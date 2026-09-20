@@ -6,8 +6,8 @@
 #include "utils/Utils.h"
 
 #include <algorithm>
-#include <cstring>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -26,193 +26,209 @@ using namespace angel_lsp;
 
 namespace
 {
-    /** @brief A throwaway workspace directory with real files on disk.
-     *  @note Real files rather than an injected reader: the include graph resolves a directive by
-     *        asking the filesystem whether the target exists, and the watched-files handler reads
-     *        changed files off disk. Both would see nothing in an in-memory fixture. */
-    struct WorkspaceFixture
-    {
-        std::filesystem::path dir;
+/** @brief A throwaway workspace directory with real files on disk.
+ *  @note Real files rather than an injected reader: the include graph resolves a directive by
+ *        asking the filesystem whether the target exists, and the watched-files handler reads
+ *        changed files off disk. Both would see nothing in an in-memory fixture. */
+struct WorkspaceFixture
+{
+    std::filesystem::path dir;
 
-        WorkspaceFixture()
+    WorkspaceFixture()
+    {
+        const auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+        dir = std::filesystem::temp_directory_path() / ("angel_lsp_server_" + unique);
+        std::filesystem::create_directories(dir);
+        std::error_code ec;
+        auto c = std::filesystem::canonical(dir, ec);
+        if (!ec)
+            dir = std::move(c);
+    }
+
+    ~WorkspaceFixture()
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    }
+
+    void Write(const std::string& name, const std::string& contents) const
+    {
+        // Parent directories created first. Without this a fixture writing "scripts/maps/x.as"
+        // silently wrote nothing at all, and the test that read it back was measuring an empty
+        // workspace while passing its earlier assertions.
+        const std::filesystem::path full = dir / name;
+        if (full.has_parent_path())
         {
-            const auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-            dir = std::filesystem::temp_directory_path() / ("angel_lsp_server_" + unique);
-            std::filesystem::create_directories(dir);
             std::error_code ec;
-            auto c = std::filesystem::canonical(dir, ec);
-            if (!ec)
-                dir = std::move(c);
+            std::filesystem::create_directories(full.parent_path(), ec);
         }
 
-        ~WorkspaceFixture()
+        std::ofstream out(full, std::ios::binary);
+        out << contents;
+    }
+
+    /** @brief file:// URI of a workspace file, in the spelling a client would send. */
+    std::string Uri(const std::string& name) const
+    {
+        return angel_lsp::utils::PathToUri((dir / name).string());
+    }
+
+    std::string RootUri() const
+    {
+        return angel_lsp::utils::PathToUri(dir.string());
+    }
+};
+
+/** @brief Waits until a needle has appeared at least `times` times. */
+void WaitForCount(test::ScriptedStream& stream, const std::string& needle, size_t times)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        const std::string output = stream.Output();
+        size_t count = 0;
+        for (size_t at = output.find(needle); at != std::string::npos; at = output.find(needle, at + needle.size()))
         {
-            std::error_code ec;
-            std::filesystem::remove_all(dir, ec);
+            ++count;
         }
-
-        void Write(const std::string &name, const std::string &contents) const
-        {
-            // Parent directories created first. Without this a fixture writing "scripts/maps/x.as"
-            // silently wrote nothing at all, and the test that read it back was measuring an empty
-            // workspace while passing its earlier assertions.
-            const std::filesystem::path full = dir / name;
-            if (full.has_parent_path())
-            {
-                std::error_code ec;
-                std::filesystem::create_directories(full.parent_path(), ec);
-            }
-
-            std::ofstream out(full, std::ios::binary);
-            out << contents;
-        }
-
-        /** @brief file:// URI of a workspace file, in the spelling a client would send. */
-        std::string Uri(const std::string &name) const
-        {
-            return angel_lsp::utils::PathToUri((dir / name).string());
-        }
-
-        std::string RootUri() const
-        {
-            return angel_lsp::utils::PathToUri(dir.string());
-        }
-    };
-
-    /** @brief Waits until a needle has appeared at least `times` times. */
-    void WaitForCount(test::ScriptedStream &stream, const std::string &needle, size_t times)
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            const std::string output = stream.Output();
-            size_t count = 0;
-            for (size_t at = output.find(needle); at != std::string::npos;
-                 at = output.find(needle, at + needle.size()))
-            {
-                ++count;
-            }
-            if (count >= times)
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    }
-
-    /** @brief Drives a Server through a scripted message sequence and returns everything it wrote. */
-    std::string RunScript(const config::ServerConfig &config, test::ScriptedStream &stream)
-    {
-        Server server(config, stream);
-        server.Run();
-        return stream.Output();
-    }
-
-    std::string InitializeMessage(const std::string &rootUri)
-    {
-        return R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
-               R"("processId":null,"rootUri":")" + rootUri + R"(",)"
-               R"("capabilities":{},)"
-               R"("workspaceFolders":[{"uri":")" + rootUri + R"(","name":"fixture"}]}})";
-    }
-
-    /** @brief Escapes a document so it can be carried inside a JSON string literal. */
-    std::string JsonEscape(const std::string &text)
-    {
-        std::string escaped;
-        escaped.reserve(text.size() + 16);
-        for (const char c : text)
-        {
-            switch (c)
-            {
-            case '"':  escaped += "\\\""; break;
-            case '\\': escaped += "\\\\"; break;
-            case '\n': escaped += "\\n"; break;
-            case '\r': escaped += "\\r"; break;
-            case '\t': escaped += "\\t"; break;
-            default:   escaped.push_back(c); break;
-            }
-        }
-        return escaped;
-    }
-
-    std::string DidOpenMessage(const std::string &uri, const std::string &text)
-    {
-        return R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{)"
-               R"("uri":")" + uri + R"(","languageId":"angelscript","version":1,"text":")" +
-               JsonEscape(text) + R"("}}})";
-    }
-
-    std::string DidChangeMessage(const std::string &uri, int version, const std::string &text)
-    {
-        return R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{)"
-               R"("uri":")" + uri + R"(","version":)" + std::to_string(version) +
-               R"(},"contentChanges":[{"text":")" + JsonEscape(text) + R"("}]}})";
-    }
-
-    /**
-     * @brief Opens one document and returns everything the server wrote back.
-     *
-     * The shape every rule-module test below shares: initialize, open a document written to trip
-     * one module's rules, shut down. What it proves is the part unit tests cannot - that a
-     * diagnostic survives the trip through publishDiagnostics and reaches the client at all.
-     */
-    std::string DiagnosticsFor(const std::string &source, config::ServerConfig serverConfig = {})
-    {
-        WorkspaceFixture fixture;
-        fixture.Write("main.as", source);
-
-        test::ScriptedStream stream;
-        stream.Push(InitializeMessage(fixture.RootUri()));
-        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-        stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
-        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
-
-        RunScript(serverConfig, stream);
-        return stream.Output();
-    }
-
-    /**
-     * @brief Just the publishDiagnostics frames of a transcript, concatenated.
-     *
-     * Searching the whole transcript is not good enough: the server also writes window/logMessage
-     * notifications that quote the rule name and the diagnostic code verbatim, so a test looking
-     * for a code would pass on the debug log alone while the diagnostic never reached the client -
-     * which is the one thing these tests exist to prove.
-     */
-    std::string PublishedFrames(const std::string &output)
-    {
-        std::string frames;
-        size_t pos = 0;
-        while (pos < output.size())
-        {
-            const size_t headerStart = output.find("Content-Length:", pos);
-            if (headerStart == std::string::npos)
-                break;
-
-            const size_t bodyStart = output.find("\r\n\r\n", headerStart);
-            if (bodyStart == std::string::npos)
-                break;
-
-            const size_t contentStart = bodyStart + 4;
-            const size_t nextHeader = output.find("Content-Length:", contentStart);
-            const size_t bodyLength = (nextHeader == std::string::npos) ? (output.size() - contentStart) : (nextHeader - contentStart);
-
-            std::string body = output.substr(contentStart, bodyLength);
-            if (body.find("textDocument/publishDiagnostics") != std::string::npos)
-            {
-                frames += body;
-            }
-
-            pos = contentStart + bodyLength;
-        }
-        return frames;
-    }
-
-    /** @brief True when a diagnostic carrying this code was published to the client. */
-    bool Published(const std::string &output, const std::string &code)
-    {
-        return PublishedFrames(output).find("\"" + code + "\"") != std::string::npos;
+        if (count >= times)
+            return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
+
+/** @brief Drives a Server through a scripted message sequence and returns everything it wrote. */
+std::string RunScript(const config::ServerConfig& config, test::ScriptedStream& stream)
+{
+    Server server(config, stream);
+    server.Run();
+    return stream.Output();
+}
+
+std::string InitializeMessage(const std::string& rootUri)
+{
+    return R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
+           R"("processId":null,"rootUri":")" +
+           rootUri +
+           R"(",)"
+           R"("capabilities":{},)"
+           R"("workspaceFolders":[{"uri":")" +
+           rootUri + R"(","name":"fixture"}]}})";
+}
+
+/** @brief Escapes a document so it can be carried inside a JSON string literal. */
+std::string JsonEscape(const std::string& text)
+{
+    std::string escaped;
+    escaped.reserve(text.size() + 16);
+    for (const char c : text)
+    {
+        switch (c)
+        {
+        case '"':
+            escaped += "\\\"";
+            break;
+        case '\\':
+            escaped += "\\\\";
+            break;
+        case '\n':
+            escaped += "\\n";
+            break;
+        case '\r':
+            escaped += "\\r";
+            break;
+        case '\t':
+            escaped += "\\t";
+            break;
+        default:
+            escaped.push_back(c);
+            break;
+        }
+    }
+    return escaped;
+}
+
+std::string DidOpenMessage(const std::string& uri, const std::string& text)
+{
+    return R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{)"
+           R"("uri":")" +
+           uri + R"(","languageId":"angelscript","version":1,"text":")" + JsonEscape(text) + R"("}}})";
+}
+
+std::string DidChangeMessage(const std::string& uri, int version, const std::string& text)
+{
+    return R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{)"
+           R"("uri":")" +
+           uri + R"(","version":)" + std::to_string(version) + R"(},"contentChanges":[{"text":")" + JsonEscape(text) +
+           R"("}]}})";
+}
+
+/**
+ * @brief Opens one document and returns everything the server wrote back.
+ *
+ * The shape every rule-module test below shares: initialize, open a document written to trip
+ * one module's rules, shut down. What it proves is the part unit tests cannot - that a
+ * diagnostic survives the trip through publishDiagnostics and reaches the client at all.
+ */
+std::string DiagnosticsFor(const std::string& source, config::ServerConfig serverConfig = {})
+{
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    RunScript(serverConfig, stream);
+    return stream.Output();
+}
+
+/**
+ * @brief Just the publishDiagnostics frames of a transcript, concatenated.
+ *
+ * Searching the whole transcript is not good enough: the server also writes window/logMessage
+ * notifications that quote the rule name and the diagnostic code verbatim, so a test looking
+ * for a code would pass on the debug log alone while the diagnostic never reached the client -
+ * which is the one thing these tests exist to prove.
+ */
+std::string PublishedFrames(const std::string& output)
+{
+    std::string frames;
+    size_t pos = 0;
+    while (pos < output.size())
+    {
+        const size_t headerStart = output.find("Content-Length:", pos);
+        if (headerStart == std::string::npos)
+            break;
+
+        const size_t bodyStart = output.find("\r\n\r\n", headerStart);
+        if (bodyStart == std::string::npos)
+            break;
+
+        const size_t contentStart = bodyStart + 4;
+        const size_t nextHeader = output.find("Content-Length:", contentStart);
+        const size_t bodyLength =
+            (nextHeader == std::string::npos) ? (output.size() - contentStart) : (nextHeader - contentStart);
+
+        std::string body = output.substr(contentStart, bodyLength);
+        if (body.find("textDocument/publishDiagnostics") != std::string::npos)
+        {
+            frames += body;
+        }
+
+        pos = contentStart + bodyLength;
+    }
+    return frames;
+}
+
+/** @brief True when a diagnostic carrying this code was published to the client. */
+bool Published(const std::string& output, const std::string& code)
+{
+    return PublishedFrames(output).find("\"" + code + "\"") != std::string::npos;
+}
+} // namespace
 
 TEST_CASE("Server - Announces the capabilities its feature flags enable")
 {
@@ -296,15 +312,14 @@ TEST_CASE("Server - Withholds the new capabilities when their flags are off")
 
 TEST_CASE("Server - Answers an implementation request over the wire")
 {
-    const std::string source =
-        "interface IThinker\n"
-        "{\n"
-        "    void Think();\n"
-        "}\n"
-        "class Robot : IThinker\n"
-        "{\n"
-        "    void Think() { }\n"
-        "}\n";
+    const std::string source = "interface IThinker\n"
+                               "{\n"
+                               "    void Think();\n"
+                               "}\n"
+                               "class Robot : IThinker\n"
+                               "{\n"
+                               "    void Think() { }\n"
+                               "}\n";
 
     WorkspaceFixture fixture;
     fixture.Write("main.as", source);
@@ -364,9 +379,8 @@ TEST_CASE("Server - Announces the hierarchy capabilities")
 
 TEST_CASE("Server - Answers a call hierarchy over the wire")
 {
-    const std::string source =
-        "void Helper() { }\n"
-        "void Spawn() { Helper(); }\n";
+    const std::string source = "void Helper() { }\n"
+                               "void Spawn() { Helper(); }\n";
 
     WorkspaceFixture fixture;
     fixture.Write("main.as", source);
@@ -375,8 +389,9 @@ TEST_CASE("Server - Answers a call hierarchy over the wire")
     stream.Push(InitializeMessage(fixture.RootUri()));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/prepareCallHierarchy","params":{"textDocument":{"uri":")" +
-                fixture.Uri("main.as") + R"("},"position":{"line":0,"character":6}}})");
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":2,"method":"textDocument/prepareCallHierarchy","params":{"textDocument":{"uri":")" +
+        fixture.Uri("main.as") + R"("},"position":{"line":0,"character":6}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -390,9 +405,8 @@ TEST_CASE("Server - Answers a call hierarchy over the wire")
 
 TEST_CASE("Server - Answers a type hierarchy over the wire")
 {
-    const std::string source =
-        "class Base { }\n"
-        "class Derived : Base { }\n";
+    const std::string source = "class Base { }\n"
+                               "class Derived : Base { }\n";
 
     WorkspaceFixture fixture;
     fixture.Write("main.as", source);
@@ -401,8 +415,9 @@ TEST_CASE("Server - Answers a type hierarchy over the wire")
     stream.Push(InitializeMessage(fixture.RootUri()));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/prepareTypeHierarchy","params":{"textDocument":{"uri":")" +
-                fixture.Uri("main.as") + R"("},"position":{"line":1,"character":8}}})");
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":2,"method":"textDocument/prepareTypeHierarchy","params":{"textDocument":{"uri":")" +
+        fixture.Uri("main.as") + R"("},"position":{"line":1,"character":8}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -413,12 +428,11 @@ TEST_CASE("Server - Answers a type hierarchy over the wire")
 
 TEST_CASE("Server - Announces and answers linked editing")
 {
-    const std::string source =
-        "void main()\n"
-        "{\n"
-        "    int ticks = 0;\n"
-        "    ticks = ticks + 1;\n"
-        "}\n";
+    const std::string source = "void main()\n"
+                               "{\n"
+                               "    int ticks = 0;\n"
+                               "    ticks = ticks + 1;\n"
+                               "}\n";
 
     WorkspaceFixture fixture;
     fixture.Write("main.as", source);
@@ -427,8 +441,9 @@ TEST_CASE("Server - Announces and answers linked editing")
     stream.Push(InitializeMessage(fixture.RootUri()));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/linkedEditingRange","params":{"textDocument":{"uri":")" +
-                fixture.Uri("main.as") + R"("},"position":{"line":2,"character":9}}})");
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":2,"method":"textDocument/linkedEditingRange","params":{"textDocument":{"uri":")" +
+        fixture.Uri("main.as") + R"("},"position":{"line":2,"character":9}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -484,7 +499,8 @@ TEST_CASE("Server - A watched file deleted on disk stops contributing symbols")
     // Scheduled rather than executed inline: the whole script is built before the server starts.
     stream.PushAction([dir = fixture.dir]() { std::filesystem::remove(dir / "helper.as"); });
     stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[)"
-                R"({"uri":")" + fixture.Uri("helper.as") + R"(","type":3}]}})");
+                R"({"uri":")" +
+                fixture.Uri("helper.as") + R"(","type":3}]}})");
 
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"workspace/symbol","params":{"query":"Helper"}})");
     stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
@@ -508,8 +524,11 @@ TEST_CASE("Server - Survives a watched-file event naming a path it never indexed
     stream.Push(InitializeMessage(fixture.RootUri()));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[)"
-                R"({"uri":")" + fixture.Uri("never-existed.as") + R"(","type":3},)"
-                R"({"uri":")" + fixture.Uri("also-missing.as") + R"(","type":1}]}})");
+                R"({"uri":")" +
+                fixture.Uri("never-existed.as") +
+                R"(","type":3},)"
+                R"({"uri":")" +
+                fixture.Uri("also-missing.as") + R"(","type":1}]}})");
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -528,7 +547,8 @@ TEST_CASE("Server - Accepts a workspace folder added after initialize")
     stream.Push(InitializeMessage(first.RootUri()));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeWorkspaceFolders","params":{"event":{)"
-                R"("added":[{"uri":")" + second.RootUri() + R"(","name":"second"}],"removed":[]}}})");
+                R"("added":[{"uri":")" +
+                second.RootUri() + R"(","name":"second"}],"removed":[]}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -582,11 +602,13 @@ TEST_CASE("Server - Answers a semantic token delta against the payload it last s
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), "void main() {}"));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full","params":{)"
-                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("}}})");
+                R"("textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
     // The id the server minted for the payload above is "1": the counter starts at zero and this
     // is the first token stream of the session.
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full/delta","params":{)"
-                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"previousResultId":"1"}})");
+                R"("textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"previousResultId":"1"}})");
     stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -615,7 +637,8 @@ TEST_CASE("Server - Falls back to a full stream when the delta base is unknown")
     // A result id from some past session. Answering with edits against it would corrupt whatever
     // the client is holding, so the protocol allows a full stream instead.
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full/delta","params":{)"
-                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"previousResultId":"stale"}})");
+                R"("textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"previousResultId":"stale"}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -638,21 +661,24 @@ TEST_CASE("Server - Invalidates delta cache on syntax error transition")
 
     // 1. Initial full tokens request
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full","params":{)"
-                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("}}})");
+                R"("textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
 
     // 2. Client introduces syntax error (unclosed quote)
     stream.Push(DidChangeMessage(fixture.Uri("main.as"), 2, "void main() { int a = \"unclosed; }\n"));
 
     // 3. Delta request while AST has syntax error -> falls back to full tokens (data, no edits)
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full/delta","params":{)"
-                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"previousResultId":"1"}})");
+                R"("textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"previousResultId":"1"}})");
 
     // 4. Client fixes syntax error
     stream.Push(DidChangeMessage(fixture.Uri("main.as"), 3, "void main() { int a = 2; }\n"));
 
     // 5. Delta request after recovering from syntax error -> falls back to full tokens (data, no edits)
     stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"textDocument/semanticTokens/full/delta","params":{)"
-                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"previousResultId":"2"}})");
+                R"("textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"previousResultId":"2"}})");
 
     stream.Push(R"({"jsonrpc":"2.0","id":5,"method":"shutdown"})");
 
@@ -692,18 +718,21 @@ TEST_CASE("Server - Delta tokens splice edits after modifications and stabilize 
 
     // 1. Initial full tokens request upon opening
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full","params":{)"
-                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("}}})");
+                R"("textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
 
     // 2. Incremental modification appending a variable declaration
     stream.Push(DidChangeMessage(fixture.Uri("main.as"), 2, "void main() { int a = 1; int b = 2; }\n"));
 
     // 3. Delta request after edit -> returns spliced edits against resultId 1
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/semanticTokens/full/delta","params":{)"
-                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"previousResultId":"1"}})");
+                R"("textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"previousResultId":"1"}})");
 
     // 4. Settled post-edit idle state: second delta request with resultId 2 -> empty edits
     stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"textDocument/semanticTokens/full/delta","params":{)"
-                R"("textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"previousResultId":"2"}})");
+                R"("textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"previousResultId":"2"}})");
 
     stream.Push(R"({"jsonrpc":"2.0","id":5,"method":"shutdown"})");
 
@@ -726,7 +755,6 @@ TEST_CASE("Server - Delta tokens splice edits after modifications and stabilize 
     CHECK(r4.find("\"resultId\":\"3\"") != std::string::npos);
 }
 
-
 // =====================================================================================
 // Every rule module, over the protocol
 //
@@ -741,12 +769,11 @@ TEST_CASE("Server - Delta tokens splice edits after modifications and stabilize 
 
 TEST_CASE("Server - Publishes the class rule diagnostics")
 {
-    const std::string source =
-        "mixin final class Helper {}\n"
-        "final class Sealed {}\n"
-        "class Derived : Sealed {}\n"
-        "interface IThink { void Think(); }\n"
-        "class Idle : IThink {}\n";
+    const std::string source = "mixin final class Helper {}\n"
+                               "final class Sealed {}\n"
+                               "class Derived : Sealed {}\n"
+                               "interface IThink { void Think(); }\n"
+                               "class Idle : IThink {}\n";
 
     const std::string output = DiagnosticsFor(source);
     CHECK(Published(output, "as-err-mixin-final"));
@@ -758,10 +785,9 @@ TEST_CASE("Server - Publishes the type rule diagnostics")
 {
     // A floating point initializer, not an identifier one: referring to a constant is legal and the
     // rule deliberately leaves it alone.
-    const std::string source =
-        "enum Mode { First = 1, Second = 1.5 }\n"
-        "void Repeated() {}\n"
-        "void Repeated() {}\n";
+    const std::string source = "enum Mode { First = 1, Second = 1.5 }\n"
+                               "void Repeated() {}\n"
+                               "void Repeated() {}\n";
 
     const std::string output = DiagnosticsFor(source);
     CHECK(Published(output, "as-err-enum-invalid-initializer"));
@@ -770,10 +796,9 @@ TEST_CASE("Server - Publishes the type rule diagnostics")
 
 TEST_CASE("Server - Publishes the variable rule diagnostics")
 {
-    const std::string source =
-        "void g_nothing;\n"
-        "int@ g_broken;\n"
-        "private int g_scoped;\n";
+    const std::string source = "void g_nothing;\n"
+                               "int@ g_broken;\n"
+                               "private int g_scoped;\n";
 
     const std::string output = DiagnosticsFor(source);
     CHECK(Published(output, "as-err-void-variable"));
@@ -783,10 +808,9 @@ TEST_CASE("Server - Publishes the variable rule diagnostics")
 
 TEST_CASE("Server - Publishes the function rule diagnostics")
 {
-    const std::string source =
-        "void Orphan();\n"
-        "void Move(int x, int x) {}\n"
-        "void Think() const {}\n";
+    const std::string source = "void Orphan();\n"
+                               "void Move(int x, int x) {}\n"
+                               "void Think() const {}\n";
 
     const std::string output = DiagnosticsFor(source);
     CHECK(Published(output, "as-err-missing-body"));
@@ -796,12 +820,11 @@ TEST_CASE("Server - Publishes the function rule diagnostics")
 
 TEST_CASE("Server - Publishes the operator rule diagnostics")
 {
-    const std::string source =
-        "class Vec\n"
-        "{\n"
-        "    float opCmp(const Vec &in other) const { return 0; }\n"
-        "    Vec opAdd() const { return this; }\n"
-        "}\n";
+    const std::string source = "class Vec\n"
+                               "{\n"
+                               "    float opCmp(const Vec &in other) const { return 0; }\n"
+                               "    Vec opAdd() const { return this; }\n"
+                               "}\n";
 
     const std::string output = DiagnosticsFor(source);
     CHECK(Published(output, "as-err-opcmp-return-int"));
@@ -810,9 +833,8 @@ TEST_CASE("Server - Publishes the operator rule diagnostics")
 
 TEST_CASE("Server - Publishes the control flow diagnostics")
 {
-    const std::string source =
-        "void Loose() { break; }\n"
-        "int Silent() { int x = 1; }\n";
+    const std::string source = "void Loose() { break; }\n"
+                               "int Silent() { int x = 1; }\n";
 
     const std::string output = DiagnosticsFor(source);
     CHECK(Published(output, "as-err-break-outside-loop"));
@@ -822,18 +844,17 @@ TEST_CASE("Server - Publishes the control flow diagnostics")
 TEST_CASE("Server - Publishes the member access diagnostics")
 {
     // The case that started this rule, end to end: a user writing it in the editor should see it.
-    const std::string source =
-        "class MyClass\n"
-        "{\n"
-        "    private float f;\n"
-        "    protected int p;\n"
-        "}\n"
-        "void main()\n"
-        "{\n"
-        "    MyClass myClass;\n"
-        "    myClass.f = 3.0f;\n"
-        "    myClass.p = 1;\n"
-        "}\n";
+    const std::string source = "class MyClass\n"
+                               "{\n"
+                               "    private float f;\n"
+                               "    protected int p;\n"
+                               "}\n"
+                               "void main()\n"
+                               "{\n"
+                               "    MyClass myClass;\n"
+                               "    myClass.f = 3.0f;\n"
+                               "    myClass.p = 1;\n"
+                               "}\n";
 
     const std::string output = DiagnosticsFor(source);
     CHECK(Published(output, "as-err-private-member-access"));
@@ -842,13 +863,12 @@ TEST_CASE("Server - Publishes the member access diagnostics")
 
 TEST_CASE("Server - Publishes the function attribute diagnostics")
 {
-    const std::string source =
-        "class Entity\n"
-        "{\n"
-        "    void Think() delete;\n"
-        "    void Broken() property { }\n"
-        "}\n"
-        "void Convert() explicit { }\n";
+    const std::string source = "class Entity\n"
+                               "{\n"
+                               "    void Think() delete;\n"
+                               "    void Broken() property { }\n"
+                               "}\n"
+                               "void Convert() explicit { }\n";
 
     const std::string output = DiagnosticsFor(source);
     CHECK(Published(output, "as-err-delete-not-auto-generated"));
@@ -861,12 +881,11 @@ TEST_CASE("Server - Publishes the diagnostics the widened grammar made reachable
     // Each of these used to reach the user as `Syntax error: "<token>"`, because the grammar
     // refused the construct. They now arrive as sentences, which is the whole point of parsing
     // something the engine rejects.
-    const std::string source =
-        "class Entity {}\n"
-        "typedef Entity Alias;\n"
-        "interface IThing { IThing(); void Do(); }\n"
-        "funcdef void Callback() delete;\n"
-        "array<void> g_bad;\n";
+    const std::string source = "class Entity {}\n"
+                               "typedef Entity Alias;\n"
+                               "interface IThing { IThing(); void Do(); }\n"
+                               "funcdef void Callback() delete;\n"
+                               "array<void> g_bad;\n";
 
     const std::string output = DiagnosticsFor(source);
     CHECK(Published(output, "as-err-typedef-non-primitive"));
@@ -877,13 +896,12 @@ TEST_CASE("Server - Publishes the diagnostics the widened grammar made reachable
 
 TEST_CASE("Server - Publishes the non-instantiable type diagnostics")
 {
-    const std::string source =
-        "abstract class Shape { void Draw() {} }\n"
-        "interface IThing { void Do(); }\n"
-        "Shape g_shape;\n"
-        "IThing g_thing;\n"
-        "void Take(Shape s) { }\n"
-        "Shape Make() { return Shape(); }\n";
+    const std::string source = "abstract class Shape { void Draw() {} }\n"
+                               "interface IThing { void Do(); }\n"
+                               "Shape g_shape;\n"
+                               "IThing g_thing;\n"
+                               "void Take(Shape s) { }\n"
+                               "Shape Make() { return Shape(); }\n";
 
     const std::string output = DiagnosticsFor(source);
     CHECK(Published(output, "as-err-abstract-instantiated"));
@@ -894,11 +912,10 @@ TEST_CASE("Server - Publishes the non-instantiable type diagnostics")
 
 TEST_CASE("Server - Publishes the const correctness diagnostics")
 {
-    const std::string source =
-        "const int g_max = 10;\n"
-        "class Entity { int v; void Mutate() { v = 1; } }\n"
-        "void main() { g_max = 5; }\n"
-        "void Take(const Entity &in e) { e.Mutate(); }\n";
+    const std::string source = "const int g_max = 10;\n"
+                               "class Entity { int v; void Mutate() { v = 1; } }\n"
+                               "void main() { g_max = 5; }\n"
+                               "void Take(const Entity &in e) { e.Mutate(); }\n";
 
     const std::string output = DiagnosticsFor(source);
     CHECK(Published(output, "as-err-const-assignment"));
@@ -934,9 +951,8 @@ TEST_CASE("Server - Publishes a diagnostic only an engine property switches on")
 
 TEST_CASE("Server - Publishes the type conversion diagnostics")
 {
-    const std::string source =
-        "class Money {}\n"
-        "void main() { Money m = 1; }\n";
+    const std::string source = "class Money {}\n"
+                               "void main() { Money m = 1; }\n";
 
     CHECK(Published(DiagnosticsFor(source), "as-err-no-implicit-conversion"));
 }
@@ -989,14 +1005,13 @@ TEST_CASE("Server - An opened predefined stub is not judged as a script")
     // user and one error per declaration - the real Sven Coop stub produces 3144 of them when it is
     // read as ordinary script. The file is named `as.predefined`, AngelScript's own convention,
     // which the configured `.as.predefined` suffix does not match on its own.
-    const std::string stub =
-        "class CBaseEntity\n"
-        "{\n"
-        "    void Spawn();\n"
-        "    void Precache();\n"
-        "    int TakeDamage(CBaseEntity@ attacker, float damage);\n"
-        "}\n"
-        "void ServerCommand(const string &in command);\n";
+    const std::string stub = "class CBaseEntity\n"
+                             "{\n"
+                             "    void Spawn();\n"
+                             "    void Precache();\n"
+                             "    int TakeDamage(CBaseEntity@ attacker, float damage);\n"
+                             "}\n"
+                             "void ServerCommand(const string &in command);\n";
 
     WorkspaceFixture fixture;
     fixture.Write("as.predefined", stub);
@@ -1095,7 +1110,7 @@ TEST_CASE("Server - Recovers from a structurally invalid JSON-RPC message")
 TEST_CASE("Server - Keeps the call graph after a document is re-analysed")
 {
     const std::string before = "void helper() {}\nvoid main() { helper(); }\n";
-    const std::string after  = "void helper() {}\nvoid main() { helper(); helper(); }\n";
+    const std::string after = "void helper() {}\nvoid main() { helper(); helper(); }\n";
 
     WorkspaceFixture fixture;
     fixture.Write("main.as", before);
@@ -1103,10 +1118,10 @@ TEST_CASE("Server - Keeps the call graph after a document is re-analysed")
 
     // Hand-built rather than echoed back from prepareCallHierarchy: the outgoing-calls handler
     // reads the item straight off the request, so nothing here depends on parsing a prior reply.
-    const std::string item =
-        R"({"name":"main","kind":12,"uri":")" + uri + R"(",)"
-        R"("range":{"start":{"line":1,"character":0},"end":{"line":1,"character":33}},)"
-        R"("selectionRange":{"start":{"line":1,"character":5},"end":{"line":1,"character":9}}})";
+    const std::string item = R"({"name":"main","kind":12,"uri":")" + uri +
+                             R"(",)"
+                             R"("range":{"start":{"line":1,"character":0},"end":{"line":1,"character":33}},)"
+                             R"("selectionRange":{"start":{"line":1,"character":5},"end":{"line":1,"character":9}}})";
 
     test::ScriptedStream stream;
     stream.Push(InitializeMessage(fixture.RootUri()));
@@ -1115,18 +1130,20 @@ TEST_CASE("Server - Keeps the call graph after a document is re-analysed")
 
     // Whole-document sync, which is the branch that drops the tree and reparses from scratch.
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{)"
-                R"("uri":")" + uri + R"(","version":2},"contentChanges":[{"text":")" +
-                JsonEscape(after) + R"("}]}})");
+                R"("uri":")" +
+                uri + R"(","version":2},"contentChanges":[{"text":")" + JsonEscape(after) + R"("}]}})");
 
-    // Runs on the message loop before the next frame is read, so the debounced analysis (200 ms)
-    // has finished by the time the query below is handled. Not a race: the server is blocked here.
-    stream.PushAction([]() { std::this_thread::sleep_for(std::chrono::milliseconds(900)); });
+    config::ServerConfig serverConfig;
+    Server server(serverConfig, stream);
+
+    // Runs on the message loop before the next frame is read, so the debounced analysis
+    // has finished by the time the query below is handled. Synchronized deterministically.
+    stream.PushAction([&server]() { server.DrainQueue(); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"callHierarchy/outgoingCalls","params":{"item":)" + item + R"(}})");
     stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
 
-    config::ServerConfig serverConfig;
-    RunScript(serverConfig, stream);
+    server.Run();
 
     // The call from main() to helper() must still be there after the re-analysis.
     CHECK(stream.OutputContains("\"helper\""));
@@ -1147,15 +1164,19 @@ TEST_CASE("Server - Keeps the call graph after a document is re-analysed")
 
 namespace
 {
-    std::string InitializeWithProgress(const std::string &rootUri, bool workDoneProgress)
-    {
-        return R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
-               R"("processId":null,"rootUri":")" + rootUri + R"(",)"
-               R"("capabilities":{"window":{"workDoneProgress":)" +
-               (workDoneProgress ? "true" : "false") + R"(}},)"
-               R"("workspaceFolders":[{"uri":")" + rootUri + R"(","name":"fixture"}]}})";
-    }
+std::string InitializeWithProgress(const std::string& rootUri, bool workDoneProgress)
+{
+    return R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
+           R"("processId":null,"rootUri":")" +
+           rootUri +
+           R"(",)"
+           R"("capabilities":{"window":{"workDoneProgress":)" +
+           (workDoneProgress ? "true" : "false") +
+           R"(}},)"
+           R"("workspaceFolders":[{"uri":")" +
+           rootUri + R"(","name":"fixture"}]}})";
 }
+} // namespace
 
 TEST_CASE("ServerHarness - Reports workspace scan progress when the client supports it")
 {
@@ -1175,18 +1196,19 @@ TEST_CASE("ServerHarness - Reports workspace scan progress when the client suppo
     // A request after the notification, so the loop has demonstrably come back round and dispatched
     // `initialized` before the wait below begins. Without it the action fires while that
     // notification is still in flight and the scan has not been started yet.
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream]()
         {
-            if (stream.Output().find("\"kind\":\"end\"") != std::string::npos)
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::chrono::steady_clock::now() < deadline)
             {
-                return;
+                if (stream.Output().find("\"kind\":\"end\"") != std::string::npos)
+                {
+                    return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+        });
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -1281,7 +1303,7 @@ TEST_CASE("Server - Diagnostics come back under the spelling the client sent")
     // The half that a key alone would have broken. Everything inside the server is keyed by the
     // canonical form; a diagnostic published under it is addressed to a document the client has
     // never heard of, so the user would see nothing at all.
-    const std::string source = "void Think(  { }\n";  // deliberately malformed, to force one
+    const std::string source = "void Think(  { }\n"; // deliberately malformed, to force one
 
     WorkspaceFixture fixture;
     fixture.Write("broken.as", source);
@@ -1345,14 +1367,16 @@ TEST_CASE("Server - Editing a predefined stub re-diagnoses the open documents")
     // Two spacers before the wait. The reader runs a frame ahead of the message loop, so an action
     // registered immediately after a notification fires while that notification is still being
     // processed - the wait has to sit far enough behind to land after the fan-out has scheduled.
-    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-    stream.PushAction([] { std::this_thread::sleep_for(std::chrono::milliseconds(1500)); });
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
-
     config::ServerConfig serverConfig;
     serverConfig.features.enablePredefinedLoader = true;
-    RunScript(serverConfig, stream);
+    Server server(serverConfig, stream);
+
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
+    stream.PushAction([&server] { server.DrainQueue(); });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    server.Run();
 
     // Two publishDiagnostics for the document: the one from didOpen, and a second after the stub
     // changed. Without the fan-out there is only ever the first.
@@ -1474,11 +1498,12 @@ TEST_CASE("Server - Deleting a file drops its symbols from the workspace")
     // Present before.
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/symbol","params":{"query":"UniquelyNamedHelper"}})");
 
-    stream.PushAction([dir = fixture.dir]()
-    {
-        std::error_code ec;
-        std::filesystem::remove(dir / "helper.as", ec);
-    });
+    stream.PushAction(
+        [dir = fixture.dir]()
+        {
+            std::error_code ec;
+            std::filesystem::remove(dir / "helper.as", ec);
+        });
     stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didDeleteFiles","params":{"files":[{"uri":")" +
                 fixture.Uri("helper.as") + R"("}]}})");
 
@@ -1548,16 +1573,17 @@ TEST_CASE("Server - A pulled diagnostic carries what the pushed one carried")
     // processed.
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream]()
         {
-            if (stream.OutputContains("publishDiagnostics"))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("publishDiagnostics"))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
                 fixture.Uri("main.as") + R"("}}})");
@@ -1586,26 +1612,31 @@ TEST_CASE("Server - Pull diagnostics client receives workspace/diagnostic/refres
     fixture.Write("main.as", source);
 
     test::ScriptedStream stream;
-    std::string initMsg = R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
-                          R"("processId":null,"rootUri":")" + fixture.RootUri() + R"(",)"
-                          R"("capabilities":{"textDocument":{"diagnostic":{}},"workspace":{"diagnostics":{"refreshSupport":true}}},)"
-                          R"("workspaceFolders":[{"uri":")" + fixture.RootUri() + R"(","name":"fixture"}]}})";
+    std::string initMsg =
+        R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
+        R"("processId":null,"rootUri":")" +
+        fixture.RootUri() +
+        R"(",)"
+        R"("capabilities":{"textDocument":{"diagnostic":{}},"workspace":{"diagnostics":{"refreshSupport":true}}},)"
+        R"("workspaceFolders":[{"uri":")" +
+        fixture.RootUri() + R"(","name":"fixture"}]}})";
     stream.Push(initMsg);
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
 
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream]()
         {
-            if (stream.OutputContains("workspace/diagnostic/refresh"))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("workspace/diagnostic/refresh"))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
@@ -1628,7 +1659,7 @@ TEST_CASE("Server - A second pull of an unedited document is answered unchanged"
     // stops holding, this fails loudly rather than quietly testing nothing.
     const std::string source = "void Main()\n{\n    UndefinedThingy();\n}\n";
 
-    const auto pullOnce = [&source](const std::string &previousResultId)
+    const auto pullOnce = [&source](const std::string& previousResultId)
     {
         WorkspaceFixture fixture;
         fixture.Write("main.as", source);
@@ -1640,19 +1671,21 @@ TEST_CASE("Server - A second pull of an unedited document is answered unchanged"
 
         stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
         stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-        stream.PushAction([&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-            while (std::chrono::steady_clock::now() < deadline)
+        stream.PushAction(
+            [&stream]()
             {
-                if (stream.OutputContains("publishDiagnostics"))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        });
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+                while (std::chrono::steady_clock::now() < deadline)
+                {
+                    if (stream.OutputContains("publishDiagnostics"))
+                        return;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                }
+            });
 
-        std::string request = R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
-                              fixture.Uri("main.as") + R"("})";
+        std::string request =
+            R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+            fixture.Uri("main.as") + R"("})";
         if (!previousResultId.empty())
             request += R"(,"previousResultId":")" + previousResultId + R"(")";
         request += "}}";
@@ -1729,16 +1762,17 @@ TEST_CASE("Server - workspace/diagnostic reports the documents already analysed"
 
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream]()
         {
-            if (stream.OutputContains("publishDiagnostics"))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("publishDiagnostics"))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/diagnostic","params":{"previousResultIds":[]}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
@@ -1824,16 +1858,17 @@ TEST_CASE("Server - Push diagnostics keep working with pull switched off")
 
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream]()
         {
-            if (stream.OutputContains("publishDiagnostics"))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("publishDiagnostics"))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
@@ -1867,7 +1902,6 @@ TEST_CASE("Server - workspace/diagnostic answers empty rather than failing when 
     CHECK(reply.find("\"error\"") == std::string::npos);
     CHECK(reply.find("\"items\":[]") != std::string::npos);
 }
-
 
 // =====================================================================================
 // Three protocol messages that were in the framework's ClientToServer list and unanswered.
@@ -1910,16 +1944,17 @@ TEST_CASE("Server - The workspace scan announces itself as cancellable")
     // about a notification the server was right not to send.
     stream.Push(InitializeWithProgress(fixture.RootUri(), true));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream]()
         {
-            if (stream.OutputContains("\"kind\":\"end\""))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("\"kind\":\"end\""))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        });
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -1940,7 +1975,8 @@ TEST_CASE("Server - Survives a cancel naming a progress token it never issued")
     test::ScriptedStream stream;
     stream.Push(InitializeMessage(fixture.RootUri()));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.Push(R"({"jsonrpc":"2.0","method":"window/workDoneProgress/cancel","params":{"token":"someone-elses-token"}})");
+    stream.Push(
+        R"({"jsonrpc":"2.0","method":"window/workDoneProgress/cancel","params":{"token":"someone-elses-token"}})");
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -1979,11 +2015,12 @@ TEST_CASE("Server - A created file that something includes becomes visible")
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), mainSource));
 
     // The editor creates the file, then reports it.
-    stream.PushAction([dir = fixture.dir]()
-    {
-        std::ofstream out(dir / "helper.as", std::ios::binary);
-        out << "void UniquelyNamedNewcomer() { }\n";
-    });
+    stream.PushAction(
+        [dir = fixture.dir]()
+        {
+            std::ofstream out(dir / "helper.as", std::ios::binary);
+            out << "void UniquelyNamedNewcomer() { }\n";
+        });
     stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didCreateFiles","params":{"files":[{"uri":")" +
                 fixture.Uri("helper.as") + R"("}]}})");
 
@@ -2022,11 +2059,12 @@ TEST_CASE("Server - A created file nothing includes is not indexed")
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), mainSource));
 
-    stream.PushAction([dir = fixture.dir]()
-    {
-        std::ofstream out(dir / "unreferenced.as", std::ios::binary);
-        out << "void NobodyAsksForThis() { }\n";
-    });
+    stream.PushAction(
+        [dir = fixture.dir]()
+        {
+            std::ofstream out(dir / "unreferenced.as", std::ios::binary);
+            out << "void NobodyAsksForThis() { }\n";
+        });
     stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didCreateFiles","params":{"files":[{"uri":")" +
                 fixture.Uri("unreferenced.as") + R"("}]}})");
 
@@ -2042,7 +2080,6 @@ TEST_CASE("Server - A created file nothing includes is not indexed")
 
     CHECK(stream.ResponseFor(2).find("NobodyAsksForThis") == std::string::npos);
 }
-
 
 // =====================================================================================
 // The three resolve round-trips, and multi-range formatting.
@@ -2088,7 +2125,8 @@ TEST_CASE("Server - documentLink/resolve answers rather than failing")
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"documentLink/resolve","params":)"
                 R"({"range":{"start":{"line":0,"character":10},"end":{"line":0,"character":20}},)"
-                R"("target":")" + fixture.Uri("helper.as") + R"("}})");
+                R"("target":")" +
+                fixture.Uri("helper.as") + R"("}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -2128,7 +2166,8 @@ TEST_CASE("Server - workspaceSymbol/resolve answers rather than failing")
     stream.Push(InitializeMessage(fixture.RootUri()));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspaceSymbol/resolve","params":)"
-                R"({"name":"AlreadyComplete","kind":12,"location":{"uri":")" + fixture.Uri("main.as") +
+                R"({"name":"AlreadyComplete","kind":12,"location":{"uri":")" +
+                fixture.Uri("main.as") +
                 R"(","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}}}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
@@ -2143,10 +2182,9 @@ TEST_CASE("Server - workspaceSymbol/resolve answers rather than failing")
 
 TEST_CASE("Server - rangesFormatting formats every range it is given")
 {
-    const std::string source =
-        "void  a( ) { int   x=1; }\n"
-        "void  b( ) { int   y=2; }\n"
-        "void  c( ) { int   z=3; }\n";
+    const std::string source = "void  a( ) { int   x=1; }\n"
+                               "void  b( ) { int   y=2; }\n"
+                               "void  c( ) { int   z=3; }\n";
 
     WorkspaceFixture fixture;
     fixture.Write("main.as", source);
@@ -2159,7 +2197,9 @@ TEST_CASE("Server - rangesFormatting formats every range it is given")
     // The first and third lines, skipping the middle - the shape rangesFormatting exists for, and
     // the one a single range cannot express.
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/rangesFormatting","params":)"
-                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},)"
+                R"({"textDocument":{"uri":")" +
+                fixture.Uri("main.as") +
+                R"("},)"
                 R"("ranges":[{"start":{"line":0,"character":0},"end":{"line":0,"character":25}},)"
                 R"({"start":{"line":2,"character":0},"end":{"line":2,"character":25}}],)"
                 R"("options":{"tabSize":4,"insertSpaces":true}}})");
@@ -2186,7 +2226,9 @@ TEST_CASE("Server - rangesFormatting with no ranges is an empty edit, not an err
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/rangesFormatting","params":)"
-                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"ranges":[],)"
+                R"({"textDocument":{"uri":")" +
+                fixture.Uri("main.as") +
+                R"("},"ranges":[],)"
                 R"("options":{"tabSize":4,"insertSpaces":true}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
@@ -2197,7 +2239,6 @@ TEST_CASE("Server - rangesFormatting with no ranges is an empty edit, not an err
     INFO(reply);
     CHECK(reply.find("\"error\"") == std::string::npos);
 }
-
 
 // =====================================================================================
 // willSave, willSaveWaitUntil and executeCommand.
@@ -2240,7 +2281,8 @@ TEST_CASE("Server - A manual save formats nothing unless format-on-save was aske
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/willSaveWaitUntil","params":)"
-                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"reason":1}})");
+                R"({"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"reason":1}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -2264,7 +2306,8 @@ TEST_CASE("Server - A manual save formats when format-on-save is on")
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     // reason 1 is Manual.
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/willSaveWaitUntil","params":)"
-                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"reason":1}})");
+                R"({"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"reason":1}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -2290,7 +2333,8 @@ TEST_CASE("Server - An autosave never formats, even with format-on-save on")
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/willSaveWaitUntil","params":)"
-                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"reason":2}})");
+                R"({"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"reason":2}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -2316,7 +2360,8 @@ TEST_CASE("Server - A focus-change save never formats either")
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/willSaveWaitUntil","params":)"
-                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"reason":3}})");
+                R"({"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"reason":3}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -2338,7 +2383,8 @@ TEST_CASE("Server - willSave is consumed rather than dropped")
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/willSave","params":)"
-                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},"reason":1}})");
+                R"({"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("},"reason":1}})");
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -2353,8 +2399,10 @@ TEST_CASE("Server - executeCommand runs the rescan and refuses anything else")
     test::ScriptedStream stream;
     stream.Push(InitializeMessage(fixture.RootUri()));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/executeCommand","params":{"command":"angelscript.rescanWorkspace"}})");
-    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"workspace/executeCommand","params":{"command":"angelscript.notARealCommand"}})");
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":2,"method":"workspace/executeCommand","params":{"command":"angelscript.rescanWorkspace"}})");
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":3,"method":"workspace/executeCommand","params":{"command":"angelscript.notARealCommand"}})");
     stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -2371,7 +2419,6 @@ TEST_CASE("Server - executeCommand runs the rescan and refuses anything else")
     CHECK(unknown.find("\"error\"") != std::string::npos);
     CHECK(unknown.find("notARealCommand") != std::string::npos);
 }
-
 
 // =====================================================================================
 // The last four ClientToServer messages.
@@ -2404,12 +2451,11 @@ TEST_CASE("Server - Announces moniker and the virtual-document scheme, but not i
 
 TEST_CASE("Server - A moniker names the symbol under the cursor")
 {
-    const std::string source =
-        "class Entity\n"
-        "{\n"
-        "    void Think() { }\n"
-        "}\n"
-        "void main() { Entity e; e.Think(); }\n";
+    const std::string source = "class Entity\n"
+                               "{\n"
+                               "    void Think() { }\n"
+                               "}\n"
+                               "void main() { Entity e; e.Think(); }\n";
 
     WorkspaceFixture fixture;
     fixture.Write("main.as", source);
@@ -2420,7 +2466,9 @@ TEST_CASE("Server - A moniker names the symbol under the cursor")
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     // On `Think` at the call site.
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/moniker","params":)"
-                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},)"
+                R"({"textDocument":{"uri":")" +
+                fixture.Uri("main.as") +
+                R"("},)"
                 R"("position":{"line":4,"character":26}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
@@ -2449,7 +2497,9 @@ TEST_CASE("Server - A moniker on empty space answers null rather than inventing 
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/moniker","params":)"
-                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},)"
+                R"({"textDocument":{"uri":")" +
+                fixture.Uri("main.as") +
+                R"("},)"
                 R"("position":{"line":0,"character":13}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
@@ -2474,7 +2524,9 @@ TEST_CASE("Server - inlineCompletion answers empty rather than failing")
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/inlineCompletion","params":)"
-                R"({"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("},)"
+                R"({"textDocument":{"uri":")" +
+                fixture.Uri("main.as") +
+                R"("},)"
                 R"("position":{"line":0,"character":13},)"
                 R"("context":{"triggerKind":1}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
@@ -2494,7 +2546,8 @@ TEST_CASE("Server - textDocumentContent refuses a scheme it does not serve")
     test::ScriptedStream stream;
     stream.Push(InitializeMessage(fixture.RootUri()));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/textDocumentContent","params":{"uri":"file:///etc/passwd"}})");
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":2,"method":"workspace/textDocumentContent","params":{"uri":"file:///etc/passwd"}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -2514,7 +2567,8 @@ TEST_CASE("Server - textDocumentContent refuses a stub it never loaded")
     test::ScriptedStream stream;
     stream.Push(InitializeMessage(fixture.RootUri()));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/textDocumentContent","params":{"uri":"angelscript-predefined:C:/nowhere/nothing.as.predefined"}})");
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":2,"method":"workspace/textDocumentContent","params":{"uri":"angelscript-predefined:C:/nowhere/nothing.as.predefined"}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -2552,29 +2606,29 @@ TEST_CASE("Server - $/cancelRequest is consumed rather than dropped")
 
 namespace
 {
-    /** @brief Runs one `#if FOO` document under a stub and returns everything the server said. */
-    std::string RunUnderStub(const std::string &stubText)
-    {
-        WorkspaceFixture fixture;
-        fixture.Write("engine.as.predefined", stubText);
+/** @brief Runs one `#if FOO` document under a stub and returns everything the server said. */
+std::string RunUnderStub(const std::string& stubText)
+{
+    WorkspaceFixture fixture;
+    fixture.Write("engine.as.predefined", stubText);
 
-        const std::string source =
-            "#if FOO\n"
-            "void Main()\n"
-            "{\n"
-            "    UndefinedThingy();\n"
-            "}\n"
-            "#endif\n";
-        fixture.Write("main.as", source);
+    const std::string source = "#if FOO\n"
+                               "void Main()\n"
+                               "{\n"
+                               "    UndefinedThingy();\n"
+                               "}\n"
+                               "#endif\n";
+    fixture.Write("main.as", source);
 
-        test::ScriptedStream stream;
-        stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
-        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
 
-        // The stub is read by the workspace scan, so opening the document before the scan reports
-        // "end" would analyse it against a server that has not seen the `#define` yet - and the
-        // test would then be measuring the race rather than the feature.
-        stream.PushAction([&stream]()
+    // The stub is read by the workspace scan, so opening the document before the scan reports
+    // "end" would analyse it against a server that has not seen the `#define` yet - and the
+    // test would then be measuring the race rather than the feature.
+    stream.PushAction(
+        [&stream]()
         {
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
             while (std::chrono::steady_clock::now() < deadline)
@@ -2585,12 +2639,13 @@ namespace
             }
         });
 
-        stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
 
-        // And analysis runs on its own thread, so shutting down straight after didOpen would end
-        // the session before anything was published. Both of these tests passed that way once -
-        // the one expecting silence passed because there was silence about everything.
-        stream.PushAction([&stream]()
+    // And analysis runs on its own thread, so shutting down straight after didOpen would end
+    // the session before anything was published. Both of these tests passed that way once -
+    // the one expecting silence passed because there was silence about everything.
+    stream.PushAction(
+        [&stream]()
         {
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
             while (std::chrono::steady_clock::now() < deadline)
@@ -2601,14 +2656,14 @@ namespace
             }
         });
 
-        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
-        config::ServerConfig serverConfig;
-        RunScript(serverConfig, stream);
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
 
-        return stream.Output();
-    }
+    return stream.Output();
 }
+} // namespace
 
 TEST_CASE("Server - A stub's #define makes the #if block it names live")
 {
@@ -2646,28 +2701,30 @@ TEST_CASE("Server - A #define in a script is reported, and the same one in a stu
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream]()
         {
-            if (stream.OutputContains("\"kind\":\"end\""))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("\"kind\":\"end\""))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        });
 
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream]()
         {
-            if (stream.OutputContains("publishDiagnostics"))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("publishDiagnostics"))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        });
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
@@ -2702,15 +2759,14 @@ TEST_CASE("Server - Switching engine profile forgets the profile that was left")
     WorkspaceFixture fixture;
     fixture.Write("main.as", source);
 
-    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle, size_t times)
+    const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle, size_t times)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
         while (std::chrono::steady_clock::now() < deadline)
         {
             const std::string output = stream.Output();
             size_t count = 0;
-            for (size_t at = output.find(needle); at != std::string::npos;
-                 at = output.find(needle, at + needle.size()))
+            for (size_t at = output.find(needle); at != std::string::npos; at = output.find(needle, at + needle.size()))
             {
                 ++count;
             }
@@ -2763,65 +2819,66 @@ TEST_CASE("Server - Switching engine profile forgets the profile that was left")
 
 namespace
 {
-    /** @brief A workspace with two stubs, each declaring a type the other does not. */
-    struct TwoStubFixture
+/** @brief A workspace with two stubs, each declaring a type the other does not. */
+struct TwoStubFixture
+{
+    WorkspaceFixture fixture;
+
+    TwoStubFixture()
     {
-        WorkspaceFixture fixture;
+        fixture.Write("host_a.as.predefined", "class TypeFromA { void Poke(); }\n");
+        fixture.Write("host_b.as.predefined", "class TypeFromB { void Poke(); }\n");
+    }
 
-        TwoStubFixture()
+    std::string Stub(const char* name) const
+    {
+        return (fixture.dir / name).generic_string();
+    }
+};
+
+/** @brief Runs one document against this workspace and returns everything the server said. */
+std::string RunWithActiveStub(const TwoStubFixture& two, const std::string& source, const std::string& activeStub)
+{
+    const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline)
         {
-            fixture.Write("host_a.as.predefined", "class TypeFromA { void Poke(); }\n");
-            fixture.Write("host_b.as.predefined", "class TypeFromB { void Poke(); }\n");
+            if (stream.OutputContains(needle))
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-
-        std::string Stub(const char *name) const { return (fixture.dir / name).generic_string(); }
     };
 
-    /** @brief Runs one document against this workspace and returns everything the server said. */
-    std::string RunWithActiveStub(const TwoStubFixture &two,
-                                  const std::string &source,
-                                  const std::string &activeStub)
-    {
-        const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                if (stream.OutputContains(needle))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-        };
+    two.fixture.Write("main.as", source);
 
-        two.fixture.Write("main.as", source);
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\""); });
 
-        test::ScriptedStream stream;
-        stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
-        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-        stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\""); });
+    stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), source));
+    stream.PushAction([&]() { waitFor(stream, "publishDiagnostics"); });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
-        stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), source));
-        stream.PushAction([&]() { waitFor(stream, "publishDiagnostics"); });
-        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+    config::ServerConfig serverConfig;
+    serverConfig.activePredefined = activeStub;
 
-        config::ServerConfig serverConfig;
-        serverConfig.activePredefined = activeStub;
+    // Not the default "none". The analyzer stays silent about a type it cannot see the world
+    // of, so with an empty symbol table every one of these assertions would pass by vacuity.
+    serverConfig.engineProfile = "standard";
 
-        // Not the default "none". The analyzer stays silent about a type it cannot see the world
-        // of, so with an empty symbol table every one of these assertions would pass by vacuity.
-        serverConfig.engineProfile = "standard";
-
-        RunScript(serverConfig, stream);
-        return stream.Output();
-    }
+    RunScript(serverConfig, stream);
+    return stream.Output();
 }
+} // namespace
 
 TEST_CASE("Server - An active stub is the only one the workspace scan loads")
 {
     TwoStubFixture two;
 
-    const std::string output = RunWithActiveStub(
-        two, "void main() { TypeFromB b; }\n", two.Stub("host_a.as.predefined"));
+    const std::string output =
+        RunWithActiveStub(two, "void main() { TypeFromB b; }\n", two.Stub("host_a.as.predefined"));
 
     INFO(PublishedFrames(output));
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
@@ -2836,8 +2893,8 @@ TEST_CASE("Server - The active stub itself still resolves")
     // the test above.
     TwoStubFixture two;
 
-    const std::string output = RunWithActiveStub(
-        two, "void main() { TypeFromA a; }\n", two.Stub("host_a.as.predefined"));
+    const std::string output =
+        RunWithActiveStub(two, "void main() { TypeFromA a; }\n", two.Stub("host_a.as.predefined"));
 
     INFO(PublishedFrames(output));
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
@@ -2852,8 +2909,7 @@ TEST_CASE("Server - With no selection the scan picks one stub rather than mergin
     // stub in path order, so the same one on every machine, and the user is told which.
     TwoStubFixture two;
 
-    const std::string output = RunWithActiveStub(
-        two, "void main() { TypeFromA a; TypeFromB b; }\n", /*activeStub=*/"");
+    const std::string output = RunWithActiveStub(two, "void main() { TypeFromA a; TypeFromB b; }\n", /*activeStub=*/"");
 
     INFO(PublishedFrames(output));
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
@@ -2873,8 +2929,8 @@ TEST_CASE("Server - Asking for all of them brings the merge back")
     // two stubs needs exactly this, and it has to stay reachable.
     TwoStubFixture two;
 
-    const std::string output = RunWithActiveStub(
-        two, "void main() { TypeFromA a; TypeFromB b; }\n", /*activeStub=*/"all");
+    const std::string output =
+        RunWithActiveStub(two, "void main() { TypeFromA a; TypeFromB b; }\n", /*activeStub=*/"all");
 
     INFO(PublishedFrames(output));
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
@@ -2891,7 +2947,7 @@ TEST_CASE("Server - A lone stub is loaded without a word about it")
     fixture.Write("only.as.predefined", "class TypeFromA { }\n");
     fixture.Write("main.as", "void main() { TypeFromA a; }\n");
 
-    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
         while (std::chrono::steady_clock::now() < deadline)
@@ -2929,8 +2985,8 @@ TEST_CASE("Server - The engine profile survives a stub selection")
     // profile as well, every workspace that chose a stub would lose `array` and `string`.
     TwoStubFixture two;
 
-    const std::string output = RunWithActiveStub(
-        two, "void main() { array<int> xs; }\n", two.Stub("host_a.as.predefined"));
+    const std::string output =
+        RunWithActiveStub(two, "void main() { array<int> xs; }\n", two.Stub("host_a.as.predefined"));
 
     INFO(PublishedFrames(output));
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
@@ -2944,8 +3000,8 @@ TEST_CASE("Server - A selection naming a file that is not there is reported, lou
     // would stop resolving, and nothing on screen would say why.
     TwoStubFixture two;
 
-    const std::string output = RunWithActiveStub(
-        two, "void main() { }\n", two.Stub("host_that_does_not_exist.as.predefined"));
+    const std::string output =
+        RunWithActiveStub(two, "void main() { }\n", two.Stub("host_that_does_not_exist.as.predefined"));
 
     CHECK(output.find("selected predefined stub was not found") != std::string::npos);
 }
@@ -2959,7 +3015,7 @@ TEST_CASE("Server - The selection matches the file, not the spelling of its path
     TwoStubFixture two;
 
     std::string shouted = two.Stub("host_a.as.predefined");
-    for (char &c : shouted)
+    for (char& c : shouted)
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
 
     // Whether the shouted path is the same file is the filesystem's business, not the platform's,
@@ -3003,9 +3059,9 @@ TEST_CASE("Server - A pull answer is never about text the analyzer has not seen"
     // handler could tell it had an answer and not whether that answer was still about this text.
     // After the first analysis it served the previous one forever.
     const std::string broken = "void main() { float f }\n";
-    const std::string fixed   = "void main() { float f; }\n";
+    const std::string fixed = "void main() { float f; }\n";
 
-    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
         while (std::chrono::steady_clock::now() < deadline)
@@ -3029,8 +3085,8 @@ TEST_CASE("Server - A pull answer is never about text the analyzer has not seen"
 
     // The fix arrives, and the client pulls immediately - before the debounced analysis can run.
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
-                fixture.Uri("main.as") + R"(","version":2},"contentChanges":[{"text":")" +
-                JsonEscape(fixed) + R"("}]}})");
+                fixture.Uri("main.as") + R"(","version":2},"contentChanges":[{"text":")" + JsonEscape(fixed) +
+                R"("}]}})");
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
                 fixture.Uri("main.as") + R"("}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
@@ -3043,8 +3099,8 @@ TEST_CASE("Server - A pull answer is never about text the analyzer has not seen"
 
     // Either the analyzer had already caught up and the answer is clean, or it had not and the
     // server said so. What it must never do is hand back the previous document's findings.
-    const bool refused = pulled.find("\"code\":-32802") != std::string::npos ||
-                         pulled.find("retriggerRequest") != std::string::npos;
+    const bool refused =
+        pulled.find("\"code\":-32802") != std::string::npos || pulled.find("retriggerRequest") != std::string::npos;
     const bool clean = pulled.find("as-syntax-error") == std::string::npos;
 
     CHECK((refused || clean));
@@ -3069,7 +3125,7 @@ TEST_CASE("Server - A pull answer is never about text the analyzer has not seen"
 TEST_CASE("Server - An edit reaches the client while a polling editor keeps asking")
 {
     const std::string opened = "void main() { }\n";
-    const std::string typed  = "void main() { int justTyped = 1; }\n";
+    const std::string typed = "void main() { int justTyped = 1; }\n";
 
     WorkspaceFixture fixture;
     fixture.Write("main.as", opened);
@@ -3080,8 +3136,8 @@ TEST_CASE("Server - An edit reaches the client while a polling editor keeps aski
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), opened));
 
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
-                fixture.Uri("main.as") + R"(","version":2},"contentChanges":[{"text":")" +
-                JsonEscape(typed) + R"("}]}})");
+                fixture.Uri("main.as") + R"(","version":2},"contentChanges":[{"text":")" + JsonEscape(typed) +
+                R"("}]}})");
 
     // Twenty polls at 50ms: about a second of a client asking, every one of them well inside the
     // quiet period the edit opened. The sleeps are the point of the test - consumed back to back
@@ -3131,7 +3187,7 @@ TEST_CASE("Server - Answers the stub listing the picker is built on")
     TwoStubFixture two;
     two.fixture.Write("main.as", "void main() { }\n");
 
-    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
         while (std::chrono::steady_clock::now() < deadline)
@@ -3178,7 +3234,7 @@ TEST_CASE("Server - The listing reports a merge as one")
     TwoStubFixture two;
     two.fixture.Write("main.as", "void main() { }\n");
 
-    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
         while (std::chrono::steady_clock::now() < deadline)
@@ -3227,9 +3283,12 @@ TEST_CASE("Server - A client that pulls diagnostics is not also sent them")
 
     test::ScriptedStream stream;
     stream.Push(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
-                R"("processId":null,"rootUri":")" + fixture.RootUri() + R"(",)"
+                R"("processId":null,"rootUri":")" +
+                fixture.RootUri() +
+                R"(",)"
                 R"("capabilities":{"textDocument":{"diagnostic":{"dynamicRegistration":false}}},)"
-                R"("workspaceFolders":[{"uri":")" + fixture.RootUri() + R"(","name":"fixture"}]}})");
+                R"("workspaceFolders":[{"uri":")" +
+                fixture.RootUri() + R"(","name":"fixture"}]}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
@@ -3289,7 +3348,7 @@ TEST_CASE("Server - Opening the stub that was not selected does not load it")
     const std::string source = "void main() { TypeFromB b; }\n";
     two.fixture.Write("main.as", source);
 
-    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
         while (std::chrono::steady_clock::now() < deadline)
@@ -3306,14 +3365,12 @@ TEST_CASE("Server - Opening the stub that was not selected does not load it")
 
     // A message between initialized and the wait, so the wait runs after the scan exists - see
     // ScriptedStream::PushAction.
-    stream.Push(DidOpenMessage(two.fixture.Uri("host_b.as.predefined"),
-                               "class TypeFromB { void Poke(); }\n"));
+    stream.Push(DidOpenMessage(two.fixture.Uri("host_b.as.predefined"), "class TypeFromB { void Poke(); }\n"));
     stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\""); });
 
     // Opened again after the scan has chosen, which is the order a user reaches this in: the
     // notification names host_a, they go and look at host_b.
-    stream.Push(DidOpenMessage(two.fixture.Uri("host_b.as.predefined"),
-                               "class TypeFromB { void Poke(); }\n"));
+    stream.Push(DidOpenMessage(two.fixture.Uri("host_b.as.predefined"), "class TypeFromB { void Poke(); }\n"));
     stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), source));
     stream.PushAction([&]() { waitFor(stream, "publishDiagnostics"); });
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
@@ -3334,7 +3391,7 @@ TEST_CASE("Server - Opening the stub that was selected keeps it loaded")
     const std::string source = "void main() { TypeFromA a; }\n";
     two.fixture.Write("main.as", source);
 
-    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
         while (std::chrono::steady_clock::now() < deadline)
@@ -3348,8 +3405,7 @@ TEST_CASE("Server - Opening the stub that was selected keeps it loaded")
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    stream.Push(DidOpenMessage(two.fixture.Uri("host_a.as.predefined"),
-                               "class TypeFromA { void Poke(); }\n"));
+    stream.Push(DidOpenMessage(two.fixture.Uri("host_a.as.predefined"), "class TypeFromA { void Poke(); }\n"));
     stream.PushAction([&]() { waitFor(stream, "\"kind\":\"end\""); });
 
     stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), source));
@@ -3380,185 +3436,182 @@ TEST_CASE("Server - Opening the stub that was selected keeps it loaded")
 
 namespace
 {
-    /** @brief One typed character, as the editor sends it: a zero-width range and the text. */
-    std::string TypeCharMessage(const std::string &uri, int version,
-                                uint32_t line, uint32_t character, char typed)
-    {
-        const std::string position = R"({"line":)" + std::to_string(line) +
-                                     R"(,"character":)" + std::to_string(character) + R"(})";
+/** @brief One typed character, as the editor sends it: a zero-width range and the text. */
+std::string TypeCharMessage(const std::string& uri, int version, uint32_t line, uint32_t character, char typed)
+{
+    const std::string position =
+        R"({"line":)" + std::to_string(line) + R"(,"character":)" + std::to_string(character) + R"(})";
 
-        return R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
-               uri + R"(","version":)" + std::to_string(version) + R"(},"contentChanges":[{"range":{"start":)" +
-               position + R"(,"end":)" + position + R"(},"text":")" + JsonEscape(std::string(1, typed)) +
-               R"("}]}})";
-    }
-
-    struct TypingEdit
-    {
-        uint32_t line = 0;
-        uint32_t character = 0;
-        std::string text;
-    };
-
-    struct TypingScenario
-    {
-        std::string name;
-        std::string why;
-        std::string initial;
-        std::vector<TypingEdit> edits;
-        std::vector<std::string> expectPresent;
-        std::vector<std::string> expectAbsent;
-
-        bool hasHover = false;
-        uint32_t hoverLine = 0;
-        uint32_t hoverCharacter = 0;
-        std::string hoverContains;
-    };
-
-    std::vector<TypingScenario> LoadTypingScenarios()
-    {
-        const std::filesystem::path path =
-            std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "typing_scenarios.json";
-
-        std::ifstream file(path, std::ios::binary);
-        REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
-
-        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        lsp::json::Value parsed = lsp::json::parse(text);
-        REQUIRE(parsed.isObject());
-
-        const auto *list = parsed.object().find("scenarios");
-        REQUIRE(list != nullptr);
-        REQUIRE(list->isArray());
-
-        std::vector<TypingScenario> scenarios;
-        for (const auto &entry : list->array())
-        {
-            REQUIRE(entry.isObject());
-            const lsp::json::Object &fields = entry.object();
-
-            TypingScenario scenario;
-            scenario.name = fields.find("name")->string();
-            scenario.why = fields.find("why")->string();
-            scenario.initial = fields.find("initial")->string();
-
-            for (const auto &edit : fields.find("edits")->array())
-            {
-                const lsp::json::Object &editFields = edit.object();
-                TypingEdit typed;
-                typed.line = static_cast<uint32_t>(editFields.find("line")->number());
-                typed.character = static_cast<uint32_t>(editFields.find("character")->number());
-                typed.text = editFields.find("text")->string();
-                scenario.edits.push_back(std::move(typed));
-            }
-
-            for (const auto &code : fields.find("expectPresent")->array())
-                scenario.expectPresent.push_back(code.string());
-            for (const auto &code : fields.find("expectAbsent")->array())
-                scenario.expectAbsent.push_back(code.string());
-
-            if (const auto *hover = fields.find("hover"); hover && hover->isObject())
-            {
-                scenario.hasHover = true;
-                scenario.hoverLine = static_cast<uint32_t>(hover->object().find("line")->number());
-                scenario.hoverCharacter = static_cast<uint32_t>(hover->object().find("character")->number());
-                scenario.hoverContains = hover->object().find("contains")->string();
-            }
-
-            scenarios.push_back(std::move(scenario));
-        }
-
-        return scenarios;
-    }
-
-    /**
-     * @brief The body of the last publishDiagnostics frame naming this URI.
-     *
-     * The last, not any: typing produces one per analysis, and only the final one describes the
-     * document the assertions are about.
-     */
-    /**
-     * @brief How many publishDiagnostics frames for one file the server has written so far.
-     *
-     * Exists because "the stream went quiet" is not the same statement as "the server finished".
-     * A step's analysis is debounced by 200ms and then has to run, so on a loaded machine the
-     * output is quiet for the simple reason that the work has not started - and a harness that
-     * reads at that moment gets the PREVIOUS step's diagnostics, which is a green test locally and
-     * a failure on CI. That is exactly what happened: Windows CI, four ctest jobs in parallel, and
-     * the assertion reported step 1's unbalanced-brace error against step 2's expectations.
-     *
-     * Counting publishes turns the wait into a statement about what arrived rather than about what
-     * did not.
-     */
-    size_t CountPublishedFor(const std::string &output, const std::string &uriFragment)
-    {
-        size_t count = 0;
-        size_t pos = 0;
-        while (pos < output.size())
-        {
-            const size_t headerStart = output.find("Content-Length:", pos);
-            if (headerStart == std::string::npos)
-                break;
-
-            const size_t bodyStart = output.find("\r\n\r\n", headerStart);
-            if (bodyStart == std::string::npos)
-                break;
-
-            const size_t contentStart = bodyStart + 4;
-            const size_t nextHeader = output.find("Content-Length:", contentStart);
-            const size_t bodyLength =
-                (nextHeader == std::string::npos) ? (output.size() - contentStart) : (nextHeader - contentStart);
-
-            const std::string frame = output.substr(contentStart, bodyLength);
-            if (frame.find("textDocument/publishDiagnostics") != std::string::npos &&
-                frame.find(uriFragment) != std::string::npos)
-            {
-                ++count;
-            }
-
-            pos = (nextHeader == std::string::npos) ? output.size() : nextHeader;
-        }
-        return count;
-    }
-
-    std::string LastPublishedFor(const std::string &output, const std::string &uriFragment)
-    {
-        std::string last;
-        size_t pos = 0;
-        while (pos < output.size())
-        {
-            const size_t headerStart = output.find("Content-Length:", pos);
-            if (headerStart == std::string::npos)
-                break;
-
-            const size_t bodyStart = output.find("\r\n\r\n", headerStart);
-            if (bodyStart == std::string::npos)
-                break;
-
-            const size_t contentStart = bodyStart + 4;
-            const size_t nextHeader = output.find("Content-Length:", contentStart);
-            const size_t bodyLength =
-                (nextHeader == std::string::npos) ? (output.size() - contentStart) : (nextHeader - contentStart);
-
-            const std::string frame = output.substr(contentStart, bodyLength);
-            if (frame.find("textDocument/publishDiagnostics") != std::string::npos &&
-                frame.find(uriFragment) != std::string::npos)
-            {
-                last = frame;
-            }
-
-            pos = contentStart + bodyLength;
-        }
-        return last;
-    }
+    return R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" + uri +
+           R"(","version":)" + std::to_string(version) + R"(},"contentChanges":[{"range":{"start":)" + position +
+           R"(,"end":)" + position + R"(},"text":")" + JsonEscape(std::string(1, typed)) + R"("}]}})";
 }
+
+struct TypingEdit
+{
+    uint32_t line = 0;
+    uint32_t character = 0;
+    std::string text;
+};
+
+struct TypingScenario
+{
+    std::string name;
+    std::string why;
+    std::string initial;
+    std::vector<TypingEdit> edits;
+    std::vector<std::string> expectPresent;
+    std::vector<std::string> expectAbsent;
+
+    bool hasHover = false;
+    uint32_t hoverLine = 0;
+    uint32_t hoverCharacter = 0;
+    std::string hoverContains;
+};
+
+std::vector<TypingScenario> LoadTypingScenarios()
+{
+    const std::filesystem::path path = std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "typing_scenarios.json";
+
+    std::ifstream file(path, std::ios::binary);
+    REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    lsp::json::Value parsed = lsp::json::parse(text);
+    REQUIRE(parsed.isObject());
+
+    const auto* list = parsed.object().find("scenarios");
+    REQUIRE(list != nullptr);
+    REQUIRE(list->isArray());
+
+    std::vector<TypingScenario> scenarios;
+    for (const auto& entry : list->array())
+    {
+        REQUIRE(entry.isObject());
+        const lsp::json::Object& fields = entry.object();
+
+        TypingScenario scenario;
+        scenario.name = fields.find("name")->string();
+        scenario.why = fields.find("why")->string();
+        scenario.initial = fields.find("initial")->string();
+
+        for (const auto& edit : fields.find("edits")->array())
+        {
+            const lsp::json::Object& editFields = edit.object();
+            TypingEdit typed;
+            typed.line = static_cast<uint32_t>(editFields.find("line")->number());
+            typed.character = static_cast<uint32_t>(editFields.find("character")->number());
+            typed.text = editFields.find("text")->string();
+            scenario.edits.push_back(std::move(typed));
+        }
+
+        for (const auto& code : fields.find("expectPresent")->array())
+            scenario.expectPresent.push_back(code.string());
+        for (const auto& code : fields.find("expectAbsent")->array())
+            scenario.expectAbsent.push_back(code.string());
+
+        if (const auto* hover = fields.find("hover"); hover && hover->isObject())
+        {
+            scenario.hasHover = true;
+            scenario.hoverLine = static_cast<uint32_t>(hover->object().find("line")->number());
+            scenario.hoverCharacter = static_cast<uint32_t>(hover->object().find("character")->number());
+            scenario.hoverContains = hover->object().find("contains")->string();
+        }
+
+        scenarios.push_back(std::move(scenario));
+    }
+
+    return scenarios;
+}
+
+/**
+ * @brief The body of the last publishDiagnostics frame naming this URI.
+ *
+ * The last, not any: typing produces one per analysis, and only the final one describes the
+ * document the assertions are about.
+ */
+/**
+ * @brief How many publishDiagnostics frames for one file the server has written so far.
+ *
+ * Exists because "the stream went quiet" is not the same statement as "the server finished".
+ * A step's analysis is debounced by 200ms and then has to run, so on a loaded machine the
+ * output is quiet for the simple reason that the work has not started - and a harness that
+ * reads at that moment gets the PREVIOUS step's diagnostics, which is a green test locally and
+ * a failure on CI. That is exactly what happened: Windows CI, four ctest jobs in parallel, and
+ * the assertion reported step 1's unbalanced-brace error against step 2's expectations.
+ *
+ * Counting publishes turns the wait into a statement about what arrived rather than about what
+ * did not.
+ */
+size_t CountPublishedFor(const std::string& output, const std::string& uriFragment)
+{
+    size_t count = 0;
+    size_t pos = 0;
+    while (pos < output.size())
+    {
+        const size_t headerStart = output.find("Content-Length:", pos);
+        if (headerStart == std::string::npos)
+            break;
+
+        const size_t bodyStart = output.find("\r\n\r\n", headerStart);
+        if (bodyStart == std::string::npos)
+            break;
+
+        const size_t contentStart = bodyStart + 4;
+        const size_t nextHeader = output.find("Content-Length:", contentStart);
+        const size_t bodyLength =
+            (nextHeader == std::string::npos) ? (output.size() - contentStart) : (nextHeader - contentStart);
+
+        const std::string frame = output.substr(contentStart, bodyLength);
+        if (frame.find("textDocument/publishDiagnostics") != std::string::npos &&
+            frame.find(uriFragment) != std::string::npos)
+        {
+            ++count;
+        }
+
+        pos = (nextHeader == std::string::npos) ? output.size() : nextHeader;
+    }
+    return count;
+}
+
+std::string LastPublishedFor(const std::string& output, const std::string& uriFragment)
+{
+    std::string last;
+    size_t pos = 0;
+    while (pos < output.size())
+    {
+        const size_t headerStart = output.find("Content-Length:", pos);
+        if (headerStart == std::string::npos)
+            break;
+
+        const size_t bodyStart = output.find("\r\n\r\n", headerStart);
+        if (bodyStart == std::string::npos)
+            break;
+
+        const size_t contentStart = bodyStart + 4;
+        const size_t nextHeader = output.find("Content-Length:", contentStart);
+        const size_t bodyLength =
+            (nextHeader == std::string::npos) ? (output.size() - contentStart) : (nextHeader - contentStart);
+
+        const std::string frame = output.substr(contentStart, bodyLength);
+        if (frame.find("textDocument/publishDiagnostics") != std::string::npos &&
+            frame.find(uriFragment) != std::string::npos)
+        {
+            last = frame;
+        }
+
+        pos = contentStart + bodyLength;
+    }
+    return last;
+}
+} // namespace
 
 TEST_CASE("Server - Diagnostics and hover survive being typed one character at a time")
 {
     const std::vector<TypingScenario> scenarios = LoadTypingScenarios();
     REQUIRE_FALSE(scenarios.empty());
 
-    for (const TypingScenario &scenario : scenarios)
+    for (const TypingScenario& scenario : scenarios)
     {
         CAPTURE(scenario.name);
         INFO(scenario.why);
@@ -3574,7 +3627,7 @@ TEST_CASE("Server - Diagnostics and hover survive being typed one character at a
         // One notification per character, each with the range the cursor was at - which is the
         // whole point: a whole-document change would never exercise the incremental path.
         int version = 2;
-        for (const TypingEdit &edit : scenario.edits)
+        for (const TypingEdit& edit : scenario.edits)
         {
             uint32_t line = edit.line;
             uint32_t character = edit.character;
@@ -3595,30 +3648,11 @@ TEST_CASE("Server - Diagnostics and hover survive being typed one character at a
             }
         }
 
-        // Analysis is debounced, so the last keystroke's diagnostics arrive after a quiet period.
-        // Waiting for the stream to go quiet rather than for a fixed delay: the debounce is 200ms
-        // and the analysis itself is not instant, and a fixed sleep would be either flaky or slow.
-        stream.PushAction([&stream]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-            size_t lastSize = 0;
-            auto quietSince = std::chrono::steady_clock::now();
+        config::ServerConfig serverConfig;
+        Server server(serverConfig, stream);
 
-            while (std::chrono::steady_clock::now() < deadline)
-            {
-                const size_t size = stream.Output().size();
-                if (size != lastSize)
-                {
-                    lastSize = size;
-                    quietSince = std::chrono::steady_clock::now();
-                }
-                else if (std::chrono::steady_clock::now() - quietSince > std::chrono::milliseconds(400))
-                {
-                    return;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        });
+        // Deterministic synchronization: drains the debounced analysis completely
+        stream.PushAction([&server]() { server.DrainQueue(); });
 
         // Asked after the wait above, not before it. Analysis is debounced, so a hover sent in
         // the same breath as the last keystroke is answered against a document the analyzer has
@@ -3632,21 +3666,19 @@ TEST_CASE("Server - Diagnostics and hover survive being typed one character at a
         }
 
         stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
-
-        config::ServerConfig serverConfig;
-        RunScript(serverConfig, stream);
+        server.Run();
 
         const std::string published = LastPublishedFor(stream.Output(), "main.as");
         INFO("published: " << published);
         REQUIRE_FALSE(published.empty());
 
-        for (const std::string &code : scenario.expectPresent)
+        for (const std::string& code : scenario.expectPresent)
         {
             INFO("expected present: " << code);
             CHECK(published.find("\"" + code + "\"") != std::string::npos);
         }
 
-        for (const std::string &code : scenario.expectAbsent)
+        for (const std::string& code : scenario.expectAbsent)
         {
             INFO("expected absent: " << code);
             CHECK(published.find("\"" + code + "\"") == std::string::npos);
@@ -3686,21 +3718,13 @@ TEST_CASE("Server - A message a typed diagnostic carries is the one the user rea
     stream.Push(R"({"jsonrpc":"2.0","id":50,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
                 fixture.Uri("main.as") + R"("}}})");
 
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
-        {
-            if (stream.OutputContains("as-warn-unused-variable"))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+    config::ServerConfig serverConfig;
+    Server server(serverConfig, stream);
+
+    stream.PushAction([&server]() { server.DrainQueue(); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
-
-    config::ServerConfig serverConfig;
-    RunScript(serverConfig, stream);
+    server.Run();
 
     const std::string published = LastPublishedFor(stream.Output(), "main.as");
     INFO(published);
@@ -3728,63 +3752,62 @@ TEST_CASE("Server - A message a typed diagnostic carries is the one the user rea
 
 namespace
 {
-    struct ModuleCase
+struct ModuleCase
+{
+    std::string name;
+    std::string why;
+    std::string compiler;
+    std::string main;
+    std::string other;
+    std::vector<std::string> expectPresent;
+    std::vector<std::string> expectAbsent;
+};
+
+std::vector<ModuleCase> LoadModuleCases()
+{
+    const std::filesystem::path path = std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "module_cases.json";
+
+    std::ifstream file(path, std::ios::binary);
+    REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    lsp::json::Value parsed = lsp::json::parse(text);
+    REQUIRE(parsed.isObject());
+
+    const auto* list = parsed.object().find("cases");
+    REQUIRE(list != nullptr);
+    REQUIRE(list->isArray());
+
+    std::vector<ModuleCase> cases;
+    for (const auto& entry : list->array())
     {
-        std::string name;
-        std::string why;
-        std::string compiler;
-        std::string main;
-        std::string other;
-        std::vector<std::string> expectPresent;
-        std::vector<std::string> expectAbsent;
-    };
+        const lsp::json::Object& fields = entry.object();
 
-    std::vector<ModuleCase> LoadModuleCases()
-    {
-        const std::filesystem::path path =
-            std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "module_cases.json";
+        ModuleCase moduleCase;
+        moduleCase.name = fields.find("name")->string();
+        moduleCase.why = fields.find("why")->string();
+        moduleCase.compiler = fields.find("compiler")->string();
+        moduleCase.main = fields.find("main")->string();
+        moduleCase.other = fields.find("other")->string();
 
-        std::ifstream file(path, std::ios::binary);
-        REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+        for (const auto& code : fields.find("expectPresent")->array())
+            moduleCase.expectPresent.push_back(code.string());
+        for (const auto& code : fields.find("expectAbsent")->array())
+            moduleCase.expectAbsent.push_back(code.string());
 
-        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        lsp::json::Value parsed = lsp::json::parse(text);
-        REQUIRE(parsed.isObject());
-
-        const auto *list = parsed.object().find("cases");
-        REQUIRE(list != nullptr);
-        REQUIRE(list->isArray());
-
-        std::vector<ModuleCase> cases;
-        for (const auto &entry : list->array())
-        {
-            const lsp::json::Object &fields = entry.object();
-
-            ModuleCase moduleCase;
-            moduleCase.name = fields.find("name")->string();
-            moduleCase.why = fields.find("why")->string();
-            moduleCase.compiler = fields.find("compiler")->string();
-            moduleCase.main = fields.find("main")->string();
-            moduleCase.other = fields.find("other")->string();
-
-            for (const auto &code : fields.find("expectPresent")->array())
-                moduleCase.expectPresent.push_back(code.string());
-            for (const auto &code : fields.find("expectAbsent")->array())
-                moduleCase.expectAbsent.push_back(code.string());
-
-            cases.push_back(std::move(moduleCase));
-        }
-
-        return cases;
+        cases.push_back(std::move(moduleCase));
     }
+
+    return cases;
 }
+} // namespace
 
 TEST_CASE("Server - A namespace reopened in two files of one module")
 {
     const std::vector<ModuleCase> cases = LoadModuleCases();
     REQUIRE_FALSE(cases.empty());
 
-    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
         while (std::chrono::steady_clock::now() < deadline)
@@ -3795,7 +3818,7 @@ TEST_CASE("Server - A namespace reopened in two files of one module")
         }
     };
 
-    for (const ModuleCase &moduleCase : cases)
+    for (const ModuleCase& moduleCase : cases)
     {
         CAPTURE(moduleCase.name);
         INFO(moduleCase.why);
@@ -3828,13 +3851,13 @@ TEST_CASE("Server - A namespace reopened in two files of one module")
         INFO("published: " << published);
         REQUIRE_FALSE(published.empty());
 
-        for (const std::string &code : moduleCase.expectPresent)
+        for (const std::string& code : moduleCase.expectPresent)
         {
             INFO("expected present: " << code);
             CHECK(published.find("\"" + code + "\"") != std::string::npos);
         }
 
-        for (const std::string &code : moduleCase.expectAbsent)
+        for (const std::string& code : moduleCase.expectAbsent)
         {
             INFO("expected absent: " << code);
             CHECK(published.find("\"" + code + "\"") == std::string::npos);
@@ -3852,34 +3875,36 @@ TEST_CASE("Server - A header included by many files is not a redeclaration")
     // Twenty files rather than two, because the bug this guards against would grow with the count:
     // a rule comparing every pair would report here and nowhere else.
     WorkspaceFixture fixture;
-    fixture.Write("common.as",
-                  "namespace Core\n"
-                  "{\n"
-                  "    class Entity { int id; }\n"
-                  "    int Helper(int v) { return v + 1; }\n"
-                  "}\n"
-                  "class GlobalThing { float x; }\n"
-                  "int GlobalHelper() { return 7; }\n");
+    fixture.Write("common.as", "namespace Core\n"
+                               "{\n"
+                               "    class Entity { int id; }\n"
+                               "    int Helper(int v) { return v + 1; }\n"
+                               "}\n"
+                               "class GlobalThing { float x; }\n"
+                               "int GlobalHelper() { return 7; }\n");
 
     std::vector<std::string> users;
     for (int i = 1; i <= 20; ++i)
     {
         const std::string name = "user" + std::to_string(i) + ".as";
-        const std::string source =
-            "#include \"common.as\"\n"
-            "void Use" + std::to_string(i) + "()\n"
-            "{\n"
-            "    Core::Entity e;\n"
-            "    e.id = Core::Helper(" + std::to_string(i) + ");\n"
-            "    GlobalThing g;\n"
-            "    g.x = float(GlobalHelper());\n"
-            "}\n";
+        const std::string source = "#include \"common.as\"\n"
+                                   "void Use" +
+                                   std::to_string(i) +
+                                   "()\n"
+                                   "{\n"
+                                   "    Core::Entity e;\n"
+                                   "    e.id = Core::Helper(" +
+                                   std::to_string(i) +
+                                   ");\n"
+                                   "    GlobalThing g;\n"
+                                   "    g.x = float(GlobalHelper());\n"
+                                   "}\n";
 
         fixture.Write(name, source);
         users.push_back(source);
     }
 
-    const auto waitFor = [](test::ScriptedStream &stream, const std::string &needle)
+    const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
         while (std::chrono::steady_clock::now() < deadline)
@@ -3936,15 +3961,14 @@ TEST_CASE("Server - Deleting the stub in force hands the workspace to the next o
     const std::string source = "void main() { TypeFromB b; }\n";
     two.fixture.Write("main.as", source);
 
-    const auto waitForCount = [](test::ScriptedStream &stream, const std::string &needle, size_t times)
+    const auto waitForCount = [](test::ScriptedStream& stream, const std::string& needle, size_t times)
     {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
         while (std::chrono::steady_clock::now() < deadline)
         {
             const std::string output = stream.Output();
             size_t count = 0;
-            for (size_t at = output.find(needle); at != std::string::npos;
-                 at = output.find(needle, at + needle.size()))
+            for (size_t at = output.find(needle); at != std::string::npos; at = output.find(needle, at + needle.size()))
             {
                 ++count;
             }
@@ -3968,13 +3992,11 @@ TEST_CASE("Server - Deleting the stub in force hands the workspace to the next o
     stream.PushAction([&]() { waitForCount(stream, "publishDiagnostics", 1); });
 
     // And now the chosen one is gone.
-    stream.PushAction([dir = two.fixture.dir]()
-    {
-        std::filesystem::remove(dir / "host_a.as.predefined");
-    });
+    stream.PushAction([dir = two.fixture.dir]() { std::filesystem::remove(dir / "host_a.as.predefined"); });
 
     stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[)"
-                R"({"uri":")" + two.fixture.Uri("host_a.as.predefined") + R"(","type":3}]}})");
+                R"({"uri":")" +
+                two.fixture.Uri("host_a.as.predefined") + R"(","type":3}]}})");
 
     // A message between the notification and the wait, so the wait runs after the deletion has been
     // *handled* rather than merely read - see ScriptedStream::PushAction.
@@ -4013,12 +4035,11 @@ TEST_CASE("Server - Deleting the stub in force hands the workspace to the next o
 TEST_CASE("Server - Reports the lines a dropped #if takes with it")
 {
     WorkspaceFixture fixture;
-    const std::string source =
-        "int live = 1;\n"
-        "#if NOT_DEFINED\n"
-        "int dead = 2;\n"
-        "#endif\n"
-        "int alsoLive = 3;\n";
+    const std::string source = "int live = 1;\n"
+                               "#if NOT_DEFINED\n"
+                               "int dead = 2;\n"
+                               "#endif\n"
+                               "int alsoLive = 3;\n";
     fixture.Write("main.as", source);
 
     test::ScriptedStream stream;
@@ -4081,80 +4102,79 @@ TEST_CASE("Server - Reports an empty region list when nothing is dropped")
 
 namespace
 {
-    struct BrokenStep
+struct BrokenStep
+{
+    std::string typed;
+    uint32_t line = 0;
+    uint32_t character = 0;
+    std::vector<std::string> expectPresent;
+    std::vector<std::string> expectAbsent;
+    std::string message;
+};
+
+struct BrokenScenario
+{
+    std::string name;
+    std::string why;
+    std::string initial;
+    std::string predefined; ///< Empty when the scenario needs no host stub.
+    std::vector<BrokenStep> steps;
+};
+
+std::vector<BrokenScenario> LoadBrokenScenarios()
+{
+    const std::filesystem::path path = std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "typing_broken_scenarios.json";
+
+    std::ifstream file(path, std::ios::binary);
+    REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    lsp::json::Value parsed = lsp::json::parse(text);
+    REQUIRE(parsed.isObject());
+
+    const auto* list = parsed.object().find("scenarios");
+    REQUIRE(list != nullptr);
+    REQUIRE(list->isArray());
+
+    std::vector<BrokenScenario> scenarios;
+    for (const auto& entry : list->array())
     {
-        std::string typed;
-        uint32_t line = 0;
-        uint32_t character = 0;
-        std::vector<std::string> expectPresent;
-        std::vector<std::string> expectAbsent;
-        std::string message;
-    };
+        const lsp::json::Object& fields = entry.object();
 
-    struct BrokenScenario
-    {
-        std::string name;
-        std::string why;
-        std::string initial;
-        std::string predefined;   ///< Empty when the scenario needs no host stub.
-        std::vector<BrokenStep> steps;
-    };
+        BrokenScenario scenario;
+        scenario.name = fields.find("name")->string();
+        scenario.why = fields.find("why")->string();
+        scenario.initial = fields.find("initial")->string();
 
-    std::vector<BrokenScenario> LoadBrokenScenarios()
-    {
-        const std::filesystem::path path =
-            std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "typing_broken_scenarios.json";
+        if (const auto* stub = fields.find("predefined"); stub && stub->isString())
+            scenario.predefined = stub->string();
 
-        std::ifstream file(path, std::ios::binary);
-        REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
-
-        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        lsp::json::Value parsed = lsp::json::parse(text);
-        REQUIRE(parsed.isObject());
-
-        const auto *list = parsed.object().find("scenarios");
-        REQUIRE(list != nullptr);
-        REQUIRE(list->isArray());
-
-        std::vector<BrokenScenario> scenarios;
-        for (const auto &entry : list->array())
+        for (const auto& item : fields.find("steps")->array())
         {
-            const lsp::json::Object &fields = entry.object();
+            const lsp::json::Object& stepFields = item.object();
 
-            BrokenScenario scenario;
-            scenario.name = fields.find("name")->string();
-            scenario.why = fields.find("why")->string();
-            scenario.initial = fields.find("initial")->string();
+            BrokenStep step;
+            step.typed = stepFields.find("type")->string();
+            step.line = static_cast<uint32_t>(stepFields.find("line")->number());
+            step.character = static_cast<uint32_t>(stepFields.find("character")->number());
 
-            if (const auto *stub = fields.find("predefined"); stub && stub->isString())
-                scenario.predefined = stub->string();
+            for (const auto& code : stepFields.find("expectPresent")->array())
+                step.expectPresent.push_back(code.string());
+            for (const auto& code : stepFields.find("expectAbsent")->array())
+                step.expectAbsent.push_back(code.string());
 
-            for (const auto &item : fields.find("steps")->array())
-            {
-                const lsp::json::Object &stepFields = item.object();
+            if (const auto* message = stepFields.find("message"); message && message->isString())
+                step.message = message->string();
 
-                BrokenStep step;
-                step.typed = stepFields.find("type")->string();
-                step.line = static_cast<uint32_t>(stepFields.find("line")->number());
-                step.character = static_cast<uint32_t>(stepFields.find("character")->number());
-
-                for (const auto &code : stepFields.find("expectPresent")->array())
-                    step.expectPresent.push_back(code.string());
-                for (const auto &code : stepFields.find("expectAbsent")->array())
-                    step.expectAbsent.push_back(code.string());
-
-                if (const auto *message = stepFields.find("message"); message && message->isString())
-                    step.message = message->string();
-
-                scenario.steps.push_back(std::move(step));
-            }
-
-            scenarios.push_back(std::move(scenario));
+            scenario.steps.push_back(std::move(step));
         }
 
-        return scenarios;
+        scenarios.push_back(std::move(scenario));
     }
+
+    return scenarios;
 }
+} // namespace
 
 TEST_CASE("Server - What it says while the code is still being written")
 {
@@ -4163,7 +4183,7 @@ TEST_CASE("Server - What it says while the code is still being written")
 
     size_t stepsChecked = 0;
 
-    for (const BrokenScenario &scenario : scenarios)
+    for (const BrokenScenario& scenario : scenarios)
     {
         CAPTURE(scenario.name);
         INFO(scenario.why);
@@ -4181,16 +4201,17 @@ TEST_CASE("Server - What it says while the code is still being written")
         // the stub has started - see ScriptedStream::PushAction.
         stream.Push(R"({"jsonrpc":"2.0","id":1000,"method":"workspace/executeCommand",)"
                     R"("params":{"command":"angelscript.listPredefinedStubs"}})");
-        stream.PushAction([&]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-            while (std::chrono::steady_clock::now() < deadline)
+        stream.PushAction(
+            [&]()
             {
-                if (stream.OutputContains("\"kind\":\"end\""))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-        });
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+                while (std::chrono::steady_clock::now() < deadline)
+                {
+                    if (stream.OutputContains("\"kind\":\"end\""))
+                        return;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+            });
 
         stream.Push(DidOpenMessage(fixture.Uri("main.as"), scenario.initial));
 
@@ -4214,26 +4235,28 @@ TEST_CASE("Server - What it says while the code is still being written")
         // it burned the full timeout in every scenario, taking this test from 28 seconds to five
         // minutes. Putting a request between the two is what lets didOpen be handled first.
         stream.Push(R"({"jsonrpc":"2.0","id":1500,"method":"textDocument/documentSymbol",)"
-                    R"("params":{"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("}}})");
+                    R"("params":{"textDocument":{"uri":")" +
+                    fixture.Uri("main.as") + R"("}}})");
 
-        stream.PushAction([&stream, &publishesBefore]()
-        {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-            while (std::chrono::steady_clock::now() < deadline)
+        stream.PushAction(
+            [&stream, &publishesBefore]()
             {
-                if (CountPublishedFor(stream.Output(), "main.as") > 0)
-                    break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-            publishesBefore = CountPublishedFor(stream.Output(), "main.as");
-        });
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+                while (std::chrono::steady_clock::now() < deadline)
+                {
+                    if (CountPublishedFor(stream.Output(), "main.as") > 0)
+                        break;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                }
+                publishesBefore = CountPublishedFor(stream.Output(), "main.as");
+            });
 
         int version = 2;
         int requestId = 2000;
 
         for (size_t index = 0; index < scenario.steps.size(); ++index)
         {
-            const BrokenStep &step = scenario.steps[index];
+            const BrokenStep& step = scenario.steps[index];
 
             uint32_t line = step.line;
             uint32_t character = step.character;
@@ -4259,50 +4282,51 @@ TEST_CASE("Server - What it says while the code is still being written")
                         R"(,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
                         fixture.Uri("main.as") + R"("}}})");
 
-            stream.PushAction([&stream, &published, &publishesBefore, index]()
-            {
-                // Two conditions, and the first one is the fix. Waiting only for the stream to go
-                // quiet reads "nothing has been written lately", which is true both when the server
-                // has finished and when its debounced analysis has not started - and on a loaded
-                // machine the second is what happens. Windows CI, four ctest jobs in parallel: this
-                // read step 1's diagnostics and checked them against step 2's expectations.
-                //
-                // So wait for a publish that did not exist before this keystroke, and only then for
-                // the stream to settle, which catches a later republish. The deadline is the
-                // backstop; reaching it means something is genuinely wrong rather than slow.
-                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-                size_t lastSize = 0;
-                auto quietSince = std::chrono::steady_clock::now();
-                bool sawNewPublish = false;
-
-                while (std::chrono::steady_clock::now() < deadline)
+            stream.PushAction(
+                [&stream, &published, &publishesBefore, index]()
                 {
-                    const std::string output = stream.Output();
+                    // Two conditions, and the first one is the fix. Waiting only for the stream to go
+                    // quiet reads "nothing has been written lately", which is true both when the server
+                    // has finished and when its debounced analysis has not started - and on a loaded
+                    // machine the second is what happens. Windows CI, four ctest jobs in parallel: this
+                    // read step 1's diagnostics and checked them against step 2's expectations.
+                    //
+                    // So wait for a publish that did not exist before this keystroke, and only then for
+                    // the stream to settle, which catches a later republish. The deadline is the
+                    // backstop; reaching it means something is genuinely wrong rather than slow.
+                    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+                    size_t lastSize = 0;
+                    auto quietSince = std::chrono::steady_clock::now();
+                    bool sawNewPublish = false;
 
-                    if (!sawNewPublish && CountPublishedFor(output, "main.as") > publishesBefore)
+                    while (std::chrono::steady_clock::now() < deadline)
                     {
-                        sawNewPublish = true;
-                        quietSince = std::chrono::steady_clock::now();
+                        const std::string output = stream.Output();
+
+                        if (!sawNewPublish && CountPublishedFor(output, "main.as") > publishesBefore)
+                        {
+                            sawNewPublish = true;
+                            quietSince = std::chrono::steady_clock::now();
+                        }
+
+                        const size_t size = output.size();
+                        if (size != lastSize)
+                        {
+                            lastSize = size;
+                            quietSince = std::chrono::steady_clock::now();
+                        }
+                        else if (sawNewPublish &&
+                                 std::chrono::steady_clock::now() - quietSince > std::chrono::milliseconds(400))
+                        {
+                            break;
+                        }
+
+                        std::this_thread::sleep_for(std::chrono::milliseconds(20));
                     }
 
-                    const size_t size = output.size();
-                    if (size != lastSize)
-                    {
-                        lastSize = size;
-                        quietSince = std::chrono::steady_clock::now();
-                    }
-                    else if (sawNewPublish &&
-                             std::chrono::steady_clock::now() - quietSince > std::chrono::milliseconds(400))
-                    {
-                        break;
-                    }
-
-                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-                }
-
-                published[index] = LastPublishedFor(stream.Output(), "main.as");
-                publishesBefore = CountPublishedFor(stream.Output(), "main.as");
-            });
+                    published[index] = LastPublishedFor(stream.Output(), "main.as");
+                    publishesBefore = CountPublishedFor(stream.Output(), "main.as");
+                });
         }
 
         stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
@@ -4312,7 +4336,7 @@ TEST_CASE("Server - What it says while the code is still being written")
 
         for (size_t index = 0; index < scenario.steps.size(); ++index)
         {
-            const BrokenStep &step = scenario.steps[index];
+            const BrokenStep& step = scenario.steps[index];
 
             CAPTURE(index);
             CAPTURE(step.typed);
@@ -4320,13 +4344,13 @@ TEST_CASE("Server - What it says while the code is still being written")
 
             REQUIRE_FALSE(published[index].empty());
 
-            for (const std::string &code : step.expectPresent)
+            for (const std::string& code : step.expectPresent)
             {
                 INFO("expected present: " << code);
                 CHECK(published[index].find("\"" + code + "\"") != std::string::npos);
             }
 
-            for (const std::string &code : step.expectAbsent)
+            for (const std::string& code : step.expectAbsent)
             {
                 INFO("expected absent: " << code);
                 CHECK(published[index].find("\"" + code + "\"") == std::string::npos);
@@ -4358,142 +4382,141 @@ TEST_CASE("Server - What it says while the code is still being written")
 
 namespace
 {
-    struct RangeExpectation
+struct RangeExpectation
+{
+    std::string code;
+    std::string covers;
+    uint32_t line = 0;
+};
+
+struct RangeScenario
+{
+    std::string name;
+    std::string why;
+    std::string source;
+    std::vector<RangeExpectation> expect;
+};
+
+std::vector<RangeScenario> LoadRangeScenarios()
+{
+    const std::filesystem::path path = std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "range_scenarios.json";
+
+    std::ifstream file(path, std::ios::binary);
+    REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    lsp::json::Value parsed = lsp::json::parse(text);
+    REQUIRE(parsed.isObject());
+
+    const auto* list = parsed.object().find("scenarios");
+    REQUIRE(list != nullptr);
+    REQUIRE(list->isArray());
+
+    std::vector<RangeScenario> scenarios;
+    for (const auto& entry : list->array())
     {
-        std::string code;
-        std::string covers;
-        uint32_t line = 0;
-    };
+        const lsp::json::Object& fields = entry.object();
 
-    struct RangeScenario
-    {
-        std::string name;
-        std::string why;
-        std::string source;
-        std::vector<RangeExpectation> expect;
-    };
+        RangeScenario scenario;
+        scenario.name = fields.find("name")->string();
+        scenario.why = fields.find("why")->string();
+        scenario.source = fields.find("source")->string();
 
-    std::vector<RangeScenario> LoadRangeScenarios()
-    {
-        const std::filesystem::path path =
-            std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "range_scenarios.json";
-
-        std::ifstream file(path, std::ios::binary);
-        REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
-
-        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        lsp::json::Value parsed = lsp::json::parse(text);
-        REQUIRE(parsed.isObject());
-
-        const auto *list = parsed.object().find("scenarios");
-        REQUIRE(list != nullptr);
-        REQUIRE(list->isArray());
-
-        std::vector<RangeScenario> scenarios;
-        for (const auto &entry : list->array())
+        for (const auto& item : fields.find("expect")->array())
         {
-            const lsp::json::Object &fields = entry.object();
+            const lsp::json::Object& expectFields = item.object();
 
-            RangeScenario scenario;
-            scenario.name = fields.find("name")->string();
-            scenario.why = fields.find("why")->string();
-            scenario.source = fields.find("source")->string();
-
-            for (const auto &item : fields.find("expect")->array())
-            {
-                const lsp::json::Object &expectFields = item.object();
-
-                RangeExpectation expectation;
-                expectation.code = expectFields.find("code")->string();
-                expectation.covers = expectFields.find("covers")->string();
-                expectation.line = static_cast<uint32_t>(expectFields.find("line")->number());
-                scenario.expect.push_back(std::move(expectation));
-            }
-
-            scenarios.push_back(std::move(scenario));
+            RangeExpectation expectation;
+            expectation.code = expectFields.find("code")->string();
+            expectation.covers = expectFields.find("covers")->string();
+            expectation.line = static_cast<uint32_t>(expectFields.find("line")->number());
+            scenario.expect.push_back(std::move(expectation));
         }
 
-        return scenarios;
+        scenarios.push_back(std::move(scenario));
     }
 
-    struct PublishedDiagnostic
-    {
-        std::string code;
-        uint32_t startLine = 0;
-        uint32_t startCharacter = 0;
-        uint32_t endLine = 0;
-        uint32_t endCharacter = 0;
-    };
-
-    /** @brief The diagnostics inside one publishDiagnostics frame, parsed rather than grepped. */
-    std::vector<PublishedDiagnostic> ParsePublished(const std::string &frame)
-    {
-        std::vector<PublishedDiagnostic> parsed;
-        if (frame.empty())
-            return parsed;
-
-        lsp::json::Value message = lsp::json::parse(frame);
-        if (!message.isObject())
-            return parsed;
-
-        const auto *params = message.object().find("params");
-        if (params == nullptr || !params->isObject())
-            return parsed;
-
-        const auto *list = params->object().find("diagnostics");
-        if (list == nullptr || !list->isArray())
-            return parsed;
-
-        for (const auto &entry : list->array())
-        {
-            const lsp::json::Object &fields = entry.object();
-
-            PublishedDiagnostic diagnostic;
-            if (const auto *code = fields.find("code"); code && code->isString())
-                diagnostic.code = code->string();
-
-            const auto *range = fields.find("range");
-            if (range == nullptr || !range->isObject())
-                continue;
-
-            const auto *start = range->object().find("start");
-            const auto *end = range->object().find("end");
-            if (start == nullptr || end == nullptr)
-                continue;
-
-            diagnostic.startLine = static_cast<uint32_t>(start->object().find("line")->number());
-            diagnostic.startCharacter = static_cast<uint32_t>(start->object().find("character")->number());
-            diagnostic.endLine = static_cast<uint32_t>(end->object().find("line")->number());
-            diagnostic.endCharacter = static_cast<uint32_t>(end->object().find("character")->number());
-
-            parsed.push_back(std::move(diagnostic));
-        }
-
-        return parsed;
-    }
-
-    /** @brief The source text a range spans, or empty when the range does not fit the document. */
-    std::string TextInRange(const std::string &source, const PublishedDiagnostic &diagnostic)
-    {
-        std::vector<size_t> lineStarts{ 0 };
-        for (size_t at = 0; at < source.size(); ++at)
-        {
-            if (source[at] == '\n')
-                lineStarts.push_back(at + 1);
-        }
-
-        if (diagnostic.startLine >= lineStarts.size() || diagnostic.endLine >= lineStarts.size())
-            return {};
-
-        const size_t from = lineStarts[diagnostic.startLine] + diagnostic.startCharacter;
-        const size_t to = lineStarts[diagnostic.endLine] + diagnostic.endCharacter;
-
-        if (from > to || to > source.size())
-            return {};
-
-        return source.substr(from, to - from);
-    }
+    return scenarios;
 }
+
+struct PublishedDiagnostic
+{
+    std::string code;
+    uint32_t startLine = 0;
+    uint32_t startCharacter = 0;
+    uint32_t endLine = 0;
+    uint32_t endCharacter = 0;
+};
+
+/** @brief The diagnostics inside one publishDiagnostics frame, parsed rather than grepped. */
+std::vector<PublishedDiagnostic> ParsePublished(const std::string& frame)
+{
+    std::vector<PublishedDiagnostic> parsed;
+    if (frame.empty())
+        return parsed;
+
+    lsp::json::Value message = lsp::json::parse(frame);
+    if (!message.isObject())
+        return parsed;
+
+    const auto* params = message.object().find("params");
+    if (params == nullptr || !params->isObject())
+        return parsed;
+
+    const auto* list = params->object().find("diagnostics");
+    if (list == nullptr || !list->isArray())
+        return parsed;
+
+    for (const auto& entry : list->array())
+    {
+        const lsp::json::Object& fields = entry.object();
+
+        PublishedDiagnostic diagnostic;
+        if (const auto* code = fields.find("code"); code && code->isString())
+            diagnostic.code = code->string();
+
+        const auto* range = fields.find("range");
+        if (range == nullptr || !range->isObject())
+            continue;
+
+        const auto* start = range->object().find("start");
+        const auto* end = range->object().find("end");
+        if (start == nullptr || end == nullptr)
+            continue;
+
+        diagnostic.startLine = static_cast<uint32_t>(start->object().find("line")->number());
+        diagnostic.startCharacter = static_cast<uint32_t>(start->object().find("character")->number());
+        diagnostic.endLine = static_cast<uint32_t>(end->object().find("line")->number());
+        diagnostic.endCharacter = static_cast<uint32_t>(end->object().find("character")->number());
+
+        parsed.push_back(std::move(diagnostic));
+    }
+
+    return parsed;
+}
+
+/** @brief The source text a range spans, or empty when the range does not fit the document. */
+std::string TextInRange(const std::string& source, const PublishedDiagnostic& diagnostic)
+{
+    std::vector<size_t> lineStarts{0};
+    for (size_t at = 0; at < source.size(); ++at)
+    {
+        if (source[at] == '\n')
+            lineStarts.push_back(at + 1);
+    }
+
+    if (diagnostic.startLine >= lineStarts.size() || diagnostic.endLine >= lineStarts.size())
+        return {};
+
+    const size_t from = lineStarts[diagnostic.startLine] + diagnostic.startCharacter;
+    const size_t to = lineStarts[diagnostic.endLine] + diagnostic.endCharacter;
+
+    if (from > to || to > source.size())
+        return {};
+
+    return source.substr(from, to - from);
+}
+} // namespace
 
 TEST_CASE("Server - A diagnostic underlines the text it is about")
 {
@@ -4502,7 +4525,7 @@ TEST_CASE("Server - A diagnostic underlines the text it is about")
 
     size_t checked = 0;
 
-    for (const RangeScenario &scenario : scenarios)
+    for (const RangeScenario& scenario : scenarios)
     {
         CAPTURE(scenario.name);
         INFO(scenario.why);
@@ -4525,7 +4548,7 @@ TEST_CASE("Server - A diagnostic underlines the text it is about")
 
         const auto diagnostics = ParsePublished(frame);
 
-        for (const RangeExpectation &expectation : scenario.expect)
+        for (const RangeExpectation& expectation : scenario.expect)
         {
             CAPTURE(expectation.code);
             CAPTURE(expectation.line);
@@ -4538,7 +4561,7 @@ TEST_CASE("Server - A diagnostic underlines the text it is about")
             std::vector<std::string> underlinedHere;
             bool matched = false;
 
-            for (const PublishedDiagnostic &diagnostic : diagnostics)
+            for (const PublishedDiagnostic& diagnostic : diagnostics)
             {
                 if (diagnostic.code != expectation.code || diagnostic.startLine != expectation.line)
                     continue;
@@ -4560,7 +4583,7 @@ TEST_CASE("Server - A diagnostic underlines the text it is about")
             }
 
             std::string actually;
-            for (const std::string &text : underlinedHere)
+            for (const std::string& text : underlinedHere)
             {
                 if (!actually.empty())
                     actually += "', '";
@@ -4589,23 +4612,23 @@ TEST_CASE("Server - A diagnostic underlines the text it is about")
 
 namespace
 {
-    /** @brief One watched-file event, in the shape the client sends. */
-    std::string WatchedFileMessage(const std::string &uri, int changeType)
-    {
-        return R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[)"
-               R"({"uri":")" + uri + R"(","type":)" + std::to_string(changeType) + R"(}]}})";
-    }
-
+/** @brief One watched-file event, in the shape the client sends. */
+std::string WatchedFileMessage(const std::string& uri, int changeType)
+{
+    return R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[)"
+           R"({"uri":")" +
+           uri + R"(","type":)" + std::to_string(changeType) + R"(}]}})";
 }
+
+} // namespace
 
 TEST_CASE("Server - A script created on disk becomes part of the module")
 {
     // main.as includes helper.as, which does not exist yet. Once it appears the type it declares has
     // to resolve, without the user touching main.as.
     WorkspaceFixture fixture;
-    const std::string source =
-        "#include \"helper.as\"\n"
-        "void main() { HelperType h; h.Poke(); }\n";
+    const std::string source = "#include \"helper.as\"\n"
+                               "void main() { HelperType h; h.Poke(); }\n";
     fixture.Write("main.as", source);
 
     test::ScriptedStream stream;
@@ -4619,11 +4642,12 @@ TEST_CASE("Server - A script created on disk becomes part of the module")
     stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 1); });
 
     // The file arrives.
-    stream.PushAction([dir = fixture.dir]()
-    {
-        std::ofstream created(dir / "helper.as", std::ios::binary);
-        created << "class HelperType { void Poke() { } }\n";
-    });
+    stream.PushAction(
+        [dir = fixture.dir]()
+        {
+            std::ofstream created(dir / "helper.as", std::ios::binary);
+            created << "class HelperType { void Poke() { } }\n";
+        });
 
     stream.Push(WatchedFileMessage(fixture.Uri("helper.as"), /*Created=*/1));
     stream.Push(R"({"jsonrpc":"2.0","id":1001,"method":"workspace/executeCommand",)"
@@ -4648,9 +4672,8 @@ TEST_CASE("Server - A script deleted on disk stops resolving for the file that i
 {
     // The other direction. helper.as exists at the start and goes away.
     WorkspaceFixture fixture;
-    const std::string source =
-        "#include \"helper.as\"\n"
-        "void main() { HelperType h; h.Poke(); }\n";
+    const std::string source = "#include \"helper.as\"\n"
+                               "void main() { HelperType h; h.Poke(); }\n";
     fixture.Write("helper.as", "class HelperType { void Poke() { } }\n");
     fixture.Write("main.as", source);
 
@@ -4771,12 +4794,10 @@ TEST_CASE("Server - A finished scan re-analyses the open documents it did not kn
 TEST_CASE("Server - A global property accessor in a stub declares the property")
 {
     WorkspaceFixture fixture;
-    const std::string source =
-        "void main() { g_GaProbe.GaDo(); }\n";
+    const std::string source = "void main() { g_GaProbe.GaDo(); }\n";
     fixture.Write("main.as", source);
-    fixture.Write("host.as.predefined",
-                  "class GaProbeHost { void GaDo(); }\n"
-                  "GaProbeHost@ get_g_GaProbe();\n");
+    fixture.Write("host.as.predefined", "class GaProbeHost { void GaDo(); }\n"
+                                        "GaProbeHost@ get_g_GaProbe();\n");
 
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
@@ -4801,12 +4822,10 @@ TEST_CASE("Server - A global property accessor in a stub declares the property")
 TEST_CASE("Server - A namespace a stub declares only as A::B still declares A")
 {
     WorkspaceFixture fixture;
-    const std::string source =
-        "void main() { NsHostHandle h = NsHostOuter::NsHostInner::NsHostThing; }\n";
+    const std::string source = "void main() { NsHostHandle h = NsHostOuter::NsHostInner::NsHostThing; }\n";
     fixture.Write("main.as", source);
-    fixture.Write("host.as.predefined",
-                  "class NsHostHandle{}\n"
-                  "namespace NsHostOuter::NsHostInner { NsHostHandle NsHostThing; }\n");
+    fixture.Write("host.as.predefined", "class NsHostHandle{}\n"
+                                        "namespace NsHostOuter::NsHostInner { NsHostHandle NsHostThing; }\n");
 
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
@@ -4846,11 +4865,12 @@ TEST_CASE("Server - A stub created where there was none is picked up")
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
     stream.PushAction([&]() { WaitForCount(stream, "publishDiagnostics", 1); });
 
-    stream.PushAction([dir = fixture.dir]()
-    {
-        std::ofstream created(dir / "host.as.predefined", std::ios::binary);
-        created << "class CBaseEntity { void Spawn(); }\n";
-    });
+    stream.PushAction(
+        [dir = fixture.dir]()
+        {
+            std::ofstream created(dir / "host.as.predefined", std::ios::binary);
+            created << "class CBaseEntity { void Spawn(); }\n";
+        });
 
     stream.Push(WatchedFileMessage(fixture.Uri("host.as.predefined"), /*Created=*/1));
     stream.Push(R"({"jsonrpc":"2.0","id":1001,"method":"workspace/executeCommand",)"
@@ -4924,59 +4944,58 @@ TEST_CASE("Server - Deleting the only stub leaves the host types unknown")
 
 namespace
 {
-    struct NestedScenario
+struct NestedScenario
+{
+    std::string name;
+    std::string why;
+    std::string source;
+
+    uint32_t hoverLine = 0;
+    uint32_t hoverCharacter = 0;
+    std::string hoverText;
+    std::string hoverContains;
+};
+
+std::vector<NestedScenario> LoadNestedScenarios()
+{
+    const std::filesystem::path path = std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "nested_scenarios.json";
+
+    std::ifstream file(path, std::ios::binary);
+    REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    lsp::json::Value parsed = lsp::json::parse(text);
+    REQUIRE(parsed.isObject());
+
+    const auto* list = parsed.object().find("scenarios");
+    REQUIRE(list != nullptr);
+    REQUIRE(list->isArray());
+
+    std::vector<NestedScenario> scenarios;
+    for (const auto& entry : list->array())
     {
-        std::string name;
-        std::string why;
-        std::string source;
+        const lsp::json::Object& fields = entry.object();
 
-        uint32_t hoverLine = 0;
-        uint32_t hoverCharacter = 0;
-        std::string hoverText;
-        std::string hoverContains;
-    };
+        NestedScenario scenario;
+        scenario.name = fields.find("name")->string();
+        scenario.why = fields.find("why")->string();
+        scenario.source = fields.find("source")->string();
 
-    std::vector<NestedScenario> LoadNestedScenarios()
-    {
-        const std::filesystem::path path =
-            std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "nested_scenarios.json";
+        const auto* hover = fields.find("hover");
+        if (hover == nullptr || !hover->isObject())
+            continue;
 
-        std::ifstream file(path, std::ios::binary);
-        REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+        scenario.hoverLine = static_cast<uint32_t>(hover->object().find("line")->number());
+        scenario.hoverCharacter = static_cast<uint32_t>(hover->object().find("character")->number());
+        scenario.hoverText = hover->object().find("text")->string();
+        scenario.hoverContains = hover->object().find("contains")->string();
 
-        const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        lsp::json::Value parsed = lsp::json::parse(text);
-        REQUIRE(parsed.isObject());
-
-        const auto *list = parsed.object().find("scenarios");
-        REQUIRE(list != nullptr);
-        REQUIRE(list->isArray());
-
-        std::vector<NestedScenario> scenarios;
-        for (const auto &entry : list->array())
-        {
-            const lsp::json::Object &fields = entry.object();
-
-            NestedScenario scenario;
-            scenario.name = fields.find("name")->string();
-            scenario.why = fields.find("why")->string();
-            scenario.source = fields.find("source")->string();
-
-            const auto *hover = fields.find("hover");
-            if (hover == nullptr || !hover->isObject())
-                continue;
-
-            scenario.hoverLine = static_cast<uint32_t>(hover->object().find("line")->number());
-            scenario.hoverCharacter = static_cast<uint32_t>(hover->object().find("character")->number());
-            scenario.hoverText = hover->object().find("text")->string();
-            scenario.hoverContains = hover->object().find("contains")->string();
-
-            scenarios.push_back(std::move(scenario));
-        }
-
-        return scenarios;
+        scenarios.push_back(std::move(scenario));
     }
+
+    return scenarios;
 }
+} // namespace
 
 TEST_CASE("Server - Hover answers for the shapes that nest")
 {
@@ -4987,7 +5006,7 @@ TEST_CASE("Server - Hover answers for the shapes that nest")
     size_t silent = 0;
     size_t wrong = 0;
 
-    for (const NestedScenario &scenario : scenarios)
+    for (const NestedScenario& scenario : scenarios)
     {
         CAPTURE(scenario.name);
         INFO(scenario.why);
@@ -5023,9 +5042,8 @@ TEST_CASE("Server - Hover answers for the shapes that nest")
             ++wrong;
     }
 
-    MESSAGE("nested hover: " << answered << " of " << scenarios.size()
-                             << " named the type, " << wrong << " named something else, "
-                             << silent << " said nothing");
+    MESSAGE("nested hover: " << answered << " of " << scenarios.size() << " named the type, " << wrong
+                             << " named something else, " << silent << " said nothing");
 
     // Every one of them, because every one of them answered when this was written: 20 of 20 named
     // the type, none said anything else, none stayed silent. A soft assertion would have been the
@@ -5052,50 +5070,50 @@ TEST_CASE("Server - Hover answers for the shapes that nest")
 
 namespace
 {
-    /**
-     * @brief Starts under host_a, switches the selection to host_b, then opens @p source.
-     *
-     * The switch travels the way the client makes it - didChangeConfiguration, not a restart -
-     * because that is the path with the missing unload. Restarting the server would rebuild the
-     * table from nothing and pass whatever the unload path did.
-     */
-    std::string RunAfterSwitchingStub(const TwoStubFixture &two, const std::string &source)
-    {
-        two.fixture.Write("main.as", source);
+/**
+ * @brief Starts under host_a, switches the selection to host_b, then opens @p source.
+ *
+ * The switch travels the way the client makes it - didChangeConfiguration, not a restart -
+ * because that is the path with the missing unload. Restarting the server would rebuild the
+ * table from nothing and pass whatever the unload path did.
+ */
+std::string RunAfterSwitchingStub(const TwoStubFixture& two, const std::string& source)
+{
+    two.fixture.Write("main.as", source);
 
-        test::ScriptedStream stream;
-        stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
-        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
 
-        // The first scan loads host_a, named in the config at the bottom.
-        stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+    // The first scan loads host_a, named in the config at the bottom.
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
 
-        stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
-                    R"({"settings":{"angelscript":{"predefined":{"active":")" +
-                    JsonEscape(two.Stub("host_b.as.predefined")) + R"("}}}}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
+                R"({"settings":{"angelscript":{"predefined":{"active":")" +
+                JsonEscape(two.Stub("host_b.as.predefined")) + R"("}}}}})");
 
-        // The rescan runs its own progress cycle, so wait for a second one to finish.
-        stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 2); });
+    // The rescan runs its own progress cycle, so wait for a second one to finish.
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 2); });
 
-        stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), source));
-        stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+    stream.Push(DidOpenMessage(two.fixture.Uri("main.as"), source));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
 
-        stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":")" +
-                    two.fixture.Uri("main.as") + R"("},"position":{"line":0,"character":16}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":")" +
+                two.fixture.Uri("main.as") + R"("},"position":{"line":0,"character":16}}})");
 
-        stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
 
-        config::ServerConfig serverConfig;
-        serverConfig.activePredefined = two.Stub("host_a.as.predefined");
+    config::ServerConfig serverConfig;
+    serverConfig.activePredefined = two.Stub("host_a.as.predefined");
 
-        // Not the default "none": the analyzer stays silent about a type whose world it cannot see,
-        // and with an empty table every assertion below would pass by vacuity.
-        serverConfig.engineProfile = "standard";
+    // Not the default "none": the analyzer stays silent about a type whose world it cannot see,
+    // and with an empty table every assertion below would pass by vacuity.
+    serverConfig.engineProfile = "standard";
 
-        RunScript(serverConfig, stream);
-        return stream.Output();
-    }
+    RunScript(serverConfig, stream);
+    return stream.Output();
 }
+} // namespace
 
 TEST_CASE("Server - Switching the active stub forgets the stub that was left")
 {
@@ -5159,60 +5177,63 @@ TEST_CASE("Server - Hover stops describing a type the stub no longer declares")
 
 namespace
 {
-    /**
-     * @brief Opens a stub and a document that depends on its `#define`, then edits the stub.
-     *
-     * @param editedStub What the stub becomes. The document is never touched, so any change in what
-     *        is published about it came from the stub.
-     * @return Everything the server wrote.
-     */
-    std::string RunEditingOpenStub(const std::string &editedStub, bool expectNewFrame)
-    {
-        const std::string stub = "#define SERVER_BUILD\nclass HostEntityA { void Spawn(); }\n";
+/**
+ * @brief Opens a stub and a document that depends on its `#define`, then edits the stub.
+ *
+ * @param editedStub What the stub becomes. The document is never touched, so any change in what
+ *        is published about it came from the stub.
+ * @return Everything the server wrote.
+ */
+std::string RunEditingOpenStub(const std::string& editedStub, bool expectNewFrame)
+{
+    const std::string stub = "#define SERVER_BUILD\nclass HostEntityA { void Spawn(); }\n";
 
-        const std::string source =
-            "#if SERVER_BUILD\n"
-            "void OnServerStart()\n"
-            "{\n"
-            "    UndefinedThingy();\n"
-            "}\n"
-            "#endif\n";
+    const std::string source = "#if SERVER_BUILD\n"
+                               "void OnServerStart()\n"
+                               "{\n"
+                               "    UndefinedThingy();\n"
+                               "}\n"
+                               "#endif\n";
 
-        WorkspaceFixture fixture;
-        fixture.Write("engine.as.predefined", stub);
-        fixture.Write("main.as", source);
+    WorkspaceFixture fixture;
+    fixture.Write("engine.as.predefined", stub);
+    fixture.Write("main.as", source);
 
-        test::ScriptedStream stream;
-        stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
-        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-        stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
 
-        // With SERVER_BUILD defined the block is live code, so this publishes the error inside it.
-        stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
-        stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+    // With SERVER_BUILD defined the block is live code, so this publishes the error inside it.
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
 
-        // The user opens the stub in a tab. From here on didChangeWatchedFiles will not touch it.
-        stream.Push(DidOpenMessage(fixture.Uri("engine.as.predefined"), stub));
-        stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 2); });
+    // The user opens the stub in a tab. From here on didChangeWatchedFiles will not touch it.
+    stream.Push(DidOpenMessage(fixture.Uri("engine.as.predefined"), stub));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 2); });
 
-        size_t before = 0;
-        stream.PushAction([&stream, &before]() { before = CountPublishedFor(stream.Output(), "main.as"); });
+    size_t before = 0;
+    stream.PushAction([&stream, &before]() { before = CountPublishedFor(stream.Output(), "main.as"); });
 
-        stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
-                    fixture.Uri("engine.as.predefined") + R"(","version":2},)"
-                    R"("contentChanges":[{"text":")" + JsonEscape(editedStub) + R"("}]}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                fixture.Uri("engine.as.predefined") +
+                R"(","version":2},)"
+                R"("contentChanges":[{"text":")" +
+                JsonEscape(editedStub) + R"("}]}})");
 
-        // A filler request between the edit and the wait, and it is load-bearing. PushAction runs
-        // on the reader thread, and it fires when the bytes before it are *consumed*, not when they
-        // are handled - so an action that waits here blocks the very message loop that has to
-        // dispatch the didChange above. The wait then always ran out. Reading a request back proves
-        // the loop got past the edit.
-        stream.Push(R"({"jsonrpc":"2.0","id":1500,"method":"textDocument/documentSymbol",)"
-                    R"("params":{"textDocument":{"uri":")" + fixture.Uri("main.as") + R"("}}})");
+    // A filler request between the edit and the wait, and it is load-bearing. PushAction runs
+    // on the reader thread, and it fires when the bytes before it are *consumed*, not when they
+    // are handled - so an action that waits here blocks the very message loop that has to
+    // dispatch the didChange above. The wait then always ran out. Reading a request back proves
+    // the loop got past the edit.
+    stream.Push(R"({"jsonrpc":"2.0","id":1500,"method":"textDocument/documentSymbol",)"
+                R"("params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
 
-        // Waiting for a *new* frame about main.as, not for silence: the document was already
-        // published once, so "there is a publish for main.as" was true before the edit.
-        stream.PushAction([&stream, &before, expectNewFrame]()
+    // Waiting for a *new* frame about main.as, not for silence: the document was already
+    // published once, so "there is a publish for main.as" was true before the edit.
+    stream.PushAction(
+        [&stream, &before, expectNewFrame]()
         {
             // Bounded short when no new frame is expected: waiting the full timeout for something
             // that correctly never arrives would cost fifteen seconds of suite time per run.
@@ -5226,18 +5247,18 @@ namespace
             }
         });
 
-        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
-        config::ServerConfig serverConfig;
-        RunScript(serverConfig, stream);
-        return stream.Output();
-    }
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+    return stream.Output();
 }
+} // namespace
 
 TEST_CASE("Server - Commenting out a #define in an open stub re-evaluates every #if at once")
 {
     const std::string output = RunEditingOpenStub("// #define SERVER_BUILD\nclass HostEntityA { void Spawn(); }\n",
-                                                    /*expectNewFrame=*/true);
+                                                  /*expectNewFrame=*/true);
 
     INFO(PublishedFrames(output));
 
@@ -5289,72 +5310,73 @@ TEST_CASE("Server - An edit that leaves the #defines alone does not change what 
 
 namespace
 {
-    /**
-     * @brief A workspace with two modules: one that declares a shared class, one that externs it.
-     *
-     * The two are deliberately not connected by any `#include`. That is what makes them separate
-     * modules, and it is the whole point of the fixture.
-     */
-    struct TwoModuleFixture
+/**
+ * @brief A workspace with two modules: one that declares a shared class, one that externs it.
+ *
+ * The two are deliberately not connected by any `#include`. That is what makes them separate
+ * modules, and it is the whole point of the fixture.
+ */
+struct TwoModuleFixture
+{
+    WorkspaceFixture fixture;
+
+    TwoModuleFixture()
     {
-        WorkspaceFixture fixture;
-
-        TwoModuleFixture()
-        {
-            fixture.Write("mod_shared_lib.as", "shared class ModPacket { int id; }\n"
-                                               "shared void ModHelper() { }\n");
-            fixture.Write("mod_shared_main.as", "#include \"mod_shared_lib.as\"\n"
-                                                "void ModSharedMain() { }\n");
-        }
-
-        std::string Entry(const char *name) const { return (fixture.dir / name).generic_string(); }
-    };
-
-    /**
-     * @brief Opens `consumer.as` under a given module configuration and returns everything said.
-     *
-     * @param modules Empty means angelscript.modules is unset, which is the conservative default.
-     */
-    std::string RunWithModules(TwoModuleFixture &two,
-                               const std::string &consumerSource,
-                               const std::vector<config::ServerConfig::ModuleDefinition> &modules)
-    {
-        two.fixture.Write("mod_consumer.as", consumerSource);
-
-        test::ScriptedStream stream;
-        stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
-        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-        stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
-
-        stream.Push(DidOpenMessage(two.fixture.Uri("mod_consumer.as"), consumerSource));
-        stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
-
-        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
-
-        config::ServerConfig serverConfig;
-        serverConfig.modules = modules;
-
-        // Not the default "none": the analyzer stays silent about a world it cannot see, and with an
-        // empty table these assertions would pass by vacuity.
-        serverConfig.engineProfile = "standard";
-
-        RunScript(serverConfig, stream);
-        return stream.Output();
+        fixture.Write("mod_shared_lib.as", "shared class ModPacket { int id; }\n"
+                                           "shared void ModHelper() { }\n");
+        fixture.Write("mod_shared_main.as", "#include \"mod_shared_lib.as\"\n"
+                                            "void ModSharedMain() { }\n");
     }
 
-    std::vector<config::ServerConfig::ModuleDefinition> BothModules(const TwoModuleFixture &two)
+    std::string Entry(const char* name) const
     {
-        return { { "shared", two.Entry("mod_shared_main.as") },
-                 { "server", two.Entry("mod_consumer.as") } };
+        return (fixture.dir / name).generic_string();
     }
+};
+
+/**
+ * @brief Opens `consumer.as` under a given module configuration and returns everything said.
+ *
+ * @param modules Empty means angelscript.modules is unset, which is the conservative default.
+ */
+std::string RunWithModules(TwoModuleFixture& two, const std::string& consumerSource,
+                           const std::vector<config::ServerConfig::ModuleDefinition>& modules)
+{
+    two.fixture.Write("mod_consumer.as", consumerSource);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(two.fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(two.fixture.Uri("mod_consumer.as"), consumerSource));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.modules = modules;
+
+    // Not the default "none": the analyzer stays silent about a world it cannot see, and with an
+    // empty table these assertions would pass by vacuity.
+    serverConfig.engineProfile = "standard";
+
+    RunScript(serverConfig, stream);
+    return stream.Output();
 }
+
+std::vector<config::ServerConfig::ModuleDefinition> BothModules(const TwoModuleFixture& two)
+{
+    return {{"shared", two.Entry("mod_shared_main.as")}, {"server", two.Entry("mod_consumer.as")}};
+}
+} // namespace
 
 TEST_CASE("Server - An external shared class is satisfied by another module")
 {
     TwoModuleFixture two;
 
-    const std::string output = RunWithModules(
-        two, "external shared class ModPacket;\nvoid ModConsumerMain() { }\n", BothModules(two));
+    const std::string output =
+        RunWithModules(two, "external shared class ModPacket;\nvoid ModConsumerMain() { }\n", BothModules(two));
 
     INFO(PublishedFrames(output));
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
@@ -5369,8 +5391,7 @@ TEST_CASE("Server - An external shared class is not satisfied by its own module"
     TwoModuleFixture two;
 
     const std::string output = RunWithModules(
-        two,
-        "external shared class ModLocal;\nshared class ModLocal { int id; }\nvoid ModConsumerMain() { }\n",
+        two, "external shared class ModLocal;\nshared class ModLocal { int id; }\nvoid ModConsumerMain() { }\n",
         BothModules(two));
 
     INFO(PublishedFrames(output));
@@ -5383,8 +5404,8 @@ TEST_CASE("Server - An external shared function is satisfied by another module")
 {
     TwoModuleFixture two;
 
-    const std::string output = RunWithModules(
-        two, "external shared void ModHelper();\nvoid ModConsumerMain() { }\n", BothModules(two));
+    const std::string output =
+        RunWithModules(two, "external shared void ModHelper();\nvoid ModConsumerMain() { }\n", BothModules(two));
 
     INFO(PublishedFrames(output));
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
@@ -5400,9 +5421,7 @@ TEST_CASE("Server - Without configured modules the older, laxer question is aske
     TwoModuleFixture two;
 
     const std::string output = RunWithModules(
-        two,
-        "external shared class ModLocal;\nshared class ModLocal { int id; }\nvoid ModConsumerMain() { }\n",
-        {});
+        two, "external shared class ModLocal;\nshared class ModLocal { int id; }\nvoid ModConsumerMain() { }\n", {});
 
     INFO(PublishedFrames(output));
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
@@ -5415,8 +5434,8 @@ TEST_CASE("Server - A name no module declares shared is still reported")
     // The other control. A rule that had simply stopped firing would pass every case above.
     TwoModuleFixture two;
 
-    const std::string output = RunWithModules(
-        two, "external shared class ModNobodyHasThis;\nvoid ModConsumerMain() { }\n", BothModules(two));
+    const std::string output =
+        RunWithModules(two, "external shared class ModNobodyHasThis;\nvoid ModConsumerMain() { }\n", BothModules(two));
 
     INFO(PublishedFrames(output));
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
@@ -5432,8 +5451,7 @@ TEST_CASE("Server - An import naming no configured module is a hint, never an er
     TwoModuleFixture two;
 
     const std::string output = RunWithModules(
-        two,
-        "import void ModImported() from \"nosuchmodule\";\nvoid ModConsumerMain() { ModImported(); }\n",
+        two, "import void ModImported() from \"nosuchmodule\";\nvoid ModConsumerMain() { ModImported(); }\n",
         BothModules(two));
 
     const std::string frames = PublishedFrames(output);
@@ -5460,10 +5478,9 @@ TEST_CASE("Server - An import naming a configured module says nothing")
     // The control for the hint. Reporting every import would be noise on a correct project.
     TwoModuleFixture two;
 
-    const std::string output = RunWithModules(
-        two,
-        "import void ModImported() from \"shared\";\nvoid ModConsumerMain() { ModImported(); }\n",
-        BothModules(two));
+    const std::string output =
+        RunWithModules(two, "import void ModImported() from \"shared\";\nvoid ModConsumerMain() { ModImported(); }\n",
+                       BothModules(two));
 
     INFO(PublishedFrames(output));
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
@@ -5485,51 +5502,57 @@ TEST_CASE("Server - An import naming a configured module says nothing")
 
 namespace
 {
-    /**
-     * @brief A workspace laid out the way the design describes, modules and all.
-     *
-     * `scripts/maps/` holds a file with an error in it that nothing opens. That is the headline:
-     * the error has to reach the client anyway.
-     */
-    struct FolderModuleFixture
+/**
+ * @brief A workspace laid out the way the design describes, modules and all.
+ *
+ * `scripts/maps/` holds a file with an error in it that nothing opens. That is the headline:
+ * the error has to reach the client anyway.
+ */
+struct FolderModuleFixture
+{
+    WorkspaceFixture fixture;
+
+    FolderModuleFixture()
     {
-        WorkspaceFixture fixture;
+        fixture.Write("scripts/maps/broken_map.as", "void FmBrokenMap()\n{\n    FmNoSuchFunction();\n}\n");
+        fixture.Write("scripts/maps/clean_map.as", "void FmCleanMap() { }\n");
+        fixture.Write("scripts/plugins/plugin_main.as", "void FmPluginMain() { }\n");
+        fixture.Write("scripts/maps/deep/deep_map.as", "void FmDeepMap() { }\n");
+    }
 
-        FolderModuleFixture()
-        {
-            fixture.Write("scripts/maps/broken_map.as",
-                          "void FmBrokenMap()\n{\n    FmNoSuchFunction();\n}\n");
-            fixture.Write("scripts/maps/clean_map.as", "void FmCleanMap() { }\n");
-            fixture.Write("scripts/plugins/plugin_main.as", "void FmPluginMain() { }\n");
-            fixture.Write("scripts/maps/deep/deep_map.as", "void FmDeepMap() { }\n");
-        }
-
-        std::string Dir(const char *name) const { return (fixture.dir / name).generic_string(); }
-        std::string File(const char *name) const { return (fixture.dir / name).generic_string(); }
-    };
-
-    /** @brief Runs the fixture under a module configuration and returns everything the server said. */
-    std::string RunWithFolderModules(FolderModuleFixture &fx,
-                                     const std::vector<config::ServerConfig::ModuleDefinition> &modules,
-                                     const char *openFile = "scripts/plugins/plugin_main.as",
-                                     const char *waitForFile = "broken_map.as")
+    std::string Dir(const char* name) const
     {
-        const std::string source = "void FmOpenedDocument() { }\n";
-        fx.fixture.Write("opened.as", source);
+        return (fixture.dir / name).generic_string();
+    }
+    std::string File(const char* name) const
+    {
+        return (fixture.dir / name).generic_string();
+    }
+};
 
-        test::ScriptedStream stream;
-        stream.Push(InitializeWithProgress(fx.fixture.RootUri(), /*workDoneProgress=*/true));
-        stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-        stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+/** @brief Runs the fixture under a module configuration and returns everything the server said. */
+std::string RunWithFolderModules(FolderModuleFixture& fx,
+                                 const std::vector<config::ServerConfig::ModuleDefinition>& modules,
+                                 const char* openFile = "scripts/plugins/plugin_main.as",
+                                 const char* waitForFile = "broken_map.as")
+{
+    const std::string source = "void FmOpenedDocument() { }\n";
+    fx.fixture.Write("opened.as", source);
 
-        stream.Push(DidOpenMessage(fx.fixture.Uri(openFile), "void FmOpened() { }\n"));
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fx.fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
 
-        // The module pass schedules its members onto the analysis thread, which debounces. Waiting
-        // for the file that is NOT open to be published is what makes this about the feature rather
-        // than about the open document.
-        if (waitForFile && *waitForFile)
-        {
-            stream.PushAction([&stream, waitForFile]()
+    stream.Push(DidOpenMessage(fx.fixture.Uri(openFile), "void FmOpened() { }\n"));
+
+    // The module pass schedules its members onto the analysis thread, which debounces. Waiting
+    // for the file that is NOT open to be published is what makes this about the feature rather
+    // than about the open document.
+    if (waitForFile && *waitForFile)
+    {
+        stream.PushAction(
+            [&stream, waitForFile]()
             {
                 const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
                 while (std::chrono::steady_clock::now() < deadline)
@@ -5539,18 +5562,18 @@ namespace
                     std::this_thread::sleep_for(std::chrono::milliseconds(20));
                 }
             });
-        }
-
-        stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
-
-        config::ServerConfig serverConfig;
-        serverConfig.modules = modules;
-        serverConfig.engineProfile = "standard";
-
-        RunScript(serverConfig, stream);
-        return stream.Output();
     }
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.modules = modules;
+    serverConfig.engineProfile = "standard";
+
+    RunScript(serverConfig, stream);
+    return stream.Output();
 }
+} // namespace
 
 TEST_CASE("Server - A folder module reports a file nobody opened")
 {
@@ -5558,7 +5581,7 @@ TEST_CASE("Server - A folder module reports a file nobody opened")
     // file is opened; the point of naming the folder is that it reaches the Problems panel first.
     FolderModuleFixture fx;
 
-    const std::string output = RunWithFolderModules(fx, { { "MapScript", "", fx.Dir("scripts/maps") } });
+    const std::string output = RunWithFolderModules(fx, {{"MapScript", "", fx.Dir("scripts/maps")}});
 
     INFO(PublishedFrames(output));
     REQUIRE(output.find("publishDiagnostics") != std::string::npos);
@@ -5574,8 +5597,7 @@ TEST_CASE("Server - Without a module nothing is said about an unopened file")
     // every file in the workspace regardless would pass the case above.
     FolderModuleFixture fx;
 
-    const std::string output = RunWithFolderModules(
-        fx, {}, "scripts/plugins/plugin_main.as", "plugin_main.as");
+    const std::string output = RunWithFolderModules(fx, {}, "scripts/plugins/plugin_main.as", "plugin_main.as");
 
     INFO(PublishedFrames(output));
     CHECK(CountPublishedFor(output, "broken_map.as") == 0);
@@ -5588,8 +5610,7 @@ TEST_CASE("Server - The deepest folder wins when two claim one file")
     FolderModuleFixture fx;
 
     const std::string output = RunWithFolderModules(
-        fx, { { "MapScript", "", fx.Dir("scripts/maps") },
-              { "DeepMaps",  "", fx.Dir("scripts/maps/deep") } },
+        fx, {{"MapScript", "", fx.Dir("scripts/maps")}, {"DeepMaps", "", fx.Dir("scripts/maps/deep")}},
         "scripts/plugins/plugin_main.as", "deep_map.as");
 
     const std::string published = LastPublishedFor(output, "deep_map.as");
@@ -5608,9 +5629,8 @@ TEST_CASE("Server - A file claimed by only one module says nothing about it")
     // project, and would make the hint useless exactly where it matters.
     FolderModuleFixture fx;
 
-    const std::string output = RunWithFolderModules(
-        fx, { { "MapScript", "", fx.Dir("scripts/maps") } },
-        "scripts/plugins/plugin_main.as", "clean_map.as");
+    const std::string output = RunWithFolderModules(fx, {{"MapScript", "", fx.Dir("scripts/maps")}},
+                                                    "scripts/plugins/plugin_main.as", "clean_map.as");
 
     const std::string published = LastPublishedFor(output, "clean_map.as");
     INFO(published);
@@ -5625,8 +5645,7 @@ TEST_CASE("Server - An entry point beats a folder that also contains the file")
     FolderModuleFixture fx;
 
     const std::string output = RunWithFolderModules(
-        fx, { { "MapScript", "", fx.Dir("scripts/maps") },
-              { "TheMap", fx.File("scripts/maps/clean_map.as"), "" } },
+        fx, {{"MapScript", "", fx.Dir("scripts/maps")}, {"TheMap", fx.File("scripts/maps/clean_map.as"), ""}},
         "scripts/plugins/plugin_main.as", "clean_map.as");
 
     const std::string published = LastPublishedFor(output, "clean_map.as");
@@ -5645,8 +5664,7 @@ TEST_CASE("Server - Two modules with the same name are refused, loudly")
     FolderModuleFixture fx;
 
     const std::string output = RunWithFolderModules(
-        fx, { { "MapScript", "", fx.Dir("scripts/maps") },
-              { "MapScript", "", fx.Dir("scripts/plugins") } },
+        fx, {{"MapScript", "", fx.Dir("scripts/maps")}, {"MapScript", "", fx.Dir("scripts/plugins")}},
         "scripts/plugins/plugin_main.as", "");
 
     CHECK(output.find("two modules are both named") != std::string::npos);
@@ -5658,9 +5676,8 @@ TEST_CASE("Server - A module naming a folder that is not there is refused, loudl
     // mistyped path look identical from the outside.
     FolderModuleFixture fx;
 
-    const std::string output = RunWithFolderModules(
-        fx, { { "MapScript", "", fx.Dir("scripts/there-is-no-such-folder") } },
-        "scripts/plugins/plugin_main.as", "");
+    const std::string output = RunWithFolderModules(fx, {{"MapScript", "", fx.Dir("scripts/there-is-no-such-folder")}},
+                                                    "scripts/plugins/plugin_main.as", "");
 
     CHECK(output.find("names a folder that does not exist") != std::string::npos);
 }
@@ -5669,9 +5686,7 @@ TEST_CASE("Server - A module needs a name and at least one of a folder or an ent
 {
     FolderModuleFixture fx;
 
-    const std::string output = RunWithFolderModules(
-        fx, { { "Nameless", "", "" } },
-        "scripts/plugins/plugin_main.as", "");
+    const std::string output = RunWithFolderModules(fx, {{"Nameless", "", ""}}, "scripts/plugins/plugin_main.as", "");
 
     CHECK(output.find("at least one of an entry ") != std::string::npos);
 }
@@ -5682,10 +5697,9 @@ TEST_CASE("Server - An open document keeps its own analysis inside a module")
     // text. The module pass skips anything the editor has open, so the buffer always wins.
     FolderModuleFixture fx;
 
-    const std::string output = RunWithFolderModules(
-        fx, { { "MapScript", "", fx.Dir("scripts/maps") } },
-        /*openFile=*/"scripts/maps/clean_map.as",
-        /*waitForFile=*/"clean_map.as");
+    const std::string output = RunWithFolderModules(fx, {{"MapScript", "", fx.Dir("scripts/maps")}},
+                                                    /*openFile=*/"scripts/maps/clean_map.as",
+                                                    /*waitForFile=*/"clean_map.as");
 
     INFO(PublishedFrames(output));
 
@@ -5722,11 +5736,12 @@ TEST_CASE("Server - A renamed module folder is not remembered at its old path")
 
     // The rename, and then the rescan a configuration change triggers. The module now names the new
     // path; nothing the server remembered about the old one may answer for it.
-    stream.PushAction([&fixture]()
-    {
-        std::error_code ec;
-        std::filesystem::rename(fixture.dir / "before", fixture.dir / "after", ec);
-    });
+    stream.PushAction(
+        [&fixture]()
+        {
+            std::error_code ec;
+            std::filesystem::rename(fixture.dir / "before", fixture.dir / "after", ec);
+        });
 
     // A modules change, because that is the notification that now rebuilds the index - and the
     // folder this one names is the one the rename just created.
@@ -5738,16 +5753,17 @@ TEST_CASE("Server - A renamed module folder is not remembered at its old path")
 
     stream.Push(DidOpenMessage(fixture.Uri("opened.as"), "void RnOpened() { }\n"));
 
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream]()
         {
-            if (stream.OutputContains("renamed_map.as"))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("renamed_map.as"))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
@@ -5793,23 +5809,24 @@ TEST_CASE("Server - A symlink does not put one file in two modules twice over")
     stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
 
     stream.Push(DidOpenMessage(fixture.Uri("opened.as"), "void SlOpened() { }\n"));
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream]()
         {
-            if (stream.OutputContains("linked_map.as"))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("linked_map.as"))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
     serverConfig.engineProfile = "standard";
-    serverConfig.modules = { { "Real",   "", (fixture.dir / "real").generic_string() },
-                             { "Mirror", "", (fixture.dir / "mirror").generic_string() } };
+    serverConfig.modules = {{"Real", "", (fixture.dir / "real").generic_string()},
+                            {"Mirror", "", (fixture.dir / "mirror").generic_string()}};
 
     RunScript(serverConfig, stream);
 
@@ -5852,31 +5869,31 @@ TEST_CASE("Server - The cost of a module-wide pass is measured rather than assum
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
                 fixture.Uri("opened.as") + R"("},"text":"void MpOpened() { }\n"}})");
 
-    std::chrono::milliseconds elapsed{ 0 };
-    stream.PushAction([&stream, &savedAt, &elapsed]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
-        while (std::chrono::steady_clock::now() < deadline)
+    std::chrono::milliseconds elapsed{0};
+    stream.PushAction(
+        [&stream, &savedAt, &elapsed]()
         {
-            if (CountPublishedFor(stream.Output(), "module/file") >= k_files)
-                break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - savedAt);
-    });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (CountPublishedFor(stream.Output(), "module/file") >= k_files)
+                    break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - savedAt);
+        });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
     serverConfig.engineProfile = "standard";
-    serverConfig.modules = { { "Big", "", (fixture.dir / "module").generic_string() } };
+    serverConfig.modules = {{"Big", "", (fixture.dir / "module").generic_string()}};
 
     RunScript(serverConfig, stream);
 
     const size_t published = CountPublishedFor(stream.Output(), "module/file");
-    MESSAGE("module-wide pass: " << published << " of " << k_files
-                                 << " files published " << elapsed.count() << " ms after the save");
+    MESSAGE("module-wide pass: " << published << " of " << k_files << " files published " << elapsed.count()
+                                 << " ms after the save");
 
     // Every member reached the client. The timing above is the number worth having; this is the
     // assertion, because a pass that published half the module would still look fast.
@@ -5904,22 +5921,23 @@ TEST_CASE("Server - Closing an open file in a folder module does not purge modul
     // Open use.as: RetainedHelper must still be known and resolve without error
     stream.Push(DidOpenMessage(fixture.Uri("scripts/maps/use.as"), "void UserFunc()\n{\n    RetainedHelper();\n}\n"));
 
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream]()
         {
-            if (stream.OutputContains("use.as"))
-                return;
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (std::chrono::steady_clock::now() < deadline)
+            {
+                if (stream.OutputContains("use.as"))
+                    return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
     serverConfig.engineProfile = "standard";
-    serverConfig.modules = { { "MapScript", "", (fixture.dir / "scripts/maps").generic_string() } };
+    serverConfig.modules = {{"MapScript", "", (fixture.dir / "scripts/maps").generic_string()}};
 
     RunScript(serverConfig, stream);
 
@@ -5930,14 +5948,13 @@ TEST_CASE("Server - Closing an open file in a folder module does not purge modul
 
 TEST_CASE("Server - An incremental edit to an open stub is applied and re-analysed")
 {
-    const std::string initialStub =
-        "class StubClassProbe\n"
-        "{\n"
-        "    StubClassProbe(int &in type, int &in list);\n"
-        "}\n"
-        "class SecondClass\n"
-        "{\n"
-        "}\n";
+    const std::string initialStub = "class StubClassProbe\n"
+                                    "{\n"
+                                    "    StubClassProbe(int &in type, int &in list);\n"
+                                    "}\n"
+                                    "class SecondClass\n"
+                                    "{\n"
+                                    "}\n";
 
     WorkspaceFixture fixture;
     fixture.Write("as.predefined", initialStub);
@@ -5951,9 +5968,11 @@ TEST_CASE("Server - An incremental edit to an open stub is applied and re-analys
     // Send an incremental didChange (with a range) that inserts a new declaration
     // at a position after the constructor line.
     const std::string insertText = "\n}\nclass UniquelyNamedAfterEdit\n{\n";
-    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
-                fixture.Uri("as.predefined") + R"(","version":2},"contentChanges":[{"range":{"start":{"line":2,"character":47},"end":{"line":2,"character":47}},"text":")" +
-                JsonEscape(insertText) + R"("}]}})");
+    stream.Push(
+        R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+        fixture.Uri("as.predefined") +
+        R"(","version":2},"contentChanges":[{"range":{"start":{"line":2,"character":47},"end":{"line":2,"character":47}},"text":")" +
+        JsonEscape(insertText) + R"("}]}})");
     stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 2); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/symbol","params":{"query":"UniquelyNamedAfterEdit"}})");
@@ -5985,21 +6004,23 @@ TEST_CASE("Server - Dynamic modules change updates diagnostics for open document
 
     // 1. Open ins2_register.as with both MapInit and ins2 folder module configured.
     // INS2_KNUCKLES is defined in weapon.as under maps/ins2, so no errors.
-    stream.Push(DidOpenMessage(fixture.Uri("maps/ins2/ins2_register.as"), "void main()\n{\n    INS2_KNUCKLES::Register();\n}\n"));
+    stream.Push(DidOpenMessage(fixture.Uri("maps/ins2/ins2_register.as"),
+                               "void main()\n{\n    INS2_KNUCKLES::Register();\n}\n"));
     std::string initialPublished;
-    stream.PushAction([&stream, &initialPublished]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream, &initialPublished]()
         {
-            if (stream.OutputContains("ins2_register.as"))
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (std::chrono::steady_clock::now() < deadline)
             {
-                initialPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
-                return;
+                if (stream.OutputContains("ins2_register.as"))
+                {
+                    initialPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
+                    return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+        });
 
     // 2. Send didChangeConfiguration REMOVING the ins2 folder module.
     // Now only MapInit (entry ins2_register.as) is configured, which does not include weapon.as.
@@ -6011,50 +6032,51 @@ TEST_CASE("Server - Dynamic modules change updates diagnostics for open document
     stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 2); });
 
     std::string removedPublished;
-    stream.PushAction([&stream, &removedPublished]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream, &removedPublished]()
         {
-            if (CountPublishedFor(stream.Output(), "ins2_register.as") >= 2)
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (std::chrono::steady_clock::now() < deadline)
             {
-                removedPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
-                return;
+                if (CountPublishedFor(stream.Output(), "ins2_register.as") >= 2)
+                {
+                    removedPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
+                    return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+        });
 
     // 3. Send didChangeConfiguration ADDING the ins2 folder module back using ${workspaceFolder}!
-    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
-                R"({"settings":{"angelscript":{"modules":[{"name":"MapInit","entry":"${workspaceFolder}/maps/ins2/ins2_register.as"},)"
-                R"({"name":"ins2","folder":"${workspaceFolder}/maps/ins2"}]}}}})");
+    stream.Push(
+        R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
+        R"({"settings":{"angelscript":{"modules":[{"name":"MapInit","entry":"${workspaceFolder}/maps/ins2/ins2_register.as"},)"
+        R"({"name":"ins2","folder":"${workspaceFolder}/maps/ins2"}]}}}})");
 
     stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 3); });
 
     std::string restoredPublished;
-    stream.PushAction([&stream, &restoredPublished]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream, &restoredPublished]()
         {
-            if (CountPublishedFor(stream.Output(), "ins2_register.as") >= 3)
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (std::chrono::steady_clock::now() < deadline)
             {
-                restoredPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
-                return;
+                if (CountPublishedFor(stream.Output(), "ins2_register.as") >= 3)
+                {
+                    restoredPublished = LastPublishedFor(stream.Output(), "ins2_register.as");
+                    return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-    });
+        });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
     serverConfig.engineProfile = "standard";
-    serverConfig.modules = {
-        { "MapInit", (fixture.dir / "maps/ins2/ins2_register.as").generic_string(), "" },
-        { "ins2", "", (fixture.dir / "maps/ins2").generic_string() }
-    };
+    serverConfig.modules = {{"MapInit", (fixture.dir / "maps/ins2/ins2_register.as").generic_string(), ""},
+                            {"ins2", "", (fixture.dir / "maps/ins2").generic_string()}};
 
     RunScript(serverConfig, stream);
 
@@ -6081,21 +6103,19 @@ TEST_CASE("Server - Saving document suppresses duplicate background analysis")
     stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
 
     stream.Push(DidOpenMessage(fixture.Uri("script.as"), "void main() {}\n"));
-    stream.PushAction([&stream]()
-    {
-        WaitForCount(stream, "publishDiagnostics", 1);
-    });
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
 
     // Send didSave notification
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
                 fixture.Uri("script.as") + R"("}}})");
 
     std::string savedPublished;
-    stream.PushAction([&stream, &savedPublished]()
-    {
-        WaitForCount(stream, "publishDiagnostics", 2);
-        savedPublished = LastPublishedFor(stream.Output(), "script.as");
-    });
+    stream.PushAction(
+        [&stream, &savedPublished]()
+        {
+            WaitForCount(stream, "publishDiagnostics", 2);
+            savedPublished = LastPublishedFor(stream.Output(), "script.as");
+        });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
@@ -6174,47 +6194,46 @@ TEST_CASE("Server - Saving an open file in a module does not re-analyze closed f
     stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
 
     // Wait for initial module analysis of the closed files
-    stream.PushAction([&stream]()
-    {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        while (std::chrono::steady_clock::now() < deadline)
+    stream.PushAction(
+        [&stream]()
         {
-            if (CountPublishedFor(stream.Output(), "weapon_closed.as") >= 1)
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::chrono::steady_clock::now() < deadline)
             {
-                break;
+                if (CountPublishedFor(stream.Output(), "weapon_closed.as") >= 1)
+                {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    });
+        });
 
     // Open weapon_open.as
     const std::string openText = "void OpenFunc() { BaseFunc(); }\n";
     stream.Push(DidOpenMessage(fixture.Uri("scripts/weapons/weapon_open.as"), openText));
-    stream.PushAction([&stream]()
-    {
-        WaitForCount(stream, "weapon_open.as", 1);
-    });
+    stream.PushAction([&stream]() { WaitForCount(stream, "weapon_open.as", 1); });
 
     // Save weapon_open.as with modified body (public interface unchanged)
     const std::string savedText = "void OpenFunc() {\n    BaseFunc();\n    int localVal = 42;\n}\n";
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
                 fixture.Uri("scripts/weapons/weapon_open.as") + R"("},"text":")" + JsonEscape(savedText) + R"("}})");
 
-    stream.PushAction([&stream]()
-    {
-        // Wait for save diagnostics on the saved file itself
-        WaitForCount(stream, "weapon_open.as", 2);
-        // Small grace period to ensure no unexpected cascading analysis occurs
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    });
-
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
-
     config::ServerConfig serverConfig;
     serverConfig.engineProfile = "standard";
-    serverConfig.modules = { { "Weapons", "", (fixture.dir / "scripts/weapons").generic_string() } };
+    serverConfig.modules = {{"Weapons", "", (fixture.dir / "scripts/weapons").generic_string()}};
+    Server server(serverConfig, stream);
 
-    RunScript(serverConfig, stream);
+    stream.PushAction(
+        [&stream, &server]()
+        {
+            // Wait for save diagnostics on the saved file itself
+            WaitForCount(stream, "weapon_open.as", 2);
+            // Deterministic drain to ensure all pending and running analysis tasks have completed
+            server.DrainQueue();
+        });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+    server.Run();
 
     const std::string output = stream.Output();
 
@@ -6294,8 +6313,3 @@ TEST_CASE("Server - Initialize falls back to rootPath when formatted as file URI
     REQUIRE(roots.size() == 1);
     CHECK(roots[0] == utils::IncludeResolver::NormalizePath(fixture.dir.string()));
 }
-
-
-
-
-

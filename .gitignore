@@ -85,3 +85,12 @@ graphify-out/
 
 # Written by the corpus-audit workflow: one log per audit, plus its status table.
 server/audit-logs/
+
+# Compilation Database & Build Artifacts
+compile_commands.json
+
+# MSVC Debug / Symbol Artifacts
+*.pdb
+*.ilk
+*.obj
+*.idb

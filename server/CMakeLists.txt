@@ -181,9 +181,18 @@ target_link_libraries(angel_lsp_core PUBLIC
     unordered_dense::unordered_dense
 )
 if(MSVC)
-    target_compile_options(angel_lsp_core PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
+    target_compile_options(angel_lsp_core PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
+        /W4
+        /WX
+        /permissive-
+        /w14189  # Local variable initialized but not referenced (unused)
+        /w14101  # Unreferenced local variable
+        /w14265  # Class has virtual functions, but destructor is not virtual
+    )
+else()
+    target_compile_options(angel_lsp_core PRIVATE ${ANGELLSP_WARNING_FLAGS})
 endif()
-target_compile_options(angel_lsp_core PRIVATE ${ANGELLSP_WARNING_FLAGS})
 
 # PUBLIC so the executable and the test suite report the same version the manifest declares. There
 # is no default: a missing definition should fail to compile rather than quietly ship a wrong one.
@@ -195,9 +204,15 @@ target_compile_definitions(angel_lsp_core PUBLIC ANGELLSP_VERSION="${ANGELLSP_VE
 add_executable(angel_lsp src/main.cpp)
 target_link_libraries(angel_lsp PRIVATE angel_lsp_core)
 if(MSVC)
-    target_compile_options(angel_lsp PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
+    target_compile_options(angel_lsp PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
+        /W4
+        /WX
+        /permissive-
+    )
+else()
+    target_compile_options(angel_lsp PRIVATE ${ANGELLSP_WARNING_FLAGS})
 endif()
-target_compile_options(angel_lsp PRIVATE ${ANGELLSP_WARNING_FLAGS})
 
 if(WIN32)
     set(TARGET_OS "win32")
@@ -263,9 +278,17 @@ if(TEST_SOURCES)
         ANGELSCRIPT_REPO_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/.."
     )
     if(MSVC)
-        target_compile_options(angel_lsp_tests PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8> $<$<COMPILE_LANGUAGE:CXX>:/FS> $<$<COMPILE_LANGUAGE:CXX>:/wd5285>)
+        target_compile_options(angel_lsp_tests PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
+            $<$<COMPILE_LANGUAGE:CXX>:/FS>
+            $<$<COMPILE_LANGUAGE:CXX>:/wd5285>
+            /W4
+            /WX
+            /permissive-
+        )
+    else()
+        target_compile_options(angel_lsp_tests PRIVATE ${ANGELLSP_WARNING_FLAGS})
     endif()
-    target_compile_options(angel_lsp_tests PRIVATE ${ANGELLSP_WARNING_FLAGS})
     add_test(NAME angel_lsp_tests COMMAND angel_lsp_tests)
 
     # The full angelscript/ corpus audit test case is skip()-decorated in-code, so it is

@@ -4,20 +4,20 @@
 
 namespace angel_lsp::analysis
 {
-    namespace
+namespace
+{
+std::string ToLowerString(std::string_view str)
+{
+    std::string result;
+    result.reserve(str.size());
+    for (char c : str)
     {
-        std::string ToLowerString(std::string_view str)
-        {
-            std::string result;
-            result.reserve(str.size());
-            for (char c : str)
-            {
-                result.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-            }
-            return result;
-        }
+        result.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+    return result;
+}
 
-        constexpr std::string_view STANDARD_PROFILE_STUB = R"angelscript(
+constexpr std::string_view STANDARD_PROFILE_STUB = R"angelscript(
 // A partially declared type is worse than an undeclared one: this analyzer stays silent about a
 // name it cannot see at all, but a class it *can* see is one it will report missing members on. The
 // declarations below therefore track the add-ons' own registrations rather than being a convenient
@@ -326,7 +326,7 @@ uint64 fpToIEEE(double fp);
 
 )angelscript";
 
-        constexpr std::string_view SVENCOOP_PROFILE_STUB = R"angelscript(
+constexpr std::string_view SVENCOOP_PROFILE_STUB = R"angelscript(
 class Vector
 {
     float x;
@@ -450,7 +450,7 @@ SoundSystem g_SoundSystem;
 Scheduler g_Scheduler;
 )angelscript";
 
-        constexpr std::string_view URHO3D_PROFILE_STUB = R"angelscript(
+constexpr std::string_view URHO3D_PROFILE_STUB = R"angelscript(
 class Vector2
 {
     float x;
@@ -615,7 +615,7 @@ void SendEvent(const StringHash &in eventType, const VariantMap &in eventData = 
 void Print(const string &in msg);
 )angelscript";
 
-        constexpr std::string_view OPENXRAY_PROFILE_STUB = R"angelscript(
+constexpr std::string_view OPENXRAY_PROFILE_STUB = R"angelscript(
 class Fvector
 {
     float x;
@@ -695,7 +695,7 @@ void log(const string &in msg);
 void printf(const string &in format);
 )angelscript";
 
-        constexpr std::string_view OOTP_PROFILE_STUB = R"angelscript(
+constexpr std::string_view OOTP_PROFILE_STUB = R"angelscript(
 class OOTPPlayer
 {
     int id;
@@ -744,182 +744,162 @@ class OOTPContext
 
 OOTPContext g_OOTP;
 )angelscript";
+} // namespace
+
+EngineProfileKind ParseEngineProfileKind(std::string_view name)
+{
+    std::string lower = ToLowerString(name);
+
+    if (lower == "none")
+    {
+        return EngineProfileKind::None;
+    }
+    if (lower == "standard" || lower == "std" || lower == "default")
+    {
+        return EngineProfileKind::Standard;
+    }
+    if (lower == "svencoop" || lower == "sven" || lower == "sven_coop" || lower == "svenco-op")
+    {
+        return EngineProfileKind::SvenCoop;
+    }
+    if (lower == "urho3d" || lower == "urho" || lower == "atomic")
+    {
+        return EngineProfileKind::Urho3D;
+    }
+    if (lower == "openxray" || lower == "xray" || lower == "stalker")
+    {
+        return EngineProfileKind::OpenXRay;
+    }
+    if (lower == "ootp" || lower == "ootpbaseball")
+    {
+        return EngineProfileKind::OOTP;
+    }
+    if (lower == "auto" || lower == "detect")
+    {
+        return EngineProfileKind::Auto;
     }
 
-    EngineProfileKind ParseEngineProfileKind(std::string_view name)
-    {
-        std::string lower = ToLowerString(name);
+    // Unrecognised. Standard is the right thing to LOAD - a workspace with a typo in its
+    // profile name is better off with the standard library than with nothing - but the caller
+    // has to be able to say so, which is what IsKnownEngineProfileName is for. Returning
+    // Standard silently meant a mistyped `svencop` gave you a workspace with no host types and
+    // nothing on screen explaining why.
+    return EngineProfileKind::Standard;
+}
 
-        if (lower == "none")
-        {
-            return EngineProfileKind::None;
-        }
-        if (lower == "standard" || lower == "std" || lower == "default")
-        {
-            return EngineProfileKind::Standard;
-        }
-        if (lower == "svencoop" || lower == "sven" || lower == "sven_coop" || lower == "svenco-op")
+bool IsKnownEngineProfileName(std::string_view name)
+{
+    const std::string lower = ToLowerString(name);
+    static constexpr std::string_view k_known[] = {
+        "none", "standard", "std",      "default", "svencoop", "sven", "sven_coop",    "svenco-op", "urho3d",
+        "urho", "atomic",   "openxray", "xray",    "stalker",  "ootp", "ootpbaseball", "auto",      "detect",
+    };
+
+    for (const std::string_view candidate : k_known)
+    {
+        if (lower == candidate)
+            return true;
+    }
+    return false;
+}
+
+std::string_view EngineProfileKindToString(EngineProfileKind kind)
+{
+    switch (kind)
+    {
+    case EngineProfileKind::None:
+        return "none";
+    case EngineProfileKind::Standard:
+        return "standard";
+    case EngineProfileKind::SvenCoop:
+        return "svencoop";
+    case EngineProfileKind::Urho3D:
+        return "urho3d";
+    case EngineProfileKind::OpenXRay:
+        return "openxray";
+    case EngineProfileKind::OOTP:
+        return "ootp";
+    case EngineProfileKind::Auto:
+        return "auto";
+    }
+    return "standard";
+}
+
+std::vector<std::string_view> GetAvailableEngineProfiles()
+{
+    return {"none", "standard", "svencoop", "urho3d", "openxray", "ootp", "auto"};
+}
+
+namespace
+{
+/** @brief The raw literal, before the list-factory rewrite. See GetProfileStubText. */
+std::string_view RawProfileStub(EngineProfileKind kind)
+{
+    switch (kind)
+    {
+    case EngineProfileKind::None:
+        return "";
+    case EngineProfileKind::Standard:
+        return STANDARD_PROFILE_STUB;
+    case EngineProfileKind::SvenCoop:
+        return SVENCOOP_PROFILE_STUB;
+    case EngineProfileKind::Urho3D:
+        return URHO3D_PROFILE_STUB;
+    case EngineProfileKind::OpenXRay:
+        return OPENXRAY_PROFILE_STUB;
+    case EngineProfileKind::OOTP:
+        return OOTP_PROFILE_STUB;
+    case EngineProfileKind::Auto:
+        return STANDARD_PROFILE_STUB;
+    }
+    return "";
+}
+} // namespace
+
+std::string GetProfileStubText(EngineProfileKind kind)
+{
+    return std::string(RawProfileStub(kind));
+}
+
+std::string GetProfileSyntheticUri(EngineProfileKind kind)
+{
+    return std::string(k_profileUriPrefix) + std::string(EngineProfileKindToString(kind)) + ".as.predefined";
+}
+
+EngineProfileKind DetectEngineProfileFromWorkspace(const std::vector<std::string>& fileNamesOrSamples)
+{
+    for (const auto& item : fileNamesOrSamples)
+    {
+        std::string lower = ToLowerString(item);
+
+        if (lower.find("svencoop") != std::string::npos || lower.find("sven") != std::string::npos ||
+            lower.find("cbaseplayer") != std::string::npos || lower.find("g_playerfuncs") != std::string::npos ||
+            lower.find("g_enginefuncs") != std::string::npos)
         {
             return EngineProfileKind::SvenCoop;
         }
-        if (lower == "urho3d" || lower == "urho" || lower == "atomic")
+
+        if (lower.find("urho3d") != std::string::npos || lower.find("urho") != std::string::npos ||
+            lower.find("atomic") != std::string::npos || lower.find("subscribetoevent") != std::string::npos ||
+            lower.find("variantmap") != std::string::npos)
         {
             return EngineProfileKind::Urho3D;
         }
-        if (lower == "openxray" || lower == "xray" || lower == "stalker")
+
+        if (lower.find("openxray") != std::string::npos || lower.find("xray") != std::string::npos ||
+            lower.find("stalker") != std::string::npos || lower.find("ini_file") != std::string::npos ||
+            lower.find("alife_simulator") != std::string::npos)
         {
             return EngineProfileKind::OpenXRay;
         }
-        if (lower == "ootp" || lower == "ootpbaseball")
+
+        if (lower.find("ootp") != std::string::npos || lower.find("ootpplayer") != std::string::npos ||
+            lower.find("ootpteam") != std::string::npos)
         {
             return EngineProfileKind::OOTP;
         }
-        if (lower == "auto" || lower == "detect")
-        {
-            return EngineProfileKind::Auto;
-        }
-
-        // Unrecognised. Standard is the right thing to LOAD - a workspace with a typo in its
-        // profile name is better off with the standard library than with nothing - but the caller
-        // has to be able to say so, which is what IsKnownEngineProfileName is for. Returning
-        // Standard silently meant a mistyped `svencop` gave you a workspace with no host types and
-        // nothing on screen explaining why.
-        return EngineProfileKind::Standard;
     }
 
-    bool IsKnownEngineProfileName(std::string_view name)
-    {
-        const std::string lower = ToLowerString(name);
-        static constexpr std::string_view k_known[] = {
-            "none",
-            "standard", "std", "default",
-            "svencoop", "sven", "sven_coop", "svenco-op",
-            "urho3d", "urho", "atomic",
-            "openxray", "xray", "stalker",
-            "ootp", "ootpbaseball",
-            "auto", "detect",
-        };
-
-        for (const std::string_view candidate : k_known)
-        {
-            if (lower == candidate)
-                return true;
-        }
-        return false;
-    }
-
-    std::string_view EngineProfileKindToString(EngineProfileKind kind)
-    {
-        switch (kind)
-        {
-            case EngineProfileKind::None:
-                return "none";
-            case EngineProfileKind::Standard:
-                return "standard";
-            case EngineProfileKind::SvenCoop:
-                return "svencoop";
-            case EngineProfileKind::Urho3D:
-                return "urho3d";
-            case EngineProfileKind::OpenXRay:
-                return "openxray";
-            case EngineProfileKind::OOTP:
-                return "ootp";
-            case EngineProfileKind::Auto:
-                return "auto";
-        }
-        return "standard";
-    }
-
-    std::vector<std::string_view> GetAvailableEngineProfiles()
-    {
-        return {
-            "none",
-            "standard",
-            "svencoop",
-            "urho3d",
-            "openxray",
-            "ootp",
-            "auto"
-        };
-    }
-
-    namespace
-    {
-        /** @brief The raw literal, before the list-factory rewrite. See GetProfileStubText. */
-        std::string_view RawProfileStub(EngineProfileKind kind)
-        {
-        switch (kind)
-        {
-            case EngineProfileKind::None:
-                return "";
-            case EngineProfileKind::Standard:
-                return STANDARD_PROFILE_STUB;
-            case EngineProfileKind::SvenCoop:
-                return SVENCOOP_PROFILE_STUB;
-            case EngineProfileKind::Urho3D:
-                return URHO3D_PROFILE_STUB;
-            case EngineProfileKind::OpenXRay:
-                return OPENXRAY_PROFILE_STUB;
-            case EngineProfileKind::OOTP:
-                return OOTP_PROFILE_STUB;
-            case EngineProfileKind::Auto:
-                return STANDARD_PROFILE_STUB;
-            }
-            return "";
-        }
-    }
-
-    std::string GetProfileStubText(EngineProfileKind kind)
-    {
-        return std::string(RawProfileStub(kind));
-    }
-
-    std::string GetProfileSyntheticUri(EngineProfileKind kind)
-    {
-        return std::string(k_profileUriPrefix) + std::string(EngineProfileKindToString(kind)) + ".as.predefined";
-    }
-
-    EngineProfileKind DetectEngineProfileFromWorkspace(const std::vector<std::string> &fileNamesOrSamples)
-    {
-        for (const auto &item : fileNamesOrSamples)
-        {
-            std::string lower = ToLowerString(item);
-
-            if (lower.find("svencoop") != std::string::npos ||
-                lower.find("sven") != std::string::npos ||
-                lower.find("cbaseplayer") != std::string::npos ||
-                lower.find("g_playerfuncs") != std::string::npos ||
-                lower.find("g_enginefuncs") != std::string::npos)
-            {
-                return EngineProfileKind::SvenCoop;
-            }
-
-            if (lower.find("urho3d") != std::string::npos ||
-                lower.find("urho") != std::string::npos ||
-                lower.find("atomic") != std::string::npos ||
-                lower.find("subscribetoevent") != std::string::npos ||
-                lower.find("variantmap") != std::string::npos)
-            {
-                return EngineProfileKind::Urho3D;
-            }
-
-            if (lower.find("openxray") != std::string::npos ||
-                lower.find("xray") != std::string::npos ||
-                lower.find("stalker") != std::string::npos ||
-                lower.find("ini_file") != std::string::npos ||
-                lower.find("alife_simulator") != std::string::npos)
-            {
-                return EngineProfileKind::OpenXRay;
-            }
-
-            if (lower.find("ootp") != std::string::npos ||
-                lower.find("ootpplayer") != std::string::npos ||
-                lower.find("ootpteam") != std::string::npos)
-            {
-                return EngineProfileKind::OOTP;
-            }
-        }
-
-        return EngineProfileKind::Standard;
-    }
+    return EngineProfileKind::Standard;
 }
+} // namespace angel_lsp::analysis

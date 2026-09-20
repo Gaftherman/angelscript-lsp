@@ -4,3176 +4,3149 @@
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 
+#include "parser/GrammarNames.h"
+#include "parser/Primitives.h"
+#include "utils/LspLogger.h"
 #include <algorithm>
 #include <functional>
+#include <spdlog/fmt/fmt.h>
 #include <string_view>
 #include <vector>
-#include "parser/Primitives.h"
-#include "parser/GrammarNames.h"
-#include "utils/LspLogger.h"
-#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp::analysis
 {
-    namespace
+namespace
+{
+/**
+ * @brief Node text as an owning string.
+ *
+ * Kept per translation unit rather than shared with ASTUtils::NodeText, which returns a
+ * string_view. The two are not interchangeable: callers here store the result, concatenate
+ * it, and use it after the node has gone out of scope, so handing them a view would trade a
+ * duplicated three-line function for a lifetime question at several dozen call sites.
+ * Deduplicating it was attempted and reverted for exactly that reason.
+ */
+std::string NodeText(TSNode node, std::string_view sourceCode)
+{
+    if (ts_node_is_null(node))
     {
-        /**
-         * @brief Node text as an owning string.
-         *
-         * Kept per translation unit rather than shared with ASTUtils::NodeText, which returns a
-         * string_view. The two are not interchangeable: callers here store the result, concatenate
-         * it, and use it after the node has gone out of scope, so handing them a view would trade a
-         * duplicated three-line function for a lifetime question at several dozen call sites.
-         * Deduplicating it was attempted and reverted for exactly that reason.
-         */
-        std::string NodeText(TSNode node, std::string_view sourceCode)
-        {
-            if (ts_node_is_null(node))
-            {
-                return "";
-            }
+        return "";
+    }
 
-            const uint32_t start = ts_node_start_byte(node);
-            const uint32_t end = ts_node_end_byte(node);
-            if (start >= end || end > sourceCode.size())
-            {
-                return "";
-            }
-            return std::string(sourceCode.substr(start, end - start));
+    const uint32_t start = ts_node_start_byte(node);
+    const uint32_t end = ts_node_end_byte(node);
+    if (start >= end || end > sourceCode.size())
+    {
+        return "";
+    }
+    return std::string(sourceCode.substr(start, end - start));
+}
+
+/** @brief What a resolved expression is worth to this pass. */
+struct ExpressionType
+{
+    std::string baseName;   ///< Cleaned base type name, e.g. "Money" or "int".
+    bool known = false;     ///< False means "give up" - never a reason to diagnose.
+    bool isLiteral = false; ///< A literal's type is exact, so it can be judged strictly.
+};
+
+/** @brief The little a rule needs to know about a type declaration.
+ *  @note Deliberately not the Symbol itself: this is looked up for practically every call
+ *        expression in a document, and copying a Symbol (strings, parameter vectors, a
+ *        variant) that many times dominated the pass. */
+struct TypeDeclarationInfo
+{
+    bool found = false;
+    bool isClass = false;
+    bool isTemplate = false;
+};
+
+std::string_view NodeType(TSNode node)
+{
+    return ts_node_is_null(node) ? std::string_view{} : std::string_view(ts_node_type(node));
+}
+
+bool IsSameType(const std::string& a, const std::string& b)
+{
+    const std::string ca = CanonicalizeType(a);
+    const std::string cb = CanonicalizeType(b);
+    return ca == cb || LastScopeSegment(ca) == LastScopeSegment(cb);
+}
+
+/** @brief Visits every symbol registered under a qualified name without copying the bucket.
+ *  @param visitor Returns true to stop the walk. */
+void ForEachSymbolNamed(const std::string& qualifiedName, const SymbolTable& table,
+                        const std::function<bool(const Symbol&)>& visitor)
+{
+    const auto bucket = table.FindSymbolsPtr(qualifiedName);
+    if (!bucket)
+    {
+        return;
+    }
+    for (const auto& sym : *bucket)
+    {
+        if (visitor(sym))
+        {
+            return;
         }
+    }
+}
 
-        /** @brief What a resolved expression is worth to this pass. */
-        struct ExpressionType
+/** @brief Looks up what a type name denotes.
+ *  @return found == false when the name resolves to nothing this analyzer can see - which
+ *          is the signal to stay silent about anything involving it. */
+TypeDeclarationInfo FindTypeDeclaration(const std::string& typeName, const SymbolTable& table)
+{
+    TypeDeclarationInfo info;
+    if (typeName.empty())
+    {
+        return info;
+    }
+
+    ForEachSymbolNamed(typeName, table,
+                       [&info](const Symbol& sym)
+                       {
+                           if (sym.type != SymbolType::Class && sym.type != SymbolType::Interface)
+                           {
+                               return false;
+                           }
+                           info.found = true;
+                           info.isClass = sym.type == SymbolType::Class;
+                           info.isTemplate = info.isClass && sym.GetClass().isTemplate;
+                           return true;
+                       });
+
+    if (info.found)
+    {
+        return info;
+    }
+
+    const std::string bare = LastScopeSegment(typeName);
+    const auto matches = table.FindTypeSymbolsByShortName(bare);
+    for (const auto& sym : matches)
+    {
+        if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
         {
-            std::string baseName;    ///< Cleaned base type name, e.g. "Money" or "int".
-            bool known = false;      ///< False means "give up" - never a reason to diagnose.
-            bool isLiteral = false;  ///< A literal's type is exact, so it can be judged strictly.
-        };
-
-        /** @brief The little a rule needs to know about a type declaration.
-         *  @note Deliberately not the Symbol itself: this is looked up for practically every call
-         *        expression in a document, and copying a Symbol (strings, parameter vectors, a
-         *        variant) that many times dominated the pass. */
-        struct TypeDeclarationInfo
-        {
-            bool found = false;
-            bool isClass = false;
-            bool isTemplate = false;
-        };
-
-        std::string_view NodeType(TSNode node)
-        {
-            return ts_node_is_null(node) ? std::string_view{} : std::string_view(ts_node_type(node));
-        }
-
-        bool IsSameType(const std::string &a, const std::string &b)
-        {
-            const std::string ca = CanonicalizeType(a);
-            const std::string cb = CanonicalizeType(b);
-            return ca == cb || LastScopeSegment(ca) == LastScopeSegment(cb);
-        }
-
-        /** @brief Visits every symbol registered under a qualified name without copying the bucket.
-         *  @param visitor Returns true to stop the walk. */
-        void ForEachSymbolNamed(const std::string &qualifiedName,
-                                const SymbolTable &table,
-                                const std::function<bool(const Symbol &)> &visitor)
-        {
-            const auto bucket = table.FindSymbolsPtr(qualifiedName);
-            if (!bucket)
-            {
-                return;
-            }
-            for (const auto &sym : *bucket)
-            {
-                if (visitor(sym))
-                {
-                    return;
-                }
-            }
-        }
-
-        /** @brief Looks up what a type name denotes.
-         *  @return found == false when the name resolves to nothing this analyzer can see - which
-         *          is the signal to stay silent about anything involving it. */
-        TypeDeclarationInfo FindTypeDeclaration(const std::string &typeName, const SymbolTable &table)
-        {
-            TypeDeclarationInfo info;
-            if (typeName.empty())
-            {
-                return info;
-            }
-
-            ForEachSymbolNamed(typeName, table, [&info](const Symbol &sym)
-            {
-                if (sym.type != SymbolType::Class && sym.type != SymbolType::Interface)
-                {
-                    return false;
-                }
-                info.found = true;
-                info.isClass = sym.type == SymbolType::Class;
-                info.isTemplate = info.isClass && sym.GetClass().isTemplate;
-                return true;
-            });
-
-            if (info.found)
-            {
-                return info;
-            }
-
-            const std::string bare = LastScopeSegment(typeName);
-            const auto matches = table.FindTypeSymbolsByShortName(bare);
-            for (const auto &sym : matches)
-            {
-                if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
-                {
-                    info.found = true;
-                    info.isClass = sym.type == SymbolType::Class;
-                    info.isTemplate = info.isClass && sym.GetClass().isTemplate;
-                    return info;
-                }
-            }
-
+            info.found = true;
+            info.isClass = sym.type == SymbolType::Class;
+            info.isTemplate = info.isClass && sym.GetClass().isTemplate;
             return info;
-        }
-
-        /** @brief True when a name resolves to an enum declared somewhere the analyzer can see. */
-        bool ResolvesToEnum(const std::string &typeName, const SymbolTable &table)
-        {
-            bool found = false;
-            const std::string bare = LastScopeSegment(typeName);
-
-            for (const auto &candidate : { std::cref(typeName), std::cref(bare) })
-            {
-                ForEachSymbolNamed(candidate.get(), table, [&found](const Symbol &sym)
-                {
-                    if (sym.type == SymbolType::Enum)
-                    {
-                        found = true;
-                        return true;
-                    }
-                    return false;
-                });
-
-                if (found || bare == typeName)
-                {
-                    break;
-                }
-            }
-            return found;
-        }
-
-        /** @brief True when a name resolves to an enum, typedef, funcdef or namespace.
-         *  @note Keeps those out of the class-shaped rules below rather than letting them fall
-         *        through to "not a class, therefore suspicious". */
-        bool ResolvesToNonClassDeclaration(const std::string &typeName, const SymbolTable &table)
-        {
-            bool found = false;
-            const std::string bare = LastScopeSegment(typeName);
-
-            for (const auto &candidate : { std::cref(typeName), std::cref(bare) })
-            {
-                ForEachSymbolNamed(candidate.get(), table, [&found](const Symbol &sym)
-                {
-                    if (sym.type == SymbolType::Enum || sym.type == SymbolType::Typedef ||
-                        sym.type == SymbolType::Funcdef || sym.type == SymbolType::Namespace)
-                    {
-                        found = true;
-                        return true;
-                    }
-                    return false;
-                });
-
-                if (found || bare == typeName)
-                {
-                    break;
-                }
-            }
-            return found;
-        }
-
-        /** @brief Visits every overload of a named method visible on a type, base types included.
-         *  @param visitor Returns true to stop the walk. */
-        void ForEachMethod(const std::string &typeName,
-                           const std::string &memberName,
-                           const SymbolTable &table,
-                           const std::function<bool(const Symbol &)> &visitor)
-        {
-            bool stopped = false;
-            for (const auto &cls : GetInheritedTypeHierarchy(typeName, table))
-            {
-                ForEachSymbolNamed(cls + "::" + memberName, table, [&](const Symbol &sym)
-                {
-                    if (sym.type != SymbolType::Function)
-                    {
-                        return false;
-                    }
-                    stopped = visitor(sym);
-                    return stopped;
-                });
-
-                if (stopped)
-                {
-                    return;
-                }
-            }
-        }
-
-        /** @brief Visits the constructors declared directly on a type.
-         *  @note Deliberately not hierarchy-wide: AngelScript does not inherit constructors. */
-
-        void ForEachConstructor(const std::string &typeName,
-                                const SymbolTable &table,
-                                const std::function<bool(const Symbol &)> &visitor)
-        {
-            // The arguments come off before the key is built. A constructor is stored under the
-            // class's own name - `weakref::weakref` - so looking up `weakref<Node>` produced the key
-            // `weakref<Node>::weakref<Node>`, which matches nothing: a template's constructors were
-            // invisible here, and every `weakref<Node> w(node);` read as having none.
-            const size_t open = typeName.find('<');
-            const std::string unparameterized =
-                (open == std::string::npos) ? typeName : typeName.substr(0, open);
-
-            const std::string bare = LastScopeSegment(unparameterized);
-            bool sawAny = false;
-            bool stopped = false;
-
-            const auto visit = [&](const Symbol &sym)
-            {
-                if (sym.type != SymbolType::Function)
-                {
-                    return false;
-                }
-                sawAny = true;
-                stopped = visitor(sym);
-                return stopped;
-            };
-
-            ForEachSymbolNamed(unparameterized + "::" + bare, table, visit);
-            if (!stopped && !sawAny && bare != unparameterized)
-            {
-                ForEachSymbolNamed(bare + "::" + bare, table, visit);
-            }
-
-            // A class declared inside a namespace is keyed by its qualified name, so `Hook`'s
-            // constructor is `Hooks::Hook::Hook` and neither lookup above reaches it - the call
-            // site writes `Hook("OnMapActivate")` because it is inside the namespace, and the two
-            // keys built from that spelling match nothing. The class itself was still found,
-            // because FindTypeDeclaration already falls back to the last segment; the constructors
-            // were not, so every construction of a namespaced class read as having none. Ten
-            // corpus findings, all of them a class calling its own constructor.
-            //
-            // Matched on the last two segments together, so `Hooks::Hook::Hook` qualifies and a
-            // stray `Hook` function somewhere else does not.
-            if (!stopped && !sawAny)
-            {
-                auto shortMatches = table.FindTypeSymbolsByShortName(bare);
-                for (const auto &cSym : shortMatches)
-                {
-                    if (cSym.type == SymbolType::Class)
-                    {
-                        const std::string qCls = cSym.qualifiedName.empty() ? cSym.name : cSym.qualifiedName;
-                        ForEachSymbolNamed(qCls + "::" + bare, table, visit);
-                        if (stopped || sawAny)
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        /**
-         * @brief True when an overload can be called with exactly one argument.
-         * @note Parameter count alone is not the test: `CLogger(const string &in name, bool
-         *       isStatic = false)` is a one-argument converting constructor, and treating it as a
-         *       two-argument one is what made the first corpus run flag a legitimate conversion.
-         */
-        bool AcceptsSingleArgument(const std::vector<ParameterInformation> &parameters)
-        {
-            if (parameters.empty())
-            {
-                return false;
-            }
-            return std::all_of(parameters.begin() + 1, parameters.end(),
-                               [](const ParameterInformation &param) { return !param.defaultValue.empty(); });
-        }
-
-        /** @brief The declared type of the single argument such an overload converts from. */
-        std::string SingleArgumentType(const std::vector<ParameterInformation> &parameters)
-        {
-            return parameters.empty() ? "" : CleanBaseType(parameters[0].typeName);
-        }
-
-        /**
-         * @brief The overload an assignment operator calls, or empty for one that has none.
-         *
-         * AngelScript spells each compound assignment as a method: `a += b` is `a.opAddAssign(b)`,
-         * and the operand types are that method's business rather than a conversion between the two
-         * sides. `@=` is left out on purpose - handle assignment is not an overloadable operator on
-         * a script class, measured, and opHndlAssign is a behaviour of application-registered
-         * types.
-         */
-        std::string_view AssignmentOverloadName(std::string_view op)
-        {
-            if (op == "=")    return "opAssign";
-            if (op == "+=")   return "opAddAssign";
-            if (op == "-=")   return "opSubAssign";
-            if (op == "*=")   return "opMulAssign";
-            if (op == "/=")   return "opDivAssign";
-            if (op == "%=")   return "opModAssign";
-            if (op == "**=")  return "opPowAssign";
-            if (op == "&=")   return "opAndAssign";
-            if (op == "|=")   return "opOrAssign";
-            if (op == "^=")   return "opXorAssign";
-            if (op == "<<=")  return "opShlAssign";
-            if (op == ">>=")  return "opShrAssign";
-            if (op == ">>>=") return "opUShrAssign";
-            return {};
-        }
-
-        /** @brief Whether `typeName` declares the operator method `methodName` at all. */
-        bool DeclaresOperatorMethod(const std::string &typeName,
-                                    std::string_view methodName,
-                                    const SymbolTable &table)
-        {
-            if (typeName.empty() || methodName.empty())
-            {
-                return false;
-            }
-            return table.FindSymbolsPtr(typeName + "::" + std::string(methodName)) != nullptr;
-        }
-
-        /**
-         * @brief True for a type no `cast<>` may name: a primitive, or an enum.
-         *
-         * Measured against the compiler, which rejects every one of them the same way -
-         * `cast<int>(obj)`, `cast<int>(n)`, `cast<int>(enumValue)` and `cast<E>(n)` are all
-         * "Illegal target type for reference cast", and `cast<A@>(n)` is "No conversion from 'int'
-         * to 'A@' available". A reference cast is between reference types, and nothing else.
-         */
-        bool IsScalarCastTarget(const std::string &typeName, const SymbolTable &table)
-        {
-            if (parser::primitives::IsPrimitive(typeName))
-            {
-                return true;
-            }
-
-            const auto symbols = table.FindSymbolsPtr(typeName);
-            return symbols && std::any_of(symbols->begin(), symbols->end(),
-                                          [](const Symbol &sym)
-                                          { return sym.type == SymbolType::Enum; });
-        }
-
-        /** @brief True when a type declares any cast operator overload.
-         *  @note Deliberately coarse. Matching a cast operator to its result type means resolving
-         *        the engine's template-ish opCast, which no declaration in the source states
-         *        precisely enough to bet a diagnostic on. */
-        bool DeclaresAnyCastOperator(const std::string &typeName, const SymbolTable &table)
-        {
-            bool found = false;
-            const auto mark = [&found](const Symbol &) { found = true; return true; };
-
-            ForEachMethod(typeName, "opCast", table, mark);
-            if (!found)
-            {
-                ForEachMethod(typeName, "opImplCast", table, mark);
-            }
-            return found;
-        }
-
-        /** @brief True when a type declares a conversion operator producing the target type. */
-        bool DeclaresConversionTo(const std::string &fromType,
-                                  const std::string &toType,
-                                  const SymbolTable &table,
-                                  bool implicitOnly)
-        {
-            bool found = false;
-            const auto matches = [&](const Symbol &sym)
-            {
-                if (IsSameType(CleanBaseType(sym.GetFunction().returnType), toType))
-                {
-                    found = true;
-                    return true;
-                }
-                return false;
-            };
-
-            static const char *k_implicit[] = { "opImplConv", "opImplCast" };
-            static const char *k_explicit[] = { "opConv", "opCast" };
-
-            for (const char *opName : k_implicit)
-            {
-                ForEachMethod(fromType, opName, table, matches);
-                if (found)
-                {
-                    return true;
-                }
-            }
-            if (implicitOnly)
-            {
-                return false;
-            }
-            for (const char *opName : k_explicit)
-            {
-                ForEachMethod(fromType, opName, table, matches);
-                if (found)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /** @brief True when one type appears in the other's inheritance chain, either direction.
-         *  @note Both directions count: an upcast is implicit, and a downcast is what cast<> is
-         *        for, so neither is worth a diagnostic here. */
-        bool AreHierarchyRelated(const std::string &a, const std::string &b, const SymbolTable &table)
-        {
-            for (const auto &base : GetInheritedTypeHierarchy(a, table))
-            {
-                if (IsSameType(base, b))
-                {
-                    return true;
-                }
-            }
-            for (const auto &base : GetInheritedTypeHierarchy(b, table))
-            {
-                if (IsSameType(base, a))
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /** @brief True for the built-in scalar types plus the configured string type.
-         *  @note Conversions among these are the engine's business, not a declaration's, so the
-         *        rules below let every primitive-to-primitive pair through. */
-        /** @brief The workspace's string type, which defaults to `string` when unconfigured. */
-        bool IsStringType(const std::string &typeName, const DiagnosticContext &ctx)
-        {
-            const auto strType = ctx.request.GetStringTypeName();
-            return typeName == (strType.empty() ? std::string_view("string") : strType);
-        }
-
-        bool IsBuiltInValueType(const std::string &typeName, const DiagnosticContext &ctx)
-        {
-            return IsPrimitiveTypeName(typeName) || IsStringType(typeName, ctx);
-        }
-
-        /**
-         * @brief Decides whether a value of type 'from' can reach type 'to'.
-         * @param depth Recursion guard. At depth > 0 only the direct relations are consulted, so
-         *              matching a constructor parameter cannot recurse into another constructor.
-         * @return True whenever a route exists - and also whenever this analyzer cannot see enough
-         *         to rule one out.
-         */
-        bool IsConvertible(const std::string &from,
-                           const std::string &to,
-                           const DiagnosticContext &ctx,
-                           int depth = 0)
-        {
-            if (from.empty() || to.empty() || IsSameType(from, to))
-            {
-                return true;
-            }
-
-            // `?` is AngelScript's variable type, not a type name: a parameter declared `const ?&in`
-            // or `?&out` takes a value of any type at all. dictionary::set/get, ref, Dispose and the
-            // format/scan helpers are all declared that way, so without this the analyzer reported
-            // "Cannot implicitly convert 'int' to '?'" on code the real compiler accepts.
-            if (IsVariableType(to) || IsVariableType(from))
-            {
-                return true;
-            }
-
-            // `auto` is not a type either - it is a placeholder for whatever the initializer
-            // produces, and the deduction happens in the compiler. Judging a conversion against it
-            // asks a question with no answer: the real target is the source's own type, so every
-            // `auto` conversion is trivially fine and reporting one is always wrong.
-            if (from == "auto" || to == "auto")
-            {
-                return true;
-            }
-
-            const SymbolTable &table = ctx.request.symbolTable;
-
-            if (ctx.request.IsRegisteredSymbol(from) || ctx.request.IsRegisteredSymbol(to))
-            {
-                return true;
-            }
-
-            const std::string normFrom = CanonicalizeType(from);
-            const std::string normTo = CanonicalizeType(to);
-            if (normFrom == normTo)
-            {
-                return true;
-            }
-
-            // Implicit widening from enum to integer primitives (int, uint, int64, etc.)
-            if (ResolvesToEnum(from, table) && parser::primitives::IsInteger(normTo))
-            {
-                return true;
-            }
-
-            const bool fromBuiltIn = IsBuiltInValueType(from, ctx);
-            const bool toBuiltIn = IsBuiltInValueType(to, ctx);
-            if (fromBuiltIn && toBuiltIn)
-            {
-                if (from == to)
-                {
-                    return true;
-                }
-                const auto isNumeric = [](const std::string &t) { return IsNumericPrimitive(t); };
-                const bool fromNum = isNumeric(from);
-                const bool toNum = isNumeric(to);
-                if (fromNum && toNum)
-                {
-                    return true;
-                }
-                // `bool` is deliberately absent from both directions. It is not a number and
-                // converts to none of them: all forty combinations of {bool -> T, T -> bool} x
-                // {argument, initializer} over the ten numeric types are rejected by the compiler,
-                // and so are `int(b)`, `bool(n)`, `b + 1`, `return b` from an int function, and
-                // `if (n)`. It used to answer true here and in OverloadResolver, where the cost
-                // was 75 spurious ambiguities over the corpus. `string s = b;` stays legal through
-                // the string sink below, which is a real opAssign the add-on registers.
-                if ((from == "bool" && toNum) || (fromNum && to == "bool"))
-                {
-                    return false;
-                }
-
-                // `string` is a sink. The standard string add-on registers an opAssign for every
-                // scalar, so each of these compiles per the string add-on specification:
-                //
-                //     string s = i8;  … = u64;  … = f;  … = d;  … = b;   all accepted
-                //
-                // and the `"" + x` concatenation asks the same question.
-                //
-                // Only into it. Nothing leaves a string implicitly - `int i = s;` is
-                // "Can't implicitly convert from 'string' to 'int'", which is why
-                // this tests the target rather than treating the pair as interchangeable.
-                if (IsStringType(to, ctx))
-                {
-                    return true;
-                }
-
-                return false;
-            }
-
-            const TypeDeclarationInfo fromDecl = FindTypeDeclaration(from, table);
-            const TypeDeclarationInfo toDecl = FindTypeDeclaration(to, table);
-
-            // Nothing reaches an enum implicitly but that same enum per AngelScript type rules:
-            //
-            //     Color c = 1;        Can't implicitly convert from 'int' to 'Color'.
-            //     Color c = someUint; Can't implicitly convert from 'uint' to 'Color'.
-            //     A a = B1;           Can't implicitly convert from 'B' to 'A'.
-            //     int i = Color::Red; accepted - widening the other way is fine
-            //
-            // so an enum is a sink and only the `to` side is restricted. OverloadResolver has
-            // always agreed with the compiler here, which is why a *call* was reported and an
-            // assignment was not; this closes that. It has to run before the unresolved-name bail
-            // below, because an enum never appears in a TypeDeclarationInfo - that only records
-            // classes and interfaces - so `to` would look unresolved and the check would be skipped.
-            if (ResolvesToEnum(to, table))
-            {
-                // Decidable only when the source is something this analyzer can see. An unresolved
-                // name is an engine-registered type, and engine types carry conversions declared
-                // nowhere in the source.
-                if (!fromBuiltIn && !fromDecl.found && !ResolvesToEnum(from, table))
-                {
-                    return true;
-                }
-                // A class may declare an operator producing the enum, and the compiler accepts it:
-                // `class W { Color opImplConv() const { … } } … Color c = w;` compiles.
-                if (!fromBuiltIn && DeclaresConversionTo(from, to, table, /*implicitOnly=*/false))
-                {
-                    return true;
-                }
-                return false;
-            }
-
-            // An unresolved name is an engine-registered type as far as this analyzer knows, and
-            // engine types carry conversions that appear nowhere in the source.
-            if ((!fromBuiltIn && !fromDecl.found && !ResolvesToEnum(from, table)) ||
-                (!toBuiltIn && !toDecl.found && !ResolvesToEnum(to, table)))
-            {
-                return true;
-            }
-            if (ResolvesToNonClassDeclaration(from, table) || ResolvesToNonClassDeclaration(to, table))
-            {
-                return true;
-            }
-
-            if (!fromBuiltIn && !toBuiltIn && AreHierarchyRelated(from, to, table))
-            {
-                return true;
-            }
-            if (!fromBuiltIn && DeclaresConversionTo(from, to, table, /*implicitOnly=*/false))
-            {
-                return true;
-            }
-
-            if (depth > 0)
-            {
-                return false;
-            }
-
-            // A template class is instantiated per element type; its declared parameter types are
-            // written in terms of the template parameter, which says nothing about this call site.
-            //
-            // Reachable since the grammar gained a template class declaration and SymbolCollector
-            // began setting ClassSignature::isTemplate from it. This comment used to say the
-            // opposite and had simply gone stale.
-            if (toDecl.isTemplate)
-            {
-                return true;
-            }
-
-            bool convertible = false;
-            const auto acceptsFrom = [&](const Symbol &sym)
-            {
-                if (sym.GetFunction().modifiers.isExplicit || sym.GetFunction().modifiers.isDelete)
-                {
-                    return false;
-                }
-                const auto &parameters = sym.GetFunction().parameters;
-                if (AcceptsSingleArgument(parameters) &&
-                    IsConvertible(from, SingleArgumentType(parameters), ctx, depth + 1))
-                {
-                    convertible = true;
-                    return true;
-                }
-                return false;
-            };
-
-            ForEachConstructor(to, table, acceptsFrom);
-            if (!convertible)
-            {
-                ForEachMethod(to, "opAssign", table, acceptsFrom);
-            }
-            return convertible;
-        }
-
-        /** @brief Classifies a numeric literal as integral or floating point. */
-        std::string ClassifyNumberLiteral(const std::string &text)
-        {
-            const bool isHex = text.size() > 1 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X');
-            if (!isHex)
-            {
-                for (const char c : text)
-                {
-                    if (c == '.' || c == 'e' || c == 'E' || c == 'f' || c == 'F')
-                    {
-                        return "float";
-                    }
-                }
-            }
-            return "int";
-        }
-
-        /** @brief Finds the class a 'this' expression refers to at a given node. */
-        std::string EnclosingClassName(TSNode node, std::string_view sourceCode)
-        {
-            for (const auto &container : GetEnclosingContainers(node, sourceCode))
-            {
-                if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
-                {
-                    return container.name;
-                }
-            }
-            return "";
-        }
-
-        ExpressionType ResolveValueType(TSNode node,
-                                        const Scope *scope,
-                                        const DiagnosticContext &ctx,
-                                        std::string_view sourceCode,
-                                        int depth = 0);
-
-        /** @brief Resolves the type a bare (possibly scope-qualified) name denotes as a value. */
-        ExpressionType ResolveIdentifierValueType(TSNode node,
-                                                  const std::string &name,
-                                                  const Scope *scope,
-                                                  const DiagnosticContext &ctx,
-                                                  std::string_view sourceCode)
-        {
-            if (name == "this")
-            {
-                const std::string className = EnclosingClassName(node, sourceCode);
-                return className.empty() ? ExpressionType{} : ExpressionType{ className, true, false };
-            }
-
-            if (scope)
-            {
-                if (const LocalDefinition *def = ResolveInScope(scope, name); def && !def->typeName.empty())
-                {
-                    return ExpressionType{ CleanBaseType(def->typeName), true, false };
-                }
-            }
-
-            ExpressionType result;
-            ForEachSymbolNamed(name, ctx.request.symbolTable, [&result](const Symbol &sym)
-            {
-                // A bare function name is a function pointer, and a bare type name is not a value
-                // at all. Neither has a value type worth judging, so both stay unknown.
-                if (sym.type != SymbolType::Variable && sym.type != SymbolType::Property)
-                {
-                    return true;
-                }
-                if (!sym.GetVariable().typeName.empty())
-                {
-                    result = ExpressionType{ CleanBaseType(sym.GetVariable().typeName), true, false };
-                    return true;
-                }
-                return false;
-            });
-            return result;
-        }
-
-        /** @brief Resolves what a call expression evaluates to: a constructed type, or a return type. */
-        ExpressionType ResolveCallValueType(TSNode node,
-                                            const DiagnosticContext &ctx,
-                                            std::string_view sourceCode)
-        {
-            TSNode callee = parser::GetChildByField(node, parser::fields::Function);
-            if (ts_node_is_null(callee) && ts_node_child_count(node) > 0)
-            {
-                callee = ts_node_child(node, 0);
-            }
-            if (ts_node_is_null(callee))
-            {
-                return ExpressionType{};
-            }
-
-            const std::string calleeName = CleanBaseType(NodeText(callee, sourceCode));
-            if (calleeName.empty())
-            {
-                return ExpressionType{};
-            }
-
-            // Type(args) constructs a value of that type; anything else is an ordinary call.
-            if (FindTypeDeclaration(calleeName, ctx.request.symbolTable).found)
-            {
-                return ExpressionType{ calleeName, true, false };
-            }
-            if (IsBuiltInValueType(calleeName, ctx))
-            {
-                return ExpressionType{ calleeName, true, false };
-            }
-
-            ExpressionType result;
-            ForEachSymbolNamed(LastScopeSegment(calleeName), ctx.request.symbolTable, [&result](const Symbol &sym)
-            {
-                if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
-                {
-                    result = ExpressionType{ CleanBaseType(sym.GetFunction().returnType), true, false };
-                    return true;
-                }
-                return false;
-            });
-            return result;
-        }
-
-        ExpressionType ResolveValueType(TSNode node,
-                                        const Scope *scope,
-                                        const DiagnosticContext &ctx,
-                                        std::string_view sourceCode,
-                                        int depth)
-        {
-            // See k_maxAstDepth in ASTUtils.h. Returning the empty type is this file's established
-            // "cannot see enough to judge" answer, which every caller already treats as silence.
-            if (depth > k_maxAstDepth)
-            {
-                return ExpressionType{};
-            }
-
-            if (ts_node_is_null(node))
-            {
-                return ExpressionType{};
-            }
-
-            const std::string_view nodeType = NodeType(node);
-
-            if (nodeType == node_types::NumberLiteral)
-            {
-                return ExpressionType{ ClassifyNumberLiteral(NodeText(node, sourceCode)), true, true };
-            }
-            if (nodeType == node_types::StringLiteral)
-            {
-                const auto strType = ctx.request.GetStringTypeName();
-                return ExpressionType{ strType.empty() ? "string" : std::string(strType), true, true };
-            }
-            if (nodeType == node_types::BooleanLiteral)
-            {
-                return ExpressionType{ "bool", true, true };
-            }
-            if (nodeType == node_types::NullLiteral)
-            {
-                // 'null' has its own rule (CheckNullAssignedToNonHandle) and no type of its own.
-                return ExpressionType{};
-            }
-
-            if (nodeType == "parenthesized_expression")
-            {
-                return ts_node_named_child_count(node) > 0
-                           ? ResolveValueType(ts_node_named_child(node, 0), scope, ctx, sourceCode, depth + 1)
-                           : ExpressionType{};
-            }
-
-            if (nodeType == "unary_expression")
-            {
-                const std::string op = NodeText(
-                    parser::GetChildByField(node, parser::fields::Operator), sourceCode);
-                if (op == "!" || op == "not")
-                {
-                    return ExpressionType{ "bool", true, false };
-                }
-                return ResolveValueType(
-                    parser::GetChildByField(node, parser::fields::Operand), scope, ctx, sourceCode, depth + 1);
-            }
-
-            if (nodeType == "identifier" || nodeType == "scoped_identifier")
-            {
-                return ResolveIdentifierValueType(node, NodeText(node, sourceCode), scope, ctx, sourceCode);
-            }
-
-            if (nodeType == node_types::CallExpression || nodeType == "construct_call_expression")
-            {
-                return ResolveCallValueType(node, ctx, sourceCode);
-            }
-
-            if (nodeType == "cast_expression" || nodeType == "functional_cast_expression")
-            {
-                const std::string typeText = CleanBaseType(
-                    NodeText(parser::GetChildByField(node, parser::fields::Type), sourceCode));
-                return typeText.empty() ? ExpressionType{} : ExpressionType{ typeText, true, false };
-            }
-
-            if (nodeType == "member_expression")
-            {
-                const std::string resolved = ResolveExpressionType(node, scope, ctx.request.symbolTable, sourceCode);
-                return resolved.empty() ? ExpressionType{} : ExpressionType{ CleanBaseType(resolved), true, false };
-            }
-
-            // Binary, conditional and assignment expressions need operator resolution this pass
-            // does not do, so their result type stays unknown rather than being guessed.
-            return ExpressionType{};
-        }
-
-        struct PropertyAccessInfo
-        {
-            bool isProperty = false;
-            bool hasGet = false;
-            bool hasSet = false;
-            bool isIndexed = false;
-            std::string propName;
-            std::string receiverType;
-        };
-
-        PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope *scope, const SymbolTable &table, std::string_view sourceCode, const std::string &uri)
-        {
-            PropertyAccessInfo info;
-            std::string_view nt = NodeType(exprNode);
-            if (nt == "member_expression")
-            {
-                TSNode objNode = parser::GetChildByField(exprNode, parser::fields::Object);
-                TSNode memNode = parser::GetChildByField(exprNode, parser::fields::Member);
-                if (ts_node_is_null(objNode) && ts_node_named_child_count(exprNode) > 0)
-                {
-                    objNode = ts_node_named_child(exprNode, 0);
-                    if (ts_node_named_child_count(exprNode) > 1)
-                    {
-                        memNode = ts_node_named_child(exprNode, 1);
-                    }
-                }
-                if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
-                {
-                    info.propName = NodeText(memNode, sourceCode);
-                    info.receiverType = ResolveExpressionType(objNode, scope, table, sourceCode, uri);
-                    std::string cleanObj = CleanBaseType(info.receiverType);
-                    if (!cleanObj.empty())
-                    {
-                        auto hierarchy = GetInheritedTypeHierarchy(cleanObj, table);
-                        for (const auto &typeName : hierarchy)
-                        {
-                            auto propSyms = table.FindSymbolsPtr(typeName + "::" + info.propName);
-                            if (propSyms)
-                            {
-                                for (const auto &s : *propSyms)
-                                {
-                                    if (s.type == SymbolType::Property && std::holds_alternative<VariableSignature>(s.signature))
-                                    {
-                                        const auto &vs = s.GetVariable();
-                                        if (vs.isVirtualProperty)
-                                        {
-                                            info.isProperty = true;
-                                            info.hasGet = vs.hasGet;
-                                            info.hasSet = vs.hasSet;
-                                            return info;
-                                        }
-                                    }
-                                }
-                            }
-                            auto getSyms = table.FindSymbolsPtr(typeName + "::get_" + info.propName);
-                            if (getSyms && !getSyms->empty())
-                            {
-                                info.isProperty = true;
-                                info.hasGet = true;
-                                for (const auto &gs : *getSyms)
-                                {
-                                    if (gs.type == SymbolType::Function && !gs.GetFunction().parameters.empty())
-                                    {
-                                        info.isIndexed = true;
-                                    }
-                                }
-                            }
-                            auto setSyms = table.FindSymbolsPtr(typeName + "::set_" + info.propName);
-                            if (setSyms && !setSyms->empty())
-                            {
-                                info.isProperty = true;
-                                info.hasSet = true;
-                                for (const auto &ss : *setSyms)
-                                {
-                                    if (ss.type == SymbolType::Function && ss.GetFunction().parameters.size() > 1)
-                                    {
-                                        info.isIndexed = true;
-                                    }
-                                }
-                            }
-                            if (info.isProperty)
-                            {
-                                return info;
-                            }
-                        }
-                    }
-                }
-            }
-            return info;
-        }
-
-        /** @brief Emits at the exact source range of a node. */
-        void EmitAtNode(TSNode node,
-                        DiagnosticContext &ctx,
-                        std::string_view code,
-                        const std::string &from = "",
-                        const std::string &to = "")
-        {
-            const TSPoint start = ts_node_start_point(node);
-            const TSPoint end = ts_node_end_point(node);
-            ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, from, to,
-                            DiagnosticSeverity::Error);
-        }
-
-        void EmitWarningAtNode(TSNode node,
-                               DiagnosticContext &ctx,
-                               std::string_view code,
-                               const std::string &from = "",
-                               const std::string &to = "")
-        {
-            const TSPoint start = ts_node_start_point(node);
-            const TSPoint end = ts_node_end_point(node);
-            ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, from, to,
-                            DiagnosticSeverity::Warning);
-        }
-
-        // --- Numeric conversion warnings (TYPE-03) -------------------------------------------
-        //
-        // The compiler emits five numeric warnings. Two of them - these - it decides from the
-        // operand types alone. The other three ("Implicit conversion changed sign of value",
-        // "Value is too large for data type", "Implicit conversion of value is not exact") fire
-        // only on constant expressions, so answering them needs a constant folder this analyzer
-        // does not have. They are left unimplemented rather than approximated: a warning that is
-        // right about the shape and wrong about the value is worse than no warning.
-        //
-        // Everything below was measured against angelscript_oracle, not read off documentation,
-        // and the measurements corrected the backlog on three points:
-        //
-        //   * Signed/Unsigned mismatch fires ONLY on the six comparison operators. `i * u`,
-        //     `i & u` and every other arithmetic or bitwise pairing is silent, and so are
-        //     assignment, argument passing and return. The backlog implied it followed the
-        //     conversion, which it does not.
-        //   * Width is irrelevant - every signed integer paired with every unsigned one warns -
-        //     and float and double count as SIGNED: `float < uint` warns, `float < int` does not.
-        //   * A compile-time constant on either side folds the comparison away and it is silent.
-        //     `const int i = 1; i < u` is clean, a bare enum member is clean, and `i < 5` is
-        //     clean. Only a constant whose value is itself out of range warns, and then under one
-        //     of the three codes above.
-        //
-        // The last point is the whole false-positive risk, so the rule stays silent whenever
-        // either operand is constant. That costs `u < -5`, which the compiler does warn about;
-        // missing beats inventing, and the alternative is the folder again.
-        //
-        // Neither warning reuses IsPrimitiveWidening from OverloadResolver, and that is
-        // deliberate: it lists signed/unsigned pairs as SAFE on purpose, because removing them
-        // produced real false positives on `array<int> a(1)`. The compiler warns on exactly the
-        // pairs that table calls safe, so the two questions need two tables.
-
-        bool IsUnsignedIntegerPrimitive(std::string_view typeName) noexcept
-        {
-            return typeName == "uint" || typeName == "uint8" || typeName == "uint16" ||
-                   typeName == "uint32" || typeName == "uint64";
-        }
-
-        /** @brief Signed for the purpose of the mismatch warning, which counts float and double. */
-        bool IsSignedNumericPrimitive(std::string_view typeName) noexcept
-        {
-            return typeName == "int" || typeName == "int8" || typeName == "int16" ||
-                   typeName == "int32" || typeName == "int64" ||
-                   typeName == "float" || typeName == "double";
-        }
-
-        bool IsComparisonOperator(std::string_view op) noexcept
-        {
-            return op == "<" || op == ">" || op == "<=" || op == ">=" || op == "==" || op == "!=";
-        }
-
-        /** @brief True for a written-out number, through any parentheses and unary sign. */
-        bool IsNumericLiteralExpression(TSNode node, int depth = 0)
-        {
-            if (ts_node_is_null(node) || depth > k_maxAstDepth)
-            {
-                return false;
-            }
-
-            const std::string_view nodeType = NodeType(node);
-            if (nodeType.ends_with("_literal") || nodeType == "number")
-            {
-                return true;
-            }
-            if (nodeType != "parenthesized_expression" && nodeType != "unary_expression")
-            {
-                return false;
-            }
-            for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
-            {
-                if (IsNumericLiteralExpression(ts_node_named_child(node, i), depth + 1))
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /**
-         * @brief True when the operand is something the compiler folds before it compares.
-         *
-         * Constants are what lets the mismatch rule stay silent instead of guessing: the compiler
-         * knows the value, so it compares values rather than types and no mismatch arises. A name
-         * counts as constant here when its declaration says `const` - the one spelling that
-         * survives into both LocalDefinition::typeName and VariableSignature::typeName - or when
-         * it is a literal.
-         *
-         * An enum member needs no case of its own. ResolveExpressionType answers a bare `A` with
-         * its enum's name rather than `int`, so it never reaches the numeric test at all.
-         *
-         * An unrecognised shape answers false, which is the emitting side. That is what the
-         * corpus audit in TypeConversionTest.cpp exists to hold honest.
-         */
-        bool IsFoldedConstantOperand(TSNode node,
-                                     const Scope *scope,
-                                     const DiagnosticContext &ctx,
-                                     std::string_view sourceCode,
-                                     int depth = 0)
-        {
-            if (ts_node_is_null(node) || depth > k_maxAstDepth)
-            {
-                return false;
-            }
-
-            const std::string_view nodeType = NodeType(node);
-            if (IsNumericLiteralExpression(node))
-            {
-                return true;
-            }
-
-            if (nodeType == "parenthesized_expression")
-            {
-                for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
-                {
-                    if (IsFoldedConstantOperand(ts_node_named_child(node, i), scope, ctx, sourceCode, depth + 1))
-                    {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            if (nodeType != "identifier" && nodeType != "scoped_identifier" &&
-                nodeType != "qualified_identifier")
-            {
-                return false;
-            }
-
-            const std::string name = NodeText(node, sourceCode);
-            if (scope)
-            {
-                if (const LocalDefinition *def = ResolveInScope(scope, LastScopeSegment(name)))
-                {
-                    return def->typeName.starts_with("const ");
-                }
-            }
-
-            bool folded = false;
-            ForEachSymbolNamed(name, ctx.request.symbolTable, [&folded](const Symbol &sym)
-            {
-                if (sym.type != SymbolType::Variable && sym.type != SymbolType::Property)
-                {
-                    return false;
-                }
-                folded = sym.GetVariable().typeName.starts_with("const ");
-                return true;
-            });
-            return folded;
-        }
-
-        /**
-         * @brief `as-warn-signed-unsigned-mismatch`, anchored on the operator the way the compiler
-         *        anchors it.
-         */
-        void CheckSignedUnsignedComparison(TSNode node,
-                                           const Scope *scope,
-                                           DiagnosticContext &ctx,
-                                           std::string_view sourceCode)
-        {
-            TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
-            if (ts_node_is_null(opNode) || !IsComparisonOperator(NodeText(opNode, sourceCode)))
-            {
-                return;
-            }
-
-            TSNode left = parser::GetChildByField(node, parser::fields::Left);
-            TSNode right = parser::GetChildByField(node, parser::fields::Right);
-            if (ts_node_is_null(left) || ts_node_is_null(right))
-            {
-                return;
-            }
-
-            const std::string leftType = CleanBaseType(
-                ResolveExpressionType(left, scope, ctx.request.symbolTable, sourceCode, ctx.request.fileUri));
-            const std::string rightType = CleanBaseType(
-                ResolveExpressionType(right, scope, ctx.request.symbolTable, sourceCode, ctx.request.fileUri));
-
-            const bool mismatched =
-                (IsUnsignedIntegerPrimitive(leftType) && IsSignedNumericPrimitive(rightType)) ||
-                (IsUnsignedIntegerPrimitive(rightType) && IsSignedNumericPrimitive(leftType));
-            if (!mismatched)
-            {
-                return;
-            }
-
-            if (IsFoldedConstantOperand(left, scope, ctx, sourceCode) ||
-                IsFoldedConstantOperand(right, scope, ctx, sourceCode))
-            {
-                return;
-            }
-
-            EmitWarningAtNode(opNode, ctx, "as-warn-signed-unsigned-mismatch", leftType, rightType);
-        }
-
-        /**
-         * @brief `as-warn-float-truncation` where a float value implicitly becomes an integer.
-         *
-         * Anchored at the source expression, which is where the compiler anchors it.
-         *
-         * A CONSTANT source is excluded, for the same reason the mismatch rule excludes one: the
-         * compiler folds it and then judges the value, not the type. `const float D = 15.0;
-         * int i = D;` is clean because 15.0 survives the trip exactly, and `const float D = 15.5`
-         * is "Implicit conversion of value is not exact" - a different code, and one that needs
-         * the constant folder. A written literal is the same story: `int i = 2.0f;` is clean and
-         * `int i = 1.5f;` is not.
-         *
-         * This is not a hypothetical. The corpus audit's first run reported 34 findings of the
-         * shape `const float WEAPON_DAMAGE = 15.0; int m_iBulletDamage = WEAPON_DAMAGE;` across
-         * the Sven Co-op weapon scripts, and the compiler is silent on every one of them.
-         */
-        void CheckFloatTruncation(TSNode valueNode,
-                                  const std::string &sourceType,
-                                  const std::string &targetType,
-                                  const Scope *scope,
-                                  DiagnosticContext &ctx,
-                                  std::string_view sourceCode)
-        {
-            if (ts_node_is_null(valueNode))
-            {
-                return;
-            }
-            if (!IsFloatingPointPrimitive(sourceType) || !IsIntegerPrimitive(targetType))
-            {
-                return;
-            }
-            if (IsFoldedConstantOperand(valueNode, scope, ctx, sourceCode))
-            {
-                return;
-            }
-            EmitWarningAtNode(valueNode, ctx, "as-warn-float-truncation", sourceType, targetType);
-        }
-
-        /** @brief Everything one declared type text says that the rules below need to know. */
-        struct DeclaredType
-        {
-            std::string baseName;
-            bool isHandle = false;
-            bool usable = false;  ///< False when the shape is out of scope (array, template, unknown).
-
-            /**
-             * @brief True for `array<T>` and `T[]`, where baseName is the *element* type.
-             *
-             * CleanBaseType answers the element type, which is what the initializer comparisons
-             * below want - `array<int> a = other;` compares element to element. A construction
-             * argument is a different question: `array<PlayerSlide> g(33);` passes 33 to the
-             * container's initial-size constructor, and comparing it against `PlayerSlide` asked
-             * whether an int can become a PlayerSlide. It cannot, so three corpus declarations of
-             * exactly this shape were reported.
-             */
-            bool isTemplateOrArray = false;
-        };
-
-        /** @brief Reads a 'type' node into the shape the conversion rules can act on.
-         *  @note Arrays, templates and anything that does not resolve to a plain class are marked
-         *        unusable: their conversion rules depend on element types this pass does not track. */
-        DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext &ctx, std::string_view sourceCode)
-        {
-            DeclaredType result;
-            if (ts_node_is_null(typeNode))
-            {
-                return result;
-            }
-
-            const std::string raw = NodeText(typeNode, sourceCode);
-            if (raw.empty())
-            {
-                return result;
-            }
-
-            result.isHandle = raw.find('@') != std::string::npos;
-            result.baseName = CleanBaseType(raw);
-            if (result.baseName.empty())
-            {
-                return result;
-            }
-            if (ctx.request.IsRegisteredSymbol(result.baseName))
-            {
-                return result;
-            }
-
-            // The written SHAPE is decided before anything about the base name, and the order
-            // matters. CleanBaseType reduces `bool[]` to `bool`, which is a built-in value type,
-            // so the test below used to claim the declaration first and return with
-            // isTemplateOrArray false - and then `bool[] flags(33);` was read as constructing a
-            // `bool` from 33 rather than sizing an array. It stayed silent only by accident:
-            // `int[] a(33)` and `float[] a(33)` are the same mistake, and `int -> int` and
-            // `int -> float` are convertible, so nothing was reported. Correcting `bool` to be
-            // unconvertible from the numeric types is what made the accident visible, on
-            // `bool[] g_playerGlowEnable(32+1);` in the corpus.
-            if (raw.find('<') != std::string::npos || raw.find('[') != std::string::npos)
-            {
-                result.usable = true;
-                result.isTemplateOrArray = true;
-                return result;
-            }
-
-            if (IsBuiltInValueType(result.baseName, ctx))
-            {
-                result.usable = true;
-                return result;
-            }
-
-            // An enum is not a class, but it is a type this pass can reason about completely: the
-            // members are all declared in the source, nothing converts to it implicitly but itself,
-            // and IsConvertible says so. Left out, `Color c = 1;` was silent while the identical
-            // mistake in a call - `SetMode(1)` - was reported, because OverloadResolver had always
-            // agreed with the compiler.
-            if (ResolvesToEnum(result.baseName, ctx.request.symbolTable))
-            {
-                result.usable = true;
-                return result;
-            }
-
-            const TypeDeclarationInfo declaration = FindTypeDeclaration(result.baseName, ctx.request.symbolTable);
-            if (!declaration.found || !declaration.isClass || declaration.isTemplate)
-            {
-                return result;
-            }
-            if (ResolvesToNonClassDeclaration(result.baseName, ctx.request.symbolTable))
-            {
-                return result;
-            }
-
-            result.usable = true;
-            return result;
-        }
-
-        /** @brief Rule for `T v = expr;` - the implicit conversion route. */
-        void CheckInitializer(TSNode declaratorNode,
-                              const DeclaredType &declared,
-                              const Scope *scope,
-                              DiagnosticContext &ctx,
-                              std::string_view sourceCode)
-        {
-            TSNode valueNode = parser::GetChildByField(declaratorNode, parser::fields::Value);
-            if (ts_node_is_null(valueNode) || NodeType(valueNode) == "initializer_list")
-            {
-                return;
-            }
-
-            const ExpressionType source = ResolveValueType(valueNode, scope, ctx, sourceCode);
-            if (!source.known || source.baseName.empty())
-            {
-                std::string identName = NodeText(valueNode, sourceCode);
-                while (!identName.empty() && isspace(static_cast<unsigned char>(identName.front()))) identName.erase(identName.begin());
-                while (!identName.empty() && isspace(static_cast<unsigned char>(identName.back()))) identName.pop_back();
-
-                if (!identName.empty())
-                {
-                    bool isTypeOrTemplate = false;
-                    ForEachSymbolNamed(identName, ctx.request.symbolTable, [&](const Symbol &s) -> bool
-                    {
-                        if (s.type == SymbolType::Class || s.type == SymbolType::Interface || s.type == SymbolType::Typedef || s.type == SymbolType::Enum)
-                        {
-                            isTypeOrTemplate = true;
-                            return false;
-                        }
-                        return true;
-                    });
-                    if (isTypeOrTemplate)
-                    {
-                        EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", identName, declared.baseName);
-                    }
-                }
-                return;
-            }
-
-            if (!declared.isHandle)
-            {
-                CheckFloatTruncation(valueNode, source.baseName, declared.baseName, scope, ctx, sourceCode);
-            }
-
-            // A handle binds to objects.
-            if (declared.isHandle)
-            {
-                if (source.baseName == "null")
-                {
-                    return;
-                }
-                if (source.isLiteral)
-                {
-                    EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", source.baseName, declared.baseName);
-                    return;
-                }
-
-                if (IsSameType(source.baseName, declared.baseName))
-                {
-                    return;
-                }
-
-                // If declared is a derived class of source, that's an invalid downcast without cast<T>
-                if (ctx.request.symbolTable.HasSymbolAnywhere(source.baseName) && ctx.request.symbolTable.HasSymbolAnywhere(declared.baseName))
-                {
-                    const auto hierarchy = GetInheritedTypeHierarchy(declared.baseName, ctx.request.symbolTable);
-                    if (std::find(hierarchy.begin(), hierarchy.end(), source.baseName) != hierarchy.end())
-                    {
-                        EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", source.baseName + "@", declared.baseName + "@");
-                        return;
-                    }
-                }
-                return;
-            }
-
-            if (IsConvertible(source.baseName, declared.baseName, ctx))
-            {
-                return;
-            }
-
-            EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", source.baseName, declared.baseName);
-        }
-
-        /**
-         * @brief The type `foreach`'s Nth loop variable takes, from the container's own declaration.
-         *
-         * AngelScript drives `foreach` through `opForBegin` / `opForEnd` / `opForNext` and one
-         * `opForValue<N>` per loop variable, so the Nth variable's type is that method's return
-         * type. Reading it back out of the stub is the general rule and needs no per-type knowledge:
-         * `array<T>` declares `const T& opForValue0(uint)` and `uint opForValue1(uint)`, and
-         * `dictionary` declares `const dictionaryValue& opForValue0(...)` and
-         * `const string& opForValue1(...)`, which is exactly what the compiler hands the loop.
-         *
-         * Returns empty when the container declares no such method, which leaves the variable's
-         * written `auto` in place rather than guessing at it.
-         */
-        std::string ForeachValueType(const std::string &containerType,
-                                     uint32_t variableIndex,
-                                     const DiagnosticContext &ctx)
-        {
-            const std::string cleaned = CleanExpressionType(containerType);
-            if (cleaned.empty())
-            {
-                return {};
-            }
-
-            const size_t open = cleaned.find('<');
-            const std::string bare =
-                LastScopeSegment((open == std::string::npos) ? cleaned : cleaned.substr(0, open));
-
-            const TemplateBinding binding = BindTemplateArguments(cleaned, ctx.request.symbolTable);
-            const std::string method = "opForValue" + std::to_string(variableIndex);
-
-            for (const std::string &candidate : GetInheritedTypeHierarchy(bare, ctx.request.symbolTable))
-            {
-                const auto overloads = ctx.request.symbolTable.FindSymbolsPtr(candidate + "::" + method);
-                if (!overloads)
-                {
-                    continue;
-                }
-                for (const Symbol &overload : *overloads)
-                {
-                    if (overload.type != SymbolType::Function ||
-                        !std::holds_alternative<FunctionSignature>(overload.signature))
-                    {
-                        continue;
-                    }
-
-                    std::string returnType = std::get<FunctionSignature>(overload.signature).returnType;
-                    if (returnType.empty() || returnType == "void")
-                    {
-                        continue;
-                    }
-                    if (binding.usable)
-                    {
-                        for (size_t i = 0; i < binding.parameters.size(); ++i)
-                        {
-                            returnType = SubstituteTypeParam(returnType, binding.parameters[i],
-                                                             binding.arguments[i]);
-                        }
-                    }
-                    // `const T&` names the same type as `T` for anything the scope tree does with
-                    // it, and the reference is not part of the variable's identity.
-                    return CleanExpressionType(returnType);
-                }
-            }
-
-            return {};
-        }
-
-        /** @brief Rule for a one-argument construction: `T(expr)` or `T v(expr);`. */
-        void CheckConstruction(TSNode argumentListNode,
-                               const std::string &targetType,
-                               const Scope *scope,
-                               DiagnosticContext &ctx,
-                               std::string_view sourceCode)
-        {
-            // Only single-argument constructions are conversions. Anything else is overload
-            // resolution over a full argument list, which this pass does not attempt.
-            if (ts_node_is_null(argumentListNode) || ts_node_named_child_count(argumentListNode) != 1)
-            {
-                return;
-            }
-
-            TSNode argument = ts_node_named_child(argumentListNode, 0);
-            const ExpressionType source = ResolveValueType(argument, scope, ctx, sourceCode);
-            if (!source.known || source.baseName.empty() || IsSameType(source.baseName, targetType))
-            {
-                return;
-            }
-
-            const SymbolTable &table = ctx.request.symbolTable;
-
-            // The verdict below is "no constructor accepts this", and it is only worth anything
-            // when the constructors are visible. Two kinds of target they are not:
-            //
-            //   - A built-in value type. `string(u)`, `float(i)` - the engine registers these in
-            //     C++ and no stub can express them. CheckDefaultConstructor already bails here for
-            //     the same reason; this one did not, so every `string(count)` in the corpus was
-            //     reported.
-            //   - A name with no declaration in the workspace. `EHandle(x)`, `Vector(x)`,
-            //     `array<float>(33)` - the host registers them, ForEachConstructor finds nothing,
-            //     and "I found no constructor" is indistinguishable from "they are written in C++".
-            //
-            // An enum is neither and stays judged: `Color(1)` has no constructor by design and the
-            // compiler's rule for it is known exactly, which the block further down applies.
-            //
-            // A visible class that declares no constructor is still reported - `class Plain {}`
-            // with `Plain(1)` is an error the compiler agrees with, and that is what separates the
-            // two cases. Together these were the bulk of the 273 corpus findings.
-            if (IsBuiltInValueType(targetType, ctx))
-            {
-                return;
-            }
-            if (!FindTypeDeclaration(targetType, table).found && !ResolvesToEnum(targetType, table))
-            {
-                return;
-            }
-
-            if (AreHierarchyRelated(source.baseName, targetType, table))
-            {
-                return;
-            }
-            if (DeclaresConversionTo(source.baseName, targetType, table, /*implicitOnly=*/false))
-            {
-                return;
-            }
-
-            // A template's constructors are written in terms of its parameters - `weakref<T>` takes
-            // a `T@` - so the argument has to be substituted in before the types can be compared.
-            // Without it every `weakref<Node> w(node);` was reported as "No conversion from 'Node'
-            // to 'weakref<Node>'", because `T` resolves to nothing and nothing is convertible to
-            // it. Anything that cannot be substituted cleanly leaves the check inconclusive.
-            const TemplateBinding binding = BindTemplateArguments(targetType, table);
-            if (binding.isTemplate && !binding.usable)
-            {
-                return;
-            }
-
-            // `Color(1)` is the explicit conversion an enum offers, and it has no constructor
-            // declaring it - the compiler accepts every numeric source (`Color(1.0f)` too) and
-            // rejects the rest ("Can't implicitly convert from 'string' to 'const Color'"). Without
-            // this the ForEachConstructor walk below found nothing and reported the one form that
-            // exists for turning an int into an enum.
-            if (ResolvesToEnum(targetType, table))
-            {
-                if (IsNumericPrimitive(source.baseName) || ResolvesToEnum(source.baseName, table))
-                {
-                    return;
-                }
-                EmitAtNode(argument, ctx, "as-err-no-explicit-conversion", source.baseName, targetType);
-                return;
-            }
-
-            bool constructible = false;
-            ForEachConstructor(targetType, table, [&](const Symbol &sym)
-            {
-                const auto &parameters = sym.GetFunction().parameters;
-                if (!AcceptsSingleArgument(parameters))
-                {
-                    return false;
-                }
-
-                std::string parameterType = SingleArgumentType(parameters);
-                for (size_t i = 0; i < binding.parameters.size(); ++i)
-                {
-                    parameterType = SubstituteTypeParam(parameterType, binding.parameters[i],
-                                                        binding.arguments[i]);
-                }
-
-                if (IsConvertible(source.baseName, parameterType, ctx, 1))
-                {
-                    constructible = true;
-                    return true;
-                }
-                return false;
-            });
-
-            if (!constructible)
-            {
-                EmitAtNode(argument, ctx, "as-err-no-explicit-conversion", source.baseName, targetType);
-            }
-        }
-
-        void CheckDefaultConstructor(TSNode declaratorNode,
-                                     const std::string &typeName,
-                                     DiagnosticContext &ctx)
-        {
-            if (typeName.empty() || IsBuiltInValueType(typeName, ctx))
-            {
-                return;
-            }
-
-            const SymbolTable &table = ctx.request.symbolTable;
-            const TypeDeclarationInfo decl = FindTypeDeclaration(typeName, table);
-            if (!decl.found || !decl.isClass || decl.isTemplate)
-            {
-                return;
-            }
-
-            std::vector<Symbol> constructors;
-            ForEachConstructor(typeName, table, [&](const Symbol &sym)
-            {
-                constructors.push_back(sym);
-                return false;
-            });
-
-            if (constructors.empty())
-            {
-                return;
-            }
-
-            bool hasZeroArg = false;
-            bool zeroArgDeleted = false;
-            for (const auto &ctor : constructors)
-            {
-                const auto &sig = ctor.GetFunction();
-                bool canTakeZero = sig.parameters.empty();
-                if (!canTakeZero)
-                {
-                    canTakeZero = std::all_of(sig.parameters.begin(), sig.parameters.end(),
-                                              [](const ParameterInformation &p) { return !p.defaultValue.empty(); });
-                }
-                if (canTakeZero)
-                {
-                    hasZeroArg = true;
-                    if (sig.modifiers.isDelete)
-                    {
-                        zeroArgDeleted = true;
-                    }
-                    break;
-                }
-            }
-
-            TSNode nameNode = parser::GetChildByField(declaratorNode, parser::fields::Name);
-            TSNode targetNode = ts_node_is_null(nameNode) ? declaratorNode : nameNode;
-
-            if (zeroArgDeleted)
-            {
-                EmitAtNode(targetNode, ctx, "as-err-deleted-method-called", typeName, typeName);
-            }
-            else if (!hasZeroArg)
-            {
-                EmitAtNode(targetNode, ctx, "as-err-no-default-constructor", typeName);
-            }
-        }
-
-        std::optional<Symbol> FindFuncdef(const std::string &name, const SymbolTable &table)
-        {
-            std::optional<Symbol> result;
-            ForEachSymbolNamed(name, table, [&](const Symbol &sym)
-            {
-                if (sym.type == SymbolType::Funcdef)
-                {
-                    result = sym;
-                    return true;
-                }
-                return false;
-            });
-            if (result)
-            {
-                return result;
-            }
-            const std::string bare = LastScopeSegment(name);
-            const auto matches = table.FindTypeSymbolsByShortName(bare);
-            for (const auto &sym : matches)
-            {
-                if (sym.type == SymbolType::Funcdef)
-                {
-                    return sym;
-                }
-            }
-            return result;
-        }
-
-        bool MatchesFuncdefSignature(const FunctionSignature &fn, const FuncdefSignature &fd)
-        {
-            if (CleanBaseType(fn.returnType) != CleanBaseType(fd.returnType))
-            {
-                return false;
-            }
-            if (fn.parameters.size() != fd.parameters.size())
-            {
-                return false;
-            }
-            for (size_t i = 0; i < fn.parameters.size(); ++i)
-            {
-                if (CleanBaseType(fn.parameters[i].typeName) != CleanBaseType(fd.parameters[i].typeName))
-                {
-                    return false;
-                }
-                if (fn.parameters[i].modifier != fd.parameters[i].modifier)
-                {
-                    return false;
-                }
-                if (fn.parameters[i].isReference != fd.parameters[i].isReference)
-                {
-                    return false;
-                }
-                if (fn.parameters[i].isHandle != fd.parameters[i].isHandle)
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        // --- Lambda against its target funcdef ------------------------------------------------
-        //
-        // A lambda takes its parameter types from the funcdef it is assigned to, so it may leave
-        // them out. What it writes, though, has to match exactly - the compiler compares the
-        // written signature, it does not convert it. Measured against angelscript_oracle, and the
-        // exactness is the surprising half:
-        //
-        //     funcdef void CB(const string &in);
-        //     CB@ cb = function(s) { };                    // accepted, type comes from CB
-        //     CB@ cb = function(const string &in s) { };    // accepted, written and identical
-        //     CB@ cb = function(string s) { };              // REJECTED - no const, no &in
-        //     CB@ cb = function(string &in s) { };          // REJECTED - no const
-        //     funcdef void CB(int);
-        //     CB@ cb = function(uint a) { };                // REJECTED - int does not widen here
-        //
-        // ARITY is a hard equality even when every parameter is untyped, and a funcdef's default
-        // argument does not relax it: `funcdef void CB(int a = 1)` still rejects `function()`.
-        // That is the whole of what this rule can check without risking a false positive, and it
-        // is also the mistake real code actually makes.
-        //
-        // The TYPE NAME is another matter, because the compiler resolves it and this rule only
-        // reads it. All of these are ACCEPTED, and a string comparison would report every one:
-        //
-        //     typedef float real;  funcdef void CB(real);   function(float a)   // typedef
-        //     funcdef void CB(array<int>@);                 function(int[]@ a)  // two spellings
-        //     namespace N { class Foo{} funcdef void CB(Foo@); }
-        //                                                   function(N::Foo@ f) // qualification
-        //
-        // So the name is compared by its last `::` segment, and not at all when either side names
-        // a typedef - the one alias no spelling comparison can see through. `array<int>` and
-        // `int[]` need no case of their own: CleanBaseType reduces both to the element type.
-        //
-        // The DECORATIONS - `const`, `&`, the in/out/inout modifier and `@` - are compared
-        // whatever the type name is, because none of them can be hidden by a spelling: AngelScript
-        // typedefs alias primitives only (see as-err-typedef-non-primitive), and a namespace
-        // qualifies a name without changing whether it is a handle.
-
-        void CheckFuncdefAssignment(TSNode targetNode,
-                                    const FuncdefSignature &funcdefSig,
-                                    TSNode valueNode,
-                                    const Scope * /*scope*/,
-                                    DiagnosticContext &ctx,
-                                    std::string_view sourceCode)
-        {
-            if (ts_node_is_null(valueNode))
-            {
-                return;
-            }
-
-            TSNode actualVal = valueNode;
-            if (std::string_view(NodeType(valueNode)) == "unary_expression")
-            {
-                TSNode op = parser::GetChildByField(valueNode, parser::fields::Operator);
-                if (!ts_node_is_null(op) && NodeText(op, sourceCode) == "@")
-                {
-                    TSNode operand = parser::GetChildByField(valueNode, parser::fields::Operand);
-                    if (!ts_node_is_null(operand))
-                    {
-                        actualVal = operand;
-                    }
-                }
-            }
-
-            const std::string_view valueType = NodeType(actualVal);
-            if (valueType == node_types::LambdaExpression)
-            {
-                // A lambda has no symbol to look up, so the name search below would find nothing
-                // and return in silence - which is what it did before this branch existed.
-                TSNode listNode = parser::GetChildByField(actualVal, parser::fields::Parameters);
-                if (ts_node_is_null(listNode))
-                {
-                    return;
-                }
-                if (LambdaContradictsFuncdef(ReadLambdaParameters(listNode, sourceCode), funcdefSig,
-                                             ctx.request.symbolTable))
-                {
-                    EmitAtNode(targetNode, ctx, "as-err-signature-mismatch-func-handle");
-                }
-                return;
-            }
-
-            std::string funcName = NodeText(actualVal, sourceCode);
-            while (!funcName.empty() && isspace(static_cast<unsigned char>(funcName.front()))) funcName.erase(funcName.begin());
-            while (!funcName.empty() && isspace(static_cast<unsigned char>(funcName.back()))) funcName.pop_back();
-
-            if (funcName.empty() || funcName == "null")
-            {
-                return;
-            }
-
-            std::vector<Symbol> candidates;
-            auto found = ctx.request.symbolTable.FindSymbolsPtr(funcName);
-            if (found)
-            {
-                for (const auto &s : *found)
-                {
-                    if (s.type == SymbolType::Function)
-                    {
-                        candidates.push_back(s);
-                    }
-                }
-            }
-            if (candidates.empty())
-            {
-                std::string bare = LastScopeSegment(funcName);
-                auto all = ctx.request.symbolTable.FindSymbolsPtr(bare);
-                if (all)
-                {
-                    for (const auto &s : *all)
-                    {
-                        if (s.type == SymbolType::Function)
-                        {
-                            candidates.push_back(s);
-                        }
-                    }
-                }
-            }
-
-            if (candidates.empty())
-            {
-                return;
-            }
-
-            bool matched = false;
-            for (const auto &cand : candidates)
-            {
-                if (MatchesFuncdefSignature(cand.GetFunction(), funcdefSig))
-                {
-                    matched = true;
-                    break;
-                }
-            }
-
-            if (!matched)
-            {
-                EmitAtNode(targetNode, ctx, "as-err-signature-mismatch-func-handle");
-            }
-        }
-
-        void CheckConstructorDelegation(TSNode funcNode,
-                                        DiagnosticContext &ctx,
-                                        std::string_view sourceCode)
-        {
-            TSNode parent = ts_node_parent(funcNode);
-            while (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) != "class_declaration")
-            {
-                parent = ts_node_parent(parent);
-            }
-            if (ts_node_is_null(parent))
-            {
-                return;
-            }
-
-            TSNode classNameNode = parser::GetChildByField(parent, parser::fields::Name);
-            if (ts_node_is_null(classNameNode))
-            {
-                return;
-            }
-            std::string className = NodeText(classNameNode, sourceCode);
-
-            TSNode funcNameNode = parser::GetChildByField(funcNode, parser::fields::Name);
-            if (ts_node_is_null(funcNameNode) || NodeText(funcNameNode, sourceCode) != className)
-            {
-                return;
-            }
-
-            TSNode bodyNode = parser::GetChildByField(funcNode, parser::fields::Body);
-            if (ts_node_is_null(bodyNode))
-            {
-                return;
-            }
-
-            const uint32_t stmtCount = ts_node_named_child_count(bodyNode);
-            for (uint32_t i = 0; i < stmtCount; ++i)
-            {
-                TSNode stmt = ts_node_named_child(bodyNode, i);
-                if (std::string_view(ts_node_type(stmt)) != "expression_statement")
-                {
-                    continue;
-                }
-
-                if (ts_node_named_child_count(stmt) == 0)
-                {
-                    continue;
-                }
-
-                TSNode expr = ts_node_named_child(stmt, 0);
-                std::string_view exprType = ts_node_type(expr);
-                if (exprType == node_types::CallExpression || exprType == "construct_call_expression")
-                {
-                    TSNode callee = parser::GetChildByField(expr, parser::fields::Function);
-                    if (ts_node_is_null(callee))
-                    {
-                        callee = parser::GetChildByField(expr, parser::fields::Type);
-                    }
-                    if (ts_node_is_null(callee) && ts_node_child_count(expr) > 0)
-                    {
-                        callee = ts_node_child(expr, 0);
-                    }
-                    if (!ts_node_is_null(callee) && NodeText(callee, sourceCode) == className)
-                    {
-                        EmitAtNode(expr, ctx, "as-err-constructor-delegation-disallowed");
-                    }
-                }
-            }
-        }
-
-        /** @brief Rule for `cast<T>(expr)` - the reinterpreting route. */
-        void CheckCast(TSNode castNode,
-                       const Scope *scope,
-                       DiagnosticContext &ctx,
-                       std::string_view sourceCode)
-        {
-            const std::string targetName = CleanBaseType(
-                NodeText(parser::GetChildByField(castNode, parser::fields::Type), sourceCode));
-
-            TSNode valueNode = parser::GetChildByField(castNode, parser::fields::Value);
-            if (ts_node_is_null(valueNode) || targetName.empty())
-            {
-                return;
-            }
-
-            const SymbolTable &table = ctx.request.symbolTable;
-
-            // A primitive has no declaration to find, and requiring one is what kept this rule from
-            // ever reporting the cases the compiler rejects - every one of them has a primitive on
-            // a side. Checked first, so the visibility guards below apply only to named types.
-            const bool targetIsScalar = IsScalarCastTarget(targetName, table);
-
-            // Unlike the other two rules the target may legitimately be an interface here, so the
-            // class-only ReadDeclaredType is not what decides visibility.
-            if (!targetIsScalar && !FindTypeDeclaration(targetName, table).found)
-            {
-                return;
-            }
-
-            const ExpressionType source = ResolveValueType(valueNode, scope, ctx, sourceCode);
-            if (!source.known || source.baseName.empty() || IsSameType(source.baseName, targetName))
-            {
-                return;
-            }
-
-            const bool sourceIsScalar = IsScalarCastTarget(source.baseName, table);
-            if (!sourceIsScalar && !FindTypeDeclaration(source.baseName, table).found)
-            {
-                return;
-            }
-            if (ctx.request.IsRegisteredSymbol(source.baseName) || ctx.request.IsRegisteredSymbol(targetName))
-            {
-                return;
-            }
-
-            if (AreHierarchyRelated(source.baseName, targetName, table))
-            {
-                return;
-            }
-
-            // Between two reference types `cast<>` is never a compile-time error, whatever their
-            // hierarchies say. It is a *dynamic* cast: it answers null at runtime when the object
-            // is not of that type, which is the entire reason the language spells it this way
-            // rather than with a conversion. Measured, all four accepted:
-            //
-            //     class A {} class B {}  A@ g();
-            //     B@ b = cast<B@>(g());          // two unrelated classes
-            //     I@ i = cast<I@>(g());          // class to an interface it does not declare
-            //     B@ b = cast<B@>(iface);        // interface to a class that does not declare it
-            //     J@ j = cast<J@>(iface);        // one interface to another
-            //
-            // This rule used to report the first three, and a unit test asserted the first as
-            // correct behaviour. Found against a real Sven Co-op plugin, where
-            // `cast<CIns2GL@>(CastToScriptClass(pEntity))` is how the game hands a script its own
-            // object back: seven errors on code that runs.
-            //
-            // What the compiler rejects is the other half, and it rejects it uniformly - there is
-            // no legal cast<> with a primitive or an enum on either side, not even cast<int>(n):
-            //
-            //     cast<int>(obj)  cast<int>(n)  cast<int>(enumValue)  cast<E>(n)
-            //         Illegal target type for reference cast
-            //     cast<A@>(n)
-            //         No conversion from 'int' to 'A@' available
-            //
-            // So that is now the whole of the rule. Before this it had no true positives at all:
-            // the reference cases it reported are legal, and the scalar cases it could have caught
-            // were leaving early for want of a type declaration.
-            if (!sourceIsScalar && !targetIsScalar)
-            {
-                return;
-            }
-
-            if (DeclaresAnyCastOperator(source.baseName, table) || DeclaresAnyCastOperator(targetName, table))
-            {
-                return;
-            }
-
-            EmitAtNode(castNode, ctx, "as-err-invalid-cast", source.baseName, targetName);
-        }
-
-        /**
-         * @brief The bool conversion operator a class declares, or nullptr when it declares none.
-         *
-         * Returns nullptr for a type whose declaration is not visible, which is the load-bearing
-         * half. A workspace's host types are registered in C++ and appear in no stub this analyzer
-         * can read; assuming such a type has no bool conversion would report every legal use of one.
-         * So the rule speaks only about classes it can actually see the members of.
-         *
-         * `opImplConv` is preferred over `opConv` when a class declares both, because that is the
-         * one the engine reaches for first and so the one the quick fix should name.
-         */
-
-
-        const std::string *BoolConversionOperator(const std::string &typeName, const SymbolTable &table)
-        {
-            if (typeName.empty())
-                return nullptr;
-
-            static const std::string implicitName = "opImplConv";
-            static const std::string explicitName = "opConv";
-
-            bool typeIsVisible = false;
-            bool hasImplicit = false;
-            bool hasExplicit = false;
-
-            auto checkClassMethods = [&](const std::string &cls)
-            {
-                if (auto ptr = table.FindSymbolsPtr(cls + "::" + implicitName))
-                {
-                    for (const auto &sym : *ptr)
-                    {
-                        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
-                        {
-                            if (CleanBaseType(sym.GetFunction().returnType) == "bool")
-                            {
-                                hasImplicit = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (auto ptr = table.FindSymbolsPtr(cls + "::" + explicitName))
-                {
-                    for (const auto &sym : *ptr)
-                    {
-                        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
-                        {
-                            if (CleanBaseType(sym.GetFunction().returnType) == "bool")
-                            {
-                                hasExplicit = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            };
-
-            if (auto ptr = table.FindSymbolsPtr(typeName))
-            {
-                for (const auto &sym : *ptr)
-                {
-                    if (sym.type == SymbolType::Class)
-                    {
-                        typeIsVisible = true;
-                        break;
-                    }
-                }
-            }
-            if (typeIsVisible)
-            {
-                checkClassMethods(typeName);
-            }
-            else
-            {
-                auto shortTypes = table.FindTypeSymbolsByShortName(typeName);
-                for (const auto &sym : shortTypes)
-                {
-                    if (sym.type == SymbolType::Class)
-                    {
-                        typeIsVisible = true;
-                        const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                        checkClassMethods(qName);
-                        if (hasImplicit || hasExplicit)
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!typeIsVisible)
-                return nullptr;
-
-            if (hasImplicit)
-                return &implicitName;
-            if (hasExplicit)
-                return &explicitName;
-
-            // A visible class with no bool conversion at all. The compiler rejects that too, but
-            // with a different message and for a different reason, and this rule is about the one
-            // case where an engine setting decides the answer.
-            return nullptr;
-        }
-
-        /**
-         * @brief The sub-expressions a condition actually evaluates for truth.
-         *
-         * `if (h)` is one operand; `if (h && other)` is two, and `if (!h)` is one behind a negation.
-         * Collecting them handles compound conditions like `if (h && true)` - resolving the
-         * type of the whole condition there answers `bool`, because `&&` yields one, and the class
-         * that cannot convert sits underneath.
-         *
-         * Only the logical operators recurse. `a == b` also yields a bool but its operands are
-         * compared, not converted to bool, and the engine's rules for that are a different question.
-         */
-        void CollectBooleanOperands(TSNode expr, std::vector<TSNode> &operands, int depth = 0)
-        {
-            if (ts_node_is_null(expr) || depth > k_maxAstDepth)
-                return;
-
-            const std::string_view type = NodeType(expr);
-
-            if (type == "binary_expression")
-            {
-                const TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
-                const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
-                if (opText == "&&" || opText == "and" || opText == "||" || opText == "or" ||
-                    opText == "^^" || opText == "xor")
-                {
-                    CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Left), operands, depth + 1);
-                    CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Right), operands, depth + 1);
-                    return;
-                }
-            }
-            else if (type == "unary_expression")
-            {
-                const TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
-                const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
-                if (opText == "!" || opText == "not")
-                {
-                    CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Operand), operands, depth + 1);
-                    return;
-                }
-            }
-
-            operands.push_back(expr);
-        }
-
-        void ProcessNode(TSNode node, const TypeConversionCheckRequest &request, DiagnosticContext &ctx)
-        {
-            const std::string_view nodeType = NodeType(node);
-
-            // Resolved lazily: only the three rules below need the scope walk, and paying for it on
-            // every node of the tree costs more than the rules themselves.
-            const Scope *scope = nullptr;
-            bool scopeResolved = false;
-            const auto scopeAt = [&]() -> const Scope *
-            {
-                if (!scopeResolved)
-                {
-                    const TSPoint start = ts_node_start_point(node);
-                    scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
-                    scopeResolved = true;
-                }
-                return scope;
-            };
-
-            // A class standing where a bool is expected.
-            //
-            // Measured against angelscript_oracle: under asEP_BOOL_CONVERSION_MODE 0, the engine's
-            // own default, `if (h)` on a script class is rejected - "Expression must be of boolean
-            // type, instead found 'H&'" - whether the class declares opImplConv, opConv, or both.
-            // Under mode 1 both forms are accepted.
-            //
-            // Narrower than it first looks, and the earlier wording here claimed more than was
-            // measured. The SDK's own comment says mode 0 still lets a **value type** convert via
-            // opImplConv, and every probe behind this rule used a script class - which in
-            // AngelScript is a reference type, so they measured the reference half only.
-            //
-            // It does not change what this rule does, because it cannot: the only annotation a stub
-            // can carry is @listpattern, so nothing in a predefined file says "this type is a value
-            // type". A registered value type with opImplConv would therefore be hinted about on
-            // legal code. Acceptable only because this is a Hint and off by default; if it ever
-            // becomes anything louder, a @valuetype marker has to exist first.
-            //
-            // A Hint and opt-in, not an error, because the analyzer cannot see the host's engine
-            // setup. A host running mode 1 makes this code legal, and an error there would be a
-            // false positive on working code - which is the one thing this project does not trade.
-            // The condition is worth looking at whatever the settings say. Two rules read it: the
-            // opt-in hint about a class that would need an explicit conversion, and - always on -
-            // the plain fact that a number is not a condition. Measured, and mode-independent:
-            //
-            //     if (x) / while (x) / for (; x; ) / do while (x)   with an int or a float
-            //         Expression must be of boolean type, instead found 'int'
-            //     bool b = x;
-            //         Can't implicitly convert from 'int' to 'bool'.
-            //
-            // AngelScript has no numeric-to-bool conversion at all, so asEP_BOOL_CONVERSION_MODE -
-            // which decides whether a *class* may convert - does not reach this.
-            if (nodeType == "if_statement" || nodeType == "while_statement" ||
-                nodeType == "do_while_statement" || nodeType == "for_statement" ||
-                nodeType == "ternary_expression")
-            {
-                // `for` and the ternary were missing, and they are not a guess either: `for (; c; )`
-                // and `c ? 1 : 2` on a class declaring opImplConv are both rejected under mode 0
-                // and both accepted under mode 1, exactly as `if` and `while` are. Five probes,
-                // each run under both settings.
-                //
-                // Two shapes of node, two ways to reach the condition. `for` and the ternary name
-                // the field; if/while/do do not - see BuiltQueries.h - so there the condition is
-                // the first named child, or the second for do/while, where the body comes first.
-                TSNode condition{};
-                if (nodeType == "for_statement" || nodeType == "ternary_expression")
-                {
-                    condition = parser::GetChildByField(node, parser::fields::Condition);
-
-                    // `for`'s condition field holds an *expression_statement*, not the expression -
-                    // grammar.js declares it as `choice($.expression_statement, ";")`, the `;` being
-                    // the empty `for (;;)`. Handing the wrapper straight to CollectBooleanOperands
-                    // found nothing and the rule stayed silent on every `for` in every file, which
-                    // is exactly how it looked when the field name was simply wrong.
-                    if (!ts_node_is_null(condition) &&
-                        std::string_view(ts_node_type(condition)) == "expression_statement")
-                    {
-                        condition = ts_node_named_child(condition, 0);
-                    }
-
-                    if (ts_node_is_null(condition) && nodeType == "ternary_expression")
-                        condition = ts_node_named_child(node, 0);
-                }
-                else
-                {
-                    condition = ts_node_named_child(node, nodeType == "do_while_statement" ? 1 : 0);
-                }
-
-                if (!ts_node_is_null(condition))
-                {
-                    // Each operand the condition evaluates for truth, not the condition as a whole:
-                    // `if (h && true)` resolves to bool at the top because `&&` yields one, and the
-                    // class that cannot convert is underneath it.
-                    std::vector<TSNode> operands;
-                    CollectBooleanOperands(condition, operands);
-
-                    for (const TSNode &operand : operands)
-                    {
-                        const std::string operandType = CleanBaseType(ResolveExpressionType(
-                            operand, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
-
-                        if (operandType.empty() || operandType == "auto" || operandType == "void")
-                        {
-                            continue;
-                        }
-
-                        const bool isKnown = parser::primitives::IsNumeric(operandType) ||
-                                             operandType == "string" ||
-                                             ctx.request.symbolTable.HasSymbolAnywhere(operandType);
-
-                        if (isKnown && !IsTruthyCondition(operandType, ctx.request.symbolTable))
-                        {
-                            const TSPoint start = ts_node_start_point(operand);
-                            const TSPoint end = ts_node_end_point(operand);
-                            ctx.EmitAtRange(start.row, start.column, end.row, end.column,
-                                            "as-err-condition-not-boolean", operandType);
-                            continue;
-                        }
-
-                        if (!ctx.request.diagnostics || !ctx.request.diagnostics->reportBoolConversion ||
-                            ctx.request.BoolConversionMode() != 0)
-                        {
-                            continue;
-                        }
-
-                        // Silent unless fully visible. A type this analyzer cannot find the
-                        // declaration of is assumed engine-registered, and an engine-registered type
-                        // may convert to bool by a route no stub records.
-                        if (const std::string *conversion = BoolConversionOperator(operandType, ctx.request.symbolTable))
-                        {
-                            const TSPoint start = ts_node_start_point(operand);
-                            const TSPoint end = ts_node_end_point(operand);
-                            ctx.EmitAtRange(start.row, start.column, end.row, end.column,
-                                            "as-hint-bool-conversion", operandType, *conversion,
-                                            DiagnosticSeverity::Hint);
-                        }
-                    }
-                }
-            }
-
-            if (nodeType == "ternary_expression")
-            {
-                TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
-                TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
-                if (!ts_node_is_null(consequence) && !ts_node_is_null(alternative))
-                {
-                    const std::string t1 = ResolveExpressionType(
-                        consequence, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
-                    const std::string t2 = ResolveExpressionType(
-                        alternative, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
-
-                    const std::string clean1 = CanonicalizeType(CleanExpressionType(t1));
-                    const std::string clean2 = CanonicalizeType(CleanExpressionType(t2));
-
-                    if (!clean1.empty() && !clean2.empty() &&
-                        clean1 != "auto" && clean2 != "auto" &&
-                        clean1 != "void" && clean2 != "void")
-                    {
-                        bool isStringMismatch = (IsStringType(clean1, ctx) != IsStringType(clean2, ctx));
-                        bool isEnumMismatch = ResolvesToEnum(clean1, ctx.request.symbolTable) &&
-                                              ResolvesToEnum(clean2, ctx.request.symbolTable) &&
-                                              clean1 != clean2;
-                        if (isStringMismatch || isEnumMismatch || (!IsConvertible(clean1, clean2, ctx) && !IsConvertible(clean2, clean1, ctx)))
-                        {
-                            EmitAtNode(alternative, ctx, "as-err-no-implicit-conversion", clean2, clean1);
-                        }
-                    }
-                }
-            }
-
-            if (nodeType == "expression_statement")
-            {
-                TSNode expr = ts_node_named_child(node, 0);
-                if (!ts_node_is_null(expr))
-                {
-                    std::string dataTypeName;
-                    if (IsBareDataType(expr, scopeAt(), ctx.request.symbolTable, request.sourceCode, dataTypeName))
-                    {
-                        EmitAtNode(expr, ctx, diagnostics::codes::ExpressionIsDataType, dataTypeName);
-                    }
-                }
-            }
-
-
-            // `foreach (auto value : container)` writes `auto` and nothing else, so without this
-            // the loop variable reached every consumer typeless: no hover, no completion after
-            // `value.`, nothing for the expression resolver behind the access and const passes.
-            // Same guard and same write-back as the `auto` inference below - see the comment there
-            // for why mutableScopeRoot is what makes touching the scope tree sound.
-            if (nodeType == "foreach_statement")
-            {
-                TSNode collection = parser::GetChildByField(node, parser::fields::Collection);
-                if (!ts_node_is_null(collection))
-                {
-                    const std::string containerType = ResolveExpressionType(
-                        collection, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
-
-                    // A primitive can never be iterated: `foreach` needs opForBegin/opForEnd/
-                    // opForNext/opForValue, and nothing can register those on `int`. The real
-                    // compiler answers this with "Type 'int' is not valid type for foreach loops".
-                    //
-                    // Only primitives are reported, for the usual reason - a class that declares no
-                    // opFor* here may well have them registered in C++ where no stub records it, and
-                    // reporting that would be a false positive on working code.
-                    const std::string containerBase = CleanExpressionType(containerType);
-                    if (IsCorePrimitive(containerBase) && containerBase != "auto" && containerBase != "void")
-                    {
-                        EmitAtNode(collection, ctx, "as-err-invalid-foreach-container", containerBase);
-                    }
-
-                    // The write-back below is the only part that needs an unpublished tree; the
-                    // diagnostic above is a plain reading of the source and is owed to the user
-                    // whether or not this caller owns the scope tree exclusively.
-                    if (!containerType.empty() && request.mutableScopeRoot)
-                    {
-                        uint32_t variableIndex = 0;
-                        const uint32_t childCount = ts_node_named_child_count(node);
-                        for (uint32_t i = 0; i < childCount; ++i)
-                        {
-                            TSNode child = ts_node_named_child(node, i);
-                            if (NodeType(child) != "foreach_variable")
-                            {
-                                continue;
-                            }
-
-                            TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
-                            const std::string valueType = ForeachValueType(containerType, variableIndex, ctx);
-                            ++variableIndex;
-
-                            if (ts_node_is_null(nameNode) || valueType.empty())
-                            {
-                                continue;
-                            }
-
-                            // The body's scope is where the variable lives, so it is resolved from
-                            // the name's own position rather than the statement's.
-                            const TSPoint namePoint = ts_node_start_point(nameNode);
-                            const Scope *bodyScope = FindEnclosingScope(request.scopeRoot, namePoint.row, namePoint.column);
-                            const LocalDefinition *def =
-                                ResolveInScope(bodyScope ? bodyScope : scopeAt(),
-                                               NodeText(nameNode, request.sourceCode));
-
-                            if (def && (def->typeName == "auto" || def->typeName == "auto@"))
-                            {
-                                const_cast<LocalDefinition *>(def)->typeName = valueType;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (nodeType == "variable_declaration")
-            {
-                TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
-                if (ts_node_is_null(typeNode))
-                {
-                    typeNode = parser::GetChildByField(node, parser::fields::Type);
-                }
-
-                std::string rawType = CleanBaseType(NodeText(typeNode, request.sourceCode));
-                if (rawType == "auto")
-                {
-                    for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
-                    {
-                        TSNode child = ts_node_named_child(node, i);
-                        if (NodeType(child) != "variable_declarator")
-                        {
-                            continue;
-                        }
-
-                        TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
-                        std::string varName = NodeText(nameNode, request.sourceCode);
-
-                        TSNode valueNode = parser::GetChildByField(child, parser::fields::Value);
-                        if (ts_node_is_null(valueNode))
-                        {
-                            uint32_t childCount = ts_node_child_count(child);
-                            bool foundEq = false;
-                            for (uint32_t c = 0; c < childCount; ++c)
-                            {
-                                TSNode ch = ts_node_child(child, c);
-                                if (foundEq)
-                                {
-                                    valueNode = ch;
-                                    break;
-                                }
-                                if (NodeText(ch, request.sourceCode) == "=")
-                                {
-                                    foundEq = true;
-                                }
-                            }
-                        }
-
-                        if (ts_node_is_null(valueNode))
-                        {
-                            EmitAtNode(child, ctx, "as-err-auto-requires-initializer");
-                            continue;
-                        }
-
-                        // Check cyclic auto dependency (e.g. auto invalid2 = invalid2 + 1)
-                        std::string valueText = NodeText(valueNode, request.sourceCode);
-                        bool isCyclic = false;
-                        if (!varName.empty())
-                        {
-                            size_t pos = 0;
-                            while ((pos = valueText.find(varName, pos)) != std::string::npos)
-                            {
-                                bool leftBoundary = (pos == 0 || (!isalnum(static_cast<unsigned char>(valueText[pos - 1])) && valueText[pos - 1] != '_'));
-                                bool rightBoundary = (pos + varName.size() >= valueText.size() || (!isalnum(static_cast<unsigned char>(valueText[pos + varName.size()])) && valueText[pos + varName.size()] != '_'));
-                                if (leftBoundary && rightBoundary)
-                                {
-                                    isCyclic = true;
-                                    break;
-                                }
-                                pos += varName.size();
-                            }
-                        }
-
-                        if (isCyclic)
-                        {
-                            EmitAtNode(valueNode, ctx, "as-err-cyclic-auto-dependency", varName);
-                            continue;
-                        }
-
-                        std::string rhsType = ResolveExpressionType(valueNode, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
-                        if (rhsType == "void")
-                        {
-                            EmitAtNode(valueNode, ctx, "as-err-cannot-infer-void");
-                        }
-                        else if (rhsType == "null")
-                        {
-                            EmitAtNode(valueNode, ctx, "as-err-cannot-infer-null");
-                        }
-                        // Writing the deduced type back is what lets hover, completion and the
-                        // other checkers see `auto` as its concrete type. It is guarded on
-                        // mutableScopeRoot because it is only sound on a tree the caller has not
-                        // published yet: doing it unconditionally meant the analysis thread wrote
-                        // this std::string while the message loop read it for a hover.
-                        else if (!rhsType.empty() && request.mutableScopeRoot && scopeAt())
-                        {
-                            const LocalDefinition *def = ResolveInScope(scopeAt(), varName);
-                            if (def && (def->typeName == "auto" || def->typeName == "auto@"))
-                            {
-                                // Sound only under the guard above: mutableScopeRoot is the caller
-                                // asserting it owns this exact tree exclusively, so the constness
-                                // here is incidental rather than a shared-state guarantee.
-                                const_cast<LocalDefinition *>(def)->typeName = rhsType;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    const std::string fullType = NodeText(typeNode, request.sourceCode);
-                    const std::string baseType = CleanBaseType(fullType);
-                    auto funcdefSym = FindFuncdef(baseType, ctx.request.symbolTable);
-                    if (funcdefSym)
-                    {
-                        for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
-                        {
-                            TSNode child = ts_node_named_child(node, i);
-                            if (NodeType(child) != "variable_declarator")
-                            {
-                                continue;
-                            }
-                            TSNode valNode = parser::GetChildByField(child, parser::fields::Value);
-                            CheckFuncdefAssignment(child, funcdefSym->GetFuncdef(), valNode, scopeAt(), ctx, request.sourceCode);
-                        }
-                    }
-
-                    const DeclaredType declared = ReadDeclaredType(typeNode, ctx, request.sourceCode);
-                    if (declared.usable && !IsMixinClass(declared.baseName, ctx.request.symbolTable))
-                    {
-                        for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
-                        {
-                            TSNode child = ts_node_named_child(node, i);
-                            if (NodeType(child) != "variable_declarator")
-                            {
-                                continue;
-                            }
-
-                            CheckInitializer(child, declared, scopeAt(), ctx, request.sourceCode);
-
-                            if (!declared.isHandle)
-                            {
-                                NonInstantiableKind nonInst = ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable);
-                                if (nonInst == NonInstantiableKind::Abstract)
-                                {
-                                    EmitAtNode(child, ctx, "as-err-abstract-instantiated", declared.baseName, declared.baseName);
-                                }
-                                else
-                                {
-                                    TSNode argsNode = parser::GetChildByField(child, parser::fields::Arguments);
-                                    TSNode valNode = parser::GetChildByField(child, parser::fields::Value);
-                                    if (ts_node_is_null(argsNode) && ts_node_is_null(valNode))
-                                    {
-                                        CheckDefaultConstructor(child, declared.baseName, ctx);
-                                    }
-                                    else if (!ts_node_is_null(argsNode) && !declared.isTemplateOrArray)
-                                    {
-                                        // Skipped for a template: the argument belongs to the
-                                        // container's constructor and declared.baseName is the
-                                        // element type, so this would ask whether 33 can become a
-                                        // PlayerSlide. The container's own constructors are the
-                                        // engine's - see the visibility guard in CheckConstruction.
-                                        CheckConstruction(argsNode, declared.baseName, scopeAt(), ctx, request.sourceCode);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            else if (nodeType == "assignment_expression")
-            {
-                TSNode left = parser::GetChildByField(node, parser::fields::Left);
-                TSNode right = parser::GetChildByField(node, parser::fields::Right);
-                TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
-                std::string opText = NodeText(opNode, request.sourceCode);
-                if (!ts_node_is_null(left) && !ts_node_is_null(right))
-                {
-                    // Property access checks
-                    std::string_view leftNodeType = NodeType(left);
-                    if (leftNodeType == "index_expression")
-                    {
-                        TSNode arrayNode = parser::GetChildByField(left, parser::fields::Object);
-                        if (ts_node_is_null(arrayNode) && ts_node_named_child_count(left) > 0)
-                        {
-                            arrayNode = ts_node_named_child(left, 0);
-                        }
-                        PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
-                        if (pInfo.isProperty && pInfo.isIndexed && opText != "=")
-                        {
-                            EmitAtNode(node, ctx, "as-err-compound-assign-on-indexed-prop", pInfo.propName);
-                        }
-                    }
-                    else
-                    {
-                        PropertyAccessInfo pInfo = InspectPropertyAccess(left, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
-                        if (pInfo.isProperty)
-                        {
-                            if (!pInfo.hasSet && pInfo.hasGet)
-                            {
-                                EmitAtNode(left, ctx, "as-err-read-only-property", pInfo.propName);
-                            }
-                            else if (opText != "=")
-                            {
-                                if (pInfo.receiverType.find('@') == std::string::npos)
-                                {
-                                    EmitAtNode(node, ctx, "as-err-compound-assign-on-value-prop", pInfo.propName);
-                                }
-                            }
-                        }
-                    }
-
-                    std::string leftType = ResolveExpressionType(left, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
-                    std::string rightType = ResolveExpressionType(right, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
-                    std::string cleanLeft = CleanBaseType(leftType);
-                    std::string cleanRight = CleanBaseType(rightType);
-
-                    // Covers `i = f;` and `i += f;` alike - the compiler warns on both, and a
-                    // compound assignment reaches here with the same left and right types.
-                    CheckFloatTruncation(right, cleanRight, cleanLeft, scopeAt(), ctx, request.sourceCode);
-
-                    auto leftFuncdef = FindFuncdef(cleanLeft, ctx.request.symbolTable);
-                    if (leftFuncdef)
-                    {
-                        CheckFuncdefAssignment(node, leftFuncdef->GetFuncdef(), right, scopeAt(), ctx, request.sourceCode);
-                    }
-
-                    // Handle assignment const qualifier discard check
-                    bool isHandleAssignment = false;
-                    TSNode actualLeft = left;
-                    TSNode actualRight = right;
-                    if (std::string_view(NodeType(left)) == "unary_expression")
-                    {
-                        TSNode op = parser::GetChildByField(left, parser::fields::Operator);
-                        if (!ts_node_is_null(op) && NodeText(op, request.sourceCode) == "@")
-                        {
-                            isHandleAssignment = true;
-                            TSNode operand = parser::GetChildByField(left, parser::fields::Operand);
-                            if (!ts_node_is_null(operand))
-                            {
-                                actualLeft = operand;
-                            }
-                        }
-                    }
-                    if (std::string_view(NodeType(right)) == "unary_expression")
-                    {
-                        TSNode op = parser::GetChildByField(right, parser::fields::Operator);
-                        if (!ts_node_is_null(op) && NodeText(op, request.sourceCode) == "@")
-                        {
-                            TSNode operand = parser::GetChildByField(right, parser::fields::Operand);
-                            if (!ts_node_is_null(operand))
-                            {
-                                actualRight = operand;
-                            }
-                        }
-                    }
-
-                    if (isHandleAssignment)
-                    {
-                        auto getFullType = [&](TSNode n) -> std::string
-                        {
-                            std::string name = NodeText(n, request.sourceCode);
-                            if (scopeAt())
-                            {
-                                if (const auto *def = ResolveInScope(scopeAt(), LastScopeSegment(name)))
-                                {
-                                    return def->typeName;
-                                }
-                            }
-                            if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(name))
-                            {
-                                for (const auto &s : *syms)
-                                {
-                                    if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
-                                    {
-                                        return s.GetVariable().typeName;
-                                    }
-                                }
-                            }
-                            return "";
-                        };
-
-                        std::string leftFull = getFullType(actualLeft);
-                        std::string rightFull = getFullType(actualRight);
-                        bool rightConstTarget = rightFull.starts_with("const ");
-                        bool leftConstTarget = leftFull.starts_with("const ");
-                        if (rightConstTarget && !leftConstTarget && !cleanRight.empty() && !cleanLeft.empty())
-                        {
-                            EmitAtNode(right, ctx, "as-err-no-implicit-conversion", "const " + cleanRight + "@", cleanLeft + "@");
-                        }
-                    }
-
-                    // Check if opAssign is explicitly deleted on LHS class
-                    if (!cleanLeft.empty())
-                    {
-                        auto opSyms = ctx.request.symbolTable.FindSymbolsPtr(cleanLeft + "::opAssign");
-                        if (opSyms)
-                        {
-                            for (const auto &sym : *opSyms)
-                            {
-                                if (sym.type == SymbolType::Function &&
-                                    std::holds_alternative<FunctionSignature>(sym.signature) &&
-                                    sym.GetFunction().modifiers.isDelete)
-                                {
-                                    EmitAtNode(node, ctx, "as-err-deleted-method-called", cleanLeft, "opAssign");
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if (!cleanLeft.empty() && !cleanRight.empty() && cleanLeft != cleanRight)
-                    {
-                        // Which operator sits between the two sides decides whether this is a
-                        // conversion at all. `value += 1` on a class declaring opAddAssign(int) is
-                        // a method call, and nothing converts an int to that class - measured
-                        // across all twelve compound assignments, every one of them reported here
-                        // on code the compiler accepts.
-                        //
-                        // Coarse on purpose: the overload's parameter types are not matched, only
-                        // its existence. Matching them is the overload resolver's job and it is
-                        // reached by the call path; what this rule needs to know is whether it is
-                        // looking at a conversion, and an operator method means it is not.
-                        const TSNode assignOp = parser::GetChildByField(node, parser::fields::Operator);
-                        const std::string_view overload =
-                            ts_node_is_null(assignOp)
-                                ? std::string_view()
-                                : AssignmentOverloadName(NodeText(assignOp, request.sourceCode));
-
-                        const bool operatorHandlesIt =
-                            DeclaresOperatorMethod(cleanLeft, overload, ctx.request.symbolTable);
-
-                        if (!operatorHandlesIt && !IsConvertible(cleanRight, cleanLeft, ctx))
-                        {
-                            EmitAtNode(right, ctx, "as-err-no-implicit-conversion", cleanRight, cleanLeft);
-                        }
-                    }
-                }
-            }
-            else if (nodeType == "binary_expression")
-            {
-                CheckSignedUnsignedComparison(node, scopeAt(), ctx, request.sourceCode);
-            }
-            else if (nodeType == "unary_expression" || nodeType == "postfix_expression")
-            {
-                TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
-                std::string opText = NodeText(opNode, request.sourceCode);
-                std::string nodeText = NodeText(node, request.sourceCode);
-                if (opText == "++" || opText == "--" || nodeText.find("++") != std::string::npos || nodeText.find("--") != std::string::npos)
-                {
-                    TSNode argNode = parser::GetChildByField(node, parser::fields::Operand);
-                    if (ts_node_is_null(argNode))
-                    {
-                        uint32_t count = ts_node_named_child_count(node);
-                        for (uint32_t i = 0; i < count; ++i)
-                        {
-                            TSNode ch = ts_node_named_child(node, i);
-                            std::string_view ct = ts_node_type(ch);
-                            if (ct != "operator" && ct != "++" && ct != "--")
-                            {
-                                argNode = ch;
-                                break;
-                            }
-                        }
-                    }
-                    if (!ts_node_is_null(argNode))
-                    {
-                        PropertyAccessInfo pInfo = InspectPropertyAccess(argNode, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
-                        if (pInfo.isProperty)
-                        {
-                            EmitAtNode(node, ctx, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
-                        }
-                    }
-                }
-                // Unary minus on an unsigned operand used to be reported here as
-                // as-err-unary-neg-on-unsigned. It is not an error: AngelScript permits it and the
-                // result wraps, exactly as it does in C and C++. Verified against the real compiler
-                // for uint8, uint16, uint, uint64 and unsigned sub-expressions - every one compiles
-                // clean per the AngelScript language specification. The rule fired on ordinary correct code such as
-                // `-someUint`, so it was removed rather than narrowed; there is no operand type for
-                // which the diagnostic would have been right.
-            }
-            else if (nodeType == "member_expression")
-            {
-                TSNode parent = ts_node_parent(node);
-                bool isLhsAssignment = false;
-                bool isUnaryArg = false;
-                if (!ts_node_is_null(parent))
-                {
-                    std::string_view pType = ts_node_type(parent);
-                    if (pType == "assignment_expression")
-                    {
-                        TSNode leftChild = parser::GetChildByField(parent, parser::fields::Left);
-                        if (ts_node_eq(leftChild, node))
-                        {
-                            isLhsAssignment = true;
-                        }
-                    }
-                    else if (pType == "unary_expression" || pType == "postfix_expression")
-                    {
-                        isUnaryArg = true;
-                    }
-                }
-                if (!isLhsAssignment && !isUnaryArg)
-                {
-                    PropertyAccessInfo pInfo = InspectPropertyAccess(node, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
-                    if (pInfo.isProperty && !pInfo.hasGet && pInfo.hasSet)
-                    {
-                        EmitAtNode(node, ctx, "as-err-write-only-property", pInfo.propName);
-                    }
-                }
-            }
-            else if (nodeType == "if_statement" || nodeType == "while_statement" ||
-                     nodeType == "for_statement" || nodeType == "do_while_statement")
-            {
-                TSNode condNode = parser::GetChildByField(node, parser::fields::Condition);
-                if (ts_node_is_null(condNode))
-                {
-                    uint32_t count = ts_node_named_child_count(node);
-                    for (uint32_t i = 0; i < count; ++i)
-                    {
-                        TSNode child = ts_node_named_child(node, i);
-                        std::string_view ct = ts_node_type(child);
-                        if (ct != "compound_statement" && ct != "statement_block" && !ct.ends_with("_statement"))
-                        {
-                            condNode = child;
-                            break;
-                        }
-                    }
-                }
-                if (!ts_node_is_null(condNode))
-                {
-                    while (!ts_node_is_null(condNode) &&
-                           std::string_view(ts_node_type(condNode)) == "parenthesized_expression" &&
-                           ts_node_named_child_count(condNode) > 0)
-                    {
-                        condNode = ts_node_named_child(condNode, 0);
-                    }
-
-                    bool isHandle = false;
-                    if (scopeAt())
-                    {
-                        const std::string name = NodeText(condNode, request.sourceCode);
-                        const LocalDefinition *def = ResolveInScope(scopeAt(), name);
-                        if (def)
-                        {
-                            isHandle = def->typeName.find('@') != std::string::npos;
-                        }
-                    }
-
-                    std::string condType = ResolveExpressionType(condNode, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
-                    if (isHandle || condType.find('@') != std::string::npos)
-                    {
-                        std::string baseClass = CleanBaseType(condType);
-                        auto opSyms = ctx.request.symbolTable.FindSymbolsPtr(baseClass + "::opImplConv");
-                        if (opSyms)
-                        {
-                            for (const auto &sym : *opSyms)
-                            {
-                                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
-                                {
-                                    if (CleanBaseType(sym.GetFunction().returnType) == "bool")
-                                    {
-                                        EmitAtNode(condNode, ctx, "as-err-ref-type-bool-conv-disallowed", baseClass, "bool");
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            else if (nodeType == "cast_expression")
-            {
-                CheckCast(node, scopeAt(), ctx, request.sourceCode);
-            }
-            else if (nodeType == "return_statement")
-            {
-                if (ts_node_named_child_count(node) > 0)
-                {
-                    TSNode expr = ts_node_named_child(node, 0);
-                    TSNode parent = ts_node_parent(node);
-                    while (!ts_node_is_null(parent))
-                    {
-                        const std::string_view pType = ts_node_type(parent);
-                        if (pType == "lambda_expression")
-                        {
-                            // A lambda writes no return type; the funcdef it is handed to supplies
-                            // one. Measured: `funcdef void CB(); CB@ cb = function() { return 1; };`
-                            // is "Can't return value when return type is 'void'", and
-                            // `funcdef int CB(); ... { return 'x'; }` is "No conversion from
-                            // 'const string' to 'int'". Both are the same two checks the named-
-                            // function branch below makes, against a return type read from
-                            // elsewhere - so this stops at the lambda either way, having judged
-                            // what it could.
-                            const auto target = FuncdefTargetOfLambda(parent, ctx.request.symbolTable,
-                                                                      request.sourceCode);
-                            if (target)
-                            {
-                                const std::string expected = CleanBaseType(target->GetFuncdef().returnType);
-                                if (expected == "void")
-                                {
-                                    EmitAtNode(expr, ctx, "as-err-void-return-value");
-                                }
-                                else if (!expected.empty())
-                                {
-                                    const std::string actual = CleanBaseType(ResolveExpressionType(
-                                        expr, scopeAt(), ctx.request.symbolTable, request.sourceCode,
-                                        ctx.request.fileUri));
-                                    CheckFloatTruncation(expr, actual, expected, scopeAt(), ctx,
-                                                         request.sourceCode);
-                                    if (!actual.empty() && actual != expected &&
-                                        !IsConvertible(actual, expected, ctx))
-                                    {
-                                        EmitAtNode(expr, ctx, "as-err-no-implicit-conversion", actual, expected);
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                        if (pType == "func_declaration")
-                        {
-                            TSNode retTypeNode = parser::GetChildByField(parent, parser::fields::ReturnType);
-                            if (ts_node_is_null(retTypeNode))
-                            {
-                                retTypeNode = parser::GetChildByField(parent, parser::fields::Type);
-                            }
-                            if (!ts_node_is_null(retTypeNode))
-                            {
-                                TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
-                                uint32_t headEnd = ts_node_is_null(nameNode) ? ts_node_end_byte(retTypeNode) : ts_node_start_byte(nameNode);
-                                uint32_t headStart = ts_node_start_byte(parent);
-                                std::string headText = (headEnd > headStart && headEnd <= request.sourceCode.size())
-                                    ? std::string(request.sourceCode.substr(headStart, headEnd - headStart))
-                                    : "";
-                                std::string rawRetText = NodeText(retTypeNode, request.sourceCode);
-                                bool isReturnRef = headText.find('&') != std::string::npos || rawRetText.find('&') != std::string::npos;
-                                if (isReturnRef)
-                                {
-                                    std::string exprText = NodeText(expr, request.sourceCode);
-                                    while (!exprText.empty() && isspace(static_cast<unsigned char>(exprText.front()))) exprText.erase(exprText.begin());
-                                    while (!exprText.empty() && isspace(static_cast<unsigned char>(exprText.back()))) exprText.pop_back();
-
-                                    const Scope *s = scopeAt();
-                                    if (s)
-                                    {
-                                        const LocalDefinition *def = ResolveInScope(s, exprText);
-                                        if (def)
-                                        {
-                                            TSPoint funcStart = ts_node_start_point(parent);
-                                            TSPoint funcEnd = ts_node_end_point(parent);
-                                            bool isInsideFunction = (def->startLine > funcStart.row && def->startLine < funcEnd.row) ||
-                                                                    (def->startLine == funcStart.row && def->startCharacter >= funcStart.column);
-                                            if (isInsideFunction)
-                                            {
-                                                if (def->kind == LocalDefinitionKind::Parameter)
-                                                {
-                                                    EmitAtNode(expr, ctx, "as-err-cannot-return-param-ref", exprText);
-                                                }
-                                                else if (def->kind == LocalDefinitionKind::Variable)
-                                                {
-                                                    EmitAtNode(expr, ctx, "as-err-cannot-return-local-ref", exprText);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                const std::string expected = CleanBaseType(rawRetText);
-                                if (expected == "void")
-                                {
-                                    EmitAtNode(expr, ctx, "as-err-void-return-value");
-                                }
-                                else if (!expected.empty())
-                                {
-                                    const std::string actual = CleanBaseType(ResolveExpressionType(
-                                        expr, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
-                                    CheckFloatTruncation(expr, actual, expected, scopeAt(), ctx, request.sourceCode);
-                                    if (!actual.empty() && actual != expected)
-                                    {
-                                        if (!IsConvertible(actual, expected, ctx))
-                                        {
-                                            EmitAtNode(expr, ctx, "as-err-no-implicit-conversion", actual, expected);
-                                        }
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                        parent = ts_node_parent(parent);
-                    }
-                }
-            }
-            else if (nodeType == node_types::CallExpression || nodeType == "construct_call_expression")
-            {
-                TSNode callee = parser::GetChildByField(node, parser::fields::Type);
-                if (ts_node_is_null(callee))
-                {
-                    callee = parser::GetChildByField(node, parser::fields::Function);
-                }
-                if (ts_node_is_null(callee) && ts_node_child_count(node) > 0)
-                {
-                    callee = ts_node_child(node, 0);
-                }
-
-                const std::string calleeName = CleanBaseType(NodeText(callee, request.sourceCode));
-
-                // `MapChangeHook( function(...) )` - a funcdef used as a conversion. This is how
-                // real code writes a callback: across the whole 1,061-file corpus there is not one
-                // `CB@ cb = function(...)`, and every lambda that reaches a funcdef reaches it
-                // through this shape or as a call argument. The compiler answers a wrong lambda
-                // here with "No matching signatures to 'CB(<auto> lambda())'", by the same rules as
-                // the assignment - so it is the same call.
-                //
-                // Guarded on the argument actually being a lambda, because FindFuncdef falls back
-                // to a last-segment scan across the whole table: without the guard, a class that
-                // shares its bare name with some namespace's funcdef would take this branch and
-                // lose its CheckConstruction below.
-                TSNode argsNode = parser::GetChildByField(node, parser::fields::Arguments);
-                TSNode soleArgument = {};
-                if (!ts_node_is_null(argsNode) && ts_node_named_child_count(argsNode) == 1)
-                {
-                    soleArgument = ts_node_named_child(argsNode, 0);
-                }
-                const std::string_view soleArgumentType = NodeType(soleArgument);
-                const bool soleArgumentIsLambda =
-                    soleArgumentType == node_types::LambdaExpression;
-
-                std::optional<Symbol> calleeFuncdef;
-                if (soleArgumentIsLambda)
-                {
-                    calleeFuncdef = FindFuncdef(calleeName, ctx.request.symbolTable);
-                }
-
-                NonInstantiableKind calleeNonInst = ClassifyNonInstantiable(calleeName, ctx.request.symbolTable);
-                if (calleeNonInst == NonInstantiableKind::Abstract)
-                {
-                    EmitAtNode(node, ctx, "as-err-abstract-instantiated", calleeName, calleeName);
-                }
-                else if (calleeNonInst == NonInstantiableKind::Mixin)
-                {
-                    EmitAtNode(node, ctx, "as-err-mixin-not-a-type", calleeName);
-                }
-                else if (calleeFuncdef)
-                {
-                    CheckFuncdefAssignment(node, calleeFuncdef->GetFuncdef(), soleArgument,
-                                           scopeAt(), ctx, request.sourceCode);
-                }
-                else
-                {
-                    const DeclaredType target = ReadDeclaredType(callee, ctx, request.sourceCode);
-                    if (target.usable && !target.isHandle && IsSameType(calleeName, target.baseName))
-                    {
-                        CheckConstruction(parser::GetChildByField(node, parser::fields::Arguments),
-                                          target.baseName, scopeAt(), ctx, request.sourceCode);
-                    }
-                }
-            }
-            else if (nodeType == "func_declaration")
-            {
-                CheckConstructorDelegation(node, ctx, request.sourceCode);
-            }
-        }
-
-        void VisitNode(TSNode node, const TypeConversionCheckRequest &request, DiagnosticContext &ctx, int depth = 0)
-        {
-            if (depth > k_maxAstDepth)
-            {
-                return;
-            }
-
-            ProcessNode(node, request, ctx);
-
-            // Named children only: every node these rules match is a named one, and anonymous
-            // token nodes ('(', '=', ';') are leaves with nothing underneath them to find.
-            const uint32_t childCount = ts_node_named_child_count(node);
-            for (uint32_t i = 0; i < childCount; ++i)
-            {
-                VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
-            }
         }
     }
 
-    bool IsTruthyCondition(const std::string &typeName, const SymbolTable &table)
+    return info;
+}
+
+/** @brief True when a name resolves to an enum declared somewhere the analyzer can see. */
+bool ResolvesToEnum(const std::string& typeName, const SymbolTable& table)
+{
+    bool found = false;
+    const std::string bare = LastScopeSegment(typeName);
+
+    for (const auto& candidate : {std::cref(typeName), std::cref(bare)})
     {
-        if (typeName.empty())
+        ForEachSymbolNamed(candidate.get(), table,
+                           [&found](const Symbol& sym)
+                           {
+                               if (sym.type == SymbolType::Enum)
+                               {
+                                   found = true;
+                                   return true;
+                               }
+                               return false;
+                           });
+
+        if (found || bare == typeName)
+        {
+            break;
+        }
+    }
+    return found;
+}
+
+/** @brief True when a name resolves to an enum, typedef, funcdef or namespace.
+ *  @note Keeps those out of the class-shaped rules below rather than letting them fall
+ *        through to "not a class, therefore suspicious". */
+bool ResolvesToNonClassDeclaration(const std::string& typeName, const SymbolTable& table)
+{
+    bool found = false;
+    const std::string bare = LastScopeSegment(typeName);
+
+    for (const auto& candidate : {std::cref(typeName), std::cref(bare)})
+    {
+        ForEachSymbolNamed(candidate.get(), table,
+                           [&found](const Symbol& sym)
+                           {
+                               if (sym.type == SymbolType::Enum || sym.type == SymbolType::Typedef ||
+                                   sym.type == SymbolType::Funcdef || sym.type == SymbolType::Namespace)
+                               {
+                                   found = true;
+                                   return true;
+                               }
+                               return false;
+                           });
+
+        if (found || bare == typeName)
+        {
+            break;
+        }
+    }
+    return found;
+}
+
+/** @brief Visits every overload of a named method visible on a type, base types included.
+ *  @param visitor Returns true to stop the walk. */
+void ForEachMethod(const std::string& typeName, const std::string& memberName, const SymbolTable& table,
+                   const std::function<bool(const Symbol&)>& visitor)
+{
+    bool stopped = false;
+    for (const auto& cls : GetInheritedTypeHierarchy(typeName, table))
+    {
+        ForEachSymbolNamed(cls + "::" + memberName, table,
+                           [&](const Symbol& sym)
+                           {
+                               if (sym.type != SymbolType::Function)
+                               {
+                                   return false;
+                               }
+                               stopped = visitor(sym);
+                               return stopped;
+                           });
+
+        if (stopped)
+        {
+            return;
+        }
+    }
+}
+
+/** @brief Visits the constructors declared directly on a type.
+ *  @note Deliberately not hierarchy-wide: AngelScript does not inherit constructors. */
+
+void ForEachConstructor(const std::string& typeName, const SymbolTable& table,
+                        const std::function<bool(const Symbol&)>& visitor)
+{
+    // The arguments come off before the key is built. A constructor is stored under the
+    // class's own name - `weakref::weakref` - so looking up `weakref<Node>` produced the key
+    // `weakref<Node>::weakref<Node>`, which matches nothing: a template's constructors were
+    // invisible here, and every `weakref<Node> w(node);` read as having none.
+    const size_t open = typeName.find('<');
+    const std::string unparameterized = (open == std::string::npos) ? typeName : typeName.substr(0, open);
+
+    const std::string bare = LastScopeSegment(unparameterized);
+    bool sawAny = false;
+    bool stopped = false;
+
+    const auto visit = [&](const Symbol& sym)
+    {
+        if (sym.type != SymbolType::Function)
+        {
+            return false;
+        }
+        sawAny = true;
+        stopped = visitor(sym);
+        return stopped;
+    };
+
+    ForEachSymbolNamed(unparameterized + "::" + bare, table, visit);
+    if (!stopped && !sawAny && bare != unparameterized)
+    {
+        ForEachSymbolNamed(bare + "::" + bare, table, visit);
+    }
+
+    // A class declared inside a namespace is keyed by its qualified name, so `Hook`'s
+    // constructor is `Hooks::Hook::Hook` and neither lookup above reaches it - the call
+    // site writes `Hook("OnMapActivate")` because it is inside the namespace, and the two
+    // keys built from that spelling match nothing. The class itself was still found,
+    // because FindTypeDeclaration already falls back to the last segment; the constructors
+    // were not, so every construction of a namespaced class read as having none. Ten
+    // corpus findings, all of them a class calling its own constructor.
+    //
+    // Matched on the last two segments together, so `Hooks::Hook::Hook` qualifies and a
+    // stray `Hook` function somewhere else does not.
+    if (!stopped && !sawAny)
+    {
+        auto shortMatches = table.FindTypeSymbolsByShortName(bare);
+        for (const auto& cSym : shortMatches)
+        {
+            if (cSym.type == SymbolType::Class)
+            {
+                const std::string qCls = cSym.qualifiedName.empty() ? cSym.name : cSym.qualifiedName;
+                ForEachSymbolNamed(qCls + "::" + bare, table, visit);
+                if (stopped || sawAny)
+                {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/**
+ * @brief True when an overload can be called with exactly one argument.
+ * @note Parameter count alone is not the test: `CLogger(const string &in name, bool
+ *       isStatic = false)` is a one-argument converting constructor, and treating it as a
+ *       two-argument one is what made the first corpus run flag a legitimate conversion.
+ */
+bool AcceptsSingleArgument(const std::vector<ParameterInformation>& parameters)
+{
+    if (parameters.empty())
+    {
+        return false;
+    }
+    return std::all_of(parameters.begin() + 1, parameters.end(),
+                       [](const ParameterInformation& param) { return !param.defaultValue.empty(); });
+}
+
+/** @brief The declared type of the single argument such an overload converts from. */
+std::string SingleArgumentType(const std::vector<ParameterInformation>& parameters)
+{
+    return parameters.empty() ? "" : CleanBaseType(parameters[0].typeName);
+}
+
+/**
+ * @brief The overload an assignment operator calls, or empty for one that has none.
+ *
+ * AngelScript spells each compound assignment as a method: `a += b` is `a.opAddAssign(b)`,
+ * and the operand types are that method's business rather than a conversion between the two
+ * sides. `@=` is left out on purpose - handle assignment is not an overloadable operator on
+ * a script class, measured, and opHndlAssign is a behaviour of application-registered
+ * types.
+ */
+std::string_view AssignmentOverloadName(std::string_view op)
+{
+    if (op == "=")
+        return "opAssign";
+    if (op == "+=")
+        return "opAddAssign";
+    if (op == "-=")
+        return "opSubAssign";
+    if (op == "*=")
+        return "opMulAssign";
+    if (op == "/=")
+        return "opDivAssign";
+    if (op == "%=")
+        return "opModAssign";
+    if (op == "**=")
+        return "opPowAssign";
+    if (op == "&=")
+        return "opAndAssign";
+    if (op == "|=")
+        return "opOrAssign";
+    if (op == "^=")
+        return "opXorAssign";
+    if (op == "<<=")
+        return "opShlAssign";
+    if (op == ">>=")
+        return "opShrAssign";
+    if (op == ">>>=")
+        return "opUShrAssign";
+    return {};
+}
+
+/** @brief Whether `typeName` declares the operator method `methodName` at all. */
+bool DeclaresOperatorMethod(const std::string& typeName, std::string_view methodName, const SymbolTable& table)
+{
+    if (typeName.empty() || methodName.empty())
+    {
+        return false;
+    }
+    return table.FindSymbolsPtr(typeName + "::" + std::string(methodName)) != nullptr;
+}
+
+/**
+ * @brief True for a type no `cast<>` may name: a primitive, or an enum.
+ *
+ * Measured against the compiler, which rejects every one of them the same way -
+ * `cast<int>(obj)`, `cast<int>(n)`, `cast<int>(enumValue)` and `cast<E>(n)` are all
+ * "Illegal target type for reference cast", and `cast<A@>(n)` is "No conversion from 'int'
+ * to 'A@' available". A reference cast is between reference types, and nothing else.
+ */
+bool IsScalarCastTarget(const std::string& typeName, const SymbolTable& table)
+{
+    if (parser::primitives::IsPrimitive(typeName))
+    {
+        return true;
+    }
+
+    const auto symbols = table.FindSymbolsPtr(typeName);
+    return symbols && std::any_of(symbols->begin(), symbols->end(),
+                                  [](const Symbol& sym) { return sym.type == SymbolType::Enum; });
+}
+
+/** @brief True when a type declares any cast operator overload.
+ *  @note Deliberately coarse. Matching a cast operator to its result type means resolving
+ *        the engine's template-ish opCast, which no declaration in the source states
+ *        precisely enough to bet a diagnostic on. */
+bool DeclaresAnyCastOperator(const std::string& typeName, const SymbolTable& table)
+{
+    bool found = false;
+    const auto mark = [&found](const Symbol&)
+    {
+        found = true;
+        return true;
+    };
+
+    ForEachMethod(typeName, "opCast", table, mark);
+    if (!found)
+    {
+        ForEachMethod(typeName, "opImplCast", table, mark);
+    }
+    return found;
+}
+
+/** @brief True when a type declares a conversion operator producing the target type. */
+bool DeclaresConversionTo(const std::string& fromType, const std::string& toType, const SymbolTable& table,
+                          bool implicitOnly)
+{
+    bool found = false;
+    const auto matches = [&](const Symbol& sym)
+    {
+        if (IsSameType(CleanBaseType(sym.GetFunction().returnType), toType))
+        {
+            found = true;
+            return true;
+        }
+        return false;
+    };
+
+    static const char* k_implicit[] = {"opImplConv", "opImplCast"};
+    static const char* k_explicit[] = {"opConv", "opCast"};
+
+    for (const char* opName : k_implicit)
+    {
+        ForEachMethod(fromType, opName, table, matches);
+        if (found)
+        {
+            return true;
+        }
+    }
+    if (implicitOnly)
+    {
+        return false;
+    }
+    for (const char* opName : k_explicit)
+    {
+        ForEachMethod(fromType, opName, table, matches);
+        if (found)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @brief True when one type appears in the other's inheritance chain, either direction.
+ *  @note Both directions count: an upcast is implicit, and a downcast is what cast<> is
+ *        for, so neither is worth a diagnostic here. */
+bool AreHierarchyRelated(const std::string& a, const std::string& b, const SymbolTable& table)
+{
+    for (const auto& base : GetInheritedTypeHierarchy(a, table))
+    {
+        if (IsSameType(base, b))
+        {
+            return true;
+        }
+    }
+    for (const auto& base : GetInheritedTypeHierarchy(b, table))
+    {
+        if (IsSameType(base, a))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @brief True for the built-in scalar types plus the configured string type.
+ *  @note Conversions among these are the engine's business, not a declaration's, so the
+ *        rules below let every primitive-to-primitive pair through. */
+/** @brief The workspace's string type, which defaults to `string` when unconfigured. */
+bool IsStringType(const std::string& typeName, const DiagnosticContext& ctx)
+{
+    const auto strType = ctx.request.GetStringTypeName();
+    return typeName == (strType.empty() ? std::string_view("string") : strType);
+}
+
+bool IsBuiltInValueType(const std::string& typeName, const DiagnosticContext& ctx)
+{
+    return IsPrimitiveTypeName(typeName) || IsStringType(typeName, ctx);
+}
+
+/**
+ * @brief Decides whether a value of type 'from' can reach type 'to'.
+ * @param depth Recursion guard. At depth > 0 only the direct relations are consulted, so
+ *              matching a constructor parameter cannot recurse into another constructor.
+ * @return True whenever a route exists - and also whenever this analyzer cannot see enough
+ *         to rule one out.
+ */
+bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, int depth = 0)
+{
+    if (from.empty() || to.empty() || IsSameType(from, to))
+    {
+        return true;
+    }
+
+    // `?` is AngelScript's variable type, not a type name: a parameter declared `const ?&in`
+    // or `?&out` takes a value of any type at all. dictionary::set/get, ref, Dispose and the
+    // format/scan helpers are all declared that way, so without this the analyzer reported
+    // "Cannot implicitly convert 'int' to '?'" on code the real compiler accepts.
+    if (IsVariableType(to) || IsVariableType(from))
+    {
+        return true;
+    }
+
+    // `auto` is not a type either - it is a placeholder for whatever the initializer
+    // produces, and the deduction happens in the compiler. Judging a conversion against it
+    // asks a question with no answer: the real target is the source's own type, so every
+    // `auto` conversion is trivially fine and reporting one is always wrong.
+    if (from == "auto" || to == "auto")
+    {
+        return true;
+    }
+
+    const SymbolTable& table = ctx.request.symbolTable;
+
+    if (ctx.request.IsRegisteredSymbol(from) || ctx.request.IsRegisteredSymbol(to))
+    {
+        return true;
+    }
+
+    const std::string normFrom = CanonicalizeType(from);
+    const std::string normTo = CanonicalizeType(to);
+    if (normFrom == normTo)
+    {
+        return true;
+    }
+
+    // Implicit widening from enum to integer primitives (int, uint, int64, etc.)
+    if (ResolvesToEnum(from, table) && parser::primitives::IsInteger(normTo))
+    {
+        return true;
+    }
+
+    const bool fromBuiltIn = IsBuiltInValueType(from, ctx);
+    const bool toBuiltIn = IsBuiltInValueType(to, ctx);
+    if (fromBuiltIn && toBuiltIn)
+    {
+        if (from == to)
+        {
+            return true;
+        }
+        const auto isNumeric = [](const std::string& t) { return IsNumericPrimitive(t); };
+        const bool fromNum = isNumeric(from);
+        const bool toNum = isNumeric(to);
+        if (fromNum && toNum)
+        {
+            return true;
+        }
+        // `bool` is deliberately absent from both directions. It is not a number and
+        // converts to none of them: all forty combinations of {bool -> T, T -> bool} x
+        // {argument, initializer} over the ten numeric types are rejected by the compiler,
+        // and so are `int(b)`, `bool(n)`, `b + 1`, `return b` from an int function, and
+        // `if (n)`. It used to answer true here and in OverloadResolver, where the cost
+        // was 75 spurious ambiguities over the corpus. `string s = b;` stays legal through
+        // the string sink below, which is a real opAssign the add-on registers.
+        if ((from == "bool" && toNum) || (fromNum && to == "bool"))
         {
             return false;
         }
 
-        // Handles (isHandle or type ends with @) -> true
-        if (typeName.ends_with('@') || typeName.find('@') != std::string::npos)
+        // `string` is a sink. The standard string add-on registers an opAssign for every
+        // scalar, so each of these compiles per the string add-on specification:
+        //
+        //     string s = i8;  … = u64;  … = f;  … = d;  … = b;   all accepted
+        //
+        // and the `"" + x` concatenation asks the same question.
+        //
+        // Only into it. Nothing leaves a string implicitly - `int i = s;` is
+        // "Can't implicitly convert from 'string' to 'int'", which is why
+        // this tests the target rather than treating the pair as interchangeable.
+        if (IsStringType(to, ctx))
         {
             return true;
         }
 
-        const std::string clean = CleanBaseType(typeName);
-        // bool -> true
-        if (clean == "bool")
-        {
-            return true;
-        }
-
-        // classes declaring opImplConv or opConv to bool -> true
-        auto checkConv = [&](const std::string &cls) -> bool
-        {
-            if (auto ptr = table.FindSymbolsPtr(cls + "::opImplConv"))
-            {
-                for (const auto &sym : *ptr)
-                {
-                    if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
-                    {
-                        if (CleanBaseType(sym.GetFunction().returnType) == "bool")
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-            if (auto ptr = table.FindSymbolsPtr(cls + "::opConv"))
-            {
-                for (const auto &sym : *ptr)
-                {
-                    if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
-                    {
-                        if (CleanBaseType(sym.GetFunction().returnType) == "bool")
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-            return false;
-        };
-
-        if (checkConv(clean))
-        {
-            return true;
-        }
-
-        auto shortMatches = table.FindTypeSymbolsByShortName(clean);
-        for (const auto &sym : shortMatches)
-        {
-            if (sym.type == SymbolType::Class)
-            {
-                const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                if (checkConv(qName))
-                {
-                    return true;
-                }
-            }
-        }
-
-        // all other types -> false
         return false;
     }
 
-    bool CanConvertImplicitly(const std::string &fromType, const std::string &toType,
-                              const DiagnosticContext &ctx)
+    const TypeDeclarationInfo fromDecl = FindTypeDeclaration(from, table);
+    const TypeDeclarationInfo toDecl = FindTypeDeclaration(to, table);
+
+    // Nothing reaches an enum implicitly but that same enum per AngelScript type rules:
+    //
+    //     Color c = 1;        Can't implicitly convert from 'int' to 'Color'.
+    //     Color c = someUint; Can't implicitly convert from 'uint' to 'Color'.
+    //     A a = B1;           Can't implicitly convert from 'B' to 'A'.
+    //     int i = Color::Red; accepted - widening the other way is fine
+    //
+    // so an enum is a sink and only the `to` side is restricted. OverloadResolver has
+    // always agreed with the compiler here, which is why a *call* was reported and an
+    // assignment was not; this closes that. It has to run before the unresolved-name bail
+    // below, because an enum never appears in a TypeDeclarationInfo - that only records
+    // classes and interfaces - so `to` would look unresolved and the check would be skipped.
+    if (ResolvesToEnum(to, table))
     {
-        return IsConvertible(CleanBaseType(fromType), CleanBaseType(toType), ctx);
+        // Decidable only when the source is something this analyzer can see. An unresolved
+        // name is an engine-registered type, and engine types carry conversions declared
+        // nowhere in the source.
+        if (!fromBuiltIn && !fromDecl.found && !ResolvesToEnum(from, table))
+        {
+            return true;
+        }
+        // A class may declare an operator producing the enum, and the compiler accepts it:
+        // `class W { Color opImplConv() const { … } } … Color c = w;` compiles.
+        if (!fromBuiltIn && DeclaresConversionTo(from, to, table, /*implicitOnly=*/false))
+        {
+            return true;
+        }
+        return false;
     }
 
-    void CheckTypeConversions(const TypeConversionCheckRequest &request, DiagnosticContext &ctx)
+    // An unresolved name is an engine-registered type as far as this analyzer knows, and
+    // engine types carry conversions that appear nowhere in the source.
+    if ((!fromBuiltIn && !fromDecl.found && !ResolvesToEnum(from, table)) ||
+        (!toBuiltIn && !toDecl.found && !ResolvesToEnum(to, table)))
     {
-        if (ts_node_is_null(request.root) || request.sourceCode.empty())
+        return true;
+    }
+    if (ResolvesToNonClassDeclaration(from, table) || ResolvesToNonClassDeclaration(to, table))
+    {
+        return true;
+    }
+
+    if (!fromBuiltIn && !toBuiltIn && AreHierarchyRelated(from, to, table))
+    {
+        return true;
+    }
+    if (!fromBuiltIn && DeclaresConversionTo(from, to, table, /*implicitOnly=*/false))
+    {
+        return true;
+    }
+
+    if (depth > 0)
+    {
+        return false;
+    }
+
+    // A template class is instantiated per element type; its declared parameter types are
+    // written in terms of the template parameter, which says nothing about this call site.
+    //
+    // Reachable since the grammar gained a template class declaration and SymbolCollector
+    // began setting ClassSignature::isTemplate from it. This comment used to say the
+    // opposite and had simply gone stale.
+    if (toDecl.isTemplate)
+    {
+        return true;
+    }
+
+    bool convertible = false;
+    const auto acceptsFrom = [&](const Symbol& sym)
+    {
+        if (sym.GetFunction().modifiers.isExplicit || sym.GetFunction().modifiers.isDelete)
+        {
+            return false;
+        }
+        const auto& parameters = sym.GetFunction().parameters;
+        if (AcceptsSingleArgument(parameters) && IsConvertible(from, SingleArgumentType(parameters), ctx, depth + 1))
+        {
+            convertible = true;
+            return true;
+        }
+        return false;
+    };
+
+    ForEachConstructor(to, table, acceptsFrom);
+    if (!convertible)
+    {
+        ForEachMethod(to, "opAssign", table, acceptsFrom);
+    }
+    return convertible;
+}
+
+/** @brief Classifies a numeric literal as integral or floating point. */
+std::string ClassifyNumberLiteral(const std::string& text)
+{
+    const bool isHex = text.size() > 1 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X');
+    if (!isHex)
+    {
+        for (const char c : text)
+        {
+            if (c == '.' || c == 'e' || c == 'E' || c == 'f' || c == 'F')
+            {
+                return "float";
+            }
+        }
+    }
+    return "int";
+}
+
+/** @brief Finds the class a 'this' expression refers to at a given node. */
+std::string EnclosingClassName(TSNode node, std::string_view sourceCode)
+{
+    for (const auto& container : GetEnclosingContainers(node, sourceCode))
+    {
+        if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
+        {
+            return container.name;
+        }
+    }
+    return "";
+}
+
+ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx,
+                                std::string_view sourceCode, int depth = 0);
+
+/** @brief Resolves the type a bare (possibly scope-qualified) name denotes as a value. */
+ExpressionType ResolveIdentifierValueType(TSNode node, const std::string& name, const Scope* scope,
+                                          const DiagnosticContext& ctx, std::string_view sourceCode)
+{
+    if (name == "this")
+    {
+        const std::string className = EnclosingClassName(node, sourceCode);
+        return className.empty() ? ExpressionType{} : ExpressionType{className, true, false};
+    }
+
+    if (scope)
+    {
+        if (const LocalDefinition* def = ResolveInScope(scope, name); def && !def->typeName.empty())
+        {
+            return ExpressionType{CleanBaseType(def->typeName), true, false};
+        }
+    }
+
+    ExpressionType result;
+    ForEachSymbolNamed(name, ctx.request.symbolTable,
+                       [&result](const Symbol& sym)
+                       {
+                           // A bare function name is a function pointer, and a bare type name is not a value
+                           // at all. Neither has a value type worth judging, so both stay unknown.
+                           if (sym.type != SymbolType::Variable && sym.type != SymbolType::Property)
+                           {
+                               return true;
+                           }
+                           if (!sym.GetVariable().typeName.empty())
+                           {
+                               result = ExpressionType{CleanBaseType(sym.GetVariable().typeName), true, false};
+                               return true;
+                           }
+                           return false;
+                       });
+    return result;
+}
+
+/** @brief Resolves what a call expression evaluates to: a constructed type, or a return type. */
+ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx, std::string_view sourceCode)
+{
+    TSNode callee = parser::GetChildByField(node, parser::fields::Function);
+    if (ts_node_is_null(callee) && ts_node_child_count(node) > 0)
+    {
+        callee = ts_node_child(node, 0);
+    }
+    if (ts_node_is_null(callee))
+    {
+        return ExpressionType{};
+    }
+
+    const std::string calleeName = CleanBaseType(NodeText(callee, sourceCode));
+    if (calleeName.empty())
+    {
+        return ExpressionType{};
+    }
+
+    // Type(args) constructs a value of that type; anything else is an ordinary call.
+    if (FindTypeDeclaration(calleeName, ctx.request.symbolTable).found)
+    {
+        return ExpressionType{calleeName, true, false};
+    }
+    if (IsBuiltInValueType(calleeName, ctx))
+    {
+        return ExpressionType{calleeName, true, false};
+    }
+
+    ExpressionType result;
+    ForEachSymbolNamed(LastScopeSegment(calleeName), ctx.request.symbolTable,
+                       [&result](const Symbol& sym)
+                       {
+                           if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
+                           {
+                               result = ExpressionType{CleanBaseType(sym.GetFunction().returnType), true, false};
+                               return true;
+                           }
+                           return false;
+                       });
+    return result;
+}
+
+ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx,
+                                std::string_view sourceCode, int depth)
+{
+    // See k_maxAstDepth in ASTUtils.h. Returning the empty type is this file's established
+    // "cannot see enough to judge" answer, which every caller already treats as silence.
+    if (depth > k_maxAstDepth)
+    {
+        return ExpressionType{};
+    }
+
+    if (ts_node_is_null(node))
+    {
+        return ExpressionType{};
+    }
+
+    const std::string_view nodeType = NodeType(node);
+
+    if (nodeType == node_types::NumberLiteral)
+    {
+        return ExpressionType{ClassifyNumberLiteral(NodeText(node, sourceCode)), true, true};
+    }
+    if (nodeType == node_types::StringLiteral)
+    {
+        const auto strType = ctx.request.GetStringTypeName();
+        return ExpressionType{strType.empty() ? "string" : std::string(strType), true, true};
+    }
+    if (nodeType == node_types::BooleanLiteral)
+    {
+        return ExpressionType{"bool", true, true};
+    }
+    if (nodeType == node_types::NullLiteral)
+    {
+        // 'null' has its own rule (CheckNullAssignedToNonHandle) and no type of its own.
+        return ExpressionType{};
+    }
+
+    if (nodeType == "parenthesized_expression")
+    {
+        return ts_node_named_child_count(node) > 0
+                   ? ResolveValueType(ts_node_named_child(node, 0), scope, ctx, sourceCode, depth + 1)
+                   : ExpressionType{};
+    }
+
+    if (nodeType == "unary_expression")
+    {
+        const std::string op = NodeText(parser::GetChildByField(node, parser::fields::Operator), sourceCode);
+        if (op == "!" || op == "not")
+        {
+            return ExpressionType{"bool", true, false};
+        }
+        return ResolveValueType(parser::GetChildByField(node, parser::fields::Operand), scope, ctx, sourceCode,
+                                depth + 1);
+    }
+
+    if (nodeType == "identifier" || nodeType == "scoped_identifier")
+    {
+        return ResolveIdentifierValueType(node, NodeText(node, sourceCode), scope, ctx, sourceCode);
+    }
+
+    if (nodeType == node_types::CallExpression || nodeType == "construct_call_expression")
+    {
+        return ResolveCallValueType(node, ctx, sourceCode);
+    }
+
+    if (nodeType == "cast_expression" || nodeType == "functional_cast_expression")
+    {
+        const std::string typeText =
+            CleanBaseType(NodeText(parser::GetChildByField(node, parser::fields::Type), sourceCode));
+        return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false};
+    }
+
+    if (nodeType == "member_expression")
+    {
+        const std::string resolved = ResolveExpressionType(node, scope, ctx.request.symbolTable, sourceCode);
+        return resolved.empty() ? ExpressionType{} : ExpressionType{CleanBaseType(resolved), true, false};
+    }
+
+    // Binary, conditional and assignment expressions need operator resolution this pass
+    // does not do, so their result type stays unknown rather than being guessed.
+    return ExpressionType{};
+}
+
+struct PropertyAccessInfo
+{
+    bool isProperty = false;
+    bool hasGet = false;
+    bool hasSet = false;
+    bool isIndexed = false;
+    std::string propName;
+    std::string receiverType;
+};
+
+PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, const SymbolTable& table,
+                                         std::string_view sourceCode, const std::string& uri)
+{
+    PropertyAccessInfo info;
+    std::string_view nt = NodeType(exprNode);
+    if (nt == "member_expression")
+    {
+        TSNode objNode = parser::GetChildByField(exprNode, parser::fields::Object);
+        TSNode memNode = parser::GetChildByField(exprNode, parser::fields::Member);
+        if (ts_node_is_null(objNode) && ts_node_named_child_count(exprNode) > 0)
+        {
+            objNode = ts_node_named_child(exprNode, 0);
+            if (ts_node_named_child_count(exprNode) > 1)
+            {
+                memNode = ts_node_named_child(exprNode, 1);
+            }
+        }
+        if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
+        {
+            info.propName = NodeText(memNode, sourceCode);
+            info.receiverType = ResolveExpressionType(objNode, scope, table, sourceCode, uri);
+            std::string cleanObj = CleanBaseType(info.receiverType);
+            if (!cleanObj.empty())
+            {
+                auto hierarchy = GetInheritedTypeHierarchy(cleanObj, table);
+                for (const auto& typeName : hierarchy)
+                {
+                    auto propSyms = table.FindSymbolsPtr(typeName + "::" + info.propName);
+                    if (propSyms)
+                    {
+                        for (const auto& s : *propSyms)
+                        {
+                            if (s.type == SymbolType::Property &&
+                                std::holds_alternative<VariableSignature>(s.signature))
+                            {
+                                const auto& vs = s.GetVariable();
+                                if (vs.isVirtualProperty)
+                                {
+                                    info.isProperty = true;
+                                    info.hasGet = vs.hasGet;
+                                    info.hasSet = vs.hasSet;
+                                    return info;
+                                }
+                            }
+                        }
+                    }
+                    auto getSyms = table.FindSymbolsPtr(typeName + "::get_" + info.propName);
+                    if (getSyms && !getSyms->empty())
+                    {
+                        info.isProperty = true;
+                        info.hasGet = true;
+                        for (const auto& gs : *getSyms)
+                        {
+                            if (gs.type == SymbolType::Function && !gs.GetFunction().parameters.empty())
+                            {
+                                info.isIndexed = true;
+                            }
+                        }
+                    }
+                    auto setSyms = table.FindSymbolsPtr(typeName + "::set_" + info.propName);
+                    if (setSyms && !setSyms->empty())
+                    {
+                        info.isProperty = true;
+                        info.hasSet = true;
+                        for (const auto& ss : *setSyms)
+                        {
+                            if (ss.type == SymbolType::Function && ss.GetFunction().parameters.size() > 1)
+                            {
+                                info.isIndexed = true;
+                            }
+                        }
+                    }
+                    if (info.isProperty)
+                    {
+                        return info;
+                    }
+                }
+            }
+        }
+    }
+    return info;
+}
+
+/** @brief Emits at the exact source range of a node. */
+void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const std::string& from = "",
+                const std::string& to = "")
+{
+    const TSPoint start = ts_node_start_point(node);
+    const TSPoint end = ts_node_end_point(node);
+    ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, from, to, DiagnosticSeverity::Error);
+}
+
+void EmitWarningAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const std::string& from = "",
+                       const std::string& to = "")
+{
+    const TSPoint start = ts_node_start_point(node);
+    const TSPoint end = ts_node_end_point(node);
+    ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, from, to, DiagnosticSeverity::Warning);
+}
+
+// --- Numeric conversion warnings (TYPE-03) -------------------------------------------
+//
+// The compiler emits five numeric warnings. Two of them - these - it decides from the
+// operand types alone. The other three ("Implicit conversion changed sign of value",
+// "Value is too large for data type", "Implicit conversion of value is not exact") fire
+// only on constant expressions, so answering them needs a constant folder this analyzer
+// does not have. They are left unimplemented rather than approximated: a warning that is
+// right about the shape and wrong about the value is worse than no warning.
+//
+// Everything below was measured against angelscript_oracle, not read off documentation,
+// and the measurements corrected the backlog on three points:
+//
+//   * Signed/Unsigned mismatch fires ONLY on the six comparison operators. `i * u`,
+//     `i & u` and every other arithmetic or bitwise pairing is silent, and so are
+//     assignment, argument passing and return. The backlog implied it followed the
+//     conversion, which it does not.
+//   * Width is irrelevant - every signed integer paired with every unsigned one warns -
+//     and float and double count as SIGNED: `float < uint` warns, `float < int` does not.
+//   * A compile-time constant on either side folds the comparison away and it is silent.
+//     `const int i = 1; i < u` is clean, a bare enum member is clean, and `i < 5` is
+//     clean. Only a constant whose value is itself out of range warns, and then under one
+//     of the three codes above.
+//
+// The last point is the whole false-positive risk, so the rule stays silent whenever
+// either operand is constant. That costs `u < -5`, which the compiler does warn about;
+// missing beats inventing, and the alternative is the folder again.
+//
+// Neither warning reuses IsPrimitiveWidening from OverloadResolver, and that is
+// deliberate: it lists signed/unsigned pairs as SAFE on purpose, because removing them
+// produced real false positives on `array<int> a(1)`. The compiler warns on exactly the
+// pairs that table calls safe, so the two questions need two tables.
+
+bool IsUnsignedIntegerPrimitive(std::string_view typeName) noexcept
+{
+    return typeName == "uint" || typeName == "uint8" || typeName == "uint16" || typeName == "uint32" ||
+           typeName == "uint64";
+}
+
+/** @brief Signed for the purpose of the mismatch warning, which counts float and double. */
+bool IsSignedNumericPrimitive(std::string_view typeName) noexcept
+{
+    return typeName == "int" || typeName == "int8" || typeName == "int16" || typeName == "int32" ||
+           typeName == "int64" || typeName == "float" || typeName == "double";
+}
+
+bool IsComparisonOperator(std::string_view op) noexcept
+{
+    return op == "<" || op == ">" || op == "<=" || op == ">=" || op == "==" || op == "!=";
+}
+
+/** @brief True for a written-out number, through any parentheses and unary sign. */
+bool IsNumericLiteralExpression(TSNode node, int depth = 0)
+{
+    if (ts_node_is_null(node) || depth > k_maxAstDepth)
+    {
+        return false;
+    }
+
+    const std::string_view nodeType = NodeType(node);
+    if (nodeType.ends_with("_literal") || nodeType == "number")
+    {
+        return true;
+    }
+    if (nodeType != "parenthesized_expression" && nodeType != "unary_expression")
+    {
+        return false;
+    }
+    for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
+    {
+        if (IsNumericLiteralExpression(ts_node_named_child(node, i), depth + 1))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief True when the operand is something the compiler folds before it compares.
+ *
+ * Constants are what lets the mismatch rule stay silent instead of guessing: the compiler
+ * knows the value, so it compares values rather than types and no mismatch arises. A name
+ * counts as constant here when its declaration says `const` - the one spelling that
+ * survives into both LocalDefinition::typeName and VariableSignature::typeName - or when
+ * it is a literal.
+ *
+ * An enum member needs no case of its own. ResolveExpressionType answers a bare `A` with
+ * its enum's name rather than `int`, so it never reaches the numeric test at all.
+ *
+ * An unrecognised shape answers false, which is the emitting side. That is what the
+ * corpus audit in TypeConversionTest.cpp exists to hold honest.
+ */
+bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticContext& ctx, std::string_view sourceCode,
+                             int depth = 0)
+{
+    if (ts_node_is_null(node) || depth > k_maxAstDepth)
+    {
+        return false;
+    }
+
+    const std::string_view nodeType = NodeType(node);
+    if (IsNumericLiteralExpression(node))
+    {
+        return true;
+    }
+
+    if (nodeType == "parenthesized_expression")
+    {
+        for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
+        {
+            if (IsFoldedConstantOperand(ts_node_named_child(node, i), scope, ctx, sourceCode, depth + 1))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    if (nodeType != "identifier" && nodeType != "scoped_identifier" && nodeType != "qualified_identifier")
+    {
+        return false;
+    }
+
+    const std::string name = NodeText(node, sourceCode);
+    if (scope)
+    {
+        if (const LocalDefinition* def = ResolveInScope(scope, LastScopeSegment(name)))
+        {
+            return def->typeName.starts_with("const ");
+        }
+    }
+
+    bool folded = false;
+    ForEachSymbolNamed(name, ctx.request.symbolTable,
+                       [&folded](const Symbol& sym)
+                       {
+                           if (sym.type != SymbolType::Variable && sym.type != SymbolType::Property)
+                           {
+                               return false;
+                           }
+                           folded = sym.GetVariable().typeName.starts_with("const ");
+                           return true;
+                       });
+    return folded;
+}
+
+/**
+ * @brief `as-warn-signed-unsigned-mismatch`, anchored on the operator the way the compiler
+ *        anchors it.
+ */
+void CheckSignedUnsignedComparison(TSNode node, const Scope* scope, DiagnosticContext& ctx, std::string_view sourceCode)
+{
+    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    if (ts_node_is_null(opNode) || !IsComparisonOperator(NodeText(opNode, sourceCode)))
+    {
+        return;
+    }
+
+    TSNode left = parser::GetChildByField(node, parser::fields::Left);
+    TSNode right = parser::GetChildByField(node, parser::fields::Right);
+    if (ts_node_is_null(left) || ts_node_is_null(right))
+    {
+        return;
+    }
+
+    const std::string leftType =
+        CleanBaseType(ResolveExpressionType(left, scope, ctx.request.symbolTable, sourceCode, ctx.request.fileUri));
+    const std::string rightType =
+        CleanBaseType(ResolveExpressionType(right, scope, ctx.request.symbolTable, sourceCode, ctx.request.fileUri));
+
+    const bool mismatched = (IsUnsignedIntegerPrimitive(leftType) && IsSignedNumericPrimitive(rightType)) ||
+                            (IsUnsignedIntegerPrimitive(rightType) && IsSignedNumericPrimitive(leftType));
+    if (!mismatched)
+    {
+        return;
+    }
+
+    if (IsFoldedConstantOperand(left, scope, ctx, sourceCode) || IsFoldedConstantOperand(right, scope, ctx, sourceCode))
+    {
+        return;
+    }
+
+    EmitWarningAtNode(opNode, ctx, "as-warn-signed-unsigned-mismatch", leftType, rightType);
+}
+
+/**
+ * @brief `as-warn-float-truncation` where a float value implicitly becomes an integer.
+ *
+ * Anchored at the source expression, which is where the compiler anchors it.
+ *
+ * A CONSTANT source is excluded, for the same reason the mismatch rule excludes one: the
+ * compiler folds it and then judges the value, not the type. `const float D = 15.0;
+ * int i = D;` is clean because 15.0 survives the trip exactly, and `const float D = 15.5`
+ * is "Implicit conversion of value is not exact" - a different code, and one that needs
+ * the constant folder. A written literal is the same story: `int i = 2.0f;` is clean and
+ * `int i = 1.5f;` is not.
+ *
+ * This is not a hypothetical. The corpus audit's first run reported 34 findings of the
+ * shape `const float WEAPON_DAMAGE = 15.0; int m_iBulletDamage = WEAPON_DAMAGE;` across
+ * the Sven Co-op weapon scripts, and the compiler is silent on every one of them.
+ */
+void CheckFloatTruncation(TSNode valueNode, const std::string& sourceType, const std::string& targetType,
+                          const Scope* scope, DiagnosticContext& ctx, std::string_view sourceCode)
+{
+    if (ts_node_is_null(valueNode))
+    {
+        return;
+    }
+    if (!IsFloatingPointPrimitive(sourceType) || !IsIntegerPrimitive(targetType))
+    {
+        return;
+    }
+    if (IsFoldedConstantOperand(valueNode, scope, ctx, sourceCode))
+    {
+        return;
+    }
+    EmitWarningAtNode(valueNode, ctx, "as-warn-float-truncation", sourceType, targetType);
+}
+
+/** @brief Everything one declared type text says that the rules below need to know. */
+struct DeclaredType
+{
+    std::string baseName;
+    bool isHandle = false;
+    bool usable = false; ///< False when the shape is out of scope (array, template, unknown).
+
+    /**
+     * @brief True for `array<T>` and `T[]`, where baseName is the *element* type.
+     *
+     * CleanBaseType answers the element type, which is what the initializer comparisons
+     * below want - `array<int> a = other;` compares element to element. A construction
+     * argument is a different question: `array<PlayerSlide> g(33);` passes 33 to the
+     * container's initial-size constructor, and comparing it against `PlayerSlide` asked
+     * whether an int can become a PlayerSlide. It cannot, so three corpus declarations of
+     * exactly this shape were reported.
+     */
+    bool isTemplateOrArray = false;
+};
+
+/** @brief Reads a 'type' node into the shape the conversion rules can act on.
+ *  @note Arrays, templates and anything that does not resolve to a plain class are marked
+ *        unusable: their conversion rules depend on element types this pass does not track. */
+DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx, std::string_view sourceCode)
+{
+    DeclaredType result;
+    if (ts_node_is_null(typeNode))
+    {
+        return result;
+    }
+
+    const std::string raw = NodeText(typeNode, sourceCode);
+    if (raw.empty())
+    {
+        return result;
+    }
+
+    result.isHandle = raw.find('@') != std::string::npos;
+    result.baseName = CleanBaseType(raw);
+    if (result.baseName.empty())
+    {
+        return result;
+    }
+    if (ctx.request.IsRegisteredSymbol(result.baseName))
+    {
+        return result;
+    }
+
+    // The written SHAPE is decided before anything about the base name, and the order
+    // matters. CleanBaseType reduces `bool[]` to `bool`, which is a built-in value type,
+    // so the test below used to claim the declaration first and return with
+    // isTemplateOrArray false - and then `bool[] flags(33);` was read as constructing a
+    // `bool` from 33 rather than sizing an array. It stayed silent only by accident:
+    // `int[] a(33)` and `float[] a(33)` are the same mistake, and `int -> int` and
+    // `int -> float` are convertible, so nothing was reported. Correcting `bool` to be
+    // unconvertible from the numeric types is what made the accident visible, on
+    // `bool[] g_playerGlowEnable(32+1);` in the corpus.
+    if (raw.find('<') != std::string::npos || raw.find('[') != std::string::npos)
+    {
+        result.usable = true;
+        result.isTemplateOrArray = true;
+        return result;
+    }
+
+    if (IsBuiltInValueType(result.baseName, ctx))
+    {
+        result.usable = true;
+        return result;
+    }
+
+    // An enum is not a class, but it is a type this pass can reason about completely: the
+    // members are all declared in the source, nothing converts to it implicitly but itself,
+    // and IsConvertible says so. Left out, `Color c = 1;` was silent while the identical
+    // mistake in a call - `SetMode(1)` - was reported, because OverloadResolver had always
+    // agreed with the compiler.
+    if (ResolvesToEnum(result.baseName, ctx.request.symbolTable))
+    {
+        result.usable = true;
+        return result;
+    }
+
+    const TypeDeclarationInfo declaration = FindTypeDeclaration(result.baseName, ctx.request.symbolTable);
+    if (!declaration.found || !declaration.isClass || declaration.isTemplate)
+    {
+        return result;
+    }
+    if (ResolvesToNonClassDeclaration(result.baseName, ctx.request.symbolTable))
+    {
+        return result;
+    }
+
+    result.usable = true;
+    return result;
+}
+
+/** @brief Rule for `T v = expr;` - the implicit conversion route. */
+void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const Scope* scope, DiagnosticContext& ctx,
+                      std::string_view sourceCode)
+{
+    TSNode valueNode = parser::GetChildByField(declaratorNode, parser::fields::Value);
+    if (ts_node_is_null(valueNode) || NodeType(valueNode) == "initializer_list")
+    {
+        return;
+    }
+
+    const ExpressionType source = ResolveValueType(valueNode, scope, ctx, sourceCode);
+    if (!source.known || source.baseName.empty())
+    {
+        std::string identName = NodeText(valueNode, sourceCode);
+        while (!identName.empty() && isspace(static_cast<unsigned char>(identName.front())))
+            identName.erase(identName.begin());
+        while (!identName.empty() && isspace(static_cast<unsigned char>(identName.back())))
+            identName.pop_back();
+
+        if (!identName.empty())
+        {
+            bool isTypeOrTemplate = false;
+            ForEachSymbolNamed(identName, ctx.request.symbolTable,
+                               [&](const Symbol& s) -> bool
+                               {
+                                   if (s.type == SymbolType::Class || s.type == SymbolType::Interface ||
+                                       s.type == SymbolType::Typedef || s.type == SymbolType::Enum)
+                                   {
+                                       isTypeOrTemplate = true;
+                                       return false;
+                                   }
+                                   return true;
+                               });
+            if (isTypeOrTemplate)
+            {
+                EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", identName, declared.baseName);
+            }
+        }
+        return;
+    }
+
+    if (!declared.isHandle)
+    {
+        CheckFloatTruncation(valueNode, source.baseName, declared.baseName, scope, ctx, sourceCode);
+    }
+
+    // A handle binds to objects.
+    if (declared.isHandle)
+    {
+        if (source.baseName == "null")
+        {
+            return;
+        }
+        if (source.isLiteral)
+        {
+            EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", source.baseName, declared.baseName);
+            return;
+        }
+
+        if (IsSameType(source.baseName, declared.baseName))
         {
             return;
         }
 
-        if (ctx.logger && ctx.logger->IsDebugEnabled())
+        // If declared is a derived class of source, that's an invalid downcast without cast<T>
+        if (ctx.request.symbolTable.HasSymbolAnywhere(source.baseName) &&
+            ctx.request.symbolTable.HasSymbolAnywhere(declared.baseName))
         {
-            ctx.logger->LogDebug(fmt::format("[TypeConversionChecker] Running CheckTypeConversions for URI: {}", ctx.request.fileUri));
+            const auto hierarchy = GetInheritedTypeHierarchy(declared.baseName, ctx.request.symbolTable);
+            if (std::find(hierarchy.begin(), hierarchy.end(), source.baseName) != hierarchy.end())
+            {
+                EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", source.baseName + "@",
+                           declared.baseName + "@");
+                return;
+            }
+        }
+        return;
+    }
+
+    if (IsConvertible(source.baseName, declared.baseName, ctx))
+    {
+        return;
+    }
+
+    EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", source.baseName, declared.baseName);
+}
+
+/**
+ * @brief The type `foreach`'s Nth loop variable takes, from the container's own declaration.
+ *
+ * AngelScript drives `foreach` through `opForBegin` / `opForEnd` / `opForNext` and one
+ * `opForValue<N>` per loop variable, so the Nth variable's type is that method's return
+ * type. Reading it back out of the stub is the general rule and needs no per-type knowledge:
+ * `array<T>` declares `const T& opForValue0(uint)` and `uint opForValue1(uint)`, and
+ * `dictionary` declares `const dictionaryValue& opForValue0(...)` and
+ * `const string& opForValue1(...)`, which is exactly what the compiler hands the loop.
+ *
+ * Returns empty when the container declares no such method, which leaves the variable's
+ * written `auto` in place rather than guessing at it.
+ */
+std::string ForeachValueType(const std::string& containerType, uint32_t variableIndex, const DiagnosticContext& ctx)
+{
+    const std::string cleaned = CleanExpressionType(containerType);
+    if (cleaned.empty())
+    {
+        return {};
+    }
+
+    const size_t open = cleaned.find('<');
+    const std::string bare = LastScopeSegment((open == std::string::npos) ? cleaned : cleaned.substr(0, open));
+
+    const TemplateBinding binding = BindTemplateArguments(cleaned, ctx.request.symbolTable);
+    const std::string method = "opForValue" + std::to_string(variableIndex);
+
+    for (const std::string& candidate : GetInheritedTypeHierarchy(bare, ctx.request.symbolTable))
+    {
+        const auto overloads = ctx.request.symbolTable.FindSymbolsPtr(candidate + "::" + method);
+        if (!overloads)
+        {
+            continue;
+        }
+        for (const Symbol& overload : *overloads)
+        {
+            if (overload.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(overload.signature))
+            {
+                continue;
+            }
+
+            std::string returnType = std::get<FunctionSignature>(overload.signature).returnType;
+            if (returnType.empty() || returnType == "void")
+            {
+                continue;
+            }
+            if (binding.usable)
+            {
+                for (size_t i = 0; i < binding.parameters.size(); ++i)
+                {
+                    returnType = SubstituteTypeParam(returnType, binding.parameters[i], binding.arguments[i]);
+                }
+            }
+            // `const T&` names the same type as `T` for anything the scope tree does with
+            // it, and the reference is not part of the variable's identity.
+            return CleanExpressionType(returnType);
+        }
+    }
+
+    return {};
+}
+
+/** @brief Rule for a one-argument construction: `T(expr)` or `T v(expr);`. */
+void CheckConstruction(TSNode argumentListNode, const std::string& targetType, const Scope* scope,
+                       DiagnosticContext& ctx, std::string_view sourceCode)
+{
+    // Only single-argument constructions are conversions. Anything else is overload
+    // resolution over a full argument list, which this pass does not attempt.
+    if (ts_node_is_null(argumentListNode) || ts_node_named_child_count(argumentListNode) != 1)
+    {
+        return;
+    }
+
+    TSNode argument = ts_node_named_child(argumentListNode, 0);
+    const ExpressionType source = ResolveValueType(argument, scope, ctx, sourceCode);
+    if (!source.known || source.baseName.empty() || IsSameType(source.baseName, targetType))
+    {
+        return;
+    }
+
+    const SymbolTable& table = ctx.request.symbolTable;
+
+    // The verdict below is "no constructor accepts this", and it is only worth anything
+    // when the constructors are visible. Two kinds of target they are not:
+    //
+    //   - A built-in value type. `string(u)`, `float(i)` - the engine registers these in
+    //     C++ and no stub can express them. CheckDefaultConstructor already bails here for
+    //     the same reason; this one did not, so every `string(count)` in the corpus was
+    //     reported.
+    //   - A name with no declaration in the workspace. `EHandle(x)`, `Vector(x)`,
+    //     `array<float>(33)` - the host registers them, ForEachConstructor finds nothing,
+    //     and "I found no constructor" is indistinguishable from "they are written in C++".
+    //
+    // An enum is neither and stays judged: `Color(1)` has no constructor by design and the
+    // compiler's rule for it is known exactly, which the block further down applies.
+    //
+    // A visible class that declares no constructor is still reported - `class Plain {}`
+    // with `Plain(1)` is an error the compiler agrees with, and that is what separates the
+    // two cases. Together these were the bulk of the 273 corpus findings.
+    if (IsBuiltInValueType(targetType, ctx))
+    {
+        return;
+    }
+    if (!FindTypeDeclaration(targetType, table).found && !ResolvesToEnum(targetType, table))
+    {
+        return;
+    }
+
+    if (AreHierarchyRelated(source.baseName, targetType, table))
+    {
+        return;
+    }
+    if (DeclaresConversionTo(source.baseName, targetType, table, /*implicitOnly=*/false))
+    {
+        return;
+    }
+
+    // A template's constructors are written in terms of its parameters - `weakref<T>` takes
+    // a `T@` - so the argument has to be substituted in before the types can be compared.
+    // Without it every `weakref<Node> w(node);` was reported as "No conversion from 'Node'
+    // to 'weakref<Node>'", because `T` resolves to nothing and nothing is convertible to
+    // it. Anything that cannot be substituted cleanly leaves the check inconclusive.
+    const TemplateBinding binding = BindTemplateArguments(targetType, table);
+    if (binding.isTemplate && !binding.usable)
+    {
+        return;
+    }
+
+    // `Color(1)` is the explicit conversion an enum offers, and it has no constructor
+    // declaring it - the compiler accepts every numeric source (`Color(1.0f)` too) and
+    // rejects the rest ("Can't implicitly convert from 'string' to 'const Color'"). Without
+    // this the ForEachConstructor walk below found nothing and reported the one form that
+    // exists for turning an int into an enum.
+    if (ResolvesToEnum(targetType, table))
+    {
+        if (IsNumericPrimitive(source.baseName) || ResolvesToEnum(source.baseName, table))
+        {
+            return;
+        }
+        EmitAtNode(argument, ctx, "as-err-no-explicit-conversion", source.baseName, targetType);
+        return;
+    }
+
+    bool constructible = false;
+    ForEachConstructor(targetType, table,
+                       [&](const Symbol& sym)
+                       {
+                           const auto& parameters = sym.GetFunction().parameters;
+                           if (!AcceptsSingleArgument(parameters))
+                           {
+                               return false;
+                           }
+
+                           std::string parameterType = SingleArgumentType(parameters);
+                           for (size_t i = 0; i < binding.parameters.size(); ++i)
+                           {
+                               parameterType =
+                                   SubstituteTypeParam(parameterType, binding.parameters[i], binding.arguments[i]);
+                           }
+
+                           if (IsConvertible(source.baseName, parameterType, ctx, 1))
+                           {
+                               constructible = true;
+                               return true;
+                           }
+                           return false;
+                       });
+
+    if (!constructible)
+    {
+        EmitAtNode(argument, ctx, "as-err-no-explicit-conversion", source.baseName, targetType);
+    }
+}
+
+void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName, DiagnosticContext& ctx)
+{
+    if (typeName.empty() || IsBuiltInValueType(typeName, ctx))
+    {
+        return;
+    }
+
+    const SymbolTable& table = ctx.request.symbolTable;
+    const TypeDeclarationInfo decl = FindTypeDeclaration(typeName, table);
+    if (!decl.found || !decl.isClass || decl.isTemplate)
+    {
+        return;
+    }
+
+    std::vector<Symbol> constructors;
+    ForEachConstructor(typeName, table,
+                       [&](const Symbol& sym)
+                       {
+                           constructors.push_back(sym);
+                           return false;
+                       });
+
+    if (constructors.empty())
+    {
+        return;
+    }
+
+    bool hasZeroArg = false;
+    bool zeroArgDeleted = false;
+    for (const auto& ctor : constructors)
+    {
+        const auto& sig = ctor.GetFunction();
+        bool canTakeZero = sig.parameters.empty();
+        if (!canTakeZero)
+        {
+            canTakeZero = std::all_of(sig.parameters.begin(), sig.parameters.end(),
+                                      [](const ParameterInformation& p) { return !p.defaultValue.empty(); });
+        }
+        if (canTakeZero)
+        {
+            hasZeroArg = true;
+            if (sig.modifiers.isDelete)
+            {
+                zeroArgDeleted = true;
+            }
+            break;
+        }
+    }
+
+    TSNode nameNode = parser::GetChildByField(declaratorNode, parser::fields::Name);
+    TSNode targetNode = ts_node_is_null(nameNode) ? declaratorNode : nameNode;
+
+    if (zeroArgDeleted)
+    {
+        EmitAtNode(targetNode, ctx, "as-err-deleted-method-called", typeName, typeName);
+    }
+    else if (!hasZeroArg)
+    {
+        EmitAtNode(targetNode, ctx, "as-err-no-default-constructor", typeName);
+    }
+}
+
+std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& table)
+{
+    std::optional<Symbol> result;
+    ForEachSymbolNamed(name, table,
+                       [&](const Symbol& sym)
+                       {
+                           if (sym.type == SymbolType::Funcdef)
+                           {
+                               result = sym;
+                               return true;
+                           }
+                           return false;
+                       });
+    if (result)
+    {
+        return result;
+    }
+    const std::string bare = LastScopeSegment(name);
+    const auto matches = table.FindTypeSymbolsByShortName(bare);
+    for (const auto& sym : matches)
+    {
+        if (sym.type == SymbolType::Funcdef)
+        {
+            return sym;
+        }
+    }
+    return result;
+}
+
+bool MatchesFuncdefSignature(const FunctionSignature& fn, const FuncdefSignature& fd)
+{
+    if (CleanBaseType(fn.returnType) != CleanBaseType(fd.returnType))
+    {
+        return false;
+    }
+    if (fn.parameters.size() != fd.parameters.size())
+    {
+        return false;
+    }
+    for (size_t i = 0; i < fn.parameters.size(); ++i)
+    {
+        if (CleanBaseType(fn.parameters[i].typeName) != CleanBaseType(fd.parameters[i].typeName))
+        {
+            return false;
+        }
+        if (fn.parameters[i].modifier != fd.parameters[i].modifier)
+        {
+            return false;
+        }
+        if (fn.parameters[i].isReference != fd.parameters[i].isReference)
+        {
+            return false;
+        }
+        if (fn.parameters[i].isHandle != fd.parameters[i].isHandle)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+// --- Lambda against its target funcdef ------------------------------------------------
+//
+// A lambda takes its parameter types from the funcdef it is assigned to, so it may leave
+// them out. What it writes, though, has to match exactly - the compiler compares the
+// written signature, it does not convert it. Measured against angelscript_oracle, and the
+// exactness is the surprising half:
+//
+//     funcdef void CB(const string &in);
+//     CB@ cb = function(s) { };                    // accepted, type comes from CB
+//     CB@ cb = function(const string &in s) { };    // accepted, written and identical
+//     CB@ cb = function(string s) { };              // REJECTED - no const, no &in
+//     CB@ cb = function(string &in s) { };          // REJECTED - no const
+//     funcdef void CB(int);
+//     CB@ cb = function(uint a) { };                // REJECTED - int does not widen here
+//
+// ARITY is a hard equality even when every parameter is untyped, and a funcdef's default
+// argument does not relax it: `funcdef void CB(int a = 1)` still rejects `function()`.
+// That is the whole of what this rule can check without risking a false positive, and it
+// is also the mistake real code actually makes.
+//
+// The TYPE NAME is another matter, because the compiler resolves it and this rule only
+// reads it. All of these are ACCEPTED, and a string comparison would report every one:
+//
+//     typedef float real;  funcdef void CB(real);   function(float a)   // typedef
+//     funcdef void CB(array<int>@);                 function(int[]@ a)  // two spellings
+//     namespace N { class Foo{} funcdef void CB(Foo@); }
+//                                                   function(N::Foo@ f) // qualification
+//
+// So the name is compared by its last `::` segment, and not at all when either side names
+// a typedef - the one alias no spelling comparison can see through. `array<int>` and
+// `int[]` need no case of their own: CleanBaseType reduces both to the element type.
+//
+// The DECORATIONS - `const`, `&`, the in/out/inout modifier and `@` - are compared
+// whatever the type name is, because none of them can be hidden by a spelling: AngelScript
+// typedefs alias primitives only (see as-err-typedef-non-primitive), and a namespace
+// qualifies a name without changing whether it is a handle.
+
+void CheckFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode valueNode,
+                            const Scope* /*scope*/, DiagnosticContext& ctx, std::string_view sourceCode)
+{
+    if (ts_node_is_null(valueNode))
+    {
+        return;
+    }
+
+    TSNode actualVal = valueNode;
+    if (std::string_view(NodeType(valueNode)) == "unary_expression")
+    {
+        TSNode op = parser::GetChildByField(valueNode, parser::fields::Operator);
+        if (!ts_node_is_null(op) && NodeText(op, sourceCode) == "@")
+        {
+            TSNode operand = parser::GetChildByField(valueNode, parser::fields::Operand);
+            if (!ts_node_is_null(operand))
+            {
+                actualVal = operand;
+            }
+        }
+    }
+
+    const std::string_view valueType = NodeType(actualVal);
+    if (valueType == node_types::LambdaExpression)
+    {
+        // A lambda has no symbol to look up, so the name search below would find nothing
+        // and return in silence - which is what it did before this branch existed.
+        TSNode listNode = parser::GetChildByField(actualVal, parser::fields::Parameters);
+        if (ts_node_is_null(listNode))
+        {
+            return;
+        }
+        if (LambdaContradictsFuncdef(ReadLambdaParameters(listNode, sourceCode), funcdefSig, ctx.request.symbolTable))
+        {
+            EmitAtNode(targetNode, ctx, "as-err-signature-mismatch-func-handle");
+        }
+        return;
+    }
+
+    std::string funcName = NodeText(actualVal, sourceCode);
+    while (!funcName.empty() && isspace(static_cast<unsigned char>(funcName.front())))
+        funcName.erase(funcName.begin());
+    while (!funcName.empty() && isspace(static_cast<unsigned char>(funcName.back())))
+        funcName.pop_back();
+
+    if (funcName.empty() || funcName == "null")
+    {
+        return;
+    }
+
+    std::vector<Symbol> candidates;
+    auto found = ctx.request.symbolTable.FindSymbolsPtr(funcName);
+    if (found)
+    {
+        for (const auto& s : *found)
+        {
+            if (s.type == SymbolType::Function)
+            {
+                candidates.push_back(s);
+            }
+        }
+    }
+    if (candidates.empty())
+    {
+        std::string bare = LastScopeSegment(funcName);
+        auto all = ctx.request.symbolTable.FindSymbolsPtr(bare);
+        if (all)
+        {
+            for (const auto& s : *all)
+            {
+                if (s.type == SymbolType::Function)
+                {
+                    candidates.push_back(s);
+                }
+            }
+        }
+    }
+
+    if (candidates.empty())
+    {
+        return;
+    }
+
+    bool matched = false;
+    for (const auto& cand : candidates)
+    {
+        if (MatchesFuncdefSignature(cand.GetFunction(), funcdefSig))
+        {
+            matched = true;
+            break;
+        }
+    }
+
+    if (!matched)
+    {
+        EmitAtNode(targetNode, ctx, "as-err-signature-mismatch-func-handle");
+    }
+}
+
+void CheckConstructorDelegation(TSNode funcNode, DiagnosticContext& ctx, std::string_view sourceCode)
+{
+    TSNode parent = ts_node_parent(funcNode);
+    while (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) != "class_declaration")
+    {
+        parent = ts_node_parent(parent);
+    }
+    if (ts_node_is_null(parent))
+    {
+        return;
+    }
+
+    TSNode classNameNode = parser::GetChildByField(parent, parser::fields::Name);
+    if (ts_node_is_null(classNameNode))
+    {
+        return;
+    }
+    std::string className = NodeText(classNameNode, sourceCode);
+
+    TSNode funcNameNode = parser::GetChildByField(funcNode, parser::fields::Name);
+    if (ts_node_is_null(funcNameNode) || NodeText(funcNameNode, sourceCode) != className)
+    {
+        return;
+    }
+
+    TSNode bodyNode = parser::GetChildByField(funcNode, parser::fields::Body);
+    if (ts_node_is_null(bodyNode))
+    {
+        return;
+    }
+
+    const uint32_t stmtCount = ts_node_named_child_count(bodyNode);
+    for (uint32_t i = 0; i < stmtCount; ++i)
+    {
+        TSNode stmt = ts_node_named_child(bodyNode, i);
+        if (std::string_view(ts_node_type(stmt)) != "expression_statement")
+        {
+            continue;
         }
 
-        if (request.nodeIndex)
+        if (ts_node_named_child_count(stmt) == 0)
         {
-            for (TSNode node : request.nodeIndex->AllNodes())
+            continue;
+        }
+
+        TSNode expr = ts_node_named_child(stmt, 0);
+        std::string_view exprType = ts_node_type(expr);
+        if (exprType == node_types::CallExpression || exprType == "construct_call_expression")
+        {
+            TSNode callee = parser::GetChildByField(expr, parser::fields::Function);
+            if (ts_node_is_null(callee))
             {
-                if (ts_node_is_named(node))
+                callee = parser::GetChildByField(expr, parser::fields::Type);
+            }
+            if (ts_node_is_null(callee) && ts_node_child_count(expr) > 0)
+            {
+                callee = ts_node_child(expr, 0);
+            }
+            if (!ts_node_is_null(callee) && NodeText(callee, sourceCode) == className)
+            {
+                EmitAtNode(expr, ctx, "as-err-constructor-delegation-disallowed");
+            }
+        }
+    }
+}
+
+/** @brief Rule for `cast<T>(expr)` - the reinterpreting route. */
+void CheckCast(TSNode castNode, const Scope* scope, DiagnosticContext& ctx, std::string_view sourceCode)
+{
+    const std::string targetName =
+        CleanBaseType(NodeText(parser::GetChildByField(castNode, parser::fields::Type), sourceCode));
+
+    TSNode valueNode = parser::GetChildByField(castNode, parser::fields::Value);
+    if (ts_node_is_null(valueNode) || targetName.empty())
+    {
+        return;
+    }
+
+    const SymbolTable& table = ctx.request.symbolTable;
+
+    // A primitive has no declaration to find, and requiring one is what kept this rule from
+    // ever reporting the cases the compiler rejects - every one of them has a primitive on
+    // a side. Checked first, so the visibility guards below apply only to named types.
+    const bool targetIsScalar = IsScalarCastTarget(targetName, table);
+
+    // Unlike the other two rules the target may legitimately be an interface here, so the
+    // class-only ReadDeclaredType is not what decides visibility.
+    if (!targetIsScalar && !FindTypeDeclaration(targetName, table).found)
+    {
+        return;
+    }
+
+    const ExpressionType source = ResolveValueType(valueNode, scope, ctx, sourceCode);
+    if (!source.known || source.baseName.empty() || IsSameType(source.baseName, targetName))
+    {
+        return;
+    }
+
+    const bool sourceIsScalar = IsScalarCastTarget(source.baseName, table);
+    if (!sourceIsScalar && !FindTypeDeclaration(source.baseName, table).found)
+    {
+        return;
+    }
+    if (ctx.request.IsRegisteredSymbol(source.baseName) || ctx.request.IsRegisteredSymbol(targetName))
+    {
+        return;
+    }
+
+    if (AreHierarchyRelated(source.baseName, targetName, table))
+    {
+        return;
+    }
+
+    // Between two reference types `cast<>` is never a compile-time error, whatever their
+    // hierarchies say. It is a *dynamic* cast: it answers null at runtime when the object
+    // is not of that type, which is the entire reason the language spells it this way
+    // rather than with a conversion. Measured, all four accepted:
+    //
+    //     class A {} class B {}  A@ g();
+    //     B@ b = cast<B@>(g());          // two unrelated classes
+    //     I@ i = cast<I@>(g());          // class to an interface it does not declare
+    //     B@ b = cast<B@>(iface);        // interface to a class that does not declare it
+    //     J@ j = cast<J@>(iface);        // one interface to another
+    //
+    // This rule used to report the first three, and a unit test asserted the first as
+    // correct behaviour. Found against a real Sven Co-op plugin, where
+    // `cast<CIns2GL@>(CastToScriptClass(pEntity))` is how the game hands a script its own
+    // object back: seven errors on code that runs.
+    //
+    // What the compiler rejects is the other half, and it rejects it uniformly - there is
+    // no legal cast<> with a primitive or an enum on either side, not even cast<int>(n):
+    //
+    //     cast<int>(obj)  cast<int>(n)  cast<int>(enumValue)  cast<E>(n)
+    //         Illegal target type for reference cast
+    //     cast<A@>(n)
+    //         No conversion from 'int' to 'A@' available
+    //
+    // So that is now the whole of the rule. Before this it had no true positives at all:
+    // the reference cases it reported are legal, and the scalar cases it could have caught
+    // were leaving early for want of a type declaration.
+    if (!sourceIsScalar && !targetIsScalar)
+    {
+        return;
+    }
+
+    if (DeclaresAnyCastOperator(source.baseName, table) || DeclaresAnyCastOperator(targetName, table))
+    {
+        return;
+    }
+
+    EmitAtNode(castNode, ctx, "as-err-invalid-cast", source.baseName, targetName);
+}
+
+/**
+ * @brief The bool conversion operator a class declares, or nullptr when it declares none.
+ *
+ * Returns nullptr for a type whose declaration is not visible, which is the load-bearing
+ * half. A workspace's host types are registered in C++ and appear in no stub this analyzer
+ * can read; assuming such a type has no bool conversion would report every legal use of one.
+ * So the rule speaks only about classes it can actually see the members of.
+ *
+ * `opImplConv` is preferred over `opConv` when a class declares both, because that is the
+ * one the engine reaches for first and so the one the quick fix should name.
+ */
+
+const std::string* BoolConversionOperator(const std::string& typeName, const SymbolTable& table)
+{
+    if (typeName.empty())
+        return nullptr;
+
+    static const std::string implicitName = "opImplConv";
+    static const std::string explicitName = "opConv";
+
+    bool typeIsVisible = false;
+    bool hasImplicit = false;
+    bool hasExplicit = false;
+
+    auto checkClassMethods = [&](const std::string& cls)
+    {
+        if (auto ptr = table.FindSymbolsPtr(cls + "::" + implicitName))
+        {
+            for (const auto& sym : *ptr)
+            {
+                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
                 {
-                    ProcessNode(node, request, ctx);
+                    if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                    {
+                        hasImplicit = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (auto ptr = table.FindSymbolsPtr(cls + "::" + explicitName))
+        {
+            for (const auto& sym : *ptr)
+            {
+                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                {
+                    if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                    {
+                        hasExplicit = true;
+                        break;
+                    }
+                }
+            }
+        }
+    };
+
+    if (auto ptr = table.FindSymbolsPtr(typeName))
+    {
+        for (const auto& sym : *ptr)
+        {
+            if (sym.type == SymbolType::Class)
+            {
+                typeIsVisible = true;
+                break;
+            }
+        }
+    }
+    if (typeIsVisible)
+    {
+        checkClassMethods(typeName);
+    }
+    else
+    {
+        auto shortTypes = table.FindTypeSymbolsByShortName(typeName);
+        for (const auto& sym : shortTypes)
+        {
+            if (sym.type == SymbolType::Class)
+            {
+                typeIsVisible = true;
+                const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                checkClassMethods(qName);
+                if (hasImplicit || hasExplicit)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!typeIsVisible)
+        return nullptr;
+
+    if (hasImplicit)
+        return &implicitName;
+    if (hasExplicit)
+        return &explicitName;
+
+    // A visible class with no bool conversion at all. The compiler rejects that too, but
+    // with a different message and for a different reason, and this rule is about the one
+    // case where an engine setting decides the answer.
+    return nullptr;
+}
+
+/**
+ * @brief The sub-expressions a condition actually evaluates for truth.
+ *
+ * `if (h)` is one operand; `if (h && other)` is two, and `if (!h)` is one behind a negation.
+ * Collecting them handles compound conditions like `if (h && true)` - resolving the
+ * type of the whole condition there answers `bool`, because `&&` yields one, and the class
+ * that cannot convert sits underneath.
+ *
+ * Only the logical operators recurse. `a == b` also yields a bool but its operands are
+ * compared, not converted to bool, and the engine's rules for that are a different question.
+ */
+void CollectBooleanOperands(TSNode expr, std::vector<TSNode>& operands, int depth = 0)
+{
+    if (ts_node_is_null(expr) || depth > k_maxAstDepth)
+        return;
+
+    const std::string_view type = NodeType(expr);
+
+    if (type == "binary_expression")
+    {
+        const TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
+        const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
+        if (opText == "&&" || opText == "and" || opText == "||" || opText == "or" || opText == "^^" || opText == "xor")
+        {
+            CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Left), operands, depth + 1);
+            CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Right), operands, depth + 1);
+            return;
+        }
+    }
+    else if (type == "unary_expression")
+    {
+        const TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
+        const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
+        if (opText == "!" || opText == "not")
+        {
+            CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Operand), operands, depth + 1);
+            return;
+        }
+    }
+
+    operands.push_back(expr);
+}
+
+void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+{
+    const std::string_view nodeType = NodeType(node);
+
+    // Resolved lazily: only the three rules below need the scope walk, and paying for it on
+    // every node of the tree costs more than the rules themselves.
+    const Scope* scope = nullptr;
+    bool scopeResolved = false;
+    const auto scopeAt = [&]() -> const Scope*
+    {
+        if (!scopeResolved)
+        {
+            const TSPoint start = ts_node_start_point(node);
+            scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
+            scopeResolved = true;
+        }
+        return scope;
+    };
+
+    // A class standing where a bool is expected.
+    //
+    // Measured against angelscript_oracle: under asEP_BOOL_CONVERSION_MODE 0, the engine's
+    // own default, `if (h)` on a script class is rejected - "Expression must be of boolean
+    // type, instead found 'H&'" - whether the class declares opImplConv, opConv, or both.
+    // Under mode 1 both forms are accepted.
+    //
+    // Narrower than it first looks, and the earlier wording here claimed more than was
+    // measured. The SDK's own comment says mode 0 still lets a **value type** convert via
+    // opImplConv, and every probe behind this rule used a script class - which in
+    // AngelScript is a reference type, so they measured the reference half only.
+    //
+    // It does not change what this rule does, because it cannot: the only annotation a stub
+    // can carry is @listpattern, so nothing in a predefined file says "this type is a value
+    // type". A registered value type with opImplConv would therefore be hinted about on
+    // legal code. Acceptable only because this is a Hint and off by default; if it ever
+    // becomes anything louder, a @valuetype marker has to exist first.
+    //
+    // A Hint and opt-in, not an error, because the analyzer cannot see the host's engine
+    // setup. A host running mode 1 makes this code legal, and an error there would be a
+    // false positive on working code - which is the one thing this project does not trade.
+    // The condition is worth looking at whatever the settings say. Two rules read it: the
+    // opt-in hint about a class that would need an explicit conversion, and - always on -
+    // the plain fact that a number is not a condition. Measured, and mode-independent:
+    //
+    //     if (x) / while (x) / for (; x; ) / do while (x)   with an int or a float
+    //         Expression must be of boolean type, instead found 'int'
+    //     bool b = x;
+    //         Can't implicitly convert from 'int' to 'bool'.
+    //
+    // AngelScript has no numeric-to-bool conversion at all, so asEP_BOOL_CONVERSION_MODE -
+    // which decides whether a *class* may convert - does not reach this.
+    if (nodeType == "if_statement" || nodeType == "while_statement" || nodeType == "do_while_statement" ||
+        nodeType == "for_statement" || nodeType == "ternary_expression")
+    {
+        // `for` and the ternary were missing, and they are not a guess either: `for (; c; )`
+        // and `c ? 1 : 2` on a class declaring opImplConv are both rejected under mode 0
+        // and both accepted under mode 1, exactly as `if` and `while` are. Five probes,
+        // each run under both settings.
+        //
+        // Two shapes of node, two ways to reach the condition. `for` and the ternary name
+        // the field; if/while/do do not - see BuiltQueries.h - so there the condition is
+        // the first named child, or the second for do/while, where the body comes first.
+        TSNode condition{};
+        if (nodeType == "for_statement" || nodeType == "ternary_expression")
+        {
+            condition = parser::GetChildByField(node, parser::fields::Condition);
+
+            // `for`'s condition field holds an *expression_statement*, not the expression -
+            // grammar.js declares it as `choice($.expression_statement, ";")`, the `;` being
+            // the empty `for (;;)`. Handing the wrapper straight to CollectBooleanOperands
+            // found nothing and the rule stayed silent on every `for` in every file, which
+            // is exactly how it looked when the field name was simply wrong.
+            if (!ts_node_is_null(condition) && std::string_view(ts_node_type(condition)) == "expression_statement")
+            {
+                condition = ts_node_named_child(condition, 0);
+            }
+
+            if (ts_node_is_null(condition) && nodeType == "ternary_expression")
+                condition = ts_node_named_child(node, 0);
+        }
+        else
+        {
+            condition = ts_node_named_child(node, nodeType == "do_while_statement" ? 1 : 0);
+        }
+
+        if (!ts_node_is_null(condition))
+        {
+            // Each operand the condition evaluates for truth, not the condition as a whole:
+            // `if (h && true)` resolves to bool at the top because `&&` yields one, and the
+            // class that cannot convert is underneath it.
+            std::vector<TSNode> operands;
+            CollectBooleanOperands(condition, operands);
+
+            for (const TSNode& operand : operands)
+            {
+                const std::string operandType = CleanBaseType(ResolveExpressionType(
+                    operand, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
+
+                if (operandType.empty() || operandType == "auto" || operandType == "void")
+                {
+                    continue;
+                }
+
+                const bool isKnown = parser::primitives::IsNumeric(operandType) || operandType == "string" ||
+                                     ctx.request.symbolTable.HasSymbolAnywhere(operandType);
+
+                if (isKnown && !IsTruthyCondition(operandType, ctx.request.symbolTable))
+                {
+                    const TSPoint start = ts_node_start_point(operand);
+                    const TSPoint end = ts_node_end_point(operand);
+                    ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-condition-not-boolean",
+                                    operandType);
+                    continue;
+                }
+
+                if (!ctx.request.diagnostics || !ctx.request.diagnostics->reportBoolConversion ||
+                    ctx.request.BoolConversionMode() != 0)
+                {
+                    continue;
+                }
+
+                // Silent unless fully visible. A type this analyzer cannot find the
+                // declaration of is assumed engine-registered, and an engine-registered type
+                // may convert to bool by a route no stub records.
+                if (const std::string* conversion = BoolConversionOperator(operandType, ctx.request.symbolTable))
+                {
+                    const TSPoint start = ts_node_start_point(operand);
+                    const TSPoint end = ts_node_end_point(operand);
+                    ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-hint-bool-conversion",
+                                    operandType, *conversion, DiagnosticSeverity::Hint);
+                }
+            }
+        }
+    }
+
+    if (nodeType == "ternary_expression")
+    {
+        TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
+        TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
+        if (!ts_node_is_null(consequence) && !ts_node_is_null(alternative))
+        {
+            const std::string t1 = ResolveExpressionType(consequence, scopeAt(), ctx.request.symbolTable,
+                                                         request.sourceCode, ctx.request.fileUri);
+            const std::string t2 = ResolveExpressionType(alternative, scopeAt(), ctx.request.symbolTable,
+                                                         request.sourceCode, ctx.request.fileUri);
+
+            const std::string clean1 = CanonicalizeType(CleanExpressionType(t1));
+            const std::string clean2 = CanonicalizeType(CleanExpressionType(t2));
+
+            if (!clean1.empty() && !clean2.empty() && clean1 != "auto" && clean2 != "auto" && clean1 != "void" &&
+                clean2 != "void")
+            {
+                bool isStringMismatch = (IsStringType(clean1, ctx) != IsStringType(clean2, ctx));
+                bool isEnumMismatch = ResolvesToEnum(clean1, ctx.request.symbolTable) &&
+                                      ResolvesToEnum(clean2, ctx.request.symbolTable) && clean1 != clean2;
+                if (isStringMismatch || isEnumMismatch ||
+                    (!IsConvertible(clean1, clean2, ctx) && !IsConvertible(clean2, clean1, ctx)))
+                {
+                    EmitAtNode(alternative, ctx, "as-err-no-implicit-conversion", clean2, clean1);
+                }
+            }
+        }
+    }
+
+    if (nodeType == "expression_statement")
+    {
+        TSNode expr = ts_node_named_child(node, 0);
+        if (!ts_node_is_null(expr))
+        {
+            std::string dataTypeName;
+            if (IsBareDataType(expr, scopeAt(), ctx.request.symbolTable, request.sourceCode, dataTypeName))
+            {
+                EmitAtNode(expr, ctx, diagnostics::codes::ExpressionIsDataType, dataTypeName);
+            }
+        }
+    }
+
+    // `foreach (auto value : container)` writes `auto` and nothing else, so without this
+    // the loop variable reached every consumer typeless: no hover, no completion after
+    // `value.`, nothing for the expression resolver behind the access and const passes.
+    // Same guard and same write-back as the `auto` inference below - see the comment there
+    // for why mutableScopeRoot is what makes touching the scope tree sound.
+    if (nodeType == "foreach_statement")
+    {
+        TSNode collection = parser::GetChildByField(node, parser::fields::Collection);
+        if (!ts_node_is_null(collection))
+        {
+            const std::string containerType = ResolveExpressionType(collection, scopeAt(), ctx.request.symbolTable,
+                                                                    request.sourceCode, ctx.request.fileUri);
+
+            // A primitive can never be iterated: `foreach` needs opForBegin/opForEnd/
+            // opForNext/opForValue, and nothing can register those on `int`. The real
+            // compiler answers this with "Type 'int' is not valid type for foreach loops".
+            //
+            // Only primitives are reported, for the usual reason - a class that declares no
+            // opFor* here may well have them registered in C++ where no stub records it, and
+            // reporting that would be a false positive on working code.
+            const std::string containerBase = CleanExpressionType(containerType);
+            if (IsCorePrimitive(containerBase) && containerBase != "auto" && containerBase != "void")
+            {
+                EmitAtNode(collection, ctx, "as-err-invalid-foreach-container", containerBase);
+            }
+
+            // The write-back below is the only part that needs an unpublished tree; the
+            // diagnostic above is a plain reading of the source and is owed to the user
+            // whether or not this caller owns the scope tree exclusively.
+            if (!containerType.empty() && request.mutableScopeRoot)
+            {
+                uint32_t variableIndex = 0;
+                const uint32_t childCount = ts_node_named_child_count(node);
+                for (uint32_t i = 0; i < childCount; ++i)
+                {
+                    TSNode child = ts_node_named_child(node, i);
+                    if (NodeType(child) != "foreach_variable")
+                    {
+                        continue;
+                    }
+
+                    TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
+                    const std::string valueType = ForeachValueType(containerType, variableIndex, ctx);
+                    ++variableIndex;
+
+                    if (ts_node_is_null(nameNode) || valueType.empty())
+                    {
+                        continue;
+                    }
+
+                    // The body's scope is where the variable lives, so it is resolved from
+                    // the name's own position rather than the statement's.
+                    const TSPoint namePoint = ts_node_start_point(nameNode);
+                    const Scope* bodyScope = FindEnclosingScope(request.scopeRoot, namePoint.row, namePoint.column);
+                    const LocalDefinition* def =
+                        ResolveInScope(bodyScope ? bodyScope : scopeAt(), NodeText(nameNode, request.sourceCode));
+
+                    if (def && (def->typeName == "auto" || def->typeName == "auto@"))
+                    {
+                        const_cast<LocalDefinition*>(def)->typeName = valueType;
+                    }
+                }
+            }
+        }
+    }
+
+    if (nodeType == "variable_declaration")
+    {
+        TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
+        if (ts_node_is_null(typeNode))
+        {
+            typeNode = parser::GetChildByField(node, parser::fields::Type);
+        }
+
+        std::string rawType = CleanBaseType(NodeText(typeNode, request.sourceCode));
+        if (rawType == "auto")
+        {
+            for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
+            {
+                TSNode child = ts_node_named_child(node, i);
+                if (NodeType(child) != "variable_declarator")
+                {
+                    continue;
+                }
+
+                TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
+                std::string varName = NodeText(nameNode, request.sourceCode);
+
+                TSNode valueNode = parser::GetChildByField(child, parser::fields::Value);
+                if (ts_node_is_null(valueNode))
+                {
+                    uint32_t childCount = ts_node_child_count(child);
+                    bool foundEq = false;
+                    for (uint32_t c = 0; c < childCount; ++c)
+                    {
+                        TSNode ch = ts_node_child(child, c);
+                        if (foundEq)
+                        {
+                            valueNode = ch;
+                            break;
+                        }
+                        if (NodeText(ch, request.sourceCode) == "=")
+                        {
+                            foundEq = true;
+                        }
+                    }
+                }
+
+                if (ts_node_is_null(valueNode))
+                {
+                    EmitAtNode(child, ctx, "as-err-auto-requires-initializer");
+                    continue;
+                }
+
+                // Check cyclic auto dependency (e.g. auto invalid2 = invalid2 + 1)
+                std::string valueText = NodeText(valueNode, request.sourceCode);
+                bool isCyclic = false;
+                if (!varName.empty())
+                {
+                    size_t pos = 0;
+                    while ((pos = valueText.find(varName, pos)) != std::string::npos)
+                    {
+                        bool leftBoundary = (pos == 0 || (!isalnum(static_cast<unsigned char>(valueText[pos - 1])) &&
+                                                          valueText[pos - 1] != '_'));
+                        bool rightBoundary = (pos + varName.size() >= valueText.size() ||
+                                              (!isalnum(static_cast<unsigned char>(valueText[pos + varName.size()])) &&
+                                               valueText[pos + varName.size()] != '_'));
+                        if (leftBoundary && rightBoundary)
+                        {
+                            isCyclic = true;
+                            break;
+                        }
+                        pos += varName.size();
+                    }
+                }
+
+                if (isCyclic)
+                {
+                    EmitAtNode(valueNode, ctx, "as-err-cyclic-auto-dependency", varName);
+                    continue;
+                }
+
+                std::string rhsType = ResolveExpressionType(valueNode, scopeAt(), ctx.request.symbolTable,
+                                                            request.sourceCode, ctx.request.fileUri);
+                if (rhsType == "void")
+                {
+                    EmitAtNode(valueNode, ctx, "as-err-cannot-infer-void");
+                }
+                else if (rhsType == "null")
+                {
+                    EmitAtNode(valueNode, ctx, "as-err-cannot-infer-null");
+                }
+                // Writing the deduced type back is what lets hover, completion and the
+                // other checkers see `auto` as its concrete type. It is guarded on
+                // mutableScopeRoot because it is only sound on a tree the caller has not
+                // published yet: doing it unconditionally meant the analysis thread wrote
+                // this std::string while the message loop read it for a hover.
+                else if (!rhsType.empty() && request.mutableScopeRoot && scopeAt())
+                {
+                    const LocalDefinition* def = ResolveInScope(scopeAt(), varName);
+                    if (def && (def->typeName == "auto" || def->typeName == "auto@"))
+                    {
+                        // Sound only under the guard above: mutableScopeRoot is the caller
+                        // asserting it owns this exact tree exclusively, so the constness
+                        // here is incidental rather than a shared-state guarantee.
+                        const_cast<LocalDefinition*>(def)->typeName = rhsType;
+                    }
                 }
             }
         }
         else
         {
-            VisitNode(request.root, request, ctx);
-        }
+            const std::string fullType = NodeText(typeNode, request.sourceCode);
+            const std::string baseType = CleanBaseType(fullType);
+            auto funcdefSym = FindFuncdef(baseType, ctx.request.symbolTable);
+            if (funcdefSym)
+            {
+                for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
+                {
+                    TSNode child = ts_node_named_child(node, i);
+                    if (NodeType(child) != "variable_declarator")
+                    {
+                        continue;
+                    }
+                    TSNode valNode = parser::GetChildByField(child, parser::fields::Value);
+                    CheckFuncdefAssignment(child, funcdefSym->GetFuncdef(), valNode, scopeAt(), ctx,
+                                           request.sourceCode);
+                }
+            }
 
-        if (ctx.logger && ctx.logger->IsTraceEnabled())
-        {
-            ctx.logger->LogTrace(fmt::format("[TypeConversionChecker] Finished CheckTypeConversions for URI: {}", ctx.request.fileUri));
+            const DeclaredType declared = ReadDeclaredType(typeNode, ctx, request.sourceCode);
+            if (declared.usable && !IsMixinClass(declared.baseName, ctx.request.symbolTable))
+            {
+                for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
+                {
+                    TSNode child = ts_node_named_child(node, i);
+                    if (NodeType(child) != "variable_declarator")
+                    {
+                        continue;
+                    }
+
+                    CheckInitializer(child, declared, scopeAt(), ctx, request.sourceCode);
+
+                    if (!declared.isHandle)
+                    {
+                        NonInstantiableKind nonInst =
+                            ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable);
+                        if (nonInst == NonInstantiableKind::Abstract)
+                        {
+                            EmitAtNode(child, ctx, "as-err-abstract-instantiated", declared.baseName,
+                                       declared.baseName);
+                        }
+                        else
+                        {
+                            TSNode argsNode = parser::GetChildByField(child, parser::fields::Arguments);
+                            TSNode valNode = parser::GetChildByField(child, parser::fields::Value);
+                            if (ts_node_is_null(argsNode) && ts_node_is_null(valNode))
+                            {
+                                CheckDefaultConstructor(child, declared.baseName, ctx);
+                            }
+                            else if (!ts_node_is_null(argsNode) && !declared.isTemplateOrArray)
+                            {
+                                // Skipped for a template: the argument belongs to the
+                                // container's constructor and declared.baseName is the
+                                // element type, so this would ask whether 33 can become a
+                                // PlayerSlide. The container's own constructors are the
+                                // engine's - see the visibility guard in CheckConstruction.
+                                CheckConstruction(argsNode, declared.baseName, scopeAt(), ctx, request.sourceCode);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
+    else if (nodeType == "assignment_expression")
+    {
+        TSNode left = parser::GetChildByField(node, parser::fields::Left);
+        TSNode right = parser::GetChildByField(node, parser::fields::Right);
+        TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+        std::string opText = NodeText(opNode, request.sourceCode);
+        if (!ts_node_is_null(left) && !ts_node_is_null(right))
+        {
+            // Property access checks
+            std::string_view leftNodeType = NodeType(left);
+            if (leftNodeType == "index_expression")
+            {
+                TSNode arrayNode = parser::GetChildByField(left, parser::fields::Object);
+                if (ts_node_is_null(arrayNode) && ts_node_named_child_count(left) > 0)
+                {
+                    arrayNode = ts_node_named_child(left, 0);
+                }
+                PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scopeAt(), ctx.request.symbolTable,
+                                                                 request.sourceCode, ctx.request.fileUri);
+                if (pInfo.isProperty && pInfo.isIndexed && opText != "=")
+                {
+                    EmitAtNode(node, ctx, "as-err-compound-assign-on-indexed-prop", pInfo.propName);
+                }
+            }
+            else
+            {
+                PropertyAccessInfo pInfo = InspectPropertyAccess(left, scopeAt(), ctx.request.symbolTable,
+                                                                 request.sourceCode, ctx.request.fileUri);
+                if (pInfo.isProperty)
+                {
+                    if (!pInfo.hasSet && pInfo.hasGet)
+                    {
+                        EmitAtNode(left, ctx, "as-err-read-only-property", pInfo.propName);
+                    }
+                    else if (opText != "=")
+                    {
+                        if (pInfo.receiverType.find('@') == std::string::npos)
+                        {
+                            EmitAtNode(node, ctx, "as-err-compound-assign-on-value-prop", pInfo.propName);
+                        }
+                    }
+                }
+            }
+
+            std::string leftType = ResolveExpressionType(left, scopeAt(), ctx.request.symbolTable, request.sourceCode,
+                                                         ctx.request.fileUri);
+            std::string rightType = ResolveExpressionType(right, scopeAt(), ctx.request.symbolTable, request.sourceCode,
+                                                          ctx.request.fileUri);
+            std::string cleanLeft = CleanBaseType(leftType);
+            std::string cleanRight = CleanBaseType(rightType);
+
+            // Covers `i = f;` and `i += f;` alike - the compiler warns on both, and a
+            // compound assignment reaches here with the same left and right types.
+            CheckFloatTruncation(right, cleanRight, cleanLeft, scopeAt(), ctx, request.sourceCode);
+
+            auto leftFuncdef = FindFuncdef(cleanLeft, ctx.request.symbolTable);
+            if (leftFuncdef)
+            {
+                CheckFuncdefAssignment(node, leftFuncdef->GetFuncdef(), right, scopeAt(), ctx, request.sourceCode);
+            }
+
+            // Handle assignment const qualifier discard check
+            bool isHandleAssignment = false;
+            TSNode actualLeft = left;
+            TSNode actualRight = right;
+            if (std::string_view(NodeType(left)) == "unary_expression")
+            {
+                TSNode op = parser::GetChildByField(left, parser::fields::Operator);
+                if (!ts_node_is_null(op) && NodeText(op, request.sourceCode) == "@")
+                {
+                    isHandleAssignment = true;
+                    TSNode operand = parser::GetChildByField(left, parser::fields::Operand);
+                    if (!ts_node_is_null(operand))
+                    {
+                        actualLeft = operand;
+                    }
+                }
+            }
+            if (std::string_view(NodeType(right)) == "unary_expression")
+            {
+                TSNode op = parser::GetChildByField(right, parser::fields::Operator);
+                if (!ts_node_is_null(op) && NodeText(op, request.sourceCode) == "@")
+                {
+                    TSNode operand = parser::GetChildByField(right, parser::fields::Operand);
+                    if (!ts_node_is_null(operand))
+                    {
+                        actualRight = operand;
+                    }
+                }
+            }
+
+            if (isHandleAssignment)
+            {
+                auto getFullType = [&](TSNode n) -> std::string
+                {
+                    std::string name = NodeText(n, request.sourceCode);
+                    if (scopeAt())
+                    {
+                        if (const auto* def = ResolveInScope(scopeAt(), LastScopeSegment(name)))
+                        {
+                            return def->typeName;
+                        }
+                    }
+                    if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(name))
+                    {
+                        for (const auto& s : *syms)
+                        {
+                            if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
+                            {
+                                return s.GetVariable().typeName;
+                            }
+                        }
+                    }
+                    return "";
+                };
+
+                std::string leftFull = getFullType(actualLeft);
+                std::string rightFull = getFullType(actualRight);
+                bool rightConstTarget = rightFull.starts_with("const ");
+                bool leftConstTarget = leftFull.starts_with("const ");
+                if (rightConstTarget && !leftConstTarget && !cleanRight.empty() && !cleanLeft.empty())
+                {
+                    EmitAtNode(right, ctx, "as-err-no-implicit-conversion", "const " + cleanRight + "@",
+                               cleanLeft + "@");
+                }
+            }
+
+            // Check if opAssign is explicitly deleted on LHS class
+            if (!cleanLeft.empty())
+            {
+                auto opSyms = ctx.request.symbolTable.FindSymbolsPtr(cleanLeft + "::opAssign");
+                if (opSyms)
+                {
+                    for (const auto& sym : *opSyms)
+                    {
+                        if (sym.type == SymbolType::Function &&
+                            std::holds_alternative<FunctionSignature>(sym.signature) &&
+                            sym.GetFunction().modifiers.isDelete)
+                        {
+                            EmitAtNode(node, ctx, "as-err-deleted-method-called", cleanLeft, "opAssign");
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!cleanLeft.empty() && !cleanRight.empty() && cleanLeft != cleanRight)
+            {
+                // Which operator sits between the two sides decides whether this is a
+                // conversion at all. `value += 1` on a class declaring opAddAssign(int) is
+                // a method call, and nothing converts an int to that class - measured
+                // across all twelve compound assignments, every one of them reported here
+                // on code the compiler accepts.
+                //
+                // Coarse on purpose: the overload's parameter types are not matched, only
+                // its existence. Matching them is the overload resolver's job and it is
+                // reached by the call path; what this rule needs to know is whether it is
+                // looking at a conversion, and an operator method means it is not.
+                const TSNode assignOp = parser::GetChildByField(node, parser::fields::Operator);
+                const std::string_view overload = ts_node_is_null(assignOp)
+                                                      ? std::string_view()
+                                                      : AssignmentOverloadName(NodeText(assignOp, request.sourceCode));
+
+                const bool operatorHandlesIt = DeclaresOperatorMethod(cleanLeft, overload, ctx.request.symbolTable);
+
+                if (!operatorHandlesIt && !IsConvertible(cleanRight, cleanLeft, ctx))
+                {
+                    EmitAtNode(right, ctx, "as-err-no-implicit-conversion", cleanRight, cleanLeft);
+                }
+            }
+        }
+    }
+    else if (nodeType == "binary_expression")
+    {
+        CheckSignedUnsignedComparison(node, scopeAt(), ctx, request.sourceCode);
+    }
+    else if (nodeType == "unary_expression" || nodeType == "postfix_expression")
+    {
+        TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+        std::string opText = NodeText(opNode, request.sourceCode);
+        std::string nodeText = NodeText(node, request.sourceCode);
+        if (opText == "++" || opText == "--" || nodeText.find("++") != std::string::npos ||
+            nodeText.find("--") != std::string::npos)
+        {
+            TSNode argNode = parser::GetChildByField(node, parser::fields::Operand);
+            if (ts_node_is_null(argNode))
+            {
+                uint32_t count = ts_node_named_child_count(node);
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    TSNode ch = ts_node_named_child(node, i);
+                    std::string_view ct = ts_node_type(ch);
+                    if (ct != "operator" && ct != "++" && ct != "--")
+                    {
+                        argNode = ch;
+                        break;
+                    }
+                }
+            }
+            if (!ts_node_is_null(argNode))
+            {
+                PropertyAccessInfo pInfo = InspectPropertyAccess(argNode, scopeAt(), ctx.request.symbolTable,
+                                                                 request.sourceCode, ctx.request.fileUri);
+                if (pInfo.isProperty)
+                {
+                    EmitAtNode(node, ctx, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
+                }
+            }
+        }
+        // Unary minus on an unsigned operand used to be reported here as
+        // as-err-unary-neg-on-unsigned. It is not an error: AngelScript permits it and the
+        // result wraps, exactly as it does in C and C++. Verified against the real compiler
+        // for uint8, uint16, uint, uint64 and unsigned sub-expressions - every one compiles
+        // clean per the AngelScript language specification. The rule fired on ordinary correct code such as
+        // `-someUint`, so it was removed rather than narrowed; there is no operand type for
+        // which the diagnostic would have been right.
+    }
+    else if (nodeType == "member_expression")
+    {
+        TSNode parent = ts_node_parent(node);
+        bool isLhsAssignment = false;
+        bool isUnaryArg = false;
+        if (!ts_node_is_null(parent))
+        {
+            std::string_view pType = ts_node_type(parent);
+            if (pType == "assignment_expression")
+            {
+                TSNode leftChild = parser::GetChildByField(parent, parser::fields::Left);
+                if (ts_node_eq(leftChild, node))
+                {
+                    isLhsAssignment = true;
+                }
+            }
+            else if (pType == "unary_expression" || pType == "postfix_expression")
+            {
+                isUnaryArg = true;
+            }
+        }
+        if (!isLhsAssignment && !isUnaryArg)
+        {
+            PropertyAccessInfo pInfo = InspectPropertyAccess(node, scopeAt(), ctx.request.symbolTable,
+                                                             request.sourceCode, ctx.request.fileUri);
+            if (pInfo.isProperty && !pInfo.hasGet && pInfo.hasSet)
+            {
+                EmitAtNode(node, ctx, "as-err-write-only-property", pInfo.propName);
+            }
+        }
+    }
+    else if (nodeType == "if_statement" || nodeType == "while_statement" || nodeType == "for_statement" ||
+             nodeType == "do_while_statement")
+    {
+        TSNode condNode = parser::GetChildByField(node, parser::fields::Condition);
+        if (ts_node_is_null(condNode))
+        {
+            uint32_t count = ts_node_named_child_count(node);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_named_child(node, i);
+                std::string_view ct = ts_node_type(child);
+                if (ct != "compound_statement" && ct != "statement_block" && !ct.ends_with("_statement"))
+                {
+                    condNode = child;
+                    break;
+                }
+            }
+        }
+        if (!ts_node_is_null(condNode))
+        {
+            while (!ts_node_is_null(condNode) &&
+                   std::string_view(ts_node_type(condNode)) == "parenthesized_expression" &&
+                   ts_node_named_child_count(condNode) > 0)
+            {
+                condNode = ts_node_named_child(condNode, 0);
+            }
+
+            bool isHandle = false;
+            if (scopeAt())
+            {
+                const std::string name = NodeText(condNode, request.sourceCode);
+                const LocalDefinition* def = ResolveInScope(scopeAt(), name);
+                if (def)
+                {
+                    isHandle = def->typeName.find('@') != std::string::npos;
+                }
+            }
+
+            std::string condType = ResolveExpressionType(condNode, scopeAt(), ctx.request.symbolTable,
+                                                         request.sourceCode, ctx.request.fileUri);
+            if (isHandle || condType.find('@') != std::string::npos)
+            {
+                std::string baseClass = CleanBaseType(condType);
+                auto opSyms = ctx.request.symbolTable.FindSymbolsPtr(baseClass + "::opImplConv");
+                if (opSyms)
+                {
+                    for (const auto& sym : *opSyms)
+                    {
+                        if (sym.type == SymbolType::Function &&
+                            std::holds_alternative<FunctionSignature>(sym.signature))
+                        {
+                            if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                            {
+                                EmitAtNode(condNode, ctx, "as-err-ref-type-bool-conv-disallowed", baseClass, "bool");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    else if (nodeType == "cast_expression")
+    {
+        CheckCast(node, scopeAt(), ctx, request.sourceCode);
+    }
+    else if (nodeType == "return_statement")
+    {
+        if (ts_node_named_child_count(node) > 0)
+        {
+            TSNode expr = ts_node_named_child(node, 0);
+            TSNode parent = ts_node_parent(node);
+            while (!ts_node_is_null(parent))
+            {
+                const std::string_view pType = ts_node_type(parent);
+                if (pType == "lambda_expression")
+                {
+                    // A lambda writes no return type; the funcdef it is handed to supplies
+                    // one. Measured: `funcdef void CB(); CB@ cb = function() { return 1; };`
+                    // is "Can't return value when return type is 'void'", and
+                    // `funcdef int CB(); ... { return 'x'; }` is "No conversion from
+                    // 'const string' to 'int'". Both are the same two checks the named-
+                    // function branch below makes, against a return type read from
+                    // elsewhere - so this stops at the lambda either way, having judged
+                    // what it could.
+                    const auto target = FuncdefTargetOfLambda(parent, ctx.request.symbolTable, request.sourceCode);
+                    if (target)
+                    {
+                        const std::string expected = CleanBaseType(target->GetFuncdef().returnType);
+                        if (expected == "void")
+                        {
+                            EmitAtNode(expr, ctx, "as-err-void-return-value");
+                        }
+                        else if (!expected.empty())
+                        {
+                            const std::string actual = CleanBaseType(ResolveExpressionType(
+                                expr, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
+                            CheckFloatTruncation(expr, actual, expected, scopeAt(), ctx, request.sourceCode);
+                            if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
+                            {
+                                EmitAtNode(expr, ctx, "as-err-no-implicit-conversion", actual, expected);
+                            }
+                        }
+                    }
+                    break;
+                }
+                if (pType == "func_declaration")
+                {
+                    TSNode retTypeNode = parser::GetChildByField(parent, parser::fields::ReturnType);
+                    if (ts_node_is_null(retTypeNode))
+                    {
+                        retTypeNode = parser::GetChildByField(parent, parser::fields::Type);
+                    }
+                    if (!ts_node_is_null(retTypeNode))
+                    {
+                        TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
+                        uint32_t headEnd =
+                            ts_node_is_null(nameNode) ? ts_node_end_byte(retTypeNode) : ts_node_start_byte(nameNode);
+                        uint32_t headStart = ts_node_start_byte(parent);
+                        std::string headText =
+                            (headEnd > headStart && headEnd <= request.sourceCode.size())
+                                ? std::string(request.sourceCode.substr(headStart, headEnd - headStart))
+                                : "";
+                        std::string rawRetText = NodeText(retTypeNode, request.sourceCode);
+                        bool isReturnRef =
+                            headText.find('&') != std::string::npos || rawRetText.find('&') != std::string::npos;
+                        if (isReturnRef)
+                        {
+                            std::string exprText = NodeText(expr, request.sourceCode);
+                            while (!exprText.empty() && isspace(static_cast<unsigned char>(exprText.front())))
+                                exprText.erase(exprText.begin());
+                            while (!exprText.empty() && isspace(static_cast<unsigned char>(exprText.back())))
+                                exprText.pop_back();
+
+                            const Scope* s = scopeAt();
+                            if (s)
+                            {
+                                const LocalDefinition* def = ResolveInScope(s, exprText);
+                                if (def)
+                                {
+                                    TSPoint funcStart = ts_node_start_point(parent);
+                                    TSPoint funcEnd = ts_node_end_point(parent);
+                                    bool isInsideFunction =
+                                        (def->startLine > funcStart.row && def->startLine < funcEnd.row) ||
+                                        (def->startLine == funcStart.row && def->startCharacter >= funcStart.column);
+                                    if (isInsideFunction)
+                                    {
+                                        if (def->kind == LocalDefinitionKind::Parameter)
+                                        {
+                                            EmitAtNode(expr, ctx, "as-err-cannot-return-param-ref", exprText);
+                                        }
+                                        else if (def->kind == LocalDefinitionKind::Variable)
+                                        {
+                                            EmitAtNode(expr, ctx, "as-err-cannot-return-local-ref", exprText);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        const std::string expected = CleanBaseType(rawRetText);
+                        if (expected == "void")
+                        {
+                            EmitAtNode(expr, ctx, "as-err-void-return-value");
+                        }
+                        else if (!expected.empty())
+                        {
+                            const std::string actual = CleanBaseType(ResolveExpressionType(
+                                expr, scopeAt(), ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri));
+                            CheckFloatTruncation(expr, actual, expected, scopeAt(), ctx, request.sourceCode);
+                            if (!actual.empty() && actual != expected)
+                            {
+                                if (!IsConvertible(actual, expected, ctx))
+                                {
+                                    EmitAtNode(expr, ctx, "as-err-no-implicit-conversion", actual, expected);
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+                parent = ts_node_parent(parent);
+            }
+        }
+    }
+    else if (nodeType == node_types::CallExpression || nodeType == "construct_call_expression")
+    {
+        TSNode callee = parser::GetChildByField(node, parser::fields::Type);
+        if (ts_node_is_null(callee))
+        {
+            callee = parser::GetChildByField(node, parser::fields::Function);
+        }
+        if (ts_node_is_null(callee) && ts_node_child_count(node) > 0)
+        {
+            callee = ts_node_child(node, 0);
+        }
+
+        const std::string calleeName = CleanBaseType(NodeText(callee, request.sourceCode));
+
+        // `MapChangeHook( function(...) )` - a funcdef used as a conversion. This is how
+        // real code writes a callback: across the whole 1,061-file corpus there is not one
+        // `CB@ cb = function(...)`, and every lambda that reaches a funcdef reaches it
+        // through this shape or as a call argument. The compiler answers a wrong lambda
+        // here with "No matching signatures to 'CB(<auto> lambda())'", by the same rules as
+        // the assignment - so it is the same call.
+        //
+        // Guarded on the argument actually being a lambda, because FindFuncdef falls back
+        // to a last-segment scan across the whole table: without the guard, a class that
+        // shares its bare name with some namespace's funcdef would take this branch and
+        // lose its CheckConstruction below.
+        TSNode argsNode = parser::GetChildByField(node, parser::fields::Arguments);
+        TSNode soleArgument = {};
+        if (!ts_node_is_null(argsNode) && ts_node_named_child_count(argsNode) == 1)
+        {
+            soleArgument = ts_node_named_child(argsNode, 0);
+        }
+        const std::string_view soleArgumentType = NodeType(soleArgument);
+        const bool soleArgumentIsLambda = soleArgumentType == node_types::LambdaExpression;
+
+        std::optional<Symbol> calleeFuncdef;
+        if (soleArgumentIsLambda)
+        {
+            calleeFuncdef = FindFuncdef(calleeName, ctx.request.symbolTable);
+        }
+
+        NonInstantiableKind calleeNonInst = ClassifyNonInstantiable(calleeName, ctx.request.symbolTable);
+        if (calleeNonInst == NonInstantiableKind::Abstract)
+        {
+            EmitAtNode(node, ctx, "as-err-abstract-instantiated", calleeName, calleeName);
+        }
+        else if (calleeNonInst == NonInstantiableKind::Mixin)
+        {
+            EmitAtNode(node, ctx, "as-err-mixin-not-a-type", calleeName);
+        }
+        else if (calleeFuncdef)
+        {
+            CheckFuncdefAssignment(node, calleeFuncdef->GetFuncdef(), soleArgument, scopeAt(), ctx, request.sourceCode);
+        }
+        else
+        {
+            const DeclaredType target = ReadDeclaredType(callee, ctx, request.sourceCode);
+            if (target.usable && !target.isHandle && IsSameType(calleeName, target.baseName))
+            {
+                CheckConstruction(parser::GetChildByField(node, parser::fields::Arguments), target.baseName, scopeAt(),
+                                  ctx, request.sourceCode);
+            }
+        }
+    }
+    else if (nodeType == "func_declaration")
+    {
+        CheckConstructorDelegation(node, ctx, request.sourceCode);
+    }
 }
+
+void VisitNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx, int depth = 0)
+{
+    if (depth > k_maxAstDepth)
+    {
+        return;
+    }
+
+    ProcessNode(node, request, ctx);
+
+    // Named children only: every node these rules match is a named one, and anonymous
+    // token nodes ('(', '=', ';') are leaves with nothing underneath them to find.
+    const uint32_t childCount = ts_node_named_child_count(node);
+    for (uint32_t i = 0; i < childCount; ++i)
+    {
+        VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
+    }
+}
+} // namespace
+
+bool IsTruthyCondition(const std::string& typeName, const SymbolTable& table)
+{
+    if (typeName.empty())
+    {
+        return false;
+    }
+
+    // Handles (isHandle or type ends with @) -> true
+    if (typeName.ends_with('@') || typeName.find('@') != std::string::npos)
+    {
+        return true;
+    }
+
+    const std::string clean = CleanBaseType(typeName);
+    // bool -> true
+    if (clean == "bool")
+    {
+        return true;
+    }
+
+    // classes declaring opImplConv or opConv to bool -> true
+    auto checkConv = [&](const std::string& cls) -> bool
+    {
+        if (auto ptr = table.FindSymbolsPtr(cls + "::opImplConv"))
+        {
+            for (const auto& sym : *ptr)
+            {
+                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                {
+                    if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        if (auto ptr = table.FindSymbolsPtr(cls + "::opConv"))
+        {
+            for (const auto& sym : *ptr)
+            {
+                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                {
+                    if (CleanBaseType(sym.GetFunction().returnType) == "bool")
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    };
+
+    if (checkConv(clean))
+    {
+        return true;
+    }
+
+    auto shortMatches = table.FindTypeSymbolsByShortName(clean);
+    for (const auto& sym : shortMatches)
+    {
+        if (sym.type == SymbolType::Class)
+        {
+            const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            if (checkConv(qName))
+            {
+                return true;
+            }
+        }
+    }
+
+    // all other types -> false
+    return false;
+}
+
+bool CanConvertImplicitly(const std::string& fromType, const std::string& toType, const DiagnosticContext& ctx)
+{
+    return IsConvertible(CleanBaseType(fromType), CleanBaseType(toType), ctx);
+}
+
+void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+{
+    if (ts_node_is_null(request.root) || request.sourceCode.empty())
+    {
+        return;
+    }
+
+    if (ctx.logger && ctx.logger->IsDebugEnabled())
+    {
+        ctx.logger->LogDebug(
+            fmt::format("[TypeConversionChecker] Running CheckTypeConversions for URI: {}", ctx.request.fileUri));
+    }
+
+    if (request.nodeIndex)
+    {
+        for (TSNode node : request.nodeIndex->AllNodes())
+        {
+            if (ts_node_is_named(node))
+            {
+                ProcessNode(node, request, ctx);
+            }
+        }
+    }
+    else
+    {
+        VisitNode(request.root, request, ctx);
+    }
+
+    if (ctx.logger && ctx.logger->IsTraceEnabled())
+    {
+        ctx.logger->LogTrace(
+            fmt::format("[TypeConversionChecker] Finished CheckTypeConversions for URI: {}", ctx.request.fileUri));
+    }
+}
+} // namespace angel_lsp::analysis

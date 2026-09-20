@@ -1,6 +1,6 @@
 #include "utils/WorkspaceIncludeGraph.h"
-#include "utils/WorkspaceScan.h"
 #include "utils/Utils.h"
+#include "utils/WorkspaceScan.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -10,168 +10,165 @@
 
 namespace angel_lsp::utils
 {
-    namespace
+namespace
+{
+std::string ReadFileFromDisk(const std::string& path)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+        return "";
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
+/**
+ * @brief Resolves every `#include` in one file to a normalized path, dropping directives
+ *        that point nowhere.
+ */
+std::vector<std::string> ResolveDirectives(const std::string& normalizedPath, std::string_view sourceCode,
+                                           const std::vector<std::string>& searchDirectories,
+                                           const std::vector<std::string>& allowedRoots,
+                                           std::string_view implicitExtension)
+{
+    std::vector<std::string> resolved;
+
+    for (const auto& directive : IncludeResolver::ExtractIncludes(sourceCode))
     {
-        std::string ReadFileFromDisk(const std::string &path)
-        {
-            std::ifstream file(path, std::ios::binary);
-            if (!file.is_open())
-                return "";
+        std::string target = IncludeResolver::ResolveIncludePath(directive.rawPath, normalizedPath, searchDirectories,
+                                                                 allowedRoots, implicitExtension);
+        if (target.empty())
+            continue; // Unresolvable include - reported as a diagnostic elsewhere, not an edge.
 
-            std::ostringstream buffer;
-            buffer << file.rdbuf();
-            return buffer.str();
-        }
+        if (target == normalizedPath)
+            continue; // A file including itself would be a self-loop with no meaning here.
 
-        /**
-         * @brief Resolves every `#include` in one file to a normalized path, dropping directives
-         *        that point nowhere.
-         */
-        std::vector<std::string> ResolveDirectives(const std::string &normalizedPath,
-                                                   std::string_view sourceCode,
-                                                   const std::vector<std::string> &searchDirectories,
-                                                   const std::vector<std::string> &allowedRoots,
-                                                   std::string_view implicitExtension)
-        {
-            std::vector<std::string> resolved;
-
-            for (const auto &directive : IncludeResolver::ExtractIncludes(sourceCode))
-            {
-                std::string target = IncludeResolver::ResolveIncludePath(
-                    directive.rawPath, normalizedPath, searchDirectories, allowedRoots, implicitExtension);
-                if (target.empty())
-                    continue; // Unresolvable include - reported as a diagnostic elsewhere, not an edge.
-
-                if (target == normalizedPath)
-                    continue; // A file including itself would be a self-loop with no meaning here.
-
-                if (std::find(resolved.begin(), resolved.end(), target) == resolved.end())
-                    resolved.push_back(std::move(target));
-            }
-
-            return resolved;
-        }
+        if (std::find(resolved.begin(), resolved.end(), target) == resolved.end())
+            resolved.push_back(std::move(target));
     }
 
-    void WorkspaceIncludeGraph::SetIncludesLocked(const std::string &normalizedPath, std::vector<std::string> includes)
+    return resolved;
+}
+} // namespace
+
+void WorkspaceIncludeGraph::SetIncludesLocked(const std::string& normalizedPath, std::vector<std::string> includes)
+{
+    // Detach the previous forward edges from their reverse counterparts before overwriting, or
+    // a removed #include would leave a dangling includedBy entry that keeps the two files in
+    // the same module forever.
+    if (const auto previous = m_includes.find(normalizedPath); previous != m_includes.end())
     {
-        // Detach the previous forward edges from their reverse counterparts before overwriting, or
-        // a removed #include would leave a dangling includedBy entry that keeps the two files in
-        // the same module forever.
-        if (const auto previous = m_includes.find(normalizedPath); previous != m_includes.end())
+        for (const auto& target : previous->second)
         {
-            for (const auto &target : previous->second)
+            if (auto reverse = m_includedBy.find(target); reverse != m_includedBy.end())
             {
-                if (auto reverse = m_includedBy.find(target); reverse != m_includedBy.end())
-                {
-                    auto &includers = reverse->second;
-                    includers.erase(std::remove(includers.begin(), includers.end(), normalizedPath), includers.end());
-                }
+                auto& includers = reverse->second;
+                includers.erase(std::remove(includers.begin(), includers.end(), normalizedPath), includers.end());
             }
         }
-
-        for (const auto &target : includes)
-        {
-            auto &includers = m_includedBy[target];
-            if (std::find(includers.begin(), includers.end(), normalizedPath) == includers.end())
-                includers.push_back(normalizedPath);
-        }
-
-        m_includes[normalizedPath] = std::move(includes);
     }
 
-    void WorkspaceIncludeGraph::Build(const std::vector<std::string> &workspaceRoots,
-                                      const std::vector<std::string> &searchDirectories,
-                                      std::string_view scriptExtension,
-                                      const std::function<bool()> &shouldStop,
-                                      const FileReader &fileReader,
-                                      const std::vector<std::string> &excludeGlobs,
-                                      std::string_view implicitExtension)
+    for (const auto& target : includes)
     {
-        // An edge may only point at a file inside the workspace or one of the configured search
-        // directories. Those are exactly the two places a script is legitimately allowed to include
-        // from, and confining the graph here is what stops a hostile `#include "/etc/passwd"` from
-        // pulling an arbitrary file into the index in the first place.
-        std::vector<std::string> allowedRoots = workspaceRoots;
-        allowedRoots.insert(allowedRoots.end(), searchDirectories.begin(), searchDirectories.end());
-
-        const FileReader read = fileReader ? fileReader : FileReader(ReadFileFromDisk);
-
-        // Collect first, then swap under the lock, so a long filesystem walk never blocks the
-        // message loop's reads against a half-built graph.
-        ankerl::unordered_dense::map<std::string, std::vector<std::string>> includes;
-        ankerl::unordered_dense::map<std::string, std::vector<std::string>> includedBy;
-
-        const bool completed = ForEachWorkspaceFile(
-            workspaceRoots, excludeGlobs, shouldStop,
-            [&](const std::filesystem::directory_entry &entry) {
-                // The walk produced this path, so its own spelling is already the filesystem's and only
-                // the directory needs canonicalising - see IncludeResolver::NormalizeWalkedPath. This
-                // one line was most of the server's startup time.
-                const std::string path = IncludeResolver::NormalizeWalkedPath(entry.path());
-                if (!scriptExtension.empty() && !std::string_view(path).ends_with(scriptExtension))
-                    return;
-
-                std::vector<std::string> targets =
-                    ResolveDirectives(path, read(path), searchDirectories, allowedRoots, implicitExtension);
-
-                for (const auto &target : targets)
-                    includedBy[target].push_back(path);
-
-                includes[path] = std::move(targets);
-            });
-
-        // A cancelled walk leaves the existing graph alone rather than swapping in whatever half
-        // of it was reached. Publishing a partial graph would make every file the walk had not got
-        // to yet look as though it included nothing.
-        if (!completed)
-            return;
-
-        std::unique_lock<std::shared_mutex> lock(m_mutex);
-        m_includes = std::move(includes);
-        m_includedBy = std::move(includedBy);
+        auto& includers = m_includedBy[target];
+        if (std::find(includers.begin(), includers.end(), normalizedPath) == includers.end())
+            includers.push_back(normalizedPath);
     }
 
-    void WorkspaceIncludeGraph::BuildFromFiles(const std::vector<std::string> &scriptFiles,
-                                               const std::vector<std::string> &searchDirectories,
-                                               const std::vector<std::string> &workspaceRoots,
-                                               const std::function<bool()> &shouldStop,
-                                               const FileReader &fileReader,
-                                               std::string_view implicitExtension)
+    m_includes[normalizedPath] = std::move(includes);
+}
+
+void WorkspaceIncludeGraph::Build(const std::vector<std::string>& workspaceRoots,
+                                  const std::vector<std::string>& searchDirectories, std::string_view scriptExtension,
+                                  const std::function<bool()>& shouldStop, const FileReader& fileReader,
+                                  const std::vector<std::string>& excludeGlobs, std::string_view implicitExtension)
+{
+    // An edge may only point at a file inside the workspace or one of the configured search
+    // directories. Those are exactly the two places a script is legitimately allowed to include
+    // from, and confining the graph here is what stops a hostile `#include "/etc/passwd"` from
+    // pulling an arbitrary file into the index in the first place.
+    std::vector<std::string> allowedRoots = workspaceRoots;
+    allowedRoots.insert(allowedRoots.end(), searchDirectories.begin(), searchDirectories.end());
+
+    const FileReader read = fileReader ? fileReader : FileReader(ReadFileFromDisk);
+
+    // Collect first, then swap under the lock, so a long filesystem walk never blocks the
+    // message loop's reads against a half-built graph.
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>> includes;
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>> includedBy;
+
+    const bool completed =
+        ForEachWorkspaceFile(workspaceRoots, excludeGlobs, shouldStop,
+                             [&](const std::filesystem::directory_entry& entry)
+                             {
+                                 // The walk produced this path, so its own spelling is already the filesystem's and
+                                 // only the directory needs canonicalising - see IncludeResolver::NormalizeWalkedPath.
+                                 // This one line was most of the server's startup time.
+                                 const std::string path = IncludeResolver::NormalizeWalkedPath(entry.path());
+                                 if (!scriptExtension.empty() && !std::string_view(path).ends_with(scriptExtension))
+                                     return;
+
+                                 std::vector<std::string> targets = ResolveDirectives(
+                                     path, read(path), searchDirectories, allowedRoots, implicitExtension);
+
+                                 for (const auto& target : targets)
+                                     includedBy[target].push_back(path);
+
+                                 includes[path] = std::move(targets);
+                             });
+
+    // A cancelled walk leaves the existing graph alone rather than swapping in whatever half
+    // of it was reached. Publishing a partial graph would make every file the walk had not got
+    // to yet look as though it included nothing.
+    if (!completed)
+        return;
+
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    m_includes = std::move(includes);
+    m_includedBy = std::move(includedBy);
+}
+
+void WorkspaceIncludeGraph::BuildFromFiles(const std::vector<std::string>& scriptFiles,
+                                           const std::vector<std::string>& searchDirectories,
+                                           const std::vector<std::string>& workspaceRoots,
+                                           const std::function<bool()>& shouldStop, const FileReader& fileReader,
+                                           std::string_view implicitExtension)
+{
+    std::vector<std::string> allowedRoots = workspaceRoots;
+    allowedRoots.insert(allowedRoots.end(), searchDirectories.begin(), searchDirectories.end());
+
+    const FileReader read = fileReader ? fileReader : FileReader(ReadFileFromDisk);
+
+    struct FileDirectives
     {
-        std::vector<std::string> allowedRoots = workspaceRoots;
-        allowedRoots.insert(allowedRoots.end(), searchDirectories.begin(), searchDirectories.end());
+        std::string path;
+        std::vector<std::string> targets;
+    };
 
-        const FileReader read = fileReader ? fileReader : FileReader(ReadFileFromDisk);
+    const size_t totalFiles = scriptFiles.size();
+    std::vector<FileDirectives> results(totalFiles);
 
-        struct FileDirectives
+    const unsigned int hwThreads = std::thread::hardware_concurrency();
+    const unsigned int numThreads = (totalFiles >= 16 && hwThreads > 1) ? std::min(hwThreads, 8u) : 1u;
+
+    if (numThreads > 1)
+    {
+        std::vector<std::thread> workers;
+        workers.reserve(numThreads);
+        const size_t chunkSize = (totalFiles + numThreads - 1) / numThreads;
+
+        for (unsigned int t = 0; t < numThreads; ++t)
         {
-            std::string path;
-            std::vector<std::string> targets;
-        };
-
-        const size_t totalFiles = scriptFiles.size();
-        std::vector<FileDirectives> results(totalFiles);
-
-        const unsigned int hwThreads = std::thread::hardware_concurrency();
-        const unsigned int numThreads = (totalFiles >= 16 && hwThreads > 1) ? std::min(hwThreads, 8u) : 1u;
-
-        if (numThreads > 1)
-        {
-            std::vector<std::thread> workers;
-            workers.reserve(numThreads);
-            const size_t chunkSize = (totalFiles + numThreads - 1) / numThreads;
-
-            for (unsigned int t = 0; t < numThreads; ++t)
+            const size_t start = t * chunkSize;
+            const size_t end = std::min(start + chunkSize, totalFiles);
+            if (start >= end)
             {
-                const size_t start = t * chunkSize;
-                const size_t end = std::min(start + chunkSize, totalFiles);
-                if (start >= end)
-                {
-                    break;
-                }
+                break;
+            }
 
-                workers.emplace_back([&, start, end]()
+            workers.emplace_back(
+                [&, start, end]()
                 {
                     for (size_t i = start; i < end; ++i)
                     {
@@ -179,213 +176,207 @@ namespace angel_lsp::utils
                         {
                             return;
                         }
-                        const auto &path = scriptFiles[i];
-                        results[i] = FileDirectives{
-                            path,
-                            ResolveDirectives(path, read(path), searchDirectories, allowedRoots, implicitExtension)
-                        };
+                        const auto& path = scriptFiles[i];
+                        results[i] = FileDirectives{path, ResolveDirectives(path, read(path), searchDirectories,
+                                                                            allowedRoots, implicitExtension)};
                     }
                 });
-            }
-
-            for (auto &w : workers)
-            {
-                if (w.joinable())
-                {
-                    w.join();
-                }
-            }
         }
-        else
+
+        for (auto& w : workers)
         {
-            for (size_t i = 0; i < totalFiles; ++i)
+            if (w.joinable())
             {
-                if (shouldStop && shouldStop())
-                {
-                    return;
-                }
-                const auto &path = scriptFiles[i];
-                results[i] = FileDirectives{
-                    path,
-                    ResolveDirectives(path, read(path), searchDirectories, allowedRoots, implicitExtension)
-                };
+                w.join();
             }
         }
-
-        if (shouldStop && shouldStop())
+    }
+    else
+    {
+        for (size_t i = 0; i < totalFiles; ++i)
         {
-            return;
-        }
-
-        ankerl::unordered_dense::map<std::string, std::vector<std::string>> includes;
-        ankerl::unordered_dense::map<std::string, std::vector<std::string>> includedBy;
-
-        for (auto &entry : results)
-        {
-            if (entry.path.empty())
+            if (shouldStop && shouldStop())
             {
-                continue;
+                return;
             }
-            for (const auto &target : entry.targets)
-            {
-                includedBy[target].push_back(entry.path);
-            }
-            includes[std::move(entry.path)] = std::move(entry.targets);
+            const auto& path = scriptFiles[i];
+            results[i] = FileDirectives{
+                path, ResolveDirectives(path, read(path), searchDirectories, allowedRoots, implicitExtension)};
         }
-
-        std::unique_lock<std::shared_mutex> lock(m_mutex);
-        m_includes = std::move(includes);
-        m_includedBy = std::move(includedBy);
     }
 
-    void WorkspaceIncludeGraph::UpdateFile(const std::string &filePath,
-                                           std::string_view sourceCode,
-                                           const std::vector<std::string> &searchDirectories,
-                                           const std::vector<std::string> &allowedRoots,
-                                           std::string_view implicitExtension)
+    if (shouldStop && shouldStop())
     {
-        const std::string normalized = IncludeResolver::NormalizePath(filePath);
-        std::vector<std::string> targets =
-            ResolveDirectives(normalized, sourceCode, searchDirectories, allowedRoots, implicitExtension);
-
-        std::unique_lock<std::shared_mutex> lock(m_mutex);
-        SetIncludesLocked(normalized, std::move(targets));
+        return;
     }
 
-    bool WorkspaceIncludeGraph::RemoveFile(const std::string &filePath)
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>> includes;
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>> includedBy;
+
+    for (auto& entry : results)
     {
-        const std::string normalized = IncludeResolver::NormalizePath(filePath);
-
-        std::unique_lock<std::shared_mutex> lock(m_mutex);
-
-        // Tested before clearing, because SetIncludesLocked inserts the node it is given - so
-        // asking afterwards would report every unknown path as having been removed.
-        const bool existed = m_includes.contains(normalized) || m_includedBy.contains(normalized);
-        if (!existed)
+        if (entry.path.empty())
         {
-            return false;
+            continue;
         }
-
-        // Clearing the forward edges first reuses the reverse-edge detaching SetIncludesLocked
-        // already does correctly, so only the node's own two entries are left to erase.
-        SetIncludesLocked(normalized, {});
-        m_includes.erase(normalized);
-        m_includedBy.erase(normalized);
-
-        // Deliberately left alone: the forward edges of the files that still include this one.
-        // Their directives really do still name a file that is gone, and reporting that is
-        // AppendIncludeDiagnostics' job - rewriting their edges here would hide it instead.
-        return true;
-    }
-
-    std::vector<std::string> WorkspaceIncludeGraph::GetFilesIncluding(const std::string &filePath) const
-    {
-        const std::string normalized = IncludeResolver::NormalizePath(filePath);
-
-        std::shared_lock<std::shared_mutex> lock(m_mutex);
-        const auto found = m_includedBy.find(normalized);
-        return found == m_includedBy.end() ? std::vector<std::string>{} : found->second;
-    }
-
-    std::vector<std::string> WorkspaceIncludeGraph::GetModuleClosure(const std::string &filePath) const
-    {
-        const std::string normalized = IncludeResolver::NormalizePath(filePath);
-
-        std::shared_lock<std::shared_mutex> lock(m_mutex);
-
-        // Pass 1 - ascend. Everything that (transitively) includes this file belongs to its module,
-        // and the ones nothing includes are the module's entry points.
-        ankerl::unordered_dense::set<std::string> ascended;
-        std::vector<std::string> roots;
-        std::vector<std::string> queue{normalized};
-        ascended.insert(normalized);
-
-        for (size_t i = 0; i < queue.size(); ++i)
+        for (const auto& target : entry.targets)
         {
-            const std::string current = queue[i];
-            const auto includers = m_includedBy.find(current);
-
-            if (includers == m_includedBy.end() || includers->second.empty())
-            {
-                roots.push_back(current);
-                continue;
-            }
-
-            for (const auto &includer : includers->second)
-            {
-                if (ascended.insert(includer).second)
-                    queue.push_back(includer);
-            }
+            includedBy[target].push_back(entry.path);
         }
-
-        // A cycle can leave every node with an includer and therefore no root at all. Treating the
-        // whole ascended set as roots still yields the right closure - it is only the starting
-        // points for the descent that are ambiguous, not the membership.
-        if (roots.empty())
-            roots.assign(ascended.begin(), ascended.end());
-
-        // Pass 2 - descend. From each root, everything reachable through forward edges is part of
-        // the same module.
-        ankerl::unordered_dense::set<std::string> closure;
-        std::vector<std::string> descendQueue;
-
-        for (const auto &root : roots)
-        {
-            if (closure.insert(root).second)
-                descendQueue.push_back(root);
-        }
-
-        for (size_t i = 0; i < descendQueue.size(); ++i)
-        {
-            const auto targets = m_includes.find(descendQueue[i]);
-            if (targets == m_includes.end())
-                continue;
-
-            for (const auto &target : targets->second)
-            {
-                if (closure.insert(target).second)
-                    descendQueue.push_back(target);
-            }
-        }
-
-        // The file itself is in the closure by construction whenever the graph knows it; add it
-        // explicitly so an unknown file (never scanned, just opened) still gets indexed alone
-        // rather than coming back empty.
-        closure.insert(normalized);
-
-        return std::vector<std::string>(closure.begin(), closure.end());
+        includes[std::move(entry.path)] = std::move(entry.targets);
     }
 
-    bool WorkspaceIncludeGraph::Contains(const std::string &filePath) const
-    {
-        const std::string normalized = IncludeResolver::NormalizePath(filePath);
-
-        std::shared_lock<std::shared_mutex> lock(m_mutex);
-        return m_includes.contains(normalized) || m_includedBy.contains(normalized);
-    }
-
-    std::vector<std::string> WorkspaceIncludeGraph::AllFiles() const
-    {
-        std::shared_lock<std::shared_mutex> lock(m_mutex);
-
-        std::vector<std::string> files;
-        files.reserve(m_includes.size());
-        for (const auto &[path, _] : m_includes)
-            files.push_back(path);
-
-        return files;
-    }
-
-    size_t WorkspaceIncludeGraph::FileCount() const
-    {
-        std::shared_lock<std::shared_mutex> lock(m_mutex);
-        return m_includes.size();
-    }
-
-    void WorkspaceIncludeGraph::Clear()
-    {
-        std::unique_lock<std::shared_mutex> lock(m_mutex);
-        m_includes.clear();
-        m_includedBy.clear();
-    }
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    m_includes = std::move(includes);
+    m_includedBy = std::move(includedBy);
 }
+
+void WorkspaceIncludeGraph::UpdateFile(const std::string& filePath, std::string_view sourceCode,
+                                       const std::vector<std::string>& searchDirectories,
+                                       const std::vector<std::string>& allowedRoots, std::string_view implicitExtension)
+{
+    const std::string normalized = IncludeResolver::NormalizePath(filePath);
+    std::vector<std::string> targets =
+        ResolveDirectives(normalized, sourceCode, searchDirectories, allowedRoots, implicitExtension);
+
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    SetIncludesLocked(normalized, std::move(targets));
+}
+
+bool WorkspaceIncludeGraph::RemoveFile(const std::string& filePath)
+{
+    const std::string normalized = IncludeResolver::NormalizePath(filePath);
+
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+
+    // Tested before clearing, because SetIncludesLocked inserts the node it is given - so
+    // asking afterwards would report every unknown path as having been removed.
+    const bool existed = m_includes.contains(normalized) || m_includedBy.contains(normalized);
+    if (!existed)
+    {
+        return false;
+    }
+
+    // Clearing the forward edges first reuses the reverse-edge detaching SetIncludesLocked
+    // already does correctly, so only the node's own two entries are left to erase.
+    SetIncludesLocked(normalized, {});
+    m_includes.erase(normalized);
+    m_includedBy.erase(normalized);
+
+    // Deliberately left alone: the forward edges of the files that still include this one.
+    // Their directives really do still name a file that is gone, and reporting that is
+    // AppendIncludeDiagnostics' job - rewriting their edges here would hide it instead.
+    return true;
+}
+
+std::vector<std::string> WorkspaceIncludeGraph::GetFilesIncluding(const std::string& filePath) const
+{
+    const std::string normalized = IncludeResolver::NormalizePath(filePath);
+
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    const auto found = m_includedBy.find(normalized);
+    return found == m_includedBy.end() ? std::vector<std::string>{} : found->second;
+}
+
+std::vector<std::string> WorkspaceIncludeGraph::GetModuleClosure(const std::string& filePath) const
+{
+    const std::string normalized = IncludeResolver::NormalizePath(filePath);
+
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+
+    // Pass 1 - ascend. Everything that (transitively) includes this file belongs to its module,
+    // and the ones nothing includes are the module's entry points.
+    ankerl::unordered_dense::set<std::string> ascended;
+    std::vector<std::string> roots;
+    std::vector<std::string> queue{normalized};
+    ascended.insert(normalized);
+
+    for (size_t i = 0; i < queue.size(); ++i)
+    {
+        const std::string current = queue[i];
+        const auto includers = m_includedBy.find(current);
+
+        if (includers == m_includedBy.end() || includers->second.empty())
+        {
+            roots.push_back(current);
+            continue;
+        }
+
+        for (const auto& includer : includers->second)
+        {
+            if (ascended.insert(includer).second)
+                queue.push_back(includer);
+        }
+    }
+
+    // A cycle can leave every node with an includer and therefore no root at all. Treating the
+    // whole ascended set as roots still yields the right closure - it is only the starting
+    // points for the descent that are ambiguous, not the membership.
+    if (roots.empty())
+        roots.assign(ascended.begin(), ascended.end());
+
+    // Pass 2 - descend. From each root, everything reachable through forward edges is part of
+    // the same module.
+    ankerl::unordered_dense::set<std::string> closure;
+    std::vector<std::string> descendQueue;
+
+    for (const auto& root : roots)
+    {
+        if (closure.insert(root).second)
+            descendQueue.push_back(root);
+    }
+
+    for (size_t i = 0; i < descendQueue.size(); ++i)
+    {
+        const auto targets = m_includes.find(descendQueue[i]);
+        if (targets == m_includes.end())
+            continue;
+
+        for (const auto& target : targets->second)
+        {
+            if (closure.insert(target).second)
+                descendQueue.push_back(target);
+        }
+    }
+
+    // The file itself is in the closure by construction whenever the graph knows it; add it
+    // explicitly so an unknown file (never scanned, just opened) still gets indexed alone
+    // rather than coming back empty.
+    closure.insert(normalized);
+
+    return std::vector<std::string>(closure.begin(), closure.end());
+}
+
+bool WorkspaceIncludeGraph::Contains(const std::string& filePath) const
+{
+    const std::string normalized = IncludeResolver::NormalizePath(filePath);
+
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return m_includes.contains(normalized) || m_includedBy.contains(normalized);
+}
+
+std::vector<std::string> WorkspaceIncludeGraph::AllFiles() const
+{
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+
+    std::vector<std::string> files;
+    files.reserve(m_includes.size());
+    for (const auto& [path, _] : m_includes)
+        files.push_back(path);
+
+    return files;
+}
+
+size_t WorkspaceIncludeGraph::FileCount() const
+{
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    return m_includes.size();
+}
+
+void WorkspaceIncludeGraph::Clear()
+{
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    m_includes.clear();
+    m_includedBy.clear();
+}
+} // namespace angel_lsp::utils

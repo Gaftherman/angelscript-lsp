@@ -1,9 +1,9 @@
 #pragma once
 #include <algorithm>
-#include <string>
 #include <cstdint>
 #include <filesystem>
 #include <spdlog/fmt/fmt.h>
+#include <string>
 
 #include "utils/PositionEncoding.h"
 
@@ -11,89 +11,86 @@
 
 namespace angel_lsp::utils
 {
-    std::string UriToPath(const std::string &uri);
-    std::string PathToUri(const std::string &filePath);
-    /**
-     * @brief Decodes percent-encoded characters in a URI or URI component (e.g. %3A%3A -> ::, %20 -> space).
-     * @param in Input string containing percent-encoded sequences.
-     * @return Decoded string.
-     */
-    std::string UrlDecode(std::string_view in);
-    /**
-     * @brief Converts an LSP position into a byte offset into the document text.
-     * @param text Full document text (UTF-8).
-     * @param line 0-indexed line number.
-     * @param character Character offset within the line, in the negotiated encoding.
-     * @param enc The position encoding negotiated with the client.
-     * @return Byte offset, clamped to the end of the line and then to the end of the text.
-     */
-    size_t PositionToOffset(const std::string &text, uint32_t line, uint32_t character, PositionEncoding enc);
+std::string UriToPath(const std::string& uri);
+std::string PathToUri(const std::string& filePath);
+/**
+ * @brief Decodes percent-encoded characters in a URI or URI component (e.g. %3A%3A -> ::, %20 -> space).
+ * @param in Input string containing percent-encoded sequences.
+ * @return Decoded string.
+ */
+std::string UrlDecode(std::string_view in);
+/**
+ * @brief Converts an LSP position into a byte offset into the document text.
+ * @param text Full document text (UTF-8).
+ * @param line 0-indexed line number.
+ * @param character Character offset within the line, in the negotiated encoding.
+ * @param enc The position encoding negotiated with the client.
+ * @return Byte offset, clamped to the end of the line and then to the end of the text.
+ */
+size_t PositionToOffset(const std::string& text, uint32_t line, uint32_t character, PositionEncoding enc);
 
-    /**
-     * @brief Applies one LSP incremental content change to the document buffer in place.
-     * @param enc The position encoding negotiated with the client - the range is expressed in it.
-     */
-    void ApplyIncrementalChange(std::string &buffer,
-                                uint32_t startLine, uint32_t startCharacter,
-                                uint32_t endLine, uint32_t endCharacter,
-                                const std::string &newText,
-                                PositionEncoding enc);
-    /**
-     * @brief Checks whether a file is a predefined stub describing the host application's API.
-     *
-     * Two spellings count. One is the configured suffix, which this project writes as
-     * `<name>.as.predefined`. The other is a file named exactly `as.predefined`, which is
-     * AngelScript's own convention and what the community's stubs are called - the extension
-     * registers that filename as AngelScript in package.json, so the server recognising it too is
-     * what makes the two halves agree.
-     *
-     * @param fileUri URI or path of the file.
-     * @param extension Configured stub suffix, e.g. ".as.predefined". Empty disables suffix matching.
-     * @return True if the file should be treated as a stub.
-     */
-    bool IsPredefinedFile(const std::string_view &fileUri, const std::string_view extension);
+/**
+ * @brief Applies one LSP incremental content change to the document buffer in place.
+ * @param enc The position encoding negotiated with the client - the range is expressed in it.
+ */
+void ApplyIncrementalChange(std::string& buffer, uint32_t startLine, uint32_t startCharacter, uint32_t endLine,
+                            uint32_t endCharacter, const std::string& newText, PositionEncoding enc);
+/**
+ * @brief Checks whether a file is a predefined stub describing the host application's API.
+ *
+ * Two spellings count. One is the configured suffix, which this project writes as
+ * `<name>.as.predefined`. The other is a file named exactly `as.predefined`, which is
+ * AngelScript's own convention and what the community's stubs are called - the extension
+ * registers that filename as AngelScript in package.json, so the server recognising it too is
+ * what makes the two halves agree.
+ *
+ * @param fileUri URI or path of the file.
+ * @param extension Configured stub suffix, e.g. ".as.predefined". Empty disables suffix matching.
+ * @return True if the file should be treated as a stub.
+ */
+bool IsPredefinedFile(const std::string_view& fileUri, const std::string_view extension);
 
-    /**
-     * @brief Sanitizes predefined stub content before parsing by blanking inline list patterns.
-     *
-     * Native AngelScript stubs (.predefined files) can contain documentation notation for list factories:
-     *     array(int &in type, int &in list) {repeat T};
-     *     dictionary(int &in type, int &in list) {repeat {string, ?}};
-     * Tree-Sitter grammar cannot parse `{repeat ...}` tokens inside class bodies and reports syntax errors,
-     * which causes the AST parser to drop whole classes (e.g. dictionary).
-     * Blanking the `{...}` pattern between `)` and `;` with spaces preserves exact line and column numbers
-     * without shifting offsets, allowing Tree-Sitter to parse valid method declarations cleanly.
-     *
-     * @param source The stub's full text.
-     * @return Sanitized text where inline patterns are replaced by spaces.
-     */
-    std::string SanitizePredefinedContent(std::string_view source);
+/**
+ * @brief Sanitizes predefined stub content before parsing by blanking inline list patterns.
+ *
+ * Native AngelScript stubs (.predefined files) can contain documentation notation for list factories:
+ *     array(int &in type, int &in list) {repeat T};
+ *     dictionary(int &in type, int &in list) {repeat {string, ?}};
+ * Tree-Sitter grammar cannot parse `{repeat ...}` tokens inside class bodies and reports syntax errors,
+ * which causes the AST parser to drop whole classes (e.g. dictionary).
+ * Blanking the `{...}` pattern between `)` and `;` with spaces preserves exact line and column numbers
+ * without shifting offsets, allowing Tree-Sitter to parse valid method declarations cleanly.
+ *
+ * @param source The stub's full text.
+ * @return Sanitized text where inline patterns are replaced by spaces.
+ */
+std::string SanitizePredefinedContent(std::string_view source);
 
-    /**
-     * @brief Glob match over a `/`-separated path.
-     *
-     * `?` matches one character, `*` matches within a single segment, and `**` spans any number of
-     * segments including none - the same three the exclude settings every editor ships use,
-     * so a user can paste what they already have.
-     */
-    bool MatchesGlob(std::string_view path, std::string_view pattern);
+/**
+ * @brief Glob match over a `/`-separated path.
+ *
+ * `?` matches one character, `*` matches within a single segment, and `**` spans any number of
+ * segments including none - the same three the exclude settings every editor ships use,
+ * so a user can paste what they already have.
+ */
+bool MatchesGlob(std::string_view path, std::string_view pattern);
 
-    /** @brief True when any pattern matches the path. */
-    bool IsExcludedPath(std::string_view path, const std::vector<std::string> &patterns);
+/** @brief True when any pattern matches the path. */
+bool IsExcludedPath(std::string_view path, const std::vector<std::string>& patterns);
 
-    /**
-     * @brief True when a directory should not be descended into.
-     *
-     * Distinct from IsExcludedPath because a pattern like `**` + `/build/` + `**` names what is INSIDE `build` and never
-     * `build` itself, and pruning is the whole point: filtering results afterwards still walks
-     * every file under it. The trailing slash-star-star is dropped before the directory is tested.
-     */
-    bool IsExcludedDirectory(std::string_view path, const std::vector<std::string> &patterns);
+/**
+ * @brief True when a directory should not be descended into.
+ *
+ * Distinct from IsExcludedPath because a pattern like `**` + `/build/` + `**` names what is INSIDE `build` and never
+ * `build` itself, and pruning is the whole point: filtering results afterwards still walks
+ * every file under it. The trailing slash-star-star is dropped before the directory is tested.
+ */
+bool IsExcludedDirectory(std::string_view path, const std::vector<std::string>& patterns);
 
-    /**
-     * @brief Checks whether the given type name is a standard AngelScript primitive type.
-     * @param typeName The name of the type to check.
-     * @return True if the type is a standard AngelScript primitive type; otherwise false.
-     */
-    bool IsPrimitiveType(const std::string &typeName);
-}
+/**
+ * @brief Checks whether the given type name is a standard AngelScript primitive type.
+ * @param typeName The name of the type to check.
+ * @return True if the type is a standard AngelScript primitive type; otherwise false.
+ */
+bool IsPrimitiveType(const std::string& typeName);
+} // namespace angel_lsp::utils

@@ -7,99 +7,98 @@
 
 namespace angel_lsp::analysis
 {
-    /**
-     * @brief Checks that every conversion written in a document has a declaration backing it.
-     *
-     * AngelScript reaches a target type through four routes, and each one is a declaration this
-     * analyzer can see when the types involved are visible:
-     *
-     * | Written as        | Satisfied by                                  |
-     * | ----------------- | --------------------------------------------- |
-     * | `T v = expr;`     | copy/converting constructor, opImplConv, opAssign |
-     * | `T(expr)`         | constructor, opConv, opImplConv                |
-     * | `cast<T>(expr)`   | opCast, opImplCast, or an inheritance relation |
-     *
-     * The pass is deliberately silent unless it can see everything it is judging. A target type
-     * that resolves to no declaration is engine-registered as far as this analyzer knows, and an
-     * engine type can carry conversions that exist nowhere in the source - so it is skipped rather
-     * than guessed at. Same for a source expression whose type does not resolve. That asymmetry is
-     * the point: a missed error costs nothing, a false one costs the user's trust in every other
-     * diagnostic on screen.
-     */
-    class NodeIndex;
+/**
+ * @brief Checks that every conversion written in a document has a declaration backing it.
+ *
+ * AngelScript reaches a target type through four routes, and each one is a declaration this
+ * analyzer can see when the types involved are visible:
+ *
+ * | Written as        | Satisfied by                                  |
+ * | ----------------- | --------------------------------------------- |
+ * | `T v = expr;`     | copy/converting constructor, opImplConv, opAssign |
+ * | `T(expr)`         | constructor, opConv, opImplConv                |
+ * | `cast<T>(expr)`   | opCast, opImplCast, or an inheritance relation |
+ *
+ * The pass is deliberately silent unless it can see everything it is judging. A target type
+ * that resolves to no declaration is engine-registered as far as this analyzer knows, and an
+ * engine type can carry conversions that exist nowhere in the source - so it is skipped rather
+ * than guessed at. Same for a source expression whose type does not resolve. That asymmetry is
+ * the point: a missed error costs nothing, a false one costs the user's trust in every other
+ * diagnostic on screen.
+ */
+class NodeIndex;
 
-    struct TypeConversionCheckRequest
-    {
-        /** @brief Root node of the document's syntax tree. */
-        TSNode root;
+struct TypeConversionCheckRequest
+{
+    /** @brief Root node of the document's syntax tree. */
+    TSNode root;
 
-        /** @brief Document source text the tree was parsed from. */
-        std::string_view sourceCode;
+    /** @brief Document source text the tree was parsed from. */
+    std::string_view sourceCode;
 
-        /** @brief Root of the document's lexical scope tree, or nullptr when none was collected. */
-        const Scope *scopeRoot = nullptr;
-
-        /**
-         * @brief The same tree as scopeRoot, non-null only while the caller exclusively owns it.
-         *
-         * `auto` inference writes the deduced type back into the LocalDefinition so that everything
-         * reading the scope tree afterwards sees the concrete type instead of "auto". That write is
-         * only safe on a tree no other thread can reach - see SemanticAnalysisRequest::
-         * mutableScopeRoot for the race it used to be. Null means "published or shared": the
-         * deduction still drives this pass's own diagnostics, it just is not written back.
-         */
-        Scope *mutableScopeRoot = nullptr;
-
-        /** @brief Optional pre-indexed node index for fast single-pass querying. */
-        const NodeIndex *nodeIndex = nullptr;
-    };
+    /** @brief Root of the document's lexical scope tree, or nullptr when none was collected. */
+    const Scope* scopeRoot = nullptr;
 
     /**
-     * @brief Walks the document and reports conversions with no declaration to back them.
-     * @param request Tree, source text and scope tree of the document under analysis.
-     * @param ctx Diagnostic sink; also carries the SymbolTable every lookup goes through.
+     * @brief The same tree as scopeRoot, non-null only while the caller exclusively owns it.
+     *
+     * `auto` inference writes the deduced type back into the LocalDefinition so that everything
+     * reading the scope tree afterwards sees the concrete type instead of "auto". That write is
+     * only safe on a tree no other thread can reach - see SemanticAnalysisRequest::
+     * mutableScopeRoot for the race it used to be. Null means "published or shared": the
+     * deduction still drives this pass's own diagnostics, it just is not written back.
      */
-    void CheckTypeConversions(const TypeConversionCheckRequest &request, DiagnosticContext &ctx);
+    Scope* mutableScopeRoot = nullptr;
 
-    /**
-     * @brief Whether a value of `fromType` can reach `toType` implicitly.
-     *
-     * The same judgement CheckTypeConversions makes internally, exposed for the one caller that has
-     * to make it about an expression this pass does not reach: an element of an initializer list.
-     * InitializerListChecker owns the list's shape - which nestings the list factory accepts - and
-     * had no way to ask about an element's type, so `array<int> a = {"x"}` was silent where the
-     * compiler answers "Can't implicitly convert from 'const string' to 'int&'".
-     *
-     * Carries the same asymmetry as the rest of the pass, and callers depend on it: an empty or
-     * unresolved type on either side comes back true. Not knowing is never a reason to report.
-     *
-     * @param fromType Source type, as spelled - decorations are stripped internally.
-     * @param toType Target type, likewise.
-     * @param ctx Diagnostic sink; used only for the SymbolTable and config it carries.
-     */
-    bool CanConvertImplicitly(const std::string &fromType, const std::string &toType,
-                              const DiagnosticContext &ctx);
+    /** @brief Optional pre-indexed node index for fast single-pass querying. */
+    const NodeIndex* nodeIndex = nullptr;
+};
 
-    /**
-     * @brief Evaluates whether a type satisfies boolean truthiness in control flow conditions.
-     *
-     * In AngelScript, conditions (if, while, for, do-while, ternary) accept:
-     * - `bool`
-     * - Object handles (types ending with `@` or handle definitions)
-     * - Class instances declaring `opImplConv` or `opConv` returning `bool`
-     * All other types (primitives, string, enum, non-converting classes) return false.
-     *
-     * @param typeName Type name to evaluate.
-     * @param table SymbolTable for looking up class declarations and methods.
-     * @return True if the type can evaluate as a condition; false otherwise.
-     */
-    bool IsTruthyCondition(const std::string &typeName, const SymbolTable &table);
+/**
+ * @brief Walks the document and reports conversions with no declaration to back them.
+ * @param request Tree, source text and scope tree of the document under analysis.
+ * @param ctx Diagnostic sink; also carries the SymbolTable every lookup goes through.
+ */
+void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
 
-    namespace TypeConversionChecker
-    {
-        inline bool IsTruthyCondition(const std::string &typeName, const SymbolTable &table)
-        {
-            return ::angel_lsp::analysis::IsTruthyCondition(typeName, table);
-        }
-    }
+/**
+ * @brief Whether a value of `fromType` can reach `toType` implicitly.
+ *
+ * The same judgement CheckTypeConversions makes internally, exposed for the one caller that has
+ * to make it about an expression this pass does not reach: an element of an initializer list.
+ * InitializerListChecker owns the list's shape - which nestings the list factory accepts - and
+ * had no way to ask about an element's type, so `array<int> a = {"x"}` was silent where the
+ * compiler answers "Can't implicitly convert from 'const string' to 'int&'".
+ *
+ * Carries the same asymmetry as the rest of the pass, and callers depend on it: an empty or
+ * unresolved type on either side comes back true. Not knowing is never a reason to report.
+ *
+ * @param fromType Source type, as spelled - decorations are stripped internally.
+ * @param toType Target type, likewise.
+ * @param ctx Diagnostic sink; used only for the SymbolTable and config it carries.
+ */
+bool CanConvertImplicitly(const std::string& fromType, const std::string& toType, const DiagnosticContext& ctx);
+
+/**
+ * @brief Evaluates whether a type satisfies boolean truthiness in control flow conditions.
+ *
+ * In AngelScript, conditions (if, while, for, do-while, ternary) accept:
+ * - `bool`
+ * - Object handles (types ending with `@` or handle definitions)
+ * - Class instances declaring `opImplConv` or `opConv` returning `bool`
+ * All other types (primitives, string, enum, non-converting classes) return false.
+ *
+ * @param typeName Type name to evaluate.
+ * @param table SymbolTable for looking up class declarations and methods.
+ * @return True if the type can evaluate as a condition; false otherwise.
+ */
+bool IsTruthyCondition(const std::string& typeName, const SymbolTable& table);
+
+namespace TypeConversionChecker
+{
+inline bool IsTruthyCondition(const std::string& typeName, const SymbolTable& table)
+{
+    return ::angel_lsp::analysis::IsTruthyCondition(typeName, table);
 }
+} // namespace TypeConversionChecker
+} // namespace angel_lsp::analysis

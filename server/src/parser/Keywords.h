@@ -24,45 +24,45 @@
  */
 namespace angel_lsp::parser::keywords
 {
-    /**
-     * @brief Words that can never be an identifier. Rejected as a local and as a global alike.
-     *
-     * This is the set a diagnostic may be built on, and the only one. `string` is deliberately NOT
-     * here even though `int string;` is rejected: `string` is a type the application registers, not
-     * a word of the language, and a host that registers something else makes that name legal again.
-     * The same reasoning applies to user-defined types: a local variable may shadow a script class or type without a syntax error.
-     */
-    inline constexpr std::array<std::string_view, 53> k_reserved = {
-        "and", "auto", "bool", "break", "case", "cast", "catch", "class", "const", "continue",
-        "default", "do", "double", "else", "enum", "false", "float", "for", "foreach", "funcdef",
-        "if", "import", "in", "inout", "int", "int8", "int16", "int32", "int64", "interface",
-        "is", "mixin", "namespace", "not", "null", "or", "out", "private", "protected", "return",
-        "switch", "true", "try", "typedef", "uint", "uint8", "uint16", "uint32", "uint64",
-        "using", "void", "while", "xor",
-    };
+/**
+ * @brief Words that can never be an identifier. Rejected as a local and as a global alike.
+ *
+ * This is the set a diagnostic may be built on, and the only one. `string` is deliberately NOT
+ * here even though `int string;` is rejected: `string` is a type the application registers, not
+ * a word of the language, and a host that registers something else makes that name legal again.
+ * The same reasoning applies to user-defined types: a local variable may shadow a script class or type without a syntax
+ * error.
+ */
+inline constexpr std::array<std::string_view, 53> k_reserved = {
+    "and",      "auto",    "bool",      "break",  "case",   "cast",      "catch", "class",   "const",
+    "continue", "default", "do",        "double", "else",   "enum",      "false", "float",   "for",
+    "foreach",  "funcdef", "if",        "import", "in",     "inout",     "int",   "int8",    "int16",
+    "int32",    "int64",   "interface", "is",     "mixin",  "namespace", "not",   "null",    "or",
+    "out",      "private", "protected", "return", "switch", "true",      "try",   "typedef", "uint",
+    "uint8",    "uint16",  "uint32",    "uint64", "using",  "void",      "while", "xor",
+};
 
-    /**
-     * @brief Words the grammar knows, that are still legal as an identifier.
-     *
-     * Modifiers and contextual keywords: `int final;` compiles, and so does `int get;`. Measured,
-     * all fifteen. They belong in colouring and in completion, and must never reach a rule that
-     * rejects a name - which is exactly the mistake the split prevents.
-     */
-    inline constexpr std::array<std::string_view, 15> k_contextual = {
-        "abstract", "delete", "explicit", "external", "final", "from", "function", "get",
-        "override", "property", "public", "set", "shared", "super", "this",
-    };
+/**
+ * @brief Words the grammar knows, that are still legal as an identifier.
+ *
+ * Modifiers and contextual keywords: `int final;` compiles, and so does `int get;`. Measured,
+ * all fifteen. They belong in colouring and in completion, and must never reach a rule that
+ * rejects a name - which is exactly the mistake the split prevents.
+ */
+inline constexpr std::array<std::string_view, 15> k_contextual = {
+    "abstract", "delete",   "explicit", "external", "final",  "from",  "function", "get",
+    "override", "property", "public",   "set",      "shared", "super", "this",
+};
 
-    /** @brief Reserved, so never a name. The analyzer's question. */
-    [[nodiscard]] inline bool IsReserved(std::string_view word) noexcept
-    {
-        return std::find(k_reserved.begin(), k_reserved.end(), word) != k_reserved.end();
-    }
-
-    /** @brief A keyword of any kind - reserved or contextual. The formatter's question. */
-    [[nodiscard]] inline bool IsKeyword(std::string_view word) noexcept
-    {
-        return IsReserved(word) ||
-               std::find(k_contextual.begin(), k_contextual.end(), word) != k_contextual.end();
-    }
+/** @brief Reserved, so never a name. The analyzer's question. */
+[[nodiscard]] inline bool IsReserved(std::string_view word) noexcept
+{
+    return std::find(k_reserved.begin(), k_reserved.end(), word) != k_reserved.end();
 }
+
+/** @brief A keyword of any kind - reserved or contextual. The formatter's question. */
+[[nodiscard]] inline bool IsKeyword(std::string_view word) noexcept
+{
+    return IsReserved(word) || std::find(k_contextual.begin(), k_contextual.end(), word) != k_contextual.end();
+}
+} // namespace angel_lsp::parser::keywords

@@ -1,699 +1,724 @@
 #pragma once
 
+#include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <shared_mutex>
 #include <string>
 #include <vector>
-#include <shared_mutex>
-#include <optional>
-#include <ankerl/unordered_dense.h>
 
 #include <variant>
 
 // Forward-declared rather than included: avoids pulling <lsp/messages.h> into every TU that touches symbols.
-namespace angel_lsp::utils { class LspLogger; }
+namespace angel_lsp::utils
+{
+class LspLogger;
+}
 
 namespace angel_lsp::analysis
 {
-    namespace rules
+namespace rules
+{
+struct RuleIndex;
+struct RuleIndexPartial;
+} // namespace rules
+
+enum class SymbolType
+{
+    Variable,
+    Function,
+    Class,
+    Interface,
+    Enum,
+    Typedef,
+    Namespace,
+    Funcdef,
+    Property,
+    CallReference
+};
+
+enum class AccessModifier
+{
+    Public,
+    Private,
+    Protected
+};
+
+enum class ParameterModifier
+{
+    None,
+    In,
+    Out,
+    InOut
+};
+
+enum class TypeKind
+{
+    Unknown,
+    Auto,
+    Void,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    Float,
+    Double,
+    Bool,
+    String,
+    Object,
+    Array,
+    Handle,
+    // Aliases placed last so they don't reset the implicit counter for the entries above.
+    Int = Int32,
+    UInt = UInt32
+};
+
+/**
+ * @brief Syntactic placement of declaration modifiers and attributes.
+ */
+enum class ModifierPlacement : uint8_t
+{
+    None = 0,
+    Prefix,  ///< Placed before type (e.g., 'final class Foo', 'abstract void Bar()')
+    Trailing ///< Placed after parameter list (e.g., 'void Bar() final', 'void Bar() override')
+};
+
+struct SymbolModifiers
+{
+    AccessModifier access = AccessModifier::Public;
+    bool isConst = false;
+    bool isHandle = false;
+    bool isShared = false;
+    bool isMixin = false;
+    bool isAbstract = false;
+    bool isFinal = false;
+    bool isDeclarationFinal =
+        false; ///< True when 'final' is a declaration_modifier (before type), not a func_attribute
+    bool isDeclarationAbstract = false; ///< True when 'abstract' is a declaration_modifier (before type)
+    bool isOverride = false;
+    bool isExplicit = false;
+    bool isProperty = false;
+    bool isDelete = false;
+    bool isExternal = false;
+    bool isReturnReference = false;
+    ParameterModifier paramModifier = ParameterModifier::None;
+
+    [[nodiscard]] ModifierPlacement GetFinalPlacement() const noexcept
     {
-        struct RuleIndex;
-        struct RuleIndexPartial;
+        if (isDeclarationFinal)
+            return ModifierPlacement::Prefix;
+        if (isFinal)
+            return ModifierPlacement::Trailing;
+        return ModifierPlacement::None;
     }
 
-    enum class SymbolType
+    [[nodiscard]] ModifierPlacement GetAbstractPlacement() const noexcept
     {
-        Variable,
-        Function,
-        Class,
-        Interface,
-        Enum,
-        Typedef,
-        Namespace,
-        Funcdef,
-        Property,
-        CallReference
-    };
+        if (isDeclarationAbstract)
+            return ModifierPlacement::Prefix;
+        if (isAbstract)
+            return ModifierPlacement::Trailing;
+        return ModifierPlacement::None;
+    }
 
-    enum class AccessModifier
+    void SetFinalPlacement(ModifierPlacement placement) noexcept
     {
-        Public,
-        Private,
-        Protected
-    };
+        isFinal = (placement != ModifierPlacement::None);
+        isDeclarationFinal = (placement == ModifierPlacement::Prefix);
+    }
 
-    enum class ParameterModifier
+    void SetAbstractPlacement(ModifierPlacement placement) noexcept
     {
-        None,
-        In,
-        Out,
-        InOut
-    };
+        isAbstract = (placement != ModifierPlacement::None);
+        isDeclarationAbstract = (placement == ModifierPlacement::Prefix);
+    }
+};
 
-    enum class TypeKind
+struct ParameterInformation
+{
+    ParameterInformation() = default;
+    ParameterInformation(std::string name_, std::string typeName_, std::string rawText_ = "",
+                         std::string baseTypeName_ = "")
+        : name(std::move(name_)), typeName(std::move(typeName_)), rawText(std::move(rawText_)),
+          baseTypeName(std::move(baseTypeName_))
     {
-        Unknown,
-        Auto,
-        Void,
-        Int8,
-        Int16,
-        Int32,
-        Int64,
-        UInt8,
-        UInt16,
-        UInt32,
-        UInt64,
-        Float,
-        Double,
-        Bool,
-        String,
-        Object,
-        Array,
-        Handle,
-        // Aliases placed last so they don't reset the implicit counter for the entries above.
-        Int = Int32,
-        UInt = UInt32
-    };
+    }
+
+    std::string name;
+    std::string typeName;
+    std::string rawText;
+    std::string baseTypeName;
+    std::string templateName;
+    TypeKind typeKind = TypeKind::Unknown;
+    bool isArray = false;
+    bool hasPrimitiveHandle = false;
+    uint32_t arrayDepth = 0;
+    ParameterModifier modifier = ParameterModifier::None;
+    std::string defaultValue;
+    bool isHandle = false;
+    bool isConst = false;
+    bool isReference = false;
+    bool hasDoubleReference = false;
+    bool isStandaloneRef = false;
+
+    uint32_t startLine = 0;
+    uint32_t startCharacter = 0;
+    uint32_t endLine = 0;
+    uint32_t endCharacter = 0;
+};
+
+struct SourceRange
+{
+    uint32_t startLine = 0;
+    uint32_t startCharacter = 0;
+    uint32_t endLine = 0;
+    uint32_t endCharacter = 0;
+};
+
+struct TypeExtractionResult
+{
+    std::string baseTypeName;
+    std::string templateName;
+    TypeKind kind = TypeKind::Unknown;
+    bool isArray = false;
+    bool isHandle = false;
+    bool isReference = false;
+    bool isConst = false;
+    bool hasPrimitiveHandle = false;
+    uint32_t arrayDepth = 0;
+    std::vector<TypeExtractionResult> templateArguments;
+};
+
+struct FunctionSignature
+{
+    std::string returnType;
+    std::string returnBaseTypeName;
+    std::string returnTemplateName;
+    SymbolModifiers modifiers;
+    TypeKind returnTypeKind = TypeKind::Unknown;
+    bool returnIsArray = false;
+    bool returnIsConst = false;
+    bool returnHasPrimitiveHandle = false;
+    uint32_t returnArrayDepth = 0;
+    std::vector<ParameterInformation> parameters;
+    bool hasBody = false;
+    bool isInterfaceMethod = false;
+    bool isImported = false;
+    std::string originModule;
+    std::string defaultValue;
+};
+
+struct VariableSignature
+{
+    std::string typeName;
+    std::string baseTypeName;
+    std::string templateName;
+    std::vector<std::string> templateArgumentTypes;
+    TypeKind typeKind = TypeKind::Unknown;
+    bool isArray = false;
+    bool hasPrimitiveHandle = false;
+    uint32_t arrayDepth = 0;
+    std::string defaultValue;
+    SymbolModifiers modifiers;
+    bool isVirtualProperty = false;
+    bool hasGet = false;
+    bool hasSet = false;
+    bool isGetConst = false;
+    bool hasBodyGet = false;
+    bool hasBodySet = false;
+    bool hasDuplicateGet = false;
+    bool hasDuplicateSet = false;
+    bool isGetOverride = false;
+    bool isSetOverride = false;
+    bool isGetFinal = false;
+    bool isSetFinal = false;
+    bool hasNullInitializer = false;
+    bool hasSemicolon = true;
+    bool isLocal = false;
+};
+
+struct EnumMemberInformation
+{
+    std::string name;
+    std::string value;
+    std::string valueNodeType;
+};
+
+struct EnumSignature
+{
+    SymbolModifiers modifiers;
+    std::vector<EnumMemberInformation> members;
+    bool hasBraces = false;
+};
+
+struct ClassSignature
+{
+    std::vector<std::string> bases;
+    std::vector<std::string> includedMixins;
+    std::vector<std::string> templateParams;
+    SymbolModifiers modifiers;
+    bool isTemplate = false;
+    bool hasBraces = false;
+};
+
+struct InterfaceSignature
+{
+    std::vector<std::string> inheritedInterfaces;
+    SymbolModifiers modifiers;
+};
+
+struct TypedefSignature
+{
+    std::string baseType;
+    TypeKind typeKind = TypeKind::Unknown;
+    bool hasSemicolon = true;
+    uint32_t baseTypeStartLine = 0;
+    uint32_t baseTypeStartCharacter = 0;
+    uint32_t baseTypeEndLine = 0;
+    uint32_t baseTypeEndCharacter = 0;
+};
+
+struct FuncdefSignature
+{
+    std::string returnType;
+    std::string returnBaseTypeName;
+    std::string returnTemplateName;
+    TypeKind returnTypeKind = TypeKind::Unknown;
+    bool returnIsArray = false;
+    bool returnIsConst = false;
+    bool returnHasPrimitiveHandle = false;
+    uint32_t returnArrayDepth = 0;
+    SymbolModifiers modifiers;
+    std::vector<ParameterInformation> parameters;
+    uint32_t returnTypeStartLine = 0;
+    uint32_t returnTypeStartCharacter = 0;
+    uint32_t returnTypeEndLine = 0;
+    uint32_t returnTypeEndCharacter = 0;
+};
+
+/** @brief Describes a function/method call that occurs outside of any function body
+ *         (e.g. a global variable initializer, a class field initializer, or an enum value). */
+struct CallReferenceSignature
+{
+    std::string calleeName;
+    bool isMethodCall = false;
+    std::string objectExpression;
+};
+
+struct Symbol
+{
+    SymbolType type;
+    std::string name;
+    std::string containerName;
+    std::string qualifiedName;
+    std::string fileUri;
+
+    uint32_t startLine = 0;
+    uint32_t startCharacter = 0;
+    uint32_t endLine = 0;
+    uint32_t endCharacter = 0;
+
+    SourceRange fullRange;      ///< Full enclosing source range of the declaration (for DocumentSymbol).
+    SourceRange selectionRange; ///< Source range of the identifier token itself (for DocumentSymbol/Rename).
+
+    bool isSynthesized = false; ///< True when synthesized into a host class (e.g. from an included mixin).
+    std::string virtualFileUri; ///< Synthetic URI when virtual mixin documents are enabled (e.g.
+                                ///< angelscript-virtual://<host_class>/<mixin>.as).
+
+    std::variant<std::monostate, FunctionSignature, VariableSignature, EnumSignature, ClassSignature,
+                 InterfaceSignature, TypedefSignature, FuncdefSignature, CallReferenceSignature>
+        signature;
+
+    FunctionSignature& GetFunction()
+    {
+        return std::get<FunctionSignature>(signature);
+    }
+
+    const FunctionSignature& GetFunction() const
+    {
+        return std::get<FunctionSignature>(signature);
+    }
+
+    VariableSignature& GetVariable()
+    {
+        return std::get<VariableSignature>(signature);
+    }
+
+    const VariableSignature& GetVariable() const
+    {
+        return std::get<VariableSignature>(signature);
+    }
+
+    EnumSignature& GetEnum()
+    {
+        return std::get<EnumSignature>(signature);
+    }
+
+    const EnumSignature& GetEnum() const
+    {
+        return std::get<EnumSignature>(signature);
+    }
+
+    ClassSignature& GetClass()
+    {
+        return std::get<ClassSignature>(signature);
+    }
+
+    const ClassSignature& GetClass() const
+    {
+        return std::get<ClassSignature>(signature);
+    }
+
+    InterfaceSignature& GetInterface()
+    {
+        return std::get<InterfaceSignature>(signature);
+    }
+
+    const InterfaceSignature& GetInterface() const
+    {
+        return std::get<InterfaceSignature>(signature);
+    }
+
+    TypedefSignature& GetTypedef()
+    {
+        return std::get<TypedefSignature>(signature);
+    }
+
+    const TypedefSignature& GetTypedef() const
+    {
+        return std::get<TypedefSignature>(signature);
+    }
+
+    FuncdefSignature& GetFuncdef()
+    {
+        return std::get<FuncdefSignature>(signature);
+    }
+
+    const FuncdefSignature& GetFuncdef() const
+    {
+        return std::get<FuncdefSignature>(signature);
+    }
+
+    CallReferenceSignature& GetCallReference()
+    {
+        return std::get<CallReferenceSignature>(signature);
+    }
+
+    const CallReferenceSignature& GetCallReference() const
+    {
+        return std::get<CallReferenceSignature>(signature);
+    }
+};
+
+struct TransparentStringHash
+{
+    using is_transparent = void;
+    using is_avalanching = void;
+
+    [[nodiscard]] uint64_t operator()(std::string_view sv) const noexcept
+    {
+        return ankerl::unordered_dense::hash<std::string_view>{}(sv);
+    }
+};
+
+using SymbolKind = SymbolType;
+
+class SymbolTable
+{
+  public:
+    SymbolTable();
+    ~SymbolTable();
+    SymbolTable(const SymbolTable&) = delete;
+    SymbolTable& operator=(const SymbolTable&) = delete;
+    SymbolTable(SymbolTable&&) = delete;
+    SymbolTable& operator=(SymbolTable&&) = delete;
+
+    void AddSymbol(const Symbol& symbol);
+    void InsertSymbol(const std::string& name, SymbolKind kind, const std::string& type = "");
+    void ClearDocumentSymbols(const std::string& fileUri);
+
+    /** @brief Atomically swaps every symbol belonging to fileUri for the ones collected in staging.
+     *  @param fileUri Document whose symbols are being replaced.
+     *  @param staging Table the fresh symbols were collected into.
+     *  @note Clearing and then re-collecting takes two locks, and between them the document has
+     *        no symbols at all - a window a reader on another thread can land in and see an
+     *        empty file. Since analysis moved off the message loop that window is on the hot
+     *        editing path, so the swap happens under a single write lock instead. */
+    void ReplaceDocumentSymbols(const std::string& fileUri, const SymbolTable& staging);
 
     /**
-     * @brief Syntactic placement of declaration modifiers and attributes.
+     * @brief ReplaceDocumentSymbols that consumes the staging table instead of copying it.
+     *
+     * Every caller builds `staging` for this one call and drops it afterwards, and a Symbol
+     * carries several strings and two vectors. Copying it out of staging and then again into
+     * the bucket is two deep copies of a whole document's symbols for nothing - 72 ms of the
+     * 411 ms a 646 KB stub took to load. `staging` is left empty.
      */
-    enum class ModifierPlacement : uint8_t
+    void ReplaceDocumentSymbols(const std::string& fileUri, SymbolTable&& staging);
+
+    /**
+     * @brief Creates an isolated analysis snapshot of this symbol table with staging symbols applied for uriStr.
+     *        The global table is read-locked during copy; the returned snapshot is completely private to the caller
+     *        and safe for concurrent semantic analysis without contaminating the global symbol table.
+     * @param uriStr Document URI being analyzed.
+     * @param staging Fresh symbols collected for uriStr.
+     * @return Isolated SymbolTable snapshot owned by unique_ptr.
+     */
+    [[nodiscard]] std::unique_ptr<SymbolTable> CreateAnalysisSnapshot(const std::string& uriStr,
+                                                                      const SymbolTable& staging) const;
+
+    void ResolveIncludedMixins();
+
+    /** @brief Controls whether synthetic virtual mixin document URIs are generated during mixin resolution. */
+    void SetVirtualMixinDocumentsEnabled(bool enabled);
+
+    /** @brief Checks if virtual mixin documents generation is currently enabled. */
+    [[nodiscard]] bool IsVirtualMixinDocumentsEnabled() const;
+
+    /** @brief Number of header lines generated in a virtual mixin document (lines 0..2). */
+    static constexpr uint32_t kVirtualMixinHeaderLineCount = 3;
+
+    /**
+     * @brief Maps a virtual mixin document line number to the physical mixin declaration line number.
+     * @param virtualLine 0-indexed line number in the virtual mixin document.
+     * @param mixinStartLine 0-indexed line number where the mixin declaration begins in the physical file.
+     * @return 0-indexed line number in the physical file.
+     */
+    [[nodiscard]] static constexpr uint32_t VirtualToPhysicalLine(uint32_t virtualLine,
+                                                                  uint32_t mixinStartLine) noexcept
     {
-        None = 0,
-        Prefix,   ///< Placed before type (e.g., 'final class Foo', 'abstract void Bar()')
-        Trailing  ///< Placed after parameter list (e.g., 'void Bar() final', 'void Bar() override')
-    };
+        return (virtualLine >= kVirtualMixinHeaderLineCount)
+                   ? (mixinStartLine + (virtualLine - kVirtualMixinHeaderLineCount))
+                   : mixinStartLine;
+    }
 
-    struct SymbolModifiers
+    /**
+     * @brief Maps a physical mixin source line number to the virtual mixin document line number.
+     * @param physicalLine 0-indexed line number in the physical file.
+     * @param mixinStartLine 0-indexed line number where the mixin declaration begins in the physical file.
+     * @return 0-indexed line number in the virtual mixin document.
+     */
+    [[nodiscard]] static constexpr uint32_t PhysicalToVirtualLine(uint32_t physicalLine,
+                                                                  uint32_t mixinStartLine) noexcept
     {
-        AccessModifier access = AccessModifier::Public;
-        bool isConst = false;
-        bool isHandle = false;
-        bool isShared = false;
-        bool isMixin = false;
-        bool isAbstract = false;
-        bool isFinal = false;
-        bool isDeclarationFinal = false; ///< True when 'final' is a declaration_modifier (before type), not a func_attribute
-        bool isDeclarationAbstract = false; ///< True when 'abstract' is a declaration_modifier (before type)
-        bool isOverride = false;
-        bool isExplicit = false;
-        bool isProperty = false;
-        bool isDelete = false;
-        bool isExternal = false;
-        bool isReturnReference = false;
-        ParameterModifier paramModifier = ParameterModifier::None;
+        return (physicalLine >= mixinStartLine) ? (kVirtualMixinHeaderLineCount + (physicalLine - mixinStartLine))
+                                                : kVirtualMixinHeaderLineCount;
+    }
 
-        [[nodiscard]] ModifierPlacement GetFinalPlacement() const noexcept
-        {
-            if (isDeclarationFinal) return ModifierPlacement::Prefix;
-            if (isFinal) return ModifierPlacement::Trailing;
-            return ModifierPlacement::None;
-        }
+    /** @brief Constructs a virtual mixin URI for a host class and mixin name (e.g.
+     * angelscript-virtual://<host>/<mixin>.as). */
+    [[nodiscard]] static std::string BuildVirtualMixinUri(std::string_view hostClass, std::string_view mixinName);
 
-        [[nodiscard]] ModifierPlacement GetAbstractPlacement() const noexcept
-        {
-            if (isDeclarationAbstract) return ModifierPlacement::Prefix;
-            if (isAbstract) return ModifierPlacement::Trailing;
-            return ModifierPlacement::None;
-        }
+    /** @brief Extracts the host class from a virtual mixin URI (e.g. "Rifle" from
+     * angelscript-virtual://Rifle/WeaponMixin.as). */
+    [[nodiscard]] static std::string ExtractVirtualHostClass(std::string_view uri);
 
-        void SetFinalPlacement(ModifierPlacement placement) noexcept
-        {
-            isFinal = (placement != ModifierPlacement::None);
-            isDeclarationFinal = (placement == ModifierPlacement::Prefix);
-        }
+    /** @brief Extracts the mixin name from a virtual mixin URI (e.g. "WeaponMixin" from
+     * angelscript-virtual://Rifle/WeaponMixin.as). */
+    [[nodiscard]] static std::string ExtractVirtualMixinName(std::string_view uri);
 
-        void SetAbstractPlacement(ModifierPlacement placement) noexcept
-        {
-            isAbstract = (placement != ModifierPlacement::None);
-            isDeclarationAbstract = (placement == ModifierPlacement::Prefix);
-        }
-    };
+    /** @brief Returns true if the symbol table holds any symbols collected from fileUri. */
+    [[nodiscard]] bool HasDocumentSymbols(const std::string& fileUri) const;
 
-    struct ParameterInformation
+    bool HasSymbol(std::string_view qualifiedName) const;
+    bool HasSymbol(const std::string& qualifiedName) const
     {
-        ParameterInformation() = default;
-        ParameterInformation(std::string name_, std::string typeName_, std::string rawText_ = "", std::string baseTypeName_ = "")
-            : name(std::move(name_)), typeName(std::move(typeName_)), rawText(std::move(rawText_)), baseTypeName(std::move(baseTypeName_)) {}
-
-        std::string name;
-        std::string typeName;
-        std::string rawText;
-        std::string baseTypeName;
-        std::string templateName;
-        TypeKind typeKind = TypeKind::Unknown;
-        bool isArray = false;
-        bool hasPrimitiveHandle = false;
-        uint32_t arrayDepth = 0;
-        ParameterModifier modifier = ParameterModifier::None;
-        std::string defaultValue;
-        bool isHandle = false;
-        bool isConst = false;
-        bool isReference = false;
-        bool hasDoubleReference = false;
-        bool isStandaloneRef = false;
-
-        uint32_t startLine = 0;
-        uint32_t startCharacter = 0;
-        uint32_t endLine = 0;
-        uint32_t endCharacter = 0;
-    };
-
-    struct SourceRange
+        return HasSymbol(std::string_view(qualifiedName));
+    }
+    bool HasSymbol(const char* qualifiedName) const
     {
-        uint32_t startLine = 0;
-        uint32_t startCharacter = 0;
-        uint32_t endLine = 0;
-        uint32_t endCharacter = 0;
-    };
+        return HasSymbol(std::string_view(qualifiedName));
+    }
 
-    struct TypeExtractionResult
+    bool HasSymbolAnywhere(std::string_view name) const;
+    bool HasSymbolAnywhere(const std::string& name) const
     {
-        std::string baseTypeName;
-        std::string templateName;
-        TypeKind kind = TypeKind::Unknown;
-        bool isArray = false;
-        bool isHandle = false;
-        bool isReference = false;
-        bool isConst = false;
-        bool hasPrimitiveHandle = false;
-        uint32_t arrayDepth = 0;
-        std::vector<TypeExtractionResult> templateArguments;
-    };
-
-    struct FunctionSignature
+        return HasSymbolAnywhere(std::string_view(name));
+    }
+    bool HasSymbolAnywhere(const char* name) const
     {
-        std::string returnType;
-        std::string returnBaseTypeName;
-        std::string returnTemplateName;
-        SymbolModifiers modifiers;
-        TypeKind returnTypeKind = TypeKind::Unknown;
-        bool returnIsArray = false;
-        bool returnIsConst = false;
-        bool returnHasPrimitiveHandle = false;
-        uint32_t returnArrayDepth = 0;
-        std::vector<ParameterInformation> parameters;
-        bool hasBody = false;
-        bool isInterfaceMethod = false;
-        bool isImported = false;
-        std::string originModule;
-        std::string defaultValue;
-    };
+        return HasSymbolAnywhere(std::string_view(name));
+    }
 
-
-    struct VariableSignature
+    /** @brief Returns a snapshot handle to the overload list for the given qualified name.
+     *  @return Shared pointer to an immutable symbol list. The snapshot stays valid even if
+     *          the table is mutated afterwards (copy-on-write), or nullptr if not found.
+     *  @note Prefer this over FindSymbols() for hot read paths (Hover, Completion) to avoid vector copy. */
+    std::shared_ptr<const std::vector<Symbol>> FindSymbolsPtr(std::string_view qualifiedName) const;
+    std::shared_ptr<const std::vector<Symbol>> FindSymbolsPtr(const std::string& qualifiedName) const
     {
-        std::string typeName;
-        std::string baseTypeName;
-        std::string templateName;
-        std::vector<std::string> templateArgumentTypes;
-        TypeKind typeKind = TypeKind::Unknown;
-        bool isArray = false;
-        bool hasPrimitiveHandle = false;
-        uint32_t arrayDepth = 0;
-        std::string defaultValue;
-        SymbolModifiers modifiers;
-        bool isVirtualProperty = false;
-        bool hasGet = false;
-        bool hasSet = false;
-        bool isGetConst = false;
-        bool hasBodyGet = false;
-        bool hasBodySet = false;
-        bool hasDuplicateGet = false;
-        bool hasDuplicateSet = false;
-        bool isGetOverride = false;
-        bool isSetOverride = false;
-        bool isGetFinal = false;
-        bool isSetFinal = false;
-        bool hasNullInitializer = false;
-        bool hasSemicolon = true;
-        bool isLocal = false;
-    };
-
-    struct EnumMemberInformation
+        return FindSymbolsPtr(std::string_view(qualifiedName));
+    }
+    std::shared_ptr<const std::vector<Symbol>> FindSymbolsPtr(const char* qualifiedName) const
     {
-        std::string name;
-        std::string value;
-        std::string valueNodeType;
-    };
+        return FindSymbolsPtr(std::string_view(qualifiedName));
+    }
 
-    struct EnumSignature
+    /** @brief Returns a copy of all symbols matching qualifiedName. Safe across mutations. */
+    std::vector<Symbol> FindSymbols(std::string_view qualifiedName) const;
+    std::vector<Symbol> FindSymbols(const std::string& qualifiedName) const
     {
-        SymbolModifiers modifiers;
-        std::vector<EnumMemberInformation> members;
-        bool hasBraces = false;
-    };
-
-    struct ClassSignature
+        return FindSymbols(std::string_view(qualifiedName));
+    }
+    std::vector<Symbol> FindSymbols(const char* qualifiedName) const
     {
-        std::vector<std::string> bases;
-        std::vector<std::string> includedMixins;
-        std::vector<std::string> templateParams;
-        SymbolModifiers modifiers;
-        bool isTemplate = false;
-        bool hasBraces = false;
-    };
+        return FindSymbols(std::string_view(qualifiedName));
+    }
 
-    struct InterfaceSignature
+    std::optional<Symbol> FindFirstSymbol(std::string_view qualifiedName) const;
+    std::optional<Symbol> FindFirstSymbol(const std::string& qualifiedName) const
     {
-        std::vector<std::string> inheritedInterfaces;
-        SymbolModifiers modifiers;
-    };
-
-    struct TypedefSignature
+        return FindFirstSymbol(std::string_view(qualifiedName));
+    }
+    std::optional<Symbol> FindFirstSymbol(const char* qualifiedName) const
     {
-        std::string baseType;
-        TypeKind typeKind = TypeKind::Unknown;
-        bool hasSemicolon = true;
-        uint32_t baseTypeStartLine = 0;
-        uint32_t baseTypeStartCharacter = 0;
-        uint32_t baseTypeEndLine = 0;
-        uint32_t baseTypeEndCharacter = 0;
-    };
+        return FindFirstSymbol(std::string_view(qualifiedName));
+    }
 
-    struct FuncdefSignature
+    std::optional<Symbol> LookupSymbol(std::string_view name) const;
+    std::optional<Symbol> LookupSymbol(const std::string& name) const
     {
-        std::string returnType;
-        std::string returnBaseTypeName;
-        std::string returnTemplateName;
-        TypeKind returnTypeKind = TypeKind::Unknown;
-        bool returnIsArray = false;
-        bool returnIsConst = false;
-        bool returnHasPrimitiveHandle = false;
-        uint32_t returnArrayDepth = 0;
-        SymbolModifiers modifiers;
-        std::vector<ParameterInformation> parameters;
-        uint32_t returnTypeStartLine = 0;
-        uint32_t returnTypeStartCharacter = 0;
-        uint32_t returnTypeEndLine = 0;
-        uint32_t returnTypeEndCharacter = 0;
-    };
-
-    /** @brief Describes a function/method call that occurs outside of any function body
-     *         (e.g. a global variable initializer, a class field initializer, or an enum value). */
-    struct CallReferenceSignature
+        return LookupSymbol(std::string_view(name));
+    }
+    std::optional<Symbol> LookupSymbol(const char* name) const
     {
-        std::string calleeName;
-        bool isMethodCall = false;
-        std::string objectExpression;
-    };
+        return LookupSymbol(std::string_view(name));
+    }
 
-    struct Symbol
+    /** @brief Returns all type symbols (class, interface, enum, typedef, funcdef) whose short name matches. */
+    std::vector<Symbol> FindTypeSymbolsByShortName(const std::string& shortName) const;
+
+    /** @brief Returns a copy of all symbols currently present in the table. */
+    std::vector<Symbol> GetAllSymbols() const;
+
+    /** @brief Iterates all symbols in the table.
+     *  @param visitor Callback invoked for each (qualifiedName, symbol_list) pair.
+     *  @note The buckets are snapshotted under the lock and visited outside it, so a visitor
+     *        may safely look other symbols up - see the implementation for why that matters. */
+    void ForEachSymbol(const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const;
+
+    /**
+     * @brief Iterates only the buckets holding at least one symbol from one document.
+     *
+     * The reason this exists: analysis runs per document, but the table is workspace-wide. A
+     * pass that walks everything and then discards by fileUri pays for all 50,000 symbols in
+     * the workspace to diagnose a forty-line file, on every debounced keystroke. A visitor
+     * still sees the whole bucket, which is what the redeclaration rule needs - the same name
+     * declared in a sibling file has to be visible for the comparison to mean anything.
+     *
+     * @param fileUri Document whose buckets to visit.
+     * @param visitor Callback invoked for each (qualifiedName, symbol_list) pair.
+     */
+    void ForEachSymbolInFile(const std::string& fileUri,
+                             const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const;
+
+    /**
+     * @brief Computes a 64-bit hash of the document's public declarations (names, types, signatures, modifiers).
+     *        Excludes line numbers, comments, whitespace, and function bodies.
+     * @param fileUri Document whose declarations to hash.
+     * @return 64-bit interface hash, or 0 if no symbols exist for fileUri.
+     */
+    uint64_t ComputeDocumentInterfaceHash(const std::string& fileUri) const;
+
+    /** @brief Counter bumped on every mutation, so a derived index can tell it is still current. */
+    uint64_t Version() const;
+
+    /**
+     * @brief The declaration rules' member index, rebuilt only when the table has changed.
+     *
+     * Hosted here rather than on the analysis request because the answer depends on the table
+     * and nothing else: built per request it was one full walk per keystroke, and the table
+     * usually has not changed between two of them.
+     */
+    std::shared_ptr<const rules::RuleIndex> GetRuleIndex() const;
+
+    /**
+     * @brief Forces construction of the RuleIndex if not already built.
+     *
+     * Called at the end of the workspace scan to avoid a latency spike on the first hover
+     * that calls FindTypeSymbolsByShortName. Building the index eagerly on the workspace
+     * thread costs the same as building it lazily on the first request, but the user is
+     * not waiting for a tooltip while it happens.
+     */
+    void EnsureRuleIndex() const;
+
+    void PrintSymbols(angel_lsp::utils::LspLogger* logger) const;
+
+  private:
+    /** @brief Records that a symbol's bucket now holds something from its file. Caller holds the write lock. */
+    void IndexKeyForFileLocked(const std::string& fileUri, const std::string& key);
+
+    /** @brief Erases symbols belonging to fileUri from m_symbols and m_keysByFile. Caller holds the write lock. */
+    void EraseDocumentSymbolsOnlyLocked(const std::string& fileUri);
+
+    /** @brief Returns pointers to all non-synthesized symbols declared in fileUri. Caller holds the read or write lock.
+     */
+    std::vector<const Symbol*> GetDocumentSymbolPointersLocked(const std::string& fileUri) const;
+
+    /** @brief Erases every symbol belonging to fileUri, touching only that file's buckets. Caller holds the write lock.
+     */
+    void EraseDocumentLocked(const std::string& fileUri);
+
+    /** @brief The half both ReplaceDocumentSymbols overloads share: take the write lock, swap the file's symbols for
+     * these. */
+    void PublishDocumentSymbols(const std::string& fileUri, std::vector<Symbol>&& fresh);
+    void ResolveIncludedMixinsLocked(std::vector<std::string>* outAffectedFiles = nullptr);
+    void ResolveIncludedMixinsForKeysLocked(const std::vector<std::string>& classKeys,
+                                            std::vector<std::string>* outAffectedFiles = nullptr);
+    uint64_t ComputeDocumentInterfaceHashLocked(const std::string& fileUri) const;
+
+    mutable std::shared_mutex m_mutex;
+    ankerl::unordered_dense::map<std::string, std::shared_ptr<std::vector<Symbol>>, TransparentStringHash,
+                                 std::equal_to<>>
+        m_symbols;
+
+    /** @brief Bucket keys touched by each document, so a per-file walk need not scan the rest. */
+    ankerl::unordered_dense::map<std::string, ankerl::unordered_dense::set<std::string>> m_keysByFile;
+
+    uint64_t m_version = 0;
+
+    // Guarded separately from m_mutex: building or updating the index reads the table, so holding the
+    // table's lock across the build would be a lock taken twice by one thread.
+    mutable std::mutex m_ruleIndexMutex;
+    mutable std::shared_ptr<rules::RuleIndex> m_ruleIndex;
+    mutable std::unique_ptr<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>> m_ruleIndexPartials;
+
+    bool m_virtualMixinDocumentsEnabled = false;
+};
+
+/** @brief Converts SymbolType enum to lower/string representation. */
+inline std::string SymbolTypeToString(SymbolType type)
+{
+    switch (type)
     {
-        SymbolType type;
-        std::string name;
-        std::string containerName;
-        std::string qualifiedName;
-        std::string fileUri;
-
-        uint32_t startLine = 0;
-        uint32_t startCharacter = 0;
-        uint32_t endLine = 0;
-        uint32_t endCharacter = 0;
-
-        SourceRange fullRange;       ///< Full enclosing source range of the declaration (for DocumentSymbol).
-        SourceRange selectionRange;  ///< Source range of the identifier token itself (for DocumentSymbol/Rename).
-
-        bool isSynthesized = false;  ///< True when synthesized into a host class (e.g. from an included mixin).
-        std::string virtualFileUri;  ///< Synthetic URI when virtual mixin documents are enabled (e.g. angelscript-virtual://<host_class>/<mixin>.as).
-
-        std::variant<
-            std::monostate,
-            FunctionSignature,
-            VariableSignature,
-            EnumSignature,
-            ClassSignature,
-            InterfaceSignature,
-            TypedefSignature,
-            FuncdefSignature,
-            CallReferenceSignature
-        > signature;
-
-        FunctionSignature &GetFunction()
-        {
-            return std::get<FunctionSignature>(signature);
-        }
-
-        const FunctionSignature &GetFunction() const
-        {
-            return std::get<FunctionSignature>(signature);
-        }
-
-        VariableSignature &GetVariable()
-        {
-            return std::get<VariableSignature>(signature);
-        }
-
-        const VariableSignature &GetVariable() const
-        {
-            return std::get<VariableSignature>(signature);
-        }
-
-        EnumSignature &GetEnum()
-        {
-            return std::get<EnumSignature>(signature);
-        }
-
-        const EnumSignature &GetEnum() const
-        {
-            return std::get<EnumSignature>(signature);
-        }
-
-        ClassSignature &GetClass()
-        {
-            return std::get<ClassSignature>(signature);
-        }
-
-        const ClassSignature &GetClass() const
-        {
-            return std::get<ClassSignature>(signature);
-        }
-
-        InterfaceSignature &GetInterface()
-        {
-            return std::get<InterfaceSignature>(signature);
-        }
-
-        const InterfaceSignature &GetInterface() const
-        {
-            return std::get<InterfaceSignature>(signature);
-        }
-
-        TypedefSignature &GetTypedef()
-        {
-            return std::get<TypedefSignature>(signature);
-        }
-
-        const TypedefSignature &GetTypedef() const
-        {
-            return std::get<TypedefSignature>(signature);
-        }
-
-        FuncdefSignature &GetFuncdef()
-        {
-            return std::get<FuncdefSignature>(signature);
-        }
-
-        const FuncdefSignature &GetFuncdef() const
-        {
-            return std::get<FuncdefSignature>(signature);
-        }
-
-        CallReferenceSignature &GetCallReference()
-        {
-            return std::get<CallReferenceSignature>(signature);
-        }
-
-        const CallReferenceSignature &GetCallReference() const
-        {
-            return std::get<CallReferenceSignature>(signature);
-        }
-    };
-
-    struct TransparentStringHash
-    {
-        using is_transparent = void;
-        using is_avalanching = void;
-
-        [[nodiscard]] uint64_t operator()(std::string_view sv) const noexcept
-        {
-            return ankerl::unordered_dense::hash<std::string_view>{}(sv);
-        }
-    };
-
-    using SymbolKind = SymbolType;
-
-    class SymbolTable
-    {
-    public:
-        SymbolTable();
-        ~SymbolTable();
-        SymbolTable(const SymbolTable &) = delete;
-        SymbolTable &operator=(const SymbolTable &) = delete;
-        SymbolTable(SymbolTable &&) = delete;
-        SymbolTable &operator=(SymbolTable &&) = delete;
-
-        void AddSymbol(const Symbol &symbol);
-        void InsertSymbol(const std::string &name, SymbolKind kind, const std::string &type = "");
-        void ClearDocumentSymbols(const std::string &fileUri);
-
-        /** @brief Atomically swaps every symbol belonging to fileUri for the ones collected in staging.
-         *  @param fileUri Document whose symbols are being replaced.
-         *  @param staging Table the fresh symbols were collected into.
-         *  @note Clearing and then re-collecting takes two locks, and between them the document has
-         *        no symbols at all - a window a reader on another thread can land in and see an
-         *        empty file. Since analysis moved off the message loop that window is on the hot
-         *        editing path, so the swap happens under a single write lock instead. */
-        void ReplaceDocumentSymbols(const std::string &fileUri, const SymbolTable &staging);
-
-        /**
-         * @brief ReplaceDocumentSymbols that consumes the staging table instead of copying it.
-         *
-         * Every caller builds `staging` for this one call and drops it afterwards, and a Symbol
-         * carries several strings and two vectors. Copying it out of staging and then again into
-         * the bucket is two deep copies of a whole document's symbols for nothing - 72 ms of the
-         * 411 ms a 646 KB stub took to load. `staging` is left empty.
-         */
-        void ReplaceDocumentSymbols(const std::string &fileUri, SymbolTable &&staging);
-
-        /**
-         * @brief Creates an isolated analysis snapshot of this symbol table with staging symbols applied for uriStr.
-         *        The global table is read-locked during copy; the returned snapshot is completely private to the caller
-         *        and safe for concurrent semantic analysis without contaminating the global symbol table.
-         * @param uriStr Document URI being analyzed.
-         * @param staging Fresh symbols collected for uriStr.
-         * @return Isolated SymbolTable snapshot owned by unique_ptr.
-         */
-        [[nodiscard]] std::unique_ptr<SymbolTable> CreateAnalysisSnapshot(const std::string &uriStr, const SymbolTable &staging) const;
-
-        void ResolveIncludedMixins();
-
-        /** @brief Controls whether synthetic virtual mixin document URIs are generated during mixin resolution. */
-        void SetVirtualMixinDocumentsEnabled(bool enabled);
-
-        /** @brief Checks if virtual mixin documents generation is currently enabled. */
-        [[nodiscard]] bool IsVirtualMixinDocumentsEnabled() const;
-
-        /** @brief Number of header lines generated in a virtual mixin document (lines 0..2). */
-        static constexpr uint32_t kVirtualMixinHeaderLineCount = 3;
-
-        /**
-         * @brief Maps a virtual mixin document line number to the physical mixin declaration line number.
-         * @param virtualLine 0-indexed line number in the virtual mixin document.
-         * @param mixinStartLine 0-indexed line number where the mixin declaration begins in the physical file.
-         * @return 0-indexed line number in the physical file.
-         */
-        [[nodiscard]] static constexpr uint32_t VirtualToPhysicalLine(uint32_t virtualLine, uint32_t mixinStartLine) noexcept
-        {
-            return (virtualLine >= kVirtualMixinHeaderLineCount)
-                ? (mixinStartLine + (virtualLine - kVirtualMixinHeaderLineCount))
-                : mixinStartLine;
-        }
-
-        /**
-         * @brief Maps a physical mixin source line number to the virtual mixin document line number.
-         * @param physicalLine 0-indexed line number in the physical file.
-         * @param mixinStartLine 0-indexed line number where the mixin declaration begins in the physical file.
-         * @return 0-indexed line number in the virtual mixin document.
-         */
-        [[nodiscard]] static constexpr uint32_t PhysicalToVirtualLine(uint32_t physicalLine, uint32_t mixinStartLine) noexcept
-        {
-            return (physicalLine >= mixinStartLine)
-                ? (kVirtualMixinHeaderLineCount + (physicalLine - mixinStartLine))
-                : kVirtualMixinHeaderLineCount;
-        }
-
-        /** @brief Constructs a virtual mixin URI for a host class and mixin name (e.g. angelscript-virtual://<host>/<mixin>.as). */
-        [[nodiscard]] static std::string BuildVirtualMixinUri(std::string_view hostClass, std::string_view mixinName);
-
-        /** @brief Extracts the host class from a virtual mixin URI (e.g. "Rifle" from angelscript-virtual://Rifle/WeaponMixin.as). */
-        [[nodiscard]] static std::string ExtractVirtualHostClass(std::string_view uri);
-
-        /** @brief Extracts the mixin name from a virtual mixin URI (e.g. "WeaponMixin" from angelscript-virtual://Rifle/WeaponMixin.as). */
-        [[nodiscard]] static std::string ExtractVirtualMixinName(std::string_view uri);
-
-        /** @brief Returns true if the symbol table holds any symbols collected from fileUri. */
-        [[nodiscard]] bool HasDocumentSymbols(const std::string &fileUri) const;
-
-        bool HasSymbol(std::string_view qualifiedName) const;
-        bool HasSymbol(const std::string &qualifiedName) const
-        {
-            return HasSymbol(std::string_view(qualifiedName));
-        }
-        bool HasSymbol(const char *qualifiedName) const
-        {
-            return HasSymbol(std::string_view(qualifiedName));
-        }
-
-        bool HasSymbolAnywhere(std::string_view name) const;
-        bool HasSymbolAnywhere(const std::string &name) const
-        {
-            return HasSymbolAnywhere(std::string_view(name));
-        }
-        bool HasSymbolAnywhere(const char *name) const
-        {
-            return HasSymbolAnywhere(std::string_view(name));
-        }
-
-        /** @brief Returns a snapshot handle to the overload list for the given qualified name.
-         *  @return Shared pointer to an immutable symbol list. The snapshot stays valid even if
-         *          the table is mutated afterwards (copy-on-write), or nullptr if not found.
-         *  @note Prefer this over FindSymbols() for hot read paths (Hover, Completion) to avoid vector copy. */
-        std::shared_ptr<const std::vector<Symbol>> FindSymbolsPtr(std::string_view qualifiedName) const;
-        std::shared_ptr<const std::vector<Symbol>> FindSymbolsPtr(const std::string &qualifiedName) const
-        {
-            return FindSymbolsPtr(std::string_view(qualifiedName));
-        }
-        std::shared_ptr<const std::vector<Symbol>> FindSymbolsPtr(const char *qualifiedName) const
-        {
-            return FindSymbolsPtr(std::string_view(qualifiedName));
-        }
-
-        /** @brief Returns a copy of all symbols matching qualifiedName. Safe across mutations. */
-        std::vector<Symbol> FindSymbols(std::string_view qualifiedName) const;
-        std::vector<Symbol> FindSymbols(const std::string &qualifiedName) const
-        {
-            return FindSymbols(std::string_view(qualifiedName));
-        }
-        std::vector<Symbol> FindSymbols(const char *qualifiedName) const
-        {
-            return FindSymbols(std::string_view(qualifiedName));
-        }
-
-        std::optional<Symbol> FindFirstSymbol(std::string_view qualifiedName) const;
-        std::optional<Symbol> FindFirstSymbol(const std::string &qualifiedName) const
-        {
-            return FindFirstSymbol(std::string_view(qualifiedName));
-        }
-        std::optional<Symbol> FindFirstSymbol(const char *qualifiedName) const
-        {
-            return FindFirstSymbol(std::string_view(qualifiedName));
-        }
-
-        std::optional<Symbol> LookupSymbol(std::string_view name) const;
-        std::optional<Symbol> LookupSymbol(const std::string &name) const
-        {
-            return LookupSymbol(std::string_view(name));
-        }
-        std::optional<Symbol> LookupSymbol(const char *name) const
-        {
-            return LookupSymbol(std::string_view(name));
-        }
-
-        /** @brief Returns all type symbols (class, interface, enum, typedef, funcdef) whose short name matches. */
-        std::vector<Symbol> FindTypeSymbolsByShortName(const std::string &shortName) const;
-
-        /** @brief Returns a copy of all symbols currently present in the table. */
-        std::vector<Symbol> GetAllSymbols() const;
-
-        /** @brief Iterates all symbols in the table.
-         *  @param visitor Callback invoked for each (qualifiedName, symbol_list) pair.
-         *  @note The buckets are snapshotted under the lock and visited outside it, so a visitor
-         *        may safely look other symbols up - see the implementation for why that matters. */
-        void ForEachSymbol(const std::function<void(const std::string &, const std::vector<Symbol> &)> &visitor) const;
-
-        /**
-         * @brief Iterates only the buckets holding at least one symbol from one document.
-         *
-         * The reason this exists: analysis runs per document, but the table is workspace-wide. A
-         * pass that walks everything and then discards by fileUri pays for all 50,000 symbols in
-         * the workspace to diagnose a forty-line file, on every debounced keystroke. A visitor
-         * still sees the whole bucket, which is what the redeclaration rule needs - the same name
-         * declared in a sibling file has to be visible for the comparison to mean anything.
-         *
-         * @param fileUri Document whose buckets to visit.
-         * @param visitor Callback invoked for each (qualifiedName, symbol_list) pair.
-         */
-        void ForEachSymbolInFile(const std::string &fileUri,
-                                 const std::function<void(const std::string &, const std::vector<Symbol> &)> &visitor) const;
-
-        /**
-         * @brief Computes a 64-bit hash of the document's public declarations (names, types, signatures, modifiers).
-         *        Excludes line numbers, comments, whitespace, and function bodies.
-         * @param fileUri Document whose declarations to hash.
-         * @return 64-bit interface hash, or 0 if no symbols exist for fileUri.
-         */
-        uint64_t ComputeDocumentInterfaceHash(const std::string &fileUri) const;
-
-        /** @brief Counter bumped on every mutation, so a derived index can tell it is still current. */
-        uint64_t Version() const;
-
-        /**
-         * @brief The declaration rules' member index, rebuilt only when the table has changed.
-         *
-         * Hosted here rather than on the analysis request because the answer depends on the table
-         * and nothing else: built per request it was one full walk per keystroke, and the table
-         * usually has not changed between two of them.
-         */
-        std::shared_ptr<const rules::RuleIndex> GetRuleIndex() const;
-
-        /**
-         * @brief Forces construction of the RuleIndex if not already built.
-         *
-         * Called at the end of the workspace scan to avoid a latency spike on the first hover
-         * that calls FindTypeSymbolsByShortName. Building the index eagerly on the workspace
-         * thread costs the same as building it lazily on the first request, but the user is
-         * not waiting for a tooltip while it happens.
-         */
-        void EnsureRuleIndex() const;
-
-        void PrintSymbols(angel_lsp::utils::LspLogger *logger) const;
-
-    private:
-        /** @brief Records that a symbol's bucket now holds something from its file. Caller holds the write lock. */
-        void IndexKeyForFileLocked(const std::string &fileUri, const std::string &key);
-
-        /** @brief Erases symbols belonging to fileUri from m_symbols and m_keysByFile. Caller holds the write lock. */
-        void EraseDocumentSymbolsOnlyLocked(const std::string &fileUri);
-
-        /** @brief Returns pointers to all non-synthesized symbols declared in fileUri. Caller holds the read or write lock. */
-        std::vector<const Symbol *> GetDocumentSymbolPointersLocked(const std::string &fileUri) const;
-
-        /** @brief Erases every symbol belonging to fileUri, touching only that file's buckets. Caller holds the write lock. */
-        void EraseDocumentLocked(const std::string &fileUri);
-
-        /** @brief The half both ReplaceDocumentSymbols overloads share: take the write lock, swap the file's symbols for these. */
-        void PublishDocumentSymbols(const std::string &fileUri, std::vector<Symbol> &&fresh);
-        void ResolveIncludedMixinsLocked(std::vector<std::string> *outAffectedFiles = nullptr);
-        void ResolveIncludedMixinsForKeysLocked(const std::vector<std::string> &classKeys,
-                                                std::vector<std::string> *outAffectedFiles = nullptr);
-        uint64_t ComputeDocumentInterfaceHashLocked(const std::string &fileUri) const;
-
-        mutable std::shared_mutex m_mutex;
-        ankerl::unordered_dense::map<std::string, std::shared_ptr<std::vector<Symbol>>, TransparentStringHash, std::equal_to<>> m_symbols;
-
-        /** @brief Bucket keys touched by each document, so a per-file walk need not scan the rest. */
-        ankerl::unordered_dense::map<std::string, ankerl::unordered_dense::set<std::string>> m_keysByFile;
-
-        uint64_t m_version = 0;
-
-        // Guarded separately from m_mutex: building or updating the index reads the table, so holding the
-        // table's lock across the build would be a lock taken twice by one thread.
-        mutable std::mutex m_ruleIndexMutex;
-        mutable std::shared_ptr<rules::RuleIndex> m_ruleIndex;
-        mutable std::unique_ptr<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>> m_ruleIndexPartials;
-
-        bool m_virtualMixinDocumentsEnabled = false;
-    };
-
-    /** @brief Converts SymbolType enum to lower/string representation. */
-    inline std::string SymbolTypeToString(SymbolType type)
-    {
-        switch (type)
-        {
-        case SymbolType::Variable:  return "variable";
-        case SymbolType::Function:  return "function";
-        case SymbolType::Class:     return "class";
-        case SymbolType::Interface: return "interface";
-        case SymbolType::Enum:      return "enum";
-        case SymbolType::Typedef:   return "typedef";
-        case SymbolType::Namespace: return "namespace";
-        case SymbolType::Funcdef:   return "funcdef";
-        case SymbolType::Property:  return "property";
-        case SymbolType::CallReference: return "call_reference";
-        default:                    return "unknown";
-        }
+    case SymbolType::Variable:
+        return "variable";
+    case SymbolType::Function:
+        return "function";
+    case SymbolType::Class:
+        return "class";
+    case SymbolType::Interface:
+        return "interface";
+    case SymbolType::Enum:
+        return "enum";
+    case SymbolType::Typedef:
+        return "typedef";
+    case SymbolType::Namespace:
+        return "namespace";
+    case SymbolType::Funcdef:
+        return "funcdef";
+    case SymbolType::Property:
+        return "property";
+    case SymbolType::CallReference:
+        return "call_reference";
+    default:
+        return "unknown";
     }
 }
+} // namespace angel_lsp::analysis

@@ -2,176 +2,177 @@
 
 namespace angel_lsp::analysis
 {
-    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name,
-                                          const Scope **owner, bool respectClosureBarrier)
+const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name, const Scope** owner,
+                                      bool respectClosureBarrier)
+{
+    bool crossedClosure = false;
+    for (const Scope* current = scope; current != nullptr; current = current->parent)
     {
-        bool crossedClosure = false;
-        for (const Scope *current = scope; current != nullptr; current = current->parent)
+        for (const LocalDefinition& def : current->definitions)
         {
-            for (const LocalDefinition &def : current->definitions)
+            if (def.name == name)
             {
-                if (def.name == name)
+                if (crossedClosure && respectClosureBarrier)
                 {
-                    if (crossedClosure && respectClosureBarrier)
+                    // Closures cannot capture outer local variables or parameters from enclosing functions/closures.
+                    if (def.kind == LocalDefinitionKind::Parameter)
                     {
-                        // Closures cannot capture outer local variables or parameters from enclosing functions/closures.
-                        if (def.kind == LocalDefinitionKind::Parameter)
+                        continue;
+                    }
+                    if (def.kind == LocalDefinitionKind::Variable)
+                    {
+                        bool isFunctionLocal = false;
+                        for (const Scope* s = current; s != nullptr; s = s->parent)
+                        {
+                            if (s->kind == ScopeKind::Function || s->kind == ScopeKind::Closure)
+                            {
+                                isFunctionLocal = true;
+                                break;
+                            }
+                            if (s->kind == ScopeKind::Class || s->kind == ScopeKind::Namespace ||
+                                s->kind == ScopeKind::Global)
+                            {
+                                break;
+                            }
+                        }
+                        if (isFunctionLocal)
                         {
                             continue;
                         }
-                        if (def.kind == LocalDefinitionKind::Variable)
-                        {
-                            bool isFunctionLocal = false;
-                            for (const Scope *s = current; s != nullptr; s = s->parent)
-                            {
-                                if (s->kind == ScopeKind::Function || s->kind == ScopeKind::Closure)
-                                {
-                                    isFunctionLocal = true;
-                                    break;
-                                }
-                                if (s->kind == ScopeKind::Class || s->kind == ScopeKind::Namespace || s->kind == ScopeKind::Global)
-                                {
-                                    break;
-                                }
-                            }
-                            if (isFunctionLocal)
-                            {
-                                continue;
-                            }
-                        }
                     }
-
-                    if (owner)
-                    {
-                        *owner = current;
-                    }
-                    return &def;
                 }
-            }
 
-            if (current->kind == ScopeKind::Closure)
-            {
-                crossedClosure = true;
-            }
-        }
-
-        return nullptr;
-    }
-
-    const LocalDefinition *ResolveInScope(const Scope *scope, std::string_view name, bool respectClosureBarrier)
-    {
-        return ResolveInScope(scope, name, nullptr, respectClosureBarrier);
-    }
-
-    const Scope *FindEnclosingClosure(const Scope *scope)
-    {
-        for (const Scope *current = scope; current != nullptr; current = current->parent)
-        {
-            if (current->kind == ScopeKind::Closure)
-            {
-                return current;
-            }
-        }
-        return nullptr;
-    }
-
-    const Scope *FindEnclosingScope(const Scope *root, uint32_t line, uint32_t character)
-    {
-        if (!root)
-        {
-            return nullptr;
-        }
-        for (const auto &child : root->children)
-        {
-            if (line >= child->startLine && line <= child->endLine)
-            {
-                if (line == child->startLine && character < child->startCharacter)
+                if (owner)
                 {
-                    continue;
+                    *owner = current;
                 }
-                if (line == child->endLine && character > child->endCharacter)
-                {
-                    continue;
-                }
-                const Scope *inner = FindEnclosingScope(child.get(), line, character);
-                return inner ? inner : child.get();
+                return &def;
             }
         }
-        return root;
-    }
 
-    const Scope *FindInnermostScope(const Scope *root, uint32_t line, uint32_t character)
-    {
-        if (!root)
+        if (current->kind == ScopeKind::Closure)
         {
-            return nullptr;
+            crossedClosure = true;
         }
-
-        const auto contains = [line, character](const Scope &scope)
-        {
-            if (line < scope.startLine || line > scope.endLine)
-            {
-                return false;
-            }
-            if (line == scope.startLine && character < scope.startCharacter)
-            {
-                return false;
-            }
-            if (line == scope.endLine && character > scope.endCharacter)
-            {
-                return false;
-            }
-            return true;
-        };
-
-        if (!contains(*root))
-        {
-            return nullptr;
-        }
-
-        const Scope *current = root;
-        for (bool descended = true; descended;)
-        {
-            descended = false;
-            for (const auto &child : current->children)
-            {
-                if (child && contains(*child))
-                {
-                    current = child.get();
-                    descended = true;
-                    break;
-                }
-            }
-        }
-        return current;
     }
 
-    void ScopeIndex::SetScopeTree(const std::string &fileUri, std::unique_ptr<Scope> root)
-    {
-        std::unique_lock<std::shared_mutex> lock(m_mutex);
-        m_roots[fileUri] = std::shared_ptr<Scope>(std::move(root));
-    }
-
-    void ScopeIndex::SetScopeTree(const std::string &fileUri, std::shared_ptr<const Scope> root)
-    {
-        std::unique_lock<std::shared_mutex> lock(m_mutex);
-        m_roots[fileUri] = std::const_pointer_cast<Scope>(root);
-    }
-
-    void ScopeIndex::ClearDocument(const std::string &fileUri)
-    {
-        std::unique_lock<std::shared_mutex> lock(m_mutex);
-        m_roots.erase(fileUri);
-    }
-
-    std::shared_ptr<const Scope> ScopeIndex::GetRoot(const std::string &fileUri) const
-    {
-        std::shared_lock<std::shared_mutex> lock(m_mutex);
-
-        auto it = m_roots.find(fileUri);
-        if (it == m_roots.end())
-            return nullptr;
-
-        return it->second;
-    }
+    return nullptr;
 }
+
+const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name, bool respectClosureBarrier)
+{
+    return ResolveInScope(scope, name, nullptr, respectClosureBarrier);
+}
+
+const Scope* FindEnclosingClosure(const Scope* scope)
+{
+    for (const Scope* current = scope; current != nullptr; current = current->parent)
+    {
+        if (current->kind == ScopeKind::Closure)
+        {
+            return current;
+        }
+    }
+    return nullptr;
+}
+
+const Scope* FindEnclosingScope(const Scope* root, uint32_t line, uint32_t character)
+{
+    if (!root)
+    {
+        return nullptr;
+    }
+    for (const auto& child : root->children)
+    {
+        if (line >= child->startLine && line <= child->endLine)
+        {
+            if (line == child->startLine && character < child->startCharacter)
+            {
+                continue;
+            }
+            if (line == child->endLine && character > child->endCharacter)
+            {
+                continue;
+            }
+            const Scope* inner = FindEnclosingScope(child.get(), line, character);
+            return inner ? inner : child.get();
+        }
+    }
+    return root;
+}
+
+const Scope* FindInnermostScope(const Scope* root, uint32_t line, uint32_t character)
+{
+    if (!root)
+    {
+        return nullptr;
+    }
+
+    const auto contains = [line, character](const Scope& scope)
+    {
+        if (line < scope.startLine || line > scope.endLine)
+        {
+            return false;
+        }
+        if (line == scope.startLine && character < scope.startCharacter)
+        {
+            return false;
+        }
+        if (line == scope.endLine && character > scope.endCharacter)
+        {
+            return false;
+        }
+        return true;
+    };
+
+    if (!contains(*root))
+    {
+        return nullptr;
+    }
+
+    const Scope* current = root;
+    for (bool descended = true; descended;)
+    {
+        descended = false;
+        for (const auto& child : current->children)
+        {
+            if (child && contains(*child))
+            {
+                current = child.get();
+                descended = true;
+                break;
+            }
+        }
+    }
+    return current;
+}
+
+void ScopeIndex::SetScopeTree(const std::string& fileUri, std::unique_ptr<Scope> root)
+{
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    m_roots[fileUri] = std::shared_ptr<Scope>(std::move(root));
+}
+
+void ScopeIndex::SetScopeTree(const std::string& fileUri, std::shared_ptr<const Scope> root)
+{
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    m_roots[fileUri] = std::const_pointer_cast<Scope>(root);
+}
+
+void ScopeIndex::ClearDocument(const std::string& fileUri)
+{
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    m_roots.erase(fileUri);
+}
+
+std::shared_ptr<const Scope> ScopeIndex::GetRoot(const std::string& fileUri) const
+{
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+
+    auto it = m_roots.find(fileUri);
+    if (it == m_roots.end())
+        return nullptr;
+
+    return it->second;
+}
+} // namespace angel_lsp::analysis

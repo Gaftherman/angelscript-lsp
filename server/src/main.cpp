@@ -4,15 +4,15 @@
  * @ingroup Server
  */
 
-#include <iostream>
 #include "lsp/Server.h"
+#include <iostream>
 
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
 #endif
 
-int main(int argc, char **argv)
+int main(int argc, char** argv)
 {
 #ifdef _WIN32
     _setmode(_fileno(stdin), _O_BINARY);
@@ -34,7 +34,7 @@ int main(int argc, char **argv)
         angel_lsp::Server server(config);
         server.Run();
     }
-    catch (const std::exception &e)
+    catch (const std::exception& e)
     {
         std::cerr << "angel_lsp: fatal error: " << e.what() << '\n';
         return 1;

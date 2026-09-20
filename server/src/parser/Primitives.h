@@ -20,60 +20,56 @@
  */
 namespace angel_lsp::parser::primitives
 {
-    /** @brief The integers, signed and unsigned. `int32`/`uint32` are the explicit spellings of
-     *         `int`/`uint`; the parser returns whichever the source wrote, so both are listed. */
-    inline constexpr std::array<std::string_view, 10> k_integers = {
-        "int", "int8", "int16", "int32", "int64",
-        "uint", "uint8", "uint16", "uint32", "uint64",
-    };
+/** @brief The integers, signed and unsigned. `int32`/`uint32` are the explicit spellings of
+ *         `int`/`uint`; the parser returns whichever the source wrote, so both are listed. */
+inline constexpr std::array<std::string_view, 10> k_integers = {
+    "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64",
+};
 
-    /** @brief The floating point types. */
-    inline constexpr std::array<std::string_view, 2> k_floats = { "float", "double" };
+/** @brief The floating point types. */
+inline constexpr std::array<std::string_view, 2> k_floats = {"float", "double"};
 
-    /** @brief Everything that carries a number. */
-    inline constexpr std::array<std::string_view, 12> k_numeric = {
-        "int", "int8", "int16", "int32", "int64",
-        "uint", "uint8", "uint16", "uint32", "uint64",
-        "float", "double",
-    };
+/** @brief Everything that carries a number. */
+inline constexpr std::array<std::string_view, 12> k_numeric = {
+    "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float", "double",
+};
 
-    /** @brief Every primitive the VM has, `void` included. */
-    inline constexpr std::array<std::string_view, 14> k_all = {
-        "int", "int8", "int16", "int32", "int64",
-        "uint", "uint8", "uint16", "uint32", "uint64",
-        "float", "double", "bool", "void",
-    };
+/** @brief Every primitive the VM has, `void` included. */
+inline constexpr std::array<std::string_view, 14> k_all = {
+    "int",    "int8",   "int16",  "int32", "int64",  "uint", "uint8",
+    "uint16", "uint32", "uint64", "float", "double", "bool", "void",
+};
 
-    [[nodiscard]] constexpr bool IsInteger(std::string_view name) noexcept
-    {
-        return std::find(k_integers.begin(), k_integers.end(), name) != k_integers.end();
-    }
-
-    [[nodiscard]] constexpr bool IsFloatingPoint(std::string_view name) noexcept
-    {
-        return std::find(k_floats.begin(), k_floats.end(), name) != k_floats.end();
-    }
-
-    /** @brief A number, so never a bool and never a condition on its own. */
-    [[nodiscard]] constexpr bool IsNumeric(std::string_view name) noexcept
-    {
-        return std::find(k_numeric.begin(), k_numeric.end(), name) != k_numeric.end();
-    }
-
-    /** @brief Any primitive at all. */
-    [[nodiscard]] constexpr bool IsPrimitive(std::string_view name) noexcept
-    {
-        return std::find(k_all.begin(), k_all.end(), name) != k_all.end();
-    }
-
-    /**
-     * @brief A primitive that can hold a value, so `null` can never be assigned to it.
-     *
-     * Everything but `void`, which holds nothing at all - the distinction ControlFlowChecker draws
-     * when it decides whether returning `null` is a type error.
-     */
-    [[nodiscard]] constexpr bool IsNonNullable(std::string_view name) noexcept
-    {
-        return IsPrimitive(name) && name != "void";
-    }
+[[nodiscard]] constexpr bool IsInteger(std::string_view name) noexcept
+{
+    return std::find(k_integers.begin(), k_integers.end(), name) != k_integers.end();
 }
+
+[[nodiscard]] constexpr bool IsFloatingPoint(std::string_view name) noexcept
+{
+    return std::find(k_floats.begin(), k_floats.end(), name) != k_floats.end();
+}
+
+/** @brief A number, so never a bool and never a condition on its own. */
+[[nodiscard]] constexpr bool IsNumeric(std::string_view name) noexcept
+{
+    return std::find(k_numeric.begin(), k_numeric.end(), name) != k_numeric.end();
+}
+
+/** @brief Any primitive at all. */
+[[nodiscard]] constexpr bool IsPrimitive(std::string_view name) noexcept
+{
+    return std::find(k_all.begin(), k_all.end(), name) != k_all.end();
+}
+
+/**
+ * @brief A primitive that can hold a value, so `null` can never be assigned to it.
+ *
+ * Everything but `void`, which holds nothing at all - the distinction ControlFlowChecker draws
+ * when it decides whether returning `null` is a type error.
+ */
+[[nodiscard]] constexpr bool IsNonNullable(std::string_view name) noexcept
+{
+    return IsPrimitive(name) && name != "void";
+}
+} // namespace angel_lsp::parser::primitives

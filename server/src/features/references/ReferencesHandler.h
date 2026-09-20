@@ -1,44 +1,44 @@
 #pragma once
 
-#include "analysis/SymbolTable.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/SymbolTable.h"
 #include <lsp/messages.h>
 #include <lsp/types.h>
-#include <tree_sitter/api.h>
-#include <string>
-#include <vector>
 #include <optional>
+#include <string>
+#include <tree_sitter/api.h>
+#include <vector>
 
 namespace angel_lsp::utils
 {
-    class LspLogger;
+class LspLogger;
 }
 
 namespace angel_lsp::features
 {
-    /**
-     * @brief Context and input parameters for a Find References request.
-     */
-    struct ReferencesRequest
-    {
-        const std::string &uri;
-        const std::string &sourceCode;
-        TSTree *tree = nullptr;
-        lsp::Position position;
-        bool includeDeclaration = true;
-        const analysis::SymbolTable &symbolTable;
-        const analysis::ScopeIndex &scopeIndex;
-        angel_lsp::utils::LspLogger *logger = nullptr;
-    };
+/**
+ * @brief Context and input parameters for a Find References request.
+ */
+struct ReferencesRequest
+{
+    const std::string& uri;
+    const std::string& sourceCode;
+    TSTree* tree = nullptr;
+    lsp::Position position;
+    bool includeDeclaration = true;
+    const analysis::SymbolTable& symbolTable;
+    const analysis::ScopeIndex& scopeIndex;
+    angel_lsp::utils::LspLogger* logger = nullptr;
+};
 
-    using ReferencesResult = std::vector<lsp::Location>;
+using ReferencesResult = std::vector<lsp::Location>;
 
-    /**
-     * @brief Resolves all declaration and reference occurrences of any target symbol
-     *        (local variables, function parameters, class fields/methods, global declarations)
-     *        across documents and lexical scopes.
-     * @param request Immutable context for references lookup.
-     * @return Optional vector of Locations; nullopt if symbol cannot be resolved or no references found.
-     */
-    std::optional<ReferencesResult> GetReferences(const ReferencesRequest &request);
-}
+/**
+ * @brief Resolves all declaration and reference occurrences of any target symbol
+ *        (local variables, function parameters, class fields/methods, global declarations)
+ *        across documents and lexical scopes.
+ * @param request Immutable context for references lookup.
+ * @return Optional vector of Locations; nullopt if symbol cannot be resolved or no references found.
+ */
+std::optional<ReferencesResult> GetReferences(const ReferencesRequest& request);
+} // namespace angel_lsp::features

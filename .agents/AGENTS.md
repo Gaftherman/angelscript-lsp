@@ -1,149 +1,112 @@
-# Standard Operating Procedure (SOP) & Project Guide - AngelScript LSP
+# Standard Operating Procedure (SOP) & Engineering Standard - AngelLSP
 
-AngelLSP is a high-performance C++20 Language Server Protocol (LSP) implementation for the AngelScript programming language (`.as` files), using Tree-Sitter for AST parsing and symbol table analysis.
-
----
-
-## Core Architecture
-- **Layer 4**: LSP Orchestrator & Server (`server/src/lsp/`, `server/src/main.cpp`)
-- **Layer 3**: Feature Handlers (`server/src/features/`) - hover, definition, completion, semantic tokens, signature help.
-- **Layer 2**: Analysis & Symbol Management (`server/src/analysis/`) - `SymbolTable`, `SymbolCollector`, `LocalScopeCollector`, `SemanticAnalyzer`, `NodeIndex`.
-- **Layer 1**: Core, Document, Parser & Utilities (`server/src/document/`, `server/src/parser/`, `server/src/utils/`).
-
-## Key Directories
-- `server/`: C++20 LSP backend server (`CMakeLists.txt`, `src/`). Build directory: `server/build`.
-- `client/`: VS Code extension TypeScript client.
-
-## Common Developer Workflows
-- **Build C++ Backend Server:**
-  ```powershell
-  cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Debug
-  cmake --build server/build --config Debug
-  ```
-- **Run Unit & Integration Tests:**
-  ```powershell
-  cd server/build
-  ctest -C Debug --output-on-failure
-  ```
-- **Build VS Code Extension Client:**
-  ```powershell
-  cd client
-  npm install
-  npm run compile
-  ```
+AngelLSP is a high-performance C++20 Language Server Protocol (LSP) server for the AngelScript language (`.as`), using Tree-Sitter for AST parsing, semantic token resolution, and symbol analysis.
 
 ---
 
-## 1. The Unbreakable Rule of `#include`s (Layer Matrix)
+## 1. Architectural Layers & Include Matrix
 
-To prevent circular dependencies and cascading build errors, review this matrix before writing any `#include`:
+Circular or downward-to-upward inclusions are strictly prohibited and checked via `server/scripts/check-layer-includes.py`:
 
-| Current File Layer | May `#include`: | FORBIDDEN to `#include`: |
-| --- | --- | --- |
-| **Layer 1: Core / Config**<br>(`config/`, `document/`, `parser/`, `utils/`) | Only standard C++ libraries (`<string>`, `<vector>`, etc.) or headers from its own layer. | Layer 2 (Analysis), Layer 3 (Features), Layer 4 (Server). |
-| **Layer 2: Analysis**<br>(`analysis/`) | Layer 1 (Core/Config) and C++ libraries. | Layer 3 (Features), Layer 4 (Server). |
-| **Layer 3: Features**<br>(`features/hover/`, `features/completion/`, etc.) | Layer 1 (Core) and Layer 2 (Analysis). | **Other Features** (e.g. Hover MUST NOT include Completion) and Layer 4 (Server). |
-| **Layer 4: Server / Listener**<br>(`lsp/`, `main.cpp`) | Layer 1, Layer 2, and Layer 3. | None (topmost layer). |
-
-> **Litmus test:** If you open `HoverHandler.h` and see `#include "../completion/CompletionHandler.h"`, **stop immediately**. That change breaks modularity.
+| Layer | Path | Allowed to `#include` | FORBIDDEN to `#include` |
+| :--- | :--- | :--- | :--- |
+| **Layer 1: Core / Config** | `core/`, `config/`, `document/`, `parser/`, `utils/` | Own layer, standard C++ libraries | Layers 2, 3, and 4 |
+| **Layer 2: Analysis** | `analysis/` | Layer 1, standard C++ libraries | Layers 3 and 4 |
+| **Layer 3: Features** | `features/<feature_name>/` | Layers 1 and 2 | Sibling features, Layer 4 |
+| **Layer 4: Server / LSP** | `lsp/`, `main.cpp` | Layers 1, 2, and 3 | None (topmost layer) |
 
 ---
 
-## 2. Step-by-Step: How to Add or Refactor a Feature
+## 2. Doxygen Documentation Standard (Mandatory for All Public APIs)
 
-When creating a new feature (e.g. `SignatureHelp`) or fixing an existing one, strictly follow these **5 steps**:
+All classes, structs, member variables, functions, and feature contracts must be documented in **English** using Javadoc-style Doxygen comments (`/** ... */`).
 
-### Step 1: Define the pure contract (`SignatureHelpHandler.h`)
+### Rules:
+1. **`@brief`**: A concise single-line description ending with a period.
+2. **`@param[in/out]`**: Explicit direction tag for each parameter, followed by parameter name and purpose.
+3. **`@return`**: Describes the returned value and empty/nullopt semantics.
+4. **`@note` / `@warning`**: Concurrency constraints, thread-safety guarantees, or AST lifecycle rules.
+5. **No inline comments for API contracts**: Do not use `//` comments for function contracts.
 
-Create the function declaration in **Layer 3**. It must be a **pure** function accepting only const references (`const &`).
-
+### Canonical Example:
 ```cpp
-#pragma once
-
-#include "analysis/SymbolTable.h"
-#include "document/Document.h"
-#include <optional>
-
 namespace lsp::features
 {
-    struct SignatureHelpRequest
+    /**
+     * @brief Immutable context bundle required to compute hover tooltips.
+     */
+    struct HoverRequest
     {
-        const Document& document;
-        const SymbolTable& symbolTable;
-        Position position;
+        const Document& document;          /**< Read-only snapshot of the active script document. */
+        const SymbolTable& symbolTable;    /**< Precomputed semantic symbol table for the active scope. */
+        Position position;                 /**< UTF-16 character position where hover was triggered. */
     };
 
     /**
-     * @brief Computes signature help info for a function call at a given position.
-     * @param request Immutable context needed to calculate signature help.
-     * @return Optional SignatureHelp struct; nullopt if position is invalid.
+     * @brief Resolves hover tooltip information for an AST node at a given document coordinate.
+     * @param[in] request Immutable context payload containing document, symbols, and coordinates.
+     * @return An optional HoverResult containing Markdown contents; std::nullopt if the position
+     *         does not correspond to a resolvable symbol or comment.
+     * @note Thread-safe. This function operates purely on const references without modifying global state.
      */
-    std::optional<SignatureHelpResult> GetSignatureHelp(const SignatureHelpRequest& request);
+    std::optional<HoverResult> GetHover(const HoverRequest& request);
 }
-```
-
-### Step 2: Implement isolated logic (`SignatureHelpHandler.cpp`)
-
-Write the code without storing global state or static variables.
-* If the cursor is not over a valid function call, return `std::nullopt` or an empty result.
-* **Never** throw exceptions (`throw`). Return an empty state if something fails.
-
-### Step 3: Create the in-memory unit test (`tests/SignatureHelpTest.cpp`)
-
-Test the function **without touching the disk** using the `TestUtils.h` helper:
-
-```cpp
-#include <doctest/doctest.h>
-#include "helpers/TestUtils.h"
-#include "features/signature_help/SignatureHelpHandler.h"
-
-TEST_CASE("ShouldProvideArgumentsForFunctionCall")
-{
-    // 1. Create fake in-memory document
-    std::string code = "void test(int a, float b) {}\nvoid main() { test(|); }";
-    auto doc = angel_lsp::test::CreateTestDocument("file:///test.as", code);
-    angel_lsp::analysis::SymbolTable table;
-    angel_lsp::test::PopulateTestSymbolTable(doc, table);
-
-    // 2. Execute pure function...
-}
-```
-
-### Step 4: Register the Kill-Switch and Capability
-
-1. **Check `ServerConfig.h`:** Ensure the corresponding flag exists (`enableSignatureHelp`).
-2. **Update `Server.cpp`:**
-   * In `ComputeCapabilities()` / `Initialize`: Announce the capability to the client **only if** the flag is active.
-   * In handlers: Wrap the call with the flag guard.
-
-```cpp
-messageHandler->add<lsp::requests::TextDocument_SignatureHelp>(
-    [this](lsp::requests::TextDocument_SignatureHelp::Params &&req)
-    {
-        if (!m_config.features.enableSignatureHelp)
-        {
-            return lsp::requests::TextDocument_SignatureHelp::Result{};
-        }
-        // ...
-    });
-```
-
-### Step 5: Compile and Validate
-
-Run verification commands in your terminal:
-
-```powershell
-# 1. Build everything
-cmake --build server/build --config Debug
-
-# 2. Run test suite with CTest
-cd server/build
-ctest -C Debug --output-on-failure
 ```
 
 ---
 
-## 3. Code Style and Documentation
+## 3. Conventional Commits & Git Hygiene Standard
 
-1. **Allman Style**: Opening braces `{` always on a new line for classes, structs, functions, loops, and `if`/`switch`.
-2. **Doxygen Comments in English**: Document every class, function, and struct using `/** ... */` format in English.
+Every commit must adhere strictly to the Conventional Commits specification. Unstructured commits or commits containing temporary debugging logs are rejected.
+
+### Format:
+```
+<type>(<scope>): <short imperative description>
+
+[optional body explaining WHY, context, or edge cases]
+
+[optional footer(s): Closes #123, Breaking-Change: ...]
+```
+
+### Allowed Types:
+- **`feat`**: A new LSP feature, user-facing capability, or language extension.
+- **`fix`**: A bug fix in parsing, type checking, scheduling, or diagnostics.
+- **`test`**: Adding missing tests, refactoring test helpers, or improving coverage.
+- **`perf`**: A code change that improves throughput or reduces memory/latency.
+- **`refactor`**: A code change that neither fixes a bug nor adds a feature.
+- **`style`**: Changes that do not affect code logic (clang-format, whitespace, Allman braces).
+- **`docs`**: Documentation only changes (Doxygen, README, AGENTS.md).
+- **`chore`**: Maintenance tasks, CMake adjustments, CI workflows, or gitignore updates.
+
+### Allowed Scopes:
+- `core`, `parser`, `analysis`, `features`, `server`, `harness`, `tests`, `docs`.
+
+### Examples:
+- `feat(features): implement signature help handler for overloaded constructors`
+- `fix(analysis): resolve false positive in definite assignment loop break`
+- `test(harness): replace sleep_for with deterministic DrainQueue barrier`
+- `docs(architecture): update layer matrix and Doxygen standards in AGENTS.md`
+
+### Rules:
+- Commits must be **atomic** (one logical change per commit).
+- **Zero debug code**: Never commit `std::cout`, `printf`, or temporary trace logs.
+
+---
+
+## 4. Deterministic Testing & Performance Budget SLA
+
+1. **Deterministic Execution:** No `sleep_for` in any test. Background tasks must be synchronized using `AnalysisScheduler::DrainQueue()`.
+2. **In-Memory Testing:** Feature tests must use `TestUtils.h` (`CreateTestDocument`, `PopulateTestSymbolTable`) without touching physical disk I/O.
+3. **Performance SLA:**
+   - `Hover` / `Definition`: < 20 ms.
+   - `Completion`: < 50 ms.
+   - `SemanticTokens`: < 80 ms per 1,000 lines.
+   - Full test suite execution target: < 120s across all 1,771 tests.
+
+---
+
+## 5. Tooling & Linting Standards
+
+- **Code Style:** Strict Allman style with 4-space indentation enforced by `.clang-format`.
+- **Static Analysis:** `clang-tidy` rules in `.clang-tidy` and `cppcheck` via `run-harness.ps1 -FullAudit`.
+- **AST Exploration:** Handled via `@nendo/tree-sitter-mcp` and `@felipeerias/clangd-mcp-server`.
