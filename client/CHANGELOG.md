@@ -4,6 +4,21 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.8-exp.3] - 2026-09-20
+
+### Fixes & Cross-Platform Stability
+
+- Grammar Specification Alignment:
+  - Corrected Tree-sitter node type comparison from non-existent `function_declaration` to `func_declaration` in `TypeHierarchyHandler`.
+- Predefined Stub Selection & Filtering:
+  - Fixed active stub selection isolation where opening an unselected `.as.predefined` could unintentionally contribute host symbols to the workspace symbol table.
+  - Hardened `PredefinedStubContributes` to honor active predefined selection, explicitly configured stubs, and built-in engine profiles without circular cache fallback.
+  - Enhanced `PathsAreSameFile` with `std::filesystem::equivalent` to properly handle POSIX symlink normalization (such as macOS `/var` vs `/private/var` temporary workspaces).
+  - Synchronized `m_effectivePredefined` publication order before pruning unselected stubs during workspace scans.
+  - Cleared symbol table entries and removed cached stub representations when unselected predefined files are opened or saved.
+- Concurrency & Synchronization:
+  - Synchronized `PurgeUnusedClosureFiles` under `m_lifecycleMutex` to prevent data races and premature closure invalidation with `IndexModuleClosure`.
+
 ## [0.7.8-exp.2] - 2026-09-12
 
 ### Performance & Optimization
