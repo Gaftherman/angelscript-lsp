@@ -54,6 +54,11 @@ namespace angel_lsp
                 m_predefinedManager.SetDocumentText(uriStr, analysisText);
                 diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, savedTree.get());
             }
+            else
+            {
+                m_symbolTable.ClearDocumentSymbols(uriStr);
+                m_predefinedManager.RemoveStub(uriStr);
+            }
 
             m_scopeIndex.ClearDocument(uriStr);
             m_callGraph.ClearDocument(uriStr);
@@ -187,6 +192,8 @@ namespace angel_lsp
 
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
         {
+            const bool contributes = PredefinedStubContributes(uriStr);
+
             bool contentUnchanged = false;
             auto existingText = m_predefinedManager.GetDocumentText(uriStr);
             if (existingText && *existingText == analysisText)
@@ -194,7 +201,7 @@ namespace angel_lsp
                 contentUnchanged = true;
             }
 
-            if (contentUnchanged)
+            if (contentUnchanged && contributes)
             {
                 PublishDiagnostics(uriStr, {}, version);
                 double totalMs = totalTimer.ElapsedMs();
@@ -208,11 +215,16 @@ namespace angel_lsp
             }
 
             utils::HighResTimer colTimer;
-            if (PredefinedStubContributes(uriStr))
+            if (contributes)
             {
                 ClaimPredefinedFile(uriStr, /*forceReload=*/true);
                 m_predefinedManager.SetDocumentText(uriStr, analysisText);
                 ReplaceSymbolsFromTree(uriStr, analysisText, tree);
+            }
+            else
+            {
+                m_symbolTable.ClearDocumentSymbols(uriStr);
+                m_predefinedManager.RemoveStub(uriStr);
             }
             double colMs = colTimer.ElapsedMs();
 

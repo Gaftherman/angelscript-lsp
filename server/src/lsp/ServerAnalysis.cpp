@@ -346,6 +346,10 @@ namespace angel_lsp
                 ClaimPredefinedFile(uriStr, /*forceReload=*/true);
                 m_predefinedManager.SetDocumentText(uriStr, analysisText);
             }
+            else
+            {
+                m_predefinedManager.RemoveStub(uriStr);
+            }
 
             const bool committed = CommitAnalysisResults(
                 uriStr, version, generation, configRevision,

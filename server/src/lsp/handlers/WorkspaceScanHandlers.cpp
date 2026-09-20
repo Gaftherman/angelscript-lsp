@@ -312,6 +312,12 @@ namespace angel_lsp
                     wantedPaths.push_back(autoSelected);
                 }
 
+                {
+                    std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+                    m_discoveredPredefined = discovered;
+                    m_effectivePredefined = autoSelected.empty() ? activePath : autoSelected;
+                }
+
                 // Anything still loaded from a stub file this scan did not want has to go, for exactly
                 // the reason the built-in profiles above do: didChangeConfiguration sets shouldRescan,
                 // the rescan reaches here, and ClaimPredefinedFile refuses the URIs it has already seen
@@ -320,12 +326,6 @@ namespace angel_lsp
                 // hover and completion, unmarked, and the `#define`s it wrote still keeping `#if`
                 // blocks live. Only the built-in profile half of this had ever been fixed.
                 UnloadUnselectedPredefinedStubs(wantedPaths);
-
-                {
-                    std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-                    m_discoveredPredefined = discovered;
-                    m_effectivePredefined = autoSelected.empty() ? activePath : autoSelected;
-                }
 
                 ReportPredefinedSelection(discovered, activePath, autoSelected, mergeAll);
             }

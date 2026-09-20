@@ -199,15 +199,29 @@ namespace angel_lsp
 
     bool Server::PathsAreSameFile(const std::string &a, const std::string &b)
     {
+        if (a == b)
+        {
+            return true;
+        }
+
 #if defined(_WIN32)
-        return a.size() == b.size() &&
-               std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
-                   return std::tolower(static_cast<unsigned char>(x)) ==
-                          std::tolower(static_cast<unsigned char>(y));
-               });
-#else
-        return a == b;
+        if (a.size() == b.size() &&
+            std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+                return std::tolower(static_cast<unsigned char>(x)) ==
+                       std::tolower(static_cast<unsigned char>(y));
+            }))
+        {
+            return true;
+        }
 #endif
+
+        std::error_code ec;
+        if (!a.empty() && !b.empty() && std::filesystem::equivalent(a, b, ec) && !ec)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     void Server::ReportPredefinedSelection(const std::vector<std::string> &discovered,
@@ -291,10 +305,25 @@ namespace angel_lsp
 
     bool Server::PredefinedStubContributes(const std::string &uriStr) const
     {
+        if (uriStr.starts_with(angel_lsp::analysis::k_profileUriPrefix))
+        {
+            return true;
+        }
+
         std::string effective;
         {
             std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
             effective = m_effectivePredefined;
+        }
+
+        const std::string path = CanonicalPathFromUri(uriStr);
+
+        for (const auto &configured : m_config.predefinedFiles)
+        {
+            if (!path.empty() && PathsAreSameFile(path, angel_lsp::utils::IncludeResolver::NormalizePath(configured)))
+            {
+                return true;
+            }
         }
 
         if (effective.empty())
@@ -302,12 +331,6 @@ namespace angel_lsp
             return true;
         }
 
-        if (m_predefinedManager.HasStub(uriStr))
-        {
-            return true;
-        }
-
-        const std::string path = CanonicalPathFromUri(uriStr);
         return !path.empty() && PathsAreSameFile(path, effective);
     }
 

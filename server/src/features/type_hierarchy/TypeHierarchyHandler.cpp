@@ -165,7 +165,7 @@ namespace angel_lsp::features
                     }
                 }
                 if (pType == "class_declaration" || pType == "interface_declaration" ||
-                    pType == "function_declaration" || pType == "statement_block")
+                    pType == "func_declaration" || pType == "statement_block")
                 {
                     break;
                 }

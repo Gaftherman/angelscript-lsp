@@ -309,6 +309,7 @@ namespace angel_lsp
 
     void Server::PurgeUnusedClosureFiles()
     {
+        std::lock_guard<std::mutex> lock(m_lifecycleMutex);
         ankerl::unordered_dense::set<std::string> wantedCanonicalPaths;
 
         for (const auto &openUri : m_documentStore.GetOpenUris())
