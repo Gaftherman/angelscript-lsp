@@ -96,9 +96,6 @@ angel_lsp::analysis::IsPrimitiveWidening
 angel_lsp::analysis::IsTruthyCondition
 angel_lsp::analysis::IsolationVisitor::Visit
 angel_lsp::analysis::LocalDefinition::LocalDefinition
-angel_lsp::analysis::LocalScopeCollector::BuildScopeTree
-angel_lsp::analysis::LocalScopeCollector::LocalScopeCollector
-angel_lsp::analysis::LocalScopeCollector::ReadVariableTypeInfo
 angel_lsp::analysis::MergeInlineTag
 angel_lsp::analysis::NodeIndex::Build
 angel_lsp::analysis::NormalizeType
