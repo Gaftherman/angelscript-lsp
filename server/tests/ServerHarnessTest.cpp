@@ -5511,7 +5511,8 @@ namespace
     /** @brief Runs the fixture under a module configuration and returns everything the server said. */
     std::string RunWithFolderModules(FolderModuleFixture &fx,
                                      const std::vector<config::ServerConfig::ModuleDefinition> &modules,
-                                     const char *openFile = "scripts/plugins/plugin_main.as")
+                                     const char *openFile = "scripts/plugins/plugin_main.as",
+                                     const char *waitForFile = "broken_map.as")
     {
         const std::string source = "void FmOpenedDocument() { }\n";
         fx.fixture.Write("opened.as", source);
@@ -5526,16 +5527,19 @@ namespace
         // The module pass schedules its members onto the analysis thread, which debounces. Waiting
         // for the file that is NOT open to be published is what makes this about the feature rather
         // than about the open document.
-        stream.PushAction([&stream]()
+        if (waitForFile && *waitForFile)
         {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-            while (std::chrono::steady_clock::now() < deadline)
+            stream.PushAction([&stream, waitForFile]()
             {
-                if (stream.OutputContains("broken_map.as"))
-                    return;
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        });
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+                while (std::chrono::steady_clock::now() < deadline)
+                {
+                    if (!LastPublishedFor(stream.Output(), waitForFile).empty())
+                        return;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                }
+            });
+        }
 
         stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
@@ -5570,7 +5574,8 @@ TEST_CASE("Server - Without a module nothing is said about an unopened file")
     // every file in the workspace regardless would pass the case above.
     FolderModuleFixture fx;
 
-    const std::string output = RunWithFolderModules(fx, {});
+    const std::string output = RunWithFolderModules(
+        fx, {}, "scripts/plugins/plugin_main.as", "plugin_main.as");
 
     INFO(PublishedFrames(output));
     CHECK(CountPublishedFor(output, "broken_map.as") == 0);
@@ -5584,7 +5589,8 @@ TEST_CASE("Server - The deepest folder wins when two claim one file")
 
     const std::string output = RunWithFolderModules(
         fx, { { "MapScript", "", fx.Dir("scripts/maps") },
-              { "DeepMaps",  "", fx.Dir("scripts/maps/deep") } });
+              { "DeepMaps",  "", fx.Dir("scripts/maps/deep") } },
+        "scripts/plugins/plugin_main.as", "deep_map.as");
 
     const std::string published = LastPublishedFor(output, "deep_map.as");
     INFO(published);
@@ -5602,7 +5608,9 @@ TEST_CASE("Server - A file claimed by only one module says nothing about it")
     // project, and would make the hint useless exactly where it matters.
     FolderModuleFixture fx;
 
-    const std::string output = RunWithFolderModules(fx, { { "MapScript", "", fx.Dir("scripts/maps") } });
+    const std::string output = RunWithFolderModules(
+        fx, { { "MapScript", "", fx.Dir("scripts/maps") } },
+        "scripts/plugins/plugin_main.as", "clean_map.as");
 
     const std::string published = LastPublishedFor(output, "clean_map.as");
     INFO(published);
@@ -5618,7 +5626,8 @@ TEST_CASE("Server - An entry point beats a folder that also contains the file")
 
     const std::string output = RunWithFolderModules(
         fx, { { "MapScript", "", fx.Dir("scripts/maps") },
-              { "TheMap", fx.File("scripts/maps/clean_map.as"), "" } });
+              { "TheMap", fx.File("scripts/maps/clean_map.as"), "" } },
+        "scripts/plugins/plugin_main.as", "clean_map.as");
 
     const std::string published = LastPublishedFor(output, "clean_map.as");
     INFO(published);
@@ -5637,7 +5646,8 @@ TEST_CASE("Server - Two modules with the same name are refused, loudly")
 
     const std::string output = RunWithFolderModules(
         fx, { { "MapScript", "", fx.Dir("scripts/maps") },
-              { "MapScript", "", fx.Dir("scripts/plugins") } });
+              { "MapScript", "", fx.Dir("scripts/plugins") } },
+        "scripts/plugins/plugin_main.as", "");
 
     CHECK(output.find("two modules are both named") != std::string::npos);
 }
@@ -5649,7 +5659,8 @@ TEST_CASE("Server - A module naming a folder that is not there is refused, loudl
     FolderModuleFixture fx;
 
     const std::string output = RunWithFolderModules(
-        fx, { { "MapScript", "", fx.Dir("scripts/there-is-no-such-folder") } });
+        fx, { { "MapScript", "", fx.Dir("scripts/there-is-no-such-folder") } },
+        "scripts/plugins/plugin_main.as", "");
 
     CHECK(output.find("names a folder that does not exist") != std::string::npos);
 }
@@ -5658,7 +5669,9 @@ TEST_CASE("Server - A module needs a name and at least one of a folder or an ent
 {
     FolderModuleFixture fx;
 
-    const std::string output = RunWithFolderModules(fx, { { "Nameless", "", "" } });
+    const std::string output = RunWithFolderModules(
+        fx, { { "Nameless", "", "" } },
+        "scripts/plugins/plugin_main.as", "");
 
     CHECK(output.find("at least one of an entry ") != std::string::npos);
 }
@@ -5671,7 +5684,8 @@ TEST_CASE("Server - An open document keeps its own analysis inside a module")
 
     const std::string output = RunWithFolderModules(
         fx, { { "MapScript", "", fx.Dir("scripts/maps") } },
-        /*openFile=*/"scripts/maps/clean_map.as");
+        /*openFile=*/"scripts/maps/clean_map.as",
+        /*waitForFile=*/"clean_map.as");
 
     INFO(PublishedFrames(output));
 
