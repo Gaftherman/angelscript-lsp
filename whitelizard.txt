@@ -111,7 +111,6 @@ angel_lsp::analysis::ValidateMultiDimensionalContainer
 angel_lsp::analysis::Walk
 angel_lsp::analysis::rules::CheckBody
 angel_lsp::analysis::rules::CheckClassModifiers
-angel_lsp::analysis::rules::CheckDeclaredType
 angel_lsp::analysis::rules::CheckExternal
 angel_lsp::analysis::rules::CheckInterfaceImplementation
 angel_lsp::analysis::rules::CheckMixinInstantiations
@@ -125,7 +124,6 @@ angel_lsp::analysis::rules::RuleIndex::RemovePartial
 angel_lsp::analysis::rules::ValidateDuplicates
 angel_lsp::analysis::rules::ValidateEnum
 angel_lsp::analysis::rules::ValidateFuncdef
-angel_lsp::analysis::rules::ValidateOperator
 angel_lsp::analysis::rules::ValidateParameters
 angel_lsp::config::ApplyEngineProperty
 angel_lsp::config::FromArgs

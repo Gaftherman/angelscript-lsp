@@ -55,19 +55,48 @@ bool IsDeclaredInAClass(const Symbol& sym, const DiagnosticContext& ctx)
     return container && std::any_of(container->begin(), container->end(), [](const Symbol& owner)
                                     { return owner.type == SymbolType::Class || owner.type == SymbolType::Interface; });
 }
+void ValidateOpCmp(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+{
+    if (sig.returnTypeKind != TypeKind::Int32 || sig.returnIsArray || sig.modifiers.isHandle)
+    {
+        ctx.LogRule("ValidateOperator", "as-err-opcmp-return-int", sym);
+        ctx.Emit(sym, "as-err-opcmp-return-int");
+    }
+    if (sig.parameters.size() != 1)
+    {
+        ctx.LogRule("ValidateOperator", "as-err-binary-operator-arity", sym);
+        ctx.Emit(sym, "as-err-binary-operator-arity", sym.name);
+    }
+}
+
+void ValidateOpEquals(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+{
+    if (sig.returnTypeKind != TypeKind::Bool || sig.returnIsArray || sig.modifiers.isHandle)
+    {
+        ctx.LogRule("ValidateOperator", "as-err-opequals-return-bool", sym);
+        ctx.Emit(sym, "as-err-opequals-return-bool");
+    }
+    if (sig.parameters.size() != 1)
+    {
+        ctx.LogRule("ValidateOperator", "as-err-binary-operator-arity", sym);
+        ctx.Emit(sym, "as-err-binary-operator-arity", sym.name);
+    }
+}
+
+void ValidateOpIndex(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+{
+    if (sig.parameters.empty())
+    {
+        ctx.LogRule("ValidateOperator", "as-err-opindex-no-params", sym);
+        ctx.Emit(sym, "as-err-opindex-no-params");
+    }
+}
 } // namespace
 
 void ValidateOperator(const Symbol& sym, const DiagnosticContext& ctx)
 {
-    if (sym.type != SymbolType::Function || !IsOperatorName(sym.name))
-    {
-        return;
-    }
-    if (IsFromPredefinedStub(sym, ctx))
-    {
-        return;
-    }
-    if (!std::holds_alternative<FunctionSignature>(sym.signature))
+    if (sym.type != SymbolType::Function || !IsOperatorName(sym.name) || IsFromPredefinedStub(sym, ctx) ||
+        !std::holds_alternative<FunctionSignature>(sym.signature))
     {
         return;
     }
@@ -85,49 +114,25 @@ void ValidateOperator(const Symbol& sym, const DiagnosticContext& ctx)
         return;
     }
 
-    const size_t parameterCount = sig.parameters.size();
-
     if (sym.name == "opCmp")
     {
-        if (sig.returnTypeKind != TypeKind::Int32 || sig.returnIsArray || sig.modifiers.isHandle)
-        {
-            ctx.LogRule("ValidateOperator", "as-err-opcmp-return-int", sym);
-            ctx.Emit(sym, "as-err-opcmp-return-int");
-        }
-        if (parameterCount != 1)
-        {
-            ctx.LogRule("ValidateOperator", "as-err-binary-operator-arity", sym);
-            ctx.Emit(sym, "as-err-binary-operator-arity", sym.name);
-        }
+        ValidateOpCmp(sym, sig, ctx);
         return;
     }
 
     if (sym.name == "opEquals")
     {
-        if (sig.returnTypeKind != TypeKind::Bool || sig.returnIsArray || sig.modifiers.isHandle)
-        {
-            ctx.LogRule("ValidateOperator", "as-err-opequals-return-bool", sym);
-            ctx.Emit(sym, "as-err-opequals-return-bool");
-        }
-        if (parameterCount != 1)
-        {
-            ctx.LogRule("ValidateOperator", "as-err-binary-operator-arity", sym);
-            ctx.Emit(sym, "as-err-binary-operator-arity", sym.name);
-        }
+        ValidateOpEquals(sym, sig, ctx);
         return;
     }
 
     if (sym.name == "opIndex")
     {
-        if (parameterCount == 0)
-        {
-            ctx.LogRule("ValidateOperator", "as-err-opindex-no-params", sym);
-            ctx.Emit(sym, "as-err-opindex-no-params");
-        }
+        ValidateOpIndex(sym, sig, ctx);
         return;
     }
 
-    if (Contains(k_binaryOperators, sym.name) && parameterCount != 1)
+    if (Contains(k_binaryOperators, sym.name) && sig.parameters.size() != 1)
     {
         ctx.LogRule("ValidateOperator", "as-err-binary-operator-arity", sym);
         ctx.Emit(sym, "as-err-binary-operator-arity", sym.name);

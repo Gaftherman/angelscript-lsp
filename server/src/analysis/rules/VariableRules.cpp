@@ -92,8 +92,7 @@ void CheckTemplateArguments(const Symbol& sym, const VariableSignature& sig, con
     }
 }
 
-/** @brief Rules about what the declared type may be. */
-void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
+void CheckPrimitiveOrVoidType(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.typeKind == TypeKind::Void && !sig.modifiers.isHandle)
     {
@@ -106,6 +105,39 @@ void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const Di
         ctx.LogRule("CheckDeclaredType", "as-err-handle-on-primitive", sym);
         ctx.Emit(sym, "as-err-handle-on-primitive", sig.baseTypeName);
     }
+}
+
+void CheckNonInstantiableType(const Symbol& sym, const VariableSignature& sig, std::string_view baseType,
+                              const DiagnosticContext& ctx)
+{
+    if (sig.modifiers.isHandle || !sig.templateName.empty())
+    {
+        return;
+    }
+
+    switch (ClassifyNonInstantiable(baseType, ctx.request.symbolTable))
+    {
+    case NonInstantiableKind::Abstract:
+        ctx.LogRule("CheckDeclaredType", "as-err-abstract-instantiated", sym);
+        ctx.Emit(sym, "as-err-abstract-instantiated", baseType, baseType);
+        break;
+    case NonInstantiableKind::Interface:
+        ctx.LogRule("CheckDeclaredType", "as-err-interface-instantiated", sym);
+        ctx.Emit(sym, "as-err-interface-instantiated", baseType, baseType);
+        break;
+    case NonInstantiableKind::Mixin:
+        ctx.LogRule("CheckDeclaredType", "as-err-mixin-not-a-type", sym);
+        ctx.Emit(sym, "as-err-mixin-not-a-type", baseType);
+        break;
+    case NonInstantiableKind::None:
+        break;
+    }
+}
+
+/** @brief Rules about what the declared type may be. */
+void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
+{
+    CheckPrimitiveOrVoidType(sym, sig, ctx);
 
     const std::string baseType = CleanBaseType(sig.baseTypeName.empty() ? sig.typeName : sig.baseTypeName);
     std::shared_ptr<const std::vector<Symbol>> keepAlive;
@@ -147,26 +179,7 @@ void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const Di
         return;
     }
 
-    if (!sig.modifiers.isHandle && sig.templateName.empty())
-    {
-        switch (ClassifyNonInstantiable(baseType, ctx.request.symbolTable))
-        {
-        case NonInstantiableKind::Abstract:
-            ctx.LogRule("CheckDeclaredType", "as-err-abstract-instantiated", sym);
-            ctx.Emit(sym, "as-err-abstract-instantiated", baseType, baseType);
-            break;
-        case NonInstantiableKind::Interface:
-            ctx.LogRule("CheckDeclaredType", "as-err-interface-instantiated", sym);
-            ctx.Emit(sym, "as-err-interface-instantiated", baseType, baseType);
-            break;
-        case NonInstantiableKind::Mixin:
-            ctx.LogRule("CheckDeclaredType", "as-err-mixin-not-a-type", sym);
-            ctx.Emit(sym, "as-err-mixin-not-a-type", baseType);
-            break;
-        case NonInstantiableKind::None:
-            break;
-        }
-    }
+    CheckNonInstantiableType(sym, sig, baseType, ctx);
 }
 
 /** @brief Rules about the modifiers a declaration carries where it sits. */
