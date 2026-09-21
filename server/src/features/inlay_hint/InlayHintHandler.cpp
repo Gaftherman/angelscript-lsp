@@ -4,6 +4,7 @@
 #include "parser/GrammarNames.h"
 #include "utils/LspLogger.h"
 #include <algorithm>
+#include <cctype>
 #include <spdlog/fmt/fmt.h>
 #include <string>
 #include <string_view>
@@ -16,6 +17,9 @@ namespace
 {
 /**
  * @brief Extracts text slice of an AST node from the source code.
+ * @param[in] node Tree-sitter AST node.
+ * @param[in] sourceCode Source text buffer.
+ * @return Extracted node text or empty string.
  */
 std::string GetNodeText(TSNode node, std::string_view sourceCode)
 {
@@ -33,11 +37,28 @@ std::string GetNodeText(TSNode node, std::string_view sourceCode)
 }
 
 /**
- * @brief Finds the deepest/innermost scope enclosing a given source position.
+ * @brief Trims surrounding whitespace, parentheses, and semicolons from node text.
+ * @param[in] text Raw text to trim.
+ * @return Trimmed string.
  */
+std::string TrimNodeText(std::string text)
+{
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t' || text.front() == '('))
+    {
+        text.erase(text.begin());
+    }
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == ')' || text.back() == ';'))
+    {
+        text.pop_back();
+    }
+    return text;
+}
 
 /**
  * @brief Checks if a position is within the requested range (or if range is unbounded).
+ * @param[in] pos Target position to test.
+ * @param[in] range Active query range.
+ * @return True if position is within range.
  */
 bool IsPositionInRange(const lsp::Position& pos, const lsp::Range& range)
 {
@@ -62,6 +83,9 @@ bool IsPositionInRange(const lsp::Position& pos, const lsp::Range& range)
 
 /**
  * @brief Checks if an AST node's line range overlaps with the requested range.
+ * @param[in] node AST node to check.
+ * @param[in] range Active query range.
+ * @return True if node overlaps with range.
  */
 bool IsNodeOverlappingRange(TSNode node, const lsp::Range& range)
 {
@@ -79,188 +103,355 @@ bool IsNodeOverlappingRange(TSNode node, const lsp::Range& range)
 }
 
 /**
- * @brief Resolves parameters for a function, method, or constructor called by a call_expression node.
+ * @brief Retrieves parameter information vector pointer from a Function or Funcdef symbol if available.
+ * @param[in] sym Symbol to inspect.
+ * @return Pointer to vector of parameter information, or nullptr if not callable.
  */
-std::vector<analysis::ParameterInformation> ResolveCalleeParameters(TSNode callNode, const InlayHintRequest& request,
-                                                                    size_t numArgs)
+const std::vector<analysis::ParameterInformation>* GetParametersIfCallable(const analysis::Symbol& sym)
 {
-    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
-    if (ts_node_is_null(funcNode))
+    if (sym.type == analysis::SymbolType::Function &&
+        std::holds_alternative<analysis::FunctionSignature>(sym.signature))
     {
-        uint32_t childCount = ts_node_child_count(callNode);
-        if (childCount > 0)
+        return &sym.GetFunction().parameters;
+    }
+    if (sym.type == analysis::SymbolType::Funcdef && std::holds_alternative<analysis::FuncdefSignature>(sym.signature))
+    {
+        return &sym.GetFuncdef().parameters;
+    }
+    return nullptr;
+}
+
+/**
+ * @brief Counts the minimum number of arguments required by a callable's parameters.
+ * @param[in] parameters Vector of parameter information to evaluate.
+ * @return Count of non-default, non-vararg parameters.
+ */
+size_t CountRequiredParameters(const std::vector<analysis::ParameterInformation>& parameters)
+{
+    size_t minRequired = 0;
+    for (const auto& p : parameters)
+    {
+        if (p.defaultValue.empty() && p.rawText.find("...") == std::string::npos)
         {
-            funcNode = ts_node_child(callNode, 0);
+            minRequired++;
         }
     }
+    return minRequired;
+}
 
-    if (ts_node_is_null(funcNode))
+/**
+ * @brief Locates the function expression child node for a call_expression.
+ * @param[in] callNode AST call_expression node.
+ * @return Function node, or null node if not found.
+ */
+TSNode FindCalleeFunctionNode(TSNode callNode)
+{
+    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
+    if (ts_node_is_null(funcNode) && ts_node_child_count(callNode) > 0)
     {
-        return {};
+        funcNode = ts_node_child(callNode, 0);
+    }
+    return funcNode;
+}
+
+/**
+ * @brief Collects candidate method symbols for a member call expression across type hierarchy.
+ * @param[in] funcNode AST member_expression node.
+ * @param[in] request Inlay hint request context.
+ * @return Vector of candidate symbols.
+ */
+std::vector<analysis::Symbol> CollectMemberCalleeCandidates(TSNode funcNode, const InlayHintRequest& request)
+{
+    std::vector<analysis::Symbol> candidateSymbols;
+    TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
+    TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
+    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
+    {
+        return candidateSymbols;
     }
 
-    std::string_view funcType = ts_node_type(funcNode);
-    std::vector<analysis::Symbol> candidateSymbols;
+    std::string objText = GetNodeText(objNode, request.sourceCode);
+    std::string memText = GetNodeText(memNode, request.sourceCode);
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    TSPoint objPoint = ts_node_start_point(objNode);
+    const analysis::Scope* scope =
+        rootScope ? FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column) : nullptr;
+    std::string receiverTypeName =
+        analysis::ResolveReceiverType(objNode, request.sourceCode, request.symbolTable, scope, "", request.uri);
 
-    if (funcType == "member_expression")
+    if (receiverTypeName.empty())
     {
-        TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
-        TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
-
-        if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
+        auto directCandidates = request.symbolTable.FindSymbols(objText + "::" + memText);
+        for (const auto& sym : directCandidates)
         {
-            std::string objText = GetNodeText(objNode, request.sourceCode);
-            std::string memText = GetNodeText(memNode, request.sourceCode);
-            auto rootScope = request.scopeIndex.GetRoot(request.uri);
-            TSPoint objPoint = ts_node_start_point(objNode);
-            const analysis::Scope* scope =
-                rootScope ? FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column) : nullptr;
-            std::string receiverTypeName =
-                analysis::ResolveReceiverType(objNode, request.sourceCode, request.symbolTable, scope, "", request.uri);
+            candidateSymbols.push_back(sym);
+        }
+        return candidateSymbols;
+    }
 
-            if (receiverTypeName.empty())
+    auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, request.symbolTable);
+    for (const auto& typeName : hierarchy)
+    {
+        std::string qualifiedName = typeName + "::" + memText;
+        auto found = request.symbolTable.FindSymbols(qualifiedName);
+        for (const auto& sym : found)
+        {
+            if (sym.type == analysis::SymbolType::Function)
             {
-                auto directCandidates = request.symbolTable.FindSymbols(objText + "::" + memText);
-                for (const auto& sym : directCandidates)
+                bool overriddenLower =
+                    std::any_of(candidateSymbols.begin(), candidateSymbols.end(), [&](const analysis::Symbol& kept)
+                                { return analysis::HasSameParameterList(kept, sym); });
+                if (!overriddenLower)
                 {
                     candidateSymbols.push_back(sym);
                 }
             }
-
-            if (!receiverTypeName.empty())
+            else
             {
-                auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, request.symbolTable);
-                for (const auto& typeName : hierarchy)
+                candidateSymbols.push_back(sym);
+            }
+        }
+    }
+    return candidateSymbols;
+}
+
+/**
+ * @brief Collects candidate member methods from enclosing class hierarchy for an unqualified call.
+ * @param[in] calleeName Callee identifier text.
+ * @param[in] callNode AST call_expression node.
+ * @param[in] request Inlay hint request context.
+ * @param[in,out] candidateSymbols Symbol collection receiving candidates.
+ */
+void CollectEnclosingClassCallees(const std::string& calleeName, TSNode callNode, const InlayHintRequest& request,
+                                  std::vector<analysis::Symbol>& candidateSymbols)
+{
+    auto containers = analysis::GetEnclosingContainers(callNode, request.sourceCode);
+    for (const auto& c : containers)
+    {
+        if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+        {
+            auto hierarchy = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName,
+                                                                 request.symbolTable);
+            for (const auto& typeName : hierarchy)
+            {
+                std::string qualifiedName = typeName + "::" + calleeName;
+                auto found = request.symbolTable.FindSymbols(qualifiedName);
+                for (const auto& sym : found)
                 {
-                    std::string qualifiedName = typeName + "::" + memText;
-                    auto found = request.symbolTable.FindSymbols(qualifiedName);
-                    for (const auto& sym : found)
+                    if (sym.type == analysis::SymbolType::Function)
                     {
-                        if (sym.type == analysis::SymbolType::Function)
-                        {
-                            bool overriddenLower = std::any_of(candidateSymbols.begin(), candidateSymbols.end(),
-                                                               [&](const analysis::Symbol& kept)
-                                                               { return analysis::HasSameParameterList(kept, sym); });
-                            if (!overriddenLower)
-                            {
-                                candidateSymbols.push_back(sym);
-                            }
-                        }
-                        else
+                        bool overriddenLower = std::any_of(candidateSymbols.begin(), candidateSymbols.end(),
+                                                           [&](const analysis::Symbol& kept)
+                                                           { return analysis::HasSameParameterList(kept, sym); });
+                        if (!overriddenLower)
                         {
                             candidateSymbols.push_back(sym);
                         }
                     }
                 }
             }
+            break;
         }
     }
-    else
-    {
-        std::string calleeName = GetNodeText(funcNode, request.sourceCode);
-        candidateSymbols = analysis::FindSymbolsInScope(calleeName, callNode, request.sourceCode, request.symbolTable);
+}
 
-        // Look up in enclosing class hierarchy
-        auto containers = analysis::GetEnclosingContainers(callNode, request.sourceCode);
-        for (const auto& c : containers)
+/**
+ * @brief Collects candidate function symbols for a free or unqualified call expression.
+ * @param[in] funcNode AST callee function node.
+ * @param[in] callNode AST call_expression node.
+ * @param[in] request Inlay hint request context.
+ * @return Vector of candidate symbols.
+ */
+std::vector<analysis::Symbol> CollectFreeCalleeCandidates(TSNode funcNode, TSNode callNode,
+                                                          const InlayHintRequest& request)
+{
+    std::string calleeName = GetNodeText(funcNode, request.sourceCode);
+    auto candidateSymbols = analysis::FindSymbolsInScope(calleeName, callNode, request.sourceCode, request.symbolTable);
+
+    CollectEnclosingClassCallees(calleeName, callNode, request, candidateSymbols);
+
+    if (candidateSymbols.empty())
+    {
+        candidateSymbols = request.symbolTable.FindSymbols(calleeName);
+    }
+
+    for (const auto& sym : candidateSymbols)
+    {
+        if (sym.type == analysis::SymbolType::Class)
         {
-            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+            std::string ctorName = sym.name + "::" + sym.name;
+            auto ctorSyms = request.symbolTable.FindSymbols(ctorName);
+            if (!ctorSyms.empty())
             {
-                auto hierarchy = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName,
-                                                                     request.symbolTable);
-                for (const auto& typeName : hierarchy)
-                {
-                    std::string qualifiedName = typeName + "::" + calleeName;
-                    auto found = request.symbolTable.FindSymbols(qualifiedName);
-                    for (const auto& sym : found)
-                    {
-                        if (sym.type == analysis::SymbolType::Function)
-                        {
-                            bool overriddenLower = std::any_of(candidateSymbols.begin(), candidateSymbols.end(),
-                                                               [&](const analysis::Symbol& kept)
-                                                               { return analysis::HasSameParameterList(kept, sym); });
-                            if (!overriddenLower)
-                            {
-                                candidateSymbols.push_back(sym);
-                            }
-                        }
-                    }
-                }
-                break;
+                return ctorSyms;
             }
         }
+    }
+    return candidateSymbols;
+}
 
-        if (candidateSymbols.empty())
+/**
+ * @brief Locates the argument_list child AST node for a call_expression node.
+ * @param[in] callNode AST call_expression node.
+ * @return AST argument_list node or null node.
+ */
+TSNode FindArgumentListNode(TSNode callNode)
+{
+    TSNode argListNode = parser::GetChildByField(callNode, parser::fields::Arguments);
+    if (ts_node_is_null(argListNode))
+    {
+        uint32_t childCount = ts_node_child_count(callNode);
+        for (uint32_t i = 0; i < childCount; ++i)
         {
-            candidateSymbols = request.symbolTable.FindSymbols(calleeName);
-        }
-
-        // If symbol is a Class, look for its constructor
-        for (const auto& sym : candidateSymbols)
-        {
-            if (sym.type == analysis::SymbolType::Class)
+            TSNode child = ts_node_child(callNode, i);
+            if (std::string_view(ts_node_type(child)) == "argument_list")
             {
-                std::string ctorName = sym.name + "::" + sym.name;
-                auto ctorSyms = request.symbolTable.FindSymbols(ctorName);
-                if (!ctorSyms.empty())
+                return child;
+            }
+        }
+    }
+    return argListNode;
+}
+
+/**
+ * @brief Extracts expression type strings for each argument in a call expression.
+ * @param[in] callNode AST call_expression node.
+ * @param[in] request Inlay hint request context.
+ * @return Vector of type strings.
+ */
+std::vector<std::string> ExtractCallArgTypes(TSNode callNode, const InlayHintRequest& request)
+{
+    TSNode argListNode = FindArgumentListNode(callNode);
+    if (ts_node_is_null(argListNode))
+    {
+        return {};
+    }
+
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    const analysis::Scope* scope = nullptr;
+    if (rootScope)
+    {
+        TSPoint pt = ts_node_start_point(callNode);
+        scope = FindInnermostScope(rootScope.get(), pt.row, pt.column);
+    }
+
+    std::vector<std::string> argTypes;
+    uint32_t count = ts_node_child_count(argListNode);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        TSNode ch = ts_node_child(argListNode, i);
+        std::string_view ct = ts_node_type(ch);
+        if (ct == "(" || ct == ")" || ct == "," || ct == "comment" || ct == ":")
+        {
+            continue;
+        }
+        const char* fieldName = ts_node_field_name_for_child(argListNode, i);
+        if (fieldName && std::string_view(fieldName) == "arg_name")
+        {
+            continue;
+        }
+        std::string aType =
+            analysis::ResolveExpressionType(ch, scope, request.symbolTable, request.sourceCode, request.uri);
+        argTypes.push_back(std::move(aType));
+    }
+    return argTypes;
+}
+
+/**
+ * @brief Selects the candidate matching the given argument count and default parameter bounds.
+ * @param[in] candidateSymbols Available candidate symbols.
+ * @param[in] numArgs Number of arguments passed.
+ * @return Pointer to best matching candidate symbol, or nullptr.
+ */
+const analysis::Symbol* SelectCandidateByArgCount(const std::vector<analysis::Symbol>& candidateSymbols, size_t numArgs)
+{
+    const analysis::Symbol* bestSym = nullptr;
+    for (const auto& sym : candidateSymbols)
+    {
+        const auto* params = GetParametersIfCallable(sym);
+        if (!params)
+        {
+            continue;
+        }
+        size_t minRequiredArgs = CountRequiredParameters(*params);
+        if (numArgs >= minRequiredArgs && numArgs <= params->size())
+        {
+            if (!bestSym || params->size() == numArgs ||
+                (GetParametersIfCallable(*bestSym) && GetParametersIfCallable(*bestSym)->size() < numArgs))
+            {
+                bestSym = &sym;
+                if (params->size() == numArgs)
                 {
-                    candidateSymbols = std::move(ctorSyms);
                     break;
                 }
             }
         }
     }
+    return bestSym;
+}
+
+/**
+ * @brief Selects the candidate with the highest parameter count as a fallback.
+ * @param[in] candidateSymbols Available candidate symbols.
+ * @return Pointer to fallback symbol, or nullptr.
+ */
+const analysis::Symbol* SelectFallbackCandidate(const std::vector<analysis::Symbol>& candidateSymbols)
+{
+    const analysis::Symbol* bestSym = nullptr;
+    size_t maxParams = 0;
+    for (const auto& sym : candidateSymbols)
+    {
+        const auto* params = GetParametersIfCallable(sym);
+        size_t pCount = params ? params->size() : 0;
+        if (!bestSym || pCount > maxParams)
+        {
+            bestSym = &sym;
+            maxParams = pCount;
+        }
+    }
+    return bestSym;
+}
+
+/**
+ * @brief Extracts parameter information vector from a resolved callable symbol.
+ * @param[in] sym Resolved symbol.
+ * @return Vector of parameter information items.
+ */
+std::vector<analysis::ParameterInformation> ExtractParametersFromSymbol(const analysis::Symbol* sym)
+{
+    if (!sym)
+    {
+        return {};
+    }
+    const auto* params = GetParametersIfCallable(*sym);
+    return params ? *params : std::vector<analysis::ParameterInformation>{};
+}
+
+/**
+ * @brief Resolves parameters for a function, method, or constructor called by a call_expression node.
+ * @param[in] callNode AST call_expression node.
+ * @param[in] request Inlay hint request context.
+ * @param[in] numArgs Number of arguments passed in the call.
+ * @return Vector of parameter information items matching the call.
+ */
+std::vector<analysis::ParameterInformation> ResolveCalleeParameters(TSNode callNode, const InlayHintRequest& request,
+                                                                    size_t numArgs)
+{
+    TSNode funcNode = FindCalleeFunctionNode(callNode);
+    if (ts_node_is_null(funcNode))
+    {
+        return {};
+    }
+
+    std::string_view funcType = ts_node_type(funcNode);
+    std::vector<analysis::Symbol> candidateSymbols = (funcType == "member_expression")
+                                                         ? CollectMemberCalleeCandidates(funcNode, request)
+                                                         : CollectFreeCalleeCandidates(funcNode, callNode, request);
 
     const analysis::Symbol* bestSym = nullptr;
-
     if (candidateSymbols.size() > 1)
     {
-        TSNode argListNode = parser::GetChildByField(callNode, parser::fields::Arguments);
-        if (ts_node_is_null(argListNode))
-        {
-            uint32_t childCount = ts_node_child_count(callNode);
-            for (uint32_t i = 0; i < childCount; ++i)
-            {
-                TSNode child = ts_node_child(callNode, i);
-                if (std::string_view(ts_node_type(child)) == "argument_list")
-                {
-                    argListNode = child;
-                    break;
-                }
-            }
-        }
-
-        auto rootScope = request.scopeIndex.GetRoot(request.uri);
-        const analysis::Scope* scope = nullptr;
-        if (rootScope)
-        {
-            TSPoint pt = ts_node_start_point(callNode);
-            scope = FindInnermostScope(rootScope.get(), pt.row, pt.column);
-        }
-
-        std::vector<std::string> argTypes;
-        if (!ts_node_is_null(argListNode))
-        {
-            uint32_t count = ts_node_child_count(argListNode);
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                TSNode ch = ts_node_child(argListNode, i);
-                std::string_view ct = ts_node_type(ch);
-                if (ct == "(" || ct == ")" || ct == "," || ct == "comment" || ct == ":")
-                {
-                    continue;
-                }
-                const char* fieldName = ts_node_field_name_for_child(argListNode, i);
-                if (fieldName && std::string_view(fieldName) == "arg_name")
-                {
-                    continue;
-                }
-                std::string aType =
-                    analysis::ResolveExpressionType(ch, scope, request.symbolTable, request.sourceCode, request.uri);
-                argTypes.push_back(std::move(aType));
-            }
-        }
-
+        auto argTypes = ExtractCallArgTypes(callNode, request);
         auto match = analysis::ResolveBestOverload(candidateSymbols, argTypes, request.symbolTable);
         if (match.bestCandidate != nullptr)
         {
@@ -270,100 +461,19 @@ std::vector<analysis::ParameterInformation> ResolveCalleeParameters(TSNode callN
 
     if (!bestSym)
     {
-        for (const auto& sym : candidateSymbols)
-        {
-            if (sym.type == analysis::SymbolType::Function)
-            {
-                const auto& fn = sym.GetFunction();
-                size_t minRequiredArgs = 0;
-                for (const auto& p : fn.parameters)
-                {
-                    if (p.defaultValue.empty() && p.rawText.find("...") == std::string::npos)
-                    {
-                        minRequiredArgs++;
-                    }
-                }
-                if (numArgs >= minRequiredArgs && numArgs <= fn.parameters.size())
-                {
-                    if (!bestSym || fn.parameters.size() == numArgs ||
-                        (bestSym->type == analysis::SymbolType::Function &&
-                         bestSym->GetFunction().parameters.size() < numArgs))
-                    {
-                        bestSym = &sym;
-                        if (fn.parameters.size() == numArgs)
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-            else if (sym.type == analysis::SymbolType::Funcdef)
-            {
-                const auto& fn = sym.GetFuncdef();
-                size_t minRequiredArgs = 0;
-                for (const auto& p : fn.parameters)
-                {
-                    if (p.defaultValue.empty() && p.rawText.find("...") == std::string::npos)
-                    {
-                        minRequiredArgs++;
-                    }
-                }
-                if (numArgs >= minRequiredArgs && numArgs <= fn.parameters.size())
-                {
-                    if (!bestSym || fn.parameters.size() == numArgs ||
-                        (bestSym->type == analysis::SymbolType::Funcdef &&
-                         bestSym->GetFuncdef().parameters.size() < numArgs))
-                    {
-                        bestSym = &sym;
-                        if (fn.parameters.size() == numArgs)
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
+        bestSym = SelectCandidateByArgCount(candidateSymbols, numArgs);
     }
-
     if (!bestSym && !candidateSymbols.empty())
     {
-        size_t maxParams = 0;
-        for (const auto& sym : candidateSymbols)
-        {
-            size_t pCount = 0;
-            if (sym.type == analysis::SymbolType::Function &&
-                std::holds_alternative<analysis::FunctionSignature>(sym.signature))
-            {
-                pCount = sym.GetFunction().parameters.size();
-            }
-            else if (sym.type == analysis::SymbolType::Funcdef &&
-                     std::holds_alternative<analysis::FunctionSignature>(sym.signature))
-            {
-                pCount = sym.GetFuncdef().parameters.size();
-            }
-            if (!bestSym || pCount > maxParams)
-            {
-                bestSym = &sym;
-                maxParams = pCount;
-            }
-        }
+        bestSym = SelectFallbackCandidate(candidateSymbols);
     }
 
-    if (bestSym)
-    {
-        if (bestSym->type == analysis::SymbolType::Function)
-        {
-            return bestSym->GetFunction().parameters;
-        }
-        else if (bestSym->type == analysis::SymbolType::Funcdef)
-        {
-            return bestSym->GetFuncdef().parameters;
-        }
-    }
-
-    return {};
+    return ExtractParametersFromSymbol(bestSym);
 }
 
+/**
+ * @brief Holds parsed information for an argument AST node in a call or constructor.
+ */
 struct ArgInfo
 {
     TSNode exprNode;
@@ -375,6 +485,9 @@ struct ArgInfo
 
 /**
  * @brief Parses an argument_list node into structured ArgInfo items.
+ * @param[in] argListNode AST argument_list node.
+ * @param[in] sourceCode Source text buffer.
+ * @return Vector of parsed ArgInfo items.
  */
 std::vector<ArgInfo> ParseArguments(TSNode argListNode, std::string_view sourceCode)
 {
@@ -428,37 +541,19 @@ std::vector<ArgInfo> ParseArguments(TSNode argListNode, std::string_view sourceC
 }
 
 /**
- * @brief Resolves constructor parameters for a variable direct-initialization.
- * @param declaredTypeName The type name written in the variable declaration.
- * @param declaratorNode The variable_declarator AST node.
- * @param request Inlay hint context request.
- * @param numArgs Number of arguments passed in the initialization.
- * @param args Parsed argument information.
- * @return Vector of constructor parameter information matching the call.
+ * @brief Collects candidate constructor symbols for direct-initialization.
+ * @param[in] baseName Clean base type name.
+ * @param[in] declaratorNode AST variable_declarator node.
+ * @param[in] request Inlay hint request context.
+ * @return Vector of candidate constructor symbols.
  */
-std::vector<analysis::ParameterInformation>
-ResolveConstructorParameters(const std::string& declaredTypeName, TSNode declaratorNode,
-                             const InlayHintRequest& request, size_t numArgs, const std::vector<ArgInfo>& args)
+std::vector<analysis::Symbol> CollectConstructorCandidates(const std::string& baseName, TSNode declaratorNode,
+                                                           const InlayHintRequest& request)
 {
-    std::string baseName = analysis::CleanBaseType(declaredTypeName);
-    if (baseName.empty())
-    {
-        return {};
-    }
-
     std::vector<analysis::Symbol> candidateSymbols;
-
-    // 1. Qualified constructor lookup: Type::Type (e.g. NetworkMessage::NetworkMessage or NS::Type::Type)
-    std::string ctorName;
     size_t lastColon = baseName.rfind("::");
-    if (lastColon != std::string::npos)
-    {
-        ctorName = baseName + "::" + baseName.substr(lastColon + 2);
-    }
-    else
-    {
-        ctorName = baseName + "::" + baseName;
-    }
+    std::string ctorName = (lastColon != std::string::npos) ? baseName + "::" + baseName.substr(lastColon + 2)
+                                                            : baseName + "::" + baseName;
 
     auto ctorSyms = request.symbolTable.FindSymbols(ctorName);
     for (const auto& s : ctorSyms)
@@ -469,7 +564,6 @@ ResolveConstructorParameters(const std::string& declaredTypeName, TSNode declara
         }
     }
 
-    // 2. In-scope search if Type is namespaced or unqualified
     if (candidateSymbols.empty())
     {
         auto scopeSyms =
@@ -491,7 +585,6 @@ ResolveConstructorParameters(const std::string& declaredTypeName, TSNode declara
         }
     }
 
-    // 3. Fallback: Type as a function symbol
     if (candidateSymbols.empty())
     {
         auto fnSyms = request.symbolTable.FindSymbols(baseName);
@@ -504,67 +597,80 @@ ResolveConstructorParameters(const std::string& declaredTypeName, TSNode declara
         }
     }
 
-    const analysis::Symbol* bestSym = nullptr;
+    return candidateSymbols;
+}
 
-    if (candidateSymbols.size() > 1)
+/**
+ * @brief Matches the best constructor overload using argument types.
+ * @param[in] candidateSymbols Candidate constructor symbols.
+ * @param[in] declaratorNode AST variable_declarator node.
+ * @param[in] request Inlay hint request context.
+ * @param[in] args Parsed argument information.
+ * @return Pointer to best matching symbol, or nullptr.
+ */
+const analysis::Symbol* MatchConstructorOverload(const std::vector<analysis::Symbol>& candidateSymbols,
+                                                 TSNode declaratorNode, const InlayHintRequest& request,
+                                                 const std::vector<ArgInfo>& args)
+{
+    if (candidateSymbols.size() <= 1)
     {
-        auto rootScope = request.scopeIndex.GetRoot(request.uri);
-        const analysis::Scope* scope = nullptr;
-        if (rootScope)
-        {
-            TSPoint pt = ts_node_start_point(declaratorNode);
-            scope = FindInnermostScope(rootScope.get(), pt.row, pt.column);
-        }
-
-        std::vector<std::string> argTypes;
-        argTypes.reserve(args.size());
-        for (const auto& arg : args)
-        {
-            std::string aType = analysis::ResolveExpressionType(arg.exprNode, scope, request.symbolTable,
-                                                                request.sourceCode, request.uri);
-            argTypes.push_back(std::move(aType));
-        }
-
-        auto match = analysis::ResolveBestOverload(candidateSymbols, argTypes, request.symbolTable);
-        if (match.bestCandidate != nullptr)
-        {
-            bestSym = match.bestCandidate;
-        }
+        return nullptr;
     }
+
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    const analysis::Scope* scope = nullptr;
+    if (rootScope)
+    {
+        TSPoint pt = ts_node_start_point(declaratorNode);
+        scope = FindInnermostScope(rootScope.get(), pt.row, pt.column);
+    }
+
+    std::vector<std::string> argTypes;
+    argTypes.reserve(args.size());
+    for (const auto& arg : args)
+    {
+        std::string aType =
+            analysis::ResolveExpressionType(arg.exprNode, scope, request.symbolTable, request.sourceCode, request.uri);
+        argTypes.push_back(std::move(aType));
+    }
+
+    auto match = analysis::ResolveBestOverload(candidateSymbols, argTypes, request.symbolTable);
+    return match.bestCandidate;
+}
+
+/**
+ * @brief Resolves constructor parameters for a variable direct-initialization.
+ * @param[in] declaredTypeName The type name written in the variable declaration.
+ * @param[in] declaratorNode The variable_declarator AST node.
+ * @param[in] request Inlay hint context request.
+ * @param[in] args Parsed argument information.
+ * @return Vector of constructor parameter information matching the call.
+ */
+std::vector<analysis::ParameterInformation> ResolveConstructorParameters(const std::string& declaredTypeName,
+                                                                         TSNode declaratorNode,
+                                                                         const InlayHintRequest& request,
+                                                                         const std::vector<ArgInfo>& args)
+{
+    std::string baseName = analysis::CleanBaseType(declaredTypeName);
+    if (baseName.empty())
+    {
+        return {};
+    }
+
+    std::vector<analysis::Symbol> candidateSymbols = CollectConstructorCandidates(baseName, declaratorNode, request);
+    if (candidateSymbols.empty())
+    {
+        return {};
+    }
+
+    const analysis::Symbol* bestSym = MatchConstructorOverload(candidateSymbols, declaratorNode, request, args);
 
     if (!bestSym)
     {
-        for (const auto& sym : candidateSymbols)
-        {
-            if (sym.type == analysis::SymbolType::Function)
-            {
-                const auto& fn = sym.GetFunction();
-                size_t minRequiredArgs = 0;
-                for (const auto& p : fn.parameters)
-                {
-                    if (p.defaultValue.empty() && p.rawText.find("...") == std::string::npos)
-                    {
-                        minRequiredArgs++;
-                    }
-                }
-                if (numArgs >= minRequiredArgs && numArgs <= fn.parameters.size())
-                {
-                    if (!bestSym || fn.parameters.size() == numArgs ||
-                        (bestSym->type == analysis::SymbolType::Function &&
-                         bestSym->GetFunction().parameters.size() < numArgs))
-                    {
-                        bestSym = &sym;
-                        if (fn.parameters.size() == numArgs)
-                        {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
+        bestSym = SelectCandidateByArgCount(candidateSymbols, args.size());
     }
 
-    if (!bestSym && !candidateSymbols.empty())
+    if (!bestSym)
     {
         for (const auto& sym : candidateSymbols)
         {
@@ -585,12 +691,489 @@ ResolveConstructorParameters(const std::string& declaredTypeName, TSNode declara
 }
 
 /**
- * @brief Forward declaration for type deduction helper.
+ * @brief Forward declaration for expression type deduction.
+ * @param[in] exprNode Target expression node.
+ * @param[in] request Inlay hint request context.
+ * @return Deduced type string or empty string.
  */
 std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& request);
 
 /**
- * @brief Recursively deduces the type string for an expression AST node.
+ * @brief Checks if trimmed text represents a numeric literal token.
+ * @param[in] text Trimmed text string.
+ * @param[in] nodeType AST node type name.
+ * @return True if token is numeric.
+ */
+bool IsNumericLiteralText(std::string_view text, std::string_view nodeType)
+{
+    if (text.empty())
+    {
+        return false;
+    }
+    if (nodeType == "number_literal")
+    {
+        return true;
+    }
+    if (isdigit(static_cast<unsigned char>(text[0])))
+    {
+        return true;
+    }
+    if (text.size() > 1 && (text[0] == '-' || text[0] == '+') && isdigit(static_cast<unsigned char>(text[1])))
+    {
+        return true;
+    }
+    return text.starts_with("0x") || text.starts_with("0X") || text.starts_with("0b") || text.starts_with("0B") ||
+           text.starts_with("0o") || text.starts_with("0O");
+}
+
+/**
+ * @brief Deduces AngelScript type string from a numeric literal text.
+ * @param[in] nodeTxt Trimmed literal string.
+ * @return Deduced type ("float", "double", or "int").
+ */
+std::string DeduceNumericLiteralType(std::string_view nodeTxt)
+{
+    if (nodeTxt.find('.') != std::string_view::npos || nodeTxt.find('e') != std::string_view::npos ||
+        nodeTxt.find('E') != std::string_view::npos)
+    {
+        if (nodeTxt.ends_with('f') || nodeTxt.ends_with('F'))
+        {
+            return "float";
+        }
+        return "double";
+    }
+    if (nodeTxt.ends_with('f') || nodeTxt.ends_with('F'))
+    {
+        return "float";
+    }
+    if (nodeTxt.ends_with('d') || nodeTxt.ends_with('D'))
+    {
+        return "double";
+    }
+    return "int";
+}
+
+/**
+ * @brief Deduces literal expression type from syntax node and source code.
+ * @param[in] exprNode Literal AST node.
+ * @param[in] sourceCode Source text buffer.
+ * @return Type string or empty string.
+ */
+std::string DeduceLiteralType(TSNode exprNode, std::string_view sourceCode)
+{
+    std::string_view type = ts_node_type(exprNode);
+    std::string nodeTxt = TrimNodeText(GetNodeText(exprNode, sourceCode));
+    if (IsNumericLiteralText(nodeTxt, type))
+    {
+        return DeduceNumericLiteralType(nodeTxt);
+    }
+    if (type == "string_literal" || type == "concatenated_string")
+    {
+        return "string";
+    }
+    if (type == "boolean_literal")
+    {
+        return "bool";
+    }
+    return "";
+}
+
+/**
+ * @brief Deduces type from functional cast, C-style cast, or constructor call expressions.
+ * @param[in] exprNode AST cast or constructor call node.
+ * @param[in] sourceCode Source text buffer.
+ * @return Type string or empty string.
+ */
+std::string DeduceCastOrConstructType(TSNode exprNode, std::string_view sourceCode)
+{
+    std::string_view type = ts_node_type(exprNode);
+    if (type == "functional_cast_expression" || type == "cast_expression")
+    {
+        TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
+        if (!ts_node_is_null(typeNode))
+        {
+            return GetNodeText(typeNode, sourceCode);
+        }
+    }
+    else if (type == "construct_call_expression")
+    {
+        TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
+        if (!ts_node_is_null(typeNode))
+        {
+            std::string cType = GetNodeText(typeNode, sourceCode);
+            uint32_t count = ts_node_child_count(exprNode);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                TSNode child = ts_node_child(exprNode, i);
+                if (std::string_view(ts_node_type(child)) == "template_type_list")
+                {
+                    cType += GetNodeText(child, sourceCode);
+                    break;
+                }
+            }
+            return cType;
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Resolves receiver class type name for a method call expression.
+ * @param[in] objNode Object expression AST node.
+ * @param[in] exprNode Full call expression AST node.
+ * @param[in] request Inlay hint request context.
+ * @param[in] rootScope Root scope of document, or nullptr.
+ * @return Receiver type name or empty string.
+ */
+std::string ResolveMemberCallReceiverType(TSNode objNode, TSNode exprNode, const InlayHintRequest& request,
+                                          const analysis::Scope* rootScope)
+{
+    std::string objText = GetNodeText(objNode, request.sourceCode);
+    if (objText == "this")
+    {
+        auto containers = analysis::GetEnclosingContainers(exprNode, request.sourceCode);
+        for (const auto& c : containers)
+        {
+            if (c.kind == analysis::ContainerKind::Class)
+            {
+                return c.name;
+            }
+        }
+    }
+    else if (rootScope)
+    {
+        TSPoint objPoint = ts_node_start_point(objNode);
+        const analysis::Scope* objScope = FindInnermostScope(rootScope, objPoint.row, objPoint.column);
+        if (objScope)
+        {
+            const analysis::LocalDefinition* def = analysis::ResolveInScope(objScope, objText);
+            if (def && !def->typeName.empty())
+            {
+                return analysis::CleanBaseType(def->typeName);
+            }
+        }
+    }
+    return objText;
+}
+
+/**
+ * @brief Deduces return type for a member method call expression.
+ * @param[in] funcNode AST member_expression node.
+ * @param[in] exprNode Call expression AST node.
+ * @param[in] request Inlay hint request context.
+ * @param[in] rootScope Root scope of document, or nullptr.
+ * @return Return type string or empty string.
+ */
+std::string DeduceMemberCallReturnType(TSNode funcNode, TSNode exprNode, const InlayHintRequest& request,
+                                       const analysis::Scope* rootScope)
+{
+    TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
+    TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
+    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
+    {
+        return "";
+    }
+    std::string receiverType = ResolveMemberCallReceiverType(objNode, exprNode, request, rootScope);
+    if (receiverType.empty())
+    {
+        return "";
+    }
+    std::string memText = GetNodeText(memNode, request.sourceCode);
+    auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverType, request.symbolTable);
+    if (hierarchy.empty())
+    {
+        hierarchy.push_back(receiverType);
+    }
+    for (const auto& typeName : hierarchy)
+    {
+        std::string qualifiedName = typeName + "::" + memText;
+        auto found = request.symbolTable.FindSymbols(qualifiedName);
+        for (const auto& sym : found)
+        {
+            if (sym.type == analysis::SymbolType::Function)
+            {
+                return sym.GetFunction().returnType;
+            }
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Deduces return type for a free or unqualified function call expression.
+ * @param[in] funcNode Callee function identifier AST node.
+ * @param[in] exprNode Call expression AST node.
+ * @param[in] request Inlay hint request context.
+ * @return Return type string or class name, or empty string.
+ */
+std::string DeduceFreeCallReturnType(TSNode funcNode, TSNode exprNode, const InlayHintRequest& request)
+{
+    std::string fName = GetNodeText(funcNode, request.sourceCode);
+    auto candidates = analysis::FindSymbolsInScope(fName, exprNode, request.sourceCode, request.symbolTable);
+    if (candidates.empty())
+    {
+        candidates = request.symbolTable.FindSymbols(fName);
+    }
+    for (const auto& sym : candidates)
+    {
+        if (sym.type == analysis::SymbolType::Function)
+        {
+            return sym.GetFunction().returnType;
+        }
+        if (sym.type == analysis::SymbolType::Funcdef)
+        {
+            return sym.GetFuncdef().returnType;
+        }
+        if (sym.type == analysis::SymbolType::Class)
+        {
+            return sym.name;
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Deduces the return type of a call expression.
+ * @param[in] exprNode Call expression AST node.
+ * @param[in] request Inlay hint request context.
+ * @param[in] rootScope Root document scope.
+ * @return Deduced return type string or empty string.
+ */
+std::string DeduceCallExpressionType(TSNode exprNode, const InlayHintRequest& request, const analysis::Scope* rootScope)
+{
+    TSNode funcNode = parser::GetChildByField(exprNode, parser::fields::Function);
+    if (ts_node_is_null(funcNode))
+    {
+        uint32_t childCount = ts_node_child_count(exprNode);
+        if (childCount > 0)
+        {
+            funcNode = ts_node_child(exprNode, 0);
+        }
+    }
+    if (ts_node_is_null(funcNode))
+    {
+        return "";
+    }
+    if (std::string_view(ts_node_type(funcNode)) == "member_expression")
+    {
+        return DeduceMemberCallReturnType(funcNode, exprNode, request, rootScope);
+    }
+    return DeduceFreeCallReturnType(funcNode, exprNode, request);
+}
+
+/**
+ * @brief Deduces the type of a member expression (property or method return type).
+ * @param[in] exprNode Member expression AST node.
+ * @param[in] request Inlay hint request context.
+ * @param[in] rootScope Root document scope.
+ * @return Deduced type string or empty string.
+ */
+std::string DeduceMemberExpressionType(TSNode exprNode, const InlayHintRequest& request,
+                                       const analysis::Scope* rootScope)
+{
+    TSNode objNode = parser::GetChildByField(exprNode, parser::fields::Object);
+    TSNode memNode = parser::GetChildByField(exprNode, parser::fields::Member);
+    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
+    {
+        return "";
+    }
+    std::string objText = GetNodeText(objNode, request.sourceCode);
+    std::string memText = GetNodeText(memNode, request.sourceCode);
+    std::string receiverType;
+    if (rootScope)
+    {
+        TSPoint objPoint = ts_node_start_point(objNode);
+        const analysis::Scope* objScope = FindInnermostScope(rootScope, objPoint.row, objPoint.column);
+        if (objScope)
+        {
+            const analysis::LocalDefinition* def = analysis::ResolveInScope(objScope, objText);
+            if (def && !def->typeName.empty())
+            {
+                receiverType = analysis::CleanBaseType(def->typeName);
+            }
+        }
+    }
+    if (receiverType.empty())
+    {
+        return "";
+    }
+    auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverType, request.symbolTable);
+    for (const auto& typeName : hierarchy)
+    {
+        std::string qualifiedName = typeName + "::" + memText;
+        auto found = request.symbolTable.FindSymbols(qualifiedName);
+        for (const auto& sym : found)
+        {
+            if (sym.type == analysis::SymbolType::Variable)
+            {
+                return sym.GetVariable().typeName;
+            }
+            if (sym.type == analysis::SymbolType::Function)
+            {
+                return sym.GetFunction().returnType;
+            }
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Deduces the type of an identifier or scoped identifier from scope or symbol table.
+ * @param[in] exprNode Identifier AST node.
+ * @param[in] request Inlay hint request context.
+ * @param[in] scope Enclosing lexical scope, or nullptr.
+ * @return Type string or empty string.
+ */
+std::string DeduceIdentifierType(TSNode exprNode, const InlayHintRequest& request, const analysis::Scope* scope)
+{
+    std::string name = GetNodeText(exprNode, request.sourceCode);
+    if (scope)
+    {
+        const analysis::LocalDefinition* def = analysis::ResolveInScope(scope, name);
+        if (def && !def->typeName.empty())
+        {
+            return def->typeName;
+        }
+    }
+    auto symbols = request.symbolTable.FindSymbols(name);
+    for (const auto& sym : symbols)
+    {
+        if (sym.type == analysis::SymbolType::Variable)
+        {
+            return sym.GetVariable().typeName;
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Checks if an operator produces a boolean result.
+ * @param[in] op Operator string.
+ * @return True if operator is comparison or logical.
+ */
+bool IsBooleanBinaryOperator(std::string_view op)
+{
+    static const std::unordered_set<std::string_view> kBoolOps = {"==", "!=",  "<",  ">",   "<=", ">=", "&&",
+                                                                  "||", "and", "or", "xor", "^^", "is", "!is"};
+    return kBoolOps.contains(op);
+}
+
+/**
+ * @brief Selects the wider numeric/string type from binary operand types.
+ * @param[in] leftT Left operand type string.
+ * @param[in] rightT Right operand type string.
+ * @return Wider type string.
+ */
+std::string SelectWiderType(std::string_view leftT, std::string_view rightT)
+{
+    if (leftT == "double" || rightT == "double")
+    {
+        return "double";
+    }
+    if (leftT == "float" || rightT == "float")
+    {
+        return "float";
+    }
+    if (leftT == "string" || rightT == "string")
+    {
+        return "string";
+    }
+    if (leftT == "int64" || rightT == "int64")
+    {
+        return "int64";
+    }
+    if (leftT == "uint" || rightT == "uint")
+    {
+        return "uint";
+    }
+    if (!leftT.empty())
+    {
+        return std::string(leftT);
+    }
+    if (!rightT.empty())
+    {
+        return std::string(rightT);
+    }
+    return "int";
+}
+
+/**
+ * @brief Deduces result type of a binary expression AST node.
+ * @param[in] exprNode Binary expression AST node.
+ * @param[in] request Inlay hint request context.
+ * @return Deduced type string.
+ */
+std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRequest& request)
+{
+    TSNode opNode = parser::GetChildByField(exprNode, parser::fields::Operator);
+    std::string op = GetNodeText(opNode, request.sourceCode);
+    if (IsBooleanBinaryOperator(op))
+    {
+        return "bool";
+    }
+
+    TSNode left = parser::GetChildByField(exprNode, parser::fields::Left);
+    TSNode right = parser::GetChildByField(exprNode, parser::fields::Right);
+    std::string leftT = DeduceExpressionType(left, request);
+    std::string rightT = DeduceExpressionType(right, request);
+
+    return SelectWiderType(leftT, rightT);
+}
+
+/**
+ * @brief Deduces result type of a unary expression AST node.
+ * @param[in] exprNode Unary expression AST node.
+ * @param[in] request Inlay hint request context.
+ * @return Deduced type string.
+ */
+std::string DeduceUnaryExpressionType(TSNode exprNode, const InlayHintRequest& request)
+{
+    TSNode opNode = parser::GetChildByField(exprNode, parser::fields::Operator);
+    std::string op = GetNodeText(opNode, request.sourceCode);
+    TSNode operand = parser::GetChildByField(exprNode, parser::fields::Operand);
+
+    if (op == "!" || op == "not")
+    {
+        return "bool";
+    }
+    if (op == "@")
+    {
+        std::string opT = DeduceExpressionType(operand, request);
+        if (!opT.empty() && !opT.ends_with("@"))
+        {
+            return opT + "@";
+        }
+        return opT;
+    }
+    return DeduceExpressionType(operand, request);
+}
+
+/**
+ * @brief Deduces type for a parenthesized expression AST node.
+ * @param[in] exprNode Parenthesized expression node.
+ * @param[in] request Inlay hint request context.
+ * @return Deduced type string or empty string.
+ */
+std::string DeduceParenthesizedType(TSNode exprNode, const InlayHintRequest& request)
+{
+    uint32_t count = ts_node_child_count(exprNode);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        TSNode child = ts_node_child(exprNode, i);
+        std::string_view cType = ts_node_type(child);
+        if (cType != "(" && cType != ")")
+        {
+            return DeduceExpressionType(child, request);
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Deduces the type string for an expression AST node.
+ * @param[in] exprNode AST expression node.
+ * @param[in] request Inlay hint request context.
+ * @return Deduced type string or empty string.
  */
 std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& request)
 {
@@ -600,12 +1183,8 @@ std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& reques
     }
 
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    const analysis::Scope* scope = nullptr;
-    if (rootScope)
-    {
-        TSPoint point = ts_node_start_point(exprNode);
-        scope = FindInnermostScope(rootScope.get(), point.row, point.column);
-    }
+    TSPoint point = ts_node_start_point(exprNode);
+    const analysis::Scope* scope = rootScope ? FindInnermostScope(rootScope.get(), point.row, point.column) : nullptr;
 
     std::string resolved =
         analysis::ResolveExpressionType(exprNode, scope, request.symbolTable, request.sourceCode, request.uri);
@@ -615,597 +1194,322 @@ std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& reques
     }
 
     std::string_view type = ts_node_type(exprNode);
-
     if (type == "parenthesized_expression")
     {
-        uint32_t count = ts_node_child_count(exprNode);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            TSNode child = ts_node_child(exprNode, i);
-            std::string_view cType = ts_node_type(child);
-            if (cType != "(" && cType != ")")
-            {
-                return DeduceExpressionType(child, request);
-            }
-        }
-        return "";
+        return DeduceParenthesizedType(exprNode, request);
     }
-
-    std::string nodeTxt = GetNodeText(exprNode, request.sourceCode);
-    while (!nodeTxt.empty() && (nodeTxt.front() == ' ' || nodeTxt.front() == '\t' || nodeTxt.front() == '('))
+    std::string lit = DeduceLiteralType(exprNode, request.sourceCode);
+    if (!lit.empty())
     {
-        nodeTxt.erase(nodeTxt.begin());
+        return lit;
     }
-    while (!nodeTxt.empty() &&
-           (nodeTxt.back() == ' ' || nodeTxt.back() == '\t' || nodeTxt.back() == ')' || nodeTxt.back() == ';'))
+    std::string cast = DeduceCastOrConstructType(exprNode, request.sourceCode);
+    if (!cast.empty())
     {
-        nodeTxt.pop_back();
+        return cast;
     }
-
-    if (!nodeTxt.empty() && (isdigit(static_cast<unsigned char>(nodeTxt[0])) ||
-                             (nodeTxt.size() > 1 && (nodeTxt[0] == '-' || nodeTxt[0] == '+') &&
-                              isdigit(static_cast<unsigned char>(nodeTxt[1]))) ||
-                             nodeTxt.starts_with("0x") || nodeTxt.starts_with("0X") || nodeTxt.starts_with("0b") ||
-                             nodeTxt.starts_with("0B") || nodeTxt.starts_with("0o") || nodeTxt.starts_with("0O") ||
-                             type == "number_literal"))
-    {
-        if (nodeTxt.find('.') != std::string::npos || nodeTxt.find('e') != std::string::npos ||
-            nodeTxt.find('E') != std::string::npos)
-        {
-            if (nodeTxt.back() == 'f' || nodeTxt.back() == 'F')
-                return "float";
-            if (nodeTxt.back() == 'd' || nodeTxt.back() == 'D')
-                return "double";
-            return "double";
-        }
-        // AngelScript only defines f/F and d/D suffixes, and only on floating-point
-        // literals. The C-style integer suffixes this used to sniff for (42u, 1000L,
-        // 2000u64) are not part of the language: the grammar tokenises decimal_int as
-        // plain /[0-9]+/, so "42u" never reaches here as one literal - it parses as 42
-        // followed by a stray identifier. Guessing a type from them invented information.
-        if (nodeTxt.back() == 'f' || nodeTxt.back() == 'F')
-            return "float";
-        if (nodeTxt.back() == 'd' || nodeTxt.back() == 'D')
-            return "double";
-        return "int";
-    }
-
-    if (type == "string_literal" || type == "concatenated_string")
-    {
-        return "string";
-    }
-
-    if (type == "boolean_literal")
-    {
-        return "bool";
-    }
-
-    if (type == "null_literal")
-    {
-        return "";
-    }
-
-    if (type == "functional_cast_expression")
-    {
-        TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
-        if (!ts_node_is_null(typeNode))
-        {
-            return GetNodeText(typeNode, request.sourceCode);
-        }
-    }
-
-    if (type == "cast_expression")
-    {
-        TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
-        if (!ts_node_is_null(typeNode))
-        {
-            return GetNodeText(typeNode, request.sourceCode);
-        }
-    }
-
-    if (type == "construct_call_expression")
-    {
-        TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
-        if (!ts_node_is_null(typeNode))
-        {
-            std::string cType = GetNodeText(typeNode, request.sourceCode);
-            uint32_t count = ts_node_child_count(exprNode);
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                TSNode child = ts_node_child(exprNode, i);
-                if (std::string_view(ts_node_type(child)) == "template_type_list")
-                {
-                    cType += GetNodeText(child, request.sourceCode);
-                    break;
-                }
-            }
-            return cType;
-        }
-    }
-
     if (type == "call_expression")
     {
-        TSNode funcNode = parser::GetChildByField(exprNode, parser::fields::Function);
-        if (ts_node_is_null(funcNode))
-        {
-            uint32_t childCount = ts_node_child_count(exprNode);
-            if (childCount > 0)
-            {
-                funcNode = ts_node_child(exprNode, 0);
-            }
-        }
-
-        if (!ts_node_is_null(funcNode))
-        {
-            std::string_view fType = ts_node_type(funcNode);
-            if (fType == "member_expression")
-            {
-                TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
-                TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
-                if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
-                {
-                    std::string objText = GetNodeText(objNode, request.sourceCode);
-                    std::string memText = GetNodeText(memNode, request.sourceCode);
-                    std::string receiverType;
-
-                    if (objText == "this")
-                    {
-                        auto containers = analysis::GetEnclosingContainers(exprNode, request.sourceCode);
-                        for (const auto& c : containers)
-                        {
-                            if (c.kind == analysis::ContainerKind::Class)
-                            {
-                                receiverType = c.name;
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if (rootScope)
-                        {
-                            TSPoint objPoint = ts_node_start_point(objNode);
-                            const analysis::Scope* objScope =
-                                FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column);
-                            if (objScope)
-                            {
-                                const analysis::LocalDefinition* def = analysis::ResolveInScope(objScope, objText);
-                                if (def && !def->typeName.empty())
-                                {
-                                    receiverType = analysis::CleanBaseType(def->typeName);
-                                }
-                            }
-                        }
-                    }
-
-                    if (receiverType.empty())
-                    {
-                        receiverType = objText;
-                    }
-
-                    if (!receiverType.empty())
-                    {
-                        auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverType, request.symbolTable);
-                        if (hierarchy.empty())
-                        {
-                            hierarchy.push_back(receiverType);
-                        }
-                        for (const auto& typeName : hierarchy)
-                        {
-                            std::string qualifiedName = typeName + "::" + memText;
-                            auto found = request.symbolTable.FindSymbols(qualifiedName);
-                            for (const auto& sym : found)
-                            {
-                                if (sym.type == analysis::SymbolType::Function)
-                                {
-                                    return sym.GetFunction().returnType;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            else
-            {
-                std::string fName = GetNodeText(funcNode, request.sourceCode);
-                auto candidates =
-                    analysis::FindSymbolsInScope(fName, exprNode, request.sourceCode, request.symbolTable);
-                if (candidates.empty())
-                {
-                    candidates = request.symbolTable.FindSymbols(fName);
-                }
-
-                for (const auto& sym : candidates)
-                {
-                    if (sym.type == analysis::SymbolType::Function)
-                    {
-                        return sym.GetFunction().returnType;
-                    }
-                    else if (sym.type == analysis::SymbolType::Funcdef)
-                    {
-                        return sym.GetFuncdef().returnType;
-                    }
-                    else if (sym.type == analysis::SymbolType::Class)
-                    {
-                        return sym.name;
-                    }
-                }
-            }
-        }
+        return DeduceCallExpressionType(exprNode, request, rootScope.get());
     }
-
     if (type == "member_expression")
     {
-        TSNode objNode = parser::GetChildByField(exprNode, parser::fields::Object);
-        TSNode memNode = parser::GetChildByField(exprNode, parser::fields::Member);
-        if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
-        {
-            std::string objText = GetNodeText(objNode, request.sourceCode);
-            std::string memText = GetNodeText(memNode, request.sourceCode);
-            std::string receiverType;
-
-            if (rootScope)
-            {
-                TSPoint objPoint = ts_node_start_point(objNode);
-                const analysis::Scope* objScope = FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column);
-                if (objScope)
-                {
-                    const analysis::LocalDefinition* def = analysis::ResolveInScope(objScope, objText);
-                    if (def && !def->typeName.empty())
-                    {
-                        receiverType = analysis::CleanBaseType(def->typeName);
-                    }
-                }
-            }
-
-            if (!receiverType.empty())
-            {
-                auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverType, request.symbolTable);
-                for (const auto& typeName : hierarchy)
-                {
-                    std::string qualifiedName = typeName + "::" + memText;
-                    auto found = request.symbolTable.FindSymbols(qualifiedName);
-                    for (const auto& sym : found)
-                    {
-                        if (sym.type == analysis::SymbolType::Variable)
-                        {
-                            return sym.GetVariable().typeName;
-                        }
-                        else if (sym.type == analysis::SymbolType::Function)
-                        {
-                            return sym.GetFunction().returnType;
-                        }
-                    }
-                }
-            }
-        }
+        return DeduceMemberExpressionType(exprNode, request, rootScope.get());
     }
-
     if (type == "identifier" || type == "scoped_identifier")
     {
-        std::string name = GetNodeText(exprNode, request.sourceCode);
-        if (scope)
-        {
-            const analysis::LocalDefinition* def = analysis::ResolveInScope(scope, name);
-            if (def && !def->typeName.empty())
-            {
-                return def->typeName;
-            }
-        }
-
-        auto symbols = request.symbolTable.FindSymbols(name);
-        for (const auto& sym : symbols)
-        {
-            if (sym.type == analysis::SymbolType::Variable)
-            {
-                return sym.GetVariable().typeName;
-            }
-        }
+        return DeduceIdentifierType(exprNode, request, scope);
     }
-
     if (type == "binary_expression")
     {
-        TSNode opNode = parser::GetChildByField(exprNode, parser::fields::Operator);
-        std::string op = GetNodeText(opNode, request.sourceCode);
-
-        if (op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=" || op == "&&" ||
-            op == "||" || op == "and" || op == "or" || op == "xor" || op == "^^" || op == "is" || op == "!is")
-        {
-            return "bool";
-        }
-
-        TSNode left = parser::GetChildByField(exprNode, parser::fields::Left);
-        TSNode right = parser::GetChildByField(exprNode, parser::fields::Right);
-        std::string leftT = DeduceExpressionType(left, request);
-        std::string rightT = DeduceExpressionType(right, request);
-
-        if (leftT == "double" || rightT == "double")
-            return "double";
-        if (leftT == "float" || rightT == "float")
-            return "float";
-        if (leftT == "string" || rightT == "string")
-            return "string";
-        if (leftT == "int64" || rightT == "int64")
-            return "int64";
-        if (leftT == "uint" || rightT == "uint")
-            return "uint";
-        if (!leftT.empty())
-            return leftT;
-        if (!rightT.empty())
-            return rightT;
-        return "int";
+        return DeduceBinaryExpressionType(exprNode, request);
     }
-
     if (type == "unary_expression")
     {
-        TSNode opNode = parser::GetChildByField(exprNode, parser::fields::Operator);
-        std::string op = GetNodeText(opNode, request.sourceCode);
-        TSNode operand = parser::GetChildByField(exprNode, parser::fields::Operand);
-
-        if (op == "!" || op == "not")
-        {
-            return "bool";
-        }
-        if (op == "@")
-        {
-            std::string opT = DeduceExpressionType(operand, request);
-            if (!opT.empty() && !opT.ends_with("@"))
-            {
-                return opT + "@";
-            }
-            return opT;
-        }
-        return DeduceExpressionType(operand, request);
+        return DeduceUnaryExpressionType(exprNode, request);
     }
-
     if (type == "postfix_expression")
     {
         TSNode operand = parser::GetChildByField(exprNode, parser::fields::Operand);
         return DeduceExpressionType(operand, request);
     }
-
     return "";
 }
 
 /**
- * @brief Recursively traverses the AST and collects inlay hints.
+ * @brief Adds parameter inlay hints for matched parameters and arguments.
+ * @param[in] parameters Matched callee parameter signatures.
+ * @param[in] args Parsed call arguments.
+ * @param[in] request Inlay hint request context.
+ * @param[in,out] hints Hint vector receiving generated parameter hints.
  */
-void CollectInlayHintsFromNode(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
+void AddParameterHints(const std::vector<analysis::ParameterInformation>& parameters, const std::vector<ArgInfo>& args,
+                       const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {
-    if (ts_node_is_null(node))
+    for (size_t i = 0; i < args.size() && i < parameters.size(); ++i)
+    {
+        const auto& param = parameters[i];
+        const auto& arg = args[i];
+
+        if (arg.isNamed || param.name.empty() || param.name == "...")
+        {
+            continue;
+        }
+
+        if (request.suppressWhenArgumentMatchesName && arg.text == param.name)
+        {
+            continue;
+        }
+
+        if (IsPositionInRange(arg.hintPosition, request.range))
+        {
+            lsp::InlayHint hint;
+            hint.position = arg.hintPosition;
+            hint.label = param.name + ":";
+            hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
+            hint.paddingRight = true;
+            hint.paddingLeft = false;
+            hint.tooltip = param.name.empty() ? ("Parameter: " + param.typeName)
+                                              : ("Parameter: " + param.typeName + " " + param.name);
+            hints.push_back(std::move(hint));
+        }
+    }
+}
+
+/**
+ * @brief Processes a call_expression node to generate parameter inlay hints.
+ * @param[in] node AST call_expression node.
+ * @param[in] request Inlay hint request context.
+ * @param[in,out] hints Hint vector receiving generated parameter hints.
+ */
+void ProcessCallExpression(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
+{
+    TSNode argListNode = parser::GetChildByField(node, parser::fields::Arguments);
+    if (ts_node_is_null(argListNode))
+    {
+        uint32_t childCount = ts_node_child_count(node);
+        for (uint32_t i = 0; i < childCount; ++i)
+        {
+            TSNode child = ts_node_child(node, i);
+            if (std::string_view(ts_node_type(child)) == "argument_list")
+            {
+                argListNode = child;
+                break;
+            }
+        }
+    }
+
+    if (!ts_node_is_null(argListNode))
+    {
+        auto args = ParseArguments(argListNode, request.sourceCode);
+        auto parameters = ResolveCalleeParameters(node, request, args.size());
+        AddParameterHints(parameters, args, request, hints);
+    }
+}
+
+/**
+ * @brief Generates type deduction hint for an auto variable declarator node.
+ * @param[in] declarator AST variable_declarator node.
+ * @param[in] request Inlay hint request context.
+ * @param[in,out] hints Hint vector receiving generated type hints.
+ */
+void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequest& request,
+                                   std::vector<lsp::InlayHint>& hints)
+{
+    TSNode nameNode = parser::GetChildByField(declarator, parser::fields::Name);
+    if (ts_node_is_null(nameNode))
     {
         return;
     }
 
-    if (!IsNodeOverlappingRange(node, request.range))
+    TSNode initExpr = parser::GetChildByField(declarator, parser::fields::Value);
+    if (ts_node_is_null(initExpr))
+    {
+        initExpr = parser::GetChildByField(declarator, parser::fields::Arguments);
+    }
+    if (ts_node_is_null(initExpr))
     {
         return;
     }
 
-    std::string_view nodeType = ts_node_type(node);
-
-    // 1. Process call_expression for parameter name hints
-    if (nodeType == "call_expression")
+    std::string deduced = DeduceExpressionType(initExpr, request);
+    if (deduced.empty() || deduced == "auto" || deduced == "null" || deduced == "void")
     {
-        TSNode argListNode = parser::GetChildByField(node, parser::fields::Arguments);
-        if (ts_node_is_null(argListNode))
+        return;
+    }
+
+    TSPoint endPoint = ts_node_end_point(nameNode);
+    lsp::Position hintPos{endPoint.row, endPoint.column};
+    if (IsPositionInRange(hintPos, request.range))
+    {
+        lsp::InlayHint hint;
+        hint.position = hintPos;
+        hint.label = ": " + deduced;
+        hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Type);
+        hint.paddingLeft = true;
+        hint.paddingRight = false;
+        hint.tooltip = "Deduced type: " + deduced;
+        hints.push_back(std::move(hint));
+    }
+}
+
+/**
+ * @brief Locates the argument_list AST node within a variable declarator.
+ * @param[in] declarator AST variable_declarator node.
+ * @return AST argument_list node or null node.
+ */
+TSNode FindDeclaratorArgumentList(TSNode declarator)
+{
+    TSNode argListNode = parser::GetChildByField(declarator, parser::fields::Arguments);
+    if (ts_node_is_null(argListNode))
+    {
+        uint32_t count = ts_node_child_count(declarator);
+        for (uint32_t j = 0; j < count; ++j)
         {
-            uint32_t childCount = ts_node_child_count(node);
-            for (uint32_t i = 0; i < childCount; ++i)
+            TSNode grandChild = ts_node_child(declarator, j);
+            if (std::string_view(ts_node_type(grandChild)) == "argument_list")
             {
-                TSNode child = ts_node_child(node, i);
-                if (std::string_view(ts_node_type(child)) == "argument_list")
-                {
-                    argListNode = child;
-                    break;
-                }
-            }
-        }
-
-        if (!ts_node_is_null(argListNode))
-        {
-            auto args = ParseArguments(argListNode, request.sourceCode);
-            auto parameters = ResolveCalleeParameters(node, request, args.size());
-
-            for (size_t i = 0; i < args.size() && i < parameters.size(); ++i)
-            {
-                const auto& param = parameters[i];
-                const auto& arg = args[i];
-
-                // Exclusion Rule 1: Already named in syntax
-                if (arg.isNamed)
-                {
-                    continue;
-                }
-
-                // Exclusion Rule 2: Empty or varargs
-                if (param.name.empty() || param.name == "...")
-                {
-                    continue;
-                }
-
-                // Exclusion Rule 3: Argument variable text matches parameter name exactly
-                if (request.suppressWhenArgumentMatchesName && arg.text == param.name)
-                {
-                    continue;
-                }
-
-                if (IsPositionInRange(arg.hintPosition, request.range))
-                {
-                    lsp::InlayHint hint;
-                    hint.position = arg.hintPosition;
-                    hint.label = param.name + ":";
-                    hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
-                    hint.paddingRight = true;
-                    hint.paddingLeft = false;
-                    std::string tooltip = "Parameter: " + param.typeName;
-                    if (!param.name.empty())
-                    {
-                        tooltip += " " + param.name;
-                    }
-                    hint.tooltip = tooltip;
-                    hints.push_back(std::move(hint));
-                }
+                return grandChild;
             }
         }
     }
+    return argListNode;
+}
 
-    // 2. Process variable_declaration for auto type deduction hints
-    if (nodeType == "variable_declaration")
+/**
+ * @brief Generates parameter hints for a constructor direct-initialization declarator.
+ * @param[in] typeText Declared type name.
+ * @param[in] declarator AST variable_declarator node.
+ * @param[in] request Inlay hint request context.
+ * @param[in,out] hints Hint vector receiving generated parameter hints.
+ */
+void ProcessConstructorInitDeclarator(const std::string& typeText, TSNode declarator, const InlayHintRequest& request,
+                                      std::vector<lsp::InlayHint>& hints)
+{
+    TSNode argListNode = FindDeclaratorArgumentList(declarator);
+    if (!ts_node_is_null(argListNode))
     {
-        TSNode varTypeNode = parser::GetChildByField(node, parser::fields::VarType);
-        if (ts_node_is_null(varTypeNode))
+        auto args = ParseArguments(argListNode, request.sourceCode);
+        auto parameters = ResolveConstructorParameters(typeText, declarator, request, args);
+        AddParameterHints(parameters, args, request, hints);
+    }
+}
+
+/**
+ * @brief Locates the type AST node within a variable_declaration node.
+ * @param[in] varDeclNode AST variable_declaration node.
+ * @return AST type node or null node.
+ */
+TSNode FindVariableTypeNode(TSNode varDeclNode)
+{
+    TSNode varTypeNode = parser::GetChildByField(varDeclNode, parser::fields::VarType);
+    if (ts_node_is_null(varTypeNode))
+    {
+        uint32_t count = ts_node_child_count(varDeclNode);
+        for (uint32_t i = 0; i < count; ++i)
         {
-            uint32_t count = ts_node_child_count(node);
-            for (uint32_t i = 0; i < count; ++i)
+            TSNode child = ts_node_child(varDeclNode, i);
+            if (std::string_view(ts_node_type(child)) == "type")
             {
-                TSNode child = ts_node_child(node, i);
-                if (std::string_view(ts_node_type(child)) == "type")
-                {
-                    varTypeNode = child;
-                    break;
-                }
+                return child;
             }
         }
+    }
+    return varTypeNode;
+}
 
-        if (!ts_node_is_null(varTypeNode))
+/**
+ * @brief Processes a variable_declaration AST node for auto type hints or direct-initialization hints.
+ * @param[in] node AST variable_declaration node.
+ * @param[in] request Inlay hint request context.
+ * @param[in,out] hints Hint vector receiving generated inlay hints.
+ */
+void ProcessVariableDeclaration(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
+{
+    TSNode varTypeNode = FindVariableTypeNode(node);
+    if (ts_node_is_null(varTypeNode))
+    {
+        return;
+    }
+
+    std::string typeText = GetNodeText(varTypeNode, request.sourceCode);
+    bool isAuto = (typeText == "auto");
+    uint32_t count = ts_node_child_count(node);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        TSNode child = ts_node_child(node, i);
+        if (std::string_view(ts_node_type(child)) == "variable_declarator")
         {
-            std::string typeText = GetNodeText(varTypeNode, request.sourceCode);
-            if (typeText == "auto")
+            if (isAuto)
             {
-                uint32_t count = ts_node_child_count(node);
-                for (uint32_t i = 0; i < count; ++i)
-                {
-                    TSNode child = ts_node_child(node, i);
-                    if (std::string_view(ts_node_type(child)) == "variable_declarator")
-                    {
-                        TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
-                        if (ts_node_is_null(nameNode))
-                        {
-                            continue;
-                        }
-
-                        // The grammar names both initialiser shapes: "value" for "= expr"
-                        // and "arguments" for a constructor call such as "Player p(1, 2)".
-                        // This used to be a manual child walk hunting for the "=" token,
-                        // which is what an unnamed initialiser forced.
-                        TSNode initExpr = parser::GetChildByField(child, parser::fields::Value);
-                        if (ts_node_is_null(initExpr))
-                        {
-                            initExpr = parser::GetChildByField(child, parser::fields::Arguments);
-                        }
-
-                        if (!ts_node_is_null(initExpr))
-                        {
-                            // The initialiser type comes from the AST alone. This used to be
-                            // followed by a second pass that re-read the declaration as raw
-                            // text, hunting for the '=' with substr and sniffing C-style
-                            // integer suffixes off the tail - suffixes AngelScript does not
-                            // have, on text that does not parse as one literal when present.
-                            std::string deduced = DeduceExpressionType(initExpr, request);
-                            if (!deduced.empty() && deduced != "auto" && deduced != "null" && deduced != "void")
-                            {
-                                TSPoint endPoint = ts_node_end_point(nameNode);
-                                lsp::Position hintPos{endPoint.row, endPoint.column};
-                                if (IsPositionInRange(hintPos, request.range))
-                                {
-                                    lsp::InlayHint hint;
-                                    hint.position = hintPos;
-                                    hint.label = ": " + deduced;
-                                    hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Type);
-                                    hint.paddingLeft = true;
-                                    hint.paddingRight = false;
-                                    hint.tooltip = "Deduced type: " + deduced;
-                                    hints.push_back(std::move(hint));
-                                }
-                            }
-                        }
-                    }
-                }
+                ProcessAutoVariableDeclarator(child, request, hints);
             }
             else if (!typeText.empty())
             {
-                // 3. Process direct constructor initialisation:
-                // NetworkMessage weapon( MSG_ONE, NetworkMessages::WeapPickup, pPlayer.edict() );
-                uint32_t count = ts_node_child_count(node);
-                for (uint32_t i = 0; i < count; ++i)
-                {
-                    TSNode child = ts_node_child(node, i);
-                    if (std::string_view(ts_node_type(child)) == "variable_declarator")
-                    {
-                        TSNode argListNode = parser::GetChildByField(child, parser::fields::Arguments);
-                        if (ts_node_is_null(argListNode))
-                        {
-                            uint32_t declaratorChildCount = ts_node_child_count(child);
-                            for (uint32_t j = 0; j < declaratorChildCount; ++j)
-                            {
-                                TSNode grandChild = ts_node_child(child, j);
-                                if (std::string_view(ts_node_type(grandChild)) == "argument_list")
-                                {
-                                    argListNode = grandChild;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (!ts_node_is_null(argListNode))
-                        {
-                            auto args = ParseArguments(argListNode, request.sourceCode);
-                            auto parameters = ResolveConstructorParameters(typeText, child, request, args.size(), args);
-
-                            for (size_t k = 0; k < args.size() && k < parameters.size(); ++k)
-                            {
-                                const auto& param = parameters[k];
-                                const auto& arg = args[k];
-
-                                // Exclusion Rule 1: Already named in syntax
-                                if (arg.isNamed)
-                                {
-                                    continue;
-                                }
-
-                                // Exclusion Rule 2: Empty or varargs
-                                if (param.name.empty() || param.name == "...")
-                                {
-                                    continue;
-                                }
-
-                                // Exclusion Rule 3: Argument variable text matches parameter name exactly
-                                if (request.suppressWhenArgumentMatchesName && arg.text == param.name)
-                                {
-                                    continue;
-                                }
-
-                                if (IsPositionInRange(arg.hintPosition, request.range))
-                                {
-                                    lsp::InlayHint hint;
-                                    hint.position = arg.hintPosition;
-                                    hint.label = param.name + ":";
-                                    hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
-                                    hint.paddingRight = true;
-                                    hint.paddingLeft = false;
-                                    std::string tooltip = "Parameter: " + param.typeName;
-                                    if (!param.name.empty())
-                                    {
-                                        tooltip += " " + param.name;
-                                    }
-                                    hint.tooltip = tooltip;
-                                    hints.push_back(std::move(hint));
-                                }
-                            }
-                        }
-                    }
-                }
+                ProcessConstructorInitDeclarator(typeText, child, request, hints);
             }
         }
     }
+}
 
-    // Recurse on children
-    uint32_t childCount = ts_node_child_count(node);
-    for (uint32_t i = 0; i < childCount; ++i)
+/**
+ * @brief Iteratively traverses the AST using a flat Tree-Sitter cursor to collect inlay hints.
+ * @param[in] rootNode Root AST node of the document.
+ * @param[in] request Inlay hint request context.
+ * @param[in,out] hints Inlay hints vector receiving collected items.
+ */
+void CollectInlayHints(TSNode rootNode, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
+{
+    if (ts_node_is_null(rootNode) || !IsNodeOverlappingRange(rootNode, request.range))
     {
-        CollectInlayHintsFromNode(ts_node_child(node, i), request, hints);
+        return;
     }
+
+    TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
+    bool descending = true;
+
+    while (true)
+    {
+        TSNode currentNode = ts_tree_cursor_current_node(&cursor);
+        bool overlaps = IsNodeOverlappingRange(currentNode, request.range);
+
+        if (descending && overlaps)
+        {
+            std::string_view nodeType = ts_node_type(currentNode);
+            if (nodeType == "call_expression")
+            {
+                ProcessCallExpression(currentNode, request, hints);
+            }
+            else if (nodeType == "variable_declaration")
+            {
+                ProcessVariableDeclaration(currentNode, request, hints);
+            }
+
+            if (ts_tree_cursor_goto_first_child(&cursor))
+            {
+                continue;
+            }
+        }
+
+        if (ts_node_eq(currentNode, rootNode))
+        {
+            break;
+        }
+
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            descending = true;
+            continue;
+        }
+
+        if (!ts_tree_cursor_goto_parent(&cursor))
+        {
+            break;
+        }
+        descending = false;
+    }
+
+    ts_tree_cursor_delete(&cursor);
 }
 } // namespace
 
@@ -1228,9 +1532,8 @@ std::optional<InlayHintResult> GetInlayHints(const InlayHintRequest& request)
     }
 
     std::vector<lsp::InlayHint> hints;
-    CollectInlayHintsFromNode(rootNode, request, hints);
+    CollectInlayHints(rootNode, request, hints);
 
-    // Sort hints by source position
     std::sort(hints.begin(), hints.end(),
               [](const lsp::InlayHint& a, const lsp::InlayHint& b)
               {
