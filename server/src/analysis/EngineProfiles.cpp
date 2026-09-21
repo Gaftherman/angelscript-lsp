@@ -1,6 +1,7 @@
 #include "analysis/EngineProfiles.h"
 #include <algorithm>
 #include <cctype>
+#include <optional>
 
 namespace angel_lsp::analysis
 {
@@ -748,35 +749,30 @@ OOTPContext g_OOTP;
 
 EngineProfileKind ParseEngineProfileKind(std::string_view name)
 {
-    std::string lower = ToLowerString(name);
+    const std::string lower = ToLowerString(name);
+    struct ProfileMapping
+    {
+        std::string_view alias;
+        EngineProfileKind kind;
+    };
+    static constexpr ProfileMapping kMappings[] = {
+        {"none", EngineProfileKind::None},          {"standard", EngineProfileKind::Standard},
+        {"std", EngineProfileKind::Standard},       {"default", EngineProfileKind::Standard},
+        {"svencoop", EngineProfileKind::SvenCoop},  {"sven", EngineProfileKind::SvenCoop},
+        {"sven_coop", EngineProfileKind::SvenCoop}, {"svenco-op", EngineProfileKind::SvenCoop},
+        {"urho3d", EngineProfileKind::Urho3D},      {"urho", EngineProfileKind::Urho3D},
+        {"atomic", EngineProfileKind::Urho3D},      {"openxray", EngineProfileKind::OpenXRay},
+        {"xray", EngineProfileKind::OpenXRay},      {"stalker", EngineProfileKind::OpenXRay},
+        {"ootp", EngineProfileKind::OOTP},          {"ootpbaseball", EngineProfileKind::OOTP},
+        {"auto", EngineProfileKind::Auto},          {"detect", EngineProfileKind::Auto},
+    };
 
-    if (lower == "none")
+    for (const auto& entry : kMappings)
     {
-        return EngineProfileKind::None;
-    }
-    if (lower == "standard" || lower == "std" || lower == "default")
-    {
-        return EngineProfileKind::Standard;
-    }
-    if (lower == "svencoop" || lower == "sven" || lower == "sven_coop" || lower == "svenco-op")
-    {
-        return EngineProfileKind::SvenCoop;
-    }
-    if (lower == "urho3d" || lower == "urho" || lower == "atomic")
-    {
-        return EngineProfileKind::Urho3D;
-    }
-    if (lower == "openxray" || lower == "xray" || lower == "stalker")
-    {
-        return EngineProfileKind::OpenXRay;
-    }
-    if (lower == "ootp" || lower == "ootpbaseball")
-    {
-        return EngineProfileKind::OOTP;
-    }
-    if (lower == "auto" || lower == "detect")
-    {
-        return EngineProfileKind::Auto;
+        if (lower == entry.alias)
+        {
+            return entry.kind;
+        }
     }
 
     // Unrecognised. Standard is the right thing to LOAD - a workspace with a typo in its
@@ -854,6 +850,56 @@ std::string_view RawProfileStub(EngineProfileKind kind)
     }
     return "";
 }
+
+bool MatchesSvenCoop(std::string_view lower)
+{
+    return lower.find("svencoop") != std::string_view::npos || lower.find("sven") != std::string_view::npos ||
+           lower.find("cbaseplayer") != std::string_view::npos ||
+           lower.find("g_playerfuncs") != std::string_view::npos ||
+           lower.find("g_enginefuncs") != std::string_view::npos;
+}
+
+bool MatchesUrho3D(std::string_view lower)
+{
+    return lower.find("urho3d") != std::string_view::npos || lower.find("urho") != std::string_view::npos ||
+           lower.find("atomic") != std::string_view::npos || lower.find("subscribetoevent") != std::string_view::npos ||
+           lower.find("variantmap") != std::string_view::npos;
+}
+
+bool MatchesOpenXRay(std::string_view lower)
+{
+    return lower.find("openxray") != std::string_view::npos || lower.find("xray") != std::string_view::npos ||
+           lower.find("stalker") != std::string_view::npos || lower.find("ini_file") != std::string_view::npos ||
+           lower.find("alife_simulator") != std::string_view::npos;
+}
+
+bool MatchesOOTP(std::string_view lower)
+{
+    return lower.find("ootp") != std::string_view::npos || lower.find("ootpplayer") != std::string_view::npos ||
+           lower.find("ootpteam") != std::string_view::npos;
+}
+
+std::optional<EngineProfileKind> MatchProfileSample(std::string_view sample)
+{
+    const std::string lower = ToLowerString(sample);
+    if (MatchesSvenCoop(lower))
+    {
+        return EngineProfileKind::SvenCoop;
+    }
+    if (MatchesUrho3D(lower))
+    {
+        return EngineProfileKind::Urho3D;
+    }
+    if (MatchesOpenXRay(lower))
+    {
+        return EngineProfileKind::OpenXRay;
+    }
+    if (MatchesOOTP(lower))
+    {
+        return EngineProfileKind::OOTP;
+    }
+    return std::nullopt;
+}
 } // namespace
 
 std::string GetProfileStubText(EngineProfileKind kind)
@@ -870,33 +916,9 @@ EngineProfileKind DetectEngineProfileFromWorkspace(const std::vector<std::string
 {
     for (const auto& item : fileNamesOrSamples)
     {
-        std::string lower = ToLowerString(item);
-
-        if (lower.find("svencoop") != std::string::npos || lower.find("sven") != std::string::npos ||
-            lower.find("cbaseplayer") != std::string::npos || lower.find("g_playerfuncs") != std::string::npos ||
-            lower.find("g_enginefuncs") != std::string::npos)
+        if (const auto matched = MatchProfileSample(item))
         {
-            return EngineProfileKind::SvenCoop;
-        }
-
-        if (lower.find("urho3d") != std::string::npos || lower.find("urho") != std::string::npos ||
-            lower.find("atomic") != std::string::npos || lower.find("subscribetoevent") != std::string::npos ||
-            lower.find("variantmap") != std::string::npos)
-        {
-            return EngineProfileKind::Urho3D;
-        }
-
-        if (lower.find("openxray") != std::string::npos || lower.find("xray") != std::string::npos ||
-            lower.find("stalker") != std::string::npos || lower.find("ini_file") != std::string::npos ||
-            lower.find("alife_simulator") != std::string::npos)
-        {
-            return EngineProfileKind::OpenXRay;
-        }
-
-        if (lower.find("ootp") != std::string::npos || lower.find("ootpplayer") != std::string::npos ||
-            lower.find("ootpteam") != std::string::npos)
-        {
-            return EngineProfileKind::OOTP;
+            return *matched;
         }
     }
 

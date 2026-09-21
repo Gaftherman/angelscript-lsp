@@ -37,7 +37,6 @@ angel_lsp::analysis::CheckMemberExpression
 angel_lsp::analysis::CheckVariableDirectInitialization
 angel_lsp::analysis::CleanBaseType
 angel_lsp::analysis::CleanDescriptionLines
-angel_lsp::analysis::DetectEngineProfileFromWorkspace
 angel_lsp::analysis::DiagnosticContext::Emit
 angel_lsp::analysis::DiagnosticContext::EmitAtRange
 angel_lsp::analysis::DiagnosticContext::EmitAtTypeName
@@ -46,13 +45,9 @@ angel_lsp::analysis::EmitAtNode
 angel_lsp::analysis::EmitWarningAtNode
 angel_lsp::analysis::ExtractBrief
 angel_lsp::analysis::ExtractCommentLines
-angel_lsp::analysis::ExtractDocComment
-angel_lsp::analysis::ExtractTrailingComment
 angel_lsp::analysis::FindFreeCandidates
 angel_lsp::analysis::FindMember
 angel_lsp::analysis::FindSymbolsInScope
-angel_lsp::analysis::FormatFunctionDeclaration
-angel_lsp::analysis::FormatTypeDeclaration
 angel_lsp::analysis::FuncdefTargetOfLambda
 angel_lsp::analysis::GetAllRelatedClasses
 angel_lsp::analysis::GetCompatibleMemberClasses
@@ -72,7 +67,6 @@ angel_lsp::analysis::IsPrimitiveWidening
 angel_lsp::analysis::MergeInlineTag
 angel_lsp::analysis::NormalizeType
 angel_lsp::analysis::ParseDocSegment
-angel_lsp::analysis::ParseEngineProfileKind
 angel_lsp::analysis::ParseTemplateType
 angel_lsp::analysis::ProcessAdmonitionTag
 angel_lsp::analysis::ProcessParamTag

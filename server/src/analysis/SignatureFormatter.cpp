@@ -167,6 +167,47 @@ std::string FormatReturnType(const std::string& returnType, const SymbolModifier
     return returnType;
 }
 
+void AppendParameters(std::ostringstream& oss, const std::vector<ParameterInformation>& parameters)
+{
+    for (size_t i = 0; i < parameters.size(); ++i)
+    {
+        if (i > 0)
+        {
+            oss << ", ";
+        }
+        oss << FormatParameter(parameters[i]);
+    }
+}
+
+void AppendImportOrigin(std::ostringstream& oss, const Symbol& sym)
+{
+    if (sym.type == SymbolType::Function && sym.GetFunction().isImported && !sym.GetFunction().originModule.empty())
+    {
+        oss << " from \"" << sym.GetFunction().originModule << "\"";
+    }
+}
+
+void AppendFunctionPreamble(std::ostringstream& oss, const Symbol& sym, bool isFuncdef)
+{
+    if (isFuncdef)
+    {
+        oss << "funcdef ";
+    }
+    else if (sym.type == SymbolType::Function && sym.GetFunction().isImported)
+    {
+        oss << "import ";
+    }
+}
+
+void AppendFunctionName(std::ostringstream& oss, const Symbol& sym, bool qualified)
+{
+    if (qualified && !sym.containerName.empty())
+    {
+        oss << sym.containerName << "::";
+    }
+    oss << sym.name;
+}
+
 std::string FormatFunctionDeclaration(const Symbol& sym, bool qualified)
 {
     if (sym.type != SymbolType::Function && sym.type != SymbolType::Funcdef)
@@ -177,44 +218,19 @@ std::string FormatFunctionDeclaration(const Symbol& sym, bool qualified)
     const bool isFuncdef = sym.type == SymbolType::Funcdef;
     const SymbolModifiers& modifiers = isFuncdef ? sym.GetFuncdef().modifiers : sym.GetFunction().modifiers;
     const std::string& returnType = isFuncdef ? sym.GetFuncdef().returnType : sym.GetFunction().returnType;
-    const std::vector<ParameterInformation>& parameters =
-        isFuncdef ? sym.GetFuncdef().parameters : sym.GetFunction().parameters;
+    const auto& parameters = isFuncdef ? sym.GetFuncdef().parameters : sym.GetFunction().parameters;
 
     std::ostringstream oss;
     oss << FormatDeclarationPrefix(modifiers);
-
-    if (isFuncdef)
-    {
-        oss << "funcdef ";
-    }
-    else if (sym.type == SymbolType::Function && sym.GetFunction().isImported)
-    {
-        oss << "import ";
-    }
-
+    AppendFunctionPreamble(oss, sym, isFuncdef);
     oss << FormatReturnType(returnType, modifiers) << " ";
-
-    if (qualified && !sym.containerName.empty())
-    {
-        oss << sym.containerName << "::";
-    }
-    oss << sym.name << "(";
-
-    for (size_t i = 0; i < parameters.size(); ++i)
-    {
-        if (i > 0)
-        {
-            oss << ", ";
-        }
-        oss << FormatParameter(parameters[i]);
-    }
-
+    AppendFunctionName(oss, sym, qualified);
+    oss << "(";
+    AppendParameters(oss, parameters);
     oss << ")" << FormatFunctionSuffix(modifiers);
-
-    if (!isFuncdef && sym.type == SymbolType::Function && sym.GetFunction().isImported &&
-        !sym.GetFunction().originModule.empty())
+    if (!isFuncdef)
     {
-        oss << " from \"" << sym.GetFunction().originModule << "\"";
+        AppendImportOrigin(oss, sym);
     }
 
     return oss.str();
@@ -270,79 +286,87 @@ std::string FormatVariableDeclaration(const VariableSignature& var, const std::s
     return oss.str();
 }
 
+void FormatClassDeclaration(std::ostringstream& oss, const Symbol& sym)
+{
+    const auto& sig = sym.GetClass();
+    oss << FormatAccessPrefix(sig.modifiers);
+
+    if (sig.modifiers.isExternal)
+    {
+        oss << "external ";
+    }
+    if (sig.modifiers.isShared)
+    {
+        oss << "shared ";
+    }
+    if (sig.modifiers.isMixin)
+    {
+        oss << "mixin ";
+    }
+    if (sig.modifiers.isAbstract)
+    {
+        oss << "abstract ";
+    }
+    if (sig.modifiers.isFinal)
+    {
+        oss << "final ";
+    }
+
+    oss << "class " << sym.name;
+
+    if (sig.isTemplate && !sig.templateParams.empty())
+    {
+        oss << "<";
+        for (size_t i = 0; i < sig.templateParams.size(); ++i)
+        {
+            if (i > 0)
+            {
+                oss << ", ";
+            }
+            oss << sig.templateParams[i];
+        }
+        oss << ">";
+    }
+
+    for (size_t i = 0; i < sig.bases.size(); ++i)
+    {
+        oss << (i == 0 ? " : " : ", ") << sig.bases[i];
+    }
+}
+
+void FormatInterfaceDeclaration(std::ostringstream& oss, const Symbol& sym)
+{
+    const auto& sig = sym.GetInterface();
+    oss << FormatAccessPrefix(sig.modifiers);
+
+    if (sig.modifiers.isExternal)
+    {
+        oss << "external ";
+    }
+    if (sig.modifiers.isShared)
+    {
+        oss << "shared ";
+    }
+
+    oss << "interface " << sym.name;
+
+    for (size_t i = 0; i < sig.inheritedInterfaces.size(); ++i)
+    {
+        oss << (i == 0 ? " : " : ", ") << sig.inheritedInterfaces[i];
+    }
+}
+
 std::string FormatTypeDeclaration(const Symbol& sym)
 {
     std::ostringstream oss;
-
     if (sym.type == SymbolType::Class)
     {
-        const auto& sig = sym.GetClass();
-        oss << FormatAccessPrefix(sig.modifiers);
-
-        if (sig.modifiers.isExternal)
-        {
-            oss << "external ";
-        }
-        if (sig.modifiers.isShared)
-        {
-            oss << "shared ";
-        }
-        if (sig.modifiers.isMixin)
-        {
-            oss << "mixin ";
-        }
-        if (sig.modifiers.isAbstract)
-        {
-            oss << "abstract ";
-        }
-        if (sig.modifiers.isFinal)
-        {
-            oss << "final ";
-        }
-
-        oss << "class " << sym.name;
-
-        if (sig.isTemplate && !sig.templateParams.empty())
-        {
-            oss << "<";
-            for (size_t i = 0; i < sig.templateParams.size(); ++i)
-            {
-                if (i > 0)
-                {
-                    oss << ", ";
-                }
-                oss << sig.templateParams[i];
-            }
-            oss << ">";
-        }
-
-        for (size_t i = 0; i < sig.bases.size(); ++i)
-        {
-            oss << (i == 0 ? " : " : ", ") << sig.bases[i];
-        }
+        FormatClassDeclaration(oss, sym);
     }
     else if (sym.type == SymbolType::Interface)
     {
-        const auto& sig = sym.GetInterface();
-        oss << FormatAccessPrefix(sig.modifiers);
-
-        if (sig.modifiers.isExternal)
-        {
-            oss << "external ";
-        }
-        if (sig.modifiers.isShared)
-        {
-            oss << "shared ";
-        }
-
-        oss << "interface " << sym.name;
-
-        for (size_t i = 0; i < sig.inheritedInterfaces.size(); ++i)
-        {
-            oss << (i == 0 ? " : " : ", ") << sig.inheritedInterfaces[i];
-        }
+        FormatInterfaceDeclaration(oss, sym);
     }
-
     return oss.str();
 }
 } // namespace angel_lsp::analysis

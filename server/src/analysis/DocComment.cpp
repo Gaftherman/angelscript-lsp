@@ -40,6 +40,49 @@ std::string Trim(const std::string& str)
     return str.substr(first, (last - first + 1));
 }
 
+std::string ExtractLineComment(std::string_view rem)
+{
+    const size_t lpPos = rem.find("//@listpattern");
+    if (lpPos != std::string_view::npos)
+    {
+        rem = rem.substr(0, lpPos);
+    }
+    while (!rem.empty() && (rem.back() == ' ' || rem.back() == '\t' || rem.back() == '\r' || rem.back() == '\n'))
+    {
+        rem.remove_suffix(1);
+    }
+    if (rem.empty() || rem == "//")
+    {
+        return "";
+    }
+    return std::string(rem);
+}
+
+std::string ExtractBlockComment(const std::string& line, size_t startPos)
+{
+    const size_t close = line.find("*/", startPos + 2);
+    if (close != std::string::npos)
+    {
+        return line.substr(startPos, close + 2 - startPos);
+    }
+    return line.substr(startPos);
+}
+
+bool UpdateQuoteState(char c, bool& inString, bool& inChar)
+{
+    if (c == '"' && !inChar)
+    {
+        inString = !inString;
+        return true;
+    }
+    if (c == '\'' && !inString)
+    {
+        inChar = !inChar;
+        return true;
+    }
+    return false;
+}
+
 /**
  * @brief Extracts a trailing comment from a line of code.
  *
@@ -51,58 +94,96 @@ std::string ExtractTrailingComment(const std::string& line)
     bool inChar = false;
     for (size_t i = 0; i < line.size(); ++i)
     {
-        char c = line[i];
+        const char c = line[i];
         if (c == '\\' && (inString || inChar))
         {
             ++i;
             continue;
         }
-        if (c == '"' && !inChar)
+        if (UpdateQuoteState(c, inString, inChar))
         {
-            inString = !inString;
             continue;
         }
-        if (c == '\'' && !inString)
+        if (!inString && !inChar && c == '/' && i + 1 < line.size())
         {
-            inChar = !inChar;
-            continue;
-        }
-        if (!inString && !inChar)
-        {
-            if (c == '/' && i + 1 < line.size())
+            if (line[i + 1] == '/')
             {
-                if (line[i + 1] == '/')
-                {
-                    std::string_view rem = std::string_view(line).substr(i);
-                    const size_t lpPos = rem.find("//@listpattern");
-                    if (lpPos != std::string_view::npos)
-                    {
-                        rem = rem.substr(0, lpPos);
-                    }
-                    while (!rem.empty() &&
-                           (rem.back() == ' ' || rem.back() == '\t' || rem.back() == '\r' || rem.back() == '\n'))
-                    {
-                        rem.remove_suffix(1);
-                    }
-                    if (rem.empty() || rem == "//")
-                    {
-                        return "";
-                    }
-                    return std::string(rem);
-                }
-                if (line[i + 1] == '*')
-                {
-                    size_t close = line.find("*/", i + 2);
-                    if (close != std::string::npos)
-                    {
-                        return line.substr(i, close + 2 - i);
-                    }
-                    return line.substr(i);
-                }
+                return ExtractLineComment(std::string_view(line).substr(i));
+            }
+            if (line[i + 1] == '*')
+            {
+                return ExtractBlockComment(line, i);
             }
         }
     }
     return "";
+}
+
+int FindPrecedingCommentLine(const std::vector<std::string>& lines, int startLine)
+{
+    int line = startLine;
+    while (line >= 0 && Trim(lines[line]).empty())
+    {
+        line--;
+    }
+    return line;
+}
+
+std::vector<std::string> CollectBlockComment(const std::vector<std::string>& lines, int endLine)
+{
+    std::vector<std::string> commentLines;
+    for (int line = endLine; line >= 0; --line)
+    {
+        const std::string& l = lines[line];
+        commentLines.push_back(l);
+        if (l.find("/*") != std::string::npos)
+        {
+            break;
+        }
+    }
+    std::reverse(commentLines.begin(), commentLines.end());
+    return commentLines;
+}
+
+std::vector<std::string> CollectLineComments(const std::vector<std::string>& lines, int endLine)
+{
+    std::vector<std::string> commentLines;
+    for (int line = endLine; line >= 0; --line)
+    {
+        if (Trim(lines[line]).starts_with("//"))
+        {
+            commentLines.push_back(lines[line]);
+        }
+        else
+        {
+            break;
+        }
+    }
+    std::reverse(commentLines.begin(), commentLines.end());
+    return commentLines;
+}
+
+std::vector<std::string> CollectPrecedingDocComments(const std::vector<std::string>& lines, uint32_t declStartLine)
+{
+    if (declStartLine == 0)
+    {
+        return {};
+    }
+    const int candidateLine = FindPrecedingCommentLine(lines, static_cast<int>(declStartLine) - 1);
+    if (candidateLine < 0)
+    {
+        return {};
+    }
+    const std::string trimmed = Trim(lines[candidateLine]);
+    if (trimmed.ends_with("*/"))
+    {
+        return CollectBlockComment(lines, candidateLine);
+    }
+    if (trimmed.starts_with("//"))
+    {
+        return CollectLineComments(lines, candidateLine);
+    }
+    return {};
 }
 } // namespace
 
@@ -113,61 +194,13 @@ std::string ExtractDocComment(const std::string& sourceCode, uint32_t declStartL
         return "";
     }
 
-    auto lines = SplitLines(sourceCode);
+    const auto lines = SplitLines(sourceCode);
     if (declStartLine >= lines.size())
     {
         return "";
     }
 
-    std::vector<std::string> commentLines;
-    if (declStartLine > 0)
-    {
-        int currentLine = static_cast<int>(declStartLine) - 1;
-
-        while (currentLine >= 0 && Trim(lines[currentLine]).empty())
-        {
-            currentLine--;
-        }
-
-        if (currentLine >= 0)
-        {
-            std::string trimmed = Trim(lines[currentLine]);
-            if (trimmed.ends_with("*/"))
-            {
-                // Block comment: scan upwards to find /* or /**
-                while (currentLine >= 0)
-                {
-                    std::string l = lines[currentLine];
-                    commentLines.push_back(l);
-                    if (l.find("/*") != std::string::npos)
-                    {
-                        break;
-                    }
-                    currentLine--;
-                }
-                std::reverse(commentLines.begin(), commentLines.end());
-            }
-            else if (trimmed.starts_with("//"))
-            {
-                // Line comments: scan upwards as long as lines start with //
-                while (currentLine >= 0)
-                {
-                    std::string l = Trim(lines[currentLine]);
-                    if (l.starts_with("//"))
-                    {
-                        commentLines.push_back(lines[currentLine]);
-                        currentLine--;
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
-                std::reverse(commentLines.begin(), commentLines.end());
-            }
-        }
-    }
-
+    std::vector<std::string> commentLines = CollectPrecedingDocComments(lines, declStartLine);
     if (commentLines.empty())
     {
         std::string trailing = ExtractTrailingComment(lines[declStartLine]);
