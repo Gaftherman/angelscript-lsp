@@ -131,25 +131,14 @@ bool IsUnmistakablyAPrototype(const FunctionSignature& sig)
                        { return !param.name.empty() || param.typeKind == TypeKind::Void; });
 }
 
-void CheckBody(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
-               const DiagnosticContext& ctx)
+bool MayOmitBody(const FunctionSignature& sig, const FunctionContext& fctx)
 {
-    if (sig.isImported && sig.hasBody)
-    {
-        ctx.LogRule("CheckBody", "as-err-import-has-body", sym);
-        ctx.Emit(sym, "as-err-import-has-body", sym.name);
-        return;
-    }
+    return sig.isInterfaceMethod || fctx.isInterface || sig.modifiers.isExternal || sig.modifiers.isDelete ||
+           fctx.isConstructor || fctx.isDestructor || sig.isImported;
+}
 
-    const bool mayOmitBody = sig.isInterfaceMethod || fctx.isInterface || sig.modifiers.isExternal ||
-                             sig.modifiers.isDelete || fctx.isConstructor || fctx.isDestructor || sig.isImported;
-
-    if (!sig.hasBody && !mayOmitBody && IsUnmistakablyAPrototype(sig))
-    {
-        ctx.LogRule("CheckBody", "as-err-missing-body", sym);
-        ctx.Emit(sym, "as-err-missing-body", sym.name);
-    }
-
+void CheckDeleteModifiers(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+{
     if (sig.hasBody && sig.modifiers.isDelete)
     {
         ctx.LogRule("CheckBody", "as-err-delete-with-body", sym);
@@ -163,32 +152,51 @@ void CheckBody(const Symbol& sym, const FunctionSignature& sig, const FunctionCo
     }
 }
 
+void CheckBody(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+               const DiagnosticContext& ctx)
+{
+    if (sig.isImported && sig.hasBody)
+    {
+        ctx.LogRule("CheckBody", "as-err-import-has-body", sym);
+        ctx.Emit(sym, "as-err-import-has-body", sym.name);
+        return;
+    }
+
+    if (!sig.hasBody && !MayOmitBody(sig, fctx) && IsUnmistakablyAPrototype(sig))
+    {
+        ctx.LogRule("CheckBody", "as-err-missing-body", sym);
+        ctx.Emit(sym, "as-err-missing-body", sym.name);
+    }
+
+    CheckDeleteModifiers(sym, sig, ctx);
+}
+
 // =============================================================================
 // Return type
 // =============================================================================
 
-void CheckReturnType(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
-                     const DiagnosticContext& ctx)
+void CheckVoidReturnType(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
-    // A constructor and a destructor have no return type to judge, and what the collector
-    // put in returnType for them is whatever preceded the name.
-    if (fctx.isConstructor || fctx.isDestructor)
+    if (sig.returnTypeKind != TypeKind::Void)
     {
         return;
     }
 
-    if (sig.returnTypeKind == TypeKind::Void && sig.returnIsConst)
+    if (sig.returnIsConst)
     {
         ctx.LogRule("CheckReturnType", "as-err-const-void-return", sym);
         ctx.Emit(sym, "as-err-const-void-return");
     }
 
-    if (sig.returnTypeKind == TypeKind::Void && sig.modifiers.isReturnReference)
+    if (sig.modifiers.isReturnReference)
     {
         ctx.LogRule("CheckReturnType", "as-err-void-reference", sym);
         ctx.Emit(sym, "as-err-void-reference");
     }
+}
 
+void CheckReturnTypeLegality(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+{
     if (sig.returnHasPrimitiveHandle && !sig.returnIsArray)
     {
         ctx.LogRule("CheckReturnType", "as-err-handle-on-primitive", sym);
@@ -201,11 +209,6 @@ void CheckReturnType(const Symbol& sym, const FunctionSignature& sig, const Func
         ctx.Emit(sym, "as-err-mixin-not-a-type", sig.returnBaseTypeName);
     }
 
-    // Returning an abstract class or an interface by value means constructing one to
-    // return, so the engine answers "Return type can't be 'Shape'" at the declaration.
-    // Only a plain by-value return is judged: `Shape@` is the ordinary and correct way to
-    // write this, and a reference return is left alone because whether one is legal at all
-    // depends on asEP_ALLOW_UNSAFE_REFERENCES rather than on the type.
     const bool returnsByValue = sig.returnType.find('@') == std::string::npos &&
                                 sig.returnType.find('&') == std::string::npos && !sig.modifiers.isReturnReference;
     if (returnsByValue && !sig.returnIsArray && sig.returnTemplateName.empty() &&
@@ -214,11 +217,10 @@ void CheckReturnType(const Symbol& sym, const FunctionSignature& sig, const Func
         ctx.LogRule("CheckReturnType", "as-err-return-not-instantiable", sym);
         ctx.Emit(sym, "as-err-return-not-instantiable", sig.returnBaseTypeName);
     }
+}
 
-    // An imported function's types must be declared - the engine resolves the import
-    // against another module by signature - so that case is always judged. Everything else
-    // is opt-in: an engine-registered type and a typo look identical from here, and the
-    // reasoning is in config::DiagnosticsConfig::reportUnknownTypes.
+void CheckReturnTypeResolution(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+{
     const bool isPredefined =
         angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
     if ((sig.isImported || ctx.request.ReportsUnknownTypes()) && !sig.returnBaseTypeName.empty() &&
@@ -226,29 +228,23 @@ void CheckReturnType(const Symbol& sym, const FunctionSignature& sig, const Func
         !IsKnownType(sig.returnBaseTypeName, ctx))
     {
         ctx.LogRule("CheckReturnType", "as-err-unresolved-type", sym);
-
-        // On the type, not over the whole signature: `MissingType getThing() { ... }`
-        // underlined the declaration and left the reader to find which part of it was
-        // being complained about.
         ctx.EmitAtTypeName(sym, "as-err-unresolved-type", sig.returnBaseTypeName);
     }
+}
 
-    // NOT IMPLEMENTED: as-err-invalid-reference-return.
-    //
-    // Not for want of an engine option, as this comment used to claim. Compiled against a
-    // real engine at its defaults, `int& GetRef() { return g_value; }` builds clean and
-    // `int& Bad() { int local = 1; return local; }` answers "Not a valid reference" - so
-    // the declaration is never what is wrong. What the engine rejects is the returned
-    // expression, and judging that needs the return statement's type, not the signature's.
-    // It belongs with the use-site rules, and waits on the expression resolver reaching
-    // far enough to answer what a return statement yields.
-    //
-    // as-err-unresolved-type on the return type used to be listed here as NOT IMPLEMENTED.
-    // The reasoning still holds - an engine-registered type and a typo look identical from
-    // here, and the corpus is nothing but engine types, so on-by-default would report
-    // virtually every function in it. What changed is that the workspaces where it *is*
-    // decidable now have a way to say so: angelscript.diagnostics.reportUnknownTypes, off
-    // by default. The rule is above.
+void CheckReturnType(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+                     const DiagnosticContext& ctx)
+{
+    // A constructor and a destructor have no return type to judge, and what the collector
+    // put in returnType for them is whatever preceded the name.
+    if (fctx.isConstructor || fctx.isDestructor)
+    {
+        return;
+    }
+
+    CheckVoidReturnType(sym, sig, ctx);
+    CheckReturnTypeLegality(sym, sig, ctx);
+    CheckReturnTypeResolution(sym, sig, ctx);
 }
 
 // =============================================================================
@@ -487,65 +483,65 @@ void CheckOverride(const Symbol& sym, const FunctionSignature& sig, const Functi
     }
 }
 
+void CheckImportedFunction(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+{
+    if (ctx.request.moduleContext.has_value() && !sig.originModule.empty())
+    {
+        const auto& names = ctx.request.moduleContext->moduleNames;
+        if (!names.empty() && std::find(names.begin(), names.end(), sig.originModule) == names.end())
+        {
+            ctx.LogRule("CheckExternal", "as-hint-import-unknown-module", sym);
+            ctx.Emit(sym, "as-hint-import-unknown-module", sig.originModule, DiagnosticSeverity::Hint);
+        }
+    }
+}
+
+bool HasFullSharedFunctionDefinition(const std::string& name, const DiagnosticContext& ctx)
+{
+    const bool knowsModules = ctx.request.moduleContext.has_value() && !ctx.request.moduleContext->name.empty();
+    if (knowsModules)
+    {
+        return ctx.request.moduleContext->sharedElsewhere.contains(name);
+    }
+
+    if (auto symsPtr = ctx.request.symbolTable.FindSymbolsPtr(name))
+    {
+        for (const auto& s : *symsPtr)
+        {
+            if (s.type == SymbolType::Function && s.GetFunction().hasBody && s.GetFunction().modifiers.isShared &&
+                !s.GetFunction().modifiers.isExternal)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 void CheckExternal(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.isImported)
     {
-        // A hint, never an error. Measured: the compiler accepts an import naming a module
-        // that was never built, because the binding happens at runtime. What it can say is
-        // that the name is not one of the modules the host described - almost always a
-        // typo, and otherwise a module this server has not been told about.
-        if (ctx.request.moduleContext.has_value() && !sig.originModule.empty())
-        {
-            const auto& names = ctx.request.moduleContext->moduleNames;
-            if (!names.empty() && std::find(names.begin(), names.end(), sig.originModule) == names.end())
-            {
-                ctx.LogRule("CheckExternal", "as-hint-import-unknown-module", sym);
-                ctx.Emit(sym, "as-hint-import-unknown-module", sig.originModule, DiagnosticSeverity::Hint);
-            }
-        }
+        CheckImportedFunction(sym, sig, ctx);
         return;
     }
 
-    if (sig.modifiers.isExternal)
+    if (!sig.modifiers.isExternal)
     {
-        if (!sig.modifiers.isShared)
-        {
-            ctx.LogRule("CheckExternal", "as-err-external-not-shared", sym);
-            ctx.Emit(sym, "as-err-external-not-shared", sym.name);
-        }
-        else
-        {
-            // The same question, and the same two answers to it, as the class rule in
-            // ClassRules.cpp - see the comment there. In a module the definition has to be
-            // in a different one; without knowing the modules, anywhere will do and the
-            // false negative is accepted rather than guessed at.
-            const bool knowsModules = ctx.request.moduleContext.has_value() && !ctx.request.moduleContext->name.empty();
+        return;
+    }
 
-            bool hasFullSharedDefinition = false;
+    if (!sig.modifiers.isShared)
+    {
+        ctx.LogRule("CheckExternal", "as-err-external-not-shared", sym);
+        ctx.Emit(sym, "as-err-external-not-shared", sym.name);
+        return;
+    }
 
-            if (knowsModules)
-            {
-                hasFullSharedDefinition = ctx.request.moduleContext->sharedElsewhere.contains(sym.name);
-            }
-            else if (auto symsPtr = ctx.request.symbolTable.FindSymbolsPtr(sym.name))
-            {
-                for (const auto& s : *symsPtr)
-                {
-                    if (s.type == SymbolType::Function && s.GetFunction().hasBody &&
-                        s.GetFunction().modifiers.isShared && !s.GetFunction().modifiers.isExternal)
-                    {
-                        hasFullSharedDefinition = true;
-                        break;
-                    }
-                }
-            }
-            if (!hasFullSharedDefinition)
-            {
-                ctx.LogRule("CheckExternal", "as-err-external-not-found", sym);
-                ctx.Emit(sym, "as-err-external-not-found", sym.name);
-            }
-        }
+    if (!HasFullSharedFunctionDefinition(sym.name, ctx))
+    {
+        ctx.LogRule("CheckExternal", "as-err-external-not-found", sym);
+        ctx.Emit(sym, "as-err-external-not-found", sym.name);
     }
 }
 
@@ -580,9 +576,107 @@ inline constexpr std::string_view k_reservedParameterNames[] = {
 }
 } // namespace
 
-// =============================================================================
-// Parameters
-// =============================================================================
+void CheckParamModifiers(const Symbol& sym, const ParameterInformation& param, const DiagnosticContext& ctx)
+{
+    if (param.modifier == ParameterModifier::Out)
+    {
+        if (param.isConst)
+        {
+            ctx.LogParam("ValidateParameters", "as-err-const-out-param", param, sym);
+            ctx.Emit(param, sym, "as-err-const-out-param", param.name);
+        }
+        if (!param.defaultValue.empty() && CleanBaseType(param.defaultValue) != "void")
+        {
+            ctx.LogParam("ValidateParameters", "as-err-out-param-default", param, sym);
+            ctx.Emit(param, sym, "as-err-out-param-default", param.name);
+        }
+    }
+
+    const bool isInOutReference = param.modifier == ParameterModifier::InOut || param.isStandaloneRef;
+    if (isInOutReference && IsValueOnlyKind(param.typeKind) && !param.isArray && !ctx.request.AllowsUnsafeReferences())
+    {
+        ctx.LogParam("ValidateParameters", "as-err-inout-on-primitive", param, sym);
+        ctx.Emit(param, sym, "as-err-inout-on-primitive", param.baseTypeName);
+    }
+
+    if (param.hasDoubleReference)
+    {
+        ctx.LogParam("ValidateParameters", "as-err-double-reference", param, sym);
+        ctx.Emit(param, sym, "as-err-double-reference", param.baseTypeName);
+    }
+
+    if (param.hasPrimitiveHandle)
+    {
+        ctx.LogParam("ValidateParameters", "as-err-handle-on-primitive", param, sym);
+        ctx.Emit(param, sym, "as-err-handle-on-primitive", param.baseTypeName);
+    }
+}
+
+void CheckParamTypeLegality(const Symbol& sym, const ParameterInformation& param, const DiagnosticContext& ctx)
+{
+    if (IsMixinClass(param.baseTypeName, ctx.request.symbolTable))
+    {
+        ctx.LogParam("ValidateParameters", "as-err-mixin-not-a-type", param, sym);
+        ctx.Emit(param, sym, "as-err-mixin-not-a-type", param.baseTypeName);
+    }
+
+    if (!param.isHandle && param.templateName.empty() && !param.isArray &&
+        ClassifyNonInstantiable(param.baseTypeName, ctx.request.symbolTable) != NonInstantiableKind::None)
+    {
+        ctx.LogParam("ValidateParameters", "as-err-parameter-not-instantiable", param, sym);
+        ctx.Emit(param, sym, "as-err-parameter-not-instantiable",
+                 param.typeName.empty() ? param.baseTypeName : param.typeName);
+    }
+
+    if (!param.isHandle && !param.baseTypeName.empty())
+    {
+        const auto typeSymbols = ctx.request.symbolTable.FindSymbolsPtr(param.baseTypeName);
+        const bool isFuncdefType =
+            typeSymbols && std::any_of(typeSymbols->begin(), typeSymbols->end(),
+                                       [](const Symbol& type) { return type.type == SymbolType::Funcdef; });
+        if (isFuncdefType)
+        {
+            ctx.LogParam("ValidateParameters", "as-err-funcdef-not-handle", param, sym);
+            ctx.Emit(param, sym, "as-err-funcdef-not-handle", param.baseTypeName, param.baseTypeName);
+        }
+    }
+}
+
+void CheckParamTypeResolution(const Symbol& sym, const ParameterInformation& param, const DiagnosticContext& ctx)
+{
+    const bool isPredefined =
+        angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
+    const bool judgeParameterType =
+        (sym.type == SymbolType::Function && sym.GetFunction().isImported) || ctx.request.ReportsUnknownTypes();
+    if (judgeParameterType && !param.baseTypeName.empty() && !(isPredefined && param.baseTypeName == "?") &&
+        !IsKnownType(param.baseTypeName, ctx))
+    {
+        ctx.LogParam("ValidateParameters", "as-err-unresolved-type", param, sym);
+        ctx.EmitAtTypeName(param, sym, "as-err-unresolved-type", param.baseTypeName);
+    }
+}
+
+void CheckParamName(const Symbol& sym, const ParameterInformation& param,
+                    ankerl::unordered_dense::set<std::string>& seenNames, const DiagnosticContext& ctx)
+{
+    if (param.name.empty())
+    {
+        return;
+    }
+
+    if (IsReservedParameterName(param.name))
+    {
+        ctx.LogParam("ValidateParameters", diagnostics::codes::ReservedWordAsParameterName, param, sym);
+        ctx.Emit(param, sym, diagnostics::codes::ReservedWordAsParameterName, param.name);
+        return;
+    }
+
+    if (!seenNames.insert(param.name).second)
+    {
+        ctx.LogParam("ValidateParameters", "as-err-duplicate-param", param, sym);
+        ctx.Emit(param, sym, "as-err-duplicate-param", param.name, sym.name);
+    }
+}
 
 void ValidateParameters(const Symbol& sym, const std::vector<ParameterInformation>& parameters, bool isFuncdef,
                         const DiagnosticContext& ctx)
@@ -602,141 +696,17 @@ void ValidateParameters(const Symbol& sym, const std::vector<ParameterInformatio
             ctx.Emit(param, sym, "as-err-default-param-order", sym.name);
         }
 
-        // `void` alone in the list is the C spelling of "no parameters" and the grammar accepts
-        // it; anything else typed void is an error.
         if (param.typeKind == TypeKind::Void && !(parameters.size() == 1 && param.name.empty()))
         {
             ctx.LogParam("ValidateParameters", "as-err-void-parameter", param, sym);
             ctx.Emit(param, sym, "as-err-void-parameter", param.name, sym.name);
         }
 
-        // An &out parameter is written by the callee, so the caller has to supply something to
-        // write to - a default value has nothing to be written back into, and const forbids
-        // the write outright.
-        if (param.modifier == ParameterModifier::Out)
-        {
-            if (param.isConst)
-            {
-                ctx.LogParam("ValidateParameters", "as-err-const-out-param", param, sym);
-                ctx.Emit(param, sym, "as-err-const-out-param", param.name);
-            }
-            // `= void` is the one default an &out parameter may carry: it is AngelScript's
-            // spelling of "the caller may leave this argument out and discard the value", and
-            // the engine's own documentation uses `void func(int &out output = void)`. Any
-            // other default has nothing to write back into.
-            if (!param.defaultValue.empty() && CleanBaseType(param.defaultValue) != "void")
-            {
-                ctx.LogParam("ValidateParameters", "as-err-out-param-default", param, sym);
-                ctx.Emit(param, sym, "as-err-out-param-default", param.name);
-            }
-        }
-
-        // A bare `&` is `&inout` spelled shorter - the engine answers both with the very same
-        // sentence, "Only object types that support object handles can use &inout", so both
-        // arrive here. Verified against a real engine: `void f(int &x)` and `void f(int &inout
-        // x)` are refused identically, while `void f(Foo &x)` on a script class is accepted.
-        //
-        // Unless the host turned asEP_ALLOW_UNSAFE_REFERENCES on, in which case a primitive by
-        // reference is exactly what that option exists to permit and this rule would be
-        // reporting a legal program. Only primitives are judged either way: whether a
-        // registered type supports handles is not something script text says, and `string &x`
-        // is an error for that reason while `Foo &x` is not.
-        const bool isInOutReference = param.modifier == ParameterModifier::InOut || param.isStandaloneRef;
-        if (isInOutReference && IsValueOnlyKind(param.typeKind) && !param.isArray &&
-            !ctx.request.AllowsUnsafeReferences())
-        {
-            ctx.LogParam("ValidateParameters", "as-err-inout-on-primitive", param, sym);
-            ctx.Emit(param, sym, "as-err-inout-on-primitive", param.baseTypeName);
-        }
-
-        if (param.hasDoubleReference)
-        {
-            ctx.LogParam("ValidateParameters", "as-err-double-reference", param, sym);
-            ctx.Emit(param, sym, "as-err-double-reference", param.baseTypeName);
-        }
-
-        if (param.hasPrimitiveHandle)
-        {
-            ctx.LogParam("ValidateParameters", "as-err-handle-on-primitive", param, sym);
-            ctx.Emit(param, sym, "as-err-handle-on-primitive", param.baseTypeName);
-        }
-
-        if (IsMixinClass(param.baseTypeName, ctx.request.symbolTable))
-        {
-            ctx.LogParam("ValidateParameters", "as-err-mixin-not-a-type", param, sym);
-            ctx.Emit(param, sym, "as-err-mixin-not-a-type", param.baseTypeName);
-        }
-
-        // A by-value parameter of an abstract class or an interface is an instance the caller
-        // has to make, so the engine refuses the signature itself rather than any call to it -
-        // and refuses `const Shape &in` too, since a reference is still not a handle. It has a
-        // message of its own here, naming the parameter's whole written type the way the
-        // engine's does.
-        // A template argument is left alone here for the same reason it is in VariableRules:
-        // baseTypeName is the element, and the engine decides a subtype by its registered
-        // factory rather than by abstractness.
-        if (!param.isHandle && param.templateName.empty() && !param.isArray &&
-            ClassifyNonInstantiable(param.baseTypeName, ctx.request.symbolTable) != NonInstantiableKind::None)
-        {
-            ctx.LogParam("ValidateParameters", "as-err-parameter-not-instantiable", param, sym);
-            ctx.Emit(param, sym, "as-err-parameter-not-instantiable",
-                     param.typeName.empty() ? param.baseTypeName : param.typeName);
-        }
-
-        if (!param.isHandle && !param.baseTypeName.empty())
-        {
-            const auto typeSymbols = ctx.request.symbolTable.FindSymbolsPtr(param.baseTypeName);
-            const bool isFuncdefType =
-                typeSymbols && std::any_of(typeSymbols->begin(), typeSymbols->end(),
-                                           [](const Symbol& type) { return type.type == SymbolType::Funcdef; });
-            if (isFuncdefType)
-            {
-                ctx.LogParam("ValidateParameters", "as-err-funcdef-not-handle", param, sym);
-                ctx.Emit(param, sym, "as-err-funcdef-not-handle", param.baseTypeName, param.baseTypeName);
-            }
-        }
-
-        const bool isPredefined =
-            angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
-        const bool judgeParameterType =
-            (sym.type == SymbolType::Function && sym.GetFunction().isImported) || ctx.request.ReportsUnknownTypes();
-        if (judgeParameterType && !param.baseTypeName.empty() && !(isPredefined && param.baseTypeName == "?") &&
-            !IsKnownType(param.baseTypeName, ctx))
-        {
-            ctx.LogParam("ValidateParameters", "as-err-unresolved-type", param, sym);
-
-            // On the type, not over `BadType param` - the name beside it is not what is wrong.
-            ctx.EmitAtTypeName(param, sym, "as-err-unresolved-type", param.baseTypeName);
-        }
-
-        if (param.name.empty())
-        {
-            continue;
-        }
-
-        // A reserved keyword cannot be used as a parameter name. The tree-sitter grammar accepts
-        // it as a parameter node with the keyword in the name field, so this rule reports the
-        // compiler parse error ("Instead found reserved keyword '<word>'").
-        if (IsReservedParameterName(param.name))
-        {
-            ctx.LogParam("ValidateParameters", diagnostics::codes::ReservedWordAsParameterName, param, sym);
-            ctx.Emit(param, sym, diagnostics::codes::ReservedWordAsParameterName, param.name);
-            continue;
-        }
-
-        if (!seenNames.insert(param.name).second)
-        {
-            ctx.LogParam("ValidateParameters", "as-err-duplicate-param", param, sym);
-            ctx.Emit(param, sym, "as-err-duplicate-param", param.name, sym.name);
-        }
+        CheckParamModifiers(sym, param, ctx);
+        CheckParamTypeLegality(sym, param, ctx);
+        CheckParamTypeResolution(sym, param, ctx);
+        CheckParamName(sym, param, seenNames, ctx);
     }
-
-    // NOT IMPLEMENTED: as-warn-shadow-global.
-    //
-    // Shadowing a global is legal AngelScript and extremely common in the corpus, where the
-    // warning fires on ordinary parameter naming rather than on anything a user would want to
-    // change. Unlike the reference rules above, no engine option decides it - it is a matter
-    // of taste, and would belong behind a lint preference rather than a dialect one.
 }
 
 void ValidateFunction(const Symbol& sym, const DiagnosticContext& ctx)
@@ -789,41 +759,60 @@ void ValidateFunction(const Symbol& sym, const DiagnosticContext& ctx)
 
 namespace
 {
-void WalkStandaloneLambda(TSNode node, const DiagnosticContext& ctx, int depth = 0)
-{
-    if (ts_node_is_null(node) || depth > k_maxAstDepth)
-    {
-        return;
-    }
-
-    const std::string_view nodeType = NodeType(node);
-    if (nodeType == parser::nodes::ExpressionStatement && ts_node_named_child_count(node) == 1)
-    {
-        const TSNode child = ts_node_named_child(node, 0);
-        if (NodeType(child) == parser::nodes::LambdaExpression)
-        {
-            const TSPoint start = ts_node_start_point(child);
-            const TSPoint end = ts_node_end_point(child);
-            ctx.EmitAtRange(start.row, start.column, end.row, end.column,
-                            diagnostics::codes::StandaloneAnonymousFunction, DiagnosticSeverity::Error);
-        }
-    }
-
-    const uint32_t count = ts_node_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        WalkStandaloneLambda(ts_node_child(node, i), ctx, depth + 1);
-    }
-}
-} // namespace
-
-void ValidateStandaloneLambda(TSNode root, const DiagnosticContext& ctx)
+void WalkStandaloneLambda(TSNode root, const DiagnosticContext& ctx)
 {
     if (ts_node_is_null(root))
     {
         return;
     }
 
+    TSTreeCursor cursor = ts_tree_cursor_new(root);
+    bool reachedRoot = false;
+
+    while (!reachedRoot)
+    {
+        TSNode node = ts_tree_cursor_current_node(&cursor);
+        if (NodeType(node) == parser::nodes::ExpressionStatement && ts_node_named_child_count(node) == 1)
+        {
+            const TSNode child = ts_node_named_child(node, 0);
+            if (NodeType(child) == parser::nodes::LambdaExpression)
+            {
+                const TSPoint start = ts_node_start_point(child);
+                const TSPoint end = ts_node_end_point(child);
+                ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                                diagnostics::codes::StandaloneAnonymousFunction, DiagnosticSeverity::Error);
+            }
+        }
+
+        if (ts_tree_cursor_goto_first_child(&cursor))
+        {
+            continue;
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            continue;
+        }
+
+        while (!reachedRoot)
+        {
+            if (!ts_tree_cursor_goto_parent(&cursor))
+            {
+                reachedRoot = true;
+                break;
+            }
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                break;
+            }
+        }
+    }
+
+    ts_tree_cursor_delete(&cursor);
+}
+} // namespace
+
+void ValidateStandaloneLambda(TSNode root, const DiagnosticContext& ctx)
+{
     WalkStandaloneLambda(root, ctx);
 }
 
