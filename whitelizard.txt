@@ -5,7 +5,6 @@
 angel_lsp::AnalysisScheduler::RunLoop
 angel_lsp::AnalysisScheduler::Schedule
 angel_lsp::AnalysisScheduler::ScheduleImmediate
-angel_lsp::ModuleIndex::UpdateFile
 angel_lsp::PendingAnalysisEntry::PendingAnalysisEntry
 angel_lsp::Server::AnalyzeDocument
 angel_lsp::Server::BuildModuleIndex
@@ -180,9 +179,5 @@ angel_lsp::utils::ApplyIncrementalChange
 angel_lsp::utils::ForEachDirective
 angel_lsp::utils::IncludeResolver::ExtractIncludes
 angel_lsp::utils::IncludeResolver::ResolveIncludePath
-angel_lsp::utils::ResolveDirectives
 angel_lsp::utils::SanitizePredefinedContent
 angel_lsp::utils::ScanPreprocessor
-angel_lsp::utils::WorkspaceIncludeGraph::Build
-angel_lsp::utils::WorkspaceIncludeGraph::BuildFromFiles
-angel_lsp::utils::WorkspaceIncludeGraph::UpdateFile

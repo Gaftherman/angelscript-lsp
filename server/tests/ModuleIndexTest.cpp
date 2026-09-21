@@ -1,5 +1,5 @@
-#include <doctest/doctest.h>
 #include "lsp/ModuleIndex.h"
+#include <doctest/doctest.h>
 #include <thread>
 #include <vector>
 
@@ -11,52 +11,52 @@ using namespace angel_lsp;
 
 namespace
 {
-    struct TempDirFixture
+struct TempDirFixture
+{
+    std::filesystem::path dir;
+
+    TempDirFixture()
     {
-        std::filesystem::path dir;
-
-        TempDirFixture()
+        const auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+        dir = std::filesystem::temp_directory_path() / ("angel_lsp_modindex_" + unique);
+        std::filesystem::create_directories(dir);
+        std::error_code ec;
+        auto c = std::filesystem::canonical(dir, ec);
+        if (!ec)
         {
-            const auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-            dir = std::filesystem::temp_directory_path() / ("angel_lsp_modindex_" + unique);
-            std::filesystem::create_directories(dir);
-            std::error_code ec;
-            auto c = std::filesystem::canonical(dir, ec);
-            if (!ec)
-            {
-                dir = std::move(c);
-            }
+            dir = std::move(c);
+        }
+    }
+
+    ~TempDirFixture()
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    }
+
+    void Write(const std::string& name, const std::string& content) const
+    {
+        const std::filesystem::path full = dir / name;
+        if (full.has_parent_path())
+        {
+            std::filesystem::create_directories(full.parent_path());
         }
 
-        ~TempDirFixture()
-        {
-            std::error_code ec;
-            std::filesystem::remove_all(dir, ec);
-        }
+        std::ofstream out(full, std::ios::binary);
+        out << content;
+    }
 
-        void Write(const std::string &name, const std::string &content) const
-        {
-            const std::filesystem::path full = dir / name;
-            if (full.has_parent_path())
-            {
-                std::filesystem::create_directories(full.parent_path());
-            }
+    std::string Path(const std::string& name) const
+    {
+        return angel_lsp::utils::IncludeResolver::NormalizePath(dir / name);
+    }
 
-            std::ofstream out(full, std::ios::binary);
-            out << content;
-        }
-
-        std::string Path(const std::string &name) const
-        {
-            return angel_lsp::utils::IncludeResolver::NormalizePath(dir / name);
-        }
-
-        std::string Root() const
-        {
-            return angel_lsp::utils::IncludeResolver::NormalizePath(dir);
-        }
-    };
-}
+    std::string Root() const
+    {
+        return angel_lsp::utils::IncludeResolver::NormalizePath(dir);
+    }
+};
+} // namespace
 
 TEST_CASE("ModuleIndex - Include graph and closure tracking")
 {
@@ -71,8 +71,8 @@ TEST_CASE("ModuleIndex - Include graph and closure tracking")
     const std::string fileA = fix.Path("A.as");
     const std::string fileB = fix.Path("B.as");
 
-    index.UpdateFile(fileA, contentA, {fix.Root()}, {fix.Root()}, "");
-    index.UpdateFile(fileB, contentB, {fix.Root()}, {fix.Root()}, "");
+    index.UpdateFile(ModuleIndex::UpdateFileRequest{fileA, contentA, {fix.Root()}, {fix.Root()}, ""});
+    index.UpdateFile(ModuleIndex::UpdateFileRequest{fileB, contentB, {fix.Root()}, {fix.Root()}, ""});
 
     auto closureA = index.GetModuleClosure(fileA);
     CHECK(closureA.size() == 2);
@@ -149,22 +149,23 @@ TEST_CASE("ModuleIndex - Concurrent access")
 
     for (int t = 0; t < 4; ++t)
     {
-        threads.emplace_back([&index, t]()
-        {
-            for (int i = 0; i < kIterations; ++i)
+        threads.emplace_back(
+            [&index, t]()
             {
-                std::string path = "C:/project/file_" + std::to_string(t) + "_" + std::to_string(i) + ".as";
-                std::string uri = "file:///" + path;
-                index.SetIndexedUri(path, uri);
-                index.SetClosureDocument(uri, "void f() {}");
-                auto res = index.GetIndexedUri(path);
-                CHECK(res.has_value());
-                index.PurgeClosureDocument(uri);
-            }
-        });
+                for (int i = 0; i < kIterations; ++i)
+                {
+                    std::string path = "C:/project/file_" + std::to_string(t) + "_" + std::to_string(i) + ".as";
+                    std::string uri = "file:///" + path;
+                    index.SetIndexedUri(path, uri);
+                    index.SetClosureDocument(uri, "void f() {}");
+                    auto res = index.GetIndexedUri(path);
+                    CHECK(res.has_value());
+                    index.PurgeClosureDocument(uri);
+                }
+            });
     }
 
-    for (auto &th : threads)
+    for (auto& th : threads)
     {
         th.join();
     }

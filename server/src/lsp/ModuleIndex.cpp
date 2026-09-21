@@ -2,12 +2,17 @@
 
 namespace angel_lsp
 {
-void ModuleIndex::UpdateFile(const std::string& filePath, std::string_view content,
-                             const std::vector<std::string>& searchDirectories,
-                             const std::vector<std::string>& allowedRoots, std::string_view implicitExtension)
+void ModuleIndex::UpdateFile(const UpdateFileRequest& request)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_includeGraph.UpdateFile(filePath, content, searchDirectories, allowedRoots, implicitExtension);
+    m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
+        request.filePath, request.content, request.searchDirectories, request.allowedRoots, request.implicitExtension});
+}
+
+void ModuleIndex::UpdateFile(const std::string& filePath, std::string_view content,
+                             const std::vector<std::string>& searchDirectories)
+{
+    UpdateFile(UpdateFileRequest{filePath, content, searchDirectories, {}, {}});
 }
 
 void ModuleIndex::RemoveFile(const std::string& filePath)

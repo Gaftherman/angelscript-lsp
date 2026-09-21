@@ -339,8 +339,12 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
     phase.emplace(m_logger.get(), "include graph");
 
     m_includeGraph.BuildFromFiles(
-        allScriptFiles, *searchDirectories, roots, [&stopToken]() { return stopToken.stop_requested(); }, {},
-        ImplicitIncludeExtension());
+        utils::WorkspaceIncludeGraph::BuildFromFilesRequest{allScriptFiles,
+                                                            *searchDirectories,
+                                                            roots,
+                                                            [&stopToken]() { return stopToken.stop_requested(); },
+                                                            {},
+                                                            std::string(ImplicitIncludeExtension())});
 
     if (stopToken.stop_requested())
     {
@@ -526,8 +530,8 @@ void Server::HandleNotificationsWorkspace_DidChangeWatchedFiles(
 
         const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
-        m_includeGraph.UpdateFile(path, content, *SearchDirectories(), IncludeAllowedRoots(),
-                                  ImplicitIncludeExtension());
+        m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
+            path, content, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
         graphChanged = true;
 
         // Only files already pulled in as part of an open document's module are re-indexed
@@ -599,11 +603,12 @@ void Server::HandleNotificationsWorkspace_DidChangeWatchedFiles(
     // checkout` into a full rescan. Directives only, so it costs a scan of the text rather than
     // a parse.
     for (const auto& [openUri, openText] : m_documentStore.GetSnapshot())
-    {
         if (const std::string openPath = CanonicalPathFromUri(openUri); !openPath.empty())
-            m_includeGraph.UpdateFile(openPath, openText, *SearchDirectories(), IncludeAllowedRoots(),
-                                      ImplicitIncludeExtension());
-    }
+        {
+            m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
+                openPath, openText, *SearchDirectories(), IncludeAllowedRoots(),
+                std::string(ImplicitIncludeExtension())});
+        }
 
     // An edited #include line can move a file between modules, so every open document's
     // closure is recomputed and re-diagnosed against whatever it now sees.
@@ -723,7 +728,10 @@ void Server::HandleNotificationsWorkspace_DidCreateFiles(lsp::notifications::Wor
     {
         const std::string openPath = CanonicalPathFromUri(openUri);
         if (!openPath.empty())
-            m_includeGraph.UpdateFile(openPath, text, *searchDirectories, IncludeAllowedRoots());
+        {
+            m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
+                openPath, text, *searchDirectories, IncludeAllowedRoots(), {}});
+        }
     }
 
     ReanalyseOpenDocuments();

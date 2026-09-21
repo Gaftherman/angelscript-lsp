@@ -20,63 +20,63 @@ using namespace angel_lsp::utils;
 
 namespace
 {
-    struct GraphFixture
+struct GraphFixture
+{
+    std::filesystem::path dir;
+
+    GraphFixture()
     {
-        std::filesystem::path dir;
+        const auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+        dir = std::filesystem::temp_directory_path() / ("angel_lsp_graph_" + unique);
+        std::filesystem::create_directories(dir);
+        std::error_code ec;
+        auto c = std::filesystem::canonical(dir, ec);
+        if (!ec)
+            dir = std::move(c);
+    }
 
-        GraphFixture()
-        {
-            const auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-            dir = std::filesystem::temp_directory_path() / ("angel_lsp_graph_" + unique);
-            std::filesystem::create_directories(dir);
-            std::error_code ec;
-            auto c = std::filesystem::canonical(dir, ec);
-            if (!ec)
-                dir = std::move(c);
-        }
+    ~GraphFixture()
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    }
 
-        ~GraphFixture()
-        {
-            std::error_code ec;
-            std::filesystem::remove_all(dir, ec);
-        }
+    void Write(const std::string& name, const std::string& content) const
+    {
+        const std::filesystem::path full = dir / name;
+        if (full.has_parent_path())
+            std::filesystem::create_directories(full.parent_path());
 
-        void Write(const std::string &name, const std::string &content) const
-        {
-            const std::filesystem::path full = dir / name;
-            if (full.has_parent_path())
-                std::filesystem::create_directories(full.parent_path());
+        std::ofstream out(full, std::ios::binary);
+        out << content;
+    }
 
-            std::ofstream out(full, std::ios::binary);
-            out << content;
-        }
+    std::string Path(const std::string& name) const
+    {
+        return IncludeResolver::NormalizePath(dir / name);
+    }
 
-        std::string Path(const std::string &name) const
-        {
-            return IncludeResolver::NormalizePath(dir / name);
-        }
+    std::string Root() const
+    {
+        return IncludeResolver::NormalizePath(dir);
+    }
 
-        std::string Root() const
-        {
-            return IncludeResolver::NormalizePath(dir);
-        }
+    // Held by the fixture rather than returned: a shared_mutex member makes the graph
+    // neither copyable nor movable.
+    WorkspaceIncludeGraph graph;
 
-        // Held by the fixture rather than returned: a shared_mutex member makes the graph
-        // neither copyable nor movable.
-        WorkspaceIncludeGraph graph;
+    void Build()
+    {
+        graph.Build({Root()}, {}, ".as");
+    }
 
-        void Build()
-        {
-            graph.Build({Root()}, {}, ".as");
-        }
-
-        std::set<std::string> ClosureOf(const std::string &name) const
-        {
-            const auto closure = graph.GetModuleClosure(Path(name));
-            return std::set<std::string>(closure.begin(), closure.end());
-        }
-    };
-}
+    std::set<std::string> ClosureOf(const std::string& name) const
+    {
+        const auto closure = graph.GetModuleClosure(Path(name));
+        return std::set<std::string>(closure.begin(), closure.end());
+    }
+};
+} // namespace
 
 // -------------------------------------------------------------------------------------
 // The case that motivated the graph: a file is opened from the middle of a module and
@@ -351,15 +351,13 @@ TEST_CASE("Build - an excluded directory is never descended into")
     fixture.Write("build/generated/main.as", "#include \"helper.as\"\n");
     fixture.Write("build/generated/helper.as", "\n");
 
-    const std::vector<std::string> excluded = { "**/build/**" };
+    const std::vector<std::string> excluded = {"**/build/**"};
 
     WorkspaceIncludeGraph graph;
-    graph.Build({ fixture.Root() }, {}, ".as", {}, {}, excluded);
+    graph.Build(WorkspaceIncludeGraph::BuildRequest{{fixture.Root()}, {}, ".as", {}, {}, excluded, {}});
 
-    const auto has = [](const std::vector<std::string> &closure, const std::string &path)
-    {
-        return std::find(closure.begin(), closure.end(), path) != closure.end();
-    };
+    const auto has = [](const std::vector<std::string>& closure, const std::string& path)
+    { return std::find(closure.begin(), closure.end(), path) != closure.end(); };
 
     const auto closure = graph.GetModuleClosure(fixture.Path("src/main.as"));
     CHECK(has(closure, fixture.Path("src/main.as")));
@@ -372,7 +370,7 @@ TEST_CASE("Build - an excluded directory is never descended into")
     // Without the exclusion the same tree is walked and the file IS known, which is what shows
     // the pruning did the work rather than the file simply being unreachable.
     WorkspaceIncludeGraph unpruned;
-    unpruned.Build({ fixture.Root() }, {}, ".as");
+    unpruned.Build({fixture.Root()}, {}, ".as");
     const auto unprunedClosure = unpruned.GetModuleClosure(fixture.Path("build/generated/main.as"));
     CHECK(has(unprunedClosure, fixture.Path("build/generated/helper.as")));
 }
@@ -384,17 +382,13 @@ TEST_CASE("WorkspaceIncludeGraph - BuildFromFiles produces identical graph to Bu
     fixture.Write("b.as", "#include \"c.as\"\n");
     fixture.Write("c.as", "\n");
 
-    std::vector<std::string> files = {
-        fixture.Path("a.as"),
-        fixture.Path("b.as"),
-        fixture.Path("c.as")
-    };
+    std::vector<std::string> files = {fixture.Path("a.as"), fixture.Path("b.as"), fixture.Path("c.as")};
 
     WorkspaceIncludeGraph graphFromFiles;
-    graphFromFiles.BuildFromFiles(files, {}, { fixture.Root() });
+    graphFromFiles.BuildFromFiles(files, {}, {fixture.Root()});
 
     WorkspaceIncludeGraph graphFromBuild;
-    graphFromBuild.Build({ fixture.Root() }, {}, ".as");
+    graphFromBuild.Build({fixture.Root()}, {}, ".as");
 
     CHECK(graphFromFiles.FileCount() == 3);
     CHECK(graphFromBuild.FileCount() == 3);
@@ -407,4 +401,3 @@ TEST_CASE("WorkspaceIncludeGraph - BuildFromFiles produces identical graph to Bu
 
     CHECK(closureFiles == closureBuild);
 }
-

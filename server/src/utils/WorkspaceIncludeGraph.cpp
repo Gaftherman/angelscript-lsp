@@ -24,20 +24,28 @@ std::string ReadFileFromDisk(const std::string& path)
 }
 
 /**
+ * @brief Bundled parameters for include resolution.
+ */
+struct IncludeContext
+{
+    const std::vector<std::string>& searchDirectories;
+    const std::vector<std::string>& allowedRoots;
+    std::string_view implicitExtension;
+};
+
+/**
  * @brief Resolves every `#include` in one file to a normalized path, dropping directives
  *        that point nowhere.
  */
 std::vector<std::string> ResolveDirectives(const std::string& normalizedPath, std::string_view sourceCode,
-                                           const std::vector<std::string>& searchDirectories,
-                                           const std::vector<std::string>& allowedRoots,
-                                           std::string_view implicitExtension)
+                                           const IncludeContext& ctx)
 {
     std::vector<std::string> resolved;
 
     for (const auto& directive : IncludeResolver::ExtractIncludes(sourceCode))
     {
-        std::string target = IncludeResolver::ResolveIncludePath(directive.rawPath, normalizedPath, searchDirectories,
-                                                                 allowedRoots, implicitExtension);
+        std::string target = IncludeResolver::ResolveIncludePath(
+            directive.rawPath, normalizedPath, ctx.searchDirectories, ctx.allowedRoots, ctx.implicitExtension);
         if (target.empty())
             continue; // Unresolvable include - reported as a diagnostic elsewhere, not an edge.
 
@@ -49,6 +57,77 @@ std::vector<std::string> ResolveDirectives(const std::string& normalizedPath, st
     }
 
     return resolved;
+}
+
+struct FileDirectives
+{
+    std::string path;
+    std::vector<std::string> targets;
+};
+
+struct DirectivesWorkerContext
+{
+    const std::vector<std::string>& scriptFiles;
+    const IncludeContext& includeCtx;
+    const WorkspaceIncludeGraph::FileReader& read;
+    const std::function<bool()>& shouldStop;
+};
+
+void ProcessDirectivesRange(const DirectivesWorkerContext& dctx, size_t start, size_t end,
+                            std::vector<FileDirectives>& results)
+{
+    for (size_t i = start; i < end; ++i)
+    {
+        if (dctx.shouldStop && dctx.shouldStop())
+        {
+            return;
+        }
+        const auto& path = dctx.scriptFiles[i];
+        results[i] = FileDirectives{path, ResolveDirectives(path, dctx.read(path), dctx.includeCtx)};
+    }
+}
+
+void CollectFileDirectives(const WorkspaceIncludeGraph::BuildFromFilesRequest& request,
+                           const IncludeContext& includeCtx, const WorkspaceIncludeGraph::FileReader& read,
+                           std::vector<FileDirectives>& results)
+{
+    const size_t totalFiles = request.scriptFiles.size();
+    const unsigned int hwThreads = std::thread::hardware_concurrency();
+    const unsigned int numThreads = (totalFiles >= 16 && hwThreads > 1) ? std::min(hwThreads, 8u) : 1u;
+
+    const DirectivesWorkerContext dctx{request.scriptFiles, includeCtx, read, request.shouldStop};
+
+    if (numThreads > 1)
+    {
+        std::vector<std::thread> workers;
+        workers.reserve(numThreads);
+        const size_t chunkSize = (totalFiles + numThreads - 1) / numThreads;
+
+        for (unsigned int t = 0; t < numThreads; ++t)
+        {
+            const size_t start = t * chunkSize;
+            const size_t end = std::min(start + chunkSize, totalFiles);
+            if (start >= end)
+            {
+                break;
+            }
+
+            workers.emplace_back([&dctx, start, end, &results]()
+                                 { ProcessDirectivesRange(dctx, start, end, results); });
+        }
+
+        for (auto& w : workers)
+        {
+            if (w.joinable())
+            {
+                w.join();
+            }
+        }
+    }
+    else
+    {
+        ProcessDirectivesRange(dctx, 0, totalFiles, results);
+    }
 }
 } // namespace
 
@@ -79,44 +158,41 @@ void WorkspaceIncludeGraph::SetIncludesLocked(const std::string& normalizedPath,
     m_includes[normalizedPath] = std::move(includes);
 }
 
-void WorkspaceIncludeGraph::Build(const std::vector<std::string>& workspaceRoots,
-                                  const std::vector<std::string>& searchDirectories, std::string_view scriptExtension,
-                                  const std::function<bool()>& shouldStop, const FileReader& fileReader,
-                                  const std::vector<std::string>& excludeGlobs, std::string_view implicitExtension)
+void WorkspaceIncludeGraph::Build(const BuildRequest& request)
 {
     // An edge may only point at a file inside the workspace or one of the configured search
     // directories. Those are exactly the two places a script is legitimately allowed to include
     // from, and confining the graph here is what stops a hostile `#include "/etc/passwd"` from
     // pulling an arbitrary file into the index in the first place.
-    std::vector<std::string> allowedRoots = workspaceRoots;
-    allowedRoots.insert(allowedRoots.end(), searchDirectories.begin(), searchDirectories.end());
+    std::vector<std::string> allowedRoots = request.workspaceRoots;
+    allowedRoots.insert(allowedRoots.end(), request.searchDirectories.begin(), request.searchDirectories.end());
 
-    const FileReader read = fileReader ? fileReader : FileReader(ReadFileFromDisk);
+    const FileReader read = request.fileReader ? request.fileReader : FileReader(ReadFileFromDisk);
+    const IncludeContext includeCtx{request.searchDirectories, allowedRoots, request.implicitExtension};
 
     // Collect first, then swap under the lock, so a long filesystem walk never blocks the
     // message loop's reads against a half-built graph.
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> includes;
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> includedBy;
 
-    const bool completed =
-        ForEachWorkspaceFile(workspaceRoots, excludeGlobs, shouldStop,
-                             [&](const std::filesystem::directory_entry& entry)
-                             {
-                                 // The walk produced this path, so its own spelling is already the filesystem's and
-                                 // only the directory needs canonicalising - see IncludeResolver::NormalizeWalkedPath.
-                                 // This one line was most of the server's startup time.
-                                 const std::string path = IncludeResolver::NormalizeWalkedPath(entry.path());
-                                 if (!scriptExtension.empty() && !std::string_view(path).ends_with(scriptExtension))
-                                     return;
+    const bool completed = ForEachWorkspaceFile(
+        request.workspaceRoots, request.excludeGlobs, request.shouldStop,
+        [&](const std::filesystem::directory_entry& entry)
+        {
+            // The walk produced this path, so its own spelling is already the filesystem's and
+            // only the directory needs canonicalising - see IncludeResolver::NormalizeWalkedPath.
+            // This one line was most of the server's startup time.
+            const std::string path = IncludeResolver::NormalizeWalkedPath(entry.path());
+            if (!request.scriptExtension.empty() && !std::string_view(path).ends_with(request.scriptExtension))
+                return;
 
-                                 std::vector<std::string> targets = ResolveDirectives(
-                                     path, read(path), searchDirectories, allowedRoots, implicitExtension);
+            std::vector<std::string> targets = ResolveDirectives(path, read(path), includeCtx);
 
-                                 for (const auto& target : targets)
-                                     includedBy[target].push_back(path);
+            for (const auto& target : targets)
+                includedBy[target].push_back(path);
 
-                                 includes[path] = std::move(targets);
-                             });
+            includes[path] = std::move(targets);
+        });
 
     // A cancelled walk leaves the existing graph alone rather than swapping in whatever half
     // of it was reached. Publishing a partial graph would make every file the walk had not got
@@ -129,83 +205,24 @@ void WorkspaceIncludeGraph::Build(const std::vector<std::string>& workspaceRoots
     m_includedBy = std::move(includedBy);
 }
 
-void WorkspaceIncludeGraph::BuildFromFiles(const std::vector<std::string>& scriptFiles,
-                                           const std::vector<std::string>& searchDirectories,
-                                           const std::vector<std::string>& workspaceRoots,
-                                           const std::function<bool()>& shouldStop, const FileReader& fileReader,
-                                           std::string_view implicitExtension)
+void WorkspaceIncludeGraph::Build(const std::vector<std::string>& workspaceRoots,
+                                  const std::vector<std::string>& searchDirectories, std::string_view scriptExtension)
 {
-    std::vector<std::string> allowedRoots = workspaceRoots;
-    allowedRoots.insert(allowedRoots.end(), searchDirectories.begin(), searchDirectories.end());
+    Build(BuildRequest{workspaceRoots, searchDirectories, std::string(scriptExtension), {}, {}, {}, {}});
+}
 
-    const FileReader read = fileReader ? fileReader : FileReader(ReadFileFromDisk);
+void WorkspaceIncludeGraph::BuildFromFiles(const BuildFromFilesRequest& request)
+{
+    std::vector<std::string> allowedRoots = request.workspaceRoots;
+    allowedRoots.insert(allowedRoots.end(), request.searchDirectories.begin(), request.searchDirectories.end());
 
-    struct FileDirectives
-    {
-        std::string path;
-        std::vector<std::string> targets;
-    };
+    const FileReader read = request.fileReader ? request.fileReader : FileReader(ReadFileFromDisk);
+    const IncludeContext includeCtx{request.searchDirectories, allowedRoots, request.implicitExtension};
 
-    const size_t totalFiles = scriptFiles.size();
-    std::vector<FileDirectives> results(totalFiles);
+    std::vector<FileDirectives> results(request.scriptFiles.size());
+    CollectFileDirectives(request, includeCtx, read, results);
 
-    const unsigned int hwThreads = std::thread::hardware_concurrency();
-    const unsigned int numThreads = (totalFiles >= 16 && hwThreads > 1) ? std::min(hwThreads, 8u) : 1u;
-
-    if (numThreads > 1)
-    {
-        std::vector<std::thread> workers;
-        workers.reserve(numThreads);
-        const size_t chunkSize = (totalFiles + numThreads - 1) / numThreads;
-
-        for (unsigned int t = 0; t < numThreads; ++t)
-        {
-            const size_t start = t * chunkSize;
-            const size_t end = std::min(start + chunkSize, totalFiles);
-            if (start >= end)
-            {
-                break;
-            }
-
-            workers.emplace_back(
-                [&, start, end]()
-                {
-                    for (size_t i = start; i < end; ++i)
-                    {
-                        if (shouldStop && shouldStop())
-                        {
-                            return;
-                        }
-                        const auto& path = scriptFiles[i];
-                        results[i] = FileDirectives{path, ResolveDirectives(path, read(path), searchDirectories,
-                                                                            allowedRoots, implicitExtension)};
-                    }
-                });
-        }
-
-        for (auto& w : workers)
-        {
-            if (w.joinable())
-            {
-                w.join();
-            }
-        }
-    }
-    else
-    {
-        for (size_t i = 0; i < totalFiles; ++i)
-        {
-            if (shouldStop && shouldStop())
-            {
-                return;
-            }
-            const auto& path = scriptFiles[i];
-            results[i] = FileDirectives{
-                path, ResolveDirectives(path, read(path), searchDirectories, allowedRoots, implicitExtension)};
-        }
-    }
-
-    if (shouldStop && shouldStop())
+    if (request.shouldStop && request.shouldStop())
     {
         return;
     }
@@ -231,16 +248,27 @@ void WorkspaceIncludeGraph::BuildFromFiles(const std::vector<std::string>& scrip
     m_includedBy = std::move(includedBy);
 }
 
-void WorkspaceIncludeGraph::UpdateFile(const std::string& filePath, std::string_view sourceCode,
-                                       const std::vector<std::string>& searchDirectories,
-                                       const std::vector<std::string>& allowedRoots, std::string_view implicitExtension)
+void WorkspaceIncludeGraph::BuildFromFiles(const std::vector<std::string>& scriptFiles,
+                                           const std::vector<std::string>& searchDirectories,
+                                           const std::vector<std::string>& workspaceRoots)
 {
-    const std::string normalized = IncludeResolver::NormalizePath(filePath);
-    std::vector<std::string> targets =
-        ResolveDirectives(normalized, sourceCode, searchDirectories, allowedRoots, implicitExtension);
+    BuildFromFiles(BuildFromFilesRequest{scriptFiles, searchDirectories, workspaceRoots, {}, {}, {}});
+}
+
+void WorkspaceIncludeGraph::UpdateFile(const UpdateFileRequest& request)
+{
+    const std::string normalized = IncludeResolver::NormalizePath(request.filePath);
+    const IncludeContext includeCtx{request.searchDirectories, request.allowedRoots, request.implicitExtension};
+    std::vector<std::string> targets = ResolveDirectives(normalized, request.sourceCode, includeCtx);
 
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     SetIncludesLocked(normalized, std::move(targets));
+}
+
+void WorkspaceIncludeGraph::UpdateFile(const std::string& filePath, std::string_view sourceCode,
+                                       const std::vector<std::string>& searchDirectories)
+{
+    UpdateFile(UpdateFileRequest{filePath, sourceCode, searchDirectories, {}, {}});
 }
 
 bool WorkspaceIncludeGraph::RemoveFile(const std::string& filePath)

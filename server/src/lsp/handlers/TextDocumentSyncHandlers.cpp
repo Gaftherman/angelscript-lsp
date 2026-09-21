@@ -91,8 +91,10 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
     document::TreePtr savedTree = document::MakeTreePtr(m_parser->Parse(analysisText));
 
     if (const std::string savedPath = CanonicalPathFromUri(uriStr); !savedPath.empty())
-        m_includeGraph.UpdateFile(savedPath, text, *SearchDirectories(), IncludeAllowedRoots(),
-                                  ImplicitIncludeExtension());
+    {
+        m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
+            savedPath, text, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
+    }
 
     IndexModuleClosure(uriStr);
 

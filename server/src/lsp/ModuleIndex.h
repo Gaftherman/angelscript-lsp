@@ -32,11 +32,31 @@ class ModuleIndex
     ModuleIndex& operator=(ModuleIndex&&) = delete;
 
     /**
+     * @brief Parameters for updating a file in the module index.
+     */
+    struct UpdateFileRequest
+    {
+        std::string filePath;
+        std::string_view content;
+        std::vector<std::string> searchDirectories;
+        std::vector<std::string> allowedRoots = {};
+        std::string implicitExtension = {};
+    };
+
+    /**
      * @brief Updates include dependencies for a saved or scanned file.
+     * @param request Bundled update parameters.
+     */
+    void UpdateFile(const UpdateFileRequest& request);
+
+    /**
+     * @brief Updates include dependencies for a saved or scanned file with default options.
+     * @param filePath Path of the file.
+     * @param content File contents.
+     * @param searchDirectories Search directories for includes.
      */
     void UpdateFile(const std::string& filePath, std::string_view content,
-                    const std::vector<std::string>& searchDirectories,
-                    const std::vector<std::string>& allowedRoots = {}, std::string_view implicitExtension = {});
+                    const std::vector<std::string>& searchDirectories);
 
     /**
      * @brief Removes a file from the include graph.

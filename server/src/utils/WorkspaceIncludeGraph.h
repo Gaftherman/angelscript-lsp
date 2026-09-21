@@ -52,41 +52,88 @@ class WorkspaceIncludeGraph
      * @param fileReader Optional content source; reads from disk when not supplied.
      */
     /**
-     * @param excludeGlobs Directory globs the walk does not descend into. Defaults to none, so
-     *                     an unconfigured caller behaves exactly as before.
+     * @brief Parameters for building the workspace include graph from directories.
+     */
+    struct BuildRequest
+    {
+        std::vector<std::string> workspaceRoots;
+        std::vector<std::string> searchDirectories;
+        std::string scriptExtension;
+        std::function<bool()> shouldStop = {};
+        FileReader fileReader = {};
+        std::vector<std::string> excludeGlobs = {};
+        std::string implicitExtension = {};
+    };
+
+    /**
+     * @brief Parameters for building the workspace include graph from a known file list.
+     */
+    struct BuildFromFilesRequest
+    {
+        std::vector<std::string> scriptFiles;
+        std::vector<std::string> searchDirectories;
+        std::vector<std::string> workspaceRoots;
+        std::function<bool()> shouldStop = {};
+        FileReader fileReader = {};
+        std::string implicitExtension = {};
+    };
+
+    /**
+     * @brief Parameters for updating a single file in the include graph.
+     */
+    struct UpdateFileRequest
+    {
+        std::string filePath;
+        std::string_view sourceCode;
+        std::vector<std::string> searchDirectories;
+        std::vector<std::string> allowedRoots = {};
+        std::string implicitExtension = {};
+    };
+
+    /**
+     * @brief Scans the workspace and builds the graph from scratch, discarding any previous one.
+     * @param request Bundled build parameters.
+     */
+    void Build(const BuildRequest& request);
+
+    /**
+     * @brief Scans the workspace with default options.
+     * @param workspaceRoots Directories to walk recursively.
+     * @param searchDirectories Extra include search paths.
+     * @param scriptExtension Script file extension (e.g. ".as").
      */
     void Build(const std::vector<std::string>& workspaceRoots, const std::vector<std::string>& searchDirectories,
-               std::string_view scriptExtension, const std::function<bool()>& shouldStop = {},
-               const FileReader& fileReader = {}, const std::vector<std::string>& excludeGlobs = {},
-               std::string_view implicitExtension = {});
+               std::string_view scriptExtension);
 
     /**
      * @brief Builds the graph from a pre-discovered list of script file paths.
-     *
-     * Used when the caller has already walked the workspace and collected the paths, so a
-     * second walk would be redundant. The semantics are identical to Build() except the
-     * filesystem walk is skipped.
-     *
+     * @param request Bundled parameters.
+     */
+    void BuildFromFiles(const BuildFromFilesRequest& request);
+
+    /**
+     * @brief Builds the graph from a pre-discovered list of script file paths with default options.
      * @param scriptFiles Normalized paths of every script file to include in the graph.
-     * @param searchDirectories Extra include search paths, in priority order.
+     * @param searchDirectories Extra include search paths.
      * @param workspaceRoots Directories that define the allowed-roots boundary.
-     * @param shouldStop Polled between files so a shutdown can interrupt.
-     * @param fileReader Optional content source; reads from disk when not supplied.
-     * @param implicitExtension Optional implicit file extension for includes.
      */
     void BuildFromFiles(const std::vector<std::string>& scriptFiles, const std::vector<std::string>& searchDirectories,
-                        const std::vector<std::string>& workspaceRoots, const std::function<bool()>& shouldStop = {},
-                        const FileReader& fileReader = {}, std::string_view implicitExtension = {});
+                        const std::vector<std::string>& workspaceRoots);
 
     /**
      * @brief Re-reads one file's directives and patches just its edges.
-     *
-     * Called on save: an edited `#include` line changes which module a file belongs to, and a
-     * full rebuild for one keystroke-sized change would be wasteful.
+     * @param request Bundled parameters.
+     */
+    void UpdateFile(const UpdateFileRequest& request);
+
+    /**
+     * @brief Re-reads one file's directives with default options.
+     * @param filePath Any file in the module.
+     * @param sourceCode Source code of the file.
+     * @param searchDirectories Extra include search paths.
      */
     void UpdateFile(const std::string& filePath, std::string_view sourceCode,
-                    const std::vector<std::string>& searchDirectories,
-                    const std::vector<std::string>& allowedRoots = {}, std::string_view implicitExtension = {});
+                    const std::vector<std::string>& searchDirectories);
 
     /**
      * @brief All files that make up the module the given file participates in.
