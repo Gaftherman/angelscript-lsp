@@ -51,3 +51,13 @@ Format: `<type>(<scope>): <short imperative description>`
 - **Types:** `feat`, `fix`, `test`, `perf`, `refactor`, `style`, `docs`, `chore`.
 - **Scopes:** `core`, `parser`, `analysis`, `features`, `server`, `harness`, `tests`, `docs`.
 - Zero debug code: Never commit `std::cout`, `printf`, or temporary tracing logs.
+
+---
+
+## 8. Invariant-Based Testing & Anti-Overfitting Governance
+
+1. **Mandatory Randomization in Test Fixtures:** Tests must never assert against predictable, hardcoded symbol names. Use `angel_lsp::test::GenerateRandomSymbolName()` to construct unique identifiers, types, and file names at runtime.
+2. **Path Containment Invariant:** Path resolution must be tested using dynamic temporary sandboxes with multi-depth randomized traversal sequences. Testing only fixed strings like `../../etc/passwd` is strictly prohibited.
+3. **Transport Security Invariant:** JSON-RPC transport layers must enforce a bounded envelope (`MAX_LSP_PAYLOAD_SIZE = 16 MB`). Payloads outside bounds or with malformed headers must be rejected without allocations or crashes.
+4. **AST Thread Safety Invariant:** `TSTree*` pointers must never be shared across threads without `ts_tree_copy()`. Concurrency suites must validate simultaneous mutation and reading under randomized workloads.
+5. **Topological Graph Invariant:** Invalidation traversals over `WorkspaceIncludeGraph` must be tested on randomized DAGs asserting strictly $O(V + E)$ deduplicated visits.

@@ -4,7 +4,7 @@ import { ConfigurationTarget, commands, extensions, workspace, Uri } from 'vscod
 
 import * as os from 'os';
 
-import { buildServerArgs, portableStubPath, VirtualMixinContentProvider, openPhysicalSource, viewMixinExpansion } from '../extension';
+import { buildServerArgs, portableStubPath, VirtualMixinContentProvider, openPhysicalSource, viewMixinExpansion, resolveServerBinary } from '../extension';
 
 // =====================================================================================
 // The client's settings-to-arguments mapping.
@@ -457,6 +457,54 @@ suite('Mixin Commands', () => {
         await assert.doesNotReject(async () => {
             await viewMixinExpansion({ hostClass: 'TestHost', mixinName: 'TestMixin' });
         });
+    });
+});
+
+suite('Workspace Trust Gate', () => {
+    function generateRandomSymbolName(prefix = 'malicious'): string {
+        return `${prefix}_${Math.floor(Math.random() * 900000000 + 100000)}`;
+    }
+
+    const mockContext = {
+        asAbsolutePath: (rel: string) => path.join('/mock/extension', rel),
+        extensionMode: 1, // Production mode
+    } as any;
+
+    test('scenario A: untrusted workspace ignores custom server.executablePath', async () => {
+        const originalTrust = workspace.isTrusted;
+        try {
+            Object.defineProperty(workspace, 'isTrusted', { value: false, configurable: true });
+
+            for (let i = 0; i < 20; ++i) {
+                const randomName = `${generateRandomSymbolName()}_${i}.exe`;
+                const customPath = i % 2 === 0 ? path.join('/malicious/payload', randomName) : `../../payloads/${randomName}`;
+                await withSetting('server.executablePath', customPath, () => {
+                    const bin = resolveServerBinary(mockContext);
+                    assert.ok(!bin.path.includes(randomName), `custom path was accepted in untrusted workspace: ${bin.path}`);
+                    assert.ok(bin.path.startsWith('/mock/extension') || bin.path.includes('bin'), `did not fallback to bundled binary: ${bin.path}`);
+                });
+            }
+        } finally {
+            Object.defineProperty(workspace, 'isTrusted', { value: originalTrust, configurable: true });
+        }
+    });
+
+    test('scenario B: trusted workspace accepts custom server.executablePath', async () => {
+        const originalTrust = workspace.isTrusted;
+        try {
+            Object.defineProperty(workspace, 'isTrusted', { value: true, configurable: true });
+
+            for (let i = 0; i < 20; ++i) {
+                const randomName = `${generateRandomSymbolName()}_${i}.exe`;
+                const customPath = path.resolve('/custom/tools', randomName);
+                await withSetting('server.executablePath', customPath, () => {
+                    const bin = resolveServerBinary(mockContext);
+                    assert.strictEqual(bin.path, customPath, `custom path was not accepted in trusted workspace: ${bin.path}`);
+                });
+            }
+        } finally {
+            Object.defineProperty(workspace, 'isTrusted', { value: originalTrust, configurable: true });
+        }
     });
 });
 

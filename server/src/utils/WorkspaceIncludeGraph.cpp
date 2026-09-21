@@ -311,6 +311,112 @@ std::vector<std::string> WorkspaceIncludeGraph::GetFilesIncluding(const std::str
     return found == m_includedBy.end() ? std::vector<std::string>{} : found->second;
 }
 
+namespace
+{
+/**
+ * @brief Collects all reachable reverse dependencies starting from direct includers.
+ */
+ankerl::unordered_dense::set<std::string>
+CollectReachableDependents(const std::string& startNode,
+                           const ankerl::unordered_dense::map<std::string, std::vector<std::string>>& includedBy)
+{
+    const auto direct = includedBy.find(startNode);
+    if (direct == includedBy.end() || direct->second.empty())
+        return {};
+
+    ankerl::unordered_dense::set<std::string> reachable;
+    std::vector<std::string> queue;
+    for (const auto& inc : direct->second)
+    {
+        if (reachable.insert(inc).second)
+            queue.push_back(inc);
+    }
+    for (size_t i = 0; i < queue.size(); ++i)
+    {
+        const auto it = includedBy.find(queue[i]);
+        if (it != includedBy.end())
+        {
+            for (const auto& next : it->second)
+            {
+                if (reachable.insert(next).second)
+                    queue.push_back(next);
+            }
+        }
+    }
+    return reachable;
+}
+
+/**
+ * @brief Performs topological sorting via Kahn's algorithm over a reachable dependency subgraph.
+ */
+std::vector<std::string>
+SortReachableTopological(const ankerl::unordered_dense::set<std::string>& reachable,
+                         const ankerl::unordered_dense::map<std::string, std::vector<std::string>>& includes,
+                         const ankerl::unordered_dense::map<std::string, std::vector<std::string>>& includedBy)
+{
+    ankerl::unordered_dense::map<std::string, size_t> inDegree;
+    for (const auto& node : reachable)
+        inDegree[node] = 0;
+
+    for (const auto& u : reachable)
+    {
+        const auto it = includes.find(u);
+        if (it != includes.end())
+        {
+            for (const auto& v : it->second)
+            {
+                if (reachable.contains(v))
+                    inDegree[u]++;
+            }
+        }
+    }
+
+    std::vector<std::string> readyQueue;
+    for (const auto& node : reachable)
+    {
+        if (inDegree[node] == 0)
+            readyQueue.push_back(node);
+    }
+
+    std::vector<std::string> result;
+    result.reserve(reachable.size());
+    for (size_t i = 0; i < readyQueue.size(); ++i)
+    {
+        const std::string curr = readyQueue[i];
+        result.push_back(curr);
+
+        const auto it = includedBy.find(curr);
+        if (it != includedBy.end())
+        {
+            for (const auto& dependent : it->second)
+            {
+                if (reachable.contains(dependent) && --inDegree[dependent] == 0)
+                    readyQueue.push_back(dependent);
+            }
+        }
+    }
+
+    for (const auto& node : reachable)
+    {
+        if (inDegree[node] > 0)
+            result.push_back(node);
+    }
+    return result;
+}
+} // namespace
+
+std::vector<std::string> WorkspaceIncludeGraph::GetReverseDependenciesTopological(const std::string& filePath) const
+{
+    const std::string normalized = IncludeResolver::NormalizePath(filePath);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+
+    auto reachable = CollectReachableDependents(normalized, m_includedBy);
+    if (reachable.empty())
+        return {};
+
+    return SortReachableTopological(reachable, m_includes, m_includedBy);
+}
+
 std::vector<std::string> WorkspaceIncludeGraph::GetModuleClosure(const std::string& filePath) const
 {
     const std::string normalized = IncludeResolver::NormalizePath(filePath);

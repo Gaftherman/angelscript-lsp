@@ -345,7 +345,7 @@ function reportFailure(summary: string, detail?: string): void {
 }
 
 /** @brief Where the server binary was found, or every place that was looked when it was not. */
-interface ServerBinary {
+export interface ServerBinary {
     /** @brief The binary to launch. When `found` is false this is where one was expected. */
     path: string;
     found: boolean;
@@ -358,11 +358,24 @@ interface ServerBinary {
  * @param context The extension execution context framework.
  * @return The binary, or the expected location and the full search when there is none.
  */
-function resolveServerBinary(context: ExtensionContext): ServerBinary {
+export function resolveServerBinary(context: ExtensionContext): ServerBinary {
     const platform = os.platform();
     const architecture = os.arch();
     const isWindows = platform === 'win32';
     const binaryName = isWindows ? 'angel_lsp.exe' : 'angel_lsp';
+
+    const config = workspace.getConfiguration('angelscript');
+    const customPath = config.get<string>('server.executablePath') ?? config.get<string>('executablePath');
+    if (customPath && customPath.trim().length > 0) {
+        if (workspace.isTrusted) {
+            const resolved = path.isAbsolute(customPath) ? customPath : context.asAbsolutePath(customPath);
+            return {
+                path: resolved,
+                found: fs.existsSync(resolved),
+                searched: [resolved]
+            };
+        }
+    }
 
     const candidates: string[] = [];
 

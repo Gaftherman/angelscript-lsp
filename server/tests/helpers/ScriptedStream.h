@@ -37,6 +37,12 @@ class ScriptedStream final : public lsp::io::Stream
         m_input += Frame(jsonBody);
     }
 
+    /** @brief Appends raw bytes directly to scripted input without Content-Length framing. */
+    void PushRaw(const std::string& rawBytes)
+    {
+        m_input += rawBytes;
+    }
+
     /**
      * @brief Schedules a side effect to run once the message pushed before it has been handled.
      *

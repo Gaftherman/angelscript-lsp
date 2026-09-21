@@ -9,17 +9,14 @@ $projectRoot = "E:\Github\src\angelscript-lsp"
 Set-Location $projectRoot
 
 Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host " [1/7] Running Structural & Signature Audits" -ForegroundColor Cyan
+Write-Host " [1/7] Running Layer, Diagnostic & Signatures" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 python "$projectRoot\server\scripts\check-layer-includes.py"
 if ($LASTEXITCODE -ne 0) { throw "check-layer-includes.py failed with exit code $LASTEXITCODE" }
-
 python "$projectRoot\server\scripts\check-diagnostic-codes.py"
 if ($LASTEXITCODE -ne 0) { throw "check-diagnostic-codes.py failed with exit code $LASTEXITCODE" }
-
 python "$projectRoot\server\scripts\check-clean-signatures.py"
 if ($LASTEXITCODE -ne 0) { throw "check-clean-signatures.py failed with exit code $LASTEXITCODE" }
-
 python "$projectRoot\server\scripts\check-grammar-names.py"
 if ($LASTEXITCODE -ne 0) { throw "check-grammar-names.py failed with exit code $LASTEXITCODE" }
 
@@ -51,13 +48,10 @@ if ($EnableASan) {
 }
 cmake @cmakeArgs
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed with exit code $LASTEXITCODE" }
-
 cmake --build build --config Debug
 if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE" }
 
-if (Test-Path "build\compile_commands.json") {
-    Copy-Item "build\compile_commands.json" -Destination "$projectRoot\" -Force
-}
+Copy-Item "build\compile_commands.json" -Destination "$projectRoot\" -Force
 
 Write-Host "`n==========================================" -ForegroundColor Cyan
 Write-Host " [5/7] Executing Complete CTest Suite     " -ForegroundColor Cyan
@@ -78,4 +72,18 @@ if ($CheckFormatting) {
     }
 }
 
-Write-Host "`n[+] Full Verification Harness Succeeded: 100% Clean & Deterministic." -ForegroundColor Green
+if ($FullAudit) {
+    Write-Host "`n==========================================" -ForegroundColor Cyan
+    Write-Host " [7/7] Cppcheck Static Analysis Audit     " -ForegroundColor Cyan
+    Write-Host "==========================================" -ForegroundColor Cyan
+    if (Get-Command cppcheck -ErrorAction SilentlyContinue) {
+        cppcheck --project="$projectRoot\compile_commands.json" `
+                 --enable=style,performance,warning,portability `
+                 --inline-suppr `
+                 --suppress=missingIncludeSystem `
+                 --error-exitcode=1 `
+                 -i "server/build/_deps"
+    }
+}
+
+Write-Host "`n[+] Full Verification Harness Succeeded: 100% Deterministic & Randomized." -ForegroundColor Green

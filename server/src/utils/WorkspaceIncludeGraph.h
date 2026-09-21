@@ -160,6 +160,18 @@ class WorkspaceIncludeGraph
     std::vector<std::string> GetFilesIncluding(const std::string& filePath) const;
 
     /**
+     * @brief Collects all files transitively depending on filePath in topological order.
+     *
+     * Traverses reverse dependency edges (`m_includedBy`) and sorts the reachable subgraph
+     * such that every dependent node appears strictly after all its prerequisites.
+     * Guarantees zero duplicate entries and O(V + E) algorithmic complexity.
+     *
+     * @param[in] filePath Path of the modified or invalidated dependency root.
+     * @return Ordered, deduplicated list of dependent file paths in topological order.
+     */
+    std::vector<std::string> GetReverseDependenciesTopological(const std::string& filePath) const;
+
+    /**
      * @brief Drops one file from the graph, detaching it from both edge directions.
      *
      * Called when a file is deleted on disk. Distinct from UpdateFile(path, "", ...), which
