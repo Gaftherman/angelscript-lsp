@@ -1030,6 +1030,162 @@ class Server
      */
     lsp::json::Value HandleRequestsVirtualDocumentContent(lsp::json::Value&& params);
 
+    /** @brief Handles textDocument/prepareCallHierarchy request. */
+    lsp::requests::TextDocument_PrepareCallHierarchy::Result
+    HandleRequestsTextDocument_PrepareCallHierarchy(lsp::requests::TextDocument_PrepareCallHierarchy::Params&& req);
+
+    /** @brief Handles callHierarchy/incomingCalls request. */
+    lsp::requests::CallHierarchy_IncomingCalls::Result
+    HandleRequestsCallHierarchy_IncomingCalls(lsp::requests::CallHierarchy_IncomingCalls::Params&& req);
+
+    /** @brief Handles callHierarchy/outgoingCalls request. */
+    lsp::requests::CallHierarchy_OutgoingCalls::Result
+    HandleRequestsCallHierarchy_OutgoingCalls(lsp::requests::CallHierarchy_OutgoingCalls::Params&& req);
+
+    /** @brief Handles textDocument/prepareTypeHierarchy request. */
+    lsp::requests::TextDocument_PrepareTypeHierarchy::Result
+    HandleRequestsTextDocument_PrepareTypeHierarchy(lsp::requests::TextDocument_PrepareTypeHierarchy::Params&& req);
+
+    /** @brief Handles typeHierarchy/supertypes request. */
+    lsp::requests::TypeHierarchy_Supertypes::Result
+    HandleRequestsTypeHierarchy_Supertypes(lsp::requests::TypeHierarchy_Supertypes::Params&& req);
+
+    /** @brief Handles typeHierarchy/subtypes request. */
+    lsp::requests::TypeHierarchy_Subtypes::Result
+    HandleRequestsTypeHierarchy_Subtypes(lsp::requests::TypeHierarchy_Subtypes::Params&& req);
+
+    /** @brief Handles textDocument/linkedEditingRange request. */
+    lsp::requests::TextDocument_LinkedEditingRange::Result
+    HandleRequestsTextDocument_LinkedEditingRange(lsp::requests::TextDocument_LinkedEditingRange::Params&& req);
+
+    /** @brief Handles textDocument/selectionRange request. */
+    lsp::requests::TextDocument_SelectionRange::Result
+    HandleRequestsTextDocument_SelectionRange(lsp::requests::TextDocument_SelectionRange::Params&& req);
+
+    /** @brief Handles textDocument/semanticTokens/full request. */
+    lsp::requests::TextDocument_SemanticTokens_Full::Result
+    HandleRequestsTextDocument_SemanticTokens_Full(lsp::requests::TextDocument_SemanticTokens_Full::Params&& req);
+
+    /** @brief Handles textDocument/semanticTokens/full/delta request. */
+    lsp::requests::TextDocument_SemanticTokens_Full_Delta::Result HandleRequestsTextDocument_SemanticTokens_Full_Delta(
+        lsp::requests::TextDocument_SemanticTokens_Full_Delta::Params&& req);
+
+    /** @brief Handles textDocument/semanticTokens/range request. */
+    lsp::requests::TextDocument_SemanticTokens_Range::Result
+    HandleRequestsTextDocument_SemanticTokens_Range(lsp::requests::TextDocument_SemanticTokens_Range::Params&& req);
+
+    /** @brief Handles textDocument/foldingRange request. */
+    lsp::requests::TextDocument_FoldingRange::Result
+    HandleRequestsTextDocument_FoldingRange(lsp::requests::TextDocument_FoldingRange::Params&& req);
+
+    /** @brief Handles textDocument/inlayHint request. */
+    lsp::requests::TextDocument_InlayHint::Result
+    HandleRequestsTextDocument_InlayHint(lsp::requests::TextDocument_InlayHint::Params&& req);
+
+    /** @brief Handles workspace/textDocumentContent request. */
+    lsp::requests::Workspace_TextDocumentContent::Result
+    HandleRequestsWorkspace_TextDocumentContent(lsp::requests::Workspace_TextDocumentContent::Params&& req);
+
+    /** @brief Handles workspace/symbol request. */
+    lsp::requests::Workspace_Symbol::Result
+    HandleRequestsWorkspace_Symbol(lsp::requests::Workspace_Symbol::Params&& req);
+
+    void RegisterLifecycleHandlers();
+    void RegisterFileEventHandlers();
+    void RegisterDocumentSyncHandlers();
+    void RegisterWorkspaceActionHandlers();
+    void RegisterNavigationHandlers();
+    void RegisterEditingHandlers();
+    void RegisterFormattingAndSymbolHandlers();
+
+    /** @brief Handles textDocument/hover request. */
+    lsp::requests::TextDocument_Hover::Result
+    HandleRequestsTextDocument_Hover(lsp::requests::TextDocument_Hover::Params&& req);
+
+    /** @brief Handles textDocument/definition request. */
+    lsp::requests::TextDocument_Definition::Result
+    HandleRequestsTextDocument_Definition(lsp::requests::TextDocument_Definition::Params&& req);
+
+    /** @brief Handles textDocument/moniker request. */
+    lsp::requests::TextDocument_Moniker::Result
+    HandleRequestsTextDocument_Moniker(lsp::requests::TextDocument_Moniker::Params&& req);
+
+    /** @brief Handles textDocument/declaration request. */
+    lsp::requests::TextDocument_Declaration::Result
+    HandleRequestsTextDocument_Declaration(lsp::requests::TextDocument_Declaration::Params&& req);
+
+    /** @brief Handles textDocument/implementation request. */
+    lsp::requests::TextDocument_Implementation::Result
+    HandleRequestsTextDocument_Implementation(lsp::requests::TextDocument_Implementation::Params&& req);
+
+    /** @brief Handles textDocument/typeDefinition request. */
+    lsp::requests::TextDocument_TypeDefinition::Result
+    HandleRequestsTextDocument_TypeDefinition(lsp::requests::TextDocument_TypeDefinition::Params&& req);
+
+    /** @brief Handles textDocument/references request. */
+    lsp::requests::TextDocument_References::Result
+    HandleRequestsTextDocument_References(lsp::requests::TextDocument_References::Params&& req);
+
+    /** @brief Handles textDocument/documentHighlight request. */
+    lsp::requests::TextDocument_DocumentHighlight::Result
+    HandleRequestsTextDocument_DocumentHighlight(lsp::requests::TextDocument_DocumentHighlight::Params&& req);
+
+    /** @brief Handles textDocument/completion request. */
+    lsp::requests::TextDocument_Completion::Result
+    HandleRequestsTextDocument_Completion(lsp::requests::TextDocument_Completion::Params&& req);
+
+    /** @brief Handles completionItem/resolve request. */
+    lsp::requests::CompletionItem_Resolve::Result
+    HandleRequestsCompletionItem_Resolve(lsp::requests::CompletionItem_Resolve::Params&& req);
+
+    /** @brief Handles textDocument/signatureHelp request. */
+    lsp::requests::TextDocument_SignatureHelp::Result
+    HandleRequestsTextDocument_SignatureHelp(lsp::requests::TextDocument_SignatureHelp::Params&& req);
+
+    /** @brief Handles textDocument/prepareRename request. */
+    lsp::requests::TextDocument_PrepareRename::Result
+    HandleRequestsTextDocument_PrepareRename(lsp::requests::TextDocument_PrepareRename::Params&& req);
+
+    /** @brief Handles textDocument/rename request. */
+    lsp::requests::TextDocument_Rename::Result
+    HandleRequestsTextDocument_Rename(lsp::requests::TextDocument_Rename::Params&& req);
+
+    /** @brief Handles textDocument/codeAction request. */
+    lsp::requests::TextDocument_CodeAction::Result
+    HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAction::Params&& req);
+
+    /** @brief Handles codeAction/resolve request. */
+    lsp::requests::CodeAction_Resolve::Result
+    HandleRequestsCodeAction_Resolve(lsp::requests::CodeAction_Resolve::Params&& req);
+
+    /** @brief Handles textDocument/documentSymbol request. */
+    lsp::requests::TextDocument_DocumentSymbol::Result
+    HandleRequestsTextDocument_DocumentSymbol(lsp::requests::TextDocument_DocumentSymbol::Params&& req);
+
+    /** @brief Handles textDocument/formatting request. */
+    lsp::requests::TextDocument_Formatting::Result
+    HandleRequestsTextDocument_Formatting(lsp::requests::TextDocument_Formatting::Params&& req);
+
+    /** @brief Handles textDocument/rangeFormatting request. */
+    lsp::requests::TextDocument_RangeFormatting::Result
+    HandleRequestsTextDocument_RangeFormatting(lsp::requests::TextDocument_RangeFormatting::Params&& req);
+
+    /** @brief Handles textDocument/onTypeFormatting request. */
+    lsp::requests::TextDocument_OnTypeFormatting::Result
+    HandleRequestsTextDocument_OnTypeFormatting(lsp::requests::TextDocument_OnTypeFormatting::Params&& req);
+
+    /** @brief Handles textDocument/documentLink request. */
+    lsp::requests::TextDocument_DocumentLink::Result
+    HandleRequestsTextDocument_DocumentLink(lsp::requests::TextDocument_DocumentLink::Params&& req);
+
+    /** @brief Handles textDocument/codeLens request. */
+    lsp::requests::TextDocument_CodeLens::Result
+    HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens::Params&& req);
+
+    /** @brief Handles codeLens/resolve request. */
+    lsp::requests::CodeLens_Resolve::Result
+    HandleRequestsCodeLens_Resolve(lsp::requests::CodeLens_Resolve::Params&& req);
+
     /**
      * @brief Full text of an indexed document, or nullptr when the server holds none.
      *

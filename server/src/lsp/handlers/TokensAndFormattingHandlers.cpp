@@ -9,259 +9,288 @@
 
 namespace angel_lsp
 {
+namespace
+{
+struct CachedTokensSnapshot
+{
+    bool canDiff{false};
+    bool prevHadError{false};
+    int cachedVersion{-1};
+    std::vector<lsp::uint> previous;
+};
+
+bool AreSemanticTokensEditsValid(const std::vector<lsp::SemanticTokensEdit>& edits)
+{
+    for (const auto& edit : edits)
+    {
+        if (edit.start % 5 != 0 || edit.deleteCount % 5 != 0 || (edit.data.has_value() && edit.data->size() % 5 != 0))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+} // namespace
+
+lsp::requests::TextDocument_LinkedEditingRange::Result
+Server::HandleRequestsTextDocument_LinkedEditingRange(lsp::requests::TextDocument_LinkedEditingRange::Params&& req)
+{
+    if (!m_config.features.enableLinkedEditing)
+    {
+        return lsp::Null{};
+    }
+    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    if (!doc)
+    {
+        return lsp::Null{};
+    }
+
+    auto scopeRoot = m_scopeIndex.GetRoot(doc->uri);
+    features::LinkedEditingRangeRequest lr{*doc->text, scopeRoot.get(),
+                                           codec::Decode(*doc->text, m_positionEncoding, req.position)};
+
+    auto ranges = features::GetLinkedEditingRanges(lr);
+    if (!ranges.has_value())
+    {
+        return lsp::Null{};
+    }
+    for (auto& range : ranges->ranges)
+    {
+        codec::Encode(*doc->text, m_positionEncoding, range);
+    }
+    return ranges.value();
+}
+
+lsp::requests::TextDocument_SelectionRange::Result
+Server::HandleRequestsTextDocument_SelectionRange(lsp::requests::TextDocument_SelectionRange::Params&& req)
+{
+    if (!m_config.features.enableSelectionRange)
+    {
+        return lsp::Null{};
+    }
+    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    if (!doc)
+    {
+        return lsp::Null{};
+    }
+
+    std::vector<lsp::Position> positions;
+    positions.reserve(req.positions.size());
+    for (const auto& position : req.positions)
+    {
+        positions.push_back(codec::Decode(*doc->text, m_positionEncoding, position));
+    }
+
+    features::SelectionRangeRequest sr{*doc->text, doc->tree, positions};
+    auto ranges = features::GetSelectionRanges(sr);
+    if (ranges.empty())
+    {
+        return lsp::Null{};
+    }
+
+    for (auto& chain : ranges)
+    {
+        for (lsp::SelectionRange* link = &chain; link != nullptr; link = link->parent.get())
+        {
+            codec::Encode(*doc->text, m_positionEncoding, link->range);
+        }
+    }
+    return ranges;
+}
+
+lsp::requests::TextDocument_SemanticTokens_Full::Result
+Server::HandleRequestsTextDocument_SemanticTokens_Full(lsp::requests::TextDocument_SemanticTokens_Full::Params&& req)
+{
+    if (!m_config.features.enableSemanticTokens)
+    {
+        return lsp::Null{};
+    }
+    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    if (!doc)
+    {
+        return lsp::Null{};
+    }
+
+    return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
+}
+
+lsp::requests::TextDocument_SemanticTokens_Full_Delta::Result
+Server::HandleRequestsTextDocument_SemanticTokens_Full_Delta(
+    lsp::requests::TextDocument_SemanticTokens_Full_Delta::Params&& req)
+{
+    if (!m_config.features.enableSemanticTokens)
+    {
+        return lsp::Null{};
+    }
+    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    if (!doc)
+    {
+        return lsp::Null{};
+    }
+
+    CachedTokensSnapshot snap;
+    {
+        std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
+        if (const auto cached = m_semanticTokensCache.find(doc->uri);
+            cached != m_semanticTokensCache.end() && cached->second.resultId == req.previousResultId)
+        {
+            snap.canDiff = true;
+            snap.prevHadError = cached->second.hasError;
+            snap.cachedVersion = cached->second.version;
+            snap.previous = std::move(cached->second.data);
+        }
+    }
+
+    const bool currHasError = doc->tree != nullptr && ts_node_has_error(ts_tree_root_node(doc->tree));
+    if (!snap.canDiff || snap.prevHadError || currHasError)
+    {
+        return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
+    }
+
+    const int currentVersion = m_documentStore.GetVersion(doc->uri);
+    if (currentVersion >= 0 && snap.cachedVersion == currentVersion)
+    {
+        std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
+        const std::string newResultId = std::to_string(++m_semanticTokensRevision);
+        if (auto it = m_semanticTokensCache.find(doc->uri); it != m_semanticTokensCache.end())
+        {
+            it->second.resultId = newResultId;
+        }
+        lsp::SemanticTokensDelta delta;
+        delta.resultId = newResultId;
+        delta.edits = {};
+        return delta;
+    }
+
+    lsp::SemanticTokens tokens = ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
+    lsp::SemanticTokensDelta delta;
+    delta.resultId = tokens.resultId;
+    delta.edits = features::ComputeSemanticTokensDelta(snap.previous, tokens.data);
+
+    if (!AreSemanticTokensEditsValid(delta.edits))
+    {
+        return tokens;
+    }
+    return delta;
+}
+
+lsp::requests::TextDocument_SemanticTokens_Range::Result
+Server::HandleRequestsTextDocument_SemanticTokens_Range(lsp::requests::TextDocument_SemanticTokens_Range::Params&& req)
+{
+    if (!m_config.features.enableSemanticTokens)
+    {
+        return lsp::Null{};
+    }
+    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    if (!doc)
+    {
+        return lsp::Null{};
+    }
+
+    analysis::NodeIndex localNodeIndex;
+    const analysis::NodeIndex* nodeIndexPtr = nullptr;
+    if (doc->tree)
+    {
+        localNodeIndex.Build(ts_tree_root_node(doc->tree));
+        nodeIndexPtr = &localNodeIndex;
+    }
+
+    features::SemanticTokensRequest sr{doc->uri, *doc->text, doc->tree, m_symbolTable};
+    sr.scopeRoot = m_scopeIndex.GetRoot(doc->uri);
+    sr.nodeIndex = nodeIndexPtr;
+    sr.excludedLineRanges = ExcludedLineRanges(*doc->text);
+    sr.range = codec::Decode(*doc->text, m_positionEncoding, req.range);
+
+    lsp::SemanticTokens tokens = features::GetSemanticTokens(sr);
+    codec::EncodeSemanticTokens(*doc->text, m_positionEncoding, tokens.data);
+    return tokens;
+}
+
+lsp::requests::TextDocument_FoldingRange::Result
+Server::HandleRequestsTextDocument_FoldingRange(lsp::requests::TextDocument_FoldingRange::Params&& req)
+{
+    if (!m_config.features.enableFoldingRange)
+    {
+        return lsp::Array<lsp::FoldingRange>{};
+    }
+    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    if (!doc)
+    {
+        return lsp::Array<lsp::FoldingRange>{};
+    }
+
+    features::FoldingRangeRequest fr{doc->uri, *doc->text, doc->tree};
+    auto ranges = features::GetFoldingRanges(fr);
+    if (ranges.has_value())
+    {
+        EncodeIn(*doc->text, ranges.value());
+        return ranges.value();
+    }
+    return lsp::Array<lsp::FoldingRange>{};
+}
+
+lsp::requests::TextDocument_InlayHint::Result
+Server::HandleRequestsTextDocument_InlayHint(lsp::requests::TextDocument_InlayHint::Params&& req)
+{
+    if (!m_config.features.enableInlayHints)
+    {
+        return lsp::Null{};
+    }
+    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    if (!doc)
+    {
+        return lsp::Null{};
+    }
+
+    features::InlayHintRequest ihr{doc->uri,
+                                   *doc->text,
+                                   doc->tree,
+                                   codec::Decode(*doc->text, m_positionEncoding, req.range),
+                                   m_symbolTable,
+                                   m_scopeIndex,
+                                   m_config.features.inlayHintsSuppressWhenArgumentMatchesName,
+                                   m_logger.get()};
+    auto hints = features::GetInlayHints(ihr);
+    if (hints.has_value())
+    {
+        EncodeIn(*doc->text, hints.value());
+        return hints.value();
+    }
+    return lsp::Null{};
+}
+
 void Server::RegisterTokensAndFormattingHandlers()
 {
     m_messageHandler->add<lsp::requests::TextDocument_LinkedEditingRange>(
         [this](lsp::requests::TextDocument_LinkedEditingRange::Params&& req)
-            -> lsp::requests::TextDocument_LinkedEditingRange::Result
-        {
-            if (!m_config.features.enableLinkedEditing)
-            {
-                return lsp::Null{};
-            }
-            const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
-            if (!doc)
-            {
-                return lsp::Null{};
-            }
-
-            auto scopeRoot = m_scopeIndex.GetRoot(doc->uri);
-            features::LinkedEditingRangeRequest lr{*doc->text, scopeRoot.get(),
-                                                   codec::Decode(*doc->text, m_positionEncoding, req.position)};
-
-            auto ranges = features::GetLinkedEditingRanges(lr);
-            if (!ranges.has_value())
-            {
-                return lsp::Null{};
-            }
-            for (auto& range : ranges->ranges)
-            {
-                codec::Encode(*doc->text, m_positionEncoding, range);
-            }
-            return ranges.value();
-        });
+        { return HandleRequestsTextDocument_LinkedEditingRange(std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TextDocument_SelectionRange>(
         [this](lsp::requests::TextDocument_SelectionRange::Params&& req)
-            -> lsp::requests::TextDocument_SelectionRange::Result
-        {
-            if (!m_config.features.enableSelectionRange)
-            {
-                return lsp::Null{};
-            }
-            const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
-            if (!doc)
-            {
-                return lsp::Null{};
-            }
-
-            std::vector<lsp::Position> positions;
-            positions.reserve(req.positions.size());
-            for (const auto& position : req.positions)
-            {
-                positions.push_back(codec::Decode(*doc->text, m_positionEncoding, position));
-            }
-
-            features::SelectionRangeRequest sr{*doc->text, doc->tree, positions};
-            auto ranges = features::GetSelectionRanges(sr);
-            if (ranges.empty())
-            {
-                return lsp::Null{};
-            }
-
-            for (auto& chain : ranges)
-            {
-                for (lsp::SelectionRange* link = &chain; link != nullptr; link = link->parent.get())
-                {
-                    codec::Encode(*doc->text, m_positionEncoding, link->range);
-                }
-            }
-            return ranges;
-        });
+        { return HandleRequestsTextDocument_SelectionRange(std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TextDocument_SemanticTokens_Full>(
         [this](lsp::requests::TextDocument_SemanticTokens_Full::Params&& req)
-            -> lsp::requests::TextDocument_SemanticTokens_Full::Result
-        {
-            if (!m_config.features.enableSemanticTokens)
-            {
-                return lsp::Null{};
-            }
-            const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
-            if (!doc)
-            {
-                return lsp::Null{};
-            }
-
-            return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
-        });
+        { return HandleRequestsTextDocument_SemanticTokens_Full(std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TextDocument_SemanticTokens_Full_Delta>(
         [this](lsp::requests::TextDocument_SemanticTokens_Full_Delta::Params&& req)
-            -> lsp::requests::TextDocument_SemanticTokens_Full_Delta::Result
-        {
-            if (!m_config.features.enableSemanticTokens)
-            {
-                return lsp::Null{};
-            }
-            const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
-            if (!doc)
-            {
-                return lsp::Null{};
-            }
-
-            bool canDiff = false;
-            bool prevHadError = false;
-            int cachedVersion = -1;
-            std::vector<lsp::uint> previous;
-
-            {
-                std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
-                if (const auto cached = m_semanticTokensCache.find(doc->uri);
-                    cached != m_semanticTokensCache.end() && cached->second.resultId == req.previousResultId)
-                {
-                    canDiff = true;
-                    prevHadError = cached->second.hasError;
-                    cachedVersion = cached->second.version;
-                    previous = std::move(cached->second.data);
-                }
-            }
-
-            if (!canDiff)
-            {
-                return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
-            }
-
-            const bool currHasError = doc->tree != nullptr && ts_node_has_error(ts_tree_root_node(doc->tree));
-
-            if (prevHadError || currHasError)
-            {
-                return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
-            }
-
-            const int currentVersion = m_documentStore.GetVersion(doc->uri);
-
-            if (currentVersion >= 0 && cachedVersion >= 0 && cachedVersion == currentVersion && !currHasError)
-            {
-                std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
-                const std::string newResultId = std::to_string(++m_semanticTokensRevision);
-                if (auto it = m_semanticTokensCache.find(doc->uri); it != m_semanticTokensCache.end())
-                {
-                    it->second.resultId = newResultId;
-                }
-                lsp::SemanticTokensDelta delta;
-                delta.resultId = newResultId;
-                delta.edits = {};
-                return delta;
-            }
-
-            lsp::SemanticTokens tokens = ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
-
-            lsp::SemanticTokensDelta delta;
-            delta.resultId = tokens.resultId;
-            delta.edits = features::ComputeSemanticTokensDelta(previous, tokens.data);
-
-            for (const auto& edit : delta.edits)
-            {
-                if (edit.start % 5 != 0 || edit.deleteCount % 5 != 0 ||
-                    (edit.data.has_value() && edit.data->size() % 5 != 0))
-                {
-                    return tokens;
-                }
-            }
-
-            return delta;
-        });
+        { return HandleRequestsTextDocument_SemanticTokens_Full_Delta(std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TextDocument_SemanticTokens_Range>(
         [this](lsp::requests::TextDocument_SemanticTokens_Range::Params&& req)
-            -> lsp::requests::TextDocument_SemanticTokens_Range::Result
-        {
-            if (!m_config.features.enableSemanticTokens)
-            {
-                return lsp::Null{};
-            }
-            const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
-            if (!doc)
-            {
-                return lsp::Null{};
-            }
-
-            analysis::NodeIndex localNodeIndex;
-            const analysis::NodeIndex* nodeIndexPtr = nullptr;
-            if (doc->tree)
-            {
-                localNodeIndex.Build(ts_tree_root_node(doc->tree));
-                nodeIndexPtr = &localNodeIndex;
-            }
-
-            features::SemanticTokensRequest sr{doc->uri, *doc->text, doc->tree, m_symbolTable};
-            sr.scopeRoot = m_scopeIndex.GetRoot(doc->uri);
-            sr.nodeIndex = nodeIndexPtr;
-            sr.excludedLineRanges = ExcludedLineRanges(*doc->text);
-            sr.range = codec::Decode(*doc->text, m_positionEncoding, req.range);
-
-            lsp::SemanticTokens tokens = features::GetSemanticTokens(sr);
-            codec::EncodeSemanticTokens(*doc->text, m_positionEncoding, tokens.data);
-            return tokens;
-        });
+        { return HandleRequestsTextDocument_SemanticTokens_Range(std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TextDocument_FoldingRange>(
-        [this](
-            lsp::requests::TextDocument_FoldingRange::Params&& req) -> lsp::requests::TextDocument_FoldingRange::Result
-        {
-            if (!m_config.features.enableFoldingRange)
-            {
-                return lsp::Array<lsp::FoldingRange>{};
-            }
-            const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
-            if (!doc)
-            {
-                return lsp::Array<lsp::FoldingRange>{};
-            }
-
-            features::FoldingRangeRequest fr{doc->uri, *doc->text, doc->tree};
-            auto ranges = features::GetFoldingRanges(fr);
-            if (ranges.has_value())
-            {
-                EncodeIn(*doc->text, ranges.value());
-                return ranges.value();
-            }
-            return lsp::Array<lsp::FoldingRange>{};
-        });
+        [this](lsp::requests::TextDocument_FoldingRange::Params&& req)
+        { return HandleRequestsTextDocument_FoldingRange(std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TextDocument_InlayHint>(
-        [this](lsp::requests::TextDocument_InlayHint::Params&& req) -> lsp::requests::TextDocument_InlayHint::Result
-        {
-            if (!m_config.features.enableInlayHints)
-            {
-                return lsp::Null{};
-            }
-            const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
-            if (!doc)
-            {
-                return lsp::Null{};
-            }
-
-            features::InlayHintRequest ihr{doc->uri,
-                                           *doc->text,
-                                           doc->tree,
-                                           codec::Decode(*doc->text, m_positionEncoding, req.range),
-                                           m_symbolTable,
-                                           m_scopeIndex,
-                                           m_config.features.inlayHintsSuppressWhenArgumentMatchesName,
-                                           m_logger.get()};
-            auto hints = features::GetInlayHints(ihr);
-            if (hints.has_value())
-            {
-                EncodeIn(*doc->text, hints.value());
-                return hints.value();
-            }
-            return lsp::Null{};
-        });
+        [this](lsp::requests::TextDocument_InlayHint::Params&& req)
+        { return HandleRequestsTextDocument_InlayHint(std::move(req)); });
 
     m_messageHandler->add<lsp::requests::InlayHint_Resolve>(
-        [this](lsp::requests::InlayHint_Resolve::Params&& req) -> lsp::requests::InlayHint_Resolve::Result
-        { return this->HandleRequestsInlayHint_Resolve(std::move(req)); });
+        [this](lsp::requests::InlayHint_Resolve::Params&& req)
+        { return HandleRequestsInlayHint_Resolve(std::move(req)); });
 }
 } // namespace angel_lsp
