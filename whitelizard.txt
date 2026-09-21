@@ -106,7 +106,6 @@ angel_lsp::analysis::Walk
 angel_lsp::features::AddItemIfNew
 angel_lsp::features::ClassifyOccurrence
 angel_lsp::features::CollectInlayHintsFromNode
-angel_lsp::features::CollectReferencesInScope
 angel_lsp::features::CompleteIncludePath
 angel_lsp::features::ContextAtOffset
 angel_lsp::features::DeduceExpressionType
@@ -117,7 +116,6 @@ angel_lsp::features::FormatDeclarationText
 angel_lsp::features::FormatRange
 angel_lsp::features::FormatSourceCode
 angel_lsp::features::GetCodeActions
-angel_lsp::features::GetCodeLenses
 angel_lsp::features::GetCompletion
 angel_lsp::features::GetDefaultReturnValue
 angel_lsp::features::GetDefinition
