@@ -112,7 +112,6 @@ angel_lsp::features::CollectReferencesInScope
 angel_lsp::features::CollectSubtypes
 angel_lsp::features::CompleteIncludePath
 angel_lsp::features::ContextAtOffset
-angel_lsp::features::Covers
 angel_lsp::features::DeduceExpressionType
 angel_lsp::features::ExtractDeclarationTextAt
 angel_lsp::features::ExtractHoverNode

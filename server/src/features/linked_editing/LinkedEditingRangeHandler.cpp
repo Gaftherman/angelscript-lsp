@@ -54,27 +54,27 @@ const Scope* InnermostScope(const Scope* root, const lsp::Position& position)
     return current;
 }
 
-bool Covers(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter,
-            const lsp::Position& position)
+template <typename T> bool Covers(const T& item, const lsp::Position& position)
 {
-    if (position.line < startLine || position.line > endLine)
+    if (position.line < item.startLine || position.line > item.endLine)
     {
         return false;
     }
-    if (position.line == startLine && position.character < startCharacter)
+    if (position.line == item.startLine && position.character < item.startCharacter)
     {
         return false;
     }
-    if (position.line == endLine && position.character > endCharacter)
+    if (position.line == item.endLine && position.character > item.endCharacter)
     {
         return false;
     }
     return true;
 }
 
-lsp::Range ToRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter)
+template <typename T> lsp::Range ToRange(const T& item)
 {
-    return lsp::Range{lsp::Position{startLine, startCharacter}, lsp::Position{endLine, endCharacter}};
+    return lsp::Range{lsp::Position{item.startLine, item.startCharacter},
+                      lsp::Position{item.endLine, item.endCharacter}};
 }
 
 /**
@@ -89,8 +89,7 @@ const LocalDefinition* DefinitionAt(const Scope* scope, const lsp::Position& pos
     {
         for (const auto& definition : current->definitions)
         {
-            if (Covers(definition.startLine, definition.startCharacter, definition.endLine, definition.endCharacter,
-                       position))
+            if (Covers(definition, position))
             {
                 *owningScope = current;
                 return &definition;
@@ -103,8 +102,7 @@ const LocalDefinition* DefinitionAt(const Scope* scope, const lsp::Position& pos
     {
         for (const auto& reference : current->references)
         {
-            if (reference.isMemberAccess || !Covers(reference.startLine, reference.startCharacter, reference.endLine,
-                                                    reference.endCharacter, position))
+            if (reference.isMemberAccess || !Covers(reference, position))
             {
                 continue;
             }
@@ -160,16 +158,14 @@ void CollectIn(const Scope& scope, const std::string& name, std::vector<lsp::Ran
     {
         if (definition.name == name)
         {
-            out.push_back(
-                ToRange(definition.startLine, definition.startCharacter, definition.endLine, definition.endCharacter));
+            out.push_back(ToRange(definition));
         }
     }
     for (const auto& reference : scope.references)
     {
         if (!reference.isMemberAccess && reference.name == name)
         {
-            out.push_back(
-                ToRange(reference.startLine, reference.startCharacter, reference.endLine, reference.endCharacter));
+            out.push_back(ToRange(reference));
         }
     }
 
