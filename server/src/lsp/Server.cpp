@@ -858,7 +858,7 @@ std::optional<Server::OpenDocument> Server::LookupOpenDocument(const std::string
             {
                 document::TreePtr tree =
                     m_parser ? document::MakeTreePtr(m_parser->Parse(text)) : document::MakeTreePtr(nullptr);
-                m_documentStore.OpenDocument(key, text, 0, std::move(tree), key);
+                m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{key, text, 0, std::move(tree), key});
                 doc = m_documentStore.GetDocument(key);
             }
             else

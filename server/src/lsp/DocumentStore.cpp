@@ -2,18 +2,24 @@
 
 namespace angel_lsp
 {
-void DocumentStore::OpenDocument(const std::string& uri, std::string text, int version, document::TreePtr tree,
-                                 const std::string& clientUri)
+void DocumentStore::OpenDocument(OpenDocumentRequest request)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!clientUri.empty())
+    if (!request.clientUri.empty())
     {
-        m_clientUriByKey[uri] = clientUri;
+        m_clientUriByKey[request.uri] = request.clientUri;
     }
 
     const uint64_t gen = m_nextGeneration++;
     m_documents.insert_or_assign(
-        uri, std::make_shared<const document::Document>(uri, std::move(text), version, std::move(tree), gen));
+        request.uri, std::make_shared<const document::Document>(
+                         document::DocumentSnapshot{request.uri, std::move(request.text), request.version, gen},
+                         std::move(request.tree)));
+}
+
+void DocumentStore::OpenDocument(const std::string& uri, std::string text, int version, document::TreePtr tree)
+{
+    OpenDocument(OpenDocumentRequest{uri, std::move(text), version, std::move(tree), ""});
 }
 
 void DocumentStore::UpdateDocument(const std::string& uri, std::string text, int version, document::TreePtr tree)
@@ -22,13 +28,15 @@ void DocumentStore::UpdateDocument(const std::string& uri, std::string text, int
     if (auto it = m_documents.find(uri); it != m_documents.end())
     {
         const uint64_t gen = it->second ? it->second->generation : m_nextGeneration++;
-        it->second = std::make_shared<const document::Document>(uri, std::move(text), version, std::move(tree), gen);
+        it->second = std::make_shared<const document::Document>(
+            document::DocumentSnapshot{uri, std::move(text), version, gen}, std::move(tree));
     }
     else
     {
         const uint64_t gen = m_nextGeneration++;
         m_documents.insert_or_assign(
-            uri, std::make_shared<const document::Document>(uri, std::move(text), version, std::move(tree), gen));
+            uri, std::make_shared<const document::Document>(
+                     document::DocumentSnapshot{uri, std::move(text), version, gen}, std::move(tree)));
     }
 }
 
@@ -71,8 +79,8 @@ void DocumentStore::SetVersion(const std::string& uri, int version)
     {
         document::TreePtr treeCopy =
             document::MakeTreePtr(it->second->tree ? ts_tree_copy(it->second->tree.get()) : nullptr);
-        it->second = std::make_shared<const document::Document>(uri, it->second->text, version, std::move(treeCopy),
-                                                                it->second->generation);
+        it->second = std::make_shared<const document::Document>(
+            document::DocumentSnapshot{uri, it->second->text, version, it->second->generation}, std::move(treeCopy));
     }
 }
 
@@ -91,8 +99,9 @@ void DocumentStore::SetTree(const std::string& uri, document::TreePtr tree)
     std::lock_guard<std::mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
     {
-        it->second = std::make_shared<const document::Document>(uri, it->second->text, it->second->version,
-                                                                std::move(tree), it->second->generation);
+        it->second = std::make_shared<const document::Document>(
+            document::DocumentSnapshot{uri, it->second->text, it->second->version, it->second->generation},
+            std::move(tree));
     }
 }
 

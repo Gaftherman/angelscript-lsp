@@ -1,6 +1,6 @@
-#include <doctest/doctest.h>
 #include "lsp/DocumentStore.h"
 #include "parser/AngelScriptParser.h"
+#include <doctest/doctest.h>
 #include <thread>
 #include <vector>
 
@@ -21,7 +21,7 @@ TEST_CASE("DocumentStore - Open, Update, Lookup, and Close operations")
     CHECK(store.GetTree(uri) == nullptr);
 
     // Open
-    store.OpenDocument(uri, text1, 1, std::move(tree1), "file:///test/main.as");
+    store.OpenDocument(DocumentStore::OpenDocumentRequest{uri, text1, 1, std::move(tree1), "file:///test/main.as"});
     CHECK(store.IsOpen(uri));
     CHECK(store.Size() == 1);
     CHECK(store.GetVersion(uri) == 1);
@@ -70,24 +70,25 @@ TEST_CASE("DocumentStore - Concurrent read/write stress")
 
     for (int t = 0; t < kThreads; ++t)
     {
-        workers.emplace_back([&store, t]()
-        {
-            const std::string uri = "file:///worker_" + std::to_string(t) + ".as";
-            for (int i = 0; i < kIterations; ++i)
+        workers.emplace_back(
+            [&store, t]()
             {
-                store.OpenDocument(uri, "int x = " + std::to_string(i) + ";", i, document::MakeTreePtr(nullptr));
-                store.SetVersion(uri, i + 1);
-                auto text = store.GetText(uri);
-                CHECK(text.has_value());
-                CHECK(store.GetVersion(uri) >= i);
-                auto snapshot = store.GetSnapshot();
-                CHECK_FALSE(snapshot.empty());
-                store.CloseDocument(uri);
-            }
-        });
+                const std::string uri = "file:///worker_" + std::to_string(t) + ".as";
+                for (int i = 0; i < kIterations; ++i)
+                {
+                    store.OpenDocument(uri, "int x = " + std::to_string(i) + ";", i, document::MakeTreePtr(nullptr));
+                    store.SetVersion(uri, i + 1);
+                    auto text = store.GetText(uri);
+                    CHECK(text.has_value());
+                    CHECK(store.GetVersion(uri) >= i);
+                    auto snapshot = store.GetSnapshot();
+                    CHECK_FALSE(snapshot.empty());
+                    store.CloseDocument(uri);
+                }
+            });
     }
 
-    for (auto &w : workers)
+    for (auto& w : workers)
     {
         w.join();
     }
@@ -119,4 +120,3 @@ TEST_CASE("DocumentStore - Generation invalidation on close and reopen")
     CHECK_FALSE(store.IsCurrent(uri, gen1, 1)); // Stale gen1 must be rejected
     CHECK(store.IsCurrent(uri, gen2, 1));       // Fresh gen2 is accepted
 }
-

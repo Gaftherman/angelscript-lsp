@@ -191,7 +191,8 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     utils::HighResTimer parseTimer;
     TSTree* tree = m_parser->Parse(analysisText);
     double parseMs = parseTimer.ElapsedMs();
-    m_documentStore.OpenDocument(uriStr, text, version, document::MakeTreePtr(tree), clientUri);
+    m_documentStore.OpenDocument(
+        DocumentStore::OpenDocumentRequest{uriStr, text, version, document::MakeTreePtr(tree), clientUri});
 
     if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
     {

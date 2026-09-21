@@ -32,15 +32,31 @@ class DocumentStore
     DocumentStore& operator=(DocumentStore&&) = delete;
 
     /**
-     * @brief Opens a document in the store.
+     * @brief Request parameters for opening a document in DocumentStore.
+     */
+    struct OpenDocumentRequest
+    {
+        std::string uri;
+        std::string text;
+        int version = 0;
+        document::TreePtr tree = document::MakeTreePtr(nullptr);
+        std::string clientUri;
+    };
+
+    /**
+     * @brief Opens a document in the store using a bundled request struct.
+     * @param request Bundled document parameters.
+     */
+    void OpenDocument(OpenDocumentRequest request);
+
+    /**
+     * @brief Opens a document in the store without clientUri.
      * @param uri Canonical URI key.
      * @param text Document source content.
      * @param version Document version.
      * @param tree Parsed syntax tree (transfers ownership).
-     * @param clientUri Original URI spelling sent by client.
      */
-    void OpenDocument(const std::string& uri, std::string text, int version, document::TreePtr tree,
-                      const std::string& clientUri = "");
+    void OpenDocument(const std::string& uri, std::string text, int version, document::TreePtr tree);
 
     /**
      * @brief Updates text, version, and syntax tree of an existing open document.

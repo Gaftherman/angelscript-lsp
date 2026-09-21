@@ -21,6 +21,17 @@ inline TreePtr MakeTreePtr(TSTree* tree = nullptr)
 }
 
 /**
+ * @brief Snapshot parameters for constructing a Document.
+ */
+struct DocumentSnapshot
+{
+    std::string uri;
+    std::string text;
+    int version = 0;
+    uint64_t generation = 0;
+};
+
+/**
  * @brief Represents an in-memory document managed by the language server.
  */
 struct Document
@@ -32,12 +43,17 @@ struct Document
     TreePtr tree = MakeTreePtr(nullptr);
 
     Document() = default;
-    Document(std::string u, std::string t, int v = 0, TSTree* tr = nullptr, uint64_t gen = 0)
-        : uri(std::move(u)), text(std::move(t)), version(v), generation(gen), tree(MakeTreePtr(tr))
+    Document(std::string u, std::string t, int v = 0, TSTree* tr = nullptr)
+        : uri(std::move(u)), text(std::move(t)), version(v), generation(0), tree(MakeTreePtr(tr))
     {
     }
-    Document(std::string u, std::string t, int v, TreePtr tr, uint64_t gen = 0)
-        : uri(std::move(u)), text(std::move(t)), version(v), generation(gen), tree(std::move(tr))
+    Document(std::string u, std::string t, int v, TreePtr tr)
+        : uri(std::move(u)), text(std::move(t)), version(v), generation(0), tree(std::move(tr))
+    {
+    }
+    Document(DocumentSnapshot snapshot, TreePtr tr)
+        : uri(std::move(snapshot.uri)), text(std::move(snapshot.text)), version(snapshot.version),
+          generation(snapshot.generation), tree(std::move(tr))
     {
     }
 };
