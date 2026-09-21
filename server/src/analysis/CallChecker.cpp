@@ -9,6 +9,8 @@
 
 #include "parser/GrammarNames.h"
 #include <algorithm>
+#include <cctype>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -25,6 +27,10 @@ namespace
  * it, and use it after the node has gone out of scope, so handing them a view would trade a
  * duplicated three-line function for a lifetime question at several dozen call sites.
  * Deduplicating it was attempted and reverted for exactly that reason.
+ *
+ * @param[in] node AST node to read.
+ * @param[in] sourceCode Document source text.
+ * @return Owning string of the node text.
  */
 std::string NodeText(TSNode node, std::string_view sourceCode)
 {
@@ -43,6 +49,23 @@ std::string NodeText(TSNode node, std::string_view sourceCode)
 }
 
 /**
+ * @brief Trims leading and trailing whitespace in place.
+ *
+ * @param[in,out] s String to trim.
+ */
+void TrimString(std::string& s)
+{
+    while (!s.empty() && isspace(static_cast<unsigned char>(s.front())))
+    {
+        s.erase(s.begin());
+    }
+    while (!s.empty() && isspace(static_cast<unsigned char>(s.back())))
+    {
+        s.pop_back();
+    }
+}
+
+/**
  * @brief Counts the arguments written between one call's parentheses.
  *
  * Counted from the separators rather than from the named children, because a named argument
@@ -50,6 +73,9 @@ std::string NodeText(TSNode node, std::string_view sourceCode)
  * twice. `Take(void)` is one argument too - AngelScript's spelling of "discard this &out" -
  * and it is an anonymous token, so an empty list is only an empty one when nothing at all
  * stands between the parentheses.
+ *
+ * @param[in] argumentList AST node representing the argument list.
+ * @return Count of written arguments.
  */
 uint32_t CountArguments(TSNode argumentList)
 {
@@ -78,6 +104,12 @@ uint32_t CountArguments(TSNode argumentList)
     return sawArgument ? commas + 1 : 0;
 }
 
+/**
+ * @brief Extracts argument expression nodes from an argument list AST node.
+ *
+ * @param[in] argumentList AST node representing the argument list.
+ * @return Vector of AST nodes for each argument expression.
+ */
 std::vector<TSNode> GetArgumentNodes(TSNode argumentList)
 {
     std::vector<TSNode> argNodes;
@@ -107,6 +139,12 @@ struct Arity
     bool variadic = false;
 };
 
+/**
+ * @brief Calculates arity boundaries of a function signature.
+ *
+ * @param[in] sig Function signature to inspect.
+ * @return Calculated Arity boundaries.
+ */
 Arity ArityOf(const FunctionSignature& sig)
 {
     Arity arity;
@@ -136,6 +174,10 @@ Arity ArityOf(const FunctionSignature& sig)
  * of those is a call to a function of that name, and the enclosing class happening to
  * declare a method called VoteBlocked is a coincidence this rule must not read anything
  * into.
+ *
+ * @param[in] name Identifier name.
+ * @param[in] table Symbol table.
+ * @return True if the name denotes a type.
  */
 bool NamesAType(const std::string& name, const SymbolTable& table)
 {
@@ -149,6 +191,12 @@ bool NamesAType(const std::string& name, const SymbolTable& table)
                                   });
 }
 
+/**
+ * @brief True when a symbol represents a function with a valid signature.
+ *
+ * @param[in] sym Symbol to check.
+ * @return True if the symbol is a function.
+ */
 bool IsFunctionSymbol(const Symbol& sym)
 {
     return sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature);
@@ -161,6 +209,13 @@ struct CandidateSet
     bool accepts = false; ///< True when some candidate takes the written argument count.
 };
 
+/**
+ * @brief Evaluates whether candidate set accepts an argument count.
+ *
+ * @param[in] candidates Available function candidates.
+ * @param[in] argumentCount Number of arguments provided.
+ * @return CandidateSet verdict.
+ */
 CandidateSet JudgeAgainst(const std::vector<Symbol>& candidates, uint32_t argumentCount)
 {
     CandidateSet result;
@@ -171,7 +226,6 @@ CandidateSet JudgeAgainst(const std::vector<Symbol>& candidates, uint32_t argume
         const Arity arity = ArityOf(sym.GetFunction());
         if (arity.variadic)
         {
-            // Accepts any count, so the question is answered and closed.
             result.accepts = true;
             return result;
         }
@@ -185,19 +239,16 @@ CandidateSet JudgeAgainst(const std::vector<Symbol>& candidates, uint32_t argume
 }
 
 /**
- * @brief True when every type in a chain resolves to a declaration this analyzer can read.
- *
- * The claim is "no visible declaration takes this many arguments", so every declaration has
- * to be on the table before it may be made. One unresolved base is an engine-registered
- * type, and those carry overloads written down in no source here.
- */
-/**
  * @brief True when a member name is its own class's constructor or destructor.
  *
  * Matched by name because that is the convention the analyzer uses throughout - a
  * constructor is an ordinary Function stored under `Class::Class` (see the constructor
  * lookup further down, which relies on the same thing). The type may arrive qualified, so
  * the comparison is against its last `::` segment.
+ *
+ * @param[in] memberName Member identifier text.
+ * @param[in] typeName Owner type name.
+ * @return True if name denotes constructor or destructor.
  */
 bool IsConstructorOrDestructorName(const std::string& memberName, const std::string& typeName)
 {
@@ -218,7 +269,14 @@ bool IsConstructorOrDestructorName(const std::string& memberName, const std::str
     return memberName.front() == '~' && std::string_view(memberName).substr(1) == shortName;
 }
 
-/** @brief Declarations of a method, across a type's whole visible hierarchy. */
+/**
+ * @brief Declarations of a method, across a type's whole visible hierarchy.
+ *
+ * @param[in] typeName Name of the class type.
+ * @param[in] methodName Name of the method.
+ * @param[in] table Symbol table.
+ * @return Candidate symbols matching the method name.
+ */
 std::vector<Symbol> FindMethodCandidates(const std::string& typeName, const std::string& methodName,
                                          const SymbolTable& table)
 {
@@ -237,22 +295,6 @@ std::vector<Symbol> FindMethodCandidates(const std::string& typeName, const std:
                 continue;
             }
 
-            // A method redeclared in a subclass OVERRIDES the base's; it does not compete
-            // with it. GetInheritedTypeHierarchy walks derived-first, so the first
-            // declaration of a given parameter list is the one that wins and every later
-            // one is the same method seen further up.
-            //
-            // Without this the hierarchy handed back both, they scored identically, and the
-            // call was reported "Multiple matching signatures" - 75 times over the corpus,
-            // every one on legal code. The library that produces them declares
-            // `class json : meta_api::json::v2::json` and restates its methods, which is an
-            // ordinary way to write an interface summary. HasSameSignature did not catch it
-            // because it compares the qualified name too, and `json::Contains` and
-            // `meta_api::json::v2::json::Contains` are genuinely different names for what
-            // is one method.
-            //
-            // The same tie also handed DefiniteAssignmentChecker an arbitrary overload to
-            // read `&out` from, which is where the last six of its findings came from.
             const bool overriddenLower = std::any_of(candidates.begin(), candidates.end(), [&sym](const Symbol& kept)
                                                      { return HasSameParameterList(kept, sym); });
             if (!overriddenLower)
@@ -264,43 +306,26 @@ std::vector<Symbol> FindMethodCandidates(const std::string& typeName, const std:
     return candidates;
 }
 
-/**
- * @brief Declarations an unqualified call can reach, when that question is answerable.
- *
- * Narrower than it first looks, and every restriction was put here by a corpus finding:
- *
- * - a call written inside a class body is not judged at all. `VoteBlocked(this.VoteBlocked)`
- *   builds a delegate from an engine-registered funcdef, and the enclosing class declaring
- *   a method of that name is a coincidence - but the funcdef is invisible, so the two are
- *   indistinguishable from here. `Precache(keyvalues)` is the same shape;
- * - a global declared in another file is not a candidate. Two Sven Co-op plugins that never
- *   include one another both declare `Stop`, and matching a call in one against the other's
- *   signature is reading a relationship that does not exist. Same file is the one module
- *   boundary this pass can be certain of.
- *
- * What is left is the case people actually get wrong and this can actually decide: a call
- * to a function declared beside it.
- */
-std::vector<Symbol> FindFreeCandidates(TSNode callNode, const std::string& name, std::string_view sourceCode,
-                                       const std::string& fileUri, const std::string& predefinedExtension,
-                                       const SymbolTable& table, const rules::RuleIndex& index)
+/** @brief Context bundled for free candidate lookup. */
+struct FreeLookupContext
 {
-    std::vector<Symbol> candidates;
+    TSNode callNode;
+    std::string_view sourceCode;
+    const std::string& fileUri;
+    const std::string& predefinedExtension;
+    const SymbolTable& table;
+    const rules::RuleIndex& index;
+};
 
-    // One hash probe before the tree climb. allNames holds the unqualified spelling of
-    // every symbol in the workspace, so a name nothing declares - which is what most
-    // unqualified calls in real code are, naming an engine function with no visible
-    // declaration - is answered here and never walks anything.
-    if (!index.allNames.contains(name))
-    {
-        return candidates;
-    }
-
-    // Which scopes an unqualified name may name from here, innermost first, ending at the
-    // global scope. This pass used to look only at the global one, and the collector keys a
-    // namespaced function under its qualified name alone - `TEST::my_test_func`, never
-    // `my_test_func` - so inside a namespace the probe found nothing and every call in the
-    // file went unchecked. The identical call at file scope was checked.
+/**
+ * @brief Collects enclosing namespace scopes up to global scope.
+ *
+ * @param[in] callNode AST node of call expression.
+ * @param[in] sourceCode Document source text.
+ * @return Ordered list of reachable namespace scopes.
+ */
+std::vector<std::string> CollectReachableScopes(TSNode callNode, std::string_view sourceCode)
+{
     std::vector<std::string> reachableScopes;
     for (const auto& container : GetEnclosingContainers(callNode, sourceCode))
     {
@@ -314,176 +339,182 @@ std::vector<Symbol> FindFreeCandidates(TSNode callNode, const std::string& name,
         }
     }
     reachableScopes.emplace_back();
-
-    // Same file, or a predefined stub. A global declared in another file is not a
-    // candidate: two plugins that never include one another both declare `Stop`, and
-    // matching a call in one against the other's signature reads a relationship that does
-    // not exist.
-    const auto collectFrom = [&](const std::string& scopeName)
-    {
-        const std::string key = scopeName.empty() ? name : scopeName + "::" + name;
-        const auto found = table.FindSymbolsPtr(key);
-        if (!found)
-        {
-            return;
-        }
-
-        for (const auto& sym : *found)
-        {
-            if (IsFunctionSymbol(sym) &&
-                (sym.fileUri == fileUri || utils::IsPredefinedFile(sym.fileUri, predefinedExtension)))
-            {
-                candidates.push_back(sym);
-            }
-        }
-    };
-
-    // A lexical scope shadows: the first one that declares the name is the only one
-    // consulted, and an overload in an enclosing scope does not join it. The compiler is
-    // explicit about that -
-    //
-    //     void f(int i) {}
-    //     namespace N { void f(string s) {} void g() { f(1); } }
-    //                                                  ^ No matching signatures to 'f(const int)'
-    //
-    // - so breaking matters for the verdict and not only for speed. A wider set can only
-    // make a bad call look matchable.
-    for (const auto& scopeName : reachableScopes)
-    {
-        collectFrom(scopeName);
-        if (!candidates.empty())
-        {
-            break;
-        }
-    }
-
-    // A using-directive does not shadow, and does not stop the search either: when nothing
-    // lexical declares the name, every imported namespace contributes at once and ordinary
-    // overload resolution decides between them. Again from the compiler:
-    //
-    //     namespace A { void f(string s) {} }
-    //     namespace B { void f(int i) {} }
-    //     using namespace A;  using namespace B;
-    //     void g() { f(1); }              // compiles, picks B::f
-    //     void g() { f("x"); }            // Multiple matching signatures, when both take string
-    //
-    // which is why these are merged rather than broken on, and why an ambiguity among them
-    // is left to ResolveBestOverload to find instead of being special-cased here.
-    //
-    // Collected from the whole document rather than from each directive's own scope. A
-    // `using namespace` inside a namespace body is scoped to it, so this is wider than the
-    // language - but only in the direction of finding a declaration that really exists,
-    // which at worst judges a call the engine would reject as undefined anyway.
-    if (candidates.empty())
-    {
-        TSNode documentRoot = callNode;
-        while (!ts_node_is_null(ts_node_parent(documentRoot)))
-        {
-            documentRoot = ts_node_parent(documentRoot);
-        }
-
-        for (const auto& imported : CollectUsingNamespaces(documentRoot, sourceCode))
-        {
-            if (!imported.empty() &&
-                std::find(reachableScopes.begin(), reachableScopes.end(), imported) == reachableScopes.end())
-            {
-                collectFrom(imported);
-            }
-        }
-    }
-
-    return candidates;
+    return reachableScopes;
 }
 
 /**
- * @brief Judges a lambda argument against the funcdef parameter it lands on.
+ * @brief Collects function symbols matching name from a specific scope.
  *
- * The same problem the initializer-list check above solves, and for the same reason: a
- * lambda resolves to no type, so `allArgsResolved` is false and the entire overload check
- * below is skipped for any call that takes one. Every lambda in the 1,061-file corpus is a
- * call argument, so that silence covered all of them.
- *
- * Measured against angelscript_oracle:
- *
- *     void Take(CB@ c);   Take(function(int a){})  -> accepted
- *                         Take(function(a){})      -> accepted, type comes from CB
- *                         Take(function(){})       -> "No matching signatures to
- *                                                      'Take(<auto> lambda())'"
- *     void T(A@); void T(B@);
- *                         T(function(int a){})     -> accepted, one overload matches
- *                         T(function(int, int){})  -> "No matching signatures"
- *                         T(function(a){})         -> "Multiple matching signatures"
- *
- * A candidate is viable when every lambda argument satisfies the funcdef at its position;
- * none viable is the rejection, more than one is the ambiguity. If ANY candidate's
- * parameter at a lambda position is not a funcdef this analyzer can see - the usual case
- * for a host-registered callback - nothing is judged at all, because the question is then
- * about a signature that is not in the workspace.
+ * @param[in] scopeName Name of scope or empty for global.
+ * @param[in] name Unqualified symbol name.
+ * @param[in] ctx Lookup context.
+ * @param[in,out] candidates Destination vector for collected symbols.
  */
-void CheckLambdaArguments(const std::vector<TSNode>& argNodes, const std::vector<Symbol>& candidates, TSNode callee,
-                          TSNode arguments, const std::string& reportedName, const SymbolTable& table,
-                          std::string_view sourceCode, DiagnosticContext& ctx)
+void CollectScopeCandidates(const std::string& scopeName, const std::string& name, const FreeLookupContext& ctx,
+                            std::vector<Symbol>& candidates)
 {
-    std::vector<size_t> lambdaPositions;
-    for (size_t i = 0; i < argNodes.size(); ++i)
-    {
-        if (IsLambdaExpression(argNodes[i]))
-        {
-            lambdaPositions.push_back(i);
-        }
-    }
-    if (lambdaPositions.empty() || candidates.empty())
+    const std::string key = scopeName.empty() ? name : scopeName + "::" + name;
+    const auto found = ctx.table.FindSymbolsPtr(key);
+    if (!found)
     {
         return;
     }
 
-    // The funcdef each accepting candidate wants, per lambda position. Two candidates that
-    // name the SAME funcdef are the same overload reached twice - the corpus flattens
-    // twenty projects into one directory, so a function declared once per project arrives
-    // as several identical symbols - and that is not the ambiguity the compiler means.
-    std::vector<std::vector<std::string>> acceptedShapes;
-
-    for (const auto& candidate : candidates)
+    for (const auto& sym : *found)
     {
-        const auto& fn = candidate.GetFunction();
-        std::vector<std::string> shape;
-        bool takesEveryLambda = true;
-
-        for (const size_t position : lambdaPositions)
+        if (IsFunctionSymbol(sym) &&
+            (sym.fileUri == ctx.fileUri || utils::IsPredefinedFile(sym.fileUri, ctx.predefinedExtension)))
         {
-            if (position >= fn.parameters.size())
-            {
-                takesEveryLambda = false;
-                break;
-            }
-
-            const std::string parameterType = CleanBaseType(fn.parameters[position].typeName);
-            const auto funcdef = FindFuncdefSymbol(parameterType, table);
-            if (!funcdef)
-            {
-                return;
-            }
-            if (LambdaContradictsFuncdef(argNodes[position], funcdef->GetFuncdef(), table, sourceCode))
-            {
-                takesEveryLambda = false;
-                break;
-            }
-            shape.push_back(funcdef->name);
+            candidates.push_back(sym);
         }
+    }
+}
 
-        if (takesEveryLambda)
+/**
+ * @brief Collects candidates from using namespace directives at document root.
+ *
+ * @param[in] name Unqualified function name.
+ * @param[in] reachableScopes Already visited lexical scopes.
+ * @param[in] ctx Lookup context.
+ * @param[in,out] candidates Destination vector for collected symbols.
+ */
+void CollectUsingNamespaceCandidates(const std::string& name, const std::vector<std::string>& reachableScopes,
+                                     const FreeLookupContext& ctx, std::vector<Symbol>& candidates)
+{
+    TSNode documentRoot = ctx.callNode;
+    while (!ts_node_is_null(ts_node_parent(documentRoot)))
+    {
+        documentRoot = ts_node_parent(documentRoot);
+    }
+
+    for (const auto& imported : CollectUsingNamespaces(documentRoot, ctx.sourceCode))
+    {
+        if (!imported.empty() &&
+            std::find(reachableScopes.begin(), reachableScopes.end(), imported) == reachableScopes.end())
         {
-            acceptedShapes.push_back(std::move(shape));
+            CollectScopeCandidates(imported, name, ctx, candidates);
+        }
+    }
+}
+
+/**
+ * @brief Declarations an unqualified call can reach, when that question is answerable.
+ *
+ * @param[in] name Function identifier name.
+ * @param[in] ctx Free candidate lookup context.
+ * @return Reachable function candidate symbols.
+ */
+std::vector<Symbol> FindFreeCandidates(const std::string& name, const FreeLookupContext& ctx)
+{
+    std::vector<Symbol> candidates;
+    if (!ctx.index.allNames.contains(name))
+    {
+        return candidates;
+    }
+
+    const std::vector<std::string> reachableScopes = CollectReachableScopes(ctx.callNode, ctx.sourceCode);
+    for (const auto& scopeName : reachableScopes)
+    {
+        CollectScopeCandidates(scopeName, name, ctx, candidates);
+        if (!candidates.empty())
+        {
+            return candidates;
         }
     }
 
-    const TSPoint start = ts_node_start_point(callee);
-    const TSPoint end = ts_node_end_point(arguments);
+    CollectUsingNamespaceCandidates(name, reachableScopes, ctx, candidates);
+    return candidates;
+}
+
+/** @brief Context bundled for lambda argument verification. */
+struct LambdaCheckContext
+{
+    TSNode callee;
+    TSNode arguments;
+    std::string reportedName;
+    const SymbolTable& table;
+    std::string_view sourceCode;
+    const std::vector<TSNode>& argNodes;
+    std::vector<size_t> lambdaPositions;
+};
+
+enum class LambdaCandidateStatus
+{
+    Accepted,
+    Rejected,
+    UnresolvableFuncdef
+};
+
+/**
+ * @brief Finds indices of arguments that are lambda expressions.
+ *
+ * @param[in] argNodes List of argument AST nodes.
+ * @return 0-based indices where arguments are lambdas.
+ */
+std::vector<size_t> FindLambdaPositions(const std::vector<TSNode>& argNodes)
+{
+    std::vector<size_t> positions;
+    for (size_t i = 0; i < argNodes.size(); ++i)
+    {
+        if (IsLambdaExpression(argNodes[i]))
+        {
+            positions.push_back(i);
+        }
+    }
+    return positions;
+}
+
+/**
+ * @brief Evaluates whether candidate accepts all lambda arguments.
+ *
+ * @param[in] candidate Function candidate to check.
+ * @param[in] lctx Lambda verification context.
+ * @param[out] shape Collected funcdef names for matched lambda parameters.
+ * @return Status of match.
+ */
+LambdaCandidateStatus EvaluateCandidateLambdaShape(const Symbol& candidate, const LambdaCheckContext& lctx,
+                                                   std::vector<std::string>& shape)
+{
+    const auto& fn = candidate.GetFunction();
+    for (const size_t position : lctx.lambdaPositions)
+    {
+        if (position >= fn.parameters.size())
+        {
+            return LambdaCandidateStatus::Rejected;
+        }
+
+        const std::string parameterType = CleanBaseType(fn.parameters[position].typeName);
+        const auto funcdef = FindFuncdefSymbol(parameterType, lctx.table);
+        if (!funcdef)
+        {
+            return LambdaCandidateStatus::UnresolvableFuncdef;
+        }
+        if (LambdaContradictsFuncdef(lctx.argNodes[position], funcdef->GetFuncdef(), lctx.table, lctx.sourceCode))
+        {
+            return LambdaCandidateStatus::Rejected;
+        }
+        shape.push_back(funcdef->name);
+    }
+    return LambdaCandidateStatus::Accepted;
+}
+
+/**
+ * @brief Emits diagnostics for lambda shape matching results.
+ *
+ * @param[in] acceptedShapes Matrix of accepted funcdef shapes per viable candidate.
+ * @param[in] lctx Lambda verification context.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>& acceptedShapes,
+                             const LambdaCheckContext& lctx, DiagnosticContext& ctx)
+{
+    const TSPoint start = ts_node_start_point(lctx.callee);
+    const TSPoint end = ts_node_end_point(lctx.arguments);
 
     if (acceptedShapes.empty())
     {
         ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-no-matching-signature",
-                        reportedName);
+                        lctx.reportedName);
         return;
     }
 
@@ -492,250 +523,326 @@ void CheckLambdaArguments(const std::vector<TSNode>& argNodes, const std::vector
                     [&](const std::vector<std::string>& shape) { return shape == acceptedShapes.front(); });
     if (acceptedShapes.size() > 1 && !everyShapeIdentical)
     {
-        ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-ambiguous", reportedName);
+        ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-ambiguous", lctx.reportedName);
     }
 }
 
-void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+/**
+ * @brief Judges a lambda argument against the funcdef parameter it lands on.
+ *
+ * @param[in] candidates Candidate function overloads.
+ * @param[in] lctx Lambda verification context.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckLambdaArguments(const std::vector<Symbol>& candidates, const LambdaCheckContext& lctx, DiagnosticContext& ctx)
 {
-    TSNode callee = parser::GetChildByField(node, parser::fields::Function);
-    TSNode arguments = parser::GetChildByField(node, parser::fields::Arguments);
-    if (ts_node_is_null(callee) || ts_node_is_null(arguments))
+    if (lctx.lambdaPositions.empty() || candidates.empty())
     {
         return;
     }
 
-    const SymbolTable& table = ctx.request.symbolTable;
-    const std::string_view calleeType = ts_node_type(callee);
-    const uint32_t argumentCount = CountArguments(arguments);
+    std::vector<std::vector<std::string>> acceptedShapes;
+    for (const auto& candidate : candidates)
+    {
+        std::vector<std::string> shape;
+        const auto status = EvaluateCandidateLambdaShape(candidate, lctx, shape);
+        if (status == LambdaCandidateStatus::UnresolvableFuncdef)
+        {
+            return;
+        }
+        if (status == LambdaCandidateStatus::Accepted)
+        {
+            acceptedShapes.push_back(std::move(shape));
+        }
+    }
 
+    ReportLambdaDiagnostics(acceptedShapes, lctx, ctx);
+}
+
+/** @brief Context bundled for overall call validation. */
+struct CallValidationContext
+{
+    TSNode callNode;
+    TSNode callee;
+    TSNode arguments;
+    const CallCheckRequest& request;
+    const Scope* scope;
+    DiagnosticContext& ctx;
+};
+
+/** @brief Result of callee resolution stage. */
+struct CalleeResolution
+{
     std::vector<Symbol> candidates;
-
-    // Whether the set came from free-function lookup rather than from a type's members.
-    // Only the free set is a complete picture: member lookup has precedence rules this pass
-    // does not model - a mixin's method beats the base class's, and the class's own beats
-    // the mixin's - so two same-named members are routinely not a choice at all.
+    std::string reportedName;
     bool candidatesAreFreeFunctions = false;
     bool isUnqualifiedClassCall = false;
-    std::string reportedName;
+    bool shouldCheck = true;
+};
 
-    if (calleeType == "member_expression")
+/** @brief Resolved object type and template arguments for member calls. */
+struct ObjectTypeInfo
+{
+    std::string objectType;
+    std::vector<std::string> templateArgs;
+};
+
+/**
+ * @brief Resolves object type and template arguments from member expression.
+ *
+ * @param[in] objectNode AST node of object expression.
+ * @param[in] valCtx Call validation context.
+ * @return Resolved ObjectTypeInfo.
+ */
+ObjectTypeInfo ResolveMemberObjectType(TSNode objectNode, const CallValidationContext& valCtx)
+{
+    ObjectTypeInfo info;
+    const std::string rawObjType = CanonicalizeArrayType(
+        ResolveExpressionType(objectNode, valCtx.scope, valCtx.ctx.request.symbolTable, valCtx.request.sourceCode,
+                              valCtx.ctx.request.fileUri),
+        valCtx.ctx.request.GetArrayTypeName().empty() ? "array" : valCtx.ctx.request.GetArrayTypeName());
+    info.objectType = CleanBaseType(rawObjType);
+
+    if (rawObjType.find('<') != std::string::npos && rawObjType.ends_with('>'))
     {
-        TSNode objectNode = parser::GetChildByField(callee, parser::fields::Object);
-        TSNode memberNode = parser::GetChildByField(callee, parser::fields::Member);
-        if (ts_node_is_null(objectNode) || ts_node_is_null(memberNode))
+        const size_t openBracket = rawObjType.find('<');
+        std::string tmplName = rawObjType.substr(0, openBracket);
+        TrimString(tmplName);
+        if (valCtx.ctx.request.symbolTable.FindSymbolsPtr(tmplName))
         {
-            return;
+            info.objectType = tmplName;
+            std::string argStr = rawObjType.substr(openBracket + 1, rawObjType.size() - openBracket - 2);
+            info.templateArgs.push_back(std::move(argStr));
         }
+    }
+    return info;
+}
 
-        // `int[]` is `array<int>`, and only the template spelling reached the branch below.
-        // The bracket one cleaned to `int`, which has no hierarchy, so the visibility guard
-        // sent every call on a bracket-declared array away unchecked.
-        const std::string rawObjType = CanonicalizeArrayType(
-            ResolveExpressionType(objectNode, scope, table, request.sourceCode, ctx.request.fileUri),
-            ctx.request.GetArrayTypeName().empty() ? "array" : ctx.request.GetArrayTypeName());
-        std::string objectType = CleanBaseType(rawObjType);
-        std::vector<std::string> templateArgs;
-        if (rawObjType.find('<') != std::string::npos && rawObjType.ends_with('>'))
+/**
+ * @brief Replaces template parameter occurrences in a function signature.
+ *
+ * @param[in,out] fn Signature to mutate.
+ * @param[in] paramName Template parameter name (e.g. "T").
+ * @param[in] concreteType Concrete type name to substitute.
+ */
+void SubstituteFunctionTemplateParams(FunctionSignature& fn, const std::string& paramName,
+                                      const std::string& concreteType)
+{
+    fn.returnType = SubstituteTypeParam(fn.returnType, paramName, concreteType);
+    for (auto& p : fn.parameters)
+    {
+        p.typeName = SubstituteTypeParam(p.typeName, paramName, concreteType);
+        p.baseTypeName = SubstituteTypeParam(p.baseTypeName, paramName, concreteType);
+    }
+}
+
+/**
+ * @brief Applies template argument substitutions across candidate methods.
+ *
+ * @param[in,out] candidates Candidate symbols to specialize.
+ * @param[in] typeName Owner type name.
+ * @param[in] fallbackArgs Fallback template arguments when generic binding is absent.
+ * @param[in] table Symbol table.
+ */
+void ApplyTemplateSubstitutions(std::vector<Symbol>& candidates, const std::string& typeName,
+                                const std::vector<std::string>& fallbackArgs, const SymbolTable& table)
+{
+    const auto binding = BindTemplateArguments(typeName, table);
+    if (binding.usable)
+    {
+        for (auto& sym : candidates)
         {
-            size_t openBracket = rawObjType.find('<');
-            std::string tmplName = rawObjType.substr(0, openBracket);
-            while (!tmplName.empty() && isspace(static_cast<unsigned char>(tmplName.front())))
-                tmplName.erase(tmplName.begin());
-            while (!tmplName.empty() && isspace(static_cast<unsigned char>(tmplName.back())))
-                tmplName.pop_back();
-            if (table.FindSymbolsPtr(tmplName))
+            if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
             {
-                objectType = tmplName;
-                std::string argStr = rawObjType.substr(openBracket + 1, rawObjType.size() - openBracket - 2);
-                templateArgs.push_back(argStr);
-            }
-        }
-
-        if (objectType.empty() || !HierarchyIsFullyVisible(objectType, table))
-        {
-            return;
-        }
-
-        reportedName = NodeText(memberNode, request.sourceCode);
-
-        // A constructor is not a member you can call on an instance. AngelScript has no
-        // syntax for it - the real compiler answers `t.Thing()` with "No matching symbol
-        // 'Thing'" - but this analyzer resolved it happily, because a constructor is stored
-        // as `Thing::Thing` and that is exactly the key a method lookup builds. So the
-        // lookup succeeded and the call was accepted.
-        //
-        // Safe to report: the guard above has already established that the type and its
-        // whole hierarchy are visible, and a member whose name is its own class is a
-        // constructor in every case - there is no other declaration that can produce it.
-        if (IsConstructorOrDestructorName(reportedName, objectType))
-        {
-            const TSPoint ctorStart = ts_node_start_point(memberNode);
-            const TSPoint ctorEnd = ts_node_end_point(memberNode);
-            ctx.EmitAtRange(ctorStart.row, ctorStart.column, ctorEnd.row, ctorEnd.column,
-                            "as-err-constructor-not-callable", reportedName, objectType);
-            return;
-        }
-
-        candidates = FindMethodCandidates(objectType, reportedName, table);
-        const auto binding = BindTemplateArguments(objectType, table);
-        if (binding.usable)
-        {
-            for (auto& sym : candidates)
-            {
-                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                auto fn = sym.GetFunction();
+                for (size_t i = 0; i < binding.parameters.size(); ++i)
                 {
-                    auto fn = sym.GetFunction();
-                    for (size_t i = 0; i < binding.parameters.size(); ++i)
-                    {
-                        fn.returnType = SubstituteTypeParam(fn.returnType, binding.parameters[i], binding.arguments[i]);
-                        for (auto& p : fn.parameters)
-                        {
-                            p.typeName = SubstituteTypeParam(p.typeName, binding.parameters[i], binding.arguments[i]);
-                            p.baseTypeName =
-                                SubstituteTypeParam(p.baseTypeName, binding.parameters[i], binding.arguments[i]);
-                        }
-                    }
-                    sym.signature = fn;
+                    SubstituteFunctionTemplateParams(fn, binding.parameters[i], binding.arguments[i]);
                 }
-            }
-        }
-        else if (!templateArgs.empty())
-        {
-            for (auto& sym : candidates)
-            {
-                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
-                {
-                    auto fn = sym.GetFunction();
-                    for (auto& p : fn.parameters)
-                    {
-                        p.typeName = SubstituteTypeParam(p.typeName, "T", templateArgs[0]);
-                        p.baseTypeName = SubstituteTypeParam(p.baseTypeName, "T", templateArgs[0]);
-                    }
-                    sym.signature = fn;
-                }
+                sym.signature = fn;
             }
         }
     }
-    else if (calleeType == "scoped_identifier" || calleeType == "identifier")
+    else if (!fallbackArgs.empty())
     {
-        const std::string written = NodeText(callee, request.sourceCode);
-        if (written.empty())
+        for (auto& sym : candidates)
         {
-            return;
-        }
-
-        // A local or a parameter of the same name shadows the function: `Callback@ Think;`
-        // then `Think()` is a call through a handle, and which funcdef that reaches is not
-        // a question this pass answers.
-        //
-        // Only those two kinds. The scope tree also records functions and methods as
-        // definitions, and treating one as a shadow of itself silenced every unqualified
-        // call there was - which is what the first run of these tests found.
-        if (scope)
-        {
-            const LocalDefinition* shadow = ResolveInScope(scope, LastScopeSegment(written));
-            if (shadow &&
-                (shadow->kind == LocalDefinitionKind::Variable || shadow->kind == LocalDefinitionKind::Parameter))
+            if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
             {
-                return;
-            }
-        }
-
-        if (NamesAType(LastScopeSegment(written), table))
-        {
-            return;
-        }
-
-        reportedName = LastScopeSegment(written);
-
-        if (written.find("::") != std::string::npos)
-        {
-            // A qualified name is the key the collector stored it under, and it names one
-            // thing - so it is asked for whole, wherever it was declared.
-            if (const auto found = table.FindSymbolsPtr(written))
-            {
-                for (const auto& sym : *found)
+                auto fn = sym.GetFunction();
+                for (auto& p : fn.parameters)
                 {
-                    if (IsFunctionSymbol(sym))
-                    {
-                        candidates.push_back(sym);
-                    }
+                    p.typeName = SubstituteTypeParam(p.typeName, "T", fallbackArgs[0]);
+                    p.baseTypeName = SubstituteTypeParam(p.baseTypeName, "T", fallbackArgs[0]);
                 }
-            }
-        }
-        else
-        {
-            // Check if inside a class or interface; if so, probe class hierarchy for method candidates
-            std::string enclosingClass;
-            for (const auto& container : GetEnclosingContainers(node, request.sourceCode))
-            {
-                if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
-                {
-                    enclosingClass = container.qualifiedName.empty() ? container.name : container.qualifiedName;
-                    break;
-                }
-            }
-
-            if (!enclosingClass.empty())
-            {
-                candidates = FindMethodCandidates(enclosingClass, written, table);
-                if (!candidates.empty())
-                {
-                    candidatesAreFreeFunctions = false;
-                    isUnqualifiedClassCall = true;
-                    const auto binding = BindTemplateArguments(enclosingClass, table);
-                    if (binding.usable)
-                    {
-                        for (auto& sym : candidates)
-                        {
-                            if (sym.type == SymbolType::Function &&
-                                std::holds_alternative<FunctionSignature>(sym.signature))
-                            {
-                                auto fn = sym.GetFunction();
-                                for (size_t i = 0; i < binding.parameters.size(); ++i)
-                                {
-                                    fn.returnType =
-                                        SubstituteTypeParam(fn.returnType, binding.parameters[i], binding.arguments[i]);
-                                    for (auto& p : fn.parameters)
-                                    {
-                                        p.typeName = SubstituteTypeParam(p.typeName, binding.parameters[i],
-                                                                         binding.arguments[i]);
-                                        p.baseTypeName = SubstituteTypeParam(p.baseTypeName, binding.parameters[i],
-                                                                             binding.arguments[i]);
-                                    }
-                                }
-                                sym.signature = fn;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (candidates.empty())
-            {
-                candidatesAreFreeFunctions = true;
-                candidates = FindFreeCandidates(node, written, request.sourceCode, ctx.request.fileUri,
-                                                ctx.request.predefinedFileExtension, table, ctx.request.GetRuleIndex());
+                sym.signature = fn;
             }
         }
     }
-    else
+}
+
+/**
+ * @brief Resolves candidates and reports invalid constructors for member calls.
+ *
+ * @param[in] valCtx Call validation context.
+ * @return Resolved CalleeResolution.
+ */
+CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
+{
+    CalleeResolution res;
+    TSNode objectNode = parser::GetChildByField(valCtx.callee, parser::fields::Object);
+    TSNode memberNode = parser::GetChildByField(valCtx.callee, parser::fields::Member);
+    if (ts_node_is_null(objectNode) || ts_node_is_null(memberNode))
     {
-        // A lambda, an indexed value, a call through a returned handle: no declaration to
-        // count against.
-        return;
+        res.shouldCheck = false;
+        return res;
     }
 
-    // Check for positional arguments following named arguments
-    bool sawNamedArg = false;
+    const auto objInfo = ResolveMemberObjectType(objectNode, valCtx);
+    if (objInfo.objectType.empty() || !HierarchyIsFullyVisible(objInfo.objectType, valCtx.ctx.request.symbolTable))
+    {
+        res.shouldCheck = false;
+        return res;
+    }
+
+    res.reportedName = NodeText(memberNode, valCtx.request.sourceCode);
+    if (IsConstructorOrDestructorName(res.reportedName, objInfo.objectType))
+    {
+        const TSPoint ctorStart = ts_node_start_point(memberNode);
+        const TSPoint ctorEnd = ts_node_end_point(memberNode);
+        valCtx.ctx.EmitAtRange(ctorStart.row, ctorStart.column, ctorEnd.row, ctorEnd.column,
+                               "as-err-constructor-not-callable", res.reportedName, objInfo.objectType);
+        res.shouldCheck = false;
+        return res;
+    }
+
+    res.candidates = FindMethodCandidates(objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable);
+    ApplyTemplateSubstitutions(res.candidates, objInfo.objectType, objInfo.templateArgs,
+                               valCtx.ctx.request.symbolTable);
+    return res;
+}
+
+/**
+ * @brief Checks whether an identifier is shadowed by a local/parameter or names a type.
+ *
+ * @param[in] shortName Unqualified identifier.
+ * @param[in] scope Lexical scope.
+ * @param[in] table Symbol table.
+ * @return True if shadowed or names a type.
+ */
+bool IsShadowedOrTypeName(const std::string& shortName, const Scope* scope, const SymbolTable& table)
+{
+    if (scope)
+    {
+        const LocalDefinition* shadow = ResolveInScope(scope, shortName);
+        if (shadow && (shadow->kind == LocalDefinitionKind::Variable || shadow->kind == LocalDefinitionKind::Parameter))
+        {
+            return true;
+        }
+    }
+    return NamesAType(shortName, table);
+}
+
+/**
+ * @brief Finds enclosing class or interface name if inside one.
+ *
+ * @param[in] node AST node.
+ * @param[in] sourceCode Document source text.
+ * @return Enclosing class name or empty string.
+ */
+std::string FindEnclosingClassOrInterface(TSNode node, std::string_view sourceCode)
+{
+    for (const auto& container : GetEnclosingContainers(node, sourceCode))
+    {
+        if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
+        {
+            return container.qualifiedName.empty() ? container.name : container.qualifiedName;
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Resolves candidates for identifier and scoped identifier callees.
+ *
+ * @param[in] valCtx Call validation context.
+ * @return Resolved CalleeResolution.
+ */
+CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
+{
+    CalleeResolution res;
+    const std::string written = NodeText(valCtx.callee, valCtx.request.sourceCode);
+    if (written.empty())
+    {
+        res.shouldCheck = false;
+        return res;
+    }
+
+    const std::string shortName = LastScopeSegment(written);
+    if (IsShadowedOrTypeName(shortName, valCtx.scope, valCtx.ctx.request.symbolTable))
+    {
+        res.shouldCheck = false;
+        return res;
+    }
+
+    res.reportedName = shortName;
+    if (written.find("::") != std::string::npos)
+    {
+        if (const auto found = valCtx.ctx.request.symbolTable.FindSymbolsPtr(written))
+        {
+            for (const auto& sym : *found)
+            {
+                if (IsFunctionSymbol(sym))
+                {
+                    res.candidates.push_back(sym);
+                }
+            }
+        }
+        return res;
+    }
+
+    const std::string enclosingClass = FindEnclosingClassOrInterface(valCtx.callNode, valCtx.request.sourceCode);
+    if (!enclosingClass.empty())
+    {
+        res.candidates = FindMethodCandidates(enclosingClass, written, valCtx.ctx.request.symbolTable);
+        if (!res.candidates.empty())
+        {
+            res.candidatesAreFreeFunctions = false;
+            res.isUnqualifiedClassCall = true;
+            ApplyTemplateSubstitutions(res.candidates, enclosingClass, {}, valCtx.ctx.request.symbolTable);
+            return res;
+        }
+    }
+
+    res.candidatesAreFreeFunctions = true;
+    const FreeLookupContext freeCtx{valCtx.callNode,
+                                    valCtx.request.sourceCode,
+                                    valCtx.ctx.request.fileUri,
+                                    valCtx.ctx.request.predefinedFileExtension,
+                                    valCtx.ctx.request.symbolTable,
+                                    valCtx.ctx.request.GetRuleIndex()};
+    res.candidates = FindFreeCandidates(written, freeCtx);
+    return res;
+}
+
+/**
+ * @brief Validates argument ordering to prevent positional arguments after named ones.
+ *
+ * @param[in] arguments AST arguments node.
+ * @param[out] sawNamedArg True if at least one named argument was found.
+ * @param[in,out] ctx Diagnostic context.
+ * @return True if argument ordering is valid.
+ */
+bool ValidateArgumentOrdering(TSNode arguments, bool& sawNamedArg, DiagnosticContext& ctx)
+{
+    sawNamedArg = false;
     const uint32_t totalChildren = ts_node_child_count(arguments);
     std::vector<std::vector<TSNode>> argGroups;
     std::vector<TSNode> currentGroup;
     for (uint32_t i = 0; i < totalChildren; ++i)
     {
         TSNode child = ts_node_child(arguments, i);
-        std::string_view ct = ts_node_type(child);
+        const std::string_view ct = ts_node_type(child);
         if (ct == "(" || ct == ")" || ct == "comment")
         {
             continue;
@@ -760,14 +867,6 @@ void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope,
 
     for (const auto& group : argGroups)
     {
-        // A ':' token directly in the argument list, and nothing else. The grammar writes
-        // a named argument as `optional(seq(field("arg_name", identifier), ":"))` before
-        // the expression, so the token is a child here exactly when the argument is named,
-        // and a ':' belonging to an expression stays inside that expression's own node.
-        //
-        // This used to also search the argument's text for a ':', which reported 156 errors
-        // on one real plugin file - `NS::GetName()` as an argument, and every argument
-        // after it. `bool ? 1 : 2` failed the same way. The oracle accepts both.
         bool isNamed = false;
         for (const auto& token : group)
         {
@@ -790,431 +889,588 @@ void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope,
                 const TSPoint aEnd = ts_node_end_point(group.back());
                 ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-positional-after-named-arg");
             }
-            return;
+            return false;
         }
     }
+    return true;
+}
 
-    const CandidateSet judged = JudgeAgainst(candidates, argumentCount);
-    if (!judged.decided || !judged.accepts)
-    {
-        if (judged.decided && !judged.accepts && !isUnqualifiedClassCall)
-        {
-            const TSPoint start = ts_node_start_point(callee);
-            const TSPoint end = ts_node_end_point(arguments);
-            ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-argument-count", reportedName,
-                            std::to_string(argumentCount));
-        }
-        return;
-    }
-
-    // Argument count is valid. Now check argument types against overload candidates.
-    std::vector<TSNode> argNodes = GetArgumentNodes(arguments);
+/** @brief Argument nodes and resolved types for a call expression. */
+struct CallArgTypes
+{
+    std::vector<TSNode> argNodes;
     std::vector<std::string> argTypes;
     bool allArgsResolved = true;
+};
 
-    for (const auto& argNode : argNodes)
+/**
+ * @brief Resolves expression types for each call argument and flags bare types.
+ *
+ * @param[in] valCtx Call validation context.
+ * @return Resolved CallArgTypes structure.
+ */
+CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
+{
+    CallArgTypes result;
+    result.argNodes = GetArgumentNodes(valCtx.arguments);
+
+    for (const auto& argNode : result.argNodes)
     {
         std::string dataTypeName;
-        if (IsBareDataType(argNode, scope, table, request.sourceCode, dataTypeName))
+        if (IsBareDataType(argNode, valCtx.scope, valCtx.ctx.request.symbolTable, valCtx.request.sourceCode,
+                           dataTypeName))
         {
             const TSPoint aStart = ts_node_start_point(argNode);
             const TSPoint aEnd = ts_node_end_point(argNode);
-            ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, diagnostics::codes::ExpressionIsDataType,
-                            dataTypeName);
-            allArgsResolved = false;
-            argTypes.push_back("");
+            valCtx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                   diagnostics::codes::ExpressionIsDataType, dataTypeName);
+            result.allArgsResolved = false;
+            result.argTypes.push_back("");
             continue;
         }
 
-        std::string argType = ResolveExpressionType(argNode, scope, table, request.sourceCode, ctx.request.fileUri);
+        std::string argType = ResolveExpressionType(argNode, valCtx.scope, valCtx.ctx.request.symbolTable,
+                                                    valCtx.request.sourceCode, valCtx.ctx.request.fileUri);
         if (argType.empty())
         {
-            allArgsResolved = false;
+            result.allArgsResolved = false;
         }
-        argTypes.push_back(argType);
+        result.argTypes.push_back(std::move(argType));
     }
+    return result;
+}
 
-    // A zero-argument *free* call is judged too. The empty-argument guard that used to sit
-    // here read as harmless - with no arguments there are no argument types to check - but
-    // ambiguity does not need one:
-    //
-    //     namespace PackageA { void Initialize() {} }
-    //     namespace PackageB { void Initialize() {} }
-    //     using namespace PackageA;  using namespace PackageB;
-    //     void Main() { Initialize(); }
-    //                   ^ Multiple matching signatures to 'Initialize()'
-    //
-    // Two identical signatures under different qualified names is what HasSameSignature
-    // already distinguishes from the same function declared twice, so nothing else had to
-    // change for that.
-    //
-    // Members are excluded, and the corpus is why: `class DerivedA : Base, MixinA {}` where
-    // both declare `GetName()` compiles, because the mixin's member beats the base's and
-    // the class's own beats the mixin's. Those precedence rules live in member lookup, not
-    // here, so a member set of two same-named candidates is not evidence of a choice.
-    std::vector<Symbol> matchingArityCandidates;
+/**
+ * @brief Filters candidates whose arity matches the provided argument count.
+ *
+ * @param[in] candidates Candidate symbols.
+ * @param[in] argumentCount Argument count.
+ * @return Subvector of matching arity symbols.
+ */
+std::vector<Symbol> FilterMatchingArityCandidates(const std::vector<Symbol>& candidates, uint32_t argumentCount)
+{
+    std::vector<Symbol> matching;
     for (const auto& sym : candidates)
     {
         const Arity arity = ArityOf(sym.GetFunction());
         if (arity.variadic || (argumentCount >= arity.required && argumentCount <= arity.maximum))
         {
-            matchingArityCandidates.push_back(sym);
+            matching.push_back(sym);
         }
     }
+    return matching;
+}
 
-    // An initializer list argument. `take({1, 2})` compiles - the compiler takes the target
-    // type from the parameter the list lands on and builds the list against it, so
-    // `take({"x"})` against `array<int>` is "Can't implicitly convert from 'const string' to
-    // 'int&'". The list itself resolves to no type on its own, so it requires target-type context.
-    //
-    // Only where the parameter is not in question: one candidate of this arity, and no
-    // named argument to move the positions around. With two overloads the compiler's own
-    // answer to a list argument is "Multiple matching signatures to 'take({...})'" - which
-    // parameter type the list was meant for is precisely what is undecided, so a verdict
-    // about its shape would be a guess wearing an error's clothes.
-    if (matchingArityCandidates.size() == 1 && !sawNamedArg)
+/**
+ * @brief Checks initializer list arguments against parameter target types.
+ *
+ * @param[in] argNodes Call argument AST nodes.
+ * @param[in] fn Target function signature.
+ * @param[in] valCtx Call validation context.
+ */
+void CheckInitializerListArgs(const std::vector<TSNode>& argNodes, const FunctionSignature& fn,
+                              const CallValidationContext& valCtx)
+{
+    for (size_t i = 0; i < argNodes.size() && i < fn.parameters.size(); ++i)
     {
-        const auto& only = matchingArityCandidates.front().GetFunction();
-        for (size_t i = 0; i < argNodes.size() && i < only.parameters.size(); ++i)
+        if (NodeType(argNodes[i]) == "initializer_list")
         {
-            if (NodeType(argNodes[i]) == "initializer_list")
-            {
-                CheckInitializerListAgainstType(argNodes[i], only.parameters[i].typeName, request.sourceCode, scope,
-                                                ctx);
-            }
-        }
-    }
-
-    // A lambda argument, which resolves to no type and therefore turns allArgsResolved
-    // off for the whole call - see CheckLambdaArguments for what the compiler does answer.
-    if (!sawNamedArg)
-    {
-        CheckLambdaArguments(argNodes, matchingArityCandidates, callee, arguments, reportedName, table,
-                             request.sourceCode, ctx);
-    }
-
-    // Malformed ternary expression argument without a unified type
-    for (size_t i = 0; i < argNodes.size() && i < argTypes.size(); ++i)
-    {
-        if (std::string_view(ts_node_type(argNodes[i])) == parser::nodes::TernaryExpression && argTypes[i].empty())
-        {
-            if (!matchingArityCandidates.empty())
-            {
-                const auto& fn = matchingArityCandidates[0].GetFunction();
-                if (i < fn.parameters.size())
-                {
-                    const std::string expected = fn.parameters[i].typeName;
-                    TSNode consequence = parser::GetChildByField(argNodes[i], parser::fields::Consequence);
-                    TSNode alternative = parser::GetChildByField(argNodes[i], parser::fields::Alternative);
-                    std::string t1 =
-                        ResolveExpressionType(consequence, scope, table, request.sourceCode, ctx.request.fileUri);
-                    std::string t2 =
-                        ResolveExpressionType(alternative, scope, table, request.sourceCode, ctx.request.fileUri);
-
-                    std::string badType = (!t1.empty() && t1 != expected) ? t1 : t2;
-                    if (badType.empty())
-                    {
-                        badType = (!t2.empty() ? t2 : t1);
-                    }
-                    if (badType.empty())
-                    {
-                        badType = "unknown";
-                    }
-
-                    const TSPoint aStart = ts_node_start_point(argNodes[i]);
-                    const TSPoint aEnd = ts_node_end_point(argNodes[i]);
-                    ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-implicit-conversion",
-                                    badType, expected);
-                }
-            }
-        }
-    }
-
-    if (!argTypes.empty() || candidatesAreFreeFunctions)
-    {
-        if (!matchingArityCandidates.empty())
-        {
-            OverloadMatchResult match = ResolveBestOverload(matchingArityCandidates, argTypes, table);
-            if (match.isAmbiguous && allArgsResolved)
-            {
-                const TSPoint start = ts_node_start_point(callee);
-                const TSPoint end = ts_node_end_point(arguments);
-                ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-ambiguous", reportedName);
-            }
-            else if (match.viableCandidates.empty() || match.bestScore >= 999)
-            {
-                // Which argument is at fault, when every candidate agrees on it.
-                //
-                // With one overload the answer is simply the first parameter that cannot
-                // take its argument. With several it is only meaningful when they all fail
-                // at the same position: if one rejects argument 0 and another argument 1,
-                // there is no single offending argument to point at and the generic message
-                // is the honest one. Underlining a position only some overloads object to
-                // would be worse than saying nothing specific.
-                bool emittedSpecificConversion = false;
-                {
-                    size_t blamedArgument = argTypes.size();
-                    bool everyCandidateAgrees = !matchingArityCandidates.empty();
-
-                    for (const auto& candidate : matchingArityCandidates)
-                    {
-                        const auto& fn = candidate.GetFunction();
-                        size_t firstBad = argTypes.size();
-                        for (size_t i = 0; i < argTypes.size() && i < fn.parameters.size(); ++i)
-                        {
-                            if (ScoreArgumentMatch(argTypes[i], fn.parameters[i], table) >= 999)
-                            {
-                                firstBad = i;
-                                break;
-                            }
-                        }
-
-                        if (firstBad == argTypes.size())
-                        {
-                            // This overload takes every argument, so the call failed for a
-                            // reason no single argument explains.
-                            everyCandidateAgrees = false;
-                            break;
-                        }
-                        if (blamedArgument == argTypes.size())
-                        {
-                            blamedArgument = firstBad;
-                        }
-                        else if (blamedArgument != firstBad)
-                        {
-                            everyCandidateAgrees = false;
-                            break;
-                        }
-                    }
-
-                    if (everyCandidateAgrees && blamedArgument < argNodes.size())
-                    {
-                        // The expected type is named from the first candidate; with several
-                        // they differ, and one concrete example reads better than a list.
-                        const auto& fn = matchingArityCandidates[0].GetFunction();
-                        const std::string expected = blamedArgument < fn.parameters.size()
-                                                         ? fn.parameters[blamedArgument].typeName
-                                                         : std::string();
-
-                        const TSPoint aStart = ts_node_start_point(argNodes[blamedArgument]);
-                        const TSPoint aEnd = ts_node_end_point(argNodes[blamedArgument]);
-                        ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
-                                        "as-err-no-implicit-conversion", argTypes[blamedArgument], expected);
-                        emittedSpecificConversion = true;
-                    }
-                }
-
-                if (!emittedSpecificConversion && allArgsResolved)
-                {
-                    const TSPoint start = ts_node_start_point(callee);
-                    const TSPoint end = ts_node_end_point(arguments);
-                    ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-no-matching-signature",
-                                    reportedName);
-                }
-            }
-            else
-            {
-                const auto& targetCandidate = match.bestCandidate ? *match.bestCandidate : matchingArityCandidates[0];
-                const auto& fn = targetCandidate.GetFunction();
-                for (size_t i = 0; i < argNodes.size() && i < fn.parameters.size(); ++i)
-                {
-                    const auto& param = fn.parameters[i];
-                    if (param.rawText.find("&out") != std::string::npos ||
-                        param.typeName.find("&out") != std::string::npos ||
-                        param.typeName.find("& out") != std::string::npos)
-                    {
-                        std::string aText = NodeText(argNodes[i], request.sourceCode);
-                        while (!aText.empty() && isspace(static_cast<unsigned char>(aText.front())))
-                            aText.erase(aText.begin());
-                        while (!aText.empty() && isspace(static_cast<unsigned char>(aText.back())))
-                            aText.pop_back();
-                        if (aText != "void")
-                        {
-                            TSNode argNode = argNodes[i];
-                            std::string_view aType = ts_node_type(argNode);
-
-                            // `@x` is how a handle is handed to a `?&out` parameter, and it
-                            // is every bit as much an l-value as `x` - `ref::opCast(?&out)`
-                            // is called as `r.opCast(@target);` and the real compiler
-                            // accepts it. Looking only at the outer node saw a unary
-                            // expression and reported the argument as unassignable.
-                            if (aType == "unary_expression" && aText.starts_with("@"))
-                            {
-                                TSNode operand = parser::GetChildByField(argNode, parser::fields::Operand);
-                                if (!ts_node_is_null(operand))
-                                {
-                                    argNode = operand;
-                                    aType = ts_node_type(argNode);
-                                    aText = NodeText(argNode, request.sourceCode);
-                                    while (!aText.empty() && isspace(static_cast<unsigned char>(aText.front())))
-                                        aText.erase(aText.begin());
-                                    while (!aText.empty() && isspace(static_cast<unsigned char>(aText.back())))
-                                        aText.pop_back();
-                                }
-                            }
-
-                            bool isLVal = false;
-                            if (aType == "identifier" || aType == "scoped_identifier")
-                            {
-                                if (scope)
-                                {
-                                    const auto* def = ResolveInScope(scope, aText);
-                                    if (def && (def->kind == LocalDefinitionKind::Variable ||
-                                                def->kind == LocalDefinitionKind::Parameter))
-                                    {
-                                        isLVal = true;
-                                    }
-                                }
-                                if (!isLVal)
-                                {
-                                    auto syms = table.FindSymbolsPtr(aText);
-                                    if (syms)
-                                    {
-                                        for (const auto& s : *syms)
-                                        {
-                                            if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
-                                            {
-                                                isLVal = true;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            else if (aType == "member_expression" || aType == "index_expression")
-                            {
-                                isLVal = true;
-                            }
-                            if (!isLVal)
-                            {
-                                const TSPoint aStart = ts_node_start_point(argNodes[i]);
-                                const TSPoint aEnd = ts_node_end_point(argNodes[i]);
-                                ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
-                                                "as-err-lvalue-required-for-out-param");
-                            }
-                        }
-                    }
-                }
-            }
+            CheckInitializerListAgainstType(argNodes[i], fn.parameters[i].typeName, valCtx.request.sourceCode,
+                                            valCtx.scope, valCtx.ctx);
         }
     }
 }
 
-void CheckVariableDirectInitialization(TSNode varDeclNode, const CallCheckRequest& request, DiagnosticContext& ctx)
+/**
+ * @brief Checks malformed ternary expressions used as call arguments.
+ *
+ * @param[in] argNodes Argument AST nodes.
+ * @param[in] argTypes Resolved argument types.
+ * @param[in] candidates Available matching candidates.
+ * @param[in] valCtx Call validation context.
+ */
+void CheckMalformedTernaryArgs(const std::vector<TSNode>& argNodes, const std::vector<std::string>& argTypes,
+                               const std::vector<Symbol>& candidates, const CallValidationContext& valCtx)
+{
+    if (candidates.empty())
+    {
+        return;
+    }
+    const auto& fn = candidates[0].GetFunction();
+
+    for (size_t i = 0; i < argNodes.size() && i < argTypes.size() && i < fn.parameters.size(); ++i)
+    {
+        if (std::string_view(ts_node_type(argNodes[i])) != parser::nodes::TernaryExpression || !argTypes[i].empty())
+        {
+            continue;
+        }
+
+        const std::string expected = fn.parameters[i].typeName;
+        TSNode consequence = parser::GetChildByField(argNodes[i], parser::fields::Consequence);
+        TSNode alternative = parser::GetChildByField(argNodes[i], parser::fields::Alternative);
+        std::string t1 = ResolveExpressionType(consequence, valCtx.scope, valCtx.ctx.request.symbolTable,
+                                               valCtx.request.sourceCode, valCtx.ctx.request.fileUri);
+        std::string t2 = ResolveExpressionType(alternative, valCtx.scope, valCtx.ctx.request.symbolTable,
+                                               valCtx.request.sourceCode, valCtx.ctx.request.fileUri);
+
+        std::string badType = (!t1.empty() && t1 != expected) ? t1 : t2;
+        if (badType.empty())
+        {
+            badType = (!t2.empty() ? t2 : t1);
+        }
+        if (badType.empty())
+        {
+            badType = "unknown";
+        }
+
+        const TSPoint aStart = ts_node_start_point(argNodes[i]);
+        const TSPoint aEnd = ts_node_end_point(argNodes[i]);
+        valCtx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-implicit-conversion",
+                               badType, expected);
+    }
+}
+
+/**
+ * @brief Finds index of first parameter failing conversion in a candidate.
+ *
+ * @param[in] candidate Candidate function.
+ * @param[in] argTypes Argument types.
+ * @param[in] table Symbol table.
+ * @return Index of first mismatched argument or argTypes.size().
+ */
+size_t FindCandidateBadArgument(const Symbol& candidate, const std::vector<std::string>& argTypes,
+                                const SymbolTable& table)
+{
+    const auto& fn = candidate.GetFunction();
+    for (size_t i = 0; i < argTypes.size() && i < fn.parameters.size(); ++i)
+    {
+        if (ScoreArgumentMatch(argTypes[i], fn.parameters[i], table) >= 999)
+        {
+            return i;
+        }
+    }
+    return argTypes.size();
+}
+
+/**
+ * @brief Determines if all candidate overloads agree on a single bad argument index.
+ *
+ * @param[in] candidates Candidate functions.
+ * @param[in] argTypes Argument types.
+ * @param[in] table Symbol table.
+ * @return Blamed argument index if agreed, or std::nullopt.
+ */
+std::optional<size_t> FindAgreedBlamedArgument(const std::vector<Symbol>& candidates,
+                                               const std::vector<std::string>& argTypes, const SymbolTable& table)
+{
+    if (candidates.empty())
+    {
+        return std::nullopt;
+    }
+
+    size_t blamed = argTypes.size();
+    for (const auto& candidate : candidates)
+    {
+        const size_t firstBad = FindCandidateBadArgument(candidate, argTypes, table);
+        if (firstBad == argTypes.size())
+        {
+            return std::nullopt;
+        }
+        if (blamed == argTypes.size())
+        {
+            blamed = firstBad;
+        }
+        else if (blamed != firstBad)
+        {
+            return std::nullopt;
+        }
+    }
+    return blamed < argTypes.size() ? std::optional<size_t>(blamed) : std::nullopt;
+}
+
+/**
+ * @brief Emits diagnostics when overload resolution finds no viable candidates.
+ *
+ * @param[in] candidates Candidate functions.
+ * @param[in] args Call arguments info.
+ * @param[in] reportedName Reported callee name.
+ * @param[in] valCtx Call validation context.
+ */
+void ReportOverloadResolutionFailure(const std::vector<Symbol>& candidates, const CallArgTypes& args,
+                                     const std::string& reportedName, const CallValidationContext& valCtx)
+{
+    const auto blamedArg = FindAgreedBlamedArgument(candidates, args.argTypes, valCtx.ctx.request.symbolTable);
+    if (blamedArg && *blamedArg < args.argNodes.size())
+    {
+        const auto& fn = candidates[0].GetFunction();
+        const std::string expected =
+            *blamedArg < fn.parameters.size() ? fn.parameters[*blamedArg].typeName : std::string();
+        const TSPoint aStart = ts_node_start_point(args.argNodes[*blamedArg]);
+        const TSPoint aEnd = ts_node_end_point(args.argNodes[*blamedArg]);
+        valCtx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-implicit-conversion",
+                               args.argTypes[*blamedArg], expected);
+        return;
+    }
+
+    if (args.allArgsResolved)
+    {
+        const TSPoint start = ts_node_start_point(valCtx.callee);
+        const TSPoint end = ts_node_end_point(valCtx.arguments);
+        valCtx.ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-no-matching-signature",
+                               reportedName);
+    }
+}
+
+/**
+ * @brief Checks whether a named symbol resolves to an assignable non-const variable.
+ *
+ * @param[in] name Symbol name.
+ * @param[in] scope Lexical scope.
+ * @param[in] table Symbol table.
+ * @return True if assignable variable.
+ */
+bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, const SymbolTable& table)
+{
+    if (scope)
+    {
+        const auto* def = ResolveInScope(scope, name);
+        if (def && (def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter))
+        {
+            return true;
+        }
+    }
+    auto syms = table.FindSymbolsPtr(std::string(name));
+    if (syms)
+    {
+        for (const auto& s : *syms)
+        {
+            if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Validates if an AST node is a valid L-value for an out parameter.
+ *
+ * @param[in] argNode Argument AST node.
+ * @param[in] sourceCode Document source text.
+ * @param[in] scope Lexical scope.
+ * @param[in] table Symbol table.
+ * @return True if node is an assignable L-value.
+ */
+bool CheckArgIsLValue(TSNode argNode, std::string_view sourceCode, const Scope* scope, const SymbolTable& table)
+{
+    std::string_view aType = ts_node_type(argNode);
+    std::string aText = NodeText(argNode, sourceCode);
+    TrimString(aText);
+
+    if (aType == "unary_expression" && aText.starts_with("@"))
+    {
+        TSNode operand = parser::GetChildByField(argNode, parser::fields::Operand);
+        if (!ts_node_is_null(operand))
+        {
+            argNode = operand;
+            aType = ts_node_type(argNode);
+            aText = NodeText(argNode, sourceCode);
+            TrimString(aText);
+        }
+    }
+
+    if (aType == "identifier" || aType == "scoped_identifier")
+    {
+        return IsAssignableLValueSymbol(aText, scope, table);
+    }
+    return (aType == "member_expression" || aType == "index_expression");
+}
+
+/**
+ * @brief Validates that arguments passed to &out parameters are assignable L-values.
+ *
+ * @param[in] candidate Chosen function overload.
+ * @param[in] argNodes Call argument AST nodes.
+ * @param[in] valCtx Call validation context.
+ */
+void ValidateOutArguments(const Symbol& candidate, const std::vector<TSNode>& argNodes,
+                          const CallValidationContext& valCtx)
+{
+    const auto& fn = candidate.GetFunction();
+    for (size_t i = 0; i < argNodes.size() && i < fn.parameters.size(); ++i)
+    {
+        const auto& param = fn.parameters[i];
+        if (param.rawText.find("&out") == std::string::npos && param.typeName.find("&out") == std::string::npos &&
+            param.typeName.find("& out") == std::string::npos)
+        {
+            continue;
+        }
+
+        std::string aText = NodeText(argNodes[i], valCtx.request.sourceCode);
+        TrimString(aText);
+        if (aText == "void")
+        {
+            continue;
+        }
+
+        if (!CheckArgIsLValue(argNodes[i], valCtx.request.sourceCode, valCtx.scope, valCtx.ctx.request.symbolTable))
+        {
+            const TSPoint aStart = ts_node_start_point(argNodes[i]);
+            const TSPoint aEnd = ts_node_end_point(argNodes[i]);
+            valCtx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+                                   "as-err-lvalue-required-for-out-param");
+        }
+    }
+}
+
+/**
+ * @brief Dispatches overload resolution and checks ambiguity, conversions, and out parameters.
+ *
+ * @param[in] matchingArity Candidates of matching arity.
+ * @param[in] args Resolved argument types.
+ * @param[in] calleeRes Callee resolution details.
+ * @param[in] valCtx Call validation context.
+ */
+void CheckCallOverloads(const std::vector<Symbol>& matchingArity, const CallArgTypes& args,
+                        const CalleeResolution& calleeRes, const CallValidationContext& valCtx)
+{
+    if ((args.argTypes.empty() && !calleeRes.candidatesAreFreeFunctions) || matchingArity.empty())
+    {
+        return;
+    }
+
+    OverloadMatchResult match = ResolveBestOverload(matchingArity, args.argTypes, valCtx.ctx.request.symbolTable);
+    if (match.isAmbiguous && args.allArgsResolved)
+    {
+        const TSPoint start = ts_node_start_point(valCtx.callee);
+        const TSPoint end = ts_node_end_point(valCtx.arguments);
+        valCtx.ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-ambiguous",
+                               calleeRes.reportedName);
+    }
+    else if (match.viableCandidates.empty() || match.bestScore >= 999)
+    {
+        ReportOverloadResolutionFailure(matchingArity, args, calleeRes.reportedName, valCtx);
+    }
+    else
+    {
+        const auto& target = match.bestCandidate ? *match.bestCandidate : matchingArity[0];
+        ValidateOutArguments(target, args.argNodes, valCtx);
+    }
+}
+
+/**
+ * @brief Resolves callee candidates based on node type.
+ *
+ * @param[in] valCtx Call validation context.
+ * @return Resolved CalleeResolution.
+ */
+CalleeResolution ResolveCalleeCandidates(const CallValidationContext& valCtx)
+{
+    const std::string_view calleeType = ts_node_type(valCtx.callee);
+    if (calleeType == "member_expression")
+    {
+        return ResolveMemberCallee(valCtx);
+    }
+    if (calleeType == "scoped_identifier" || calleeType == "identifier")
+    {
+        return ResolveIdentifierCallee(valCtx);
+    }
+    CalleeResolution res;
+    res.shouldCheck = false;
+    return res;
+}
+
+/**
+ * @brief Validates argument count against candidate arities and emits diagnostics on failure.
+ *
+ * @param[in] calleeRes Callee resolution details.
+ * @param[in] argumentCount Number of passed arguments.
+ * @param[in] valCtx Call validation context.
+ * @return True if argument count is accepted.
+ */
+bool CheckArgumentCount(const CalleeResolution& calleeRes, uint32_t argumentCount, const CallValidationContext& valCtx)
+{
+    const CandidateSet judged = JudgeAgainst(calleeRes.candidates, argumentCount);
+    if (!judged.decided || !judged.accepts)
+    {
+        if (judged.decided && !judged.accepts && !calleeRes.isUnqualifiedClassCall)
+        {
+            const TSPoint start = ts_node_start_point(valCtx.callee);
+            const TSPoint end = ts_node_end_point(valCtx.arguments);
+            valCtx.ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-argument-count",
+                                   calleeRes.reportedName, std::to_string(argumentCount));
+        }
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Validates a single function call expression.
+ *
+ * @param[in] node AST call expression node.
+ * @param[in] request Analysis call request.
+ * @param[in] scope Lexical scope.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+{
+    TSNode callee = parser::GetChildByField(node, parser::fields::Function);
+    TSNode arguments = parser::GetChildByField(node, parser::fields::Arguments);
+    if (ts_node_is_null(callee) || ts_node_is_null(arguments))
+    {
+        return;
+    }
+
+    const CallValidationContext valCtx{node, callee, arguments, request, scope, ctx};
+    const CalleeResolution calleeRes = ResolveCalleeCandidates(valCtx);
+    if (!calleeRes.shouldCheck)
+    {
+        return;
+    }
+
+    bool sawNamedArg = false;
+    if (!ValidateArgumentOrdering(arguments, sawNamedArg, ctx))
+    {
+        return;
+    }
+
+    const uint32_t argumentCount = CountArguments(arguments);
+    if (!CheckArgumentCount(calleeRes, argumentCount, valCtx))
+    {
+        return;
+    }
+
+    const CallArgTypes args = ResolveCallArguments(valCtx);
+    const std::vector<Symbol> matchingArity = FilterMatchingArityCandidates(calleeRes.candidates, argumentCount);
+
+    if (matchingArity.size() == 1 && !sawNamedArg)
+    {
+        CheckInitializerListArgs(args.argNodes, matchingArity.front().GetFunction(), valCtx);
+    }
+
+    if (!sawNamedArg)
+    {
+        const LambdaCheckContext lctx{callee,
+                                      arguments,
+                                      calleeRes.reportedName,
+                                      ctx.request.symbolTable,
+                                      request.sourceCode,
+                                      args.argNodes,
+                                      FindLambdaPositions(args.argNodes)};
+        CheckLambdaArguments(matchingArity, lctx, ctx);
+    }
+
+    CheckMalformedTernaryArgs(args.argNodes, args.argTypes, matchingArity, valCtx);
+    CheckCallOverloads(matchingArity, args, calleeRes, valCtx);
+}
+
+/**
+ * @brief Finds the type AST node within a variable declaration node.
+ *
+ * @param[in] varDeclNode AST variable declaration node.
+ * @return Type AST node or null node if not found.
+ */
+TSNode FindVariableTypeNode(TSNode varDeclNode)
 {
     TSNode varTypeNode = parser::GetChildByField(varDeclNode, parser::fields::VarType);
-    if (ts_node_is_null(varTypeNode))
+    if (!ts_node_is_null(varTypeNode))
     {
-        varTypeNode = parser::GetChildByField(varDeclNode, parser::fields::Type);
+        return varTypeNode;
     }
-    if (ts_node_is_null(varTypeNode))
+    varTypeNode = parser::GetChildByField(varDeclNode, parser::fields::Type);
+    if (!ts_node_is_null(varTypeNode))
     {
-        uint32_t count = ts_node_named_child_count(varDeclNode);
-        for (uint32_t i = 0; i < count; ++i)
+        return varTypeNode;
+    }
+    const uint32_t count = ts_node_named_child_count(varDeclNode);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        TSNode child = ts_node_named_child(varDeclNode, i);
+        if (std::string_view(ts_node_type(child)) == "type")
         {
-            TSNode child = ts_node_named_child(varDeclNode, i);
-            if (std::string_view(ts_node_type(child)) == "type")
-            {
-                varTypeNode = child;
-                break;
-            }
+            return child;
         }
     }
-    if (ts_node_is_null(varTypeNode))
+    return varTypeNode;
+}
+
+/**
+ * @brief Formats an attempted constructor call signature for error reporting.
+ *
+ * @param[in] targetType Declared type name.
+ * @param[in] argTypes Resolved argument types.
+ * @return Formatted signature string, e.g. "Type(int, string)".
+ */
+std::string FormatSignatureAttempt(const std::string& targetType, const std::vector<std::string>& argTypes)
+{
+    std::string sig = targetType + "(";
+    for (size_t a = 0; a < argTypes.size(); ++a)
     {
-        return;
+        if (a > 0)
+        {
+            sig += ", ";
+        }
+        sig += argTypes[a];
     }
+    sig += ")";
+    return sig;
+}
 
-    std::string rawTypeStr = NodeText(varTypeNode, request.sourceCode);
-    std::string declaredType = CleanExpressionType(rawTypeStr);
-    if (declaredType.empty() || declaredType == "auto")
+/** @brief Context bundled for variable direct initialization verification. */
+struct VarInitContext
+{
+    std::string declaredType;
+    std::string baseName;
+    TemplateTypeInfo tmplInfo;
+    const CallCheckRequest& request;
+    DiagnosticContext& ctx;
+};
+
+/**
+ * @brief Verifies direct initialization of a primitive type.
+ *
+ * @param[in] argListNode Argument list AST node.
+ * @param[in] argTypes Resolved argument types.
+ * @param[in] vctx Variable initialization context.
+ */
+void CheckPrimitiveDirectInit(TSNode argListNode, const std::vector<std::string>& argTypes, const VarInitContext& vctx)
+{
+    if (argTypes.size() != 1)
     {
-        return;
+        const TSPoint aStart = ts_node_start_point(argListNode);
+        const TSPoint aEnd = ts_node_end_point(argListNode);
+        vctx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-matching-constructor",
+                             FormatSignatureAttempt(vctx.declaredType, argTypes));
     }
-
-    // `int[] a(33)` sizes an array; it does not construct an `int` from 33. The bracket
-    // spelling reduces to its ELEMENT type here - CleanBaseType takes `bool[]` to `bool` -
-    // so the primitive branch below read `bool[] flags(32+1);` as converting 32+1 into a
-    // bool. It stayed silent for years because `int[] a(33)` and `float[] a(33)` are the
-    // same misreading and `int -> int` and `int -> float` score fine; correcting `bool` to
-    // be unconvertible from the numeric types is what made it visible, on
-    // `bool[] g_playerGlowEnable(32+1);` in the corpus.
-    //
-    // The angle spelling needs no guard: `array<int>` keeps `array` as its container name,
-    // which is not a primitive, so it already takes the class path.
-    if (rawTypeStr.find('[') != std::string::npos)
+    else
     {
-        return;
+        ParameterInformation dummyParam{vctx.baseName, vctx.baseName, "", ""};
+        int score = ScoreArgumentMatch(argTypes[0], dummyParam, vctx.ctx.request.symbolTable);
+        if (score >= 999)
+        {
+            const TSPoint aStart = ts_node_start_point(argListNode);
+            const TSPoint aEnd = ts_node_end_point(argListNode);
+            vctx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-implicit-conversion",
+                                 argTypes[0], vctx.baseName);
+        }
     }
+}
 
-    TemplateTypeInfo tmplInfo = ParseTemplateType(declaredType);
-    std::string baseName = tmplInfo.containerName.empty() ? declaredType : tmplInfo.containerName;
-    baseName = CleanBaseType(baseName);
-
-    uint32_t declaratorCount = ts_node_named_child_count(varDeclNode);
-    for (uint32_t d = 0; d < declaratorCount; ++d)
+/**
+ * @brief Looks up constructor declarations for a given type name in symbol table.
+ *
+ * @param[in] baseName Cleaned type name.
+ * @param[in] table Symbol table.
+ * @return Candidate constructor symbols.
+ */
+std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const SymbolTable& table)
+{
+    std::vector<Symbol> rawConstructors;
+    auto collectFunctions = [&](const std::string& key)
     {
-        TSNode declarator = ts_node_named_child(varDeclNode, d);
-        if (std::string_view(ts_node_type(declarator)) != "variable_declarator")
-        {
-            continue;
-        }
-
-        TSNode argListNode = parser::GetChildByField(declarator, parser::fields::Arguments);
-        if (ts_node_is_null(argListNode))
-        {
-            continue;
-        }
-
-        const TSPoint start = ts_node_start_point(declarator);
-        const Scope* scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
-
-        std::vector<TSNode> argNodes = GetArgumentNodes(argListNode);
-        uint32_t argCount = static_cast<uint32_t>(argNodes.size());
-
-        std::vector<std::string> argTypes;
-        for (TSNode argNode : argNodes)
-        {
-            argTypes.push_back(ResolveExpressionType(argNode, scope, ctx.request.symbolTable, request.sourceCode,
-                                                     ctx.request.fileUri));
-        }
-
-        if (IsCorePrimitive(baseName))
-        {
-            if (argCount != 1)
-            {
-                const TSPoint aStart = ts_node_start_point(argListNode);
-                const TSPoint aEnd = ts_node_end_point(argListNode);
-                std::string sigAttempt = declaredType + "(";
-                for (size_t a = 0; a < argTypes.size(); ++a)
-                {
-                    if (a > 0)
-                        sigAttempt += ", ";
-                    sigAttempt += argTypes[a];
-                }
-                sigAttempt += ")";
-                ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-matching-constructor",
-                                sigAttempt);
-            }
-            else
-            {
-                ParameterInformation dummyParam{baseName, baseName, "", ""};
-                int score = ScoreArgumentMatch(argTypes[0], dummyParam, ctx.request.symbolTable);
-                if (score >= 999)
-                {
-                    const TSPoint aStart = ts_node_start_point(argListNode);
-                    const TSPoint aEnd = ts_node_end_point(argListNode);
-                    ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-implicit-conversion",
-                                    argTypes[0], baseName);
-                }
-            }
-            continue;
-        }
-
-        // Look up constructors
-        std::vector<Symbol> rawConstructors;
-        auto found = ctx.request.symbolTable.FindSymbolsPtr(baseName + "::" + baseName);
-        if (found)
+        if (const auto found = table.FindSymbolsPtr(key))
         {
             for (const auto& s : *found)
             {
@@ -1224,216 +1480,310 @@ void CheckVariableDirectInitialization(TSNode varDeclNode, const CallCheckReques
                 }
             }
         }
-        if (rawConstructors.empty())
+    };
+
+    collectFunctions(baseName + "::" + baseName);
+    if (rawConstructors.empty())
+    {
+        collectFunctions(baseName);
+    }
+    return rawConstructors;
+}
+
+/**
+ * @brief Checks if a class declaration is visible in script source (not predefined).
+ *
+ * @param[in] baseName Type name.
+ * @param[in] table Symbol table.
+ * @param[in] predefinedExt Predefined file extension.
+ * @return True if class declaration is visible in script.
+ */
+bool IsClassDeclarationVisible(const std::string& baseName, const SymbolTable& table, const std::string& predefinedExt)
+{
+    if (const auto declarations = table.FindSymbolsPtr(baseName))
+    {
+        for (const auto& declaration : *declarations)
         {
-            auto found2 = ctx.request.symbolTable.FindSymbolsPtr(baseName);
-            if (found2)
+            if (declaration.type == SymbolType::Class &&
+                std::holds_alternative<ClassSignature>(declaration.signature) &&
+                !utils::IsPredefinedFile(declaration.fileUri, predefinedExt))
             {
-                for (const auto& s : *found2)
-                {
-                    if (s.type == SymbolType::Function)
-                    {
-                        rawConstructors.push_back(s);
-                    }
-                }
+                return true;
             }
         }
+    }
+    return false;
+}
 
-        if (rawConstructors.empty())
+/**
+ * @brief Retrieves template parameter names declared on a class.
+ *
+ * @param[in] baseName Class name.
+ * @param[in] table Symbol table.
+ * @return Template parameter names (e.g. {"T"}).
+ */
+std::vector<std::string> GetClassTemplateParams(const std::string& baseName, const SymbolTable& table)
+{
+    std::vector<std::string> templateParams;
+    if (auto classSymbols = table.FindSymbolsPtr(baseName))
+    {
+        for (const auto& cs : *classSymbols)
         {
-            // Knowing the type exists is not the same as being able to see its
-            // constructors, and only the second justifies complaining about one.
-            //
-            // `array` is known because TypeConfig names it, and `string` because the engine
-            // registers it - neither declares a constructor anywhere this analyzer can
-            // read. Treating "known" as "fully visible" made `array<int> a(10)` report
-            // "No matching signatures to 'array<int>(int)'" on correct code, which the real
-            // compiler accepts without a word. That is the exact failure mode the
-            // silent-unless-fully-visible policy exists to prevent.
-            //
-            // A class declared in *script* is different: if it declares no constructor at
-            // all, only the implicit no-argument one exists, and a call passing arguments
-            // really is wrong.
-            //
-            // A class declared in a predefined stub is not. Its factories are registered in
-            // C++ and the stub is under no obligation to repeat them - AS-Harness's own
-            // as.predefined declares `class array<T>` with no constructor whatsoever, while
-            // the engine registers three. Seeing that declaration says the type exists; it
-            // says nothing about how many ways there are to build one.
-            bool declarationVisible = false;
-            if (const auto declarations = ctx.request.symbolTable.FindSymbolsPtr(baseName))
+            if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
             {
-                for (const auto& declaration : *declarations)
-                {
-                    if (declaration.type == SymbolType::Class &&
-                        std::holds_alternative<ClassSignature>(declaration.signature) &&
-                        !utils::IsPredefinedFile(declaration.fileUri, ctx.request.predefinedFileExtension))
-                    {
-                        declarationVisible = true;
-                        break;
-                    }
-                }
+                templateParams = cs.GetClass().templateParams;
+                break;
             }
-
-            if (declarationVisible)
-            {
-                const TSPoint aStart = ts_node_start_point(argListNode);
-                const TSPoint aEnd = ts_node_end_point(argListNode);
-                std::string sigAttempt = declaredType + "(";
-                for (size_t a = 0; a < argTypes.size(); ++a)
-                {
-                    if (a > 0)
-                        sigAttempt += ", ";
-                    sigAttempt += argTypes[a];
-                }
-                sigAttempt += ")";
-                ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-matching-constructor",
-                                sigAttempt);
-            }
-            continue;
         }
+    }
+    if (templateParams.empty())
+    {
+        templateParams.push_back("T");
+    }
+    return templateParams;
+}
 
-        // Template specialization
-        std::vector<Symbol> candidates;
-        if (!tmplInfo.templateArgs.empty())
+/**
+ * @brief Specializes a single constructor parameter by replacing template parameters.
+ *
+ * @param[in,out] param Parameter information to specialize.
+ * @param[in] paramName Template parameter name.
+ * @param[in] concreteArg Concrete argument type.
+ */
+void SpecializeConstructorParam(ParameterInformation& param, const std::string& paramName,
+                                const std::string& concreteArg)
+{
+    if (param.baseTypeName == paramName)
+    {
+        param.baseTypeName = concreteArg;
+    }
+    size_t pos = 0;
+    while ((pos = param.typeName.find(paramName, pos)) != std::string::npos)
+    {
+        const bool beforeOk = (pos == 0 || !isalnum(static_cast<unsigned char>(param.typeName[pos - 1])));
+        const bool afterOk = (pos + paramName.size() >= param.typeName.size() ||
+                              !isalnum(static_cast<unsigned char>(param.typeName[pos + paramName.size()])));
+        if (beforeOk && afterOk)
         {
-            std::vector<std::string> templateParams;
-            auto classSymbols = ctx.request.symbolTable.FindSymbolsPtr(baseName);
-            if (classSymbols)
-            {
-                for (const auto& cs : *classSymbols)
-                {
-                    if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
-                    {
-                        templateParams = cs.GetClass().templateParams;
-                        break;
-                    }
-                }
-            }
-            if (templateParams.empty())
-            {
-                templateParams.push_back("T");
-            }
-
-            for (const auto& sym : rawConstructors)
-            {
-                Symbol specSym = sym;
-                if (std::holds_alternative<FunctionSignature>(specSym.signature))
-                {
-                    auto& fn = specSym.GetFunction();
-                    for (auto& param : fn.parameters)
-                    {
-                        for (size_t t = 0; t < templateParams.size() && t < tmplInfo.templateArgs.size(); ++t)
-                        {
-                            const std::string& paramName = templateParams[t];
-                            const std::string& concreteArg = tmplInfo.templateArgs[t];
-                            if (param.baseTypeName == paramName)
-                            {
-                                param.baseTypeName = concreteArg;
-                            }
-                            size_t pos = 0;
-                            while ((pos = param.typeName.find(paramName, pos)) != std::string::npos)
-                            {
-                                bool beforeOk =
-                                    (pos == 0 || !isalnum(static_cast<unsigned char>(param.typeName[pos - 1])));
-                                bool afterOk =
-                                    (pos + paramName.size() >= param.typeName.size() ||
-                                     !isalnum(static_cast<unsigned char>(param.typeName[pos + paramName.size()])));
-                                if (beforeOk && afterOk)
-                                {
-                                    param.typeName.replace(pos, paramName.size(), concreteArg);
-                                    pos += concreteArg.size();
-                                }
-                                else
-                                {
-                                    pos += paramName.size();
-                                }
-                            }
-                        }
-                    }
-                }
-                candidates.push_back(std::move(specSym));
-            }
+            param.typeName.replace(pos, paramName.size(), concreteArg);
+            pos += concreteArg.size();
         }
         else
         {
-            candidates = rawConstructors;
-        }
-
-        // Check arity
-        std::vector<Symbol> matchingArityCandidates;
-        for (const auto& sym : candidates)
-        {
-            if (std::holds_alternative<FunctionSignature>(sym.signature))
-            {
-                const Arity arity = ArityOf(sym.GetFunction());
-                if (arity.variadic || (argCount >= arity.required && argCount <= arity.maximum))
-                {
-                    matchingArityCandidates.push_back(sym);
-                }
-            }
-        }
-
-        if (matchingArityCandidates.empty())
-        {
-            const TSPoint aStart = ts_node_start_point(argListNode);
-            const TSPoint aEnd = ts_node_end_point(argListNode);
-            std::string sigAttempt = declaredType + "(";
-            for (size_t a = 0; a < argTypes.size(); ++a)
-            {
-                if (a > 0)
-                    sigAttempt += ", ";
-                sigAttempt += argTypes[a];
-            }
-            sigAttempt += ")";
-            ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-matching-constructor",
-                            sigAttempt);
-            continue;
-        }
-
-        // Score matching arity overloads
-        auto match = ResolveBestOverload(matchingArityCandidates, argTypes, ctx.request.symbolTable);
-        if (match.bestScore >= 999 || match.bestCandidate == nullptr)
-        {
-            const TSPoint aStart = ts_node_start_point(argListNode);
-            const TSPoint aEnd = ts_node_end_point(argListNode);
-            std::string sigAttempt = declaredType + "(";
-            for (size_t a = 0; a < argTypes.size(); ++a)
-            {
-                if (a > 0)
-                    sigAttempt += ", ";
-                sigAttempt += argTypes[a];
-            }
-            sigAttempt += ")";
-            ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-matching-constructor",
-                            sigAttempt);
-            continue;
+            pos += paramName.size();
         }
     }
 }
 
-void VisitNode(TSNode node, const CallCheckRequest& request, DiagnosticContext& ctx, int depth = 0)
+/**
+ * @brief Specializes raw constructor candidates using template argument mappings.
+ *
+ * @param[in] rawConstructors Unspecialized constructor symbols.
+ * @param[in] tmplInfo Parsed template type information.
+ * @param[in] baseName Base type name.
+ * @param[in] table Symbol table.
+ * @return Specialized constructor symbols.
+ */
+std::vector<Symbol> SpecializeConstructors(const std::vector<Symbol>& rawConstructors, const TemplateTypeInfo& tmplInfo,
+                                           const std::string& baseName, const SymbolTable& table)
 {
-    // Pathologically nested source would otherwise recurse until the stack gives out; see
-    // k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
+    if (tmplInfo.templateArgs.empty())
+    {
+        return rawConstructors;
+    }
+
+    const std::vector<std::string> templateParams = GetClassTemplateParams(baseName, table);
+    std::vector<Symbol> candidates;
+
+    for (const auto& sym : rawConstructors)
+    {
+        Symbol specSym = sym;
+        if (std::holds_alternative<FunctionSignature>(specSym.signature))
+        {
+            auto& fn = specSym.GetFunction();
+            for (auto& param : fn.parameters)
+            {
+                for (size_t t = 0; t < templateParams.size() && t < tmplInfo.templateArgs.size(); ++t)
+                {
+                    SpecializeConstructorParam(param, templateParams[t], tmplInfo.templateArgs[t]);
+                }
+            }
+        }
+        candidates.push_back(std::move(specSym));
+    }
+    return candidates;
+}
+
+/**
+ * @brief Verifies constructor candidate overloads against provided arguments.
+ *
+ * @param[in] argListNode Argument list AST node.
+ * @param[in] candidates Candidate constructor symbols.
+ * @param[in] argTypes Resolved argument types.
+ * @param[in] vctx Variable initialization context.
+ */
+void CheckConstructorOverload(TSNode argListNode, const std::vector<Symbol>& candidates,
+                              const std::vector<std::string>& argTypes, const VarInitContext& vctx)
+{
+    std::vector<Symbol> matchingArity;
+    const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
+    for (const auto& sym : candidates)
+    {
+        if (std::holds_alternative<FunctionSignature>(sym.signature))
+        {
+            const Arity arity = ArityOf(sym.GetFunction());
+            if (arity.variadic || (argCount >= arity.required && argCount <= arity.maximum))
+            {
+                matchingArity.push_back(sym);
+            }
+        }
+    }
+
+    if (matchingArity.empty())
+    {
+        const TSPoint aStart = ts_node_start_point(argListNode);
+        const TSPoint aEnd = ts_node_end_point(argListNode);
+        vctx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-matching-constructor",
+                             FormatSignatureAttempt(vctx.declaredType, argTypes));
         return;
-
-    std::string_view nodeType = ts_node_type(node);
-    if (nodeType == "call_expression")
-    {
-        const TSPoint start = ts_node_start_point(node);
-        CheckCall(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
-    }
-    else if (nodeType == "variable_declaration")
-    {
-        CheckVariableDirectInitialization(node, request, ctx);
     }
 
-    const uint32_t childCount = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < childCount; ++i)
+    auto match = ResolveBestOverload(matchingArity, argTypes, vctx.ctx.request.symbolTable);
+    if (match.bestScore >= 999 || match.bestCandidate == nullptr)
     {
-        VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
+        const TSPoint aStart = ts_node_start_point(argListNode);
+        const TSPoint aEnd = ts_node_end_point(argListNode);
+        vctx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-matching-constructor",
+                             FormatSignatureAttempt(vctx.declaredType, argTypes));
+    }
+}
+
+/**
+ * @brief Verifies direct initialization arguments for a single variable declarator.
+ *
+ * @param[in] declarator AST variable declarator node.
+ * @param[in] vctx Variable initialization context.
+ */
+void CheckDeclaratorDirectInit(TSNode declarator, const VarInitContext& vctx)
+{
+    TSNode argListNode = parser::GetChildByField(declarator, parser::fields::Arguments);
+    if (ts_node_is_null(argListNode))
+    {
+        return;
+    }
+
+    const TSPoint start = ts_node_start_point(declarator);
+    const Scope* scope = FindInnermostScope(vctx.request.scopeRoot, start.row, start.column);
+
+    const std::vector<TSNode> argNodes = GetArgumentNodes(argListNode);
+    std::vector<std::string> argTypes;
+    for (TSNode argNode : argNodes)
+    {
+        argTypes.push_back(ResolveExpressionType(argNode, scope, vctx.ctx.request.symbolTable, vctx.request.sourceCode,
+                                                 vctx.ctx.request.fileUri));
+    }
+
+    if (IsCorePrimitive(vctx.baseName))
+    {
+        CheckPrimitiveDirectInit(argListNode, argTypes, vctx);
+        return;
+    }
+
+    const std::vector<Symbol> rawConstructors = LookupRawConstructors(vctx.baseName, vctx.ctx.request.symbolTable);
+    if (rawConstructors.empty())
+    {
+        if (IsClassDeclarationVisible(vctx.baseName, vctx.ctx.request.symbolTable,
+                                      vctx.ctx.request.predefinedFileExtension))
+        {
+            const TSPoint aStart = ts_node_start_point(argListNode);
+            const TSPoint aEnd = ts_node_end_point(argListNode);
+            vctx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-matching-constructor",
+                                 FormatSignatureAttempt(vctx.declaredType, argTypes));
+        }
+        return;
+    }
+
+    const std::vector<Symbol> candidates =
+        SpecializeConstructors(rawConstructors, vctx.tmplInfo, vctx.baseName, vctx.ctx.request.symbolTable);
+    CheckConstructorOverload(argListNode, candidates, argTypes, vctx);
+}
+
+/**
+ * @brief Checks direct variable initialization syntax against accessible constructors.
+ *
+ * @param[in] varDeclNode AST variable declaration node.
+ * @param[in] request Analysis call request.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckVariableDirectInitialization(TSNode varDeclNode, const CallCheckRequest& request, DiagnosticContext& ctx)
+{
+    TSNode varTypeNode = FindVariableTypeNode(varDeclNode);
+    if (ts_node_is_null(varTypeNode))
+    {
+        return;
+    }
+
+    const std::string rawTypeStr = NodeText(varTypeNode, request.sourceCode);
+    const std::string declaredType = CleanExpressionType(rawTypeStr);
+    if (declaredType.empty() || declaredType == "auto" || rawTypeStr.find('[') != std::string::npos)
+    {
+        return;
+    }
+
+    const TemplateTypeInfo tmplInfo = ParseTemplateType(declaredType);
+    std::string baseName = tmplInfo.containerName.empty() ? declaredType : tmplInfo.containerName;
+    baseName = CleanBaseType(baseName);
+
+    const VarInitContext vctx{declaredType, baseName, tmplInfo, request, ctx};
+    const uint32_t declaratorCount = ts_node_named_child_count(varDeclNode);
+    for (uint32_t d = 0; d < declaratorCount; ++d)
+    {
+        TSNode declarator = ts_node_named_child(varDeclNode, d);
+        if (std::string_view(ts_node_type(declarator)) == "variable_declarator")
+        {
+            CheckDeclaratorDirectInit(declarator, vctx);
+        }
+    }
+}
+
+/**
+ * @brief Non-recursive worklist traversal of AST nodes for call checking.
+ *
+ * @param[in] root Root AST node.
+ * @param[in] request Analysis call request.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void TraverseAstNodes(TSNode root, const CallCheckRequest& request, DiagnosticContext& ctx)
+{
+    std::vector<TSNode> stack;
+    stack.push_back(root);
+
+    while (!stack.empty())
+    {
+        TSNode node = stack.back();
+        stack.pop_back();
+
+        if (ts_node_is_null(node))
+        {
+            continue;
+        }
+
+        const std::string_view nodeType = ts_node_type(node);
+        if (nodeType == "call_expression")
+        {
+            const TSPoint start = ts_node_start_point(node);
+            CheckCall(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
+        }
+        else if (nodeType == "variable_declaration")
+        {
+            CheckVariableDirectInitialization(node, request, ctx);
+        }
+
+        const uint32_t childCount = ts_node_named_child_count(node);
+        for (uint32_t i = childCount; i > 0; --i)
+        {
+            stack.push_back(ts_node_named_child(node, i - 1));
+        }
     }
 }
 } // namespace
@@ -1445,8 +1795,6 @@ void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)
         return;
     }
 
-    // A stub describes an API rather than using one, so it has no calls worth judging - the
-    // same exemption every other use-site pass carries.
     if (utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
     {
         return;
@@ -1485,6 +1833,6 @@ void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)
         return;
     }
 
-    VisitNode(request.root, request, ctx);
+    TraverseAstNodes(request.root, request, ctx);
 }
 } // namespace angel_lsp::analysis
