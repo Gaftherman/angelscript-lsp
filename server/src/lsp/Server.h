@@ -18,6 +18,7 @@
 #include "utils/PositionEncoding.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/StopFlag.h"
+#include "utils/Timer.h"
 #include "utils/WorkspaceIncludeGraph.h"
 
 #include <ankerl/unordered_dense.h>
@@ -1185,6 +1186,56 @@ class Server
     /** @brief Handles codeLens/resolve request. */
     lsp::requests::CodeLens_Resolve::Result
     HandleRequestsCodeLens_Resolve(lsp::requests::CodeLens_Resolve::Params&& req);
+
+    /**
+     * @brief Bundles parameters for processing an open predefined stub file.
+     */
+    struct DidOpenPredefinedRequest
+    {
+        const std::string& uriStr;
+        const std::string& text;
+        int version = 0;
+        TSTree* tree = nullptr;
+        double parseMs = 0.0;
+        const utils::HighResTimer& totalTimer;
+    };
+
+    /**
+     * @brief Processes saving a predefined file stub.
+     * @param[in] uriStr Document URI key.
+     * @param[in] text Document contents.
+     */
+    void DidSavePredefinedFile(const std::string& uriStr, const std::string& text);
+
+    /**
+     * @brief Reanalyzes dependent documents when an interface change is detected on save.
+     * @param[in] uriStr Saved document URI key.
+     */
+    void ReanalyzeDependentsOnSave(const std::string& uriStr);
+
+    /**
+     * @brief Processes opening of a predefined file stub and publishes empty diagnostics.
+     * @param[in] req Request containing URI, document text, version, parse tree and timers.
+     */
+    void DidOpenPredefinedFile(const DidOpenPredefinedRequest& req);
+
+    /**
+     * @brief Applies an incremental or full content change event to a document buffer and parse tree.
+     * @param[in,out] buffer Target text buffer to modify.
+     * @param[in,out] workingTree Target AST tree to update incrementally.
+     * @param[in] change LSP change event.
+     * @param[in] isPredefined True if the document is a predefined stub.
+     */
+    void ApplyContentChange(std::string& buffer, document::TreePtr& workingTree,
+                            const lsp::TextDocumentContentChangeEvent& change, bool isPredefined);
+
+    /**
+     * @brief Restores a closed document as an on-disk closure file if claimed by an active module.
+     * @param[in] uriStr Document URI key.
+     * @param[in] path Canonical filesystem path.
+     * @return True if file was restored and re-analyzed as a module closure file.
+     */
+    bool RestoreClosedModuleFile(const std::string& uriStr, const std::string& path);
 
     /**
      * @brief Full text of an indexed document, or nullptr when the server holds none.

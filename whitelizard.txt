@@ -6,11 +6,6 @@ angel_lsp::Server::AnalyzeDocument
 angel_lsp::Server::BuildModuleIndex
 angel_lsp::Server::CollectScopesAndAnalyze
 angel_lsp::Server::CommitAnalysisResults
-angel_lsp::Server::GenerateVirtualMixinDocument
-angel_lsp::Server::HandleNotificationsTextDocument_DidChange
-angel_lsp::Server::HandleNotificationsTextDocument_DidClose
-angel_lsp::Server::HandleNotificationsTextDocument_DidOpen
-angel_lsp::Server::HandleNotificationsTextDocument_DidSave
 angel_lsp::Server::HandleNotificationsWorkspace_DidChangeConfiguration
 angel_lsp::Server::HandleNotificationsWorkspace_DidChangeWatchedFiles
 angel_lsp::Server::HandleRequestsInitialized

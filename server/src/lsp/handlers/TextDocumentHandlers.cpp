@@ -923,9 +923,25 @@ Server::HandleRequestsTextDocument_WillSaveWaitUntil(lsp::requests::TextDocument
     return lsp::Array<lsp::TextEdit>{};
 }
 
-std::string Server::GenerateVirtualMixinDocument(std::string_view uri)
+namespace
 {
-    // Expected format: angelscript-virtual://<host_class>/<mixin>.as
+struct VirtualMixinTarget
+{
+    std::string hostClass;
+    std::string mixinName;
+};
+
+struct MixinSymbolLocation
+{
+    std::string fileUri;
+    uint32_t startLine{0};
+    uint32_t endLine{0};
+    std::string resolvedBaseClass;
+    bool found{false};
+};
+
+VirtualMixinTarget ParseVirtualMixinUri(std::string_view uri)
+{
     std::string_view s = uri;
     static constexpr std::string_view kVirtualSchemeFull = "angelscript-virtual://";
     static constexpr std::string_view kVirtualSchemeShort = "angelscript-virtual:";
@@ -943,99 +959,143 @@ std::string Server::GenerateVirtualMixinDocument(std::string_view uri)
         }
     }
 
-    std::string hostClass;
-    std::string mixinName;
+    VirtualMixinTarget target;
     auto slashPos = s.find('/');
+    std::string_view mixinPart = (slashPos != std::string_view::npos) ? s.substr(slashPos + 1) : s;
     if (slashPos != std::string_view::npos)
     {
-        hostClass = angel_lsp::utils::UrlDecode(s.substr(0, slashPos));
-        std::string_view mixinPart = s.substr(slashPos + 1);
-        if (mixinPart.ends_with(".as"))
-        {
-            mixinPart.remove_suffix(3);
-        }
-        mixinName = angel_lsp::utils::UrlDecode(mixinPart);
+        target.hostClass = angel_lsp::utils::UrlDecode(s.substr(0, slashPos));
     }
-    else
+    if (mixinPart.ends_with(".as"))
     {
-        std::string_view mixinPart = s;
-        if (mixinPart.ends_with(".as"))
-        {
-            mixinPart.remove_suffix(3);
-        }
-        mixinName = angel_lsp::utils::UrlDecode(mixinPart);
+        mixinPart.remove_suffix(3);
     }
+    target.mixinName = angel_lsp::utils::UrlDecode(mixinPart);
+    return target;
+}
 
-    std::string mixinPhysicalFileUri;
-    uint32_t mixinStartLine = 0;
-    uint32_t mixinEndLine = 0;
-    bool foundMixin = false;
-    std::string resolvedBaseClass;
-
-    const angel_lsp::analysis::Symbol* mixinSym = nullptr;
-    auto candidates = m_symbolTable.FindSymbols(mixinName);
-    for (const auto& cand : candidates)
+const angel_lsp::analysis::Symbol* FindMixinClassSymbol(const angel_lsp::analysis::SymbolTable& symTable,
+                                                        const std::string& mixinName,
+                                                        std::vector<angel_lsp::analysis::Symbol>& outCandidates)
+{
+    outCandidates = symTable.FindSymbols(mixinName);
+    for (const auto& cand : outCandidates)
     {
         if (cand.type == angel_lsp::analysis::SymbolType::Class)
         {
-            mixinSym = &cand;
-            break;
+            return &cand;
         }
     }
 
+    std::string shortName = mixinName;
+    if (auto lastScope = shortName.rfind("::"); lastScope != std::string::npos)
+    {
+        shortName = shortName.substr(lastScope + 2);
+    }
+    auto shortCandidates = symTable.FindTypeSymbolsByShortName(shortName);
+    for (const auto& cand : shortCandidates)
+    {
+        if (cand.type == angel_lsp::analysis::SymbolType::Class)
+        {
+            return &cand;
+        }
+    }
+    return nullptr;
+}
+
+MixinSymbolLocation ResolveMixinLocation(const angel_lsp::analysis::Symbol* mixinSym)
+{
+    MixinSymbolLocation loc;
     if (!mixinSym)
     {
-        std::string shortName = mixinName;
-        auto lastScope = shortName.rfind("::");
-        if (lastScope != std::string::npos)
-        {
-            shortName = shortName.substr(lastScope + 2);
-        }
-        auto shortCandidates = m_symbolTable.FindTypeSymbolsByShortName(shortName);
-        for (const auto& cand : shortCandidates)
-        {
-            if (cand.type == angel_lsp::analysis::SymbolType::Class)
-            {
-                mixinSym = &cand;
-                break;
-            }
-        }
+        return loc;
     }
+    loc.fileUri = mixinSym->fileUri;
+    loc.startLine = mixinSym->startLine;
+    loc.endLine = mixinSym->fullRange.endLine > 0 ? mixinSym->fullRange.endLine : mixinSym->endLine;
+    loc.found = true;
 
-    if (mixinSym)
+    if (std::holds_alternative<angel_lsp::analysis::ClassSignature>(mixinSym->signature))
     {
-        mixinPhysicalFileUri = mixinSym->fileUri;
-        mixinStartLine = mixinSym->startLine;
-        mixinEndLine = mixinSym->fullRange.endLine > 0 ? mixinSym->fullRange.endLine : mixinSym->endLine;
-        foundMixin = true;
-
-        if (std::holds_alternative<angel_lsp::analysis::ClassSignature>(mixinSym->signature))
+        const auto& clsSig = std::get<angel_lsp::analysis::ClassSignature>(mixinSym->signature);
+        if (!clsSig.bases.empty())
         {
-            const auto& clsSig = std::get<angel_lsp::analysis::ClassSignature>(mixinSym->signature);
-            if (!clsSig.bases.empty())
-            {
-                resolvedBaseClass = fmt::format(" | Base: {}", fmt::join(clsSig.bases, ", "));
-            }
+            loc.resolvedBaseClass = fmt::format(" | Base: {}", fmt::join(clsSig.bases, ", "));
         }
     }
+    return loc;
+}
 
-    // Construct header (kVirtualMixinHeaderLineCount lines: 0..kVirtualMixinHeaderLineCount-1)
+void AppendMixinSourceLines(std::string_view sourceText, uint32_t startLine, uint32_t endLine, std::string& out)
+{
+    std::vector<std::string_view> lines;
+    size_t start = 0;
+    while (start < sourceText.size())
+    {
+        size_t end = sourceText.find('\n', start);
+        if (end == std::string_view::npos)
+        {
+            lines.push_back(std::string_view(sourceText).substr(start));
+            break;
+        }
+        std::string_view line = std::string_view(sourceText).substr(start, end - start);
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.remove_suffix(1);
+        }
+        lines.push_back(line);
+        start = end + 1;
+    }
+
+    if (startLine < lines.size())
+    {
+        size_t effectiveEndLine = std::max<size_t>(startLine, endLine);
+        size_t clampEnd = std::min<size_t>(effectiveEndLine, lines.size() - 1);
+        for (size_t i = startLine; i <= clampEnd; ++i)
+        {
+            out.append(lines[i]);
+            out.push_back('\n');
+        }
+    }
+}
+
+void AppendFallbackMixin(std::string_view mixinName, const std::vector<angel_lsp::analysis::Symbol>& candidates,
+                         std::string& out)
+{
+    out += fmt::format("mixin class {}\n{{\n", mixinName);
+    for (const auto& cand : candidates)
+    {
+        if (cand.type == angel_lsp::analysis::SymbolType::Function && cand.containerName == mixinName)
+        {
+            out += fmt::format("    void {}();\n", cand.name);
+        }
+    }
+    out += "}\n";
+}
+} // namespace
+
+std::string Server::GenerateVirtualMixinDocument(std::string_view uri)
+{
+    const auto target = ParseVirtualMixinUri(uri);
+    std::vector<angel_lsp::analysis::Symbol> candidates;
+    const auto* mixinSym = FindMixinClassSymbol(m_symbolTable, target.mixinName, candidates);
+    const auto loc = ResolveMixinLocation(mixinSym);
+
     static_assert(angel_lsp::analysis::SymbolTable::kVirtualMixinHeaderLineCount == 3);
     std::string result;
-    result += fmt::format("// Virtual expanded mixin {} for host class {}\n", mixinName, hostClass);
-    result += fmt::format("// Origin: {}{}\n", mixinPhysicalFileUri, resolvedBaseClass);
-    result += "\n";
+    result += fmt::format("// Virtual expanded mixin {} for host class {}\n", target.mixinName, target.hostClass);
+    result += fmt::format("// Origin: {}{}\n\n", loc.fileUri, loc.resolvedBaseClass);
 
     std::string sourceText;
-    if (!mixinPhysicalFileUri.empty())
+    if (!loc.fileUri.empty())
     {
-        if (const std::string* docText = FindDocumentText(mixinPhysicalFileUri))
+        if (const std::string* docText = FindDocumentText(loc.fileUri))
         {
             sourceText = *docText;
         }
         else
         {
-            std::string filePath = angel_lsp::utils::UriToPath(mixinPhysicalFileUri);
+            std::string filePath = angel_lsp::utils::UriToPath(loc.fileUri);
             std::ifstream file(filePath, std::ios::binary);
             if (file.is_open())
             {
@@ -1044,50 +1104,13 @@ std::string Server::GenerateVirtualMixinDocument(std::string_view uri)
         }
     }
 
-    if (foundMixin && !sourceText.empty())
+    if (loc.found && !sourceText.empty())
     {
-        std::vector<std::string_view> lines;
-        size_t start = 0;
-        while (start < sourceText.size())
-        {
-            size_t end = sourceText.find('\n', start);
-            if (end == std::string_view::npos)
-            {
-                lines.push_back(std::string_view(sourceText).substr(start));
-                break;
-            }
-            std::string_view line = std::string_view(sourceText).substr(start, end - start);
-            if (!line.empty() && line.back() == '\r')
-            {
-                line.remove_suffix(1);
-            }
-            lines.push_back(line);
-            start = end + 1;
-        }
-
-        if (mixinStartLine < lines.size())
-        {
-            size_t effectiveEndLine = std::max<size_t>(mixinStartLine, mixinEndLine);
-            size_t clampEnd = std::min<size_t>(effectiveEndLine, lines.size() - 1);
-            for (size_t i = mixinStartLine; i <= clampEnd; ++i)
-            {
-                result.append(lines[i]);
-                result.push_back('\n');
-            }
-        }
+        AppendMixinSourceLines(sourceText, loc.startLine, loc.endLine, result);
     }
     else
     {
-        // Fallback synthesis if physical source is unavailable
-        result += fmt::format("mixin class {}\n{{\n", mixinName);
-        for (const auto& cand : candidates)
-        {
-            if (cand.type == angel_lsp::analysis::SymbolType::Function && cand.containerName == mixinName)
-            {
-                result += fmt::format("    void {}();\n", cand.name);
-            }
-        }
-        result += "}\n";
+        AppendFallbackMixin(target.mixinName, candidates, result);
     }
 
     return result;
