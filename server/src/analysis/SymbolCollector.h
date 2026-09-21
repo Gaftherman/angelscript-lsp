@@ -10,8 +10,10 @@
 #include "parser/GrammarNames.h"
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
+#include <vector>
 
 // Forward-declared to ensure AST symbol extraction remains in Layer 2 without pulling protocol definitions.
 namespace angel_lsp::utils
@@ -21,6 +23,30 @@ class LspLogger;
 
 namespace angel_lsp::analysis
 {
+/**
+ * @brief Input parameters for symbol collection.
+ */
+struct SymbolCollectRequest
+{
+    /** @brief Document URI used to tag every collected symbol and diagnostic. */
+    const std::string& fileUri;
+    /** @brief Full text of the document. */
+    const std::string& sourceCode;
+    /** @brief Optional localizer for diagnostic messages; English is used when null. */
+    const angel_lsp::i18n::I18n* i18n = nullptr;
+
+    /**
+     * @brief Constructs a SymbolCollectRequest bundle.
+     * @param[in] uri Document URI string.
+     * @param[in] code Full text of the document.
+     * @param[in] loc Optional localizer pointer.
+     */
+    SymbolCollectRequest(const std::string& uri, const std::string& code, const angel_lsp::i18n::I18n* loc = nullptr)
+        : fileUri(uri), sourceCode(code), i18n(loc)
+    {
+    }
+};
+
 /**
  * @brief Walks a parsed AngelScript tree-sitter AST and populates a SymbolTable with
  *        declarations (functions, classes, variables, ...) and out-of-body call references.
@@ -48,31 +74,56 @@ class SymbolCollector
 
     /**
      * @brief Parses sourceCode and collects its symbols into symbolTable.
-     * @param fileUri Document URI used to tag every collected symbol and diagnostic.
-     * @param sourceCode Full text of the document.
-     * @param parser Tree-sitter parser used to produce the AST (and immediately discarded).
-     * @param symbolTable Table that receives the collected symbols.
-     * @param i18n Optional localizer for diagnostic messages; English is used when null.
+     * @param[in] request Request bundle containing file URI, source text, and optional localizer.
+     * @param[in,out] parser Tree-sitter parser used to produce the AST.
+     * @param[in,out] symbolTable Table that receives the collected symbols.
+     * @return Diagnostics produced while parsing and validating the document.
+     */
+    std::vector<Diagnostic> CollectSymbols(const SymbolCollectRequest& request,
+                                           angel_lsp::parser::AngelScriptParser& parser, SymbolTable& symbolTable);
+
+    /**
+     * @brief Convenience overload collecting symbols from URI and sourceCode with default localization.
+     * @param[in] fileUri Document URI used to tag every collected symbol and diagnostic.
+     * @param[in] sourceCode Full text of the document.
+     * @param[in,out] parser Tree-sitter parser used to produce the AST.
+     * @param[in,out] symbolTable Table that receives the collected symbols.
      * @return Diagnostics produced while parsing and validating the document.
      */
     std::vector<Diagnostic> CollectSymbols(const std::string& fileUri, const std::string& sourceCode,
-                                           angel_lsp::parser::AngelScriptParser& parser, SymbolTable& symbolTable,
-                                           const angel_lsp::i18n::I18n* i18n = nullptr);
+                                           angel_lsp::parser::AngelScriptParser& parser, SymbolTable& symbolTable);
 
     /**
      * @brief Collects symbols from an already-parsed tree, without owning or freeing it.
-     * @param tree Pre-parsed tree-sitter tree; the caller retains ownership.
-     * @see CollectSymbols for the remaining parameters.
+     * @param[in] request Request bundle containing file URI, source text, and optional localizer.
+     * @param[in] tree Pre-parsed tree-sitter tree; the caller retains ownership.
+     * @param[in,out] symbolTable Table that receives the collected symbols.
+     * @return Diagnostics produced while validating the document.
+     */
+    std::vector<Diagnostic> CollectSymbolsWithTree(const SymbolCollectRequest& request, TSTree* tree,
+                                                   SymbolTable& symbolTable);
+
+    /**
+     * @brief Convenience overload collecting symbols from an already-parsed tree with default localization.
+     * @param[in] fileUri Document URI used to tag every collected symbol and diagnostic.
+     * @param[in] sourceCode Full text of the document.
+     * @param[in] tree Pre-parsed tree-sitter tree; the caller retains ownership.
+     * @param[in,out] symbolTable Table that receives the collected symbols.
+     * @return Diagnostics produced while validating the document.
      */
     std::vector<Diagnostic> CollectSymbolsWithTree(const std::string& fileUri, const std::string& sourceCode,
-                                                   TSTree* tree, SymbolTable& symbolTable,
-                                                   const angel_lsp::i18n::I18n* i18n = nullptr);
+                                                   TSTree* tree, SymbolTable& symbolTable);
 
     // =====================================================================================
     // AST Helpers
     // =====================================================================================
 
-    /** @brief Returns the child of node bound to fieldName, or a null TSNode if absent. */
+    /**
+     * @brief Returns the child of node bound to fieldName, or a null TSNode if absent.
+     * @param[in] node Parent tree-sitter node.
+     * @param[in] fieldName Field name string.
+     * @return Child tree-sitter node.
+     */
     static TSNode GetChildByFieldName(TSNode node, const char* fieldName)
     {
         return parser::GetChildByField(node, fieldName);
@@ -80,7 +131,7 @@ class SymbolCollector
 
   private:
     utils::LspLogger* m_logger;
-    TSQuery* m_tagsQuery;
+    TSQuery* m_tagsQuery = nullptr;
 
     // =====================================================================================
     // Cached grammar symbols (tree-sitter TSSymbol IDs, resolved once per instance)
@@ -131,7 +182,7 @@ class SymbolCollector
     TSSymbol m_tokOpenBrace = 0;
 
     // =====================================================================================
-    // AST Traversal & Scope Helpers
+    // Internal Bundled Contexts
     // =====================================================================================
 
     /** @brief Tracks the lexical scope a TAGS_QUERY match was found in while it is dispatched. */
@@ -143,146 +194,144 @@ class SymbolCollector
         bool isInsideNamespace = false;
     };
 
-    /** @brief Member-function pointer type used to dispatch a TAGS_QUERY capture to its handler. */
-    using ProcessFn = void (SymbolCollector::*)(TSNode, const std::string&, const std::string&, SymbolTable&,
-                                                const CollectionContext&);
+    /** @brief Bundles mutable collectors and immutable request state during AST walks. */
+    struct SymbolCollectContext
+    {
+        const SymbolCollectRequest& request;
+        SymbolTable& symbolTable;
+        std::vector<Diagnostic>& diagnostics;
+    };
 
-    /** @brief Maps each TAGS_QUERY capture index (by definition order) to its handler, built once in the constructor.
-     */
+    /** @brief Bundles URI and source context for symbol creation. */
+    struct SymbolLocationContext
+    {
+        const std::string& sourceCode;
+        const std::string& fileUri;
+        const std::string& containerPath;
+    };
+
+    struct VariableHeaderInfo
+    {
+        std::string typeStr;
+        TypeExtractionResult typeInfo;
+        SymbolModifiers modifiers;
+        bool hasSemicolon = false;
+    };
+
+    // =====================================================================================
+    // Query Dispatch Types & Members
+    // =====================================================================================
+
+    /** @brief Member-function pointer type used to dispatch a TAGS_QUERY capture to its handler. */
+    using ProcessFn = void (SymbolCollector::*)(TSNode, SymbolCollectContext&, const CollectionContext&);
+
+    /** @brief Maps each TAGS_QUERY capture index to its handler, built once in the constructor. */
     std::vector<ProcessFn> m_captureDispatch;
 
-    /** @brief Member-function pointer type used to dispatch a TAGS_QUERY capture to a diagnostics-only validation
-     * handler. */
-    using ValidationFn = void (SymbolCollector::*)(TSNode, const std::string&, const std::string&,
-                                                   std::vector<Diagnostic>&, const angel_lsp::i18n::I18n*) const;
+    /** @brief Member-function pointer type used to dispatch a validation capture to its handler. */
+    using ValidationFn = void (SymbolCollector::*)(TSNode, SymbolCollectContext&) const;
 
-    /**
-     * @brief Maps each TAGS_QUERY capture index to its validation handler, built once in the
-     *        constructor. Kept separate from m_captureDispatch (rather than widening ProcessFn)
-     *        because validation captures need no SymbolTable/CollectionContext - they only
-     *        append Diagnostics, so BuildContext's O(depth) ancestor walk is skipped for them.
-     *        A given capture index is only ever present in one of the two tables.
-     */
+    /** @brief Maps each TAGS_QUERY capture index to its validation handler. */
     std::vector<ValidationFn> m_validationDispatch;
 
-    /** @brief Runs diagnostics and the TAGS_QUERY dispatch loop over a parsed root node. */
-    void CollectFromTree(TSNode rootNode, const std::string& sourceCode, const std::string& fileUri,
-                         SymbolTable& symbolTable, const angel_lsp::i18n::I18n* i18n,
-                         std::vector<Diagnostic>& diagnostics);
+    // =====================================================================================
+    // Initialization Helpers
+    // =====================================================================================
 
-    /** @brief Walks node's ancestors to derive the enclosing container path and function/class/namespace nesting flags.
-     */
+    void ResolveGrammarSymbols(const TSLanguage* lang);
+    void InitQueryDispatch(const TSLanguage* lang);
+    void PopulateDispatchTables();
+    ProcessFn ResolveCaptureHandler(std::string_view captureName) const;
+    ValidationFn ResolveValidationHandler(std::string_view captureName) const;
+
+    // =====================================================================================
+    // AST Traversal & Scope Helpers
+    // =====================================================================================
+
+    /** @brief Runs diagnostics and the TAGS_QUERY dispatch loop over a parsed root node. */
+    void CollectFromTree(TSNode rootNode, SymbolCollectContext& sCtx);
+
+    /** @brief Walks node's ancestors to derive the enclosing container path and nesting flags. */
     CollectionContext BuildContext(TSNode node, const std::string& sourceCode) const;
 
     // =====================================================================================
     // Declaration Collectors (TAGS_QUERY @definition.* handlers)
     // =====================================================================================
 
-    /** @brief Collects a global/class-field/namespace variable declaration or virtual property; local variables are
-     * skipped. */
-    void ProcessVariable(TSNode varDeclNode, const std::string& sourceCode, const std::string& fileUri,
-                         SymbolTable& symbolTable, const CollectionContext& ctx);
+    void ProcessVariable(TSNode varDeclNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    void ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    void ProcessRegularVariable(TSNode varDeclNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    void CollectDeclaratorSymbol(TSNode declaratorNode, const VariableHeaderInfo& header, SymbolCollectContext& sCtx,
+                                 const CollectionContext& ctx);
+    void ParseAccessorNodes(TSNode node, VariableSignature& varSig) const;
+    void ParseSingleAccessor(TSNode accNode, VariableSignature& varSig) const;
+    void ApplyAccessorTokens(TSNode accNode, bool isGet, bool isSet, VariableSignature& varSig) const;
 
-    /** @brief Collects a function, method, interface method, or imported function declaration. */
-    void ProcessFunction(TSNode funcNode, const std::string& sourceCode, const std::string& fileUri,
-                         SymbolTable& symbolTable, const CollectionContext& ctx);
+    void ProcessFunction(TSNode funcNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    TSNode FindFunctionBody(TSNode funcNode) const;
+    bool IsExternalFunction(TSNode funcNode) const;
+    std::string ExtractOriginModule(TSNode funcNode, const std::string& sourceCode) const;
 
-    /** @brief Collects a class or mixin declaration, including its base list and template parameters. */
-    void ProcessClass(TSNode classNode, const std::string& sourceCode, const std::string& fileUri,
-                      SymbolTable& symbolTable, const CollectionContext& ctx);
+    void ProcessClass(TSNode classNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    void ProcessNamespace(TSNode namespaceNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    void ProcessTypedef(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    void ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
 
-    /** @brief Collects a namespace declaration. */
-    void ProcessNamespace(TSNode namespaceNode, const std::string& sourceCode, const std::string& fileUri,
-                          SymbolTable& symbolTable, const CollectionContext& ctx);
+    void ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    bool EnumHasBraces(TSNode node) const;
+    void CollectEnumMembers(TSNode node, const std::string& sourceCode, EnumSignature& enumSig) const;
+    void PublishEnumMembers(TSNode node, const EnumSignature& enumSig, SymbolCollectContext& sCtx,
+                            const CollectionContext& ctx);
 
-    /** @brief Collects a typedef declaration. */
-    void ProcessTypedef(TSNode node, const std::string& sourceCode, const std::string& fileUri,
-                        SymbolTable& symbolTable, const CollectionContext& ctx);
-
-    /** @brief Collects a funcdef (function-pointer type alias) declaration. */
-    void ProcessFuncdef(TSNode node, const std::string& sourceCode, const std::string& fileUri,
-                        SymbolTable& symbolTable, const CollectionContext& ctx);
-
-    /** @brief Collects an enum declaration and indexes each of its members as Variable symbols. */
-    void ProcessEnum(TSNode node, const std::string& sourceCode, const std::string& fileUri, SymbolTable& symbolTable,
-                     const CollectionContext& ctx);
-
-    /** @brief Collects a standalone virtual property (get/set) declaration. */
-    void ProcessProperty(TSNode node, const std::string& sourceCode, const std::string& fileUri,
-                         SymbolTable& symbolTable, const CollectionContext& ctx);
-
-    /** @brief Collects an interface declaration, including its inherited interface list. */
-    void ProcessInterface(TSNode node, const std::string& sourceCode, const std::string& fileUri,
-                          SymbolTable& symbolTable, const CollectionContext& ctx);
+    void ProcessProperty(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    void ProcessInterface(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
 
     // =====================================================================================
-    // Reference & Out-of-Body Call Collectors (TAGS_QUERY @reference.* handlers)
+    // Reference & Out-of-Body Call Collectors
     // =====================================================================================
 
-    /**
-     * @brief Records a function or method call that occurs outside any function body
-     *        (e.g. a global/class-field initializer or an enum member value) as a
-     *        CallReference symbol. Calls made from inside a function body are ignored here,
-     *        since they belong to that function's own body analysis instead.
-     */
-    void ProcessCallReference(TSNode callNode, const std::string& sourceCode, const std::string& fileUri,
-                              SymbolTable& symbolTable, const CollectionContext& ctx);
+    void ProcessCallReference(TSNode callNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
 
     // =====================================================================================
-    // Validation Collectors (TAGS_QUERY @validation.* handlers)
+    // Validation Collectors
     // =====================================================================================
 
-    /** @brief Flags `using namespace <reserved-keyword>;` declarations as invalid identifiers. */
-    void CheckUsingDeclarationCapture(TSNode usingNode, const std::string& sourceCode, const std::string& fileUri,
-                                      std::vector<Diagnostic>& diagnostics, const angel_lsp::i18n::I18n* i18n) const;
-
-    /**
-     * @brief Flags repeated declaration modifiers (e.g. `final final class Foo {}`) as warnings.
-     *        Handles both declaration_modifier (class/mixin) and shared_external_modifier
-     *        (interface) child nodes, since the query matches all three declaration kinds.
-     */
-    void CheckDuplicateModifierGroup(TSNode declNode, const std::string& sourceCode, const std::string& fileUri,
-                                     std::vector<Diagnostic>& diagnostics, const angel_lsp::i18n::I18n* i18n) const;
+    void CheckUsingDeclarationCapture(TSNode usingNode, SymbolCollectContext& sCtx) const;
+    void CheckDuplicateModifierGroup(TSNode declNode, SymbolCollectContext& sCtx) const;
 
     // =====================================================================================
     // Diagnostics & Error Recovery
     // =====================================================================================
 
-    /** @brief Recursively reports tree-sitter ERROR/MISSING nodes as syntax-error diagnostics. */
-    void ReportParseErrors(TSNode node, const std::string& fileUri, const std::string& sourceCode,
-                           std::vector<Diagnostic>& diagnostics, const angel_lsp::i18n::I18n* i18n = nullptr,
-                           int depth = 0) const;
+    void ReportParseErrors(TSNode rootNode, SymbolCollectContext& sCtx) const;
+    void EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext& sCtx) const;
+    std::string FormatSyntaxErrorMessage(const std::string& rawErrText, std::string& outCode,
+                                         const angel_lsp::i18n::I18n* i18n) const;
 
     // =====================================================================================
     // AST/Text Extraction Helpers
     // =====================================================================================
 
-    /** @brief Returns the source text spanned by node, or an empty string for a null/degenerate node. */
     std::string GetNodeText(TSNode node, const std::string& sourceCode) const;
-
-    /** @brief Non-owning view equivalent of GetNodeText; valid only as long as sourceCode is alive. */
     std::string_view GetNodeView(TSNode node, const std::string& sourceCode) const;
 
-    /** @brief Extracts access/const/handle/shared/... modifiers from a declaration_modifier or func_attributes child
-     * list. */
     SymbolModifiers ExtractModifiers(TSNode node, const std::string& sourceCode) const;
-
-    /** @brief Applies a single anonymous modifier token (e.g. "const", "shared") onto modifiers. */
+    void ProcessModifierChild(TSNode child, const std::string& sourceCode, SymbolModifiers& modifiers) const;
+    void ApplyModifierString(std::string_view text, SymbolModifiers& modifiers, bool isFuncAttr) const;
+    bool ApplyAccessOrStorageString(std::string_view text, SymbolModifiers& modifiers) const;
     void ApplyModifierToken(TSSymbol tokenSymbol, SymbolModifiers& modifiers) const;
+    bool ApplyParamModifierToken(TSSymbol tokenSymbol, SymbolModifiers& modifiers) const;
 
-    /** @brief Returns true if node or any of its descendants is a null_literal. */
-
-    /** @brief Extracts name, type, and modifier information from a single function/method parameter node. */
     ParameterInformation ExtractParameterInfo(TSNode paramNode, const std::string& sourceCode) const;
+    void ExtractParamTypeRefAndConst(TSNode pTypeNode, const std::string& sourceCode, ParameterInformation& paramInfo,
+                                     uint32_t& refCount) const;
+    void ExtractParamModifierTokens(TSNode paramNode, const std::string& sourceCode, ParameterInformation& paramInfo,
+                                    uint32_t& refCount) const;
 
-    /** @brief Extracts all parameters from a parameter_list node, collapsing a lone `(void)` to an empty list. */
     std::vector<ParameterInformation> ExtractParameters(TSNode paramsNode, const std::string& sourceCode) const;
 
-    /** @brief Builds a Symbol with its type, name, container, qualified name, file URI, and source range populated. */
-    Symbol CreateSymbol(SymbolType type, TSNode node, TSNode nameNode, const std::string& sourceCode,
-                        const std::string& fileUri, const std::string& containerPath) const;
+    Symbol CreateSymbol(SymbolType type, TSNode node, TSNode nameNode, const SymbolLocationContext& loc) const;
 
-    /** @brief Extracts the base class/interface name list from a class or interface declaration's base_class_list. */
     std::vector<std::string> ExtractBases(TSNode classNode, const std::string& sourceCode) const;
 };
 } // namespace angel_lsp::analysis

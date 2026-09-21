@@ -42,34 +42,33 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    std::string ReadWholeFile(const std::filesystem::path &path)
-    {
-        std::ifstream file(path, std::ios::binary);
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-        return buffer.str();
-    }
-
-    /** @brief Every predefined stub under the repository root, by the server's own name rule. */
-    std::vector<std::filesystem::path> FindStubs()
-    {
-        std::vector<std::filesystem::path> stubs;
-
-        // The same walk and the same exclusions the server uses, so this cannot disagree with it
-        // about which files are stubs or which trees are skipped.
-        angel_lsp::utils::ForEachWorkspaceFile(
-            { std::string(ANGELSCRIPT_REPO_ROOT) },
-            { "**/.git/**", "**/build*/**", "**/node_modules/**", "**/out/**" },
-            {},
-            [&stubs](const std::filesystem::directory_entry &entry) {
-                if (angel_lsp::utils::IsPredefinedFile(entry.path().generic_string(), ".as.predefined"))
-                    stubs.push_back(entry.path());
-            });
-
-        std::sort(stubs.begin(), stubs.end());
-        return stubs;
-    }
+std::string ReadWholeFile(const std::filesystem::path& path)
+{
+    std::ifstream file(path, std::ios::binary);
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
 }
+
+/** @brief Every predefined stub under the repository root, by the server's own name rule. */
+std::vector<std::filesystem::path> FindStubs()
+{
+    std::vector<std::filesystem::path> stubs;
+
+    // The same walk and the same exclusions the server uses, so this cannot disagree with it
+    // about which files are stubs or which trees are skipped.
+    angel_lsp::utils::ForEachWorkspaceFile(
+        {std::string(ANGELSCRIPT_REPO_ROOT)}, {"**/.git/**", "**/build*/**", "**/node_modules/**", "**/out/**"}, {},
+        [&stubs](const std::filesystem::directory_entry& entry)
+        {
+            if (angel_lsp::utils::IsPredefinedFile(entry.path().generic_string(), ".as.predefined"))
+                stubs.push_back(entry.path());
+        });
+
+    std::sort(stubs.begin(), stubs.end());
+    return stubs;
+}
+} // namespace
 
 TEST_CASE("Every predefined stub in this checkout parses and analyses clean")
 {
@@ -78,14 +77,14 @@ TEST_CASE("Every predefined stub in this checkout parses and analyses clean")
     // Not a vacuous pass. The two fixtures are committed, so finding none means the sweep itself
     // is broken - a wrong root, an exclusion that swallowed tests/fixtures - rather than that the
     // repository is clean.
-    REQUIRE_MESSAGE(!stubs.empty(),
-                    "No predefined stub found under " << ANGELSCRIPT_REPO_ROOT
-                        << ". Two are committed under server/tests/fixtures, so this means the "
-                           "sweep is looking in the wrong place.");
+    REQUIRE_MESSAGE(!stubs.empty(), "No predefined stub found under "
+                                        << ANGELSCRIPT_REPO_ROOT
+                                        << ". Two are committed under server/tests/fixtures, so this means the "
+                                           "sweep is looking in the wrong place.");
 
     static angel_lsp::i18n::I18n i18n;
 
-    for (const auto &stub : stubs)
+    for (const auto& stub : stubs)
     {
         // Read it the way the server reads it. RewriteInlineListPatterns turns the manual's inline
         // list-factory notation - `array (int& in type, int& in list) {repeat T};` - into the
@@ -103,53 +102,51 @@ TEST_CASE("Every predefined stub in this checkout parses and analyses clean")
         LocalScopeCollector scopes(nullptr);
         SymbolTable table;
 
-        auto diagnostics = collector.CollectSymbols(uri, source, parser, table, &i18n);
+        auto diagnostics = collector.CollectSymbols({uri, source, &i18n}, parser, table);
 
-        SemanticAnalysisRequest request{ table, uri, ".as.predefined", &i18n };
+        SemanticAnalysisRequest request{table, uri, ".as.predefined", &i18n};
         request.sourceCode = source;
         request.scopeRoot = scopes.CollectScopes(source, parser);
 
-        TSTree *tree = parser.Parse(source);
+        TSTree* tree = parser.Parse(source);
         request.tree = tree;
 
         SemanticAnalyzer analyzer(nullptr);
-        for (auto &diagnostic : analyzer.Analyze(request))
+        for (auto& diagnostic : analyzer.Analyze(request))
             diagnostics.push_back(std::move(diagnostic));
 
         if (tree)
             ts_tree_delete(tree);
 
         std::vector<std::string> errors;
-        for (const auto &diagnostic : diagnostics)
+        for (const auto& diagnostic : diagnostics)
         {
             if (diagnostic.severity != DiagnosticSeverity::Error)
                 continue;
 
-            errors.push_back("line " + std::to_string(diagnostic.range.start.line + 1) + "  " +
-                             diagnostic.code + "  " + diagnostic.message);
+            errors.push_back("line " + std::to_string(diagnostic.range.start.line + 1) + "  " + diagnostic.code + "  " +
+                             diagnostic.message);
         }
 
         // Errors only. A stub legitimately draws warnings and hints - unused declarations are the
         // whole point of one - and failing on those would make every stub in the world unusable.
         std::string report;
-        for (const auto &error : errors)
+        for (const auto& error : errors)
             report += "\n    " + error;
 
         INFO(report);
-        CHECK_MESSAGE(errors.empty(),
-                      "This stub does not analyse clean, so every type it declares is invisible to "
-                      "the server that reads it: " << stub.filename().generic_string());
+        CHECK_MESSAGE(errors.empty(), "This stub does not analyse clean, so every type it declares is invisible to "
+                                      "the server that reads it: "
+                                          << stub.filename().generic_string());
 
         // A stub that produced no symbols parsed as something, but not as declarations - the shape
         // an unrecognised stub takes, and the one no error would report.
         size_t declared = 0;
-        table.ForEachSymbol([&declared](const std::string &, const std::vector<Symbol> &symbols) {
-            declared += symbols.size();
-        });
+        table.ForEachSymbol([&declared](const std::string&, const std::vector<Symbol>& symbols)
+                            { declared += symbols.size(); });
 
         CHECK_MESSAGE(declared > 0,
-                      "This stub declares nothing the analyzer could see: "
-                          << stub.filename().generic_string());
+                      "This stub declares nothing the analyzer could see: " << stub.filename().generic_string());
     }
 
     MESSAGE("Stubs swept: " << stubs.size());

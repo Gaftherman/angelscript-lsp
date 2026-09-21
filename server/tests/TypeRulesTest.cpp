@@ -1,14 +1,14 @@
 #include <doctest/doctest.h>
 
+#include "analysis/LocalScopeCollector.h"
+#include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "analysis/rules/TypeRules.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "helpers/TestUtils.h"
-#include "analysis/rules/TypeRules.h"
-#include "analysis/SemanticAnalyzer.h"
-#include "analysis/SemanticAnalysisRequest.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/SymbolTable.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
@@ -25,60 +25,60 @@ using namespace angel_lsp::test;
 
 namespace
 {
-    std::vector<Diagnostic> AnalyzeTypeSnippet(const std::string &code,
-                                               const std::string &fileUri = "file:///types.as")
+std::vector<Diagnostic> AnalyzeTypeSnippet(const std::string& code, const std::string& fileUri = "file:///types.as")
+{
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    LocalScopeCollector scopes(nullptr);
+    SymbolTable table;
+    static angel_lsp::i18n::I18n i18n;
+
+    auto diagnostics = collector.CollectSymbols({fileUri, code, &i18n}, parser, table);
+
+    SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
+    request.scopeRoot = scopes.CollectScopes(code, parser);
+    request.sourceCode = code;
+    request.tree = parser.Parse(code);
+
+    SemanticAnalyzer analyzer(nullptr);
+    auto semDiags = analyzer.Analyze(request);
+    diagnostics.insert(diagnostics.end(), semDiags.begin(), semDiags.end());
+
+    if (request.tree)
     {
-        AngelScriptParser parser;
-        SymbolCollector collector(nullptr);
-        LocalScopeCollector scopes(nullptr);
-        SymbolTable table;
-        static angel_lsp::i18n::I18n i18n;
-
-        auto diagnostics = collector.CollectSymbols(fileUri, code, parser, table, &i18n);
-
-        SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
-        request.scopeRoot = scopes.CollectScopes(code, parser);
-        request.sourceCode = code;
-        request.tree = parser.Parse(code);
-
-        SemanticAnalyzer analyzer(nullptr);
-        auto semDiags = analyzer.Analyze(request);
-        diagnostics.insert(diagnostics.end(), semDiags.begin(), semDiags.end());
-
-        if (request.tree)
-        {
-            ts_tree_delete(const_cast<TSTree *>(request.tree));
-        }
-        return diagnostics;
+        ts_tree_delete(const_cast<TSTree*>(request.tree));
     }
-
-    std::vector<Diagnostic> FilterErrors(const std::vector<Diagnostic> &diagnostics)
-    {
-        std::vector<Diagnostic> errors;
-        for (const auto &d : diagnostics)
-        {
-            if (d.severity == DiagnosticSeverity::Error)
-            {
-                errors.push_back(d);
-            }
-        }
-        std::sort(errors.begin(), errors.end(), [](const Diagnostic &a, const Diagnostic &b)
-        {
-            if (a.range.start.line != b.range.start.line)
-            {
-                return a.range.start.line < b.range.start.line;
-            }
-            return a.range.start.character < b.range.start.character;
-        });
-        return errors;
-    }
-
-    bool HasCode(const std::vector<Diagnostic> &diagnostics, const std::string &code)
-    {
-        return std::any_of(diagnostics.begin(), diagnostics.end(),
-                           [&code](const Diagnostic &diag) { return diag.code == code; });
-    }
+    return diagnostics;
 }
+
+std::vector<Diagnostic> FilterErrors(const std::vector<Diagnostic>& diagnostics)
+{
+    std::vector<Diagnostic> errors;
+    for (const auto& d : diagnostics)
+    {
+        if (d.severity == DiagnosticSeverity::Error)
+        {
+            errors.push_back(d);
+        }
+    }
+    std::sort(errors.begin(), errors.end(),
+              [](const Diagnostic& a, const Diagnostic& b)
+              {
+                  if (a.range.start.line != b.range.start.line)
+                  {
+                      return a.range.start.line < b.range.start.line;
+                  }
+                  return a.range.start.character < b.range.start.character;
+              });
+    return errors;
+}
+
+bool HasCode(const std::vector<Diagnostic>& diagnostics, const std::string& code)
+{
+    return std::any_of(diagnostics.begin(), diagnostics.end(),
+                       [&code](const Diagnostic& diag) { return diag.code == code; });
+}
+} // namespace
 
 // =====================================================================================
 // Typedef
@@ -95,9 +95,8 @@ TEST_CASE("TypeRules - Reports a typedef of a user-defined type")
     // AngelScript typedefs a primitive and nothing else; its own parser refuses the rest outright.
     // The grammar parses it now so the user gets this sentence instead of a syntax error pointing
     // at the alias name.
-    const std::string code =
-        "class Entity {}\n"
-        "typedef Entity Alias;\n";
+    const std::string code = "class Entity {}\n"
+                             "typedef Entity Alias;\n";
 
     const auto diagnostics = AnalyzeTypeSnippet(code);
     CHECK(HasCode(diagnostics, "as-err-typedef-non-primitive"));
@@ -118,37 +117,33 @@ TEST_CASE("TypeRules - A typedef of a name that resolves to nothing reads the sa
 
 TEST_CASE("TypeRules - Integer initializers are accepted, in both bases")
 {
-    const std::string code =
-        "enum Flags\n"
-        "{\n"
-        "    None = 0,\n"
-        "    First = 1,\n"
-        "    High = 0x80,\n"
-        "    Negative = -1\n"
-        "}\n";
+    const std::string code = "enum Flags\n"
+                             "{\n"
+                             "    None = 0,\n"
+                             "    First = 1,\n"
+                             "    High = 0x80,\n"
+                             "    Negative = -1\n"
+                             "}\n";
 
     CHECK_FALSE(HasCode(AnalyzeTypeSnippet(code), "as-err-enum-invalid-initializer"));
 }
 
 TEST_CASE("TypeRules - Reports a string or floating point enum initializer")
 {
-    CHECK(HasCode(AnalyzeTypeSnippet("enum Bad { Value = 'text' }\n"),
-                  "as-err-enum-invalid-initializer"));
-    CHECK(HasCode(AnalyzeTypeSnippet("enum Bad { Value = 1.5 }\n"),
-                  "as-err-enum-invalid-initializer"));
+    CHECK(HasCode(AnalyzeTypeSnippet("enum Bad { Value = 'text' }\n"), "as-err-enum-invalid-initializer"));
+    CHECK(HasCode(AnalyzeTypeSnippet("enum Bad { Value = 1.5 }\n"), "as-err-enum-invalid-initializer"));
 }
 
 TEST_CASE("TypeRules - An initializer this pass cannot evaluate is left alone")
 {
     // Referring to another member, a constant, or an expression is legal and this pass does not
     // evaluate expressions - so it must not guess.
-    const std::string code =
-        "enum Flags\n"
-        "{\n"
-        "    First = 1,\n"
-        "    Second = First,\n"
-        "    Both = First | Second\n"
-        "}\n";
+    const std::string code = "enum Flags\n"
+                             "{\n"
+                             "    First = 1,\n"
+                             "    Second = First,\n"
+                             "    Both = First | Second\n"
+                             "}\n";
 
     CHECK_FALSE(HasCode(AnalyzeTypeSnippet(code), "as-err-enum-invalid-initializer"));
 }
@@ -159,12 +154,11 @@ TEST_CASE("TypeRules - Reports a duplicate enumerator name in the same enum")
     //   enum DupEnumProbe { Member1 = 0, Member1 = 0 }
     //   ERROR (4, 5): Name conflict. 'Member1' is already used.
     // The second occurrence is reported on the duplicate member node; the first is kept.
-    const std::string code =
-        "enum DupEnumProbe\n"
-        "{\n"
-        "    Member1 = 0,\n"
-        "    Member1 = 0\n"
-        "}\n";
+    const std::string code = "enum DupEnumProbe\n"
+                             "{\n"
+                             "    Member1 = 0,\n"
+                             "    Member1 = 0\n"
+                             "}\n";
 
     const auto diagnostics = AnalyzeTypeSnippet(code);
     const auto errors = FilterErrors(diagnostics);
@@ -175,12 +169,11 @@ TEST_CASE("TypeRules - Reports a duplicate enumerator name in the same enum")
 
 TEST_CASE("TypeRules - Enumerators with different names in the same enum are accepted")
 {
-    const std::string code =
-        "enum DistinctEnum\n"
-        "{\n"
-        "    Member1 = 0,\n"
-        "    Member2 = 1\n"
-        "}\n";
+    const std::string code = "enum DistinctEnum\n"
+                             "{\n"
+                             "    Member1 = 0,\n"
+                             "    Member2 = 1\n"
+                             "}\n";
 
     CHECK_FALSE(HasCode(AnalyzeTypeSnippet(code), "as-err-duplicate-enum-member"));
 }
@@ -189,15 +182,14 @@ TEST_CASE("TypeRules - The same enumerator name in two different enums is accept
 {
     // Scope is per enum: the same name in two different enums is fine unless they collide
     // in an enclosing namespace, which is a different rule.
-    const std::string code =
-        "enum EnumA\n"
-        "{\n"
-        "    SharedMember = 0\n"
-        "}\n"
-        "enum EnumB\n"
-        "{\n"
-        "    SharedMember = 0\n"
-        "}\n";
+    const std::string code = "enum EnumA\n"
+                             "{\n"
+                             "    SharedMember = 0\n"
+                             "}\n"
+                             "enum EnumB\n"
+                             "{\n"
+                             "    SharedMember = 0\n"
+                             "}\n";
 
     CHECK_FALSE(HasCode(AnalyzeTypeSnippet(code), "as-err-duplicate-enum-member"));
 }
@@ -213,9 +205,8 @@ TEST_CASE("TypeRules - Reports a handle on a primitive in a funcdef")
 
 TEST_CASE("TypeRules - An ordinary funcdef is accepted")
 {
-    const std::string code =
-        "class Entity {}\n"
-        "funcdef bool Predicate(const Entity@ &in candidate);\n";
+    const std::string code = "class Entity {}\n"
+                             "funcdef bool Predicate(const Entity@ &in candidate);\n";
 
     CHECK_FALSE(HasCode(AnalyzeTypeSnippet(code), "as-err-handle-on-primitive"));
     CHECK_FALSE(HasCode(AnalyzeTypeSnippet(code), "as-err-funcdef-attribute"));
@@ -225,7 +216,7 @@ TEST_CASE("TypeRules - Reports every function attribute on a funcdef")
 {
     // A funcdef names a signature: no body, no class, nothing to override. The engine rejects all
     // five attributes on one, and the grammar parses them so this can name which.
-    for (const std::string attribute : { "override", "final", "explicit", "property", "delete" })
+    for (const std::string attribute : {"override", "final", "explicit", "property", "delete"})
     {
         INFO("attribute: ", attribute);
         const auto diagnostics = AnalyzeTypeSnippet("funcdef void Callback() " + attribute + ";\n");
@@ -238,8 +229,7 @@ TEST_CASE("TypeRules - A shared funcdef is not mistaken for one carrying an attr
 {
     // 'shared' and 'external' are declaration modifiers, not function attributes, and they are the
     // two a funcdef legitimately carries.
-    CHECK_FALSE(HasCode(AnalyzeTypeSnippet("shared funcdef void Callback();\n"),
-                        "as-err-funcdef-attribute"));
+    CHECK_FALSE(HasCode(AnalyzeTypeSnippet("shared funcdef void Callback();\n"), "as-err-funcdef-attribute"));
 }
 
 // =====================================================================================
@@ -250,10 +240,8 @@ TEST_CASE("TypeRules - Reports a constructor or a destructor declared in an inte
 {
     // An interface declares a contract, never construction. The engine refuses both forms and the
     // grammar parses them now, so this names the construct rather than pointing at a token.
-    CHECK(HasCode(AnalyzeTypeSnippet("interface IThing { IThing(); void Do(); }\n"),
-                  "as-err-interface-constructor"));
-    CHECK(HasCode(AnalyzeTypeSnippet("interface IThing { ~IThing(); void Do(); }\n"),
-                  "as-err-interface-constructor"));
+    CHECK(HasCode(AnalyzeTypeSnippet("interface IThing { IThing(); void Do(); }\n"), "as-err-interface-constructor"));
+    CHECK(HasCode(AnalyzeTypeSnippet("interface IThing { ~IThing(); void Do(); }\n"), "as-err-interface-constructor"));
 }
 
 TEST_CASE("TypeRules - An ordinary interface is accepted")
@@ -268,28 +256,25 @@ TEST_CASE("TypeRules - An ordinary interface is accepted")
 
 TEST_CASE("TypeRules - Reports the same function declared twice with one signature")
 {
-    const std::string code =
-        "void Spawn(int id) {}\n"
-        "void Spawn(int id) {}\n";
+    const std::string code = "void Spawn(int id) {}\n"
+                             "void Spawn(int id) {}\n";
 
     CHECK(HasCode(AnalyzeTypeSnippet(code), "as-err-duplicate-symbol"));
 }
 
 TEST_CASE("TypeRules - Overloads differing in parameters are not duplicates")
 {
-    const std::string code =
-        "void Spawn(int id) {}\n"
-        "void Spawn(const string &in name) {}\n"
-        "void Spawn(int id, bool force) {}\n";
+    const std::string code = "void Spawn(int id) {}\n"
+                             "void Spawn(const string &in name) {}\n"
+                             "void Spawn(int id, bool force) {}\n";
 
     CHECK_FALSE(HasCode(AnalyzeTypeSnippet(code), "as-err-duplicate-symbol"));
 }
 
 TEST_CASE("TypeRules - Reports a name used for two different kinds of declaration")
 {
-    const std::string code =
-        "class Thing {}\n"
-        "void Thing() {}\n";
+    const std::string code = "class Thing {}\n"
+                             "void Thing() {}\n";
 
     CHECK(HasCode(AnalyzeTypeSnippet(code), "as-err-name-conflict"));
 }
@@ -308,7 +293,7 @@ TEST_CASE("TypeRules - The same name in two files of a module is not a redeclara
     collector.CollectSymbols("file:///a.as", shared, parser, table);
     collector.CollectSymbols("file:///b.as", shared, parser, table);
 
-    SemanticAnalysisRequest request{ table, "file:///a.as", ".as.predefined", &i18n };
+    SemanticAnalysisRequest request{table, "file:///a.as", ".as.predefined", &i18n};
     request.sourceCode = shared;
 
     SemanticAnalyzer analyzer(nullptr);
@@ -317,8 +302,7 @@ TEST_CASE("TypeRules - The same name in two files of a module is not a redeclara
 
 TEST_CASE("TypeRules - A predefined stub is exempt")
 {
-    const auto diagnostics = AnalyzeTypeSnippet("enum E { V = 'x' }\n",
-                                                "file:///engine.as.predefined");
+    const auto diagnostics = AnalyzeTypeSnippet("enum E { V = 'x' }\n", "file:///engine.as.predefined");
     CHECK_FALSE(HasCode(diagnostics, "as-err-enum-invalid-initializer"));
 }
 
@@ -326,10 +310,9 @@ TEST_SUITE("AngelScript_CleanPredefined_And_DuplicateDetection")
 {
     TEST_CASE("Clean Slate: No ghost types exist without physical workspace files")
     {
-        const std::string script =
-            "void Main() {\n"
-            "    string s; // Error: 'string' does not exist in an empty workspace\n"
-            "}\n";
+        const std::string script = "void Main() {\n"
+                                   "    string s; // Error: 'string' does not exist in an empty workspace\n"
+                                   "}\n";
 
         auto rawDiagnostics = AnalyzeTypeSnippet(script, "file:///workspace/main.as");
         auto errors = FilterErrors(rawDiagnostics);
@@ -340,12 +323,11 @@ TEST_SUITE("AngelScript_CleanPredefined_And_DuplicateDetection")
 
     TEST_CASE("Predefined Diagnostics: Detect duplicate method definitions in class")
     {
-        const std::string predefinedScript =
-            "class string {\n"
-            "    bool isEmpty() const;\n"
-            "    uint Length() const;\n"
-            "    bool isEmpty() const; // Error: Duplicate method declaration\n"
-            "}\n";
+        const std::string predefinedScript = "class string {\n"
+                                             "    bool isEmpty() const;\n"
+                                             "    uint Length() const;\n"
+                                             "    bool isEmpty() const; // Error: Duplicate method declaration\n"
+                                             "}\n";
 
         auto rawDiagnostics = AnalyzeTypeSnippet(predefinedScript, "file:///workspace/as.predefined");
         auto errors = FilterErrors(rawDiagnostics);
@@ -373,10 +355,9 @@ TEST_SUITE("AngelScript_CleanPredefined_And_DuplicateDetection")
 
     TEST_CASE("Global Scope: Detect duplicate global function declarations")
     {
-        const std::string predefinedScript =
-            "void Print(const string &in text);\n"
-            "float GetTime();\n"
-            "void Print(const string &in text); // Error: Duplicate global function\n";
+        const std::string predefinedScript = "void Print(const string &in text);\n"
+                                             "float GetTime();\n"
+                                             "void Print(const string &in text); // Error: Duplicate global function\n";
 
         auto rawDiagnostics = AnalyzeTypeSnippet(predefinedScript, "file:///workspace/as.predefined");
         auto errors = FilterErrors(rawDiagnostics);
@@ -390,7 +371,7 @@ TEST_SUITE("AngelScript_DuplicateDeclaration_Diagnostics")
 {
     TEST_CASE("Global Scope: Detect exact duplicate global function declarations in as.predefined")
     {
-        const char *predefinedScript = R"(
+        const char* predefinedScript = R"(
             /**
              * @brief Imprime un mensaje de texto en la consola de salida
              * @param text Contenido a imprimir
@@ -412,7 +393,7 @@ TEST_SUITE("AngelScript_DuplicateDeclaration_Diagnostics")
 
     TEST_CASE("Class Scope: Detect duplicate method in as.predefined")
     {
-        const char *predefinedScript = R"(
+        const char* predefinedScript = R"(
             class string {
                 bool isEmpty() const;
                 uint Length() const;
@@ -432,7 +413,7 @@ TEST_SUITE("AngelScript_DuplicateDeclaration_Diagnostics")
 
     TEST_CASE("Valid Overloads: Do not flag functions with distinct parameter types")
     {
-        const char *predefinedScript = R"(
+        const char* predefinedScript = R"(
             void Print(const string &in text);
             void Print(int number);
             void Print(float value);
@@ -450,7 +431,7 @@ TEST_SUITE("AngelScript_TypedefValidation_Parity")
 {
     TEST_CASE("Valid Typedefs: Primitive types in as.predefined and script files")
     {
-        const char *predefinedScript = R"(
+        const char* predefinedScript = R"(
             typedef float real32;
             typedef double real64;
             typedef uint32 EntityID;
@@ -466,7 +447,7 @@ TEST_SUITE("AngelScript_TypedefValidation_Parity")
 
     TEST_CASE("Invalid Typedefs: Reject class types in as.predefined")
     {
-        const char *predefinedScript = R"(
+        const char* predefinedScript = R"(
             class string {}
             class Vector3 {}
 
@@ -491,7 +472,7 @@ TEST_SUITE("AngelScript_TypedefValidation_Parity")
 
     TEST_CASE("Invalid Typedefs: Reject handles and templates in standard script files")
     {
-        const char *script = R"(
+        const char* script = R"(
             class MyClass {}
 
             typedef MyClass@ ClassHandle; // Error: Handle typedef disallowed
@@ -511,12 +492,12 @@ TEST_SUITE("AngelScript_Funcdef_Verification")
 {
     TEST_CASE("Predefined & Script: Register funcdef, bind matching function, and deduce return type")
     {
-        const char *predefinedScript = R"(
+        const char* predefinedScript = R"(
             funcdef bool Predicate(int value);
             funcdef void Action();
         )";
 
-        const char *userScript = R"(
+        const char* userScript = R"(
             bool IsEven(int val) { return (val % 2) == 0; }
             void DoWork() {}
 
@@ -548,7 +529,7 @@ TEST_SUITE("AngelScript_Funcdef_Verification")
 
     TEST_CASE("Diagnostics: Incompatible function signature bound to funcdef handle")
     {
-        const char *script = R"(
+        const char* script = R"(
             funcdef int Operation(int a, int b);
 
             void IncompatibleReturn(int a, int b) {}
@@ -575,7 +556,7 @@ TEST_SUITE("AngelScript_Funcdef_Verification")
 
     TEST_CASE("Diagnostics: Duplicate funcdef declarations in as.predefined")
     {
-        const char *predefinedScript = R"(
+        const char* predefinedScript = R"(
             funcdef void EventCallback(float deltaTime);
             funcdef void EventCallback(float deltaTime); // Error: Duplicate funcdef
         )";
@@ -591,7 +572,7 @@ TEST_SUITE("AngelScript_Funcdef_Verification")
 
     TEST_CASE("Diagnostics: Unknown types used in funcdef signature")
     {
-        const char *predefinedScript = R"(
+        const char* predefinedScript = R"(
             funcdef UnregisteredType BadFuncDef(UnknownParam p);
         )";
 
@@ -600,13 +581,15 @@ TEST_SUITE("AngelScript_Funcdef_Verification")
 
         auto diagnostics = doc->GetDiagnostics();
         REQUIRE(diagnostics.size() == 2);
-        CHECK((diagnostics[0].code == "as-err-unresolved-type" || diagnostics[0].code == "E_UNKNOWN_TYPE")); // UnregisteredType
-        CHECK((diagnostics[1].code == "as-err-unresolved-type" || diagnostics[1].code == "E_UNKNOWN_TYPE")); // UnknownParam
+        CHECK((diagnostics[0].code == "as-err-unresolved-type" ||
+               diagnostics[0].code == "E_UNKNOWN_TYPE")); // UnregisteredType
+        CHECK((diagnostics[1].code == "as-err-unresolved-type" ||
+               diagnostics[1].code == "E_UNKNOWN_TYPE")); // UnknownParam
     }
 
     TEST_CASE("Diagnostics: Wildcard type '?' allowed only in predefined stubs")
     {
-        const char *predefinedScript = R"(
+        const char* predefinedScript = R"(
             funcdef bool Less(const ? &in a, const ? &in b);
         )";
 
@@ -615,7 +598,7 @@ TEST_SUITE("AngelScript_Funcdef_Verification")
         auto predefinedDiags = predefinedDoc->GetDiagnostics();
         CHECK(predefinedDiags.empty());
 
-        const char *normalScript = R"(
+        const char* normalScript = R"(
             funcdef bool NormalLess(const ? &in a, const ? &in b);
         )";
 
@@ -639,7 +622,7 @@ TEST_SUITE("AngelScript_EngineParity_Verification")
         //   [ERROR] (2, 35) : No matching signatures to 'Entity::Mutate() const'
         // -------------------------------------------
 
-        const char *script = R"(
+        const char* script = R"(
             class Entity {
                 int v;
                 void Mutate() { v = 1; }
@@ -669,7 +652,7 @@ TEST_SUITE("AngelScript_EngineParity_Verification")
         // Engine Verdict: Successfully resolves to Vector::opMul_r with 0 errors
         // -------------------------------------------
 
-        const char *script = R"(
+        const char* script = R"(
             class Matrix {
                 Matrix opMul(float s) const { return Matrix(); }
             }
@@ -700,7 +683,7 @@ TEST_SUITE("AngelScript_MixinClasses_Verification")
 {
     TEST_CASE("Instantiation: Reject direct instantiation or handles of mixin classes")
     {
-        const char *script = R"(
+        const char* script = R"(
             mixin class HelperMixin {
                 void Help() {}
             }
@@ -726,7 +709,7 @@ TEST_SUITE("AngelScript_MixinClasses_Verification")
 
     TEST_CASE("Method Precedence: Mixin overrides base class method, class overrides mixin")
     {
-        const char *script = R"(
+        const char* script = R"(
             class Base {
                 string GetName() const { return "Base"; }
             }
@@ -768,7 +751,7 @@ TEST_SUITE("AngelScript_MixinClasses_Verification")
 
     TEST_CASE("Property Precedence: Base class property shadows mixin property")
     {
-        const char *script = R"(
+        const char* script = R"(
             class Base {
                 int score;
             }
@@ -795,7 +778,7 @@ TEST_SUITE("AngelScript_MixinClasses_Verification")
 
     TEST_CASE("Deferred Context: Mixin method referencing target class members")
     {
-        const char *script = R"(
+        const char* script = R"(
             mixin class StateMixin {
                 void Increment() {
                     count++; // 'count' is declared in the target class
@@ -819,7 +802,7 @@ TEST_SUITE("AngelScript_MixinClasses_Verification")
 
     TEST_CASE("Interfaces: Mixin implements partial interface, class implements remainder")
     {
-        const char *script = R"(
+        const char* script = R"(
             interface IService {
                 void Start();
                 void Stop();
@@ -850,7 +833,7 @@ TEST_SUITE("AngelScript_MixinClasses_Verification")
 
     TEST_CASE("Inheritance Restriction: Reject mixin inheriting from class")
     {
-        const char *script = R"(
+        const char* script = R"(
             class PlainClass {}
 
             mixin class BadMixin : PlainClass {} // Error: Mixin cannot inherit from class
@@ -866,9 +849,11 @@ TEST_SUITE("AngelScript_MixinClasses_Verification")
     }
 }
 
-TEST_SUITE("AngelScript_Namespaces_Verification") {
+TEST_SUITE("AngelScript_Namespaces_Verification")
+{
 
-    TEST_CASE("Nested Namespaces: Scope resolution, shadowing, and global root operator (::)") {
+    TEST_CASE("Nested Namespaces: Scope resolution, shadowing, and global root operator (::)")
+    {
         const char* script = R"(
             int var = 100;
 
@@ -909,7 +894,8 @@ TEST_SUITE("AngelScript_Namespaces_Verification") {
         CHECK(globalCall->targetSymbol == "::var");
     }
 
-    TEST_CASE("Using Namespace: Unqualified symbol lookup across namespaces") {
+    TEST_CASE("Using Namespace: Unqualified symbol lookup across namespaces")
+    {
         const char* script = R"(
             namespace Math {
                 float ComputeSin(float rad) { return 0.0f; }
@@ -943,7 +929,8 @@ TEST_SUITE("AngelScript_Namespaces_Verification") {
     // which arrives from CallChecker's ResolveBestOverload as as-err-call-ambiguous. Change either
     // Initialize to take an argument and the script compiles - see
     // tests/parity/doc_p16_using_ns_overloads_merge.as.
-    TEST_CASE("Diagnostics: Two identical signatures reached through using-directives are ambiguous") {
+    TEST_CASE("Diagnostics: Two identical signatures reached through using-directives are ambiguous")
+    {
         const char* script = R"(
             namespace PackageA {
                 void Initialize() {}
@@ -970,7 +957,8 @@ TEST_SUITE("AngelScript_Namespaces_Verification") {
         CHECK(diagnostics[0].range.start.line == 13);
     }
 
-    TEST_CASE("Diagnostics: Undefined namespace in qualified path") {
+    TEST_CASE("Diagnostics: Undefined namespace in qualified path")
+    {
         const char* script = R"(
             namespace Geometry {
                 int sides = 4;
@@ -992,9 +980,11 @@ TEST_SUITE("AngelScript_Namespaces_Verification") {
     }
 }
 
-TEST_SUITE("AngelScript_Imports_Verification") {
+TEST_SUITE("AngelScript_Imports_Verification")
+{
 
-    TEST_CASE("Imports: Declaration, call resolution, and hover module provenance") {
+    TEST_CASE("Imports: Declaration, call resolution, and hover module provenance")
+    {
         const char* script = R"(import void ExternalLog(int level, const string &in message) from "LogModule";
 import float CalculateBonus(float base) from "EconomyModule";
 
@@ -1018,10 +1008,13 @@ void Main() {
         // 3. Validate hover displaying import syntax and module origin
         auto hover = doc->GetHoverAt({4, 10});
         REQUIRE(hover.has_value());
-        CHECK(hover->contents.value.find("import void ExternalLog(int level, const string &in message) from \"LogModule\"") != std::string::npos);
+        CHECK(hover->contents.value.find(
+                  "import void ExternalLog(int level, const string &in message) from \"LogModule\"") !=
+              std::string::npos);
     }
 
-    TEST_CASE("Diagnostics: Reject import declarations containing function bodies") {
+    TEST_CASE("Diagnostics: Reject import declarations containing function bodies")
+    {
         const char* script = R"(
             import void InvalidImport() from "Module" {
                 // Error: Imports cannot have implementations
@@ -1037,7 +1030,8 @@ void Main() {
         CHECK(diagnostics[0].range.start.line == 1);
     }
 
-    TEST_CASE("Diagnostics: Duplicate import declarations") {
+    TEST_CASE("Diagnostics: Duplicate import declarations")
+    {
         const char* script = R"(
             import void ServiceTick(float dt) from "Engine";
             import void ServiceTick(float dt) from "Engine"; // Error: Duplicate import
@@ -1052,7 +1046,8 @@ void Main() {
         CHECK(diagnostics[0].range.start.line == 2);
     }
 
-    TEST_CASE("Diagnostics: Unregistered types in import signature") {
+    TEST_CASE("Diagnostics: Unregistered types in import signature")
+    {
         const char* script = R"(
             import UnregisteredReturn QueryData(UnregisteredParam p) from "DataModule";
         )";
@@ -1062,14 +1057,18 @@ void Main() {
 
         auto diagnostics = doc->GetDiagnostics();
         REQUIRE(diagnostics.size() == 2);
-        CHECK((diagnostics[0].code == "as-err-unresolved-type" || diagnostics[0].code == "E_UNKNOWN_TYPE")); // UnregisteredReturn
-        CHECK((diagnostics[1].code == "as-err-unresolved-type" || diagnostics[1].code == "E_UNKNOWN_TYPE")); // UnregisteredParam
+        CHECK((diagnostics[0].code == "as-err-unresolved-type" ||
+               diagnostics[0].code == "E_UNKNOWN_TYPE")); // UnregisteredReturn
+        CHECK((diagnostics[1].code == "as-err-unresolved-type" ||
+               diagnostics[1].code == "E_UNKNOWN_TYPE")); // UnregisteredParam
     }
 }
 
-TEST_SUITE("AngelScript_Statements_Verification") {
+TEST_SUITE("AngelScript_Statements_Verification")
+{
 
-    TEST_CASE("Variable Declarations: Comma chaining, initialization, and sub-block shadowing") {
+    TEST_CASE("Variable Declarations: Comma chaining, initialization, and sub-block shadowing")
+    {
         const char* script = R"(
             void Main() {
                 int a = 1, b = 2;
@@ -1090,10 +1089,11 @@ TEST_SUITE("AngelScript_Statements_Verification") {
 
         // Validate symbol types across scopes
         CHECK(doc->GetSymbolTypeAt({6, 27}) == "float"); // Inner 'a'
-        CHECK(doc->GetSymbolTypeAt({10, 35}) == "int");   // Outer 'a'
+        CHECK(doc->GetSymbolTypeAt({10, 35}) == "int");  // Outer 'a'
     }
 
-    TEST_CASE("Switch-Case: Constant folding, non-constexpr detection, and duplicate cases") {
+    TEST_CASE("Switch-Case: Constant folding, non-constexpr detection, and duplicate cases")
+    {
         const char* script = R"(
             const int VALID_CONST = 10;
             int runtimeVar = 20;
@@ -1127,7 +1127,8 @@ TEST_SUITE("AngelScript_Statements_Verification") {
         CHECK(diagnostics[1].range.start.line == 12);
     }
 
-    TEST_CASE("Loop Control: Break and continue scope boundaries") {
+    TEST_CASE("Loop Control: Break and continue scope boundaries")
+    {
         const char* script = R"(
             void Main() {
                 while (true) {
@@ -1162,7 +1163,8 @@ TEST_SUITE("AngelScript_Statements_Verification") {
         CHECK(diagnostics[2].range.start.line == 14);
     }
 
-    TEST_CASE("Return Semantics: Void returning expression vs Non-void missing/invalid return") {
+    TEST_CASE("Return Semantics: Void returning expression vs Non-void missing/invalid return")
+    {
         const char* script = R"(
             void VoidFunc() {
                 return 42; // Error: Void function cannot return a value
@@ -1186,7 +1188,8 @@ TEST_SUITE("AngelScript_Statements_Verification") {
         CHECK(diagnostics[1].range.start.line == 6);
     }
 
-    TEST_CASE("Scoped Using Namespace: Block lifetime and isolation") {
+    TEST_CASE("Scoped Using Namespace: Block lifetime and isolation")
+    {
         const char* script = R"(
             namespace HiddenMath {
                 void FastSqrt() {}
@@ -1213,9 +1216,11 @@ TEST_SUITE("AngelScript_Statements_Verification") {
     }
 }
 
-TEST_SUITE("AngelScript_Expressions_Verification") {
+TEST_SUITE("AngelScript_Expressions_Verification")
+{
 
-    TEST_CASE("Out Parameters: Mutable lvalue vs explicit void argument vs temporary rejection") {
+    TEST_CASE("Out Parameters: Mutable lvalue vs explicit void argument vs temporary rejection")
+    {
         const char* script = R"(
             void FetchData(int &out val, float &out rate) {
                 val = 100;
@@ -1239,7 +1244,8 @@ TEST_SUITE("AngelScript_Expressions_Verification") {
         CHECK(diagnostics[0].range.start.line == 10);
     }
 
-    TEST_CASE("Named Arguments: Parameter reordering and rejection of positional after named") {
+    TEST_CASE("Named Arguments: Parameter reordering and rejection of positional after named")
+    {
         const char* script = R"(
             void Configure(int width = 800, int height = 600, bool fullscreen = false) {}
 
@@ -1261,7 +1267,8 @@ TEST_SUITE("AngelScript_Expressions_Verification") {
         CHECK(diagnostics[0].range.start.line == 8);
     }
 
-    TEST_CASE("Unary Operators: Unary minus on unsigned integers is legal") {
+    TEST_CASE("Unary Operators: Unary minus on unsigned integers is legal")
+    {
         // This test used to assert the opposite, and both it and the rule behind it were wrong.
         // AngelScript permits unary minus on unsigned operands - the result wraps, exactly as in
         // C and C++ - and the real compiler accepts every form below without a word. The parity
@@ -1292,7 +1299,8 @@ TEST_SUITE("AngelScript_Expressions_Verification") {
         CHECK(diagnostics.empty());
     }
 
-    TEST_CASE("Ternary Operator: Assignable lvalue conditional expression") {
+    TEST_CASE("Ternary Operator: Assignable lvalue conditional expression")
+    {
         const char* script = R"(
             void Main() {
                 int leftVal = 0;
@@ -1316,7 +1324,8 @@ TEST_SUITE("AngelScript_Expressions_Verification") {
         CHECK(diagnostics[0].range.start.line == 10);
     }
 
-    TEST_CASE("Logical & Bitwise: Keyword operator aliases and short-circuit evaluation") {
+    TEST_CASE("Logical & Bitwise: Keyword operator aliases and short-circuit evaluation")
+    {
         const char* script = R"(
             void Main() {
                 bool a = true, b = false, c = true;
@@ -1337,7 +1346,8 @@ TEST_SUITE("AngelScript_Expressions_Verification") {
         CHECK(doc->GetSymbolTypeAt({8, 25}) == "uint8");
     }
 
-    TEST_CASE("Anonymous Objects & Initialization Lists: Deduction in function calls") {
+    TEST_CASE("Anonymous Objects & Initialization Lists: Deduction in function calls")
+    {
         const char* predefinedScript = R"(
             class array<T> {
                 array();
@@ -1364,9 +1374,11 @@ TEST_SUITE("AngelScript_Expressions_Verification") {
     }
 }
 
-TEST_SUITE("AngelScript_Functions_And_Overloading_Verification") {
+TEST_SUITE("AngelScript_Functions_And_Overloading_Verification")
+{
 
-    TEST_CASE("Parameter References: Disallow inout references on primitive types") {
+    TEST_CASE("Parameter References: Disallow inout references on primitive types")
+    {
         const char* script = R"(
             class Entity {}
 
@@ -1388,7 +1400,8 @@ TEST_SUITE("AngelScript_Functions_And_Overloading_Verification") {
         CHECK(diagnostics[1].range.start.line == 5);
     }
 
-    TEST_CASE("Return References: Global and member access vs local escape prevention") {
+    TEST_CASE("Return References: Global and member access vs local escape prevention")
+    {
         const char* script = R"(
             int g_val = 0;
 
@@ -1424,7 +1437,8 @@ TEST_SUITE("AngelScript_Functions_And_Overloading_Verification") {
         CHECK(diagnostics[1].range.start.line == 18);
     }
 
-    TEST_CASE("Overload Resolution: 14-tier ranking and type promotion") {
+    TEST_CASE("Overload Resolution: 14-tier ranking and type promotion")
+    {
         const char* script = R"(
             void Process(int a, float b) {}     // Overload 1
             void Process(float a, int b) {}     // Overload 2
@@ -1454,7 +1468,8 @@ TEST_SUITE("AngelScript_Functions_And_Overloading_Verification") {
         CHECK(call3->targetFunctionSymbol == "Process(double, double)");
     }
 
-    TEST_CASE("Default Arguments: Non-trailing default parameter rejection") {
+    TEST_CASE("Default Arguments: Non-trailing default parameter rejection")
+    {
         const char* script = R"(
             void InvalidDefaults(int a = 1, int b) {} // Error: Parameter after default must have default
             void ValidDefaults(int a, int b = 2, int c = 3) {} // OK
@@ -1469,7 +1484,8 @@ TEST_SUITE("AngelScript_Functions_And_Overloading_Verification") {
         CHECK(diagnostics[0].range.start.line == 1);
     }
 
-    TEST_CASE("Anonymous Functions: Lambda type matching and closure restriction") {
+    TEST_CASE("Anonymous Functions: Lambda type matching and closure restriction")
+    {
         const char* script = R"(
             funcdef bool Predicate(int a, int b);
 
@@ -1496,9 +1512,11 @@ TEST_SUITE("AngelScript_Functions_And_Overloading_Verification") {
     }
 }
 
-TEST_SUITE("AngelScript_Class_OOP_And_Operators_Verification") {
+TEST_SUITE("AngelScript_Class_OOP_And_Operators_Verification")
+{
 
-    TEST_CASE("OOP Modifiers: final class, final method, and override diagnostics") {
+    TEST_CASE("OOP Modifiers: final class, final method, and override diagnostics")
+    {
         const char* script = R"(
             final class FinalBase {}
             class IllegalDerived : FinalBase {} // Error: Cannot inherit final class
@@ -1531,7 +1549,8 @@ TEST_SUITE("AngelScript_Class_OOP_And_Operators_Verification") {
         CHECK(diagnostics[2].range.start.line == 11);
     }
 
-    TEST_CASE("Access Control: Protected and private member visibility enforcement") {
+    TEST_CASE("Access Control: Protected and private member visibility enforcement")
+    {
         const char* script = R"(
             class Base {
                 private int m_priv;
@@ -1571,7 +1590,8 @@ TEST_SUITE("AngelScript_Class_OOP_And_Operators_Verification") {
         CHECK(diagnostics[2].range.start.line == 19);
     }
 
-    TEST_CASE("Operator Overloading: Dual-dispatch binary opMul and opMul_r resolution") {
+    TEST_CASE("Operator Overloading: Dual-dispatch binary opMul and opMul_r resolution")
+    {
         const char* script = R"(
             class Vector3;
             class Matrix4 {
@@ -1598,7 +1618,8 @@ TEST_SUITE("AngelScript_Class_OOP_And_Operators_Verification") {
         CHECK(call->targetFunctionSymbol == "Vector3::opMul_r(const Matrix4 &in) const");
     }
 
-    TEST_CASE("Property Accessors: Virtual property get/set expansion and ++ restriction") {
+    TEST_CASE("Property Accessors: Virtual property get/set expansion and ++ restriction")
+    {
         const char* script = R"(
             class Account {
                 private int m_balance;
@@ -1627,7 +1648,8 @@ TEST_SUITE("AngelScript_Class_OOP_And_Operators_Verification") {
         CHECK(diagnostics[0].range.start.line == 15);
     }
 
-    TEST_CASE("Abstract Class: Direct instantiation rejection") {
+    TEST_CASE("Abstract Class: Direct instantiation rejection")
+    {
         const char* script = R"(
             abstract class AbstractBase {
                 void Run() {}
@@ -1680,28 +1702,27 @@ TEST_SUITE("AngelScript_ObjectHandles_Verification")
 
     TEST_CASE("Handle Semantics: Value assignment vs handle reassignment and identity checks")
     {
-        const char* script =
-            "class Node {\n"
-            "    int value;\n"
-            "    Node& opAssign(const Node &in other) {\n"
-            "        this.value = other.value;\n"
-            "        return this;\n"
-            "    }\n"
-            "}\n"
-            "\n"
-            "void Main() {\n"
-            "    Node a, b;\n"
-            "    Node@ h1 = @a;\n"
-            "    Node@ h2 = @b;\n"
-            "\n"
-            "    // Handle Identity\n"
-            "    bool same1 = (h1 is h2);\n"
-            "    bool same2 = (@h1 == @h2);\n"
-            "    bool notNull = (h1 !is null);\n"
-            "\n"
-            "    h1 = h2;   // Invokes Node::opAssign\n"
-            "    @h1 = @h2; // Retargets h1 pointer to b\n"
-            "}\n";
+        const char* script = "class Node {\n"
+                             "    int value;\n"
+                             "    Node& opAssign(const Node &in other) {\n"
+                             "        this.value = other.value;\n"
+                             "        return this;\n"
+                             "    }\n"
+                             "}\n"
+                             "\n"
+                             "void Main() {\n"
+                             "    Node a, b;\n"
+                             "    Node@ h1 = @a;\n"
+                             "    Node@ h2 = @b;\n"
+                             "\n"
+                             "    // Handle Identity\n"
+                             "    bool same1 = (h1 is h2);\n"
+                             "    bool same2 = (@h1 == @h2);\n"
+                             "    bool notNull = (h1 !is null);\n"
+                             "\n"
+                             "    h1 = h2;   // Invokes Node::opAssign\n"
+                             "    @h1 = @h2; // Retargets h1 pointer to b\n"
+                             "}\n";
 
         auto doc = CreateTestDocument("file:///test_handle_semantics.as", script);
         REQUIRE(doc != nullptr);
@@ -1762,30 +1783,29 @@ TEST_SUITE("AngelScript_ObjectHandles_Verification")
 
     TEST_CASE("Polymorphism: Interface binding and dynamic downcasting with cast<T>")
     {
-        const char* script =
-            "interface IComponent {\n"
-            "    void Update();\n"
-            "}\n"
-            "class Transform : IComponent {\n"
-            "    void Update() {}\n"
-            "    void SetPosition(float x, float y) {}\n"
-            "}\n"
-            "\n"
-            "void Process(IComponent@ comp) {\n"
-            "    comp.Update(); // OK: Interface call\n"
-            "\n"
-            "    Transform@ t = cast<Transform>(comp); // OK: Dynamic cast\n"
-            "    if (t !is null) {\n"
-            "        t.SetPosition(0.0f, 0.0f);\n"
-            "    }\n"
-            "\n"
-            "    Transform@ invalid = comp; // Error: Direct downcast without cast<T>\n"
-            "}\n"
-            "\n"
-            "void Main() {\n"
-            "    IComponent@ comp = Transform(); // OK: Implicit upcast\n"
-            "    Process(comp);\n"
-            "}\n";
+        const char* script = "interface IComponent {\n"
+                             "    void Update();\n"
+                             "}\n"
+                             "class Transform : IComponent {\n"
+                             "    void Update() {}\n"
+                             "    void SetPosition(float x, float y) {}\n"
+                             "}\n"
+                             "\n"
+                             "void Process(IComponent@ comp) {\n"
+                             "    comp.Update(); // OK: Interface call\n"
+                             "\n"
+                             "    Transform@ t = cast<Transform>(comp); // OK: Dynamic cast\n"
+                             "    if (t !is null) {\n"
+                             "        t.SetPosition(0.0f, 0.0f);\n"
+                             "    }\n"
+                             "\n"
+                             "    Transform@ invalid = comp; // Error: Direct downcast without cast<T>\n"
+                             "}\n"
+                             "\n"
+                             "void Main() {\n"
+                             "    IComponent@ comp = Transform(); // OK: Implicit upcast\n"
+                             "    Process(comp);\n"
+                             "}\n";
 
         auto doc = CreateTestDocument("file:///test_handle_polymorphism.as", script);
         REQUIRE(doc != nullptr);
@@ -2087,7 +2107,7 @@ TEST_SUITE("AngelScript_HardcodedString_DecouplingAudit")
         auto symbols = doc->GetSymbolTable()->GetAllSymbols();
         for (const auto& sym : symbols)
         {
-            CHECK_MESSAGE(!sym.fileUri.starts_with("builtin:"), 
+            CHECK_MESSAGE(!sym.fileUri.starts_with("builtin:"),
                           (std::string("Found leaked synthetic builtin URI in symbol table: ") + sym.fileUri));
         }
     }
@@ -2098,7 +2118,7 @@ TEST_SUITE("AngelScript_Diagnostic_Range_Precision")
 {
     TEST_CASE("Diagnostic Range: Standalone unknown type 'value' highlights exact type token")
     {
-        const char *script = R"(
+        const char* script = R"(
 void Main() {
     value Value;
 }
@@ -2110,12 +2130,12 @@ void Main() {
         auto diagnostics = doc->GetDiagnostics();
         REQUIRE(diagnostics.size() == 1);
 
-        const auto &diag = diagnostics[0];
+        const auto& diag = diagnostics[0];
         CHECK(diag.code == "as-err-unresolved-type");
         CHECK(diag.range.start.line == 2);
         CHECK(diag.range.start.character == 4); // Start of 'value'
         CHECK(diag.range.end.line == 2);
-        CHECK(diag.range.end.character == 9);   // End of 'value'
+        CHECK(diag.range.end.character == 9); // End of 'value'
     }
 
     TEST_CASE("Diagnostic Range: Unknown template subtype 'value' inside 'array<value>'")
@@ -2123,11 +2143,11 @@ void Main() {
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
-        const char *predefinedScript = R"(
+        const char* predefinedScript = R"(
             class array<T> {}
         )";
 
-        const char *script = R"(
+        const char* script = R"(
 void Main() {
     array<value> sString;
 }
@@ -2140,17 +2160,17 @@ void Main() {
         auto diagnostics = doc->GetDiagnostics();
         REQUIRE(diagnostics.size() == 1);
 
-        const auto &diag = diagnostics[0];
+        const auto& diag = diagnostics[0];
         CHECK(diag.code == "as-err-unresolved-type");
         CHECK(diag.range.start.line == 2);
         CHECK(diag.range.start.character == 10); // Start of 'value' inside <value>
         CHECK(diag.range.end.line == 2);
-        CHECK(diag.range.end.character == 15);  // End of 'value' inside <value>
+        CHECK(diag.range.end.character == 15); // End of 'value' inside <value>
     }
 
     TEST_CASE("Diagnostic Parity: Consistency between 'value' and 'value_S'")
     {
-        const char *script = R"(
+        const char* script = R"(
 void Main() {
     value a;
     value_S b;
@@ -2239,8 +2259,7 @@ TEST_SUITE("AngelScript_Performance_And_Throughput_Benchmarks")
             }
             const auto end = std::chrono::high_resolution_clock::now();
             return std::pair<int, long long>{
-                found, std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
-            };
+                found, std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()};
         };
 
         // Warmed first, so the first run does not pay for cold pages and get blamed on the table.
@@ -2279,9 +2298,11 @@ class array<T> {
 }
 )AS";
 
-TEST_SUITE("AngelScript_Array_Templates_And_Completion") {
+TEST_SUITE("AngelScript_Array_Templates_And_Completion")
+{
 
-    TEST_CASE("Array Handles: Valid syntax should not emit primitive handle error") {
+    TEST_CASE("Array Handles: Valid syntax should not emit primitive handle error")
+    {
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
@@ -2300,12 +2321,14 @@ TEST_SUITE("AngelScript_Array_Templates_And_Completion") {
         REQUIRE(doc != nullptr);
 
         auto diagnostics = doc->GetDiagnostics();
-        for (const auto& diag : diagnostics) {
+        for (const auto& diag : diagnostics)
+        {
             CHECK(diag.code != "as-err-handle-on-primitive");
         }
     }
 
-    TEST_CASE("Completion: Generic type substitution for array members") {
+    TEST_CASE("Completion: Generic type substitution for array members")
+    {
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
@@ -2329,12 +2352,15 @@ TEST_SUITE("AngelScript_Array_Templates_And_Completion") {
         bool foundInsertLast = false;
         bool foundLength = false;
 
-        for (const auto& item : items) {
-            if (item.label == "insertLast") {
+        for (const auto& item : items)
+        {
+            if (item.label == "insertLast")
+            {
                 foundInsertLast = true;
                 CHECK(item.detail == "void insertLast(const int &in val)");
             }
-            if (item.label == "length") {
+            if (item.label == "length")
+            {
                 foundLength = true;
                 CHECK(item.detail == "uint length() const");
             }
@@ -2344,7 +2370,8 @@ TEST_SUITE("AngelScript_Array_Templates_And_Completion") {
         CHECK(foundLength);
     }
 
-    TEST_CASE("Completion: Bracket syntax array member access") {
+    TEST_CASE("Completion: Bracket syntax array member access")
+    {
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
@@ -2365,8 +2392,10 @@ TEST_SUITE("AngelScript_Array_Templates_And_Completion") {
         REQUIRE_FALSE(items.empty());
 
         bool foundInsertLast = false;
-        for (const auto& item : items) {
-            if (item.label == "insertLast") {
+        for (const auto& item : items)
+        {
+            if (item.label == "insertLast")
+            {
                 foundInsertLast = true;
                 CHECK(item.detail == "void insertLast(const int &in val)");
             }
@@ -2374,7 +2403,8 @@ TEST_SUITE("AngelScript_Array_Templates_And_Completion") {
         CHECK(foundInsertLast);
     }
 
-    TEST_CASE("Completion: Multidimensional array index dereferencing") {
+    TEST_CASE("Completion: Multidimensional array index dereferencing")
+    {
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
@@ -2397,8 +2427,10 @@ TEST_SUITE("AngelScript_Array_Templates_And_Completion") {
         REQUIRE_FALSE(items1.empty());
 
         bool foundNestedInsert = false;
-        for (const auto& item : items1) {
-            if (item.label == "insertLast") {
+        for (const auto& item : items1)
+        {
+            if (item.label == "insertLast")
+            {
                 foundNestedInsert = true;
                 // Detail should accept array<int> as input
                 CHECK((item.detail && item.detail->find("array<int>") != std::string::npos));
@@ -2412,8 +2444,10 @@ TEST_SUITE("AngelScript_Array_Templates_And_Completion") {
         REQUIRE_FALSE(items2.empty());
 
         bool foundElementInsert = false;
-        for (const auto& item : items2) {
-            if (item.label == "insertLast") {
+        for (const auto& item : items2)
+        {
+            if (item.label == "insertLast")
+            {
                 foundElementInsert = true;
                 CHECK(item.detail == "void insertLast(const int &in val)");
             }
@@ -2421,7 +2455,8 @@ TEST_SUITE("AngelScript_Array_Templates_And_Completion") {
         CHECK(foundElementInsert);
     }
 
-    TEST_CASE("Semantic Tokens: Proper splitting of '>>' in nested template types") {
+    TEST_CASE("Semantic Tokens: Proper splitting of '>>' in nested template types")
+    {
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
@@ -2436,15 +2471,19 @@ TEST_SUITE("AngelScript_Array_Templates_And_Completion") {
         REQUIRE_FALSE(tokens.empty());
 
         // Ensure template angle brackets at col 15/16 are NOT emitted as operators
-        for (const auto& token : tokens) {
-            if (token.line == 0 && (token.character == 5 || token.character == 11 || token.character == 15 || token.character == 16)) {
+        for (const auto& token : tokens)
+        {
+            if (token.line == 0 &&
+                (token.character == 5 || token.character == 11 || token.character == 15 || token.character == 16))
+            {
                 CHECK(token.type != SemanticTokenType::Operator);
             }
         }
     }
 }
 
-TEST_SUITE("AngelScript_Generic_Arrays_And_Tokens_Verification") {
+TEST_SUITE("AngelScript_Generic_Arrays_And_Tokens_Verification")
+{
 
     const char* kPredefinedArray = R"(
         class array<T> {
@@ -2456,7 +2495,8 @@ TEST_SUITE("AngelScript_Generic_Arrays_And_Tokens_Verification") {
         }
     )";
 
-    TEST_CASE("Oracle Parity: Default constructed array<T> is valid and not uninitialized") {
+    TEST_CASE("Oracle Parity: Default constructed array<T> is valid and not uninitialized")
+    {
         // --- GROUND TRUTH ORACLE (asharness.exe) ---
         // Snippet:
         //   array<int> myIntAr;
@@ -2483,7 +2523,8 @@ TEST_SUITE("AngelScript_Generic_Arrays_And_Tokens_Verification") {
         CHECK(doc->GetDiagnostics().empty());
     }
 
-    TEST_CASE("Oracle Parity: Reject bare template identifier in assignment") {
+    TEST_CASE("Oracle Parity: Reject bare template identifier in assignment")
+    {
         // --- GROUND TRUTH ORACLE (asharness.exe) ---
         // Snippet:
         //   array<array<array<int>>> myInt = array;
@@ -2509,7 +2550,8 @@ TEST_SUITE("AngelScript_Generic_Arrays_And_Tokens_Verification") {
         CHECK(diagnostics[0].range.start.line == 2);
     }
 
-    TEST_CASE("Oracle Parity: Type mismatch on nested array insertLast") {
+    TEST_CASE("Oracle Parity: Type mismatch on nested array insertLast")
+    {
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
@@ -2531,7 +2573,8 @@ TEST_SUITE("AngelScript_Generic_Arrays_And_Tokens_Verification") {
         CHECK(diagnostics[0].range.start.line == 3);
     }
 
-    TEST_CASE("Semantic Tokens: Arbitrary nested angle brackets (>>>) do not emit operators") {
+    TEST_CASE("Semantic Tokens: Arbitrary nested angle brackets (>>>) do not emit operators")
+    {
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
@@ -2545,18 +2588,22 @@ TEST_SUITE("AngelScript_Generic_Arrays_And_Tokens_Verification") {
         auto tokens = doc->GetSemanticTokens();
         REQUIRE_FALSE(tokens.empty());
 
-        for (const auto& tok : tokens) {
+        for (const auto& tok : tokens)
+        {
             if (tok.line == 0 && (tok.character == 5 || tok.character == 11 || tok.character == 17 ||
-                                  (tok.character >= 21 && tok.character <= 23))) {
+                                  (tok.character >= 21 && tok.character <= 23)))
+            {
                 CHECK(tok.type != SemanticTokenType::Operator);
             }
         }
     }
 }
 
-TEST_SUITE("AngelScript_SemanticTokens_Template_Disambiguation") {
+TEST_SUITE("AngelScript_SemanticTokens_Template_Disambiguation")
+{
 
-    TEST_CASE("Semantic Tokens: Template angle brackets must NOT be tokenized as operators") {
+    TEST_CASE("Semantic Tokens: Template angle brackets must NOT be tokenized as operators")
+    {
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
@@ -2570,14 +2617,17 @@ TEST_SUITE("AngelScript_SemanticTokens_Template_Disambiguation") {
 
         // Line 0: "array<int> values;"
         // Col 5 is '<', Col 9 is '>'
-        for (const auto& token : tokens) {
-            if (token.line == 0 && (token.character == 5 || token.character == 9)) {
+        for (const auto& token : tokens)
+        {
+            if (token.line == 0 && (token.character == 5 || token.character == 9))
+            {
                 CHECK(token.type != SemanticTokenType::Operator);
             }
         }
     }
 
-    TEST_CASE("Semantic Tokens: Binary relational operators < and > MUST be tokenized as operators") {
+    TEST_CASE("Semantic Tokens: Binary relational operators < and > MUST be tokenized as operators")
+    {
         const char* script = R"(
             void Main() {
                 bool less = (10 < 20);
@@ -2595,14 +2645,19 @@ TEST_SUITE("AngelScript_SemanticTokens_Template_Disambiguation") {
         bool foundLessOp = false;
         bool foundGreaterOp = false;
 
-        for (const auto& token : tokens) {
-            if (token.line == 2 && token.character == 32 && token.length == 1) { // '<' in (10 < 20)
-                if (token.type == SemanticTokenType::Operator) {
+        for (const auto& token : tokens)
+        {
+            if (token.line == 2 && token.character == 32 && token.length == 1)
+            { // '<' in (10 < 20)
+                if (token.type == SemanticTokenType::Operator)
+                {
                     foundLessOp = true;
                 }
             }
-            if (token.line == 3 && token.character == 35 && token.length == 1) { // '>' in (30 > 15)
-                if (token.type == SemanticTokenType::Operator) {
+            if (token.line == 3 && token.character == 35 && token.length == 1)
+            { // '>' in (30 > 15)
+                if (token.type == SemanticTokenType::Operator)
+                {
                     foundGreaterOp = true;
                 }
             }
@@ -2612,7 +2667,8 @@ TEST_SUITE("AngelScript_SemanticTokens_Template_Disambiguation") {
         CHECK(foundGreaterOp);
     }
 
-    TEST_CASE("Semantic Tokens: Nested template delimiters in array<array<int>> do not emit operators") {
+    TEST_CASE("Semantic Tokens: Nested template delimiters in array<array<int>> do not emit operators")
+    {
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
@@ -2625,16 +2681,19 @@ TEST_SUITE("AngelScript_SemanticTokens_Template_Disambiguation") {
         REQUIRE_FALSE(tokens.empty());
 
         // Col 5 ('<'), Col 11 ('<'), Col 15 ('>'), Col 16 ('>')
-        for (const auto& token : tokens) {
-            if (token.line == 0 && (token.character == 5 || token.character == 11 || 
-                                    token.character == 15 || token.character == 16)) {
+        for (const auto& token : tokens)
+        {
+            if (token.line == 0 &&
+                (token.character == 5 || token.character == 11 || token.character == 15 || token.character == 16))
+            {
                 CHECK(token.type != SemanticTokenType::Operator);
             }
         }
     }
 }
 
-TEST_SUITE("AngelScript_Template_Symbol_Resolution") {
+TEST_SUITE("AngelScript_Template_Symbol_Resolution")
+{
 
     const char* kPredefinedArray = R"(
         class array<T> {
@@ -2648,7 +2707,8 @@ TEST_SUITE("AngelScript_Template_Symbol_Resolution") {
         }
     )";
 
-    TEST_CASE("Template Instantiation: array<int> resolves cleanly against predefined array<T>") {
+    TEST_CASE("Template Instantiation: array<int> resolves cleanly against predefined array<T>")
+    {
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
@@ -2669,11 +2729,14 @@ TEST_SUITE("AngelScript_Template_Symbol_Resolution") {
         bool hasUndeclaredIdentifier = false;
         bool hasUnusedVariableWarn = false;
 
-        for (const auto& diag : diagnostics) {
-            if (diag.code == "as-warn-undeclared-identifier" || diag.code == "as-err-unresolved-type") {
+        for (const auto& diag : diagnostics)
+        {
+            if (diag.code == "as-warn-undeclared-identifier" || diag.code == "as-err-unresolved-type")
+            {
                 hasUndeclaredIdentifier = true;
             }
-            if (diag.code == "as-warn-unused-variable") {
+            if (diag.code == "as-warn-unused-variable")
+            {
                 hasUnusedVariableWarn = true;
                 CHECK(diag.range.start.line == 2);
                 CHECK(diag.range.start.character == 27); // 'myInt' span
@@ -2684,7 +2747,8 @@ TEST_SUITE("AngelScript_Template_Symbol_Resolution") {
         CHECK(hasUnusedVariableWarn);
     }
 
-    TEST_CASE("Template Diagnostics: Unknown subtype inside array<T> highlights subtype only") {
+    TEST_CASE("Template Diagnostics: Unknown subtype inside array<T> highlights subtype only")
+    {
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
@@ -2713,7 +2777,7 @@ TEST_SUITE("AngelScript_Template_Symbol_Resolution") {
 
 TEST_SUITE("AngelScript_Constructor_Direct_Initialization_Verification")
 {
-    const char *kPredefinedScript = R"(
+    const char* kPredefinedScript = R"(
         class array<T> {
             array();
             array(uint initialSize);
@@ -2733,7 +2797,7 @@ TEST_SUITE("AngelScript_Constructor_Direct_Initialization_Verification")
         config.types.arrayTypeName = "array";
         config.types.stringTypeName = "string";
 
-        const char *script = R"(
+        const char* script = R"(
             void Main() {
                 array<int> a;           // OK: Default constructor
                 array<int> b(5);        // OK: (uint) constructor
@@ -2767,7 +2831,7 @@ TEST_SUITE("AngelScript_Constructor_Direct_Initialization_Verification")
         config.types.arrayTypeName = "array";
         config.types.stringTypeName = "string";
 
-        const char *script = R"(
+        const char* script = R"(
             void Main() {
                 array<int> myInt({123}, {123}); // Error: No matching constructor signature
                 string s({"s"}, {"s"});         // Error: No matching constructor signature
@@ -2796,7 +2860,7 @@ TEST_SUITE("AngelScript_Constructor_Direct_Initialization_Verification")
         config::ServerConfig config;
         config.types.arrayTypeName = "array";
 
-        const char *script = R"(
+        const char* script = R"(
             void Main() {
                 // OK: Constructing 10x10 array of ints
                 array<array<int>> matrix(10, array<int>(10));
@@ -2831,28 +2895,23 @@ TEST_CASE("TypeRules - Type Rules Corpus Audit" * doctest::skip(true))
         return;
     }
 
-    static const std::vector<std::string> k_codes = {
-        "as-err-typedef-non-primitive", "as-err-enum-invalid-initializer",
-        "as-err-interface-constructor", "as-err-duplicate-symbol", "as-err-name-conflict",
-        "as-err-handle-on-primitive", "as-syntax-error-missing",
-        "as-err-declaration-missing-body", "as-err-external-not-shared",
-        "as-err-funcdef-attribute"
-    };
+    static const std::vector<std::string> k_codes = {"as-err-typedef-non-primitive", "as-err-enum-invalid-initializer",
+                                                     "as-err-interface-constructor", "as-err-duplicate-symbol",
+                                                     "as-err-name-conflict",         "as-err-handle-on-primitive",
+                                                     "as-syntax-error-missing",      "as-err-declaration-missing-body",
+                                                     "as-err-external-not-shared",   "as-err-funcdef-attribute"};
 
-    const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)
-    {
-        return std::find(k_codes.begin(), k_codes.end(), code) != k_codes.end();
-    });
+    const auto result = angel_lsp::test::RunCorpusAudit(
+        [](const std::string& code) { return std::find(k_codes.begin(), k_codes.end(), code) != k_codes.end(); });
 
-    MESSAGE("Type-rule corpus audit: files=" << result.filesAnalysed
-            << " totalFlagged=" << result.Total()
-            << " seconds=" << result.seconds);
+    MESSAGE("Type-rule corpus audit: files=" << result.filesAnalysed << " totalFlagged=" << result.Total()
+                                             << " seconds=" << result.seconds);
 
-    for (const auto &[code, count] : result.countByCode)
+    for (const auto& [code, count] : result.countByCode)
     {
         MESSAGE("  " << code << ": " << count);
     }
-    for (const auto &hit : result.hits)
+    for (const auto& hit : result.hits)
     {
         MESSAGE("  " << hit.fileName << ":" << hit.line << " [" << hit.code << "] " << hit.message);
     }

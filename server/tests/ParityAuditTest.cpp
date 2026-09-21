@@ -1,15 +1,15 @@
 #include <doctest/doctest.h>
 
-#include "analysis/SemanticAnalyzer.h"
-#include "analysis/SemanticAnalysisRequest.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/SymbolTable.h"
 #include "analysis/EngineProfiles.h"
+#include "analysis/LocalScopeCollector.h"
+#include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
-#include "utils/PreprocessorRegions.h"
 #include "parser/AngelScriptParser.h"
+#include "utils/PreprocessorRegions.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -56,110 +56,109 @@
 
 namespace
 {
-    namespace fs = std::filesystem;
+namespace fs = std::filesystem;
 
-    std::string EnvVar(const char *name)
-    {
+std::string EnvVar(const char* name)
+{
 #if defined(_WIN32)
-        char *value = nullptr;
-        size_t len = 0;
-        if (_dupenv_s(&value, &len, name) != 0 || value == nullptr)
-            return {};
-        std::string result(value);
-        free(value);
-        return result;
+    char* value = nullptr;
+    size_t len = 0;
+    if (_dupenv_s(&value, &len, name) != 0 || value == nullptr)
+        return {};
+    std::string result(value);
+    free(value);
+    return result;
 #else
-        const char *value = std::getenv(name);
-        return value ? std::string(value) : std::string();
+    const char* value = std::getenv(name);
+    return value ? std::string(value) : std::string();
 #endif
-    }
-
-    std::string ReadFile(const fs::path &path)
-    {
-        std::ifstream in(path, std::ios::binary);
-        if (!in.is_open())
-            return {};
-        std::ostringstream ss;
-        ss << in.rdbuf();
-        return ss.str();
-    }
-
-    /** @brief True when the real AngelScript compiler accepts the script (asharness exits 0). */
-    bool RealCompilerAccepts(const std::string &harnessExe, const fs::path &script)
-    {
-        // Wrapped in an extra pair of quotes: cmd.exe strips the outermost pair, and both the
-        // harness path and the script path can contain spaces.
-        std::string command = "\"\"" + harnessExe + "\" \"" + script.string() + "\" --json --no-pause\"";
-#if defined(_WIN32)
-        command += " > NUL 2>&1";
-#else
-        command += " > /dev/null 2>&1";
-#endif
-        return std::system(command.c_str()) == 0;
-    }
-
-    struct ParityCase
-    {
-        fs::path path;
-        bool realAccepts = false;
-        std::vector<angel_lsp::analysis::Diagnostic> ourErrors;
-
-        // Everything below Error. Only the false-negative side reads these - see the comment where
-        // they are split.
-        std::vector<angel_lsp::analysis::Diagnostic> ourWarnings;
-    };
-
-    /**
-     * @brief A file this analyzer is known to disagree with the compiler on, and why.
-     *
-     * Every entry was traced to a specific cause before being added. The test checks this list in
-     * both directions: an unlisted file producing false positives is a regression, and a listed
-     * file that stops producing them means the gap is closed and the entry must be removed.
-     * Without that second direction the list would quietly become a place to hide failures.
-     */
-    struct KnownGap
-    {
-        std::string fileName;
-        std::string reason;
-    };
-
-    const std::vector<KnownGap> &KnownGaps()
-    {
-        static const std::vector<KnownGap> gaps = {
-            // json.as used to sit here: as.predefined declares no JSON constructors, so JSON(1) had no
-            // visible constructor. That closed on its own once CheckConstruction stayed silent when
-            // constructors are not visible in predefined stubs.
-
-            // doc_p44 is not listed here, and the reason is worth writing down because the count
-            // above moved when the `any` add-on was added to the built-in standard profile.
-            //
-            // The two harnesses disagree about `any`. angelscript_oracle registers it - measured,
-            // `any v;` compiles - and doc_p44's header records that verdict. AS-Harness does not:
-            // it answers `Identifier 'any' is not a data type in global namespace`. So the file now
-            // counts as a false negative, meaning the compiler under test rejects what we accept.
-            //
-            // Left as a false negative rather than excused as a gap, because a gap entry says "our
-            // analyzer is wrong here" and it is not: an application with the standard add-ons has
-            // `any`, which is exactly what the standard profile describes. What is really being
-            // measured is one harness's engine configuration. Recorded here so the number moving
-            // from three to four is a decision someone made rather than drift nobody noticed.
-        };
-        return gaps;
-    }
-
-    const KnownGap *FindKnownGap(const fs::path &path)
-    {
-        for (const auto &gap : KnownGaps())
-        {
-            if (gap.fileName == path.filename().string())
-                return &gap;
-        }
-        return nullptr;
-    }
 }
 
-TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
-          * doctest::skip(true))
+std::string ReadFile(const fs::path& path)
+{
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open())
+        return {};
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
+
+/** @brief True when the real AngelScript compiler accepts the script (asharness exits 0). */
+bool RealCompilerAccepts(const std::string& harnessExe, const fs::path& script)
+{
+    // Wrapped in an extra pair of quotes: cmd.exe strips the outermost pair, and both the
+    // harness path and the script path can contain spaces.
+    std::string command = "\"\"" + harnessExe + "\" \"" + script.string() + "\" --json --no-pause\"";
+#if defined(_WIN32)
+    command += " > NUL 2>&1";
+#else
+    command += " > /dev/null 2>&1";
+#endif
+    return std::system(command.c_str()) == 0;
+}
+
+struct ParityCase
+{
+    fs::path path;
+    bool realAccepts = false;
+    std::vector<angel_lsp::analysis::Diagnostic> ourErrors;
+
+    // Everything below Error. Only the false-negative side reads these - see the comment where
+    // they are split.
+    std::vector<angel_lsp::analysis::Diagnostic> ourWarnings;
+};
+
+/**
+ * @brief A file this analyzer is known to disagree with the compiler on, and why.
+ *
+ * Every entry was traced to a specific cause before being added. The test checks this list in
+ * both directions: an unlisted file producing false positives is a regression, and a listed
+ * file that stops producing them means the gap is closed and the entry must be removed.
+ * Without that second direction the list would quietly become a place to hide failures.
+ */
+struct KnownGap
+{
+    std::string fileName;
+    std::string reason;
+};
+
+const std::vector<KnownGap>& KnownGaps()
+{
+    static const std::vector<KnownGap> gaps = {
+        // json.as used to sit here: as.predefined declares no JSON constructors, so JSON(1) had no
+        // visible constructor. That closed on its own once CheckConstruction stayed silent when
+        // constructors are not visible in predefined stubs.
+
+        // doc_p44 is not listed here, and the reason is worth writing down because the count
+        // above moved when the `any` add-on was added to the built-in standard profile.
+        //
+        // The two harnesses disagree about `any`. angelscript_oracle registers it - measured,
+        // `any v;` compiles - and doc_p44's header records that verdict. AS-Harness does not:
+        // it answers `Identifier 'any' is not a data type in global namespace`. So the file now
+        // counts as a false negative, meaning the compiler under test rejects what we accept.
+        //
+        // Left as a false negative rather than excused as a gap, because a gap entry says "our
+        // analyzer is wrong here" and it is not: an application with the standard add-ons has
+        // `any`, which is exactly what the standard profile describes. What is really being
+        // measured is one harness's engine configuration. Recorded here so the number moving
+        // from three to four is a decision someone made rather than drift nobody noticed.
+    };
+    return gaps;
+}
+
+const KnownGap* FindKnownGap(const fs::path& path)
+{
+    for (const auto& gap : KnownGaps())
+    {
+        if (gap.fileName == path.filename().string())
+            return &gap;
+    }
+    return nullptr;
+}
+} // namespace
+
+TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" * doctest::skip(true))
 {
     using namespace angel_lsp::analysis;
     using namespace angel_lsp::parser;
@@ -198,10 +197,9 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         // used to fall through to the harness corpus, which meant a typo in the CI variable
         // measured a different set of scripts than the job claimed to.
         REQUIRE_MESSAGE(fs::exists(overrideDir),
-                        "PARITY_SCRIPT_DIR is set but names a directory that does not exist: "
-                            << overrideDir);
+                        "PARITY_SCRIPT_DIR is set but names a directory that does not exist: " << overrideDir);
 
-        for (const auto &entry : fs::directory_iterator(overrideDir))
+        for (const auto& entry : fs::directory_iterator(overrideDir))
         {
             if (entry.is_regular_file() && entry.path().extension() == ".as")
                 scripts.push_back(entry.path());
@@ -214,13 +212,13 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
     }
     else
     {
-        for (const char *sub : { "Tests", "examples" })
+        for (const char* sub : {"Tests", "examples"})
         {
             const fs::path dir = fs::path(harnessRoot) / sub;
             if (!fs::exists(dir))
                 continue;
 
-            for (const auto &entry : fs::directory_iterator(dir))
+            for (const auto& entry : fs::directory_iterator(dir))
             {
                 if (entry.is_regular_file() && entry.path().extension() == ".as")
                     scripts.push_back(entry.path());
@@ -248,15 +246,12 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
     // describe exactly that set. Pointing one at the other is what makes the comparison honest -
     // an oracle and a stub that disagree produce findings about the disagreement.
     const std::string explicitStubPath = EnvVar("PARITY_PREDEFINED");
-    const std::string explicitStub =
-        explicitStubPath.empty() ? std::string()
-                                 : ReadFile(fs::path(explicitStubPath));
+    const std::string explicitStub = explicitStubPath.empty() ? std::string() : ReadFile(fs::path(explicitStubPath));
 
     if (!explicitStubPath.empty())
     {
         REQUIRE_MESSAGE(!explicitStub.empty(),
-                        "PARITY_PREDEFINED is set but names a file that could not be read: "
-                            << explicitStubPath);
+                        "PARITY_PREDEFINED is set but names a file that could not be read: " << explicitStubPath);
     }
 
     const bool useBuiltinProfile = !overrideDir.empty() && explicitStubPath.empty();
@@ -265,9 +260,8 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
     // list factories - so a view of it dangles the moment the ternary's temporary dies, which this
     // test found as a SIGSEGV within one run of making that change.
     const std::string standardStub =
-        useBuiltinProfile
-            ? angel_lsp::analysis::GetProfileStubText(angel_lsp::analysis::EngineProfileKind::Standard)
-            : std::string();
+        useBuiltinProfile ? angel_lsp::analysis::GetProfileStubText(angel_lsp::analysis::EngineProfileKind::Standard)
+                          : std::string();
 
     size_t agreeAccept = 0;
     size_t agreeReject = 0;
@@ -280,7 +274,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
     std::vector<ParityCase> falsePositives;
     std::vector<std::string> falseNegativeFiles;
 
-    for (const auto &script : scripts)
+    for (const auto& script : scripts)
     {
         const std::string source = ReadFile(script);
         if (source.empty())
@@ -300,11 +294,12 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         SymbolTable table;
 
         if (!standardStub.empty())
-            collector.CollectSymbols("file:///standard.as.predefined", std::string(standardStub), parser, table, &i18n);
+            collector.CollectSymbols({"file:///standard.as.predefined", std::string(standardStub), &i18n}, parser,
+                                     table);
 
         if (!explicitStub.empty())
         {
-            collector.CollectSymbols("file:///parity.as.predefined", explicitStub, parser, table, &i18n);
+            collector.CollectSymbols({"file:///parity.as.predefined", explicitStub, &i18n}, parser, table);
         }
         else if (!useBuiltinProfile && !predefinedStub.empty())
         {
@@ -313,7 +308,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
             // scriptarray.cpp / scriptdictionary.cpp. Without them the harness would be compiling a
             // language this analyzer cannot see the list factories of.
             std::string annotated = predefinedStub;
-            const auto annotate = [&annotated](const std::string &declaration, const std::string &pattern)
+            const auto annotate = [&annotated](const std::string& declaration, const std::string& pattern)
             {
                 const size_t at = annotated.find(declaration);
                 if (at != std::string::npos)
@@ -324,7 +319,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
             annotate("class array<T>", "{repeat T}");
             annotate("class dictionary", "{repeat {string, ?}}");
 
-            collector.CollectSymbols("file:///as.predefined", annotated, parser, table, &i18n);
+            collector.CollectSymbols({"file:///as.predefined", annotated, &i18n}, parser, table);
         }
 
         const std::string uri = "file:///" + script.filename().string();
@@ -334,7 +329,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         // vector the client receives). Dropping them here made this test blind to every syntax
         // error: `Matrix m.Matrix();` produced a tree-sitter ERROR node, the collector reported it,
         // and the parity run scored the file as a miss because it only ever looked at Analyze().
-        const auto collectorDiagnostics = collector.CollectSymbols(uri, source, parser, table, &i18n);
+        const auto collectorDiagnostics = collector.CollectSymbols({uri, source, &i18n}, parser, table);
 
         // The server always analyses with a TypeConfig; running without one here made this harness
         // model something the server never is. It decides, among other things, which template is
@@ -359,7 +354,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
             return config;
         }();
 
-        SemanticAnalysisRequest request{ table, uri, ".as.predefined", &i18n };
+        SemanticAnalysisRequest request{table, uri, ".as.predefined", &i18n};
         request.typeConfig = &types;
         request.diagnostics = &diagnostics;
 
@@ -384,7 +379,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
 
         SemanticAnalyzer analyzer(nullptr);
         auto ours = collectorDiagnostics;
-        for (const auto &diagnostic : analyzer.Analyze(request))
+        for (const auto& diagnostic : analyzer.Analyze(request))
             ours.push_back(diagnostic);
 
         // A second pass differing only in the two opt-in hints. Same tree, same table, same
@@ -393,8 +388,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         request.diagnostics = &withHints;
         const auto oursWithHints = analyzer.Analyze(request);
         request.diagnostics = &diagnostics;
-        const bool saidSomethingWithHints =
-            !oursWithHints.empty() || !collectorDiagnostics.empty();
+        const bool saidSomethingWithHints = !oursWithHints.empty() || !collectorDiagnostics.empty();
 
         // Asymmetric on purpose, and the asymmetry is the point.
         //
@@ -410,7 +404,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         // doc_r01_super_method.as was scored as a miss while the user was in fact getting a
         // squiggle on `super`. Worse than the miscount: a rule quietly downgraded to Warning would
         // have been reclassified as an acceptable gap instead of failing anything.
-        for (const auto &diagnostic : ours)
+        for (const auto& diagnostic : ours)
         {
             if (diagnostic.severity == DiagnosticSeverity::Error)
                 current.ourErrors.push_back(diagnostic);
@@ -419,7 +413,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
         }
 
         if (request.tree)
-            ts_tree_delete(const_cast<TSTree *>(request.tree));
+            ts_tree_delete(const_cast<TSTree*>(request.tree));
 
         if (current.realAccepts)
         {
@@ -446,9 +440,9 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
 
     std::vector<ParityCase> explainedCases;
 
-    for (auto &c : falsePositives)
+    for (auto& c : falsePositives)
     {
-        if (const KnownGap *gap = FindKnownGap(c.path))
+        if (const KnownGap* gap = FindKnownGap(c.path))
         {
             explained.push_back(gap->fileName);
             explainedCases.push_back(std::move(c));
@@ -505,40 +499,36 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
     // The "with the opt-in hints on" line above is the measurement of that claim, and it is
     // measured rather than asserted here on purpose: a count written into a comment is a count that
     // goes stale, which this very block has already done once.
-    for (const auto &name : falseNegativeFiles)
+    for (const auto& name : falseNegativeFiles)
         std::cout << "      [missed] " << name << "\n";
 
-    for (const auto &c : unexplained)
+    for (const auto& c : unexplained)
     {
         std::cout << "\n  [UNEXPLAINED] " << c.path.filename().string()
-                  << " - the real compiler accepts this file, we report "
-                  << c.ourErrors.size() << " error(s):\n";
+                  << " - the real compiler accepts this file, we report " << c.ourErrors.size() << " error(s):\n";
 
-        for (const auto &d : c.ourErrors)
+        for (const auto& d : c.ourErrors)
         {
-            std::cout << "      line " << (d.range.start.line + 1) << "  "
-                      << d.code << "  " << d.message << "\n";
+            std::cout << "      line " << (d.range.start.line + 1) << "  " << d.code << "  " << d.message << "\n";
         }
     }
     // Known gaps are printed too, not just counted. A gap that shrinks - because part of its cause
     // was fixed - is only visible if the remaining diagnostics are on screen, and that is exactly
     // the moment its recorded reason has gone stale.
-    for (const auto &c : explainedCases)
+    for (const auto& c : explainedCases)
     {
-        std::cout << "\n  [known gap] " << c.path.filename().string()
-                  << " - " << c.ourErrors.size() << " error(s) still reported:\n";
+        std::cout << "\n  [known gap] " << c.path.filename().string() << " - " << c.ourErrors.size()
+                  << " error(s) still reported:\n";
 
-        for (const auto &d : c.ourErrors)
+        for (const auto& d : c.ourErrors)
         {
-            std::cout << "      line " << (d.range.start.line + 1) << "  "
-                      << d.code << "  " << d.message << "\n";
+            std::cout << "      line " << (d.range.start.line + 1) << "  " << d.code << "  " << d.message << "\n";
         }
     }
     std::cout << std::endl;
 
-    CHECK_MESSAGE(unexplained.empty(),
-                  "This analyzer reports errors on scripts the real AngelScript compiler accepts, "
-                  "for a reason not recorded in KnownGaps().");
+    CHECK_MESSAGE(unexplained.empty(), "This analyzer reports errors on scripts the real AngelScript compiler accepts, "
+                                       "for a reason not recorded in KnownGaps().");
 
     // The other direction: a documented gap that no longer reproduces has been fixed, and leaving
     // its entry in place would let a future regression hide behind it.
@@ -551,17 +541,15 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts"
     //
     // Scoped per gap instead of per run: a gap naming a file this corpus does not contain is simply
     // not evaluated, and one whose file WAS audited has to still be failing or the entry is stale.
-    for (const auto &gap : KnownGaps())
+    for (const auto& gap : KnownGaps())
     {
-        const bool wasAudited = std::any_of(scripts.begin(), scripts.end(),
-                                            [&gap](const fs::path &script) {
-                                                return script.filename().string() == gap.fileName;
-                                            });
+        const bool wasAudited = std::any_of(scripts.begin(), scripts.end(), [&gap](const fs::path& script)
+                                            { return script.filename().string() == gap.fileName; });
         if (!wasAudited)
             continue;
 
         const bool stillFailing = std::any_of(explained.begin(), explained.end(),
-                                              [&gap](const std::string &name) { return name == gap.fileName; });
+                                              [&gap](const std::string& name) { return name == gap.fileName; });
 
         INFO("Known gap for " << gap.fileName << " no longer reproduces - remove it from KnownGaps().");
         CHECK(stillFailing);

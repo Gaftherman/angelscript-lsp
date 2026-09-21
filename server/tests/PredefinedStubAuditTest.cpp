@@ -1,9 +1,9 @@
 #include <doctest/doctest.h>
 
-#include "analysis/SemanticAnalyzer.h"
-#include "analysis/SemanticAnalysisRequest.h"
-#include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
+#include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
@@ -37,35 +37,35 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    /** @brief Path of a stub to audit, or empty when none is available on this machine. */
-    std::string FindStub()
+/** @brief Path of a stub to audit, or empty when none is available on this machine. */
+std::string FindStub()
+{
+    if (const char* fromEnv = std::getenv("ANGELSCRIPT_STUB_PATH"))
     {
-        if (const char *fromEnv = std::getenv("ANGELSCRIPT_STUB_PATH"))
+        if (std::filesystem::exists(fromEnv))
         {
-            if (std::filesystem::exists(fromEnv))
-            {
-                return fromEnv;
-            }
+            return fromEnv;
         }
+    }
 #ifdef ANGELSCRIPT_REPO_ROOT
-        std::filesystem::path repoRoot(ANGELSCRIPT_REPO_ROOT);
-        std::filesystem::path defaultStub = repoRoot / "predefined" / "sven.as.predefined";
-        if (std::filesystem::exists(defaultStub))
-        {
-            return defaultStub.string();
-        }
-#endif
-        return "";
-    }
-
-    std::string ReadFile(const std::string &path)
+    std::filesystem::path repoRoot(ANGELSCRIPT_REPO_ROOT);
+    std::filesystem::path defaultStub = repoRoot / "predefined" / "sven.as.predefined";
+    if (std::filesystem::exists(defaultStub))
     {
-        std::ifstream file(path, std::ios::binary);
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-        return buffer.str();
+        return defaultStub.string();
     }
+#endif
+    return "";
 }
+
+std::string ReadFile(const std::string& path)
+{
+    std::ifstream file(path, std::ios::binary);
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+} // namespace
 
 TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
 {
@@ -90,10 +90,11 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
     // Everything downstream depends on this. A stub that is not recognised is analysed as ordinary
     // script, and every body-less declaration in it becomes an error.
     // ---------------------------------------------------------------------------------
-    for (const std::string extension : { ".as.predefined", "as.predefined", ".predefined" })
+    for (const std::string extension : {".as.predefined", "as.predefined", ".predefined"})
     {
         MESSAGE("  extension \"" << extension << "\" matches this stub: "
-                << (angel_lsp::utils::IsPredefinedFile(fileUri, extension) ? std::string("YES") : std::string("no")));
+                                 << (angel_lsp::utils::IsPredefinedFile(fileUri, extension) ? std::string("YES")
+                                                                                            : std::string("no")));
     }
 
     // ---------------------------------------------------------------------------------
@@ -105,35 +106,34 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
 
-    const auto parseDiagnostics = collector.CollectSymbols(fileUri, source, parser, table, &i18n);
+    const auto parseDiagnostics = collector.CollectSymbols({fileUri, source, &i18n}, parser, table);
 
     size_t symbolCount = 0;
     std::map<std::string, size_t> byKind;
     table.ForEachSymbolInFile(fileUri,
-        [&](const std::string &, const std::vector<Symbol> &symbols)
-        {
-            for (const auto &sym : symbols)
-            {
-                if (sym.fileUri != fileUri)
-                {
-                    continue;
-                }
-                ++symbolCount;
-                ++byKind[SymbolTypeToString(sym.type)];
-            }
-        });
+                              [&](const std::string&, const std::vector<Symbol>& symbols)
+                              {
+                                  for (const auto& sym : symbols)
+                                  {
+                                      if (sym.fileUri != fileUri)
+                                      {
+                                          continue;
+                                      }
+                                      ++symbolCount;
+                                      ++byKind[SymbolTypeToString(sym.type)];
+                                  }
+                              });
 
     MESSAGE("  parse diagnostics: " << parseDiagnostics.size());
     MESSAGE("  symbols collected: " << symbolCount);
-    for (const auto &[kind, count] : byKind)
+    for (const auto& [kind, count] : byKind)
     {
         MESSAGE("    " << kind << ": " << count);
     }
 
     for (size_t i = 0; i < parseDiagnostics.size() && i < 25; ++i)
     {
-        MESSAGE("    parse error L" << parseDiagnostics[i].range.start.line + 1
-                << ": " << parseDiagnostics[i].message);
+        MESSAGE("    parse error L" << parseDiagnostics[i].range.start.line + 1 << ": " << parseDiagnostics[i].message);
     }
 
     // ---------------------------------------------------------------------------------
@@ -141,9 +141,9 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
     //
     // The difference between the two columns is exactly what the stub exemption is worth.
     // ---------------------------------------------------------------------------------
-    const auto analyse = [&](const std::string &asFileUri, const std::string &extension)
+    const auto analyse = [&](const std::string& asFileUri, const std::string& extension)
     {
-        SemanticAnalysisRequest request{ table, asFileUri, extension, &i18n };
+        SemanticAnalysisRequest request{table, asFileUri, extension, &i18n};
         request.scopeRoot = scopes.CollectScopes(source, parser);
         request.sourceCode = source;
         request.tree = parser.Parse(source);
@@ -152,32 +152,35 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
         const auto diagnostics = analyzer.Analyze(request);
 
         std::map<std::string, size_t> counts;
-        for (const auto &diag : diagnostics)
+        for (const auto& diag : diagnostics)
         {
             ++counts[diag.code];
         }
 
         if (request.tree)
         {
-            ts_tree_delete(const_cast<TSTree *>(request.tree));
+            ts_tree_delete(const_cast<TSTree*>(request.tree));
         }
         return counts;
     };
 
     // Did the one parse error cost us the class it sits on?
-    for (const std::string typeName : { "array", "dictionary", "string", "any", "CBasePlayer" })
+    for (const std::string typeName : {"array", "dictionary", "string", "any", "CBasePlayer"})
     {
         const auto found = table.FindSymbolsPtr(typeName);
         size_t members = 0;
-        table.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &symbols)
-        {
-            for (const auto &sym : symbols)
+        table.ForEachSymbol(
+            [&](const std::string&, const std::vector<Symbol>& symbols)
             {
-                if (sym.containerName == typeName) { ++members; }
-            }
-        });
-        MESSAGE("  type \"" << typeName << "\": declared=" << (found ? "yes" : "NO")
-                << " members=" << members);
+                for (const auto& sym : symbols)
+                {
+                    if (sym.containerName == typeName)
+                    {
+                        ++members;
+                    }
+                }
+            });
+        MESSAGE("  type \"" << typeName << "\": declared=" << (found ? "yes" : "NO") << " members=" << members);
     }
 
     const auto asStub = analyse(fileUri, ".as.predefined");
@@ -189,50 +192,55 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
     // `as.predefined` is recognised by name whatever the suffix says.
     SymbolTable scriptTable;
     SymbolCollector scriptCollector(nullptr);
-    scriptCollector.CollectSymbols("file:///main.as", source, parser, scriptTable, &i18n);
+    scriptCollector.CollectSymbols({"file:///main.as", source, &i18n}, parser, scriptTable);
 
     std::map<std::string, size_t> asScript;
     {
-        SemanticAnalysisRequest request{ scriptTable, "file:///main.as", ".as.predefined", &i18n };
+        SemanticAnalysisRequest request{scriptTable, "file:///main.as", ".as.predefined", &i18n};
         request.scopeRoot = scopes.CollectScopes(source, parser);
         request.sourceCode = source;
         request.tree = parser.Parse(source);
 
         SemanticAnalyzer analyzer(nullptr);
-        for (const auto &diag : analyzer.Analyze(request))
+        for (const auto& diag : analyzer.Analyze(request))
         {
             ++asScript[diag.code];
         }
-        if (request.tree) { ts_tree_delete(const_cast<TSTree *>(request.tree)); }
+        if (request.tree)
+        {
+            ts_tree_delete(const_cast<TSTree*>(request.tree));
+        }
     }
 
     {
-        SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
+        SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
         request.scopeRoot = scopes.CollectScopes(source, parser);
         request.sourceCode = source;
         request.tree = parser.Parse(source);
 
         SemanticAnalyzer analyzer(nullptr);
-        for (const auto &diag : analyzer.Analyze(request))
+        for (const auto& diag : analyzer.Analyze(request))
         {
-            MESSAGE("    surviving: L" << diag.range.start.line + 1 << " [" << diag.code << "] "
-                    << diag.message);
+            MESSAGE("    surviving: L" << diag.range.start.line + 1 << " [" << diag.code << "] " << diag.message);
         }
-        if (request.tree) { ts_tree_delete(const_cast<TSTree *>(request.tree)); }
+        if (request.tree)
+        {
+            ts_tree_delete(const_cast<TSTree*>(request.tree));
+        }
     }
 
-    MESSAGE("  diagnostics when treated as a stub: "
-            << std::accumulate(asStub.begin(), asStub.end(), size_t{0},
-                               [](size_t total, const auto &entry) { return total + entry.second; }));
-    for (const auto &[code, count] : asStub)
+    MESSAGE("  diagnostics when treated as a stub: " << std::accumulate(asStub.begin(), asStub.end(), size_t{0},
+                                                                        [](size_t total, const auto& entry)
+                                                                        { return total + entry.second; }));
+    for (const auto& [code, count] : asStub)
     {
         MESSAGE("    " << code << ": " << count);
     }
 
     MESSAGE("  diagnostics when NOT recognised as a stub: "
             << std::accumulate(asScript.begin(), asScript.end(), size_t{0},
-                               [](size_t total, const auto &entry) { return total + entry.second; }));
-    for (const auto &[code, count] : asScript)
+                               [](size_t total, const auto& entry) { return total + entry.second; }));
+    for (const auto& [code, count] : asScript)
     {
         MESSAGE("    " << code << ": " << count);
     }

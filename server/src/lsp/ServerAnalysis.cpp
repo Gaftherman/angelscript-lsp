@@ -86,7 +86,7 @@ std::vector<angel_lsp::analysis::Diagnostic> Server::ReplaceSymbolsFromTree(cons
                                                                             bool* outInterfaceChanged)
 {
     angel_lsp::analysis::SymbolTable staging;
-    auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree, staging, m_i18n.get());
+    auto diagnostics = m_symbolCollector->CollectSymbolsWithTree({uriStr, text, m_i18n.get()}, tree, staging);
     if (outInterfaceChanged)
     {
         const uint64_t oldHash = m_symbolTable.ComputeDocumentInterfaceHash(uriStr);
@@ -102,7 +102,7 @@ Server::ReplaceSymbolsFromSource(const std::string& uriStr, const std::string& t
                                  angel_lsp::parser::AngelScriptParser& parser)
 {
     angel_lsp::analysis::SymbolTable staging;
-    auto diagnostics = m_symbolCollector->CollectSymbols(uriStr, text, parser, staging, m_i18n.get());
+    auto diagnostics = m_symbolCollector->CollectSymbols({uriStr, text, m_i18n.get()}, parser, staging);
     m_symbolTable.ReplaceDocumentSymbols(uriStr, std::move(staging));
     return diagnostics;
 }
@@ -317,7 +317,7 @@ void Server::AnalyzeDocument(const std::string& uriStr, const std::string& text,
         const bool contributes = PredefinedStubContributes(uriStr);
         if (contributes && tree)
         {
-            m_symbolCollector->CollectSymbolsWithTree(uriStr, analysisText, tree.get(), staging, m_i18n.get());
+            m_symbolCollector->CollectSymbolsWithTree({uriStr, analysisText, m_i18n.get()}, tree.get(), staging);
         }
         double colMs = colTimer.ElapsedMs();
 
@@ -380,7 +380,7 @@ void Server::AnalyzeDocument(const std::string& uriStr, const std::string& text,
 
     utils::HighResTimer colTimer;
     angel_lsp::analysis::SymbolTable staging;
-    auto diagnostics = m_symbolCollector->CollectSymbolsWithTree(uriStr, text, tree.get(), staging, m_i18n.get());
+    auto diagnostics = m_symbolCollector->CollectSymbolsWithTree({uriStr, text, m_i18n.get()}, tree.get(), staging);
     double colMs = colTimer.ElapsedMs();
 
     // Currency check before snapshot creation
