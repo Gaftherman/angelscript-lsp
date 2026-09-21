@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/CallGraph.h"
+#include "analysis/EngineProfiles.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticAnalyzer.h"
@@ -530,6 +531,63 @@ class Server
     void PurgeUnusedClosureFiles();
 
     /**
+     * @brief Sends a warning message to the client when a module definition has an issue.
+     * @param[in] text Warning message to notify and log.
+     */
+    void NotifyModuleWarning(const std::string& text);
+
+    /**
+     * @brief Populates directory members for a module from workspace files.
+     * @param[in] folder Folder path configured for the module.
+     * @param[in,out] view Target module view receiving members.
+     * @param[in] workspaceFiles List of all files discovered in the workspace.
+     * @return True if folder exists and members were populated, false if folder does not exist.
+     */
+    bool PopulateModuleFolderMembers(const std::string& folder, ModuleView& view,
+                                     const std::vector<std::string>& workspaceFiles);
+
+    /**
+     * @brief Populates entry script closure for a module from the include graph.
+     * @param[in] entry Entry script path configured for the module.
+     * @param[in,out] view Target module view receiving entry closure paths.
+     * @return True if entry file exists and closure was resolved, false if entry does not exist.
+     */
+    bool PopulateModuleEntryClosure(const std::string& entry, ModuleView& view);
+
+    /**
+     * @brief Resolves a single module definition against discovered workspace files.
+     * @param[in] definition User-configured module definition.
+     * @param[in] resolved Already resolved modules to check for duplicate names.
+     * @param[in] workspaceFiles List of all files discovered in the workspace.
+     * @return Fully populated module view, or std::nullopt if definition was invalid or duplicate.
+     */
+    [[nodiscard]] std::optional<ModuleView>
+    ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& definition,
+                            const std::vector<ModuleView>& resolved, const std::vector<std::string>& workspaceFiles);
+
+    /**
+     * @brief Collects all canonical file paths currently needed by open documents and modules.
+     * @return Set of canonical file paths that must remain in memory.
+     */
+    [[nodiscard]] ankerl::unordered_dense::set<std::string> CollectWantedClosurePaths() const;
+
+    /**
+     * @brief Collects URIs of indexed closure files no longer required by any open document or module.
+     * @param[in] wantedPaths Set of canonical file paths currently needed.
+     * @return List of URIs to purge from cache.
+     */
+    [[nodiscard]] std::vector<std::string>
+    CollectStaleClosureUris(const ankerl::unordered_dense::set<std::string>& wantedPaths) const;
+
+    /**
+     * @brief Collects names of symbols declared shared in other modules or outside the owning module.
+     * @param[in] owning Owning module view to exclude from external shared searches.
+     * @param[out] outShared Set of symbol names receiving externally shared declarations.
+     */
+    void CollectSharedSymbolsElsewhere(const ModuleView& owning,
+                                       ankerl::unordered_dense::set<std::string>& outShared) const;
+
+    /**
      * @brief The module scoping for one document, or nullopt when there is none to give.
      *
      * Nullopt when angelscript.modules is unset, and also when the document belongs to none of
@@ -696,6 +754,28 @@ class Server
      */
     void LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser& parser,
                                    const angel_lsp::utils::StopFlag& stopToken);
+
+    /**
+     * @brief Determines the engine profile to load based on configuration and workspace contents.
+     * @param[in] stopToken Checked during auto-detection scan for early exit on cancellation.
+     * @return Target engine profile kind, or std::nullopt if disabled, canceled, or kind is None.
+     */
+    [[nodiscard]] std::optional<angel_lsp::analysis::EngineProfileKind>
+    ResolveTargetEngineProfile(const angel_lsp::utils::StopFlag& stopToken);
+
+    /**
+     * @brief Unloads synthetic profile URIs that are no longer in the active profile set.
+     * @param[in] wantedProfiles Active profiles to preserve.
+     */
+    void UnloadStaleBuiltinEngineProfiles(const std::vector<angel_lsp::analysis::EngineProfileKind>& wantedProfiles);
+
+    /**
+     * @brief Loads a single engine profile stub into the symbol and scope tables.
+     * @param[in] pKind Engine profile kind to load.
+     * @param[in,out] parser Parser to reuse for AST generation.
+     */
+    void LoadEngineProfileStub(angel_lsp::analysis::EngineProfileKind pKind,
+                               angel_lsp::parser::AngelScriptParser& parser);
 
     /**
      * @brief Converts the configured severity names into the analyzer's enum, once at startup.

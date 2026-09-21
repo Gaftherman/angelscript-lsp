@@ -10,93 +10,119 @@
 
 namespace angel_lsp
 {
+void Server::NotifyModuleWarning(const std::string& text)
+{
+    LogError(text);
+
+    lsp::notifications::Window_ShowMessage::Params params;
+    params.type = lsp::MessageType::Warning;
+    params.message = text;
+
+    std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
+    m_messageHandler->sendNotification<lsp::notifications::Window_ShowMessage>(std::move(params));
+}
+
+bool Server::PopulateModuleFolderMembers(const std::string& folder, ModuleView& view,
+                                         const std::vector<std::string>& workspaceFiles)
+{
+    view.folderPath = ResolveConfiguredPath(folder);
+
+    std::error_code ec;
+    if (!std::filesystem::is_directory(std::filesystem::path(view.folderPath), ec))
+    {
+        NotifyModuleWarning(
+            fmt::format("AngelScript: module '{}' names a folder that does not exist: {}", view.name, view.folderPath));
+        return false;
+    }
+
+    for (const auto& candidate : workspaceFiles)
+    {
+        if (PathIsInside(candidate, view.folderPath))
+        {
+            view.memberPaths.insert(candidate);
+        }
+    }
+
+    return true;
+}
+
+bool Server::PopulateModuleEntryClosure(const std::string& entry, ModuleView& view)
+{
+    view.entryPath = ResolveConfiguredPath(entry);
+
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(std::filesystem::path(view.entryPath), ec))
+    {
+        NotifyModuleWarning(fmt::format("AngelScript: module '{}' names an entry script that does not exist: {}",
+                                        view.name, view.entryPath));
+        return false;
+    }
+
+    for (const auto& member : m_includeGraph.GetModuleClosure(view.entryPath))
+    {
+        view.closurePaths.insert(member);
+        view.memberPaths.insert(member);
+    }
+
+    view.closurePaths.insert(view.entryPath);
+    view.memberPaths.insert(view.entryPath);
+    return true;
+}
+
+std::optional<Server::ModuleView>
+Server::ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& definition,
+                                const std::vector<ModuleView>& resolved, const std::vector<std::string>& workspaceFiles)
+{
+    if (definition.name.empty() || (definition.entry.empty() && definition.folder.empty()))
+    {
+        NotifyModuleWarning("AngelScript: a configured module needs a name and at least one of an entry "
+                            "script or a folder. One was skipped.");
+        return std::nullopt;
+    }
+
+    const bool duplicate = std::any_of(resolved.begin(), resolved.end(), [&definition](const ModuleView& existing)
+                                       { return existing.name == definition.name; });
+    if (duplicate)
+    {
+        NotifyModuleWarning(fmt::format("AngelScript: two modules are both named '{}'. The second was skipped - "
+                                        "'external shared' cannot say which module an entity came from otherwise.",
+                                        definition.name));
+        return std::nullopt;
+    }
+
+    ModuleView view;
+    view.name = definition.name;
+
+    if (!definition.folder.empty() && !PopulateModuleFolderMembers(definition.folder, view, workspaceFiles))
+    {
+        return std::nullopt;
+    }
+
+    if (!definition.entry.empty() && !PopulateModuleEntryClosure(definition.entry, view))
+    {
+        return std::nullopt;
+    }
+
+    LogInfo(fmt::format("Module '{}': {} file(s){}{}", view.name, view.memberPaths.size(),
+                        view.folderPath.empty() ? std::string() : fmt::format(" under {}", view.folderPath),
+                        view.entryPath.empty() ? std::string() : fmt::format(" from {}", view.entryPath)));
+
+    return view;
+}
+
 void Server::BuildModuleIndex()
 {
     std::vector<ModuleView> resolved;
     resolved.reserve(m_config.modules.size());
 
-    const auto tellUser = [this](const std::string& text)
-    {
-        LogError(text);
-
-        lsp::notifications::Window_ShowMessage::Params params;
-        params.type = lsp::MessageType::Warning;
-        params.message = text;
-
-        std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
-        m_messageHandler->sendNotification<lsp::notifications::Window_ShowMessage>(std::move(params));
-    };
-
     const std::vector<std::string> workspaceFiles = m_includeGraph.AllFiles();
 
     for (const auto& definition : m_config.modules)
     {
-        if (definition.name.empty() || (definition.entry.empty() && definition.folder.empty()))
+        if (auto view = ResolveModuleDefinition(definition, resolved, workspaceFiles))
         {
-            tellUser("AngelScript: a configured module needs a name and at least one of an entry "
-                     "script or a folder. One was skipped.");
-            continue;
+            resolved.push_back(std::move(*view));
         }
-
-        const bool duplicate = std::any_of(resolved.begin(), resolved.end(), [&definition](const ModuleView& existing)
-                                           { return existing.name == definition.name; });
-        if (duplicate)
-        {
-            tellUser(fmt::format("AngelScript: two modules are both named '{}'. The second was skipped - "
-                                 "'external shared' cannot say which module an entity came from otherwise.",
-                                 definition.name));
-            continue;
-        }
-
-        ModuleView view;
-        view.name = definition.name;
-
-        if (!definition.folder.empty())
-        {
-            view.folderPath = ResolveConfiguredPath(definition.folder);
-
-            std::error_code ec;
-            if (!std::filesystem::is_directory(std::filesystem::path(view.folderPath), ec))
-            {
-                tellUser(fmt::format("AngelScript: module '{}' names a folder that does not exist: {}", view.name,
-                                     view.folderPath));
-                continue;
-            }
-
-            for (const auto& candidate : workspaceFiles)
-            {
-                if (PathIsInside(candidate, view.folderPath))
-                    view.memberPaths.insert(candidate);
-            }
-        }
-
-        if (!definition.entry.empty())
-        {
-            view.entryPath = ResolveConfiguredPath(definition.entry);
-
-            std::error_code ec;
-            if (!std::filesystem::is_regular_file(std::filesystem::path(view.entryPath), ec))
-            {
-                tellUser(fmt::format("AngelScript: module '{}' names an entry script that does not exist: {}",
-                                     view.name, view.entryPath));
-                continue;
-            }
-
-            for (const auto& member : m_includeGraph.GetModuleClosure(view.entryPath))
-            {
-                view.closurePaths.insert(member);
-                view.memberPaths.insert(member);
-            }
-
-            view.closurePaths.insert(view.entryPath);
-            view.memberPaths.insert(view.entryPath);
-        }
-
-        LogInfo(fmt::format("Module '{}': {} file(s){}{}", view.name, view.memberPaths.size(),
-                            view.folderPath.empty() ? std::string() : fmt::format(" under {}", view.folderPath),
-                            view.entryPath.empty() ? std::string() : fmt::format(" from {}", view.entryPath)));
-
-        resolved.push_back(std::move(view));
     }
 
     m_modules = std::move(resolved);
@@ -296,9 +322,8 @@ void Server::WithdrawStaleModuleDiagnostics()
     }
 }
 
-void Server::PurgeUnusedClosureFiles()
+ankerl::unordered_dense::set<std::string> Server::CollectWantedClosurePaths() const
 {
-    std::lock_guard<std::mutex> lock(m_lifecycleMutex);
     ankerl::unordered_dense::set<std::string> wantedCanonicalPaths;
 
     for (const auto& openUri : m_documentStore.GetOpenUris())
@@ -334,11 +359,17 @@ void Server::PurgeUnusedClosureFiles()
         }
     }
 
+    return wantedCanonicalPaths;
+}
+
+std::vector<std::string>
+Server::CollectStaleClosureUris(const ankerl::unordered_dense::set<std::string>& wantedPaths) const
+{
     std::vector<std::string> toPurge;
     for (const auto& [uriStr, _] : m_closureDocuments)
     {
         const std::string p = CanonicalPathFromUri(uriStr);
-        if (p.empty() || !wantedCanonicalPaths.contains(p))
+        if (p.empty() || !wantedPaths.contains(p))
         {
             toPurge.push_back(uriStr);
         }
@@ -347,7 +378,7 @@ void Server::PurgeUnusedClosureFiles()
     for (const auto& [path, uriStr] : m_indexedUriByPath)
     {
         const std::string p = angel_lsp::utils::IncludeResolver::NormalizePath(path);
-        if (!wantedCanonicalPaths.contains(p) && !IsOpenElsewhere(uriStr))
+        if (!wantedPaths.contains(p) && !IsOpenElsewhere(uriStr))
         {
             toPurge.push_back(uriStr);
         }
@@ -355,6 +386,14 @@ void Server::PurgeUnusedClosureFiles()
 
     std::sort(toPurge.begin(), toPurge.end());
     toPurge.erase(std::unique(toPurge.begin(), toPurge.end()), toPurge.end());
+    return toPurge;
+}
+
+void Server::PurgeUnusedClosureFiles()
+{
+    std::lock_guard<std::mutex> lock(m_lifecycleMutex);
+    const auto wantedCanonicalPaths = CollectWantedClosurePaths();
+    const auto toPurge = CollectStaleClosureUris(wantedCanonicalPaths);
 
     for (const auto& uriStr : toPurge)
     {
@@ -392,6 +431,49 @@ void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser
     }
 }
 
+namespace
+{
+bool SymbolDeclaresShared(const angel_lsp::analysis::Symbol& symbol)
+{
+    if (symbol.type == angel_lsp::analysis::SymbolType::Class)
+    {
+        const auto& c = symbol.GetClass();
+        return c.hasBraces && c.modifiers.isShared && !c.modifiers.isExternal;
+    }
+    if (symbol.type == angel_lsp::analysis::SymbolType::Function)
+    {
+        const auto& f = symbol.GetFunction();
+        return f.hasBody && f.modifiers.isShared && !f.modifiers.isExternal;
+    }
+    return false;
+}
+} // namespace
+
+void Server::CollectSharedSymbolsElsewhere(const ModuleView& owning,
+                                           ankerl::unordered_dense::set<std::string>& outShared) const
+{
+    m_symbolTable.ForEachSymbol(
+        [this, &owning, &outShared](const std::string& name, const std::vector<angel_lsp::analysis::Symbol>& symbols)
+        {
+            for (const auto& symbol : symbols)
+            {
+                if (!SymbolDeclaresShared(symbol))
+                {
+                    continue;
+                }
+
+                const std::string declaringPath = CanonicalPathFromUri(symbol.fileUri);
+                if (declaringPath.empty() || owning.memberPaths.contains(declaringPath))
+                {
+                    continue;
+                }
+
+                outShared.insert(name);
+                return;
+            }
+        });
+}
+
 std::optional<angel_lsp::analysis::SemanticAnalysisRequest::ModuleContext>
 Server::ModuleContextFor(const std::string& uriStr) const
 {
@@ -409,7 +491,9 @@ Server::ModuleContextFor(const std::string& uriStr) const
     angel_lsp::analysis::SemanticAnalysisRequest::ModuleContext context;
     context.moduleNames.reserve(m_modules.size());
     for (const auto& view : m_modules)
+    {
         context.moduleNames.push_back(view.name);
+    }
 
     const ModuleClaim claim = ClaimFor(path);
     const ModuleView* owning = claim.owner;
@@ -421,29 +505,7 @@ Server::ModuleContextFor(const std::string& uriStr) const
     }
 
     context.name = owning->name;
-
-    m_symbolTable.ForEachSymbol(
-        [owning, &context](const std::string& name, const std::vector<angel_lsp::analysis::Symbol>& symbols)
-        {
-            for (const auto& symbol : symbols)
-            {
-                const bool declaresShared =
-                    (symbol.type == angel_lsp::analysis::SymbolType::Class && symbol.GetClass().hasBraces &&
-                     symbol.GetClass().modifiers.isShared && !symbol.GetClass().modifiers.isExternal) ||
-                    (symbol.type == angel_lsp::analysis::SymbolType::Function && symbol.GetFunction().hasBody &&
-                     symbol.GetFunction().modifiers.isShared && !symbol.GetFunction().modifiers.isExternal);
-
-                if (!declaresShared)
-                    continue;
-
-                const std::string declaringPath = CanonicalPathFromUri(symbol.fileUri);
-                if (declaringPath.empty() || owning->memberPaths.contains(declaringPath))
-                    continue;
-
-                context.sharedElsewhere.insert(name);
-                return;
-            }
-        });
+    CollectSharedSymbolsElsewhere(*owning, context.sharedElsewhere);
 
     return context;
 }

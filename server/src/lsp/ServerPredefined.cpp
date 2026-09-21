@@ -12,12 +12,12 @@
 
 namespace angel_lsp
 {
-void Server::LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser& parser,
-                                       const angel_lsp::utils::StopFlag& stopToken)
+std::optional<angel_lsp::analysis::EngineProfileKind>
+Server::ResolveTargetEngineProfile(const angel_lsp::utils::StopFlag& stopToken)
 {
     if (!m_config.features.enablePredefinedLoader)
     {
-        return;
+        return std::nullopt;
     }
 
     const std::string profileName = EngineProfile();
@@ -36,14 +36,16 @@ void Server::LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser& par
 
     if (kind == angel_lsp::analysis::EngineProfileKind::None)
     {
-        return;
+        return std::nullopt;
     }
 
     if (kind == angel_lsp::analysis::EngineProfileKind::Auto)
     {
         std::vector<std::string> rootPaths;
         for (const auto& workspaceRoot : WorkspaceRoots())
+        {
             rootPaths.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
+        }
 
         std::vector<std::string> fileNames;
         const bool completed = angel_lsp::utils::ForEachWorkspaceFile(
@@ -52,39 +54,89 @@ void Server::LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser& par
             { fileNames.push_back(entry.path().filename().string()); });
 
         if (!completed)
-            return;
+        {
+            return std::nullopt;
+        }
         kind = angel_lsp::analysis::DetectEngineProfileFromWorkspace(fileNames);
     }
 
+    return kind;
+}
+
+void Server::UnloadStaleBuiltinEngineProfiles(const std::vector<angel_lsp::analysis::EngineProfileKind>& wantedProfiles)
+{
+    std::vector<std::string> wanted;
+    wanted.reserve(wantedProfiles.size());
+    for (const auto pKind : wantedProfiles)
+    {
+        wanted.push_back(angel_lsp::analysis::GetProfileSyntheticUri(pKind));
+    }
+
+    std::vector<std::string> stale;
+    for (const auto& loaded : m_predefinedManager.GetLoadedUris())
+    {
+        if (!loaded.starts_with(angel_lsp::analysis::k_profileUriPrefix))
+        {
+            continue;
+        }
+        if (std::find(wanted.begin(), wanted.end(), loaded) == wanted.end())
+        {
+            stale.push_back(loaded);
+        }
+    }
+
+    for (const auto& uri : stale)
+    {
+        UnloadPredefinedUri(uri);
+        LogInfo(fmt::format("Unloaded built-in engine profile: {}", uri));
+    }
+}
+
+void Server::LoadEngineProfileStub(angel_lsp::analysis::EngineProfileKind pKind,
+                                   angel_lsp::parser::AngelScriptParser& parser)
+{
+    const std::string stubSource = angel_lsp::analysis::GetProfileStubText(pKind);
+    if (stubSource.empty())
+    {
+        return;
+    }
+
+    const std::string syntheticUri = angel_lsp::analysis::GetProfileSyntheticUri(pKind);
+
+    if (!ClaimPredefinedFile(syntheticUri, false))
+    {
+        return;
+    }
+
+    m_predefinedManager.SetDocumentText(syntheticUri, stubSource);
+
+    ReplaceSymbolsFromSource(syntheticUri, stubSource, parser);
+
+    m_scopeIndex.ClearDocument(syntheticUri);
+    m_callGraph.ClearDocument(syntheticUri);
+    m_scopeIndex.SetScopeTree(syntheticUri, m_localScopeCollector->CollectScopes(std::string(stubSource), parser));
+
+    LogInfo(fmt::format("Loaded built-in engine profile: {}", angel_lsp::analysis::EngineProfileKindToString(pKind)));
+}
+
+void Server::LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser& parser,
+                                       const angel_lsp::utils::StopFlag& stopToken)
+{
+    const auto targetKind = ResolveTargetEngineProfile(stopToken);
+    if (!targetKind.has_value())
+    {
+        return;
+    }
+
     std::vector<angel_lsp::analysis::EngineProfileKind> profilesToLoad;
-    if (kind != angel_lsp::analysis::EngineProfileKind::Standard &&
-        kind != angel_lsp::analysis::EngineProfileKind::None)
+    if (*targetKind != angel_lsp::analysis::EngineProfileKind::Standard &&
+        *targetKind != angel_lsp::analysis::EngineProfileKind::None)
     {
         profilesToLoad.push_back(angel_lsp::analysis::EngineProfileKind::Standard);
     }
-    profilesToLoad.push_back(kind);
+    profilesToLoad.push_back(*targetKind);
 
-    {
-        std::vector<std::string> wanted;
-        wanted.reserve(profilesToLoad.size());
-        for (const auto pKind : profilesToLoad)
-            wanted.push_back(angel_lsp::analysis::GetProfileSyntheticUri(pKind));
-
-        std::vector<std::string> stale;
-        for (const auto& loaded : m_predefinedManager.GetLoadedUris())
-        {
-            if (!loaded.starts_with(angel_lsp::analysis::k_profileUriPrefix))
-                continue;
-            if (std::find(wanted.begin(), wanted.end(), loaded) == wanted.end())
-                stale.push_back(loaded);
-        }
-
-        for (const auto& uri : stale)
-        {
-            UnloadPredefinedUri(uri);
-            LogInfo(fmt::format("Unloaded built-in engine profile: {}", uri));
-        }
-    }
+    UnloadStaleBuiltinEngineProfiles(profilesToLoad);
 
     for (auto pKind : profilesToLoad)
     {
@@ -93,29 +145,7 @@ void Server::LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser& par
             return;
         }
 
-        const std::string stubSource = angel_lsp::analysis::GetProfileStubText(pKind);
-        if (stubSource.empty())
-        {
-            continue;
-        }
-
-        const std::string syntheticUri = angel_lsp::analysis::GetProfileSyntheticUri(pKind);
-
-        if (!ClaimPredefinedFile(syntheticUri, false))
-        {
-            continue;
-        }
-
-        m_predefinedManager.SetDocumentText(syntheticUri, stubSource);
-
-        ReplaceSymbolsFromSource(syntheticUri, stubSource, parser);
-
-        m_scopeIndex.ClearDocument(syntheticUri);
-        m_callGraph.ClearDocument(syntheticUri);
-        m_scopeIndex.SetScopeTree(syntheticUri, m_localScopeCollector->CollectScopes(std::string(stubSource), parser));
-
-        LogInfo(
-            fmt::format("Loaded built-in engine profile: {}", angel_lsp::analysis::EngineProfileKindToString(pKind)));
+        LoadEngineProfileStub(pKind, parser);
     }
 }
 

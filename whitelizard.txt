@@ -3,12 +3,8 @@
 # When refactoring any of these functions, remove it from this list to enforce strict limits permanently.
 
 angel_lsp::Server::AnalyzeDocument
-angel_lsp::Server::BuildModuleIndex
 angel_lsp::Server::CollectScopesAndAnalyze
 angel_lsp::Server::CommitAnalysisResults
-angel_lsp::Server::LoadBuiltinEngineProfiles
-angel_lsp::Server::ModuleContextFor
 angel_lsp::Server::PublishDiagnostics
-angel_lsp::Server::PurgeUnusedClosureFiles
 angel_lsp::Server::ScheduleAnalysis
 angel_lsp::Server::ScheduleAnalysisImmediate
