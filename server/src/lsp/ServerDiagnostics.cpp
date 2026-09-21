@@ -242,7 +242,13 @@ void Server::PublishDiagnostics(const std::string& uriStr,
     {
         version = GetDocumentVersion(uriStr);
     }
-    PublishDiagnostics(uriStr, docText ? *docText : std::string(), diagnostics, version);
+    PublishDiagnostics(PublishDiagnosticsRequest{
+        .uriStr = uriStr,
+        .text = docText ? *docText : std::string(),
+        .diagnostics = diagnostics,
+        .version = version,
+        .generation = 0,
+    });
 }
 
 std::vector<lsp::Diagnostic>
@@ -319,53 +325,44 @@ void Server::PublishInactiveRegions(const std::string& uriStr, const std::string
     m_messageHandler->sendNotification("angelscript/inactiveRegions", lsp::json::Value(std::move(params)));
 }
 
-void Server::PublishDiagnostics(const std::string& uriStr, const std::string& text,
-                                const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics, int version,
-                                uint64_t generation)
+bool Server::IsPublishDiagnosticsStale(const PublishDiagnosticsRequest& request) const
 {
-    if (generation > 0 && !m_documentStore.IsCurrent(uriStr, generation, version))
+    if (request.generation > 0 && !m_documentStore.IsCurrent(request.uriStr, request.generation, request.version))
     {
-        return;
+        return true;
     }
 
-    if (version >= 0)
+    if (request.version >= 0)
     {
-        const int currentVersion = GetDocumentVersion(uriStr);
-        if (currentVersion >= 0 && currentVersion != version)
+        const int currentVersion = GetDocumentVersion(request.uriStr);
+        if (currentVersion >= 0 && currentVersion != request.version)
         {
-            return;
+            return true;
         }
-        if (currentVersion < 0 && !diagnostics.empty())
+        if (currentVersion < 0 && !request.diagnostics.empty())
         {
-            return;
+            return true;
         }
     }
+    return false;
+}
 
-    lsp::notifications::TextDocument_PublishDiagnostics::Params params;
-    if (version >= 0)
-    {
-        params.version = version;
-    }
+void Server::CacheDiagnosticsSnapshot(const PublishDiagnosticsRequest& request,
+                                      const std::vector<lsp::Diagnostic>& protocolDiagnostics)
+{
+    std::lock_guard<std::mutex> cacheLock(m_diagnosticsCacheMutex);
+    DiagnosticsSnapshot snapshot;
+    snapshot.resultId = std::to_string(++m_diagnosticsRevision);
+    snapshot.items = protocolDiagnostics;
+    snapshot.textHash = std::hash<std::string>{}(request.text);
+    snapshot.version = request.version;
+    snapshot.generation = request.generation;
+    snapshot.configRevision = m_configRevision.load();
+    m_diagnosticsCache[request.uriStr] = std::move(snapshot);
+}
 
-    const std::string outgoingUri = m_documentStore.GetClientUri(uriStr);
-    params.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
-
-    params.diagnostics = ToProtocolDiagnostics(text, diagnostics);
-
-    PublishInactiveRegions(uriStr, text);
-
-    {
-        std::lock_guard<std::mutex> cacheLock(m_diagnosticsCacheMutex);
-        DiagnosticsSnapshot snapshot;
-        snapshot.resultId = std::to_string(++m_diagnosticsRevision);
-        snapshot.items = params.diagnostics;
-        snapshot.textHash = std::hash<std::string>{}(text);
-        snapshot.version = version;
-        snapshot.generation = generation;
-        snapshot.configRevision = m_configRevision.load();
-        m_diagnosticsCache[uriStr] = std::move(snapshot);
-    }
-
+void Server::NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDiagnostics::Params params)
+{
     if (m_clientPullsDiagnostics)
     {
         if (m_clientSupportsDiagnosticRefresh)
@@ -386,5 +383,42 @@ void Server::PublishDiagnostics(const std::string& uriStr, const std::string& te
     {
         m_messageHandler->sendNotification<lsp::notifications::TextDocument_PublishDiagnostics>(std::move(params));
     }
+}
+
+void Server::PublishDiagnostics(const PublishDiagnosticsRequest& request)
+{
+    if (IsPublishDiagnosticsStale(request))
+    {
+        return;
+    }
+
+    lsp::notifications::TextDocument_PublishDiagnostics::Params params;
+    if (request.version >= 0)
+    {
+        params.version = request.version;
+    }
+
+    const std::string outgoingUri = m_documentStore.GetClientUri(request.uriStr);
+    params.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
+
+    params.diagnostics = ToProtocolDiagnostics(request.text, request.diagnostics);
+
+    PublishInactiveRegions(request.uriStr, request.text);
+
+    CacheDiagnosticsSnapshot(request, params.diagnostics);
+
+    NotifyClientDiagnostics(std::move(params));
+}
+
+void Server::PublishDiagnostics(const std::string& uriStr, const std::string& text,
+                                const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics, int version)
+{
+    PublishDiagnostics(PublishDiagnosticsRequest{
+        .uriStr = uriStr,
+        .text = text,
+        .diagnostics = diagnostics,
+        .version = version,
+        .generation = 0,
+    });
 }
 } // namespace angel_lsp

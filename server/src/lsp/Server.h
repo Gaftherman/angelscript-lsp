@@ -679,6 +679,13 @@ class Server
      */
     void HandleNotificationsTextDocument_WillSave(lsp::notifications::TextDocument_WillSave::Params&& params);
     void HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params&& params);
+
+    /**
+     * @brief Withdraws stale diagnostics or re-analyzes dependents when a document save alters interface.
+     * @param[in] uriStr Document URI that was saved.
+     * @param[in] interfaceChanged True if the public interface changed on save.
+     */
+    void HandleSavedInterfaceChange(const std::string& uriStr, bool interfaceChanged);
     void HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params&& params);
     void HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params&& params);
     void HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params&& params);
@@ -812,14 +819,35 @@ class Server
                          const angel_lsp::analysis::SymbolTable* customSymbolTable = nullptr) const;
 
     /**
+     * @brief Parameters required to atomically commit analysis results for a document.
+     */
+    struct CommitAnalysisRequest
+    {
+        std::string uriStr;
+        int version = -1;
+        uint64_t generation = 0;
+        uint64_t configRevision = 0;
+        analysis::SymbolTable* staging = nullptr;
+        std::shared_ptr<const analysis::Scope> scopeRoot;
+        std::vector<analysis::CallSite> calls;
+        std::vector<analysis::Diagnostic> diagnostics;
+        std::string text;
+    };
+
+    /**
+     * @brief Checks if analysis results are stale due to newer document edits, config changes, or cancellation.
+     * @param[in] req Commit request to evaluate.
+     * @return True if the results should be discarded, false if they are current.
+     */
+    [[nodiscard]] bool IsCommitAnalysisStale(const CommitAnalysisRequest& req) const;
+
+    /**
      * @brief Atomically commits analysis results if and only if the document state is still current.
      *        Guarded by m_lifecycleMutex to serialize with document lifecycle mutations.
+     * @param[in] req Parameters and analysis products to commit.
      * @return True if committed, false if rejected due to obsolescence or cancellation.
      */
-    bool CommitAnalysisResults(const std::string& uriStr, int version, uint64_t generation, uint64_t configRevision,
-                               analysis::SymbolTable&& staging, std::shared_ptr<const analysis::Scope> scopeRoot,
-                               std::vector<analysis::CallSite> calls, std::vector<analysis::Diagnostic> diagnostics,
-                               const std::string& text);
+    bool CommitAnalysisResults(CommitAnalysisRequest req);
 
     /**
      * @brief Rebuilds one document's symbols as a single atomic replacement.
@@ -846,27 +874,31 @@ class Server
                                                                           angel_lsp::parser::AngelScriptParser& parser);
 
     /**
+     * @brief Parameters for scope collection and semantic analysis invocation.
+     */
+    struct CollectScopesRequest
+    {
+        std::string uriStr;
+        std::string text;
+        const TSTree* tree = nullptr;
+        double* outScopeMs = nullptr;
+        double* outCheckMs = nullptr;
+        const analysis::NodeIndex* nodeIndex = nullptr;
+    };
+
+    /**
+     * @brief Checks if scope analysis should be skipped (e.g. document too large or predefined).
+     * @param[in] request Scope request to evaluate.
+     * @return True if scope analysis should be skipped.
+     */
+    [[nodiscard]] bool ShouldSkipScopeAnalysis(const CollectScopesRequest& request);
+
+    /**
      * @brief Collects the document's scopes and calls, analyses it, then publishes the scopes.
-     *
-     * The order is the point. `auto` inference in TypeConversionChecker writes the deduced type
-     * back into the scope tree so that hover, completion and the other checkers read a concrete
-     * type rather than "auto". Publishing before analysing made that write a data race - the
-     * analysis thread assigning a std::string that the message loop could be reading for a
-     * hover at the same moment. So the tree is built privately, handed to Analyze() as
-     * SemanticAnalysisRequest::mutableScopeRoot, and only swapped into the ScopeIndex once it
-     * is complete. Readers keep seeing the previous revision until then: an older consistent
-     * tree, never a half-written one. Same discipline as SymbolTable::ReplaceDocumentSymbols.
-     *
-     * @param uriStr Document URI.
-     * @param text Document text the tree was parsed from.
-     * @param tree Parsed tree, or nullptr - in which case the document's scopes and calls are
-     *        cleared and only the table-driven rules run.
+     * @param[in] request Bundled document parameters and timing destinations.
      * @return Diagnostics produced by semantic analysis.
      */
-    std::vector<angel_lsp::analysis::Diagnostic>
-    CollectScopesAndAnalyze(const std::string& uriStr, const std::string& text, const TSTree* tree,
-                            double* outScopeMs = nullptr, double* outCheckMs = nullptr,
-                            const analysis::NodeIndex* nodeIndex = nullptr);
+    std::vector<angel_lsp::analysis::Diagnostic> CollectScopesAndAnalyze(const CollectScopesRequest& request);
 
     /**
      * @brief Claims a predefined stub file for the given URI, releasing any earlier spelling.
@@ -988,18 +1020,63 @@ class Server
      * dims whatever is underneath, brackets included.
      */
     void PublishInactiveRegions(const std::string& uriStr, const std::string& text);
+    /**
+     * @brief Request bundle for publishing diagnostics for a document.
+     */
+    struct PublishDiagnosticsRequest
+    {
+        std::string uriStr;
+        std::string text;
+        std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
+        int version = -1;
+        uint64_t generation = 0;
+    };
+
+    /**
+     * @brief Checks whether diagnostic publication is stale due to generation or version mismatch.
+     * @param[in] request Publish request to validate.
+     * @return True if diagnostics should be discarded, false if current.
+     */
+    [[nodiscard]] bool IsPublishDiagnosticsStale(const PublishDiagnosticsRequest& request) const;
+
+    /**
+     * @brief Caches diagnostics snapshot for pull diagnostics requests.
+     * @param[in] request Original publish request.
+     * @param[in] protocolDiagnostics Converted protocol diagnostics items.
+     */
+    void CacheDiagnosticsSnapshot(const PublishDiagnosticsRequest& request,
+                                  const std::vector<lsp::Diagnostic>& protocolDiagnostics);
+
+    /**
+     * @brief Sends diagnostic notification to the client or requests workspace refresh.
+     * @param[in] params Publishing parameters.
+     */
+    void NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDiagnostics::Params params);
+
+    /**
+     * @brief Publishes diagnostics using bundled request parameters.
+     * @param[in] request Publishing parameters and diagnostics.
+     */
+    void PublishDiagnostics(const PublishDiagnosticsRequest& request);
+
+    /**
+     * @brief Publishes diagnostics for an open document, fetching text from document store.
+     * @param[in] uriStr Document URI.
+     * @param[in] diagnostics Diagnostics to report.
+     * @param[in] version Optional document version (-1 to query current version).
+     */
     void PublishDiagnostics(const std::string& uriStr, const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics,
                             int version = -1);
 
     /**
-     * @brief PublishDiagnostics with the document text supplied explicitly.
-     *
-     * The analysis thread cannot look the text up itself - m_openDocuments belongs to the
-     * message loop - and the text is what the ranges are converted against.
+     * @brief Publishes diagnostics with explicit document text for line offset encoding.
+     * @param[in] uriStr Document URI.
+     * @param[in] text Document buffer text.
+     * @param[in] diagnostics Diagnostics to report.
+     * @param[in] version Optional document version (-1 to query current version).
      */
     void PublishDiagnostics(const std::string& uriStr, const std::string& text,
-                            const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics, int version = -1,
-                            uint64_t generation = 0);
+                            const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics, int version = -1);
 
     /**
      * @brief Analyzer diagnostics as the client receives them: filtered, encoded, converted.
@@ -1682,33 +1759,87 @@ class Server
     // `force` says the answer can differ even though the bytes did not - the symbol table
     // moved, not the buffer. Without it the dedupe drops the request as a duplicate of the
     // analysis whose answer is exactly the one being replaced.
-    void ScheduleAnalysis(const std::string& uriStr, const std::string& text, bool force,
-                          angel_lsp::document::TreePtr tree, int version = -1, uint64_t generation = 0);
-
-    void ScheduleAnalysis(const std::string& uriStr, const std::string& text, bool force = false,
-                          TSTree* tree = nullptr, int version = -1, uint64_t generation = 0)
+    /**
+     * @brief Request bundle for queueing background or immediate document analysis.
+     */
+    struct ScheduleAnalysisRequest
     {
-        ScheduleAnalysis(uriStr, text, force, angel_lsp::document::MakeTreePtr(tree), version, generation);
-    }
+        std::string uriStr;
+        std::string text;
+        bool force = false;
+        angel_lsp::document::TreePtr tree = angel_lsp::document::MakeTreePtr(nullptr);
+        int version = -1;
+        uint64_t generation = 0;
+    };
 
-    void ScheduleAnalysisImmediate(const std::string& uriStr, const std::string& text, bool force,
-                                   angel_lsp::document::TreePtr tree, int version = -1, uint64_t generation = 0);
+    /**
+     * @brief Queues a document for re-analysis once debounce expires.
+     * @param[in] req Analysis scheduling parameters.
+     */
+    void ScheduleAnalysis(ScheduleAnalysisRequest req);
 
-    void ScheduleAnalysisImmediate(const std::string& uriStr, const std::string& text, bool force = false,
-                                   TSTree* tree = nullptr, int version = -1, uint64_t generation = 0)
+    /**
+     * @brief Convenience overload for queueing document re-analysis with default options.
+     * @param[in] uriStr Document URI.
+     * @param[in] text Document text.
+     * @param[in] force True to force re-analysis even if content is unchanged.
+     */
+    void ScheduleAnalysis(const std::string& uriStr, const std::string& text, bool force = false);
+
+    /**
+     * @brief Queues a document for immediate re-analysis without debounce delay.
+     * @param[in] req Immediate analysis scheduling parameters.
+     */
+    void ScheduleAnalysisImmediate(ScheduleAnalysisRequest req);
+
+    /**
+     * @brief Convenience overload for immediate document re-analysis with default options.
+     * @param[in] uriStr Document URI.
+     * @param[in] text Document text.
+     * @param[in] force True to force re-analysis even if content is unchanged.
+     */
+    void ScheduleAnalysisImmediate(const std::string& uriStr, const std::string& text, bool force = false);
+
+    /**
+     * @brief Request bundle for analyzing a document in the worker thread.
+     */
+    struct AnalyzeDocumentRequest
     {
-        ScheduleAnalysisImmediate(uriStr, text, force, angel_lsp::document::MakeTreePtr(tree), version, generation);
-    }
+        std::string uriStr;
+        std::string text;
+        angel_lsp::parser::AngelScriptParser& parser;
+        angel_lsp::document::TreePtr treeCopy = angel_lsp::document::MakeTreePtr(nullptr);
+        int version = -1;
+        uint64_t generation = 0;
+        uint64_t configRevision = 0;
+    };
+
+    /**
+     * @brief Checks if document analysis in worker thread has become stale before starting.
+     * @param[in] req Analysis request to validate.
+     * @return True if stale or cancelled.
+     */
+    [[nodiscard]] bool IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const;
+
+    /**
+     * @brief Analyzes a predefined stub document and commits its symbols and defined words.
+     * @param[in] req Analysis request bundle.
+     * @param[in] totalTimer High-resolution timer tracking total analysis time.
+     */
+    void AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
+
+    /**
+     * @brief Analyzes a normal AngelScript document and commits its symbols, scopes, and diagnostics.
+     * @param[in] req Analysis request bundle.
+     * @param[in] totalTimer High-resolution timer tracking total analysis time.
+     */
+    void AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
 
     /**
      * @brief Rebuilds symbols, scopes and diagnostics for one document and publishes them.
-     *
-     * Reuses copied TSTree if provided; otherwise falls back to parsing its own tree.
+     * @param[in] req Bundled document parameters and parser references.
      */
-    void AnalyzeDocument(const std::string& uriStr, const std::string& text,
-                         angel_lsp::parser::AngelScriptParser& parser,
-                         angel_lsp::document::TreePtr treeCopy = angel_lsp::document::MakeTreePtr(nullptr),
-                         int version = -1, uint64_t generation = 0, uint64_t configRevision = 0);
+    void AnalyzeDocument(AnalyzeDocumentRequest req);
 
     /**
      * @brief Converts handler output from Tree-sitter byte columns into the client's encoding.

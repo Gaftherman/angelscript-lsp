@@ -210,14 +210,23 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
     double scopeMs = 0.0;
     double checkMs = 0.0;
     analysis::NodeIndex nodeIndex(ts_tree_root_node(savedTree.get()));
-    auto semanticDiagnostics =
-        CollectScopesAndAnalyze(uriStr, analysisText, savedTree.get(), &scopeMs, &checkMs, &nodeIndex);
+    auto semanticDiagnostics = CollectScopesAndAnalyze({.uriStr = uriStr,
+                                                        .text = analysisText,
+                                                        .tree = savedTree.get(),
+                                                        .outScopeMs = &scopeMs,
+                                                        .outCheckMs = &checkMs,
+                                                        .nodeIndex = &nodeIndex});
     diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
     AppendIncludeDiagnostics(uriStr, analysisText, diagnostics);
 
     PublishDiagnostics(uriStr, analysisText, diagnostics, version);
 
+    HandleSavedInterfaceChange(uriStr, interfaceChanged);
+}
+
+void Server::HandleSavedInterfaceChange(const std::string& uriStr, bool interfaceChanged)
+{
     if (!m_modules.empty())
     {
         WithdrawStaleModuleDiagnostics();
@@ -337,7 +346,12 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     double scopeMs = 0.0;
     double checkMs = 0.0;
     analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
-    auto semanticDiagnostics = CollectScopesAndAnalyze(uriStr, analysisText, tree, &scopeMs, &checkMs, &nodeIndex);
+    auto semanticDiagnostics = CollectScopesAndAnalyze({.uriStr = uriStr,
+                                                        .text = analysisText,
+                                                        .tree = tree,
+                                                        .outScopeMs = &scopeMs,
+                                                        .outCheckMs = &checkMs,
+                                                        .nodeIndex = &nodeIndex});
     diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
     AppendIncludeDiagnostics(uriStr, analysisText, diagnostics);
@@ -418,8 +432,14 @@ void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextD
     }
 
     // The reparse above is incremental and cheap, and stays on this thread so a request
-    // arriving right after the edit is answered against a current tree.
-    ScheduleAnalysis(uriStr, buffer, false, newTree ? ts_tree_copy(newTree) : nullptr, version);
+    ScheduleAnalysis(ScheduleAnalysisRequest{
+        .uriStr = uriStr,
+        .text = buffer,
+        .force = false,
+        .tree = angel_lsp::document::MakeTreePtr(newTree ? ts_tree_copy(newTree) : nullptr),
+        .version = version,
+        .generation = 0,
+    });
 }
 
 bool Server::RestoreClosedModuleFile(const std::string& uriStr, const std::string& path)
