@@ -158,6 +158,129 @@ std::string_view TrimBlankEdges(std::string_view text)
     }
     return text;
 }
+
+struct Slot
+{
+    bool isGroup = false;
+    std::string literal;   ///< used when isGroup is false
+    std::string groupName; ///< used when isGroup is true
+};
+
+struct FormattingPlan
+{
+    std::vector<Slot> slots;
+    std::map<std::string, Group> groups;
+    std::string tail;
+};
+
+void ProcessNamespaceChild(TSNode child, std::string_view lead, const std::string& source, FormattingPlan& plan)
+{
+    const TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
+    const TSNode bodyNode = ts_node_child_by_field_name(child, "body", 4);
+    const uint32_t start = ts_node_start_byte(child);
+    const uint32_t end = ts_node_end_byte(child);
+
+    if (ts_node_is_null(nameNode) || ts_node_is_null(bodyNode))
+    {
+        plan.slots.push_back(Slot{false, std::string(lead) + std::string(Slice(source, start, end)), {}});
+        return;
+    }
+
+    const std::string name(Slice(source, ts_node_start_byte(nameNode), ts_node_end_byte(nameNode)));
+    const uint32_t bodyStart = ts_node_start_byte(bodyNode) + 1;
+    const uint32_t bodyEnd = ts_node_end_byte(bodyNode) - 1;
+
+    auto [entry, inserted] = plan.groups.try_emplace(name, Group{name, {}, plan.slots.size()});
+    if (inserted)
+    {
+        plan.slots.push_back(Slot{true, {}, name});
+    }
+
+    entry->second.occurrences.push_back(Occurrence{std::string(lead), std::string(Slice(source, bodyStart, bodyEnd))});
+}
+
+FormattingPlan BuildFormattingPlan(TSNode root, const std::string& source)
+{
+    FormattingPlan plan;
+    uint32_t cursor = 0;
+    const uint32_t childCount = ts_node_named_child_count(root);
+
+    for (uint32_t i = 0; i < childCount; ++i)
+    {
+        const TSNode child = ts_node_named_child(root, i);
+        if (std::string_view(ts_node_type(child)) == "comment")
+        {
+            continue;
+        }
+
+        const uint32_t start = ts_node_start_byte(child);
+        const uint32_t end = ts_node_end_byte(child);
+        const std::string_view lead = Slice(source, cursor, start);
+        cursor = end;
+
+        if (std::string_view(ts_node_type(child)) != "namespace_declaration")
+        {
+            plan.slots.push_back(Slot{false, std::string(lead) + std::string(Slice(source, start, end)), {}});
+            continue;
+        }
+
+        ProcessNamespaceChild(child, lead, source, plan);
+    }
+
+    plan.tail = std::string(Slice(source, cursor, static_cast<uint32_t>(source.size())));
+    return plan;
+}
+
+void EmitGroup(const Group& group, const std::string& indent, std::string& out)
+{
+    const std::string& firstLead = group.occurrences.front().lead;
+    out.append(TrimTrailingSpaceOnEachLine(firstLead));
+
+    out.append("namespace ");
+    out.append(group.name);
+    out.push_back('\n');
+    out.append("{\n");
+
+    for (size_t i = 0; i < group.occurrences.size(); ++i)
+    {
+        const Occurrence& occurrence = group.occurrences[i];
+
+        if (i > 0 && !IsBlank(occurrence.lead))
+        {
+            out.append(Reindent(TrimBlankEdges(occurrence.lead), indent));
+            out.push_back('\n');
+        }
+
+        if (!IsBlank(occurrence.body))
+        {
+            out.append(Reindent(TrimBlankEdges(occurrence.body), indent));
+            out.push_back('\n');
+        }
+    }
+
+    out.append("}");
+}
+
+std::string EmitFormattedStub(const FormattingPlan& plan, const std::string& indent, size_t initialCapacity)
+{
+    std::string out;
+    out.reserve(initialCapacity);
+
+    for (const Slot& slot : plan.slots)
+    {
+        if (!slot.isGroup)
+        {
+            out.append(slot.literal);
+            continue;
+        }
+
+        const Group& group = plan.groups.at(slot.groupName);
+        EmitGroup(group, indent, out);
+    }
+
+    out.append(plan.tail);
+    return out;
+}
 } // namespace
 
 std::string FormatPredefinedStub(const std::string& source, angel_lsp::parser::AngelScriptParser& parser,
@@ -170,134 +293,16 @@ std::string FormatPredefinedStub(const std::string& source, angel_lsp::parser::A
     }
 
     const TSNode root = ts_tree_root_node(tree);
-
-    // A file that did not parse is a file whose declaration boundaries are guesses, and moving
-    // text on a guess is how a formatter eats someone's work. Left alone instead.
     if (ts_node_has_error(root))
     {
         ts_tree_delete(tree);
         return source;
     }
 
-    // The plan is the output in order: either a literal run of source, or a namespace group to
-    // be emitted at that point.
-    struct Slot
-    {
-        bool isGroup = false;
-        std::string literal;   ///< used when isGroup is false
-        std::string groupName; ///< used when isGroup is true
-    };
-
-    std::vector<Slot> plan;
-    std::map<std::string, Group> groups;
-
-    uint32_t cursor = 0;
-    const uint32_t childCount = ts_node_named_child_count(root);
-
-    for (uint32_t i = 0; i < childCount; ++i)
-    {
-        const TSNode child = ts_node_named_child(root, i);
-
-        // A comment is a named child of the root in this grammar, so left to itself it becomes
-        // a declaration of its own and stops belonging to anything. Skipped WITHOUT moving the
-        // cursor, which leaves it inside the next declaration's lead - that is the whole
-        // mechanism by which a doc comment travels with what it describes.
-        //
-        // A comment after the last declaration is picked up by the tail for the same reason.
-        if (std::string_view(ts_node_type(child)) == "comment")
-        {
-            continue;
-        }
-
-        const uint32_t start = ts_node_start_byte(child);
-        const uint32_t end = ts_node_end_byte(child);
-
-        const std::string_view lead = Slice(source, cursor, start);
-        cursor = end;
-
-        if (std::string_view(ts_node_type(child)) != "namespace_declaration")
-        {
-            plan.push_back(Slot{false, std::string(lead) + std::string(Slice(source, start, end)), {}});
-            continue;
-        }
-
-        const TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
-        const TSNode bodyNode = ts_node_child_by_field_name(child, "body", 4);
-        if (ts_node_is_null(nameNode) || ts_node_is_null(bodyNode))
-        {
-            plan.push_back(Slot{false, std::string(lead) + std::string(Slice(source, start, end)), {}});
-            continue;
-        }
-
-        const std::string name(Slice(source, ts_node_start_byte(nameNode), ts_node_end_byte(nameNode)));
-
-        // Inside the braces, which are the body's first and last bytes.
-        const uint32_t bodyStart = ts_node_start_byte(bodyNode) + 1;
-        const uint32_t bodyEnd = ts_node_end_byte(bodyNode) - 1;
-
-        auto [entry, inserted] = groups.try_emplace(name, Group{name, {}, plan.size()});
-        if (inserted)
-        {
-            plan.push_back(Slot{true, {}, name});
-        }
-
-        entry->second.occurrences.push_back(
-            Occurrence{std::string(lead), std::string(Slice(source, bodyStart, bodyEnd))});
-    }
-
-    const std::string tail(Slice(source, cursor, static_cast<uint32_t>(source.size())));
+    FormattingPlan plan = BuildFormattingPlan(root, source);
     ts_tree_delete(tree);
 
-    std::string out;
-    out.reserve(source.size());
-
-    for (const Slot& slot : plan)
-    {
-        if (!slot.isGroup)
-        {
-            out.append(slot.literal);
-            continue;
-        }
-
-        const Group& group = groups.at(slot.groupName);
-
-        // The lead of the FIRST occurrence is the only one that can be about the namespace
-        // rather than about a member, because it is the only one that was not preceded by a
-        // declaration of this same namespace. It stays outside the block; every later one goes
-        // inside with the members it introduced, which is the case the user meets - a comment
-        // sitting above `namespace String { const string EMPTY_STRING; }`.
-        const std::string& firstLead = group.occurrences.front().lead;
-        out.append(TrimTrailingSpaceOnEachLine(firstLead));
-
-        out.append("namespace ");
-        out.append(group.name);
-        out.push_back('\n');
-        out.append("{\n");
-
-        for (size_t i = 0; i < group.occurrences.size(); ++i)
-        {
-            const Occurrence& occurrence = group.occurrences[i];
-
-            if (i > 0 && !IsBlank(occurrence.lead))
-            {
-                out.append(Reindent(TrimBlankEdges(occurrence.lead), indent));
-                out.push_back('\n');
-            }
-
-            if (!IsBlank(occurrence.body))
-            {
-                out.append(Reindent(TrimBlankEdges(occurrence.body), indent));
-                out.push_back('\n');
-            }
-        }
-
-        out.append("}");
-    }
-
-    out.append(tail);
-
-    // Returned as the same object when it came out identical, so that formatting a formatted
-    // file is guaranteed to produce no edit at all rather than an empty-looking one.
+    std::string out = EmitFormattedStub(plan, indent, source.size());
     return out == source ? source : out;
 }
 } // namespace angel_lsp::features::formatting

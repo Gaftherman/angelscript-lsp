@@ -2,6 +2,7 @@
 #include "parser/Keywords.h"
 #include <algorithm>
 #include <cctype>
+#include <optional>
 #include <sstream>
 #include <string_view>
 #include <unordered_set>
@@ -85,481 +86,558 @@ static const std::unordered_set<std::string_view> kKeywords = []
 
 static const std::unordered_set<std::string_view> kControlKeywords = {"if", "for", "while", "switch", "catch", "with"};
 
-std::vector<Token> Tokenize(std::string_view src)
+static constexpr std::string_view kTwoCharOperators[] = {
+    "==", "!=", "<=", ">=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<", ">>", "^^"};
+
+struct TokenizeState
 {
-    std::vector<Token> tokens;
+    std::string_view src;
     size_t i = 0;
     uint32_t curLine = 0;
     uint32_t curCol = 0;
     uint32_t newlines = 0;
+    std::vector<Token> tokens;
+};
 
-    while (i < src.size())
+/**
+ * @brief Consumes whitespace characters and tracks line / column / newline counts.
+ * @param[in,out] state Active tokenizer state.
+ * @return True if whitespace was consumed, false otherwise.
+ */
+bool TryConsumeWhitespace(TokenizeState& state)
+{
+    char c = state.src[state.i];
+    if (c == '\r' || c == '\n')
     {
-        char c = src[i];
-
-        if (c == '\r' || c == '\n')
+        if (c == '\r' && state.i + 1 < state.src.size() && state.src[state.i + 1] == '\n')
         {
-            if (c == '\r' && i + 1 < src.size() && src[i + 1] == '\n')
-            {
-                i += 2;
-            }
-            else
-            {
-                i++;
-            }
-            curLine++;
-            curCol = 0;
-            newlines++;
-            continue;
+            state.i += 2;
         }
-
-        if (c == ' ' || c == '\t' || c == '\v' || c == '\f')
+        else
         {
-            curCol++;
-            i++;
-            continue;
+            state.i++;
         }
-
-        // Line comment //
-        if (c == '/' && i + 1 < src.size() && src[i + 1] == '/')
-        {
-            size_t start = i;
-            uint32_t startCol = curCol;
-            while (i < src.size() && src[i] != '\r' && src[i] != '\n')
-            {
-                i++;
-                curCol++;
-            }
-            tokens.push_back(
-                {TokenType::LineComment, std::string(src.substr(start, i - start)), curLine, startCol, newlines});
-            newlines = 0;
-            continue;
-        }
-
-        // Block comment /* ... */
-        if (c == '/' && i + 1 < src.size() && src[i + 1] == '*')
-        {
-            size_t start = i;
-            uint32_t startCol = curCol;
-            i += 2;
-            curCol += 2;
-            while (i < src.size() && !(src[i] == '*' && i + 1 < src.size() && src[i + 1] == '/'))
-            {
-                if (src[i] == '\n')
-                {
-                    curLine++;
-                    curCol = 0;
-                }
-                else
-                {
-                    curCol++;
-                }
-                i++;
-            }
-            if (i < src.size())
-            {
-                i += 2;
-                curCol += 2;
-            }
-            tokens.push_back(
-                {TokenType::BlockComment, std::string(src.substr(start, i - start)), curLine, startCol, newlines});
-            newlines = 0;
-            continue;
-        }
-
-        // Preprocessor directive #...
-        if (c == '#' && (curCol == 0 || tokens.empty() || newlines > 0))
-        {
-            size_t start = i;
-            uint32_t startCol = curCol;
-            while (i < src.size() && src[i] != '\r' && src[i] != '\n')
-            {
-                if (src[i] == '\\' && i + 1 < src.size() && (src[i + 1] == '\r' || src[i + 1] == '\n'))
-                {
-                    if (src[i + 1] == '\r' && i + 2 < src.size() && src[i + 2] == '\n')
-                    {
-                        i += 3;
-                    }
-                    else
-                    {
-                        i += 2;
-                    }
-                    curLine++;
-                    curCol = 0;
-                    continue;
-                }
-                i++;
-                curCol++;
-            }
-            tokens.push_back(
-                {TokenType::Preprocessor, std::string(src.substr(start, i - start)), curLine, startCol, newlines});
-            newlines = 0;
-            continue;
-        }
-
-        // Raw string literal """ ... """
-        if (c == '"' && i + 2 < src.size() && src[i + 1] == '"' && src[i + 2] == '"')
-        {
-            size_t start = i;
-            uint32_t startCol = curCol;
-            i += 3;
-            curCol += 3;
-            while (i < src.size() && !(src[i] == '"' && i + 2 < src.size() && src[i + 1] == '"' && src[i + 2] == '"'))
-            {
-                if (src[i] == '\n')
-                {
-                    curLine++;
-                    curCol = 0;
-                }
-                else
-                {
-                    curCol++;
-                }
-                i++;
-            }
-            if (i < src.size())
-            {
-                i += 3;
-                curCol += 3;
-            }
-            tokens.push_back(
-                {TokenType::StringLiteral, std::string(src.substr(start, i - start)), curLine, startCol, newlines});
-            newlines = 0;
-            continue;
-        }
-
-        // Regular string literal "..."
-        if (c == '"')
-        {
-            size_t start = i;
-            uint32_t startCol = curCol;
-            i++;
-            curCol++;
-            while (i < src.size() && src[i] != '"')
-            {
-                if (src[i] == '\\' && i + 1 < src.size())
-                {
-                    i += 2;
-                    curCol += 2;
-                    continue;
-                }
-                if (src[i] == '\n' || src[i] == '\r')
-                {
-                    break;
-                }
-                i++;
-                curCol++;
-            }
-            const bool stringClosed = i < src.size() && src[i] == '"';
-            if (stringClosed)
-            {
-                i++;
-                curCol++;
-            }
-            Token stringTok{TokenType::StringLiteral, std::string(src.substr(start, i - start)), curLine, startCol,
-                            newlines};
-            stringTok.isUnterminated = !stringClosed;
-            tokens.push_back(std::move(stringTok));
-            newlines = 0;
-            continue;
-        }
-
-        // Character literal '...'
-        if (c == '\'')
-        {
-            size_t start = i;
-            uint32_t startCol = curCol;
-            i++;
-            curCol++;
-            while (i < src.size() && src[i] != '\'')
-            {
-                if (src[i] == '\\' && i + 1 < src.size())
-                {
-                    i += 2;
-                    curCol += 2;
-                    continue;
-                }
-                if (src[i] == '\n' || src[i] == '\r')
-                {
-                    break;
-                }
-                i++;
-                curCol++;
-            }
-            const bool charClosed = i < src.size() && src[i] == '\'';
-            if (charClosed)
-            {
-                i++;
-                curCol++;
-            }
-            Token charTok{TokenType::CharacterLiteral, std::string(src.substr(start, i - start)), curLine, startCol,
-                          newlines};
-            charTok.isUnterminated = !charClosed;
-            tokens.push_back(std::move(charTok));
-            newlines = 0;
-            continue;
-        }
-
-        // A run of non-ASCII bytes, kept whole.
-        //
-        // Nothing below this recognises one, so each byte of a UTF-8 sequence used to come
-        // out as its own token and the renderer put spaces between them - which is how a
-        // file that compiled before formatting stopped compiling after. Held together as
-        // one token it survives untouched. The formatter has no business inside a
-        // multi-byte sequence: AngelScript's own grammar is ASCII, so anything here is
-        // inside something the tokenizer already failed to claim.
-        if (static_cast<unsigned char>(c) >= 0x80)
-        {
-            size_t start = i;
-            uint32_t startCol = curCol;
-            while (i < src.size() && static_cast<unsigned char>(src[i]) >= 0x80)
-            {
-                i++;
-                curCol++;
-            }
-            tokens.push_back(
-                {TokenType::Identifier, std::string(src.substr(start, i - start)), curLine, startCol, newlines});
-            newlines = 0;
-            continue;
-        }
-
-        // Identifiers & Keywords
-        if (std::isalpha(static_cast<unsigned char>(c)) || c == '_')
-        {
-            size_t start = i;
-            uint32_t startCol = curCol;
-            while (i < src.size() && (std::isalnum(static_cast<unsigned char>(src[i])) || src[i] == '_'))
-            {
-                i++;
-                curCol++;
-            }
-            std::string text(src.substr(start, i - start));
-            TokenType tt = (kKeywords.contains(text)) ? TokenType::Keyword : TokenType::Identifier;
-            tokens.push_back({tt, std::move(text), curLine, startCol, newlines});
-            newlines = 0;
-            continue;
-        }
-
-        // Numbers
-        if (std::isdigit(static_cast<unsigned char>(c)))
-        {
-            size_t start = i;
-            uint32_t startCol = curCol;
-            if (c == '0' && i + 1 < src.size() && (src[i + 1] == 'x' || src[i + 1] == 'X'))
-            {
-                i += 2;
-                curCol += 2;
-                while (i < src.size() && std::isxdigit(static_cast<unsigned char>(src[i])))
-                {
-                    i++;
-                    curCol++;
-                }
-            }
-            else if (c == '0' && i + 1 < src.size() && (src[i + 1] == 'b' || src[i + 1] == 'B'))
-            {
-                i += 2;
-                curCol += 2;
-                while (i < src.size() && (src[i] == '0' || src[i] == '1'))
-                {
-                    i++;
-                    curCol++;
-                }
-            }
-            else if (c == '0' && i + 1 < src.size() && (src[i + 1] == 'o' || src[i + 1] == 'O'))
-            {
-                i += 2;
-                curCol += 2;
-                while (i < src.size() && (src[i] >= '0' && src[i] <= '7'))
-                {
-                    i++;
-                    curCol++;
-                }
-            }
-            else
-            {
-                while (i < src.size() && std::isdigit(static_cast<unsigned char>(src[i])))
-                {
-                    i++;
-                    curCol++;
-                }
-                if (i < src.size() && src[i] == '.' && i + 1 < src.size() &&
-                    std::isdigit(static_cast<unsigned char>(src[i + 1])))
-                {
-                    i++;
-                    curCol++;
-                    while (i < src.size() && std::isdigit(static_cast<unsigned char>(src[i])))
-                    {
-                        i++;
-                        curCol++;
-                    }
-                }
-                if (i < src.size() && (src[i] == 'e' || src[i] == 'E'))
-                {
-                    i++;
-                    curCol++;
-                    if (i < src.size() && (src[i] == '+' || src[i] == '-'))
-                    {
-                        i++;
-                        curCol++;
-                    }
-                    while (i < src.size() && std::isdigit(static_cast<unsigned char>(src[i])))
-                    {
-                        i++;
-                        curCol++;
-                    }
-                }
-            }
-            while (i < src.size() && (std::isalnum(static_cast<unsigned char>(src[i])) || src[i] == '_'))
-            {
-                i++;
-                curCol++;
-            }
-            tokens.push_back(
-                {TokenType::Number, std::string(src.substr(start, i - start)), curLine, startCol, newlines});
-            newlines = 0;
-            continue;
-        }
-
-        // 4-char operators
-        if (i + 3 < src.size())
-        {
-            std::string_view op4 = src.substr(i, 4);
-            if (op4 == ">>>=")
-            {
-                tokens.push_back({TokenType::Operator, std::string(op4), curLine, curCol, newlines});
-                i += 4;
-                curCol += 4;
-                newlines = 0;
-                continue;
-            }
-        }
-
-        // 3-char operators
-        if (i + 2 < src.size())
-        {
-            std::string_view op3 = src.substr(i, 3);
-
-            // `!is` is the handle-inequality operator, and it is the only operator here
-            // spelled with letters - so it is the only one that can swallow the front of
-            // an identifier. `!isdigit(x)` matched it and came out as `!is digit(x)`,
-            // which is not the same program and does not compile. Twenty-eight files in
-            // the 1061-script corpus were being rewritten this way. A word boundary after
-            // it is what tells the operator from the call.
-            const bool op3IsWordOperator = op3 == "!is";
-            const bool op3EndsAtWordBoundary =
-                !op3IsWordOperator || i + 3 >= src.size() ||
-                (std::isalnum(static_cast<unsigned char>(src[i + 3])) == 0 && src[i + 3] != '_');
-
-            if ((op3 == "<<=" || op3 == ">>=" || op3 == ">>>" || op3IsWordOperator) && op3EndsAtWordBoundary)
-            {
-                tokens.push_back({TokenType::Operator, std::string(op3), curLine, curCol, newlines});
-                i += 3;
-                curCol += 3;
-                newlines = 0;
-                continue;
-            }
-        }
-
-        // 2-char operators & symbols
-        if (i + 1 < src.size())
-        {
-            std::string_view op2 = src.substr(i, 2);
-            if (op2 == "++")
-            {
-                tokens.push_back({TokenType::Increment, "++", curLine, curCol, newlines});
-                i += 2;
-                curCol += 2;
-                newlines = 0;
-                continue;
-            }
-            if (op2 == "--")
-            {
-                tokens.push_back({TokenType::Decrement, "--", curLine, curCol, newlines});
-                i += 2;
-                curCol += 2;
-                newlines = 0;
-                continue;
-            }
-            if (op2 == "::")
-            {
-                tokens.push_back({TokenType::DoubleColon, "::", curLine, curCol, newlines});
-                i += 2;
-                curCol += 2;
-                newlines = 0;
-                continue;
-            }
-            if (op2 == "->")
-            {
-                tokens.push_back({TokenType::Arrow, "->", curLine, curCol, newlines});
-                i += 2;
-                curCol += 2;
-                newlines = 0;
-                continue;
-            }
-            if (op2 == "==" || op2 == "!=" || op2 == "<=" || op2 == ">=" || op2 == "&&" || op2 == "||" || op2 == "+=" ||
-                op2 == "-=" || op2 == "*=" || op2 == "/=" || op2 == "%=" || op2 == "&=" || op2 == "|=" || op2 == "^=" ||
-                op2 == "<<" || op2 == ">>" || op2 == "^^")
-            {
-                tokens.push_back({TokenType::Operator, std::string(op2), curLine, curCol, newlines});
-                i += 2;
-                curCol += 2;
-                newlines = 0;
-                continue;
-            }
-        }
-
-        // Single-char tokens
-        TokenType tt = TokenType::Operator;
-        switch (c)
-        {
-        case '{':
-            tt = TokenType::OpenBrace;
-            break;
-        case '}':
-            tt = TokenType::CloseBrace;
-            break;
-        case '(':
-            tt = TokenType::OpenParen;
-            break;
-        case ')':
-            tt = TokenType::CloseParen;
-            break;
-        case '[':
-            tt = TokenType::OpenBracket;
-            break;
-        case ']':
-            tt = TokenType::CloseBracket;
-            break;
-        case ';':
-            tt = TokenType::Semicolon;
-            break;
-        case ',':
-            tt = TokenType::Comma;
-            break;
-        case ':':
-            tt = TokenType::Colon;
-            break;
-        case '?':
-            tt = TokenType::Question;
-            break;
-        case '.':
-            tt = TokenType::Dot;
-            break;
-        case '@':
-            tt = TokenType::At;
-            break;
-        default:
-            tt = TokenType::Operator;
-            break;
-        }
-
-        tokens.push_back({tt, std::string(1, c), curLine, curCol, newlines});
-        i++;
-        curCol++;
-        newlines = 0;
+        state.curLine++;
+        state.curCol = 0;
+        state.newlines++;
+        return true;
     }
+    if (c == ' ' || c == '\t' || c == '\v' || c == '\f')
+    {
+        state.curCol++;
+        state.i++;
+        return true;
+    }
+    return false;
+}
 
-    // Split any '>>' or '>>>' operator tokens into individual '>' tokens so nested templates are cleanly recognized
+/**
+ * @brief Consumes a single-line comment beginning with `//`.
+ * @param[in,out] state Active tokenizer state.
+ * @return True if a line comment was consumed, false otherwise.
+ */
+bool TryConsumeLineComment(TokenizeState& state)
+{
+    char c = state.src[state.i];
+    if (c == '/' && state.i + 1 < state.src.size() && state.src[state.i + 1] == '/')
+    {
+        size_t start = state.i;
+        uint32_t startCol = state.curCol;
+        while (state.i < state.src.size() && state.src[state.i] != '\r' && state.src[state.i] != '\n')
+        {
+            state.i++;
+            state.curCol++;
+        }
+        state.tokens.push_back({TokenType::LineComment, std::string(state.src.substr(start, state.i - start)),
+                                state.curLine, startCol, state.newlines});
+        state.newlines = 0;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Consumes a block comment beginning with `/*`.
+ * @param[in,out] state Active tokenizer state.
+ * @return True if a block comment was consumed, false otherwise.
+ */
+bool TryConsumeBlockComment(TokenizeState& state)
+{
+    char c = state.src[state.i];
+    if (c == '/' && state.i + 1 < state.src.size() && state.src[state.i + 1] == '*')
+    {
+        size_t start = state.i;
+        uint32_t startCol = state.curCol;
+        state.i += 2;
+        state.curCol += 2;
+        while (state.i < state.src.size() &&
+               !(state.src[state.i] == '*' && state.i + 1 < state.src.size() && state.src[state.i + 1] == '/'))
+        {
+            if (state.src[state.i] == '\n')
+            {
+                state.curLine++;
+                state.curCol = 0;
+            }
+            else
+            {
+                state.curCol++;
+            }
+            state.i++;
+        }
+        if (state.i < state.src.size())
+        {
+            state.i += 2;
+            state.curCol += 2;
+        }
+        state.tokens.push_back({TokenType::BlockComment, std::string(state.src.substr(start, state.i - start)),
+                                state.curLine, startCol, state.newlines});
+        state.newlines = 0;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Consumes a preprocessor directive starting with `#`.
+ * @param[in,out] state Active tokenizer state.
+ * @return True if a preprocessor directive was consumed, false otherwise.
+ */
+bool TryConsumePreprocessor(TokenizeState& state)
+{
+    char c = state.src[state.i];
+    if (c == '#' && (state.curCol == 0 || state.tokens.empty() || state.newlines > 0))
+    {
+        size_t start = state.i;
+        uint32_t startCol = state.curCol;
+        while (state.i < state.src.size() && state.src[state.i] != '\r' && state.src[state.i] != '\n')
+        {
+            if (state.src[state.i] == '\\' && state.i + 1 < state.src.size() &&
+                (state.src[state.i + 1] == '\r' || state.src[state.i + 1] == '\n'))
+            {
+                if (state.src[state.i + 1] == '\r' && state.i + 2 < state.src.size() && state.src[state.i + 2] == '\n')
+                {
+                    state.i += 3;
+                }
+                else
+                {
+                    state.i += 2;
+                }
+                state.curLine++;
+                state.curCol = 0;
+                continue;
+            }
+            state.i++;
+            state.curCol++;
+        }
+        state.tokens.push_back({TokenType::Preprocessor, std::string(state.src.substr(start, state.i - start)),
+                                state.curLine, startCol, state.newlines});
+        state.newlines = 0;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Consumes a multi-line raw string literal delimited by triple quotes `"""`.
+ * @param[in,out] state Active tokenizer state.
+ * @return True if a raw string literal was consumed, false otherwise.
+ */
+bool TryConsumeRawString(TokenizeState& state)
+{
+    char c = state.src[state.i];
+    if (c == '"' && state.i + 2 < state.src.size() && state.src[state.i + 1] == '"' && state.src[state.i + 2] == '"')
+    {
+        size_t start = state.i;
+        uint32_t startCol = state.curCol;
+        state.i += 3;
+        state.curCol += 3;
+        while (state.i < state.src.size() && !(state.src[state.i] == '"' && state.i + 2 < state.src.size() &&
+                                               state.src[state.i + 1] == '"' && state.src[state.i + 2] == '"'))
+        {
+            if (state.src[state.i] == '\n')
+            {
+                state.curLine++;
+                state.curCol = 0;
+            }
+            else
+            {
+                state.curCol++;
+            }
+            state.i++;
+        }
+        if (state.i < state.src.size())
+        {
+            state.i += 3;
+            state.curCol += 3;
+        }
+        state.tokens.push_back({TokenType::StringLiteral, std::string(state.src.substr(start, state.i - start)),
+                                state.curLine, startCol, state.newlines});
+        state.newlines = 0;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Consumes a single-quote or double-quote character/string literal.
+ * @param[in,out] state Active tokenizer state.
+ * @param[in] quoteChar Delimiter character (`'` or `"`).
+ * @param[in] tokenType Target token type.
+ * @return True if a quoted literal was consumed, false otherwise.
+ */
+bool TryConsumeQuotedLiteral(TokenizeState& state, char quoteChar, TokenType tokenType)
+{
+    if (state.src[state.i] != quoteChar)
+    {
+        return false;
+    }
+    size_t start = state.i;
+    uint32_t startCol = state.curCol;
+    state.i++;
+    state.curCol++;
+    while (state.i < state.src.size() && state.src[state.i] != quoteChar)
+    {
+        if (state.src[state.i] == '\\' && state.i + 1 < state.src.size())
+        {
+            state.i += 2;
+            state.curCol += 2;
+            continue;
+        }
+        if (state.src[state.i] == '\n' || state.src[state.i] == '\r')
+        {
+            break;
+        }
+        state.i++;
+        state.curCol++;
+    }
+    const bool closed = state.i < state.src.size() && state.src[state.i] == quoteChar;
+    if (closed)
+    {
+        state.i++;
+        state.curCol++;
+    }
+    Token tok{tokenType, std::string(state.src.substr(start, state.i - start)), state.curLine, startCol,
+              state.newlines};
+    tok.isUnterminated = !closed;
+    state.tokens.push_back(std::move(tok));
+    state.newlines = 0;
+    return true;
+}
+
+/**
+ * @brief Consumes UTF-8 byte sequences or identifiers and keywords.
+ * @param[in,out] state Active tokenizer state.
+ * @return True if an identifier, keyword, or non-ASCII sequence was consumed.
+ */
+bool TryConsumeIdentifierOrNonAscii(TokenizeState& state)
+{
+    char c = state.src[state.i];
+    if (static_cast<unsigned char>(c) >= 0x80)
+    {
+        size_t start = state.i;
+        uint32_t startCol = state.curCol;
+        while (state.i < state.src.size() && static_cast<unsigned char>(state.src[state.i]) >= 0x80)
+        {
+            state.i++;
+            state.curCol++;
+        }
+        state.tokens.push_back({TokenType::Identifier, std::string(state.src.substr(start, state.i - start)),
+                                state.curLine, startCol, state.newlines});
+        state.newlines = 0;
+        return true;
+    }
+    if (std::isalpha(static_cast<unsigned char>(c)) || c == '_')
+    {
+        size_t start = state.i;
+        uint32_t startCol = state.curCol;
+        while (state.i < state.src.size() &&
+               (std::isalnum(static_cast<unsigned char>(state.src[state.i])) || state.src[state.i] == '_'))
+        {
+            state.i++;
+            state.curCol++;
+        }
+        std::string text(state.src.substr(start, state.i - start));
+        TokenType tt = (kKeywords.contains(text)) ? TokenType::Keyword : TokenType::Identifier;
+        state.tokens.push_back({tt, std::move(text), state.curLine, startCol, state.newlines});
+        state.newlines = 0;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Consumes exponent notation (`e+10`, `E-3`) in numeric literals.
+ * @param[in,out] state Active tokenizer state.
+ */
+void ConsumeDecimalExponent(TokenizeState& state)
+{
+    if (state.i < state.src.size() && (state.src[state.i] == 'e' || state.src[state.i] == 'E'))
+    {
+        state.i++;
+        state.curCol++;
+        if (state.i < state.src.size() && (state.src[state.i] == '+' || state.src[state.i] == '-'))
+        {
+            state.i++;
+            state.curCol++;
+        }
+        while (state.i < state.src.size() && std::isdigit(static_cast<unsigned char>(state.src[state.i])))
+        {
+            state.i++;
+            state.curCol++;
+        }
+    }
+}
+
+/**
+ * @brief Consumes digits matching the given prefix base ('x', 'b', or 'o').
+ * @param[in,out] state Active tokenizer state.
+ * @param[in] prefix Lowercase prefix character.
+ */
+void ConsumePrefixedDigits(TokenizeState& state, char prefix)
+{
+    state.i += 2;
+    state.curCol += 2;
+    switch (prefix)
+    {
+    case 'x':
+        while (state.i < state.src.size() && std::isxdigit(static_cast<unsigned char>(state.src[state.i])))
+        {
+            state.i++;
+            state.curCol++;
+        }
+        break;
+    case 'b':
+        while (state.i < state.src.size() && (state.src[state.i] == '0' || state.src[state.i] == '1'))
+        {
+            state.i++;
+            state.curCol++;
+        }
+        break;
+    case 'o':
+        while (state.i < state.src.size() && (state.src[state.i] >= '0' && state.src[state.i] <= '7'))
+        {
+            state.i++;
+            state.curCol++;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+/**
+ * @brief Consumes hex, binary, or octal prefixed numbers (`0x`, `0b`, `0o`).
+ * @param[in,out] state Active tokenizer state.
+ * @return True if a prefixed number base was consumed.
+ */
+bool TryConsumePrefixedNumber(TokenizeState& state)
+{
+    char c = state.src[state.i];
+    if (c != '0' || state.i + 1 >= state.src.size())
+    {
+        return false;
+    }
+    char p = static_cast<char>(std::tolower(static_cast<unsigned char>(state.src[state.i + 1])));
+    if (p == 'x' || p == 'b' || p == 'o')
+    {
+        ConsumePrefixedDigits(state, p);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Consumes decimal integers and floating-point numeric sequences.
+ * @param[in,out] state Active tokenizer state.
+ */
+void ConsumeDecimalNumber(TokenizeState& state)
+{
+    while (state.i < state.src.size() && std::isdigit(static_cast<unsigned char>(state.src[state.i])))
+    {
+        state.i++;
+        state.curCol++;
+    }
+    if (state.i < state.src.size() && state.src[state.i] == '.' && state.i + 1 < state.src.size() &&
+        std::isdigit(static_cast<unsigned char>(state.src[state.i + 1])))
+    {
+        state.i++;
+        state.curCol++;
+        while (state.i < state.src.size() && std::isdigit(static_cast<unsigned char>(state.src[state.i])))
+        {
+            state.i++;
+            state.curCol++;
+        }
+    }
+    ConsumeDecimalExponent(state);
+}
+
+/**
+ * @brief Consumes numeric literals including hex, binary, octal, and floating point.
+ * @param[in,out] state Active tokenizer state.
+ * @return True if a numeric literal was consumed, false otherwise.
+ */
+bool TryConsumeNumber(TokenizeState& state)
+{
+    char c = state.src[state.i];
+    if (!std::isdigit(static_cast<unsigned char>(c)))
+    {
+        return false;
+    }
+    size_t start = state.i;
+    uint32_t startCol = state.curCol;
+    if (!TryConsumePrefixedNumber(state))
+    {
+        ConsumeDecimalNumber(state);
+    }
+    while (state.i < state.src.size() &&
+           (std::isalnum(static_cast<unsigned char>(state.src[state.i])) || state.src[state.i] == '_'))
+    {
+        state.i++;
+        state.curCol++;
+    }
+    state.tokens.push_back({TokenType::Number, std::string(state.src.substr(start, state.i - start)), state.curLine,
+                            startCol, state.newlines});
+    state.newlines = 0;
+    return true;
+}
+
+/**
+ * @brief Recognizes 2-char operator token types.
+ * @param[in] op2 Two-character slice.
+ * @return Detected token type or `TokenType::EndOfFile` if unrecognized.
+ */
+TokenType ClassifyTwoCharOperator(std::string_view op2)
+{
+    if (op2 == "++")
+        return TokenType::Increment;
+    if (op2 == "--")
+        return TokenType::Decrement;
+    if (op2 == "::")
+        return TokenType::DoubleColon;
+    if (op2 == "->")
+        return TokenType::Arrow;
+    for (std::string_view candidate : kTwoCharOperators)
+    {
+        if (op2 == candidate)
+        {
+            return TokenType::Operator;
+        }
+    }
+    return TokenType::EndOfFile;
+}
+
+/**
+ * @brief Consumes multi-character operators (4-char, 3-char, 2-char).
+ * @param[in,out] state Active tokenizer state.
+ * @return True if a multi-char operator was consumed, false otherwise.
+ */
+bool TryConsumeMultiCharOperator(TokenizeState& state)
+{
+    if (state.i + 3 < state.src.size() && state.src.substr(state.i, 4) == ">>>=")
+    {
+        state.tokens.push_back({TokenType::Operator, ">>>=", state.curLine, state.curCol, state.newlines});
+        state.i += 4;
+        state.curCol += 4;
+        state.newlines = 0;
+        return true;
+    }
+    if (state.i + 2 < state.src.size())
+    {
+        std::string_view op3 = state.src.substr(state.i, 3);
+        const bool op3IsWordOperator = (op3 == "!is");
+        const bool op3EndsAtWordBoundary =
+            !op3IsWordOperator || state.i + 3 >= state.src.size() ||
+            (std::isalnum(static_cast<unsigned char>(state.src[state.i + 3])) == 0 && state.src[state.i + 3] != '_');
+
+        if ((op3 == "<<=" || op3 == ">>=" || op3 == ">>>" || op3IsWordOperator) && op3EndsAtWordBoundary)
+        {
+            state.tokens.push_back(
+                {TokenType::Operator, std::string(op3), state.curLine, state.curCol, state.newlines});
+            state.i += 3;
+            state.curCol += 3;
+            state.newlines = 0;
+            return true;
+        }
+    }
+    if (state.i + 1 < state.src.size())
+    {
+        TokenType tt = ClassifyTwoCharOperator(state.src.substr(state.i, 2));
+        if (tt != TokenType::EndOfFile)
+        {
+            state.tokens.push_back(
+                {tt, std::string(state.src.substr(state.i, 2)), state.curLine, state.curCol, state.newlines});
+            state.i += 2;
+            state.curCol += 2;
+            state.newlines = 0;
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Consumes a single-character punctuation or operator token.
+ * @param[in,out] state Active tokenizer state.
+ */
+void ConsumeSingleCharToken(TokenizeState& state)
+{
+    char c = state.src[state.i];
+    TokenType tt = TokenType::Operator;
+    switch (c)
+    {
+    case '{':
+        tt = TokenType::OpenBrace;
+        break;
+    case '}':
+        tt = TokenType::CloseBrace;
+        break;
+    case '(':
+        tt = TokenType::OpenParen;
+        break;
+    case ')':
+        tt = TokenType::CloseParen;
+        break;
+    case '[':
+        tt = TokenType::OpenBracket;
+        break;
+    case ']':
+        tt = TokenType::CloseBracket;
+        break;
+    case ';':
+        tt = TokenType::Semicolon;
+        break;
+    case ',':
+        tt = TokenType::Comma;
+        break;
+    case ':':
+        tt = TokenType::Colon;
+        break;
+    case '?':
+        tt = TokenType::Question;
+        break;
+    case '.':
+        tt = TokenType::Dot;
+        break;
+    case '@':
+        tt = TokenType::At;
+        break;
+    default:
+        tt = TokenType::Operator;
+        break;
+    }
+    state.tokens.push_back({tt, std::string(1, c), state.curLine, state.curCol, state.newlines});
+    state.i++;
+    state.curCol++;
+    state.newlines = 0;
+}
+
+/**
+ * @brief Splits compound shift operators `>>` and `>>>` into individual `>` tokens.
+ * @param[in] tokens Token list from initial tokenization.
+ * @return Transformed token vector with separate `>` operators.
+ */
+std::vector<Token> SplitShiftOperators(const std::vector<Token>& tokens)
+{
     std::vector<Token> splitTokens;
     splitTokens.reserve(tokens.size());
     for (const auto& tok : tokens)
@@ -580,55 +658,152 @@ std::vector<Token> Tokenize(std::string_view src)
             splitTokens.push_back(tok);
         }
     }
-    tokens = std::move(splitTokens);
+    return splitTokens;
+}
 
-    // Identify template '<' and '>'
-    for (size_t t = 0; t < tokens.size(); ++t)
+/**
+ * @brief Checks if a token can legally precede a template opening bracket.
+ * @param[in] prev Preceding token.
+ * @return True if candidate can precede `<...>` template arguments.
+ */
+bool CanPrecedeTemplate(const Token& prev)
+{
+    return prev.type == TokenType::Identifier || prev.text == "cast" || prev.isTemplateCloser;
+}
+
+/**
+ * @brief Checks if a token terminates a template bracket scan.
+ * @param[in] type Token type.
+ * @return True if token halts template identification.
+ */
+bool IsTemplateTerminator(TokenType type)
+{
+    return type == TokenType::Semicolon || type == TokenType::OpenBrace || type == TokenType::CloseBrace;
+}
+
+/**
+ * @brief Evaluates whether a `<` token at index `t` represents a template opener.
+ * @param[in,out] tokens Token stream.
+ * @param[in] t Index of the candidate `<` token.
+ */
+void TryIdentifyTemplateAt(std::vector<Token>& tokens, size_t t)
+{
+    if (t == 0 || tokens[t].text != "<" || !CanPrecedeTemplate(tokens[t - 1]))
     {
-        if (tokens[t].text == "<" && t > 0)
-        {
-            const auto& prev = tokens[t - 1];
-            if (prev.type == TokenType::Identifier || prev.text == "cast" || prev.isTemplateCloser)
-            {
-                int depth = 1;
-                size_t matchIdx = t + 1;
-                bool valid = true;
-                std::vector<size_t> closerIndices;
+        return;
+    }
+    int depth = 1;
+    size_t matchIdx = t + 1;
+    bool valid = true;
+    std::vector<size_t> closerIndices;
 
-                while (matchIdx < tokens.size() && depth > 0)
-                {
-                    if (tokens[matchIdx].type == TokenType::Semicolon ||
-                        tokens[matchIdx].type == TokenType::OpenBrace || tokens[matchIdx].type == TokenType::CloseBrace)
-                    {
-                        valid = false;
-                        break;
-                    }
-                    if (tokens[matchIdx].text == "<")
-                    {
-                        depth++;
-                    }
-                    else if (tokens[matchIdx].text == ">")
-                    {
-                        depth--;
-                        closerIndices.push_back(matchIdx);
-                    }
-                    matchIdx++;
-                }
-                if (valid && depth == 0)
-                {
-                    tokens[t].isTemplateOpener = true;
-                    for (size_t cIdx : closerIndices)
-                    {
-                        tokens[cIdx].isTemplateCloser = true;
-                    }
-                }
-            }
+    while (matchIdx < tokens.size() && depth > 0)
+    {
+        if (IsTemplateTerminator(tokens[matchIdx].type))
+        {
+            valid = false;
+            break;
+        }
+        if (tokens[matchIdx].text == "<")
+        {
+            depth++;
+        }
+        else if (tokens[matchIdx].text == ">")
+        {
+            depth--;
+            closerIndices.push_back(matchIdx);
+        }
+        matchIdx++;
+    }
+    if (valid && depth == 0)
+    {
+        tokens[t].isTemplateOpener = true;
+        for (size_t cIdx : closerIndices)
+        {
+            tokens[cIdx].isTemplateCloser = true;
         }
     }
+}
 
+/**
+ * @brief Scans token stream to flag matched template opening and closing brackets.
+ * @param[in,out] tokens Token stream.
+ */
+void IdentifyTemplates(std::vector<Token>& tokens)
+{
+    for (size_t t = 0; t < tokens.size(); ++t)
+    {
+        TryIdentifyTemplateAt(tokens, t);
+    }
+}
+
+/**
+ * @brief Tokenizes AngelScript source text into an annotated token list.
+ * @param[in] src Source text.
+ * @return Vector of tokens.
+ */
+std::vector<Token> Tokenize(std::string_view src)
+{
+    TokenizeState state{src};
+
+    while (state.i < state.src.size())
+    {
+        if (TryConsumeWhitespace(state) || TryConsumeLineComment(state) || TryConsumeBlockComment(state) ||
+            TryConsumePreprocessor(state) || TryConsumeRawString(state) ||
+            TryConsumeQuotedLiteral(state, '"', TokenType::StringLiteral) ||
+            TryConsumeQuotedLiteral(state, '\'', TokenType::CharacterLiteral) ||
+            TryConsumeIdentifierOrNonAscii(state) || TryConsumeNumber(state) || TryConsumeMultiCharOperator(state))
+        {
+            continue;
+        }
+        ConsumeSingleCharToken(state);
+    }
+
+    auto tokens = SplitShiftOperators(state.tokens);
+    IdentifyTemplates(tokens);
     return tokens;
 }
 
+/**
+ * @brief Tests if token type indicates a preceding expression boundary for a unary operator.
+ * @param[in] type Token type.
+ * @return True if operator following this type is unary.
+ */
+bool IsUnaryPrecedingTokenType(TokenType type)
+{
+    switch (type)
+    {
+    case TokenType::OpenParen:
+    case TokenType::OpenBracket:
+    case TokenType::Comma:
+    case TokenType::Semicolon:
+    case TokenType::Question:
+    case TokenType::Colon:
+    case TokenType::Operator:
+    case TokenType::Increment:
+    case TokenType::Decrement:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/**
+ * @brief Tests if keyword text indicates a preceding expression boundary for a unary operator.
+ * @param[in] kw Keyword text.
+ * @return True if operator following this keyword is unary.
+ */
+bool IsUnaryPrecedingKeyword(std::string_view kw)
+{
+    return kw == "return" || kw == "case" || kw == "throw" || kw == "is";
+}
+
+/**
+ * @brief Checks if a `+` or `-` operator token at index `idx` is unary.
+ * @param[in] tokens Token stream.
+ * @param[in] idx Index of candidate token.
+ * @return True if the token is a unary operator.
+ */
 bool IsUnary(const std::vector<Token>& tokens, size_t idx)
 {
     if (tokens[idx].text != "+" && tokens[idx].text != "-")
@@ -640,29 +815,22 @@ bool IsUnary(const std::vector<Token>& tokens, size_t idx)
         return true;
     }
     const auto& prev = tokens[idx - 1];
-    if (prev.type == TokenType::OpenParen || prev.type == TokenType::OpenBracket || prev.type == TokenType::Comma ||
-        prev.type == TokenType::Semicolon || prev.type == TokenType::Question || prev.type == TokenType::Colon ||
-        prev.type == TokenType::Operator || prev.type == TokenType::Increment || prev.type == TokenType::Decrement)
+    if (IsUnaryPrecedingTokenType(prev.type))
     {
         return true;
     }
-    if (prev.type == TokenType::Keyword)
-    {
-        if (prev.text == "return" || prev.text == "case" || prev.text == "throw" || prev.text == "is")
-        {
-            return true;
-        }
-    }
-    return false;
+    return prev.type == TokenType::Keyword && IsUnaryPrecedingKeyword(prev.text);
 }
 
+/**
+ * @brief Determines if a colon at `idx` is part of a case/default label or access specifier.
+ * @param[in] tokens Token stream.
+ * @param[in] idx Index of colon token.
+ * @return True if colon terminates a label or specifier.
+ */
 bool IsAccessSpecifierOrLabelColon(const std::vector<Token>& tokens, size_t idx)
 {
-    if (tokens[idx].type != TokenType::Colon)
-    {
-        return false;
-    }
-    if (idx == 0)
+    if (tokens[idx].type != TokenType::Colon || idx == 0)
     {
         return false;
     }
@@ -685,38 +853,68 @@ bool IsAccessSpecifierOrLabelColon(const std::vector<Token>& tokens, size_t idx)
     return false;
 }
 
-bool NeedsSpaceBetween(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx)
+/**
+ * @brief Tests if token type represents closing punctuation or separator.
+ * @param[in] type Token type.
+ * @return True if punctuation suppresses leading space.
+ */
+bool IsClosingOrSeparatorPunctuation(TokenType type)
 {
-    const auto& prev = tokens[prevIdx];
-    const auto& curr = tokens[currIdx];
+    switch (type)
+    {
+    case TokenType::Comma:
+    case TokenType::Semicolon:
+    case TokenType::CloseParen:
+    case TokenType::CloseBracket:
+    case TokenType::Dot:
+    case TokenType::DoubleColon:
+    case TokenType::Arrow:
+        return true;
+    default:
+        return false;
+    }
+}
 
-    // An omitted initializer-list element, which is legal and takes the type's default:
-    // `{0, 1, , 4}`. The hole is a gap between two separators and has no token of its
-    // own, so without this it closes up into `{0, 1,, 4}` - still the same four elements
-    // to the compiler, and invisible to whoever has to read it next.
+/**
+ * @brief Tests if token type represents opening punctuation or member access.
+ * @param[in] type Token type.
+ * @return True if punctuation suppresses trailing space.
+ */
+bool IsOpeningOrMemberPunctuation(TokenType type)
+{
+    switch (type)
+    {
+    case TokenType::OpenParen:
+    case TokenType::OpenBracket:
+    case TokenType::Dot:
+    case TokenType::DoubleColon:
+    case TokenType::Arrow:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/**
+ * @brief Evaluates spacing rules between adjacent punctuation tokens.
+ * @param[in] prev Previous token.
+ * @param[in] curr Current token.
+ * @return Boolean decision if determined by punctuation rules, std::nullopt otherwise.
+ */
+std::optional<bool> CheckPunctuationSpacing(const Token& prev, const Token& curr)
+{
     if (curr.type == TokenType::Comma && (prev.type == TokenType::Comma || prev.type == TokenType::OpenBrace))
     {
         return true;
     }
-
-    // Never space before punctuation
-    if (curr.type == TokenType::Comma || curr.type == TokenType::Semicolon || curr.type == TokenType::CloseParen ||
-        curr.type == TokenType::CloseBracket || curr.type == TokenType::Dot || curr.type == TokenType::DoubleColon ||
-        curr.type == TokenType::Arrow)
+    if (IsClosingOrSeparatorPunctuation(curr.type))
     {
         return false;
     }
-
-    // Never space after punctuation
-    if (prev.type == TokenType::OpenParen || prev.type == TokenType::OpenBracket || prev.type == TokenType::Dot ||
-        prev.type == TokenType::DoubleColon || prev.type == TokenType::Arrow)
+    if (IsOpeningOrMemberPunctuation(prev.type))
     {
         return false;
     }
-
-    // Braces only share a line when they carry a value, and the padding then follows what
-    // the brace holds: `{ Log(a); }` for a lambda body, `{1, 2}` for a list. Decided while
-    // the braces were classified, since that is the pass that knows which is which.
     if (prev.type == TokenType::OpenBrace)
     {
         return prev.isPaddedBrace;
@@ -725,8 +923,21 @@ bool NeedsSpaceBetween(const std::vector<Token>& tokens, size_t prevIdx, size_t 
     {
         return curr.isPaddedBrace;
     }
+    return std::nullopt;
+}
 
-    // Postfix ++ / --
+/**
+ * @brief Evaluates spacing rules for increment, decrement, and unary operators.
+ * @param[in] tokens Token stream.
+ * @param[in] prevIdx Index of previous token.
+ * @param[in] currIdx Index of current token.
+ * @return Boolean decision if determined by unary/increment rules, std::nullopt otherwise.
+ */
+std::optional<bool> CheckUnaryAndIncrementSpacing(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx)
+{
+    const auto& prev = tokens[prevIdx];
+    const auto& curr = tokens[currIdx];
+
     if (curr.type == TokenType::Increment || curr.type == TokenType::Decrement)
     {
         if (prev.type == TokenType::Identifier || prev.type == TokenType::CloseBracket ||
@@ -735,26 +946,18 @@ bool NeedsSpaceBetween(const std::vector<Token>& tokens, size_t prevIdx, size_t 
             return false;
         }
     }
-
-    // Prefix ++ / --
     if (prev.type == TokenType::Increment || prev.type == TokenType::Decrement)
     {
         return false;
     }
-
-    // Unary ! and ~
     if (prev.text == "!" || prev.text == "~")
     {
         return false;
     }
-
-    // No space between unary operator and its operand
     if (IsUnary(tokens, prevIdx))
     {
         return false;
     }
-
-    // Space before unary operator if preceded by binary operator, keyword, comma
     if (IsUnary(tokens, currIdx))
     {
         if (prev.type == TokenType::OpenParen || prev.type == TokenType::OpenBracket)
@@ -763,57 +966,67 @@ bool NeedsSpaceBetween(const std::vector<Token>& tokens, size_t prevIdx, size_t 
         }
         return true;
     }
+    return std::nullopt;
+}
 
-    // At symbol @ (handles)
+/**
+ * @brief Evaluates spacing rules for handle `@` and template brackets.
+ * @param[in] prev Previous token.
+ * @param[in] curr Current token.
+ * @return Boolean decision if determined by `@` or template rules, std::nullopt otherwise.
+ */
+std::optional<bool> CheckAtAndTemplateSpacing(const Token& prev, const Token& curr)
+{
     if (curr.type == TokenType::At)
     {
         return false;
     }
     if (prev.type == TokenType::At)
     {
-        if (curr.type == TokenType::Identifier || curr.type == TokenType::Keyword)
-        {
-            return true;
-        }
-        return false;
+        return curr.type == TokenType::Identifier || curr.type == TokenType::Keyword;
     }
-
-    // Template brackets
-    if (curr.isTemplateOpener || prev.isTemplateOpener)
-    {
-        return false;
-    }
-    if (curr.isTemplateCloser)
+    if (curr.isTemplateOpener || prev.isTemplateOpener || curr.isTemplateCloser)
     {
         return false;
     }
     if (prev.isTemplateCloser)
     {
-        if (curr.type == TokenType::Identifier || curr.type == TokenType::Keyword ||
-            curr.type == TokenType::OpenParen || curr.type == TokenType::Operator)
-        {
-            return true;
-        }
-        return false;
+        return curr.type == TokenType::Identifier || curr.type == TokenType::Keyword ||
+               curr.type == TokenType::OpenParen || curr.type == TokenType::Operator;
     }
+    return std::nullopt;
+}
 
-    // Function calls / declarations: no space before '(' unless control keyword
+/**
+ * @brief Tests whether token can be followed immediately by call parentheses without space.
+ * @param[in] tok Preceding token.
+ * @return True if function call or instantiation syntax suppresses space before `(`.
+ */
+bool IsCallLikePrecedingToken(const Token& tok)
+{
+    return tok.type == TokenType::Identifier || tok.text == "super" || tok.text == "this" || tok.text == "cast" ||
+           tok.text == "function";
+}
+
+/**
+ * @brief Evaluates spacing rules for parentheses and indexing brackets.
+ * @param[in] prev Previous token.
+ * @param[in] curr Current token.
+ * @return Boolean decision if determined by paren/bracket rules, std::nullopt otherwise.
+ */
+std::optional<bool> CheckParenAndBracketSpacing(const Token& prev, const Token& curr)
+{
     if (curr.type == TokenType::OpenParen)
     {
         if (prev.type == TokenType::Keyword && kControlKeywords.contains(prev.text))
         {
             return true;
         }
-        // `function` opens a lambda's parameter list the way an identifier opens a call's,
-        // so it takes no space either - `function(int a)`, not `function (int a)`.
-        if (prev.type == TokenType::Identifier || prev.text == "super" || prev.text == "this" || prev.text == "cast" ||
-            prev.text == "function")
+        if (IsCallLikePrecedingToken(prev))
         {
             return false;
         }
     }
-
-    // Array index: no space before '[' if after identifier/close bracket/paren
     if (curr.type == TokenType::OpenBracket)
     {
         if (prev.type == TokenType::Identifier || prev.type == TokenType::CloseBracket ||
@@ -822,93 +1035,143 @@ bool NeedsSpaceBetween(const std::vector<Token>& tokens, size_t prevIdx, size_t 
             return false;
         }
     }
+    return std::nullopt;
+}
 
-    // Colon
+/**
+ * @brief Evaluates spacing rules for binary operators, colons, and ternary operators.
+ * @param[in] tokens Token stream.
+ * @param[in] prevIdx Index of previous token.
+ * @param[in] currIdx Index of current token.
+ * @return Boolean decision if determined by binary/colon rules, std::nullopt otherwise.
+ */
+std::optional<bool> CheckBinaryAndColonSpacing(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx)
+{
+    const auto& prev = tokens[prevIdx];
+    const auto& curr = tokens[currIdx];
+
     if (curr.type == TokenType::Colon)
     {
-        if (IsAccessSpecifierOrLabelColon(tokens, currIdx))
-        {
-            return false;
-        }
-        return true;
+        return !IsAccessSpecifierOrLabelColon(tokens, currIdx);
     }
-
-    // Space after comma
-    if (prev.type == TokenType::Comma)
+    if (prev.type == TokenType::Comma || prev.type == TokenType::Semicolon)
     {
         return true;
     }
-
-    // Space after semicolon (in for loop)
-    if (prev.type == TokenType::Semicolon)
+    if ((curr.type == TokenType::Operator && !curr.isTemplateOpener && !curr.isTemplateCloser) ||
+        (prev.type == TokenType::Operator && !prev.isTemplateOpener && !prev.isTemplateCloser))
     {
         return true;
     }
-
-    // Binary operators
-    if (curr.type == TokenType::Operator && !curr.isTemplateOpener && !curr.isTemplateCloser)
+    if (curr.type == TokenType::Question || prev.type == TokenType::Question || prev.type == TokenType::Colon)
     {
         return true;
     }
-    if (prev.type == TokenType::Operator && !prev.isTemplateOpener && !prev.isTemplateCloser)
-    {
-        return true;
-    }
+    return std::nullopt;
+}
 
-    // Ternary question
-    if (curr.type == TokenType::Question || prev.type == TokenType::Question)
-    {
-        return true;
-    }
+/**
+ * @brief Tests if token type represents an identifier, number, or string literal.
+ * @param[in] type Token type.
+ * @return True if type is identifier, number, or string literal.
+ */
+bool IsWordOrLiteralType(TokenType type)
+{
+    return type == TokenType::Identifier || type == TokenType::Number || type == TokenType::StringLiteral;
+}
 
-    // Colon after ternary/inheritance
-    if (prev.type == TokenType::Colon)
-    {
-        return true;
-    }
+/**
+ * @brief Tests if token type represents an identifier or keyword.
+ * @param[in] type Token type.
+ * @return True if type is identifier or keyword.
+ */
+bool IsWordOrKeywordType(TokenType type)
+{
+    return type == TokenType::Identifier || type == TokenType::Keyword;
+}
 
-    // Space between keywords, identifiers, numbers, literals
+/**
+ * @brief Tests if token type represents a line or block comment.
+ * @param[in] type Token type.
+ * @return True if type is a comment.
+ */
+bool IsCommentToken(TokenType type)
+{
+    return type == TokenType::LineComment || type == TokenType::BlockComment;
+}
+
+/**
+ * @brief Evaluates spacing rules for words, literals, and comments.
+ * @param[in] prev Previous token.
+ * @param[in] curr Current token.
+ * @return True if a space is required, false otherwise.
+ */
+bool CheckWordAndLiteralSpacing(const Token& prev, const Token& curr)
+{
     if (prev.type == TokenType::Keyword || curr.type == TokenType::Keyword)
     {
         return true;
     }
-    if (prev.type == TokenType::Identifier &&
-        (curr.type == TokenType::Identifier || curr.type == TokenType::Number || curr.type == TokenType::StringLiteral))
+    if (prev.type == TokenType::Identifier && IsWordOrLiteralType(curr.type))
     {
         return true;
     }
-    if (prev.type == TokenType::CloseParen &&
-        (curr.type == TokenType::Identifier || curr.type == TokenType::Keyword || curr.type == TokenType::OpenBrace))
+    if (prev.type == TokenType::CloseParen && (IsWordOrKeywordType(curr.type) || curr.type == TokenType::OpenBrace))
     {
         return true;
     }
-    if (prev.type == TokenType::CloseBracket && (curr.type == TokenType::Identifier || curr.type == TokenType::Keyword))
+    if (prev.type == TokenType::CloseBracket && IsWordOrKeywordType(curr.type))
     {
         return true;
     }
-    if (curr.type == TokenType::LineComment || curr.type == TokenType::BlockComment)
+    if (IsCommentToken(curr.type))
     {
         return true;
     }
-
-    // Last guard, and the only one here that is not about style: two tokens that would
-    // re-read as one token must never be written next to each other. `A = 1 B = 2` came
-    // back as `A = 1B = 2` - a number welded to an identifier, four tokens turned into
-    // three, in a file the formatter had been handed to tidy.
-    //
-    // The rule above covers an identifier followed by a word; a number followed by one
-    // fell through to `return false`. That input is a syntax error, which is exactly when
-    // it matters: the formatter runs on whatever is in the editor, including half-typed
-    // code, and losing a character there is not a formatting choice.
-    if ((prev.type == TokenType::Number || prev.type == TokenType::StringLiteral) &&
-        (curr.type == TokenType::Identifier || curr.type == TokenType::Number || curr.type == TokenType::StringLiteral))
-    {
-        return true;
-    }
-
-    return false;
+    return (prev.type == TokenType::Number || prev.type == TokenType::StringLiteral) && IsWordOrLiteralType(curr.type);
 }
 
+/**
+ * @brief Determines whether a space should be inserted between two adjacent tokens.
+ * @param[in] tokens Token stream.
+ * @param[in] prevIdx Index of left-hand token.
+ * @param[in] currIdx Index of right-hand token.
+ * @return True if a whitespace separator should be emitted.
+ */
+bool NeedsSpaceBetween(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx)
+{
+    const auto& prev = tokens[prevIdx];
+    const auto& curr = tokens[currIdx];
+
+    if (auto res = CheckPunctuationSpacing(prev, curr))
+    {
+        return *res;
+    }
+    if (auto res = CheckUnaryAndIncrementSpacing(tokens, prevIdx, currIdx))
+    {
+        return *res;
+    }
+    if (auto res = CheckAtAndTemplateSpacing(prev, curr))
+    {
+        return *res;
+    }
+    if (auto res = CheckParenAndBracketSpacing(prev, curr))
+    {
+        return *res;
+    }
+    if (auto res = CheckBinaryAndColonSpacing(tokens, prevIdx, currIdx))
+    {
+        return *res;
+    }
+    return CheckWordAndLiteralSpacing(prev, curr);
+}
+
+/**
+ * @brief Generates indentation whitespace for a given nesting depth.
+ * @param[in] level Scope indent depth.
+ * @param[in] options LSP formatting configuration.
+ * @return Formatted indentation string.
+ */
 std::string MakeIndent(int level, const lsp::FormattingOptions& options)
 {
     if (level <= 0)
@@ -920,10 +1183,7 @@ std::string MakeIndent(int level, const lsp::FormattingOptions& options)
     {
         return std::string(static_cast<size_t>(level * tabSize), ' ');
     }
-    else
-    {
-        return std::string(static_cast<size_t>(level), '\t');
-    }
+    return std::string(static_cast<size_t>(level), '\t');
 }
 
 enum class ScopeKind
@@ -937,13 +1197,6 @@ enum class ScopeKind
 
 /**
  * @brief One open brace, and the paren/bracket nesting the source was at when it opened.
- *
- * The depths are what separates a lambda's body from an `if` block written inside it.
- * `f(function() { if (c) { g(); } })` has both braces at `parenDepth == 1`, so an absolute
- * test - "inside parentheses means it is a value" - calls the `if` block a value too and
- * runs its body onto one line. Measured against the brace that encloses it, the lambda body
- * opens *deeper* than its enclosing scope and the `if` block opens at the same depth, which
- * is the distinction that actually holds.
  */
 struct ScopeEntry
 {
@@ -960,386 +1213,484 @@ struct LineInfo
     bool isBlankLine = false;
     std::vector<size_t> tokenIndices;
 };
-} // namespace
 
-std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions& options, BraceStyle braceStyle)
+struct LineBuilderState
 {
-    if (sourceCode.empty())
-    {
-        return "";
-    }
-
-    // A UTF-8 BOM is held aside and put back byte for byte. The compiler accepts one and so
-    // does the grammar, so it must survive formatting - and it is not a token: left in the
-    // stream it becomes the first "identifier" on line one, which is a different file.
-    std::string_view bom;
-    if (sourceCode.size() >= 3 && static_cast<unsigned char>(sourceCode[0]) == 0xEF &&
-        static_cast<unsigned char>(sourceCode[1]) == 0xBB && static_cast<unsigned char>(sourceCode[2]) == 0xBF)
-    {
-        bom = sourceCode.substr(0, 3);
-        sourceCode.remove_prefix(3);
-    }
-
-    auto tokens = Tokenize(sourceCode);
-    if (tokens.empty())
-    {
-        return "";
-    }
-
     std::vector<LineInfo> lines;
     LineInfo currentLine;
     int braceLevel = 0;
     int parenDepth = 0;
     int bracketDepth = 0;
-
     std::vector<ScopeEntry> scopeStack;
     ScopeKind pendingScope = ScopeKind::Generic;
     bool insideCaseBody = false;
-
-    // Set by `=` or `return` at the nesting the enclosing brace opened at, cleared at the end
-    // of the statement. It is what makes `array<int> a = {1, 2};` a value brace while
-    // `if (x = 5) {}` and `for (int i = 0; ...) {}` keep theirs as blocks - in those two the
-    // `=` sits inside parentheses, deeper than the scope, so it never arms this.
     bool inValueContext = false;
 
-    auto currentScopeKind = [&]() -> ScopeKind
-    { return scopeStack.empty() ? ScopeKind::Generic : scopeStack.back().kind; };
+    ScopeKind CurrentScopeKind() const
+    {
+        return scopeStack.empty() ? ScopeKind::Generic : scopeStack.back().kind;
+    }
 
-    auto flushCurrentLine = [&]()
+    void FlushCurrentLine()
     {
         if (!currentLine.tokenIndices.empty() || currentLine.isBlankLine)
         {
             lines.push_back(std::move(currentLine));
             currentLine = LineInfo{};
         }
-    };
+    }
 
-    // The indent a fresh line takes, which a case body pushes one level deeper.
-    auto beginLineIfEmpty = [&]()
+    void BeginLineIfEmpty()
     {
         if (!currentLine.tokenIndices.empty())
         {
             return;
         }
-        const bool inCaseBody = insideCaseBody && currentScopeKind() == ScopeKind::Switch;
+        const bool inCaseBody = insideCaseBody && CurrentScopeKind() == ScopeKind::Switch;
         currentLine.indentLevel = inCaseBody ? braceLevel + 1 : braceLevel;
-    };
+    }
+};
+
+/**
+ * @brief Preserves intentional blank lines between statements.
+ * @param[in,out] state Active line builder state.
+ * @param[in] tok Current token.
+ */
+void HandleBlankLines(LineBuilderState& state, const Token& tok)
+{
+    if (tok.newlinesBefore >= 2 && !state.lines.empty() && !state.lines.back().isBlankLine)
+    {
+        state.FlushCurrentLine();
+        LineInfo blank;
+        blank.isBlankLine = true;
+        state.lines.push_back(std::move(blank));
+    }
+}
+
+/**
+ * @brief Tracks paren, bracket, and pending scope types across tokens.
+ * @param[in,out] state Active line builder state.
+ * @param[in] tok Current token.
+ */
+void UpdateBracketNesting(LineBuilderState& state, const Token& tok)
+{
+    if (tok.type == TokenType::Keyword)
+    {
+        if (tok.text == "switch")
+        {
+            state.pendingScope = ScopeKind::Switch;
+        }
+        else if (tok.text == "enum")
+        {
+            state.pendingScope = ScopeKind::Enum;
+        }
+        else if (tok.text == "class" || tok.text == "interface")
+        {
+            state.pendingScope = ScopeKind::Class;
+        }
+    }
+    if (tok.type == TokenType::OpenParen)
+    {
+        state.parenDepth++;
+    }
+    else if (tok.type == TokenType::CloseParen && state.parenDepth > 0)
+    {
+        state.parenDepth--;
+    }
+    else if (tok.type == TokenType::OpenBracket)
+    {
+        state.bracketDepth++;
+    }
+    else if (tok.type == TokenType::CloseBracket && state.bracketDepth > 0)
+    {
+        state.bracketDepth--;
+    }
+}
+
+/**
+ * @brief Tracks value contexts triggered by assignments or returns.
+ * @param[in,out] state Active line builder state.
+ * @param[in] tok Current token.
+ */
+void UpdateValueContext(LineBuilderState& state, const Token& tok)
+{
+    const int baseParen = state.scopeStack.empty() ? 0 : state.scopeStack.back().parenDepthAtOpen;
+    const int baseBracket = state.scopeStack.empty() ? 0 : state.scopeStack.back().bracketDepthAtOpen;
+    const bool atScopeNesting = (state.parenDepth == baseParen && state.bracketDepth == baseBracket);
+
+    if (atScopeNesting && state.CurrentScopeKind() != ScopeKind::Value)
+    {
+        if ((tok.type == TokenType::Operator && tok.text == "=") ||
+            (tok.type == TokenType::Keyword && tok.text == "return"))
+        {
+            state.inValueContext = true;
+        }
+        else if (tok.type == TokenType::Semicolon || tok.type == TokenType::Comma)
+        {
+            state.inValueContext = false;
+        }
+    }
+}
+
+/**
+ * @brief Emits preprocessor directives and metadata attribute blocks on their own lines.
+ * @param[in,out] state Active line builder state.
+ * @param[in] tokens Token stream.
+ * @param[in,out] i Current token index.
+ * @return True if preprocessor directive or metadata block was processed.
+ */
+bool HandlePreprocessorOrMetadata(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
+{
+    const auto& tok = tokens[i];
+    if (tok.type == TokenType::Preprocessor)
+    {
+        state.FlushCurrentLine();
+        LineInfo prep;
+        prep.isPreprocessor = true;
+        prep.indentLevel = state.braceLevel;
+        prep.tokenIndices.push_back(i);
+        state.lines.push_back(std::move(prep));
+        return true;
+    }
+    if (tok.type == TokenType::OpenBracket && state.currentLine.tokenIndices.empty())
+    {
+        state.BeginLineIfEmpty();
+        state.currentLine.tokenIndices.push_back(i);
+        int depth = 1;
+        while (depth > 0 && i + 1 < tokens.size())
+        {
+            ++i;
+            if (tokens[i].type == TokenType::OpenBracket)
+            {
+                depth++;
+                state.bracketDepth++;
+            }
+            else if (tokens[i].type == TokenType::CloseBracket)
+            {
+                depth--;
+                if (state.bracketDepth > 0)
+                    state.bracketDepth--;
+            }
+            state.currentLine.tokenIndices.push_back(i);
+        }
+        state.FlushCurrentLine();
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Processes opening curly braces according to style rules and value contexts.
+ * @param[in,out] state Active line builder state.
+ * @param[in,out] tokens Token stream.
+ * @param[in] i Current token index.
+ * @param[in] braceStyle Configured brace placement style.
+ */
+void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t i, BraceStyle braceStyle)
+{
+    const int baseParen = state.scopeStack.empty() ? 0 : state.scopeStack.back().parenDepthAtOpen;
+    const int baseBracket = state.scopeStack.empty() ? 0 : state.scopeStack.back().bracketDepthAtOpen;
+    const bool isValueBrace = state.CurrentScopeKind() == ScopeKind::Value || state.parenDepth > baseParen ||
+                              state.bracketDepth > baseBracket || state.inValueContext;
+
+    if (isValueBrace)
+    {
+        const bool padded = i > 0 && (tokens[i - 1].type == TokenType::CloseParen || tokens[i - 1].text == "function");
+        tokens[i].isPaddedBrace = padded;
+
+        state.BeginLineIfEmpty();
+        state.currentLine.tokenIndices.push_back(i);
+        state.scopeStack.push_back({ScopeKind::Value, state.parenDepth, state.bracketDepth, padded});
+        return;
+    }
+
+    if (braceStyle == BraceStyle::KAndR && !state.currentLine.tokenIndices.empty())
+    {
+        state.currentLine.tokenIndices.push_back(i);
+        state.FlushCurrentLine();
+    }
+    else
+    {
+        state.FlushCurrentLine();
+        LineInfo braceLine;
+        braceLine.indentLevel = state.braceLevel;
+        braceLine.tokenIndices.push_back(i);
+        state.lines.push_back(std::move(braceLine));
+    }
+
+    state.scopeStack.push_back({state.pendingScope, state.parenDepth, state.bracketDepth});
+    state.pendingScope = ScopeKind::Generic;
+    state.insideCaseBody = false;
+    state.inValueContext = false;
+    state.braceLevel++;
+}
+
+/**
+ * @brief Processes closing curly braces and attached semicolons.
+ * @param[in,out] state Active line builder state.
+ * @param[in,out] tokens Token stream.
+ * @param[in,out] i Current token index.
+ */
+void HandleCloseBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t& i)
+{
+    if (state.CurrentScopeKind() == ScopeKind::Value)
+    {
+        tokens[i].isPaddedBrace = state.scopeStack.back().paddedBrace;
+        state.scopeStack.pop_back();
+        state.BeginLineIfEmpty();
+        state.currentLine.tokenIndices.push_back(i);
+        return;
+    }
+
+    state.FlushCurrentLine();
+    state.braceLevel = std::max(0, state.braceLevel - 1);
+    if (!state.scopeStack.empty())
+    {
+        state.scopeStack.pop_back();
+    }
+    state.insideCaseBody = false;
+    state.inValueContext = false;
+
+    LineInfo braceLine;
+    braceLine.indentLevel = state.braceLevel;
+    braceLine.tokenIndices.push_back(i);
+
+    if (i + 1 < tokens.size() && tokens[i + 1].type == TokenType::Semicolon)
+    {
+        i++;
+        braceLine.tokenIndices.push_back(i);
+    }
+    state.lines.push_back(std::move(braceLine));
+}
+
+/**
+ * @brief Formats `else` keywords matching the configured brace style.
+ * @param[in,out] state Active line builder state.
+ * @param[in] tokens Token stream.
+ * @param[in] i Current token index.
+ * @param[in] braceStyle Configured brace placement style.
+ * @return True if token was `else` and processed.
+ */
+bool HandleElseKeyword(LineBuilderState& state, const std::vector<Token>& tokens, size_t i, BraceStyle braceStyle)
+{
+    if (tokens[i].type != TokenType::Keyword || tokens[i].text != "else")
+    {
+        return false;
+    }
+    state.FlushCurrentLine();
+    if (braceStyle == BraceStyle::KAndR && !state.lines.empty() && state.lines.back().tokenIndices.size() == 1 &&
+        tokens[state.lines.back().tokenIndices.front()].type == TokenType::CloseBrace)
+    {
+        state.currentLine = std::move(state.lines.back());
+        state.lines.pop_back();
+        state.currentLine.tokenIndices.push_back(i);
+        return true;
+    }
+    state.currentLine.indentLevel = state.braceLevel;
+    state.currentLine.tokenIndices.push_back(i);
+    return true;
+}
+
+/**
+ * @brief Formats `case` or `default` label statements in switch blocks.
+ * @param[in,out] state Active line builder state.
+ * @param[in] tok Candidate token.
+ * @param[in] i Current token index.
+ * @return True if candidate is `case` or `default` keyword.
+ */
+bool HandleCaseOrDefault(LineBuilderState& state, const Token& tok, size_t i)
+{
+    if (tok.type == TokenType::Keyword && (tok.text == "case" || tok.text == "default"))
+    {
+        state.FlushCurrentLine();
+        state.insideCaseBody = false;
+        state.currentLine.indentLevel = state.braceLevel;
+        state.currentLine.tokenIndices.push_back(i);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Formats class member access specifiers (`public:`, `private:`, `protected:`).
+ * @param[in,out] state Active line builder state.
+ * @param[in] tokens Token stream.
+ * @param[in,out] i Current token index.
+ * @return True if an access specifier was processed.
+ */
+bool HandleAccessSpecifier(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
+{
+    const auto& tok = tokens[i];
+    if (tok.type == TokenType::Keyword && (tok.text == "public" || tok.text == "private" || tok.text == "protected"))
+    {
+        if (i + 1 < tokens.size() && tokens[i + 1].type == TokenType::Colon)
+        {
+            state.FlushCurrentLine();
+            state.currentLine.indentLevel = std::max(0, state.braceLevel - 1);
+            state.currentLine.tokenIndices.push_back(i);
+            i++;
+            state.currentLine.tokenIndices.push_back(i);
+            state.FlushCurrentLine();
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Formats `else` branches, switch `case`/`default` labels, and class access specifiers.
+ * @param[in,out] state Active line builder state.
+ * @param[in] tokens Token stream.
+ * @param[in,out] i Current token index.
+ * @param[in] braceStyle Configured brace placement style.
+ * @return True if a keyword branch or label was processed.
+ */
+bool HandleKeywordsAndLabels(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i,
+                             BraceStyle braceStyle)
+{
+    return HandleElseKeyword(state, tokens, i, braceStyle) || HandleCaseOrDefault(state, tokens[i], i) ||
+           HandleAccessSpecifier(state, tokens, i);
+}
+
+/**
+ * @brief Consumes trailing inline line or block comments on the active line.
+ * @param[in,out] state Active line builder state.
+ * @param[in] tokens Token stream.
+ * @param[in,out] i Current token index.
+ */
+void ConsumeTrailingComment(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
+{
+    if (i + 1 < tokens.size() && tokens[i + 1].newlinesBefore == 0 &&
+        (tokens[i + 1].type == TokenType::LineComment || tokens[i + 1].type == TokenType::BlockComment))
+    {
+        i++;
+        state.currentLine.tokenIndices.push_back(i);
+    }
+}
+
+/**
+ * @brief Tests if token represents a statement semicolon or enum comma terminator.
+ * @param[in] state Active line builder state.
+ * @param[in] tok Current token.
+ * @return True if token marks the end of a statement or enum member.
+ */
+bool IsStatementOrEnumTerminator(const LineBuilderState& state, const Token& tok)
+{
+    if (state.parenDepth != 0 || state.bracketDepth != 0)
+    {
+        return false;
+    }
+    if (tok.type == TokenType::Semicolon && state.CurrentScopeKind() != ScopeKind::Value)
+    {
+        return true;
+    }
+    return tok.type == TokenType::Comma && state.CurrentScopeKind() == ScopeKind::Enum;
+}
+
+/**
+ * @brief Checks if a statement or comment token triggers a line boundary.
+ * @param[in,out] state Active line builder state.
+ * @param[in] tokens Token stream.
+ * @param[in,out] i Current token index.
+ */
+void HandleStatementOrCommentEnd(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
+{
+    const auto& tok = tokens[i];
+    if (tok.isUnterminated || tok.type == TokenType::LineComment)
+    {
+        state.FlushCurrentLine();
+        return;
+    }
+
+    if (IsStatementOrEnumTerminator(state, tok))
+    {
+        ConsumeTrailingComment(state, tokens, i);
+        state.FlushCurrentLine();
+        return;
+    }
+
+    if (tok.type == TokenType::Colon && IsAccessSpecifierOrLabelColon(tokens, i))
+    {
+        state.FlushCurrentLine();
+        if (state.CurrentScopeKind() == ScopeKind::Switch)
+        {
+            state.insideCaseBody = true;
+        }
+    }
+}
+
+/**
+ * @brief Groups tokens into discrete formatted lines with associated indentation levels.
+ * @param[in,out] tokens Token stream.
+ * @param[in] braceStyle Configured brace placement style.
+ * @return Vector of formatted line specifications.
+ */
+std::vector<LineInfo> BuildFormattedLines(std::vector<Token>& tokens, BraceStyle braceStyle)
+{
+    LineBuilderState state;
 
     for (size_t i = 0; i < tokens.size(); ++i)
     {
         const auto& tok = tokens[i];
+        HandleBlankLines(state, tok);
+        UpdateBracketNesting(state, tok);
+        UpdateValueContext(state, tok);
 
-        // Preserve intentional blank lines
-        if (tok.newlinesBefore >= 2 && !lines.empty() && !lines.back().isBlankLine)
+        if (HandlePreprocessorOrMetadata(state, tokens, i))
         {
-            flushCurrentLine();
-            LineInfo blank;
-            blank.isBlankLine = true;
-            lines.push_back(std::move(blank));
-        }
-
-        if (tok.type == TokenType::Keyword)
-        {
-            if (tok.text == "switch")
-            {
-                pendingScope = ScopeKind::Switch;
-            }
-            else if (tok.text == "enum")
-            {
-                pendingScope = ScopeKind::Enum;
-            }
-            else if (tok.text == "class" || tok.text == "interface")
-            {
-                pendingScope = ScopeKind::Class;
-            }
-        }
-
-        if (tok.type == TokenType::OpenParen)
-        {
-            parenDepth++;
-        }
-        else if (tok.type == TokenType::CloseParen)
-        {
-            if (parenDepth > 0)
-                parenDepth--;
-        }
-        else if (tok.type == TokenType::OpenBracket)
-        {
-            bracketDepth++;
-        }
-        else if (tok.type == TokenType::CloseBracket)
-        {
-            if (bracketDepth > 0)
-                bracketDepth--;
-        }
-
-        const int baseParen = scopeStack.empty() ? 0 : scopeStack.back().parenDepthAtOpen;
-        const int baseBracket = scopeStack.empty() ? 0 : scopeStack.back().bracketDepthAtOpen;
-        const bool atScopeNesting = parenDepth == baseParen && bracketDepth == baseBracket;
-
-        // Arm and disarm the value context. A top-level comma separates two declarators
-        // (`int[] a = {1}, b = {2};`), so it ends the first one's value context - but a comma
-        // *inside* a list separates its elements and must leave it alone.
-        if (atScopeNesting && currentScopeKind() != ScopeKind::Value)
-        {
-            if ((tok.type == TokenType::Operator && tok.text == "=") ||
-                (tok.type == TokenType::Keyword && tok.text == "return"))
-            {
-                inValueContext = true;
-            }
-            else if (tok.type == TokenType::Semicolon || tok.type == TokenType::Comma)
-            {
-                inValueContext = false;
-            }
-        }
-
-        // Preprocessor
-        if (tok.type == TokenType::Preprocessor)
-        {
-            flushCurrentLine();
-            LineInfo prep;
-            prep.isPreprocessor = true;
-            // Indented with the block it sits in. Column zero is right for the `#include` at
-            // the top of a file and only because that is already brace level zero; forcing it
-            // everywhere tore a `#if` out of the function body it belongs to.
-            prep.indentLevel = braceLevel;
-            prep.tokenIndices.push_back(i);
-            lines.push_back(std::move(prep));
             continue;
         }
-
-        // Metadata block: `[Property, Category="Weapons"]` before a declaration.
-        //
-        // CScriptBuilder strips these before the compiler sees them, and the grammar makes the
-        // block a sibling of the declaration rather than part of it, so it is its own line.
-        // Told apart from an index expression by position alone: an index never opens a line -
-        // `arr[0] = 1;` starts with the identifier - and metadata always does.
-        if (tok.type == TokenType::OpenBracket && currentLine.tokenIndices.empty())
-        {
-            beginLineIfEmpty();
-            currentLine.tokenIndices.push_back(i);
-            int depth = 1;
-            while (depth > 0 && i + 1 < tokens.size())
-            {
-                ++i;
-                if (tokens[i].type == TokenType::OpenBracket)
-                {
-                    depth++;
-                    bracketDepth++;
-                }
-                else if (tokens[i].type == TokenType::CloseBracket)
-                {
-                    depth--;
-                    if (bracketDepth > 0)
-                        bracketDepth--;
-                }
-                currentLine.tokenIndices.push_back(i);
-            }
-            flushCurrentLine();
-            continue;
-        }
-
-        // Open brace {
         if (tok.type == TokenType::OpenBrace)
         {
-            // A value brace: already inside one, opened deeper than its enclosing scope (a
-            // lambda or a list passed as an argument), or armed by an `=` or a `return`.
-            const bool isValueBrace = currentScopeKind() == ScopeKind::Value || parenDepth > baseParen ||
-                                      bracketDepth > baseBracket || inValueContext;
-
-            if (isValueBrace)
-            {
-                // Statements or elements? A lambda body follows its parameter list, so a `)`
-                // or a bare `function` in front of the brace is the tell. Everything else -
-                // `= {`, `, {`, `( {`, `return {`, a list nested in a list - holds elements.
-                const bool padded =
-                    i > 0 && (tokens[i - 1].type == TokenType::CloseParen || tokens[i - 1].text == "function");
-                tokens[i].isPaddedBrace = padded;
-
-                beginLineIfEmpty();
-                currentLine.tokenIndices.push_back(i);
-                scopeStack.push_back({ScopeKind::Value, parenDepth, bracketDepth, padded});
-                continue;
-            }
-
-            if (braceStyle == BraceStyle::KAndR && !currentLine.tokenIndices.empty())
-            {
-                currentLine.tokenIndices.push_back(i);
-                flushCurrentLine();
-            }
-            else
-            {
-                flushCurrentLine();
-                LineInfo braceLine;
-                braceLine.indentLevel = braceLevel;
-                braceLine.tokenIndices.push_back(i);
-                lines.push_back(std::move(braceLine));
-            }
-
-            scopeStack.push_back({pendingScope, parenDepth, bracketDepth});
-            pendingScope = ScopeKind::Generic;
-            insideCaseBody = false;
-            inValueContext = false;
-
-            braceLevel++;
+            HandleOpenBrace(state, tokens, i, braceStyle);
             continue;
         }
-
-        // Close brace }
         if (tok.type == TokenType::CloseBrace)
         {
-            // Closing a value: stays on the line its list or lambda body is on, and costs no
-            // indent level, because opening it never took one.
-            if (currentScopeKind() == ScopeKind::Value)
-            {
-                tokens[i].isPaddedBrace = scopeStack.back().paddedBrace;
-                scopeStack.pop_back();
-                beginLineIfEmpty();
-                currentLine.tokenIndices.push_back(i);
-                continue;
-            }
-
-            flushCurrentLine();
-            braceLevel = std::max(0, braceLevel - 1);
-            if (!scopeStack.empty())
-            {
-                scopeStack.pop_back();
-            }
-            insideCaseBody = false;
-            inValueContext = false;
-
-            LineInfo braceLine;
-            braceLine.indentLevel = braceLevel;
-            braceLine.tokenIndices.push_back(i);
-
-            // If followed immediately by ';' (e.g. struct/class/enum definition end '};')
-            if (i + 1 < tokens.size() && tokens[i + 1].type == TokenType::Semicolon)
-            {
-                i++;
-                braceLine.tokenIndices.push_back(i);
-            }
-            lines.push_back(std::move(braceLine));
+            HandleCloseBrace(state, tokens, i);
+            continue;
+        }
+        if (HandleKeywordsAndLabels(state, tokens, i, braceStyle))
+        {
             continue;
         }
 
-        // Control keyword 'else'
-        if (tok.type == TokenType::Keyword && tok.text == "else")
-        {
-            flushCurrentLine();
-
-            // K&R puts it beside the brace that closed the `if`: `} else`. Only when that is
-            // literally the line before - an `else` after a braceless `if` body has an
-            // ordinary statement there and must not be glued onto it.
-            if (braceStyle == BraceStyle::KAndR && !lines.empty() && lines.back().tokenIndices.size() == 1 &&
-                tokens[lines.back().tokenIndices.front()].type == TokenType::CloseBrace)
-            {
-                // Taken back off the emitted list rather than appended to it, so the `{` that
-                // follows finds a line still open and lands on it too: `} else {`.
-                currentLine = std::move(lines.back());
-                lines.pop_back();
-                currentLine.tokenIndices.push_back(i);
-                continue;
-            }
-
-            currentLine.indentLevel = braceLevel;
-            currentLine.tokenIndices.push_back(i);
-            continue;
-        }
-
-        // Case / default label
-        if (tok.type == TokenType::Keyword && (tok.text == "case" || tok.text == "default"))
-        {
-            flushCurrentLine();
-            insideCaseBody = false;
-            currentLine.indentLevel = braceLevel;
-            currentLine.tokenIndices.push_back(i);
-            continue;
-        }
-
-        // Access specifiers
-        if (tok.type == TokenType::Keyword &&
-            (tok.text == "public" || tok.text == "private" || tok.text == "protected"))
-        {
-            if (i + 1 < tokens.size() && tokens[i + 1].type == TokenType::Colon)
-            {
-                flushCurrentLine();
-                currentLine.indentLevel = std::max(0, braceLevel - 1);
-                currentLine.tokenIndices.push_back(i);
-                i++;
-                currentLine.tokenIndices.push_back(i);
-                flushCurrentLine();
-                continue;
-            }
-        }
-
-        // First token on line
-        beginLineIfEmpty();
-
-        currentLine.tokenIndices.push_back(i);
-
-        // A literal with no closing quote ends its line, whatever follows. Joining the next
-        // line onto it would move that code inside the literal - the file would still be one
-        // the compiler rejects, but for a different reason and in a different place, and the
-        // user's own line breaks would be gone.
-        if (tok.isUnterminated)
-        {
-            flushCurrentLine();
-            continue;
-        }
-
-        // Semicolon outside paren/bracket ends statement. Inside a value scope it does not:
-        // a lambda body written as an argument keeps its statements on the argument's line.
-        if (tok.type == TokenType::Semicolon && parenDepth == 0 && bracketDepth == 0 &&
-            currentScopeKind() != ScopeKind::Value)
-        {
-            // Check if next token is trailing comment on same line
-            if (i + 1 < tokens.size() && tokens[i + 1].newlinesBefore == 0 &&
-                (tokens[i + 1].type == TokenType::LineComment || tokens[i + 1].type == TokenType::BlockComment))
-            {
-                i++;
-                currentLine.tokenIndices.push_back(i);
-            }
-            flushCurrentLine();
-            continue;
-        }
-
-        // Comma in enum body breaks line
-        if (tok.type == TokenType::Comma && parenDepth == 0 && bracketDepth == 0 &&
-            currentScopeKind() == ScopeKind::Enum)
-        {
-            // Check if next token is trailing comment on same line
-            if (i + 1 < tokens.size() && tokens[i + 1].newlinesBefore == 0 &&
-                (tokens[i + 1].type == TokenType::LineComment || tokens[i + 1].type == TokenType::BlockComment))
-            {
-                i++;
-                currentLine.tokenIndices.push_back(i);
-            }
-            flushCurrentLine();
-            continue;
-        }
-
-        // Line comment ends line
-        if (tok.type == TokenType::LineComment)
-        {
-            flushCurrentLine();
-            continue;
-        }
-
-        // Case/default label colon ends label line
-        if (tok.type == TokenType::Colon && IsAccessSpecifierOrLabelColon(tokens, i))
-        {
-            flushCurrentLine();
-            if (currentScopeKind() == ScopeKind::Switch)
-            {
-                insideCaseBody = true;
-            }
-            continue;
-        }
+        state.BeginLineIfEmpty();
+        state.currentLine.tokenIndices.push_back(i);
+        HandleStatementOrCommentEnd(state, tokens, i);
     }
 
-    flushCurrentLine();
+    state.FlushCurrentLine();
+    return state.lines;
+}
 
-    // Render lines
+/**
+ * @brief Extracts UTF-8 Byte Order Mark (BOM) if present.
+ * @param[in,out] sourceCode Input source code.
+ * @return BOM string view if found, empty view otherwise.
+ */
+std::string_view ExtractBom(std::string_view& sourceCode)
+{
+    if (sourceCode.size() >= 3 && static_cast<unsigned char>(sourceCode[0]) == 0xEF &&
+        static_cast<unsigned char>(sourceCode[1]) == 0xBB && static_cast<unsigned char>(sourceCode[2]) == 0xBF)
+    {
+        std::string_view bom = sourceCode.substr(0, 3);
+        sourceCode.remove_prefix(3);
+        return bom;
+    }
+    return {};
+}
+
+/**
+ * @brief Renders lines into formatted string representation with indentation and intra-line spacing.
+ * @param[in] lines Line specifications.
+ * @param[in] tokens Annotated token stream.
+ * @param[in] options Formatting options.
+ * @return Vector of rendered lines.
+ */
+std::vector<std::string> RenderLines(const std::vector<LineInfo>& lines, const std::vector<Token>& tokens,
+                                     const lsp::FormattingOptions& options)
+{
     std::vector<std::string> outputLines;
     for (const auto& line : lines)
     {
@@ -1350,7 +1701,6 @@ std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingO
         }
 
         std::string lineStr = MakeIndent(line.indentLevel, options);
-
         for (size_t k = 0; k < line.tokenIndices.size(); ++k)
         {
             size_t tokIdx = line.tokenIndices[k];
@@ -1365,7 +1715,6 @@ std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingO
             lineStr += tokens[tokIdx].text;
         }
 
-        // Trim trailing whitespace if requested
         if (options.trimTrailingWhitespace.value_or(true))
         {
             while (!lineStr.empty() && (lineStr.back() == ' ' || lineStr.back() == '\t'))
@@ -1373,51 +1722,138 @@ std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingO
                 lineStr.pop_back();
             }
         }
-
         outputLines.push_back(std::move(lineStr));
     }
+    return outputLines;
+}
 
-    // Collapse consecutive blank lines > 1
-    std::vector<std::string> collapsedLines;
+/**
+ * @brief Collapses consecutive blank lines and trims trailing empty lines.
+ * @param[in,out] lines Rendered lines to collapse in place.
+ * @param[in] options Formatting options.
+ */
+void CollapseAndTrimLines(std::vector<std::string>& lines, const lsp::FormattingOptions& options)
+{
+    std::vector<std::string> collapsed;
     bool lastWasBlank = false;
-    for (auto& l : outputLines)
+    for (auto& l : lines)
     {
         if (l.empty())
         {
-            if (!lastWasBlank && !collapsedLines.empty())
+            if (!lastWasBlank && !collapsed.empty())
             {
-                collapsedLines.push_back("");
+                collapsed.push_back("");
                 lastWasBlank = true;
             }
         }
         else
         {
-            collapsedLines.push_back(std::move(l));
+            collapsed.push_back(std::move(l));
             lastWasBlank = false;
         }
     }
 
-    // Trim final newlines / blank lines if requested
     if (options.trimFinalNewlines.value_or(true))
     {
-        while (!collapsedLines.empty() && collapsedLines.back().empty())
+        while (!collapsed.empty() && collapsed.back().empty())
         {
-            collapsedLines.pop_back();
+            collapsed.pop_back();
         }
     }
+    lines = std::move(collapsed);
+}
 
-    // Build result text
+/**
+ * @brief Assembles output text with BOM and final newlines.
+ * @param[in] bom Byte order mark string view.
+ * @param[in] lines Processed lines.
+ * @param[in] options Formatting options.
+ * @return Final formatted source text.
+ */
+std::string AssembleFormattedText(std::string_view bom, const std::vector<std::string>& lines,
+                                  const lsp::FormattingOptions& options)
+{
     std::string result(bom);
-    for (size_t idx = 0; idx < collapsedLines.size(); ++idx)
+    for (size_t idx = 0; idx < lines.size(); ++idx)
     {
-        result += collapsedLines[idx];
-        if (idx + 1 < collapsedLines.size() || options.insertFinalNewline.value_or(true))
+        result += lines[idx];
+        if (idx + 1 < lines.size() || options.insertFinalNewline.value_or(true))
         {
             result += '\n';
         }
     }
-
     return result;
+}
+
+/**
+ * @brief Splits source text by newline characters.
+ * @param[in] text Input text.
+ * @param[in] keepTrailingEmpty True to retain trailing empty line after final newline.
+ * @return Vector of line strings.
+ */
+std::vector<std::string> SplitLines(std::string_view text, bool keepTrailingEmpty)
+{
+    std::vector<std::string> lines;
+    std::string cur;
+    for (char c : text)
+    {
+        if (c == '\n')
+        {
+            lines.push_back(cur);
+            cur.clear();
+        }
+        else if (c != '\r')
+        {
+            cur += c;
+        }
+    }
+    if (keepTrailingEmpty || !cur.empty())
+    {
+        lines.push_back(cur);
+    }
+    return lines;
+}
+
+/**
+ * @brief Joins a range of lines into a newline-separated string.
+ * @param[in] lines Vector of line strings.
+ * @param[in] start 0-based start line index.
+ * @param[in] end 0-based end line index.
+ * @return Joined text string.
+ */
+std::string JoinLines(const std::vector<std::string>& lines, uint32_t start, uint32_t end)
+{
+    std::string result;
+    for (uint32_t l = start; l <= end && l < lines.size(); ++l)
+    {
+        result += lines[l];
+        if (l < end)
+        {
+            result += '\n';
+        }
+    }
+    return result;
+}
+} // namespace
+
+std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions& options, BraceStyle braceStyle)
+{
+    if (sourceCode.empty())
+    {
+        return "";
+    }
+
+    std::string_view bom = ExtractBom(sourceCode);
+    auto tokens = Tokenize(sourceCode);
+    if (tokens.empty())
+    {
+        return "";
+    }
+
+    auto lines = BuildFormattedLines(tokens, braceStyle);
+    auto rendered = RenderLines(lines, tokens, options);
+    CollapseAndTrimLines(rendered, options);
+    return AssembleFormattedText(bom, rendered, options);
 }
 
 std::optional<std::vector<lsp::TextEdit>> FormatDocument(const FormattingRequest& request)
@@ -1450,8 +1886,6 @@ std::optional<std::vector<lsp::TextEdit>> FormatDocument(const FormattingRequest
 
     lsp::TextEdit edit;
     edit.range.start = lsp::Position{0, 0};
-    // Narrowing: size_t is 64-bit on x64, so the braced initialiser is a hard error there
-    // even though the 32-bit build accepts it silently.
     edit.range.end = lsp::Position{lineCount, static_cast<uint32_t>(lastLineLen)};
     edit.newText = std::move(formatted);
 
@@ -1465,25 +1899,7 @@ std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingReque
         return std::vector<lsp::TextEdit>{};
     }
 
-    // Split sourceCode into lines
-    std::vector<std::string> origLines;
-    {
-        std::string cur;
-        for (char c : request.sourceCode)
-        {
-            if (c == '\n')
-            {
-                origLines.push_back(cur);
-                cur.clear();
-            }
-            else if (c != '\r')
-            {
-                cur += c;
-            }
-        }
-        origLines.push_back(cur);
-    }
-
+    auto origLines = SplitLines(request.sourceCode, true);
     uint32_t totalLines = static_cast<uint32_t>(origLines.size());
     uint32_t startLine = std::min(request.range.start.line, totalLines > 0 ? totalLines - 1 : 0);
     uint32_t endLine = std::min(request.range.end.line, totalLines > 0 ? totalLines - 1 : 0);
@@ -1494,50 +1910,18 @@ std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingReque
         return FormatDocument(fullReq);
     }
 
-    // Format document
     std::string fullFormatted = FormatSourceCode(request.sourceCode, request.options, request.braceStyle);
     if (fullFormatted == request.sourceCode)
     {
         return std::vector<lsp::TextEdit>{};
     }
 
-    std::vector<std::string> formattedLines;
-    {
-        std::string cur;
-        for (char c : fullFormatted)
-        {
-            if (c == '\n')
-            {
-                formattedLines.push_back(cur);
-                cur.clear();
-            }
-            else if (c != '\r')
-            {
-                cur += c;
-            }
-        }
-        if (!cur.empty())
-        {
-            formattedLines.push_back(cur);
-        }
-    }
-
-    // Compute edit covering startLine to endLine
+    auto formattedLines = SplitLines(fullFormatted, false);
     lsp::TextEdit edit;
     edit.range.start = lsp::Position{startLine, 0};
     edit.range.end = lsp::Position{endLine, static_cast<uint32_t>(origLines[endLine].size())};
+    edit.newText = JoinLines(formattedLines, startLine, endLine);
 
-    std::string rangeFormattedText;
-    for (uint32_t l = startLine; l <= endLine && l < formattedLines.size(); ++l)
-    {
-        rangeFormattedText += formattedLines[l];
-        if (l < endLine)
-        {
-            rangeFormattedText += '\n';
-        }
-    }
-
-    edit.newText = std::move(rangeFormattedText);
     return std::vector<lsp::TextEdit>{std::move(edit)};
 }
 
