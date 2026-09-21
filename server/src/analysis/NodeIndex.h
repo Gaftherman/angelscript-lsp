@@ -88,6 +88,10 @@ class NodeIndex
     void Clear() noexcept;
 
   private:
+    void PopulatePredefinedSymbols(const TSLanguage* lang);
+    void IndexNode(TSNode node);
+    void TraverseTree(TSNode root);
+
     TSNode m_root{};
     const TSLanguage* m_language = nullptr;
     std::vector<TSNode> m_allNodes;

@@ -39,10 +39,19 @@ struct LocalTypeArgPosition
 struct LocalDefinition
 {
     LocalDefinition() = default;
-    LocalDefinition(std::string name_, LocalDefinitionKind kind_, uint32_t sl = 0, uint32_t sc = 0, uint32_t el = 0,
-                    uint32_t ec = 0, uint32_t tsl = 0, uint32_t tsc = 0, uint32_t tel = 0, uint32_t tec = 0)
-        : name(std::move(name_)), kind(kind_), startLine(sl), startCharacter(sc), endLine(el), endCharacter(ec),
-          typeStartLine(tsl), typeStartCharacter(tsc), typeEndLine(tel), typeEndCharacter(tec)
+
+    /**
+     * @brief Constructs a LocalDefinition with name, kind, and optional definition and type ranges.
+     * @param[in] name_ Identifier name.
+     * @param[in] kind_ Local declaration kind.
+     * @param[in] range Source range of the identifier.
+     * @param[in] typeRange Source range of the declared type.
+     */
+    LocalDefinition(std::string name_, LocalDefinitionKind kind_, SourceRange range = {}, SourceRange typeRange = {})
+        : name(std::move(name_)), kind(kind_), startLine(range.startLine), startCharacter(range.startCharacter),
+          endLine(range.endLine), endCharacter(range.endCharacter), typeStartLine(typeRange.startLine),
+          typeStartCharacter(typeRange.startCharacter), typeEndLine(typeRange.endLine),
+          typeEndCharacter(typeRange.endCharacter)
     {
     }
 

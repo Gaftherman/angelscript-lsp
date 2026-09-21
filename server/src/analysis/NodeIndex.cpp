@@ -11,34 +11,42 @@ NodeIndex::NodeIndex(TSNode root, const TSLanguage* lang)
     Build(root, lang);
 }
 
-void NodeIndex::Build(TSNode root, const TSLanguage* lang)
+void NodeIndex::PopulatePredefinedSymbols(const TSLanguage* lang)
 {
-    Clear();
-    m_root = root;
-    if (ts_node_is_null(root))
+    if (!lang)
     {
         return;
     }
-
-    if (!lang)
+    for (const std::string_view name : parser::k_allNodeTypes)
     {
-        lang = tree_sitter_angelscript();
-    }
-    m_language = lang;
-
-    if (lang)
-    {
-        for (const std::string_view name : parser::k_allNodeTypes)
+        const TSSymbol sym = ts_language_symbol_for_name(lang, name.data(), static_cast<uint32_t>(name.length()), true);
+        if (sym != 0)
         {
-            const TSSymbol sym =
-                ts_language_symbol_for_name(lang, name.data(), static_cast<uint32_t>(name.length()), true);
-            if (sym != 0)
-            {
-                m_symbolByName[name] = sym;
-            }
+            m_symbolByName[name] = sym;
         }
     }
+}
 
+void NodeIndex::IndexNode(TSNode node)
+{
+    m_allNodes.push_back(node);
+
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym >= m_nodesBySymbol.size())
+    {
+        m_nodesBySymbol.resize(static_cast<size_t>(sym) + 1);
+    }
+    m_nodesBySymbol[sym].push_back(node);
+
+    const char* typeStr = ts_node_type(node);
+    if (typeStr)
+    {
+        m_symbolByName.try_emplace(std::string_view(typeStr), sym);
+    }
+}
+
+void NodeIndex::TraverseTree(TSNode root)
+{
     TSTreeCursor cursor = ts_tree_cursor_new(root);
     int depth = 0;
     bool visiting = true;
@@ -46,20 +54,7 @@ void NodeIndex::Build(TSNode root, const TSLanguage* lang)
     while (visiting)
     {
         TSNode node = ts_tree_cursor_current_node(&cursor);
-        m_allNodes.push_back(node);
-
-        const TSSymbol sym = ts_node_symbol(node);
-        if (sym >= m_nodesBySymbol.size())
-        {
-            m_nodesBySymbol.resize(static_cast<size_t>(sym) + 1);
-        }
-        m_nodesBySymbol[sym].push_back(node);
-
-        const char* typeStr = ts_node_type(node);
-        if (typeStr)
-        {
-            m_symbolByName.try_emplace(std::string_view(typeStr), sym);
-        }
+        IndexNode(node);
 
         if (depth < k_maxAstDepth && ts_tree_cursor_goto_first_child(&cursor))
         {
@@ -90,6 +85,20 @@ void NodeIndex::Build(TSNode root, const TSLanguage* lang)
     }
 
     ts_tree_cursor_delete(&cursor);
+}
+
+void NodeIndex::Build(TSNode root, const TSLanguage* lang)
+{
+    Clear();
+    m_root = root;
+    if (ts_node_is_null(root))
+    {
+        return;
+    }
+
+    m_language = lang ? lang : tree_sitter_angelscript();
+    PopulatePredefinedSymbols(m_language);
+    TraverseTree(root);
 }
 
 std::span<const TSNode> NodeIndex::Nodes(TSSymbol symbol) const noexcept

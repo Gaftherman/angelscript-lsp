@@ -283,12 +283,8 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
         current = stack[stack.size() - 2].scope;
     }
 
-    LocalDefinition def{GetNodeText(capture.node, sourceCode),
-                        capture.definitionKind,
-                        startPt.row,
-                        startPt.column,
-                        endPt.row,
-                        endPt.column};
+    LocalDefinition def{GetNodeText(capture.node, sourceCode), capture.definitionKind,
+                        SourceRange{startPt.row, startPt.column, endPt.row, endPt.column}};
     def.fullStartLine = startPt.row;
     def.fullStartCharacter = startPt.column;
     def.fullEndLine = endPt.row;

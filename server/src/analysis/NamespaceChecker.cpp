@@ -28,196 +28,242 @@ bool IsInsideMixinBody(TSNode node)
     }
     return false;
 }
-} // namespace
-
-void CheckNamespacesAndScopes(const NamespaceCheckRequest& request, DiagnosticContext& ctx)
+/**
+ * @brief Checks if a scoped identifier refers to a known namespace or type prefix.
+ */
+void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const SymbolTable& table, DiagnosticContext& ctx)
 {
-    const TSNode root = request.root;
-    const std::string_view sourceCode = request.sourceCode;
-
-    const auto& table = ctx.request.symbolTable;
-    auto usings = request.nodeIndex ? CollectUsingNamespaces(*request.nodeIndex, sourceCode)
-                                    : CollectUsingNamespaces(root, sourceCode);
-
-    auto processNode = [&](TSNode node)
+    const uint32_t childCount = ts_node_child_count(node);
+    if (childCount < 3)
     {
-        std::string_view type = ts_node_type(node);
-
-        if (type == "scoped_identifier")
-        {
-            uint32_t childCount = ts_node_child_count(node);
-            if (childCount >= 3)
-            {
-                TSNode firstChild = ts_node_child(node, 0);
-                std::string_view firstType = ts_node_type(firstChild);
-                if (firstType == "identifier")
-                {
-                    std::string prefix = GetNodeText(firstChild, sourceCode);
-                    while (!prefix.empty() && isspace(static_cast<unsigned char>(prefix.front())))
-                        prefix.erase(prefix.begin());
-                    while (!prefix.empty() && isspace(static_cast<unsigned char>(prefix.back())))
-                        prefix.pop_back();
-
-                    if (!prefix.empty() && !IsKnownScope(prefix, node, sourceCode, table))
-                    {
-                        TSPoint startPt = ts_node_start_point(firstChild);
-                        TSPoint endPt = ts_node_end_point(firstChild);
-                        ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column,
-                                        "as-err-undefined-namespace", prefix, DiagnosticSeverity::Error);
-                    }
-                }
-            }
-        }
-
-        if (type == "call_expression")
-        {
-            TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
-            if (ts_node_is_null(funcNode) && ts_node_child_count(node) > 0)
-            {
-                funcNode = ts_node_child(node, 0);
-            }
-
-            if (!ts_node_is_null(funcNode))
-            {
-                std::string calleeName = GetNodeText(funcNode, sourceCode);
-                while (!calleeName.empty() && isspace(static_cast<unsigned char>(calleeName.front())))
-                    calleeName.erase(calleeName.begin());
-                while (!calleeName.empty() && isspace(static_cast<unsigned char>(calleeName.back())))
-                    calleeName.pop_back();
-
-                if (!calleeName.empty() && calleeName.find("::") == std::string::npos &&
-                    calleeName.find('.') == std::string::npos)
-                {
-                    const Scope* scope = ctx.request.scopeRoot ? FindEnclosingScope(ctx.request.scopeRoot.get(),
-                                                                                    ts_node_start_point(node).row,
-                                                                                    ts_node_start_point(node).column)
-                                                               : nullptr;
-                    const LocalDefinition* localDef = scope ? ResolveInScope(scope, calleeName) : nullptr;
-                    auto inScopeSyms = FindSymbolsInScope(calleeName, node, sourceCode, table);
-                    // `super(1)` is the base-constructor call, and it resolves to nothing by
-                    // design - there is no symbol named `super`. Every other use of the word
-                    // genuinely is undefined, so this excuses the one shape rather than the
-                    // name. See IsBaseConstructorCall.
-                    if (calleeName == "super" && IsBaseConstructorCall(funcNode, sourceCode))
-                    {
-                        // Nothing to report, and nothing below applies either: the ambiguity
-                        // check that follows would look `super` up in every using-namespace.
-                    }
-                    // Not inside a mixin: a mixin's members are copied into whatever class
-                    // includes it and compiled there, so an unqualified call here can name a
-                    // member of a class that is not in this file and may not be in the
-                    // workspace at all. Measured on a real Sven Co-op plugin: 12 errors in one
-                    // file, every one of them a member of the including class.
-                    //
-                    // The compiler does report a genuinely undefined name inside a mixin, so
-                    // this gives up a true positive. That is the trade this project has already
-                    // chosen - an error on code the compiler accepts is the one failure it
-                    // treats as fatal, and from in here the world is not visible.
-                    //
-                    // Mixin bodies cannot be fully checked until included in a concrete host class,
-                    // because symbols referenced inside the mixin body may be provided by the host class
-                    // or other mixins included alongside it.
-                    else if (!localDef && inScopeSyms.empty() && !ctx.request.IsRegisteredSymbol(calleeName) &&
-                             !table.HasSymbol(calleeName) && !IsInsideMixinBody(node))
-                    {
-                        TSPoint startPt = ts_node_start_point(funcNode);
-                        TSPoint endPt = ts_node_end_point(funcNode);
-                        ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column,
-                                        "as-err-undefined-identifier", calleeName, DiagnosticSeverity::Error);
-                    }
-                    // Two using-directives that both declare the name used to be reported
-                    // here as an ambiguous symbol. The compiler does not agree, and never did:
-                    //
-                    //     namespace A { void f(string s) {} }
-                    //     namespace B { void f(int i) {} }
-                    //     using namespace A;  using namespace B;
-                    //     void g() { f(1); }        // compiles - picks B::f
-                    //
-                    // A directive does not shadow and does not stop the search; every imported
-                    // namespace contributes at once and ordinary overload resolution decides.
-                    // Ambiguity is a property of the signatures, not of the scope count, and
-                    // the compiler says so only when resolution itself cannot choose -
-                    // "Multiple matching signatures to 'f(const string)'". CallChecker reaches
-                    // that verdict through ResolveBestOverload and reports it as
-                    // as-err-call-ambiguous, which is the only place it can honestly be
-                    // decided. Two namespaces declaring the same *variable* are not reported
-                    // by the compiler at all.
-                }
-            }
-        }
-
-        if (type == "import_declaration" || type == "ERROR")
-        {
-            std::string nodeText = GetNodeText(node, sourceCode);
-            size_t importPos = nodeText.find("import ");
-            if (importPos != std::string::npos)
-            {
-                size_t fromPos = nodeText.find("from", importPos);
-                if (fromPos != std::string::npos && nodeText.find('{', fromPos) != std::string::npos)
-                {
-                    TSPoint startPt = ts_node_start_point(node);
-                    TSPoint endPt = ts_node_end_point(node);
-                    ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column, "as-err-import-has-body",
-                                    "import", DiagnosticSeverity::Error);
-                }
-            }
-        }
-    };
-
-    if (request.nodeIndex)
+        return;
+    }
+    TSNode firstChild = ts_node_child(node, 0);
+    if (std::string_view(ts_node_type(firstChild)) != "identifier")
     {
-        struct Cursor
+        return;
+    }
+    std::string prefix = GetNodeText(firstChild, sourceCode);
+    while (!prefix.empty() && isspace(static_cast<unsigned char>(prefix.front())))
+    {
+        prefix.erase(prefix.begin());
+    }
+    while (!prefix.empty() && isspace(static_cast<unsigned char>(prefix.back())))
+    {
+        prefix.pop_back();
+    }
+    if (!prefix.empty() && !IsKnownScope(prefix, node, sourceCode, table))
+    {
+        TSPoint startPt = ts_node_start_point(firstChild);
+        TSPoint endPt = ts_node_end_point(firstChild);
+        ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column, "as-err-undefined-namespace", prefix,
+                        DiagnosticSeverity::Error);
+    }
+}
+
+/**
+ * @brief Extracts and trims the callee name from a call expression node.
+ */
+std::string ExtractCalleeName(TSNode node, std::string_view sourceCode)
+{
+    TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
+    if (ts_node_is_null(funcNode) && ts_node_child_count(node) > 0)
+    {
+        funcNode = ts_node_child(node, 0);
+    }
+    if (ts_node_is_null(funcNode))
+    {
+        return {};
+    }
+    std::string name = GetNodeText(funcNode, sourceCode);
+    while (!name.empty() && isspace(static_cast<unsigned char>(name.front())))
+    {
+        name.erase(name.begin());
+    }
+    while (!name.empty() && isspace(static_cast<unsigned char>(name.back())))
+    {
+        name.pop_back();
+    }
+    return name;
+}
+
+/**
+ * @brief Checks if a callee name is known in scope, registered, or excused by context.
+ */
+bool IsKnownCallee(const std::string& name, TSNode node, const NamespaceCheckRequest& request,
+                   const DiagnosticContext& ctx)
+{
+    if (name == "super")
+    {
+        TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
+        if (ts_node_is_null(funcNode) && ts_node_child_count(node) > 0)
         {
-            std::span<const TSNode> nodes;
-            size_t index = 0;
-            uint32_t currentByte() const
-            {
-                return (index < nodes.size()) ? ts_node_start_byte(nodes[index]) : UINT32_MAX;
-            }
-        };
-
-        std::array<Cursor, 4> cursors = {{{request.nodeIndex->Nodes(parser::nodes::ScopedIdentifier), 0},
-                                          {request.nodeIndex->Nodes(parser::nodes::CallExpression), 0},
-                                          {request.nodeIndex->Nodes(parser::nodes::ImportDeclaration), 0},
-                                          {request.nodeIndex->Nodes("ERROR"), 0}}};
-
-        while (true)
-        {
-            size_t best = 0;
-            uint32_t minByte = cursors[0].currentByte();
-            for (size_t c = 1; c < cursors.size(); ++c)
-            {
-                uint32_t b = cursors[c].currentByte();
-                if (b < minByte)
-                {
-                    minByte = b;
-                    best = c;
-                }
-            }
-            if (minByte == UINT32_MAX)
-            {
-                break;
-            }
-
-            TSNode node = cursors[best].nodes[cursors[best].index++];
-            processNode(node);
+            funcNode = ts_node_child(node, 0);
         }
+        if (IsBaseConstructorCall(funcNode, request.sourceCode))
+        {
+            return true;
+        }
+    }
+
+    const Scope* scope = ctx.request.scopeRoot
+                             ? FindEnclosingScope(ctx.request.scopeRoot.get(), ts_node_start_point(node).row,
+                                                  ts_node_start_point(node).column)
+                             : nullptr;
+    if (scope && ResolveInScope(scope, name))
+    {
+        return true;
+    }
+
+    if (!FindSymbolsInScope(name, node, request.sourceCode, ctx.request.symbolTable).empty())
+    {
+        return true;
+    }
+
+    if (ctx.request.IsRegisteredSymbol(name) || ctx.request.symbolTable.HasSymbol(name))
+    {
+        return true;
+    }
+
+    return IsInsideMixinBody(node);
+}
+
+/**
+ * @brief Checks if an unqualified function call resolves to an in-scope symbol.
+ */
+void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
+{
+    const std::string calleeName = ExtractCalleeName(node, request.sourceCode);
+    if (calleeName.empty() || calleeName.find("::") != std::string::npos || calleeName.find('.') != std::string::npos)
+    {
         return;
     }
 
+    if (IsKnownCallee(calleeName, node, request, ctx))
+    {
+        return;
+    }
+
+    TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
+    if (ts_node_is_null(funcNode) && ts_node_child_count(node) > 0)
+    {
+        funcNode = ts_node_child(node, 0);
+    }
+    const TSPoint startPt = ts_node_start_point(funcNode);
+    const TSPoint endPt = ts_node_end_point(funcNode);
+    ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column, "as-err-undefined-identifier", calleeName,
+                    DiagnosticSeverity::Error);
+}
+
+/**
+ * @brief Checks if an import declaration mistakenly specifies a body block.
+ */
+void CheckImportBody(TSNode node, std::string_view sourceCode, DiagnosticContext& ctx)
+{
+    std::string nodeText = GetNodeText(node, sourceCode);
+    size_t importPos = nodeText.find("import ");
+    if (importPos == std::string::npos)
+    {
+        return;
+    }
+    size_t fromPos = nodeText.find("from", importPos);
+    if (fromPos != std::string::npos && nodeText.find('{', fromPos) != std::string::npos)
+    {
+        TSPoint startPt = ts_node_start_point(node);
+        TSPoint endPt = ts_node_end_point(node);
+        ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column, "as-err-import-has-body", "import",
+                        DiagnosticSeverity::Error);
+    }
+}
+
+/**
+ * @brief Dispatches node inspection to category-specific checks.
+ */
+void ProcessNamespaceNode(TSNode node, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
+{
+    const std::string_view type = ts_node_type(node);
+    if (type == "scoped_identifier")
+    {
+        CheckScopedIdentifier(node, request.sourceCode, ctx.request.symbolTable, ctx);
+    }
+    else if (type == "call_expression")
+    {
+        CheckCallExpression(node, request, ctx);
+    }
+    else if (type == "import_declaration" || type == "ERROR")
+    {
+        CheckImportBody(node, request.sourceCode, ctx);
+    }
+}
+
+void CheckFromNodeIndex(const NamespaceCheckRequest& request, DiagnosticContext& ctx)
+{
+    struct Cursor
+    {
+        std::span<const TSNode> nodes;
+        size_t index = 0;
+        uint32_t currentByte() const
+        {
+            return (index < nodes.size()) ? ts_node_start_byte(nodes[index]) : UINT32_MAX;
+        }
+    };
+
+    std::array<Cursor, 4> cursors = {{{request.nodeIndex->Nodes(parser::nodes::ScopedIdentifier), 0},
+                                      {request.nodeIndex->Nodes(parser::nodes::CallExpression), 0},
+                                      {request.nodeIndex->Nodes(parser::nodes::ImportDeclaration), 0},
+                                      {request.nodeIndex->Nodes("ERROR"), 0}}};
+
+    while (true)
+    {
+        size_t best = 0;
+        uint32_t minByte = cursors[0].currentByte();
+        for (size_t c = 1; c < cursors.size(); ++c)
+        {
+            uint32_t b = cursors[c].currentByte();
+            if (b < minByte)
+            {
+                minByte = b;
+                best = c;
+            }
+        }
+        if (minByte == UINT32_MAX)
+        {
+            break;
+        }
+
+        TSNode node = cursors[best].nodes[cursors[best].index++];
+        ProcessNamespaceNode(node, request, ctx);
+    }
+}
+
+void CheckFromASTTraversal(TSNode root, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
+{
     std::vector<TSNode> stack = {root};
     while (!stack.empty())
     {
         TSNode node = stack.back();
         stack.pop_back();
 
-        processNode(node);
+        ProcessNamespaceNode(node, request, ctx);
 
-        uint32_t count = ts_node_child_count(node);
+        const uint32_t count = ts_node_child_count(node);
         for (uint32_t i = 0; i < count; ++i)
         {
             stack.push_back(ts_node_child(node, i));
         }
+    }
+}
+} // namespace
+
+void CheckNamespacesAndScopes(const NamespaceCheckRequest& request, DiagnosticContext& ctx)
+{
+    if (request.nodeIndex)
+    {
+        CheckFromNodeIndex(request, ctx);
+    }
+    else
+    {
+        CheckFromASTTraversal(request.root, request, ctx);
     }
 }
 } // namespace angel_lsp::analysis

@@ -2,6 +2,44 @@
 
 namespace angel_lsp::analysis
 {
+namespace
+{
+/**
+ * @brief Checks if a scope is contained within a function or closure body.
+ */
+bool IsFunctionLocal(const Scope* defScope)
+{
+    for (const Scope* s = defScope; s != nullptr; s = s->parent)
+    {
+        if (s->kind == ScopeKind::Function || s->kind == ScopeKind::Closure)
+        {
+            return true;
+        }
+        if (s->kind == ScopeKind::Class || s->kind == ScopeKind::Namespace || s->kind == ScopeKind::Global)
+        {
+            return false;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if capturing def across a closure boundary is forbidden.
+ */
+bool IsForbiddenClosureCapture(const LocalDefinition& def, const Scope* defScope)
+{
+    if (def.kind == LocalDefinitionKind::Parameter)
+    {
+        return true;
+    }
+    if (def.kind == LocalDefinitionKind::Variable)
+    {
+        return IsFunctionLocal(defScope);
+    }
+    return false;
+}
+} // namespace
+
 const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name, const Scope** owner,
                                       bool respectClosureBarrier)
 {
@@ -12,34 +50,9 @@ const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name,
         {
             if (def.name == name)
             {
-                if (crossedClosure && respectClosureBarrier)
+                if (crossedClosure && respectClosureBarrier && IsForbiddenClosureCapture(def, current))
                 {
-                    // Closures cannot capture outer local variables or parameters from enclosing functions/closures.
-                    if (def.kind == LocalDefinitionKind::Parameter)
-                    {
-                        continue;
-                    }
-                    if (def.kind == LocalDefinitionKind::Variable)
-                    {
-                        bool isFunctionLocal = false;
-                        for (const Scope* s = current; s != nullptr; s = s->parent)
-                        {
-                            if (s->kind == ScopeKind::Function || s->kind == ScopeKind::Closure)
-                            {
-                                isFunctionLocal = true;
-                                break;
-                            }
-                            if (s->kind == ScopeKind::Class || s->kind == ScopeKind::Namespace ||
-                                s->kind == ScopeKind::Global)
-                            {
-                                break;
-                            }
-                        }
-                        if (isFunctionLocal)
-                        {
-                            continue;
-                        }
-                    }
+                    continue;
                 }
 
                 if (owner)

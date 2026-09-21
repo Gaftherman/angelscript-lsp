@@ -84,65 +84,110 @@ TSNode CalleeNameNode(TSNode callNode)
     return TSNode{};
 }
 
-/**
- * @brief Recursive descent carrying the container path and the enclosing function's name.
- *
- * The two names are passed by reference and only rebuilt at the handful of nodes that
- * change them. Copying them into locals at every node instead - which is the obvious way to
- * write this - cost two string copies per node of the tree, a third of the pass's whole
- * running time, for work that changes at a few dozen nodes per file. Measured: 3.30 ms per
- * file that way against 2.19 this way, over the 300-file sample in RuleCostTest.
- */
-void Walk(TSNode node, std::string_view sourceCode, const std::string& containerPath, const std::string& caller,
-          std::vector<CallSite>& out, int depth = 0)
+struct TraversalItem
 {
-    // See k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
+    TSNode node{};
+    uint32_t containerIndex = 0;
+    uint32_t callerIndex = 0;
+    int depth = 0;
+};
+
+bool IsContainerType(std::string_view nodeType)
+{
+    return nodeType == "class_declaration" || nodeType == "interface_declaration" || nodeType == "mixin_declaration" ||
+           nodeType == "namespace_declaration";
+}
+
+struct NamingContext
+{
+    std::vector<std::string> containers{""};
+    std::vector<std::string> callers{""};
+
+    uint32_t NextContainer(TSNode node, std::string_view sourceCode, uint32_t current)
+    {
+        const std::string name = NodeText(parser::GetChildByField(node, parser::fields::Name), sourceCode);
+        if (name.empty())
+        {
+            return current;
+        }
+        const std::string& parent = containers[current];
+        containers.push_back(parent.empty() ? name : parent + "::" + name);
+        return static_cast<uint32_t>(containers.size() - 1);
+    }
+
+    uint32_t NextCaller(TSNode node, std::string_view sourceCode, uint32_t containerIdx, uint32_t current)
+    {
+        const std::string name = NodeText(parser::GetChildByField(node, parser::fields::Name), sourceCode);
+        if (name.empty())
+        {
+            return current;
+        }
+        const std::string& parent = containers[containerIdx];
+        callers.push_back(parent.empty() ? name : parent + "::" + name);
+        return static_cast<uint32_t>(callers.size() - 1);
+    }
+};
+
+void RecordCallSite(TSNode node, std::string_view sourceCode, const std::string& caller, std::vector<CallSite>& out)
+{
+    const TSNode nameNode = CalleeNameNode(node);
+    if (ts_node_is_null(nameNode))
+    {
         return;
-
-    const std::string_view nodeType = ts_node_type(node);
-
-    std::string rebuilt;
-    const std::string* nextContainer = &containerPath;
-    const std::string* nextCaller = &caller;
-
-    if (nodeType == "class_declaration" || nodeType == "interface_declaration" || nodeType == "mixin_declaration" ||
-        nodeType == "namespace_declaration")
-    {
-        const std::string name = NodeText(parser::GetChildByField(node, parser::fields::Name), sourceCode);
-        if (!name.empty())
-        {
-            rebuilt = containerPath.empty() ? name : containerPath + "::" + name;
-            nextContainer = &rebuilt;
-        }
     }
-    else if (nodeType == "func_declaration")
+    std::string callee = NodeText(nameNode, sourceCode);
+    if (!callee.empty())
     {
-        const std::string name = NodeText(parser::GetChildByField(node, parser::fields::Name), sourceCode);
-        if (!name.empty())
-        {
-            rebuilt = containerPath.empty() ? name : containerPath + "::" + name;
-            nextCaller = &rebuilt;
-        }
+        out.push_back(CallSite{caller, std::move(callee), ToSourceRange(nameNode)});
     }
-    else if (nodeType == "call_expression")
-    {
-        const TSNode nameNode = CalleeNameNode(node);
-        if (!ts_node_is_null(nameNode))
-        {
-            std::string callee = NodeText(nameNode, sourceCode);
-            if (!callee.empty())
-            {
-                out.push_back(CallSite{caller, std::move(callee), ToSourceRange(nameNode)});
-            }
-        }
-        // Falls through to the children: arguments carry calls of their own.
-    }
+}
 
-    const uint32_t childCount = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < childCount; ++i)
+/**
+ * @brief Traverses the AST with a flat worklist, collecting call expressions.
+ *
+ * @param[in] root AST root node.
+ * @param[in] sourceCode Source text.
+ * @param[out] out Vector receiving collected call sites.
+ */
+void CollectCallsInto(TSNode root, std::string_view sourceCode, std::vector<CallSite>& out)
+{
+    NamingContext ctx;
+    std::vector<TraversalItem> worklist;
+    worklist.push_back(TraversalItem{root, 0, 0, 0});
+
+    while (!worklist.empty())
     {
-        Walk(ts_node_named_child(node, i), sourceCode, *nextContainer, *nextCaller, out, depth + 1);
+        const TraversalItem item = worklist.back();
+        worklist.pop_back();
+
+        if (item.depth > k_maxAstDepth)
+        {
+            continue;
+        }
+
+        const std::string_view nodeType = ts_node_type(item.node);
+        uint32_t nextContainer = item.containerIndex;
+        uint32_t nextCaller = item.callerIndex;
+
+        if (IsContainerType(nodeType))
+        {
+            nextContainer = ctx.NextContainer(item.node, sourceCode, item.containerIndex);
+        }
+        else if (nodeType == "func_declaration")
+        {
+            nextCaller = ctx.NextCaller(item.node, sourceCode, item.containerIndex, item.callerIndex);
+        }
+        else if (nodeType == "call_expression")
+        {
+            RecordCallSite(item.node, sourceCode, ctx.callers[item.callerIndex], out);
+        }
+
+        const uint32_t childCount = ts_node_named_child_count(item.node);
+        for (uint32_t i = childCount; i > 0; --i)
+        {
+            worklist.push_back(
+                TraversalItem{ts_node_named_child(item.node, i - 1), nextContainer, nextCaller, item.depth + 1});
+        }
     }
 }
 } // namespace
@@ -155,7 +200,7 @@ std::vector<CallSite> CollectCalls(TSNode root, std::string_view sourceCode)
         return calls;
     }
 
-    Walk(root, sourceCode, "", "", calls);
+    CollectCallsInto(root, sourceCode, calls);
     return calls;
 }
 

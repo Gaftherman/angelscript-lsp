@@ -105,14 +105,11 @@ static std::string_view GetNodeView(TSNode node, const std::string& sourceCode)
     return std::string_view(sourceCode.data() + start, end - start);
 }
 
-TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, const std::string& sourceCode)
+static bool TryExtractPrimitiveOrIdentifier(TSNode typeNode, const std::string& sourceCode,
+                                            TypeExtractionResult& result)
 {
-    TypeExtractionResult result;
-    if (ts_node_is_null(typeNode))
-        return result;
-
     const auto& symbols = GetTypeExtractionSymbols();
-    TSSymbol nodeSymbol = ts_node_symbol(typeNode);
+    const TSSymbol nodeSymbol = ts_node_symbol(typeNode);
 
     if (nodeSymbol == symbols.symPrimitiveType)
     {
@@ -130,108 +127,138 @@ TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, const std::string& 
         {
             result.kind = symbols.LookupPrimitiveKind(nodeSymbol);
         }
-        return result;
+        return true;
     }
 
     if (nodeSymbol == symbols.symIdentifier)
     {
         result.baseTypeName = GetNodeText(typeNode, sourceCode);
         result.kind = TypeKind::Unknown;
+        return true;
+    }
+
+    return false;
+}
+
+static void ProcessDatatypeChild(TSNode child, const std::string& sourceCode, TypeExtractionResult& result,
+                                 std::string& datatypeText)
+{
+    TSNode inner = ts_node_named_child(child, 0);
+    if (!ts_node_is_null(inner))
+    {
+        TypeExtractionResult innerInfo = ExtractTypeInfoFromAST(inner, sourceCode);
+        result.baseTypeName = innerInfo.baseTypeName;
+        result.kind = innerInfo.kind;
+        datatypeText = innerInfo.baseTypeName;
+    }
+    else
+    {
+        datatypeText = GetNodeText(child, sourceCode);
+        result.baseTypeName = datatypeText;
+    }
+}
+
+static void ProcessTemplateTypeListChild(TSNode child, const std::string& sourceCode, const std::string& datatypeText,
+                                         TypeExtractionResult& result)
+{
+    const auto& symbols = GetTypeExtractionSymbols();
+    result.isArray = true;
+    result.arrayDepth++;
+    result.templateName = datatypeText;
+
+    const uint32_t tCount = ts_node_named_child_count(child);
+    for (uint32_t t = 0; t < tCount; ++t)
+    {
+        TSNode innerType = ts_node_named_child(child, t);
+        if (ts_node_symbol(innerType) == symbols.symType)
+        {
+            TypeExtractionResult inner = ExtractTypeInfoFromAST(innerType, sourceCode);
+            result.templateArguments.push_back(inner);
+            if (result.templateArguments.size() == 1)
+            {
+                result.baseTypeName = inner.baseTypeName;
+                result.hasPrimitiveHandle = inner.hasPrimitiveHandle;
+                result.arrayDepth += inner.arrayDepth;
+                if (inner.kind != TypeKind::Unknown)
+                {
+                    result.kind = inner.kind;
+                }
+            }
+        }
+    }
+}
+
+static void ProcessAnonymousModifier(TSNode child, TSNode prevChild, const std::string& sourceCode,
+                                     TypeExtractionResult& result)
+{
+    const auto& symbols = GetTypeExtractionSymbols();
+    const std::string_view tok = GetNodeView(child, sourceCode);
+    if (tok == "[")
+    {
+        result.isArray = true;
+        result.arrayDepth++;
+    }
+    else if (tok == "@")
+    {
+        const std::string_view prevTok = !ts_node_is_null(prevChild) ? GetNodeView(prevChild, sourceCode) : "";
+        if (result.isHandle && prevTok != "const")
+        {
+            result.hasPrimitiveHandle = true;
+        }
+        result.isHandle = true;
+        if (!result.isArray && !ts_node_is_null(prevChild) && ts_node_symbol(prevChild) == symbols.symDatatype)
+        {
+            TSNode innerChild = ts_node_named_child(prevChild, 0);
+            if (!ts_node_is_null(innerChild) && ts_node_symbol(innerChild) == symbols.symPrimitiveType)
+            {
+                result.hasPrimitiveHandle = true;
+            }
+        }
+    }
+    else if (tok == "&")
+    {
+        result.isReference = true;
+    }
+    else if (tok == "const")
+    {
+        result.isConst = true;
+    }
+}
+
+TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, const std::string& sourceCode)
+{
+    TypeExtractionResult result;
+    if (ts_node_is_null(typeNode))
+    {
         return result;
     }
 
+    if (TryExtractPrimitiveOrIdentifier(typeNode, sourceCode, result))
+    {
+        return result;
+    }
+
+    const auto& symbols = GetTypeExtractionSymbols();
     std::string datatypeText;
-    uint32_t count = ts_node_child_count(typeNode);
+    const uint32_t count = ts_node_child_count(typeNode);
     TSNode prevChild = ts_node_child(typeNode, 0);
 
     for (uint32_t i = 0; i < count; ++i)
     {
         TSNode child = ts_node_child(typeNode, i);
-        TSSymbol childSym = ts_node_symbol(child);
+        const TSSymbol childSym = ts_node_symbol(child);
 
         if (childSym == symbols.symDatatype)
         {
-            TSNode inner = ts_node_named_child(child, 0);
-            if (!ts_node_is_null(inner))
-            {
-                TypeExtractionResult innerInfo = ExtractTypeInfoFromAST(inner, sourceCode);
-                result.baseTypeName = innerInfo.baseTypeName;
-                result.kind = innerInfo.kind;
-                datatypeText = innerInfo.baseTypeName;
-            }
-            else
-            {
-                datatypeText = GetNodeText(child, sourceCode);
-                result.baseTypeName = datatypeText;
-            }
-            prevChild = child;
+            ProcessDatatypeChild(child, sourceCode, result, datatypeText);
         }
         else if (childSym == symbols.symTemplateTypeList)
         {
-            result.isArray = true;
-            result.arrayDepth++;
-            result.templateName = datatypeText;
-
-            uint32_t tCount = ts_node_named_child_count(child);
-            for (uint32_t t = 0; t < tCount; ++t)
-            {
-                TSNode innerType = ts_node_named_child(child, t);
-                if (ts_node_symbol(innerType) == symbols.symType)
-                {
-                    TypeExtractionResult inner = ExtractTypeInfoFromAST(innerType, sourceCode);
-                    result.templateArguments.push_back(inner);
-                    if (result.templateArguments.size() == 1)
-                    {
-                        result.baseTypeName = inner.baseTypeName;
-                        // The element's handle-ness is the element's. Folding it into the outer
-                        // type made `array<Foo@>` look like a handle, and then the outer '@' of
-                        // `array<Foo@>@` read as a double handle - which is ordinary AngelScript
-                        // and was being reported as a handle on a primitive.
-                        result.hasPrimitiveHandle = inner.hasPrimitiveHandle;
-                        result.arrayDepth += inner.arrayDepth;
-                        if (inner.kind != TypeKind::Unknown)
-                        {
-                            result.kind = inner.kind;
-                        }
-                    }
-                }
-            }
-            prevChild = child;
+            ProcessTemplateTypeListChild(child, sourceCode, datatypeText, result);
         }
         else if (!ts_node_is_named(child))
         {
-            std::string_view tok = GetNodeView(child, sourceCode);
-            if (tok == "[")
-            {
-                result.isArray = true;
-                result.arrayDepth++;
-            }
-            else if (tok == "@")
-            {
-                std::string_view prevTok = !ts_node_is_null(prevChild) ? GetNodeView(prevChild, sourceCode) : "";
-                if (result.isHandle && prevTok != "const")
-                {
-                    // Double handle @@ or @ @ without 'const' in between is not allowed in AngelScript
-                    result.hasPrimitiveHandle = true;
-                }
-                result.isHandle = true;
-                if (!result.isArray && !ts_node_is_null(prevChild) && ts_node_symbol(prevChild) == symbols.symDatatype)
-                {
-                    TSNode innerChild = ts_node_named_child(prevChild, 0);
-                    if (!ts_node_is_null(innerChild) && ts_node_symbol(innerChild) == symbols.symPrimitiveType)
-                    {
-                        result.hasPrimitiveHandle = true;
-                    }
-                }
-            }
-            else if (tok == "&")
-            {
-                result.isReference = true;
-            }
-            else if (tok == "const")
-            {
-                result.isConst = true;
-            }
+            ProcessAnonymousModifier(child, prevChild, sourceCode, result);
         }
         prevChild = child;
     }

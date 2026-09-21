@@ -34,7 +34,6 @@ angel_lsp::analysis::CheckInitializerListAgainstType
 angel_lsp::analysis::CheckInitializerLists
 angel_lsp::analysis::CheckLambdaArguments
 angel_lsp::analysis::CheckMemberExpression
-angel_lsp::analysis::CheckNamespacesAndScopes
 angel_lsp::analysis::CheckVariableDirectInitialization
 angel_lsp::analysis::CleanBaseType
 angel_lsp::analysis::CleanDescriptionLines
@@ -49,7 +48,6 @@ angel_lsp::analysis::ExtractBrief
 angel_lsp::analysis::ExtractCommentLines
 angel_lsp::analysis::ExtractDocComment
 angel_lsp::analysis::ExtractTrailingComment
-angel_lsp::analysis::ExtractTypeInfoFromAST
 angel_lsp::analysis::FindFreeCandidates
 angel_lsp::analysis::FindMember
 angel_lsp::analysis::FindSymbolsInScope
@@ -71,9 +69,7 @@ angel_lsp::analysis::IsBaseConstructorCall
 angel_lsp::analysis::IsBlockCommand
 angel_lsp::analysis::IsKnownScope
 angel_lsp::analysis::IsPrimitiveWidening
-angel_lsp::analysis::LocalDefinition::LocalDefinition
 angel_lsp::analysis::MergeInlineTag
-angel_lsp::analysis::NodeIndex::Build
 angel_lsp::analysis::NormalizeType
 angel_lsp::analysis::ParseDocSegment
 angel_lsp::analysis::ParseEngineProfileKind
@@ -87,7 +83,6 @@ angel_lsp::analysis::RenderInlineNode
 angel_lsp::analysis::ResolveBestOverload
 angel_lsp::analysis::ResolveConstness
 angel_lsp::analysis::ResolveExpressionType
-angel_lsp::analysis::ResolveInScope
 angel_lsp::analysis::ResolveIndexedType
 angel_lsp::analysis::ResolveNameConstness
 angel_lsp::analysis::ResolveReceiverType
@@ -102,5 +97,4 @@ angel_lsp::analysis::SymbolTable::PublishDocumentSymbols
 angel_lsp::analysis::SymbolTable::ResolveIncludedMixinsForKeysLocked
 angel_lsp::analysis::ValidateList
 angel_lsp::analysis::ValidateMultiDimensionalContainer
-angel_lsp::analysis::Walk
 
