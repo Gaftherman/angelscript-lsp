@@ -1,4 +1,5 @@
 #include "utils/Utils.h"
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -91,11 +92,11 @@ size_t PositionToOffset(const std::string& text, uint32_t line, uint32_t charact
     return std::min(lineStart + LspCharToByteColumn(lineText, character, enc), text.size());
 }
 
-void ApplyIncrementalChange(std::string& buffer, uint32_t startLine, uint32_t startCharacter, uint32_t endLine,
-                            uint32_t endCharacter, const std::string& newText, PositionEncoding enc)
+void ApplyIncrementalChange(std::string& buffer, const TextChangeRange& range, const std::string& newText,
+                            PositionEncoding enc)
 {
-    size_t startOffset = PositionToOffset(buffer, startLine, startCharacter, enc);
-    size_t endOffset = PositionToOffset(buffer, endLine, endCharacter, enc);
+    const size_t startOffset = PositionToOffset(buffer, range.startLine, range.startCharacter, enc);
+    const size_t endOffset = PositionToOffset(buffer, range.endLine, range.endCharacter, enc);
 
     if (startOffset <= endOffset)
     {
@@ -123,6 +124,125 @@ bool IsPredefinedFile(const std::string_view& fileUri, const std::string_view ex
     return fileUri.ends_with(extension) || fileUri.ends_with(fmt::format("/{}", extension));
 }
 
+namespace
+{
+/**
+ * @brief Advances pos past all ASCII whitespace characters.
+ * @param[in] text Input string.
+ * @param[in] pos Starting offset.
+ * @return First non-whitespace index or text.size().
+ */
+size_t SkipWhitespace(std::string_view text, size_t pos)
+{
+    while (pos < text.size() && (text[pos] == ' ' || text[pos] == '\t' || text[pos] == '\r' || text[pos] == '\n'))
+    {
+        ++pos;
+    }
+    return pos;
+}
+
+/**
+ * @brief Skips an optional 'const' qualifier and any surrounding whitespace.
+ * @param[in] text Input string.
+ * @param[in] pos Starting offset.
+ * @return Offset after 'const' and whitespace, or pos if no 'const' found.
+ */
+size_t SkipConstQualifier(std::string_view text, size_t pos)
+{
+    pos = SkipWhitespace(text, pos);
+    constexpr std::string_view kConst = "const";
+    if (pos + kConst.size() <= text.size() && text.substr(pos, kConst.size()) == kConst)
+    {
+        const size_t after = pos + kConst.size();
+        if (after == text.size() || text[after] == ' ' || text[after] == '\t' || text[after] == '\r' ||
+            text[after] == '\n' || text[after] == '{')
+        {
+            return SkipWhitespace(text, after);
+        }
+    }
+    return pos;
+}
+
+/**
+ * @brief Finds the matching closing brace for an opening brace at openBrace.
+ * @param[in] text Input string.
+ * @param[in] openBrace Index of opening '{'.
+ * @return Index of matching '}', or std::nullopt if unmatched.
+ */
+std::optional<size_t> FindMatchingBrace(std::string_view text, size_t openBrace)
+{
+    int depth = 1;
+    size_t k = openBrace + 1;
+    while (k < text.size() && depth > 0)
+    {
+        if (text[k] == '{')
+        {
+            ++depth;
+        }
+        else if (text[k] == '}')
+        {
+            --depth;
+            if (depth == 0)
+            {
+                return k;
+            }
+        }
+        ++k;
+    }
+    return std::nullopt;
+}
+
+struct PatternSpan
+{
+    size_t openBrace{0};
+    size_t closeBrace{0};
+    size_t nextIndex{0};
+};
+
+/**
+ * @brief Identifies an inline list pattern like '{repeat T}' following a closing paren.
+ * @param[in] text Input string.
+ * @param[in] closeParenPos Offset of ')'.
+ * @return PatternSpan if an inline pattern followed by ';' is found, otherwise std::nullopt.
+ */
+std::optional<PatternSpan> FindInlineListPattern(std::string_view text, size_t closeParenPos)
+{
+    const size_t afterParen = SkipConstQualifier(text, closeParenPos + 1);
+    if (afterParen >= text.size() || text[afterParen] != '{')
+    {
+        return std::nullopt;
+    }
+    const auto closeBrace = FindMatchingBrace(text, afterParen);
+    if (!closeBrace)
+    {
+        return std::nullopt;
+    }
+    const size_t afterClose = SkipWhitespace(text, *closeBrace + 1);
+    if (afterClose < text.size() && text[afterClose] == ';')
+    {
+        return PatternSpan{afterParen, *closeBrace, afterClose};
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief Blanks characters in [openBrace, closeBrace] with spaces, preserving newlines.
+ * @param[in,out] result String buffer to blank in place.
+ * @param[in] openBrace Start offset.
+ * @param[in] closeBrace End offset (inclusive).
+ */
+void BlankPattern(std::string& result, size_t openBrace, size_t closeBrace)
+{
+    for (size_t b = openBrace; b <= closeBrace; ++b)
+    {
+        if (result[b] != '\r' && result[b] != '\n')
+        {
+            result[b] = ' ';
+        }
+    }
+}
+} // namespace
+
 std::string SanitizePredefinedContent(std::string_view source)
 {
     if (source.empty())
@@ -138,78 +258,16 @@ std::string SanitizePredefinedContent(std::string_view source)
     }
 
     std::string result(source);
-    const size_t n = result.size();
-
     size_t i = 0;
-    while (i < n)
+    while (i < result.size())
     {
-        // Look for ')' closing a function or constructor parameter list
         if (result[i] == ')')
         {
-            size_t j = i + 1;
-            while (j < n && (result[j] == ' ' || result[j] == '\t' || result[j] == '\r' || result[j] == '\n'))
+            if (const auto pattern = FindInlineListPattern(result, i))
             {
-                ++j;
-            }
-
-            // Optional method qualifiers such as 'const'
-            if (j + 5 < n && result.compare(j, 5, "const") == 0 &&
-                (result[j + 5] == ' ' || result[j + 5] == '\t' || result[j + 5] == '\r' || result[j + 5] == '\n' ||
-                 result[j + 5] == '{'))
-            {
-                j += 5;
-                while (j < n && (result[j] == ' ' || result[j] == '\t' || result[j] == '\r' || result[j] == '\n'))
-                {
-                    ++j;
-                }
-            }
-
-            if (j < n && result[j] == '{')
-            {
-                const size_t openBrace = j;
-                int depth = 1;
-                size_t k = j + 1;
-                while (k < n && depth > 0)
-                {
-                    if (result[k] == '{')
-                    {
-                        ++depth;
-                    }
-                    else if (result[k] == '}')
-                    {
-                        --depth;
-                    }
-                    if (depth > 0)
-                    {
-                        ++k;
-                    }
-                }
-
-                if (depth == 0 && k < n && result[k] == '}')
-                {
-                    const size_t closeBrace = k;
-                    size_t afterClose = closeBrace + 1;
-                    while (afterClose < n && (result[afterClose] == ' ' || result[afterClose] == '\t' ||
-                                              result[afterClose] == '\r' || result[afterClose] == '\n'))
-                    {
-                        ++afterClose;
-                    }
-
-                    // Must be followed by a semicolon terminating the declaration
-                    if (afterClose < n && result[afterClose] == ';')
-                    {
-                        // Blank from openBrace to closeBrace (inclusive) with spaces, preserving newlines
-                        for (size_t b = openBrace; b <= closeBrace; ++b)
-                        {
-                            if (result[b] != '\r' && result[b] != '\n')
-                            {
-                                result[b] = ' ';
-                            }
-                        }
-                        i = afterClose;
-                        continue;
-                    }
-                }
+                BlankPattern(result, pattern->openBrace, pattern->closeBrace);
+                i = pattern->nextIndex;
+                continue;
             }
         }
         ++i;

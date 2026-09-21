@@ -371,9 +371,11 @@ void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextD
                 ts_tree_edit(workingTree.get(), &edit);
             }
 
-            angel_lsp::utils::ApplyIncrementalChange(buffer, rt.range.start.line, rt.range.start.character,
-                                                     rt.range.end.line, rt.range.end.character, rt.text,
-                                                     m_positionEncoding);
+            angel_lsp::utils::ApplyIncrementalChange(
+                buffer,
+                angel_lsp::utils::TextChangeRange{rt.range.start.line, rt.range.start.character, rt.range.end.line,
+                                                  rt.range.end.character},
+                rt.text, m_positionEncoding);
         }
         else if (std::holds_alternative<lsp::TextDocumentContentChangeWholeDocument>(change))
         {

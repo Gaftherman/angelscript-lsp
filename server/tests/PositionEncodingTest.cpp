@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 
+#include "lsp/PositionCodec.h"
 #include "utils/PositionEncoding.h"
 #include "utils/Utils.h"
-#include "lsp/PositionCodec.h"
 
 using namespace angel_lsp::utils;
 
@@ -21,10 +21,10 @@ using namespace angel_lsp::utils;
 
 namespace
 {
-    // U+1F52B written out byte by byte so the fixture does not depend on the source file's
-    // own encoding surviving every toolchain.
-    constexpr const char *k_astral = "\xF0\x9F\x94\xAB";
-}
+// U+1F52B written out byte by byte so the fixture does not depend on the source file's
+// own encoding surviving every toolchain.
+constexpr const char* k_astral = "\xF0\x9F\x94\xAB";
+} // namespace
 
 // -------------------------------------------------------------------------------------
 // LineStartOffset / GetLine
@@ -86,7 +86,8 @@ TEST_CASE("LspCharToByteColumn - a two-byte character shifts every column after 
 
 TEST_CASE("LspCharToByteColumn - a three-byte character costs one UTF-16 unit")
 {
-    const std::string_view line = "\xE2\x82\xAC" "x";
+    const std::string_view line = "\xE2\x82\xAC"
+                                  "x";
     CHECK(LspCharToByteColumn(line, 1, PositionEncoding::Utf16) == 3);
 }
 
@@ -190,7 +191,7 @@ TEST_CASE("ApplyIncrementalChange - an insertion after an accented character lan
 
     // The editor reports the caret just past the accent as UTF-16 column 4; byte column 4
     // would be the *second* byte of the two-byte sequence.
-    ApplyIncrementalChange(buffer, 0, 4, 0, 4, "!", PositionEncoding::Utf16);
+    ApplyIncrementalChange(buffer, {0, 4, 0, 4}, "!", PositionEncoding::Utf16);
 
     CHECK(buffer == "// \xC3\xB3!\nint y = 2;\n");
 }
@@ -199,7 +200,7 @@ TEST_CASE("ApplyIncrementalChange - a replacement spanning an accented character
 {
     std::string buffer = "int \xC3\xB3 = 1;\n";
 
-    ApplyIncrementalChange(buffer, 0, 4, 0, 5, "x", PositionEncoding::Utf16);
+    ApplyIncrementalChange(buffer, {0, 4, 0, 5}, "x", PositionEncoding::Utf16);
 
     CHECK(buffer == "int x = 1;\n");
 }
@@ -210,7 +211,7 @@ TEST_CASE("ApplyIncrementalChange - a multi-line replacement across accented lin
 
     // End column 4 on line 1 is past the euro sign, so the replacement swallows both accented
     // characters; column 3 would stop at its first byte and leave it stranded.
-    ApplyIncrementalChange(buffer, 0, 3, 1, 4, "X", PositionEncoding::Utf16);
+    ApplyIncrementalChange(buffer, {0, 3, 1, 4}, "X", PositionEncoding::Utf16);
 
     CHECK(buffer == "// X\nkeep\n");
 }
@@ -219,7 +220,7 @@ TEST_CASE("ApplyIncrementalChange - UTF-8 clients are unaffected, byte columns p
 {
     std::string buffer = "// \xC3\xB3\nint y = 2;\n";
 
-    ApplyIncrementalChange(buffer, 0, 5, 0, 5, "!", PositionEncoding::Utf8);
+    ApplyIncrementalChange(buffer, {0, 5, 0, 5}, "!", PositionEncoding::Utf8);
 
     CHECK(buffer == "// \xC3\xB3!\nint y = 2;\n");
 }
@@ -282,7 +283,7 @@ TEST_CASE("codec::EncodeSemanticTokens - a token length spanning an accented cha
     // "s<o-acute>z" is one 4-byte, 3-unit identifier starting at byte column 0.
     const std::string text = "s\xC3\xB3z = 1;";
 
-    std::vector<lsp::uint> data = { 0, 0, 4, 0, 0 };
+    std::vector<lsp::uint> data = {0, 0, 4, 0, 0};
 
     angel_lsp::codec::EncodeSemanticTokens(text, PositionEncoding::Utf16, data);
 
@@ -309,7 +310,7 @@ TEST_CASE("codec::EncodeSemanticTokens - UTF-8 clients get the payload back unto
 {
     const std::string text = "ab \xC3\xB3 cd";
 
-    std::vector<lsp::uint> data = { 0, 0, 2, 0, 0, 0, 6, 2, 0, 0 };
+    std::vector<lsp::uint> data = {0, 0, 2, 0, 0, 0, 6, 2, 0, 0};
     const std::vector<lsp::uint> original = data;
 
     angel_lsp::codec::EncodeSemanticTokens(text, PositionEncoding::Utf8, data);
@@ -331,7 +332,6 @@ TEST_CASE("codec::Encode - WorkspaceEdit text edits with UTF-16 non-ASCII charac
     CHECK(range.start.character == 4);
     CHECK(range.end.character == 5);
 }
-
 
 // =====================================================================================
 // LineIndex is a cache in front of GetLine(), so the only thing that matters is that it
@@ -358,7 +358,7 @@ TEST_CASE("LineIndex - Agrees with GetLine on every line")
         "a\n\nb\n\nc",
     };
 
-    for (const auto &doc : documents)
+    for (const auto& doc : documents)
     {
         CAPTURE(doc);
         const auto index = angel_lsp::utils::LineIndex::Build(doc);
@@ -377,7 +377,7 @@ TEST_CASE("LineIndex - Counts lines the way the document is written")
 {
     CHECK(angel_lsp::utils::LineIndex::Build("").LineCount() == 1);
     CHECK(angel_lsp::utils::LineIndex::Build("a").LineCount() == 1);
-    CHECK(angel_lsp::utils::LineIndex::Build("a\n").LineCount() == 2);   // trailing empty line
+    CHECK(angel_lsp::utils::LineIndex::Build("a\n").LineCount() == 2); // trailing empty line
     CHECK(angel_lsp::utils::LineIndex::Build("a\nb").LineCount() == 2);
     CHECK(angel_lsp::utils::LineIndex::Build("a\nb\n").LineCount() == 3);
 }

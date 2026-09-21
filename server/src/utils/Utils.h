@@ -30,11 +30,25 @@ std::string UrlDecode(std::string_view in);
 size_t PositionToOffset(const std::string& text, uint32_t line, uint32_t character, PositionEncoding enc);
 
 /**
- * @brief Applies one LSP incremental content change to the document buffer in place.
- * @param enc The position encoding negotiated with the client - the range is expressed in it.
+ * @brief Represents a zero-indexed text range for an incremental LSP edit.
  */
-void ApplyIncrementalChange(std::string& buffer, uint32_t startLine, uint32_t startCharacter, uint32_t endLine,
-                            uint32_t endCharacter, const std::string& newText, PositionEncoding enc);
+struct TextChangeRange
+{
+    uint32_t startLine{0};
+    uint32_t startCharacter{0};
+    uint32_t endLine{0};
+    uint32_t endCharacter{0};
+};
+
+/**
+ * @brief Applies one LSP incremental content change to the document buffer in place.
+ * @param[in,out] buffer Document text buffer to mutate in place.
+ * @param[in] range Coordinate range of the replaced region.
+ * @param[in] newText Replacement text to insert.
+ * @param[in] enc The position encoding negotiated with the client - the range is expressed in it.
+ */
+void ApplyIncrementalChange(std::string& buffer, const TextChangeRange& range, const std::string& newText,
+                            PositionEncoding enc);
 /**
  * @brief Checks whether a file is a predefined stub describing the host application's API.
  *
