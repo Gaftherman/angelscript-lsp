@@ -140,9 +140,11 @@ Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& s
     InitHandles();
 
     m_analysisScheduler = std::make_unique<angel_lsp::AnalysisScheduler>(
-        [this](const std::string& uriStr, const std::string& text, angel_lsp::document::TreePtr tree, int version,
-               uint64_t generation, uint64_t configRevision)
-        { AnalyzeDocument(uriStr, text, *m_workerParser, std::move(tree), version, generation, configRevision); });
+        [this](angel_lsp::AnalyzeRequest req)
+        {
+            AnalyzeDocument(req.uriStr, req.text, *m_workerParser, std::move(req.tree), req.version, req.generation,
+                            req.configRevision);
+        });
 }
 
 Server::~Server()

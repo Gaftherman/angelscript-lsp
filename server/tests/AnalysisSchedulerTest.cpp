@@ -17,12 +17,11 @@ TEST_CASE("AnalysisScheduler - Debouncing collapses rapid edits")
     std::string lastAnalyzedText;
 
     AnalysisScheduler scheduler(
-        [&](const std::string& uri, const std::string& text, document::TreePtr /*tree*/, int /*version*/,
-            uint64_t /*generation*/, uint64_t /*configRevision*/)
+        [&](AnalyzeRequest req)
         {
             std::lock_guard<std::mutex> lock(stateMutex);
-            lastAnalyzedUri = uri;
-            lastAnalyzedText = text;
+            lastAnalyzedUri = req.uriStr;
+            lastAnalyzedText = req.text;
             ++analyzeCount;
         },
         std::chrono::milliseconds(100));
@@ -30,7 +29,7 @@ TEST_CASE("AnalysisScheduler - Debouncing collapses rapid edits")
     const std::string uri = "file:///test.as";
     for (int i = 0; i < 5; ++i)
     {
-        scheduler.Schedule(uri, "int x = " + std::to_string(i) + ";", false, document::MakeTreePtr(nullptr), i);
+        scheduler.Schedule({uri, "int x = " + std::to_string(i) + ";", false, document::MakeTreePtr(nullptr), i});
     }
 
     // Deterministic barrier blocks until debounce and background analysis complete
@@ -50,13 +49,10 @@ TEST_CASE("AnalysisScheduler - MarkSaved cancels pending work")
 {
     std::atomic<int> analyzeCount{0};
 
-    AnalysisScheduler scheduler([&](const std::string& /*uri*/, const std::string& /*text*/, document::TreePtr /*tree*/,
-                                    int /*version*/, uint64_t /*generation*/, uint64_t /*configRevision*/)
-                                { ++analyzeCount; },
-                                std::chrono::milliseconds(100));
+    AnalysisScheduler scheduler([&](AnalyzeRequest /*req*/) { ++analyzeCount; }, std::chrono::milliseconds(100));
 
     const std::string uri = "file:///saved.as";
-    scheduler.Schedule(uri, "void f() {}", false, document::MakeTreePtr(nullptr), 1);
+    scheduler.Schedule({uri, "void f() {}", false, document::MakeTreePtr(nullptr), 1});
     scheduler.MarkSaved(uri, 1);
 
     scheduler.DrainQueue();
@@ -87,20 +83,19 @@ TEST_CASE("AnalysisScheduler - Version-gated cancellation discards stale pending
     std::string analyzedText;
 
     AnalysisScheduler scheduler(
-        [&](const std::string& /*uri*/, const std::string& text, document::TreePtr /*tree*/, int version,
-            uint64_t /*generation*/, uint64_t /*configRevision*/)
+        [&](AnalyzeRequest req)
         {
             std::lock_guard<std::mutex> lock(stateMutex);
-            analyzedVersion.store(version);
-            analyzedText = text;
+            analyzedVersion.store(req.version);
+            analyzedText = req.text;
             ++analyzeCount;
         },
         std::chrono::milliseconds(100));
 
     const std::string uri = "file:///version_test.as";
 
-    scheduler.Schedule(uri, "version 10", false, document::MakeTreePtr(nullptr), 10);
-    scheduler.Schedule(uri, "version 5", false, document::MakeTreePtr(nullptr), 5);
+    scheduler.Schedule({uri, "version 10", false, document::MakeTreePtr(nullptr), 10});
+    scheduler.Schedule({uri, "version 5", false, document::MakeTreePtr(nullptr), 5});
 
     scheduler.DrainQueue();
 
@@ -120,17 +115,16 @@ TEST_CASE("AnalysisScheduler - Identical text with higher version updates pendin
     std::atomic<int> analyzedVersion{-1};
 
     AnalysisScheduler scheduler(
-        [&](const std::string& /*uri*/, const std::string& /*text*/, document::TreePtr /*tree*/, int version,
-            uint64_t /*generation*/, uint64_t /*configRevision*/)
+        [&](AnalyzeRequest req)
         {
-            analyzedVersion.store(version);
+            analyzedVersion.store(req.version);
             ++analyzeCount;
         },
         std::chrono::milliseconds(100));
 
     const std::string uri = "file:///same_text.as";
-    scheduler.Schedule(uri, "const int x = 42;", false, document::MakeTreePtr(nullptr), 1);
-    scheduler.Schedule(uri, "const int x = 42;", false, document::MakeTreePtr(nullptr), 2);
+    scheduler.Schedule({uri, "const int x = 42;", false, document::MakeTreePtr(nullptr), 1});
+    scheduler.Schedule({uri, "const int x = 42;", false, document::MakeTreePtr(nullptr), 2});
 
     scheduler.DrainQueue();
 
@@ -144,13 +138,10 @@ TEST_CASE("AnalysisScheduler - Cancel removes pending and cancels active analysi
 {
     std::atomic<int> analyzeCount{0};
 
-    AnalysisScheduler scheduler([&](const std::string& /*uri*/, const std::string& /*text*/, document::TreePtr /*tree*/,
-                                    int /*version*/, uint64_t /*generation*/, uint64_t /*configRevision*/)
-                                { ++analyzeCount; },
-                                std::chrono::milliseconds(100));
+    AnalysisScheduler scheduler([&](AnalyzeRequest /*req*/) { ++analyzeCount; }, std::chrono::milliseconds(100));
 
     const std::string uri = "file:///cancelled.as";
-    scheduler.Schedule(uri, "int a = 1;", false, document::MakeTreePtr(nullptr), 1);
+    scheduler.Schedule({uri, "int a = 1;", false, document::MakeTreePtr(nullptr), 1});
     scheduler.Cancel(uri);
 
     scheduler.DrainQueue();
@@ -164,15 +155,12 @@ TEST_CASE("AnalysisScheduler - Cancel removes pending and cancels active analysi
 TEST_CASE("AnalysisScheduler - DrainQueue provides deterministic barrier across multiple tasks")
 {
     std::atomic<int> analyzeCount{0};
-    AnalysisScheduler scheduler([&](const std::string& /*uri*/, const std::string& /*text*/, document::TreePtr /*tree*/,
-                                    int /*version*/, uint64_t /*generation*/, uint64_t /*configRevision*/)
-                                { ++analyzeCount; },
-                                std::chrono::milliseconds(50));
+    AnalysisScheduler scheduler([&](AnalyzeRequest /*req*/) { ++analyzeCount; }, std::chrono::milliseconds(50));
 
     for (int i = 0; i < 5; ++i)
     {
-        scheduler.Schedule("file:///task_" + std::to_string(i) + ".as", "content", true, document::MakeTreePtr(nullptr),
-                           i);
+        scheduler.Schedule(
+            {"file:///task_" + std::to_string(i) + ".as", "content", true, document::MakeTreePtr(nullptr), i});
     }
 
     scheduler.DrainQueue();

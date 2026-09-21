@@ -2,10 +2,6 @@
 # Functions listed here are exempt from AST complexity limits (CCN <= 15, NLOC <= 70, params <= 4).
 # When refactoring any of these functions, remove it from this list to enforce strict limits permanently.
 
-angel_lsp::AnalysisScheduler::RunLoop
-angel_lsp::AnalysisScheduler::Schedule
-angel_lsp::AnalysisScheduler::ScheduleImmediate
-angel_lsp::PendingAnalysisEntry::PendingAnalysisEntry
 angel_lsp::Server::AnalyzeDocument
 angel_lsp::Server::BuildModuleIndex
 angel_lsp::Server::CollectScopesAndAnalyze

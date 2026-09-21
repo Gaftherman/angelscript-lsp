@@ -207,8 +207,8 @@ void Server::ScheduleAnalysis(const std::string& uriStr, const std::string& text
 
     if (m_analysisScheduler)
     {
-        m_analysisScheduler->Schedule(uriStr, analysisText, force, std::move(tree), version, generation,
-                                      configRevision);
+        m_analysisScheduler->Schedule(
+            {uriStr, analysisText, force, std::move(tree), version, generation, configRevision});
     }
 }
 
@@ -230,8 +230,8 @@ void Server::ScheduleAnalysisImmediate(const std::string& uriStr, const std::str
 
     if (m_analysisScheduler)
     {
-        m_analysisScheduler->ScheduleImmediate(uriStr, analysisText, force, std::move(tree), version, generation,
-                                               configRevision);
+        m_analysisScheduler->ScheduleImmediate(
+            {uriStr, analysisText, force, std::move(tree), version, generation, configRevision});
     }
 }
 

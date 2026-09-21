@@ -52,8 +52,66 @@ void AnalysisScheduler::DrainQueue()
         { return m_stop.load() || (m_pending.empty() && m_inFlight.empty() && m_currentlyAnalyzingUri.empty()); });
 }
 
-void AnalysisScheduler::Schedule(const std::string& uriStr, std::string text, bool force, document::TreePtr tree,
-                                 int version, uint64_t generation, uint64_t configRevision)
+void AnalysisScheduler::UpdateActiveTasksLocked()
+{
+    const size_t remaining = m_pending.size() + m_inFlight.size() + (m_currentlyAnalyzingUri.empty() ? 0 : 1);
+    m_activeTasks.store(remaining);
+    if (remaining == 0)
+    {
+        m_drainCv.notify_all();
+    }
+}
+
+bool AnalysisScheduler::IsRedundantWithActiveOrInFlightLocked(const ScheduleRequest& request) const
+{
+    if (request.force)
+    {
+        return false;
+    }
+    if (m_currentlyAnalyzingUri == request.uriStr && m_currentlyAnalyzingVersion >= request.version &&
+        request.version >= 0 && m_currentlyAnalyzingText == request.text)
+    {
+        return true;
+    }
+
+    const auto running = m_inFlight.find(request.uriStr);
+    return (running != m_inFlight.end() && running->second.version >= request.version && request.version >= 0 &&
+            running->second.text == request.text);
+}
+
+bool AnalysisScheduler::UpdatePendingOrDiscardLocked(ScheduleRequest& request)
+{
+    const auto it = m_pending.find(request.uriStr);
+    if (it == m_pending.end())
+    {
+        m_pending.emplace(request.uriStr, PendingAnalysisEntry{std::move(request.text), std::move(request.tree),
+                                                               AnalysisMetadata{request.version, request.generation,
+                                                                                request.configRevision}});
+        return true;
+    }
+
+    if (!request.force && it->second.text == request.text)
+    {
+        if (request.version > it->second.version)
+        {
+            it->second.version = request.version;
+            it->second.generation = request.generation;
+            it->second.configRevision = request.configRevision;
+        }
+        return false;
+    }
+
+    if (!request.force && it->second.version > request.version && request.version >= 0)
+    {
+        return false;
+    }
+
+    it->second = PendingAnalysisEntry{std::move(request.text), std::move(request.tree),
+                                      AnalysisMetadata{request.version, request.generation, request.configRevision}};
+    return true;
+}
+
+void AnalysisScheduler::Schedule(ScheduleRequest request)
 {
     if (m_stop.load())
     {
@@ -62,64 +120,43 @@ void AnalysisScheduler::Schedule(const std::string& uriStr, std::string text, bo
 
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_savedUris.erase(uriStr);
-        m_savedVersions.erase(uriStr);
-        m_cancelledUris.erase(uriStr);
+        m_savedUris.erase(request.uriStr);
+        m_savedVersions.erase(request.uriStr);
+        m_cancelledUris.erase(request.uriStr);
 
-        if (!force && m_currentlyAnalyzingUri == uriStr && m_currentlyAnalyzingVersion >= version && version >= 0 &&
-            m_currentlyAnalyzingText == text)
+        if (IsRedundantWithActiveOrInFlightLocked(request))
         {
             return;
         }
 
-        if (const auto running = m_inFlight.find(uriStr); !force && running != m_inFlight.end() &&
-                                                          running->second.version >= version && version >= 0 &&
-                                                          running->second.text == text)
+        if (!UpdatePendingOrDiscardLocked(request))
         {
             return;
-        }
-
-        const auto it = m_pending.find(uriStr);
-        if (it != m_pending.end())
-        {
-            if (!force && it->second.text == text)
-            {
-                if (version > it->second.version)
-                {
-                    it->second.version = version;
-                    it->second.generation = generation;
-                    it->second.configRevision = configRevision;
-                }
-                return;
-            }
-
-            if (!force && it->second.version > version && version >= 0)
-            {
-                return;
-            }
-
-            it->second = PendingAnalysisEntry{std::move(text), std::move(tree), version, generation, configRevision};
-        }
-        else
-        {
-            m_pending.emplace(
-                uriStr, PendingAnalysisEntry{std::move(text), std::move(tree), version, generation, configRevision});
         }
 
         ++m_revision;
-        m_activeTasks.store(m_pending.size() + m_inFlight.size() + (m_currentlyAnalyzingUri.empty() ? 0 : 1));
+        UpdateActiveTasksLocked();
     }
 
     m_cv.notify_one();
 }
 
-void AnalysisScheduler::ScheduleImmediate(const std::string& uriStr, std::string text, bool force,
-                                          document::TreePtr tree, int version, uint64_t generation,
-                                          uint64_t configRevision)
+void AnalysisScheduler::Schedule(const std::string& uriStr, std::string text, bool force, document::TreePtr tree)
 {
-    Schedule(uriStr, std::move(text), force, std::move(tree), version, generation, configRevision);
+    Schedule(ScheduleRequest{uriStr, std::move(text), force, std::move(tree), -1, 0, 0});
+}
+
+void AnalysisScheduler::ScheduleImmediate(ScheduleRequest request)
+{
+    Schedule(std::move(request));
     m_immediateRequested.store(true);
     m_cv.notify_one();
+}
+
+void AnalysisScheduler::ScheduleImmediate(const std::string& uriStr, std::string text, bool force,
+                                          document::TreePtr tree)
+{
+    ScheduleImmediate(ScheduleRequest{uriStr, std::move(text), force, std::move(tree), -1, 0, 0});
 }
 
 void AnalysisScheduler::MarkSaved(const std::string& uriStr, int version)
@@ -136,12 +173,7 @@ void AnalysisScheduler::MarkSaved(const std::string& uriStr, int version)
     {
         m_cancelCurrentAnalysis = true;
     }
-    const size_t remaining = m_pending.size() + m_inFlight.size() + (m_currentlyAnalyzingUri.empty() ? 0 : 1);
-    m_activeTasks.store(remaining);
-    if (remaining == 0)
-    {
-        m_drainCv.notify_all();
-    }
+    UpdateActiveTasksLocked();
 }
 
 void AnalysisScheduler::Cancel(const std::string& uriStr)
@@ -157,23 +189,13 @@ void AnalysisScheduler::Cancel(const std::string& uriStr)
         {
             m_cancelCurrentAnalysis = true;
         }
-        const size_t remaining = m_pending.size() + m_inFlight.size() + (m_currentlyAnalyzingUri.empty() ? 0 : 1);
-        m_activeTasks.store(remaining);
-        if (remaining == 0)
-        {
-            m_drainCv.notify_all();
-        }
+        UpdateActiveTasksLocked();
     }
-    ClearPeerDebounce(uriStr);
 }
 
 bool AnalysisScheduler::IsCancelled(const std::string& uriStr) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_currentlyAnalyzingUri == uriStr && m_cancelCurrentAnalysis.load())
-    {
-        return true;
-    }
     return m_cancelledUris.contains(uriStr);
 }
 
@@ -198,6 +220,115 @@ void AnalysisScheduler::ClearPeerDebounce(const std::string& uriStr)
     m_peerTimestamps.erase(uriStr);
 }
 
+void AnalysisScheduler::WaitForDebounce(std::unique_lock<std::mutex>& lock)
+{
+    for (;;)
+    {
+        if (m_immediateRequested.load())
+        {
+            m_immediateRequested.store(false);
+            break;
+        }
+
+        const uint64_t seen = m_revision;
+        const bool interrupted =
+            m_cv.wait_for(lock, m_debounceWindow, [this, seen]()
+                          { return m_stop.load() || m_revision != seen || m_immediateRequested.load(); });
+
+        if (m_stop.load())
+        {
+            return;
+        }
+
+        if (m_immediateRequested.load())
+        {
+            m_immediateRequested.store(false);
+            break;
+        }
+
+        if (!interrupted)
+        {
+            break;
+        }
+    }
+}
+
+std::optional<std::pair<std::string, PendingAnalysisEntry>> AnalysisScheduler::PopNextValidInFlightEntry()
+{
+    std::lock_guard<std::mutex> workLock(m_mutex);
+    while (!m_stop.load() && !m_inFlight.empty())
+    {
+        auto it = m_inFlight.begin();
+        std::string currentUri = it->first;
+        PendingAnalysisEntry currentEntry = std::move(it->second);
+        m_inFlight.erase(it);
+
+        if (m_cancelledUris.contains(currentUri) || m_savedUris.erase(currentUri) > 0)
+        {
+            UpdateActiveTasksLocked();
+            continue;
+        }
+        if (const auto itSaved = m_savedVersions.find(currentUri);
+            itSaved != m_savedVersions.end() && itSaved->second >= currentEntry.version && currentEntry.version >= 0)
+        {
+            UpdateActiveTasksLocked();
+            continue;
+        }
+        if (const auto itPending = m_pending.find(currentUri); itPending != m_pending.end() &&
+                                                               itPending->second.version > currentEntry.version &&
+                                                               currentEntry.version >= 0)
+        {
+            UpdateActiveTasksLocked();
+            continue;
+        }
+
+        m_currentlyAnalyzingUri = currentUri;
+        m_currentlyAnalyzingText = currentEntry.text;
+        m_currentlyAnalyzingVersion = currentEntry.version;
+        m_currentlyAnalyzingGeneration = currentEntry.generation;
+        m_cancelCurrentAnalysis = false;
+        return std::make_pair(std::move(currentUri), std::move(currentEntry));
+    }
+    return std::nullopt;
+}
+
+void AnalysisScheduler::FinishActiveAnalysis()
+{
+    std::lock_guard<std::mutex> workLock(m_mutex);
+    m_currentlyAnalyzingUri.clear();
+    m_currentlyAnalyzingText.clear();
+    m_currentlyAnalyzingVersion = -1;
+    m_currentlyAnalyzingGeneration = 0;
+    m_cancelCurrentAnalysis = false;
+    UpdateActiveTasksLocked();
+}
+
+void AnalysisScheduler::DrainInFlightWork()
+{
+    for (;;)
+    {
+        if (m_stop.load())
+        {
+            break;
+        }
+
+        auto entryOpt = PopNextValidInFlightEntry();
+        if (!entryOpt)
+        {
+            break;
+        }
+
+        auto& [uri, entry] = *entryOpt;
+        if (m_callback && !m_cancelCurrentAnalysis.load())
+        {
+            m_callback(AnalyzeRequest{uri, std::move(entry.text), std::move(entry.tree), entry.version,
+                                      entry.generation, entry.configRevision});
+        }
+
+        FinishActiveAnalysis();
+    }
+}
+
 void AnalysisScheduler::RunLoop()
 {
     for (;;)
@@ -210,121 +341,17 @@ void AnalysisScheduler::RunLoop()
             return;
         }
 
-        for (;;)
+        WaitForDebounce(lock);
+
+        if (m_stop.load())
         {
-            if (m_immediateRequested.load())
-            {
-                m_immediateRequested.store(false);
-                break;
-            }
-
-            const uint64_t seen = m_revision;
-            const bool interrupted =
-                m_cv.wait_for(lock, m_debounceWindow, [this, seen]()
-                              { return m_stop.load() || m_revision != seen || m_immediateRequested.load(); });
-
-            if (m_stop.load())
-            {
-                return;
-            }
-
-            if (m_immediateRequested.load())
-            {
-                m_immediateRequested.store(false);
-                break;
-            }
-
-            if (!interrupted)
-            {
-                break;
-            }
+            return;
         }
 
         m_inFlight.swap(m_pending);
         lock.unlock();
 
-        for (;;)
-        {
-            if (m_stop.load())
-            {
-                break;
-            }
-            std::string currentUri;
-            PendingAnalysisEntry currentEntry;
-            {
-                std::lock_guard<std::mutex> workLock(m_mutex);
-                if (m_stop.load() || m_inFlight.empty())
-                {
-                    break;
-                }
-                auto it = m_inFlight.begin();
-                currentUri = it->first;
-                currentEntry = std::move(it->second);
-                m_inFlight.erase(it);
-
-                if (m_cancelledUris.contains(currentUri) || m_savedUris.erase(currentUri) > 0)
-                {
-                    const size_t remaining = m_pending.size() + m_inFlight.size();
-                    m_activeTasks.store(remaining);
-                    if (remaining == 0)
-                    {
-                        m_drainCv.notify_all();
-                    }
-                    continue;
-                }
-                if (const auto itSaved = m_savedVersions.find(currentUri); itSaved != m_savedVersions.end() &&
-                                                                           itSaved->second >= currentEntry.version &&
-                                                                           currentEntry.version >= 0)
-                {
-                    const size_t remaining = m_pending.size() + m_inFlight.size();
-                    m_activeTasks.store(remaining);
-                    if (remaining == 0)
-                    {
-                        m_drainCv.notify_all();
-                    }
-                    continue;
-                }
-                if (const auto itPending = m_pending.find(currentUri);
-                    itPending != m_pending.end() && itPending->second.version > currentEntry.version &&
-                    currentEntry.version >= 0)
-                {
-                    // Superseded by newer edit while queued
-                    const size_t remaining = m_pending.size() + m_inFlight.size();
-                    m_activeTasks.store(remaining);
-                    if (remaining == 0)
-                    {
-                        m_drainCv.notify_all();
-                    }
-                    continue;
-                }
-                m_currentlyAnalyzingUri = currentUri;
-                m_currentlyAnalyzingText = currentEntry.text;
-                m_currentlyAnalyzingVersion = currentEntry.version;
-                m_currentlyAnalyzingGeneration = currentEntry.generation;
-                m_cancelCurrentAnalysis = false;
-            }
-
-            if (m_callback && !m_cancelCurrentAnalysis.load())
-            {
-                m_callback(currentUri, currentEntry.text, std::move(currentEntry.tree), currentEntry.version,
-                           currentEntry.generation, currentEntry.configRevision);
-            }
-
-            {
-                std::lock_guard<std::mutex> workLock(m_mutex);
-                m_currentlyAnalyzingUri.clear();
-                m_currentlyAnalyzingText.clear();
-                m_currentlyAnalyzingVersion = -1;
-                m_currentlyAnalyzingGeneration = 0;
-                m_cancelCurrentAnalysis = false;
-                const size_t remaining = m_pending.size() + m_inFlight.size();
-                m_activeTasks.store(remaining);
-                if (remaining == 0)
-                {
-                    m_drainCv.notify_all();
-                }
-            }
-        }
+        DrainInFlightWork();
     }
 }
 } // namespace angel_lsp
