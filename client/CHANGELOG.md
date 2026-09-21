@@ -4,6 +4,22 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.9-exp.1] - 2026-09-21
+
+### Architectural Refactoring & Technical Debt Elimination
+
+- Standard Operating Procedure (SOP) & Layer Matrix Enforcement:
+  - Enforced strict 4-layer include matrix architecture across Core, Analysis, Features, and Server/LSP.
+  - Reduced `whitelizard.txt` technical debt whitelist to 0 entries, achieving complete AST compliance repository-wide.
+  - Enforced strict cyclomatic complexity (CCN <= 15) and length limits (NLOC <= 70) on all functions.
+  - Enforced parameter ceiling (<= 4) by bundling multi-argument signatures into dedicated immutable request structs.
+  - Audited and eliminated all dead, unnamed, and commented-out formal parameters (/we4100 clean).
+- Subsystem Decomposition:
+  - Decomposed analysis pipeline (`ScheduleAnalysis`, `AnalyzeDocument`, `CommitAnalysisResults`, `CollectScopesAndAnalyze`) into isolated stage handlers.
+  - Decomposed diagnostics pipeline (`PublishDiagnostics`, stale check, snapshot caching, notification delivery).
+  - Decomposed module indexation, closure discovery, and predefined builtin engine profile loaders.
+  - Decomposed workspace scanner, document synchronization, and mixin synthesis passes into modular helpers.
+
 ## [0.7.8-exp.3] - 2026-09-20
 
 ### Fixes & Cross-Platform Stability
