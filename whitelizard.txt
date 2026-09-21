@@ -144,7 +144,6 @@ angel_lsp::features::NeedsSpaceBetween
 angel_lsp::features::ParseAccessChain
 angel_lsp::features::PrepareRename
 angel_lsp::features::PrepareTypeHierarchy
-angel_lsp::features::ProcessNode
 angel_lsp::features::RefineDeclarationTokenType
 angel_lsp::features::Rename
 angel_lsp::features::ResolveCallOverload
