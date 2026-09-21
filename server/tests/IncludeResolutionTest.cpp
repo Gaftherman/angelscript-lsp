@@ -14,56 +14,56 @@ using namespace angel_lsp::utils;
 
 namespace
 {
-    /**
-     * @brief RAII helper to create and automatically clean up temporary directories for disk-based tests.
-     */
-    struct TempDirGuard
+/**
+ * @brief RAII helper to create and automatically clean up temporary directories for disk-based tests.
+ */
+struct TempDirGuard
+{
+    std::filesystem::path dir;
+
+    explicit TempDirGuard(const std::string& prefix)
     {
-        std::filesystem::path dir;
+        auto base = std::filesystem::temp_directory_path();
+        auto uniqueSuffix = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+        dir = base / (prefix + "_" + uniqueSuffix);
+        std::filesystem::create_directories(dir);
+    }
 
-        explicit TempDirGuard(const std::string &prefix)
+    ~TempDirGuard()
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    }
+
+    void WriteFile(const std::string& relativePath, const std::string& content)
+    {
+        std::filesystem::path fullPath = dir / relativePath;
+        if (fullPath.has_parent_path())
         {
-            auto base = std::filesystem::temp_directory_path();
-            auto uniqueSuffix = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-            dir = base / (prefix + "_" + uniqueSuffix);
-            std::filesystem::create_directories(dir);
+            std::filesystem::create_directories(fullPath.parent_path());
         }
+        std::ofstream out(fullPath, std::ios::binary);
+        out << content;
+        out.close();
+    }
 
-        ~TempDirGuard()
-        {
-            std::error_code ec;
-            std::filesystem::remove_all(dir, ec);
-        }
-
-        void WriteFile(const std::string &relativePath, const std::string &content)
-        {
-            std::filesystem::path fullPath = dir / relativePath;
-            if (fullPath.has_parent_path())
-            {
-                std::filesystem::create_directories(fullPath.parent_path());
-            }
-            std::ofstream out(fullPath, std::ios::binary);
-            out << content;
-            out.close();
-        }
-
-        std::string PathString(const std::string &relativePath = "") const
-        {
-            std::filesystem::path p = relativePath.empty() ? dir : (dir / relativePath);
-            std::error_code ec;
-            std::filesystem::path canon = std::filesystem::weakly_canonical(p, ec);
-            std::string s = canon.string();
+    std::string PathString(const std::string& relativePath = "") const
+    {
+        std::filesystem::path p = relativePath.empty() ? dir : (dir / relativePath);
+        std::error_code ec;
+        std::filesystem::path canon = std::filesystem::weakly_canonical(p, ec);
+        std::string s = canon.string();
 #if defined(_WIN32)
-            if (s.rfind("\\\\?\\", 0) == 0)
-            {
-                s = s.substr(4);
-            }
-#endif
-            std::replace(s.begin(), s.end(), '\\', '/');
-            return s;
+        if (s.rfind("\\\\?\\", 0) == 0)
+        {
+            s = s.substr(4);
         }
-    };
-}
+#endif
+        std::replace(s.begin(), s.end(), '\\', '/');
+        return s;
+    }
+};
+} // namespace
 
 // =====================================================================================
 // 1. Directive Extraction Tests
@@ -108,10 +108,9 @@ TEST_CASE("IncludeResolver - Extract include with whitespace variations")
 
 TEST_CASE("IncludeResolver - Ignore includes in single-line comments")
 {
-    std::string source =
-        "// #include \"ignored1.as\"\n"
-        "#include \"valid.as\"\n"
-        "   //   #include <ignored2.as>\n";
+    std::string source = "// #include \"ignored1.as\"\n"
+                         "#include \"valid.as\"\n"
+                         "   //   #include <ignored2.as>\n";
 
     auto includes = IncludeResolver::ExtractIncludes(source);
 
@@ -122,13 +121,12 @@ TEST_CASE("IncludeResolver - Ignore includes in single-line comments")
 
 TEST_CASE("IncludeResolver - Ignore includes in multi-line block comments")
 {
-    std::string source =
-        "/*\n"
-        " #include \"ignored_in_block1.as\"\n"
-        "*/\n"
-        "#include \"valid.as\"\n"
-        "/* single line block */ #include \"after_block.as\"\n"
-        "/* #include \"ignored_in_block2.as\" */\n";
+    std::string source = "/*\n"
+                         " #include \"ignored_in_block1.as\"\n"
+                         "*/\n"
+                         "#include \"valid.as\"\n"
+                         "/* single line block */ #include \"after_block.as\"\n"
+                         "/* #include \"ignored_in_block2.as\" */\n";
 
     auto includes = IncludeResolver::ExtractIncludes(source);
 
@@ -141,12 +139,11 @@ TEST_CASE("IncludeResolver - Ignore includes in multi-line block comments")
 
 TEST_CASE("IncludeResolver - Ignore includes in string literals")
 {
-    std::string source =
-        "string s1 = \"#include \\\"ignored1.as\\\"\";\n"
-        "#include \"real.as\"\n"
-        "string s2 = @\"#include \"\"ignored2.as\"\"\";\n"
-        "string s3 = \"\"\" #include \"ignored3.as\" \"\"\";\n"
-        "char c = '#';\n";
+    std::string source = "string s1 = \"#include \\\"ignored1.as\\\"\";\n"
+                         "#include \"real.as\"\n"
+                         "string s2 = @\"#include \"\"ignored2.as\"\"\";\n"
+                         "string s3 = \"\"\" #include \"ignored3.as\" \"\"\";\n"
+                         "char c = '#';\n";
 
     auto includes = IncludeResolver::ExtractIncludes(source);
 
@@ -158,13 +155,12 @@ TEST_CASE("IncludeResolver - Ignore includes in string literals")
 
 TEST_CASE("IncludeResolver - Ignore non-include preprocessor directives")
 {
-    std::string source =
-        "#define FOO 1\n"
-        "#ifdef FOO\n"
-        "#pragma once\n"
-        "#include_next <header.as>\n"
-        "#include \"expected.as\"\n"
-        "#endif\n";
+    std::string source = "#define FOO 1\n"
+                         "#ifdef FOO\n"
+                         "#pragma once\n"
+                         "#include_next <header.as>\n"
+                         "#include \"expected.as\"\n"
+                         "#endif\n";
 
     auto includes = IncludeResolver::ExtractIncludes(source);
 
@@ -175,16 +171,15 @@ TEST_CASE("IncludeResolver - Ignore non-include preprocessor directives")
 
 TEST_CASE("IncludeResolver - Multi-line file with multiple includes and accurate line numbers")
 {
-    std::string source =
-        "// Header comment\n"
-        "#include \"common/Defs.as\"\n"
-        "\n"
-        "void foo() {}\n"
-        "\n"
-        "#include <engine/Math.as>\n"
-        "/* block comment */\n"
-        "\n"
-        "#include \"local/Helper.as\"\n";
+    std::string source = "// Header comment\n"
+                         "#include \"common/Defs.as\"\n"
+                         "\n"
+                         "void foo() {}\n"
+                         "\n"
+                         "#include <engine/Math.as>\n"
+                         "/* block comment */\n"
+                         "\n"
+                         "#include \"local/Helper.as\"\n";
 
     auto includes = IncludeResolver::ExtractIncludes(source);
 
@@ -239,7 +234,7 @@ TEST_CASE("IncludeResolver - Fallback to search directories when not in current 
     temp.WriteFile("shared/engine/audio.as", "// audio header");
 
     std::string currentFile = temp.PathString("app/main.as");
-    std::vector<std::string> searchDirs = { temp.PathString("shared") };
+    std::vector<std::string> searchDirs = {temp.PathString("shared")};
 
     std::string resolved = IncludeResolver::ResolveIncludePath("engine/audio.as", currentFile, searchDirs);
 
@@ -255,19 +250,13 @@ TEST_CASE("IncludeResolver - Search directory precedence")
     temp.WriteFile("include_dir2/config.as", "// config 2");
 
     std::string currentFile = temp.PathString("src/main.as");
-    std::vector<std::string> searchDirs = {
-        temp.PathString("include_dir1"),
-        temp.PathString("include_dir2")
-    };
+    std::vector<std::string> searchDirs = {temp.PathString("include_dir1"), temp.PathString("include_dir2")};
 
     std::string resolved = IncludeResolver::ResolveIncludePath("config.as", currentFile, searchDirs);
     CHECK(resolved == temp.PathString("include_dir1/config.as"));
 
     // Reverse order
-    std::vector<std::string> reversedDirs = {
-        temp.PathString("include_dir2"),
-        temp.PathString("include_dir1")
-    };
+    std::vector<std::string> reversedDirs = {temp.PathString("include_dir2"), temp.PathString("include_dir1")};
     std::string resolvedReversed = IncludeResolver::ResolveIncludePath("config.as", currentFile, reversedDirs);
     CHECK(resolvedReversed == temp.PathString("include_dir2/config.as"));
 }
@@ -278,7 +267,7 @@ TEST_CASE("IncludeResolver - Nonexistent include returns empty string")
     temp.WriteFile("src/main.as", "#include \"missing.as\"");
 
     std::string currentFile = temp.PathString("src/main.as");
-    std::vector<std::string> searchDirs = { temp.PathString("shared") };
+    std::vector<std::string> searchDirs = {temp.PathString("shared")};
 
     std::string resolved = IncludeResolver::ResolveIncludePath("missing.as", currentFile, searchDirs);
     CHECK(resolved.empty());
@@ -372,12 +361,9 @@ TEST_CASE("IncludeResolver - Custom fileReader callback in ResolveAllIncludes")
     std::string dep2Path = temp.PathString("dep2.as");
 
     std::unordered_map<std::string, std::string> virtualFiles = {
-        { rootPath, "#include \"dep1.as\"\n#include \"dep2.as\"" },
-        { dep1Path, "// dep1" },
-        { dep2Path, "// dep2" }
-    };
+        {rootPath, "#include \"dep1.as\"\n#include \"dep2.as\""}, {dep1Path, "// dep1"}, {dep2Path, "// dep2"}};
 
-    auto mockReader = [&](const std::string &path) -> std::string
+    auto mockReader = [&](const std::string& path) -> std::string
     {
         auto it = virtualFiles.find(path);
         if (it != virtualFiles.end())
@@ -416,7 +402,7 @@ TEST_CASE("IncludeResolver - Confines resolution to the allowed roots")
 
     const std::string workspaceRoot = ws.PathString("workspace");
     const std::string currentFile = ws.PathString("workspace/main.as");
-    const std::vector<std::string> roots{ workspaceRoot };
+    const std::vector<std::string> roots{workspaceRoot};
 
     SUBCASE("A file inside the root still resolves")
     {
@@ -440,11 +426,11 @@ TEST_CASE("IncludeResolver - Confines resolution to the allowed roots")
     SUBCASE("A search directory is a root in its own right")
     {
         const std::string searchDir = ws.PathString("secrets");
-        const std::vector<std::string> withSearchDir{ workspaceRoot, searchDir };
+        const std::vector<std::string> withSearchDir{workspaceRoot, searchDir};
 
         // Reachable once the operator has explicitly configured that directory, and only then.
-        CHECK_FALSE(IncludeResolver::ResolveIncludePath("private.as", currentFile, { searchDir }, withSearchDir).empty());
-        CHECK(IncludeResolver::ResolveIncludePath("private.as", currentFile, { searchDir }, roots).empty());
+        CHECK_FALSE(IncludeResolver::ResolveIncludePath("private.as", currentFile, {searchDir}, withSearchDir).empty());
+        CHECK(IncludeResolver::ResolveIncludePath("private.as", currentFile, {searchDir}, roots).empty());
     }
 
     SUBCASE("A sibling whose name merely starts with the root is not inside it")
@@ -466,7 +452,7 @@ TEST_CASE("IncludeResolver - Transitive resolution is confined too")
     ws.WriteFile("workspace/mid.as", "#include \"../secrets/private.as\"\n");
     ws.WriteFile("secrets/private.as", "void secret() {}\n");
 
-    const std::vector<std::string> roots{ ws.PathString("workspace") };
+    const std::vector<std::string> roots{ws.PathString("workspace")};
 
     // Without roots the walk escapes at the second hop; with them it stops at mid.as.
     const auto unconfined = IncludeResolver::ResolveAllIncludes(ws.PathString("workspace/root.as"), {}, nullptr);
@@ -483,7 +469,8 @@ TEST_CASE("IncludeResolver - Transitive resolution is confined too")
 
 TEST_CASE("IncludeResolver - Resolves literal extensionless file when no implicit extension is configured")
 {
-    // Default behavior matches vanilla AngelScript: the path between quotes is opened verbatim, finding a literal extensionless file.
+    // Default behavior matches vanilla AngelScript: the path between quotes is opened verbatim, finding a literal
+    // extensionless file.
     TempDirGuard temp("inc_implicit_none_exact");
     temp.WriteFile("src/main.as", "#include \"helper\"\n");
     temp.WriteFile("src/helper", "// literal helper\n");
@@ -495,9 +482,11 @@ TEST_CASE("IncludeResolver - Resolves literal extensionless file when no implici
     CHECK(resolved == temp.PathString("src/helper"));
 }
 
-TEST_CASE("IncludeResolver - Extensionless include finds nothing when only .as exists and implicit extension is omitted")
+TEST_CASE(
+    "IncludeResolver - Extensionless include finds nothing when only .as exists and implicit extension is omitted")
 {
-    // Compiler-exact control: CScriptBuilder never guesses extensions, so an unadorned include must fail when only helper.as exists unless the caller explicitly opted into implicit extension.
+    // Compiler-exact control: CScriptBuilder never guesses extensions, so an unadorned include must fail when only
+    // helper.as exists unless the caller explicitly opted into implicit extension.
     TempDirGuard temp("inc_implicit_none_missing");
     temp.WriteFile("src/main.as", "#include \"helper\"\n");
     temp.WriteFile("src/helper.as", "// helper script\n");
@@ -510,42 +499,59 @@ TEST_CASE("IncludeResolver - Extensionless include finds nothing when only .as e
 
 TEST_CASE("IncludeResolver - Resolves extensionless include to .as file when implicit extension is set")
 {
-    // Host environments like Sven Co-op mandate omitting the extension; configuring an implicit extension retries name + suffix when the exact name is absent.
+    // Host environments like Sven Co-op mandate omitting the extension; configuring an implicit extension retries name
+    // + suffix when the exact name is absent.
     TempDirGuard temp("inc_implicit_ext_found");
     temp.WriteFile("src/main.as", "#include \"helper\"\n");
     temp.WriteFile("src/helper.as", "// helper script\n");
 
     const std::string currentFile = temp.PathString("src/main.as");
-    const std::string resolved = IncludeResolver::ResolveIncludePath("helper", currentFile, {}, {}, ".as");
+    const std::string resolved = IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+        .includePath = "helper",
+        .currentFilePath = currentFile,
+        .implicitExtension = ".as",
+    });
 
     CHECK_FALSE(resolved.empty());
     CHECK(resolved == temp.PathString("src/helper.as"));
 }
 
-TEST_CASE("IncludeResolver - Include already containing extension resolves on exact pass without appending duplicate extension")
+TEST_CASE("IncludeResolver - Include already containing extension resolves on exact pass without appending duplicate "
+          "extension")
 {
-    // The exact name is tried first in each directory, so an include already bearing .as matches immediately and never constructs helper.as.as.
+    // The exact name is tried first in each directory, so an include already bearing .as matches immediately and never
+    // constructs helper.as.as.
     TempDirGuard temp("inc_implicit_ext_already_has_ext");
     temp.WriteFile("src/main.as", "#include \"helper.as\"\n");
     temp.WriteFile("src/helper.as", "// helper script\n");
 
     const std::string currentFile = temp.PathString("src/main.as");
-    const std::string resolved = IncludeResolver::ResolveIncludePath("helper.as", currentFile, {}, {}, ".as");
+    const std::string resolved = IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+        .includePath = "helper.as",
+        .currentFilePath = currentFile,
+        .implicitExtension = ".as",
+    });
 
     CHECK_FALSE(resolved.empty());
     CHECK(resolved == temp.PathString("src/helper.as"));
 }
 
-TEST_CASE("IncludeResolver - Exact match takes precedence over implicit extension when both exist in the same directory")
+TEST_CASE(
+    "IncludeResolver - Exact match takes precedence over implicit extension when both exist in the same directory")
 {
-    // Exact lookup must run before suffix retry; otherwise a directory holding both helper and helper.as would silently resolve to the wrong file.
+    // Exact lookup must run before suffix retry; otherwise a directory holding both helper and helper.as would silently
+    // resolve to the wrong file.
     TempDirGuard temp("inc_implicit_ext_precedence");
     temp.WriteFile("src/main.as", "#include \"helper\"\n");
     temp.WriteFile("src/helper", "// literal helper\n");
     temp.WriteFile("src/helper.as", "// helper script\n");
 
     const std::string currentFile = temp.PathString("src/main.as");
-    const std::string resolved = IncludeResolver::ResolveIncludePath("helper", currentFile, {}, {}, ".as");
+    const std::string resolved = IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+        .includePath = "helper",
+        .currentFilePath = currentFile,
+        .implicitExtension = ".as",
+    });
 
     CHECK_FALSE(resolved.empty());
     CHECK(resolved == temp.PathString("src/helper"));
@@ -553,15 +559,21 @@ TEST_CASE("IncludeResolver - Exact match takes precedence over implicit extensio
 
 TEST_CASE("IncludeResolver - Retries implicit extension in first directory before inspecting search directories")
 {
-    // Resolution evaluates candidate locations directory-by-directory: the current file's directory is tried exhaustively (exact, then extended) before any search directory is consulted.
+    // Resolution evaluates candidate locations directory-by-directory: the current file's directory is tried
+    // exhaustively (exact, then extended) before any search directory is consulted.
     TempDirGuard temp("inc_implicit_ext_per_dir");
     temp.WriteFile("src/main.as", "#include \"helper\"\n");
     temp.WriteFile("src/helper.as", "// extended helper in current dir\n");
     temp.WriteFile("search/helper", "// exact helper in search dir\n");
 
     const std::string currentFile = temp.PathString("src/main.as");
-    const std::vector<std::string> searchDirs = { temp.PathString("search") };
-    const std::string resolved = IncludeResolver::ResolveIncludePath("helper", currentFile, searchDirs, {}, ".as");
+    const std::vector<std::string> searchDirs = {temp.PathString("search")};
+    const std::string resolved = IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+        .includePath = "helper",
+        .currentFilePath = currentFile,
+        .searchDirectories = searchDirs,
+        .implicitExtension = ".as",
+    });
 
     CHECK_FALSE(resolved.empty());
     CHECK(resolved == temp.PathString("src/helper.as"));
@@ -569,13 +581,18 @@ TEST_CASE("IncludeResolver - Retries implicit extension in first directory befor
 
 TEST_CASE("IncludeResolver - Subdirectory include path resolves with implicit extension")
 {
-    // Implicit extension retry applies to paths containing nested subdirectories, appending the suffix to the full relative path.
+    // Implicit extension retry applies to paths containing nested subdirectories, appending the suffix to the full
+    // relative path.
     TempDirGuard temp("inc_implicit_ext_subdir");
     temp.WriteFile("src/main.as", "#include \"weapons/rifle\"\n");
     temp.WriteFile("src/weapons/rifle.as", "// rifle script\n");
 
     const std::string currentFile = temp.PathString("src/main.as");
-    const std::string resolved = IncludeResolver::ResolveIncludePath("weapons/rifle", currentFile, {}, {}, ".as");
+    const std::string resolved = IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+        .includePath = "weapons/rifle",
+        .currentFilePath = currentFile,
+        .implicitExtension = ".as",
+    });
 
     CHECK_FALSE(resolved.empty());
     CHECK(resolved == temp.PathString("src/weapons/rifle.as"));
@@ -583,13 +600,18 @@ TEST_CASE("IncludeResolver - Subdirectory include path resolves with implicit ex
 
 TEST_CASE("IncludeResolver - Parent-relative include resolves with implicit extension as produced by completion")
 {
-    // Completion items produce parent-relative paths when referencing sibling directories, which must resolve cleanly under implicit extension retry.
+    // Completion items produce parent-relative paths when referencing sibling directories, which must resolve cleanly
+    // under implicit extension retry.
     TempDirGuard temp("inc_implicit_ext_parent");
     temp.WriteFile("sub/main.as", "#include \"../shared\"\n");
     temp.WriteFile("shared.as", "// shared root script\n");
 
     const std::string currentFile = temp.PathString("sub/main.as");
-    const std::string resolved = IncludeResolver::ResolveIncludePath("../shared", currentFile, {}, {}, ".as");
+    const std::string resolved = IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+        .includePath = "../shared",
+        .currentFilePath = currentFile,
+        .implicitExtension = ".as",
+    });
 
     CHECK_FALSE(resolved.empty());
     CHECK(resolved == temp.PathString("shared.as"));
@@ -597,31 +619,44 @@ TEST_CASE("IncludeResolver - Parent-relative include resolves with implicit exte
 
 TEST_CASE("IncludeResolver - Implicit extension does not defeat allowed roots confinement")
 {
-    // Confinement checking runs on the resolved path at exit, preventing suffix fallback from escaping allowed workspace roots.
+    // Confinement checking runs on the resolved path at exit, preventing suffix fallback from escaping allowed
+    // workspace roots.
     TempDirGuard ws("inc_implicit_ext_confinement");
     ws.WriteFile("workspace/main.as", "#include \"../secrets/private\"\n");
     ws.WriteFile("secrets/private.as", "// secret\n");
 
     const std::string workspaceRoot = ws.PathString("workspace");
     const std::string currentFile = ws.PathString("workspace/main.as");
-    const std::vector<std::string> roots{ workspaceRoot };
+    const std::vector<std::string> roots{workspaceRoot};
 
     // Resolves when unconfined, proving the file is present on disk and matches with the implicit extension.
-    CHECK_FALSE(IncludeResolver::ResolveIncludePath("../secrets/private", currentFile, {}, {}, ".as").empty());
+    CHECK_FALSE(IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+                                                        .includePath = "../secrets/private",
+                                                        .currentFilePath = currentFile,
+                                                        .implicitExtension = ".as",
+                                                    })
+                    .empty());
 
     // Confined resolution must reject the target because it escapes the allowed roots.
-    CHECK(IncludeResolver::ResolveIncludePath("../secrets/private", currentFile, {}, roots, ".as").empty());
+    CHECK(IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+                                                  .includePath = "../secrets/private",
+                                                  .currentFilePath = currentFile,
+                                                  .allowedRoots = roots,
+                                                  .implicitExtension = ".as",
+                                              })
+              .empty());
 }
 
 TEST_CASE("IncludeResolver - Resolves differently-cased include name based on filesystem case sensitivity")
 {
-    // Whether differently-cased paths refer to the same file is determined by the underlying filesystem rather than the OS, requiring runtime detection rather than compile-time platform checks.
+    // Whether differently-cased paths refer to the same file is determined by the underlying filesystem rather than the
+    // OS, requiring runtime detection rather than compile-time platform checks.
     TempDirGuard temp("inc_implicit_ext_casing");
     temp.WriteFile("src/main.as", "#include \"HELPER\"\n");
     temp.WriteFile("src/helper.as", "// helper script\n");
 
     std::string shouted = temp.PathString("src/helper.as");
-    for (char &c : shouted)
+    for (char& c : shouted)
     {
         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     }
@@ -632,7 +667,11 @@ TEST_CASE("IncludeResolver - Resolves differently-cased include name based on fi
     INFO("case-insensitive filesystem: " << caseInsensitive);
 
     const std::string currentFile = temp.PathString("src/main.as");
-    const std::string resolved = IncludeResolver::ResolveIncludePath("HELPER", currentFile, {}, {}, ".as");
+    const std::string resolved = IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+        .includePath = "HELPER",
+        .currentFilePath = currentFile,
+        .implicitExtension = ".as",
+    });
 
     if (caseInsensitive)
     {
@@ -645,15 +684,17 @@ TEST_CASE("IncludeResolver - Resolves differently-cased include name based on fi
     }
 }
 
-TEST_CASE("IncludeResolver - Resolves uppercase file extension with lowercase implicit extension based on filesystem case sensitivity")
+TEST_CASE("IncludeResolver - Resolves uppercase file extension with lowercase implicit extension based on filesystem "
+          "case sensitivity")
 {
-    // Matching an uppercase on-disk extension against a lowercase implicit extension succeeds on case-insensitive filesystems and fails on case-sensitive ones, both being correct.
+    // Matching an uppercase on-disk extension against a lowercase implicit extension succeeds on case-insensitive
+    // filesystems and fails on case-sensitive ones, both being correct.
     TempDirGuard temp("inc_implicit_ext_upper_ext");
     temp.WriteFile("src/main.as", "#include \"helper\"\n");
     temp.WriteFile("src/helper.AS", "// helper script with uppercase extension\n");
 
     std::string lowered = temp.PathString("src/helper.AS");
-    for (char &c : lowered)
+    for (char& c : lowered)
     {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
@@ -664,7 +705,11 @@ TEST_CASE("IncludeResolver - Resolves uppercase file extension with lowercase im
     INFO("case-insensitive filesystem: " << caseInsensitive);
 
     const std::string currentFile = temp.PathString("src/main.as");
-    const std::string resolved = IncludeResolver::ResolveIncludePath("helper", currentFile, {}, {}, ".as");
+    const std::string resolved = IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+        .includePath = "helper",
+        .currentFilePath = currentFile,
+        .implicitExtension = ".as",
+    });
 
     if (caseInsensitive)
     {
@@ -677,19 +722,15 @@ TEST_CASE("IncludeResolver - Resolves uppercase file extension with lowercase im
     }
 }
 
-
-
 TEST_CASE("IncludeResolver - A single-quoted include is extracted like a double-quoted one")
 {
     // Sven Co-op's scripts write every include with single quotes, and the compiler accepts them -
     // measured. Until this was handled the directive was not extracted at all: the file never
     // entered the module, and every type it declared came back unresolved.
-    const auto directives = IncludeResolver::ExtractIncludes(
-        "#include \'pcp_misc/misc\'\n#include \"other.as\"\n");
+    const auto directives = IncludeResolver::ExtractIncludes("#include \'pcp_misc/misc\'\n#include \"other.as\"\n");
 
     REQUIRE(directives.size() == 2);
     CHECK(directives[0].rawPath == "pcp_misc/misc");
     CHECK_FALSE(directives[0].isAngled);
     CHECK(directives[1].rawPath == "other.as");
 }
-

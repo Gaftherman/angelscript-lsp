@@ -4,6 +4,7 @@
 #include <cctype>
 #include <fstream>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -116,6 +117,362 @@ std::string NormalizePathString(const std::filesystem::path& p)
     std::replace(s.begin(), s.end(), '\\', '/');
     return s;
 }
+
+bool IsSpaceOrTab(char c)
+{
+    return c == ' ' || c == '\t';
+}
+
+bool IsIncludeQuote(char c)
+{
+    return c == '"' || c == '\'' || c == '<';
+}
+
+struct IncludeScanState
+{
+    size_t index{0};
+    size_t currentLine{0};
+    bool atLineStart{true};
+};
+
+bool HandleIncludeNewline(std::string_view sourceCode, IncludeScanState& state)
+{
+    const char c = sourceCode[state.index];
+    if (c == '\r')
+    {
+        if (state.index + 1 < sourceCode.size() && sourceCode[state.index + 1] == '\n')
+        {
+            ++state.index;
+        }
+        ++state.currentLine;
+        state.atLineStart = true;
+        ++state.index;
+        return true;
+    }
+    if (c == '\n')
+    {
+        ++state.currentLine;
+        state.atLineStart = true;
+        ++state.index;
+        return true;
+    }
+    return false;
+}
+
+void SkipLineComment(std::string_view sourceCode, IncludeScanState& state)
+{
+    state.index += 2;
+    const size_t n = sourceCode.size();
+    while (state.index < n && sourceCode[state.index] != '\n' && sourceCode[state.index] != '\r')
+    {
+        ++state.index;
+    }
+}
+
+void SkipBlockComment(std::string_view sourceCode, IncludeScanState& state)
+{
+    state.index += 2;
+    const size_t n = sourceCode.size();
+    while (state.index < n)
+    {
+        if (sourceCode[state.index] == '\r')
+        {
+            if (state.index + 1 < n && sourceCode[state.index + 1] == '\n')
+            {
+                ++state.index;
+            }
+            ++state.currentLine;
+            state.atLineStart = true;
+        }
+        else if (sourceCode[state.index] == '\n')
+        {
+            ++state.currentLine;
+            state.atLineStart = true;
+        }
+        else if (sourceCode[state.index] == '*' && state.index + 1 < n && sourceCode[state.index + 1] == '/')
+        {
+            state.index += 2;
+            break;
+        }
+        ++state.index;
+    }
+}
+
+bool TrySkipComment(std::string_view sourceCode, IncludeScanState& state)
+{
+    if (sourceCode[state.index] != '/' || state.index + 1 >= sourceCode.size())
+    {
+        return false;
+    }
+    const char next = sourceCode[state.index + 1];
+    if (next == '/')
+    {
+        SkipLineComment(sourceCode, state);
+        return true;
+    }
+    if (next == '*')
+    {
+        SkipBlockComment(sourceCode, state);
+        return true;
+    }
+    return false;
+}
+
+void SkipVerbatimString(std::string_view sourceCode, IncludeScanState& state)
+{
+    state.atLineStart = false;
+    state.index += 2;
+    const size_t n = sourceCode.size();
+    while (state.index < n)
+    {
+        if (sourceCode[state.index] == '\r')
+        {
+            if (state.index + 1 < n && sourceCode[state.index + 1] == '\n')
+            {
+                ++state.index;
+            }
+            ++state.currentLine;
+        }
+        else if (sourceCode[state.index] == '\n')
+        {
+            ++state.currentLine;
+        }
+        else if (sourceCode[state.index] == '"')
+        {
+            if (state.index + 1 < n && sourceCode[state.index + 1] == '"')
+            {
+                state.index += 2;
+                continue;
+            }
+            ++state.index;
+            break;
+        }
+        ++state.index;
+    }
+}
+
+void SkipMultilineString(std::string_view sourceCode, IncludeScanState& state)
+{
+    state.index += 3;
+    const size_t n = sourceCode.size();
+    while (state.index < n)
+    {
+        if (sourceCode[state.index] == '\r')
+        {
+            if (state.index + 1 < n && sourceCode[state.index + 1] == '\n')
+            {
+                ++state.index;
+            }
+            ++state.currentLine;
+        }
+        else if (sourceCode[state.index] == '\n')
+        {
+            ++state.currentLine;
+        }
+        else if (sourceCode[state.index] == '"' && state.index + 2 < n && sourceCode[state.index + 1] == '"' &&
+                 sourceCode[state.index + 2] == '"')
+        {
+            state.index += 3;
+            break;
+        }
+        ++state.index;
+    }
+}
+
+void SkipEscapedString(std::string_view sourceCode, IncludeScanState& state, char quote)
+{
+    ++state.index;
+    const size_t n = sourceCode.size();
+    while (state.index < n)
+    {
+        if (sourceCode[state.index] == '\\')
+        {
+            state.index += 2;
+            continue;
+        }
+        if (sourceCode[state.index] == quote)
+        {
+            ++state.index;
+            break;
+        }
+        if (sourceCode[state.index] == '\n' || sourceCode[state.index] == '\r')
+        {
+            break;
+        }
+        ++state.index;
+    }
+}
+
+bool TrySkipString(std::string_view sourceCode, IncludeScanState& state)
+{
+    const char c = sourceCode[state.index];
+    const size_t n = sourceCode.size();
+    if (c == '@' && state.index + 1 < n && sourceCode[state.index + 1] == '"')
+    {
+        SkipVerbatimString(sourceCode, state);
+        return true;
+    }
+    if (c == '"')
+    {
+        state.atLineStart = false;
+        if (state.index + 2 < n && sourceCode[state.index + 1] == '"' && sourceCode[state.index + 2] == '"')
+        {
+            SkipMultilineString(sourceCode, state);
+        }
+        else
+        {
+            SkipEscapedString(sourceCode, state, '"');
+        }
+        return true;
+    }
+    if (c == '\'')
+    {
+        state.atLineStart = false;
+        SkipEscapedString(sourceCode, state, '\'');
+        return true;
+    }
+    return false;
+}
+
+void SkipSpacesAndTabs(std::string_view sourceCode, IncludeScanState& state)
+{
+    const size_t n = sourceCode.size();
+    while (state.index < n && IsSpaceOrTab(sourceCode[state.index]))
+    {
+        ++state.index;
+    }
+}
+
+void SkipDirectiveRemainder(std::string_view sourceCode, IncludeScanState& state)
+{
+    const size_t n = sourceCode.size();
+    while (state.index < n && sourceCode[state.index] != '\n' && sourceCode[state.index] != '\r')
+    {
+        ++state.index;
+    }
+}
+
+std::optional<IncludeDirective> TryExtractDirective(std::string_view sourceCode, IncludeScanState& state)
+{
+    const size_t directiveLine = state.currentLine;
+    const size_t n = sourceCode.size();
+    ++state.index; // skip '#'
+
+    SkipSpacesAndTabs(sourceCode, state);
+
+    if (!sourceCode.substr(state.index).starts_with("include"))
+    {
+        SkipDirectiveRemainder(sourceCode, state);
+        return std::nullopt;
+    }
+
+    const size_t afterInclude = state.index + 7;
+    if (afterInclude >= n || !IsSpaceOrTab(sourceCode[afterInclude]))
+    {
+        SkipDirectiveRemainder(sourceCode, state);
+        return std::nullopt;
+    }
+
+    state.index = afterInclude;
+    SkipSpacesAndTabs(sourceCode, state);
+
+    if (state.index >= n)
+    {
+        return std::nullopt;
+    }
+
+    const char quoteChar = sourceCode[state.index];
+    if (!IsIncludeQuote(quoteChar))
+    {
+        SkipDirectiveRemainder(sourceCode, state);
+        return std::nullopt;
+    }
+
+    const char closingChar = (quoteChar == '<') ? '>' : quoteChar;
+    const bool isAngled = (quoteChar == '<');
+    ++state.index;
+
+    const size_t pathStart = state.index;
+    while (state.index < n && sourceCode[state.index] != closingChar && sourceCode[state.index] != '\n' &&
+           sourceCode[state.index] != '\r')
+    {
+        ++state.index;
+    }
+
+    std::optional<IncludeDirective> result;
+    if (state.index < n && sourceCode[state.index] == closingChar)
+    {
+        result = IncludeDirective{
+            .rawPath = std::string(sourceCode.substr(pathStart, state.index - pathStart)),
+            .line = directiveLine,
+            .resolvedPath = "",
+            .isAngled = isAngled,
+        };
+        ++state.index;
+    }
+
+    SkipDirectiveRemainder(sourceCode, state);
+    return result;
+}
+
+std::filesystem::path FirstExisting(const std::filesystem::path& directory, const std::filesystem::path& name,
+                                    std::string_view implicitExtension)
+{
+    std::error_code inner;
+    std::filesystem::path exact = directory / name;
+    if (std::filesystem::exists(exact, inner) && !std::filesystem::is_directory(exact, inner))
+    {
+        return exact;
+    }
+
+    if (implicitExtension.empty())
+    {
+        return {};
+    }
+
+    std::filesystem::path extended = directory / (name.string() + std::string(implicitExtension));
+    if (std::filesystem::exists(extended, inner) && !std::filesystem::is_directory(extended, inner))
+    {
+        return extended;
+    }
+
+    return {};
+}
+
+std::filesystem::path GetParentDirectory(std::string_view currentFilePath)
+{
+    std::error_code ec;
+    std::filesystem::path currentPath(currentFilePath);
+    if (std::filesystem::is_directory(currentPath, ec))
+    {
+        return currentPath;
+    }
+    if (currentPath.has_parent_path())
+    {
+        return currentPath.parent_path();
+    }
+    return std::filesystem::current_path(ec);
+}
+
+std::filesystem::path SearchInDirectories(const std::filesystem::path& inc,
+                                          std::span<const std::string> searchDirectories,
+                                          std::string_view implicitExtension)
+{
+    for (const auto& dir : searchDirectories)
+    {
+        if (dir.empty())
+        {
+            continue;
+        }
+
+        if (const std::filesystem::path candidate = FirstExisting(std::filesystem::path(dir), inc, implicitExtension);
+            !candidate.empty())
+        {
+            return candidate;
+        }
+    }
+    return {};
+}
 } // namespace
 
 std::string IncludeResolver::NormalizePath(const std::filesystem::path& path)
@@ -139,7 +496,7 @@ std::string IncludeResolver::NormalizeWalkedPath(const std::filesystem::path& pa
     return TrimAndSlash((std::filesystem::path(CanonicalDirectory(path.parent_path())) / path.filename()).string());
 }
 
-bool IncludeResolver::IsWithinRoots(const std::string& normalizedPath, const std::vector<std::string>& allowedRoots)
+bool IncludeResolver::IsWithinRoots(const std::string& normalizedPath, std::span<const std::string> allowedRoots)
 {
     // No roots configured means no confinement. Unit tests and any library caller with no
     // workspace context rely on this; the server always supplies roots.
@@ -211,343 +568,57 @@ std::vector<IncludeDirective> IncludeResolver::ExtractIncludes(std::string_view 
 std::vector<IncludeDirective> IncludeResolver::ExtractIncludes(std::string_view sourceCode)
 {
     std::vector<IncludeDirective> directives;
-    size_t n = sourceCode.size();
-    size_t i = 0;
-    size_t currentLine = 0;
-    bool atLineStart = true;
+    const size_t n = sourceCode.size();
+    IncludeScanState state;
 
-    while (i < n)
+    while (state.index < n)
     {
-        char c = sourceCode[i];
-
-        // Handle newline characters
-        if (c == '\r')
+        const char c = sourceCode[state.index];
+        if (HandleIncludeNewline(sourceCode, state))
         {
-            if (i + 1 < n && sourceCode[i + 1] == '\n')
-            {
-                ++i;
-            }
-            ++currentLine;
-            atLineStart = true;
-            ++i;
             continue;
         }
-        if (c == '\n')
-        {
-            ++currentLine;
-            atLineStart = true;
-            ++i;
-            continue;
-        }
-
-        // Horizontal whitespace preserves line start status
         if (c == ' ' || c == '\t')
         {
-            ++i;
+            ++state.index;
             continue;
         }
-
-        // Single-line or multi-line comment
-        if (c == '/')
+        if (TrySkipComment(sourceCode, state))
         {
-            if (i + 1 < n && sourceCode[i + 1] == '/')
-            {
-                // Single-line comment: skip until newline or EOF
-                i += 2;
-                while (i < n && sourceCode[i] != '\n' && sourceCode[i] != '\r')
-                {
-                    ++i;
-                }
-                continue;
-            }
-            if (i + 1 < n && sourceCode[i + 1] == '*')
-            {
-                // Multi-line block comment: skip until */ or EOF
-                i += 2;
-                while (i < n)
-                {
-                    if (sourceCode[i] == '\r')
-                    {
-                        if (i + 1 < n && sourceCode[i + 1] == '\n')
-                        {
-                            ++i;
-                        }
-                        ++currentLine;
-                        atLineStart = true;
-                    }
-                    else if (sourceCode[i] == '\n')
-                    {
-                        ++currentLine;
-                        atLineStart = true;
-                    }
-                    else if (sourceCode[i] == '*' && i + 1 < n && sourceCode[i + 1] == '/')
-                    {
-                        i += 2;
-                        break;
-                    }
-                    ++i;
-                }
-                continue;
-            }
+            continue;
         }
-
-        // Verbatim string literal @"..."
-        if (c == '@' && i + 1 < n && sourceCode[i + 1] == '"')
+        if (TrySkipString(sourceCode, state))
         {
-            atLineStart = false;
-            i += 2;
-            while (i < n)
+            continue;
+        }
+        if (c == '#' && state.atLineStart)
+        {
+            if (auto dir = TryExtractDirective(sourceCode, state))
             {
-                if (sourceCode[i] == '\r')
-                {
-                    if (i + 1 < n && sourceCode[i + 1] == '\n')
-                    {
-                        ++i;
-                    }
-                    ++currentLine;
-                }
-                else if (sourceCode[i] == '\n')
-                {
-                    ++currentLine;
-                }
-                else if (sourceCode[i] == '"')
-                {
-                    if (i + 1 < n && sourceCode[i + 1] == '"')
-                    {
-                        i += 2;
-                        continue;
-                    }
-                    ++i;
-                    break;
-                }
-                ++i;
+                directives.push_back(std::move(*dir));
             }
             continue;
         }
-
-        // Multiline string """...""" or standard string literal "..."
-        if (c == '"')
-        {
-            atLineStart = false;
-            if (i + 2 < n && sourceCode[i + 1] == '"' && sourceCode[i + 2] == '"')
-            {
-                // Multiline string """ ... """
-                i += 3;
-                while (i < n)
-                {
-                    if (sourceCode[i] == '\r')
-                    {
-                        if (i + 1 < n && sourceCode[i + 1] == '\n')
-                        {
-                            ++i;
-                        }
-                        ++currentLine;
-                    }
-                    else if (sourceCode[i] == '\n')
-                    {
-                        ++currentLine;
-                    }
-                    else if (sourceCode[i] == '"' && i + 2 < n && sourceCode[i + 1] == '"' && sourceCode[i + 2] == '"')
-                    {
-                        i += 3;
-                        break;
-                    }
-                    ++i;
-                }
-                continue;
-            }
-            else
-            {
-                // Standard double-quoted string "..."
-                ++i;
-                while (i < n)
-                {
-                    if (sourceCode[i] == '\\')
-                    {
-                        i += 2;
-                        continue;
-                    }
-                    if (sourceCode[i] == '"')
-                    {
-                        ++i;
-                        break;
-                    }
-                    if (sourceCode[i] == '\n' || sourceCode[i] == '\r')
-                    {
-                        break;
-                    }
-                    ++i;
-                }
-                continue;
-            }
-        }
-
-        // Character literal '...'
-        if (c == '\'')
-        {
-            atLineStart = false;
-            ++i;
-            while (i < n)
-            {
-                if (sourceCode[i] == '\\')
-                {
-                    i += 2;
-                    continue;
-                }
-                if (sourceCode[i] == '\'')
-                {
-                    ++i;
-                    break;
-                }
-                if (sourceCode[i] == '\n' || sourceCode[i] == '\r')
-                {
-                    break;
-                }
-                ++i;
-            }
-            continue;
-        }
-
-        // Preprocessor directive at line start
-        if (c == '#' && atLineStart)
-        {
-            size_t directiveLine = currentLine;
-            ++i; // skip '#'
-
-            // Skip spaces/tabs between '#' and directive name
-            while (i < n && (sourceCode[i] == ' ' || sourceCode[i] == '\t'))
-            {
-                ++i;
-            }
-
-            // Check for "include" keyword
-            std::string_view remaining = sourceCode.substr(i);
-            if (remaining.starts_with("include"))
-            {
-                size_t afterInclude = i + 7;
-                if (afterInclude < n && (sourceCode[afterInclude] == ' ' || sourceCode[afterInclude] == '\t'))
-                {
-                    i = afterInclude;
-                    // Skip whitespace after "include"
-                    while (i < n && (sourceCode[i] == ' ' || sourceCode[i] == '\t'))
-                    {
-                        ++i;
-                    }
-
-                    if (i < n)
-                    {
-                        char quoteChar = sourceCode[i];
-
-                        // Single quotes too. AngelScript's string literal is `'...'` as well as
-                        // `"..."` while asEP_USE_CHARACTER_LITERALS is off, which is the default,
-                        // and CScriptBuilder reads whichever the file used - measured:
-                        // `#include 'helper.as'` compiles. Sven Co-op's scripts are written that
-                        // way throughout, and until this line not one of their includes was
-                        // extracted: the directive was skipped, the file never entered the
-                        // module, and every type it declared came back unresolved.
-                        if (quoteChar == '"' || quoteChar == '\'' || quoteChar == '<')
-                        {
-                            char closingChar = (quoteChar == '<') ? '>' : quoteChar;
-                            bool isAngled = (quoteChar == '<');
-                            ++i; // skip opening quote/bracket
-
-                            size_t pathStart = i;
-                            while (i < n && sourceCode[i] != closingChar && sourceCode[i] != '\n' &&
-                                   sourceCode[i] != '\r')
-                            {
-                                ++i;
-                            }
-
-                            if (i < n && sourceCode[i] == closingChar)
-                            {
-                                std::string rawPath(sourceCode.substr(pathStart, i - pathStart));
-                                directives.push_back(IncludeDirective{.rawPath = std::move(rawPath),
-                                                                      .line = directiveLine,
-                                                                      .resolvedPath = "",
-                                                                      .isAngled = isAngled});
-                                ++i; // skip closing quote/bracket
-                            }
-
-                            // Skip rest of directive line
-                            while (i < n && sourceCode[i] != '\n' && sourceCode[i] != '\r')
-                            {
-                                ++i;
-                            }
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            // Skip remainder of unrecognized preprocessor directive line
-            while (i < n && sourceCode[i] != '\n' && sourceCode[i] != '\r')
-            {
-                ++i;
-            }
-            continue;
-        }
-
-        // Any other non-whitespace token marks the line as no longer at start
-        atLineStart = false;
-        ++i;
+        state.atLineStart = false;
+        ++state.index;
     }
 
     return directives;
 }
 
-std::string IncludeResolver::ResolveIncludePath(std::string_view includePath, std::string_view currentFilePath,
-                                                const std::vector<std::string>& searchDirectories,
-                                                const std::vector<std::string>& allowedRoots,
-                                                std::string_view implicitExtension)
+std::string IncludeResolver::ResolveIncludePath(const IncludeResolveRequest& request)
 {
-    // Every successful return below goes through this. Checking at the single exit rather than
-    // per branch is deliberate: a new resolution strategy added later is confined by default
-    // instead of silently bypassing the check.
-    const auto permit = [&allowedRoots](std::string resolved) -> std::string
-    { return IsWithinRoots(resolved, allowedRoots) ? resolved : std::string(); };
-
-    // One directory, tried the way the host would: the name exactly as written first, and only
-    // if nothing is there, the same name with the configured extension.
-    //
-    // That order is the whole of the rule. A workspace holding both `helper` and `helper.as`
-    // resolves to `helper`, which is what the compiler does; appending first would quietly pick
-    // the other file and nothing would say so.
-    const auto firstExisting = [&implicitExtension](const std::filesystem::path& directory,
-                                                    const std::filesystem::path& name) -> std::filesystem::path
-    {
-        std::error_code inner;
-
-        std::filesystem::path exact = directory / name;
-        if (std::filesystem::exists(exact, inner) && !std::filesystem::is_directory(exact, inner))
-        {
-            return exact;
-        }
-
-        if (implicitExtension.empty())
-        {
-            return {};
-        }
-
-        // No "does it already end in .as" test on purpose. If it does, the exact try above
-        // found it or the file is not there at all, and `helper.as.as` simply does not exist.
-        std::filesystem::path extended = directory / (name.string() + std::string(implicitExtension));
-        if (std::filesystem::exists(extended, inner) && !std::filesystem::is_directory(extended, inner))
-        {
-            return extended;
-        }
-
-        return {};
-    };
-
-    if (includePath.empty())
+    if (request.includePath.empty())
     {
         return "";
     }
 
-    std::error_code ec;
-    std::filesystem::path inc(includePath);
+    const auto permit = [&request](std::string resolved) -> std::string
+    { return IsWithinRoots(resolved, request.allowedRoots) ? resolved : std::string(); };
 
-    // If includePath is already absolute
+    std::error_code ec;
+    const std::filesystem::path inc(request.includePath);
+
     if (inc.is_absolute())
     {
         if (std::filesystem::exists(inc, ec) && !std::filesystem::is_directory(inc, ec))
@@ -557,46 +628,37 @@ std::string IncludeResolver::ResolveIncludePath(std::string_view includePath, st
         return "";
     }
 
-    // 1. Resolve relative to current file's directory
-    if (!currentFilePath.empty())
+    if (!request.currentFilePath.empty())
     {
-        std::filesystem::path currentPath(currentFilePath);
-        std::filesystem::path parentDir;
-
-        if (std::filesystem::is_directory(currentPath, ec))
-        {
-            parentDir = currentPath;
-        }
-        else if (currentPath.has_parent_path())
-        {
-            parentDir = currentPath.parent_path();
-        }
-        else
-        {
-            parentDir = std::filesystem::current_path(ec);
-        }
-
-        if (const std::filesystem::path candidate = firstExisting(parentDir, inc); !candidate.empty())
+        const std::filesystem::path parentDir = GetParentDirectory(request.currentFilePath);
+        if (const std::filesystem::path candidate = FirstExisting(parentDir, inc, request.implicitExtension);
+            !candidate.empty())
         {
             return permit(NormalizePathString(candidate));
         }
     }
 
-    // 2. Search configured searchDirectories in order
-    for (const auto& dir : searchDirectories)
+    if (const std::filesystem::path candidate =
+            SearchInDirectories(inc, request.searchDirectories, request.implicitExtension);
+        !candidate.empty())
     {
-        if (dir.empty())
-        {
-            continue;
-        }
-
-        if (const std::filesystem::path candidate = firstExisting(std::filesystem::path(dir), inc); !candidate.empty())
-        {
-            return permit(NormalizePathString(candidate));
-        }
+        return permit(NormalizePathString(candidate));
     }
 
     return "";
+}
+
+std::string IncludeResolver::ResolveIncludePath(std::string_view includePath, std::string_view currentFilePath,
+                                                const std::vector<std::string>& searchDirectories,
+                                                const std::vector<std::string>& allowedRoots)
+{
+    return ResolveIncludePath(IncludeResolveRequest{
+        .includePath = includePath,
+        .currentFilePath = currentFilePath,
+        .searchDirectories = searchDirectories,
+        .allowedRoots = allowedRoots,
+        .implicitExtension = {},
+    });
 }
 
 std::vector<std::string> IncludeResolver::ResolveAllIncludes(std::string_view rootFilePath,

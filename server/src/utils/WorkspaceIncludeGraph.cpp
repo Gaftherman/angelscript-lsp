@@ -44,8 +44,13 @@ std::vector<std::string> ResolveDirectives(const std::string& normalizedPath, st
 
     for (const auto& directive : IncludeResolver::ExtractIncludes(sourceCode))
     {
-        std::string target = IncludeResolver::ResolveIncludePath(
-            directive.rawPath, normalizedPath, ctx.searchDirectories, ctx.allowedRoots, ctx.implicitExtension);
+        std::string target = IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+            .includePath = directive.rawPath,
+            .currentFilePath = normalizedPath,
+            .searchDirectories = ctx.searchDirectories,
+            .allowedRoots = ctx.allowedRoots,
+            .implicitExtension = ctx.implicitExtension,
+        });
         if (target.empty())
             continue; // Unresolvable include - reported as a diagnostic elsewhere, not an edge.
 

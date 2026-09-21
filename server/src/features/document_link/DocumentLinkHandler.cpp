@@ -63,8 +63,13 @@ std::optional<DocumentLinkResult> GetDocumentLinks(const DocumentLinkRequest& re
 
     for (const auto& directive : directives)
     {
-        const std::string target = utils::IncludeResolver::ResolveIncludePath(
-            directive.rawPath, currentPath, request.searchDirectories, request.allowedRoots, request.implicitExtension);
+        const std::string target = utils::IncludeResolver::ResolveIncludePath(utils::IncludeResolveRequest{
+            .includePath = directive.rawPath,
+            .currentFilePath = currentPath,
+            .searchDirectories = request.searchDirectories,
+            .allowedRoots = request.allowedRoots,
+            .implicitExtension = request.implicitExtension,
+        });
         if (target.empty())
             continue;
 
@@ -102,8 +107,13 @@ std::vector<analysis::Diagnostic> GetUnresolvedIncludeDiagnostics(const Document
 
     for (const auto& directive : directives)
     {
-        if (!utils::IncludeResolver::ResolveIncludePath(directive.rawPath, currentPath, request.searchDirectories,
-                                                        request.allowedRoots, request.implicitExtension)
+        if (!utils::IncludeResolver::ResolveIncludePath(utils::IncludeResolveRequest{
+                                                            .includePath = directive.rawPath,
+                                                            .currentFilePath = currentPath,
+                                                            .searchDirectories = request.searchDirectories,
+                                                            .allowedRoots = request.allowedRoots,
+                                                            .implicitExtension = request.implicitExtension,
+                                                        })
                  .empty())
             continue;
 

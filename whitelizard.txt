@@ -167,5 +167,3 @@ angel_lsp::features::formatting::FormatPredefinedStub
 angel_lsp::features::resolution::CollectOccurrences
 angel_lsp::features::resolution::GetNodeTextAt
 angel_lsp::features::resolution::ResolveTargetSymbol
-angel_lsp::utils::IncludeResolver::ExtractIncludes
-angel_lsp::utils::IncludeResolver::ResolveIncludePath

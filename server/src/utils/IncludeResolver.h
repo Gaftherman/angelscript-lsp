@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,6 +22,18 @@ struct IncludeDirective
     size_t line = 0;          ///< 0-indexed line number in the source file where the directive occurs.
     std::string resolvedPath; ///< Canonical/normalized filesystem path if resolved, or empty string if not found.
     bool isAngled = false;    ///< True for <path>, false for "path".
+};
+
+/**
+ * @brief Parameters for resolving an AngelScript #include directive.
+ */
+struct IncludeResolveRequest
+{
+    std::string_view includePath{};                   ///< The raw include path from the directive.
+    std::string_view currentFilePath{};               ///< Path of the file containing the include directive.
+    std::span<const std::string> searchDirectories{}; ///< Ordered list of search paths configured for the workspace.
+    std::span<const std::string> allowedRoots{};      ///< Confinement roots; empty means unconfined.
+    std::string_view implicitExtension{};             ///< Suffix fallback to try (e.g., ".as").
 };
 
 /**
@@ -112,38 +125,33 @@ class IncludeResolver
      * Matching is per path component - "/w/lib" does not contain "/w/library" - and
      * case-insensitive on Windows, where the same file has many spellings.
      *
-     * @param allowedRoots Roots to test against. **Empty means unconfined**, which is what a
+     * @param[in] normalizedPath The normalized path to verify.
+     * @param[in] allowedRoots Roots to test against. **Empty means unconfined**, which is what a
      *        caller with no workspace context (a unit test, a bare library user) gets.
+     * @return True if normalizedPath lies inside allowedRoots or allowedRoots is empty, false otherwise.
      */
-    static bool IsWithinRoots(const std::string& normalizedPath, const std::vector<std::string>& allowedRoots);
+    static bool IsWithinRoots(const std::string& normalizedPath, std::span<const std::string> allowedRoots);
 
     /**
      * @brief Resolves a single include path against the current file's directory and search directories.
-     * @param includePath The raw include path from the directive.
-     * @param currentFilePath The path of the file containing the include directive.
-     * @param searchDirectories Ordered list of search paths configured for the workspace.
-     * @param allowedRoots Confinement roots; see IsWithinRoots. Empty (the default) resolves
+     * @param[in] request The bundled include resolution parameters.
+     * @return Canonicalized/normalized absolute path if found and permitted, else empty string.
+     */
+    static std::string ResolveIncludePath(const IncludeResolveRequest& request);
+
+    /**
+     * @brief Resolves a single include path against the current file's directory and search directories.
+     * @param[in] includePath The raw include path from the directive.
+     * @param[in] currentFilePath The path of the file containing the include directive.
+     * @param[in] searchDirectories Ordered list of search paths configured for the workspace.
+     * @param[in] allowedRoots Confinement roots; see IsWithinRoots. Empty (the default) resolves
      *        without confinement, which is what unit tests and library callers want. The server
      *        always passes its workspace folders and search directories.
-     * @param implicitExtension Suffix to try when the path as written matches no file - `.as`,
-     *        typically. Empty (the default) is AngelScript's own behaviour: CScriptBuilder
-     *        opens exactly the string between the quotes and appends nothing, measured, so
-     *        `#include "helper"` finds a file named `helper` and not `helper.as`.
-     *
-     *        Some hosts resolve the name themselves before the add-on sees it, and require the
-     *        extension to be left off - Sven Co-op is the reason this parameter exists. For
-     *        those, `#include "helper"` **is** `helper.as` and there is nothing to report.
-     *        Which of the two is true is a fact about the host, exactly like the engine
-     *        properties, so it is configuration rather than a guess.
-     *
-     *        Tried per directory and only after the exact name misses there, so a workspace
-     *        holding both `helper` and `helper.as` resolves the way the compiler would.
      * @return Canonicalized/normalized absolute path if found and permitted, else empty string.
      */
     static std::string ResolveIncludePath(std::string_view includePath, std::string_view currentFilePath,
                                           const std::vector<std::string>& searchDirectories,
-                                          const std::vector<std::string>& allowedRoots = {},
-                                          std::string_view implicitExtension = {});
+                                          const std::vector<std::string>& allowedRoots = {});
 
     /**
      * @brief Recursively discovers all resolved include files starting from rootFilePath.

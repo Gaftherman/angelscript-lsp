@@ -55,6 +55,39 @@ class PhaseTimer
     std::string m_phase;
     std::chrono::steady_clock::time_point m_start;
 };
+
+/**
+ * @brief Constructs a TextEdit for replacing an include directive's path substring.
+ * @param[in] line The source text line containing the directive.
+ * @param[in] directive The extracted include directive metadata.
+ * @param[in] replacement The new relative path replacement string.
+ * @return TextEdit if opening and closing delimiters are matched, or std::nullopt otherwise.
+ */
+std::optional<lsp::TextEdit> TryBuildDirectiveEdit(std::string_view line,
+                                                   const angel_lsp::utils::IncludeDirective& directive,
+                                                   std::string_view replacement)
+{
+    const char open = directive.isAngled ? '<' : '"';
+    const char close = directive.isAngled ? '>' : '"';
+    const size_t openPos = line.find(open);
+    if (openPos == std::string_view::npos)
+    {
+        return std::nullopt;
+    }
+    const size_t closePos = line.find(close, openPos + 1);
+    if (closePos == std::string_view::npos)
+    {
+        return std::nullopt;
+    }
+
+    lsp::TextEdit edit;
+    edit.range.start.line = static_cast<uint32_t>(directive.line);
+    edit.range.start.character = static_cast<uint32_t>(openPos + 1);
+    edit.range.end.line = static_cast<uint32_t>(directive.line);
+    edit.range.end.character = static_cast<uint32_t>(closePos);
+    edit.newText = std::string(replacement);
+    return edit;
+}
 } // namespace
 
 void Server::BeginWorkspaceProgress(const std::string& title)
@@ -859,27 +892,16 @@ std::optional<lsp::TextDocumentEdit> Server::BuildIncludeRewrite(const std::stri
     for (const auto& directive : angel_lsp::utils::IncludeResolver::ExtractIncludes(text))
     {
         const std::string resolved = angel_lsp::utils::IncludeResolver::ResolveIncludePath(
-            directive.rawPath, includerPath, *SearchDirectories(), IncludeAllowedRoots(), ImplicitIncludeExtension());
+            angel_lsp::utils::IncludeResolveRequest{directive.rawPath, includerPath, *SearchDirectories(),
+                                                    IncludeAllowedRoots(), ImplicitIncludeExtension()});
         if (resolved != oldTargetPath)
             continue;
 
         const std::string_view line = angel_lsp::utils::GetLine(text, static_cast<uint32_t>(directive.line));
-        const char open = directive.isAngled ? '<' : '"';
-        const char close = directive.isAngled ? '>' : '"';
-        const size_t openPos = line.find(open);
-        if (openPos == std::string_view::npos)
-            continue;
-        const size_t closePos = line.find(close, openPos + 1);
-        if (closePos == std::string_view::npos)
-            continue;
-
-        lsp::TextEdit edit;
-        edit.range.start.line = static_cast<uint32_t>(directive.line);
-        edit.range.start.character = static_cast<uint32_t>(openPos + 1);
-        edit.range.end.line = static_cast<uint32_t>(directive.line);
-        edit.range.end.character = static_cast<uint32_t>(closePos);
-        edit.newText = replacement;
-        edits.push_back(std::move(edit));
+        if (auto edit = TryBuildDirectiveEdit(line, directive, replacement))
+        {
+            edits.push_back(std::move(*edit));
+        }
     }
 
     if (edits.empty())
@@ -890,7 +912,9 @@ std::optional<lsp::TextDocumentEdit> Server::BuildIncludeRewrite(const std::stri
     identifier.uri = lsp::DocumentUri(lsp::Uri::parse(includerUri));
     documentEdit.textDocument = identifier;
     for (auto& edit : edits)
+    {
         documentEdit.edits.push_back(std::move(edit));
+    }
 
     return documentEdit;
 }

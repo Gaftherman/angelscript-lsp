@@ -52,8 +52,13 @@ void Server::RegisterTextDocumentHandlers()
                                       [this, uriStr = doc->uri](const std::string& rawPath)
                                       {
                                           return angel_lsp::utils::IncludeResolver::ResolveIncludePath(
-                                              rawPath, CanonicalPathFromUri(uriStr), *SearchDirectories(),
-                                              IncludeAllowedRoots(), ImplicitIncludeExtension());
+                                              angel_lsp::utils::IncludeResolveRequest{
+                                                  .includePath = rawPath,
+                                                  .currentFilePath = CanonicalPathFromUri(uriStr),
+                                                  .searchDirectories = *SearchDirectories(),
+                                                  .allowedRoots = IncludeAllowedRoots(),
+                                                  .implicitExtension = ImplicitIncludeExtension(),
+                                              });
                                       },
                                       m_logger.get()};
             auto hover = features::GetHover(hr);
@@ -87,9 +92,13 @@ void Server::RegisterTextDocumentHandlers()
                                            m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position)};
             dr.resolveInclude = [this, uriStr = doc->uri](const std::string& rawPath)
             {
-                return angel_lsp::utils::IncludeResolver::ResolveIncludePath(
-                    rawPath, CanonicalPathFromUri(uriStr), *SearchDirectories(), IncludeAllowedRoots(),
-                    ImplicitIncludeExtension());
+                return angel_lsp::utils::IncludeResolver::ResolveIncludePath(angel_lsp::utils::IncludeResolveRequest{
+                    .includePath = rawPath,
+                    .currentFilePath = CanonicalPathFromUri(uriStr),
+                    .searchDirectories = *SearchDirectories(),
+                    .allowedRoots = IncludeAllowedRoots(),
+                    .implicitExtension = ImplicitIncludeExtension(),
+                });
             };
             auto defs = features::GetDefinition(dr);
             if (defs.has_value() && !defs->empty())
@@ -119,9 +128,13 @@ void Server::RegisterTextDocumentHandlers()
                                            m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position)};
             dr.resolveInclude = [this, uriStr = doc->uri](const std::string& rawPath)
             {
-                return angel_lsp::utils::IncludeResolver::ResolveIncludePath(
-                    rawPath, CanonicalPathFromUri(uriStr), *SearchDirectories(), IncludeAllowedRoots(),
-                    ImplicitIncludeExtension());
+                return angel_lsp::utils::IncludeResolver::ResolveIncludePath(angel_lsp::utils::IncludeResolveRequest{
+                    .includePath = rawPath,
+                    .currentFilePath = CanonicalPathFromUri(uriStr),
+                    .searchDirectories = *SearchDirectories(),
+                    .allowedRoots = IncludeAllowedRoots(),
+                    .implicitExtension = ImplicitIncludeExtension(),
+                });
             };
 
             const auto defs = features::GetDefinition(dr);
