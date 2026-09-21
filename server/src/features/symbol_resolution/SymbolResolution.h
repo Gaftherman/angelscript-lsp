@@ -57,15 +57,42 @@ struct TargetDescriptor
 bool IsValidIdentifier(std::string_view name);
 
 /**
+ * @brief Context and input parameters for resolving the target symbol under the cursor.
+ */
+struct ResolveTargetRequest
+{
+    const std::string& uri;
+    const std::string& sourceCode;
+    TSTree* tree = nullptr;
+    lsp::Position position;
+    const analysis::SymbolTable& symbolTable;
+    const analysis::ScopeIndex& scopeIndex;
+    TSNode& outNode;
+    angel_lsp::utils::LspLogger* logger = nullptr;
+};
+
+/**
+ * @brief Context and input parameters for collecting occurrences of a resolved target.
+ */
+struct CollectOccurrencesRequest
+{
+    const TargetDescriptor& target;
+    const std::string& currentUri;
+    const std::string& sourceCode;
+    TSTree* tree = nullptr;
+    const analysis::SymbolTable& symbolTable;
+    const analysis::ScopeIndex& scopeIndex;
+    bool includeDeclaration = true;
+    angel_lsp::utils::LspLogger* logger = nullptr;
+};
+
+/**
  * @brief Works out what the cursor is on.
  *
- * @param outNode Receives the identifier node the position landed on.
+ * @param[in,out] request Immutable request context.
  * @return The target, or nullopt when the position is not on a renameable symbol.
  */
-std::optional<TargetDescriptor> ResolveTargetSymbol(const std::string& uri, const std::string& sourceCode, TSTree* tree,
-                                                    lsp::Position position, const analysis::SymbolTable& symbolTable,
-                                                    const analysis::ScopeIndex& scopeIndex, TSNode& outNode,
-                                                    angel_lsp::utils::LspLogger* logger = nullptr);
+std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& request);
 
 /**
  * @brief Every place the resolved target appears, across every indexed document.
@@ -81,17 +108,8 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(const std::string& uri, cons
  * Tests verify identifier positions across representative samples and require
  * the two features to return consistent ranges.
  *
- * @param includeDeclaration Whether the declaration itself is one of the occurrences. This is
- *        the one place the two callers genuinely disagreed, and the sweep above could not have
- *        found it: find-references honours the LSP request flag through eight separate guards
- *        and a set of declaration ranges, and rename never had them, because a rename that
- *        skipped the declaration would leave the symbol half renamed. Defaults to rename's
- *        answer. This body is find-references' copy, which is the superset - taking rename's
- *        and adding the flag would have meant re-deriving those eight sites by hand.
+ * @param[in] request Immutable occurrences collection request.
+ * @return Locations of all occurrences found.
  */
-std::vector<lsp::Location> CollectOccurrences(const TargetDescriptor& target, const std::string& currentUri,
-                                              const std::string& sourceCode, TSTree* tree,
-                                              const analysis::SymbolTable& symbolTable,
-                                              const analysis::ScopeIndex& scopeIndex, bool includeDeclaration = true,
-                                              angel_lsp::utils::LspLogger* logger = nullptr);
+std::vector<lsp::Location> CollectOccurrences(const CollectOccurrencesRequest& request);
 } // namespace angel_lsp::features::resolution

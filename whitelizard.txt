@@ -147,6 +147,3 @@ angel_lsp::features::TryAddSortAndCleanIncludesAction
 angel_lsp::features::TryAddUndefinedIdentifierSuggestions
 angel_lsp::features::TryAddUnresolvedIncludeSuggestions
 angel_lsp::features::formatting::FormatPredefinedStub
-angel_lsp::features::resolution::CollectOccurrences
-angel_lsp::features::resolution::GetNodeTextAt
-angel_lsp::features::resolution::ResolveTargetSymbol

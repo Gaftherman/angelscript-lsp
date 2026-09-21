@@ -144,8 +144,17 @@ std::optional<lsp::PrepareRenameResult> PrepareRename(const PrepareRenameRequest
     }
 
     TSNode node{};
-    const auto target = ResolveTargetSymbol(request.uri, request.sourceCode, request.tree, request.position,
-                                            request.symbolTable, request.scopeIndex, node, request.logger);
+    resolution::ResolveTargetRequest resolveReq{
+        .uri = request.uri,
+        .sourceCode = request.sourceCode,
+        .tree = request.tree,
+        .position = request.position,
+        .symbolTable = request.symbolTable,
+        .scopeIndex = request.scopeIndex,
+        .outNode = node,
+        .logger = request.logger,
+    };
+    const auto target = resolution::ResolveTargetSymbol(resolveReq);
 
     if (!target.has_value() || ts_node_is_null(node))
     {
@@ -175,8 +184,17 @@ std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request)
     }
 
     TSNode node{};
-    const auto target = ResolveTargetSymbol(request.uri, request.sourceCode, request.tree, request.position,
-                                            request.symbolTable, request.scopeIndex, node, request.logger);
+    resolution::ResolveTargetRequest resolveReq{
+        .uri = request.uri,
+        .sourceCode = request.sourceCode,
+        .tree = request.tree,
+        .position = request.position,
+        .symbolTable = request.symbolTable,
+        .scopeIndex = request.scopeIndex,
+        .outNode = node,
+        .logger = request.logger,
+    };
+    const auto target = resolution::ResolveTargetSymbol(resolveReq);
 
     if (!target.has_value() || ts_node_is_null(node))
     {
@@ -188,8 +206,17 @@ std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request)
         return std::nullopt;
     }
 
-    const auto occurrences = CollectOccurrences(*target, request.uri, request.sourceCode, request.tree,
-                                                request.symbolTable, request.scopeIndex, true, request.logger);
+    resolution::CollectOccurrencesRequest occReq{
+        .target = *target,
+        .currentUri = request.uri,
+        .sourceCode = request.sourceCode,
+        .tree = request.tree,
+        .symbolTable = request.symbolTable,
+        .scopeIndex = request.scopeIndex,
+        .includeDeclaration = true,
+        .logger = request.logger,
+    };
+    const auto occurrences = resolution::CollectOccurrences(occReq);
 
     if (occurrences.empty())
     {

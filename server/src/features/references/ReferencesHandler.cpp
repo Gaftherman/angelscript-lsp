@@ -15,16 +15,34 @@ using namespace angel_lsp::features::resolution;
 std::optional<ReferencesResult> GetReferences(const ReferencesRequest& request)
 {
     TSNode node{};
-    const auto target = ResolveTargetSymbol(request.uri, request.sourceCode, request.tree, request.position,
-                                            request.symbolTable, request.scopeIndex, node, request.logger);
+    ResolveTargetRequest resolveReq{
+        .uri = request.uri,
+        .sourceCode = request.sourceCode,
+        .tree = request.tree,
+        .position = request.position,
+        .symbolTable = request.symbolTable,
+        .scopeIndex = request.scopeIndex,
+        .outNode = node,
+        .logger = request.logger,
+    };
+    const auto target = ResolveTargetSymbol(resolveReq);
 
     if (!target.has_value() || ts_node_is_null(node))
     {
         return std::nullopt;
     }
 
-    auto results = CollectOccurrences(*target, request.uri, request.sourceCode, request.tree, request.symbolTable,
-                                      request.scopeIndex, request.includeDeclaration, request.logger);
+    CollectOccurrencesRequest occReq{
+        .target = *target,
+        .currentUri = request.uri,
+        .sourceCode = request.sourceCode,
+        .tree = request.tree,
+        .symbolTable = request.symbolTable,
+        .scopeIndex = request.scopeIndex,
+        .includeDeclaration = request.includeDeclaration,
+        .logger = request.logger,
+    };
+    auto results = CollectOccurrences(occReq);
 
     if (results.empty())
     {
