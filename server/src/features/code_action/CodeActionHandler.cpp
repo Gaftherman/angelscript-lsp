@@ -3,16 +3,14 @@
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolTable.h"
+#include "parser/GrammarNames.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
 #include "utils/Utils.h"
-#include <filesystem>
-
-#include "parser/GrammarNames.h"
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <cctype>
-#include <functional>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -24,6 +22,9 @@ namespace
 {
 /**
  * @brief Extracts text slice of an AST node from the source code.
+ * @param[in] node Tree-sitter AST node.
+ * @param[in] sourceCode Source document text.
+ * @return Extracted node text.
  */
 std::string GetNodeText(TSNode node, std::string_view sourceCode)
 {
@@ -42,6 +43,9 @@ std::string GetNodeText(TSNode node, std::string_view sourceCode)
 
 /**
  * @brief Extracts leading whitespace indentation of a given 0-indexed line.
+ * @param[in] sourceCode Source document text.
+ * @param[in] line 0-based target line index.
+ * @return Leading indentation string.
  */
 std::string GetLineIndentation(std::string_view sourceCode, uint32_t line)
 {
@@ -72,129 +76,167 @@ std::string GetLineIndentation(std::string_view sourceCode, uint32_t line)
 }
 
 /**
- * @brief Locates the innermost lexical scope containing the given point.
+ * @brief Locates the innermost lexical scope containing the given line.
+ * @param[in] root Root scope node.
+ * @param[in] line 0-based line number.
+ * @return Innermost matching scope or root if uncontained.
  */
-/**
- * @brief Innermost scope by *line only*, falling back to `root` when nothing contains it.
- *
- * Deliberately not analysis::FindInnermostScope, and named apart from it so the difference
- * is visible rather than shadowed. Two things differ: the column is ignored, and a point
- * outside every scope yields the root instead of nullptr. The code actions built here work
- * on whole lines and want a scope to attach to even when the cursor sits between them, so
- * both differences are load-bearing.
- */
-const analysis::Scope* FindScopeByLineOrRoot(const analysis::Scope* root, uint32_t line, uint32_t character)
+const analysis::Scope* FindScopeByLine(const analysis::Scope* root, uint32_t line)
 {
     if (!root)
     {
         return nullptr;
     }
-    for (const auto& child : root->children)
+    const analysis::Scope* curr = root;
+    bool movedDeeper = true;
+    while (movedDeeper)
     {
-        if (child->startLine <= line && child->endLine >= line)
+        movedDeeper = false;
+        for (const auto& child : curr->children)
         {
-            if (const analysis::Scope* deeper = FindScopeByLineOrRoot(child.get(), line, character))
+            if (child->startLine <= line && child->endLine >= line)
             {
-                return deeper;
+                curr = child.get();
+                movedDeeper = true;
+                break;
             }
-            return child.get();
         }
     }
-    return root;
+    return curr;
 }
 
 /**
- * @brief Recursively collects all identifier reference names across the scope hierarchy.
+ * @brief Locates the innermost lexical scope containing the given point, falling back to root.
+ * @param[in] root Root scope node.
+ * @param[in] line 0-based line number.
+ * @param[in] character 0-based character offset.
+ * @return Innermost scope or root if none matches.
  */
-void CollectAllReferences(const analysis::Scope* scope, ankerl::unordered_dense::set<std::string>& refs)
+const analysis::Scope* FindScopeByLineOrRoot(const analysis::Scope* root, uint32_t line, uint32_t character)
 {
-    if (!scope)
+    (void)character;
+    return FindScopeByLine(root, line);
+}
+
+/**
+ * @brief Collects all identifier reference names across the scope hierarchy using a worklist.
+ * @param[in] rootScope Root of scope subtree.
+ * @param[out] refs Destination reference name set.
+ */
+void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_dense::set<std::string>& refs)
+{
+    if (!rootScope)
     {
         return;
     }
-    for (const auto& ref : scope->references)
+    std::vector<const analysis::Scope*> worklist = {rootScope};
+    while (!worklist.empty())
     {
-        refs.insert(ref.name);
-    }
-    for (const auto& child : scope->children)
-    {
-        CollectAllReferences(child.get(), refs);
+        const analysis::Scope* sc = worklist.back();
+        worklist.pop_back();
+        for (const auto& ref : sc->references)
+        {
+            refs.insert(ref.name);
+        }
+        for (const auto& child : sc->children)
+        {
+            worklist.push_back(child.get());
+        }
     }
 }
 
 /**
- * @brief Recursively marks all LocalDefinition entries as used if they have a matching reference.
+ * @brief Collects definitions that have at least one valid reference across scopes using a worklist.
+ * @param[in] rootScope Root of scope subtree.
+ * @param[out] used Destination set of referenced definitions.
  */
-void CollectUsedDefinitions(const analysis::Scope* scope,
+void CollectUsedDefinitions(const analysis::Scope* rootScope,
                             ankerl::unordered_dense::set<const analysis::LocalDefinition*>& used)
 {
-    if (!scope)
+    if (!rootScope)
     {
         return;
     }
-
-    for (const auto& ref : scope->references)
+    std::vector<const analysis::Scope*> worklist = {rootScope};
+    while (!worklist.empty())
     {
-        if (ref.isMemberAccess)
+        const analysis::Scope* sc = worklist.back();
+        worklist.pop_back();
+
+        for (const auto& ref : sc->references)
         {
-            continue;
+            if (ref.isMemberAccess)
+            {
+                continue;
+            }
+            const analysis::LocalDefinition* def = analysis::ResolveInScope(sc, ref.name);
+            if (!def)
+            {
+                continue;
+            }
+            if (def->startLine == ref.startLine && def->startCharacter == ref.startCharacter &&
+                def->endLine == ref.endLine && def->endCharacter == ref.endCharacter)
+            {
+                continue;
+            }
+            used.insert(def);
         }
 
-        const analysis::LocalDefinition* def = analysis::ResolveInScope(scope, ref.name);
-        if (!def)
+        for (const auto& child : sc->children)
         {
-            continue;
+            worklist.push_back(child.get());
         }
-
-        // Skip self-reference at the declaration site
-        if (def->startLine == ref.startLine && def->startCharacter == ref.startCharacter &&
-            def->endLine == ref.endLine && def->endCharacter == ref.endCharacter)
-        {
-            continue;
-        }
-
-        used.insert(def);
-    }
-
-    for (const auto& child : scope->children)
-    {
-        CollectUsedDefinitions(child.get(), used);
     }
 }
 
 /**
- * @brief Recursively collects all unused local variables inside function scopes.
+ * @brief Traverses scopes with a worklist to collect unused local variables.
+ * @param[in] rootScope Root of scope subtree.
+ * @param[in] used Set of referenced definitions.
+ * @param[out] unused Destination vector for unused variable definitions.
  */
-void CollectUnusedVariables(const analysis::Scope* scope,
+void CollectUnusedVariables(const analysis::Scope* rootScope,
                             const ankerl::unordered_dense::set<const analysis::LocalDefinition*>& used,
-                            bool isFunctionNested, std::vector<const analysis::LocalDefinition*>& unused)
+                            std::vector<const analysis::LocalDefinition*>& unused)
 {
-    if (!scope)
+    if (!rootScope)
     {
         return;
     }
-
-    bool funcNested = isFunctionNested || scope->isFunctionScope;
-
-    if (funcNested)
+    struct ScopeItem
     {
-        for (const auto& def : scope->definitions)
+        const analysis::Scope* scope;
+        bool isFuncNested;
+    };
+    std::vector<ScopeItem> worklist = {{rootScope, rootScope->isFunctionScope}};
+
+    while (!worklist.empty())
+    {
+        auto [sc, funcNested] = worklist.back();
+        worklist.pop_back();
+
+        bool nested = funcNested || sc->isFunctionScope;
+        if (nested)
         {
-            if (def.kind == analysis::LocalDefinitionKind::Variable && !used.contains(&def))
+            for (const auto& def : sc->definitions)
             {
-                unused.push_back(&def);
+                if (def.kind == analysis::LocalDefinitionKind::Variable && !used.contains(&def))
+                {
+                    unused.push_back(&def);
+                }
             }
         }
-    }
-
-    for (const auto& child : scope->children)
-    {
-        CollectUnusedVariables(child.get(), used, funcNested, unused);
+        for (const auto& child : sc->children)
+        {
+            worklist.push_back({child.get(), nested});
+        }
     }
 }
 
 /**
  * @brief Returns default literal return string for a return type.
+ * @param[in] returnType Return type text.
+ * @return Default literal return text ("null", "false", "0", "\"\"").
  */
 std::string GetDefaultReturnValue(std::string_view returnType)
 {
@@ -211,17 +253,36 @@ std::string GetDefaultReturnValue(std::string_view returnType)
     {
         return "\"\"";
     }
-    if (cleanRet == "int" || cleanRet == "int8" || cleanRet == "int16" || cleanRet == "int32" || cleanRet == "int64" ||
-        cleanRet == "uint" || cleanRet == "uint8" || cleanRet == "uint16" || cleanRet == "uint32" ||
-        cleanRet == "uint64" || cleanRet == "float" || cleanRet == "double")
+    static const ankerl::unordered_dense::set<std::string_view> kNumericTypes = {
+        "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float", "double"};
+    if (kNumericTypes.contains(cleanRet))
     {
         return "0";
     }
     return "null";
 }
 
+static constexpr std::string_view kExtractableExpressionTypes[] = {"binary_expression",
+                                                                   "unary_expression",
+                                                                   "postfix_expression",
+                                                                   "call_expression",
+                                                                   "member_expression",
+                                                                   "ternary_expression",
+                                                                   "cast_expression",
+                                                                   "functional_cast_expression",
+                                                                   "construct_call_expression",
+                                                                   "index_expression",
+                                                                   "parenthesized_expression",
+                                                                   "scoped_identifier",
+                                                                   "identifier",
+                                                                   "number_literal",
+                                                                   "string_literal",
+                                                                   "boolean_literal"};
+
 /**
  * @brief Checks whether an AST node is an extractable expression.
+ * @param[in] node AST node.
+ * @return True if candidate node can be extracted into a variable or method.
  */
 bool IsExtractableExpression(TSNode node)
 {
@@ -230,15 +291,20 @@ bool IsExtractableExpression(TSNode node)
         return false;
     }
     std::string_view type = ts_node_type(node);
-    return type == "binary_expression" || type == "unary_expression" || type == "postfix_expression" ||
-           type == "call_expression" || type == "member_expression" || type == "ternary_expression" ||
-           type == "cast_expression" || type == "functional_cast_expression" || type == "construct_call_expression" ||
-           type == "index_expression" || type == "parenthesized_expression" || type == "scoped_identifier" ||
-           type == "identifier" || type == "number_literal" || type == "string_literal" || type == "boolean_literal";
+    for (std::string_view candidate : kExtractableExpressionTypes)
+    {
+        if (type == candidate)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
  * @brief Checks whether an AST node is the left-hand side of an assignment.
+ * @param[in] node Candidate expression AST node.
+ * @return True if node is on the LHS of an assignment.
  */
 bool IsLhsOfAssignment(TSNode node)
 {
@@ -266,6 +332,8 @@ bool IsLhsOfAssignment(TSNode node)
 
 /**
  * @brief Cleans property name by stripping m_ or _ prefix and capitalizing the first character.
+ * @param[in] fieldName Member variable name.
+ * @return Cleaned property name suitable for accessor generation.
  */
 std::string CleanPropertyName(std::string_view fieldName)
 {
@@ -285,25 +353,30 @@ std::string CleanPropertyName(std::string_view fieldName)
     return prop;
 }
 
-/**
- * @brief Checks if a method body mutates class fields or calls non-const methods on `this`.
- */
-bool MethodBodyMutatesClassState(TSNode bodyNode, TSNode classNode, std::string_view sourceCode,
-                                 const analysis::SymbolTable& table, const std::string& className,
-                                 const analysis::Scope* scope)
+struct ClassMutationContext
 {
-    if (ts_node_is_null(bodyNode))
-    {
-        return false;
-    }
+    TSNode bodyNode;
+    TSNode classNode;
+    std::string_view sourceCode;
+    const analysis::SymbolTable& table;
+    const std::string& className;
+    const analysis::Scope* scope = nullptr;
+};
 
+/**
+ * @brief Collects declared class field names from the symbol table and class body AST.
+ * @param[in] context Mutation check context.
+ * @return Set of member field names for the active class.
+ */
+ankerl::unordered_dense::set<std::string> CollectClassFields(const ClassMutationContext& context)
+{
     ankerl::unordered_dense::set<std::string> classFields;
-    table.ForEachSymbol(
+    context.table.ForEachSymbol(
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
         {
             for (const auto& sym : symList)
             {
-                if (sym.containerName == className &&
+                if (sym.containerName == context.className &&
                     (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property))
                 {
                     classFields.insert(sym.name);
@@ -311,201 +384,246 @@ bool MethodBodyMutatesClassState(TSNode bodyNode, TSNode classNode, std::string_
             }
         });
 
-    if (!ts_node_is_null(classNode))
+    if (ts_node_is_null(context.classNode))
     {
-        TSNode cBody = parser::GetChildByField(classNode, parser::fields::Body);
-        if (ts_node_is_null(cBody))
+        return classFields;
+    }
+
+    TSNode cBody = parser::GetChildByField(context.classNode, parser::fields::Body);
+    if (ts_node_is_null(cBody))
+    {
+        uint32_t cnt = ts_node_child_count(context.classNode);
+        for (uint32_t i = 0; i < cnt; ++i)
         {
-            uint32_t cnt = ts_node_child_count(classNode);
-            for (uint32_t i = 0; i < cnt; ++i)
+            TSNode ch = ts_node_child(context.classNode, i);
+            if (std::string_view(ts_node_type(ch)) == "class_body")
             {
-                TSNode ch = ts_node_child(classNode, i);
-                if (std::string_view(ts_node_type(ch)) == "class_body")
-                {
-                    cBody = ch;
-                    break;
-                }
+                cBody = ch;
+                break;
             }
         }
+    }
 
-        if (!ts_node_is_null(cBody))
+    if (!ts_node_is_null(cBody))
+    {
+        uint32_t bCnt = ts_node_child_count(cBody);
+        for (uint32_t i = 0; i < bCnt; ++i)
         {
-            uint32_t bCnt = ts_node_child_count(cBody);
-            for (uint32_t i = 0; i < bCnt; ++i)
+            TSNode ch = ts_node_child(cBody, i);
+            if (std::string_view(ts_node_type(ch)) == "variable_declaration")
             {
-                TSNode ch = ts_node_child(cBody, i);
-                if (std::string_view(ts_node_type(ch)) == "variable_declaration")
+                uint32_t vCnt = ts_node_child_count(ch);
+                for (uint32_t j = 0; j < vCnt; ++j)
                 {
-                    uint32_t vCnt = ts_node_child_count(ch);
-                    for (uint32_t j = 0; j < vCnt; ++j)
+                    TSNode vCh = ts_node_child(ch, j);
+                    if (std::string_view(ts_node_type(vCh)) == "variable_declarator")
                     {
-                        TSNode vCh = ts_node_child(ch, j);
-                        if (std::string_view(ts_node_type(vCh)) == "variable_declarator")
+                        TSNode vNameNode = parser::GetChildByField(vCh, parser::fields::Name);
+                        std::string fName = GetNodeText(vNameNode, context.sourceCode);
+                        if (!fName.empty())
                         {
-                            TSNode vNameNode = parser::GetChildByField(vCh, parser::fields::Name);
-                            std::string fName = GetNodeText(vNameNode, sourceCode);
-                            if (!fName.empty())
-                            {
-                                classFields.insert(fName);
-                            }
+                            classFields.insert(fName);
                         }
                     }
                 }
             }
         }
     }
+    return classFields;
+}
 
-    bool mutates = false;
-    std::vector<TSNode> stack = {bodyNode};
-    while (!stack.empty() && !mutates)
+/**
+ * @brief Checks if a resolved variable node refers to a class field rather than a local variable.
+ * @param[in] context Mutation check context.
+ * @param[in] classFields Set of known class field names.
+ * @param[in] idNode Identifier AST node.
+ * @param[in] varName Variable name.
+ * @return True if target refers to a class field.
+ */
+bool IsFieldOrOuterVar(const ClassMutationContext& context,
+                       const ankerl::unordered_dense::set<std::string>& classFields, TSNode idNode,
+                       const std::string& varName)
+{
+    TSPoint pt = ts_node_start_point(idNode);
+    const analysis::Scope* inner = FindScopeByLineOrRoot(context.scope, pt.row, pt.column);
+    const analysis::LocalDefinition* localDef = analysis::ResolveInScope(inner, varName);
+
+    bool isField = classFields.contains(varName);
+    if (localDef)
+    {
+        if (localDef->kind == analysis::LocalDefinitionKind::Field)
+        {
+            isField = true;
+        }
+        else if (localDef->kind == analysis::LocalDefinitionKind::Variable ||
+                 localDef->kind == analysis::LocalDefinitionKind::Parameter)
+        {
+            if (localDef->startLine >= ts_node_start_point(context.bodyNode).row &&
+                localDef->endLine <= ts_node_end_point(context.bodyNode).row)
+            {
+                isField = false;
+            }
+        }
+    }
+    return isField;
+}
+
+/**
+ * @brief Checks if an assignment expression mutates a class field.
+ * @param[in] context Mutation check context.
+ * @param[in] classFields Set of class field names.
+ * @param[in] curr Candidate assignment AST node.
+ * @return True if assignment modifies a class field.
+ */
+bool CheckAssignmentMutatesClassState(const ClassMutationContext& context,
+                                      const ankerl::unordered_dense::set<std::string>& classFields, TSNode curr)
+{
+    if (std::string_view(ts_node_type(curr)) != "assignment_expression")
+    {
+        return false;
+    }
+    TSNode left = parser::GetChildByField(curr, parser::fields::Left);
+    if (ts_node_is_null(left))
+    {
+        return false;
+    }
+    std::string_view lType = ts_node_type(left);
+    if (lType == "identifier" || lType == "scoped_identifier")
+    {
+        std::string varName = GetNodeText(left, context.sourceCode);
+        return IsFieldOrOuterVar(context, classFields, left, varName);
+    }
+    if (lType == "member_expression")
+    {
+        TSNode obj = parser::GetChildByField(left, parser::fields::Object);
+        TSNode mem = parser::GetChildByField(left, parser::fields::Member);
+        if (!ts_node_is_null(obj) && std::string_view(ts_node_type(obj)) == "this_expression")
+        {
+            std::string memName = GetNodeText(mem, context.sourceCode);
+            return classFields.contains(memName);
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if a prefix or postfix increment/decrement mutates a class field.
+ * @param[in] context Mutation check context.
+ * @param[in] classFields Set of class field names.
+ * @param[in] curr Candidate increment/decrement AST node.
+ * @return True if operator mutates a class field.
+ */
+bool CheckIncDecMutatesClassState(const ClassMutationContext& context,
+                                  const ankerl::unordered_dense::set<std::string>& classFields, TSNode curr)
+{
+    std::string_view type = ts_node_type(curr);
+    if (type != "postfix_expression" && type != "unary_expression")
+    {
+        return false;
+    }
+    TSNode opNode = parser::GetChildByField(curr, parser::fields::Operator);
+    std::string op = GetNodeText(opNode, context.sourceCode);
+    if (op != "++" && op != "--")
+    {
+        return false;
+    }
+    TSNode arg = parser::GetChildByField(curr, parser::fields::Operand);
+    if (ts_node_is_null(arg))
+    {
+        return false;
+    }
+    std::string_view aType = ts_node_type(arg);
+    if (aType == "identifier" || aType == "scoped_identifier")
+    {
+        std::string varName = GetNodeText(arg, context.sourceCode);
+        return IsFieldOrOuterVar(context, classFields, arg, varName);
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if a method call on `this` calls a non-const method.
+ * @param[in] context Mutation check context.
+ * @param[in] curr Candidate call expression AST node.
+ * @return True if method call mutates class state.
+ */
+bool CheckMethodCallMutatesClassState(const ClassMutationContext& context, TSNode curr)
+{
+    if (std::string_view(ts_node_type(curr)) != "call_expression")
+    {
+        return false;
+    }
+    TSNode callee = parser::GetChildByField(curr, parser::fields::Function);
+    if (ts_node_is_null(callee))
+    {
+        return false;
+    }
+    std::string_view cType = ts_node_type(callee);
+    std::string callMethodName;
+    bool isMemberOnThis = false;
+
+    if (cType == "identifier" || cType == "scoped_identifier")
+    {
+        callMethodName = GetNodeText(callee, context.sourceCode);
+        isMemberOnThis = true;
+    }
+    else if (cType == "member_expression")
+    {
+        TSNode obj = parser::GetChildByField(callee, parser::fields::Object);
+        TSNode mem = parser::GetChildByField(callee, parser::fields::Member);
+        if (!ts_node_is_null(obj) && std::string_view(ts_node_type(obj)) == "this_expression")
+        {
+            callMethodName = GetNodeText(mem, context.sourceCode);
+            isMemberOnThis = true;
+        }
+    }
+
+    if (isMemberOnThis && !callMethodName.empty())
+    {
+        bool mutates = false;
+        context.table.ForEachSymbol(
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
+            {
+                for (const auto& sym : symList)
+                {
+                    if (sym.type == analysis::SymbolType::Function && sym.containerName == context.className &&
+                        sym.name == callMethodName)
+                    {
+                        if (!sym.GetFunction().modifiers.isConst)
+                        {
+                            mutates = true;
+                        }
+                    }
+                }
+            });
+        return mutates;
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if a method body mutates class fields or calls non-const methods on `this`.
+ * @param[in] context Mutation evaluation context.
+ * @return True if method body mutates class state.
+ */
+bool MethodBodyMutatesClassState(const ClassMutationContext& context)
+{
+    if (ts_node_is_null(context.bodyNode))
+    {
+        return false;
+    }
+
+    auto classFields = CollectClassFields(context);
+    std::vector<TSNode> stack = {context.bodyNode};
+    while (!stack.empty())
     {
         TSNode curr = stack.back();
         stack.pop_back();
 
-        std::string_view type = ts_node_type(curr);
-
-        if (type == "assignment_expression")
+        if (CheckAssignmentMutatesClassState(context, classFields, curr) ||
+            CheckIncDecMutatesClassState(context, classFields, curr) || CheckMethodCallMutatesClassState(context, curr))
         {
-            TSNode left = parser::GetChildByField(curr, parser::fields::Left);
-            if (!ts_node_is_null(left))
-            {
-                std::string_view lType = ts_node_type(left);
-                if (lType == "identifier" || lType == "scoped_identifier")
-                {
-                    std::string varName = GetNodeText(left, sourceCode);
-                    TSPoint pt = ts_node_start_point(left);
-                    const analysis::Scope* inner = FindScopeByLineOrRoot(scope, pt.row, pt.column);
-                    const analysis::LocalDefinition* localDef = analysis::ResolveInScope(inner, varName);
-
-                    bool isField = classFields.contains(varName);
-                    if (localDef)
-                    {
-                        if (localDef->kind == analysis::LocalDefinitionKind::Field)
-                        {
-                            isField = true;
-                        }
-                        else if (localDef->kind == analysis::LocalDefinitionKind::Variable ||
-                                 localDef->kind == analysis::LocalDefinitionKind::Parameter)
-                        {
-                            if (localDef->startLine >= ts_node_start_point(bodyNode).row &&
-                                localDef->endLine <= ts_node_end_point(bodyNode).row)
-                            {
-                                isField = false;
-                            }
-                        }
-                    }
-
-                    if (isField)
-                    {
-                        mutates = true;
-                        break;
-                    }
-                }
-                else if (lType == "member_expression")
-                {
-                    TSNode obj = parser::GetChildByField(left, parser::fields::Object);
-                    TSNode mem = parser::GetChildByField(left, parser::fields::Member);
-                    if (!ts_node_is_null(obj) && std::string_view(ts_node_type(obj)) == "this_expression")
-                    {
-                        std::string memName = GetNodeText(mem, sourceCode);
-                        if (classFields.contains(memName))
-                        {
-                            mutates = true;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        else if (type == "postfix_expression" || type == "unary_expression")
-        {
-            TSNode opNode = parser::GetChildByField(curr, parser::fields::Operator);
-            std::string op = GetNodeText(opNode, sourceCode);
-            if (op == "++" || op == "--")
-            {
-                TSNode arg = parser::GetChildByField(curr, parser::fields::Operand);
-                if (!ts_node_is_null(arg))
-                {
-                    std::string_view aType = ts_node_type(arg);
-                    if (aType == "identifier" || aType == "scoped_identifier")
-                    {
-                        std::string varName = GetNodeText(arg, sourceCode);
-                        TSPoint pt = ts_node_start_point(arg);
-                        const analysis::Scope* inner = FindScopeByLineOrRoot(scope, pt.row, pt.column);
-                        const analysis::LocalDefinition* localDef = analysis::ResolveInScope(inner, varName);
-
-                        bool isField = classFields.contains(varName);
-                        if (localDef)
-                        {
-                            if (localDef->kind == analysis::LocalDefinitionKind::Field)
-                            {
-                                isField = true;
-                            }
-                            else if (localDef->kind == analysis::LocalDefinitionKind::Variable ||
-                                     localDef->kind == analysis::LocalDefinitionKind::Parameter)
-                            {
-                                if (localDef->startLine >= ts_node_start_point(bodyNode).row &&
-                                    localDef->endLine <= ts_node_end_point(bodyNode).row)
-                                {
-                                    isField = false;
-                                }
-                            }
-                        }
-
-                        if (isField)
-                        {
-                            mutates = true;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        else if (type == "call_expression")
-        {
-            TSNode callee = parser::GetChildByField(curr, parser::fields::Function);
-            if (!ts_node_is_null(callee))
-            {
-                std::string_view cType = ts_node_type(callee);
-                std::string callMethodName;
-                bool isMemberOnThis = false;
-
-                if (cType == "identifier" || cType == "scoped_identifier")
-                {
-                    callMethodName = GetNodeText(callee, sourceCode);
-                    isMemberOnThis = true;
-                }
-                else if (cType == "member_expression")
-                {
-                    TSNode obj = parser::GetChildByField(callee, parser::fields::Object);
-                    TSNode mem = parser::GetChildByField(callee, parser::fields::Member);
-                    if (!ts_node_is_null(obj) && std::string_view(ts_node_type(obj)) == "this_expression")
-                    {
-                        callMethodName = GetNodeText(mem, sourceCode);
-                        isMemberOnThis = true;
-                    }
-                }
-
-                if (isMemberOnThis && !callMethodName.empty())
-                {
-                    table.ForEachSymbol(
-                        [&]([[maybe_unused]] const std::string& qualifiedName,
-                            const std::vector<analysis::Symbol>& symList)
-                        {
-                            for (const auto& sym : symList)
-                            {
-                                if (sym.type == analysis::SymbolType::Function && sym.containerName == className &&
-                                    sym.name == callMethodName)
-                                {
-                                    if (!sym.GetFunction().modifiers.isConst)
-                                    {
-                                        mutates = true;
-                                    }
-                                }
-                            }
-                        });
-                }
-            }
+            return true;
         }
 
         uint32_t childCount = ts_node_child_count(curr);
@@ -514,29 +632,20 @@ bool MethodBodyMutatesClassState(TSNode bodyNode, TSNode classNode, std::string_
             stack.push_back(ts_node_child(curr, i));
         }
     }
-
-    return mutates;
+    return false;
 }
 
 /**
- * @brief Tries to generate an Extract Variable refactoring code action.
+ * @brief Locates the target extractable expression within the requested selection range.
+ * @param[in] rootNode Root of AST.
+ * @param[in] range Selected text range.
+ * @return Valid extractable node or null node if none matches.
  */
-void TryAddExtractVariableAction(const CodeActionRequest& request, TSNode rootNode,
-                                 std::vector<lsp::CodeAction>& actions)
+TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
 {
-    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
-    {
-        return;
-    }
-
-    TSPoint startPt = {request.range.start.line, request.range.start.character};
-    TSPoint endPt = {request.range.end.line, request.range.end.character};
+    TSPoint startPt = {range.start.line, range.start.character};
+    TSPoint endPt = {range.end.line, range.end.character};
     TSNode targetNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
-    if (ts_node_is_null(targetNode))
-    {
-        return;
-    }
-
     while (!ts_node_is_null(targetNode) && !IsExtractableExpression(targetNode))
     {
         TSNode p = ts_node_parent(targetNode);
@@ -546,44 +655,50 @@ void TryAddExtractVariableAction(const CodeActionRequest& request, TSNode rootNo
         }
         targetNode = p;
     }
-
     if (ts_node_is_null(targetNode) || !IsExtractableExpression(targetNode))
     {
-        return;
+        return TSNode{};
     }
-
     std::string_view nodeType = ts_node_type(targetNode);
     if (nodeType.ends_with("_statement") || nodeType.ends_with("_declaration") || nodeType == "statement_block" ||
-        nodeType == "class_body" || nodeType == "parameter" || nodeType == "primitive_type")
+        nodeType == "class_body" || nodeType == "parameter" || nodeType == "primitive_type" ||
+        IsLhsOfAssignment(targetNode))
     {
-        return;
+        return TSNode{};
     }
+    return targetNode;
+}
 
-    if (IsLhsOfAssignment(targetNode))
-    {
-        return;
-    }
-
-    TSNode stmtNode = targetNode;
+/**
+ * @brief Finds the innermost block-level statement enclosing the target node.
+ * @param[in] node AST node.
+ * @return Enclosing statement AST node.
+ */
+TSNode FindEnclosingBlockStatement(TSNode node)
+{
+    TSNode stmtNode = node;
     while (!ts_node_is_null(stmtNode))
     {
         TSNode parent = ts_node_parent(stmtNode);
-        if (!ts_node_is_null(parent))
+        if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "statement_block")
         {
-            std::string_view pType = ts_node_type(parent);
-            if (pType == "statement_block")
-            {
-                break;
-            }
+            return stmtNode;
         }
         stmtNode = parent;
     }
+    return TSNode{};
+}
 
-    if (ts_node_is_null(stmtNode) || ts_node_is_null(ts_node_parent(stmtNode)))
-    {
-        return;
-    }
-
+/**
+ * @brief Constructs an Extract Variable refactoring code action.
+ * @param[in] request Code action request context.
+ * @param[in] targetNode Target expression node.
+ * @param[in] stmtNode Statement node above which declaration is inserted.
+ * @return Code action if construction succeeds, std::nullopt otherwise.
+ */
+std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionRequest& request, TSNode targetNode,
+                                                          TSNode stmtNode)
+{
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     TSPoint exprStart = ts_node_start_point(targetNode);
     TSPoint exprEnd = ts_node_end_point(targetNode);
@@ -600,7 +715,7 @@ void TryAddExtractVariableAction(const CodeActionRequest& request, TSNode rootNo
     std::string exprText = GetNodeText(targetNode, request.sourceCode);
     if (exprText.empty())
     {
-        return;
+        return std::nullopt;
     }
 
     uint32_t stmtRow = ts_node_start_point(stmtNode).row;
@@ -624,56 +739,136 @@ void TryAddExtractVariableAction(const CodeActionRequest& request, TSNode rootNo
     wsEdit.changes = std::move(changes);
     action.edit = std::move(wsEdit);
 
-    actions.push_back(std::move(action));
+    return action;
 }
 
 /**
- * @brief Tries to generate an Extract Method refactoring code action.
+ * @brief Tries to generate an Extract Variable refactoring code action.
+ * @param[in] request Code action request context.
+ * @param[in] rootNode Root AST node.
+ * @param[out] actions Destination actions vector.
  */
-void TryAddExtractMethodAction(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
+void TryAddExtractVariableAction(const CodeActionRequest& request, TSNode rootNode,
+                                 std::vector<lsp::CodeAction>& actions)
 {
     if (ts_node_is_null(rootNode) || request.sourceCode.empty())
     {
         return;
     }
-
-    TSPoint startPt = {request.range.start.line, request.range.start.character};
-    TSPoint endPt = {request.range.end.line, request.range.end.character};
-    TSNode selNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
-    if (ts_node_is_null(selNode))
+    TSNode targetNode = FindExtractableExpression(rootNode, request.range);
+    if (ts_node_is_null(targetNode))
     {
         return;
     }
+    TSNode stmtNode = FindEnclosingBlockStatement(targetNode);
+    if (ts_node_is_null(stmtNode))
+    {
+        return;
+    }
+    if (auto action = BuildExtractVariableAction(request, targetNode, stmtNode))
+    {
+        actions.push_back(std::move(*action));
+    }
+}
 
+struct ExtractMethodStatements
+{
+    TSNode fnNode;
+    TSNode classNode;
+    std::vector<TSNode> selectedStmts;
+    uint32_t startByte = 0;
+    uint32_t endByte = 0;
+    TSPoint firstStart = {0, 0};
+    TSPoint lastEnd = {0, 0};
+    std::string selectedCode;
+};
+
+struct VarInfo
+{
+    std::string name;
+    std::string typeName;
+    bool declaredInside = false;
+};
+
+struct ExtractedMethodVariables
+{
+    std::vector<VarInfo> inputParams;
+    std::vector<VarInfo> outputVars;
+};
+
+/**
+ * @brief Represents deduced signature and edits for extracted method.
+ */
+struct ExtractedMethodPlan
+{
+    std::string returnType;
+    std::string paramsStr;
+    std::string argsStr;
+    std::string callSiteText;
+    std::string extractedBody;
+};
+
+/**
+ * @brief Context for discovering method outputs.
+ */
+struct MethodOutputContext
+{
+    const ExtractMethodStatements& stmts;
+    const analysis::Scope* fnScope;
+    const analysis::Scope* stmtScope;
+};
+
+/**
+ * @brief Finds the enclosing function node for a selection range.
+ * @param[in] rootNode AST root node.
+ * @param[in] range Selection range.
+ * @return Function declaration node or null node.
+ */
+TSNode FindEnclosingFunctionNode(TSNode rootNode, const lsp::Range& range)
+{
+    TSPoint startPt = {range.start.line, range.start.character};
+    TSPoint endPt = {range.end.line, range.end.character};
+    TSNode selNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
     TSNode fnNode = selNode;
     while (!ts_node_is_null(fnNode) && std::string_view(ts_node_type(fnNode)) != "func_declaration")
     {
         fnNode = ts_node_parent(fnNode);
     }
-    if (ts_node_is_null(fnNode))
-    {
-        return;
-    }
+    return fnNode;
+}
 
+/**
+ * @brief Finds the statement block body of a function node.
+ * @param[in] fnNode Function declaration node.
+ * @return Statement block node or null node.
+ */
+TSNode FindFunctionBodyBlock(TSNode fnNode)
+{
     TSNode bodyNode = parser::GetChildByField(fnNode, parser::fields::Body);
-    if (ts_node_is_null(bodyNode))
+    if (!ts_node_is_null(bodyNode))
     {
-        uint32_t cnt = ts_node_child_count(fnNode);
-        for (uint32_t i = 0; i < cnt; ++i)
+        return bodyNode;
+    }
+    uint32_t cnt = ts_node_child_count(fnNode);
+    for (uint32_t i = 0; i < cnt; ++i)
+    {
+        TSNode ch = ts_node_child(fnNode, i);
+        if (std::string_view(ts_node_type(ch)) == "statement_block")
         {
-            TSNode ch = ts_node_child(fnNode, i);
-            if (std::string_view(ts_node_type(ch)) == "statement_block")
-            {
-                bodyNode = ch;
-                break;
-            }
+            return ch;
         }
     }
-    if (ts_node_is_null(bodyNode))
-    {
-        return;
-    }
+    return bodyNode;
+}
 
+/**
+ * @brief Collects statements within a block that intersect the selection range.
+ * @param[in] bodyNode Statement block node.
+ * @param[in] range Selection range.
+ * @return Vector of intersecting statement nodes.
+ */
+std::vector<TSNode> CollectStatementsInRange(TSNode bodyNode, const lsp::Range& range)
+{
     std::vector<TSNode> selectedStmts;
     uint32_t childCount = ts_node_child_count(bodyNode);
     for (uint32_t i = 0; i < childCount; ++i)
@@ -690,29 +885,51 @@ void TryAddExtractMethodAction(const CodeActionRequest& request, TSNode rootNode
         }
         TSPoint cStart = ts_node_start_point(ch);
         TSPoint cEnd = ts_node_end_point(ch);
-        if (cStart.row <= request.range.end.line && cEnd.row >= request.range.start.line)
+        if (cStart.row <= range.end.line && cEnd.row >= range.start.line)
         {
             selectedStmts.push_back(ch);
         }
     }
+    return selectedStmts;
+}
 
+/**
+ * @brief Finds the statement sequence selected for method extraction.
+ * @param[in] rootNode AST root node.
+ * @param[in] request Code action request.
+ * @return Extracted statement metadata or std::nullopt.
+ */
+std::optional<ExtractMethodStatements> FindSelectedStatements(TSNode rootNode, const CodeActionRequest& request)
+{
+    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+    TSNode fnNode = FindEnclosingFunctionNode(rootNode, request.range);
+    if (ts_node_is_null(fnNode))
+    {
+        return std::nullopt;
+    }
+    TSNode bodyNode = FindFunctionBodyBlock(fnNode);
+    if (ts_node_is_null(bodyNode))
+    {
+        return std::nullopt;
+    }
+
+    std::vector<TSNode> selectedStmts = CollectStatementsInRange(bodyNode, request.range);
     if (selectedStmts.empty())
     {
-        return;
+        return std::nullopt;
     }
 
     TSNode firstStmt = selectedStmts.front();
     TSNode lastStmt = selectedStmts.back();
-    TSPoint firstStart = ts_node_start_point(firstStmt);
-    TSPoint lastEnd = ts_node_end_point(lastStmt);
-
     uint32_t startByte = ts_node_start_byte(firstStmt);
     uint32_t endByte = ts_node_end_byte(lastStmt);
     if (startByte >= request.sourceCode.size() || endByte > request.sourceCode.size() || startByte >= endByte)
     {
-        return;
+        return std::nullopt;
     }
-    std::string selectedCode = request.sourceCode.substr(startByte, endByte - startByte);
 
     TSNode classNode = fnNode;
     while (!ts_node_is_null(classNode) && std::string_view(ts_node_type(classNode)) != "class_declaration")
@@ -720,357 +937,542 @@ void TryAddExtractMethodAction(const CodeActionRequest& request, TSNode rootNode
         classNode = ts_node_parent(classNode);
     }
 
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    const analysis::Scope* fnScope =
-        FindScopeByLineOrRoot(rootScope.get(), ts_node_start_point(fnNode).row, ts_node_start_point(fnNode).column);
+    ExtractMethodStatements result;
+    result.fnNode = fnNode;
+    result.classNode = classNode;
+    result.selectedStmts = std::move(selectedStmts);
+    result.startByte = startByte;
+    result.endByte = endByte;
+    result.firstStart = ts_node_start_point(firstStmt);
+    result.lastEnd = ts_node_end_point(lastStmt);
+    result.selectedCode = request.sourceCode.substr(startByte, endByte - startByte);
+    return result;
+}
 
-    struct VarInfo
+/**
+ * @brief Validates if a referenced symbol is an outer input parameter or local variable.
+ * @param[in] ref Scope reference.
+ * @param[in] sc Enclosing scope.
+ * @param[in] stmts Selected statement information.
+ * @param[out] outInfo Discovered VarInfo.
+ * @return True if reference is a valid extracted method input.
+ */
+bool IsValidMethodInputRef(const analysis::LocalReference& ref, const analysis::Scope* sc,
+                           const ExtractMethodStatements& stmts, VarInfo& outInfo)
+{
+    if (ref.isMemberAccess || ref.startLine < stmts.firstStart.row || ref.endLine > stmts.lastEnd.row)
     {
-        std::string name;
-        std::string typeName;
-        bool declaredInside = false;
-    };
+        return false;
+    }
+    const analysis::LocalDefinition* def = analysis::ResolveInScope(sc, ref.name);
+    if (!def)
+    {
+        return false;
+    }
+    if (!ts_node_is_null(stmts.classNode) && def->kind == analysis::LocalDefinitionKind::Field)
+    {
+        return false;
+    }
+    if (def->kind != analysis::LocalDefinitionKind::Variable && def->kind != analysis::LocalDefinitionKind::Parameter)
+    {
+        return false;
+    }
+    bool declaredBefore = (def->endLine < stmts.firstStart.row ||
+                           (def->endLine == stmts.firstStart.row && def->endCharacter <= stmts.firstStart.column) ||
+                           def->kind == analysis::LocalDefinitionKind::Parameter);
+    if (!declaredBefore)
+    {
+        return false;
+    }
+    std::string tName = def->typeName.empty() ? "auto" : def->typeName;
+    outInfo = {def->name, std::move(tName), false};
+    return true;
+}
 
+/**
+ * @brief Collects input variables referenced within extracted statements.
+ * @param[in] stmts Selected statement information.
+ * @param[in] fnScope Enclosing function scope.
+ * @return Vector of input parameter definitions.
+ */
+std::vector<VarInfo> CollectMethodInputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope)
+{
     std::vector<VarInfo> inputParams;
-    std::vector<VarInfo> outputVars;
     ankerl::unordered_dense::set<std::string> seenInputs;
+
+    std::vector<const analysis::Scope*> scopeWorklist = {fnScope};
+    while (!scopeWorklist.empty())
+    {
+        const analysis::Scope* sc = scopeWorklist.back();
+        scopeWorklist.pop_back();
+        if (!sc)
+        {
+            continue;
+        }
+        for (const auto& ref : sc->references)
+        {
+            VarInfo info;
+            if (IsValidMethodInputRef(ref, sc, stmts, info) && !seenInputs.contains(info.name))
+            {
+                seenInputs.insert(info.name);
+                inputParams.push_back(std::move(info));
+            }
+        }
+        for (const auto& child : sc->children)
+        {
+            scopeWorklist.push_back(child.get());
+        }
+    }
+    return inputParams;
+}
+
+/**
+ * @brief Unwraps parenthesized expression and extracts identifier or single-token scoped identifier.
+ * @param[in] node AST node to unwrap.
+ * @param[in] sourceCode Source text.
+ * @return Extracted identifier text, or empty string.
+ */
+std::string UnwrapIdentifierName(TSNode node, std::string_view sourceCode)
+{
+    TSNode curr = node;
+    while (!ts_node_is_null(curr) && std::string_view(ts_node_type(curr)) == "parenthesized_expression")
+    {
+        if (ts_node_named_child_count(curr) > 0)
+        {
+            curr = ts_node_named_child(curr, 0);
+        }
+        else
+        {
+            break;
+        }
+    }
+    if (ts_node_is_null(curr))
+    {
+        return "";
+    }
+    std::string_view lType = ts_node_type(curr);
+    if (lType == "identifier")
+    {
+        return GetNodeText(curr, sourceCode);
+    }
+    if (lType == "scoped_identifier" && ts_node_named_child_count(curr) == 1)
+    {
+        return GetNodeText(ts_node_named_child(curr, 0), sourceCode);
+    }
+    return "";
+}
+
+/**
+ * @brief Checks if an assignment expression mutates a target variable.
+ * @param[in] curr Assignment expression node.
+ * @param[in] sourceCode Source text.
+ * @param[out] mutatedVars Set of recorded mutated variable names.
+ */
+void CheckAssignmentMutation(TSNode curr, std::string_view sourceCode,
+                             ankerl::unordered_dense::set<std::string>& mutatedVars)
+{
+    TSNode left = parser::GetChildByField(curr, parser::fields::Left);
+    if (ts_node_is_null(left) && ts_node_child_count(curr) > 0)
+    {
+        left = ts_node_child(curr, 0);
+    }
+    std::string varName = UnwrapIdentifierName(left, sourceCode);
+    if (!varName.empty())
+    {
+        mutatedVars.insert(varName);
+    }
+}
+
+/**
+ * @brief Finds the target operand of an increment or decrement expression.
+ * @param[in] curr Unary or postfix expression node.
+ * @param[in] sourceCode Source text.
+ * @param[out] targetArg Target operand node if found.
+ * @return True if expression is increment or decrement and operand was found.
+ */
+bool FindIncDecTarget(TSNode curr, std::string_view sourceCode, TSNode& targetArg)
+{
+    TSNode opNode = parser::GetChildByField(curr, parser::fields::Operator);
+    std::string op = !ts_node_is_null(opNode) ? GetNodeText(opNode, sourceCode) : "";
+    bool isIncDec = (op == "++" || op == "--");
+    targetArg = parser::GetChildByField(curr, parser::fields::Operand);
+    if (!isIncDec || ts_node_is_null(targetArg))
+    {
+        uint32_t cnt = ts_node_child_count(curr);
+        for (uint32_t i = 0; i < cnt; ++i)
+        {
+            TSNode ch = ts_node_child(curr, i);
+            std::string chText = GetNodeText(ch, sourceCode);
+            if (chText == "++" || chText == "--")
+            {
+                isIncDec = true;
+            }
+            else if (ts_node_is_named(ch))
+            {
+                targetArg = ch;
+            }
+        }
+    }
+    return isIncDec && !ts_node_is_null(targetArg);
+}
+
+/**
+ * @brief Checks if a postfix/unary expression increments or decrements a variable.
+ * @param[in] curr Unary or postfix expression node.
+ * @param[in] sourceCode Source text.
+ * @param[out] mutatedVars Set of recorded mutated variable names.
+ */
+void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
+                         ankerl::unordered_dense::set<std::string>& mutatedVars)
+{
+    TSNode targetArg{};
+    if (FindIncDecTarget(curr, sourceCode, targetArg))
+    {
+        std::string varName = UnwrapIdentifierName(targetArg, sourceCode);
+        if (!varName.empty())
+        {
+            mutatedVars.insert(varName);
+        }
+    }
+}
+
+/**
+ * @brief Checks if a function call mutates arguments passed with out/inout qualifiers.
+ * @param[in] curr Call expression node.
+ * @param[in] sourceCode Source text.
+ * @param[out] mutatedVars Set of recorded mutated variable names.
+ */
+void CheckCallMutation(TSNode curr, std::string_view sourceCode, ankerl::unordered_dense::set<std::string>& mutatedVars)
+{
+    TSNode argsNode = parser::GetChildByField(curr, parser::fields::Arguments);
+    if (ts_node_is_null(argsNode))
+    {
+        return;
+    }
+    uint32_t argCnt = ts_node_named_child_count(argsNode);
+    for (uint32_t i = 0; i < argCnt; ++i)
+    {
+        TSNode arg = ts_node_named_child(argsNode, i);
+        std::string argText = GetNodeText(arg, sourceCode);
+        if (argText.starts_with("&out ") || argText.starts_with("&inout ") || argText.starts_with("out ") ||
+            argText.starts_with("inout "))
+        {
+            TSNode idNode = parser::GetChildByField(arg, parser::fields::Name);
+            if (ts_node_is_null(idNode) && ts_node_named_child_count(arg) > 0)
+            {
+                idNode = ts_node_named_child(arg, ts_node_named_child_count(arg) - 1);
+            }
+            if (!ts_node_is_null(idNode))
+            {
+                std::string varName = GetNodeText(idNode, sourceCode);
+                if (!varName.empty())
+                {
+                    mutatedVars.insert(varName);
+                }
+            }
+        }
+    }
+}
+
+/**
+ * @brief Checks if an AST node mutates a variable via assignment, inc/dec, or out parameter.
+ * @param[in] curr AST node.
+ * @param[in] sourceCode Source text.
+ * @param[out] mutatedVars Set of recorded mutated variable names.
+ */
+void CheckNodeMutations(TSNode curr, std::string_view sourceCode,
+                        ankerl::unordered_dense::set<std::string>& mutatedVars)
+{
+    std::string_view type = ts_node_type(curr);
+    if (type == "assignment_expression")
+    {
+        CheckAssignmentMutation(curr, sourceCode, mutatedVars);
+    }
+    else if (type == "postfix_expression" || type == "unary_expression")
+    {
+        CheckIncDecMutation(curr, sourceCode, mutatedVars);
+    }
+    else if (type == "call_expression")
+    {
+        CheckCallMutation(curr, sourceCode, mutatedVars);
+    }
+}
+
+/**
+ * @brief Collects all variables mutated within the selected statements.
+ * @param[in] selectedStmts Statement node list.
+ * @param[in] sourceCode Source text.
+ * @return Set of mutated variable names.
+ */
+ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const std::vector<TSNode>& selectedStmts,
+                                                                  std::string_view sourceCode)
+{
+    ankerl::unordered_dense::set<std::string> mutatedVars;
+    for (const auto& stmt : selectedStmts)
+    {
+        std::vector<TSNode> stack = {stmt};
+        while (!stack.empty())
+        {
+            TSNode curr = stack.back();
+            stack.pop_back();
+            CheckNodeMutations(curr, sourceCode, mutatedVars);
+            uint32_t nodeChildCount = ts_node_child_count(curr);
+            for (uint32_t i = 0; i < nodeChildCount; ++i)
+            {
+                stack.push_back(ts_node_child(curr, i));
+            }
+        }
+    }
+    return mutatedVars;
+}
+
+/**
+ * @brief Checks if a variable has a reference occurring after the selection end point.
+ * @param[in] fnScope Enclosing function scope.
+ * @param[in] name Variable identifier name.
+ * @param[in] lastEnd End point of selection.
+ * @return True if variable is referenced after selection.
+ */
+bool IsVariableUsedAfter(const analysis::Scope* fnScope, const std::string& name, TSPoint lastEnd)
+{
+    std::vector<const analysis::Scope*> worklist = {fnScope};
+    while (!worklist.empty())
+    {
+        const analysis::Scope* s = worklist.back();
+        worklist.pop_back();
+        if (!s)
+        {
+            continue;
+        }
+        for (const auto& r : s->references)
+        {
+            if (!r.isMemberAccess && r.name == name)
+            {
+                if (r.startLine > lastEnd.row || (r.startLine == lastEnd.row && r.startCharacter >= lastEnd.column))
+                {
+                    return true;
+                }
+            }
+        }
+        for (const auto& c : s->children)
+        {
+            worklist.push_back(c.get());
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Finds a local definition in the scope subtree by variable name.
+ * @param[in] root Root scope.
+ * @param[in] name Variable identifier name.
+ * @return Matching LocalDefinition pointer or nullptr.
+ */
+const analysis::LocalDefinition* FindDefinitionInScopeTree(const analysis::Scope* root, const std::string& name)
+{
+    std::vector<const analysis::Scope*> worklist = {root};
+    while (!worklist.empty())
+    {
+        const analysis::Scope* s = worklist.back();
+        worklist.pop_back();
+        if (!s)
+        {
+            continue;
+        }
+        for (const auto& d : s->definitions)
+        {
+            if (d.name == name)
+            {
+                return &d;
+            }
+        }
+        for (const auto& c : s->children)
+        {
+            worklist.push_back(c.get());
+        }
+    }
+    return nullptr;
+}
+
+/**
+ * @brief Resolves a variable definition across statement scope, function scope, and child scopes.
+ * @param[in] ctx Method output context.
+ * @param[in] name Variable identifier name.
+ * @return Found LocalDefinition pointer, or nullptr.
+ */
+const analysis::LocalDefinition* FindVariableDefinition(const MethodOutputContext& ctx, const std::string& name)
+{
+    if (ctx.stmtScope)
+    {
+        if (const auto* def = analysis::ResolveInScope(ctx.stmtScope, name))
+        {
+            return def;
+        }
+    }
+    if (ctx.fnScope)
+    {
+        if (const auto* def = analysis::ResolveInScope(ctx.fnScope, name))
+        {
+            return def;
+        }
+        return FindDefinitionInScopeTree(ctx.fnScope, name);
+    }
+    return nullptr;
+}
+
+/**
+ * @brief Checks if a variable definition was declared before extraction and referenced after it.
+ * @param[in] ctx Method output context.
+ * @param[in] def Target local definition.
+ * @return True if definition represents an output variable.
+ */
+bool IsValidMutatedOutput(const MethodOutputContext& ctx, const analysis::LocalDefinition* def)
+{
+    if (!def)
+    {
+        return false;
+    }
+    if (!ts_node_is_null(ctx.stmts.classNode) && def->kind == analysis::LocalDefinitionKind::Field)
+    {
+        return false;
+    }
+    if (def->kind != analysis::LocalDefinitionKind::Variable && def->kind != analysis::LocalDefinitionKind::Parameter)
+    {
+        return false;
+    }
+    bool declaredBefore =
+        (def->endLine < ctx.stmts.firstStart.row ||
+         (def->endLine == ctx.stmts.firstStart.row && def->endCharacter <= ctx.stmts.firstStart.column) ||
+         def->kind == analysis::LocalDefinitionKind::Parameter);
+    return declaredBefore && IsVariableUsedAfter(ctx.fnScope, def->name, ctx.stmts.lastEnd);
+}
+
+/**
+ * @brief Collects mutated variables declared prior to extraction that are used afterwards.
+ * @param[in] ctx Method output extraction context.
+ * @param[in] mutatedVars Set of mutated variable names.
+ * @param[in,out] seenOutputs Set of deduplicated output variable names.
+ * @param[out] outputVars Output variable collection.
+ */
+void CollectMutatedOutputs(const MethodOutputContext& ctx, const ankerl::unordered_dense::set<std::string>& mutatedVars,
+                           ankerl::unordered_dense::set<std::string>& seenOutputs, std::vector<VarInfo>& outputVars)
+{
+    for (const auto& mName : mutatedVars)
+    {
+        const auto* def = FindVariableDefinition(ctx, mName);
+        if (IsValidMutatedOutput(ctx, def) && !seenOutputs.contains(def->name))
+        {
+            seenOutputs.insert(def->name);
+            std::string tName = def->typeName.empty() ? "auto" : def->typeName;
+            outputVars.push_back({def->name, std::move(tName), false});
+        }
+    }
+}
+
+/**
+ * @brief Checks if a variable has a reference occurring strictly after the specified line number.
+ * @param[in] fnScope Enclosing function scope.
+ * @param[in] name Variable identifier name.
+ * @param[in] line 0-based source line index.
+ * @return True if variable is referenced after line.
+ */
+bool IsVariableUsedAfterLine(const analysis::Scope* fnScope, const std::string& name, uint32_t line)
+{
+    std::vector<const analysis::Scope*> worklist = {fnScope};
+    while (!worklist.empty())
+    {
+        const analysis::Scope* s = worklist.back();
+        worklist.pop_back();
+        if (!s)
+        {
+            continue;
+        }
+        for (const auto& r : s->references)
+        {
+            if (!r.isMemberAccess && r.name == name && r.startLine > line)
+            {
+                return true;
+            }
+        }
+        for (const auto& c : s->children)
+        {
+            worklist.push_back(c.get());
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Collects definitions declared inside the extracted block that are used after it.
+ * @param[in] stmts Selected statement metadata.
+ * @param[in] fnScope Enclosing function scope.
+ * @param[in,out] seenOutputs Set of deduplicated output variable names.
+ * @param[out] outputVars Output variable collection.
+ */
+void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope,
+                                         ankerl::unordered_dense::set<std::string>& seenOutputs,
+                                         std::vector<VarInfo>& outputVars)
+{
+    std::vector<const analysis::Scope*> worklist = {fnScope};
+    while (!worklist.empty())
+    {
+        const analysis::Scope* sc = worklist.back();
+        worklist.pop_back();
+        if (!sc)
+        {
+            continue;
+        }
+        for (const auto& def : sc->definitions)
+        {
+            if (def.startLine >= stmts.firstStart.row && def.endLine <= stmts.lastEnd.row)
+            {
+                if (IsVariableUsedAfterLine(fnScope, def.name, stmts.lastEnd.row) && !seenOutputs.contains(def.name))
+                {
+                    seenOutputs.insert(def.name);
+                    std::string tName = def.typeName.empty() ? "auto" : def.typeName;
+                    outputVars.push_back({def.name, std::move(tName), true});
+                }
+            }
+        }
+        for (const auto& child : sc->children)
+        {
+            worklist.push_back(child.get());
+        }
+    }
+}
+
+/**
+ * @brief Collects output variables that must be returned or passed out from the extracted method.
+ * @param[in] stmts Selected statement information.
+ * @param[in] fnScope Enclosing function scope.
+ * @param[in] mutatedVars Set of mutated variable names.
+ * @param[in] stmtScope Scope of first statement.
+ * @return Vector of output variable definitions.
+ */
+std::vector<VarInfo> CollectMethodOutputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope,
+                                          const ankerl::unordered_dense::set<std::string>& mutatedVars,
+                                          const analysis::Scope* stmtScope)
+{
+    std::vector<VarInfo> outputVars;
     ankerl::unordered_dense::set<std::string> seenOutputs;
 
-    if (fnScope)
-    {
-        std::function<void(const analysis::Scope*)> scanScope = [&](const analysis::Scope* sc)
-        {
-            if (!sc)
-                return;
-            for (const auto& ref : sc->references)
-            {
-                if (ref.isMemberAccess)
-                    continue;
-                if (ref.startLine >= firstStart.row && ref.endLine <= lastEnd.row)
-                {
-                    const analysis::LocalDefinition* def = analysis::ResolveInScope(sc, ref.name);
-                    if (def)
-                    {
-                        if (!ts_node_is_null(classNode) && def->kind == analysis::LocalDefinitionKind::Field)
-                        {
-                            continue;
-                        }
-                        if (def->kind != analysis::LocalDefinitionKind::Variable &&
-                            def->kind != analysis::LocalDefinitionKind::Parameter)
-                        {
-                            continue;
-                        }
+    MethodOutputContext ctx{stmts, fnScope, stmtScope};
+    CollectMutatedOutputs(ctx, mutatedVars, seenOutputs, outputVars);
+    CollectInternalDefinitionsUsedAfter(stmts, fnScope, seenOutputs, outputVars);
 
-                        if (def->endLine < firstStart.row ||
-                            (def->endLine == firstStart.row && def->endCharacter <= firstStart.column) ||
-                            def->kind == analysis::LocalDefinitionKind::Parameter)
-                        {
-                            if (!seenInputs.contains(def->name))
-                            {
-                                seenInputs.insert(def->name);
-                                std::string tName = def->typeName.empty() ? "auto" : def->typeName;
-                                inputParams.push_back({def->name, tName, false});
-                            }
-                        }
-                    }
-                }
-            }
+    return outputVars;
+}
 
-            for (const auto& child : sc->children)
-            {
-                scanScope(child.get());
-            }
-        };
-        scanScope(fnScope);
-
-        // Collect mutated variables inside selected statements
-        ankerl::unordered_dense::set<std::string> mutatedVars;
-        auto inspectMutations = [&](TSNode node)
-        {
-            std::vector<TSNode> stack = {node};
-            while (!stack.empty())
-            {
-                TSNode curr = stack.back();
-                stack.pop_back();
-
-                std::string_view type = ts_node_type(curr);
-
-                if (type == "assignment_expression")
-                {
-                    TSNode left = parser::GetChildByField(curr, parser::fields::Left);
-                    if (ts_node_is_null(left) && ts_node_child_count(curr) > 0)
-                    {
-                        left = ts_node_child(curr, 0);
-                    }
-                    while (!ts_node_is_null(left) && std::string_view(ts_node_type(left)) == "parenthesized_expression")
-                    {
-                        if (ts_node_named_child_count(left) > 0)
-                        {
-                            left = ts_node_named_child(left, 0);
-                        }
-                        else
-                        {
-                            break;
-                        }
-                    }
-                    if (!ts_node_is_null(left))
-                    {
-                        std::string_view lType = ts_node_type(left);
-                        if (lType == "identifier")
-                        {
-                            std::string varName = GetNodeText(left, request.sourceCode);
-                            if (!varName.empty())
-                            {
-                                mutatedVars.insert(varName);
-                            }
-                        }
-                        else if (lType == "scoped_identifier")
-                        {
-                            if (ts_node_named_child_count(left) == 1)
-                            {
-                                std::string varName = GetNodeText(ts_node_named_child(left, 0), request.sourceCode);
-                                if (!varName.empty())
-                                {
-                                    mutatedVars.insert(varName);
-                                }
-                            }
-                        }
-                    }
-                }
-                else if (type == "postfix_expression" || type == "unary_expression")
-                {
-                    TSNode opNode = parser::GetChildByField(curr, parser::fields::Operator);
-                    std::string op = !ts_node_is_null(opNode) ? GetNodeText(opNode, request.sourceCode) : "";
-                    bool isIncDec = (op == "++" || op == "--");
-                    TSNode targetArg = parser::GetChildByField(curr, parser::fields::Operand);
-                    if (!isIncDec || ts_node_is_null(targetArg))
-                    {
-                        uint32_t cnt = ts_node_child_count(curr);
-                        for (uint32_t i = 0; i < cnt; ++i)
-                        {
-                            TSNode ch = ts_node_child(curr, i);
-                            std::string chText = GetNodeText(ch, request.sourceCode);
-                            if (chText == "++" || chText == "--")
-                            {
-                                isIncDec = true;
-                            }
-                            else if (ts_node_is_named(ch))
-                            {
-                                targetArg = ch;
-                            }
-                        }
-                    }
-                    if (isIncDec && !ts_node_is_null(targetArg))
-                    {
-                        while (!ts_node_is_null(targetArg) &&
-                               std::string_view(ts_node_type(targetArg)) == "parenthesized_expression")
-                        {
-                            if (ts_node_named_child_count(targetArg) > 0)
-                            {
-                                targetArg = ts_node_named_child(targetArg, 0);
-                            }
-                            else
-                            {
-                                break;
-                            }
-                        }
-                        if (!ts_node_is_null(targetArg))
-                        {
-                            std::string_view aType = ts_node_type(targetArg);
-                            if (aType == "identifier")
-                            {
-                                std::string varName = GetNodeText(targetArg, request.sourceCode);
-                                if (!varName.empty())
-                                {
-                                    mutatedVars.insert(varName);
-                                }
-                            }
-                            else if (aType == "scoped_identifier" && ts_node_named_child_count(targetArg) == 1)
-                            {
-                                std::string varName =
-                                    GetNodeText(ts_node_named_child(targetArg, 0), request.sourceCode);
-                                if (!varName.empty())
-                                {
-                                    mutatedVars.insert(varName);
-                                }
-                            }
-                        }
-                    }
-                }
-                else if (type == "call_expression")
-                {
-                    TSNode argsNode = parser::GetChildByField(curr, parser::fields::Arguments);
-                    if (!ts_node_is_null(argsNode))
-                    {
-                        uint32_t argCnt = ts_node_named_child_count(argsNode);
-                        for (uint32_t i = 0; i < argCnt; ++i)
-                        {
-                            TSNode arg = ts_node_named_child(argsNode, i);
-                            std::string argText = GetNodeText(arg, request.sourceCode);
-                            if (argText.starts_with("&out ") || argText.starts_with("&inout ") ||
-                                argText.starts_with("out ") || argText.starts_with("inout "))
-                            {
-                                TSNode idNode = parser::GetChildByField(arg, parser::fields::Name);
-                                if (ts_node_is_null(idNode) && ts_node_named_child_count(arg) > 0)
-                                    idNode = ts_node_named_child(arg, ts_node_named_child_count(arg) - 1);
-                                if (!ts_node_is_null(idNode))
-                                {
-                                    std::string varName = GetNodeText(idNode, request.sourceCode);
-                                    if (!varName.empty())
-                                        mutatedVars.insert(varName);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                uint32_t nodeChildCount = ts_node_child_count(curr);
-                for (uint32_t i = 0; i < nodeChildCount; ++i)
-                {
-                    stack.push_back(ts_node_child(curr, i));
-                }
-            }
-        };
-
-        for (const auto& stmt : selectedStmts)
-        {
-            inspectMutations(stmt);
-        }
-
-        // Check mutated pre-declared variables for usage after selection
-        const analysis::Scope* stmtScope = FindScopeByLineOrRoot(rootScope.get(), firstStart.row, firstStart.column);
-        for (const auto& mName : mutatedVars)
-        {
-            const analysis::LocalDefinition* def = nullptr;
-            if (stmtScope)
-            {
-                def = analysis::ResolveInScope(stmtScope, mName);
-            }
-            if (!def && fnScope)
-            {
-                def = analysis::ResolveInScope(fnScope, mName);
-            }
-            if (!def && fnScope)
-            {
-                std::function<void(const analysis::Scope*)> findDef = [&](const analysis::Scope* s)
-                {
-                    if (!s || def)
-                        return;
-                    for (const auto& d : s->definitions)
-                    {
-                        if (d.name == mName)
-                        {
-                            def = &d;
-                            return;
-                        }
-                    }
-                    for (const auto& c : s->children)
-                    {
-                        findDef(c.get());
-                    }
-                };
-                findDef(fnScope);
-            }
-
-            if (def)
-            {
-                if (!ts_node_is_null(classNode) && def->kind == analysis::LocalDefinitionKind::Field)
-                {
-                    continue;
-                }
-                if (def->kind != analysis::LocalDefinitionKind::Variable &&
-                    def->kind != analysis::LocalDefinitionKind::Parameter)
-                {
-                    continue;
-                }
-
-                bool declaredBefore = (def->endLine < firstStart.row ||
-                                       (def->endLine == firstStart.row && def->endCharacter <= firstStart.column) ||
-                                       def->kind == analysis::LocalDefinitionKind::Parameter);
-                if (declaredBefore)
-                {
-                    bool usedAfter = false;
-                    std::function<void(const analysis::Scope*)> checkUsed = [&](const analysis::Scope* s)
-                    {
-                        if (!s || usedAfter)
-                            return;
-                        for (const auto& r : s->references)
-                        {
-                            if (!r.isMemberAccess && r.name == def->name)
-                            {
-                                if (r.startLine > lastEnd.row ||
-                                    (r.startLine == lastEnd.row && r.startCharacter >= lastEnd.column))
-                                {
-                                    usedAfter = true;
-                                    break;
-                                }
-                            }
-                        }
-                        for (const auto& c : s->children)
-                        {
-                            checkUsed(c.get());
-                        }
-                    };
-                    checkUsed(fnScope);
-
-                    if (usedAfter && !seenOutputs.contains(def->name))
-                    {
-                        seenOutputs.insert(def->name);
-                        std::string tName = def->typeName.empty() ? "auto" : def->typeName;
-                        outputVars.push_back({def->name, tName, false});
-                    }
-                }
-            }
-        }
-
-        // Also check definitions declared inside selection for usage after selection
-        std::function<void(const analysis::Scope*)> scanDefsInside = [&](const analysis::Scope* sc)
-        {
-            if (!sc)
-                return;
-            for (const auto& def : sc->definitions)
-            {
-                if (def.startLine >= firstStart.row && def.endLine <= lastEnd.row)
-                {
-                    bool usedAfter = false;
-                    std::function<void(const analysis::Scope*)> checkUsed = [&](const analysis::Scope* s)
-                    {
-                        if (!s || usedAfter)
-                            return;
-                        for (const auto& r : s->references)
-                        {
-                            if (!r.isMemberAccess && r.name == def.name && r.startLine > lastEnd.row)
-                            {
-                                usedAfter = true;
-                                break;
-                            }
-                        }
-                        for (const auto& c : s->children)
-                        {
-                            checkUsed(c.get());
-                        }
-                    };
-                    checkUsed(fnScope);
-
-                    if (usedAfter && !seenOutputs.contains(def.name))
-                    {
-                        seenOutputs.insert(def.name);
-                        std::string tName = def.typeName.empty() ? "auto" : def.typeName;
-                        outputVars.push_back({def.name, tName, true});
-                    }
-                }
-            }
-
-            for (const auto& child : sc->children)
-            {
-                scanDefsInside(child.get());
-            }
-        };
-        scanDefsInside(fnScope);
-    }
-
-    std::string methodName = "NewMethod";
-
+/**
+ * @brief Constructs the input parameter list and invocation arguments string.
+ * @param[in] inputParams Discovered input parameters.
+ * @param[in] outputVars Discovered output variables.
+ * @param[out] paramsStr Constructed parameter list string.
+ * @param[out] argsStr Constructed argument list string.
+ */
+void BuildMethodParamsAndArgs(const std::vector<VarInfo>& inputParams, const std::vector<VarInfo>& outputVars,
+                              std::string& paramsStr, std::string& argsStr)
+{
     std::vector<VarInfo> effectiveInputs;
     for (const auto& inp : inputParams)
     {
@@ -1089,8 +1491,6 @@ void TryAddExtractMethodAction(const CodeActionRequest& request, TSNode rootNode
         }
     }
 
-    std::string paramsStr;
-    std::string argsStr;
     for (size_t i = 0; i < effectiveInputs.size(); ++i)
     {
         if (i > 0)
@@ -1101,149 +1501,225 @@ void TryAddExtractMethodAction(const CodeActionRequest& request, TSNode rootNode
         paramsStr += effectiveInputs[i].typeName + " " + effectiveInputs[i].name;
         argsStr += effectiveInputs[i].name;
     }
+}
 
-    std::string returnType = "void";
-    std::string callSiteText;
-    std::string extractedBody = selectedCode;
+/**
+ * @brief Deduces method return type and call site statement for single or multiple outputs.
+ * @param[in] vars Discovered input and output variables.
+ * @param[in] stmts Statement extraction metadata.
+ * @param[in] request Code action request.
+ * @param[out] plan In-progress extracted method plan.
+ */
+void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const ExtractMethodStatements& stmts,
+                             const CodeActionRequest& request, ExtractedMethodPlan& plan)
+{
+    const std::string methodName = "NewMethod";
+    plan.returnType = "void";
 
-    if (outputVars.size() == 1)
+    if (vars.outputVars.size() == 1)
     {
-        returnType = outputVars[0].typeName;
-        if (extractedBody.find("return " + outputVars[0].name) == std::string::npos &&
-            !extractedBody.ends_with("return " + outputVars[0].name + ";"))
+        plan.returnType = vars.outputVars[0].typeName;
+        if (plan.extractedBody.find("return " + vars.outputVars[0].name) == std::string::npos &&
+            !plan.extractedBody.ends_with("return " + vars.outputVars[0].name + ";"))
         {
-            extractedBody += "\n    return " + outputVars[0].name + ";";
+            plan.extractedBody += "\n    return " + vars.outputVars[0].name + ";";
         }
-        if (outputVars[0].declaredInside)
+        if (vars.outputVars[0].declaredInside)
         {
-            callSiteText = returnType + " " + outputVars[0].name + " = " + methodName + "(" + argsStr + ");";
+            plan.callSiteText =
+                plan.returnType + " " + vars.outputVars[0].name + " = " + methodName + "(" + plan.argsStr + ");";
         }
         else
         {
-            callSiteText = outputVars[0].name + " = " + methodName + "(" + argsStr + ");";
+            plan.callSiteText = vars.outputVars[0].name + " = " + methodName + "(" + plan.argsStr + ");";
         }
     }
-    else if (outputVars.empty())
+    else if (vars.outputVars.empty())
     {
-        TSNode lastNode = selectedStmts.back();
+        TSNode lastNode = stmts.selectedStmts.back();
         if (std::string_view(ts_node_type(lastNode)) == "return_statement")
         {
-            TSNode retTypeNode = parser::GetChildByField(fnNode, parser::fields::Type);
+            TSNode retTypeNode = parser::GetChildByField(stmts.fnNode, parser::fields::Type);
             if (!ts_node_is_null(retTypeNode))
             {
-                returnType = GetNodeText(retTypeNode, request.sourceCode);
+                plan.returnType = GetNodeText(retTypeNode, request.sourceCode);
             }
         }
-        callSiteText = methodName + "(" + argsStr + ");";
+        plan.callSiteText = methodName + "(" + plan.argsStr + ");";
     }
     else
     {
-        returnType = outputVars[0].typeName;
-        for (size_t i = 1; i < outputVars.size(); ++i)
+        plan.returnType = vars.outputVars[0].typeName;
+        for (size_t i = 1; i < vars.outputVars.size(); ++i)
         {
-            if (!paramsStr.empty())
-                paramsStr += ", ";
-            if (!argsStr.empty())
-                argsStr += ", ";
-            paramsStr += outputVars[i].typeName + " &out " + outputVars[i].name;
-            argsStr += outputVars[i].name;
+            if (!plan.paramsStr.empty())
+                plan.paramsStr += ", ";
+            if (!plan.argsStr.empty())
+                plan.argsStr += ", ";
+            plan.paramsStr += vars.outputVars[i].typeName + " &out " + vars.outputVars[i].name;
+            plan.argsStr += vars.outputVars[i].name;
         }
-        if (extractedBody.find("return " + outputVars[0].name) == std::string::npos &&
-            !extractedBody.ends_with("return " + outputVars[0].name + ";"))
+        if (plan.extractedBody.find("return " + vars.outputVars[0].name) == std::string::npos &&
+            !plan.extractedBody.ends_with("return " + vars.outputVars[0].name + ";"))
         {
-            extractedBody += "\n    return " + outputVars[0].name + ";";
+            plan.extractedBody += "\n    return " + vars.outputVars[0].name + ";";
         }
-        if (outputVars[0].declaredInside)
+        if (vars.outputVars[0].declaredInside)
         {
-            callSiteText = returnType + " " + outputVars[0].name + " = " + methodName + "(" + argsStr + ");";
+            plan.callSiteText =
+                plan.returnType + " " + vars.outputVars[0].name + " = " + methodName + "(" + plan.argsStr + ");";
         }
         else
         {
-            callSiteText = outputVars[0].name + " = " + methodName + "(" + argsStr + ");";
+            plan.callSiteText = vars.outputVars[0].name + " = " + methodName + "(" + plan.argsStr + ");";
+        }
+    }
+}
+
+/**
+ * @brief Computes extracted method signature, parameters, and invocation statement.
+ * @param[in] vars Discovered input and output variables.
+ * @param[in] stmts Statement extraction metadata.
+ * @param[in] request Code action request.
+ * @return Computed ExtractedMethodPlan.
+ */
+ExtractedMethodPlan DeduceExtractedMethodSignature(const ExtractedMethodVariables& vars,
+                                                   const ExtractMethodStatements& stmts,
+                                                   const CodeActionRequest& request)
+{
+    ExtractedMethodPlan plan;
+    plan.extractedBody = stmts.selectedCode;
+    BuildMethodParamsAndArgs(vars.inputParams, vars.outputVars, plan.paramsStr, plan.argsStr);
+    DeduceReturnAndCallSite(vars, stmts, request, plan);
+    return plan;
+}
+
+/**
+ * @brief Finds the insertion point for adding a method definition inside a class.
+ * @param[in] classNode Class declaration node.
+ * @return Insertion point.
+ */
+TSPoint FindClassBodyInsertionPoint(TSNode classNode)
+{
+    TSNode classBody = parser::GetChildByField(classNode, parser::fields::Body);
+    if (ts_node_is_null(classBody))
+    {
+        uint32_t cnt = ts_node_child_count(classNode);
+        for (uint32_t i = 0; i < cnt; ++i)
+        {
+            TSNode ch = ts_node_child(classNode, i);
+            if (std::string_view(ts_node_type(ch)) == "class_body")
+            {
+                classBody = ch;
+                break;
+            }
         }
     }
 
-    lsp::TextEdit methodDefEdit;
-    if (!ts_node_is_null(classNode))
+    if (!ts_node_is_null(classBody))
     {
-        TSNode classBody = parser::GetChildByField(classNode, parser::fields::Body);
-        if (ts_node_is_null(classBody))
+        uint32_t cnt = ts_node_child_count(classBody);
+        for (int i = static_cast<int>(cnt) - 1; i >= 0; --i)
         {
-            uint32_t cnt = ts_node_child_count(classNode);
-            for (uint32_t i = 0; i < cnt; ++i)
+            TSNode ch = ts_node_child(classBody, static_cast<uint32_t>(i));
+            if (std::string_view(ts_node_type(ch)) == "}")
             {
-                TSNode ch = ts_node_child(classNode, i);
-                if (std::string_view(ts_node_type(ch)) == "class_body")
-                {
-                    classBody = ch;
-                    break;
-                }
+                return ts_node_start_point(ch);
             }
         }
+    }
+    return TSPoint{0, 0};
+}
 
-        TSPoint insertPt = {0, 0};
-        if (!ts_node_is_null(classBody))
-        {
-            uint32_t cnt = ts_node_child_count(classBody);
-            for (int i = static_cast<int>(cnt) - 1; i >= 0; --i)
-            {
-                TSNode ch = ts_node_child(classBody, static_cast<uint32_t>(i));
-                if (std::string_view(ts_node_type(ch)) == "}")
-                {
-                    insertPt = ts_node_start_point(ch);
-                    break;
-                }
-            }
-        }
+/**
+ * @brief Constructs the workspace edits for the new extracted method and invocation site.
+ * @param[in] request Code action request.
+ * @param[in] stmts Extracted statement metadata.
+ * @param[in] plan Extracted method plan.
+ * @return Constructed WorkspaceEdit.
+ */
+lsp::WorkspaceEdit BuildExtractMethodEdits(const CodeActionRequest& request, const ExtractMethodStatements& stmts,
+                                           const ExtractedMethodPlan& plan)
+{
+    const std::string methodName = "NewMethod";
+    lsp::TextEdit methodDefEdit;
 
-        std::string methodCode = "\n    " + returnType + " " + methodName + "(" + paramsStr + ")\n    {\n        " +
-                                 extractedBody + "\n    }\n";
+    if (!ts_node_is_null(stmts.classNode))
+    {
+        TSPoint insertPt = FindClassBodyInsertionPoint(stmts.classNode);
+        std::string methodCode = "\n    " + plan.returnType + " " + methodName + "(" + plan.paramsStr +
+                                 ")\n    {\n        " + plan.extractedBody + "\n    }\n";
         methodDefEdit.range = lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
         methodDefEdit.newText = methodCode;
     }
     else
     {
-        TSPoint fnEnd = ts_node_end_point(fnNode);
-        std::string methodCode =
-            "\n\n" + returnType + " " + methodName + "(" + paramsStr + ")\n{\n    " + extractedBody + "\n}\n";
+        TSPoint fnEnd = ts_node_end_point(stmts.fnNode);
+        std::string methodCode = "\n\n" + plan.returnType + " " + methodName + "(" + plan.paramsStr + ")\n{\n    " +
+                                 plan.extractedBody + "\n}\n";
         methodDefEdit.range = lsp::Range{{fnEnd.row + 1, 0}, {fnEnd.row + 1, 0}};
         methodDefEdit.newText = methodCode;
     }
 
     lsp::TextEdit callEdit;
-    callEdit.range = lsp::Range{{firstStart.row, firstStart.column}, {lastEnd.row, lastEnd.column}};
-    callEdit.newText = callSiteText;
-
-    lsp::CodeAction action;
-    action.title = "Extract Method";
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::RefactorExtract);
+    callEdit.range =
+        lsp::Range{{stmts.firstStart.row, stmts.firstStart.column}, {stmts.lastEnd.row, stmts.lastEnd.column}};
+    callEdit.newText = plan.callSiteText;
 
     lsp::WorkspaceEdit wsEdit;
     lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
     changes[lsp::DocumentUri::parse(request.uri)] = {std::move(callEdit), std::move(methodDefEdit)};
     wsEdit.changes = std::move(changes);
-    action.edit = std::move(wsEdit);
+    return wsEdit;
+}
 
+/**
+ * @brief Tries to generate an Extract Method refactoring code action.
+ * @param[in] request Code action request context.
+ * @param[in] rootNode Root AST node.
+ * @param[out] actions Destination actions vector.
+ */
+void TryAddExtractMethodAction(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
+{
+    auto stmts = FindSelectedStatements(rootNode, request);
+    if (!stmts)
+    {
+        return;
+    }
+
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    const analysis::Scope* fnScope = FindScopeByLineOrRoot(rootScope.get(), ts_node_start_point(stmts->fnNode).row,
+                                                           ts_node_start_point(stmts->fnNode).column);
+    const analysis::Scope* stmtScope =
+        FindScopeByLineOrRoot(rootScope.get(), stmts->firstStart.row, stmts->firstStart.column);
+
+    ExtractedMethodVariables vars;
+    if (fnScope)
+    {
+        vars.inputParams = CollectMethodInputs(*stmts, fnScope);
+        auto mutated = CollectMutatedVariables(stmts->selectedStmts, request.sourceCode);
+        vars.outputVars = CollectMethodOutputs(*stmts, fnScope, mutated, stmtScope);
+    }
+
+    ExtractedMethodPlan plan = DeduceExtractedMethodSignature(vars, *stmts, request);
+
+    lsp::CodeAction action;
+    action.title = "Extract Method";
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::RefactorExtract);
+    action.edit = BuildExtractMethodEdits(request, *stmts, plan);
     actions.push_back(std::move(action));
 }
 
 /**
- * @brief Tries to generate Getters and Setters code actions for class fields.
+ * @brief Finds enclosing class declaration node and its class body node.
+ * @param[in] leaf AST leaf at cursor position.
+ * @param[in] sourceCode Source text.
+ * @param[out] className Extracted class name.
+ * @param[out] classBody Extracted class body node.
+ * @return True if class declaration and body were located.
  */
-void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
+bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::string& className, TSNode& classBody)
 {
-    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
-    {
-        return;
-    }
-
-    TSPoint pt = {request.range.start.line, request.range.start.character};
-    TSNode leaf = ts_node_descendant_for_point_range(rootNode, pt, pt);
-    if (ts_node_is_null(leaf))
-    {
-        return;
-    }
-
     TSNode classNode = leaf;
     while (!ts_node_is_null(classNode) && std::string_view(ts_node_type(classNode)) != "class_declaration")
     {
@@ -1251,10 +1727,9 @@ void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode
     }
     if (ts_node_is_null(classNode))
     {
-        return;
+        return false;
     }
-
-    TSNode classBody = parser::GetChildByField(classNode, parser::fields::Body);
+    classBody = parser::GetChildByField(classNode, parser::fields::Body);
     if (ts_node_is_null(classBody))
     {
         uint32_t cnt = ts_node_child_count(classNode);
@@ -1270,12 +1745,25 @@ void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode
     }
     if (ts_node_is_null(classBody))
     {
-        return;
+        return false;
     }
-
     TSNode nameNode = parser::GetChildByField(classNode, parser::fields::Name);
-    std::string className = GetNodeText(nameNode, request.sourceCode);
+    className = GetNodeText(nameNode, sourceCode);
+    return true;
+}
 
+/**
+ * @brief Collects candidate member fields for accessor generation.
+ * @param[in] leaf AST node under cursor.
+ * @param[in] classBody Class body AST node.
+ * @param[in] request Code action request.
+ * @param[in] className Name of enclosing class.
+ * @return Vector of {fieldName, fieldType} pairs.
+ */
+std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TSNode leaf, TSNode classBody,
+                                                                              const CodeActionRequest& request,
+                                                                              const std::string& className)
+{
     TSNode varDecl = leaf;
     while (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) != "variable_declaration" &&
            varDecl.id != classBody.id)
@@ -1284,7 +1772,6 @@ void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode
     }
 
     std::vector<std::pair<std::string, std::string>> fields;
-
     if (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) == "variable_declaration")
     {
         TSNode typeNode = parser::GetChildByField(varDecl, parser::fields::VarType);
@@ -1328,124 +1815,187 @@ void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode
                 }
             });
     }
+    return fields;
+}
 
-    if (fields.empty())
-    {
-        return;
-    }
-
-    TSPoint insertPt = {0, 0};
+/**
+ * @brief Finds the insertion point before the closing brace of a class body.
+ * @param[in] classBody Class body node.
+ * @return AST point preceding class closing brace.
+ */
+TSPoint FindClassClosingBracePoint(TSNode classBody)
+{
     uint32_t cnt = ts_node_child_count(classBody);
     for (int i = static_cast<int>(cnt) - 1; i >= 0; --i)
     {
         TSNode ch = ts_node_child(classBody, static_cast<uint32_t>(i));
         if (std::string_view(ts_node_type(ch)) == "}")
         {
-            insertPt = ts_node_start_point(ch);
-            break;
+            return ts_node_start_point(ch);
         }
     }
+    return TSPoint{0, 0};
+}
 
-    for (const auto& [fName, fType] : fields)
-    {
-        std::string propName = CleanPropertyName(fName);
-        if (propName.empty())
-            continue;
+/**
+ * @brief Context for generating getter and setter accessors.
+ */
+struct GetterSetterContext
+{
+    const std::string& className;
+    const std::pair<std::string, std::string>& field;
+    TSPoint insertPt;
+};
 
-        std::string getterName = "get_" + propName;
-        std::string setterName = "set_" + propName;
+/**
+ * @brief Creates a CodeAction inserting an accessor text edit into the class body.
+ * @param[in] uri Document URI.
+ * @param[in] title Action title.
+ * @param[in] text Method code to insert.
+ * @param[in] insertPt Class body insertion point.
+ * @return Constructed CodeAction.
+ */
+lsp::CodeAction CreateAccessorAction(const std::string& uri, const std::string& title, const std::string& text,
+                                     TSPoint insertPt)
+{
+    lsp::CodeAction action;
+    action.title = title;
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    lsp::TextEdit edit;
+    edit.range = lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
+    edit.newText = "\n" + text;
 
-        bool hasGetter = false;
-        bool hasSetter = false;
+    lsp::WorkspaceEdit wsEdit;
+    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+    changes[lsp::DocumentUri::parse(uri)] = {std::move(edit)};
+    wsEdit.changes = std::move(changes);
+    action.edit = std::move(wsEdit);
+    return action;
+}
 
-        request.symbolTable.ForEachSymbol(
-            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
+/**
+ * @brief Checks if a class field already has getter and setter declarations.
+ * @param[in] table Symbol table.
+ * @param[in] className Name of enclosing class.
+ * @param[in] propName Clean property name.
+ * @return Pair of booleans {hasGetter, hasSetter}.
+ */
+std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& table, const std::string& className,
+                                          const std::string& propName)
+{
+    std::string getterName = "get_" + propName;
+    std::string setterName = "set_" + propName;
+    bool hasGetter = false;
+    bool hasSetter = false;
+    table.ForEachSymbol(
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
+        {
+            for (const auto& sym : symList)
             {
-                for (const auto& sym : symList)
+                if (sym.containerName == className && sym.type == analysis::SymbolType::Function)
                 {
-                    if (sym.containerName == className && sym.type == analysis::SymbolType::Function)
+                    if (sym.name == getterName)
                     {
-                        if (sym.name == getterName)
-                            hasGetter = true;
-                        if (sym.name == setterName)
-                            hasSetter = true;
+                        hasGetter = true;
+                    }
+                    if (sym.name == setterName)
+                    {
+                        hasSetter = true;
                     }
                 }
-            });
+            }
+        });
+    return {hasGetter, hasSetter};
+}
 
-        if (hasGetter && hasSetter)
-        {
-            continue;
-        }
+/**
+ * @brief Emits Getter, Setter, or combined Getter/Setter actions for a class field.
+ * @param[in] request Code action request.
+ * @param[in] ctx Getter and setter context.
+ * @param[out] actions Destination code actions vector.
+ */
+void EmitGetterSetterActionsForField(const CodeActionRequest& request, const GetterSetterContext& ctx,
+                                     std::vector<lsp::CodeAction>& actions)
+{
+    const auto& [fName, fType] = ctx.field;
+    std::string propName = CleanPropertyName(fName);
+    if (propName.empty())
+    {
+        return;
+    }
 
-        std::string cleanType = fType.empty() ? "int" : fType;
-        bool isPassByValue = analysis::IsPrimitiveTypeName(cleanType) || cleanType.ends_with("@");
-        std::string setterParamType = isPassByValue ? cleanType : ("const " + cleanType + " &in");
+    auto [hasGetter, hasSetter] = CheckFieldAccessors(request.symbolTable, ctx.className, propName);
+    if (hasGetter && hasSetter)
+    {
+        return;
+    }
 
-        std::string getterCode =
-            "    " + cleanType + " " + getterName + "() const\n    {\n        return " + fName + ";\n    }\n";
-        std::string setterCode = "    void " + setterName + "(" + setterParamType + " value)\n    {\n        " + fName +
-                                 " = value;\n    }\n";
+    std::string cleanType = fType.empty() ? "int" : fType;
+    bool isPassByValue = analysis::IsPrimitiveTypeName(cleanType) || cleanType.ends_with("@");
+    std::string setterParamType = isPassByValue ? cleanType : ("const " + cleanType + " &in");
 
-        if (!hasGetter)
-        {
-            lsp::CodeAction action;
-            action.title = "Generate Getter";
-            action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    std::string getterCode =
+        "    " + cleanType + " get_" + propName + "() const\n    {\n        return " + fName + ";\n    }\n";
+    std::string setterCode =
+        "    void set_" + propName + "(" + setterParamType + " value)\n    {\n        " + fName + " = value;\n    }\n";
 
-            lsp::TextEdit edit;
-            edit.range = lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
-            edit.newText = "\n" + getterCode;
-
-            lsp::WorkspaceEdit wsEdit;
-            lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-            changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-            wsEdit.changes = std::move(changes);
-            action.edit = std::move(wsEdit);
-
-            actions.push_back(std::move(action));
-        }
-
-        if (!hasSetter)
-        {
-            lsp::CodeAction action;
-            action.title = "Generate Setter";
-            action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-
-            lsp::TextEdit edit;
-            edit.range = lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
-            edit.newText = "\n" + setterCode;
-
-            lsp::WorkspaceEdit wsEdit;
-            lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-            changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-            wsEdit.changes = std::move(changes);
-            action.edit = std::move(wsEdit);
-
-            actions.push_back(std::move(action));
-        }
-
-        if (!hasGetter && !hasSetter)
-        {
-            lsp::CodeAction action;
-            action.title = "Generate Getter and Setter";
-            action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-
-            lsp::TextEdit edit;
-            edit.range = lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
-            edit.newText = "\n" + getterCode + "\n" + setterCode;
-
-            lsp::WorkspaceEdit wsEdit;
-            lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-            changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-            wsEdit.changes = std::move(changes);
-            action.edit = std::move(wsEdit);
-
-            actions.push_back(std::move(action));
-        }
+    if (!hasGetter)
+    {
+        actions.push_back(CreateAccessorAction(request.uri, "Generate Getter", getterCode, ctx.insertPt));
+    }
+    if (!hasSetter)
+    {
+        actions.push_back(CreateAccessorAction(request.uri, "Generate Setter", setterCode, ctx.insertPt));
+    }
+    if (!hasGetter && !hasSetter)
+    {
+        actions.push_back(CreateAccessorAction(request.uri, "Generate Getter and Setter",
+                                               getterCode + "\n" + setterCode, ctx.insertPt));
     }
 }
 
+/**
+ * @brief Tries to generate Getters and Setters code actions for class fields.
+ * @param[in] request Code action request.
+ * @param[in] rootNode AST root node.
+ * @param[out] actions Destination actions vector.
+ */
+void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
+{
+    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+    {
+        return;
+    }
+    TSPoint pt = {request.range.start.line, request.range.start.character};
+    TSNode leaf = ts_node_descendant_for_point_range(rootNode, pt, pt);
+    if (ts_node_is_null(leaf))
+    {
+        return;
+    }
+    std::string className;
+    TSNode classBody;
+    if (!FindEnclosingClassAndBody(leaf, request.sourceCode, className, classBody))
+    {
+        return;
+    }
+    auto fields = CollectFieldsForGetterSetter(leaf, classBody, request, className);
+    if (fields.empty())
+    {
+        return;
+    }
+    TSPoint insertPt = FindClassClosingBracePoint(classBody);
+    for (const auto& field : fields)
+    {
+        EmitGetterSetterActionsForField(request, GetterSetterContext{className, field, insertPt}, actions);
+    }
+}
+
+/**
+ * @brief Checks if a diagnostic matches an expected error/warning code string.
+ * @param[in] diag Diagnostic object.
+ * @param[in] expectedCode Code string to match.
+ * @return True if diagnostic code matches.
+ */
 bool MatchDiagnosticCode(const lsp::Diagnostic& diag, std::string_view expectedCode)
 {
     if (!diag.code.has_value())
@@ -1460,12 +2010,11 @@ bool MatchDiagnosticCode(const lsp::Diagnostic& diag, std::string_view expectedC
 }
 
 /**
- * @brief Edit distance between two names, abandoned as soon as it passes `limit`.
- *
- * Bounded rather than exact because the answer is only ever compared against a threshold:
- * once every cell of a row is over the limit no later row can come back under it, so the
- * remaining work cannot change the verdict. That matters here - this runs against every
- * name in the workspace symbol table.
+ * @brief Bounded Levenshtein edit distance between two strings.
+ * @param[in] a First string.
+ * @param[in] b Second string.
+ * @param[in] limit Maximum search distance threshold.
+ * @return Computed distance or limit + 1 if exceeded.
  */
 size_t BoundedEditDistance(std::string_view a, std::string_view b, size_t limit)
 {
@@ -1473,8 +2022,6 @@ size_t BoundedEditDistance(std::string_view a, std::string_view b, size_t limit)
     {
         std::swap(a, b);
     }
-
-    // Length alone already settles it.
     if (b.size() - a.size() > limit)
     {
         return limit + 1;
@@ -1509,12 +2056,9 @@ size_t BoundedEditDistance(std::string_view a, std::string_view b, size_t limit)
 }
 
 /**
- * @brief How far a suggestion may sit from what the user typed, by name length.
- *
- * Deliberately tight. A wrong suggestion is worse than none: the user reads "did you mean"
- * as the server knowing something, and two edits away from a three-letter name is not a
- * typo, it is a different name. Zero is still useful - the comparison is case-folded, so a
- * limit of zero catches `myvar` for `myVar`, which is the single most common miss.
+ * @brief Determines maximum allowed typo distance by identifier length.
+ * @param[in] nameLength Length of identifier.
+ * @return Allowed edit distance.
  */
 size_t SuggestionLimit(size_t nameLength)
 {
@@ -1533,6 +2077,11 @@ size_t SuggestionLimit(size_t nameLength)
     return 3;
 }
 
+/**
+ * @brief Converts ASCII string to lowercase for case-insensitive matching.
+ * @param[in] text Input string slice.
+ * @return Folded lowercase string.
+ */
 std::string FoldCase(std::string_view text)
 {
     std::string folded(text);
@@ -1541,7 +2090,11 @@ std::string FoldCase(std::string_view text)
     return folded;
 }
 
-/** @brief Every name declared in the scope chain enclosing a point. */
+/**
+ * @brief Collects all local definition names visible at the given scope chain.
+ * @param[in] scope Starting lexical scope.
+ * @param[out] names Destination names vector.
+ */
 void CollectVisibleLocalNames(const analysis::Scope* scope, std::vector<std::string>& names)
 {
     for (const analysis::Scope* walk = scope; walk != nullptr; walk = walk->parent)
@@ -1553,7 +2106,11 @@ void CollectVisibleLocalNames(const analysis::Scope* scope, std::vector<std::str
     }
 }
 
-/** @brief True for the symbol kinds that can legally stand where a type name was written. */
+/**
+ * @brief Tests if symbol type can appear where a type name is expected.
+ * @param[in] type Symbol type.
+ * @return True if symbol is class, interface, enum, typedef, or funcdef.
+ */
 bool IsTypeLikeSymbol(analysis::SymbolType type)
 {
     return type == analysis::SymbolType::Class || type == analysis::SymbolType::Interface ||
@@ -1561,18 +2118,140 @@ bool IsTypeLikeSymbol(analysis::SymbolType type)
            type == analysis::SymbolType::Funcdef;
 }
 
+struct TypoCandidateSuggestion
+{
+    std::string name;
+    size_t distance = 0;
+};
+
 /**
- * @brief "Did you mean 'X'?" for a name that resolved to nothing, when something is close.
- *
- * Of the 132 codes this server can emit, one had a quick fix before this. These two are
- * what a typo looks like - an identifier or a type name that resolved to nothing - and the
- * name the user meant is nearly always already in the symbol table.
- *
- * The candidate set differs by which one it is. An unresolved TYPE is only ever a type, so
- * offering a function name there would be a suggestion that cannot compile; an unresolved
- * identifier can be anything in scope. Everything else about the two is the same.
- *
- * Offers nothing when nothing is close. That is the whole design - see SuggestionLimit.
+ * @brief Collects candidate names for typo suggestions from local scopes and symbols.
+ * @param[in] request Code action request.
+ * @param[in] point Cursor position.
+ * @param[in] isIdentifier True if unresolved target is an identifier.
+ * @param[in] isType True if unresolved target is a type.
+ * @return Vector of candidate names.
+ */
+std::vector<std::string> CollectTypoCandidates(const CodeActionRequest& request, TSPoint point, bool isIdentifier,
+                                               bool isType)
+{
+    std::vector<std::string> candidates;
+    if (isIdentifier)
+    {
+        auto rootScope = request.scopeIndex.GetRoot(request.uri);
+        if (rootScope)
+        {
+            CollectVisibleLocalNames(FindScopeByLineOrRoot(rootScope.get(), point.row, point.column), candidates);
+        }
+    }
+    request.symbolTable.ForEachSymbol(
+        [&candidates, isType](const std::string& name, const std::vector<analysis::Symbol>& symbols)
+        {
+            if (isType && std::none_of(symbols.begin(), symbols.end(),
+                                       [](const analysis::Symbol& sym) { return IsTypeLikeSymbol(sym.type); }))
+            {
+                return;
+            }
+            candidates.push_back(name);
+        });
+    return candidates;
+}
+
+/**
+ * @brief Ranks typo candidate suggestions by edit distance.
+ * @param[in] typed Typed identifier text.
+ * @param[in] candidates Available candidate names.
+ * @return Sorted vector of suggestions within distance limit.
+ */
+std::vector<TypoCandidateSuggestion> RankTypoSuggestions(const std::string& typed,
+                                                         const std::vector<std::string>& candidates)
+{
+    const std::string typedFolded = FoldCase(typed);
+    const size_t limit = SuggestionLimit(typed.size());
+    std::vector<TypoCandidateSuggestion> ranked;
+    ankerl::unordered_dense::set<std::string> seen;
+
+    for (const auto& candidate : candidates)
+    {
+        if (candidate.empty() || candidate == typed || !seen.insert(candidate).second)
+        {
+            continue;
+        }
+        const size_t distance = BoundedEditDistance(typedFolded, FoldCase(candidate), limit);
+        if (distance <= limit)
+        {
+            ranked.push_back({candidate, distance});
+        }
+    }
+
+    std::sort(ranked.begin(), ranked.end(),
+              [](const TypoCandidateSuggestion& a, const TypoCandidateSuggestion& b)
+              {
+                  if (a.distance != b.distance)
+                  {
+                      return a.distance < b.distance;
+                  }
+                  return a.name < b.name;
+              });
+    return ranked;
+}
+
+/**
+ * @brief Context for emitting typo candidate quick-fix code actions.
+ */
+struct TypoFixContext
+{
+    const CodeActionRequest& request;
+    const lsp::Diagnostic& diag;
+    TSNode identifier;
+};
+
+/**
+ * @brief Emits quick-fix code actions for typo suggestions.
+ * @param[in] ctx Typo fix context.
+ * @param[in] ranked Ranked suggestions list.
+ * @param[out] actions Destination actions vector.
+ */
+void EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<TypoCandidateSuggestion>& ranked,
+                         std::vector<lsp::CodeAction>& actions)
+{
+    const size_t offered = std::min<size_t>(ranked.size(), 3);
+    const bool hasClearWinner = ranked.size() == 1 || ranked[0].distance < ranked[1].distance;
+
+    for (size_t i = 0; i < offered; ++i)
+    {
+        lsp::CodeAction action;
+        action.title = "Did you mean '" + ranked[i].name + "'?";
+        action.kind = lsp::CodeActionKind::QuickFix;
+        action.diagnostics = std::vector<lsp::Diagnostic>{ctx.diag};
+
+        if (i == 0 && hasClearWinner)
+        {
+            action.isPreferred = true;
+        }
+
+        lsp::TextEdit edit;
+        edit.range.start.line = ts_node_start_point(ctx.identifier).row;
+        edit.range.start.character = ts_node_start_point(ctx.identifier).column;
+        edit.range.end.line = ts_node_end_point(ctx.identifier).row;
+        edit.range.end.character = ts_node_end_point(ctx.identifier).column;
+        edit.newText = ranked[i].name;
+
+        lsp::WorkspaceEdit wsEdit;
+        lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+        changes[lsp::DocumentUri::parse(ctx.request.uri)] = {std::move(edit)};
+        wsEdit.changes = std::move(changes);
+        action.edit = std::move(wsEdit);
+
+        actions.push_back(std::move(action));
+    }
+}
+
+/**
+ * @brief Tries to generate typo fix suggestions for undefined identifiers or unknown types.
+ * @param[in] request Code action request.
+ * @param[in] rootNode Root AST node.
+ * @param[out] actions Destination actions vector.
  */
 void TryAddUndefinedIdentifierSuggestions(const CodeActionRequest& request, TSNode rootNode,
                                           std::vector<lsp::CodeAction>& actions)
@@ -1604,114 +2283,20 @@ void TryAddUndefinedIdentifierSuggestions(const CodeActionRequest& request, TSNo
             continue;
         }
 
-        const std::string typedFolded = FoldCase(typed);
-        const size_t limit = SuggestionLimit(typed.size());
-
-        std::vector<std::string> candidates;
-
-        // Locals and parameters first - they are what an identifier in a function body most
-        // often meant. Not for a type: no local declares one.
-        if (isIdentifier)
+        auto candidates = CollectTypoCandidates(request, point, isIdentifier, isType);
+        auto ranked = RankTypoSuggestions(typed, candidates);
+        if (!ranked.empty())
         {
-            auto rootScope = request.scopeIndex.GetRoot(request.uri);
-            if (rootScope)
-            {
-                CollectVisibleLocalNames(FindScopeByLineOrRoot(rootScope.get(), point.row, point.column), candidates);
-            }
-        }
-
-        request.symbolTable.ForEachSymbol(
-            [&candidates, isType](const std::string& name, const std::vector<analysis::Symbol>& symbols)
-            {
-                if (isType && std::none_of(symbols.begin(), symbols.end(),
-                                           [](const analysis::Symbol& sym) { return IsTypeLikeSymbol(sym.type); }))
-                {
-                    return;
-                }
-                candidates.push_back(name);
-            });
-
-        struct Suggestion
-        {
-            std::string name;
-            size_t distance = 0;
-        };
-
-        std::vector<Suggestion> ranked;
-        ankerl::unordered_dense::set<std::string> seen;
-
-        for (const auto& candidate : candidates)
-        {
-            if (candidate.empty() || candidate == typed || !seen.insert(candidate).second)
-            {
-                continue;
-            }
-
-            const size_t distance = BoundedEditDistance(typedFolded, FoldCase(candidate), limit);
-            if (distance <= limit)
-            {
-                ranked.push_back({candidate, distance});
-            }
-        }
-
-        if (ranked.empty())
-        {
-            continue;
-        }
-
-        std::sort(ranked.begin(), ranked.end(),
-                  [](const Suggestion& a, const Suggestion& b)
-                  {
-                      if (a.distance != b.distance)
-                      {
-                          return a.distance < b.distance;
-                      }
-                      return a.name < b.name;
-                  });
-
-        // Three at most. A list of near-misses is a menu to read, not a fix to accept.
-        const size_t offered = std::min<size_t>(ranked.size(), 3);
-        const bool hasClearWinner = ranked.size() == 1 || ranked[0].distance < ranked[1].distance;
-
-        for (size_t i = 0; i < offered; ++i)
-        {
-            lsp::CodeAction action;
-            action.title = "Did you mean '" + ranked[i].name + "'?";
-            action.kind = lsp::CodeActionKind::QuickFix;
-            action.diagnostics = std::vector<lsp::Diagnostic>{diag};
-
-            // Only when one candidate is strictly closer than the rest. Marking a preferred
-            // fix is what lets an editor apply it without asking, so a tie must not have one.
-            if (i == 0 && hasClearWinner)
-            {
-                action.isPreferred = true;
-            }
-
-            lsp::TextEdit edit;
-            edit.range.start.line = ts_node_start_point(identifier).row;
-            edit.range.start.character = ts_node_start_point(identifier).column;
-            edit.range.end.line = ts_node_end_point(identifier).row;
-            edit.range.end.character = ts_node_end_point(identifier).column;
-            edit.newText = ranked[i].name;
-
-            lsp::WorkspaceEdit wsEdit;
-            lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-            changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-            wsEdit.changes = std::move(changes);
-            action.edit = std::move(wsEdit);
-
-            actions.push_back(std::move(action));
+            EmitTypoCodeActions(TypoFixContext{request, diag, identifier}, ranked, actions);
         }
     }
 }
 
 /**
- * @brief Drops the `@` from a handle declared on a primitive.
- *
- * AngelScript has no handle to a primitive - `int@` is not a type that exists - so there is
- * exactly one thing the user can have meant, and the fix is to delete one character. Worth
- * having precisely because it is unambiguous: the diagnostic already says what is wrong and
- * the reader still has to go and edit it by hand.
+ * @brief Removes the `@` modifier from a handle declared on a primitive type.
+ * @param[in] request Code action request.
+ * @param[in] rootNode Root AST node.
+ * @param[out] actions Destination actions vector.
  */
 void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNode,
                                 std::vector<lsp::CodeAction>& actions)
@@ -1728,8 +2313,6 @@ void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNod
             continue;
         }
 
-        // Located in the source rather than trusted from the range: the diagnostic points at
-        // the type, and the `@` may sit anywhere across it (`int@`, `int @`, `const int@`).
         const std::string_view line = angel_lsp::utils::GetLine(request.sourceCode, diag.range.start.line);
         const size_t at = line.find('@', diag.range.start.character);
         if (at == std::string_view::npos || at >= diag.range.end.character)
@@ -1760,42 +2343,21 @@ void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNod
     }
 }
 
-/**
- * @brief "Did you mean this file?" for an `#include` that resolves to nothing.
- *
- * The candidates are the files the server has actually indexed, which is the honest set: it
- * is what the server can see, and a file it has never heard of is one it cannot vouch for.
- * A moved file is the common case and lands at distance zero - the name is unchanged and
- * only the directory moved - so it sorts to the front on its own.
- *
- * The replacement is spelled relative to the including file with forward slashes, which is
- * how every `#include` in the corpus is written and what ResolveIncludePath reads back.
- */
-void TryAddUnresolvedIncludeSuggestions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+struct IncludeCandidate
 {
-    if (request.sourceCode.empty())
-    {
-        return;
-    }
+    std::string spelling;
+    size_t distance = 0;
+};
 
-    const bool anyUnresolvedInclude =
-        std::any_of(request.context.diagnostics.begin(), request.context.diagnostics.end(),
-                    [](const lsp::Diagnostic& diag) { return MatchDiagnosticCode(diag, "as-warn-include-not-found"); });
-    if (!anyUnresolvedInclude)
-    {
-        return;
-    }
-
-    const std::string includerPath = angel_lsp::utils::UriToPath(request.uri);
-    if (includerPath.empty())
-    {
-        return;
-    }
-
-    // One entry per file, not per symbol: a file with four hundred declarations is still one
-    // candidate.
+/**
+ * @brief Collects all indexed file URIs from the workspace symbol table.
+ * @param[in] table Symbol table.
+ * @return Set of known document URIs.
+ */
+ankerl::unordered_dense::set<std::string> CollectIndexedFileUris(const analysis::SymbolTable& table)
+{
     ankerl::unordered_dense::set<std::string> indexedUris;
-    request.symbolTable.ForEachSymbol(
+    table.ForEachSymbol(
         [&indexedUris]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
@@ -1806,7 +2368,171 @@ void TryAddUnresolvedIncludeSuggestions(const CodeActionRequest& request, std::v
                 }
             }
         });
+    return indexedUris;
+}
 
+/**
+ * @brief Searches indexed document URIs for filenames similar to the unresolved include.
+ * @param[in] includerPath Absolute filesystem path of current document.
+ * @param[in] rawPath Unresolved include directive raw path.
+ * @param[in] indexedUris Set of indexed file URIs.
+ * @param[in] currentUri Current document URI.
+ * @return Ranked candidates list sorted by edit distance.
+ */
+std::vector<IncludeCandidate> RankIncludeCandidates(const std::string& includerPath, const std::string& rawPath,
+                                                    const ankerl::unordered_dense::set<std::string>& indexedUris,
+                                                    const std::string& currentUri)
+{
+    const std::string typedName = std::filesystem::path(rawPath).filename().generic_string();
+    if (typedName.empty())
+    {
+        return {};
+    }
+
+    const std::string typedFolded = FoldCase(typedName);
+    const size_t limit = SuggestionLimit(typedName.size());
+    std::vector<IncludeCandidate> ranked;
+    ankerl::unordered_dense::set<std::string> seen;
+
+    for (const std::string& candidateUri : indexedUris)
+    {
+        if (candidateUri == currentUri)
+        {
+            continue;
+        }
+
+        const std::string candidatePath = angel_lsp::utils::UriToPath(candidateUri);
+        if (candidatePath.empty())
+        {
+            continue;
+        }
+
+        const std::string candidateName = std::filesystem::path(candidatePath).filename().generic_string();
+        const size_t distance = BoundedEditDistance(typedFolded, FoldCase(candidateName), limit);
+        if (distance > limit)
+        {
+            continue;
+        }
+
+        std::error_code relativeError;
+        const std::filesystem::path relative = std::filesystem::relative(
+            std::filesystem::path(candidatePath), std::filesystem::path(includerPath).parent_path(), relativeError);
+        if (relativeError || relative.empty())
+        {
+            continue;
+        }
+
+        const std::string spelling = relative.generic_string();
+        if (spelling == rawPath || !seen.insert(spelling).second)
+        {
+            continue;
+        }
+
+        ranked.push_back({spelling, distance});
+    }
+
+    std::sort(ranked.begin(), ranked.end(),
+              [](const IncludeCandidate& a, const IncludeCandidate& b)
+              {
+                  if (a.distance != b.distance)
+                  {
+                      return a.distance < b.distance;
+                  }
+                  return a.spelling < b.spelling;
+              });
+    return ranked;
+}
+
+/**
+ * @brief Context for unresolved include suggestions.
+ */
+struct IncludeFixContext
+{
+    const CodeActionRequest& request;
+    const lsp::Diagnostic& diag;
+    const angel_lsp::utils::IncludeDirective& directive;
+};
+
+/**
+ * @brief Emits quick-fix code actions for unresolved include suggestions.
+ * @param[in] ctx Include fix context.
+ * @param[in] ranked Ranked include candidates.
+ * @param[out] actions Destination actions vector.
+ */
+void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<IncludeCandidate>& ranked,
+                            std::vector<lsp::CodeAction>& actions)
+{
+    const std::string_view line =
+        angel_lsp::utils::GetLine(ctx.request.sourceCode, static_cast<uint32_t>(ctx.directive.line));
+    const char open = ctx.directive.isAngled ? '<' : '"';
+    const char close = ctx.directive.isAngled ? '>' : '"';
+    const size_t openPos = line.find(open);
+    if (openPos == std::string_view::npos)
+    {
+        return;
+    }
+    const size_t closePos = line.find(close, openPos + 1);
+    if (closePos == std::string_view::npos)
+    {
+        return;
+    }
+
+    const size_t offered = std::min<size_t>(ranked.size(), 3);
+    const bool hasClearWinner = ranked.size() == 1 || ranked[0].distance < ranked[1].distance;
+
+    for (size_t i = 0; i < offered; ++i)
+    {
+        lsp::CodeAction action;
+        action.title = "Did you mean '" + ranked[i].spelling + "'?";
+        action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+        action.diagnostics = std::vector<lsp::Diagnostic>{ctx.diag};
+        if (i == 0 && hasClearWinner)
+        {
+            action.isPreferred = true;
+        }
+
+        lsp::TextEdit edit;
+        edit.range.start.line = static_cast<uint32_t>(ctx.directive.line);
+        edit.range.start.character = static_cast<uint32_t>(openPos + 1);
+        edit.range.end.line = static_cast<uint32_t>(ctx.directive.line);
+        edit.range.end.character = static_cast<uint32_t>(closePos);
+        edit.newText = ranked[i].spelling;
+
+        lsp::WorkspaceEdit wsEdit;
+        lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+        changes[lsp::DocumentUri::parse(ctx.request.uri)] = {std::move(edit)};
+        wsEdit.changes = std::move(changes);
+        action.edit = std::move(wsEdit);
+
+        actions.push_back(std::move(action));
+    }
+}
+
+/**
+ * @brief Suggests existing workspace files for unresolved `#include` paths.
+ * @param[in] request Code action request.
+ * @param[out] actions Destination actions vector.
+ */
+void TryAddUnresolvedIncludeSuggestions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+{
+    if (request.sourceCode.empty())
+    {
+        return;
+    }
+    const bool anyUnresolvedInclude =
+        std::any_of(request.context.diagnostics.begin(), request.context.diagnostics.end(),
+                    [](const lsp::Diagnostic& diag) { return MatchDiagnosticCode(diag, "as-warn-include-not-found"); });
+    if (!anyUnresolvedInclude)
+    {
+        return;
+    }
+    const std::string includerPath = angel_lsp::utils::UriToPath(request.uri);
+    if (includerPath.empty())
+    {
+        return;
+    }
+
+    auto indexedUris = CollectIndexedFileUris(request.symbolTable);
     const auto directives = angel_lsp::utils::IncludeResolver::ExtractIncludes(request.sourceCode);
 
     for (const auto& diag : request.context.diagnostics)
@@ -1815,7 +2541,6 @@ void TryAddUnresolvedIncludeSuggestions(const CodeActionRequest& request, std::v
         {
             continue;
         }
-
         const auto directive = std::find_if(directives.begin(), directives.end(),
                                             [&diag](const angel_lsp::utils::IncludeDirective& candidate)
                                             { return candidate.line == diag.range.start.line; });
@@ -1824,136 +2549,126 @@ void TryAddUnresolvedIncludeSuggestions(const CodeActionRequest& request, std::v
             continue;
         }
 
-        const std::string typedName = std::filesystem::path(directive->rawPath).filename().generic_string();
-        if (typedName.empty())
+        auto ranked = RankIncludeCandidates(includerPath, directive->rawPath, indexedUris, request.uri);
+        if (!ranked.empty())
         {
-            continue;
-        }
-
-        const std::string typedFolded = FoldCase(typedName);
-        const size_t limit = SuggestionLimit(typedName.size());
-
-        struct Candidate
-        {
-            std::string spelling;
-            size_t distance = 0;
-        };
-
-        std::vector<Candidate> ranked;
-        ankerl::unordered_dense::set<std::string> seen;
-
-        for (const std::string& candidateUri : indexedUris)
-        {
-            if (candidateUri == request.uri)
-            {
-                continue;
-            }
-
-            const std::string candidatePath = angel_lsp::utils::UriToPath(candidateUri);
-            if (candidatePath.empty())
-            {
-                continue;
-            }
-
-            const std::string candidateName = std::filesystem::path(candidatePath).filename().generic_string();
-            const size_t distance = BoundedEditDistance(typedFolded, FoldCase(candidateName), limit);
-            if (distance > limit)
-            {
-                continue;
-            }
-
-            std::error_code relativeError;
-            const std::filesystem::path relative = std::filesystem::relative(
-                std::filesystem::path(candidatePath), std::filesystem::path(includerPath).parent_path(), relativeError);
-            if (relativeError || relative.empty())
-            {
-                continue;
-            }
-
-            const std::string spelling = relative.generic_string();
-            if (spelling == directive->rawPath || !seen.insert(spelling).second)
-            {
-                continue;
-            }
-
-            ranked.push_back({spelling, distance});
-        }
-
-        if (ranked.empty())
-        {
-            continue;
-        }
-
-        std::sort(ranked.begin(), ranked.end(),
-                  [](const Candidate& a, const Candidate& b)
-                  {
-                      if (a.distance != b.distance)
-                      {
-                          return a.distance < b.distance;
-                      }
-                      return a.spelling < b.spelling;
-                  });
-
-        // The span inside the quotes or brackets, which is all that may be rewritten -
-        // replacing the whole line would take the directive and any trailing comment with it.
-        const std::string_view line =
-            angel_lsp::utils::GetLine(request.sourceCode, static_cast<uint32_t>(directive->line));
-        const char open = directive->isAngled ? '<' : '"';
-        const char close = directive->isAngled ? '>' : '"';
-        const size_t openPos = line.find(open);
-        if (openPos == std::string_view::npos)
-        {
-            continue;
-        }
-        const size_t closePos = line.find(close, openPos + 1);
-        if (closePos == std::string_view::npos)
-        {
-            continue;
-        }
-
-        const size_t offered = std::min<size_t>(ranked.size(), 3);
-        const bool hasClearWinner = ranked.size() == 1 || ranked[0].distance < ranked[1].distance;
-
-        for (size_t i = 0; i < offered; ++i)
-        {
-            lsp::CodeAction action;
-            action.title = "Did you mean '" + ranked[i].spelling + "'?";
-            action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-            action.diagnostics = std::vector<lsp::Diagnostic>{diag};
-            if (i == 0 && hasClearWinner)
-            {
-                action.isPreferred = true;
-            }
-
-            lsp::TextEdit edit;
-            edit.range.start.line = static_cast<uint32_t>(directive->line);
-            edit.range.start.character = static_cast<uint32_t>(openPos + 1);
-            edit.range.end.line = static_cast<uint32_t>(directive->line);
-            edit.range.end.character = static_cast<uint32_t>(closePos);
-            edit.newText = ranked[i].spelling;
-
-            lsp::WorkspaceEdit wsEdit;
-            lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-            changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-            wsEdit.changes = std::move(changes);
-            action.edit = std::move(wsEdit);
-
-            actions.push_back(std::move(action));
+            EmitIncludeSuggestions(IncludeFixContext{request, diag, *directive}, ranked, actions);
         }
     }
 }
 
 /**
+ * @brief Locates a unique global function symbol by name.
+ * @param[in] table Symbol table.
+ * @param[in] functionName Name of global function.
+ * @return Unique function symbol pointer or nullptr if ambiguous/missing.
+ */
+const analysis::Symbol* FindUniqueGlobalFunction(const analysis::SymbolTable& table, const std::string& functionName)
+{
+    const analysis::Symbol* target = nullptr;
+    size_t globalOverloads = 0;
+    table.ForEachSymbol(
+        [&](const std::string& name, const std::vector<analysis::Symbol>& symbols)
+        {
+            if (name != functionName)
+            {
+                return;
+            }
+            for (const auto& sym : symbols)
+            {
+                if (sym.type == analysis::SymbolType::Function && sym.containerName.empty() &&
+                    std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+                {
+                    ++globalOverloads;
+                    target = &sym;
+                }
+            }
+        });
+    return (target != nullptr && globalOverloads == 1) ? target : nullptr;
+}
+
+/**
+ * @brief Formats a `funcdef` declaration string matching a function signature.
+ * @param[in] signature Function signature.
+ * @param[in] funcdefName Target funcdef type name.
+ * @return Formatted funcdef declaration line.
+ */
+std::string FormatFuncdefDeclarationText(const analysis::FunctionSignature& signature, const std::string& funcdefName)
+{
+    std::string declaration = "funcdef ";
+    declaration += signature.returnType.empty() ? "void" : signature.returnType;
+    declaration += " " + funcdefName + "(";
+    for (size_t i = 0; i < signature.parameters.size(); ++i)
+    {
+        if (i > 0)
+        {
+            declaration += ", ";
+        }
+        const auto& parameter = signature.parameters[i];
+        declaration += parameter.rawText.empty() ? parameter.typeName : parameter.rawText;
+    }
+    declaration += ");\n";
+    return declaration;
+}
+
+/**
+ * @brief Item information for generating a funcdef quick-fix action.
+ */
+struct FuncdefFixItem
+{
+    TSNode typeNode;
+    std::string functionName;
+    std::string funcdefName;
+    std::string declaration;
+};
+
+/**
+ * @brief Emits a quick fix that prepends a funcdef declaration and renames the type reference.
+ * @param[in] request Code action request.
+ * @param[in] diag Triggering diagnostic.
+ * @param[in] item Funcdef fix metadata item.
+ * @param[out] actions Destination actions vector.
+ */
+void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::Diagnostic& diag, const FuncdefFixItem& item,
+                           std::vector<lsp::CodeAction>& actions)
+{
+    std::vector<lsp::TextEdit> edits;
+    lsp::TextEdit insertion;
+    insertion.range.start.line = 0;
+    insertion.range.start.character = 0;
+    insertion.range.end.line = 0;
+    insertion.range.end.character = 0;
+    insertion.newText = item.declaration;
+    edits.push_back(std::move(insertion));
+
+    lsp::TextEdit rename;
+    rename.range.start.line = ts_node_start_point(item.typeNode).row;
+    rename.range.start.character = ts_node_start_point(item.typeNode).column;
+    rename.range.end.line = ts_node_end_point(item.typeNode).row;
+    rename.range.end.character = ts_node_end_point(item.typeNode).column;
+    rename.newText = item.funcdefName;
+    edits.push_back(std::move(rename));
+
+    lsp::CodeAction action;
+    action.title = "Declare funcdef '" + item.funcdefName + "' for '" + item.functionName + "'";
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    action.isPreferred = true;
+    action.diagnostics = std::vector<lsp::Diagnostic>{diag};
+
+    lsp::WorkspaceEdit wsEdit;
+    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+    changes[lsp::DocumentUri::parse(request.uri)] = std::move(edits);
+    wsEdit.changes = std::move(changes);
+    action.edit = std::move(wsEdit);
+
+    actions.push_back(std::move(action));
+}
+
+/**
  * @brief Declares the funcdef a function handle needs, derived from the function itself.
- *
- * `void Foo(int) {}` then `Foo@ h` is rejected - a function handle needs a funcdef naming
- * its signature - and the signature is sitting right there on the function. So the fix
- * writes `funcdef void FooFunc(int);` at the top of the file and rewrites the type position
- * to name it. Two edits, because either alone leaves the file no more compilable than
- * before: a funcdef nobody references, or a reference to a funcdef that does not exist.
- *
- * Parameter TYPES only, no names - that is what a funcdef takes, and `const string &in`
- * survives verbatim. Verified against the oracle, including the reference-qualified case.
+ * @param[in] request Code action request.
+ * @param[in] rootNode Root AST node.
+ * @param[out] actions Destination actions vector.
  */
 void TryAddGenerateFuncdefFix(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
 {
@@ -1982,99 +2697,25 @@ void TryAddGenerateFuncdefFix(const CodeActionRequest& request, TSNode rootNode,
             continue;
         }
 
-        // The global overload. A method cannot be written bare in a type position, so it is
-        // not what the user was reaching for, and an overload set has no single signature to
-        // derive a funcdef from - offering one of several would be a guess.
-        const analysis::Symbol* target = nullptr;
-        size_t globalOverloads = 0;
-        request.symbolTable.ForEachSymbol(
-            [&](const std::string& name, const std::vector<analysis::Symbol>& symbols)
-            {
-                if (name != functionName)
-                    return;
-                for (const auto& sym : symbols)
-                {
-                    if (sym.type == analysis::SymbolType::Function && sym.containerName.empty() &&
-                        std::holds_alternative<analysis::FunctionSignature>(sym.signature))
-                    {
-                        ++globalOverloads;
-                        target = &sym;
-                    }
-                }
-            });
-
-        if (target == nullptr || globalOverloads != 1)
+        const analysis::Symbol* target = FindUniqueGlobalFunction(request.symbolTable, functionName);
+        if (!target)
         {
             continue;
         }
 
         const auto& signature = target->GetFunction();
         const std::string funcdefName = functionName + "Func";
-
-        std::string declaration = "funcdef ";
-        declaration += signature.returnType.empty() ? "void" : signature.returnType;
-        declaration += " " + funcdefName + "(";
-        for (size_t i = 0; i < signature.parameters.size(); ++i)
-        {
-            if (i > 0)
-                declaration += ", ";
-
-            // The parameter as the user wrote it, not its typeName. typeName drops the
-            // reference qualifier - `const string &in` arrives as `const string` - and a
-            // funcdef missing it does not match the function it was derived from: the
-            // oracle answers "Can't implicitly convert from '<function>@const' to
-            // 'ComputeFunc@&'". A funcdef accepts parameter names, so rawText carries
-            // across whole and verbatim.
-            const auto& parameter = signature.parameters[i];
-            declaration += parameter.rawText.empty() ? parameter.typeName : parameter.rawText;
-        }
-        declaration += ");\n";
-
-        std::vector<lsp::TextEdit> edits;
-
-        lsp::TextEdit insertion;
-        insertion.range.start.line = 0;
-        insertion.range.start.character = 0;
-        insertion.range.end.line = 0;
-        insertion.range.end.character = 0;
-        insertion.newText = declaration;
-        edits.push_back(std::move(insertion));
-
-        lsp::TextEdit rename;
-        rename.range.start.line = ts_node_start_point(typeNode).row;
-        rename.range.start.character = ts_node_start_point(typeNode).column;
-        rename.range.end.line = ts_node_end_point(typeNode).row;
-        rename.range.end.character = ts_node_end_point(typeNode).column;
-        rename.newText = funcdefName;
-        edits.push_back(std::move(rename));
-
-        lsp::CodeAction action;
-        action.title = "Declare funcdef '" + funcdefName + "' for '" + functionName + "'";
-        action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-        action.isPreferred = true;
-        action.diagnostics = std::vector<lsp::Diagnostic>{diag};
-
-        lsp::WorkspaceEdit wsEdit;
-        lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-        changes[lsp::DocumentUri::parse(request.uri)] = std::move(edits);
-        wsEdit.changes = std::move(changes);
-        action.edit = std::move(wsEdit);
-
-        actions.push_back(std::move(action));
+        std::string declaration = FormatFuncdefDeclarationText(signature, funcdefName);
+        EmitFuncdefCodeAction(request, diag,
+                              FuncdefFixItem{typeNode, functionName, funcdefName, std::move(declaration)}, actions);
     }
 }
 
 /**
  * @brief Calls the bool conversion operator explicitly, turning `if (h)` into `if (h.opImplConv())`.
- *
- * Sound for the same reason the accessor fix is, and verified the same way: measured against
- * the oracle, the explicit call is accepted under asEP_BOOL_CONVERSION_MODE 0 AND 1, while
- * the bare `if (h)` is accepted only under 1. Applying it cannot break a host that already
- * works; it can only stop one from breaking on the engine's own default.
- *
- * The operator's name comes from the diagnostic's own message rather than being resolved
- * again here: the rule already picked between opImplConv and opConv, and picking a second
- * time is a second chance to disagree with it.
+ * @param[in] request Code action request.
+ * @param[in] rootNode Root AST node.
+ * @param[out] actions Destination actions vector.
  */
 void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
 {
@@ -2090,14 +2731,6 @@ void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, 
             continue;
         }
 
-        // The message names the operator in quotes, second of the two quoted spans. Read
-        // from there because the rule's choice is the one that must be honoured - and if the
-        // message ever stops carrying it, no fix is offered rather than a guessed one.
-        //
-        // Coupled to the message's shape, and bounded on purpose: the operator name is an
-        // AngelScript identifier and is not translated, and the result is checked against
-        // the only two names that exist before any edit is built. A message that changes
-        // shape produces no fix rather than a wrong one.
         if (!std::holds_alternative<lsp::String>(diag.message))
         {
             continue;
@@ -2122,8 +2755,6 @@ void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, 
             continue;
         }
 
-        // Appended after the condition, not wrapped around it: the diagnostic's range is
-        // exactly the condition expression, so `.opImplConv()` at its end is the whole edit.
         lsp::TextEdit edit;
         edit.range.start = diag.range.end;
         edit.range.end = diag.range.end;
@@ -2147,12 +2778,9 @@ void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, 
 
 /**
  * @brief Adds the `property` keyword to an accessor that carries none.
- *
- * The fix for the portability hint, and the reason it is offered as a fix at all: measured
- * against the oracle, an accessor WITH the keyword is accepted under
- * asEP_PROPERTY_ACCESSOR_MODE 2 and 3 alike, while one without it is rejected under 3. So
- * applying this cannot break a build that works today - it can only stop one from breaking
- * on a host that runs the engine's own default.
+ * @param[in] request Code action request.
+ * @param[in] rootNode Root AST node.
+ * @param[out] actions Destination actions vector.
  */
 void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode rootNode,
                                       std::vector<lsp::CodeAction>& actions)
@@ -2180,9 +2808,6 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
             continue;
         }
 
-        // After the parameter list, which is where `property` goes and where `const` would
-        // also sit. Anchored to the parameter list rather than to the body: an interface
-        // declaration or a stub has no body to anchor to.
         const TSNode parameters = parser::GetChildByField(node, parser::fields::Parameters);
         if (ts_node_is_null(parameters))
         {
@@ -2215,91 +2840,143 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
 }
 
 /**
- * @brief Tries to generate Missing const Qualifier quick fixes and intention actions.
+ * @brief Finds the parameter list node of a function declaration.
+ * @param[in] fnNode Function declaration node.
+ * @return Parameter list node or null node.
  */
-void TryAddConstQualifierActions(const CodeActionRequest& request, TSNode rootNode,
-                                 std::vector<lsp::CodeAction>& actions)
+TSNode FindFunctionParametersNode(TSNode fnNode)
 {
-    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+    TSNode paramList = parser::GetChildByField(fnNode, parser::fields::Parameters);
+    if (!ts_node_is_null(paramList))
     {
-        return;
+        return paramList;
     }
-
-    for (const auto& diag : request.context.diagnostics)
+    uint32_t cnt = ts_node_child_count(fnNode);
+    for (uint32_t c = 0; c < cnt; ++c)
     {
-        if (MatchDiagnosticCode(diag, "as-err-const-method-required"))
+        TSNode ch = ts_node_child(fnNode, c);
+        if (std::string_view(ts_node_type(ch)) == "parameter_list")
         {
-            TSPoint dPt = {diag.range.start.line, diag.range.start.character};
-            TSNode memberNode = ts_node_descendant_for_point_range(rootNode, dPt, dPt);
-            std::string methodName = GetNodeText(memberNode, request.sourceCode);
-
-            TSNode callee = ts_node_parent(memberNode);
-            TSNode objNode = parser::GetChildByField(callee, parser::fields::Object);
-            auto rootScope = request.scopeIndex.GetRoot(request.uri);
-            const analysis::Scope* scope = FindScopeByLineOrRoot(rootScope.get(), dPt.row, dPt.column);
-            std::string objType = analysis::CleanBaseType(
-                analysis::ResolveExpressionType(objNode, scope, request.symbolTable, request.sourceCode, request.uri));
-
-            request.symbolTable.ForEachSymbol(
-                [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
-                {
-                    for (const auto& sym : symList)
-                    {
-                        if (sym.type == analysis::SymbolType::Function && sym.name == methodName &&
-                            (objType.empty() || sym.containerName == objType) && sym.fileUri == request.uri)
-                        {
-                            TSPoint fnPt = {sym.startLine, sym.startCharacter};
-                            TSNode fnNode = ts_node_descendant_for_point_range(rootNode, fnPt, fnPt);
-                            while (!ts_node_is_null(fnNode) &&
-                                   std::string_view(ts_node_type(fnNode)) != "func_declaration")
-                            {
-                                fnNode = ts_node_parent(fnNode);
-                            }
-                            if (!ts_node_is_null(fnNode))
-                            {
-                                TSNode paramList = parser::GetChildByField(fnNode, parser::fields::Parameters);
-                                if (ts_node_is_null(paramList))
-                                {
-                                    uint32_t cnt = ts_node_child_count(fnNode);
-                                    for (uint32_t c = 0; c < cnt; ++c)
-                                    {
-                                        TSNode ch = ts_node_child(fnNode, c);
-                                        if (std::string_view(ts_node_type(ch)) == "parameter_list")
-                                        {
-                                            paramList = ch;
-                                            break;
-                                        }
-                                    }
-                                }
-                                if (!ts_node_is_null(paramList))
-                                {
-                                    TSPoint insertPt = ts_node_end_point(paramList);
-                                    lsp::TextEdit edit;
-                                    edit.range =
-                                        lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
-                                    edit.newText = " const";
-
-                                    lsp::CodeAction action;
-                                    action.title = "Add 'const' qualifier to method";
-                                    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-                                    action.isPreferred = true;
-                                    action.diagnostics = {diag};
-
-                                    lsp::WorkspaceEdit wsEdit;
-                                    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-                                    changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-                                    wsEdit.changes = std::move(changes);
-                                    action.edit = std::move(wsEdit);
-
-                                    actions.push_back(std::move(action));
-                                }
-                            }
-                        }
-                    }
-                });
+            return ch;
         }
     }
+    return paramList;
+}
 
+/**
+ * @brief Attempts to construct a missing-const quick-fix action for a matching function symbol.
+ * @param[in] request Code action request.
+ * @param[in] rootNode Root AST node.
+ * @param[in] diag Triggering diagnostic.
+ * @param[in] sym Target function symbol.
+ * @return Constructed CodeAction, or std::nullopt.
+ */
+std::optional<lsp::CodeAction> TryBuildMissingConstFixForSymbol(const CodeActionRequest& request, TSNode rootNode,
+                                                                const lsp::Diagnostic& diag,
+                                                                const analysis::Symbol& sym)
+{
+    TSPoint fnPt = {sym.startLine, sym.startCharacter};
+    TSNode fnNode = ts_node_descendant_for_point_range(rootNode, fnPt, fnPt);
+    while (!ts_node_is_null(fnNode) && std::string_view(ts_node_type(fnNode)) != "func_declaration")
+    {
+        fnNode = ts_node_parent(fnNode);
+    }
+    if (ts_node_is_null(fnNode))
+    {
+        return std::nullopt;
+    }
+    TSNode paramList = FindFunctionParametersNode(fnNode);
+    if (ts_node_is_null(paramList))
+    {
+        return std::nullopt;
+    }
+
+    TSPoint insertPt = ts_node_end_point(paramList);
+    lsp::TextEdit edit;
+    edit.range = lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
+    edit.newText = " const";
+
+    lsp::CodeAction action;
+    action.title = "Add 'const' qualifier to method";
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    action.isPreferred = true;
+    action.diagnostics = {diag};
+
+    lsp::WorkspaceEdit wsEdit;
+    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+    changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
+    wsEdit.changes = std::move(changes);
+    action.edit = std::move(wsEdit);
+    return action;
+}
+
+/**
+ * @brief Generates quick-fixes to append `const` to methods requested by diagnostics.
+ * @param[in] request Code action request.
+ * @param[in] rootNode Root AST node.
+ * @param[in] diag Target diagnostic.
+ * @param[out] actions Destination actions vector.
+ */
+void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TSNode rootNode, const lsp::Diagnostic& diag,
+                                     std::vector<lsp::CodeAction>& actions)
+{
+    TSPoint dPt = {diag.range.start.line, diag.range.start.character};
+    TSNode memberNode = ts_node_descendant_for_point_range(rootNode, dPt, dPt);
+    std::string methodName = GetNodeText(memberNode, request.sourceCode);
+
+    TSNode callee = ts_node_parent(memberNode);
+    TSNode objNode = parser::GetChildByField(callee, parser::fields::Object);
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    const analysis::Scope* scope = FindScopeByLineOrRoot(rootScope.get(), dPt.row, dPt.column);
+    std::string objType = analysis::CleanBaseType(
+        analysis::ResolveExpressionType(objNode, scope, request.symbolTable, request.sourceCode, request.uri));
+
+    request.symbolTable.ForEachSymbol(
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
+        {
+            for (const auto& sym : symList)
+            {
+                if (sym.type == analysis::SymbolType::Function && sym.name == methodName &&
+                    (objType.empty() || sym.containerName == objType) && sym.fileUri == request.uri)
+                {
+                    if (auto action = TryBuildMissingConstFixForSymbol(request, rootNode, diag, sym))
+                    {
+                        actions.push_back(std::move(*action));
+                    }
+                }
+            }
+        });
+}
+
+/**
+ * @brief Checks if a `const` qualifier already exists between parameter list and method body.
+ * @param[in] sourceCode Source text.
+ * @param[in] paramList Parameter list node.
+ * @param[in] bodyNode Method body node.
+ * @param[in] fnNode Function declaration node.
+ * @return True if const keyword is present in header suffix.
+ */
+bool HasConstQualifierBetween(std::string_view sourceCode, TSNode paramList, TSNode bodyNode, TSNode fnNode)
+{
+    uint32_t pEndByte = ts_node_end_byte(paramList);
+    uint32_t bStartByte = !ts_node_is_null(bodyNode) ? ts_node_start_byte(bodyNode) : ts_node_end_byte(fnNode);
+    if (pEndByte < bStartByte && bStartByte <= sourceCode.size())
+    {
+        std::string between = std::string(sourceCode.substr(pEndByte, bStartByte - pEndByte));
+        return between.find("const") != std::string::npos;
+    }
+    return false;
+}
+
+/**
+ * @brief Checks method under cursor and suggests adding `const` if method body doesn't mutate class state.
+ * @param[in] request Code action request.
+ * @param[in] rootNode Root AST node.
+ * @param[out] actions Destination actions vector.
+ */
+void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootNode,
+                                  std::vector<lsp::CodeAction>& actions)
+{
     TSPoint pt = {request.range.start.line, request.range.start.character};
     TSNode leaf = ts_node_descendant_for_point_range(rootNode, pt, pt);
     if (ts_node_is_null(leaf))
@@ -2312,64 +2989,25 @@ void TryAddConstQualifierActions(const CodeActionRequest& request, TSNode rootNo
     {
         fnNode = ts_node_parent(fnNode);
     }
-    if (ts_node_is_null(fnNode))
-    {
-        return;
-    }
-
     TSNode classNode = fnNode;
     while (!ts_node_is_null(classNode) && std::string_view(ts_node_type(classNode)) != "class_declaration")
     {
         classNode = ts_node_parent(classNode);
     }
-    if (ts_node_is_null(classNode))
+    if (ts_node_is_null(fnNode) || ts_node_is_null(classNode))
     {
         return;
     }
 
-    TSNode paramList = parser::GetChildByField(fnNode, parser::fields::Parameters);
-    if (ts_node_is_null(paramList))
-    {
-        uint32_t cnt = ts_node_child_count(fnNode);
-        for (uint32_t c = 0; c < cnt; ++c)
-        {
-            TSNode ch = ts_node_child(fnNode, c);
-            if (std::string_view(ts_node_type(ch)) == "parameter_list")
-            {
-                paramList = ch;
-                break;
-            }
-        }
-    }
-    if (ts_node_is_null(paramList))
+    TSNode paramList = FindFunctionParametersNode(fnNode);
+    TSNode bodyNode = FindFunctionBodyBlock(fnNode);
+    if (ts_node_is_null(paramList) || ts_node_is_null(bodyNode))
     {
         return;
     }
-
-    TSNode bodyNode = parser::GetChildByField(fnNode, parser::fields::Body);
-    if (ts_node_is_null(bodyNode))
+    if (HasConstQualifierBetween(request.sourceCode, paramList, bodyNode, fnNode))
     {
-        uint32_t cnt = ts_node_child_count(fnNode);
-        for (uint32_t i = 0; i < cnt; ++i)
-        {
-            TSNode ch = ts_node_child(fnNode, i);
-            if (std::string_view(ts_node_type(ch)) == "statement_block")
-            {
-                bodyNode = ch;
-                break;
-            }
-        }
-    }
-
-    uint32_t pEndByte = ts_node_end_byte(paramList);
-    uint32_t bStartByte = !ts_node_is_null(bodyNode) ? ts_node_start_byte(bodyNode) : ts_node_end_byte(fnNode);
-    if (pEndByte < bStartByte && bStartByte <= request.sourceCode.size())
-    {
-        std::string between = request.sourceCode.substr(pEndByte, bStartByte - pEndByte);
-        if (between.find("const") != std::string::npos)
-        {
-            return;
-        }
+        return;
     }
 
     TSNode classNameNode = parser::GetChildByField(classNode, parser::fields::Name);
@@ -2379,8 +3017,8 @@ void TryAddConstQualifierActions(const CodeActionRequest& request, TSNode rootNo
     const analysis::Scope* scope =
         FindScopeByLineOrRoot(rootScope.get(), ts_node_start_point(fnNode).row, ts_node_start_point(fnNode).column);
 
-    if (!ts_node_is_null(bodyNode) &&
-        !MethodBodyMutatesClassState(bodyNode, classNode, request.sourceCode, request.symbolTable, className, scope))
+    ClassMutationContext mutCtx{bodyNode, classNode, request.sourceCode, request.symbolTable, className, scope};
+    if (!MethodBodyMutatesClassState(mutCtx))
     {
         TSPoint insertPt = ts_node_end_point(paramList);
         lsp::TextEdit edit;
@@ -2402,7 +3040,98 @@ void TryAddConstQualifierActions(const CodeActionRequest& request, TSNode rootNo
 }
 
 /**
+ * @brief Tries to generate Missing const Qualifier quick fixes and intention actions.
+ * @param[in] request Code action request context.
+ * @param[in] rootNode Root AST node.
+ * @param[out] actions Destination actions vector.
+ */
+void TryAddConstQualifierActions(const CodeActionRequest& request, TSNode rootNode,
+                                 std::vector<lsp::CodeAction>& actions)
+{
+    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+    {
+        return;
+    }
+    for (const auto& diag : request.context.diagnostics)
+    {
+        if (MatchDiagnosticCode(diag, "as-err-const-method-required"))
+        {
+            TryAddMissingConstDiagnosticFix(request, rootNode, diag, actions);
+        }
+    }
+    TryAddIntentionalConstAction(request, rootNode, actions);
+}
+
+/**
+ * @brief Checks whether an include directive is referenced by symbols used in the file.
+ * @param[in] inc Include directive.
+ * @param[in] currentUri Document URI.
+ * @param[in] table Symbol table.
+ * @param[in] docReferences Set of referenced names in current document.
+ * @return True if include is referenced or has unknown symbols.
+ */
+bool IsIncludeDirectiveReferenced(const angel_lsp::utils::IncludeDirective& inc, const std::string& currentUri,
+                                  const analysis::SymbolTable& table,
+                                  const ankerl::unordered_dense::set<std::string>& docReferences)
+{
+    std::string resolved = utils::IncludeResolver::ResolveIncludePath(inc.rawPath, currentUri, {});
+    std::vector<std::string> symbolsInFile;
+    table.ForEachSymbol(
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
+        {
+            for (const auto& s : symList)
+            {
+                if ((!resolved.empty() && s.fileUri == resolved) ||
+                    (!inc.rawPath.empty() && s.fileUri.find(inc.rawPath) != std::string::npos))
+                {
+                    symbolsInFile.push_back(s.name);
+                }
+            }
+        });
+
+    if (symbolsInFile.empty())
+    {
+        return true;
+    }
+    for (const auto& symName : symbolsInFile)
+    {
+        if (docReferences.contains(symName))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Formats sorted angled and quoted include directive blocks.
+ * @param[in] angledIncludes Sorted vector of angled include paths.
+ * @param[in] quotedIncludes Sorted vector of quoted include paths.
+ * @return Formatted include header block text.
+ */
+std::string FormatSortedIncludesBlock(const std::vector<std::string>& angledIncludes,
+                                      const std::vector<std::string>& quotedIncludes)
+{
+    std::string newHeaderBlock;
+    for (const auto& p : angledIncludes)
+    {
+        newHeaderBlock += "#include <" + p + ">\n";
+    }
+    if (!angledIncludes.empty() && !quotedIncludes.empty())
+    {
+        newHeaderBlock += "\n";
+    }
+    for (const auto& p : quotedIncludes)
+    {
+        newHeaderBlock += "#include \"" + p + "\"\n";
+    }
+    return newHeaderBlock;
+}
+
+/**
  * @brief Tries to generate a Sort and Clean #include Directives code action.
+ * @param[in] request Code action request context.
+ * @param[out] actions Destination actions vector.
  */
 void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
@@ -2431,41 +3160,7 @@ void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vec
         }
         seen.insert(inc.rawPath);
 
-        std::string resolved = utils::IncludeResolver::ResolveIncludePath(inc.rawPath, request.uri, {});
-        bool isUnused = false;
-
-        std::vector<std::string> symbolsInFile;
-        request.symbolTable.ForEachSymbol(
-            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
-            {
-                for (const auto& s : symList)
-                {
-                    if ((!resolved.empty() && s.fileUri == resolved) ||
-                        (!inc.rawPath.empty() && s.fileUri.find(inc.rawPath) != std::string::npos))
-                    {
-                        symbolsInFile.push_back(s.name);
-                    }
-                }
-            });
-
-        if (!symbolsInFile.empty())
-        {
-            bool anyReferenced = false;
-            for (const auto& symName : symbolsInFile)
-            {
-                if (docReferences.contains(symName))
-                {
-                    anyReferenced = true;
-                    break;
-                }
-            }
-            if (!anyReferenced)
-            {
-                isUnused = true;
-            }
-        }
-
-        if (isUnused)
+        if (!IsIncludeDirectiveReferenced(inc, request.uri, request.symbolTable, docReferences))
         {
             continue;
         }
@@ -2483,24 +3178,10 @@ void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vec
     std::sort(angledIncludes.begin(), angledIncludes.end());
     std::sort(quotedIncludes.begin(), quotedIncludes.end());
 
-    std::string newHeaderBlock;
-    for (const auto& p : angledIncludes)
-    {
-        newHeaderBlock += "#include <" + p + ">\n";
-    }
-    if (!angledIncludes.empty() && !quotedIncludes.empty())
-    {
-        newHeaderBlock += "\n";
-    }
-    for (const auto& p : quotedIncludes)
-    {
-        newHeaderBlock += "#include \"" + p + "\"\n";
-    }
-
     lsp::TextEdit edit;
     edit.range.start = lsp::Position{static_cast<uint32_t>(firstLine), 0};
     edit.range.end = lsp::Position{static_cast<uint32_t>(lastLine + 1), 0};
-    edit.newText = newHeaderBlock;
+    edit.newText = FormatSortedIncludesBlock(angledIncludes, quotedIncludes);
 
     lsp::CodeAction action;
     action.title = "Sort and Clean #include Directives";
@@ -2514,177 +3195,368 @@ void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vec
 
     actions.push_back(std::move(action));
 }
-} // namespace
 
-std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionRequest& request)
+/**
+ * @brief Constructs a TextEdit to delete an entire declaration line.
+ * @param[in] def Local variable definition.
+ * @param[in] sourceCode Source text.
+ * @return TextEdit deleting the line range.
+ */
+lsp::TextEdit BuildRemoveSingleDeclaratorLine(const analysis::LocalDefinition* def, std::string_view sourceCode)
 {
-    if (!request.tree || request.sourceCode.empty())
+    lsp::TextEdit edit;
+    uint32_t lineCount = 1;
+    for (char c : sourceCode)
     {
-        return std::nullopt;
-    }
-
-    TSNode rootNode = ts_tree_root_node(request.tree);
-    if (ts_node_is_null(rootNode))
-    {
-        return std::nullopt;
-    }
-
-    std::vector<lsp::CodeAction> actions;
-
-    // =========================================================================
-    // Quick-Fix 1: Remove Unused Local Variables
-    // =========================================================================
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    if (rootScope)
-    {
-        ankerl::unordered_dense::set<const analysis::LocalDefinition*> usedDefs;
-        CollectUsedDefinitions(rootScope.get(), usedDefs);
-
-        std::vector<const analysis::LocalDefinition*> unusedVars;
-        CollectUnusedVariables(rootScope.get(), usedDefs, false, unusedVars);
-
-        for (const auto* def : unusedVars)
+        if (c == '\n')
         {
-            bool matchesRange = (request.range.start.line <= def->endLine && request.range.end.line >= def->startLine);
-            bool matchesDiag = false;
+            lineCount++;
+        }
+    }
+    if (def->endLine + 1 < lineCount)
+    {
+        edit.range.start = lsp::Position{def->startLine, 0};
+        edit.range.end = lsp::Position{def->endLine + 1, 0};
+    }
+    else
+    {
+        edit.range.start = lsp::Position{def->startLine, 0};
+        size_t lastNewline = sourceCode.rfind('\n');
+        size_t lastLineLen =
+            (lastNewline != std::string::npos) ? (sourceCode.size() - (lastNewline + 1)) : sourceCode.size();
+        edit.range.end = lsp::Position{def->endLine, static_cast<uint32_t>(lastLineLen)};
+    }
+    edit.newText = "";
+    return edit;
+}
 
-            for (const auto& diag : request.context.diagnostics)
+/**
+ * @brief Constructs a TextEdit to delete one declarator from a comma-separated list.
+ * @param[in] declarators List of all declarators in declaration.
+ * @param[in] declarator Target declarator node.
+ * @return TextEdit deleting the declarator.
+ */
+lsp::TextEdit BuildRemoveMultiDeclaratorItem(const std::vector<TSNode>& declarators, TSNode declarator)
+{
+    lsp::TextEdit edit;
+    size_t targetIdx = 0;
+    for (size_t k = 0; k < declarators.size(); ++k)
+    {
+        if (ts_node_start_byte(declarators[k]) == ts_node_start_byte(declarator))
+        {
+            targetIdx = k;
+            break;
+        }
+    }
+
+    if (targetIdx == 0 && declarators.size() > 1)
+    {
+        TSPoint startPt = ts_node_start_point(declarators[0]);
+        TSPoint endPt = ts_node_start_point(declarators[1]);
+        edit.range.start = lsp::Position{startPt.row, startPt.column};
+        edit.range.end = lsp::Position{endPt.row, endPt.column};
+    }
+    else
+    {
+        TSPoint startPt = ts_node_end_point(declarators[targetIdx - 1]);
+        TSPoint endPt = ts_node_end_point(declarators[targetIdx]);
+        edit.range.start = lsp::Position{startPt.row, startPt.column};
+        edit.range.end = lsp::Position{endPt.row, endPt.column};
+    }
+    edit.newText = "";
+    return edit;
+}
+
+/**
+ * @brief Constructs a TextEdit to delete an unused variable declaration or declarator.
+ * @param[in] rootNode Root AST node.
+ * @param[in] sourceCode Source text.
+ * @param[in] def Target local definition.
+ * @return TextEdit deleting the unused variable.
+ */
+lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view sourceCode,
+                                            const analysis::LocalDefinition* def)
+{
+    TSPoint pt = {def->startLine, def->startCharacter};
+    TSNode leaf = ts_node_descendant_for_point_range(rootNode, pt, pt);
+
+    TSNode declarator = leaf;
+    while (!ts_node_is_null(declarator) && std::string_view(ts_node_type(declarator)) != "variable_declarator")
+    {
+        declarator = ts_node_parent(declarator);
+    }
+
+    TSNode decl = declarator;
+    while (!ts_node_is_null(decl) && std::string_view(ts_node_type(decl)) != "variable_declaration")
+    {
+        decl = ts_node_parent(decl);
+    }
+
+    if (ts_node_is_null(decl))
+    {
+        lsp::TextEdit edit;
+        edit.range.start = lsp::Position{def->startLine, 0};
+        edit.range.end = lsp::Position{def->endLine + 1, 0};
+        edit.newText = "";
+        return edit;
+    }
+
+    std::vector<TSNode> declarators;
+    uint32_t dCount = ts_node_child_count(decl);
+    for (uint32_t i = 0; i < dCount; ++i)
+    {
+        TSNode child = ts_node_child(decl, i);
+        if (std::string_view(ts_node_type(child)) == "variable_declarator")
+        {
+            declarators.push_back(child);
+        }
+    }
+
+    if (declarators.size() <= 1)
+    {
+        return BuildRemoveSingleDeclaratorLine(def, sourceCode);
+    }
+    return BuildRemoveMultiDeclaratorItem(declarators, declarator);
+}
+
+/**
+ * @brief Generates quick-fixes to delete unused local variables in the active scope.
+ * @param[in] request Code action request.
+ * @param[in] rootNode AST root node.
+ * @param[out] actions Destination actions vector.
+ */
+void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode rootNode,
+                                     std::vector<lsp::CodeAction>& actions)
+{
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    if (!rootScope)
+    {
+        return;
+    }
+
+    ankerl::unordered_dense::set<const analysis::LocalDefinition*> usedDefs;
+    CollectUsedDefinitions(rootScope.get(), usedDefs);
+
+    std::vector<const analysis::LocalDefinition*> unusedVars;
+    CollectUnusedVariables(rootScope.get(), usedDefs, unusedVars);
+
+    for (const auto* def : unusedVars)
+    {
+        bool matchesRange = (request.range.start.line <= def->endLine && request.range.end.line >= def->startLine);
+        bool matchesDiag = false;
+
+        for (const auto& diag : request.context.diagnostics)
+        {
+            if (diag.range.start.line <= def->endLine && diag.range.end.line >= def->startLine)
             {
-                if (diag.range.start.line <= def->endLine && diag.range.end.line >= def->startLine)
+                matchesDiag = true;
+                break;
+            }
+        }
+
+        if (!matchesRange && !matchesDiag)
+        {
+            continue;
+        }
+
+        lsp::TextEdit edit = BuildRemoveUnusedVariableEdit(rootNode, request.sourceCode, def);
+        lsp::CodeAction action;
+        action.title = "Remove unused variable '" + def->name + "'";
+        action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+        action.isPreferred = true;
+
+        lsp::WorkspaceEdit wsEdit;
+        lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+        changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
+        wsEdit.changes = std::move(changes);
+        action.edit = std::move(wsEdit);
+
+        std::vector<lsp::Diagnostic> matchingDiags;
+        for (const auto& diag : request.context.diagnostics)
+        {
+            if (diag.range.start.line <= def->endLine && diag.range.end.line >= def->startLine)
+            {
+                matchingDiags.push_back(diag);
+            }
+        }
+        if (!matchingDiags.empty())
+        {
+            action.diagnostics = std::move(matchingDiags);
+        }
+
+        actions.push_back(std::move(action));
+    }
+}
+
+/**
+ * @brief Formats stub declarations for missing interface methods.
+ * @param[in] missingMethods List of missing method symbols.
+ * @return Formatted stub code string.
+ */
+std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis::Symbol>& missingMethods)
+{
+    std::string stubs;
+    for (const auto& m : missingMethods)
+    {
+        const auto& fn = m.GetFunction();
+        std::string ret = fn.returnType.empty() ? "void" : fn.returnType;
+        stubs += "\n    " + ret + " " + m.name + "(";
+        for (size_t p = 0; p < fn.parameters.size(); ++p)
+        {
+            if (p > 0)
+            {
+                stubs += ", ";
+            }
+            const auto& param = fn.parameters[p];
+            stubs += param.typeName;
+            if (!param.name.empty())
+            {
+                stubs += " " + param.name;
+            }
+            if (!param.defaultValue.empty())
+            {
+                stubs += " = " + param.defaultValue;
+            }
+        }
+        stubs += ")\n    {\n";
+        if (ret != "void")
+        {
+            std::string defaultVal = GetDefaultReturnValue(ret);
+            stubs += "        return " + defaultVal + ";\n";
+        }
+        stubs += "    }\n";
+    }
+    return stubs;
+}
+
+/**
+ * @brief Identifies which interface methods are not implemented by a class.
+ * @param[in] className Name of implementing class.
+ * @param[in] cleanIface Cleaned interface type name.
+ * @param[in] table Symbol table.
+ * @return Vector of missing interface method symbols.
+ */
+std::vector<analysis::Symbol> CollectMissingInterfaceMethods(const std::string& className,
+                                                             const std::string& cleanIface,
+                                                             const analysis::SymbolTable& table)
+{
+    auto ifaceHierarchy = analysis::GetInheritedTypeHierarchy(cleanIface, table);
+    if (ifaceHierarchy.empty())
+    {
+        return {};
+    }
+
+    std::vector<analysis::Symbol> ifaceMethods;
+    for (const auto& ifaceName : ifaceHierarchy)
+    {
+        table.ForEachSymbol(
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& mSyms)
+            {
+                for (const auto& m : mSyms)
                 {
-                    matchesDiag = true;
-                    break;
+                    if (m.type == analysis::SymbolType::Function && m.containerName == ifaceName)
+                    {
+                        ifaceMethods.push_back(m);
+                    }
+                }
+            });
+    }
+
+    std::vector<analysis::Symbol> classMethods;
+    table.ForEachSymbol(
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& mSyms)
+        {
+            for (const auto& m : mSyms)
+            {
+                if (m.type == analysis::SymbolType::Function && m.containerName == className)
+                {
+                    classMethods.push_back(m);
                 }
             }
+        });
 
-            if (matchesRange || matchesDiag)
+    std::vector<analysis::Symbol> missingMethods;
+    for (const auto& ifMethod : ifaceMethods)
+    {
+        bool implemented = false;
+        for (const auto& cMethod : classMethods)
+        {
+            if (cMethod.name == ifMethod.name &&
+                cMethod.GetFunction().parameters.size() == ifMethod.GetFunction().parameters.size())
             {
-                TSPoint pt = {def->startLine, def->startCharacter};
-                TSNode leaf = ts_node_descendant_for_point_range(rootNode, pt, pt);
+                implemented = true;
+                break;
+            }
+        }
+        if (!implemented)
+        {
+            missingMethods.push_back(ifMethod);
+        }
+    }
+    return missingMethods;
+}
 
-                TSNode declarator = leaf;
-                while (!ts_node_is_null(declarator) &&
-                       std::string_view(ts_node_type(declarator)) != "variable_declarator")
-                {
-                    declarator = ts_node_parent(declarator);
-                }
+/**
+ * @brief Locates the insertion position before the closing brace of a class declaration.
+ * @param[in] rootNode Root AST node.
+ * @param[in] clsSym Class symbol.
+ * @return LSP position for method stub insertion.
+ */
+lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysis::Symbol& clsSym)
+{
+    lsp::Position insertPos{clsSym.endLine, clsSym.endCharacter};
+    TSPoint cPt = {clsSym.startLine, clsSym.startCharacter};
+    TSNode cNode = ts_node_descendant_for_point_range(rootNode, cPt, cPt);
+    while (!ts_node_is_null(cNode) && std::string_view(ts_node_type(cNode)) != "class_declaration")
+    {
+        cNode = ts_node_parent(cNode);
+    }
+    if (ts_node_is_null(cNode))
+    {
+        return insertPos;
+    }
 
-                TSNode decl = declarator;
-                while (!ts_node_is_null(decl) && std::string_view(ts_node_type(decl)) != "variable_declaration")
-                {
-                    decl = ts_node_parent(decl);
-                }
-
-                lsp::TextEdit edit;
-
-                if (!ts_node_is_null(decl))
-                {
-                    std::vector<TSNode> declarators;
-                    uint32_t dCount = ts_node_child_count(decl);
-                    for (uint32_t i = 0; i < dCount; ++i)
-                    {
-                        TSNode child = ts_node_child(decl, i);
-                        if (std::string_view(ts_node_type(child)) == "variable_declarator")
-                        {
-                            declarators.push_back(child);
-                        }
-                    }
-
-                    if (declarators.size() <= 1)
-                    {
-                        uint32_t lineCount = 1;
-                        for (char c : request.sourceCode)
-                        {
-                            if (c == '\n')
-                            {
-                                lineCount++;
-                            }
-                        }
-
-                        if (def->endLine + 1 < lineCount)
-                        {
-                            edit.range.start = lsp::Position{def->startLine, 0};
-                            edit.range.end = lsp::Position{def->endLine + 1, 0};
-                        }
-                        else
-                        {
-                            edit.range.start = lsp::Position{def->startLine, 0};
-                            size_t lastNewline = request.sourceCode.rfind('\n');
-                            size_t lastLineLen = (lastNewline != std::string::npos)
-                                                     ? (request.sourceCode.size() - (lastNewline + 1))
-                                                     : request.sourceCode.size();
-                            edit.range.end = lsp::Position{def->endLine, static_cast<uint32_t>(lastLineLen)};
-                        }
-                        edit.newText = "";
-                    }
-                    else
-                    {
-                        size_t targetIdx = 0;
-                        for (size_t k = 0; k < declarators.size(); ++k)
-                        {
-                            if (ts_node_start_byte(declarators[k]) == ts_node_start_byte(declarator))
-                            {
-                                targetIdx = k;
-                                break;
-                            }
-                        }
-
-                        if (targetIdx == 0 && declarators.size() > 1)
-                        {
-                            TSPoint startPt = ts_node_start_point(declarators[0]);
-                            TSPoint endPt = ts_node_start_point(declarators[1]);
-                            edit.range.start = lsp::Position{startPt.row, startPt.column};
-                            edit.range.end = lsp::Position{endPt.row, endPt.column};
-                        }
-                        else
-                        {
-                            TSPoint startPt = ts_node_end_point(declarators[targetIdx - 1]);
-                            TSPoint endPt = ts_node_end_point(declarators[targetIdx]);
-                            edit.range.start = lsp::Position{startPt.row, startPt.column};
-                            edit.range.end = lsp::Position{endPt.row, endPt.column};
-                        }
-                        edit.newText = "";
-                    }
-                }
-                else
-                {
-                    edit.range.start = lsp::Position{def->startLine, 0};
-                    edit.range.end = lsp::Position{def->endLine + 1, 0};
-                    edit.newText = "";
-                }
-
-                lsp::CodeAction action;
-                action.title = "Remove unused variable '" + def->name + "'";
-                action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-                action.isPreferred = true;
-
-                lsp::WorkspaceEdit wsEdit;
-                lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-                changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-                wsEdit.changes = std::move(changes);
-                action.edit = std::move(wsEdit);
-
-                std::vector<lsp::Diagnostic> matchingDiags;
-                for (const auto& diag : request.context.diagnostics)
-                {
-                    if (diag.range.start.line <= def->endLine && diag.range.end.line >= def->startLine)
-                    {
-                        matchingDiags.push_back(diag);
-                    }
-                }
-                if (!matchingDiags.empty())
-                {
-                    action.diagnostics = std::move(matchingDiags);
-                }
-
-                actions.push_back(std::move(action));
+    TSNode bodyNode = parser::GetChildByField(cNode, parser::fields::Body);
+    if (ts_node_is_null(bodyNode))
+    {
+        uint32_t cnt = ts_node_child_count(cNode);
+        for (uint32_t i = 0; i < cnt; ++i)
+        {
+            TSNode ch = ts_node_child(cNode, i);
+            if (std::string_view(ts_node_type(ch)) == "class_body")
+            {
+                bodyNode = ch;
+                break;
             }
         }
     }
 
-    // =========================================================================
-    // Quick-Fix 2: Implement Missing Interface Methods in Implementing Classes
-    // =========================================================================
+    if (!ts_node_is_null(bodyNode))
+    {
+        uint32_t bCount = ts_node_child_count(bodyNode);
+        for (int i = static_cast<int>(bCount) - 1; i >= 0; --i)
+        {
+            TSNode bChild = ts_node_child(bodyNode, static_cast<uint32_t>(i));
+            if (std::string_view(ts_node_type(bChild)) == "}")
+            {
+                TSPoint pt = ts_node_start_point(bChild);
+                insertPos = lsp::Position{pt.row, pt.column};
+                break;
+            }
+        }
+    }
+    return insertPos;
+}
+
+/**
+ * @brief Generates quick-fixes to implement missing interface methods for implementing classes.
+ * @param[in] request Code action request.
+ * @param[in] rootNode AST root node.
+ * @param[out] actions Destination actions vector.
+ */
+void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode rootNode,
+                                   std::vector<lsp::CodeAction>& actions)
+{
     request.symbolTable.ForEachSymbol(
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
@@ -2694,10 +3566,7 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
                 {
                     continue;
                 }
-
-                bool classMatchesRange =
-                    (request.range.start.line <= clsSym.endLine && request.range.end.line >= clsSym.startLine);
-                if (!classMatchesRange)
+                if (request.range.start.line > clsSym.endLine || request.range.end.line < clsSym.startLine)
                 {
                     continue;
                 }
@@ -2711,146 +3580,14 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
                         continue;
                     }
 
-                    bool isInterface = false;
-                    std::vector<analysis::Symbol> ifaceMethods;
-                    auto ifaceHierarchy = analysis::GetInheritedTypeHierarchy(cleanIface, request.symbolTable);
-                    if (!ifaceHierarchy.empty())
-                    {
-                        isInterface = true;
-                        for (const auto& ifaceName : ifaceHierarchy)
-                        {
-                            request.symbolTable.ForEachSymbol(
-                                [&]([[maybe_unused]] const std::string& qualifiedName,
-                                    const std::vector<analysis::Symbol>& mSyms)
-                                {
-                                    for (const auto& m : mSyms)
-                                    {
-                                        if (m.type == analysis::SymbolType::Function && m.containerName == ifaceName)
-                                        {
-                                            ifaceMethods.push_back(m);
-                                        }
-                                    }
-                                });
-                        }
-                    }
-
-                    if (!isInterface || ifaceMethods.empty())
-                    {
-                        continue;
-                    }
-
-                    std::vector<analysis::Symbol> classMethods;
-                    request.symbolTable.ForEachSymbol(
-                        [&]([[maybe_unused]] const std::string& qualifiedName,
-                            const std::vector<analysis::Symbol>& mSyms)
-                        {
-                            for (const auto& m : mSyms)
-                            {
-                                if (m.type == analysis::SymbolType::Function && m.containerName == clsSym.name)
-                                {
-                                    classMethods.push_back(m);
-                                }
-                            }
-                        });
-
-                    std::vector<analysis::Symbol> missingMethods;
-                    for (const auto& ifMethod : ifaceMethods)
-                    {
-                        bool implemented = false;
-                        for (const auto& cMethod : classMethods)
-                        {
-                            if (cMethod.name == ifMethod.name)
-                            {
-                                if (cMethod.GetFunction().parameters.size() == ifMethod.GetFunction().parameters.size())
-                                {
-                                    implemented = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!implemented)
-                        {
-                            missingMethods.push_back(ifMethod);
-                        }
-                    }
-
+                    auto missingMethods = CollectMissingInterfaceMethods(clsSym.name, cleanIface, request.symbolTable);
                     if (missingMethods.empty())
                     {
                         continue;
                     }
 
-                    std::string stubs;
-                    for (const auto& m : missingMethods)
-                    {
-                        const auto& fn = m.GetFunction();
-                        std::string ret = fn.returnType.empty() ? "void" : fn.returnType;
-                        stubs += "\n    " + ret + " " + m.name + "(";
-                        for (size_t p = 0; p < fn.parameters.size(); ++p)
-                        {
-                            if (p > 0)
-                            {
-                                stubs += ", ";
-                            }
-                            const auto& param = fn.parameters[p];
-                            stubs += param.typeName;
-                            if (!param.name.empty())
-                            {
-                                stubs += " " + param.name;
-                            }
-                            if (!param.defaultValue.empty())
-                            {
-                                stubs += " = " + param.defaultValue;
-                            }
-                        }
-                        stubs += ")\n    {\n";
-                        if (ret != "void")
-                        {
-                            std::string defaultVal = GetDefaultReturnValue(ret);
-                            stubs += "        return " + defaultVal + ";\n";
-                        }
-                        stubs += "    }\n";
-                    }
-
-                    lsp::Position insertPos{clsSym.endLine, clsSym.endCharacter};
-                    TSPoint cPt = {clsSym.startLine, clsSym.startCharacter};
-                    TSNode cNode = ts_node_descendant_for_point_range(rootNode, cPt, cPt);
-                    while (!ts_node_is_null(cNode) && std::string_view(ts_node_type(cNode)) != "class_declaration")
-                    {
-                        cNode = ts_node_parent(cNode);
-                    }
-
-                    if (!ts_node_is_null(cNode))
-                    {
-                        TSNode bodyNode = parser::GetChildByField(cNode, parser::fields::Body);
-                        if (ts_node_is_null(bodyNode))
-                        {
-                            uint32_t cnt = ts_node_child_count(cNode);
-                            for (uint32_t i = 0; i < cnt; ++i)
-                            {
-                                TSNode ch = ts_node_child(cNode, i);
-                                if (std::string_view(ts_node_type(ch)) == "class_body")
-                                {
-                                    bodyNode = ch;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (!ts_node_is_null(bodyNode))
-                        {
-                            uint32_t bCount = ts_node_child_count(bodyNode);
-                            for (int i = static_cast<int>(bCount) - 1; i >= 0; --i)
-                            {
-                                TSNode bChild = ts_node_child(bodyNode, static_cast<uint32_t>(i));
-                                if (std::string_view(ts_node_type(bChild)) == "}")
-                                {
-                                    TSPoint pt = ts_node_start_point(bChild);
-                                    insertPos = lsp::Position{pt.row, pt.column};
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    std::string stubs = FormatMissingInterfaceMethodStubs(missingMethods);
+                    lsp::Position insertPos = FindClassInterfaceInsertionPosition(rootNode, clsSym);
 
                     lsp::TextEdit edit;
                     edit.range = lsp::Range{insertPos, insertPos};
@@ -2861,10 +3598,6 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
                     action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
                     action.isPreferred = true;
 
-                    // Bound to the diagnostic that asks for it, not only to the cursor sitting in
-                    // the class. Without this the action existed but never appeared as the fix for
-                    // the problem it fixes: an editor grouping quick fixes under a diagnostic, or
-                    // asking for actions at a diagnostic's range, sees nothing to offer.
                     std::vector<lsp::Diagnostic> matchingDiags;
                     for (const auto& diag : request.context.diagnostics)
                     {
@@ -2889,25 +3622,28 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
                 }
             }
         });
+}
+} // namespace
 
-    // =========================================================================
-    // Feature 1: Extract Variable Refactoring
-    // =========================================================================
+std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionRequest& request)
+{
+    if (!request.tree || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+
+    TSNode rootNode = ts_tree_root_node(request.tree);
+    if (ts_node_is_null(rootNode))
+    {
+        return std::nullopt;
+    }
+
+    std::vector<lsp::CodeAction> actions;
+    TryAddRemoveUnusedVariableFixes(request, rootNode, actions);
+    TryAddImplementInterfaceFixes(request, rootNode, actions);
     TryAddExtractVariableAction(request, rootNode, actions);
-
-    // =========================================================================
-    // Feature 2: Extract Method Refactoring
-    // =========================================================================
     TryAddExtractMethodAction(request, rootNode, actions);
-
-    // =========================================================================
-    // Feature 3: Getters and Setters Generation
-    // =========================================================================
     TryAddGetterSetterActions(request, rootNode, actions);
-
-    // =========================================================================
-    // Feature 4: Missing const Qualifier Quick Fix & Intention
-    // =========================================================================
     TryAddConstQualifierActions(request, rootNode, actions);
     TryAddUndefinedIdentifierSuggestions(request, rootNode, actions);
     TryAddHandleOnPrimitiveFix(request, rootNode, actions);
@@ -2915,10 +3651,6 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
     TryAddAccessorPropertyKeywordFix(request, rootNode, actions);
     TryAddBoolConversionFix(request, rootNode, actions);
     TryAddGenerateFuncdefFix(request, rootNode, actions);
-
-    // =========================================================================
-    // Feature 5: Sort and Clean #include Directives
-    // =========================================================================
     TryAddSortAndCleanIncludesAction(request, actions);
 
     if (actions.empty())

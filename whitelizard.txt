@@ -103,15 +103,4 @@ angel_lsp::analysis::SymbolTable::ResolveIncludedMixinsForKeysLocked
 angel_lsp::analysis::ValidateList
 angel_lsp::analysis::ValidateMultiDimensionalContainer
 angel_lsp::analysis::Walk
-angel_lsp::features::GetCodeActions
-angel_lsp::features::GetDefaultReturnValue
-angel_lsp::features::IsExtractableExpression
-angel_lsp::features::MethodBodyMutatesClassState
-angel_lsp::features::TryAddConstQualifierActions
-angel_lsp::features::TryAddExtractMethodAction
-angel_lsp::features::TryAddExtractVariableAction
-angel_lsp::features::TryAddGenerateFuncdefFix
-angel_lsp::features::TryAddGetterSetterActions
-angel_lsp::features::TryAddSortAndCleanIncludesAction
-angel_lsp::features::TryAddUndefinedIdentifierSuggestions
-angel_lsp::features::TryAddUnresolvedIncludeSuggestions
+
