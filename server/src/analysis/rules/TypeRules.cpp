@@ -17,40 +17,64 @@ namespace angel_lsp::analysis::rules
 namespace
 {
 /**
- * @brief Recursively searches for the enum_declaration AST node matching the symbol's start point or name.
+ * @brief Searches for the enum_declaration AST node matching the symbol's start point or name.
  */
-TSNode FindEnumDeclarationNode(TSNode node, uint32_t startLine, uint32_t startChar, std::string_view name,
-                               std::string_view sourceCode, int depth = 0)
+TSNode FindEnumDeclarationNode(TSNode root, const Symbol& sym, std::string_view sourceCode)
 {
-    if (ts_node_is_null(node) || depth > k_maxAstDepth)
+    if (ts_node_is_null(root))
     {
         return TSNode{};
     }
-    if (NodeType(node) == parser::nodes::EnumDeclaration)
+
+    TSTreeCursor cursor = ts_tree_cursor_new(root);
+    bool reachedRoot = false;
+
+    while (!reachedRoot)
     {
-        const TSPoint pt = ts_node_start_point(node);
-        if (pt.row == startLine && pt.column == startChar)
+        TSNode node = ts_tree_cursor_current_node(&cursor);
+        if (NodeType(node) == parser::nodes::EnumDeclaration)
         {
-            return node;
+            const TSPoint pt = ts_node_start_point(node);
+            if (pt.row == sym.startLine && pt.column == sym.startCharacter)
+            {
+                ts_tree_cursor_delete(&cursor);
+                return node;
+            }
+            const TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
+            if (!ts_node_is_null(nameNode) && NodeText(nameNode, sourceCode) == sym.name)
+            {
+                ts_tree_cursor_delete(&cursor);
+                return node;
+            }
         }
-        const TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
-        if (!ts_node_is_null(nameNode) && NodeText(nameNode, sourceCode) == name)
+
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            return node;
+            continue;
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            continue;
+        }
+
+        while (!reachedRoot)
+        {
+            if (!ts_tree_cursor_goto_parent(&cursor))
+            {
+                reachedRoot = true;
+                break;
+            }
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                break;
+            }
         }
     }
-    const uint32_t count = ts_node_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode found =
-            FindEnumDeclarationNode(ts_node_child(node, i), startLine, startChar, name, sourceCode, depth + 1);
-        if (!ts_node_is_null(found))
-        {
-            return found;
-        }
-    }
+
+    ts_tree_cursor_delete(&cursor);
     return TSNode{};
 }
+
 /** @brief True when the name collides with a keyword or a built-in type name. */
 bool IsUnusableName(const std::string& name, const DiagnosticContext& ctx)
 {
@@ -58,10 +82,29 @@ bool IsUnusableName(const std::string& name, const DiagnosticContext& ctx)
     const auto arrType = ctx.request.GetArrayTypeName();
     const std::string_view effectiveStrType = strType.empty() ? std::string_view("string") : strType;
     const std::string_view effectiveArrType = arrType.empty() ? std::string_view("array") : arrType;
+
     return IsReservedKeyword(name) || IsPrimitiveTypeName(name) || name == effectiveStrType || name == effectiveArrType;
 }
 
-/** @brief True when the text is an integer literal, decimal or hexadecimal, sign included. */
+bool IsPrefixedIntegerLiteral(std::string_view text, size_t i)
+{
+    char prefix = text[i + 1];
+    if (prefix == 'x' || prefix == 'X')
+    {
+        return text.substr(i + 2).find_first_not_of("0123456789abcdefABCDEF") == std::string_view::npos;
+    }
+    if (prefix == 'b' || prefix == 'B')
+    {
+        return text.substr(i + 2).find_first_not_of("01") == std::string_view::npos;
+    }
+    if (prefix == 'o' || prefix == 'O')
+    {
+        return text.substr(i + 2).find_first_not_of("01234567") == std::string_view::npos;
+    }
+    return false;
+}
+
+/** @brief True for an integer literal, including signed forms like `-1`. */
 bool IsIntegerLiteral(std::string_view text)
 {
     while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
@@ -81,16 +124,17 @@ bool IsIntegerLiteral(std::string_view text)
         return false;
     }
 
-    if (text.size() > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X'))
+    if (text.size() > 2 && text[0] == '0')
     {
-        return std::all_of(text.begin() + 2, text.end(),
-                           [](char c) { return std::isxdigit(static_cast<unsigned char>(c)) != 0; });
+        if (IsPrefixedIntegerLiteral(text, 0))
+        {
+            return true;
+        }
     }
-    return std::all_of(text.begin(), text.end(),
-                       [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; });
+    return text.find_first_not_of("0123456789") == std::string_view::npos;
 }
 
-/** @brief Renders a symbol kind the way the name-conflict message reads. */
+/** @brief Formats a symbol type into the noun the compiler uses in as-err-name-conflict. */
 std::string KindWord(SymbolType type)
 {
     switch (type)
@@ -138,56 +182,25 @@ void ValidateTypedef(const Symbol& sym, const DiagnosticContext& ctx)
         ctx.Emit(sym, "as-syntax-error-missing", ";");
     }
 
-    // AngelScript only typedefs a primitive. Its own parser refuses anything else outright -
-    // `typedef Entity Alias;` answers "Unexpected token '<identifier>'" - so this is not a
-    // question of whether the named type exists: a class, an enum and a name that resolves to
-    // nothing are equally invalid here, and none of them needs looking up.
-    //
-    // NOT IMPLEMENTED: as-err-typedef-unresolved, deleted with this commit. It described a
-    // second failure mode - "typedef base type is not defined" - that AngelScript does not
-    // have, since the type never gets far enough to be resolved.
     if (!baseType.empty() && !IsPrimitiveTypeName(baseType))
     {
-        ctx.LogRule("ValidateTypedef", "as-err-typedef-non-primitive", sym);
+        ctx.LogRule("ValidateTypedef", diagnostics::codes::TypedefNonPrimitive, sym);
         if (sig.baseTypeEndCharacter > sig.baseTypeStartCharacter || sig.baseTypeEndLine > sig.baseTypeStartLine)
         {
             ctx.EmitAtRange(sig.baseTypeStartLine, sig.baseTypeStartCharacter, sig.baseTypeEndLine,
-                            sig.baseTypeEndCharacter, "as-err-typedef-non-primitive", baseType);
+                            sig.baseTypeEndCharacter, diagnostics::codes::TypedefNonPrimitive, baseType);
         }
         else
         {
-            ctx.Emit(sym, "as-err-typedef-non-primitive", baseType);
+            ctx.Emit(sym, diagnostics::codes::TypedefNonPrimitive, baseType);
         }
     }
 }
 
-void ValidateFuncdef(const Symbol& sym, const DiagnosticContext& ctx)
+namespace
 {
-    if (sym.type != SymbolType::Funcdef)
-    {
-        return;
-    }
-
-    if (IsUnusableName(sym.name, ctx))
-    {
-        ctx.LogRule("ValidateFuncdef", "as-err-reserved-keyword-name", sym);
-        ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);
-        return;
-    }
-
-    const auto& sig = sym.GetFuncdef();
-
-    // A funcdef names a signature; it has no body, no class and nothing to override, so none of
-    // the five function attributes means anything on one and the engine rejects all five. The
-    // grammar parses them so this can name the offender rather than leaving a syntax error on
-    // the token.
-    const std::string_view attribute = FirstAttributeName(sig.modifiers);
-    if (!attribute.empty())
-    {
-        ctx.LogRule("ValidateFuncdef", "as-err-funcdef-attribute", sym);
-        ctx.Emit(sym, "as-err-funcdef-attribute", attribute, sym.name);
-    }
-
+void ValidateFuncdefReturnType(const Symbol& sym, const FuncdefSignature& sig, const DiagnosticContext& ctx)
+{
     if (sig.returnHasPrimitiveHandle)
     {
         ctx.LogRule("ValidateFuncdef", "as-err-handle-on-primitive", sym);
@@ -209,70 +222,76 @@ void ValidateFuncdef(const Symbol& sym, const DiagnosticContext& ctx)
             ctx.Emit(sym, "as-err-unresolved-type", retBase);
         }
     }
+}
 
-    for (const auto& param : sig.parameters)
+void ValidateFuncdefParameter(const Symbol& sym, const ParameterInformation& param, const DiagnosticContext& ctx)
+{
+    if (param.hasPrimitiveHandle)
     {
-        if (param.hasPrimitiveHandle)
-        {
-            ctx.LogRule("ValidateFuncdef", "as-err-handle-on-primitive", sym);
-            ctx.Emit(sym, "as-err-handle-on-primitive", param.baseTypeName);
-        }
+        ctx.LogRule("ValidateFuncdef", "as-err-handle-on-primitive", sym);
+        ctx.Emit(sym, "as-err-handle-on-primitive", param.baseTypeName);
+    }
 
-        // `?` is the variable-argument type, and it is never an unresolved type - the host
-        // registers signatures with it and the engine prints them back that way. MEASURED with
-        // `angelscript_oracle --dump-registry`, which emits fourteen of them:
-        //
-        //     void opCast(?&out);
-        //     void set(const string&in, const ?&in);
-        //     string format(const string&in fmt, const ?&in...);
-        //
-        // ValidateParameters never reported it because its check is gated on
-        // ReportsUnknownTypes(), which is false for a stub. This one was not, so a predefined
-        // stub declaring a funcdef over `?` got "Unknown type '?'" - a false positive on the
-        // one kind of file the server reads to learn what exists.
-        //
-        // Script code cannot write `?` either, but that is a different complaint with a
-        // different message - the compiler says "Expected data type", not "unknown type" - and
-        // this rule is not the place to invent it.
-        const bool isPredefined =
-            angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
-        const std::string paramBase = CleanBaseType(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
-        if (!paramBase.empty() && paramBase != "void" && paramBase != "auto" && !(isPredefined && paramBase == "?") &&
-            !IsKnownType(paramBase, ctx))
+    const bool isPredefined =
+        angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
+    const std::string paramBase = CleanBaseType(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
+    if (!paramBase.empty() && paramBase != "void" && paramBase != "auto" && !(isPredefined && paramBase == "?") &&
+        !IsKnownType(paramBase, ctx))
+    {
+        ctx.LogRule("ValidateFuncdef", "as-err-unresolved-type", sym);
+        if (param.endCharacter > param.startCharacter || param.endLine > param.startLine)
         {
-            ctx.LogRule("ValidateFuncdef", "as-err-unresolved-type", sym);
-            if (param.endCharacter > param.startCharacter || param.endLine > param.startLine)
-            {
-                ctx.EmitAtRange(param.startLine, param.startCharacter, param.endLine, param.endCharacter,
-                                "as-err-unresolved-type", paramBase);
-            }
-            else
-            {
-                ctx.Emit(sym, "as-err-unresolved-type", paramBase);
-            }
+            ctx.EmitAtRange(param.startLine, param.startCharacter, param.endLine, param.endCharacter,
+                            "as-err-unresolved-type", paramBase);
+        }
+        else
+        {
+            ctx.Emit(sym, "as-err-unresolved-type", paramBase);
         }
     }
 }
 
-void ValidateEnum(const Symbol& sym, const DiagnosticContext& ctx)
+void ValidateFuncdefParameters(const Symbol& sym, const std::vector<ParameterInformation>& params,
+                               const DiagnosticContext& ctx)
 {
-    if (sym.type != SymbolType::Enum || IsFromPredefinedStub(sym, ctx))
+    for (const auto& param : params)
+    {
+        ValidateFuncdefParameter(sym, param, ctx);
+    }
+}
+} // namespace
+
+void ValidateFuncdef(const Symbol& sym, const DiagnosticContext& ctx)
+{
+    if (sym.type != SymbolType::Funcdef)
     {
         return;
     }
 
     if (IsUnusableName(sym.name, ctx))
     {
-        ctx.LogRule("ValidateEnum", "as-err-reserved-keyword-name", sym);
+        ctx.LogRule("ValidateFuncdef", "as-err-reserved-keyword-name", sym);
         ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);
         return;
     }
 
-    const auto& sig = sym.GetEnum();
+    const auto& sig = sym.GetFuncdef();
 
-    // 'external shared enum X;' is the one bodyless form, same as for classes. Reported with
-    // the declaration code rather than as-syntax-error: the parser accepted this, so telling
-    // the user "syntax error" points them at the wrong thing entirely.
+    const std::string_view attribute = FirstAttributeName(sig.modifiers);
+    if (!attribute.empty())
+    {
+        ctx.LogRule("ValidateFuncdef", "as-err-funcdef-attribute", sym);
+        ctx.Emit(sym, "as-err-funcdef-attribute", attribute, sym.name);
+    }
+
+    ValidateFuncdefReturnType(sym, sig, ctx);
+    ValidateFuncdefParameters(sym, sig.parameters, ctx);
+}
+
+namespace
+{
+void CheckEnumModifiersAndBody(const Symbol& sym, const EnumSignature& sig, const DiagnosticContext& ctx)
+{
     if (!sig.hasBraces && !sig.modifiers.isExternal)
     {
         ctx.LogRule("ValidateEnum", "as-err-declaration-missing-body", sym);
@@ -306,7 +325,10 @@ void ValidateEnum(const Symbol& sym, const DiagnosticContext& ctx)
             ctx.Emit(sym, "as-err-external-not-found", sym.name);
         }
     }
+}
 
+void CheckEnumMemberInitializers(const Symbol& sym, const EnumSignature& sig, const DiagnosticContext& ctx)
+{
     for (const auto& member : sig.members)
     {
         if (member.value.empty())
@@ -314,9 +336,6 @@ void ValidateEnum(const Symbol& sym, const DiagnosticContext& ctx)
             continue;
         }
 
-        // Only an outright literal is judged. A member initialised from another enum member,
-        // a constant, or an arithmetic expression is perfectly legal and this pass does not
-        // evaluate expressions - so anything that is not plainly a non-integer literal passes.
         const bool isLiteralNode = member.valueNodeType == std::string(node_types::StringLiteral) ||
                                    member.valueNodeType == std::string(node_types::BooleanLiteral) ||
                                    member.valueNodeType == std::string(node_types::NullLiteral);
@@ -329,68 +348,96 @@ void ValidateEnum(const Symbol& sym, const DiagnosticContext& ctx)
             ctx.Emit(sym, "as-err-enum-invalid-initializer", member.value);
         }
     }
+}
 
-    // Duplicate enumerator names within one enum. AngelScript rejects redeclaring an
-    // enumerator in the same enum: `Member1 = 0, Member1 = 0` answers "Name conflict. 'Member1'
-    // is already used." The first occurrence is kept; every subsequent occurrence is reported.
-    // Scope is per enum - the same name in two different enums is valid unless colliding at
-    // enclosing scope, which is judged elsewhere.
+void CheckDuplicateEnumMembers(TSNode enumNode, const Symbol& sym, const DiagnosticContext& ctx)
+{
+    ankerl::unordered_dense::set<std::string> seenMemberNames;
+    TSTreeCursor cursor = ts_tree_cursor_new(enumNode);
+    if (!ts_tree_cursor_goto_first_child(&cursor))
+    {
+        ts_tree_cursor_delete(&cursor);
+        return;
+    }
+
+    do
+    {
+        const TSNode child = ts_tree_cursor_current_node(&cursor);
+        if (NodeType(child) != parser::nodes::EnumMember)
+        {
+            continue;
+        }
+        const TSNode memberNameNode = parser::GetChildByField(child, parser::fields::Name);
+        if (ts_node_is_null(memberNameNode))
+        {
+            continue;
+        }
+        const std::string memberName(NodeText(memberNameNode, ctx.request.sourceCode));
+        if (memberName.empty())
+        {
+            continue;
+        }
+        if (!seenMemberNames.insert(memberName).second)
+        {
+            const TSPoint start = ts_node_start_point(memberNameNode);
+            const TSPoint end = ts_node_end_point(memberNameNode);
+            ctx.LogRule("ValidateEnum", diagnostics::codes::DuplicateEnumMember, sym);
+            ctx.EmitAtRange(start.row, start.column, end.row, end.column, diagnostics::codes::DuplicateEnumMember,
+                            memberName);
+        }
+    } while (ts_tree_cursor_goto_next_sibling(&cursor));
+
+    ts_tree_cursor_delete(&cursor);
+}
+
+void CheckDuplicateEnumFallback(const Symbol& sym, const EnumSignature& sig, const DiagnosticContext& ctx)
+{
+    ankerl::unordered_dense::set<std::string> seenMemberNames;
+    for (const auto& member : sig.members)
+    {
+        if (member.name.empty())
+        {
+            continue;
+        }
+        if (!seenMemberNames.insert(member.name).second)
+        {
+            ctx.LogRule("ValidateEnum", diagnostics::codes::DuplicateEnumMember, sym);
+            ctx.Emit(sym, diagnostics::codes::DuplicateEnumMember, member.name);
+        }
+    }
+}
+} // namespace
+
+void ValidateEnum(const Symbol& sym, const DiagnosticContext& ctx)
+{
+    if (sym.type != SymbolType::Enum || IsFromPredefinedStub(sym, ctx))
+    {
+        return;
+    }
+
+    if (IsUnusableName(sym.name, ctx))
+    {
+        ctx.LogRule("ValidateEnum", "as-err-reserved-keyword-name", sym);
+        ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);
+        return;
+    }
+
+    const auto& sig = sym.GetEnum();
+    CheckEnumModifiersAndBody(sym, sig, ctx);
+    CheckEnumMemberInitializers(sym, sig, ctx);
+
     if (ctx.request.tree && !ctx.request.sourceCode.empty())
     {
         const TSNode root = ts_tree_root_node(ctx.request.tree);
-        const TSNode enumNode =
-            FindEnumDeclarationNode(root, sym.startLine, sym.startCharacter, sym.name, ctx.request.sourceCode);
+        const TSNode enumNode = FindEnumDeclarationNode(root, sym, ctx.request.sourceCode);
         if (!ts_node_is_null(enumNode))
         {
-            ankerl::unordered_dense::set<std::string> seenMemberNames;
-            const uint32_t count = ts_node_child_count(enumNode);
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                const TSNode child = ts_node_child(enumNode, i);
-                if (NodeType(child) != parser::nodes::EnumMember)
-                {
-                    continue;
-                }
-
-                const TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
-                if (ts_node_is_null(nameNode))
-                {
-                    continue;
-                }
-
-                const std::string memberName(NodeText(nameNode, ctx.request.sourceCode));
-                if (memberName.empty())
-                {
-                    continue;
-                }
-
-                if (!seenMemberNames.insert(memberName).second)
-                {
-                    const TSPoint start = ts_node_start_point(nameNode);
-                    const TSPoint end = ts_node_end_point(nameNode);
-                    ctx.LogRule("ValidateEnum", diagnostics::codes::DuplicateEnumMember, sym);
-                    ctx.EmitAtRange(start.row, start.column, end.row, end.column,
-                                    diagnostics::codes::DuplicateEnumMember, memberName);
-                }
-            }
+            CheckDuplicateEnumMembers(enumNode, sym, ctx);
         }
     }
     else
     {
-        // Fallback when no AST tree was supplied: evaluate against symbol table signatures.
-        ankerl::unordered_dense::set<std::string> seenMemberNames;
-        for (const auto& member : sig.members)
-        {
-            if (member.name.empty())
-            {
-                continue;
-            }
-            if (!seenMemberNames.insert(member.name).second)
-            {
-                ctx.LogRule("ValidateEnum", diagnostics::codes::DuplicateEnumMember, sym);
-                ctx.Emit(sym, diagnostics::codes::DuplicateEnumMember, member.name);
-            }
-        }
+        CheckDuplicateEnumFallback(sym, sig, ctx);
     }
 }
 
@@ -401,15 +448,6 @@ void ValidateInterfaceMembers(const Symbol& sym, const DiagnosticContext& ctx)
         return;
     }
 
-    // An interface declares a contract, never construction or destruction, and the engine
-    // refuses both: `IThing();` answers "Expected identifier / Instead found '('" and
-    // `~IThing();` answers "Expected data type / Instead found '~'". The grammar parses them
-    // now, which is what lets this say so in those terms.
-    //
-    // Both forms are spelled with the interface's own name and are the only members that reach
-    // the table with no return type at all - an ordinary method always carries one, even
-    // `void`. So the empty return type is what identifies them, and the name match is what
-    // keeps an unrelated member out.
     const std::string qualified = sym.containerName.empty() ? sym.name : sym.containerName + "::" + sym.name;
 
     const auto members = ctx.request.symbolTable.FindSymbolsPtr(qualified + "::" + sym.name);
@@ -429,39 +467,19 @@ void ValidateInterfaceMembers(const Symbol& sym, const DiagnosticContext& ctx)
             continue;
         }
 
-        ctx.LogRule("ValidateInterfaceMembers", "as-err-interface-constructor", member);
-        ctx.Emit(member, "as-err-interface-constructor", sym.name);
+        ctx.LogRule("ValidateInterfaceMembers", diagnostics::codes::InterfaceConstructor, member);
+        ctx.Emit(member, diagnostics::codes::InterfaceConstructor, sym.name);
     }
 }
 
-void ValidateDuplicates(const std::vector<Symbol>& symbols, const DiagnosticContext& ctx)
+namespace
 {
-    if (symbols.size() < 2)
-    {
-        return;
-    }
-
-    // Only declarations from the document under analysis are judged, and only against each
-    // other. The same name legitimately appears once per file across a module - that is what
-    // an #include of a shared header looks like once every member file has been indexed.
-    std::vector<const Symbol*> local;
-    std::vector<const Symbol*> moduleMates;
+void CollectDuplicateCandidates(const std::vector<Symbol>& symbols, const DiagnosticContext& ctx,
+                                std::vector<const Symbol*>& local, std::vector<const Symbol*>& moduleMates)
+{
     for (const auto& sym : symbols)
     {
-        // CallReference entries are not declarations at all: SymbolCollector records them for
-        // calls that appear outside any function body, such as `g_EngineFuncs.CVarGetFloat(...)`
-        // in a global initializer. Treating them as redeclarations is what made this rule report
-        // twenty thousand times over the corpus - once per call site of every popular helper.
-        if (sym.type == SymbolType::CallReference)
-        {
-            continue;
-        }
-
-        // A namespace shares a name with a type deliberately and often - `namespace Type` next
-        // to `enum Type`, `namespace AF2Menu` next to `class AF2Menu` - because they are looked
-        // up in different domains. Enum members are not declarations in this sense either: an
-        // enum whose member repeats its own name is ordinary AngelScript.
-        if (sym.type == SymbolType::Namespace || sym.type == SymbolType::Enum)
+        if (sym.type == SymbolType::CallReference || sym.type == SymbolType::Namespace || sym.type == SymbolType::Enum)
         {
             continue;
         }
@@ -476,16 +494,6 @@ void ValidateDuplicates(const std::vector<Symbol>& symbols, const DiagnosticCont
             continue;
         }
 
-        // A declaration in another file of the SAME module is a redeclaration; one in another
-        // module is not. Skipping every foreign file unconditionally - which is what this did -
-        // is right for the case the comment above names, a shared header indexed once per
-        // module, and wrong for the one a user hits: the same namespace reopened in two files
-        // that reach each other, where the compiler says "A function with the same name and
-        // parameters already exists" and this said nothing at all.
-        //
-        // Stubs are left out on purpose. An as.predefined describes what the host registered in
-        // C++, and a script declaring the same signature is a different question from two
-        // script sections colliding - not one this rule is the place to answer.
         if (!ctx.request.moduleFileUris.empty() && ctx.request.moduleFileUris.contains(sym.fileUri) &&
             !IsFromPredefinedStub(sym, ctx) &&
             !utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
@@ -493,26 +501,132 @@ void ValidateDuplicates(const std::vector<Symbol>& symbols, const DiagnosticCont
             moduleMates.push_back(&sym);
         }
     }
+}
 
-    // At least one declaration here to report on, and at least two in total to be a duplicate
-    // of anything.
+bool AreIdenticalFunctionSignatures(const Symbol& first, const Symbol& other)
+{
+    const auto& firstParams = first.GetFunction().parameters;
+    const auto& otherParams = other.GetFunction().parameters;
+    if (firstParams.size() != otherParams.size())
+    {
+        return false;
+    }
+    if (first.GetFunction().returnType != other.GetFunction().returnType)
+    {
+        if (first.name == "opConv" || first.name == "opImplConv" || first.name == "opCast" ||
+            first.name == "opImplCast")
+        {
+            return false;
+        }
+    }
+
+    if (first.GetFunction().modifiers.isConst != other.GetFunction().modifiers.isConst)
+    {
+        return false;
+    }
+
+    for (size_t p = 0; p < firstParams.size(); ++p)
+    {
+        if (firstParams[p].typeName != otherParams[p].typeName || firstParams[p].modifier != otherParams[p].modifier ||
+            firstParams[p].isReference != otherParams[p].isReference ||
+            firstParams[p].isHandle != otherParams[p].isHandle)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool IsAllowedDuplicate(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
+{
+    if (first.type == SymbolType::Variable &&
+        (first.GetVariable().isVirtualProperty || other.GetVariable().isVirtualProperty))
+    {
+        return true;
+    }
+
+    if (first.type == SymbolType::Class && other.type == SymbolType::Class)
+    {
+        if (!first.GetClass().hasBraces || !other.GetClass().hasBraces)
+        {
+            return true;
+        }
+    }
+
+    if (ctx.request.IgnoresDuplicateSharedInterface() && first.type == SymbolType::Interface &&
+        other.type == SymbolType::Interface && first.GetInterface().modifiers.isShared &&
+        other.GetInterface().modifiers.isShared)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+bool CheckDuplicatePair(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
+{
+    if (first.startLine == other.startLine && first.startCharacter == other.startCharacter)
+    {
+        return false;
+    }
+
+    if (first.type != other.type)
+    {
+        ctx.LogRule("ValidateDuplicates", "as-err-name-conflict", other);
+        ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter,
+                        other.selectionRange.endLine, other.selectionRange.endCharacter, "as-err-name-conflict",
+                        other.name, KindWord(first.type));
+        return true;
+    }
+
+    if (first.type == SymbolType::Function)
+    {
+        if (!AreIdenticalFunctionSignatures(first, other))
+        {
+            return false;
+        }
+
+        ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);
+        ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter,
+                        other.selectionRange.endLine, other.selectionRange.endCharacter, "as-err-duplicate-symbol",
+                        other.name);
+        return true;
+    }
+
+    if (IsAllowedDuplicate(first, other, ctx))
+    {
+        return false;
+    }
+
+    ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);
+    ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter, other.selectionRange.endLine,
+                    other.selectionRange.endCharacter, "as-err-duplicate-symbol", other.name);
+    return true;
+}
+} // namespace
+
+void ValidateDuplicates(const std::vector<Symbol>& symbols, const DiagnosticContext& ctx)
+{
+    if (symbols.size() < 2)
+    {
+        return;
+    }
+
+    std::vector<const Symbol*> local;
+    std::vector<const Symbol*> moduleMates;
+    CollectDuplicateCandidates(symbols, ctx, local, moduleMates);
+
     if (local.empty() || local.size() + moduleMates.size() < 2)
     {
         return;
     }
 
-    // The module's other files first, so every pair the loop forms has the later index on this
-    // document - which is where the diagnostic has to land.
     std::vector<const Symbol*> candidates = moduleMates;
     candidates.insert(candidates.end(), local.begin(), local.end());
 
     for (size_t i = 1; i < candidates.size(); ++i)
     {
         const Symbol& other = *candidates[i];
-
-        // Two declarations that both live elsewhere are that file's business; this document
-        // publishes diagnostics for itself only, and a range in another file would be nonsense
-        // here.
         if (other.fileUri != ctx.request.fileUri)
         {
             continue;
@@ -520,114 +634,10 @@ void ValidateDuplicates(const std::vector<Symbol>& symbols, const DiagnosticCont
 
         for (size_t j = 0; j < i; ++j)
         {
-            const Symbol& first = *candidates[j];
-
-            // The same declaration reached twice through different index paths is not a
-            // redeclaration; only distinct source positions are.
-            if (first.startLine == other.startLine && first.startCharacter == other.startCharacter)
+            if (CheckDuplicatePair(*candidates[j], other, ctx))
             {
-                continue;
-            }
-
-            if (first.type != other.type)
-            {
-                ctx.LogRule("ValidateDuplicates", "as-err-name-conflict", other);
-                ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter,
-                                other.selectionRange.endLine, other.selectionRange.endCharacter, "as-err-name-conflict",
-                                other.name, KindWord(first.type));
                 break;
             }
-
-            // Functions may repeat a name as long as the parameter lists differ - or, for a
-            // conversion operator, as long as the return types do. `float opConv()` beside
-            // `int opConv()` and `string opConv()` is the idiomatic way to write conversions in
-            // AngelScript, and comparing parameters alone reports every one of them.
-            if (first.type == SymbolType::Function)
-            {
-                const auto& firstParams = first.GetFunction().parameters;
-                const auto& otherParams = other.GetFunction().parameters;
-                if (firstParams.size() != otherParams.size())
-                {
-                    continue;
-                }
-                if (first.GetFunction().returnType != other.GetFunction().returnType)
-                {
-                    if (first.name == "opConv" || first.name == "opImplConv" || first.name == "opCast" ||
-                        first.name == "opImplCast")
-                    {
-                        continue;
-                    }
-                }
-
-                // A const overload is a distinct overload.
-                if (first.GetFunction().modifiers.isConst != other.GetFunction().modifiers.isConst)
-                {
-                    continue;
-                }
-
-                // Compared raw, not through CleanBaseType: that helper strips handles and unwraps
-                // array<T> to T, so it reports `array<string>` and `string` as the same parameter -
-                // which turns two genuine overloads into a redeclaration.
-                bool sameSignature = true;
-                for (size_t p = 0; p < firstParams.size(); ++p)
-                {
-                    if (firstParams[p].typeName != otherParams[p].typeName ||
-                        firstParams[p].modifier != otherParams[p].modifier ||
-                        firstParams[p].isReference != otherParams[p].isReference ||
-                        firstParams[p].isHandle != otherParams[p].isHandle)
-                    {
-                        sameSignature = false;
-                        break;
-                    }
-                }
-                if (!sameSignature)
-                {
-                    continue;
-                }
-
-                ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);
-                ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter,
-                                other.selectionRange.endLine, other.selectionRange.endCharacter,
-                                "as-err-duplicate-symbol", other.name);
-                break;
-            }
-
-            // A virtual property's accessors share one name by design.
-            if (first.type == SymbolType::Variable &&
-                (first.GetVariable().isVirtualProperty || other.GetVariable().isVirtualProperty))
-            {
-                continue;
-            }
-
-            // A forward class declaration completed by a full definition is not a duplicate.
-            if (first.type == SymbolType::Class && other.type == SymbolType::Class)
-            {
-                if (!first.GetClass().hasBraces || !other.GetClass().hasBraces)
-                {
-                    continue;
-                }
-            }
-
-            // asEP_IGNORE_DUPLICATE_SHARED_INTF. A host that sets it accepts the same shared
-            // interface declared twice, and this rule was reporting it as an error - a false
-            // positive on code that compiles, found by measuring the property rather than by
-            // any test.
-            //
-            // Narrow, because the measurement is: a duplicate PLAIN interface is rejected under
-            // both settings, and only `shared` on both declarations is what the property
-            // forgives. Two probes, both directions.
-            if (ctx.request.IgnoresDuplicateSharedInterface() && first.type == SymbolType::Interface &&
-                other.type == SymbolType::Interface && first.GetInterface().modifiers.isShared &&
-                other.GetInterface().modifiers.isShared)
-            {
-                continue;
-            }
-
-            ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);
-            ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter,
-                            other.selectionRange.endLine, other.selectionRange.endCharacter, "as-err-duplicate-symbol",
-                            other.name);
-            break;
         }
     }
 }

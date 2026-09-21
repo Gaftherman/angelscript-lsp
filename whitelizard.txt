@@ -116,14 +116,10 @@ angel_lsp::analysis::rules::CheckInterfaceImplementation
 angel_lsp::analysis::rules::CheckMixinInstantiations
 angel_lsp::analysis::rules::CheckPropertyAccessors
 angel_lsp::analysis::rules::CheckReturnType
-angel_lsp::analysis::rules::FindEnumDeclarationNode
 angel_lsp::analysis::rules::HasInheritanceCycle
 angel_lsp::analysis::rules::PopulatePartial
 angel_lsp::analysis::rules::RuleIndex::ApplyPartial
 angel_lsp::analysis::rules::RuleIndex::RemovePartial
-angel_lsp::analysis::rules::ValidateDuplicates
-angel_lsp::analysis::rules::ValidateEnum
-angel_lsp::analysis::rules::ValidateFuncdef
 angel_lsp::analysis::rules::ValidateParameters
 angel_lsp::config::ApplyEngineProperty
 angel_lsp::config::FromArgs
