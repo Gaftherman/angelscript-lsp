@@ -59,6 +59,181 @@ void RuleIndexPartial::Merge(RuleIndexPartial&& other)
 
 namespace
 {
+/** @brief Extracts and records template parameters and namespace segments. */
+void ProcessSymbolNames(RuleIndexPartial& partial, const Symbol& sym)
+{
+    partial.allNames.push_back(sym.name);
+
+    if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+    {
+        for (const auto& param : sym.GetClass().templateParams)
+        {
+            partial.allNames.push_back(param);
+        }
+    }
+
+    if (sym.type == SymbolType::Namespace)
+    {
+        std::string_view remaining = sym.name;
+        for (size_t at = remaining.find("::"); at != std::string_view::npos; at = remaining.find("::"))
+        {
+            partial.allNames.push_back(std::string(remaining.substr(0, at)));
+            remaining.remove_prefix(at + 2);
+        }
+        if (!remaining.empty())
+        {
+            partial.allNames.push_back(std::string(remaining));
+        }
+    }
+}
+
+/** @brief Records enum members. */
+void ProcessEnumSymbol(RuleIndexPartial& partial, const Symbol& sym)
+{
+    if (sym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(sym.signature))
+    {
+        for (const auto& member : sym.GetEnum().members)
+        {
+            partial.enumMembers.emplace_back(member.name, sym);
+        }
+    }
+}
+
+/** @brief Records qualified type names for types. */
+void ProcessTypeSymbol(RuleIndexPartial& partial, const Symbol& sym)
+{
+    if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface || sym.type == SymbolType::Enum ||
+        sym.type == SymbolType::Typedef || sym.type == SymbolType::Funcdef)
+    {
+        const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+        partial.qualifiedTypes.emplace_back(sym.name, qName);
+    }
+}
+
+/** @brief Helper to record a base type in derivedByBase. */
+void RecordBase(RuleIndexPartial& partial, const DerivedType& derived, const std::string& base)
+{
+    const std::string cleanBase = CleanBaseType(base);
+    if (!cleanBase.empty())
+    {
+        partial.derivedByBase.emplace_back(cleanBase, derived);
+    }
+    if (!base.empty() && base != cleanBase)
+    {
+        partial.derivedByBase.emplace_back(base, derived);
+    }
+}
+
+/** @brief Records inheritance and mixin relationships. */
+void ProcessInheritanceSymbol(RuleIndexPartial& partial, const Symbol& sym)
+{
+    if (sym.type != SymbolType::Class && sym.type != SymbolType::Interface)
+    {
+        return;
+    }
+
+    const DerivedType derived{sym.qualifiedName.empty() ? sym.name : sym.qualifiedName, sym.name};
+
+    if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+    {
+        const auto& classSig = sym.GetClass();
+        for (const auto& base : classSig.bases)
+        {
+            RecordBase(partial, derived, base);
+        }
+
+        for (const auto& mixinName : classSig.includedMixins)
+        {
+            const std::string cleanMixin = CleanBaseType(mixinName);
+            if (!cleanMixin.empty())
+            {
+                partial.hostClassesByMixin.emplace_back(cleanMixin, derived);
+                const std::string bareMixin = LastScopeSegment(cleanMixin);
+                if (bareMixin != cleanMixin)
+                {
+                    partial.hostClassesByMixin.emplace_back(bareMixin, derived);
+                }
+            }
+        }
+    }
+    else if (sym.type == SymbolType::Interface && std::holds_alternative<InterfaceSignature>(sym.signature))
+    {
+        for (const auto& base : sym.GetInterface().inheritedInterfaces)
+        {
+            RecordBase(partial, derived, base);
+        }
+    }
+}
+
+/** @brief Records accessor property names from getter/setter functions. */
+void RecordAccessorProperty(RuleIndexPartial& partial, const Symbol& sym)
+{
+    std::string_view accessor = sym.name;
+    if (accessor.starts_with("get_") || accessor.starts_with("set_"))
+    {
+        accessor.remove_prefix(4);
+        if (!accessor.empty())
+        {
+            partial.accessorProperties.emplace_back(accessor);
+            if (std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isProperty)
+            {
+                partial.keywordAccessorProperties.emplace_back(accessor);
+            }
+        }
+    }
+}
+
+/** @brief Records container members and their nested types. */
+void ProcessContainerMember(RuleIndexPartial& partial, const Symbol& sym)
+{
+    if (sym.containerName.empty())
+    {
+        return;
+    }
+
+    auto& members = partial.byContainer[sym.containerName];
+    members.allMemberNames.push_back(sym.name);
+    members.memberKeys.push_back(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName);
+
+    switch (sym.type)
+    {
+    case SymbolType::Function:
+        members.methodNames.push_back(sym.name);
+        if (std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isFinal)
+        {
+            members.finalMethodNames.push_back(sym.name);
+        }
+        RecordAccessorProperty(partial, sym);
+        break;
+    case SymbolType::Class:
+    case SymbolType::Interface:
+    case SymbolType::Enum:
+    case SymbolType::Typedef:
+    case SymbolType::Funcdef:
+        members.nestedTypeCount++;
+        break;
+    default:
+        break;
+    }
+}
+
+/** @brief Processes a single symbol and extracts its contributions to the partial index. */
+void ProcessSymbol(RuleIndexPartial& partial, const Symbol& sym)
+{
+    ProcessSymbolNames(partial, sym);
+    ProcessEnumSymbol(partial, sym);
+    ProcessTypeSymbol(partial, sym);
+    ProcessInheritanceSymbol(partial, sym);
+
+    if (sym.containerName.empty() && sym.type == SymbolType::Function)
+    {
+        RecordAccessorProperty(partial, sym);
+    }
+
+    ProcessContainerMember(partial, sym);
+}
+
+/** @brief Populates partial index from range of symbols. */
 template <typename SymbolRange> void PopulatePartial(RuleIndexPartial& partial, const SymbolRange& symbols)
 {
     for (const auto& symRef : symbols)
@@ -80,154 +255,296 @@ template <typename SymbolRange> void PopulatePartial(RuleIndexPartial& partial, 
             continue;
         }
 
-        partial.allNames.push_back(sym.name);
+        ProcessSymbol(partial, sym);
+    }
+}
 
-        if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+/** @brief Applies symbol names and enum members from partial index. */
+void ApplyNamesAndEnums(RuleIndex& index, const RuleIndexPartial& partial)
+{
+    for (const auto& name : partial.allNames)
+    {
+        ++index.allNames[name];
+    }
+
+    for (const auto& [name, sym] : partial.enumMembers)
+    {
+        if (++index.enumMemberCounts[name] == 1)
         {
-            for (const auto& param : sym.GetClass().templateParams)
+            index.enumMemberNames.insert(name);
+        }
+        index.enumSymbolsByMemberName[name].push_back(sym);
+    }
+}
+
+/** @brief Applies qualified types and property accessors from partial index. */
+void ApplyTypesAndAccessors(RuleIndex& index, const RuleIndexPartial& partial)
+{
+    for (const auto& [shortName, qName] : partial.qualifiedTypes)
+    {
+        auto& counts = index.qualifiedTypeCounts[shortName];
+        if (++counts[qName] == 1)
+        {
+            index.qualifiedTypesByShortName[shortName].push_back(qName);
+        }
+    }
+
+    for (const auto& p : partial.accessorProperties)
+    {
+        if (++index.accessorPropertyCounts[p] == 1)
+        {
+            index.accessorPropertyNames.insert(p);
+        }
+    }
+
+    for (const auto& p : partial.keywordAccessorProperties)
+    {
+        if (++index.keywordAccessorPropertyCounts[p] == 1)
+        {
+            index.keywordAccessorPropertyNames.insert(p);
+        }
+    }
+}
+
+/** @brief Applies inheritance and mixin relations from partial index. */
+void ApplyHierarchy(RuleIndex& index, const RuleIndexPartial& partial)
+{
+    for (const auto& [base, derived] : partial.derivedByBase)
+    {
+        index.derivedByBase[base].push_back(derived);
+    }
+
+    for (const auto& [mixin, host] : partial.hostClassesByMixin)
+    {
+        index.hostClassesByMixin[mixin].push_back(host);
+    }
+}
+
+/** @brief Applies contributions for a single container. */
+void ApplyContainerContribution(ContainerMembers& cm, const RuleIndexPartial::ContainerContribution& contrib)
+{
+    for (const auto& m : contrib.methodNames)
+    {
+        if (++cm.methodCounts[m] == 1)
+        {
+            cm.methodNames.insert(m);
+        }
+    }
+    for (const auto& m : contrib.finalMethodNames)
+    {
+        if (++cm.finalMethodCounts[m] == 1)
+        {
+            cm.finalMethodNames.insert(m);
+        }
+    }
+    for (const auto& m : contrib.allMemberNames)
+    {
+        if (++cm.allMemberCounts[m] == 1)
+        {
+            cm.allMemberNames.insert(m);
+        }
+    }
+    for (const auto& k : contrib.memberKeys)
+    {
+        cm.memberKeys.push_back(k);
+        if (++cm.memberKeyCounts[k] == 1)
+        {
+            cm.memberKeySet.insert(k);
+        }
+    }
+    cm.nestedTypeCount += contrib.nestedTypeCount;
+    cm.hasNestedType = (cm.nestedTypeCount > 0);
+}
+
+/** @brief Applies container contributions from partial index. */
+void ApplyContainers(RuleIndex& index, const RuleIndexPartial& partial)
+{
+    for (const auto& [containerName, contrib] : partial.byContainer)
+    {
+        ApplyContainerContribution(index.byContainer[containerName], contrib);
+    }
+}
+
+/** @brief Removes symbol names and enum members of a partial index. */
+void RemoveNamesAndEnums(RuleIndex& index, const RuleIndexPartial& partial)
+{
+    for (const auto& name : partial.allNames)
+    {
+        auto it = index.allNames.find(name);
+        if (it != index.allNames.end() && --it->second == 0)
+        {
+            index.allNames.erase(it);
+        }
+    }
+
+    for (const auto& [name, sym] : partial.enumMembers)
+    {
+        auto it = index.enumMemberCounts.find(name);
+        if (it != index.enumMemberCounts.end() && --it->second == 0)
+        {
+            index.enumMemberCounts.erase(it);
+            index.enumMemberNames.erase(name);
+        }
+        auto sIt = index.enumSymbolsByMemberName.find(name);
+        if (sIt != index.enumSymbolsByMemberName.end())
+        {
+            std::erase_if(sIt->second,
+                          [&](const Symbol& s) { return s.fileUri == partial.fileUri && s.name == sym.name; });
+            if (sIt->second.empty())
             {
-                partial.allNames.push_back(param);
+                index.enumSymbolsByMemberName.erase(sIt);
             }
         }
+    }
+}
 
-        if (sym.type == SymbolType::Namespace)
+/** @brief Removes qualified types and property accessors of a partial index. */
+void RemoveTypesAndAccessors(RuleIndex& index, const RuleIndexPartial& partial)
+{
+    for (const auto& [shortName, qName] : partial.qualifiedTypes)
+    {
+        auto qIt = index.qualifiedTypeCounts.find(shortName);
+        if (qIt != index.qualifiedTypeCounts.end())
         {
-            std::string_view remaining = sym.name;
-            for (size_t at = remaining.find("::"); at != std::string_view::npos; at = remaining.find("::"))
+            auto cIt = qIt->second.find(qName);
+            if (cIt != qIt->second.end() && --cIt->second == 0)
             {
-                partial.allNames.push_back(std::string(remaining.substr(0, at)));
-                remaining.remove_prefix(at + 2);
-            }
-            if (!remaining.empty())
-            {
-                partial.allNames.push_back(std::string(remaining));
-            }
-        }
-
-        if (sym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(sym.signature))
-        {
-            for (const auto& member : sym.GetEnum().members)
-            {
-                partial.enumMembers.emplace_back(member.name, sym);
-            }
-        }
-
-        if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface || sym.type == SymbolType::Enum ||
-            sym.type == SymbolType::Typedef || sym.type == SymbolType::Funcdef)
-        {
-            const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-            partial.qualifiedTypes.emplace_back(sym.name, qName);
-        }
-
-        if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
-        {
-            const DerivedType derived{sym.qualifiedName.empty() ? sym.name : sym.qualifiedName, sym.name};
-
-            const auto recordBase = [&](const std::string& base)
-            {
-                const std::string cleanBase = CleanBaseType(base);
-                if (!cleanBase.empty())
+                qIt->second.erase(cIt);
+                auto vecIt = index.qualifiedTypesByShortName.find(shortName);
+                if (vecIt != index.qualifiedTypesByShortName.end())
                 {
-                    partial.derivedByBase.emplace_back(cleanBase, derived);
-                }
-                if (!base.empty() && base != cleanBase)
-                {
-                    partial.derivedByBase.emplace_back(base, derived);
-                }
-            };
-
-            if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
-            {
-                for (const auto& base : sym.GetClass().bases)
-                {
-                    recordBase(base);
-                }
-
-                for (const auto& mixinName : sym.GetClass().includedMixins)
-                {
-                    const std::string cleanMixin = CleanBaseType(mixinName);
-                    if (!cleanMixin.empty())
+                    std::erase(vecIt->second, qName);
+                    if (vecIt->second.empty())
                     {
-                        partial.hostClassesByMixin.emplace_back(cleanMixin, derived);
-                        const std::string bareMixin = LastScopeSegment(cleanMixin);
-                        if (bareMixin != cleanMixin)
-                        {
-                            partial.hostClassesByMixin.emplace_back(bareMixin, derived);
-                        }
+                        index.qualifiedTypesByShortName.erase(vecIt);
                     }
                 }
             }
-            else if (sym.type == SymbolType::Interface && std::holds_alternative<InterfaceSignature>(sym.signature))
+            if (qIt->second.empty())
             {
-                for (const auto& base : sym.GetInterface().inheritedInterfaces)
-                {
-                    recordBase(base);
-                }
+                index.qualifiedTypeCounts.erase(qIt);
             }
         }
+    }
 
-        if (sym.containerName.empty() && sym.type == SymbolType::Function)
+    auto removeCountedProp = [](auto& counts, auto& set, const std::string& p)
+    {
+        auto it = counts.find(p);
+        if (it != counts.end() && --it->second == 0)
         {
-            std::string_view accessor = sym.name;
-            if (accessor.starts_with("get_") || accessor.starts_with("set_"))
+            counts.erase(it);
+            set.erase(p);
+        }
+    };
+
+    for (const auto& p : partial.accessorProperties)
+    {
+        removeCountedProp(index.accessorPropertyCounts, index.accessorPropertyNames, p);
+    }
+    for (const auto& p : partial.keywordAccessorProperties)
+    {
+        removeCountedProp(index.keywordAccessorPropertyCounts, index.keywordAccessorPropertyNames, p);
+    }
+}
+
+/** @brief Removes inheritance and mixin relations of a partial index. */
+void RemoveHierarchy(RuleIndex& index, const RuleIndexPartial& partial)
+{
+    for (const auto& [base, derived] : partial.derivedByBase)
+    {
+        auto it = index.derivedByBase.find(base);
+        if (it != index.derivedByBase.end())
+        {
+            std::erase_if(it->second, [&](const DerivedType& d)
+                          { return d.qualifiedName == derived.qualifiedName && d.name == derived.name; });
+            if (it->second.empty())
             {
-                accessor.remove_prefix(4);
-                if (!accessor.empty())
-                {
-                    partial.accessorProperties.emplace_back(accessor);
-                    if (std::holds_alternative<FunctionSignature>(sym.signature) &&
-                        sym.GetFunction().modifiers.isProperty)
-                    {
-                        partial.keywordAccessorProperties.emplace_back(accessor);
-                    }
-                }
+                index.derivedByBase.erase(it);
             }
         }
+    }
 
-        if (sym.containerName.empty())
+    for (const auto& [mixin, host] : partial.hostClassesByMixin)
+    {
+        auto it = index.hostClassesByMixin.find(mixin);
+        if (it != index.hostClassesByMixin.end())
+        {
+            std::erase_if(it->second, [&](const DerivedType& d)
+                          { return d.qualifiedName == host.qualifiedName && d.name == host.name; });
+            if (it->second.empty())
+            {
+                index.hostClassesByMixin.erase(it);
+            }
+        }
+    }
+}
+
+/** @brief Removes contributions for a single container. */
+void RemoveContainerContribution(ContainerMembers& cm, const RuleIndexPartial::ContainerContribution& contrib)
+{
+    auto removeCountedMember = [](auto& counts, auto& set, const std::string& item)
+    {
+        auto it = counts.find(item);
+        if (it != counts.end() && --it->second == 0)
+        {
+            counts.erase(it);
+            set.erase(item);
+        }
+    };
+
+    for (const auto& m : contrib.methodNames)
+    {
+        removeCountedMember(cm.methodCounts, cm.methodNames, m);
+    }
+    for (const auto& m : contrib.finalMethodNames)
+    {
+        removeCountedMember(cm.finalMethodCounts, cm.finalMethodNames, m);
+    }
+    for (const auto& m : contrib.allMemberNames)
+    {
+        removeCountedMember(cm.allMemberCounts, cm.allMemberNames, m);
+    }
+    for (const auto& k : contrib.memberKeys)
+    {
+        auto it = cm.memberKeyCounts.find(k);
+        if (it != cm.memberKeyCounts.end() && --it->second == 0)
+        {
+            cm.memberKeyCounts.erase(it);
+            cm.memberKeySet.erase(k);
+        }
+        auto vecIt = std::find(cm.memberKeys.begin(), cm.memberKeys.end(), k);
+        if (vecIt != cm.memberKeys.end())
+        {
+            cm.memberKeys.erase(vecIt);
+        }
+    }
+
+    if (cm.nestedTypeCount >= contrib.nestedTypeCount)
+    {
+        cm.nestedTypeCount -= contrib.nestedTypeCount;
+    }
+    else
+    {
+        cm.nestedTypeCount = 0;
+    }
+    cm.hasNestedType = (cm.nestedTypeCount > 0);
+}
+
+/** @brief Removes container contributions of a partial index. */
+void RemoveContainers(RuleIndex& index, const RuleIndexPartial& partial)
+{
+    for (const auto& [containerName, contrib] : partial.byContainer)
+    {
+        auto cIt = index.byContainer.find(containerName);
+        if (cIt == index.byContainer.end())
         {
             continue;
         }
 
-        auto& members = partial.byContainer[sym.containerName];
-        members.allMemberNames.push_back(sym.name);
-        members.memberKeys.push_back(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName);
-
-        switch (sym.type)
+        RemoveContainerContribution(cIt->second, contrib);
+        if (cIt->second.allMemberNames.empty() && cIt->second.nestedTypeCount == 0 && cIt->second.memberKeys.empty())
         {
-        case SymbolType::Function:
-            members.methodNames.push_back(sym.name);
-            if (std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isFinal)
-            {
-                members.finalMethodNames.push_back(sym.name);
-            }
-
-            {
-                std::string_view accessor = sym.name;
-                if (accessor.starts_with("get_") || accessor.starts_with("set_"))
-                {
-                    accessor.remove_prefix(4);
-                    if (!accessor.empty())
-                    {
-                        partial.accessorProperties.emplace_back(accessor);
-                        if (std::holds_alternative<FunctionSignature>(sym.signature) &&
-                            sym.GetFunction().modifiers.isProperty)
-                        {
-                            partial.keywordAccessorProperties.emplace_back(accessor);
-                        }
-                    }
-                }
-            }
-            break;
-        case SymbolType::Class:
-        case SymbolType::Interface:
-        case SymbolType::Enum:
-        case SymbolType::Typedef:
-        case SymbolType::Funcdef:
-            members.nestedTypeCount++;
-            break;
-        default:
-            break;
+            index.byContainer.erase(cIt);
         }
     }
 }
@@ -251,278 +568,18 @@ RuleIndexPartial RuleIndex::BuildPartial(const std::string& fileUri, const std::
 
 void RuleIndex::ApplyPartial(const RuleIndexPartial& partial)
 {
-    for (const auto& name : partial.allNames)
-    {
-        ++allNames[name];
-    }
-
-    for (const auto& [name, sym] : partial.enumMembers)
-    {
-        if (++enumMemberCounts[name] == 1)
-        {
-            enumMemberNames.insert(name);
-        }
-        enumSymbolsByMemberName[name].push_back(sym);
-    }
-
-    for (const auto& [shortName, qName] : partial.qualifiedTypes)
-    {
-        auto& counts = qualifiedTypeCounts[shortName];
-        if (++counts[qName] == 1)
-        {
-            qualifiedTypesByShortName[shortName].push_back(qName);
-        }
-    }
-
-    for (const auto& p : partial.accessorProperties)
-    {
-        if (++accessorPropertyCounts[p] == 1)
-        {
-            accessorPropertyNames.insert(p);
-        }
-    }
-
-    for (const auto& p : partial.keywordAccessorProperties)
-    {
-        if (++keywordAccessorPropertyCounts[p] == 1)
-        {
-            keywordAccessorPropertyNames.insert(p);
-        }
-    }
-
-    for (const auto& [base, derived] : partial.derivedByBase)
-    {
-        derivedByBase[base].push_back(derived);
-    }
-
-    for (const auto& [mixin, host] : partial.hostClassesByMixin)
-    {
-        hostClassesByMixin[mixin].push_back(host);
-    }
-
-    for (const auto& [containerName, contrib] : partial.byContainer)
-    {
-        auto& cm = byContainer[containerName];
-        for (const auto& m : contrib.methodNames)
-        {
-            if (++cm.methodCounts[m] == 1)
-            {
-                cm.methodNames.insert(m);
-            }
-        }
-        for (const auto& m : contrib.finalMethodNames)
-        {
-            if (++cm.finalMethodCounts[m] == 1)
-            {
-                cm.finalMethodNames.insert(m);
-            }
-        }
-        for (const auto& m : contrib.allMemberNames)
-        {
-            if (++cm.allMemberCounts[m] == 1)
-            {
-                cm.allMemberNames.insert(m);
-            }
-        }
-        for (const auto& k : contrib.memberKeys)
-        {
-            cm.memberKeys.push_back(k);
-            if (++cm.memberKeyCounts[k] == 1)
-            {
-                cm.memberKeySet.insert(k);
-            }
-        }
-        cm.nestedTypeCount += contrib.nestedTypeCount;
-        cm.hasNestedType = (cm.nestedTypeCount > 0);
-    }
+    ApplyNamesAndEnums(*this, partial);
+    ApplyTypesAndAccessors(*this, partial);
+    ApplyHierarchy(*this, partial);
+    ApplyContainers(*this, partial);
 }
 
 void RuleIndex::RemovePartial(const RuleIndexPartial& partial)
 {
-    for (const auto& name : partial.allNames)
-    {
-        auto it = allNames.find(name);
-        if (it != allNames.end())
-        {
-            if (--it->second == 0)
-            {
-                allNames.erase(it);
-            }
-        }
-    }
-
-    for (const auto& [name, sym] : partial.enumMembers)
-    {
-        auto it = enumMemberCounts.find(name);
-        if (it != enumMemberCounts.end())
-        {
-            if (--it->second == 0)
-            {
-                enumMemberCounts.erase(it);
-                enumMemberNames.erase(name);
-            }
-        }
-        auto sIt = enumSymbolsByMemberName.find(name);
-        if (sIt != enumSymbolsByMemberName.end())
-        {
-            std::erase_if(sIt->second,
-                          [&](const Symbol& s) { return s.fileUri == partial.fileUri && s.name == sym.name; });
-            if (sIt->second.empty())
-            {
-                enumSymbolsByMemberName.erase(sIt);
-            }
-        }
-    }
-
-    for (const auto& [shortName, qName] : partial.qualifiedTypes)
-    {
-        auto qIt = qualifiedTypeCounts.find(shortName);
-        if (qIt != qualifiedTypeCounts.end())
-        {
-            auto cIt = qIt->second.find(qName);
-            if (cIt != qIt->second.end())
-            {
-                if (--cIt->second == 0)
-                {
-                    qIt->second.erase(cIt);
-                    auto vecIt = qualifiedTypesByShortName.find(shortName);
-                    if (vecIt != qualifiedTypesByShortName.end())
-                    {
-                        std::erase(vecIt->second, qName);
-                        if (vecIt->second.empty())
-                        {
-                            qualifiedTypesByShortName.erase(vecIt);
-                        }
-                    }
-                }
-            }
-            if (qIt->second.empty())
-            {
-                qualifiedTypeCounts.erase(qIt);
-            }
-        }
-    }
-
-    for (const auto& p : partial.accessorProperties)
-    {
-        auto it = accessorPropertyCounts.find(p);
-        if (it != accessorPropertyCounts.end())
-        {
-            if (--it->second == 0)
-            {
-                accessorPropertyCounts.erase(it);
-                accessorPropertyNames.erase(p);
-            }
-        }
-    }
-
-    for (const auto& p : partial.keywordAccessorProperties)
-    {
-        auto it = keywordAccessorPropertyCounts.find(p);
-        if (it != keywordAccessorPropertyCounts.end())
-        {
-            if (--it->second == 0)
-            {
-                keywordAccessorPropertyCounts.erase(it);
-                keywordAccessorPropertyNames.erase(p);
-            }
-        }
-    }
-
-    for (const auto& [base, derived] : partial.derivedByBase)
-    {
-        auto it = derivedByBase.find(base);
-        if (it != derivedByBase.end())
-        {
-            std::erase_if(it->second, [&](const DerivedType& d)
-                          { return d.qualifiedName == derived.qualifiedName && d.name == derived.name; });
-            if (it->second.empty())
-            {
-                derivedByBase.erase(it);
-            }
-        }
-    }
-
-    for (const auto& [mixin, host] : partial.hostClassesByMixin)
-    {
-        auto it = hostClassesByMixin.find(mixin);
-        if (it != hostClassesByMixin.end())
-        {
-            std::erase_if(it->second, [&](const DerivedType& d)
-                          { return d.qualifiedName == host.qualifiedName && d.name == host.name; });
-            if (it->second.empty())
-            {
-                hostClassesByMixin.erase(it);
-            }
-        }
-    }
-
-    for (const auto& [containerName, contrib] : partial.byContainer)
-    {
-        auto cIt = byContainer.find(containerName);
-        if (cIt == byContainer.end())
-        {
-            continue;
-        }
-
-        auto& cm = cIt->second;
-        for (const auto& m : contrib.methodNames)
-        {
-            auto it = cm.methodCounts.find(m);
-            if (it != cm.methodCounts.end() && --it->second == 0)
-            {
-                cm.methodCounts.erase(it);
-                cm.methodNames.erase(m);
-            }
-        }
-        for (const auto& m : contrib.finalMethodNames)
-        {
-            auto it = cm.finalMethodCounts.find(m);
-            if (it != cm.finalMethodCounts.end() && --it->second == 0)
-            {
-                cm.finalMethodCounts.erase(it);
-                cm.finalMethodNames.erase(m);
-            }
-        }
-        for (const auto& m : contrib.allMemberNames)
-        {
-            auto it = cm.allMemberCounts.find(m);
-            if (it != cm.allMemberCounts.end() && --it->second == 0)
-            {
-                cm.allMemberCounts.erase(it);
-                cm.allMemberNames.erase(m);
-            }
-        }
-        for (const auto& k : contrib.memberKeys)
-        {
-            auto it = cm.memberKeyCounts.find(k);
-            if (it != cm.memberKeyCounts.end() && --it->second == 0)
-            {
-                cm.memberKeyCounts.erase(it);
-                cm.memberKeySet.erase(k);
-            }
-            auto vecIt = std::find(cm.memberKeys.begin(), cm.memberKeys.end(), k);
-            if (vecIt != cm.memberKeys.end())
-            {
-                cm.memberKeys.erase(vecIt);
-            }
-        }
-
-        if (cm.nestedTypeCount >= contrib.nestedTypeCount)
-        {
-            cm.nestedTypeCount -= contrib.nestedTypeCount;
-        }
-        else
-        {
-            cm.nestedTypeCount = 0;
-        }
-        cm.hasNestedType = (cm.nestedTypeCount > 0);
-
-        if (cm.allMemberNames.empty() && cm.nestedTypeCount == 0 && cm.memberKeys.empty())
-        {
-            byContainer.erase(cIt);
-        }
-    }
+    RemoveNamesAndEnums(*this, partial);
+    RemoveTypesAndAccessors(*this, partial);
+    RemoveHierarchy(*this, partial);
+    RemoveContainers(*this, partial);
 }
 
 std::shared_ptr<RuleIndex> RuleIndex::Build(const SymbolTable& table)
