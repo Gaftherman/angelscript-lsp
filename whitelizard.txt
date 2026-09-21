@@ -142,10 +142,8 @@ angel_lsp::features::IsUnary
 angel_lsp::features::MethodBodyMutatesClassState
 angel_lsp::features::NeedsSpaceBetween
 angel_lsp::features::ParseAccessChain
-angel_lsp::features::PrepareRename
 angel_lsp::features::PrepareTypeHierarchy
 angel_lsp::features::RefineDeclarationTokenType
-angel_lsp::features::Rename
 angel_lsp::features::ResolveCallOverload
 angel_lsp::features::ResolveCalleeParameters
 angel_lsp::features::ResolveConstructorParameters
