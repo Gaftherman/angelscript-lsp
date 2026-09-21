@@ -18,40 +18,40 @@ using namespace angel_lsp;
 
 namespace
 {
-    struct LinkFixture
+struct LinkFixture
+{
+    std::filesystem::path dir;
+    std::vector<std::string> searchDirectories;
+
+    LinkFixture()
     {
-        std::filesystem::path dir;
-        std::vector<std::string> searchDirectories;
+        const auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+        dir = std::filesystem::temp_directory_path() / ("angel_lsp_links_" + unique);
+        std::filesystem::create_directories(dir);
+        std::error_code ec;
+        auto c = std::filesystem::canonical(dir, ec);
+        if (!ec)
+            dir = std::move(c);
+    }
 
-        LinkFixture()
-        {
-            const auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-            dir = std::filesystem::temp_directory_path() / ("angel_lsp_links_" + unique);
-            std::filesystem::create_directories(dir);
-            std::error_code ec;
-            auto c = std::filesystem::canonical(dir, ec);
-            if (!ec)
-                dir = std::move(c);
-        }
+    ~LinkFixture()
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    }
 
-        ~LinkFixture()
-        {
-            std::error_code ec;
-            std::filesystem::remove_all(dir, ec);
-        }
+    void Write(const std::string& name, const std::string& content) const
+    {
+        std::ofstream out(dir / name, std::ios::binary);
+        out << content;
+    }
 
-        void Write(const std::string &name, const std::string &content) const
-        {
-            std::ofstream out(dir / name, std::ios::binary);
-            out << content;
-        }
-
-        std::string Uri(const std::string &name) const
-        {
-            return lsp::Uri::fileUriFromPath(utils::IncludeResolver::NormalizePath(dir / name)).toString();
-        }
-    };
-}
+    std::string Uri(const std::string& name) const
+    {
+        return lsp::Uri::fileUriFromPath(utils::IncludeResolver::NormalizePath(dir / name)).toString();
+    }
+};
+} // namespace
 
 TEST_CASE("GetDocumentLinks - a resolvable include becomes a link over the quoted path")
 {
@@ -67,11 +67,12 @@ TEST_CASE("GetDocumentLinks - a resolvable include becomes a link over the quote
     REQUIRE(links.has_value());
     REQUIRE(links->size() == 1);
 
-    const lsp::DocumentLink &link = links->front();
+    const lsp::DocumentLink& link = links->front();
     CHECK(link.range.start.line == 0);
 
     // The range covers "base.as" only, not the quotes or the directive.
-    CHECK(source.substr(link.range.start.character, link.range.end.character - link.range.start.character) == "base.as");
+    CHECK(source.substr(link.range.start.character, link.range.end.character - link.range.start.character) ==
+          "base.as");
     REQUIRE(link.target.has_value());
     CHECK(std::string(link.target->toString()).ends_with("base.as"));
 }
@@ -229,17 +230,16 @@ TEST_CASE("DocumentLink - A missing include inside a dead #if is not reported")
     // included from inside `#if UNDEFINED` compiles (exit 0), because CScriptBuilder blanks the
     // region in its first pass and only looks for `#include` in its second. The identical
     // directive one line further down is rejected (exit 1).
-    const std::string source =
-        "#if NEVER_DEFINED\n"
-        "#include \"there_is_no_such_file.as\"\n"
-        "#endif\n"
-        "#include \"there_is_no_such_file.as\"\n"
-        "void main() { }\n";
+    const std::string source = "#if NEVER_DEFINED\n"
+                               "#include \"there_is_no_such_file.as\"\n"
+                               "#endif\n"
+                               "#include \"there_is_no_such_file.as\"\n"
+                               "void main() { }\n";
 
     const std::vector<std::string> searchDirectories;
 
-    features::DocumentLinkRequest request{
-        "file:///workspace/main.as", source, searchDirectories, nullptr, { "/workspace" } };
+    features::DocumentLinkRequest request{"file:///workspace/main.as", source, searchDirectories, nullptr};
+    request.allowedRoots = {"/workspace"};
     request.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(source);
 
     const auto diagnostics = features::GetUnresolvedIncludeDiagnostics(request);

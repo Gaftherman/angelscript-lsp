@@ -17,9 +17,16 @@ namespace angel_lsp::features
  */
 struct DocumentLinkRequest
 {
+    /**
+     * @brief Constructs a DocumentLinkRequest.
+     * @param[in] u Source document URI.
+     * @param[in] sc Document source code.
+     * @param[in] sd Ordered list of include search directories.
+     * @param[in] i18nPtr Optional localization provider pointer.
+     */
     DocumentLinkRequest(const std::string& u, const std::string& sc, const std::vector<std::string>& sd,
-                        const angel_lsp::i18n::I18n* i18nPtr = nullptr, std::vector<std::string> ar = {})
-        : uri(u), sourceCode(sc), searchDirectories(sd), i18n(i18nPtr), allowedRoots(std::move(ar))
+                        const angel_lsp::i18n::I18n* i18nPtr = nullptr)
+        : uri(u), sourceCode(sc), searchDirectories(sd), i18n(i18nPtr)
     {
     }
 

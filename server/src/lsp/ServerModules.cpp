@@ -521,8 +521,8 @@ void Server::AppendIncludeDiagnostics(const std::string& uriStr, const std::stri
 
     const auto searchDirectories = SearchDirectories();
 
-    features::DocumentLinkRequest request{uriStr, text, *searchDirectories, m_i18n.get(), IncludeAllowedRoots()};
-
+    features::DocumentLinkRequest request{uriStr, text, *searchDirectories, m_i18n.get()};
+    request.allowedRoots = IncludeAllowedRoots();
     request.excludedLineRanges = ExcludedLineRanges(text);
     request.implicitExtension = std::string(ImplicitIncludeExtension());
 

@@ -561,8 +561,8 @@ void Server::RegisterTextDocumentHandlers()
 
             const auto searchDirectories = SearchDirectories();
 
-            features::DocumentLinkRequest dlr{doc->uri, *doc->text, *searchDirectories, m_i18n.get(),
-                                              IncludeAllowedRoots()};
+            features::DocumentLinkRequest dlr{doc->uri, *doc->text, *searchDirectories, m_i18n.get()};
+            dlr.allowedRoots = IncludeAllowedRoots();
             dlr.implicitExtension = std::string(ImplicitIncludeExtension());
             auto links = features::GetDocumentLinks(dlr);
             if (links.has_value())
