@@ -90,7 +90,8 @@ NOT_NODE_TYPES = {
     'final', 'abstract', 'override', 'explicit', 'property', 'delete', 'in', 'out', 'inout',
     'array', 'string', 'dictionary', 'get', 'set', 'value', 'name', 'public', 'private',
     'protected', 'bool', 'int', 'uint', 'float', 'double', 'mixin', 'enum', 'class', 'interface',
-    'namespace', 'funcdef', 'typedef', 'import', 'from',
+    'namespace', 'funcdef', 'typedef', 'import', 'from', 'module',
+    'endcode', 'verbatim', 'endverbatim',
 }
 
 

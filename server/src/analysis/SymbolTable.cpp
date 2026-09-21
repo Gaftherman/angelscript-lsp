@@ -977,8 +977,8 @@ bool SymbolTable::HasSymbolAnywhere(std::string_view name) const
     return index && (index->allNames.contains(searchName) || index->allNames.contains(name));
 }
 
-void SymbolTable::ForEachSymbol(const std::function<void([[maybe_unused]] const std::string& qualifiedName,
-                                                         const std::vector<Symbol>&)>& visitor) const
+void SymbolTable::ForEachSymbol(
+    const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const
 {
     std::vector<std::pair<const std::string*, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
     {
@@ -1000,9 +1000,9 @@ std::vector<Symbol> SymbolTable::GetAllSymbols() const
     return result;
 }
 
-void SymbolTable::ForEachSymbolInFile(const std::string& fileUri,
-                                      const std::function<void([[maybe_unused]] const std::string& qualifiedName,
-                                                               const std::vector<Symbol>&)>& visitor) const
+void SymbolTable::ForEachSymbolInFile(
+    const std::string& fileUri,
+    const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const
 {
     std::vector<std::pair<const std::string*, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
     {

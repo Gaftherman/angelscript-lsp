@@ -618,16 +618,6 @@ std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std
                                        const SymbolTable& symbolTable);
 
 /**
- * @brief Resolves the resulting type name of an AST expression node.
- *
- * Handles the forms that name a type rather than compute one: `this`, an identifier qualified
- * or not, a member chain, a call, an index, a cast, a constructor call, a unary or postfix
- * operator, and parentheses. Each of those either writes its type down or carries its
- * operand's through, so none of them needs the engine's own rules to answer.
- *
- * Everything else - a literal, a binary or ternary expression, a lambda, an initializer list -
- * returns empty on purpose rather than by omission. Their types come from promotion and
-/**
  * @brief Context bundled for expression type resolution.
  */
 struct ExpressionTypeContext

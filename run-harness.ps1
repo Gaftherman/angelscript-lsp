@@ -20,6 +20,9 @@ if ($LASTEXITCODE -ne 0) { throw "check-diagnostic-codes.py failed with exit cod
 python "$projectRoot\server\scripts\check-clean-signatures.py"
 if ($LASTEXITCODE -ne 0) { throw "check-clean-signatures.py failed with exit code $LASTEXITCODE" }
 
+python "$projectRoot\server\scripts\check-grammar-names.py"
+if ($LASTEXITCODE -ne 0) { throw "check-grammar-names.py failed with exit code $LASTEXITCODE" }
+
 Write-Host "`n==========================================" -ForegroundColor Cyan
 Write-Host " [2/7] Auditing Complexity (Lizard AST)   " -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
