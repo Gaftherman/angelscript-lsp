@@ -1238,6 +1238,201 @@ class Server
     bool RestoreClosedModuleFile(const std::string& uriStr, const std::string& path);
 
     /**
+     * @brief Extracts initial workspace folder paths from initialization parameters.
+     * @param[in] params LSP initialize request parameters.
+     */
+    void ExtractInitialWorkspaceRoots(const lsp::requests::Initialize::Params& params);
+
+    /**
+     * @brief Parses and applies engine configuration from initialization options.
+     * @param[in] initOpts Optional initialization options from client.
+     */
+    void ApplyEngineInitializationOptions(const std::optional<lsp::LSPAny>& initOpts);
+
+    /**
+     * @brief Negotiates protocol capabilities supported by the client.
+     * @param[in] capabilities Client capabilities payload.
+     */
+    void NegotiateClientCapabilities(const lsp::ClientCapabilities& capabilities);
+
+    /**
+     * @brief Configures navigation and editing provider capabilities.
+     * @param[in,out] caps Server capabilities structure to populate.
+     */
+    void ConfigureNavigationAndEditingCapabilities(lsp::ServerCapabilities& caps) const;
+
+    /**
+     * @brief Configures symbol, completion, and semantic token capabilities.
+     * @param[in,out] caps Server capabilities structure to populate.
+     */
+    void ConfigureEditingAndSymbolCapabilities(lsp::ServerCapabilities& caps) const;
+
+    /**
+     * @brief Configures formatting, code action, and diagnostics capabilities.
+     * @param[in,out] caps Server capabilities structure to populate.
+     */
+    void ConfigureFormattingAndDiagnosticCapabilities(lsp::ServerCapabilities& caps) const;
+
+    /**
+     * @brief Configures workspace folders, file operations, and command capabilities.
+     * @param[in,out] caps Server capabilities structure to populate.
+     */
+    void ConfigureWorkspaceCapabilities(lsp::ServerCapabilities& caps) const;
+
+    /**
+     * @brief Constructs full server capabilities responding to initialization request.
+     * @return Populated server capabilities object.
+     */
+    lsp::ServerCapabilities BuildServerCapabilities() const;
+
+    /**
+     * @brief Updates format brace style settings from the workspace configuration.
+     * @param[in] section Configuration object.
+     */
+    void UpdateFormatConfiguration(const lsp::LSPObject& section);
+
+    /**
+     * @brief Updates AngelScript engine settings from the workspace configuration.
+     * @param[in] section Configuration object.
+     * @return True if any engine setting was changed.
+     */
+    bool UpdateEngineConfiguration(const lsp::LSPObject& section);
+
+    /**
+     * @brief Updates feature toggle flags from the workspace configuration.
+     * @param[in] section Configuration object.
+     */
+    void UpdateFeatureConfiguration(const lsp::LSPObject& section);
+
+    /**
+     * @brief Updates module definitions from the workspace configuration.
+     * @param[in] section Configuration object.
+     * @return True if module list changed and requires a workspace rescan.
+     */
+    bool UpdateModulesConfiguration(const lsp::LSPObject& section);
+
+    /**
+     * @brief Updates include extension settings from configuration.
+     * @param[in] section Configuration object.
+     * @return True if include settings changed requiring a rescan.
+     */
+    bool UpdateIncludeConfiguration(const lsp::LSPObject& section);
+
+    /**
+     * @brief Updates active predefined stub and engine profile settings from configuration.
+     * @param[in] section Configuration object.
+     * @return True if predefined or engine profile changed requiring a rescan.
+     */
+    bool UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& section);
+
+    /**
+     * @brief Updates include search directories from configuration.
+     * @param[in] section Configuration object.
+     * @return True if search directories changed requiring a rescan.
+     */
+    bool UpdateSearchDirectoriesConfiguration(const lsp::LSPObject& section);
+
+    /**
+     * @brief Formats a predefined stub file requested via workspace/executeCommand.
+     * @param[in] args Command arguments containing target stub URI.
+     * @return Result value containing format status and modified text.
+     */
+    lsp::requests::Workspace_ExecuteCommand::Result
+    ExecuteFormatPredefinedStub(const std::optional<lsp::Array<lsp::LSPAny>>& args);
+
+    /**
+     * @brief Lists available predefined stubs requested via workspace/executeCommand.
+     * @return Result value containing discovered stubs list.
+     */
+    lsp::requests::Workspace_ExecuteCommand::Result ExecuteListPredefinedStubs() const;
+
+    /**
+     * @brief Bundles discovered file collections from a unified workspace filesystem walk.
+     */
+    struct WorkspaceFilesWalkResult
+    {
+        std::vector<std::string> allScriptFiles;
+        std::vector<std::string> allFileNames;
+        std::vector<std::string> discoveredStubPaths;
+    };
+
+    /**
+     * @brief Collects all script and stub files across workspace roots in a single pass.
+     * @param[in] roots Workspace root directory paths.
+     * @param[in] stopToken Cancellation token.
+     * @param[out] outFiles Container to receive discovered file paths.
+     * @return True if walk completed without cancellation.
+     */
+    bool CollectWorkspaceFiles(const std::vector<std::string>& roots, const angel_lsp::utils::StopFlag& stopToken,
+                               WorkspaceFilesWalkResult& outFiles);
+
+    /**
+     * @brief Loads engine profiles and configured stubs, then processes discovered stubs.
+     * @param[in] discoveredStubPaths Paths of stubs found during filesystem walk.
+     * @param[in] stopToken Cancellation token.
+     * @param[in,out] parser Parser instance for reading stub contents.
+     * @return True if completed without cancellation.
+     */
+    bool LoadAndProcessPredefinedStubs(const std::vector<std::string>& discoveredStubPaths,
+                                       const angel_lsp::utils::StopFlag& stopToken,
+                                       angel_lsp::parser::AngelScriptParser& parser);
+
+    /**
+     * @brief Discovers, parses, and unloads predefined stubs according to configuration.
+     * @param[in] discoveredStubPaths Paths of stubs found during filesystem walk.
+     * @param[in] configuredPaths Paths of explicitly configured stubs.
+     * @param[in] stopToken Cancellation token.
+     * @param[in,out] parser Parser instance for reading stub contents.
+     */
+    void ProcessDiscoveredPredefinedStubs(const std::vector<std::string>& discoveredStubPaths,
+                                          const std::vector<std::string>& configuredPaths,
+                                          const angel_lsp::utils::StopFlag& stopToken,
+                                          angel_lsp::parser::AngelScriptParser& parser);
+
+    /**
+     * @brief Builds include graph and indexes configured modules during workspace scan.
+     * @param[in] allScriptFiles Discovered script files.
+     * @param[in] roots Workspace root directory paths.
+     * @param[in] stopToken Cancellation token.
+     * @param[in,out] parser Parser instance for indexing module files.
+     */
+    void BuildIncludeGraphAndModules(const std::vector<std::string>& allScriptFiles,
+                                     const std::vector<std::string>& roots, const angel_lsp::utils::StopFlag& stopToken,
+                                     angel_lsp::parser::AngelScriptParser& parser);
+
+    /**
+     * @brief Handles a deleted file event reported by the watched files notification.
+     * @param[in] path Canonical filesystem path of deleted file.
+     * @param[in] uriStr Document URI key of deleted file.
+     * @param[in] isPredefined True if file is a predefined stub.
+     * @param[in,out] stubSelectionInvalidated Set to true if the deleted file was the active stub.
+     * @return True if the include graph or symbols changed.
+     */
+    bool HandleWatchedFileDeleted(const std::string& path, const std::string& uriStr, bool isPredefined,
+                                  bool& stubSelectionInvalidated);
+
+    /**
+     * @brief Handles a changed or created file event reported by the watched files notification.
+     * @param[in] path Canonical filesystem path of changed file.
+     * @param[in] isPredefined True if file is a predefined stub.
+     * @param[in,out] parser Parser instance for reading changed stub or closure.
+     * @return True if the include graph or symbols changed.
+     */
+    bool HandleWatchedFileChanged(const std::string& path, bool isPredefined,
+                                  angel_lsp::parser::AngelScriptParser& parser);
+
+    /**
+     * @brief Replaces an active predefined stub that was deleted on disk with the next candidate.
+     * @param[in,out] parser Parser instance to index replacement stub.
+     */
+    void ReplaceDeletedPredefinedStub(angel_lsp::parser::AngelScriptParser& parser);
+
+    /**
+     * @brief Refreshes include directives for all open documents after filesystem changes.
+     */
+    void RefreshOpenDocumentIncludes();
+
+    /**
      * @brief Full text of an indexed document, or nullptr when the server holds none.
      *
      * Needed by every position conversion: translating a Tree-sitter byte column into the

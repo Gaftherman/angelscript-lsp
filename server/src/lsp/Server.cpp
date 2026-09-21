@@ -96,6 +96,66 @@ lsp::DiagnosticSeverity ToProtocolSeverity(analysis::DiagnosticSeverity severity
     }
     return lsp::DiagnosticSeverity::Error;
 }
+
+/**
+ * @brief Searches for a boolean setting under direct, dot-prefixed, or fully-qualified engine keys.
+ * @param[in] initSection Configuration object section.
+ * @param[in] engineObj Nested engine configuration object if present.
+ * @param[in] name Setting property name.
+ * @return Value of the boolean setting if present.
+ */
+std::optional<bool> FindSectionBool(const lsp::LSPObject* initSection, const lsp::LSPObject* engineObj,
+                                    std::string_view name)
+{
+    if (engineObj)
+    {
+        if (const auto* val = engineObj->find(std::string(name)); val && val->isBoolean())
+        {
+            return val->boolean();
+        }
+    }
+    const std::string dotKey = "engine." + std::string(name);
+    if (const auto* val = initSection->find(dotKey); val && val->isBoolean())
+    {
+        return val->boolean();
+    }
+    const std::string fullKey = "angelscript.engine." + std::string(name);
+    if (const auto* val = initSection->find(fullKey); val && val->isBoolean())
+    {
+        return val->boolean();
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief Searches for an integer setting under direct, dot-prefixed, or fully-qualified engine keys.
+ * @param[in] initSection Configuration object section.
+ * @param[in] engineObj Nested engine configuration object if present.
+ * @param[in] name Setting property name.
+ * @return Value of the integer setting if present.
+ */
+std::optional<int> FindSectionInt(const lsp::LSPObject* initSection, const lsp::LSPObject* engineObj,
+                                  std::string_view name)
+{
+    if (engineObj)
+    {
+        if (const auto* val = engineObj->find(std::string(name)); val && val->isNumber())
+        {
+            return static_cast<int>(val->number());
+        }
+    }
+    const std::string dotKey = "engine." + std::string(name);
+    if (const auto* val = initSection->find(dotKey); val && val->isNumber())
+    {
+        return static_cast<int>(val->number());
+    }
+    const std::string fullKey = "angelscript.engine." + std::string(name);
+    if (const auto* val = initSection->find(fullKey); val && val->isNumber())
+    {
+        return static_cast<int>(val->number());
+    }
+    return std::nullopt;
+}
 } // namespace
 
 Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& stream)
@@ -276,122 +336,81 @@ void Server::Run()
     }
 }
 
-lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::requests::Initialize::Params&& params)
+void Server::ExtractInitialWorkspaceRoots(const lsp::requests::Initialize::Params& params)
 {
+    std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+    if (params.workspaceFolders.has_value() && !params.workspaceFolders.value().isNull())
     {
-        std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-        if (params.workspaceFolders.has_value() && !params.workspaceFolders.value().isNull())
+        for (const auto& workspace : params.workspaceFolders.value().value())
         {
-            for (const auto& workspace : params.workspaceFolders.value().value())
+            const std::string fsPath = workspace.uri.fsPath();
+            if (!fsPath.empty())
             {
-                const std::string fsPath = workspace.uri.fsPath();
-                if (!fsPath.empty())
-                {
-                    m_workspacesRoot.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(fsPath));
-                }
-            }
-        }
-
-        if (m_workspacesRoot.empty())
-        {
-            std::string root;
-            if (!params.rootUri.isNull())
-            {
-                root = params.rootUri.value().fsPath();
-                if (root.empty())
-                {
-                    root = angel_lsp::utils::UriToPath(params.rootUri.value().toString());
-                }
-            }
-            if (root.empty() && params.rootPath.has_value() && !params.rootPath.value().isNull())
-            {
-                root = angel_lsp::utils::UriToPath(params.rootPath.value().value());
-            }
-            if (!root.empty())
-            {
-                m_workspacesRoot.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(root));
+                m_workspacesRoot.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(fsPath));
             }
         }
     }
 
-    if (params.initializationOptions.has_value() && params.initializationOptions->isObject())
+    if (m_workspacesRoot.empty())
     {
-        const lsp::LSPObject* initSection = &params.initializationOptions->object();
-        if (const auto* nested = initSection->find("angelscript"); nested && nested->isObject())
+        std::string root;
+        if (!params.rootUri.isNull())
         {
-            initSection = &nested->object();
-        }
-        const lsp::LSPObject* engineObj = nullptr;
-        if (const auto* e = initSection->find("engine"); e && e->isObject())
-        {
-            engineObj = &e->object();
-        }
-
-        auto getInitBool = [&](std::string_view name) -> std::optional<bool>
-        {
-            if (engineObj)
+            root = params.rootUri.value().fsPath();
+            if (root.empty())
             {
-                if (const auto* val = engineObj->find(std::string(name)); val && val->isBoolean())
-                    return val->boolean();
+                root = angel_lsp::utils::UriToPath(params.rootUri.value().toString());
             }
-            std::string dotKey = "engine." + std::string(name);
-            if (const auto* val = initSection->find(dotKey); val && val->isBoolean())
-                return val->boolean();
-            std::string fullKey = "angelscript.engine." + std::string(name);
-            if (const auto* val = initSection->find(fullKey); val && val->isBoolean())
-                return val->boolean();
-            return std::nullopt;
-        };
-
-        auto getInitInt = [&](std::string_view name) -> std::optional<int>
+        }
+        if (root.empty() && params.rootPath.has_value() && !params.rootPath.value().isNull())
         {
-            if (engineObj)
-            {
-                if (const auto* val = engineObj->find(std::string(name)); val && val->isNumber())
-                    return static_cast<int>(val->number());
-            }
-            std::string dotKey = "engine." + std::string(name);
-            if (const auto* val = initSection->find(dotKey); val && val->isNumber())
-                return static_cast<int>(val->number());
-            std::string fullKey = "angelscript.engine." + std::string(name);
-            if (const auto* val = initSection->find(fullKey); val && val->isNumber())
-                return static_cast<int>(val->number());
-            return std::nullopt;
-        };
+            root = angel_lsp::utils::UriToPath(params.rootPath.value().value());
+        }
+        if (!root.empty())
+        {
+            m_workspacesRoot.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(root));
+        }
+    }
+}
 
-        if (auto v = getInitBool("foreachSupport"))
-            m_config.engine.foreachSupport = *v;
-        if (auto v = getInitBool("requireEnumScope"))
-            m_config.engine.requireEnumScope = *v;
-        if (auto v = getInitBool("alwaysImplDefaultConstruct"))
-            m_config.engine.alwaysImplDefaultConstruct = *v;
-        if (auto v = getInitBool("allowUnicodeIdentifiers"))
-            m_config.engine.allowUnicodeIdentifiers = *v;
-        if (auto v = getInitBool("ignoreDuplicateSharedIntf"))
-            m_config.engine.ignoreDuplicateSharedIntf = *v;
-        if (auto v = getInitInt("compilerWarnings"))
-            m_config.engine.compilerWarnings = *v;
+void Server::ApplyEngineInitializationOptions(const std::optional<lsp::LSPAny>& initOpts)
+{
+    if (!initOpts.has_value() || !initOpts->isObject())
+    {
+        return;
     }
 
-    m_i18n = std::make_unique<angel_lsp::i18n::I18n>(
-        params.locale.value_or(m_config.info.locale.empty() ? "en" : m_config.info.locale));
+    const lsp::LSPObject* initSection = &initOpts->object();
+    if (const auto* nested = initSection->find("angelscript"); nested && nested->isObject())
+    {
+        initSection = &nested->object();
+    }
+    const lsp::LSPObject* engineObj = nullptr;
+    if (const auto* e = initSection->find("engine"); e && e->isObject())
+    {
+        engineObj = &e->object();
+    }
 
-    lsp::requests::Initialize::Result result;
+    if (auto v = FindSectionBool(initSection, engineObj, "foreachSupport"))
+        m_config.engine.foreachSupport = *v;
+    if (auto v = FindSectionBool(initSection, engineObj, "requireEnumScope"))
+        m_config.engine.requireEnumScope = *v;
+    if (auto v = FindSectionBool(initSection, engineObj, "alwaysImplDefaultConstruct"))
+        m_config.engine.alwaysImplDefaultConstruct = *v;
+    if (auto v = FindSectionBool(initSection, engineObj, "allowUnicodeIdentifiers"))
+        m_config.engine.allowUnicodeIdentifiers = *v;
+    if (auto v = FindSectionBool(initSection, engineObj, "ignoreDuplicateSharedIntf"))
+        m_config.engine.ignoreDuplicateSharedIntf = *v;
+    if (auto v = FindSectionInt(initSection, engineObj, "compilerWarnings"))
+        m_config.engine.compilerWarnings = *v;
+}
 
-    lsp::ServerInfo info;
-    info.name = m_config.info.name;
-    info.version = m_config.info.version;
-    result.serverInfo = info;
-
-    // Position encoding negotiation. Tree-sitter reports columns in bytes, so UTF-8 lets every
-    // conversion in utils/PositionEncoding.h short-circuit to an identity. UTF-16 is the
-    // protocol default and the only encoding a server may assume when the client offers none,
-    // so that is what we fall back to - and then every position crossing this boundary has to
-    // be converted (see EncodeRange / DecodePosition below).
+void Server::NegotiateClientCapabilities(const lsp::ClientCapabilities& capabilities)
+{
     m_positionEncoding = angel_lsp::utils::PositionEncoding::Utf16;
-    if (params.capabilities.general.has_value() && params.capabilities.general->positionEncodings.has_value())
+    if (capabilities.general.has_value() && capabilities.general->positionEncodings.has_value())
     {
-        for (const auto& offered : params.capabilities.general->positionEncodings.value())
+        for (const auto& offered : capabilities.general->positionEncodings.value())
         {
             if (offered == lsp::PositionEncodingKind::UTF8)
             {
@@ -401,31 +420,239 @@ lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::request
         }
     }
 
-    if (params.capabilities.window.has_value() && params.capabilities.window->workDoneProgress.has_value())
+    if (capabilities.window.has_value() && capabilities.window->workDoneProgress.has_value())
     {
-        m_workDoneProgressSupport = params.capabilities.window->workDoneProgress.value();
+        m_workDoneProgressSupport = capabilities.window->workDoneProgress.value();
     }
 
-    // Which of the two diagnostic models this client wants. See m_clientPullsDiagnostics.
     m_clientPullsDiagnostics =
-        params.capabilities.textDocument.has_value() && params.capabilities.textDocument->diagnostic.has_value();
+        capabilities.textDocument.has_value() && capabilities.textDocument->diagnostic.has_value();
 
-    m_clientSupportsDiagnosticRefresh = params.capabilities.workspace.has_value() &&
-                                        params.capabilities.workspace->diagnostics.has_value() &&
-                                        params.capabilities.workspace->diagnostics->refreshSupport.has_value() &&
-                                        params.capabilities.workspace->diagnostics->refreshSupport.value();
+    m_clientSupportsDiagnosticRefresh = capabilities.workspace.has_value() &&
+                                        capabilities.workspace->diagnostics.has_value() &&
+                                        capabilities.workspace->diagnostics->refreshSupport.has_value() &&
+                                        capabilities.workspace->diagnostics->refreshSupport.value();
 
-    if (params.capabilities.textDocument.has_value() && params.capabilities.textDocument->completion.has_value() &&
-        params.capabilities.textDocument->completion->completionItem.has_value() &&
-        params.capabilities.textDocument->completion->completionItem->snippetSupport.has_value())
+    if (capabilities.textDocument.has_value() && capabilities.textDocument->completion.has_value() &&
+        capabilities.textDocument->completion->completionItem.has_value() &&
+        capabilities.textDocument->completion->completionItem->snippetSupport.has_value())
     {
-        m_snippetSupport = params.capabilities.textDocument->completion->completionItem->snippetSupport.value();
+        m_snippetSupport = capabilities.textDocument->completion->completionItem->snippetSupport.value();
+    }
+}
+
+void Server::ConfigureNavigationAndEditingCapabilities(lsp::ServerCapabilities& caps) const
+{
+    if (m_config.features.enableHover)
+    {
+        caps.hoverProvider = true;
     }
 
-    const bool useUtf8 = m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8;
-    result.capabilities.positionEncoding = useUtf8 ? lsp::PositionEncodingKind::UTF8 : lsp::PositionEncodingKind::UTF16;
-    LogInfo(fmt::format("Negotiated position encoding: {}", useUtf8 ? "utf-8" : "utf-16"));
-    m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
+    if (m_config.features.enableDefinition)
+    {
+        caps.definitionProvider = true;
+        caps.typeDefinitionProvider = true;
+        caps.declarationProvider = true;
+        caps.monikerProvider = true;
+    }
+
+    if (m_config.features.enableImplementation)
+    {
+        caps.implementationProvider = true;
+    }
+
+    if (m_config.features.enableSelectionRange)
+    {
+        caps.selectionRangeProvider = true;
+    }
+
+    if (m_config.features.enableCallHierarchy)
+    {
+        caps.callHierarchyProvider = true;
+    }
+
+    if (m_config.features.enableTypeHierarchy)
+    {
+        caps.typeHierarchyProvider = true;
+    }
+
+    if (m_config.features.enableLinkedEditing)
+    {
+        caps.linkedEditingRangeProvider = true;
+    }
+
+    if (m_config.features.enableCodeLens)
+    {
+        lsp::CodeLensOptions codeLensOpts;
+        codeLensOpts.resolveProvider = true;
+        caps.codeLensProvider = codeLensOpts;
+    }
+}
+
+void Server::ConfigureEditingAndSymbolCapabilities(lsp::ServerCapabilities& caps) const
+{
+    if (m_config.features.enableCompletion)
+    {
+        lsp::CompletionOptions completionOpts;
+        completionOpts.triggerCharacters = lsp::Array<lsp::String>{".", ":"};
+        completionOpts.resolveProvider = true;
+        caps.completionProvider = completionOpts;
+    }
+
+    if (m_config.features.enableSemanticTokens)
+    {
+        lsp::SemanticTokensOptions semOpts;
+        semOpts.legend = features::GetSemanticTokensLegend();
+        lsp::SemanticTokensFullDelta fullDelta;
+        fullDelta.delta = true;
+        semOpts.full = fullDelta;
+        semOpts.range = true;
+        caps.semanticTokensProvider = semOpts;
+    }
+
+    if (m_config.features.enableSignatureHelp)
+    {
+        lsp::SignatureHelpOptions sigOpts;
+        sigOpts.triggerCharacters = lsp::Array<lsp::String>{"(", ","};
+        caps.signatureHelpProvider = sigOpts;
+    }
+
+    if (m_config.features.enableDocumentSymbols)
+    {
+        caps.documentSymbolProvider = true;
+    }
+
+    if (m_config.features.enableWorkspaceSymbols)
+    {
+        lsp::WorkspaceSymbolOptions wsOpts;
+        wsOpts.resolveProvider = true;
+        caps.workspaceSymbolProvider = wsOpts;
+    }
+
+    if (m_config.features.enableReferences)
+    {
+        caps.referencesProvider = true;
+    }
+
+    if (m_config.features.enableRename)
+    {
+        lsp::RenameOptions renameOpts;
+        renameOpts.prepareProvider = true;
+        caps.renameProvider = renameOpts;
+    }
+
+    if (m_config.features.enableDocumentHighlight)
+    {
+        caps.documentHighlightProvider = true;
+    }
+
+    if (m_config.features.enableFoldingRange)
+    {
+        caps.foldingRangeProvider = true;
+    }
+
+    if (m_config.features.enableInlayHints)
+    {
+        lsp::InlayHintOptions inlayOpts;
+        inlayOpts.resolveProvider = true;
+        caps.inlayHintProvider = inlayOpts;
+    }
+}
+
+void Server::ConfigureFormattingAndDiagnosticCapabilities(lsp::ServerCapabilities& caps) const
+{
+    if (m_config.features.enableCodeAction)
+    {
+        lsp::CodeActionOptions codeActionOpts;
+        codeActionOpts.resolveProvider = true;
+        codeActionOpts.codeActionKinds =
+            lsp::Array<lsp::CodeActionKindEnum>{lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix),
+                                                lsp::CodeActionKindEnum(lsp::CodeActionKind::Refactor),
+                                                lsp::CodeActionKindEnum(lsp::CodeActionKind::RefactorExtract),
+                                                lsp::CodeActionKindEnum(lsp::CodeActionKind::SourceOrganizeImports)};
+        caps.codeActionProvider = codeActionOpts;
+    }
+
+    if (m_config.features.enableFormatting)
+    {
+        caps.documentFormattingProvider = true;
+        lsp::DocumentRangeFormattingOptions rangeOpts;
+        rangeOpts.rangesSupport = true;
+        caps.documentRangeFormattingProvider = rangeOpts;
+    }
+
+    if (m_config.features.enableOnTypeFormatting)
+    {
+        lsp::DocumentOnTypeFormattingOptions onTypeOpts;
+        onTypeOpts.firstTriggerCharacter = ";";
+        onTypeOpts.moreTriggerCharacter = lsp::Array<lsp::String>{"}", "\n"};
+        caps.documentOnTypeFormattingProvider = onTypeOpts;
+    }
+
+    if (m_config.features.enableDocumentLink)
+    {
+        lsp::DocumentLinkOptions linkOpts;
+        linkOpts.resolveProvider = true;
+        caps.documentLinkProvider = linkOpts;
+    }
+
+    if (m_config.features.enablePullDiagnostics)
+    {
+        lsp::DiagnosticOptions diagnosticOpts;
+        diagnosticOpts.identifier = std::string("angelscript");
+        diagnosticOpts.interFileDependencies = true;
+        diagnosticOpts.workspaceDiagnostics = true;
+        caps.diagnosticProvider = diagnosticOpts;
+    }
+}
+
+void Server::ConfigureWorkspaceCapabilities(lsp::ServerCapabilities& caps) const
+{
+    lsp::WorkspaceFoldersServerCapabilities folderCaps;
+    folderCaps.supported = true;
+    folderCaps.changeNotifications = true;
+
+    lsp::WorkspaceOptions workspaceOpts;
+    workspaceOpts.workspaceFolders = folderCaps;
+
+    lsp::FileOperationPattern scriptPattern;
+    scriptPattern.glob = fmt::format("**/*{}", m_config.info.fileExtension);
+
+    lsp::FileOperationFilter scriptFilter;
+    scriptFilter.pattern = scriptPattern;
+    scriptFilter.scheme = std::string("file");
+
+    lsp::FileOperationRegistrationOptions registration;
+    registration.filters = lsp::Array<lsp::FileOperationFilter>{scriptFilter};
+
+    lsp::FileOperationOptions fileOps;
+    fileOps.didCreate = registration;
+    fileOps.didRename = registration;
+    fileOps.didDelete = registration;
+    workspaceOpts.fileOperations = fileOps;
+
+    lsp::TextDocumentContentOptions contentOpts;
+    lsp::Array<lsp::String> schemes{"angelscript-predefined"};
+    if (m_config.features.enableVirtualMixinDocuments)
+    {
+        schemes.push_back("angelscript-virtual");
+    }
+    contentOpts.schemes = schemes;
+    workspaceOpts.textDocumentContent = contentOpts;
+
+    caps.workspace = workspaceOpts;
+
+    lsp::ExecuteCommandOptions cmdOpts;
+    cmdOpts.commands = lsp::Array<lsp::String>{"angelscript.rescanWorkspace", "angelscript.listPredefinedStubs"};
+    caps.executeCommandProvider = cmdOpts;
+}
+
+lsp::ServerCapabilities Server::BuildServerCapabilities() const
+{
+    lsp::ServerCapabilities caps;
+    caps.positionEncoding = (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+                                ? lsp::PositionEncodingKind::UTF8
+                                : lsp::PositionEncodingKind::UTF16;
 
     lsp::TextDocumentSyncOptions sync;
     sync.openClose = true;
@@ -436,244 +663,36 @@ lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::request
     lsp::SaveOptions saveOptions;
     saveOptions.includeText = true;
     sync.save = saveOptions;
+    caps.textDocumentSync = sync;
 
-    result.capabilities.textDocumentSync = sync;
+    ConfigureNavigationAndEditingCapabilities(caps);
+    ConfigureEditingAndSymbolCapabilities(caps);
+    ConfigureFormattingAndDiagnosticCapabilities(caps);
+    ConfigureWorkspaceCapabilities(caps);
 
-    if (m_config.features.enableHover)
-    {
-        result.capabilities.hoverProvider = true;
-    }
+    return caps;
+}
 
-    if (m_config.features.enableDefinition)
-    {
-        result.capabilities.definitionProvider = true;
-        result.capabilities.typeDefinitionProvider = true;
+lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::requests::Initialize::Params&& params)
+{
+    ExtractInitialWorkspaceRoots(params);
+    ApplyEngineInitializationOptions(params.initializationOptions);
 
-        // AngelScript has no declaration/definition split - no headers, no prototypes, which
-        // is the whole reason as-err-missing-body exists - so "Go to Declaration" is the same
-        // question as "Go to Definition" and is answered by the same handler. Announcing it
-        // costs nothing and stops the editor's second navigation key doing nothing at all.
-        result.capabilities.declarationProvider = true;
+    m_i18n = std::make_unique<angel_lsp::i18n::I18n>(
+        params.locale.value_or(m_config.info.locale.empty() ? "en" : m_config.info.locale));
 
-        // A moniker is the same lookup as a definition, so it lives and dies with that
-        // switch rather than getting one of its own.
-        result.capabilities.monikerProvider = true;
-    }
+    NegotiateClientCapabilities(params.capabilities);
 
-    if (m_config.features.enableImplementation)
-    {
-        result.capabilities.implementationProvider = true;
-    }
+    const bool useUtf8 = (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8);
+    LogInfo(fmt::format("Negotiated position encoding: {}", useUtf8 ? "utf-8" : "utf-16"));
+    m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
 
-    if (m_config.features.enableSelectionRange)
-    {
-        result.capabilities.selectionRangeProvider = true;
-    }
-
-    if (m_config.features.enableCallHierarchy)
-    {
-        result.capabilities.callHierarchyProvider = true;
-    }
-
-    if (m_config.features.enableTypeHierarchy)
-    {
-        result.capabilities.typeHierarchyProvider = true;
-    }
-
-    if (m_config.features.enableLinkedEditing)
-    {
-        result.capabilities.linkedEditingRangeProvider = true;
-    }
-
-    if (m_config.features.enableCodeLens)
-    {
-        lsp::CodeLensOptions codeLensOpts;
-        codeLensOpts.resolveProvider = true;
-        result.capabilities.codeLensProvider = codeLensOpts;
-    }
-
-    if (m_config.features.enableCompletion)
-    {
-        lsp::CompletionOptions completionOpts;
-        // The spec requires single characters: a two-character "::" never fires, and AngelScript
-        // has no "->" operator at all. Typing the first ":" of "::" is what has to trigger.
-        completionOpts.triggerCharacters = lsp::Array<lsp::String>{".", ":"};
-        // Documentation is attached on demand: reading the doc comment above a declaration
-        // means finding its file and re-scanning lines, and a completion list is hundreds of
-        // items of which the user reads one.
-        completionOpts.resolveProvider = true;
-        result.capabilities.completionProvider = completionOpts;
-    }
-
-    if (m_config.features.enableSemanticTokens)
-    {
-        lsp::SemanticTokensOptions semOpts;
-        semOpts.legend = features::GetSemanticTokensLegend();
-        // Delta rather than a plain full: the payload is five integers per token, and a typing
-        // session would otherwise re-send every one of them on each keystroke.
-        lsp::SemanticTokensFullDelta fullDelta;
-        fullDelta.delta = true;
-        semOpts.full = fullDelta;
-        // Lets the editor ask for just the visible viewport instead of the whole file, which is
-        // the difference between re-tokenising a 3000-line script and re-tokenising 50 lines.
-        semOpts.range = true;
-        result.capabilities.semanticTokensProvider = semOpts;
-    }
-
-    if (m_config.features.enableSignatureHelp)
-    {
-        lsp::SignatureHelpOptions sigOpts;
-        sigOpts.triggerCharacters = lsp::Array<lsp::String>{"(", ","};
-        result.capabilities.signatureHelpProvider = sigOpts;
-    }
-
-    if (m_config.features.enableDocumentSymbols)
-    {
-        result.capabilities.documentSymbolProvider = true;
-    }
-
-    if (m_config.features.enableWorkspaceSymbols)
-    {
-        lsp::WorkspaceSymbolOptions wsOpts;
-        wsOpts.resolveProvider = true;
-        result.capabilities.workspaceSymbolProvider = wsOpts;
-    }
-
-    if (m_config.features.enableReferences)
-    {
-        result.capabilities.referencesProvider = true;
-    }
-
-    if (m_config.features.enableRename)
-    {
-        lsp::RenameOptions renameOpts;
-        renameOpts.prepareProvider = true;
-        result.capabilities.renameProvider = renameOpts;
-    }
-
-    if (m_config.features.enableDocumentHighlight)
-    {
-        result.capabilities.documentHighlightProvider = true;
-    }
-
-    if (m_config.features.enableFoldingRange)
-    {
-        result.capabilities.foldingRangeProvider = true;
-    }
-
-    if (m_config.features.enableInlayHints)
-    {
-        lsp::InlayHintOptions inlayOpts;
-        inlayOpts.resolveProvider = true;
-        result.capabilities.inlayHintProvider = inlayOpts;
-    }
-
-    if (m_config.features.enableCodeAction)
-    {
-        lsp::CodeActionOptions codeActionOpts;
-        codeActionOpts.resolveProvider = true;
-        codeActionOpts.codeActionKinds =
-            lsp::Array<lsp::CodeActionKindEnum>{lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix),
-                                                lsp::CodeActionKindEnum(lsp::CodeActionKind::Refactor),
-                                                lsp::CodeActionKindEnum(lsp::CodeActionKind::RefactorExtract),
-                                                lsp::CodeActionKindEnum(lsp::CodeActionKind::SourceOrganizeImports)};
-        result.capabilities.codeActionProvider = codeActionOpts;
-    }
-
-    if (m_config.features.enableFormatting)
-    {
-        result.capabilities.documentFormattingProvider = true;
-        lsp::DocumentRangeFormattingOptions rangeOpts;
-        rangeOpts.rangesSupport = true;
-        result.capabilities.documentRangeFormattingProvider = rangeOpts;
-    }
-
-    if (m_config.features.enableOnTypeFormatting)
-    {
-        lsp::DocumentOnTypeFormattingOptions onTypeOpts;
-        onTypeOpts.firstTriggerCharacter = ";";
-        onTypeOpts.moreTriggerCharacter = lsp::Array<lsp::String>{"}", "\n"};
-        result.capabilities.documentOnTypeFormattingProvider = onTypeOpts;
-    }
-
-    if (m_config.features.enableDocumentLink)
-    {
-        lsp::DocumentLinkOptions linkOpts;
-        linkOpts.resolveProvider = true;
-        result.capabilities.documentLinkProvider = linkOpts;
-    }
-
-    // Pull diagnostics alongside the push ones, not instead of them. A client that supports
-    // pull uses it and ignores the notifications; one that does not never sends the request.
-    // Announcing both is what lets the same server serve either.
-    //
-    // interFileDependencies is true and it is not a formality: an `#include` changes the
-    // diagnostics of every file including it, which is exactly the case the flag exists for.
-    // workspaceDiagnostics reports what has already been analysed - see the handler.
-    if (m_config.features.enablePullDiagnostics)
-    {
-        lsp::DiagnosticOptions diagnosticOpts;
-        diagnosticOpts.identifier = std::string("angelscript");
-        diagnosticOpts.interFileDependencies = true;
-        diagnosticOpts.workspaceDiagnostics = true;
-        result.capabilities.diagnosticProvider = diagnosticOpts;
-    }
-
-    // Announced unconditionally: both the include graph and the predefined-stub scan are scoped
-    // to the known roots, so a folder added mid-session has to reach the server whatever else
-    // is switched off.
-    lsp::WorkspaceFoldersServerCapabilities folderCaps;
-    folderCaps.supported = true;
-    folderCaps.changeNotifications = true;
-
-    lsp::WorkspaceOptions workspaceOpts;
-    workspaceOpts.workspaceFolders = folderCaps;
-
-    // Renames and deletions of script files. Announced with a filter so the editor does not
-    // wake this server for every file in the repository - it is only ever interested in the
-    // ones the include graph can hold.
-    //
-    // The three `did` operations. The `will` variants are REQUESTS, and answering one blocks
-    // the rename in the editor until the server replies. A rename that pauses because a
-    // language server is thinking is a worse experience than one whose #include fixup arrives a
-    // moment later, and nothing here needs to veto the operation.
-    {
-        lsp::FileOperationPattern scriptPattern;
-        scriptPattern.glob = fmt::format("**/*{}", m_config.info.fileExtension);
-
-        lsp::FileOperationFilter scriptFilter;
-        scriptFilter.pattern = scriptPattern;
-        scriptFilter.scheme = std::string("file");
-
-        lsp::FileOperationRegistrationOptions registration;
-        registration.filters = lsp::Array<lsp::FileOperationFilter>{scriptFilter};
-
-        lsp::FileOperationOptions fileOps;
-        fileOps.didCreate = registration;
-        fileOps.didRename = registration;
-        fileOps.didDelete = registration;
-        workspaceOpts.fileOperations = fileOps;
-    }
-
-    // Read-only virtual documents under one scheme, so a user can open the predefined stub their
-    // workspace is analysed against. It often lives outside the workspace and is otherwise
-    // unopenable, which makes every "unknown type" impossible to check by hand.
-    {
-        lsp::TextDocumentContentOptions contentOpts;
-        lsp::Array<lsp::String> schemes{"angelscript-predefined"};
-        if (m_config.features.enableVirtualMixinDocuments)
-        {
-            schemes.push_back("angelscript-virtual");
-        }
-        contentOpts.schemes = schemes;
-        workspaceOpts.textDocumentContent = contentOpts;
-    }
-
-    result.capabilities.workspace = workspaceOpts;
-
-    lsp::ExecuteCommandOptions cmdOpts;
-    cmdOpts.commands = lsp::Array<lsp::String>{"angelscript.rescanWorkspace", "angelscript.listPredefinedStubs"};
-    result.capabilities.executeCommandProvider = cmdOpts;
+    lsp::requests::Initialize::Result result;
+    lsp::ServerInfo info;
+    info.name = m_config.info.name;
+    info.version = m_config.info.version;
+    result.serverInfo = info;
+    result.capabilities = BuildServerCapabilities();
 
     return result;
 }

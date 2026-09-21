@@ -161,214 +161,104 @@ void Server::EndWorkspaceProgress(const std::string& message)
     m_workspaceProgressToken.clear();
 }
 
-void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
+bool Server::CollectWorkspaceFiles(const std::vector<std::string>& roots, const angel_lsp::utils::StopFlag& stopToken,
+                                   WorkspaceFilesWalkResult& outFiles)
 {
-    // Snapshotted once, up front. This runs on the workspace thread while the message loop is
-    // free to add or remove a folder, and iterating the live vector while it reallocates is a
-    // use-after-free - the stop-and-restart in RestartWorkspaceScan happens after the mutation,
-    // not before, so it never protected this.
-    const std::vector<std::string> workspaceRoots = WorkspaceRoots();
-    const auto searchDirectories = SearchDirectories();
-
-    // The #include graph is what decides which files get indexed alongside an opened document,
-    // so it is built regardless of the predefined-stub loader below. Only directives are parsed
-    // here, never the AST, which is what keeps a full-workspace scan affordable at startup.
-    std::vector<std::string> roots;
-    roots.reserve(workspaceRoots.size());
-    for (const auto& workspaceRoot : workspaceRoots)
-        roots.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
-
-    // A rescan is the moment a remembered directory may have moved - a folder rename, a
-    // settings change and a workspace-folder change all end here. Forgetting first is what keeps
-    // the startup cache's stale-entry cost bounded rather than permanent.
-    angel_lsp::utils::IncludeResolver::ForgetCanonicalDirectories();
-
-    BeginWorkspaceProgress("AngelScript: indexing workspace");
-    ReportWorkspaceProgress("Building the include graph", 0);
-
-    const PhaseTimer scanTimer(m_logger.get(), "workspace scan (total)");
-
-    // Everything opened before this scan finishes was judged against a table that did not yet
-    // hold the host API - a user opens a file, the server starts, the stub loads 400 ms later,
-    // and every type it declares stays "Unknown type" until the next keystroke. Measured on a
-    // real Sven Co-op project: 258 diagnostics on code that builds, every one of them this.
-    //
-    // On a guard rather than a line at the bottom, because this function has five early
-    // returns - cancellation, a disabled loader, a stop between phases - and a call at the end
-    // is reached by exactly one of them. The cancelled paths are the ones that most need it: a
-    // scan that gave up still leaves every open document judged against the empty table.
-    //
-    // Not ReanalyseOpenDocuments: that reads m_openDocuments, which belongs to the message
-    // loop, and reading it from here corrupted the heap within one run. This reads the
-    // snapshot and only schedules; the analysis thread does the work.
-    struct ReanalyseOnExit
-    {
-        Server* server;
-        ~ReanalyseOnExit()
+    PhaseTimer walkTimer(m_logger.get(), "unified workspace walk");
+    return angel_lsp::utils::ForEachWorkspaceFile(
+        roots, m_config.exclude, [&stopToken]() { return stopToken.stop_requested(); },
+        [&](const std::filesystem::directory_entry& entry)
         {
-            server->m_workspaceScanComplete.store(true);
-            server->ScheduleOpenDocumentsForReanalysis();
-        }
-    } reanalyseOnExit{this};
-    std::optional<PhaseTimer> phase;
+            const std::string pathStr = entry.path().string();
+            outFiles.allFileNames.push_back(entry.path().filename().string());
 
-    angel_lsp::parser::AngelScriptParser backgroundParser(m_logger.get());
-
-    // Unified workspace walk: collect ALL relevant file paths in a single pass rather than
-    // walking the directory tree up to three times (profile detection, stub discovery,
-    // include graph). On a workspace with 300 files and deep directories, each walk costs
-    // 2-5 seconds of sequential I/O.
-    std::vector<std::string> allScriptFiles;
-    std::vector<std::string> allFileNames;
-    std::vector<std::string> discoveredStubPaths;
-
-    {
-        PhaseTimer walkTimer(m_logger.get(), "unified workspace walk");
-        const bool walkCompleted = angel_lsp::utils::ForEachWorkspaceFile(
-            roots, m_config.exclude, [&stopToken]() { return stopToken.stop_requested(); },
-            [&](const std::filesystem::directory_entry& entry)
+            if (angel_lsp::utils::IsPredefinedFile(pathStr, m_config.info.predefinedFileExtension))
             {
-                const std::string pathStr = entry.path().string();
-                allFileNames.push_back(entry.path().filename().string());
-
-                if (angel_lsp::utils::IsPredefinedFile(pathStr, m_config.info.predefinedFileExtension))
-                {
-                    discoveredStubPaths.push_back(angel_lsp::utils::IncludeResolver::NormalizeWalkedPath(entry.path()));
-                }
-                else if (!m_config.info.fileExtension.empty() &&
-                         std::string_view(pathStr).ends_with(m_config.info.fileExtension))
-                {
-                    allScriptFiles.push_back(angel_lsp::utils::IncludeResolver::NormalizeWalkedPath(entry.path()));
-                }
-            });
-
-        if (!walkCompleted)
-        {
-            EndWorkspaceProgress("Cancelled");
-            return;
-        }
-    }
-
-    if (m_config.features.enablePredefinedLoader)
-    {
-        // Built-in predefined engine profiles (e.g. Standard, SvenCoop, Urho3D, OpenXRay, OOTP)
-        ReportWorkspaceProgress("Loading engine profiles", 15);
-        phase.emplace(m_logger.get(), "built-in engine profiles");
-        LoadBuiltinEngineProfiles(backgroundParser, stopToken);
-
-        if (stopToken.stop_requested())
-        {
-            EndWorkspaceProgress("Cancelled");
-            return;
-        }
-
-        // Explicitly configured stubs first. A host application's declarations usually ship with
-        // the application, not with the scripts, so the scan below - which only ever walks
-        // workspace folders - would never find them. ParserPredefined de-duplicates by canonical
-        // path, so a stub that also happens to live inside the workspace is not indexed twice.
-        ReportWorkspaceProgress("Loading predefined stubs", 30);
-        phase.emplace(m_logger.get(), "configured predefined stubs");
-        const std::vector<std::string> configuredPaths = LoadConfiguredPredefinedFiles(backgroundParser, stopToken);
-
-        phase.emplace(m_logger.get(), "workspace stub discovery");
-
-        try
-        {
-            std::vector<std::string> rootPaths;
-            rootPaths.reserve(workspaceRoots.size());
-            for (const auto& workspaceRoot : workspaceRoots)
-                rootPaths.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
-
-            // Compared as canonical paths, never as text. The setting arrives with whatever
-            // spelling the client used and the walk produces the filesystem's own - different case,
-            // different separators, a percent-encoded drive letter. This project already carries
-            // m_clientUriByKey because that difference bit it once.
-            // "all" is a request, not a path: it asks for the old behaviour of loading every stub
-            // the walk finds. Spelled out rather than left as the empty default because merging two
-            // stubs that both declare `string` resolves that name twice, and a user who wants that
-            // should have said so.
-            const bool mergeAll = m_config.activePredefined == "all";
-
-            const std::string activePath =
-                (m_config.activePredefined.empty() || mergeAll)
-                    ? std::string()
-                    : angel_lsp::utils::IncludeResolver::NormalizePath(m_config.activePredefined);
-
-            std::vector<std::string> discovered;
-
-            // Every stub this scan decides is still in force. Anything loaded that is not in here
-            // is released at the end - see UnloadUnselectedPredefinedStubs.
-            std::vector<std::string> wantedPaths = configuredPaths;
-
-            for (const std::string& path : discoveredStubPaths)
+                outFiles.discoveredStubPaths.push_back(
+                    angel_lsp::utils::IncludeResolver::NormalizeWalkedPath(entry.path()));
+            }
+            else if (!m_config.info.fileExtension.empty() &&
+                     std::string_view(pathStr).ends_with(m_config.info.fileExtension))
             {
-                if (stopToken.stop_requested())
-                {
-                    EndWorkspaceProgress("Cancelled");
-                    return;
-                }
+                outFiles.allScriptFiles.push_back(angel_lsp::utils::IncludeResolver::NormalizeWalkedPath(entry.path()));
+            }
+        });
+}
 
-                discovered.push_back(path);
+void Server::ProcessDiscoveredPredefinedStubs(const std::vector<std::string>& discoveredStubPaths,
+                                              const std::vector<std::string>& configuredPaths,
+                                              const angel_lsp::utils::StopFlag& stopToken,
+                                              angel_lsp::parser::AngelScriptParser& parser)
+{
+    try
+    {
+        const bool mergeAll = (m_config.activePredefined == "all");
+        const std::string activePath =
+            (m_config.activePredefined.empty() || mergeAll)
+                ? std::string()
+                : angel_lsp::utils::IncludeResolver::NormalizePath(m_config.activePredefined);
 
-                if (!activePath.empty())
-                {
-                    if (PathsAreSameFile(path, activePath))
-                    {
-                        ParserPredefined(path, backgroundParser);
-                        wantedPaths.push_back(path);
-                    }
-                    continue;
-                }
+        std::vector<std::string> discovered;
+        std::vector<std::string> wantedPaths = configuredPaths;
 
-                if (mergeAll)
+        for (const std::string& path : discoveredStubPaths)
+        {
+            if (stopToken.stop_requested())
+            {
+                return;
+            }
+
+            discovered.push_back(path);
+
+            if (!activePath.empty())
+            {
+                if (PathsAreSameFile(path, activePath))
                 {
-                    ParserPredefined(path, backgroundParser);
+                    ParserPredefined(path, parser);
                     wantedPaths.push_back(path);
                 }
+                continue;
             }
 
-            // Sorted so the pick below is the same on every machine and every run. Directory
-            // iteration order is not specified, and a stub that wins on one developer's disk and
-            // loses on another's is the worst possible version of this feature.
-            std::sort(discovered.begin(), discovered.end());
-
-            std::string autoSelected;
-            if (activePath.empty() && !mergeAll && !discovered.empty())
+            if (mergeAll)
             {
-                autoSelected = discovered.front();
-                ParserPredefined(autoSelected, backgroundParser);
-                wantedPaths.push_back(autoSelected);
+                ParserPredefined(path, parser);
+                wantedPaths.push_back(path);
             }
-
-            {
-                std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-                m_discoveredPredefined = discovered;
-                m_effectivePredefined = autoSelected.empty() ? activePath : autoSelected;
-            }
-
-            // Anything still loaded from a stub file this scan did not want has to go, for exactly
-            // the reason the built-in profiles above do: didChangeConfiguration sets shouldRescan,
-            // the rescan reaches here, and ClaimPredefinedFile refuses the URIs it has already seen
-            // while nothing ever releases the one the user just switched away from. Measured before
-            // this call existed - selecting a second stub left the first one's classes resolving in
-            // hover and completion, unmarked, and the `#define`s it wrote still keeping `#if`
-            // blocks live. Only the built-in profile half of this had ever been fixed.
-            UnloadUnselectedPredefinedStubs(wantedPaths);
-
-            ReportPredefinedSelection(discovered, activePath, autoSelected, mergeAll);
         }
-        catch (const std::exception& e)
+
+        std::sort(discovered.begin(), discovered.end());
+
+        std::string autoSelected;
+        if (activePath.empty() && !mergeAll && !discovered.empty())
         {
-            LogError(fmt::format("Error reading workspace files: {}", e.what()));
+            autoSelected = discovered.front();
+            ParserPredefined(autoSelected, parser);
+            wantedPaths.push_back(autoSelected);
         }
 
-        if (stopToken.stop_requested())
         {
-            EndWorkspaceProgress("Cancelled");
-            return;
+            std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+            m_discoveredPredefined = discovered;
+            m_effectivePredefined = autoSelected.empty() ? activePath : autoSelected;
         }
+
+        UnloadUnselectedPredefinedStubs(wantedPaths);
+        ReportPredefinedSelection(discovered, activePath, autoSelected, mergeAll);
     }
+    catch (const std::exception& e)
+    {
+        LogError(fmt::format("Error reading workspace files: {}", e.what()));
+    }
+}
 
+void Server::BuildIncludeGraphAndModules(const std::vector<std::string>& allScriptFiles,
+                                         const std::vector<std::string>& roots,
+                                         const angel_lsp::utils::StopFlag& stopToken,
+                                         angel_lsp::parser::AngelScriptParser& parser)
+{
+    const auto searchDirectories = SearchDirectories();
+    std::optional<PhaseTimer> phase;
     phase.emplace(m_logger.get(), "include graph");
 
     m_includeGraph.BuildFromFiles(
@@ -381,35 +271,101 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
 
     if (stopToken.stop_requested())
     {
-        EndWorkspaceProgress("Cancelled");
         return;
     }
 
     LogInfo(fmt::format("Include graph built: {} script file(s)", m_includeGraph.FileCount()));
-
-    // Which files a module contains is a question about the graph, so it is answered here and
-    // nowhere else - every path that rebuilds the graph passes through this line.
     ReportWorkspaceProgress(fmt::format("Indexed {} script file(s)", m_includeGraph.FileCount()), 60);
 
-    // Which files each configured module contains, and then their contents. A module nobody
-    // has opened still has to be in the symbol table, or the module that externs its shared
-    // entities cannot see them - two modules are by definition not connected by an #include,
-    // so the open document's own closure never reaches across. See IndexConfiguredModules.
     phase.emplace(m_logger.get(), "configured modules");
     BuildModuleIndex();
     PurgeUnusedClosureFiles();
-    IndexConfiguredModules(backgroundParser);
+    IndexConfiguredModules(parser);
 
-    // Anything published for a module that no longer claims it has to be taken back before the
-    // new answers go out, or a file that changed module keeps both verdicts.
     WithdrawStaleModuleDiagnostics();
     AnalyzeConfiguredModules();
 
-    // Force the RuleIndex to be built now rather than on the first hover request. The cost is
-    // the same - every file in the table is visited once - but it happens on the workspace
-    // thread where the user is not waiting for a tooltip.
     phase.emplace(m_logger.get(), "rule index construction");
     m_symbolTable.EnsureRuleIndex();
+}
+
+bool Server::LoadAndProcessPredefinedStubs(const std::vector<std::string>& discoveredStubPaths,
+                                           const angel_lsp::utils::StopFlag& stopToken,
+                                           angel_lsp::parser::AngelScriptParser& parser)
+{
+    ReportWorkspaceProgress("Loading engine profiles", 15);
+    {
+        PhaseTimer profileTimer(m_logger.get(), "built-in engine profiles");
+        LoadBuiltinEngineProfiles(parser, stopToken);
+    }
+    if (stopToken.stop_requested())
+    {
+        return false;
+    }
+
+    ReportWorkspaceProgress("Loading predefined stubs", 30);
+    std::vector<std::string> configuredPaths;
+    {
+        PhaseTimer stubTimer(m_logger.get(), "configured predefined stubs");
+        configuredPaths = LoadConfiguredPredefinedFiles(parser, stopToken);
+    }
+
+    {
+        PhaseTimer discoveryTimer(m_logger.get(), "workspace stub discovery");
+        ProcessDiscoveredPredefinedStubs(discoveredStubPaths, configuredPaths, stopToken, parser);
+    }
+    return !stopToken.stop_requested();
+}
+
+void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
+{
+    const std::vector<std::string> workspaceRoots = WorkspaceRoots();
+    std::vector<std::string> roots;
+    roots.reserve(workspaceRoots.size());
+    for (const auto& workspaceRoot : workspaceRoots)
+    {
+        roots.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
+    }
+
+    angel_lsp::utils::IncludeResolver::ForgetCanonicalDirectories();
+    BeginWorkspaceProgress("AngelScript: indexing workspace");
+    ReportWorkspaceProgress("Building the include graph", 0);
+
+    const PhaseTimer scanTimer(m_logger.get(), "workspace scan (total)");
+
+    struct ReanalyseOnExit
+    {
+        Server* server;
+        ~ReanalyseOnExit()
+        {
+            server->m_workspaceScanComplete.store(true);
+            server->ScheduleOpenDocumentsForReanalysis();
+        }
+    } reanalyseOnExit{this};
+
+    WorkspaceFilesWalkResult walkResult;
+    if (!CollectWorkspaceFiles(roots, stopToken, walkResult))
+    {
+        EndWorkspaceProgress("Cancelled");
+        return;
+    }
+
+    angel_lsp::parser::AngelScriptParser backgroundParser(m_logger.get());
+    if (m_config.features.enablePredefinedLoader)
+    {
+        if (!LoadAndProcessPredefinedStubs(walkResult.discoveredStubPaths, stopToken, backgroundParser))
+        {
+            EndWorkspaceProgress("Cancelled");
+            return;
+        }
+    }
+
+    BuildIncludeGraphAndModules(walkResult.allScriptFiles, roots, stopToken, backgroundParser);
+    if (stopToken.stop_requested())
+    {
+        EndWorkspaceProgress("Cancelled");
+        return;
+    }
 
     EndWorkspaceProgress(fmt::format("{} script file(s) indexed", m_includeGraph.FileCount()));
 }
@@ -464,187 +420,154 @@ void Server::HandleNotificationsWorkspace_DidChangeWorkspaceFolders(
     RestartWorkspaceScan();
 }
 
-void Server::HandleNotificationsWorkspace_DidChangeWatchedFiles(
-    lsp::notifications::Workspace_DidChangeWatchedFiles::Params&& params)
+bool Server::HandleWatchedFileDeleted(const std::string& path, const std::string& uriStr, bool isPredefined,
+                                      bool& stubSelectionInvalidated)
 {
-    angel_lsp::parser::AngelScriptParser watchedParser(m_logger.get());
-    bool graphChanged = false;
-
-    // Set when the stub that was in force is the one that just disappeared. See the delete
-    // branch below: with nothing configured, which stub is loaded is a choice the scan made,
-    // and a deleted file unmakes it.
-    bool stubSelectionInvalidated = false;
-
-    for (const auto& event : params.changes)
+    if (isPredefined)
     {
-        const std::string uriStr = DocumentKey(event.uri.toString());
-
-        // The editor's buffer wins over the copy on disk: it may hold unsaved edits, and
-        // didChange/didSave already keep it indexed.
-        if (m_documentStore.IsOpen(uriStr))
-            continue;
-
-        const std::string path = CanonicalPathFromUri(uriStr);
-        if (path.empty())
-            continue;
-
-        const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
-
-        if (event.type == lsp::FileChangeType::Deleted)
-        {
-            if (isPredefined)
-            {
-                // Whether the stub that just vanished was the one in force. With nothing
-                // configured the scan picks the first stub it finds, and that choice has just
-                // been invalidated - so the scan has to run again and pick another. Without
-                // this a workspace with two stubs, one of them deleted, ends up with no host
-                // types at all while the other one is still sitting there on disk.
-                {
-                    // Both sides normalised the same way before comparing. The event's path
-                    // comes back from CanonicalPathFromUri and the selection from
-                    // IncludeResolver::NormalizePath, and on Windows those disagree about the
-                    // separator - so a plain comparison of the two never matched and this flag
-                    // was never set.
-                    const std::string deletedPath = angel_lsp::utils::IncludeResolver::NormalizePath(path);
-
-                    std::lock_guard<std::mutex> configLock(m_runtimeConfigMutex);
-                    if (!m_effectivePredefined.empty() && PathsAreSameFile(deletedPath, m_effectivePredefined))
-                        stubSelectionInvalidated = true;
-                }
-
-                if (const auto owner = m_predefinedManager.GetUriByPath(path))
-                {
-                    UnloadPredefinedUri(*owner);
-
-                    // A deleted stub takes its `#define`s with it, so every `#if` that was live
-                    // because of one goes back to being excluded. That is a change to what the
-                    // compiler would see in every open document, not just to this file, so it
-                    // joins the fan-out at the end of this function - which a deleted stub did
-                    // not do at all before: the branch above `continue`d without ever setting
-                    // graphChanged, so removing a stub left its symbols gone and every open
-                    // document still diagnosed against them until the next keystroke.
-                    SetDefinedWordsFrom(path, {});
-                    graphChanged = true;
-                }
-            }
-            else
-            {
-                PurgeClosureFile(UriFromPath(path));
-                PurgeClosureFile(uriStr);
-                graphChanged = m_includeGraph.RemoveFile(path) || graphChanged;
-            }
-            continue;
-        }
-
-        if (isPredefined)
-        {
-            if (m_config.features.enablePredefinedLoader)
-            {
-                ParserPredefined(path, watchedParser, true);
-
-                // The stub was re-read, and every open document was judged against the old
-                // one. Editing a stub is how a user teaches this server about the types their
-                // host registers, so the diagnostics it changes are exactly the ones they are
-                // watching - and until this line they did not move until the next keystroke in
-                // some other file. The `continue` below skips the `graphChanged = true` that
-                // the ordinary path sets, so the fan-out at the end of this function never ran.
-                //
-                // Reusing that flag rather than fanning out here: a workspace can hold several
-                // stubs, and one save should reanalyse each open document once, not once per
-                // stub.
-                graphChanged = true;
-            }
-            continue;
-        }
-
-        std::ifstream file(path, std::ios::binary);
-        if (!file.is_open())
-            continue;
-
-        const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-
-        m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
-            path, content, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
-        graphChanged = true;
-
-        // Only files already pulled in as part of an open document's module are re-indexed
-        // here. Anything else has no symbols in the table to go stale, and reading every
-        // created file off disk would turn a `git checkout` into a full workspace parse.
-        if (const auto indexed = m_indexedUriByPath.find(path); indexed != m_indexedUriByPath.end())
-        {
-            const std::string indexedUri = indexed->second;
-            m_symbolTable.ClearDocumentSymbols(indexedUri);
-            m_scopeIndex.ClearDocument(indexedUri);
-            m_callGraph.ClearDocument(indexedUri);
-            m_closureDocuments.erase(indexedUri);
-            IndexClosureFile(path, watchedParser);
-        }
-    }
-
-    if (stubSelectionInvalidated)
-    {
-        // Which stub is loaded, with nothing configured, is a choice the workspace scan made -
-        // the first it found in path order - and deleting that file unmakes it. Nothing re-made
-        // it, so a workspace with two stubs, one of them deleted, was left with no host types
-        // at all while the other one was still sitting there.
-        //
-        // Chosen here rather than by restarting the scan: a rescan would load it on the
-        // workspace thread and leave every open document judged against the old table until the
-        // next keystroke, which is the staleness this project has already been bitten by. One
-        // file parsed on the message loop costs less and finishes before the refresh below.
-        std::string replacement;
+        const std::string deletedPath = angel_lsp::utils::IncludeResolver::NormalizePath(path);
         {
             std::lock_guard<std::mutex> configLock(m_runtimeConfigMutex);
-
-            std::erase_if(m_discoveredPredefined, [this](const std::string& candidate)
-                          { return PathsAreSameFile(candidate, m_effectivePredefined); });
-
-            if (!m_discoveredPredefined.empty())
-                replacement = m_discoveredPredefined.front();
-
-            m_effectivePredefined = replacement;
+            if (!m_effectivePredefined.empty() && PathsAreSameFile(deletedPath, m_effectivePredefined))
+            {
+                stubSelectionInvalidated = true;
+            }
         }
 
-        if (!replacement.empty())
+        if (const auto owner = m_predefinedManager.GetUriByPath(path))
         {
-            LogInfo(fmt::format("The predefined stub in force was deleted; using {} instead",
-                                std::filesystem::path(replacement).filename().string()));
-
-            // Not under m_predefinedMutex: ParserPredefined takes it itself, as every other
-            // caller in this handler relies on.
-            ParserPredefined(replacement, watchedParser);
+            UnloadPredefinedUri(*owner);
+            SetDefinedWordsFrom(path, {});
+            return true;
         }
-        else
-        {
-            LogInfo("The predefined stub in force was deleted, and no other was found");
-        }
-
-        graphChanged = true;
+        return false;
     }
 
-    if (!graphChanged)
-        return;
+    PurgeClosureFile(UriFromPath(path));
+    PurgeClosureFile(uriStr);
+    return m_includeGraph.RemoveFile(path);
+}
 
-    // An #include that pointed at nothing may point at something now, and the edge that says
-    // so belongs to the *including* file - which nothing here has touched. Creating helper.as
-    // updated helper.as's own entry in the graph and left `#include "helper.as"` in main.as
-    // exactly as unresolved as it was, so the type it declares stayed unknown until the user
-    // typed something in main.as.
-    //
-    // Only the open documents are refreshed: they are the ones whose diagnostics are on screen,
-    // and re-resolving every file in the workspace on every watched event would turn a `git
-    // checkout` into a full rescan. Directives only, so it costs a scan of the text rather than
-    // a parse.
+bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined,
+                                      angel_lsp::parser::AngelScriptParser& parser)
+{
+    if (isPredefined)
+    {
+        if (m_config.features.enablePredefinedLoader)
+        {
+            ParserPredefined(path, parser, true);
+            return true;
+        }
+        return false;
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+    {
+        return false;
+    }
+
+    const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
+        path, content, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
+
+    if (const auto indexed = m_indexedUriByPath.find(path); indexed != m_indexedUriByPath.end())
+    {
+        const std::string indexedUri = indexed->second;
+        m_symbolTable.ClearDocumentSymbols(indexedUri);
+        m_scopeIndex.ClearDocument(indexedUri);
+        m_callGraph.ClearDocument(indexedUri);
+        m_closureDocuments.erase(indexedUri);
+        IndexClosureFile(path, parser);
+    }
+    return true;
+}
+
+void Server::ReplaceDeletedPredefinedStub(angel_lsp::parser::AngelScriptParser& parser)
+{
+    std::string replacement;
+    {
+        std::lock_guard<std::mutex> configLock(m_runtimeConfigMutex);
+        std::erase_if(m_discoveredPredefined, [this](const std::string& candidate)
+                      { return PathsAreSameFile(candidate, m_effectivePredefined); });
+
+        if (!m_discoveredPredefined.empty())
+        {
+            replacement = m_discoveredPredefined.front();
+        }
+        m_effectivePredefined = replacement;
+    }
+
+    if (!replacement.empty())
+    {
+        LogInfo(fmt::format("The predefined stub in force was deleted; using {} instead",
+                            std::filesystem::path(replacement).filename().string()));
+        ParserPredefined(replacement, parser);
+    }
+    else
+    {
+        LogInfo("The predefined stub in force was deleted, and no other was found");
+    }
+}
+
+void Server::RefreshOpenDocumentIncludes()
+{
     for (const auto& [openUri, openText] : m_documentStore.GetSnapshot())
+    {
         if (const std::string openPath = CanonicalPathFromUri(openUri); !openPath.empty())
         {
             m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
                 openPath, openText, *SearchDirectories(), IncludeAllowedRoots(),
                 std::string(ImplicitIncludeExtension())});
         }
+    }
+}
 
-    // An edited #include line can move a file between modules, so every open document's
-    // closure is recomputed and re-diagnosed against whatever it now sees.
+void Server::HandleNotificationsWorkspace_DidChangeWatchedFiles(
+    lsp::notifications::Workspace_DidChangeWatchedFiles::Params&& params)
+{
+    angel_lsp::parser::AngelScriptParser watchedParser(m_logger.get());
+    bool graphChanged = false;
+    bool stubSelectionInvalidated = false;
+
+    for (const auto& event : params.changes)
+    {
+        const std::string uriStr = DocumentKey(event.uri.toString());
+        if (m_documentStore.IsOpen(uriStr))
+        {
+            continue;
+        }
+
+        const std::string path = CanonicalPathFromUri(uriStr);
+        if (path.empty())
+        {
+            continue;
+        }
+
+        const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
+        if (event.type == lsp::FileChangeType::Deleted)
+        {
+            graphChanged =
+                HandleWatchedFileDeleted(path, uriStr, isPredefined, stubSelectionInvalidated) || graphChanged;
+        }
+        else
+        {
+            graphChanged = HandleWatchedFileChanged(path, isPredefined, watchedParser) || graphChanged;
+        }
+    }
+
+    if (stubSelectionInvalidated)
+    {
+        ReplaceDeletedPredefinedStub(watchedParser);
+        graphChanged = true;
+    }
+
+    if (!graphChanged)
+    {
+        return;
+    }
+
+    RefreshOpenDocumentIncludes();
     ReanalyseOpenDocuments();
 }
 

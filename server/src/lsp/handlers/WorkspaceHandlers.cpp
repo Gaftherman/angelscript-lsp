@@ -20,6 +20,51 @@ bool BraceStyleIsKR(std::string_view name)
     }
     return lowered == "kr" || lowered == "k&r" || lowered == "kandr" || lowered == "onetbs";
 }
+
+std::optional<bool> FindSectionBool(const lsp::LSPObject& section, const lsp::LSPObject* engineObj,
+                                    std::string_view name)
+{
+    if (engineObj)
+    {
+        if (const auto* val = engineObj->find(std::string(name)); val && val->isBoolean())
+        {
+            return val->boolean();
+        }
+    }
+    const std::string dotKey = "engine." + std::string(name);
+    if (const auto* val = section.find(dotKey); val && val->isBoolean())
+    {
+        return val->boolean();
+    }
+    const std::string fullKey = "angelscript.engine." + std::string(name);
+    if (const auto* val = section.find(fullKey); val && val->isBoolean())
+    {
+        return val->boolean();
+    }
+    return std::nullopt;
+}
+
+std::optional<int> FindSectionInt(const lsp::LSPObject& section, const lsp::LSPObject* engineObj, std::string_view name)
+{
+    if (engineObj)
+    {
+        if (const auto* val = engineObj->find(std::string(name)); val && val->isNumber())
+        {
+            return static_cast<int>(val->number());
+        }
+    }
+    const std::string dotKey = "engine." + std::string(name);
+    if (const auto* val = section.find(dotKey); val && val->isNumber())
+    {
+        return static_cast<int>(val->number());
+    }
+    const std::string fullKey = "angelscript.engine." + std::string(name);
+    if (const auto* val = section.find(fullKey); val && val->isNumber())
+    {
+        return static_cast<int>(val->number());
+    }
+    return std::nullopt;
+}
 } // namespace
 
 lsp::requests::Workspace_TextDocumentContent::Result
@@ -197,28 +242,9 @@ void Server::RegisterWorkspaceHandlers()
     RegisterWorkspaceActionHandlers();
 }
 
-void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
-    lsp::notifications::Workspace_DidChangeConfiguration::Params&& params)
+void Server::UpdateFormatConfiguration(const lsp::LSPObject& section)
 {
-    // The client synchronises the whole "angelscript" section (see the LanguageClient's
-    // synchronize.configurationSection), so settings arrives either as that section directly or
-    // wrapped in an object keyed by it, depending on the client. Both shapes are accepted.
-    if (!params.settings.isObject())
-    {
-        return;
-    }
-
-    const lsp::LSPObject* section = &params.settings.object();
-    if (const auto* nested = section->find("angelscript"); nested && nested->isObject())
-    {
-        section = &nested->object();
-    }
-
-    bool shouldRescan = false;
-
-    // Nested one level down, because the client sends it as `angelscript.format.braceStyle`.
-    // Nothing to rescan: it changes only what the next format request produces.
-    if (const auto* formatVal = section->find("format"); formatVal && formatVal->isObject())
+    if (const auto* formatVal = section.find("format"); formatVal && formatVal->isObject())
     {
         if (const auto* styleVal = formatVal->object().find("braceStyle"); styleVal && styleVal->isString())
         {
@@ -229,101 +255,44 @@ void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
             }
         }
     }
+}
 
+bool Server::UpdateEngineConfiguration(const lsp::LSPObject& section)
+{
     bool engineChanged = false;
     const lsp::LSPObject* engineObj = nullptr;
-    if (const auto* e = section->find("engine"); e && e->isObject())
+    if (const auto* e = section.find("engine"); e && e->isObject())
     {
         engineObj = &e->object();
     }
 
-    auto getEngineBool = [&](std::string_view name) -> std::optional<bool>
+    auto applyBool = [&](std::string_view name, bool& target)
     {
-        if (engineObj)
+        if (auto v = FindSectionBool(section, engineObj, name); v && target != *v)
         {
-            if (const auto* val = engineObj->find(std::string(name)); val && val->isBoolean())
-                return val->boolean();
+            target = *v;
+            engineChanged = true;
         }
-        std::string dotKey = "engine." + std::string(name);
-        if (const auto* val = section->find(dotKey); val && val->isBoolean())
-            return val->boolean();
-        std::string fullKey = "angelscript.engine." + std::string(name);
-        if (const auto* val = section->find(fullKey); val && val->isBoolean())
-            return val->boolean();
-        return std::nullopt;
     };
 
-    auto getEngineInt = [&](std::string_view name) -> std::optional<int>
-    {
-        if (engineObj)
-        {
-            if (const auto* val = engineObj->find(std::string(name)); val && val->isNumber())
-                return static_cast<int>(val->number());
-        }
-        std::string dotKey = "engine." + std::string(name);
-        if (const auto* val = section->find(dotKey); val && val->isNumber())
-            return static_cast<int>(val->number());
-        std::string fullKey = "angelscript.engine." + std::string(name);
-        if (const auto* val = section->find(fullKey); val && val->isNumber())
-            return static_cast<int>(val->number());
-        return std::nullopt;
-    };
+    applyBool("foreachSupport", m_config.engine.foreachSupport);
+    applyBool("requireEnumScope", m_config.engine.requireEnumScope);
+    applyBool("alwaysImplDefaultConstruct", m_config.engine.alwaysImplDefaultConstruct);
+    applyBool("allowUnicodeIdentifiers", m_config.engine.allowUnicodeIdentifiers);
+    applyBool("ignoreDuplicateSharedIntf", m_config.engine.ignoreDuplicateSharedIntf);
 
-    if (auto v = getEngineBool("foreachSupport"))
+    if (auto v = FindSectionInt(section, engineObj, "compilerWarnings"); v && m_config.engine.compilerWarnings != *v)
     {
-        if (m_config.engine.foreachSupport != *v)
-        {
-            m_config.engine.foreachSupport = *v;
-            engineChanged = true;
-        }
-    }
-    if (auto v = getEngineBool("requireEnumScope"))
-    {
-        if (m_config.engine.requireEnumScope != *v)
-        {
-            m_config.engine.requireEnumScope = *v;
-            engineChanged = true;
-        }
-    }
-    if (auto v = getEngineBool("alwaysImplDefaultConstruct"))
-    {
-        if (m_config.engine.alwaysImplDefaultConstruct != *v)
-        {
-            m_config.engine.alwaysImplDefaultConstruct = *v;
-            engineChanged = true;
-        }
-    }
-    if (auto v = getEngineBool("allowUnicodeIdentifiers"))
-    {
-        if (m_config.engine.allowUnicodeIdentifiers != *v)
-        {
-            m_config.engine.allowUnicodeIdentifiers = *v;
-            engineChanged = true;
-        }
-    }
-    if (auto v = getEngineBool("ignoreDuplicateSharedIntf"))
-    {
-        if (m_config.engine.ignoreDuplicateSharedIntf != *v)
-        {
-            m_config.engine.ignoreDuplicateSharedIntf = *v;
-            engineChanged = true;
-        }
-    }
-    if (auto v = getEngineInt("compilerWarnings"))
-    {
-        if (m_config.engine.compilerWarnings != *v)
-        {
-            m_config.engine.compilerWarnings = *v;
-            engineChanged = true;
-        }
+        m_config.engine.compilerWarnings = *v;
+        engineChanged = true;
     }
 
-    if (engineChanged)
-    {
-        ReanalyseOpenDocuments();
-    }
+    return engineChanged;
+}
 
-    if (const auto* featVal = section->find("features"); featVal && featVal->isObject())
+void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
+{
+    if (const auto* featVal = section.find("features"); featVal && featVal->isObject())
     {
         if (const auto* vmd = featVal->object().find("enableVirtualMixinDocuments"); vmd && vmd->isBoolean())
         {
@@ -331,57 +300,58 @@ void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
             m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
         }
     }
-    else if (const auto* vmd = section->find("enableVirtualMixinDocuments"); vmd && vmd->isBoolean())
+    else if (const auto* vmd = section.find("enableVirtualMixinDocuments"); vmd && vmd->isBoolean())
     {
         m_config.features.enableVirtualMixinDocuments = vmd->boolean();
         m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
     }
+}
 
-    // The stub selection rides the same rescan the engine profile does. With a working unload
-    // path the rescan is enough: the stub that stops being active is dropped and the new one
-    // collected, without restarting the server.
-    // A change here changes which files every `#include` resolves to, so the include graph
-    // has to be rebuilt - the same rescan the stub selection and the engine profile ride.
-    // Modules decide which files are analysed at all and what `external shared` may refer to,
-    // so a change here has to rebuild the index and re-walk the workspace. Without this the
-    // setting only took effect on the next restart - and a folder renamed on disk, which is
-    // the same edit from the server's point of view, never took effect at all.
-    if (const auto* modulesVal = section->find("modules"); modulesVal && modulesVal->isArray())
+bool Server::UpdateModulesConfiguration(const lsp::LSPObject& section)
+{
+    const auto* modulesVal = section.find("modules");
+    if (!modulesVal || !modulesVal->isArray())
     {
-        std::vector<config::ServerConfig::ModuleDefinition> parsed;
-
-        for (const auto& item : modulesVal->array())
-        {
-            if (!item.isObject())
-                continue;
-
-            config::ServerConfig::ModuleDefinition definition;
-
-            if (const auto* nameVal = item.object().find("name"); nameVal && nameVal->isString())
-                definition.name = nameVal->string();
-            if (const auto* entryVal = item.object().find("entry"); entryVal && entryVal->isString())
-                definition.entry = entryVal->string();
-            if (const auto* folderVal = item.object().find("folder"); folderVal && folderVal->isString())
-                definition.folder = folderVal->string();
-
-            parsed.push_back(std::move(definition));
-        }
-
-        const bool changed = parsed.size() != m_config.modules.size() ||
-                             !std::equal(parsed.begin(), parsed.end(), m_config.modules.begin(),
-                                         [](const config::ServerConfig::ModuleDefinition& a,
-                                            const config::ServerConfig::ModuleDefinition& b)
-                                         { return a.name == b.name && a.entry == b.entry && a.folder == b.folder; });
-
-        if (changed)
-        {
-            m_config.modules = std::move(parsed);
-            LogInfo(fmt::format("Modules changed ({} configured); rescanning", m_config.modules.size()));
-            shouldRescan = true;
-        }
+        return false;
     }
 
-    if (const auto* includeVal = section->find("include"); includeVal && includeVal->isObject())
+    std::vector<config::ServerConfig::ModuleDefinition> parsed;
+    for (const auto& item : modulesVal->array())
+    {
+        if (!item.isObject())
+        {
+            continue;
+        }
+
+        config::ServerConfig::ModuleDefinition definition;
+        if (const auto* nameVal = item.object().find("name"); nameVal && nameVal->isString())
+            definition.name = nameVal->string();
+        if (const auto* entryVal = item.object().find("entry"); entryVal && entryVal->isString())
+            definition.entry = entryVal->string();
+        if (const auto* folderVal = item.object().find("folder"); folderVal && folderVal->isString())
+            definition.folder = folderVal->string();
+
+        parsed.push_back(std::move(definition));
+    }
+
+    const bool changed =
+        parsed.size() != m_config.modules.size() ||
+        !std::equal(parsed.begin(), parsed.end(), m_config.modules.begin(),
+                    [](const config::ServerConfig::ModuleDefinition& a, const config::ServerConfig::ModuleDefinition& b)
+                    { return a.name == b.name && a.entry == b.entry && a.folder == b.folder; });
+
+    if (changed)
+    {
+        m_config.modules = std::move(parsed);
+        LogInfo(fmt::format("Modules changed ({} configured); rescanning", m_config.modules.size()));
+        return true;
+    }
+    return false;
+}
+
+bool Server::UpdateIncludeConfiguration(const lsp::LSPObject& section)
+{
+    if (const auto* includeVal = section.find("include"); includeVal && includeVal->isObject())
     {
         if (const auto* implicitVal = includeVal->object().find("implicitExtension");
             implicitVal && implicitVal->isBoolean())
@@ -391,12 +361,18 @@ void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
                 m_config.implicitIncludeExtension = implicitVal->boolean();
                 LogInfo(fmt::format("Implicit include extension {}; rebuilding the include graph",
                                     m_config.implicitIncludeExtension ? "on" : "off"));
-                shouldRescan = true;
+                return true;
             }
         }
     }
+    return false;
+}
 
-    if (const auto* predefinedVal = section->find("predefined"); predefinedVal && predefinedVal->isObject())
+bool Server::UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& section)
+{
+    bool shouldRescan = false;
+
+    if (const auto* predefinedVal = section.find("predefined"); predefinedVal && predefinedVal->isObject())
     {
         if (const auto* activeVal = predefinedVal->object().find("active"); activeVal && activeVal->isString())
         {
@@ -411,7 +387,7 @@ void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
         }
     }
 
-    if (const auto* profileVal = section->find("engineProfile"); profileVal && profileVal->isString())
+    if (const auto* profileVal = section.find("engineProfile"); profileVal && profileVal->isString())
     {
         if (!profileVal->string().empty() && profileVal->string() != EngineProfile())
         {
@@ -424,37 +400,68 @@ void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
         }
     }
 
-    const auto* directories = section->find("searchDirectories");
-    if (directories && directories->isArray())
+    return shouldRescan;
+}
+
+bool Server::UpdateSearchDirectoriesConfiguration(const lsp::LSPObject& section)
+{
+    const auto* directories = section.find("searchDirectories");
+    if (!directories || !directories->isArray())
     {
-        std::vector<std::string> updated;
-        for (const auto& entry : directories->array())
+        return false;
+    }
+
+    std::vector<std::string> updated;
+    for (const auto& entry : directories->array())
+    {
+        if (entry.isString() && !entry.string().empty())
         {
-            if (entry.isString() && !entry.string().empty())
-                updated.push_back(entry.string());
-        }
-
-        if (updated != *SearchDirectories())
-        {
-            const size_t count = updated.size();
-
-            // Swapped in as a whole new list rather than assigned into the old one: a worker
-            // holding the previous handle keeps reading that revision safely until it is done,
-            // and the old buffer is freed only when the last of them lets go.
-            {
-                std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-                m_searchDirectories = std::make_shared<const std::vector<std::string>>(std::move(updated));
-            }
-
-            LogInfo(fmt::format("Search directories changed ({} entries); rebuilding the include graph", count));
-            shouldRescan = true;
+            updated.push_back(entry.string());
         }
     }
 
+    if (updated != *SearchDirectories())
+    {
+        const size_t count = updated.size();
+        {
+            std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+            m_searchDirectories = std::make_shared<const std::vector<std::string>>(std::move(updated));
+        }
+        LogInfo(fmt::format("Search directories changed ({} entries); rebuilding the include graph", count));
+        return true;
+    }
+    return false;
+}
+
+void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
+    lsp::notifications::Workspace_DidChangeConfiguration::Params&& params)
+{
+    if (!params.settings.isObject())
+    {
+        return;
+    }
+
+    const lsp::LSPObject* section = &params.settings.object();
+    if (const auto* nested = section->find("angelscript"); nested && nested->isObject())
+    {
+        section = &nested->object();
+    }
+
+    UpdateFormatConfiguration(*section);
+    if (UpdateEngineConfiguration(*section))
+    {
+        ReanalyseOpenDocuments();
+    }
+    UpdateFeatureConfiguration(*section);
+
+    bool shouldRescan = false;
+    shouldRescan = UpdateModulesConfiguration(*section) || shouldRescan;
+    shouldRescan = UpdateIncludeConfiguration(*section) || shouldRescan;
+    shouldRescan = UpdatePredefinedAndProfileConfiguration(*section) || shouldRescan;
+    shouldRescan = UpdateSearchDirectoriesConfiguration(*section) || shouldRescan;
+
     if (shouldRescan)
     {
-        // Which files a directive resolves to depends entirely on these paths/profiles, so every edge in the
-        // graph is now suspect.
         RestartWorkspaceScan();
     }
 }
@@ -517,6 +524,68 @@ Server::HandleRequestsWorkspaceSymbol_Resolve(lsp::requests::WorkspaceSymbol_Res
 }
 
 lsp::requests::Workspace_ExecuteCommand::Result
+Server::ExecuteFormatPredefinedStub(const std::optional<lsp::Array<lsp::LSPAny>>& args)
+{
+    if (!args || args->empty() || !args->front().isString())
+    {
+        LogError("angelscript.formatPredefinedStub needs the stub's URI as its argument");
+        return lsp::Null{};
+    }
+
+    const std::string uriStr = args->front().string();
+    std::string text;
+
+    if (const auto doc = LookupOpenDocument(uriStr); doc && doc->text)
+    {
+        text = *doc->text;
+    }
+    else
+    {
+        const std::string path = CanonicalPathFromUri(uriStr);
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open())
+        {
+            LogError(fmt::format("Cannot open predefined file to format: {}", path));
+            return lsp::Null{};
+        }
+        text.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    }
+
+    angel_lsp::parser::AngelScriptParser formatterParser(m_logger.get());
+    std::string formatted = angel_lsp::features::formatting::FormatPredefinedStub(text, formatterParser);
+
+    const bool changed = (formatted != text);
+    LogInfo(fmt::format("Formatted predefined stub {}: {}", uriStr, changed ? "rewritten" : "already formatted"));
+
+    lsp::json::Object answer;
+    answer["changed"] = lsp::json::Value(changed);
+    answer["text"] = lsp::json::Value(std::move(formatted));
+    return lsp::json::Value(std::move(answer));
+}
+
+lsp::requests::Workspace_ExecuteCommand::Result Server::ExecuteListPredefinedStubs() const
+{
+    lsp::json::Object answer;
+    lsp::json::Array paths;
+    std::string effective;
+
+    {
+        std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+        for (const auto& path : m_discoveredPredefined)
+        {
+            paths.push_back(lsp::json::Value(std::string(path)));
+        }
+        effective = m_effectivePredefined;
+    }
+
+    answer["stubs"] = std::move(paths);
+    answer["active"] = std::move(effective);
+    answer["merging"] = (m_config.activePredefined == "all");
+
+    return lsp::json::Value(std::move(answer));
+}
+
+lsp::requests::Workspace_ExecuteCommand::Result
 Server::HandleRequestsWorkspace_ExecuteCommand(lsp::requests::Workspace_ExecuteCommand::Params&& params)
 {
     if (params.command == "angelscript.rescanWorkspace")
@@ -527,82 +596,12 @@ Server::HandleRequestsWorkspace_ExecuteCommand(lsp::requests::Workspace_ExecuteC
 
     if (params.command == "angelscript.formatPredefinedStub")
     {
-        // Takes one argument, the stub's URI, and answers with its formatted text. The client
-        // applies the edit, which is what lets this work on a stub that is not open: the server
-        // reads it from disk when no buffer holds it.
-        //
-        // Answering with text rather than a WorkspaceEdit keeps the decision on the client
-        // side, where the user is: an edit the server pushed would rewrite a file the moment
-        // the command ran, with no editor to undo it in if the stub was not open.
-        if (!params.arguments || params.arguments->empty() || !params.arguments->front().isString())
-        {
-            LogError("angelscript.formatPredefinedStub needs the stub's URI as its argument");
-            return lsp::Null{};
-        }
-
-        const std::string uriStr = params.arguments->front().string();
-        std::string text;
-
-        if (const auto doc = LookupOpenDocument(uriStr); doc && doc->text)
-        {
-            text = *doc->text;
-        }
-        else
-        {
-            const std::string path = CanonicalPathFromUri(uriStr);
-            std::ifstream file(path, std::ios::binary);
-            if (!file.is_open())
-            {
-                LogError(fmt::format("Cannot open predefined file to format: {}", path));
-                return lsp::Null{};
-            }
-            text.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        }
-
-        // A parser of its own: this runs on the message loop, and m_parser holds the trees the
-        // open documents are using.
-        angel_lsp::parser::AngelScriptParser formatterParser(m_logger.get());
-        std::string formatted = angel_lsp::features::formatting::FormatPredefinedStub(text, formatterParser);
-
-        const bool changed = formatted != text;
-        LogInfo(fmt::format("Formatted predefined stub {}: {}", uriStr, changed ? "rewritten" : "already formatted"));
-
-        lsp::json::Object answer;
-        answer["changed"] = lsp::json::Value(changed);
-        answer["text"] = lsp::json::Value(std::move(formatted));
-        return lsp::json::Value(std::move(answer));
+        return ExecuteFormatPredefinedStub(params.arguments);
     }
 
     if (params.command == "angelscript.listPredefinedStubs")
     {
-        // The client's stub picker asks for this rather than scanning itself. Whether a file
-        // is a stub is this server's rule, and it is not a rule the client can guess: a file
-        // named exactly `as.predefined` counts, and so does any name ending in the configured
-        // suffix. One answer, one place.
-        lsp::json::Object answer;
-        lsp::json::Array paths;
-
-        std::string effective;
-
-        {
-            std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-            for (const auto& path : m_discoveredPredefined)
-            {
-                // The Value constructor takes its string by rvalue, so the copy is explicit.
-                paths.push_back(lsp::json::Value(std::string(path)));
-            }
-            effective = m_effectivePredefined;
-        }
-
-        answer["stubs"] = std::move(paths);
-
-        // What is loaded, not what was configured. With nothing configured the scan picks one,
-        // and a picker showing "none selected" next to a workspace that plainly has host types
-        // would be telling the user something untrue.
-        answer["active"] = std::move(effective);
-        answer["merging"] = m_config.activePredefined == "all";
-
-        return lsp::json::Value(std::move(answer));
+        return ExecuteListPredefinedStubs();
     }
 
     throw lsp::RequestError(lsp::MessageError::InvalidParams, "Unknown command: " + params.command);
