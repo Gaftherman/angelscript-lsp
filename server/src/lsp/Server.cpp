@@ -709,8 +709,9 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uri
         nodeIndexPtr = &localNodeIndex;
     }
 
-    features::SemanticTokensRequest request{
-        uriStr, text, tree, m_symbolTable, m_scopeIndex.GetRoot(uriStr), std::nullopt, nodeIndexPtr};
+    features::SemanticTokensRequest request{uriStr, text, tree, m_symbolTable};
+    request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
+    request.nodeIndex = nodeIndexPtr;
     request.excludedLineRanges = ExcludedLineRanges(text);
     lsp::SemanticTokens tokens = features::GetSemanticTokens(request);
     codec::EncodeSemanticTokens(text, m_positionEncoding, tokens.data);

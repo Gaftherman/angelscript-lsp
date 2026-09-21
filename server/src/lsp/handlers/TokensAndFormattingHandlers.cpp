@@ -195,9 +195,9 @@ void Server::RegisterTokensAndFormattingHandlers()
                 nodeIndexPtr = &localNodeIndex;
             }
 
-            features::SemanticTokensRequest sr{
-                doc->uri,     *doc->text,  doc->tree, m_symbolTable, m_scopeIndex.GetRoot(doc->uri),
-                std::nullopt, nodeIndexPtr};
+            features::SemanticTokensRequest sr{doc->uri, *doc->text, doc->tree, m_symbolTable};
+            sr.scopeRoot = m_scopeIndex.GetRoot(doc->uri);
+            sr.nodeIndex = nodeIndexPtr;
             sr.excludedLineRanges = ExcludedLineRanges(*doc->text);
             sr.range = codec::Decode(*doc->text, m_positionEncoding, req.range);
 

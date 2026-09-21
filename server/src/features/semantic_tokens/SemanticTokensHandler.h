@@ -18,10 +18,8 @@ namespace angel_lsp::features
  */
 struct SemanticTokensRequest
 {
-    SemanticTokensRequest(const std::string& u, const std::string& sc, TSTree* t, const analysis::SymbolTable& st,
-                          std::shared_ptr<const analysis::Scope> sr = nullptr,
-                          std::optional<lsp::Range> r = std::nullopt, const analysis::NodeIndex* ni = nullptr)
-        : uri(u), sourceCode(sc), tree(t), symbolTable(st), scopeRoot(std::move(sr)), range(std::move(r)), nodeIndex(ni)
+    SemanticTokensRequest(const std::string& u, const std::string& sc, TSTree* t, const analysis::SymbolTable& st)
+        : uri(u), sourceCode(sc), tree(t), symbolTable(st)
     {
     }
 

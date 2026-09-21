@@ -116,11 +116,9 @@ angel_lsp::features::GetCodeActions
 angel_lsp::features::GetCompletion
 angel_lsp::features::GetDefaultReturnValue
 angel_lsp::features::GetDefinition
-angel_lsp::features::GetHighlightsQueryData
 angel_lsp::features::GetHover
 angel_lsp::features::GetInheritedTypeHierarchy
 angel_lsp::features::GetNodeTextAt
-angel_lsp::features::GetSemanticTokens
 angel_lsp::features::GetTypeDefinition
 angel_lsp::features::HoverIncludeDirective
 angel_lsp::features::IsExtractableExpression
@@ -128,9 +126,7 @@ angel_lsp::features::IsUnary
 angel_lsp::features::MethodBodyMutatesClassState
 angel_lsp::features::NeedsSpaceBetween
 angel_lsp::features::ParseAccessChain
-angel_lsp::features::RefineDeclarationTokenType
 angel_lsp::features::ResolveCallOverload
-angel_lsp::features::SemanticTokensRequest::SemanticTokensRequest
 angel_lsp::features::Tokenize
 angel_lsp::features::TryAddConstQualifierActions
 angel_lsp::features::TryAddExtractMethodAction

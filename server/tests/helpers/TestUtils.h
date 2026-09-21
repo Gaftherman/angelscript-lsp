@@ -1138,7 +1138,8 @@ class TestDocument
 
     std::vector<DecodedSemanticToken> GetSemanticTokens() const
     {
-        features::SemanticTokensRequest request{m_uri, m_sourceCode, m_tree, m_symbolTable, m_scopeRoot};
+        features::SemanticTokensRequest request{m_uri, m_sourceCode, m_tree, m_symbolTable};
+        request.scopeRoot = m_scopeRoot;
         auto lspTokens = features::GetSemanticTokens(request);
         std::vector<DecodedSemanticToken> decoded;
         if (lspTokens.data.empty())

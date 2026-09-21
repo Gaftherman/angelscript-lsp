@@ -1,9 +1,9 @@
 #include <doctest/doctest.h>
 
-#include "features/semantic_tokens/SemanticTokensHandler.h"
-#include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
+#include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/Keywords.h"
 
@@ -11,8 +11,8 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <lsp/json/json.h>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,7 +24,7 @@ using namespace angel_lsp::parser;
 
 TEST_CASE("SemanticTokensHandler - Legend is populated")
 {
-    const auto &legend = GetSemanticTokensLegend();
+    const auto& legend = GetSemanticTokensLegend();
     CHECK(!legend.tokenTypes.empty());
     CHECK(!legend.tokenModifiers.empty());
 
@@ -32,11 +32,14 @@ TEST_CASE("SemanticTokensHandler - Legend is populated")
     bool hasFunction = false;
     bool hasVariable = false;
     bool hasKeyword = false;
-    for (const auto &tt : legend.tokenTypes)
+    for (const auto& tt : legend.tokenTypes)
     {
-        if (tt == "function") hasFunction = true;
-        if (tt == "variable") hasVariable = true;
-        if (tt == "keyword") hasKeyword = true;
+        if (tt == "function")
+            hasFunction = true;
+        if (tt == "variable")
+            hasVariable = true;
+        if (tt == "keyword")
+            hasKeyword = true;
     }
     CHECK(hasFunction);
     CHECK(hasVariable);
@@ -45,19 +48,18 @@ TEST_CASE("SemanticTokensHandler - Legend is populated")
 
 TEST_CASE("SemanticTokensHandler - Delta Encoding for Simple Script")
 {
-    std::string code = 
-        "// Comment\n"
-        "int x = 42;\n"
-        "void main() {\n"
-        "    Print(x);\n"
-        "}\n";
+    std::string code = "// Comment\n"
+                       "int x = 42;\n"
+                       "void main() {\n"
+                       "    Print(x);\n"
+                       "}\n";
 
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest req{ "file:///test.as", code, tree, table };
+    SemanticTokensRequest req{"file:///test.as", code, tree, table};
     auto tokens = GetSemanticTokens(req);
 
     // The data array contains 5-tuples: [deltaLine, deltaStartChar, length, tokenType, tokenModifiers]
@@ -65,8 +67,8 @@ TEST_CASE("SemanticTokensHandler - Delta Encoding for Simple Script")
     REQUIRE(tokens.data.size() > 0);
 
     // First token is comment on line 0
-    CHECK(tokens.data[0] == 0); // line 0
-    CHECK(tokens.data[1] == 0); // col 0
+    CHECK(tokens.data[0] == 0);  // line 0
+    CHECK(tokens.data[1] == 0);  // col 0
     CHECK(tokens.data[2] == 10); // length of "// Comment"
 
     ts_tree_delete(tree);
@@ -75,12 +77,13 @@ TEST_CASE("SemanticTokensHandler - Delta Encoding for Simple Script")
 TEST_CASE("SemanticTokensHandler - Empty Code Returns Empty Tokens")
 {
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse("");
+    TSTree* tree = parser.Parse("");
     SymbolTable table;
-    SemanticTokensRequest req{ "file:///test.as", "", tree, table };
+    SemanticTokensRequest req{"file:///test.as", "", tree, table};
     auto tokens = GetSemanticTokens(req);
     CHECK(tokens.data.empty());
-    if (tree) ts_tree_delete(tree);
+    if (tree)
+        ts_tree_delete(tree);
 }
 
 // A primitive used to be reported as a keyword, and themes paint a keyword the colour of `if`.
@@ -93,11 +96,11 @@ TEST_CASE("SemanticTokensHandler - A primitive is reported as a type from the de
     std::string code = "int a = 1;\nfloat b = 2.0f;\nbool c = true;\nauto d = 4;\n";
 
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest req{ "file:///test.as", code, tree, table };
+    SemanticTokensRequest req{"file:///test.as", code, tree, table};
     auto tokens = GetSemanticTokens(req);
 
     REQUIRE(tokens.data.size() % 5 == 0);
@@ -132,7 +135,7 @@ TEST_CASE("SemanticTokensHandler - A primitive is reported as a type from the de
             curCol += deltaCol;
         }
 
-        decoded.push_back({ curLine, curCol, len, type, mod });
+        decoded.push_back({curLine, curCol, len, type, mod});
     }
 
     // Type_Type, carrying Mod_DefaultLibrary so a theme can still tell `float` from a class the
@@ -144,11 +147,10 @@ TEST_CASE("SemanticTokensHandler - A primitive is reported as a type from the de
     // build the failure message, which odr-uses them - MSVC lets that through on a constexpr local,
     // GCC does not, and the difference only appeared in the Linux container: "'k_type' is not
     // captured".
-    const auto require = [&decoded, k_type, k_defaultLibrary](uint32_t line, uint32_t length, const char *what)
+    const auto require = [&decoded, k_type, k_defaultLibrary](uint32_t line, uint32_t length, const char* what)
     {
-        auto it = std::find_if(decoded.begin(), decoded.end(),
-            [line, length](const DecodedToken &t)
-            { return t.line == line && t.startCol == 0 && t.length == length; });
+        auto it = std::find_if(decoded.begin(), decoded.end(), [line, length](const DecodedToken& t)
+                               { return t.line == line && t.startCol == 0 && t.length == length; });
         INFO("primitive: " << what);
         REQUIRE(it != decoded.end());
         CHECK(it->tokenType == k_type);
@@ -165,57 +167,56 @@ TEST_CASE("SemanticTokensHandler - A primitive is reported as a type from the de
 
 namespace
 {
-    /** @brief Decodes a delta-encoded token stream back into absolute (line, startChar) pairs. */
-    std::vector<std::pair<uint32_t, uint32_t>> DecodeTokenPositions(const std::vector<lsp::uint> &data)
+/** @brief Decodes a delta-encoded token stream back into absolute (line, startChar) pairs. */
+std::vector<std::pair<uint32_t, uint32_t>> DecodeTokenPositions(const std::vector<lsp::uint>& data)
+{
+    std::vector<std::pair<uint32_t, uint32_t>> positions;
+    uint32_t line = 0;
+    uint32_t character = 0;
+
+    for (size_t i = 0; i + 4 < data.size(); i += 5)
     {
-        std::vector<std::pair<uint32_t, uint32_t>> positions;
-        uint32_t line = 0;
-        uint32_t character = 0;
+        const uint32_t deltaLine = data[i];
+        const uint32_t deltaStart = data[i + 1];
 
-        for (size_t i = 0; i + 4 < data.size(); i += 5)
-        {
-            const uint32_t deltaLine = data[i];
-            const uint32_t deltaStart = data[i + 1];
-
-            line += deltaLine;
-            character = (deltaLine == 0) ? character + deltaStart : deltaStart;
-            positions.emplace_back(line, character);
-        }
-        return positions;
+        line += deltaLine;
+        character = (deltaLine == 0) ? character + deltaStart : deltaStart;
+        positions.emplace_back(line, character);
     }
-
-    const std::string k_rangeSource =
-        "int alpha = 1;\n"
-        "int beta = 2;\n"
-        "int gamma = 3;\n"
-        "int delta = 4;\n";
+    return positions;
 }
+
+const std::string k_rangeSource = "int alpha = 1;\n"
+                                  "int beta = 2;\n"
+                                  "int gamma = 3;\n"
+                                  "int delta = 4;\n";
+} // namespace
 
 TEST_CASE("SemanticTokensHandler - A ranged request returns only the tokens it overlaps")
 {
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(k_rangeSource);
+    TSTree* tree = parser.Parse(k_rangeSource);
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
 
-    SemanticTokensRequest fullRequest{ "file:///range.as", k_rangeSource, tree, table };
+    SemanticTokensRequest fullRequest{"file:///range.as", k_rangeSource, tree, table};
     const auto fullPositions = DecodeTokenPositions(GetSemanticTokens(fullRequest).data);
     REQUIRE(!fullPositions.empty());
 
-    SemanticTokensRequest rangedRequest{ "file:///range.as", k_rangeSource, tree, table };
-    rangedRequest.range = lsp::Range{ { 1, 0 }, { 2, 0 } };
+    SemanticTokensRequest rangedRequest{"file:///range.as", k_rangeSource, tree, table};
+    rangedRequest.range = lsp::Range{{1, 0}, {2, 0}};
     const auto rangedPositions = DecodeTokenPositions(GetSemanticTokens(rangedRequest).data);
 
     REQUIRE(!rangedPositions.empty());
-    for (const auto &[line, character] : rangedPositions)
+    for (const auto& [line, character] : rangedPositions)
     {
         CHECK(line == 1);
     }
 
     // Every token the range kept has to be one the full pass also produced, at the same place:
     // narrowing must not change how a token is classified or where it starts.
-    for (const auto &position : rangedPositions)
+    for (const auto& position : rangedPositions)
     {
         CHECK(std::find(fullPositions.begin(), fullPositions.end(), position) != fullPositions.end());
     }
@@ -228,12 +229,12 @@ TEST_CASE("SemanticTokensHandler - A ranged request returns only the tokens it o
 TEST_CASE("SemanticTokensHandler - The first token of a range is encoded against the origin")
 {
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(k_rangeSource);
+    TSTree* tree = parser.Parse(k_rangeSource);
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest request{ "file:///range.as", k_rangeSource, tree, table };
-    request.range = lsp::Range{ { 2, 0 }, { 3, 0 } };
+    SemanticTokensRequest request{"file:///range.as", k_rangeSource, tree, table};
+    request.range = lsp::Range{{2, 0}, {3, 0}};
 
     const auto tokens = GetSemanticTokens(request);
     REQUIRE(tokens.data.size() >= 5);
@@ -249,14 +250,14 @@ TEST_CASE("SemanticTokensHandler - The first token of a range is encoded against
 TEST_CASE("SemanticTokensHandler - An absent range is identical to a full request")
 {
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(k_rangeSource);
+    TSTree* tree = parser.Parse(k_rangeSource);
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
 
-    SemanticTokensRequest withoutRange{ "file:///range.as", k_rangeSource, tree, table };
-    SemanticTokensRequest wholeDocument{ "file:///range.as", k_rangeSource, tree, table };
-    wholeDocument.range = lsp::Range{ { 0, 0 }, { 100, 0 } };
+    SemanticTokensRequest withoutRange{"file:///range.as", k_rangeSource, tree, table};
+    SemanticTokensRequest wholeDocument{"file:///range.as", k_rangeSource, tree, table};
+    wholeDocument.range = lsp::Range{{0, 0}, {100, 0}};
 
     CHECK(GetSemanticTokens(withoutRange).data == GetSemanticTokens(wholeDocument).data);
 
@@ -265,19 +266,18 @@ TEST_CASE("SemanticTokensHandler - An absent range is identical to a full reques
 
 TEST_CASE("SemanticTokensHandler - A range covering no tokens returns an empty stream")
 {
-    const std::string code =
-        "int alpha = 1;\n"
-        "\n"
-        "\n"
-        "int beta = 2;\n";
+    const std::string code = "int alpha = 1;\n"
+                             "\n"
+                             "\n"
+                             "int beta = 2;\n";
 
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest request{ "file:///empty-range.as", code, tree, table };
-    request.range = lsp::Range{ { 1, 0 }, { 2, 0 } };
+    SemanticTokensRequest request{"file:///empty-range.as", code, tree, table};
+    request.range = lsp::Range{{1, 0}, {2, 0}};
 
     CHECK(GetSemanticTokens(request).data.empty());
 
@@ -286,14 +286,14 @@ TEST_CASE("SemanticTokensHandler - A range covering no tokens returns an empty s
 
 TEST_CASE("SemanticTokensHandler - An unchanged stream produces no edits")
 {
-    const std::vector<lsp::uint> tokens{ 0, 0, 3, 15, 0, 0, 4, 5, 8, 0 };
+    const std::vector<lsp::uint> tokens{0, 0, 3, 15, 0, 0, 4, 5, 8, 0};
     CHECK(ComputeSemanticTokensDelta(tokens, tokens).empty());
 }
 
 TEST_CASE("SemanticTokensHandler - A delta splices only the run that changed")
 {
-    const std::vector<lsp::uint> previous{ 0, 0, 3, 15, 0, /**/ 1, 0, 4, 12, 0, /**/ 1, 0, 5, 8, 0 };
-    const std::vector<lsp::uint> current{ 0, 0, 3, 15, 0, /**/ 1, 0, 7, 12, 0, /**/ 1, 0, 5, 8, 0 };
+    const std::vector<lsp::uint> previous{0, 0, 3, 15, 0, /**/ 1, 0, 4, 12, 0, /**/ 1, 0, 5, 8, 0};
+    const std::vector<lsp::uint> current{0, 0, 3, 15, 0, /**/ 1, 0, 7, 12, 0, /**/ 1, 0, 5, 8, 0};
 
     const auto edits = ComputeSemanticTokensDelta(previous, current);
     REQUIRE(edits.size() == 1);
@@ -308,8 +308,8 @@ TEST_CASE("SemanticTokensHandler - A delta splices only the run that changed")
 
 TEST_CASE("SemanticTokensHandler - A delta describes an appended token")
 {
-    const std::vector<lsp::uint> previous{ 0, 0, 3, 15, 0 };
-    const std::vector<lsp::uint> current{ 0, 0, 3, 15, 0, 1, 0, 4, 12, 0 };
+    const std::vector<lsp::uint> previous{0, 0, 3, 15, 0};
+    const std::vector<lsp::uint> current{0, 0, 3, 15, 0, 1, 0, 4, 12, 0};
 
     const auto edits = ComputeSemanticTokensDelta(previous, current);
     REQUIRE(edits.size() == 1);
@@ -321,8 +321,8 @@ TEST_CASE("SemanticTokensHandler - A delta describes an appended token")
 
 TEST_CASE("SemanticTokensHandler - A delta describes a removed token")
 {
-    const std::vector<lsp::uint> previous{ 0, 0, 3, 15, 0, 1, 0, 4, 12, 0 };
-    const std::vector<lsp::uint> current{ 0, 0, 3, 15, 0 };
+    const std::vector<lsp::uint> previous{0, 0, 3, 15, 0, 1, 0, 4, 12, 0};
+    const std::vector<lsp::uint> current{0, 0, 3, 15, 0};
 
     const auto edits = ComputeSemanticTokensDelta(previous, current);
     REQUIRE(edits.size() == 1);
@@ -333,7 +333,7 @@ TEST_CASE("SemanticTokensHandler - A delta describes a removed token")
 
 TEST_CASE("SemanticTokensHandler - A delta against an empty stream sends everything")
 {
-    const std::vector<lsp::uint> current{ 0, 0, 3, 15, 0 };
+    const std::vector<lsp::uint> current{0, 0, 3, 15, 0};
 
     const auto edits = ComputeSemanticTokensDelta({}, current);
     REQUIRE(edits.size() == 1);
@@ -345,18 +345,18 @@ TEST_CASE("SemanticTokensHandler - A delta against an empty stream sends everyth
 
 TEST_CASE("SemanticTokensHandler - Applying the edits reproduces the new stream")
 {
-    const std::vector<lsp::uint> previous{ 0, 0, 3, 15, 0, 1, 0, 4, 12, 0, 1, 0, 5, 8, 0 };
-    const std::vector<lsp::uint> current{ 0, 0, 3, 15, 0, 1, 0, 9, 12, 0, 2, 0, 5, 8, 0, 1, 0, 2, 8, 0 };
+    const std::vector<lsp::uint> previous{0, 0, 3, 15, 0, 1, 0, 4, 12, 0, 1, 0, 5, 8, 0};
+    const std::vector<lsp::uint> current{0, 0, 3, 15, 0, 1, 0, 9, 12, 0, 2, 0, 5, 8, 0, 1, 0, 2, 8, 0};
 
     auto applied = previous;
-    for (const auto &edit : ComputeSemanticTokensDelta(previous, current))
+    for (const auto& edit : ComputeSemanticTokensDelta(previous, current))
     {
         const auto first = applied.begin() + static_cast<std::ptrdiff_t>(edit.start);
         applied.erase(first, first + static_cast<std::ptrdiff_t>(edit.deleteCount));
         if (edit.data.has_value())
         {
-            applied.insert(applied.begin() + static_cast<std::ptrdiff_t>(edit.start),
-                           edit.data->begin(), edit.data->end());
+            applied.insert(applied.begin() + static_cast<std::ptrdiff_t>(edit.start), edit.data->begin(),
+                           edit.data->end());
         }
     }
 
@@ -378,7 +378,7 @@ TEST_CASE("SemanticTokensHandler - Applying the edits reproduces the new stream"
 
 TEST_CASE("SemanticTokensHandler - Template brackets get their own token type")
 {
-    const auto &legend = GetSemanticTokensLegend();
+    const auto& legend = GetSemanticTokensLegend();
     const auto it = std::find(legend.tokenTypes.begin(), legend.tokenTypes.end(), "templatePunctuation");
     REQUIRE(it != legend.tokenTypes.end());
     const uint32_t templatePunctuation = static_cast<uint32_t>(std::distance(legend.tokenTypes.begin(), it));
@@ -387,19 +387,18 @@ TEST_CASE("SemanticTokensHandler - Template brackets get their own token type")
     REQUIRE(operatorIt != legend.tokenTypes.end());
     const uint32_t operatorType = static_cast<uint32_t>(std::distance(legend.tokenTypes.begin(), operatorIt));
 
-    const std::string code =
-        "void main()\n"                          // 0
-        "{\n"                                    // 1
-        "    array<array<int>> grid;\n"          // 2
-        "    int shifted = 1 << 2;\n"            // 3
-        "}\n";                                   // 4
+    const std::string code = "void main()\n"                 // 0
+                             "{\n"                           // 1
+                             "    array<array<int>> grid;\n" // 2
+                             "    int shifted = 1 << 2;\n"   // 3
+                             "}\n";                          // 4
 
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest req{ "file:///template.as", code, tree, table };
+    SemanticTokensRequest req{"file:///template.as", code, tree, table};
     const auto tokens = GetSemanticTokens(req);
     ts_tree_delete(tree);
 
@@ -441,29 +440,29 @@ TEST_CASE("SemanticTokensHandler - Template brackets get their own token type")
 
 namespace
 {
-    /** @brief The (line, startChar, length, tokenType) of every token, decoded from the payload. */
-    std::vector<std::array<uint32_t, 4>> DecodeTokens(const std::vector<lsp::uint> &data)
+/** @brief The (line, startChar, length, tokenType) of every token, decoded from the payload. */
+std::vector<std::array<uint32_t, 4>> DecodeTokens(const std::vector<lsp::uint>& data)
+{
+    std::vector<std::array<uint32_t, 4>> out;
+    uint32_t line = 0;
+    uint32_t character = 0;
+
+    for (size_t i = 0; i + 4 < data.size(); i += 5)
     {
-        std::vector<std::array<uint32_t, 4>> out;
-        uint32_t line = 0;
-        uint32_t character = 0;
+        const uint32_t deltaLine = data[i];
+        const uint32_t deltaStart = data[i + 1];
 
-        for (size_t i = 0; i + 4 < data.size(); i += 5)
-        {
-            const uint32_t deltaLine = data[i];
-            const uint32_t deltaStart = data[i + 1];
-
-            line += deltaLine;
-            character = (deltaLine == 0) ? character + deltaStart : deltaStart;
-            out.push_back({ line, character, data[i + 2], data[i + 3] });
-        }
-        return out;
+        line += deltaLine;
+        character = (deltaLine == 0) ? character + deltaStart : deltaStart;
+        out.push_back({line, character, data[i + 2], data[i + 3]});
     }
-
-    // CommentTokenType() lived here, and went unused when the test below stopped requiring one
-    // comment token per dead line - see its own comment for why that instrument was wrong. GCC
-    // said so (-Wunused-function) and MSVC did not, which is the only reason it survived this long.
+    return out;
 }
+
+// CommentTokenType() lived here, and went unused when the test below stopped requiring one
+// comment token per dead line - see its own comment for why that instrument was wrong. GCC
+// said so (-Wunused-function) and MSVC did not, which is the only reason it survived this long.
+} // namespace
 
 TEST_CASE("SemanticTokensHandler - An excluded #if block is left to the decoration")
 {
@@ -478,19 +477,18 @@ TEST_CASE("SemanticTokensHandler - An excluded #if block is left to the decorati
     // dims the whole region, brackets included, which is what the C++ extension does. What this
     // handler owes is silence - no semantic token on a dead line, so the syntax colours underneath
     // show through and the decoration dims them.
-    const std::string code =
-        "int live = 1;\n"        // 0
-        "#if NOT_DEFINED\n"      // 1
-        "int dead = 2;\n"        // 2
-        "#endif\n"               // 3
-        "int alsoLive = 3;\n";   // 4
+    const std::string code = "int live = 1;\n"      // 0
+                             "#if NOT_DEFINED\n"    // 1
+                             "int dead = 2;\n"      // 2
+                             "#endif\n"             // 3
+                             "int alsoLive = 3;\n"; // 4
 
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest req{ "file:///dead.as", code, tree, table };
+    SemanticTokensRequest req{"file:///dead.as", code, tree, table};
     req.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(code);
 
     // Precondition: the block really is excluded, or the rest of this proves nothing.
@@ -501,7 +499,7 @@ TEST_CASE("SemanticTokensHandler - An excluded #if block is left to the decorati
     const auto onLine = [&tokens](uint32_t line)
     {
         std::vector<std::array<uint32_t, 4>> found;
-        for (const auto &t : tokens)
+        for (const auto& t : tokens)
         {
             if (t[0] == line)
                 found.push_back(t);
@@ -511,14 +509,14 @@ TEST_CASE("SemanticTokensHandler - An excluded #if block is left to the decorati
 
     // Every excluded line - the directives included, because CScriptBuilder blanks those too -
     // carries no semantic token at all.
-    for (const uint32_t dead : { 1u, 2u, 3u })
+    for (const uint32_t dead : {1u, 2u, 3u})
     {
         CAPTURE(dead);
         CHECK(onLine(dead).empty());
     }
 
     // And the live lines still have theirs.
-    for (const uint32_t alive : { 0u, 4u })
+    for (const uint32_t alive : {0u, 4u})
     {
         CAPTURE(alive);
         CHECK_FALSE(onLine(alive).empty());
@@ -533,13 +531,13 @@ TEST_CASE("SemanticTokensHandler - With nothing excluded the payload is unchange
     const std::string code = "int a = 1;\nvoid main() { }\n";
 
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
 
-    SemanticTokensRequest without{ "file:///plain.as", code, tree, table };
-    SemanticTokensRequest with{ "file:///plain.as", code, tree, table };
+    SemanticTokensRequest without{"file:///plain.as", code, tree, table};
+    SemanticTokensRequest with{"file:///plain.as", code, tree, table};
     with.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(code);
 
     CHECK(with.excludedLineRanges.empty());
@@ -563,136 +561,136 @@ TEST_CASE("SemanticTokensHandler - With nothing excluded the payload is unchange
 
 namespace
 {
-    struct TokenExpectation
+struct TokenExpectation
+{
+    uint32_t line = 0;
+    uint32_t character = 0;
+    std::string text;
+    std::string type;
+
+    /**
+     * @brief Why this one is still wrong, when it is.
+     *
+     * Empty for an expectation the server meets. A non-empty reason is a colour that is
+     * measurably wrong today and understood - the same bookkeeping the parity audit keeps for
+     * the compiler, and for the same reason: a gap nobody wrote down is a gap nobody fixes, and
+     * one that fails the build is a gap somebody deletes.
+     */
+    std::string gap;
+};
+
+struct TokenScenario
+{
+    std::string name;
+    std::string why;
+    std::string source;
+    std::vector<TokenExpectation> expect;
+};
+
+std::vector<TokenScenario> LoadTokenScenarios(const std::string& fileName)
+{
+    const std::filesystem::path path = std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / fileName;
+
+    std::ifstream file(path, std::ios::binary);
+    REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
+
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    const std::string text = ss.str();
+    lsp::json::Value parsed = lsp::json::parse(text);
+    REQUIRE(parsed.isObject());
+
+    const auto* list = parsed.object().find("scenarios");
+    REQUIRE(list != nullptr);
+    REQUIRE(list->isArray());
+
+    std::vector<TokenScenario> scenarios;
+    for (const auto& entry : list->array())
     {
-        uint32_t line = 0;
-        uint32_t character = 0;
-        std::string text;
-        std::string type;
+        const lsp::json::Object& fields = entry.object();
 
-        /**
-         * @brief Why this one is still wrong, when it is.
-         *
-         * Empty for an expectation the server meets. A non-empty reason is a colour that is
-         * measurably wrong today and understood - the same bookkeeping the parity audit keeps for
-         * the compiler, and for the same reason: a gap nobody wrote down is a gap nobody fixes, and
-         * one that fails the build is a gap somebody deletes.
-         */
-        std::string gap;
-    };
+        TokenScenario scenario;
+        scenario.name = fields.find("name")->string();
+        scenario.why = fields.find("why")->string();
+        scenario.source = fields.find("source")->string();
 
-    struct TokenScenario
-    {
-        std::string name;
-        std::string why;
-        std::string source;
-        std::vector<TokenExpectation> expect;
-    };
-
-    std::vector<TokenScenario> LoadTokenScenarios(const std::string &fileName)
-    {
-        const std::filesystem::path path = std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / fileName;
-
-        std::ifstream file(path, std::ios::binary);
-        REQUIRE_MESSAGE(file.is_open(), "cannot open " << path.string());
-
-        std::ostringstream ss;
-        ss << file.rdbuf();
-        const std::string text = ss.str();
-        lsp::json::Value parsed = lsp::json::parse(text);
-        REQUIRE(parsed.isObject());
-
-        const auto *list = parsed.object().find("scenarios");
-        REQUIRE(list != nullptr);
-        REQUIRE(list->isArray());
-
-        std::vector<TokenScenario> scenarios;
-        for (const auto &entry : list->array())
+        for (const auto& item : fields.find("expect")->array())
         {
-            const lsp::json::Object &fields = entry.object();
+            const lsp::json::Object& expectation = item.object();
+            TokenExpectation expected;
+            expected.line = static_cast<uint32_t>(expectation.find("line")->number());
+            expected.character = static_cast<uint32_t>(expectation.find("character")->number());
+            expected.text = expectation.find("text")->string();
+            expected.type = expectation.find("type")->string();
 
-            TokenScenario scenario;
-            scenario.name = fields.find("name")->string();
-            scenario.why = fields.find("why")->string();
-            scenario.source = fields.find("source")->string();
+            if (const auto* gap = expectation.find("gap"); gap && gap->isString())
+                expected.gap = gap->string();
 
-            for (const auto &item : fields.find("expect")->array())
-            {
-                const lsp::json::Object &expectation = item.object();
-                TokenExpectation expected;
-                expected.line = static_cast<uint32_t>(expectation.find("line")->number());
-                expected.character = static_cast<uint32_t>(expectation.find("character")->number());
-                expected.text = expectation.find("text")->string();
-                expected.type = expectation.find("type")->string();
-
-                if (const auto *gap = expectation.find("gap"); gap && gap->isString())
-                    expected.gap = gap->string();
-
-                scenario.expect.push_back(std::move(expected));
-            }
-
-            scenarios.push_back(std::move(scenario));
+            scenario.expect.push_back(std::move(expected));
         }
 
-        return scenarios;
+        scenarios.push_back(std::move(scenario));
     }
 
-    /** @brief One token, with its position resolved out of the protocol's delta encoding. */
-    struct AbsoluteToken
-    {
-        uint32_t line = 0;
-        uint32_t character = 0;
-        uint32_t length = 0;
-        std::string type;
-    };
-
-    std::vector<AbsoluteToken> DecodeAbsoluteTokens(const std::vector<unsigned> &data)
-    {
-        const auto &legend = GetSemanticTokensLegend();
-
-        std::vector<AbsoluteToken> tokens;
-        uint32_t line = 0;
-        uint32_t character = 0;
-
-        for (size_t i = 0; i + 4 < data.size(); i += 5)
-        {
-            const uint32_t deltaLine = data[i];
-            const uint32_t deltaStart = data[i + 1];
-
-            line += deltaLine;
-            character = deltaLine == 0 ? character + deltaStart : deltaStart;
-
-            AbsoluteToken token;
-            token.line = line;
-            token.character = character;
-            token.length = data[i + 2];
-            token.type = data[i + 3] < legend.tokenTypes.size() ? legend.tokenTypes[data[i + 3]]
-                                                                : std::string("<out of legend>");
-            tokens.push_back(token);
-        }
-
-        return tokens;
-    }
-
-    /** @brief The source text at a position, so a drifted expectation is reported as its own fault. */
-    std::string TextAt(const std::string &source, uint32_t line, uint32_t character, size_t length)
-    {
-        size_t at = 0;
-        for (uint32_t skipped = 0; skipped < line; ++skipped)
-        {
-            at = source.find('\n', at);
-            if (at == std::string::npos)
-                return {};
-            ++at;
-        }
-
-        at += character;
-        if (at >= source.size())
-            return {};
-
-        return source.substr(at, length);
-    }
+    return scenarios;
 }
+
+/** @brief One token, with its position resolved out of the protocol's delta encoding. */
+struct AbsoluteToken
+{
+    uint32_t line = 0;
+    uint32_t character = 0;
+    uint32_t length = 0;
+    std::string type;
+};
+
+std::vector<AbsoluteToken> DecodeAbsoluteTokens(const std::vector<unsigned>& data)
+{
+    const auto& legend = GetSemanticTokensLegend();
+
+    std::vector<AbsoluteToken> tokens;
+    uint32_t line = 0;
+    uint32_t character = 0;
+
+    for (size_t i = 0; i + 4 < data.size(); i += 5)
+    {
+        const uint32_t deltaLine = data[i];
+        const uint32_t deltaStart = data[i + 1];
+
+        line += deltaLine;
+        character = deltaLine == 0 ? character + deltaStart : deltaStart;
+
+        AbsoluteToken token;
+        token.line = line;
+        token.character = character;
+        token.length = data[i + 2];
+        token.type =
+            data[i + 3] < legend.tokenTypes.size() ? legend.tokenTypes[data[i + 3]] : std::string("<out of legend>");
+        tokens.push_back(token);
+    }
+
+    return tokens;
+}
+
+/** @brief The source text at a position, so a drifted expectation is reported as its own fault. */
+std::string TextAt(const std::string& source, uint32_t line, uint32_t character, size_t length)
+{
+    size_t at = 0;
+    for (uint32_t skipped = 0; skipped < line; ++skipped)
+    {
+        at = source.find('\n', at);
+        if (at == std::string::npos)
+            return {};
+        ++at;
+    }
+
+    at += character;
+    if (at >= source.size())
+        return {};
+
+    return source.substr(at, length);
+}
+} // namespace
 
 TEST_CASE("SemanticTokensHandler - Every name carries the type its colour comes from")
 {
@@ -710,31 +708,32 @@ TEST_CASE("SemanticTokensHandler - Every name carries the type its colour comes 
     size_t met = 0;
     size_t gaps = 0;
 
-    for (const TokenScenario &scenario : scenarios)
+    for (const TokenScenario& scenario : scenarios)
     {
         CAPTURE(scenario.name);
         INFO(scenario.why);
 
         AngelScriptParser parser;
-        TSTree *tree = parser.Parse(scenario.source);
+        TSTree* tree = parser.Parse(scenario.source);
         REQUIRE(tree != nullptr);
 
         // With an empty table a class is just an identifier, so the symbols have to be collected
         // first - which is what the server does before asking for tokens.
-        SymbolCollector collector{ nullptr };
+        SymbolCollector collector{nullptr};
         SymbolTable table;
         collector.CollectSymbols("file:///tokens.as", scenario.source, parser, table);
 
         // And the scope tree, which is what tells a *use* of a parameter apart from a use of a
         // local. The server passes it; leaving it out here made three parameter uses look like a
         // server defect when the omission was this test's.
-        LocalScopeCollector scopeCollector{ nullptr };
+        LocalScopeCollector scopeCollector{nullptr};
         std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(scenario.source, parser);
 
-        SemanticTokensRequest request{ "file:///tokens.as", scenario.source, tree, table, scopeRoot };
+        SemanticTokensRequest request{"file:///tokens.as", scenario.source, tree, table};
+        request.scopeRoot = scopeRoot;
         const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
 
-        for (const TokenExpectation &expected : scenario.expect)
+        for (const TokenExpectation& expected : scenario.expect)
         {
             CAPTURE(expected.text);
             CAPTURE(expected.line);
@@ -742,15 +741,13 @@ TEST_CASE("SemanticTokensHandler - Every name carries the type its colour comes 
 
             // The expectation has to point at what it says it does, or a failure below would blame
             // the server for a position someone counted wrong.
-            const std::string actualText = TextAt(scenario.source, expected.line, expected.character,
-                                                  expected.text.size());
+            const std::string actualText =
+                TextAt(scenario.source, expected.line, expected.character, expected.text.size());
             CHECK(actualText == expected.text);
 
-            const auto found = std::find_if(tokens.begin(), tokens.end(),
-                                            [&expected](const AbsoluteToken &token) {
-                                                return token.line == expected.line &&
-                                                       token.character == expected.character;
-                                            });
+            const auto found =
+                std::find_if(tokens.begin(), tokens.end(), [&expected](const AbsoluteToken& token)
+                             { return token.line == expected.line && token.character == expected.character; });
 
             const bool matched = found != tokens.end() && found->type == expected.type;
 
@@ -758,18 +755,17 @@ TEST_CASE("SemanticTokensHandler - Every name carries the type its colour comes 
             {
                 // A gap that has been fixed has to stop being called one, or this file starts
                 // excusing work that is already done.
-                CHECK_MESSAGE(!matched,
-                              "'" << expected.text << "' in " << scenario.name
-                                  << " is marked as a known gap but now carries " << expected.type
-                                  << " - remove the gap from token_scenarios.json");
+                CHECK_MESSAGE(!matched, "'" << expected.text << "' in " << scenario.name
+                                            << " is marked as a known gap but now carries " << expected.type
+                                            << " - remove the gap from token_scenarios.json");
                 ++gaps;
                 continue;
             }
 
             if (found == tokens.end())
             {
-                FAIL_CHECK("no token starts at " << expected.line << ":" << expected.character
-                                                 << " for '" << expected.text << "'");
+                FAIL_CHECK("no token starts at " << expected.line << ":" << expected.character << " for '"
+                                                 << expected.text << "'");
                 continue;
             }
 
@@ -783,7 +779,6 @@ TEST_CASE("SemanticTokensHandler - Every name carries the type its colour comes 
 
     MESSAGE("semantic tokens: " << met << " expectations met, " << gaps << " known gaps");
 }
-
 
 // =====================================================================================
 // The colouring sweep.
@@ -803,254 +798,242 @@ TEST_CASE("SemanticTokensHandler - Every name carries the type its colour comes 
 
 namespace
 {
-    struct SweptToken
+struct SweptToken
+{
+    uint32_t line;
+    uint32_t startCol;
+    uint32_t length;
+    uint32_t type;
+    uint32_t mod;
+};
+
+/** @brief Semantic tokens for a document, decoded back to absolute positions. */
+std::vector<SweptToken> SweepTokens(const std::string& code)
+{
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolTable table;
+    SemanticTokensRequest request{"file:///sweep.as", code, tree, table};
+    const auto tokens = GetSemanticTokens(request);
+    ts_tree_delete(tree);
+
+    std::vector<SweptToken> swept;
+    uint32_t line = 0;
+    uint32_t column = 0;
+
+    for (size_t i = 0; i + 4 < tokens.data.size(); i += 5)
     {
-        uint32_t line;
-        uint32_t startCol;
-        uint32_t length;
-        uint32_t type;
-        uint32_t mod;
-    };
+        const uint32_t deltaLine = tokens.data[i];
+        const uint32_t deltaStart = tokens.data[i + 1];
 
-    /** @brief Semantic tokens for a document, decoded back to absolute positions. */
-    std::vector<SweptToken> SweepTokens(const std::string &code)
-    {
-        AngelScriptParser parser;
-        TSTree *tree = parser.Parse(code);
-        REQUIRE(tree != nullptr);
-
-        SymbolTable table;
-        SemanticTokensRequest request{ "file:///sweep.as", code, tree, table };
-        const auto tokens = GetSemanticTokens(request);
-        ts_tree_delete(tree);
-
-        std::vector<SweptToken> swept;
-        uint32_t line = 0;
-        uint32_t column = 0;
-
-        for (size_t i = 0; i + 4 < tokens.data.size(); i += 5)
+        if (deltaLine > 0)
         {
-            const uint32_t deltaLine = tokens.data[i];
-            const uint32_t deltaStart = tokens.data[i + 1];
-
-            if (deltaLine > 0)
-            {
-                line += deltaLine;
-                column = deltaStart;
-            }
-            else
-            {
-                column += deltaStart;
-            }
-
-            swept.push_back(SweptToken{ line, column, tokens.data[i + 2], tokens.data[i + 3], tokens.data[i + 4] });
+            line += deltaLine;
+            column = deltaStart;
+        }
+        else
+        {
+            column += deltaStart;
         }
 
-        return swept;
+        swept.push_back(SweptToken{line, column, tokens.data[i + 2], tokens.data[i + 3], tokens.data[i + 4]});
     }
 
-    /** @brief The token covering a position, or nullptr. Containment, not equality: `!is` starts a
-     *         character before the word `is` that the scan below finds. */
-    const SweptToken *TokenCovering(const std::vector<SweptToken> &swept, uint32_t line, uint32_t column)
-    {
-        for (const auto &token : swept)
-        {
-            if (token.line == line && column >= token.startCol && column < token.startCol + token.length)
-                return &token;
-        }
-        return nullptr;
-    }
-
-    /** @brief The token that starts exactly here, or nullptr. */
-    const SweptToken *TokenAt(const std::vector<SweptToken> &swept, uint32_t line, uint32_t column)
-    {
-        for (const auto &token : swept)
-        {
-            if (token.line == line && token.startCol == column)
-                return &token;
-        }
-        return nullptr;
-    }
-
-    /** @brief The column of a needle on a line, so no test has to count characters by hand. */
-    uint32_t ColumnOf(const std::string &code, uint32_t line, const std::string &needle)
-    {
-        size_t start = 0;
-        for (uint32_t current = 0; current < line; ++current)
-        {
-            start = code.find('\n', start);
-            REQUIRE(start != std::string::npos);
-            ++start;
-        }
-
-        const size_t lineEnd = code.find('\n', start);
-        const std::string text = code.substr(start, lineEnd == std::string::npos ? std::string::npos : lineEnd - start);
-
-        const size_t at = text.find(needle);
-        REQUIRE(at != std::string::npos);
-        return static_cast<uint32_t>(at);
-    }
-
-    struct WordSite
-    {
-        uint32_t line;
-        uint32_t column;
-        std::string word;
-    };
-
-    /** @brief Every place a reserved word appears as a whole word, wherever it appears. */
-    std::vector<WordSite> ReservedWordSites(const std::string &code)
-    {
-        const auto isWordChar = [](char c)
-        {
-            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
-        };
-
-        std::vector<WordSite> sites;
-        uint32_t line = 0;
-        uint32_t column = 0;
-
-        for (size_t i = 0; i < code.size();)
-        {
-            if (code[i] == '\n')
-            {
-                ++line;
-                column = 0;
-                ++i;
-                continue;
-            }
-
-            if (!isWordChar(code[i]) || (i > 0 && isWordChar(code[i - 1])))
-            {
-                ++column;
-                ++i;
-                continue;
-            }
-
-            size_t end = i;
-            while (end < code.size() && isWordChar(code[end]))
-                ++end;
-
-            const std::string word = code.substr(i, end - i);
-            if (angel_lsp::parser::keywords::IsReserved(word))
-                sites.push_back(WordSite{ line, column, word });
-
-            column += static_cast<uint32_t>(end - i);
-            i = end;
-        }
-
-        return sites;
-    }
-
-    struct Scenario
-    {
-        const char *name;
-        const char *source;
-    };
-
-    /**
-     * @brief One document per construct, chosen so a missed one is a missed row rather than a
-     *        missed line inside a big file nobody reads.
-     */
-    const std::vector<Scenario> &ColouringScenarios()
-    {
-        static const std::vector<Scenario> scenarios = {
-            { "while and do-while",
-              "void Loops()\n"
-              "{\n"
-              "    while (true) { break; }\n"
-              "    do { continue; } while (false);\n"
-              "}\n" },
-
-            { "for, with every clause filled in",
-              "void Counted(int limit)\n"
-              "{\n"
-              "    for (int i = 0; i < limit; i++) { }\n"
-              "    for (uint j = 0, k = 1; j < 4; j += 1, k *= 2) { }\n"
-              "}\n" },
-
-            { "foreach",
-              "void Walk(array<int>@ xs)\n"
-              "{\n"
-              "    foreach (int x : xs) { }\n"
-              "}\n" },
-
-            { "switch, case and default",
-              "void Pick(int which)\n"
-              "{\n"
-              "    switch (which)\n"
-              "    {\n"
-              "        case 1: break;\n"
-              "        default: break;\n"
-              "    }\n"
-              "}\n" },
-
-            { "try and catch",
-              "void Guarded()\n"
-              "{\n"
-              "    try { throwing(); }\n"
-              "    catch { }\n"
-              "}\n" },
-
-            { "the word operators",
-              "bool Decide(bool a, bool b, Thing@ t)\n"
-              "{\n"
-              "    if (a and b or not a) { }\n"
-              "    if (a xor b) { }\n"
-              "    if (t is null) { }\n"
-              "    return t !is null;\n"
-              "}\n" },
-
-            { "an anonymous function inside a block",
-              "funcdef void CallbackKind(int v);\n"
-              "void Register()\n"
-              "{\n"
-              "    {\n"
-              "        CallbackKind@ cb = function(int v) { return; };\n"
-              "    }\n"
-              "}\n" },
-
-            { "a class, with modifiers and accessors",
-              "shared abstract class Actor\n"
-              "{\n"
-              "    private int m_health;\n"
-              "    protected const bool m_alive = true;\n"
-              "    int Health { get const { return m_health; } set { m_health = value; } }\n"
-              "    void Hurt(int amount) override { }\n"
-              "}\n" },
-
-            { "namespace, enum, interface, mixin, typedef and funcdef",
-              "namespace World\n"
-              "{\n"
-              "    enum Phase { Start = 1, Stop = 2 }\n"
-              "    interface Tickable { void Tick(); }\n"
-              "    mixin class Helper { void Aid() {} }\n"
-              "    typedef double Real;\n"
-              "    funcdef void Handler();\n"
-              "}\n" },
-
-            { "templates, casts and handles",
-              "void Convert(Base@ b)\n"
-              "{\n"
-              "    array<array<int>> grid;\n"
-              "    Derived@ d = cast<Derived>(b);\n"
-              "    int64 big = 1;\n"
-              "    uint8 small = 2;\n"
-              "}\n" },
-
-            { "conditions of every shape",
-              "void Conditions(int i, float f, bool flag, Thing@ t)\n"
-              "{\n"
-              "    if (i > 0 && f <= 1.0f) { }\n"
-              "    else if (flag || not flag) { }\n"
-              "    else { }\n"
-              "    while (i >>> 1 != 0) { i = i >> 1; }\n"
-              "}\n" },
-        };
-
-        return scenarios;
-    }
+    return swept;
 }
+
+/** @brief The token covering a position, or nullptr. Containment, not equality: `!is` starts a
+ *         character before the word `is` that the scan below finds. */
+const SweptToken* TokenCovering(const std::vector<SweptToken>& swept, uint32_t line, uint32_t column)
+{
+    for (const auto& token : swept)
+    {
+        if (token.line == line && column >= token.startCol && column < token.startCol + token.length)
+            return &token;
+    }
+    return nullptr;
+}
+
+/** @brief The token that starts exactly here, or nullptr. */
+const SweptToken* TokenAt(const std::vector<SweptToken>& swept, uint32_t line, uint32_t column)
+{
+    for (const auto& token : swept)
+    {
+        if (token.line == line && token.startCol == column)
+            return &token;
+    }
+    return nullptr;
+}
+
+/** @brief The column of a needle on a line, so no test has to count characters by hand. */
+uint32_t ColumnOf(const std::string& code, uint32_t line, const std::string& needle)
+{
+    size_t start = 0;
+    for (uint32_t current = 0; current < line; ++current)
+    {
+        start = code.find('\n', start);
+        REQUIRE(start != std::string::npos);
+        ++start;
+    }
+
+    const size_t lineEnd = code.find('\n', start);
+    const std::string text = code.substr(start, lineEnd == std::string::npos ? std::string::npos : lineEnd - start);
+
+    const size_t at = text.find(needle);
+    REQUIRE(at != std::string::npos);
+    return static_cast<uint32_t>(at);
+}
+
+struct WordSite
+{
+    uint32_t line;
+    uint32_t column;
+    std::string word;
+};
+
+/** @brief Every place a reserved word appears as a whole word, wherever it appears. */
+std::vector<WordSite> ReservedWordSites(const std::string& code)
+{
+    const auto isWordChar = [](char c)
+    { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'; };
+
+    std::vector<WordSite> sites;
+    uint32_t line = 0;
+    uint32_t column = 0;
+
+    for (size_t i = 0; i < code.size();)
+    {
+        if (code[i] == '\n')
+        {
+            ++line;
+            column = 0;
+            ++i;
+            continue;
+        }
+
+        if (!isWordChar(code[i]) || (i > 0 && isWordChar(code[i - 1])))
+        {
+            ++column;
+            ++i;
+            continue;
+        }
+
+        size_t end = i;
+        while (end < code.size() && isWordChar(code[end]))
+            ++end;
+
+        const std::string word = code.substr(i, end - i);
+        if (angel_lsp::parser::keywords::IsReserved(word))
+            sites.push_back(WordSite{line, column, word});
+
+        column += static_cast<uint32_t>(end - i);
+        i = end;
+    }
+
+    return sites;
+}
+
+struct Scenario
+{
+    const char* name;
+    const char* source;
+};
+
+/**
+ * @brief One document per construct, chosen so a missed one is a missed row rather than a
+ *        missed line inside a big file nobody reads.
+ */
+const std::vector<Scenario>& ColouringScenarios()
+{
+    static const std::vector<Scenario> scenarios = {
+        {"while and do-while", "void Loops()\n"
+                               "{\n"
+                               "    while (true) { break; }\n"
+                               "    do { continue; } while (false);\n"
+                               "}\n"},
+
+        {"for, with every clause filled in", "void Counted(int limit)\n"
+                                             "{\n"
+                                             "    for (int i = 0; i < limit; i++) { }\n"
+                                             "    for (uint j = 0, k = 1; j < 4; j += 1, k *= 2) { }\n"
+                                             "}\n"},
+
+        {"foreach", "void Walk(array<int>@ xs)\n"
+                    "{\n"
+                    "    foreach (int x : xs) { }\n"
+                    "}\n"},
+
+        {"switch, case and default", "void Pick(int which)\n"
+                                     "{\n"
+                                     "    switch (which)\n"
+                                     "    {\n"
+                                     "        case 1: break;\n"
+                                     "        default: break;\n"
+                                     "    }\n"
+                                     "}\n"},
+
+        {"try and catch", "void Guarded()\n"
+                          "{\n"
+                          "    try { throwing(); }\n"
+                          "    catch { }\n"
+                          "}\n"},
+
+        {"the word operators", "bool Decide(bool a, bool b, Thing@ t)\n"
+                               "{\n"
+                               "    if (a and b or not a) { }\n"
+                               "    if (a xor b) { }\n"
+                               "    if (t is null) { }\n"
+                               "    return t !is null;\n"
+                               "}\n"},
+
+        {"an anonymous function inside a block", "funcdef void CallbackKind(int v);\n"
+                                                 "void Register()\n"
+                                                 "{\n"
+                                                 "    {\n"
+                                                 "        CallbackKind@ cb = function(int v) { return; };\n"
+                                                 "    }\n"
+                                                 "}\n"},
+
+        {"a class, with modifiers and accessors",
+         "shared abstract class Actor\n"
+         "{\n"
+         "    private int m_health;\n"
+         "    protected const bool m_alive = true;\n"
+         "    int Health { get const { return m_health; } set { m_health = value; } }\n"
+         "    void Hurt(int amount) override { }\n"
+         "}\n"},
+
+        {"namespace, enum, interface, mixin, typedef and funcdef", "namespace World\n"
+                                                                   "{\n"
+                                                                   "    enum Phase { Start = 1, Stop = 2 }\n"
+                                                                   "    interface Tickable { void Tick(); }\n"
+                                                                   "    mixin class Helper { void Aid() {} }\n"
+                                                                   "    typedef double Real;\n"
+                                                                   "    funcdef void Handler();\n"
+                                                                   "}\n"},
+
+        {"templates, casts and handles", "void Convert(Base@ b)\n"
+                                         "{\n"
+                                         "    array<array<int>> grid;\n"
+                                         "    Derived@ d = cast<Derived>(b);\n"
+                                         "    int64 big = 1;\n"
+                                         "    uint8 small = 2;\n"
+                                         "}\n"},
+
+        {"conditions of every shape", "void Conditions(int i, float f, bool flag, Thing@ t)\n"
+                                      "{\n"
+                                      "    if (i > 0 && f <= 1.0f) { }\n"
+                                      "    else if (flag || not flag) { }\n"
+                                      "    else { }\n"
+                                      "    while (i >>> 1 != 0) { i = i >> 1; }\n"
+                                      "}\n"},
+    };
+
+    return scenarios;
+}
+} // namespace
 
 TEST_CASE("SemanticTokensHandler - Every word of the language is classified, in every construct")
 {
@@ -1058,11 +1041,11 @@ TEST_CASE("SemanticTokensHandler - Every word of the language is classified, in 
     // `foreach` is a keyword, `inout` a modifier, `int` a type. Comment and String are here because
     // a reserved word inside a comment or a literal is not a keyword at all, and the scan below
     // finds it anyway; the token covering it says which.
-    const std::vector<uint32_t> acceptable = { 15, 16, 1, 17, 18 };
+    const std::vector<uint32_t> acceptable = {15, 16, 1, 17, 18};
 
     size_t checked = 0;
 
-    for (const auto &scenario : ColouringScenarios())
+    for (const auto& scenario : ColouringScenarios())
     {
         const std::string source = scenario.source;
         const auto swept = SweepTokens(source);
@@ -1071,12 +1054,12 @@ TEST_CASE("SemanticTokensHandler - Every word of the language is classified, in 
         INFO("scenario: " << scenario.name);
         REQUIRE_FALSE(sites.empty());
 
-        for (const auto &site : sites)
+        for (const auto& site : sites)
         {
-            INFO("scenario: " << scenario.name << "\nword: " << site.word
-                              << " at line " << site.line << " column " << site.column);
+            INFO("scenario: " << scenario.name << "\nword: " << site.word << " at line " << site.line << " column "
+                              << site.column);
 
-            const SweptToken *token = TokenCovering(swept, site.line, site.column);
+            const SweptToken* token = TokenCovering(swept, site.line, site.column);
             REQUIRE(token != nullptr);
 
             const bool ok = std::find(acceptable.begin(), acceptable.end(), token->type) != acceptable.end();
@@ -1097,31 +1080,34 @@ TEST_CASE("SemanticTokensHandler - A word operator is a keyword, not punctuation
     // The report: `and` came back as `operator`, which themes paint the colour of plain text, while
     // the textmate grammar had always scoped it keyword.control.conditional. The semantic token was
     // overriding the better answer with a worse one.
-    const std::string source =
-        "bool Decide(bool a, bool b, Thing@ t)\n"
-        "{\n"
-        "    if (a and b) { }\n"
-        "    if (a or b) { }\n"
-        "    if (a xor b) { }\n"
-        "    if (not a) { }\n"
-        "    if (t is null) { }\n"
-        "    return t !is null;\n"
-        "}\n";
+    const std::string source = "bool Decide(bool a, bool b, Thing@ t)\n"
+                               "{\n"
+                               "    if (a and b) { }\n"
+                               "    if (a or b) { }\n"
+                               "    if (a xor b) { }\n"
+                               "    if (not a) { }\n"
+                               "    if (t is null) { }\n"
+                               "    return t !is null;\n"
+                               "}\n";
 
     const auto swept = SweepTokens(source);
 
     constexpr uint32_t k_keyword = 15;
 
-    struct Expectation { uint32_t line; const char *needle; };
+    struct Expectation
+    {
+        uint32_t line;
+        const char* needle;
+    };
     const std::vector<Expectation> expectations = {
-        { 2, "and" }, { 3, "or" }, { 4, "xor" }, { 5, "not" }, { 6, "is" }, { 7, "!is" },
+        {2, "and"}, {3, "or"}, {4, "xor"}, {5, "not"}, {6, "is"}, {7, "!is"},
     };
 
-    for (const auto &expected : expectations)
+    for (const auto& expected : expectations)
     {
         INFO("word operator: " << expected.needle);
         const uint32_t column = ColumnOf(source, expected.line, expected.needle);
-        const SweptToken *token = TokenAt(swept, expected.line, column);
+        const SweptToken* token = TokenAt(swept, expected.line, column);
         REQUIRE(token != nullptr);
         CHECK(token->length == std::string(expected.needle).size());
         CHECK(token->type == k_keyword);
@@ -1137,11 +1123,11 @@ TEST_CASE("SemanticTokensHandler - Punctuation operators stay operators")
     const auto swept = SweepTokens(source);
     constexpr uint32_t k_operator = 21;
 
-    for (const char *needle : { "+ 2", "* 3", "+= 4", ">>> 1" })
+    for (const char* needle : {"+ 2", "* 3", "+= 4", ">>> 1"})
     {
         INFO("operator: " << needle);
         const uint32_t column = ColumnOf(source, 0, needle);
-        const SweptToken *token = TokenAt(swept, 0, column);
+        const SweptToken* token = TokenAt(swept, 0, column);
         REQUIRE(token != nullptr);
         CHECK(token->type == k_operator);
     }
@@ -1149,23 +1135,22 @@ TEST_CASE("SemanticTokensHandler - Punctuation operators stay operators")
 
 TEST_CASE("SemanticTokensHandler - Braces and punctuation delimiters never receive operator token type")
 {
-    const std::string source =
-        "void BracketTest(int a, int b)\n"
-        "{\n"
-        "    int[] arr = { 1, 2 };\n"
-        "    if (a > b)\n"
-        "    {\n"
-        "        arr[0] = (a + b);\n"
-        "    }\n"
-        "}\n";
+    const std::string source = "void BracketTest(int a, int b)\n"
+                               "{\n"
+                               "    int[] arr = { 1, 2 };\n"
+                               "    if (a > b)\n"
+                               "    {\n"
+                               "        arr[0] = (a + b);\n"
+                               "    }\n"
+                               "}\n";
 
     const auto swept = SweepTokens(source);
     constexpr uint32_t k_operator = 21;
 
     // Check opening and closing braces on lines 1, 2, 4, 6, 7
-    for (uint32_t line : { 1u, 2u, 4u, 6u, 7u })
+    for (uint32_t line : {1u, 2u, 4u, 6u, 7u})
     {
-        for (const auto &token : swept)
+        for (const auto& token : swept)
         {
             if (token.line == line)
             {
@@ -1192,7 +1177,7 @@ TEST_CASE("SemanticTokensHandler - Braces and punctuation delimiters never recei
         }
     }
 
-    for (const auto &tok : swept)
+    for (const auto& tok : swept)
     {
         if (tok.type == k_operator)
         {
@@ -1213,34 +1198,31 @@ TEST_CASE("SemanticTokensHandler - Braces and punctuation delimiters never recei
 TEST_CASE("SemanticTokensHandler - Syntax error recovery preserves token integrity and 5-tuple alignment")
 {
     // Step 1: Valid function with ternary expression and braces
-    const std::string step1Valid =
-        "void TestFunction()\n"
-        "{\n"
-        "    string status = true ? \"READY\" : \"DRYFIRE\";\n"
-        "}\n";
+    const std::string step1Valid = "void TestFunction()\n"
+                                   "{\n"
+                                   "    string status = true ? \"READY\" : \"DRYFIRE\";\n"
+                                   "}\n";
 
     // Step 2: Introduce syntax error (unclosed quote DRYFIRE")
-    const std::string step2SyntaxError =
-        "void TestFunction()\n"
-        "{\n"
-        "    string status = true ? \"READY\" : DRYFIRE\";\n"
-        "}\n";
+    const std::string step2SyntaxError = "void TestFunction()\n"
+                                         "{\n"
+                                         "    string status = true ? \"READY\" : DRYFIRE\";\n"
+                                         "}\n";
 
     // Step 3: Remove quote back to DRYFIRE
-    const std::string step3Recovered =
-        "void TestFunction()\n"
-        "{\n"
-        "    string status = true ? \"READY\" : DRYFIRE;\n"
-        "}\n";
+    const std::string step3Recovered = "void TestFunction()\n"
+                                       "{\n"
+                                       "    string status = true ? \"READY\" : DRYFIRE;\n"
+                                       "}\n";
 
     AngelScriptParser parser;
     SymbolTable table;
 
     // Step 1
-    TSTree *tree1 = parser.Parse(step1Valid);
+    TSTree* tree1 = parser.Parse(step1Valid);
     REQUIRE(tree1 != nullptr);
     CHECK_FALSE(ts_node_has_error(ts_tree_root_node(tree1)));
-    SemanticTokensRequest req1{ "file:///test.as", step1Valid, tree1, table };
+    SemanticTokensRequest req1{"file:///test.as", step1Valid, tree1, table};
     const auto tokens1 = GetSemanticTokens(req1);
     ts_tree_delete(tree1);
 
@@ -1248,20 +1230,20 @@ TEST_CASE("SemanticTokensHandler - Syntax error recovery preserves token integri
     REQUIRE(!tokens1.data.empty());
 
     // Step 2
-    TSTree *tree2 = parser.Parse(step2SyntaxError);
+    TSTree* tree2 = parser.Parse(step2SyntaxError);
     REQUIRE(tree2 != nullptr);
     CHECK(ts_node_has_error(ts_tree_root_node(tree2)));
-    SemanticTokensRequest req2{ "file:///test.as", step2SyntaxError, tree2, table };
+    SemanticTokensRequest req2{"file:///test.as", step2SyntaxError, tree2, table};
     const auto tokens2 = GetSemanticTokens(req2);
     ts_tree_delete(tree2);
 
     REQUIRE(tokens2.data.size() % 5 == 0);
 
     // Step 3
-    TSTree *tree3 = parser.Parse(step3Recovered);
+    TSTree* tree3 = parser.Parse(step3Recovered);
     REQUIRE(tree3 != nullptr);
     CHECK_FALSE(ts_node_has_error(ts_tree_root_node(tree3)));
-    SemanticTokensRequest req3{ "file:///test.as", step3Recovered, tree3, table };
+    SemanticTokensRequest req3{"file:///test.as", step3Recovered, tree3, table};
     const auto tokens3 = GetSemanticTokens(req3);
     ts_tree_delete(tree3);
 
@@ -1272,7 +1254,7 @@ TEST_CASE("SemanticTokensHandler - Syntax error recovery preserves token integri
     const auto swept3 = SweepTokens(step3Recovered);
     constexpr uint32_t k_operator = 21;
 
-    for (const auto &tok : swept3)
+    for (const auto& tok : swept3)
     {
         if (tok.type == k_operator)
         {
@@ -1284,14 +1266,14 @@ TEST_CASE("SemanticTokensHandler - Syntax error recovery preserves token integri
 
     // Verify { and } on lines 1 and 3 never receive Type_Operator
     const uint32_t openBraceCol = ColumnOf(step3Recovered, 1, "{");
-    const SweptToken *openBraceToken = TokenAt(swept3, 1, openBraceCol);
+    const SweptToken* openBraceToken = TokenAt(swept3, 1, openBraceCol);
     if (openBraceToken != nullptr)
     {
         CHECK(openBraceToken->type != k_operator);
     }
 
     const uint32_t closeBraceCol = ColumnOf(step3Recovered, 3, "}");
-    const SweptToken *closeBraceToken = TokenAt(swept3, 3, closeBraceCol);
+    const SweptToken* closeBraceToken = TokenAt(swept3, 3, closeBraceCol);
     if (closeBraceToken != nullptr)
     {
         CHECK(closeBraceToken->type != k_operator);
@@ -1299,7 +1281,7 @@ TEST_CASE("SemanticTokensHandler - Syntax error recovery preserves token integri
 
     // Assert that delta edits between step 2 and step 3 strictly obey 5-tuple alignment
     const auto edits = ComputeSemanticTokensDelta(tokens2.data, tokens3.data);
-    for (const auto &edit : edits)
+    for (const auto& edit : edits)
     {
         CHECK(edit.start % 5 == 0);
         CHECK(edit.deleteCount % 5 == 0);
@@ -1311,14 +1293,14 @@ TEST_CASE("SemanticTokensHandler - Syntax error recovery preserves token integri
 
     // Assert that applying edits reproduces step 3 stream exactly
     auto applied = tokens2.data;
-    for (const auto &edit : edits)
+    for (const auto& edit : edits)
     {
         const auto first = applied.begin() + static_cast<std::ptrdiff_t>(edit.start);
         applied.erase(first, first + static_cast<std::ptrdiff_t>(edit.deleteCount));
         if (edit.data.has_value())
         {
-            applied.insert(applied.begin() + static_cast<std::ptrdiff_t>(edit.start),
-                           edit.data->begin(), edit.data->end());
+            applied.insert(applied.begin() + static_cast<std::ptrdiff_t>(edit.start), edit.data->begin(),
+                           edit.data->end());
         }
     }
     CHECK(applied == tokens3.data);
@@ -1330,46 +1312,42 @@ TEST_CASE("SemanticTokensHandler - Syntax error recovery preserves token integri
  */
 TEST_CASE("SemanticTokensHandler - Member accesses on objects are tokenized as properties")
 {
-    const std::string code =
-        "class Player\n"
-        "{\n"
-        "    int health;\n"
-        "    void run() {}\n"
-        "}\n"
-        "void main()\n"
-        "{\n"
-        "    Player p;\n"
-        "    p.health = 100;\n"
-        "    p.run();\n"
-        "}\n";
+    const std::string code = "class Player\n"
+                             "{\n"
+                             "    int health;\n"
+                             "    void run() {}\n"
+                             "}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    Player p;\n"
+                             "    p.health = 100;\n"
+                             "    p.run();\n"
+                             "}\n";
 
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
-    SymbolCollector collector{ nullptr };
+    SymbolCollector collector{nullptr};
     SymbolTable table;
     collector.CollectSymbols("file:///test.as", code, parser, table);
 
-    LocalScopeCollector scopeCollector{ nullptr };
+    LocalScopeCollector scopeCollector{nullptr};
     std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(code, parser);
 
-    SemanticTokensRequest request{ "file:///test.as", code, tree, table, scopeRoot };
+    SemanticTokensRequest request{"file:///test.as", code, tree, table};
+    request.scopeRoot = scopeRoot;
     const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
 
     // Verify p.health on line 8 has health as property
-    auto healthToken = std::find_if(tokens.begin(), tokens.end(), [](const AbsoluteToken &t)
-    {
-        return t.line == 8 && t.character == 6 && t.length == 6;
-    });
+    auto healthToken = std::find_if(tokens.begin(), tokens.end(), [](const AbsoluteToken& t)
+                                    { return t.line == 8 && t.character == 6 && t.length == 6; });
     REQUIRE(healthToken != tokens.end());
     CHECK(healthToken->type == "property");
 
     // Verify p.run() on line 9 has run as method
-    auto runToken = std::find_if(tokens.begin(), tokens.end(), [](const AbsoluteToken &t)
-    {
-        return t.line == 9 && t.character == 6 && t.length == 3;
-    });
+    auto runToken = std::find_if(tokens.begin(), tokens.end(), [](const AbsoluteToken& t)
+                                 { return t.line == 9 && t.character == 6 && t.length == 3; });
     REQUIRE(runToken != tokens.end());
     CHECK(runToken->type == "method");
 
@@ -1378,44 +1356,46 @@ TEST_CASE("SemanticTokensHandler - Member accesses on objects are tokenized as p
 
 TEST_CASE("SemanticTokensHandler - Golden Test: Bit-for-bit identity across NodeIndex and Fallback")
 {
-    std::string code =
-        "enum State { Idle, Running, Stopped }\n"
-        "class Entity\n"
-        "{\n"
-        "    int id;\n"
-        "    State state;\n"
-        "    void update(float dt)\n"
-        "    {\n"
-        "        id = 42;\n"
-        "        state = State::Running;\n"
-        "        this.id += 1;\n"
-        "    }\n"
-        "}\n"
-        "void main()\n"
-        "{\n"
-        "    Entity e;\n"
-        "    e.update(0.16f);\n"
-        "    auto lambda = function(int a, float b) { return a + int(b); };\n"
-        "}\n";
+    std::string code = "enum State { Idle, Running, Stopped }\n"
+                       "class Entity\n"
+                       "{\n"
+                       "    int id;\n"
+                       "    State state;\n"
+                       "    void update(float dt)\n"
+                       "    {\n"
+                       "        id = 42;\n"
+                       "        state = State::Running;\n"
+                       "        this.id += 1;\n"
+                       "    }\n"
+                       "}\n"
+                       "void main()\n"
+                       "{\n"
+                       "    Entity e;\n"
+                       "    e.update(0.16f);\n"
+                       "    auto lambda = function(int a, float b) { return a + int(b); };\n"
+                       "}\n";
 
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
-    SymbolCollector collector{ nullptr };
+    SymbolCollector collector{nullptr};
     SymbolTable table;
     collector.CollectSymbols("file:///golden.as", code, parser, table);
 
-    LocalScopeCollector scopeCollector{ nullptr };
+    LocalScopeCollector scopeCollector{nullptr};
     std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(code, parser);
 
     // Request 1: Without pre-supplied NodeIndex (internal NodeIndex built automatically)
-    SemanticTokensRequest reqFallback{ "file:///golden.as", code, tree, table, scopeRoot };
+    SemanticTokensRequest reqFallback{"file:///golden.as", code, tree, table};
+    reqFallback.scopeRoot = scopeRoot;
     auto tokensFallback = GetSemanticTokens(reqFallback);
 
     // Request 2: With explicit pre-supplied NodeIndex
     analysis::NodeIndex preIndex(ts_tree_root_node(tree));
-    SemanticTokensRequest reqWithIndex{ "file:///golden.as", code, tree, table, scopeRoot, std::nullopt, &preIndex };
+    SemanticTokensRequest reqWithIndex{"file:///golden.as", code, tree, table};
+    reqWithIndex.scopeRoot = scopeRoot;
+    reqWithIndex.nodeIndex = &preIndex;
     auto tokensWithIndex = GetSemanticTokens(reqWithIndex);
 
     // Assert bit-for-bit identity
@@ -1429,4 +1409,3 @@ TEST_CASE("SemanticTokensHandler - Golden Test: Bit-for-bit identity across Node
 
     ts_tree_delete(tree);
 }
-
