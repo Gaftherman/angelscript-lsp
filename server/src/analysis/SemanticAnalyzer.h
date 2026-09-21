@@ -132,5 +132,66 @@ class SemanticAnalyzer
      * @brief Checks local variable declarations (e.g. disallowing 'void' type local variables).
      */
     void CheckLocalVariableDeclarations(const Scope* scope, DiagnosticContext& ctx, int depth = 0) const;
+
+    /**
+     * @brief Dumps debug symbol information if trace logging is enabled.
+     * @param[in] request The semantic analysis request containing the symbol table.
+     */
+    void LogSymbolDump(const SemanticAnalysisRequest& request) const;
+
+    /**
+     * @brief Executes scope-level rules such as unused variables and undefined identifiers.
+     * @param[in] request The semantic analysis request.
+     * @param[in,out] ctx Diagnostic context accumulating emitted diagnostics.
+     */
+    void RunScopeRules(const SemanticAnalysisRequest& request, DiagnosticContext& ctx) const;
+
+    /**
+     * @brief Executes statement and control flow rules (breaks, returns, loops).
+     * @param[in] request The semantic analysis request.
+     * @param[in] indexPtr Optional prebuilt node index.
+     * @param[in,out] ctx Diagnostic context accumulating emitted diagnostics.
+     */
+    void RunStatementAndControlFlowRules(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
+                                         DiagnosticContext& ctx) const;
+
+    /**
+     * @brief Executes expression-level rules (calls, member expressions, assignments).
+     * @param[in] request The semantic analysis request.
+     * @param[in] indexPtr Optional prebuilt node index.
+     * @param[in,out] ctx Diagnostic context accumulating emitted diagnostics.
+     */
+    void RunExpressionRules(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
+                            DiagnosticContext& ctx) const;
+
+    /**
+     * @brief Executes type and structural rules (enums, interfaces, classes).
+     * @param[in] request The semantic analysis request.
+     * @param[in] indexPtr Optional prebuilt node index.
+     * @param[in,out] ctx Diagnostic context accumulating emitted diagnostics.
+     */
+    void RunTypeAndStructureRules(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
+                                  DiagnosticContext& ctx) const;
+
+    /**
+     * @brief Checks preprocessor directives and module boundaries.
+     * @param[in] request The semantic analysis request.
+     * @param[in,out] ctx Diagnostic context accumulating emitted diagnostics.
+     */
+    void CheckDirectivesAndModules(const SemanticAnalysisRequest& request, DiagnosticContext& ctx) const;
+
+    /**
+     * @brief Validates names declared within a local scope (e.g., duplicates, reserved keywords).
+     * @param[in] scope The current lexical scope being inspected.
+     * @param[in,out] ctx Diagnostic context accumulating emitted diagnostics.
+     */
+    void CheckLocalNames(const Scope* scope, DiagnosticContext& ctx) const;
+
+    /**
+     * @brief Validates types used by local variables within a scope.
+     * @param[in] scope The current lexical scope being inspected.
+     * @param[in,out] ctx Diagnostic context accumulating emitted diagnostics.
+     */
+    void CheckLocalTypes(const Scope* scope, DiagnosticContext& ctx) const;
 };
 } // namespace angel_lsp::analysis

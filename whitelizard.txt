@@ -122,10 +122,6 @@ angel_lsp::analysis::ResolveValueType
 angel_lsp::analysis::RewriteAtInlineCommands
 angel_lsp::analysis::ScoreArgumentMatch
 angel_lsp::analysis::SegmentCommentLines
-angel_lsp::analysis::SemanticAnalyzer::Analyze
-angel_lsp::analysis::SemanticAnalyzer::CheckEngineDialectRules
-angel_lsp::analysis::SemanticAnalyzer::CheckLocalVariableDeclarations
-angel_lsp::analysis::SemanticAnalyzer::CheckUndefinedIdentifiers
 angel_lsp::analysis::SplitCommentLineOnNewlines
 angel_lsp::analysis::SymbolCollector::ApplyModifierToken
 angel_lsp::analysis::SymbolCollector::CheckDuplicateModifierGroup

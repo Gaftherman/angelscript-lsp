@@ -28,21 +28,8 @@ SemanticAnalyzer::SemanticAnalyzer(angel_lsp::utils::LspLogger* logger) : m_logg
 {
 }
 
-std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest& request) const
+void SemanticAnalyzer::LogSymbolDump(const SemanticAnalysisRequest& request) const
 {
-    utils::HighResTimer totalTimer;
-    std::vector<Diagnostic> diagnostics;
-
-    // A dump of the document's own symbols, at Debug because that is what it is - the client's
-    // log is not the place to narrate every declaration on every keystroke. Read through
-    // ForEachSymbolInFile for the same reason the rules are: walking the whole workspace to
-    // print one file's symbols was the last full-table walk left in the analysis path.
-    // Gated on the level, not merely on the logger existing. m_logger is never null in the
-    // server, and LspLogger had no threshold at all, so this loop formatted and sent one
-    // window/logMessage notification per symbol in the file on every analysis - taking the log
-    // mutex and then the connection's write mutex each time, contending with the message loop's
-    // own responses. The check has to be here rather than inside LogDebug: passing an already
-    // built string still pays for fmt::format.
     if (m_logger && m_logger->IsDebugEnabled())
     {
         m_logger->LogDebug(fmt::format("=== [SYMBOL COLLECTOR OUTPUT] Document: {} ===", request.fileUri));
@@ -62,180 +49,94 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
                 }
             });
     }
+}
 
-    utils::HighResTimer declRulesTimer;
+void SemanticAnalyzer::RunScopeRules(const SemanticAnalysisRequest& request, DiagnosticContext& ctx) const
+{
+    if (!request.scopeRoot)
     {
-        DiagnosticContext ctx{request, diagnostics, m_logger};
-        CheckNullAssignedToNonHandle(request.symbolTable, ctx);
-        CheckDeclarationRules(request.symbolTable, ctx);
+        return;
     }
-    double declRulesMs = declRulesTimer.ElapsedMs();
+    CheckUndefinedIdentifiers(request.scopeRoot.get(), request.GetRuleIndex().allNames, ctx);
 
-    double scopeRulesMs = 0.0;
-    if (request.scopeRoot)
+    ankerl::unordered_dense::set<const LocalDefinition*> used;
+    CollectUsedDefinitions(request.scopeRoot.get(), used);
+    CheckUnusedVariables(request.scopeRoot.get(), used, ctx);
+
+    CheckNullAssignedToNonHandleInScope(request.scopeRoot.get(), ctx);
+    CheckLocalVariableDeclarations(request.scopeRoot.get(), ctx);
+}
+
+void SemanticAnalyzer::RunStatementAndControlFlowRules(const SemanticAnalysisRequest& request,
+                                                       const NodeIndex* indexPtr, DiagnosticContext& ctx) const
+{
+    const ControlFlowCheckRequest flowRequest{ts_tree_root_node(request.tree), request.sourceCode};
+    CheckControlFlow(flowRequest, ctx);
+    if (indexPtr)
     {
-        utils::HighResTimer timer;
-        DiagnosticContext ctx{request, diagnostics, m_logger};
-
-        // Taken from the version-cached index rather than rebuilt here. The set has to hold
-        // every name in the workspace for this rule to be right, but it does not have to be
-        // built afresh for each document - which is what it was, one full walk and fifty
-        // thousand insertions per analysis.
-        CheckUndefinedIdentifiers(request.scopeRoot.get(), request.GetRuleIndex().allNames, ctx);
-
-        ankerl::unordered_dense::set<const LocalDefinition*> used;
-        CollectUsedDefinitions(request.scopeRoot.get(), used);
-        CheckUnusedVariables(request.scopeRoot.get(), used, ctx);
-
-        CheckNullAssignedToNonHandleInScope(request.scopeRoot.get(), ctx);
-        CheckLocalVariableDeclarations(request.scopeRoot.get(), ctx);
-        scopeRulesMs = timer.ElapsedMs();
+        rules::ValidateStandaloneLambda(*indexPtr, ctx);
     }
-
-    std::unique_ptr<NodeIndex> localNodeIndex;
-    const NodeIndex* indexPtr = request.nodeIndex;
-    if (!indexPtr && request.tree)
+    else
     {
-        localNodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(request.tree));
-        indexPtr = localNodeIndex.get();
+        rules::ValidateStandaloneLambda(ts_tree_root_node(request.tree), ctx);
     }
+}
 
-    // Statements, not declarations: whether a break sits inside a loop or a path falls off the
-    // end of a function is nowhere in the symbol table.
-    double controlFlowMs = 0.0;
-    if (request.tree && !request.sourceCode.empty())
-    {
-        utils::HighResTimer timer;
-        DiagnosticContext ctx{request, diagnostics, m_logger};
-        const ControlFlowCheckRequest flowRequest{ts_tree_root_node(request.tree), request.sourceCode};
-        CheckControlFlow(flowRequest, ctx);
-        if (indexPtr)
-        {
-            rules::ValidateStandaloneLambda(*indexPtr, ctx);
-        }
-        else
-        {
-            rules::ValidateStandaloneLambda(ts_tree_root_node(request.tree), ctx);
-        }
-        controlFlowMs = timer.ElapsedMs();
-    }
-
-    // The one pass that judges a use rather than a declaration, so it needs both the tree that
-    // holds the expression and the table that holds what the expression reaches.
-    double accessMs = 0.0;
-    if (request.tree && !request.sourceCode.empty())
-    {
-        utils::HighResTimer timer;
-        DiagnosticContext ctx{request, diagnostics, m_logger};
-        const AccessCheckRequest accessRequest{ts_tree_root_node(request.tree), request.sourceCode,
-                                               request.scopeRoot.get(), indexPtr};
-        CheckMemberAccess(accessRequest, ctx);
-        accessMs = timer.ElapsedMs();
-    }
-
-    double constMs = 0.0;
-    if (request.tree && !request.sourceCode.empty())
-    {
-        utils::HighResTimer timer;
-        DiagnosticContext ctx{request, diagnostics, m_logger};
-        const ConstCheckRequest constRequest{ts_tree_root_node(request.tree), request.sourceCode,
-                                             request.scopeRoot.get(), indexPtr};
-        CheckConstCorrectness(constRequest, ctx);
-        constMs = timer.ElapsedMs();
-    }
-
-    double lvalueMs = 0.0;
-    if (request.tree && !request.sourceCode.empty())
-    {
-        utils::HighResTimer timer;
-        DiagnosticContext ctx{request, diagnostics, m_logger};
-        const LValueCheckRequest lvalueRequest{ts_tree_root_node(request.tree), request.sourceCode,
-                                               request.scopeRoot.get(), indexPtr};
-        CheckLValues(lvalueRequest, ctx);
-        lvalueMs = timer.ElapsedMs();
-    }
-
-    double callMs = 0.0;
-    if (request.tree && !request.sourceCode.empty())
-    {
-        utils::HighResTimer timer;
-        DiagnosticContext ctx{request, diagnostics, m_logger};
-        const CallCheckRequest callRequest{ts_tree_root_node(request.tree), request.sourceCode, request.scopeRoot.get(),
+void SemanticAnalyzer::RunExpressionRules(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
+                                          DiagnosticContext& ctx) const
+{
+    const AccessCheckRequest accessRequest{ts_tree_root_node(request.tree), request.sourceCode, request.scopeRoot.get(),
                                            indexPtr};
-        CheckCallArguments(callRequest, ctx);
-        callMs = timer.ElapsedMs();
-    }
+    CheckMemberAccess(accessRequest, ctx);
 
-    double assignMs = 0.0;
-    if (request.tree && !request.sourceCode.empty())
-    {
-        utils::HighResTimer timer;
-        DiagnosticContext ctx{request, diagnostics, m_logger};
-        const DefiniteAssignmentCheckRequest assignRequest{ts_tree_root_node(request.tree), request.sourceCode,
-                                                           request.scopeRoot.get()};
-        CheckDefiniteAssignment(assignRequest, ctx);
-        if (indexPtr)
-        {
-            CheckEngineDialectRules(*indexPtr, ctx);
-        }
-        else
-        {
-            CheckEngineDialectRules(ts_tree_root_node(request.tree), ctx);
-        }
-        assignMs = timer.ElapsedMs();
-    }
+    const ConstCheckRequest constRequest{ts_tree_root_node(request.tree), request.sourceCode, request.scopeRoot.get(),
+                                         indexPtr};
+    CheckConstCorrectness(constRequest, ctx);
 
-    // Needs the tree, not just the symbol table: an initializer or a cast is an expression, and
-    // expressions are exactly what the symbol table does not record.
-    double typeConvMs = 0.0;
-    if (request.enableTypeConversionChecks && request.tree && !request.sourceCode.empty())
+    const LValueCheckRequest lvalueRequest{ts_tree_root_node(request.tree), request.sourceCode, request.scopeRoot.get(),
+                                           indexPtr};
+    CheckLValues(lvalueRequest, ctx);
+
+    const CallCheckRequest callRequest{ts_tree_root_node(request.tree), request.sourceCode, request.scopeRoot.get(),
+                                       indexPtr};
+    CheckCallArguments(callRequest, ctx);
+
+    const DefiniteAssignmentCheckRequest assignRequest{ts_tree_root_node(request.tree), request.sourceCode,
+                                                       request.scopeRoot.get()};
+    CheckDefiniteAssignment(assignRequest, ctx);
+    if (indexPtr)
     {
-        utils::HighResTimer timer;
-        DiagnosticContext ctx{request, diagnostics, m_logger};
+        CheckEngineDialectRules(*indexPtr, ctx);
+    }
+    else
+    {
+        CheckEngineDialectRules(ts_tree_root_node(request.tree), ctx);
+    }
+}
+
+void SemanticAnalyzer::RunTypeAndStructureRules(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
+                                                DiagnosticContext& ctx) const
+{
+    if (request.enableTypeConversionChecks)
+    {
         const TypeConversionCheckRequest conversionRequest{ts_tree_root_node(request.tree), request.sourceCode,
                                                            request.scopeRoot.get(), request.mutableScopeRoot, indexPtr};
         CheckTypeConversions(conversionRequest, ctx);
-        typeConvMs = timer.ElapsedMs();
     }
 
-    double isolationMs = 0.0;
-    if (request.tree && !request.sourceCode.empty())
-    {
-        utils::HighResTimer timer;
-        DiagnosticContext ctx{request, diagnostics, m_logger};
-        const IsolationCheckRequest isolationRequest{ts_tree_root_node(request.tree), request.sourceCode,
-                                                     request.scopeRoot.get()};
-        CheckSharedIsolation(isolationRequest, ctx);
-        isolationMs = timer.ElapsedMs();
-    }
+    const IsolationCheckRequest isolationRequest{ts_tree_root_node(request.tree), request.sourceCode,
+                                                 request.scopeRoot.get()};
+    CheckSharedIsolation(isolationRequest, ctx);
 
-    double namespaceMs = 0.0;
-    if (request.tree && !request.sourceCode.empty())
-    {
-        utils::HighResTimer timer;
-        DiagnosticContext ctx{request, diagnostics, m_logger};
-        CheckNamespacesAndScopes(NamespaceCheckRequest{ts_tree_root_node(request.tree), request.sourceCode, indexPtr},
-                                 ctx);
-        namespaceMs = timer.ElapsedMs();
-    }
+    CheckNamespacesAndScopes(NamespaceCheckRequest{ts_tree_root_node(request.tree), request.sourceCode, indexPtr}, ctx);
 
-    double initListMs = 0.0;
-    if (request.tree && !request.sourceCode.empty())
-    {
-        utils::HighResTimer timer;
-        DiagnosticContext ctx{request, diagnostics, m_logger};
-        CheckInitializerLists(InitializerListCheckRequest{ts_tree_root_node(request.tree), request.sourceCode,
-                                                          request.scopeRoot.get(), indexPtr},
-                              ctx);
-        initListMs = timer.ElapsedMs();
-    }
+    CheckInitializerLists(InitializerListCheckRequest{ts_tree_root_node(request.tree), request.sourceCode,
+                                                      request.scopeRoot.get(), indexPtr},
+                          ctx);
+}
 
-    // Directives the add-on does not recognise. A Warning rather than an Error even though the
-    // compiler rejects every one of them: a host is free to have patched its copy of
-    // scriptbuilder.cpp without telling this server, and the zero-false-positives rule is about
-    // errors. Each one is silent as soon as its switch is on.
-    // Reported at the top of the file, because it is about the file rather than about anything
-    // in it. Once, not once per module that lost.
+void SemanticAnalyzer::CheckDirectivesAndModules(const SemanticAnalysisRequest& request, DiagnosticContext& ctx) const
+{
     if (request.moduleContext.has_value() && !request.moduleContext->name.empty() &&
         !request.moduleContext->alsoClaimedBy.empty())
     {
@@ -243,44 +144,31 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         for (const auto& name : request.moduleContext->alsoClaimedBy)
         {
             if (!others.empty())
+            {
                 others += ", ";
+            }
             others += "'" + name + "'";
         }
-
-        DiagnosticContext ctx{request, diagnostics, m_logger};
         ctx.EmitAtRange(0, 0, 0, 0, "as-hint-file-in-several-modules", request.moduleContext->name, others,
                         DiagnosticSeverity::Hint);
     }
 
     for (const auto& directive : request.unsupportedDirectives)
     {
-        DiagnosticContext ctx{request, diagnostics, m_logger};
-
-        // The two below are Errors, and the difference from the Warning above is measured. A
-        // host really may have patched `#else` or `#define` into its copy of the add-on, so
-        // saying "error" about one would be a false positive on somebody's legal script. No
-        // host setting makes `#incude` or `# include` legal: the add-on reads the characters
-        // straight after the `#`, and anything it does not match is left for the compiler to
-        // choke on. A user who disagrees can still move either code with
-        // angelscript.diagnosticSeverity.
         if (directive.problem == utils::DirectiveProblem::Unrecognised)
         {
             ctx.EmitAtRange(directive.line, directive.startColumn, directive.line, directive.endColumn,
                             "as-err-unknown-directive", directive.name, DiagnosticSeverity::Error);
             continue;
         }
-
         if (directive.problem == utils::DirectiveProblem::IncludeNotQuoted)
         {
             ctx.EmitAtRange(directive.line, directive.startColumn, directive.line, directive.endColumn,
                             "as-err-include-not-quoted", DiagnosticSeverity::Error);
             continue;
         }
-
         if (directive.problem == utils::DirectiveProblem::SpaceAfterHash)
         {
-            // Twice: the message shows the line as written and then as it has to be, and the
-            // name is the only thing that changes between them.
             ctx.EmitAtRange(directive.line, directive.startColumn, directive.line, directive.endColumn,
                             "as-err-directive-space-after-hash", directive.name, directive.name,
                             DiagnosticSeverity::Error);
@@ -291,33 +179,48 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
                         "as-warn-unsupported-directive", directive.name,
                         directive.name == "pragma" ? request.pragmaSeverity : DiagnosticSeverity::Warning);
     }
+}
 
-    // Nothing inside an excluded `#if` block is real code - CScriptBuilder blanks it out before
-    // the compiler ever sees it - so a diagnostic there describes text that does not exist.
-    // Filtered here, at the single exit, rather than in each rule.
+std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest& request) const
+{
+    std::vector<Diagnostic> diagnostics;
+    LogSymbolDump(request);
+
+    {
+        DiagnosticContext ctx{request, diagnostics, m_logger};
+        CheckNullAssignedToNonHandle(request.symbolTable, ctx);
+        CheckDeclarationRules(request.symbolTable, ctx);
+        RunScopeRules(request, ctx);
+
+        std::unique_ptr<NodeIndex> localNodeIndex;
+        const NodeIndex* indexPtr = request.nodeIndex;
+        if (!indexPtr && request.tree)
+        {
+            localNodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(request.tree));
+            indexPtr = localNodeIndex.get();
+        }
+
+        if (request.tree && !request.sourceCode.empty())
+        {
+            RunStatementAndControlFlowRules(request, indexPtr, ctx);
+            RunExpressionRules(request, indexPtr, ctx);
+            RunTypeAndStructureRules(request, indexPtr, ctx);
+        }
+
+        CheckDirectivesAndModules(request, ctx);
+    }
+
     if (!request.excludedLineRanges.empty())
     {
         std::erase_if(diagnostics, [&request](const Diagnostic& d)
                       { return utils::IsLineExcluded(request.excludedLineRanges, d.range.start.line); });
     }
 
-    double totalMs = totalTimer.ElapsedMs();
-    if (m_logger && m_logger->IsDebugEnabled() && totalMs > 30.0)
-    {
-        m_logger->LogDebug(fmt::format(
-            "[Checker Breakdown] File: {} | Total: {:.2f} ms (DeclRules: {:.2f} ms, ScopeRules: {:.2f} ms, "
-            "ControlFlow: {:.2f} ms, Access: {:.2f} ms, Const: {:.2f} ms, LValue: {:.2f} ms, Call: {:.2f} ms, Assign: "
-            "{:.2f} ms, TypeConv: {:.2f} ms, Isolation: {:.2f} ms, Namespace: {:.2f} ms, InitList: {:.2f} ms)",
-            request.fileUri, totalMs, declRulesMs, scopeRulesMs, controlFlowMs, accessMs, constMs, lvalueMs, callMs,
-            assignMs, typeConvMs, isolationMs, namespaceMs, initListMs));
-    }
-
     return diagnostics;
 }
 
-void SemanticAnalyzer::CheckEngineDialectRules(const NodeIndex& nodeIndex, DiagnosticContext& ctx) const
+static void CheckDialectForeach(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
 {
-    // 1. Foreach statement check
     if (!ctx.request.SupportsForeach())
     {
         for (TSNode node : nodeIndex.Nodes(parser::nodes::ForeachStatement))
@@ -327,8 +230,10 @@ void SemanticAnalyzer::CheckEngineDialectRules(const NodeIndex& nodeIndex, Diagn
                             DiagnosticSeverity::Error);
         }
     }
+}
 
-    // 2. Disallow empty list elements
+static void CheckDialectEmptyListElements(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
     if (ctx.request.DisallowsEmptyListElements())
     {
         for (TSNode node : nodeIndex.Nodes(parser::nodes::InitializerList))
@@ -347,8 +252,10 @@ void SemanticAnalyzer::CheckEngineDialectRules(const NodeIndex& nodeIndex, Diagn
             }
         }
     }
+}
 
-    // 3. Character literal mode 0
+static void CheckDialectCharacterLiterals(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
     if (ctx.request.CharacterLiteralMode() == 0)
     {
         for (TSNode node : nodeIndex.Nodes(parser::nodes::VariableDeclaration))
@@ -387,8 +294,10 @@ void SemanticAnalyzer::CheckEngineDialectRules(const NodeIndex& nodeIndex, Diagn
             }
         }
     }
+}
 
-    // 4. Integer division hint
+static void CheckDialectIntegerDivision(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
     if (ctx.request.diagnostics && ctx.request.diagnostics->reportIntegerDivision &&
         !ctx.request.DisablesIntegerDivision())
     {
@@ -422,8 +331,10 @@ void SemanticAnalyzer::CheckEngineDialectRules(const NodeIndex& nodeIndex, Diagn
             }
         }
     }
+}
 
-    // 5. Named argument syntax
+static void CheckDialectNamedArguments(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
     if (ctx.request.NamedArgumentSyntaxMode() != 2)
     {
         for (TSNode node : nodeIndex.Nodes(parser::nodes::ArgumentList))
@@ -462,8 +373,10 @@ void SemanticAnalyzer::CheckEngineDialectRules(const NodeIndex& nodeIndex, Diagn
             }
         }
     }
+}
 
-    // 6. Disallow value assign for ref type
+static void CheckDialectValueAssignForRef(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
     if (ctx.request.DisallowsValueAssignForRef())
     {
         for (TSNode node : nodeIndex.Nodes(parser::nodes::AssignmentExpression))
@@ -510,8 +423,10 @@ void SemanticAnalyzer::CheckEngineDialectRules(const NodeIndex& nodeIndex, Diagn
             }
         }
     }
+}
 
-    // 7. Multiline string literals
+static void CheckDialectMultilineStrings(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
     if (!ctx.request.AllowsMultilineStrings())
     {
         for (TSNode node : nodeIndex.Nodes(parser::nodes::StringLiteral))
@@ -535,36 +450,34 @@ void SemanticAnalyzer::CheckEngineDialectRules(const NodeIndex& nodeIndex, Diagn
     }
 }
 
-void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& ctx, int depth) const
+void SemanticAnalyzer::CheckEngineDialectRules(const NodeIndex& nodeIndex, DiagnosticContext& ctx) const
 {
-    if (ts_node_is_null(node) || depth > k_maxAstDepth)
-    {
-        return;
-    }
+    CheckDialectForeach(nodeIndex, ctx);
+    CheckDialectEmptyListElements(nodeIndex, ctx);
+    CheckDialectCharacterLiterals(nodeIndex, ctx);
+    CheckDialectIntegerDivision(nodeIndex, ctx);
+    CheckDialectNamedArguments(nodeIndex, ctx);
+    CheckDialectValueAssignForRef(nodeIndex, ctx);
+    CheckDialectMultilineStrings(nodeIndex, ctx);
+}
 
-    const std::string_view engineNodeType = ts_node_type(node);
-
-    // `foreach (T v : c)` is a compile error - "Expected '('" at the loop variable - when the
-    // host built its engine with asEP_FOREACH_SUPPORT off. On by the engine's default, so this
-    // fires only for a host that says otherwise.
-    if (engineNodeType == "foreach_statement" && !ctx.request.SupportsForeach())
+static void CheckDialectNodeForeach(TSNode node, DiagnosticContext& ctx)
+{
+    if (!ctx.request.SupportsForeach())
     {
         const TSPoint start = ts_node_start_point(node);
         ctx.EmitAtRange(start.row, start.column, start.row, start.column + 7, "as-err-foreach-unsupported",
                         DiagnosticSeverity::Error);
     }
+}
 
-    // A hole in an initializer list - `{1, , 3}` - which asEP_DISALLOW_EMPTY_LIST_ELEMENTS
-    // rejects with "Empty list element is not allowed". Allowed by the engine's default, so
-    // again this speaks only for a host that turned it off.
-    if (engineNodeType == "initializer_list" && ctx.request.DisallowsEmptyListElements())
+static void CheckDialectNodeInitializerList(TSNode node, DiagnosticContext& ctx)
+{
+    if (ctx.request.DisallowsEmptyListElements())
     {
         const uint32_t childCount = ts_node_child_count(node);
         for (uint32_t i = 1; i < childCount; ++i)
         {
-            // Two commas in a row, or a comma immediately before the closing brace: either way
-            // the element between them is missing. Read off the punctuation rather than the
-            // named children, because the missing element has no node to find.
             const std::string_view previous = ts_node_type(ts_node_child(node, i - 1));
             const std::string_view current = ts_node_type(ts_node_child(node, i));
             if (previous == "," && (current == "," || current == "}"))
@@ -575,15 +488,11 @@ void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& c
             }
         }
     }
+}
 
-    // `'x'` is a one-character STRING under the engine's default and an integer only when the
-    // host sets asEP_USE_CHARACTER_LITERALS. So `int c = 'x';` is rejected by default - "Can't
-    // implicitly convert from 'const string' to 'int'" - and legal for a host that set it.
-    // Verified both ways against angelscript_oracle.
-    //
-    // Read at the declaration rather than at the literal: the literal alone says nothing about
-    // which reading was intended, and the declared type is what makes the two distinguishable.
-    if (engineNodeType == "variable_declaration" && ctx.request.CharacterLiteralMode() == 0)
+static void CheckDialectNodeVariableDeclaration(TSNode node, DiagnosticContext& ctx)
+{
+    if (ctx.request.CharacterLiteralMode() == 0)
     {
         const TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
         if (!ts_node_is_null(typeNode))
@@ -596,15 +505,17 @@ void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& c
                 {
                     const TSNode declarator = ts_node_child(node, i);
                     if (std::string_view(ts_node_type(declarator)) != "variable_declarator")
+                    {
                         continue;
+                    }
 
                     const TSNode value = parser::GetChildByField(declarator, parser::fields::Value);
                     if (ts_node_is_null(value) || std::string_view(ts_node_type(value)) != "string_literal")
+                    {
                         continue;
+                    }
 
                     const uint32_t from = ts_node_start_byte(value);
-                    // The opening delimiter is what separates 'x' from "x": the grammar gives
-                    // both the same string_literal node type.
                     if (from < ctx.request.sourceCode.size() && ctx.request.sourceCode[from] == '\'')
                     {
                         const TSPoint start = ts_node_start_point(value);
@@ -616,18 +527,12 @@ void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& c
             }
         }
     }
+}
 
-    // Integer division under asEP_DISABLE_INTEGER_DIVISION. Not a compile error either way -
-    // all three probes compile - but the VALUE differs: `float f = 1 / 2;` is 0.0 by the
-    // engine's default and 0.5 when the host disables integer division. That is the classic
-    // `1/2 == 0` surprise, and here it is configuration-dependent, so it is worth a hint and
-    // not worth an error.
-    //
-    // Only when the host has NOT disabled integer division, because only then does the
-    // truncation happen; and only opt-in, because a codebase that means integer division
-    // writes exactly this and wants no comment on it.
-    if (engineNodeType == "binary_expression" && ctx.request.diagnostics &&
-        ctx.request.diagnostics->reportIntegerDivision && !ctx.request.DisablesIntegerDivision())
+static void CheckDialectNodeBinaryExpression(TSNode node, DiagnosticContext& ctx)
+{
+    if (ctx.request.diagnostics && ctx.request.diagnostics->reportIntegerDivision &&
+        !ctx.request.DisablesIntegerDivision())
     {
         const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
         if (!ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "/")
@@ -635,12 +540,12 @@ void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& c
             const TSNode left = parser::GetChildByField(node, parser::fields::Left);
             const TSNode right = parser::GetChildByField(node, parser::fields::Right);
 
-            // Integer LITERALS on both sides. Deliberately not variables: their types would have
-            // to be resolved, and a false hint here is noise on every division in the file.
             const auto isIntegerLiteral = [&ctx](TSNode candidate)
             {
                 if (ts_node_is_null(candidate) || std::string_view(ts_node_type(candidate)) != "number_literal")
+                {
                     return false;
+                }
                 const std::string text = GetNodeText(candidate, ctx.request.sourceCode);
                 return text.find('.') == std::string::npos && text.find('e') == std::string::npos &&
                        text.find('E') == std::string::npos && text.find('f') == std::string::npos &&
@@ -656,38 +561,35 @@ void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& c
             }
         }
     }
+}
 
-    // `f(name = value)` under asEP_ALTER_SYNTAX_NAMED_ARGS. AngelScript's own named-argument
-    // syntax is `name: value`; the `=` spelling is a compile error under the engine's default
-    // ("No matching symbol 'width'"), a warning under mode 1 and silent under mode 2. Measured
-    // all three ways against angelscript_oracle.
-    //
-    // Gated on the engine mode alone, with no separate opt-in: unlike the integer-division
-    // hint, this is not advice about legal code - under mode 0 it does not compile.
-    if (engineNodeType == "argument_list" && ctx.request.NamedArgumentSyntaxMode() != 2)
+static void CheckDialectNodeArgumentList(TSNode node, DiagnosticContext& ctx)
+{
+    if (ctx.request.NamedArgumentSyntaxMode() != 2)
     {
         const uint32_t argCount = ts_node_named_child_count(node);
         for (uint32_t i = 0; i < argCount; ++i)
         {
             const TSNode argument = ts_node_named_child(node, i);
             if (std::string_view(ts_node_type(argument)) != "assignment_expression")
+            {
                 continue;
+            }
 
-            // Only a bare name on the left. `f(obj.field = 1)` is an ordinary assignment
-            // expression and a legal argument; a lone name is what a named argument looks like.
-            //
-            // `scoped_identifier` as well as `identifier`, because the grammar wraps every bare
-            // identifier expression in one - matching only the inner node found nothing, which
-            // is how the first version of this rule silently never fired.
             const TSNode target = parser::GetChildByField(argument, parser::fields::Left);
             if (ts_node_is_null(target))
+            {
                 continue;
+            }
             const std::string_view targetType = ts_node_type(target);
             if (targetType != "identifier" && targetType != "scoped_identifier")
+            {
                 continue;
-            // A qualified name is not a parameter name.
+            }
             if (targetType == "scoped_identifier" && ts_node_named_child_count(target) != 1)
+            {
                 continue;
+            }
 
             const TSPoint start = ts_node_start_point(argument);
             const TSPoint end = ts_node_end_point(argument);
@@ -698,33 +600,24 @@ void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& c
                                                                        : DiagnosticSeverity::Error);
         }
     }
+}
 
-    // `a = b` on a reference type under asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE, which the
-    // engine answers with "Value assignment on reference types is not allowed. Did you mean to
-    // do a handle assignment?". Off by the engine's default, so this speaks only for a host
-    // that turned it on.
-    if (engineNodeType == "assignment_expression" && ctx.request.DisallowsValueAssignForRef())
+static void CheckDialectNodeAssignmentExpression(TSNode node, DiagnosticContext& ctx)
+{
+    if (ctx.request.DisallowsValueAssignForRef())
     {
         const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
         const TSNode target = parser::GetChildByField(node, parser::fields::Left);
 
-        // Every compound operator is arithmetic on a value, so only a bare `=` is a candidate.
         if (!ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "=" && !ts_node_is_null(target))
         {
-            // `@a = @b` is the handle assignment the compiler's own message asks for, and it is
-            // accepted under the property - verified against the oracle. Its operator is also a
-            // bare `=`; the `@` is a unary prefix on each side, which is the only thing telling
-            // the two forms apart. Matching on the operator alone reported the very fix the
-            // diagnostic recommends.
             bool isHandleAssignment = false;
             if (std::string_view(ts_node_type(target)) == "unary_expression")
             {
                 const TSNode prefix = parser::GetChildByField(target, parser::fields::Operator);
                 isHandleAssignment = !ts_node_is_null(prefix) && std::string_view(ts_node_type(prefix)) == "@";
             }
-            // The TYPE of the assignment target, not its text. Reading the text compared the
-            // variable's NAME against the symbol table, which never matches a local - the first
-            // version of this rule was silent for exactly that reason.
+
             const Scope* scope = ctx.request.scopeRoot
                                      ? FindInnermostScope(ctx.request.scopeRoot.get(), ts_node_start_point(target).row,
                                                           ts_node_start_point(target).column)
@@ -732,9 +625,6 @@ void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& c
             const std::string targetType = CleanBaseType(ResolveExpressionType(
                 target, scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri));
 
-            // Silent unless fully visible: only a class this analyzer can find the declaration
-            // of is known to be a reference type. A host type it cannot see might be a value
-            // type, and reporting one would be a false positive on working code.
             bool isVisibleClass = false;
             if (const auto symbols = ctx.request.symbolTable.FindSymbolsPtr(targetType))
             {
@@ -757,40 +647,96 @@ void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& c
             }
         }
     }
+}
 
-    if (engineNodeType == "string_literal")
+static void CheckDialectNodeStringLiteral(TSNode node, DiagnosticContext& ctx)
+{
+    const TSPoint start = ts_node_start_point(node);
+    const TSPoint end = ts_node_end_point(node);
+
+    if (end.row > start.row && !ctx.request.AllowsMultilineStrings())
     {
-        const TSPoint start = ts_node_start_point(node);
-        const TSPoint end = ts_node_end_point(node);
+        const uint32_t from = ts_node_start_byte(node);
+        const bool isHeredoc =
+            from + 3 <= ctx.request.sourceCode.size() && ctx.request.sourceCode.compare(from, 3, "\"\"\"") == 0;
 
-        if (end.row > start.row && !ctx.request.AllowsMultilineStrings())
+        if (!isHeredoc)
         {
-            // A heredoc spans lines under every setting; only the plain quote form is governed
-            // by asEP_ALLOW_MULTILINE_STRINGS. The grammar gives both the same node type, so
-            // the opening delimiter is what tells them apart.
-            const uint32_t from = ts_node_start_byte(node);
-            const bool isHeredoc =
-                from + 3 <= ctx.request.sourceCode.size() && ctx.request.sourceCode.compare(from, 3, "\"\"\"") == 0;
-
-            if (!isHeredoc)
-            {
-                // Anchored to the opening quote rather than the whole literal: a string running
-                // away over twenty lines would otherwise underline all twenty, and the defect is
-                // at the quote that was never closed.
-                ctx.EmitAtRange(start.row, start.column, start.row, start.column + 1, "as-err-multiline-string",
-                                DiagnosticSeverity::Error);
-            }
+            ctx.EmitAtRange(start.row, start.column, start.row, start.column + 1, "as-err-multiline-string",
+                            DiagnosticSeverity::Error);
         }
+    }
+}
 
-        // Nothing inside a string literal is worth walking.
+static void ProcessDialectNode(TSNode node, DiagnosticContext& ctx)
+{
+    const std::string_view engineNodeType = ts_node_type(node);
+    if (engineNodeType == "foreach_statement")
+    {
+        CheckDialectNodeForeach(node, ctx);
+    }
+    else if (engineNodeType == "initializer_list")
+    {
+        CheckDialectNodeInitializerList(node, ctx);
+    }
+    else if (engineNodeType == "variable_declaration")
+    {
+        CheckDialectNodeVariableDeclaration(node, ctx);
+    }
+    else if (engineNodeType == "binary_expression")
+    {
+        CheckDialectNodeBinaryExpression(node, ctx);
+    }
+    else if (engineNodeType == "argument_list")
+    {
+        CheckDialectNodeArgumentList(node, ctx);
+    }
+    else if (engineNodeType == "assignment_expression")
+    {
+        CheckDialectNodeAssignmentExpression(node, ctx);
+    }
+    else if (engineNodeType == "string_literal")
+    {
+        CheckDialectNodeStringLiteral(node, ctx);
+    }
+}
+
+void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& ctx, int depth) const
+{
+    if (ts_node_is_null(node) || depth > k_maxAstDepth)
+    {
         return;
     }
 
-    const uint32_t count = ts_node_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    bool visiting = true;
+    while (visiting)
     {
-        CheckEngineDialectRules(ts_node_child(node, i), ctx, depth + 1);
+        TSNode current = ts_tree_cursor_current_node(&cursor);
+        ProcessDialectNode(current, ctx);
+
+        std::string_view nodeType = ts_node_type(current);
+        if (nodeType == "string_literal" || !ts_tree_cursor_goto_first_child(&cursor))
+        {
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                continue;
+            }
+            while (true)
+            {
+                if (!ts_tree_cursor_goto_parent(&cursor))
+                {
+                    visiting = false;
+                    break;
+                }
+                if (ts_tree_cursor_goto_next_sibling(&cursor))
+                {
+                    break;
+                }
+            }
+        }
     }
+    ts_tree_cursor_delete(&cursor);
 }
 
 void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, DiagnosticContext& ctx) const
@@ -852,18 +798,15 @@ void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, Dia
         });
 }
 
-void SemanticAnalyzer::CheckUndefinedIdentifiers(
-    const Scope* scope,
-    const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames,
-    DiagnosticContext& ctx, int depth) const
+namespace
 {
-    // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
-        return;
+using MixinRanges = std::vector<std::pair<uint32_t, uint32_t>>;
 
-    std::vector<std::pair<uint32_t, uint32_t>> mixinRanges;
-    ctx.request.symbolTable.ForEachSymbolInFile(
-        ctx.request.fileUri,
+MixinRanges CollectMixinRanges(const SymbolTable& symbolTable, const std::string& fileUri)
+{
+    MixinRanges mixinRanges;
+    symbolTable.ForEachSymbolInFile(
+        fileUri,
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
         {
             for (const auto& sym : symbols)
@@ -874,121 +817,135 @@ void SemanticAnalyzer::CheckUndefinedIdentifiers(
                 }
             }
         });
+    return mixinRanges;
+}
 
+bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticContext& ctx)
+{
+    if (ref.isMemberAccess || ref.isTypeSpecifier)
+        return true;
+
+    if (ref.name == "this" || ref.name == "value")
+        return true;
+
+    // `super` names no symbol, by design. In `class D : B { D() { super(1); } }` it is the
+    // base-constructor call and the code compiles; anywhere else - `super.F()`,
+    // `super::F()` - the compiler agrees with this rule and reports it. So the shape is
+    // tested, not the name. NamespaceChecker makes the same distinction for the error it
+    // raises on the same line.
+    if (ref.name == "super")
+    {
+        if (ctx.request.tree)
+        {
+            const TSPoint at{ref.startLine, ref.startCharacter};
+            const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(ctx.request.tree), at, at);
+            if (IsBaseConstructorCall(node, ctx.request.sourceCode))
+                return true;
+        }
+        else
+        {
+            // No tree to ask. Staying silent is the policy when the analyzer cannot see
+            // enough to be sure.
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool IsReferenceInMixin(const LocalReference& ref, const MixinRanges& mixinRanges)
+{
+    for (const auto& r : mixinRanges)
+    {
+        if (ref.startLine >= r.first && ref.endLine <= r.second)
+            return true;
+    }
+    return false;
+}
+
+bool CheckEnumScopeDiagnostic(const Scope* scope, const LocalReference& ref, const LocalDefinition* resolved,
+                              DiagnosticContext& ctx)
+{
+    // asEP_REQUIRE_ENUM_SCOPE, checked before the resolution is acted on, because an
+    // enumerator DOES resolve from the scope tree - LOCALS_QUERY captures `enum_member` as
+    // a definition - and continuing on that is what made the first attempt at this rule
+    // never run.
+    if (!ctx.request.RequiresEnumScope() || resolved == nullptr || resolved->kind != LocalDefinitionKind::Constant ||
+        !ctx.request.GetRuleIndex().enumMemberNames.contains(ref.name))
+    {
+        return false;
+    }
+
+    bool insideFunction = false;
+    for (const Scope* current = scope; current != nullptr; current = current->parent)
+    {
+        if (current->isFunctionScope)
+        {
+            insideFunction = true;
+            break;
+        }
+    }
+
+    const bool isOwnDeclaration =
+        resolved->startLine == ref.startLine && resolved->startCharacter == ref.startCharacter;
+
+    if (insideFunction && !isOwnDeclaration)
+    {
+        ctx.EmitAtRange(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter, "as-err-enum-scope-required",
+                        ref.name);
+        return true;
+    }
+    return false;
+}
+
+bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticContext& ctx)
+{
+    const auto& index = ctx.request.GetRuleIndex();
+    const auto& accessorNames =
+        ctx.request.RequiresAccessorKeyword() ? index.keywordAccessorPropertyNames : index.accessorPropertyNames;
+    if (accessorNames.contains(ref.name))
+        return true;
+
+    return IsReservedKeyword(ref.name);
+}
+
+void CheckScopeReferences(
+    const Scope* scope,
+    const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames,
+    const MixinRanges& mixinRanges, DiagnosticContext& ctx)
+{
     for (const auto& ref : scope->references)
     {
-        if (ref.isMemberAccess || ref.isTypeSpecifier)
-            continue;
-
-        if (ref.name == "this" || ref.name == "value")
-            continue;
-
-        // `super` names no symbol, by design. In `class D : B { D() { super(1); } }` it is the
-        // base-constructor call and the code compiles; anywhere else - `super.F()`,
-        // `super::F()` - the compiler agrees with this rule and reports it. So the shape is
-        // tested, not the name. NamespaceChecker makes the same distinction for the error it
-        // raises on the same line.
-        if (ref.name == "super")
-        {
-            if (ctx.request.tree)
-            {
-                const TSPoint at{ref.startLine, ref.startCharacter};
-                const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(ctx.request.tree), at, at);
-                if (IsBaseConstructorCall(node, ctx.request.sourceCode))
-                    continue;
-            }
-            else
-            {
-                // No tree to ask. Staying silent is the policy when the analyzer cannot see
-                // enough to be sure.
-                continue;
-            }
-        }
-
-        bool isInsideMixin = false;
-        for (const auto& r : mixinRanges)
-        {
-            if (ref.startLine >= r.first && ref.endLine <= r.second)
-            {
-                isInsideMixin = true;
-                break;
-            }
-        }
-        if (isInsideMixin)
+        if (ShouldIgnoreReference(ref, ctx) || IsReferenceInMixin(ref, mixinRanges))
             continue;
 
         const LocalDefinition* resolved = ResolveInScope(scope, ref.name);
-
-        // asEP_REQUIRE_ENUM_SCOPE, checked before the resolution is acted on, because an
-        // enumerator DOES resolve from the scope tree - LOCALS_QUERY captures `enum_member` as
-        // a definition - and continuing on that is what made the first attempt at this rule
-        // never run.
-        //
-        // The kind is what separates the two cases, and it is the whole rule: an enumerator
-        // arrives as Constant, a local as Variable. `int Alpha = 5;` shadowing an enumerator is
-        // accepted by the engine - measured - and resolves to a Variable, so it is left alone.
-        //
-        // Also required: the reference must be inside a function, which drops the enumerator's
-        // own declaration at global scope, and must not sit at a definition's own position,
-        // because LocalReference does not distinguish a declaration from a use.
-        if (ctx.request.RequiresEnumScope() && resolved != nullptr && resolved->kind == LocalDefinitionKind::Constant &&
-            ctx.request.GetRuleIndex().enumMemberNames.contains(ref.name))
-        {
-            bool insideFunction = false;
-            for (const Scope* current = scope; current != nullptr; current = current->parent)
-            {
-                if (current->isFunctionScope)
-                {
-                    insideFunction = true;
-                    break;
-                }
-            }
-
-            const bool isOwnDeclaration =
-                resolved->startLine == ref.startLine && resolved->startCharacter == ref.startCharacter;
-
-            if (insideFunction && !isOwnDeclaration)
-            {
-                ctx.EmitAtRange(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter,
-                                "as-err-enum-scope-required", ref.name);
-                continue;
-            }
-        }
-
-        if (resolved != nullptr)
+        if (CheckEnumScopeDiagnostic(scope, ref, resolved, ctx))
             continue;
 
-        if (knownGlobalNames.contains(ref.name))
+        if (resolved != nullptr || knownGlobalNames.contains(ref.name))
             continue;
 
-        // A virtual property is reached by a name nothing declares: the member behind `Up` is
-        // `C::get_Up`, so the table has never heard of `Up`. Which accessors count is the
-        // engine's asEP_PROPERTY_ACCESSOR_MODE - 2 takes any get_/set_ member, 3 (the engine's
-        // own default) only one carrying the `property` keyword. This server defaults to 2; see
-        // EngineProperties::propertyAccessorMode for why it does not follow the engine here.
-        //
-        // Registered workspace-wide rather than per class, the same trade RuleIndex makes for
-        // template parameters: a bare `Up` in a class that has no such accessor goes unreported,
-        // which costs nothing, where the alternative was reporting every legal use of one.
-        {
-            const auto& index = ctx.request.GetRuleIndex();
-            const auto& accessorNames = ctx.request.RequiresAccessorKeyword() ? index.keywordAccessorPropertyNames
-                                                                              : index.accessorPropertyNames;
-            if (accessorNames.contains(ref.name))
-                continue;
-        }
-
-        // `else`, `catch`, `try` - a reserved keyword reaches this list only when tree-sitter
-        // recovered from a syntax error by reading a keyword as a name. The file is already
-        // reporting the syntax error; "Undeclared identifier 'else'" on top of it points at the
-        // wrong thing and reads like a second, unrelated problem. Measured on three recovery
-        // shapes: a dangling `else`, an `else` inside a loop body, and a `catch` with no `try`.
-        if (IsReservedKeyword(ref.name))
+        if (IsAccessorPropertyOrKeyword(ref, ctx))
             continue;
 
         ctx.EmitAtRange(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter,
                         "as-warn-undeclared-identifier", ref.name, DiagnosticSeverity::Warning);
     }
+}
+} // namespace
+
+void SemanticAnalyzer::CheckUndefinedIdentifiers(
+    const Scope* scope,
+    const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames,
+    DiagnosticContext& ctx, int depth) const
+{
+    // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
+    if (depth > k_maxAstDepth || !scope)
+        return;
+
+    const MixinRanges mixinRanges = CollectMixinRanges(ctx.request.symbolTable, ctx.request.fileUri);
+    CheckScopeReferences(scope, knownGlobalNames, mixinRanges, ctx);
 
     for (const auto& child : scope->children)
         CheckUndefinedIdentifiers(child.get(), knownGlobalNames, ctx, depth + 1);
@@ -1168,16 +1125,168 @@ void SemanticAnalyzer::CheckNullAssignedToNonHandleInScope(const Scope* scope, D
         CheckNullAssignedToNonHandleInScope(child.get(), ctx, depth + 1);
 }
 
-void SemanticAnalyzer::CheckLocalVariableDeclarations(const Scope* scope, DiagnosticContext& ctx, int depth) const
+namespace
 {
-    // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
-        return;
+struct TypeSourceRange
+{
+    uint32_t startLine;
+    uint32_t startCharacter;
+    uint32_t endLine;
+    uint32_t endCharacter;
+};
 
-    if (!scope)
+TypeSourceRange GetDefinitionTypeRange(const LocalDefinition& def)
+{
+    const bool hasExplicitType = (def.typeEndCharacter > def.typeStartCharacter || def.typeEndLine > def.typeStartLine);
+    return TypeSourceRange{
+        hasExplicitType ? def.typeStartLine : def.startLine,
+        hasExplicitType ? def.typeStartCharacter : def.startCharacter,
+        hasExplicitType ? def.typeEndLine : def.endLine,
+        hasExplicitType ? def.typeEndCharacter : def.endCharacter,
+    };
+}
+
+void ValidateTemplateArguments(const LocalDefinition& def, const TemplateTypeInfo& tmplInfo,
+                               const TypeSourceRange& range, DiagnosticContext& ctx)
+{
+    if (!IsKnownType(tmplInfo.containerName, ctx))
+    {
+        ctx.EmitAtRange(range.startLine, range.startCharacter, range.endLine, range.endCharacter,
+                        "as-err-unresolved-type", tmplInfo.containerName, DiagnosticSeverity::Error);
+    }
+    for (size_t i = 0; i < tmplInfo.templateArgs.size(); ++i)
+    {
+        std::string cleanArg = CleanBaseType(tmplInfo.templateArgs[i]);
+        if (!IsKnownType(cleanArg, ctx))
+        {
+            uint32_t sLine = range.startLine;
+            uint32_t sChar = range.startCharacter;
+            uint32_t eLine = range.endLine;
+            uint32_t eChar = range.endCharacter;
+
+            if (i < def.templateArgPositions.size())
+            {
+                sLine = def.templateArgPositions[i].startLine;
+                sChar = def.templateArgPositions[i].startCharacter;
+                eLine = def.templateArgPositions[i].endLine;
+                eChar = def.templateArgPositions[i].endCharacter;
+            }
+
+            ctx.EmitAtRange(sLine, sChar, eLine, eChar, "as-err-unresolved-type", cleanArg, DiagnosticSeverity::Error);
+        }
+    }
+}
+
+bool CheckMissingFuncdefHint(const std::string& base, const TypeSourceRange& range, DiagnosticContext& ctx)
+{
+    if (ctx.request.diagnostics && ctx.request.diagnostics->reportMissingFuncdef && base != "auto" &&
+        NamesAFunctionNotAType(base, ctx.request.symbolTable))
+    {
+        ctx.EmitAtRange(range.startLine, range.startCharacter, range.endLine, range.endCharacter,
+                        "as-hint-funcdef-missing", base, DiagnosticSeverity::Hint);
+        return true;
+    }
+    return false;
+}
+
+bool CheckIllegalHandleOnPrimitive(const LocalDefinition& def, const std::string& base, const TypeSourceRange& range,
+                                   DiagnosticContext& ctx)
+{
+    if (def.isHandleType && def.typeKind != TypeKind::Array && base != "auto" && IsPrimitiveTypeName(base))
+    {
+        ctx.EmitAtRange(range.startLine, range.startCharacter, range.endLine, range.endCharacter,
+                        "as-err-handle-on-primitive", base, DiagnosticSeverity::Error);
+        return true;
+    }
+    return false;
+}
+
+void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
+{
+    const TypeSourceRange range = GetDefinitionTypeRange(def);
+    const std::string base = CleanBaseType(def.typeName);
+
+    if (def.typeName == "void" || base == "void")
+    {
+        ctx.EmitAtRange(range.startLine, range.startCharacter, range.endLine, range.endCharacter,
+                        "as-err-void-variable", def.name, DiagnosticSeverity::Error);
+        return;
+    }
+    if (IsMixinClass(base, ctx.request.symbolTable))
+    {
+        ctx.EmitAtRange(range.startLine, range.startCharacter, range.endLine, range.endCharacter,
+                        "as-err-mixin-not-a-type", base, DiagnosticSeverity::Error);
+        return;
+    }
+    if (CheckMissingFuncdefHint(base, range, ctx) || CheckIllegalHandleOnPrimitive(def, base, range, ctx))
     {
         return;
     }
+
+    const TemplateTypeInfo tmplInfo = ParseTemplateType(def.typeName);
+    if (!tmplInfo.templateArgs.empty())
+    {
+        ValidateTemplateArguments(def, tmplInfo, range, ctx);
+    }
+    else if (!base.empty() && base != "auto" && !IsReservedKeyword(base) && !IsKnownType(base, ctx))
+    {
+        ctx.EmitAtRange(range.startLine, range.startCharacter, range.endLine, range.endCharacter,
+                        "as-err-unresolved-type", base, DiagnosticSeverity::Error);
+    }
+}
+} // namespace
+
+void SemanticAnalyzer::CheckLocalNames(const Scope* scope, DiagnosticContext& ctx) const
+{
+    // AngelScript rejects a name declared twice in one scope, and counts a function's
+    // parameters as belonging to its body.
+    ankerl::unordered_dense::set<std::string> declaredHere;
+
+    if (scope->parent && scope->parent->isFunctionScope)
+    {
+        for (const auto& param : scope->parent->definitions)
+        {
+            if (param.kind == LocalDefinitionKind::Parameter)
+                declaredHere.insert(param.name);
+        }
+    }
+
+    for (const auto& def : scope->definitions)
+    {
+        if (def.kind != LocalDefinitionKind::Variable && def.kind != LocalDefinitionKind::Parameter)
+            continue;
+
+        if (!declaredHere.insert(def.name).second)
+        {
+            ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter, "as-err-duplicate-symbol",
+                            def.name);
+        }
+
+        if (IsReservedKeyword(def.name) && def.kind == LocalDefinitionKind::Variable &&
+            IsKnownType(CleanBaseType(def.typeName), ctx))
+        {
+            ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+                            "as-err-reserved-keyword-name", def.name);
+        }
+    }
+}
+
+void SemanticAnalyzer::CheckLocalTypes(const Scope* scope, DiagnosticContext& ctx) const
+{
+    for (const auto& def : scope->definitions)
+    {
+        if (def.kind == LocalDefinitionKind::Variable)
+        {
+            ValidateVariableType(def, ctx);
+        }
+    }
+}
+
+void SemanticAnalyzer::CheckLocalVariableDeclarations(const Scope* scope, DiagnosticContext& ctx, int depth) const
+{
+    // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
+    if (depth > k_maxAstDepth || !scope)
+        return;
 
     bool isFunctionNested = false;
     for (const Scope* ancestor = scope; ancestor != nullptr; ancestor = ancestor->parent)
@@ -1191,169 +1300,8 @@ void SemanticAnalyzer::CheckLocalVariableDeclarations(const Scope* scope, Diagno
 
     if (isFunctionNested)
     {
-        // AngelScript rejects a name declared twice in one scope, and counts a function's
-        // parameters as belonging to its body. Measured, all four:
-        //
-        //     void F(float f) { float f; }        'f' is already declared
-        //     void F() { float f; float f; }      'f' is already declared
-        //     void F() { float f; { float f; } }  accepted - the block is its own scope
-        //     void F() { for (int i..){} for (int i..){} }   accepted, same reason
-        //
-        // The scope tree puts parameters on the func_declaration scope and the body in its
-        // child, so the first of those is two Scopes here and one scope to the compiler. That
-        // is the only special case; every other nesting really is a nesting.
-        ankerl::unordered_dense::set<std::string> declaredHere;
-
-        if (scope->parent && scope->parent->isFunctionScope)
-        {
-            for (const auto& param : scope->parent->definitions)
-            {
-                if (param.kind == LocalDefinitionKind::Parameter)
-                    declaredHere.insert(param.name);
-            }
-        }
-
-        for (const auto& def : scope->definitions)
-        {
-            if (def.kind != LocalDefinitionKind::Variable && def.kind != LocalDefinitionKind::Parameter)
-            {
-                continue;
-            }
-
-            if (!declaredHere.insert(def.name).second)
-            {
-                ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
-                                "as-err-duplicate-symbol", def.name);
-            }
-
-            // `int int;` and `float float;`. The compiler answers "Expected '('" - it reads the
-            // keyword as a type and goes looking for the conversion `int(...)` - which reads
-            // like a parser complaint about punctuation and is really a rejection of a name
-            // that can never be a name. Measured, and this analyzer said only that the variable
-            // was never used.
-            //
-            // The same check already guards a class name and a typedef name; it was never asked
-            // about a variable. The list is the language's own keywords, so no host can register
-            // a type that makes one of them legal.
-            //
-            // Gated on the declared type being one this analyzer knows, and that gate is the
-            // whole reason the rule is safe. A keyword name never reaches the scope tree from
-            // code somebody wrote as a declaration - it reaches it from tree-sitter recovering
-            // out of a syntax error and reading two unrelated tokens as one. The corpus audit
-            // found exactly that, once in 1,061 scripts: a dangling `else return false;` parses
-            // as a variable `return` of type `else`, and the file was already reporting a syntax
-            // error and an unknown type `else` on the same line. Requiring a known type keeps
-            // `int int;` and drops the pile-on.
-            if (IsReservedKeyword(def.name) && def.kind == LocalDefinitionKind::Variable &&
-                IsKnownType(CleanBaseType(def.typeName), ctx))
-            {
-                ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
-                                "as-err-reserved-keyword-name", def.name);
-            }
-        }
-
-        for (const auto& def : scope->definitions)
-        {
-            if (def.kind == LocalDefinitionKind::Variable)
-            {
-                uint32_t tStartLine =
-                    (def.typeEndCharacter > def.typeStartCharacter || def.typeEndLine > def.typeStartLine)
-                        ? def.typeStartLine
-                        : def.startLine;
-                uint32_t tStartChar =
-                    (def.typeEndCharacter > def.typeStartCharacter || def.typeEndLine > def.typeStartLine)
-                        ? def.typeStartCharacter
-                        : def.startCharacter;
-                uint32_t tEndLine =
-                    (def.typeEndCharacter > def.typeStartCharacter || def.typeEndLine > def.typeStartLine)
-                        ? def.typeEndLine
-                        : def.endLine;
-                uint32_t tEndChar =
-                    (def.typeEndCharacter > def.typeStartCharacter || def.typeEndLine > def.typeStartLine)
-                        ? def.typeEndCharacter
-                        : def.endCharacter;
-
-                std::string base = CleanBaseType(def.typeName);
-                if (def.typeName == "void" || base == "void")
-                {
-                    ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar, "as-err-void-variable", def.name,
-                                    DiagnosticSeverity::Error);
-                }
-                else if (IsMixinClass(base, ctx.request.symbolTable))
-                {
-                    ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar, "as-err-mixin-not-a-type", base,
-                                    DiagnosticSeverity::Error);
-                }
-                // A type position naming a FUNCTION. `void Foo(int) {}` then `Foo@ h = @Foo;`
-                // is rejected - "Identifier 'Foo' is not a data type", verified against the
-                // oracle - because a function handle needs a funcdef to name its signature. The
-                // intent is unmistakable and the funcdef is derivable from the function itself,
-                // which is what makes this worth saying rather than leaving as silence.
-                //
-                // Opt-in and a Hint: the name could equally belong to a host type this analyzer
-                // cannot see, and a workspace whose engine registers one would otherwise be told
-                // its own type does not exist.
-                else if (ctx.request.diagnostics && ctx.request.diagnostics->reportMissingFuncdef && base != "auto" &&
-                         NamesAFunctionNotAType(base, ctx.request.symbolTable))
-                {
-                    ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar, "as-hint-funcdef-missing", base,
-                                    DiagnosticSeverity::Hint);
-                }
-                // `auto` is in IsCorePrimitive's list, and it is not a primitive - it is not a
-                // type at all, but a placeholder for whatever the initializer produces, so
-                // whether a handle is allowed is decided by *that* type. The compiler accepts
-                // `auto@ g = MakeFoo();` and rejects `int@ x;`.
-                else if (def.isHandleType && def.typeKind != TypeKind::Array && base != "auto" &&
-                         IsPrimitiveTypeName(base))
-                {
-                    ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar, "as-err-handle-on-primitive", base,
-                                    DiagnosticSeverity::Error);
-                }
-                else
-                {
-                    TemplateTypeInfo tmplInfo = ParseTemplateType(def.typeName);
-                    if (!tmplInfo.templateArgs.empty())
-                    {
-                        if (!IsKnownType(tmplInfo.containerName, ctx))
-                        {
-                            ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar, "as-err-unresolved-type",
-                                            tmplInfo.containerName, DiagnosticSeverity::Error);
-                        }
-                        for (size_t i = 0; i < tmplInfo.templateArgs.size(); ++i)
-                        {
-                            std::string cleanArg = CleanBaseType(tmplInfo.templateArgs[i]);
-                            if (!IsKnownType(cleanArg, ctx))
-                            {
-                                uint32_t sLine = tStartLine;
-                                uint32_t sChar = tStartChar;
-                                uint32_t eLine = tEndLine;
-                                uint32_t eChar = tEndChar;
-
-                                if (i < def.templateArgPositions.size())
-                                {
-                                    sLine = def.templateArgPositions[i].startLine;
-                                    sChar = def.templateArgPositions[i].startCharacter;
-                                    eLine = def.templateArgPositions[i].endLine;
-                                    eChar = def.templateArgPositions[i].endCharacter;
-                                }
-
-                                ctx.EmitAtRange(sLine, sChar, eLine, eChar, "as-err-unresolved-type", cleanArg,
-                                                DiagnosticSeverity::Error);
-                            }
-                        }
-                    }
-                    // `Unknown type 'else'` - the other half of the recovery cascade the
-                    // undeclared-identifier rule already refuses to join. A keyword in a type
-                    // position means tree-sitter recovered from a syntax error, which the file
-                    // is already reporting.
-                    else if (!base.empty() && base != "auto" && !IsReservedKeyword(base) && !IsKnownType(base, ctx))
-                    {
-                        ctx.EmitAtRange(tStartLine, tStartChar, tEndLine, tEndChar, "as-err-unresolved-type", base,
-                                        DiagnosticSeverity::Error);
-                    }
-                }
-            }
-        }
+        CheckLocalNames(scope, ctx);
+        CheckLocalTypes(scope, ctx);
     }
 
     for (const auto& child : scope->children)
