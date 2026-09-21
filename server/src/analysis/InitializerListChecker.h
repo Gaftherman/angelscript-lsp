@@ -52,6 +52,17 @@ struct InitializerListCheckRequest
 void CheckInitializerLists(const InitializerListCheckRequest& request, DiagnosticContext& ctx);
 
 /**
+ * @brief Context for inspecting elements in an initializer list.
+ */
+struct ElementContext
+{
+    /** @brief Source text of the document. */
+    std::string_view sourceCode;
+    /** @brief Scope for looking up named identifiers in element expressions. */
+    const Scope* scopeRoot = nullptr;
+};
+
+/**
  * @brief Checks one list against a target type the caller already knows.
  *
  * A list written as a call argument is compiled against the parameter it lands on, and which
@@ -59,14 +70,13 @@ void CheckInitializerLists(const InitializerListCheckRequest& request, Diagnosti
  * answer and CallChecker already has. So the argument case is driven from there: it names the
  * type, this names the verdict, and the rules stay in one place.
  *
- * @param listNode   The `initializer_list` node.
- * @param targetType The type it initializes, as written; decorations are stripped here.
- * @param sourceCode Document text the tree was parsed from.
- * @param scope      Scope the list sits in, for typing elements that name something.
- * @param ctx        Diagnostic sink.
+ * @param[in] listNode   The `initializer_list` node.
+ * @param[in] targetType The type it initializes, as written; decorations are stripped here.
+ * @param[in] elements   Element source and scope context.
+ * @param[in,out] ctx    Diagnostic sink.
  */
-void CheckInitializerListAgainstType(TSNode listNode, const std::string& targetType, std::string_view sourceCode,
-                                     const Scope* scope, DiagnosticContext& ctx);
+void CheckInitializerListAgainstType(TSNode listNode, const std::string& targetType, const ElementContext& elements,
+                                     DiagnosticContext& ctx);
 
 /**
  * @brief Validates an initializer list recursively against an expected target type.

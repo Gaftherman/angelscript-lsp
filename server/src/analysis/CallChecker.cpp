@@ -974,8 +974,8 @@ void CheckInitializerListArgs(const std::vector<TSNode>& argNodes, const Functio
     {
         if (NodeType(argNodes[i]) == "initializer_list")
         {
-            CheckInitializerListAgainstType(argNodes[i], fn.parameters[i].typeName, valCtx.request.sourceCode,
-                                            valCtx.scope, valCtx.ctx);
+            CheckInitializerListAgainstType(argNodes[i], fn.parameters[i].typeName,
+                                            {valCtx.request.sourceCode, valCtx.scope}, valCtx.ctx);
         }
     }
 }
