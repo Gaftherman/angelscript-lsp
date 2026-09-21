@@ -131,7 +131,6 @@ angel_lsp::features::GetHover
 angel_lsp::features::GetImplementations
 angel_lsp::features::GetInheritedTypeHierarchy
 angel_lsp::features::GetNodeTextAt
-angel_lsp::features::GetOutgoingCalls
 angel_lsp::features::GetSemanticTokens
 angel_lsp::features::GetSignatureHelp
 angel_lsp::features::GetSubtypes

@@ -10,7 +10,9 @@ namespace angel_lsp::features
 {
 namespace
 {
+using analysis::CallGraphIndex;
 using analysis::CallSite;
+using analysis::DocumentCalls;
 using analysis::Symbol;
 using analysis::SymbolTable;
 using analysis::SymbolType;
@@ -175,6 +177,114 @@ std::string IdentifierAt(const CallHierarchyPrepareRequest& request, TSNode& out
     outNode = node;
     return std::string_view(ts_node_type(node)) == "identifier" ? NodeText(node, request.sourceCode) : std::string();
 }
+
+/**
+ * @brief Locate outgoing calls from a caller, falling back to synthesized host class origin mixin.
+ * @param[in] caller Qualified name of the caller.
+ * @param[in] callGraph Call graph to query.
+ * @param[in] symbolTable Symbol table to look up synthesized symbols.
+ * @return List of call documents matching caller.
+ */
+std::vector<DocumentCalls> FindCallsFromCaller(const std::string& caller, const CallGraphIndex& callGraph,
+                                               const SymbolTable& symbolTable)
+{
+    auto calls = callGraph.FindCallsFrom(caller);
+    if (!calls.empty())
+    {
+        return calls;
+    }
+
+    // If caller is synthesized in a host class, locate calls recorded under the originating mixin method
+    const auto symbols = symbolTable.FindSymbolsPtr(caller);
+    if (!symbols)
+    {
+        return calls;
+    }
+
+    for (const auto& sym : *symbols)
+    {
+        if (sym.isSynthesized && !sym.containerName.empty())
+        {
+            const std::string originCaller = sym.containerName + "::" + sym.name;
+            calls = callGraph.FindCallsFrom(originCaller);
+            if (!calls.empty())
+            {
+                break;
+            }
+        }
+    }
+    return calls;
+}
+
+/**
+ * @brief Group call ranges by callee name.
+ * @param[in] calls List of call documents.
+ * @return Vector of pairs mapping callee name to their call ranges.
+ */
+std::vector<std::pair<std::string, std::vector<lsp::Range>>> GroupCallsByCallee(const std::vector<DocumentCalls>& calls)
+{
+    std::vector<std::pair<std::string, std::vector<lsp::Range>>> byCallee;
+    for (const auto& document : calls)
+    {
+        for (const auto& call : document.calls)
+        {
+            auto existing = std::find_if(byCallee.begin(), byCallee.end(),
+                                         [&call](const auto& entry) { return entry.first == call.callee; });
+            if (existing == byCallee.end())
+            {
+                byCallee.emplace_back(call.callee, std::vector<lsp::Range>{ToRange(call.range)});
+            }
+            else
+            {
+                existing->second.push_back(ToRange(call.range));
+            }
+        }
+    }
+    return byCallee;
+}
+
+/**
+ * @brief Check if an outgoing call item for a symbol already exists.
+ * @param[in] outgoing Current outgoing calls list.
+ * @param[in] sym Candidate symbol to check.
+ * @return True if an outgoing call item already exists for this symbol.
+ */
+bool OutgoingCallExists(const std::vector<lsp::CallHierarchyOutgoingCall>& outgoing, const Symbol& sym)
+{
+    for (const auto& out : outgoing)
+    {
+        if (out.to.uri.toString() == sym.fileUri && out.to.selectionRange.start.line == sym.selectionRange.startLine &&
+            out.to.selectionRange.start.character == sym.selectionRange.startCharacter)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Append outgoing call entries for a specific callee.
+ * @param[in] callee Callee bare name.
+ * @param[in] ranges Ranges where callee was invoked.
+ * @param[in] symbolTable Symbol table to look up callee declarations.
+ * @param[in,out] outgoing List of outgoing calls to append to.
+ */
+void AppendOutgoingCallsForCallee(const std::string& callee, const std::vector<lsp::Range>& ranges,
+                                  const SymbolTable& symbolTable, std::vector<lsp::CallHierarchyOutgoingCall>& outgoing)
+{
+    // A callee that resolves to no declaration is an engine-registered function. There is
+    // nowhere to navigate to, so it is left out rather than offered as a dead entry.
+    for (const auto& sym : FindByBareName(callee, symbolTable))
+    {
+        if (!OutgoingCallExists(outgoing, sym))
+        {
+            lsp::CallHierarchyOutgoingCall entry;
+            entry.to = ToItem(sym);
+            entry.fromRanges = ranges;
+            outgoing.push_back(std::move(entry));
+        }
+    }
+}
 } // namespace
 
 std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const CallHierarchyPrepareRequest& request)
@@ -307,73 +417,13 @@ std::optional<std::vector<lsp::CallHierarchyOutgoingCall>> GetOutgoingCalls(cons
         return std::nullopt;
     }
 
-    std::vector<std::pair<std::string, std::vector<lsp::Range>>> byCallee;
-
-    auto calls = request.callGraph.FindCallsFrom(caller);
-    if (calls.empty())
-    {
-        // If caller is synthesized in a host class, locate calls recorded under the originating mixin method
-        auto symbols = request.symbolTable.FindSymbolsPtr(caller);
-        if (symbols)
-        {
-            for (const auto& sym : *symbols)
-            {
-                if (sym.isSynthesized && !sym.containerName.empty())
-                {
-                    const std::string originCaller = sym.containerName + "::" + sym.name;
-                    calls = request.callGraph.FindCallsFrom(originCaller);
-                    if (!calls.empty())
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    for (const auto& document : calls)
-    {
-        for (const auto& call : document.calls)
-        {
-            auto existing = std::find_if(byCallee.begin(), byCallee.end(),
-                                         [&call](const auto& entry) { return entry.first == call.callee; });
-            if (existing == byCallee.end())
-            {
-                byCallee.emplace_back(call.callee, std::vector<lsp::Range>{ToRange(call.range)});
-            }
-            else
-            {
-                existing->second.push_back(ToRange(call.range));
-            }
-        }
-    }
+    const auto calls = FindCallsFromCaller(caller, request.callGraph, request.symbolTable);
+    const auto byCallee = GroupCallsByCallee(calls);
 
     std::vector<lsp::CallHierarchyOutgoingCall> outgoing;
-    for (auto& [callee, ranges] : byCallee)
+    for (const auto& [callee, ranges] : byCallee)
     {
-        // A callee that resolves to no declaration is an engine-registered function. There is
-        // nowhere to navigate to, so it is left out rather than offered as a dead entry.
-        for (const auto& sym : FindByBareName(callee, request.symbolTable))
-        {
-            bool exists = false;
-            for (const auto& out : outgoing)
-            {
-                if (out.to.uri.toString() == sym.fileUri &&
-                    out.to.selectionRange.start.line == sym.selectionRange.startLine &&
-                    out.to.selectionRange.start.character == sym.selectionRange.startCharacter)
-                {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists)
-            {
-                lsp::CallHierarchyOutgoingCall entry;
-                entry.to = ToItem(sym);
-                entry.fromRanges = ranges;
-                outgoing.push_back(std::move(entry));
-            }
-        }
+        AppendOutgoingCallsForCallee(callee, ranges, request.symbolTable, outgoing);
     }
 
     return outgoing.empty() ? std::nullopt : std::optional{outgoing};
