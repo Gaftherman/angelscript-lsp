@@ -104,7 +104,6 @@ angel_lsp::analysis::ValidateList
 angel_lsp::analysis::ValidateMultiDimensionalContainer
 angel_lsp::analysis::Walk
 angel_lsp::features::AddItemIfNew
-angel_lsp::features::CalculateActiveParameter
 angel_lsp::features::ClassifyOccurrence
 angel_lsp::features::CollectInlayHintsFromNode
 angel_lsp::features::CollectReferencesInScope
@@ -128,7 +127,6 @@ angel_lsp::features::GetHover
 angel_lsp::features::GetInheritedTypeHierarchy
 angel_lsp::features::GetNodeTextAt
 angel_lsp::features::GetSemanticTokens
-angel_lsp::features::GetSignatureHelp
 angel_lsp::features::GetTypeDefinition
 angel_lsp::features::HoverIncludeDirective
 angel_lsp::features::IsExtractableExpression

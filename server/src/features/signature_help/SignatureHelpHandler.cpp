@@ -13,8 +13,8 @@ namespace
 
 /**
  * @brief Recursively collects the class and interface inheritance hierarchy for a type.
- * @param symbolTable The symbol table to look up class and interface definitions.
- * @param initialTypeName The starting type name.
+ * @param[in] symbolTable The symbol table to look up class and interface definitions.
+ * @param[in] initialTypeName The starting type name.
  * @return Vector of type names in the hierarchy including initialTypeName and its transitive bases.
  */
 std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& symbolTable,
@@ -24,14 +24,6 @@ std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& 
     std::unordered_set<std::string> visited;
     std::vector<std::string> queue;
 
-    // MemberOwnerType, not CleanBaseType - the same choice AccessChecker records at its
-    // own call site. A `.` on an array reaches the ARRAY's members, and CleanBaseType
-    // answers the ELEMENT type: it reduces `array<Item>` to `Item`. This file used to
-    // define its own weaker CleanBaseType that shadowed the analysis:: one and stripped
-    // neither `[]` nor `array<>`, so `array<Item>` arrived here with its brackets on and
-    // matched nothing at all - a template class is registered under its bare name, so the
-    // key is `array::insertLast`. Signature help on any array member call returned no
-    // signatures at all, in either spelling of the type.
     std::string rootType = analysis::MemberOwnerType(initialTypeName);
     if (rootType.empty())
     {
@@ -84,14 +76,11 @@ std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& 
     return hierarchy;
 }
 
-uint32_t CalculateActiveParameter(const std::string& sourceCode, uint32_t argStartByte, uint32_t cursorByte)
+/**
+ * @brief State tracker for nesting delimiters and comments during argument parsing.
+ */
+struct LexerState
 {
-    if (cursorByte <= argStartByte || cursorByte > sourceCode.size())
-    {
-        return 0;
-    }
-
-    uint32_t activeParam = 0;
     int parenDepth = 0;
     int bracketDepth = 0;
     int braceDepth = 0;
@@ -101,92 +90,209 @@ uint32_t CalculateActiveParameter(const std::string& sourceCode, uint32_t argSta
     bool inLineComment = false;
     bool inBlockComment = false;
 
+    [[nodiscard]] bool AtTopLevel() const noexcept
+    {
+        return parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 && angleDepth == 0;
+    }
+};
+
+/**
+ * @brief Advances comment state during signature lexing.
+ * @param[in] code Full source code string.
+ * @param[in,out] i Current character index in source code.
+ * @param[in] cursorByte Target cursor byte offset.
+ * @param[in,out] state Active lexer state.
+ * @return True if character was consumed as part of a comment.
+ */
+bool HandleComments(const std::string& code, size_t& i, size_t cursorByte, LexerState& state)
+{
+    if (state.inLineComment)
+    {
+        if (code[i] == '\n')
+        {
+            state.inLineComment = false;
+        }
+        return true;
+    }
+
+    if (state.inBlockComment)
+    {
+        if (code[i] == '*' && i + 1 < cursorByte && code[i + 1] == '/')
+        {
+            state.inBlockComment = false;
+            i++;
+        }
+        return true;
+    }
+
+    if (code[i] == '/' && i + 1 < cursorByte)
+    {
+        if (code[i + 1] == '/')
+        {
+            state.inLineComment = true;
+            i++;
+            return true;
+        }
+        if (code[i + 1] == '*')
+        {
+            state.inBlockComment = true;
+            i++;
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Advances string literal state during signature lexing.
+ * @param[in] code Full source code string.
+ * @param[in,out] i Current character index in source code.
+ * @param[in] cursorByte Target cursor byte offset.
+ * @param[in,out] state Active lexer state.
+ * @return True if character was consumed as part of a string literal.
+ */
+bool HandleString(const std::string& code, size_t& i, size_t cursorByte, LexerState& state)
+{
+    if (state.inString)
+    {
+        if (code[i] == '\\' && i + 1 < cursorByte)
+        {
+            i++;
+        }
+        else if (code[i] == state.stringChar)
+        {
+            state.inString = false;
+        }
+        return true;
+    }
+
+    if (code[i] == '"' || code[i] == '\'')
+    {
+        state.inString = true;
+        state.stringChar = code[i];
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Updates nesting depth or increments parameter count on comma at top-level.
+ * @param[in] c Current character.
+ * @param[in,out] state Active lexer state.
+ * @param[in,out] activeParam Current parameter counter.
+ */
+void UpdateDepth(char c, LexerState& state, uint32_t& activeParam)
+{
+    switch (c)
+    {
+    case '(':
+        ++state.parenDepth;
+        break;
+    case ')':
+        if (state.parenDepth > 0)
+            --state.parenDepth;
+        break;
+    case '[':
+        ++state.bracketDepth;
+        break;
+    case ']':
+        if (state.bracketDepth > 0)
+            --state.bracketDepth;
+        break;
+    case '{':
+        ++state.braceDepth;
+        break;
+    case '}':
+        if (state.braceDepth > 0)
+            --state.braceDepth;
+        break;
+    case '<':
+        ++state.angleDepth;
+        break;
+    case '>':
+        if (state.angleDepth > 0)
+            --state.angleDepth;
+        break;
+    case ',':
+        if (state.AtTopLevel())
+        {
+            ++activeParam;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+/**
+ * @brief Calculates zero-based active parameter index within argument list based on cursor position.
+ * @param[in] sourceCode Document source text.
+ * @param[in] argStartByte Byte offset after opening parenthesis.
+ * @param[in] cursorByte Byte offset corresponding to request position.
+ * @return Zero-based index of the parameter under cursor.
+ */
+uint32_t CalculateActiveParameter(const std::string& sourceCode, uint32_t argStartByte, uint32_t cursorByte)
+{
+    if (cursorByte <= argStartByte || cursorByte > sourceCode.size())
+    {
+        return 0;
+    }
+
+    uint32_t activeParam = 0;
+    LexerState state;
+
     for (size_t i = argStartByte; i < cursorByte; ++i)
     {
-        char c = sourceCode[i];
-
-        if (inLineComment)
+        if (HandleComments(sourceCode, i, cursorByte, state))
         {
-            if (c == '\n')
-            {
-                inLineComment = false;
-            }
             continue;
         }
-
-        if (inBlockComment)
+        if (HandleString(sourceCode, i, cursorByte, state))
         {
-            if (c == '*' && i + 1 < cursorByte && sourceCode[i + 1] == '/')
-            {
-                inBlockComment = false;
-                i++; // skip '/'
-            }
             continue;
         }
-
-        if (inString)
-        {
-            if (c == '\\' && i + 1 < cursorByte)
-            {
-                i++;
-            }
-            else if (c == stringChar)
-            {
-                inString = false;
-            }
-            continue;
-        }
-
-        // Check for comment starts
-        if (c == '/' && i + 1 < cursorByte)
-        {
-            if (sourceCode[i + 1] == '/')
-            {
-                inLineComment = true;
-                i++;
-                continue;
-            }
-            else if (sourceCode[i + 1] == '*')
-            {
-                inBlockComment = true;
-                i++;
-                continue;
-            }
-        }
-
-        // Check for string starts
-        if (c == '"' || c == '\'')
-        {
-            inString = true;
-            stringChar = c;
-            continue;
-        }
-
-        if (c == '(')
-            parenDepth++;
-        else if (c == ')' && parenDepth > 0)
-            parenDepth--;
-        else if (c == '[')
-            bracketDepth++;
-        else if (c == ']' && bracketDepth > 0)
-            bracketDepth--;
-        else if (c == '{')
-            braceDepth++;
-        else if (c == '}' && braceDepth > 0)
-            braceDepth--;
-        else if (c == '<')
-            angleDepth++;
-        else if (c == '>' && angleDepth > 0)
-            angleDepth--;
-        else if (c == ',' && parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 && angleDepth == 0)
-        {
-            activeParam++;
-        }
+        UpdateDepth(sourceCode[i], state, activeParam);
     }
 
     return activeParam;
 }
 
+/**
+ * @brief Formats parameter declarations into comma-separated text.
+ * @param[in] parameters List of parameter symbols.
+ * @return Formatted parameter string.
+ */
+std::string FormatParameters(const std::vector<analysis::ParameterInformation>& parameters)
+{
+    std::ostringstream oss;
+    for (size_t i = 0; i < parameters.size(); ++i)
+    {
+        if (i > 0)
+        {
+            oss << ", ";
+        }
+        const auto& param = parameters[i];
+        if (!param.typeName.empty())
+        {
+            oss << param.typeName;
+        }
+        if (!param.name.empty())
+        {
+            oss << " " << param.name;
+        }
+        if (!param.defaultValue.empty())
+        {
+            oss << " = " << param.defaultValue;
+        }
+    }
+    return oss.str();
+}
+
+/**
+ * @brief Formats human-readable signature label for a function or funcdef symbol.
+ * @param[in] sym Symbol representing a function or funcdef.
+ * @return Formatted signature string.
+ */
 std::string FormatSignatureLabel(const analysis::Symbol& sym)
 {
     if (sym.type != analysis::SymbolType::Function && sym.type != analysis::SymbolType::Funcdef)
@@ -212,14 +318,7 @@ std::string FormatSignatureLabel(const analysis::Symbol& sym)
         parameters = &sig.parameters;
     }
 
-    if (!returnType.empty())
-    {
-        oss << returnType << " ";
-    }
-    else
-    {
-        oss << "void ";
-    }
+    oss << (returnType.empty() ? "void " : returnType + " ");
 
     if (!sym.containerName.empty())
     {
@@ -229,31 +328,288 @@ std::string FormatSignatureLabel(const analysis::Symbol& sym)
 
     if (parameters)
     {
-        for (size_t i = 0; i < parameters->size(); ++i)
-        {
-            if (i > 0)
-            {
-                oss << ", ";
-            }
-            const auto& param = (*parameters)[i];
-            if (!param.typeName.empty())
-            {
-                oss << param.typeName;
-            }
-            if (!param.name.empty())
-            {
-                oss << " " << param.name;
-            }
-            if (!param.defaultValue.empty())
-            {
-                oss << " = " << param.defaultValue;
-            }
-        }
+        oss << FormatParameters(*parameters);
     }
 
     oss << ")";
     return oss.str();
 }
+
+/**
+ * @brief Enclosing call expression and argument list nodes.
+ */
+struct CallNodes
+{
+    TSNode callNode{};
+    TSNode argListNode{};
+};
+
+/**
+ * @brief Traverses ancestors of a node to identify enclosing call_expression and argument_list.
+ * @param[in] node Starting AST descendant.
+ * @return Identified CallNodes.
+ */
+CallNodes FindCallNodes(TSNode node)
+{
+    CallNodes result;
+    for (TSNode cur = node; !ts_node_is_null(cur); cur = ts_node_parent(cur))
+    {
+        std::string_view type = ts_node_type(cur);
+        if (type == "argument_list")
+        {
+            result.argListNode = cur;
+            TSNode parent = ts_node_parent(cur);
+            if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "call_expression")
+            {
+                result.callNode = parent;
+                break;
+            }
+        }
+        else if (type == "call_expression")
+        {
+            result.callNode = cur;
+            break;
+        }
+    }
+
+    if (!ts_node_is_null(result.callNode) && ts_node_is_null(result.argListNode))
+    {
+        result.argListNode = parser::GetChildByField(result.callNode, parser::fields::Arguments);
+        if (ts_node_is_null(result.argListNode))
+        {
+            uint32_t childCount = ts_node_child_count(result.callNode);
+            for (uint32_t i = 0; i < childCount; ++i)
+            {
+                TSNode child = ts_node_child(result.callNode, i);
+                if (std::string_view(ts_node_type(child)) == "argument_list")
+                {
+                    result.argListNode = child;
+                    break;
+                }
+            }
+        }
+    }
+    return result;
+}
+
+/**
+ * @brief Converts LSP line and character into a byte offset in source code.
+ * @param[in] sourceCode Source text.
+ * @param[in] pos Position with line and character.
+ * @return Byte offset clamped to source size.
+ */
+size_t PositionToByteOffset(const std::string& sourceCode, lsp::Position pos)
+{
+    size_t cursorByte = 0;
+    size_t curLine = 0;
+    for (size_t i = 0; i < sourceCode.size(); ++i)
+    {
+        if (curLine == pos.line)
+        {
+            cursorByte = i + pos.character;
+            break;
+        }
+        if (sourceCode[i] == '\n')
+        {
+            curLine++;
+        }
+    }
+    return std::min(cursorByte, sourceCode.size());
+}
+
+/**
+ * @brief Determines active parameter index for the call at the given request position.
+ * @param[in] request Signature help request.
+ * @param[in] argListNode Argument list AST node.
+ * @return Zero-based parameter index.
+ */
+uint32_t DetermineActiveParameter(const SignatureHelpRequest& request, TSNode argListNode)
+{
+    if (ts_node_is_null(argListNode))
+    {
+        return 0;
+    }
+
+    uint32_t argStart = ts_node_start_byte(argListNode);
+    if (argStart < request.sourceCode.size() && request.sourceCode[argStart] == '(')
+    {
+        argStart++;
+    }
+
+    size_t cursorByte = PositionToByteOffset(request.sourceCode, request.position);
+    return CalculateActiveParameter(request.sourceCode, argStart, static_cast<uint32_t>(cursorByte));
+}
+
+/**
+ * @brief Extracts the function/callee AST node from a call_expression node.
+ * @param[in] callNode Call expression AST node.
+ * @return Function AST node or null node if not found.
+ */
+TSNode ExtractFunctionNode(TSNode callNode)
+{
+    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
+    if (ts_node_is_null(funcNode))
+    {
+        uint32_t childCount = ts_node_child_count(callNode);
+        if (childCount > 0)
+        {
+            funcNode = ts_node_child(callNode, 0);
+        }
+    }
+    return funcNode;
+}
+
+/**
+ * @brief Resolves candidate method symbols for a member expression callee.
+ * @param[in] request Signature help request.
+ * @param[in] funcNode Member expression AST node.
+ * @return Matching symbol candidates from the receiver hierarchy.
+ */
+std::vector<analysis::Symbol> ResolveMemberCandidates(const SignatureHelpRequest& request, TSNode funcNode)
+{
+    TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
+    TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
+    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
+    {
+        return {};
+    }
+
+    std::string memText =
+        request.sourceCode.substr(ts_node_start_byte(memNode), ts_node_end_byte(memNode) - ts_node_start_byte(memNode));
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    const analysis::Scope* scope =
+        rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character) : nullptr;
+    std::string receiverTypeName =
+        analysis::ResolveReceiverType(objNode, request.sourceCode, request.symbolTable, scope, "", request.uri);
+
+    if (receiverTypeName.empty())
+    {
+        return {};
+    }
+
+    auto hierarchy = GetInheritedTypeHierarchy(request.symbolTable, receiverTypeName);
+    for (const auto& typeName : hierarchy)
+    {
+        std::string qualifiedName = typeName + "::" + memText;
+        auto found = request.symbolTable.FindSymbols(qualifiedName);
+        if (!found.empty())
+        {
+            return found;
+        }
+    }
+    return {};
+}
+
+/**
+ * @brief Resolves candidate function symbols for a call expression.
+ * @param[in] request Signature help request.
+ * @param[in] funcNode Function callee AST node.
+ * @return List of matching function/funcdef candidates.
+ */
+std::vector<analysis::Symbol> ResolveCandidateSymbols(const SignatureHelpRequest& request, TSNode funcNode)
+{
+    uint32_t fStart = ts_node_start_byte(funcNode);
+    uint32_t fEnd = ts_node_end_byte(funcNode);
+    if (fStart >= request.sourceCode.size() || fEnd > request.sourceCode.size() || fStart >= fEnd)
+    {
+        return {};
+    }
+
+    std::string_view funcType = ts_node_type(funcNode);
+    if (funcType == "member_expression")
+    {
+        return ResolveMemberCandidates(request, funcNode);
+    }
+
+    std::string calleeName = request.sourceCode.substr(fStart, fEnd - fStart);
+    return request.symbolTable.FindSymbols(calleeName);
+}
+
+/**
+ * @brief Builds LSP parameter information objects for a symbol's parameter list.
+ * @param[in] parameters List of symbol parameters.
+ * @return Vector of LSP ParameterInformation.
+ */
+std::vector<lsp::ParameterInformation> BuildParameterList(const std::vector<analysis::ParameterInformation>& parameters)
+{
+    std::vector<lsp::ParameterInformation> params;
+    params.reserve(parameters.size());
+
+    for (const auto& param : parameters)
+    {
+        lsp::ParameterInformation pInfo;
+        std::string pLabel;
+        if (!param.typeName.empty())
+        {
+            pLabel += param.typeName;
+        }
+        if (!param.name.empty())
+        {
+            if (!pLabel.empty())
+            {
+                pLabel += " ";
+            }
+            pLabel += param.name;
+        }
+        if (!param.defaultValue.empty())
+        {
+            pLabel += " = " + param.defaultValue;
+        }
+        pInfo.label = pLabel;
+        params.push_back(std::move(pInfo));
+    }
+    return params;
+}
+
+/**
+ * @brief Constructs LSP signature information objects for candidate symbols.
+ * @param[in] candidateSymbols Candidate function or funcdef symbols.
+ * @return List of LSP signature entries.
+ */
+std::vector<lsp::SignatureInformation> BuildSignatureList(const std::vector<analysis::Symbol>& candidateSymbols)
+{
+    std::vector<lsp::SignatureInformation> signatures;
+
+    for (const auto& sym : candidateSymbols)
+    {
+        if (sym.type != analysis::SymbolType::Function && sym.type != analysis::SymbolType::Funcdef)
+        {
+            continue;
+        }
+
+        lsp::SignatureInformation sigInfo;
+        sigInfo.label = FormatSignatureLabel(sym);
+        const std::vector<analysis::ParameterInformation>* parameters =
+            (sym.type == analysis::SymbolType::Function) ? &sym.GetFunction().parameters : &sym.GetFuncdef().parameters;
+
+        if (parameters && !parameters->empty())
+        {
+            sigInfo.parameters = BuildParameterList(*parameters);
+        }
+
+        signatures.push_back(std::move(sigInfo));
+    }
+    return signatures;
+}
+
+/**
+ * @brief Selects active signature matching the active parameter index.
+ * @param[in] signatures Available signature list.
+ * @param[in] activeParameter Active parameter index.
+ * @return Zero-based index of the matching signature.
+ */
+uint32_t SelectActiveSignature(const std::vector<lsp::SignatureInformation>& signatures, uint32_t activeParameter)
+{
+    for (size_t i = 0; i < signatures.size(); ++i)
+    {
+        if (signatures[i].parameters.has_value() && activeParameter < signatures[i].parameters->size())
+        {
+            return static_cast<uint32_t>(i);
+        }
+    }
+    return 0;
+}
+
 } // namespace
 
 std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& request)
@@ -272,223 +628,28 @@ std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& r
         return std::nullopt;
     }
 
-    // Find enclosing call_expression or argument_list
-    TSNode callNode{};
-    TSNode argListNode{};
-
-    for (TSNode cur = node; !ts_node_is_null(cur); cur = ts_node_parent(cur))
-    {
-        std::string_view type = ts_node_type(cur);
-        if (type == "argument_list")
-        {
-            argListNode = cur;
-            TSNode parent = ts_node_parent(cur);
-            if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "call_expression")
-            {
-                callNode = parent;
-                break;
-            }
-        }
-        else if (type == "call_expression")
-        {
-            callNode = cur;
-            break;
-        }
-    }
-
-    if (ts_node_is_null(callNode))
+    CallNodes callNodes = FindCallNodes(node);
+    if (ts_node_is_null(callNodes.callNode))
     {
         return std::nullopt;
     }
 
-    if (ts_node_is_null(argListNode))
-    {
-        argListNode = parser::GetChildByField(callNode, parser::fields::Arguments);
-        if (ts_node_is_null(argListNode))
-        {
-            uint32_t childCount = ts_node_child_count(callNode);
-            for (uint32_t i = 0; i < childCount; ++i)
-            {
-                TSNode child = ts_node_child(callNode, i);
-                if (std::string_view(ts_node_type(child)) == "argument_list")
-                {
-                    argListNode = child;
-                    break;
-                }
-            }
-        }
-    }
+    uint32_t activeParameter = DetermineActiveParameter(request, callNodes.argListNode);
 
-    // Determine active parameter
-    uint32_t activeParameter = 0;
-    if (!ts_node_is_null(argListNode))
-    {
-        uint32_t argStart = ts_node_start_byte(argListNode);
-        // Skip the opening '('
-        if (argStart < request.sourceCode.size() && request.sourceCode[argStart] == '(')
-        {
-            argStart++;
-        }
-
-        // Find cursor byte offset
-        size_t cursorByte = 0;
-        size_t curLine = 0;
-        for (size_t i = 0; i < request.sourceCode.size(); ++i)
-        {
-            if (curLine == request.position.line)
-            {
-                cursorByte = i + request.position.character;
-                break;
-            }
-            if (request.sourceCode[i] == '\n')
-            {
-                curLine++;
-            }
-        }
-
-        if (cursorByte > request.sourceCode.size())
-        {
-            cursorByte = request.sourceCode.size();
-        }
-
-        activeParameter = CalculateActiveParameter(request.sourceCode, argStart, static_cast<uint32_t>(cursorByte));
-    }
-
-    // Extract function node
-    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
-    if (ts_node_is_null(funcNode))
-    {
-        uint32_t childCount = ts_node_child_count(callNode);
-        if (childCount > 0)
-        {
-            funcNode = ts_node_child(callNode, 0);
-        }
-    }
-
+    TSNode funcNode = ExtractFunctionNode(callNodes.callNode);
     if (ts_node_is_null(funcNode))
     {
         return std::nullopt;
     }
 
-    std::string_view funcType = ts_node_type(funcNode);
-    uint32_t fStart = ts_node_start_byte(funcNode);
-    uint32_t fEnd = ts_node_end_byte(funcNode);
-    if (fStart >= request.sourceCode.size() || fEnd > request.sourceCode.size() || fStart >= fEnd)
-    {
-        return std::nullopt;
-    }
-
-    std::vector<analysis::Symbol> candidateSymbols;
-
-    if (funcType == "member_expression")
-    {
-        TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
-        TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
-
-        if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
-        {
-            std::string objText = request.sourceCode.substr(ts_node_start_byte(objNode),
-                                                            ts_node_end_byte(objNode) - ts_node_start_byte(objNode));
-            std::string memText = request.sourceCode.substr(ts_node_start_byte(memNode),
-                                                            ts_node_end_byte(memNode) - ts_node_start_byte(memNode));
-            auto rootScope = request.scopeIndex.GetRoot(request.uri);
-            const analysis::Scope* scope =
-                rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character)
-                          : nullptr;
-            std::string receiverTypeName =
-                analysis::ResolveReceiverType(objNode, request.sourceCode, request.symbolTable, scope, "", request.uri);
-
-            if (!receiverTypeName.empty())
-            {
-                auto hierarchy = GetInheritedTypeHierarchy(request.symbolTable, receiverTypeName);
-                for (const auto& typeName : hierarchy)
-                {
-                    std::string qualifiedName = typeName + "::" + memText;
-                    auto found = request.symbolTable.FindSymbols(qualifiedName);
-                    if (!found.empty())
-                    {
-                        candidateSymbols = std::move(found);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    else
-    {
-        std::string calleeName = request.sourceCode.substr(fStart, fEnd - fStart);
-        candidateSymbols = request.symbolTable.FindSymbols(calleeName);
-    }
-
-    std::vector<lsp::SignatureInformation> signatures;
-
-    for (const auto& sym : candidateSymbols)
-    {
-        if (sym.type != analysis::SymbolType::Function && sym.type != analysis::SymbolType::Funcdef)
-        {
-            continue;
-        }
-
-        lsp::SignatureInformation sigInfo;
-        sigInfo.label = FormatSignatureLabel(sym);
-        const std::vector<analysis::ParameterInformation>* parameters = nullptr;
-        if (sym.type == analysis::SymbolType::Function)
-        {
-            parameters = &sym.GetFunction().parameters;
-        }
-        else if (sym.type == analysis::SymbolType::Funcdef)
-        {
-            parameters = &sym.GetFuncdef().parameters;
-        }
-
-        std::vector<lsp::ParameterInformation> params;
-        if (parameters)
-        {
-            for (const auto& param : *parameters)
-            {
-                lsp::ParameterInformation pInfo;
-                std::string pLabel;
-                if (!param.typeName.empty())
-                {
-                    pLabel += param.typeName;
-                }
-                if (!param.name.empty())
-                {
-                    if (!pLabel.empty())
-                        pLabel += " ";
-                    pLabel += param.name;
-                }
-                if (!param.defaultValue.empty())
-                {
-                    pLabel += " = " + param.defaultValue;
-                }
-                pInfo.label = pLabel;
-                params.push_back(std::move(pInfo));
-            }
-        }
-
-        if (!params.empty())
-        {
-            sigInfo.parameters = std::move(params);
-        }
-
-        signatures.push_back(std::move(sigInfo));
-    }
-
+    auto candidateSymbols = ResolveCandidateSymbols(request, funcNode);
+    auto signatures = BuildSignatureList(candidateSymbols);
     if (signatures.empty())
     {
         return std::nullopt;
     }
 
-    uint32_t activeSignature = 0;
-    for (size_t i = 0; i < signatures.size(); ++i)
-    {
-        if (signatures[i].parameters.has_value() && activeParameter < signatures[i].parameters->size())
-        {
-            activeSignature = static_cast<uint32_t>(i);
-            break;
-        }
-    }
+    uint32_t activeSignature = SelectActiveSignature(signatures, activeParameter);
 
     lsp::SignatureHelp result;
     result.signatures = std::move(signatures);
@@ -497,4 +658,5 @@ std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& r
 
     return result;
 }
+
 } // namespace angel_lsp::features
