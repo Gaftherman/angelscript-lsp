@@ -149,7 +149,7 @@ void SemanticAnalyzer::CheckDirectivesAndModules(const SemanticAnalysisRequest& 
             }
             others += "'" + name + "'";
         }
-        ctx.EmitAtRange(0, 0, 0, 0, "as-hint-file-in-several-modules", request.moduleContext->name, others,
+        ctx.EmitAtRange({0, 0, 0, 0}, "as-hint-file-in-several-modules", {request.moduleContext->name, others},
                         DiagnosticSeverity::Hint);
     }
 
@@ -157,25 +157,25 @@ void SemanticAnalyzer::CheckDirectivesAndModules(const SemanticAnalysisRequest& 
     {
         if (directive.problem == utils::DirectiveProblem::Unrecognised)
         {
-            ctx.EmitAtRange(directive.line, directive.startColumn, directive.line, directive.endColumn,
+            ctx.EmitAtRange({directive.line, directive.startColumn, directive.line, directive.endColumn},
                             "as-err-unknown-directive", directive.name, DiagnosticSeverity::Error);
             continue;
         }
         if (directive.problem == utils::DirectiveProblem::IncludeNotQuoted)
         {
-            ctx.EmitAtRange(directive.line, directive.startColumn, directive.line, directive.endColumn,
+            ctx.EmitAtRange({directive.line, directive.startColumn, directive.line, directive.endColumn},
                             "as-err-include-not-quoted", DiagnosticSeverity::Error);
             continue;
         }
         if (directive.problem == utils::DirectiveProblem::SpaceAfterHash)
         {
-            ctx.EmitAtRange(directive.line, directive.startColumn, directive.line, directive.endColumn,
-                            "as-err-directive-space-after-hash", directive.name, directive.name,
+            ctx.EmitAtRange({directive.line, directive.startColumn, directive.line, directive.endColumn},
+                            "as-err-directive-space-after-hash", {directive.name, directive.name},
                             DiagnosticSeverity::Error);
             continue;
         }
 
-        ctx.EmitAtRange(directive.line, directive.startColumn, directive.line, directive.endColumn,
+        ctx.EmitAtRange({directive.line, directive.startColumn, directive.line, directive.endColumn},
                         "as-warn-unsupported-directive", directive.name,
                         directive.name == "pragma" ? request.pragmaSeverity : DiagnosticSeverity::Warning);
     }
@@ -226,7 +226,7 @@ static void CheckDialectForeach(const NodeIndex& nodeIndex, DiagnosticContext& c
         for (TSNode node : nodeIndex.Nodes(parser::nodes::ForeachStatement))
         {
             const TSPoint start = ts_node_start_point(node);
-            ctx.EmitAtRange(start.row, start.column, start.row, start.column + 7, "as-err-foreach-unsupported",
+            ctx.EmitAtRange({start.row, start.column, start.row, start.column + 7}, "as-err-foreach-unsupported",
                             DiagnosticSeverity::Error);
         }
     }
@@ -246,7 +246,7 @@ static void CheckDialectEmptyListElements(const NodeIndex& nodeIndex, Diagnostic
                 if (previous == "," && (current == "," || current == "}"))
                 {
                     const TSPoint at = ts_node_start_point(ts_node_child(node, i - 1));
-                    ctx.EmitAtRange(at.row, at.column, at.row, at.column + 1, "as-err-empty-list-element",
+                    ctx.EmitAtRange({at.row, at.column, at.row, at.column + 1}, "as-err-empty-list-element",
                                     DiagnosticSeverity::Error);
                 }
             }
@@ -286,7 +286,7 @@ static void CheckDialectCharacterLiterals(const NodeIndex& nodeIndex, Diagnostic
                         {
                             const TSPoint start = ts_node_start_point(value);
                             const TSPoint end = ts_node_end_point(value);
-                            ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                            ctx.EmitAtRange({start.row, start.column, end.row, end.column},
                                             "as-err-character-literal-is-string", declared, DiagnosticSeverity::Error);
                         }
                     }
@@ -325,7 +325,7 @@ static void CheckDialectIntegerDivision(const NodeIndex& nodeIndex, DiagnosticCo
                 {
                     const TSPoint start = ts_node_start_point(node);
                     const TSPoint end = ts_node_end_point(node);
-                    ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-hint-integer-division",
+                    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-hint-integer-division",
                                     DiagnosticSeverity::Hint);
                 }
             }
@@ -367,7 +367,7 @@ static void CheckDialectNamedArguments(const NodeIndex& nodeIndex, DiagnosticCon
                 const TSPoint end = ts_node_end_point(argument);
                 const std::string name = GetNodeText(target, ctx.request.sourceCode);
 
-                ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-named-argument-syntax", name,
+                ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-named-argument-syntax", name,
                                 ctx.request.NamedArgumentSyntaxMode() == 1 ? DiagnosticSeverity::Warning
                                                                            : DiagnosticSeverity::Error);
             }
@@ -417,7 +417,7 @@ static void CheckDialectValueAssignForRef(const NodeIndex& nodeIndex, Diagnostic
                 {
                     const TSPoint start = ts_node_start_point(node);
                     const TSPoint end = ts_node_end_point(node);
-                    ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-value-assign-for-ref",
+                    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-value-assign-for-ref",
                                     targetType, DiagnosticSeverity::Error);
                 }
             }
@@ -442,7 +442,7 @@ static void CheckDialectMultilineStrings(const NodeIndex& nodeIndex, DiagnosticC
 
                 if (!isHeredoc)
                 {
-                    ctx.EmitAtRange(start.row, start.column, start.row, start.column + 1, "as-err-multiline-string",
+                    ctx.EmitAtRange({start.row, start.column, start.row, start.column + 1}, "as-err-multiline-string",
                                     DiagnosticSeverity::Error);
                 }
             }
@@ -466,7 +466,7 @@ static void CheckDialectNodeForeach(TSNode node, DiagnosticContext& ctx)
     if (!ctx.request.SupportsForeach())
     {
         const TSPoint start = ts_node_start_point(node);
-        ctx.EmitAtRange(start.row, start.column, start.row, start.column + 7, "as-err-foreach-unsupported",
+        ctx.EmitAtRange({start.row, start.column, start.row, start.column + 7}, "as-err-foreach-unsupported",
                         DiagnosticSeverity::Error);
     }
 }
@@ -483,7 +483,7 @@ static void CheckDialectNodeInitializerList(TSNode node, DiagnosticContext& ctx)
             if (previous == "," && (current == "," || current == "}"))
             {
                 const TSPoint at = ts_node_start_point(ts_node_child(node, i - 1));
-                ctx.EmitAtRange(at.row, at.column, at.row, at.column + 1, "as-err-empty-list-element",
+                ctx.EmitAtRange({at.row, at.column, at.row, at.column + 1}, "as-err-empty-list-element",
                                 DiagnosticSeverity::Error);
             }
         }
@@ -520,7 +520,7 @@ static void CheckDialectNodeVariableDeclaration(TSNode node, DiagnosticContext& 
                     {
                         const TSPoint start = ts_node_start_point(value);
                         const TSPoint end = ts_node_end_point(value);
-                        ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                        ctx.EmitAtRange({start.row, start.column, end.row, end.column},
                                         "as-err-character-literal-is-string", declared, DiagnosticSeverity::Error);
                     }
                 }
@@ -556,7 +556,7 @@ static void CheckDialectNodeBinaryExpression(TSNode node, DiagnosticContext& ctx
             {
                 const TSPoint start = ts_node_start_point(node);
                 const TSPoint end = ts_node_end_point(node);
-                ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-hint-integer-division",
+                ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-hint-integer-division",
                                 DiagnosticSeverity::Hint);
             }
         }
@@ -595,7 +595,7 @@ static void CheckDialectNodeArgumentList(TSNode node, DiagnosticContext& ctx)
             const TSPoint end = ts_node_end_point(argument);
             const std::string name = GetNodeText(target, ctx.request.sourceCode);
 
-            ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-named-argument-syntax", name,
+            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-named-argument-syntax", name,
                             ctx.request.NamedArgumentSyntaxMode() == 1 ? DiagnosticSeverity::Warning
                                                                        : DiagnosticSeverity::Error);
         }
@@ -642,8 +642,8 @@ static void CheckDialectNodeAssignmentExpression(TSNode node, DiagnosticContext&
             {
                 const TSPoint start = ts_node_start_point(node);
                 const TSPoint end = ts_node_end_point(node);
-                ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-value-assign-for-ref", targetType,
-                                DiagnosticSeverity::Error);
+                ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-value-assign-for-ref",
+                                targetType, DiagnosticSeverity::Error);
             }
         }
     }
@@ -662,7 +662,7 @@ static void CheckDialectNodeStringLiteral(TSNode node, DiagnosticContext& ctx)
 
         if (!isHeredoc)
         {
-            ctx.EmitAtRange(start.row, start.column, start.row, start.column + 1, "as-err-multiline-string",
+            ctx.EmitAtRange({start.row, start.column, start.row, start.column + 1}, "as-err-multiline-string",
                             DiagnosticSeverity::Error);
         }
     }
@@ -891,8 +891,8 @@ bool CheckEnumScopeDiagnostic(const Scope* scope, const LocalReference& ref, con
 
     if (insideFunction && !isOwnDeclaration)
     {
-        ctx.EmitAtRange(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter, "as-err-enum-scope-required",
-                        ref.name);
+        ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
+                        "as-err-enum-scope-required", ref.name);
         return true;
     }
     return false;
@@ -929,7 +929,7 @@ void CheckScopeReferences(
         if (IsAccessorPropertyOrKeyword(ref, ctx))
             continue;
 
-        ctx.EmitAtRange(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter,
+        ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
                         "as-warn-undeclared-identifier", ref.name, DiagnosticSeverity::Warning);
     }
 }
@@ -1016,8 +1016,8 @@ void SemanticAnalyzer::CheckUnusedVariables(const Scope* scope,
             if (used.contains(&def))
                 continue;
 
-            ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter, "as-warn-unused-variable",
-                            def.name, DiagnosticSeverity::Warning);
+            ctx.EmitAtRange({def.startLine, def.startCharacter, def.endLine, def.endCharacter},
+                            "as-warn-unused-variable", def.name, DiagnosticSeverity::Warning);
         }
     }
 
@@ -1116,8 +1116,8 @@ void SemanticAnalyzer::CheckNullAssignedToNonHandleInScope(const Scope* scope, D
             if (!IsUnconditionallyNonNullablePrimitive(def.typeKind))
                 continue;
 
-            ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter, "as-err-null-non-handle",
-                            def.typeName, DiagnosticSeverity::Error);
+            ctx.EmitAtRange({def.startLine, def.startCharacter, def.endLine, def.endCharacter},
+                            "as-err-null-non-handle", def.typeName, DiagnosticSeverity::Error);
         }
     }
 
@@ -1127,18 +1127,10 @@ void SemanticAnalyzer::CheckNullAssignedToNonHandleInScope(const Scope* scope, D
 
 namespace
 {
-struct TypeSourceRange
-{
-    uint32_t startLine;
-    uint32_t startCharacter;
-    uint32_t endLine;
-    uint32_t endCharacter;
-};
-
-TypeSourceRange GetDefinitionTypeRange(const LocalDefinition& def)
+SourceRange GetDefinitionTypeRange(const LocalDefinition& def)
 {
     const bool hasExplicitType = (def.typeEndCharacter > def.typeStartCharacter || def.typeEndLine > def.typeStartLine);
-    return TypeSourceRange{
+    return SourceRange{
         hasExplicitType ? def.typeStartLine : def.startLine,
         hasExplicitType ? def.typeStartCharacter : def.startCharacter,
         hasExplicitType ? def.typeEndLine : def.endLine,
@@ -1146,13 +1138,12 @@ TypeSourceRange GetDefinitionTypeRange(const LocalDefinition& def)
     };
 }
 
-void ValidateTemplateArguments(const LocalDefinition& def, const TemplateTypeInfo& tmplInfo,
-                               const TypeSourceRange& range, DiagnosticContext& ctx)
+void ValidateTemplateArguments(const LocalDefinition& def, const TemplateTypeInfo& tmplInfo, const SourceRange& range,
+                               DiagnosticContext& ctx)
 {
     if (!IsKnownType(tmplInfo.containerName, ctx))
     {
-        ctx.EmitAtRange(range.startLine, range.startCharacter, range.endLine, range.endCharacter,
-                        "as-err-unresolved-type", tmplInfo.containerName, DiagnosticSeverity::Error);
+        ctx.EmitAtRange(range, "as-err-unresolved-type", tmplInfo.containerName, DiagnosticSeverity::Error);
     }
     for (size_t i = 0; i < tmplInfo.templateArgs.size(); ++i)
     {
@@ -1172,30 +1163,29 @@ void ValidateTemplateArguments(const LocalDefinition& def, const TemplateTypeInf
                 eChar = def.templateArgPositions[i].endCharacter;
             }
 
-            ctx.EmitAtRange(sLine, sChar, eLine, eChar, "as-err-unresolved-type", cleanArg, DiagnosticSeverity::Error);
+            ctx.EmitAtRange({sLine, sChar, eLine, eChar}, "as-err-unresolved-type", cleanArg,
+                            DiagnosticSeverity::Error);
         }
     }
 }
 
-bool CheckMissingFuncdefHint(const std::string& base, const TypeSourceRange& range, DiagnosticContext& ctx)
+bool CheckMissingFuncdefHint(const std::string& base, const SourceRange& range, DiagnosticContext& ctx)
 {
     if (ctx.request.diagnostics && ctx.request.diagnostics->reportMissingFuncdef && base != "auto" &&
         NamesAFunctionNotAType(base, ctx.request.symbolTable))
     {
-        ctx.EmitAtRange(range.startLine, range.startCharacter, range.endLine, range.endCharacter,
-                        "as-hint-funcdef-missing", base, DiagnosticSeverity::Hint);
+        ctx.EmitAtRange(range, "as-hint-funcdef-missing", base, DiagnosticSeverity::Hint);
         return true;
     }
     return false;
 }
 
-bool CheckIllegalHandleOnPrimitive(const LocalDefinition& def, const std::string& base, const TypeSourceRange& range,
+bool CheckIllegalHandleOnPrimitive(const LocalDefinition& def, const std::string& base, const SourceRange& range,
                                    DiagnosticContext& ctx)
 {
     if (def.isHandleType && def.typeKind != TypeKind::Array && base != "auto" && IsPrimitiveTypeName(base))
     {
-        ctx.EmitAtRange(range.startLine, range.startCharacter, range.endLine, range.endCharacter,
-                        "as-err-handle-on-primitive", base, DiagnosticSeverity::Error);
+        ctx.EmitAtRange(range, "as-err-handle-on-primitive", base, DiagnosticSeverity::Error);
         return true;
     }
     return false;
@@ -1203,19 +1193,17 @@ bool CheckIllegalHandleOnPrimitive(const LocalDefinition& def, const std::string
 
 void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
 {
-    const TypeSourceRange range = GetDefinitionTypeRange(def);
+    const SourceRange range = GetDefinitionTypeRange(def);
     const std::string base = CleanBaseType(def.typeName);
 
     if (def.typeName == "void" || base == "void")
     {
-        ctx.EmitAtRange(range.startLine, range.startCharacter, range.endLine, range.endCharacter,
-                        "as-err-void-variable", def.name, DiagnosticSeverity::Error);
+        ctx.EmitAtRange(range, "as-err-void-variable", def.name, DiagnosticSeverity::Error);
         return;
     }
     if (IsMixinClass(base, ctx.request.symbolTable))
     {
-        ctx.EmitAtRange(range.startLine, range.startCharacter, range.endLine, range.endCharacter,
-                        "as-err-mixin-not-a-type", base, DiagnosticSeverity::Error);
+        ctx.EmitAtRange(range, "as-err-mixin-not-a-type", base, DiagnosticSeverity::Error);
         return;
     }
     if (CheckMissingFuncdefHint(base, range, ctx) || CheckIllegalHandleOnPrimitive(def, base, range, ctx))
@@ -1230,8 +1218,7 @@ void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
     }
     else if (!base.empty() && base != "auto" && !IsReservedKeyword(base) && !IsKnownType(base, ctx))
     {
-        ctx.EmitAtRange(range.startLine, range.startCharacter, range.endLine, range.endCharacter,
-                        "as-err-unresolved-type", base, DiagnosticSeverity::Error);
+        ctx.EmitAtRange(range, "as-err-unresolved-type", base, DiagnosticSeverity::Error);
     }
 }
 } // namespace
@@ -1258,14 +1245,14 @@ void SemanticAnalyzer::CheckLocalNames(const Scope* scope, DiagnosticContext& ct
 
         if (!declaredHere.insert(def.name).second)
         {
-            ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter, "as-err-duplicate-symbol",
-                            def.name);
+            ctx.EmitAtRange({def.startLine, def.startCharacter, def.endLine, def.endCharacter},
+                            "as-err-duplicate-symbol", def.name);
         }
 
         if (IsReservedKeyword(def.name) && def.kind == LocalDefinitionKind::Variable &&
             IsKnownType(CleanBaseType(def.typeName), ctx))
         {
-            ctx.EmitAtRange(def.startLine, def.startCharacter, def.endLine, def.endCharacter,
+            ctx.EmitAtRange({def.startLine, def.startCharacter, def.endLine, def.endCharacter},
                             "as-err-reserved-keyword-name", def.name);
         }
     }

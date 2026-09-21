@@ -134,7 +134,7 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, std:
 {
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, arg);
+    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, arg);
 }
 
 /**
@@ -210,7 +210,7 @@ void CheckElementValue(TSNode element, const std::string& wanted, DiagnosticCont
     {
         const TSPoint start = ts_node_start_point(element);
         const TSPoint end = ts_node_end_point(element);
-        ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-no-implicit-conversion",
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-no-implicit-conversion",
                         StripDecorations(actual), StripDecorations(wanted));
     }
 }
@@ -992,7 +992,7 @@ void ValidateList(TSNode listNode, const std::string& targetType, const ListVali
     {
         const TSPoint start = ts_node_start_point(listNode);
         const TSPoint end = ts_node_end_point(listNode);
-        valCtx.ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-hint-list-pattern-unknown", type,
+        valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-hint-list-pattern-unknown", type,
                                DiagnosticSeverity::Hint);
     }
 }

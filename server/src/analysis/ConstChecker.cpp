@@ -299,7 +299,7 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, const DiagArgs& diag)
 {
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange(start.row, start.column, end.row, end.column, diag.code, diag.arg1, diag.arg2);
+    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diag.code, diag.arg1, diag.arg2);
 }
 
 bool TypeTextIsHandleConst(std::string_view typeText)

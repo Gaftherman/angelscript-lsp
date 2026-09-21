@@ -17,7 +17,7 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, cons
 {
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, arg);
+    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, arg);
 }
 
 std::string TrimWhitespace(std::string_view text)
@@ -212,7 +212,7 @@ void CheckSharedLine(std::string_view line, uint32_t lineNum, DiagnosticContext&
         uint32_t startCol = static_cast<uint32_t>(col);
         uint32_t endCol = static_cast<uint32_t>(col + 6);
         ctx.LogRule("CheckSharedEntityEligibility", "as-err-shared-not-allowed-on-entity", {});
-        ctx.EmitAtRange(lineNum, startCol, lineNum, endCol, "as-err-shared-not-allowed-on-entity");
+        ctx.EmitAtRange({lineNum, startCol, lineNum, endCol}, "as-err-shared-not-allowed-on-entity");
     }
 }
 

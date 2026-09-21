@@ -89,14 +89,14 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code,
 {
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, severity);
+    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, severity);
 }
 
 void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const std::string& arg)
 {
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, arg);
+    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, arg);
 }
 
 /**
@@ -131,7 +131,7 @@ void CheckEmptyBranch(TSNode node, DiagnosticContext& ctx)
     {
         const TSPoint start = ts_node_start_point(consequence);
         const TSPoint end = ts_node_end_point(consequence);
-        ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-if-empty-statement");
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-if-empty-statement");
     }
 
     const TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
@@ -139,7 +139,7 @@ void CheckEmptyBranch(TSNode node, DiagnosticContext& ctx)
     {
         const TSPoint start = ts_node_start_point(alternative);
         const TSPoint end = ts_node_end_point(alternative);
-        ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-else-empty-statement");
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-else-empty-statement");
     }
 }
 

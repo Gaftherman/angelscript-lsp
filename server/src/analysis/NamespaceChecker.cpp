@@ -56,7 +56,7 @@ void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const Symbo
     {
         TSPoint startPt = ts_node_start_point(firstChild);
         TSPoint endPt = ts_node_end_point(firstChild);
-        ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column, "as-err-undefined-namespace", prefix,
+        ctx.EmitAtRange({startPt.row, startPt.column, endPt.row, endPt.column}, "as-err-undefined-namespace", prefix,
                         DiagnosticSeverity::Error);
     }
 }
@@ -151,7 +151,7 @@ void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, Diag
     }
     const TSPoint startPt = ts_node_start_point(funcNode);
     const TSPoint endPt = ts_node_end_point(funcNode);
-    ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column, "as-err-undefined-identifier", calleeName,
+    ctx.EmitAtRange({startPt.row, startPt.column, endPt.row, endPt.column}, "as-err-undefined-identifier", calleeName,
                     DiagnosticSeverity::Error);
 }
 
@@ -171,7 +171,7 @@ void CheckImportBody(TSNode node, std::string_view sourceCode, DiagnosticContext
     {
         TSPoint startPt = ts_node_start_point(node);
         TSPoint endPt = ts_node_end_point(node);
-        ctx.EmitAtRange(startPt.row, startPt.column, endPt.row, endPt.column, "as-err-import-has-body", "import",
+        ctx.EmitAtRange({startPt.row, startPt.column, endPt.row, endPt.column}, "as-err-import-has-body", "import",
                         DiagnosticSeverity::Error);
     }
 }

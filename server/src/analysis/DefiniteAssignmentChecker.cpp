@@ -176,7 +176,7 @@ class DefiniteAssignmentVisitor
             std::string locationKey = name + ":" + std::to_string(start.row) + ":" + std::to_string(start.column);
             if (m_reportedReads.insert(locationKey).second)
             {
-                m_ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-warn-uninitialized-variable-read",
+                m_ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-warn-uninitialized-variable-read",
                                   name, DiagnosticSeverity::Warning);
             }
         }

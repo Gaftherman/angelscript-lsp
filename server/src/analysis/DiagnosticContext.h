@@ -18,6 +18,18 @@ class LspLogger;
 namespace angel_lsp::analysis
 {
 /**
+ * @brief Bundled parameters for emitting an LSP diagnostic that includes related information.
+ */
+struct RelatedDiagnosticRequest
+{
+    SourceRange range{};
+    std::string_view code;
+    std::vector<std::string> args{};
+    DiagnosticRelatedInformation related;
+    DiagnosticSeverity severity = DiagnosticSeverity::Error;
+};
+
+/**
  * @brief Context for constructing, emitting, and logging LSP diagnostics during semantic analysis.
  */
 struct DiagnosticContext
@@ -30,42 +42,32 @@ struct DiagnosticContext
     void Emit(const Symbol& sym, std::string_view code, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
     void Emit(const Symbol& sym, std::string_view code, std::string_view arg1,
               DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
-    void Emit(const Symbol& sym, std::string_view code, std::string_view arg1, std::string_view arg2,
+    void Emit(const Symbol& sym, std::string_view code, std::string_view arg1, std::string_view arg2) const;
+    void Emit(const Symbol& sym, std::string_view code, std::initializer_list<std::string_view> args,
               DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
-    void Emit(const Symbol& sym, std::string_view code, std::string_view arg1, std::string_view arg2,
-              std::string_view arg3, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
     // --- Diagnostic Emission for ParameterInformation ---
     void Emit(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
               DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
-    void Emit(const ParameterInformation& param, const Symbol& parentSym, std::string_view code, std::string_view arg1,
-              DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
-    void Emit(const ParameterInformation& param, const Symbol& parentSym, std::string_view code, std::string_view arg1,
-              std::string_view arg2, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+    void Emit(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
+              std::string_view arg1) const;
+    void Emit(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
+              std::initializer_list<std::string_view> args) const;
 
     // --- Diagnostic Emission for SourceRange ---
     void EmitAtRange(const Symbol& parentSym, const SourceRange& range, std::string_view code,
                      DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
-    void EmitAtRange(const Symbol& parentSym, const SourceRange& range, std::string_view code, std::string_view arg1,
+
+    void EmitAtRange(SourceRange range, std::string_view code,
+                     DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+    void EmitAtRange(SourceRange range, std::string_view code, std::string_view arg1,
+                     DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+    void EmitAtRange(SourceRange range, std::string_view code, std::string_view arg1, std::string_view arg2) const;
+    void EmitAtRange(SourceRange range, std::string_view code, std::initializer_list<std::string_view> args,
                      DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
-    // --- Diagnostic Emission for a raw range (no backing Symbol - e.g. a ScopeTree LocalReference).
-    //     fileUri comes from request.fileUri instead of a Symbol's own fileUri. ---
-    void EmitAtRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter,
-                     std::string_view code, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
-    void EmitAtRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter,
-                     std::string_view code, std::string_view arg1,
-                     DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
-    void EmitAtRange(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter,
-                     std::string_view code, std::string_view arg1, std::string_view arg2,
-                     DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
-    void EmitWithRelated(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter,
-                         std::string_view code, std::string_view arg1, const DiagnosticRelatedInformation& related,
-                         DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
-    void EmitWithRelated(uint32_t startLine, uint32_t startCharacter, uint32_t endLine, uint32_t endCharacter,
-                         std::string_view code, std::string_view arg1, std::string_view arg2, std::string_view arg3,
-                         std::string_view arg4, const DiagnosticRelatedInformation& related,
-                         DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+    // --- Diagnostic Emission with Related Information ---
+    void EmitWithRelated(const RelatedDiagnosticRequest& request) const;
 
     /**
      * @brief Emits at the type name inside a declaration, rather than over the declaration.
@@ -86,7 +88,7 @@ struct DiagnosticContext
 
     /** @brief The same, for a type written inside one parameter. */
     void EmitAtTypeName(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
-                        std::string_view typeName, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+                        std::string_view typeName) const;
 
     // --- Debug Logging ---
     void LogRule(std::string_view ruleName, std::string_view code, const Symbol& sym) const;
@@ -107,8 +109,7 @@ struct DiagnosticContext
      */
     void Append(Diagnostic&& diag) const;
 
-    Diagnostic CreateDiagnostic(const Symbol& sym, std::string_view code, DiagnosticSeverity severity) const;
-    Diagnostic CreateDiagnostic(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
+    Diagnostic CreateDiagnostic(SourceRange range, std::string_view fileUri, std::string_view code,
                                 DiagnosticSeverity severity) const;
 };
 } // namespace angel_lsp::analysis

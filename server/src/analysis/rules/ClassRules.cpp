@@ -196,7 +196,7 @@ void ReportMissingInterfaceMethods(const Symbol& sym,
             if (!implemented.contains(methodName))
             {
                 ctx.LogRule("CheckInterfaceImplementation", "as-err-interface-impl-missing", sym);
-                ctx.Emit(sym, "as-err-interface-impl-missing", sym.name, methodName, cleanBase);
+                ctx.Emit(sym, "as-err-interface-impl-missing", {sym.name, methodName, cleanBase});
             }
         }
     }
@@ -385,7 +385,7 @@ void ValidatePropertyAccessorPairs(const ankerl::unordered_dense::map<std::strin
             if (!getRet.empty() && !setParam.empty() && getRet != setParam)
             {
                 ctx.LogRule("CheckPropertyAccessors", "as-err-property-type-mismatch", *setSym);
-                ctx.Emit(*setSym, "as-err-property-type-mismatch", propName, getRet, setParam);
+                ctx.Emit(*setSym, "as-err-property-type-mismatch", {propName, getRet, setParam});
             }
         }
     }
@@ -672,10 +672,13 @@ void EmitMixinMemberNotFound(const MixinCheckContext& mctx, std::string_view mem
     rel.range = {{sPoint.row, sPoint.column}, {ePoint.row, ePoint.column}};
     rel.message = fmt::format("In mixin '{}': Member '{}'", mctx.mixinSym->name, memberName);
 
-    ctx.EmitWithRelated(mctx.hostRange.startLine, mctx.hostRange.startChar, mctx.hostRange.endLine,
-                        mctx.hostRange.endChar, diagnostics::codes::MixinInstantiationMemberNotFound,
-                        mctx.mixinSym->name, mctx.hostClassName, std::string(memberName), mctx.hostClassName, rel,
-                        DiagnosticSeverity::Error);
+    RelatedDiagnosticRequest req;
+    req.range = {mctx.hostRange.startLine, mctx.hostRange.startChar, mctx.hostRange.endLine, mctx.hostRange.endChar};
+    req.code = diagnostics::codes::MixinInstantiationMemberNotFound;
+    req.args = {mctx.mixinSym->name, mctx.hostClassName, std::string(memberName), mctx.hostClassName};
+    req.related = rel;
+    req.severity = DiagnosticSeverity::Error;
+    ctx.EmitWithRelated(req);
 }
 
 /** @brief Checks member expressions of form this->member. */

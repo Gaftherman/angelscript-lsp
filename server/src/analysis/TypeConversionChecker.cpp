@@ -1028,7 +1028,7 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, cons
 {
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, args.first, args.second,
+    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, {args.first, args.second},
                     DiagnosticSeverity::Error);
 }
 
@@ -1036,7 +1036,7 @@ void EmitWarningAtNode(TSNode node, DiagnosticContext& ctx, std::string_view cod
 {
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, args.first, args.second,
+    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, {args.first, args.second},
                     DiagnosticSeverity::Warning);
 }
 
@@ -2136,7 +2136,7 @@ void ValidateConditionOperand(TSNode operand, const std::string& operandType, Di
     {
         const TSPoint start = ts_node_start_point(operand);
         const TSPoint end = ts_node_end_point(operand);
-        ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-condition-not-boolean", operandType);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-condition-not-boolean", operandType);
         return;
     }
 
@@ -2150,8 +2150,8 @@ void ValidateConditionOperand(TSNode operand, const std::string& operandType, Di
     {
         const TSPoint start = ts_node_start_point(operand);
         const TSPoint end = ts_node_end_point(operand);
-        ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-hint-bool-conversion", operandType,
-                        *conversion, DiagnosticSeverity::Hint);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-hint-bool-conversion",
+                        {operandType, *conversion}, DiagnosticSeverity::Hint);
     }
 }
 

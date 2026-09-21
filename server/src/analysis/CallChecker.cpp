@@ -513,7 +513,7 @@ void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>& accept
 
     if (acceptedShapes.empty())
     {
-        ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-no-matching-signature",
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-no-matching-signature",
                         lctx.reportedName);
         return;
     }
@@ -523,7 +523,7 @@ void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>& accept
                     [&](const std::vector<std::string>& shape) { return shape == acceptedShapes.front(); });
     if (acceptedShapes.size() > 1 && !everyShapeIdentical)
     {
-        ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-ambiguous", lctx.reportedName);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-ambiguous", lctx.reportedName);
     }
 }
 
@@ -710,7 +710,7 @@ CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
     {
         const TSPoint ctorStart = ts_node_start_point(memberNode);
         const TSPoint ctorEnd = ts_node_end_point(memberNode);
-        valCtx.ctx.EmitAtRange(ctorStart.row, ctorStart.column, ctorEnd.row, ctorEnd.column,
+        valCtx.ctx.EmitAtRange({ctorStart.row, ctorStart.column, ctorEnd.row, ctorEnd.column},
                                "as-err-constructor-not-callable", res.reportedName, objInfo.objectType);
         res.shouldCheck = false;
         return res;
@@ -887,7 +887,8 @@ bool ValidateArgumentOrdering(TSNode arguments, bool& sawNamedArg, DiagnosticCon
             {
                 const TSPoint aStart = ts_node_start_point(group.front());
                 const TSPoint aEnd = ts_node_end_point(group.back());
-                ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-positional-after-named-arg");
+                ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column},
+                                "as-err-positional-after-named-arg");
             }
             return false;
         }
@@ -921,7 +922,7 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
         {
             const TSPoint aStart = ts_node_start_point(argNode);
             const TSPoint aEnd = ts_node_end_point(argNode);
-            valCtx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+            valCtx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column},
                                    diagnostics::codes::ExpressionIsDataType, *dataTypeName);
             result.allArgsResolved = false;
             result.argTypes.push_back("");
@@ -1024,7 +1025,7 @@ void CheckMalformedTernaryArgs(const std::vector<TSNode>& argNodes, const std::v
 
         const TSPoint aStart = ts_node_start_point(argNodes[i]);
         const TSPoint aEnd = ts_node_end_point(argNodes[i]);
-        valCtx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-implicit-conversion",
+        valCtx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column}, "as-err-no-implicit-conversion",
                                badType, expected);
     }
 }
@@ -1106,7 +1107,7 @@ void ReportOverloadResolutionFailure(const std::vector<Symbol>& candidates, cons
             *blamedArg < fn.parameters.size() ? fn.parameters[*blamedArg].typeName : std::string();
         const TSPoint aStart = ts_node_start_point(args.argNodes[*blamedArg]);
         const TSPoint aEnd = ts_node_end_point(args.argNodes[*blamedArg]);
-        valCtx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-implicit-conversion",
+        valCtx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column}, "as-err-no-implicit-conversion",
                                args.argTypes[*blamedArg], expected);
         return;
     }
@@ -1115,7 +1116,7 @@ void ReportOverloadResolutionFailure(const std::vector<Symbol>& candidates, cons
     {
         const TSPoint start = ts_node_start_point(valCtx.callee);
         const TSPoint end = ts_node_end_point(valCtx.arguments);
-        valCtx.ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-no-matching-signature",
+        valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-no-matching-signature",
                                reportedName);
     }
 }
@@ -1217,7 +1218,7 @@ void ValidateOutArguments(const Symbol& candidate, const std::vector<TSNode>& ar
         {
             const TSPoint aStart = ts_node_start_point(argNodes[i]);
             const TSPoint aEnd = ts_node_end_point(argNodes[i]);
-            valCtx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
+            valCtx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column},
                                    "as-err-lvalue-required-for-out-param");
         }
     }
@@ -1244,7 +1245,7 @@ void CheckCallOverloads(const std::vector<Symbol>& matchingArity, const CallArgT
     {
         const TSPoint start = ts_node_start_point(valCtx.callee);
         const TSPoint end = ts_node_end_point(valCtx.arguments);
-        valCtx.ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-ambiguous",
+        valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-ambiguous",
                                calleeRes.reportedName);
     }
     else if (match.viableCandidates.empty() || match.bestScore >= 999)
@@ -1297,7 +1298,7 @@ bool CheckArgumentCount(const CalleeResolution& calleeRes, uint32_t argumentCoun
         {
             const TSPoint start = ts_node_start_point(valCtx.callee);
             const TSPoint end = ts_node_end_point(valCtx.arguments);
-            valCtx.ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-call-argument-count",
+            valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-argument-count",
                                    calleeRes.reportedName, std::to_string(argumentCount));
         }
         return false;
@@ -1440,7 +1441,7 @@ void CheckPrimitiveDirectInit(TSNode argListNode, const std::vector<std::string>
     {
         const TSPoint aStart = ts_node_start_point(argListNode);
         const TSPoint aEnd = ts_node_end_point(argListNode);
-        vctx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-matching-constructor",
+        vctx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column}, "as-err-no-matching-constructor",
                              FormatSignatureAttempt(vctx.declaredType, argTypes));
     }
     else
@@ -1451,7 +1452,7 @@ void CheckPrimitiveDirectInit(TSNode argListNode, const std::vector<std::string>
         {
             const TSPoint aStart = ts_node_start_point(argListNode);
             const TSPoint aEnd = ts_node_end_point(argListNode);
-            vctx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-implicit-conversion",
+            vctx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column}, "as-err-no-implicit-conversion",
                                  argTypes[0], vctx.baseName);
         }
     }
@@ -1642,7 +1643,7 @@ void CheckConstructorOverload(TSNode argListNode, const std::vector<Symbol>& can
     {
         const TSPoint aStart = ts_node_start_point(argListNode);
         const TSPoint aEnd = ts_node_end_point(argListNode);
-        vctx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-matching-constructor",
+        vctx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column}, "as-err-no-matching-constructor",
                              FormatSignatureAttempt(vctx.declaredType, argTypes));
         return;
     }
@@ -1652,7 +1653,7 @@ void CheckConstructorOverload(TSNode argListNode, const std::vector<Symbol>& can
     {
         const TSPoint aStart = ts_node_start_point(argListNode);
         const TSPoint aEnd = ts_node_end_point(argListNode);
-        vctx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-matching-constructor",
+        vctx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column}, "as-err-no-matching-constructor",
                              FormatSignatureAttempt(vctx.declaredType, argTypes));
     }
 }
@@ -1696,7 +1697,7 @@ void CheckDeclaratorDirectInit(TSNode declarator, const VarInitContext& vctx)
         {
             const TSPoint aStart = ts_node_start_point(argListNode);
             const TSPoint aEnd = ts_node_end_point(argListNode);
-            vctx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column, "as-err-no-matching-constructor",
+            vctx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column}, "as-err-no-matching-constructor",
                                  FormatSignatureAttempt(vctx.declaredType, argTypes));
         }
         return;

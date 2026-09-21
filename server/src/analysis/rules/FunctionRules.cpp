@@ -277,12 +277,12 @@ void CheckModifiers(const Symbol& sym, const FunctionSignature& sig, const Funct
     if (sig.modifiers.isOverride)
     {
         ctx.LogRule("CheckModifiers", "as-warn-global-function-attribute", sym);
-        ctx.Emit(sym, "as-warn-global-function-attribute", "override", sym.name, DiagnosticSeverity::Warning);
+        ctx.Emit(sym, "as-warn-global-function-attribute", {"override", sym.name}, DiagnosticSeverity::Warning);
     }
     if (sig.modifiers.isFinal)
     {
         ctx.LogRule("CheckModifiers", "as-warn-global-function-attribute", sym);
-        ctx.Emit(sym, "as-warn-global-function-attribute", "final", sym.name, DiagnosticSeverity::Warning);
+        ctx.Emit(sym, "as-warn-global-function-attribute", {"final", sym.name}, DiagnosticSeverity::Warning);
     }
 }
 
@@ -637,7 +637,7 @@ void CheckParamTypeLegality(const Symbol& sym, const ParameterInformation& param
         if (isFuncdefType)
         {
             ctx.LogParam("ValidateParameters", "as-err-funcdef-not-handle", param, sym);
-            ctx.Emit(param, sym, "as-err-funcdef-not-handle", param.baseTypeName, param.baseTypeName);
+            ctx.Emit(param, sym, "as-err-funcdef-not-handle", {param.baseTypeName, param.baseTypeName});
         }
     }
 }
@@ -674,7 +674,7 @@ void CheckParamName(const Symbol& sym, const ParameterInformation& param,
     if (!seenNames.insert(param.name).second)
     {
         ctx.LogParam("ValidateParameters", "as-err-duplicate-param", param, sym);
-        ctx.Emit(param, sym, "as-err-duplicate-param", param.name, sym.name);
+        ctx.Emit(param, sym, "as-err-duplicate-param", {param.name, sym.name});
     }
 }
 
@@ -699,7 +699,7 @@ void ValidateParameters(const Symbol& sym, const std::vector<ParameterInformatio
         if (param.typeKind == TypeKind::Void && !(parameters.size() == 1 && param.name.empty()))
         {
             ctx.LogParam("ValidateParameters", "as-err-void-parameter", param, sym);
-            ctx.Emit(param, sym, "as-err-void-parameter", param.name, sym.name);
+            ctx.Emit(param, sym, "as-err-void-parameter", {param.name, sym.name});
         }
 
         CheckParamModifiers(sym, param, ctx);
@@ -779,7 +779,7 @@ void WalkStandaloneLambda(TSNode root, const DiagnosticContext& ctx)
             {
                 const TSPoint start = ts_node_start_point(child);
                 const TSPoint end = ts_node_end_point(child);
-                ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                ctx.EmitAtRange({start.row, start.column, end.row, end.column},
                                 diagnostics::codes::StandaloneAnonymousFunction, DiagnosticSeverity::Error);
             }
         }
@@ -827,7 +827,7 @@ void ValidateStandaloneLambda(const analysis::NodeIndex& nodeIndex, const Diagno
             {
                 const TSPoint start = ts_node_start_point(child);
                 const TSPoint end = ts_node_end_point(child);
-                ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+                ctx.EmitAtRange({start.row, start.column, end.row, end.column},
                                 diagnostics::codes::StandaloneAnonymousFunction, DiagnosticSeverity::Error);
             }
         }

@@ -187,8 +187,9 @@ void ValidateTypedef(const Symbol& sym, const DiagnosticContext& ctx)
         ctx.LogRule("ValidateTypedef", diagnostics::codes::TypedefNonPrimitive, sym);
         if (sig.baseTypeEndCharacter > sig.baseTypeStartCharacter || sig.baseTypeEndLine > sig.baseTypeStartLine)
         {
-            ctx.EmitAtRange(sig.baseTypeStartLine, sig.baseTypeStartCharacter, sig.baseTypeEndLine,
-                            sig.baseTypeEndCharacter, diagnostics::codes::TypedefNonPrimitive, baseType);
+            ctx.EmitAtRange(
+                {sig.baseTypeStartLine, sig.baseTypeStartCharacter, sig.baseTypeEndLine, sig.baseTypeEndCharacter},
+                diagnostics::codes::TypedefNonPrimitive, baseType);
         }
         else
         {
@@ -214,8 +215,9 @@ void ValidateFuncdefReturnType(const Symbol& sym, const FuncdefSignature& sig, c
         if (sig.returnTypeEndCharacter > sig.returnTypeStartCharacter ||
             sig.returnTypeEndLine > sig.returnTypeStartLine)
         {
-            ctx.EmitAtRange(sig.returnTypeStartLine, sig.returnTypeStartCharacter, sig.returnTypeEndLine,
-                            sig.returnTypeEndCharacter, "as-err-unresolved-type", retBase);
+            ctx.EmitAtRange({sig.returnTypeStartLine, sig.returnTypeStartCharacter, sig.returnTypeEndLine,
+                             sig.returnTypeEndCharacter},
+                            "as-err-unresolved-type", retBase);
         }
         else
         {
@@ -241,7 +243,7 @@ void ValidateFuncdefParameter(const Symbol& sym, const ParameterInformation& par
         ctx.LogRule("ValidateFuncdef", "as-err-unresolved-type", sym);
         if (param.endCharacter > param.startCharacter || param.endLine > param.startLine)
         {
-            ctx.EmitAtRange(param.startLine, param.startCharacter, param.endLine, param.endCharacter,
+            ctx.EmitAtRange({param.startLine, param.startCharacter, param.endLine, param.endCharacter},
                             "as-err-unresolved-type", paramBase);
         }
         else
@@ -382,7 +384,7 @@ void CheckDuplicateEnumMembers(TSNode enumNode, const Symbol& sym, const Diagnos
             const TSPoint start = ts_node_start_point(memberNameNode);
             const TSPoint end = ts_node_end_point(memberNameNode);
             ctx.LogRule("ValidateEnum", diagnostics::codes::DuplicateEnumMember, sym);
-            ctx.EmitAtRange(start.row, start.column, end.row, end.column, diagnostics::codes::DuplicateEnumMember,
+            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::DuplicateEnumMember,
                             memberName);
         }
     } while (ts_tree_cursor_goto_next_sibling(&cursor));
@@ -573,9 +575,7 @@ bool CheckDuplicatePair(const Symbol& first, const Symbol& other, const Diagnost
     if (first.type != other.type)
     {
         ctx.LogRule("ValidateDuplicates", "as-err-name-conflict", other);
-        ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter,
-                        other.selectionRange.endLine, other.selectionRange.endCharacter, "as-err-name-conflict",
-                        other.name, KindWord(first.type));
+        ctx.EmitAtRange(other.selectionRange, "as-err-name-conflict", other.name, KindWord(first.type));
         return true;
     }
 
@@ -587,9 +587,7 @@ bool CheckDuplicatePair(const Symbol& first, const Symbol& other, const Diagnost
         }
 
         ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);
-        ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter,
-                        other.selectionRange.endLine, other.selectionRange.endCharacter, "as-err-duplicate-symbol",
-                        other.name);
+        ctx.EmitAtRange(other.selectionRange, "as-err-duplicate-symbol", other.name);
         return true;
     }
 
@@ -599,8 +597,7 @@ bool CheckDuplicatePair(const Symbol& first, const Symbol& other, const Diagnost
     }
 
     ctx.LogRule("ValidateDuplicates", "as-err-duplicate-symbol", other);
-    ctx.EmitAtRange(other.selectionRange.startLine, other.selectionRange.startCharacter, other.selectionRange.endLine,
-                    other.selectionRange.endCharacter, "as-err-duplicate-symbol", other.name);
+    ctx.EmitAtRange(other.selectionRange, "as-err-duplicate-symbol", other.name);
     return true;
 }
 } // namespace

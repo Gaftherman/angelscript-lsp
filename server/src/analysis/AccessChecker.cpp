@@ -365,8 +365,8 @@ void MaybeEmitAccessorHint(TSNode memberNode, const MemberAccess& member, const 
     {
         const TSPoint hintStart = ts_node_start_point(memberNode);
         const TSPoint hintEnd = ts_node_end_point(memberNode);
-        ctx.EmitAtRange(hintStart.row, hintStart.column, hintEnd.row, hintEnd.column, "as-hint-accessor-disabled",
-                        objectType, NodeText(memberNode, ctx.request.sourceCode), DiagnosticSeverity::Hint);
+        ctx.EmitAtRange({hintStart.row, hintStart.column, hintEnd.row, hintEnd.column}, "as-hint-accessor-disabled",
+                        {objectType, NodeText(memberNode, ctx.request.sourceCode)}, DiagnosticSeverity::Hint);
     }
 }
 
@@ -413,7 +413,7 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
     {
         const TSPoint start = ts_node_start_point(memberNode);
         const TSPoint end = ts_node_end_point(memberNode);
-        ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-member-not-found", objectType,
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-member-not-found", objectType,
                         memberName);
         return;
     }
@@ -436,7 +436,7 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
     const TSPoint start = ts_node_start_point(memberNode);
     const TSPoint end = ts_node_end_point(memberNode);
     const bool declaredPrivate = member.access == AccessModifier::Private;
-    ctx.EmitAtRange(start.row, start.column, end.row, end.column,
+    ctx.EmitAtRange({start.row, start.column, end.row, end.column},
                     declaredPrivate ? "as-err-private-member-access" : "as-err-protected-member-access", memberName,
                     member.declaringClass);
 }
@@ -604,7 +604,7 @@ bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_v
     {
         const TSPoint start = ts_node_start_point(node);
         const TSPoint end = ts_node_end_point(node);
-        ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-lambda-closure-disallowed");
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-lambda-closure-disallowed");
         return true;
     }
 
@@ -651,7 +651,7 @@ void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view
         {
             const TSPoint start = ts_node_start_point(node);
             const TSPoint end = ts_node_end_point(node);
-            ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-err-private-member-access", idText,
+            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-private-member-access", idText,
                             member.declaringClass);
         }
     }

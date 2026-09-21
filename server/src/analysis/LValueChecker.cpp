@@ -41,7 +41,7 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code)
 {
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange(start.row, start.column, end.row, end.column, code);
+    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code);
 }
 
 struct CallCandidateContext
