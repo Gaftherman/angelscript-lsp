@@ -272,11 +272,10 @@ bool NamesAFunctionNotAType(std::string_view name, const class SymbolTable& tabl
  * @param scope Local scope at the node, or nullptr.
  * @param symbolTable Symbol table for type and value lookup.
  * @param sourceCode Source text of the document.
- * @param outTypeName Receives the resolved data type name if true.
- * @return True if the node is an identifier resolving to a data type without value semantics.
+ * @return Resolved data type name if the node is a bare data type without value semantics, or std::nullopt.
  */
-bool IsBareDataType(TSNode node, const struct Scope* scope, const class SymbolTable& symbolTable,
-                    std::string_view sourceCode, std::string& outTypeName);
+std::optional<std::string> IsBareDataType(TSNode node, const struct Scope* scope, const class SymbolTable& symbolTable,
+                                          std::string_view sourceCode);
 
 /** @brief What a type is when it cannot be instantiated, for the message that says so. */
 enum class NonInstantiableKind
@@ -628,33 +627,68 @@ std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std
  *
  * Everything else - a literal, a binary or ternary expression, a lambda, an initializer list -
  * returns empty on purpose rather than by omission. Their types come from promotion and
+/**
+ * @brief Context bundled for expression type resolution.
+ */
+struct ExpressionTypeContext
+{
+    const Scope* scope = nullptr;
+    const SymbolTable& symbolTable;
+    std::string_view sourceCode;
+    std::string_view uri = "";
+};
+
+/**
+ * @brief Context bundled for receiver type resolution.
+ */
+struct ReceiverTypeContext
+{
+    const Scope* scope = nullptr;
+    std::string_view virtualHostClass = {};
+    std::string_view fileUri = {};
+};
+
+/**
+ * @brief Resolves the type name of an expression AST node.
+ *
+ * Traverses down through parentheses, literals, member accesses, calls, and binary operations
+ * to return the type name that expression produces. Where an operator or call cannot be judged
+ * with certainty the function returns an empty string: the engine has no full
  * operator-overload resolution, which this analyzer does not do, and every caller treats an
  * empty answer as "stay silent". A guess here would turn that silence into a wrong sentence,
  * which costs more than the check that was skipped.
  *
- * @param exprNode The expression AST node.
- * @param scope Lexical scope if available (can be nullptr).
- * @param symbolTable Symbol table for lookups.
- * @param sourceCode Document source text.
- * @param uri Document file URI.
+ * @param[in] exprNode The expression AST node.
+ * @param[in] ctx The resolution context containing scope, symbol table, source code, and URI.
+ * @param[in] depth Current recursion depth.
  * @return Resolved base type name or empty string if unresolved.
  */
-std::string ResolveExpressionType(TSNode exprNode, const Scope* scope, const SymbolTable& symbolTable,
-                                  std::string_view sourceCode, std::string_view uri = "", int depth = 0);
+std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx, int depth = 0);
+
+/**
+ * @brief Resolves the type name of an expression AST node (convenience overload).
+ * @param[in] exprNode The expression AST node.
+ * @param[in] scope Lexical scope if available (can be nullptr).
+ * @param[in] symbolTable Symbol table for lookups.
+ * @param[in] sourceCode Document source text.
+ * @return Resolved base type name or empty string if unresolved.
+ */
+inline std::string ResolveExpressionType(TSNode exprNode, const Scope* scope, const SymbolTable& symbolTable,
+                                         std::string_view sourceCode)
+{
+    return ResolveExpressionType(exprNode, ExpressionTypeContext{scope, symbolTable, sourceCode, ""}, 0);
+}
 
 /**
  * @brief Resolves the type name of a receiver object node in member or call expressions.
- * @param objNode AST node representing the receiver / object expression.
- * @param sourceCode Document source text.
- * @param symbolTable Symbol table for type and member lookups.
- * @param scope Optional lexical scope for local variable resolution.
- * @param virtualHostClass Optional virtual mixin host class name.
- * @param fileUri Optional document file URI.
+ * @param[in] objNode AST node representing the receiver / object expression.
+ * @param[in] sourceCode Document source text.
+ * @param[in] symbolTable Symbol table for type and member lookups.
+ * @param[in] ctx Context containing optional scope, virtual host class, and file URI.
  * @return Resolved base type name, or empty string if unresolvable.
  */
 std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, const SymbolTable& symbolTable,
-                                const Scope* scope = nullptr, std::string_view virtualHostClass = {},
-                                std::string_view fileUri = {});
+                                const ReceiverTypeContext& ctx = {});
 
 // --- A lambda against the funcdef it is being handed to ---------------------------------
 //

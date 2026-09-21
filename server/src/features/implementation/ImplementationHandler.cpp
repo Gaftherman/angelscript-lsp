@@ -338,7 +338,7 @@ std::string ResolveOwnerType(TSNode node, std::string_view sourceCode, const std
         TSNode objNode = parser::GetChildByField(p, parser::fields::Object);
         if (!ts_node_is_null(objNode))
         {
-            const std::string objType = analysis::ResolveExpressionType(objNode, nullptr, table, sourceCode, uri);
+            const std::string objType = analysis::ResolveExpressionType(objNode, {nullptr, table, sourceCode, uri});
             owner = analysis::CleanBaseType(objType);
         }
     }

@@ -59,8 +59,8 @@ void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext& cctx, 
     {
         return;
     }
-    std::string objType = ResolveExpressionType(objNode, cctx.scope, cctx.ctx.request.symbolTable,
-                                                cctx.request.sourceCode, cctx.ctx.request.fileUri);
+    std::string objType = ResolveExpressionType(
+        objNode, {cctx.scope, cctx.ctx.request.symbolTable, cctx.request.sourceCode, cctx.ctx.request.fileUri});
     std::string cleanObj = CleanBaseType(objType);
     std::string memName = NodeText(memNode, cctx.request.sourceCode);
     if (cleanObj.empty() || memName.empty())

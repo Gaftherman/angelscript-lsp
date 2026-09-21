@@ -223,9 +223,9 @@ class DefiniteAssignmentVisitor
                 const Scope* callScope = m_request.scopeRoot
                                              ? FindEnclosingScope(m_request.scopeRoot, objStart.row, objStart.column)
                                              : nullptr;
-                std::string objType =
-                    ResolveExpressionType(objNode, callScope ? callScope : m_request.scopeRoot,
-                                          m_ctx.request.symbolTable, m_request.sourceCode, m_ctx.request.fileUri);
+                std::string objType = ResolveExpressionType(objNode, {callScope ? callScope : m_request.scopeRoot,
+                                                                      m_ctx.request.symbolTable, m_request.sourceCode,
+                                                                      m_ctx.request.fileUri});
                 std::string cleanObj = CleanBaseType(objType);
                 std::string memName = NodeText(memNode, m_request.sourceCode);
                 auto hierarchy = GetInheritedTypeHierarchy(cleanObj, m_ctx.request.symbolTable);
@@ -269,8 +269,8 @@ class DefiniteAssignmentVisitor
             if (ct != "(" && ct != ")" && ct != "," && ct != "comment")
             {
                 argNodes.push_back(child);
-                argTypes.push_back(ResolveExpressionType(child, m_request.scopeRoot, m_ctx.request.symbolTable,
-                                                         m_request.sourceCode, m_ctx.request.fileUri));
+                argTypes.push_back(ResolveExpressionType(child, {m_request.scopeRoot, m_ctx.request.symbolTable,
+                                                                 m_request.sourceCode, m_ctx.request.fileUri}));
             }
         }
     }

@@ -398,7 +398,7 @@ static void CheckDialectValueAssignForRef(const NodeIndex& nodeIndex, Diagnostic
                                                                                 ts_node_start_point(target).column)
                                                            : nullptr;
                 const std::string targetType = CleanBaseType(ResolveExpressionType(
-                    target, scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri));
+                    target, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri}));
 
                 bool isVisibleClass = false;
                 if (const auto symbols = ctx.request.symbolTable.FindSymbolsPtr(targetType))
@@ -623,7 +623,7 @@ static void CheckDialectNodeAssignmentExpression(TSNode node, DiagnosticContext&
                                                           ts_node_start_point(target).column)
                                      : nullptr;
             const std::string targetType = CleanBaseType(ResolveExpressionType(
-                target, scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri));
+                target, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri}));
 
             bool isVisibleClass = false;
             if (const auto symbols = ctx.request.symbolTable.FindSymbolsPtr(targetType))

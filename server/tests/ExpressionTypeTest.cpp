@@ -1,9 +1,9 @@
-#include <doctest/doctest.h>
+#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolCollector.h"
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SymbolTable.h"
 #include "parser/AngelScriptParser.h"
+#include <doctest/doctest.h>
 
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
@@ -11,63 +11,65 @@ using namespace angel_lsp::parser;
 namespace
 {
 
-    /**
-     * @brief Helper to parse code and deduce the expression type for the first expression statement in main().
-     */
-    std::string DeduceTypeInMain(const std::string &code)
+/**
+ * @brief Helper to parse code and deduce the expression type for the first expression statement in main().
+ */
+std::string DeduceTypeInMain(const std::string& code)
+{
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    LocalScopeCollector scopes(nullptr);
+    SymbolTable table;
+
+    const std::string fileUri = "file:///test.as";
+    collector.CollectSymbols(fileUri, code, parser, table);
+    auto scopeRoot = scopes.CollectScopes(code, parser);
+    TSTree* tree = parser.Parse(code);
+
+    std::string result;
+    if (tree)
     {
-        AngelScriptParser parser;
-        SymbolCollector collector(nullptr);
-        LocalScopeCollector scopes(nullptr);
-        SymbolTable table;
-
-        const std::string fileUri = "file:///test.as";
-        collector.CollectSymbols(fileUri, code, parser, table);
-        auto scopeRoot = scopes.CollectScopes(code, parser);
-        TSTree *tree = parser.Parse(code);
-
-        std::string result;
-        if (tree)
+        TSNode root = ts_tree_root_node(tree);
+        // Search for the last expression_statement or return_statement in main
+        uint32_t count = ts_node_named_child_count(root);
+        for (uint32_t i = 0; i < count; ++i)
         {
-            TSNode root = ts_tree_root_node(tree);
-            // Search for the last expression_statement or return_statement in main
-            uint32_t count = ts_node_named_child_count(root);
-            for (uint32_t i = 0; i < count; ++i)
+            TSNode func = ts_node_named_child(root, i);
+            if (std::string_view(ts_node_type(func)) == "func_declaration")
             {
-                TSNode func = ts_node_named_child(root, i);
-                if (std::string_view(ts_node_type(func)) == "func_declaration")
+                TSNode body = ts_node_child_by_field_name(func, "body", 4);
+                if (!ts_node_is_null(body))
                 {
-                    TSNode body = ts_node_child_by_field_name(func, "body", 4);
-                    if (!ts_node_is_null(body))
+                    uint32_t stmtCount = ts_node_named_child_count(body);
+                    for (uint32_t j = 0; j < stmtCount; ++j)
                     {
-                        uint32_t stmtCount = ts_node_named_child_count(body);
-                        for (uint32_t j = 0; j < stmtCount; ++j)
+                        TSNode stmt = ts_node_named_child(body, j);
+                        std::string_view stmtType = ts_node_type(stmt);
+                        if (stmtType == "expression_statement" && ts_node_named_child_count(stmt) > 0)
                         {
-                            TSNode stmt = ts_node_named_child(body, j);
-                            std::string_view stmtType = ts_node_type(stmt);
-                            if (stmtType == "expression_statement" && ts_node_named_child_count(stmt) > 0)
-                            {
-                                TSNode expr = ts_node_named_child(stmt, 0);
-                                TSPoint pt = ts_node_start_point(expr);
-                                const Scope *innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
-                                result = ResolveExpressionType(expr, innerScope ? innerScope : scopeRoot.get(), table, code, fileUri);
-                            }
-                            else if (stmtType == "return_statement" && ts_node_named_child_count(stmt) > 0)
-                            {
-                                TSNode expr = ts_node_named_child(stmt, 0);
-                                TSPoint pt = ts_node_start_point(expr);
-                                const Scope *innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
-                                result = ResolveExpressionType(expr, innerScope ? innerScope : scopeRoot.get(), table, code, fileUri);
-                            }
+                            TSNode expr = ts_node_named_child(stmt, 0);
+                            TSPoint pt = ts_node_start_point(expr);
+                            const Scope* innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
+                            result = ResolveExpressionType(
+                                expr, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
+                        }
+                        else if (stmtType == "return_statement" && ts_node_named_child_count(stmt) > 0)
+                        {
+                            TSNode expr = ts_node_named_child(stmt, 0);
+                            TSPoint pt = ts_node_start_point(expr);
+                            const Scope* innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
+                            result = ResolveExpressionType(
+                                expr, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
                         }
                     }
                 }
             }
-            ts_tree_delete(tree);
         }
-        return result;
+        ts_tree_delete(tree);
     }
+    return result;
 }
+} // namespace
 
 TEST_SUITE("ExpressionTypeDeduction")
 {
@@ -90,42 +92,39 @@ TEST_SUITE("ExpressionTypeDeduction")
 
     TEST_CASE("String Concatenation")
     {
-        std::string code =
-            "void main()\n"
-            "{\n"
-            "    string s = \"hello\";\n"
-            "    s + 42;\n"
-            "}\n";
+        std::string code = "void main()\n"
+                           "{\n"
+                           "    string s = \"hello\";\n"
+                           "    s + 42;\n"
+                           "}\n";
         CHECK(DeduceTypeInMain(code) == "string");
     }
 
     TEST_CASE("User-Defined Operator Overloads")
     {
-        std::string code =
-            "class Vector2\n"
-            "{\n"
-            "    float x, y;\n"
-            "    Vector2 opAdd(const Vector2 &in other) const { return this; }\n"
-            "    Vector2 opMul_r(float scalar) const { return this; }\n"
-            "}\n"
-            "void main()\n"
-            "{\n"
-            "    Vector2 v1, v2;\n"
-            "    v1 + v2;\n"
-            "}\n";
+        std::string code = "class Vector2\n"
+                           "{\n"
+                           "    float x, y;\n"
+                           "    Vector2 opAdd(const Vector2 &in other) const { return this; }\n"
+                           "    Vector2 opMul_r(float scalar) const { return this; }\n"
+                           "}\n"
+                           "void main()\n"
+                           "{\n"
+                           "    Vector2 v1, v2;\n"
+                           "    v1 + v2;\n"
+                           "}\n";
         CHECK(DeduceTypeInMain(code) == "Vector2");
 
-        std::string revCode =
-            "class Vector2\n"
-            "{\n"
-            "    float x, y;\n"
-            "    Vector2 opMul_r(float scalar) const { return this; }\n"
-            "}\n"
-            "void main()\n"
-            "{\n"
-            "    Vector2 v;\n"
-            "    2.5f * v;\n"
-            "}\n";
+        std::string revCode = "class Vector2\n"
+                              "{\n"
+                              "    float x, y;\n"
+                              "    Vector2 opMul_r(float scalar) const { return this; }\n"
+                              "}\n"
+                              "void main()\n"
+                              "{\n"
+                              "    Vector2 v;\n"
+                              "    2.5f * v;\n"
+                              "}\n";
         CHECK(DeduceTypeInMain(revCode) == "Vector2");
     }
 
@@ -138,107 +137,98 @@ TEST_SUITE("ExpressionTypeDeduction")
 
     TEST_CASE("Method and Property Chaining")
     {
-        std::string code =
-            "class Ammo\n"
-            "{\n"
-            "    int count;\n"
-            "}\n"
-            "class Weapon\n"
-            "{\n"
-            "    Ammo@ GetAmmo() { return null; }\n"
-            "}\n"
-            "class Player\n"
-            "{\n"
-            "    Weapon@ GetWeapon() { return null; }\n"
-            "}\n"
-            "void main()\n"
-            "{\n"
-            "    Player p;\n"
-            "    p.GetWeapon().GetAmmo().count;\n"
-            "}\n";
+        std::string code = "class Ammo\n"
+                           "{\n"
+                           "    int count;\n"
+                           "}\n"
+                           "class Weapon\n"
+                           "{\n"
+                           "    Ammo@ GetAmmo() { return null; }\n"
+                           "}\n"
+                           "class Player\n"
+                           "{\n"
+                           "    Weapon@ GetWeapon() { return null; }\n"
+                           "}\n"
+                           "void main()\n"
+                           "{\n"
+                           "    Player p;\n"
+                           "    p.GetWeapon().GetAmmo().count;\n"
+                           "}\n";
         CHECK(DeduceTypeInMain(code) == "int");
     }
 
     TEST_CASE("Template Indexing and Nested Templates")
     {
-        std::string code1 =
-            "void main()\n"
-            "{\n"
-            "    array<int> arr;\n"
-            "    arr[0];\n"
-            "}\n";
+        std::string code1 = "void main()\n"
+                            "{\n"
+                            "    array<int> arr;\n"
+                            "    arr[0];\n"
+                            "}\n";
         CHECK(DeduceTypeInMain(code1) == "int");
 
-        std::string code2 =
-            "void main()\n"
-            "{\n"
-            "    array<dictionary<string, int>> arr;\n"
-            "    arr[0];\n"
-            "}\n";
+        std::string code2 = "void main()\n"
+                            "{\n"
+                            "    array<dictionary<string, int>> arr;\n"
+                            "    arr[0];\n"
+                            "}\n";
         CHECK(DeduceTypeInMain(code2) == "dictionary<string, int>");
 
-        std::string code3 =
-            "void main()\n"
-            "{\n"
-            "    array<dictionary<string, int>> arr;\n"
-            "    arr[0][\"score\"];\n"
-            "}\n";
+        std::string code3 = "void main()\n"
+                            "{\n"
+                            "    array<dictionary<string, int>> arr;\n"
+                            "    arr[0][\"score\"];\n"
+                            "}\n";
         CHECK(DeduceTypeInMain(code3) == "int");
 
-        std::string code4 =
-            "void main()\n"
-            "{\n"
-            "    array<array<float>> grid;\n"
-            "    grid[0][0];\n"
-            "}\n";
+        std::string code4 = "void main()\n"
+                            "{\n"
+                            "    array<array<float>> grid;\n"
+                            "    grid[0][0];\n"
+                            "}\n";
         CHECK(DeduceTypeInMain(code4) == "float");
     }
 
     TEST_CASE("Custom container with opIndex and template parameter binding")
     {
-        std::string code1 =
-            "class CustomList<T>\n"
-            "{\n"
-            "    T& opIndex(uint idx);\n"
-            "}\n"
-            "void main()\n"
-            "{\n"
-            "    CustomList<string> list;\n"
-            "    list[0];\n"
-            "}\n";
+        std::string code1 = "class CustomList<T>\n"
+                            "{\n"
+                            "    T& opIndex(uint idx);\n"
+                            "}\n"
+                            "void main()\n"
+                            "{\n"
+                            "    CustomList<string> list;\n"
+                            "    list[0];\n"
+                            "}\n";
         CHECK(DeduceTypeInMain(code1) == "string");
 
-        std::string code2 =
-            "class MyMap<Key, Value>\n"
-            "{\n"
-            "    Value& opIndex(const Key &in key);\n"
-            "}\n"
-            "void main()\n"
-            "{\n"
-            "    MyMap<int, float> map;\n"
-            "    map[42];\n"
-            "}\n";
+        std::string code2 = "class MyMap<Key, Value>\n"
+                            "{\n"
+                            "    Value& opIndex(const Key &in key);\n"
+                            "}\n"
+                            "void main()\n"
+                            "{\n"
+                            "    MyMap<int, float> map;\n"
+                            "    map[42];\n"
+                            "}\n";
         CHECK(DeduceTypeInMain(code2) == "float");
 
-        std::string code3 =
-            "class Player {}\n"
-            "class PlayerRegistry\n"
-            "{\n"
-            "    Player@ opIndex(uint idx);\n"
-            "}\n"
-            "void main()\n"
-            "{\n"
-            "    PlayerRegistry reg;\n"
-            "    reg[0];\n"
-            "}\n";
+        std::string code3 = "class Player {}\n"
+                            "class PlayerRegistry\n"
+                            "{\n"
+                            "    Player@ opIndex(uint idx);\n"
+                            "}\n"
+                            "void main()\n"
+                            "{\n"
+                            "    PlayerRegistry reg;\n"
+                            "    reg[0];\n"
+                            "}\n";
         CHECK(DeduceTypeInMain(code3) == "Player@");
 
-        std::string code4 =
-            "void main()\n"
-            "{\n"
-            "    int[] nums;\n"
-            "    nums[0];\n"
-            "}\n";
+        std::string code4 = "void main()\n"
+                            "{\n"
+                            "    int[] nums;\n"
+                            "    nums[0];\n"
+                            "}\n";
         CHECK(DeduceTypeInMain(code4) == "int");
     }
 
@@ -248,70 +238,61 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain("void main() { true ? 10 : 2.5f; }") == "float");
         CHECK(DeduceTypeInMain("void main() { true ? 10 : \"str\"; }") == "");
 
-        std::string classCode =
-            "class Animal {}\n"
-            "class Dog : Animal {}\n"
-            "void main()\n"
-            "{\n"
-            "    Dog@ d;\n"
-            "    Animal@ a;\n"
-            "    true ? d : a;\n"
-            "}\n";
+        std::string classCode = "class Animal {}\n"
+                                "class Dog : Animal {}\n"
+                                "void main()\n"
+                                "{\n"
+                                "    Dog@ d;\n"
+                                "    Animal@ a;\n"
+                                "    true ? d : a;\n"
+                                "}\n";
         CHECK(DeduceTypeInMain(classCode) == "Animal@");
 
-        std::string vectorCode =
-            "class Vector\n"
-            "{\n"
-            "    float x, y, z;\n"
-            "    Vector() {}\n"
-            "    Vector(float _x, float _y, float _z) {}\n"
-            "}\n"
-            "void main()\n"
-            "{\n"
-            "    bool cond = true;\n"
-            "    cond ? Vector(1.0f, 2.0f, 3.0f) : Vector(0.0f, 0.0f, 0.0f);\n"
-            "}\n";
+        std::string vectorCode = "class Vector\n"
+                                 "{\n"
+                                 "    float x, y, z;\n"
+                                 "    Vector() {}\n"
+                                 "    Vector(float _x, float _y, float _z) {}\n"
+                                 "}\n"
+                                 "void main()\n"
+                                 "{\n"
+                                 "    bool cond = true;\n"
+                                 "    cond ? Vector(1.0f, 2.0f, 3.0f) : Vector(0.0f, 0.0f, 0.0f);\n"
+                                 "}\n";
         CHECK(DeduceTypeInMain(vectorCode) == "Vector");
 
-        std::string vectorVarCode =
-            "class Vector { float x, y, z; }\n"
-            "void main()\n"
-            "{\n"
-            "    Vector v1;\n"
-            "    Vector v2;\n"
-            "    true ? v1 : v2;\n"
-            "}\n";
+        std::string vectorVarCode = "class Vector { float x, y, z; }\n"
+                                    "void main()\n"
+                                    "{\n"
+                                    "    Vector v1;\n"
+                                    "    Vector v2;\n"
+                                    "    true ? v1 : v2;\n"
+                                    "}\n";
         CHECK(DeduceTypeInMain(vectorVarCode) == "Vector");
 
-        std::string enumIntCode =
-            "enum WeaponState { Idle, Firing }\n"
-            "void main()\n"
-            "{\n"
-            "    true ? WeaponState::Idle : 0;\n"
-            "}\n";
+        std::string enumIntCode = "enum WeaponState { Idle, Firing }\n"
+                                  "void main()\n"
+                                  "{\n"
+                                  "    true ? WeaponState::Idle : 0;\n"
+                                  "}\n";
         CHECK(DeduceTypeInMain(enumIntCode) == "int");
 
-        std::string aliasCode =
-            "void main()\n"
-            "{\n"
-            "    int32 a = 1;\n"
-            "    int b = 2;\n"
-            "    true ? a : b;\n"
-            "}\n";
+        std::string aliasCode = "void main()\n"
+                                "{\n"
+                                "    int32 a = 1;\n"
+                                "    int b = 2;\n"
+                                "    true ? a : b;\n"
+                                "}\n";
         CHECK(DeduceTypeInMain(aliasCode) == "int");
     }
 
     TEST_CASE("Bare type name in expression context is not a value (asharness parity)")
     {
-        std::string code =
-            "class Vector {}\n"
-            "void main()\n"
-            "{\n"
-            "    Vector;\n"
-            "}\n";
+        std::string code = "class Vector {}\n"
+                           "void main()\n"
+                           "{\n"
+                           "    Vector;\n"
+                           "}\n";
         CHECK(DeduceTypeInMain(code) == "");
     }
 }
-
-
-

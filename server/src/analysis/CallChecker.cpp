@@ -598,8 +598,8 @@ ObjectTypeInfo ResolveMemberObjectType(TSNode objectNode, const CallValidationCo
 {
     ObjectTypeInfo info;
     const std::string rawObjType = CanonicalizeArrayType(
-        ResolveExpressionType(objectNode, valCtx.scope, valCtx.ctx.request.symbolTable, valCtx.request.sourceCode,
-                              valCtx.ctx.request.fileUri),
+        ResolveExpressionType(objectNode, {valCtx.scope, valCtx.ctx.request.symbolTable, valCtx.request.sourceCode,
+                                           valCtx.ctx.request.fileUri}),
         valCtx.ctx.request.GetArrayTypeName().empty() ? "array" : valCtx.ctx.request.GetArrayTypeName());
     info.objectType = CleanBaseType(rawObjType);
 
@@ -916,21 +916,20 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
 
     for (const auto& argNode : result.argNodes)
     {
-        std::string dataTypeName;
-        if (IsBareDataType(argNode, valCtx.scope, valCtx.ctx.request.symbolTable, valCtx.request.sourceCode,
-                           dataTypeName))
+        if (auto dataTypeName =
+                IsBareDataType(argNode, valCtx.scope, valCtx.ctx.request.symbolTable, valCtx.request.sourceCode))
         {
             const TSPoint aStart = ts_node_start_point(argNode);
             const TSPoint aEnd = ts_node_end_point(argNode);
             valCtx.ctx.EmitAtRange(aStart.row, aStart.column, aEnd.row, aEnd.column,
-                                   diagnostics::codes::ExpressionIsDataType, dataTypeName);
+                                   diagnostics::codes::ExpressionIsDataType, *dataTypeName);
             result.allArgsResolved = false;
             result.argTypes.push_back("");
             continue;
         }
 
-        std::string argType = ResolveExpressionType(argNode, valCtx.scope, valCtx.ctx.request.symbolTable,
-                                                    valCtx.request.sourceCode, valCtx.ctx.request.fileUri);
+        std::string argType = ResolveExpressionType(argNode, {valCtx.scope, valCtx.ctx.request.symbolTable,
+                                                              valCtx.request.sourceCode, valCtx.ctx.request.fileUri});
         if (argType.empty())
         {
             result.allArgsResolved = false;
@@ -1008,10 +1007,10 @@ void CheckMalformedTernaryArgs(const std::vector<TSNode>& argNodes, const std::v
         const std::string expected = fn.parameters[i].typeName;
         TSNode consequence = parser::GetChildByField(argNodes[i], parser::fields::Consequence);
         TSNode alternative = parser::GetChildByField(argNodes[i], parser::fields::Alternative);
-        std::string t1 = ResolveExpressionType(consequence, valCtx.scope, valCtx.ctx.request.symbolTable,
-                                               valCtx.request.sourceCode, valCtx.ctx.request.fileUri);
-        std::string t2 = ResolveExpressionType(alternative, valCtx.scope, valCtx.ctx.request.symbolTable,
-                                               valCtx.request.sourceCode, valCtx.ctx.request.fileUri);
+        std::string t1 = ResolveExpressionType(consequence, {valCtx.scope, valCtx.ctx.request.symbolTable,
+                                                             valCtx.request.sourceCode, valCtx.ctx.request.fileUri});
+        std::string t2 = ResolveExpressionType(alternative, {valCtx.scope, valCtx.ctx.request.symbolTable,
+                                                             valCtx.request.sourceCode, valCtx.ctx.request.fileUri});
 
         std::string badType = (!t1.empty() && t1 != expected) ? t1 : t2;
         if (badType.empty())
@@ -1679,8 +1678,8 @@ void CheckDeclaratorDirectInit(TSNode declarator, const VarInitContext& vctx)
     std::vector<std::string> argTypes;
     for (TSNode argNode : argNodes)
     {
-        argTypes.push_back(ResolveExpressionType(argNode, scope, vctx.ctx.request.symbolTable, vctx.request.sourceCode,
-                                                 vctx.ctx.request.fileUri));
+        argTypes.push_back(ResolveExpressionType(
+            argNode, {scope, vctx.ctx.request.symbolTable, vctx.request.sourceCode, vctx.ctx.request.fileUri}));
     }
 
     if (IsCorePrimitive(vctx.baseName))

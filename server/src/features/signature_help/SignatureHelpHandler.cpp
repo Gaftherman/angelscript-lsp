@@ -480,7 +480,7 @@ std::vector<analysis::Symbol> ResolveMemberCandidates(const SignatureHelpRequest
     const analysis::Scope* scope =
         rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character) : nullptr;
     std::string receiverTypeName =
-        analysis::ResolveReceiverType(objNode, request.sourceCode, request.symbolTable, scope, "", request.uri);
+        analysis::ResolveReceiverType(objNode, request.sourceCode, request.symbolTable, {scope, "", request.uri});
 
     if (receiverTypeName.empty())
     {

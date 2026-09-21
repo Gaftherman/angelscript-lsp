@@ -1330,11 +1330,11 @@ std::string ResolveMemberRefReceiverType(const analysis::LocalReference& ref, co
         return "";
     }
     std::string rType =
-        analysis::ResolveExpressionType(objNode, scope, request.symbolTable, request.sourceCode, request.uri);
+        analysis::ResolveExpressionType(objNode, {scope, request.symbolTable, request.sourceCode, request.uri});
     if (rType.empty() && activeScope && activeScope != scope)
     {
-        rType =
-            analysis::ResolveExpressionType(objNode, activeScope, request.symbolTable, request.sourceCode, request.uri);
+        rType = analysis::ResolveExpressionType(objNode,
+                                                {activeScope, request.symbolTable, request.sourceCode, request.uri});
     }
     if (!rType.empty())
     {

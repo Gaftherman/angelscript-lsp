@@ -345,7 +345,7 @@ std::string ResolveObjectOwnerType(TSNode objectNode, const Scope* scope, const 
     const std::string_view arrayContainer =
         ctx.request.GetArrayTypeName().empty() ? std::string_view("array") : ctx.request.GetArrayTypeName();
     return MemberOwnerType(
-        ResolveExpressionType(objectNode, scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri),
+        ResolveExpressionType(objectNode, {scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri}),
         arrayContainer);
 }
 

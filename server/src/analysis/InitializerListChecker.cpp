@@ -205,8 +205,8 @@ void CheckElementValue(TSNode element, const std::string& wanted, DiagnosticCont
         return;
     }
 
-    const std::string actual = ResolveExpressionType(element, elements.scopeRoot, ctx.request.symbolTable,
-                                                     elements.sourceCode, ctx.request.fileUri);
+    const std::string actual = ResolveExpressionType(
+        element, {elements.scopeRoot, ctx.request.symbolTable, elements.sourceCode, ctx.request.fileUri});
     if (actual.empty())
     {
         return;
@@ -947,7 +947,7 @@ void CheckInitializerLists(const InitializerListCheckRequest& request, Diagnosti
                 {
                     const ElementContext elements = elementsAt(value);
                     const std::string targetType = ResolveExpressionType(
-                        target, elements.scopeRoot, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
+                        target, {elements.scopeRoot, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri});
                     if (!targetType.empty())
                     {
                         ValidateList(value, targetType, ctx, elements, arrayLikeTemplates, 0, structCache);

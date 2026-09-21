@@ -226,7 +226,7 @@ std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const analysi
             continue;
         }
         argTypes.push_back(
-            analysis::ResolveExpressionType(ch, scope, request.symbolTable, request.sourceCode, request.uri));
+            analysis::ResolveExpressionType(ch, {scope, request.symbolTable, request.sourceCode, request.uri}));
     }
     return argTypes;
 }
@@ -851,8 +851,9 @@ std::optional<std::vector<lsp::Location>> TryResolveMemberDefinition(TSNode node
     const analysis::Scope* scope =
         ctx.rootScope ? FindInnermostScope(ctx.rootScope.get(), ctx.queryLine, ctx.request.position.character)
                       : nullptr;
-    std::string receiverTypeName = analysis::ResolveReceiverType(
-        objectNode, ctx.request.sourceCode, ctx.request.symbolTable, scope, ctx.vCtx.virtualHostClass, ctx.request.uri);
+    std::string receiverTypeName =
+        analysis::ResolveReceiverType(objectNode, ctx.request.sourceCode, ctx.request.symbolTable,
+                                      {scope, ctx.vCtx.virtualHostClass, ctx.request.uri});
 
     if (receiverTypeName.empty())
     {

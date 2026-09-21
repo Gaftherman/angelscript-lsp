@@ -705,7 +705,7 @@ std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionReques
     const analysis::Scope* scope = FindScopeByLineOrRoot(rootScope.get(), exprStart.row, exprStart.column);
 
     std::string varType =
-        analysis::ResolveExpressionType(targetNode, scope, request.symbolTable, request.sourceCode, request.uri);
+        analysis::ResolveExpressionType(targetNode, {scope, request.symbolTable, request.sourceCode, request.uri});
     if (varType.empty() || varType == "null")
     {
         varType = "auto";
@@ -2929,7 +2929,7 @@ void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TSNode ro
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     const analysis::Scope* scope = FindScopeByLineOrRoot(rootScope.get(), dPt.row, dPt.column);
     std::string objType = analysis::CleanBaseType(
-        analysis::ResolveExpressionType(objNode, scope, request.symbolTable, request.sourceCode, request.uri));
+        analysis::ResolveExpressionType(objNode, {scope, request.symbolTable, request.sourceCode, request.uri}));
 
     request.symbolTable.ForEachSymbol(
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)

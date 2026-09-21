@@ -596,7 +596,8 @@ class TestDocument
                         return def->typeName;
                     }
                 }
-                std::string inferred = analysis::ResolveExpressionType(node, scope, m_symbolTable, m_sourceCode, m_uri);
+                std::string inferred =
+                    analysis::ResolveExpressionType(node, {scope, m_symbolTable, m_sourceCode, m_uri});
                 if (!inferred.empty() && inferred != "unknown")
                 {
                     return inferred;
@@ -670,9 +671,9 @@ class TestDocument
                                          .CollectScopes(m_sourceCode, const_cast<parser::AngelScriptParser&>(m_parser));
                     const analysis::Scope* scope = FindScopeByLineOrRoot(scopeRoot.get(), pos.line, pos.character);
                     std::string leftType =
-                        analysis::ResolveExpressionType(left, scope, m_symbolTable, m_sourceCode, m_uri);
+                        analysis::ResolveExpressionType(left, {scope, m_symbolTable, m_sourceCode, m_uri});
                     std::string rightType =
-                        analysis::ResolveExpressionType(right, scope, m_symbolTable, m_sourceCode, m_uri);
+                        analysis::ResolveExpressionType(right, {scope, m_symbolTable, m_sourceCode, m_uri});
                     std::string cleanLeft = analysis::CleanBaseType(leftType);
                     std::string cleanRight = analysis::CleanBaseType(rightType);
 
@@ -793,9 +794,9 @@ class TestDocument
                                 .CollectScopes(m_sourceCode, const_cast<parser::AngelScriptParser&>(m_parser));
                         const analysis::Scope* scope = FindScopeByLineOrRoot(scopeRoot.get(), pos.line, pos.character);
                         std::string leftType =
-                            analysis::ResolveExpressionType(left, scope, m_symbolTable, m_sourceCode, m_uri);
+                            analysis::ResolveExpressionType(left, {scope, m_symbolTable, m_sourceCode, m_uri});
                         std::string rightType =
-                            analysis::ResolveExpressionType(right, scope, m_symbolTable, m_sourceCode, m_uri);
+                            analysis::ResolveExpressionType(right, {scope, m_symbolTable, m_sourceCode, m_uri});
                         std::string cleanLeft = analysis::CleanBaseType(leftType);
 
                         if (!cleanLeft.empty())
@@ -855,7 +856,7 @@ class TestDocument
         auto scopeRoot = const_cast<analysis::LocalScopeCollector&>(m_scopeCollector)
                              .CollectScopes(m_sourceCode, const_cast<parser::AngelScriptParser&>(m_parser));
         const analysis::Scope* scope = FindScopeByLineOrRoot(scopeRoot.get(), pos.line, pos.character);
-        std::string calleeType = analysis::ResolveExpressionType(funcNode, scope, m_symbolTable, m_sourceCode, m_uri);
+        std::string calleeType = analysis::ResolveExpressionType(funcNode, {scope, m_symbolTable, m_sourceCode, m_uri});
         std::string clean = analysis::CleanBaseType(calleeType);
 
         auto found = m_symbolTable.FindSymbols(clean);
@@ -883,7 +884,7 @@ class TestDocument
             if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
             {
                 std::string objType =
-                    analysis::ResolveExpressionType(objNode, scope, m_symbolTable, m_sourceCode, m_uri);
+                    analysis::ResolveExpressionType(objNode, {scope, m_symbolTable, m_sourceCode, m_uri});
                 std::string cleanObj = analysis::CleanBaseType(objType);
                 std::string memName = GetNodeText(memNode, m_sourceCode);
                 while (!memName.empty() && isspace(static_cast<unsigned char>(memName.front())))
@@ -900,7 +901,7 @@ class TestDocument
                     {
                         TSNode argChild = ts_node_named_child(argsNode, i);
                         argTypes.push_back(
-                            analysis::ResolveExpressionType(argChild, scope, m_symbolTable, m_sourceCode, m_uri));
+                            analysis::ResolveExpressionType(argChild, {scope, m_symbolTable, m_sourceCode, m_uri}));
                     }
                 }
 
@@ -965,7 +966,7 @@ class TestDocument
                 {
                     TSNode argChild = ts_node_named_child(argsNode, i);
                     argTypes.push_back(
-                        analysis::ResolveExpressionType(argChild, scope, m_symbolTable, m_sourceCode, m_uri));
+                        analysis::ResolveExpressionType(argChild, {scope, m_symbolTable, m_sourceCode, m_uri}));
                 }
             }
 

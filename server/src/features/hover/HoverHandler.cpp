@@ -651,7 +651,7 @@ std::vector<std::string> ExtractCallArgTypes(TSNode argListNode, const HoverRequ
             continue;
         }
         std::string aType =
-            analysis::ResolveExpressionType(ch, scope, request.symbolTable, request.sourceCode, request.uri);
+            analysis::ResolveExpressionType(ch, {scope, request.symbolTable, request.sourceCode, request.uri});
         argTypes.push_back(std::move(aType));
     }
     return argTypes;
@@ -937,7 +937,7 @@ bool IsMemberChildOfExpression(TSNode node, TSNode parent)
 std::string ResolveReceiverTypeName(TSNode objectNode, const HoverQueryContext& ctx)
 {
     std::string receiverTypeName = analysis::ResolveReceiverType(
-        objectNode, ctx.request.sourceCode, ctx.request.symbolTable, ctx.scope, ctx.vctx.hostClass, ctx.request.uri);
+        objectNode, ctx.request.sourceCode, ctx.request.symbolTable, {ctx.scope, ctx.vctx.hostClass, ctx.request.uri});
     if (!receiverTypeName.empty() && ctx.request.config && !ctx.request.config->types.arrayTypeName.empty())
     {
         receiverTypeName = analysis::MemberOwnerType(receiverTypeName, ctx.request.config->types.arrayTypeName);

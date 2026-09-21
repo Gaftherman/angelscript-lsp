@@ -177,7 +177,7 @@ std::vector<analysis::Symbol> CollectMemberCalleeCandidates(TSNode funcNode, con
     const analysis::Scope* scope =
         rootScope ? FindInnermostScope(rootScope.get(), objPoint.row, objPoint.column) : nullptr;
     std::string receiverTypeName =
-        analysis::ResolveReceiverType(objNode, request.sourceCode, request.symbolTable, scope, "", request.uri);
+        analysis::ResolveReceiverType(objNode, request.sourceCode, request.symbolTable, {scope, "", request.uri});
 
     if (receiverTypeName.empty())
     {
@@ -351,7 +351,7 @@ std::vector<std::string> ExtractCallArgTypes(TSNode callNode, const InlayHintReq
             continue;
         }
         std::string aType =
-            analysis::ResolveExpressionType(ch, scope, request.symbolTable, request.sourceCode, request.uri);
+            analysis::ResolveExpressionType(ch, {scope, request.symbolTable, request.sourceCode, request.uri});
         argTypes.push_back(std::move(aType));
     }
     return argTypes;
@@ -629,8 +629,8 @@ const analysis::Symbol* MatchConstructorOverload(const std::vector<analysis::Sym
     argTypes.reserve(args.size());
     for (const auto& arg : args)
     {
-        std::string aType =
-            analysis::ResolveExpressionType(arg.exprNode, scope, request.symbolTable, request.sourceCode, request.uri);
+        std::string aType = analysis::ResolveExpressionType(
+            arg.exprNode, {scope, request.symbolTable, request.sourceCode, request.uri});
         argTypes.push_back(std::move(aType));
     }
 
@@ -1187,7 +1187,7 @@ std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& reques
     const analysis::Scope* scope = rootScope ? FindInnermostScope(rootScope.get(), point.row, point.column) : nullptr;
 
     std::string resolved =
-        analysis::ResolveExpressionType(exprNode, scope, request.symbolTable, request.sourceCode, request.uri);
+        analysis::ResolveExpressionType(exprNode, {scope, request.symbolTable, request.sourceCode, request.uri});
     if (!resolved.empty() && resolved != "auto")
     {
         return resolved;
