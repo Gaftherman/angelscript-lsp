@@ -203,6 +203,147 @@ void SymbolTable::EraseDocumentLocked(const std::string& fileUri)
     }
 }
 
+bool SymbolTable::HasMixinSymbolLocked(const std::string& fileUri) const
+{
+    const auto fileEntry = m_keysByFile.find(fileUri);
+    if (fileEntry == m_keysByFile.end())
+    {
+        return false;
+    }
+
+    for (const auto& key : fileEntry->second)
+    {
+        const auto bucket = m_symbols.find(key);
+        if (bucket != m_symbols.end() && bucket->second)
+        {
+            for (const auto& sym : *bucket->second)
+            {
+                if (sym.fileUri == fileUri && sym.type == SymbolType::Class &&
+                    std::holds_alternative<ClassSignature>(sym.signature) && sym.GetClass().modifiers.isMixin)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+std::vector<std::pair<std::string, rules::RuleIndexPartial>>
+SymbolTable::BuildAffectedPartialsLocked(const std::vector<std::string>& affectedFiles,
+                                         const std::string& excludeUri) const
+{
+    ankerl::unordered_dense::set<std::string> uniqueAffected;
+    for (const auto& affectedUri : affectedFiles)
+    {
+        if (affectedUri != excludeUri && !affectedUri.empty())
+        {
+            uniqueAffected.insert(affectedUri);
+        }
+    }
+
+    std::vector<std::pair<std::string, rules::RuleIndexPartial>> affectedPartials;
+    affectedPartials.reserve(uniqueAffected.size());
+    for (const auto& affectedUri : uniqueAffected)
+    {
+        auto affectedPtrs = GetDocumentSymbolPointersLocked(affectedUri);
+        affectedPartials.emplace_back(affectedUri, rules::RuleIndex::BuildPartial(affectedUri, affectedPtrs));
+    }
+    return affectedPartials;
+}
+
+void SymbolTable::ApplySingleSymbolPartialLocked(const Symbol& symbol)
+{
+    const Symbol* symPtr = &symbol;
+    rules::RuleIndexPartial singlePartial =
+        rules::RuleIndex::BuildPartial(symbol.fileUri, std::vector<const Symbol*>{symPtr});
+
+    std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
+    if (!m_ruleIndex)
+    {
+        m_ruleIndex = std::make_shared<rules::RuleIndex>();
+    }
+    else if (m_ruleIndex.use_count() > 1)
+    {
+        m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
+    }
+
+    if (!m_ruleIndexPartials)
+    {
+        m_ruleIndexPartials = std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
+    }
+
+    m_ruleIndex->ApplyPartial(singlePartial);
+    auto& filePartial = (*m_ruleIndexPartials)[symbol.fileUri];
+    filePartial.fileUri = symbol.fileUri;
+    filePartial.Merge(std::move(singlePartial));
+}
+
+void SymbolTable::ApplyRuleIndexPartialsLocked(
+    const std::string& fileUri, std::optional<rules::RuleIndexPartial> freshPartial,
+    std::vector<std::pair<std::string, rules::RuleIndexPartial>> affectedPartials)
+{
+    std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
+    if (!freshPartial && (!m_ruleIndex || !m_ruleIndexPartials))
+    {
+        return;
+    }
+
+    if (!m_ruleIndex)
+    {
+        m_ruleIndex = std::make_shared<rules::RuleIndex>();
+    }
+    else if (m_ruleIndex.use_count() > 1)
+    {
+        m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
+    }
+
+    if (!m_ruleIndexPartials)
+    {
+        m_ruleIndexPartials = std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
+    }
+
+    auto oldIt = m_ruleIndexPartials->find(fileUri);
+    if (oldIt != m_ruleIndexPartials->end())
+    {
+        if (m_ruleIndex)
+        {
+            m_ruleIndex->RemovePartial(oldIt->second);
+        }
+        if (freshPartial)
+        {
+            m_ruleIndex->ApplyPartial(*freshPartial);
+            oldIt->second = std::move(*freshPartial);
+        }
+        else
+        {
+            m_ruleIndexPartials->erase(oldIt);
+        }
+    }
+    else if (freshPartial)
+    {
+        m_ruleIndex->ApplyPartial(*freshPartial);
+        (*m_ruleIndexPartials)[fileUri] = std::move(*freshPartial);
+    }
+
+    for (auto& [affectedUri, newPartial] : affectedPartials)
+    {
+        auto affIt = m_ruleIndexPartials->find(affectedUri);
+        if (affIt != m_ruleIndexPartials->end())
+        {
+            if (m_ruleIndex)
+            {
+                m_ruleIndex->RemovePartial(affIt->second);
+            }
+        }
+        if (m_ruleIndex)
+        {
+            m_ruleIndex->ApplyPartial(newPartial);
+        }
+        (*m_ruleIndexPartials)[affectedUri] = std::move(newPartial);
+    }
+}
+
 void SymbolTable::AddSymbol(const Symbol& symbol)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
@@ -231,92 +372,15 @@ void SymbolTable::AddSymbol(const Symbol& symbol)
 
     if (!isMixin && affectedFiles.empty())
     {
-        // O(1) incremental update for ordinary symbols: avoids quadratic re-scan of the file
-        const Symbol* symPtr = &symbol;
-        rules::RuleIndexPartial singlePartial =
-            rules::RuleIndex::BuildPartial(symbol.fileUri, std::vector<const Symbol*>{symPtr});
-
-        std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
-        if (!m_ruleIndex)
-        {
-            m_ruleIndex = std::make_shared<rules::RuleIndex>();
-        }
-        else if (m_ruleIndex.use_count() > 1)
-        {
-            m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
-        }
-
-        if (!m_ruleIndexPartials)
-        {
-            m_ruleIndexPartials =
-                std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
-        }
-
-        m_ruleIndex->ApplyPartial(singlePartial);
-        auto& filePartial = (*m_ruleIndexPartials)[symbol.fileUri];
-        filePartial.fileUri = symbol.fileUri;
-        filePartial.Merge(std::move(singlePartial));
-
+        ApplySingleSymbolPartialLocked(symbol);
         ++m_version;
         return;
     }
 
     auto freshPtrs = GetDocumentSymbolPointersLocked(symbol.fileUri);
-    rules::RuleIndexPartial freshPartial = rules::RuleIndex::BuildPartial(symbol.fileUri, freshPtrs);
-
-    ankerl::unordered_dense::set<std::string> uniqueAffected;
-    for (const auto& affectedUri : affectedFiles)
-    {
-        if (affectedUri != symbol.fileUri && !affectedUri.empty())
-        {
-            uniqueAffected.insert(affectedUri);
-        }
-    }
-
-    std::vector<std::pair<std::string, rules::RuleIndexPartial>> affectedPartials;
-    affectedPartials.reserve(uniqueAffected.size());
-    for (const auto& affectedUri : uniqueAffected)
-    {
-        auto affectedPtrs = GetDocumentSymbolPointersLocked(affectedUri);
-        affectedPartials.emplace_back(affectedUri, rules::RuleIndex::BuildPartial(affectedUri, affectedPtrs));
-    }
-
-    {
-        std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
-        if (!m_ruleIndex)
-        {
-            m_ruleIndex = std::make_shared<rules::RuleIndex>();
-        }
-        else if (m_ruleIndex.use_count() > 1)
-        {
-            m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
-        }
-
-        if (!m_ruleIndexPartials)
-        {
-            m_ruleIndexPartials =
-                std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
-        }
-
-        auto it = m_ruleIndexPartials->find(symbol.fileUri);
-        if (it != m_ruleIndexPartials->end())
-        {
-            m_ruleIndex->RemovePartial(it->second);
-        }
-        m_ruleIndex->ApplyPartial(freshPartial);
-        (*m_ruleIndexPartials)[symbol.fileUri] = std::move(freshPartial);
-
-        for (auto& [affectedUri, newPartial] : affectedPartials)
-        {
-            auto affIt = m_ruleIndexPartials->find(affectedUri);
-            if (affIt != m_ruleIndexPartials->end())
-            {
-                m_ruleIndex->RemovePartial(affIt->second);
-            }
-            m_ruleIndex->ApplyPartial(newPartial);
-            (*m_ruleIndexPartials)[affectedUri] = std::move(newPartial);
-        }
-    }
+    auto freshPartial = rules::RuleIndex::BuildPartial(symbol.fileUri, freshPtrs);
+    auto affectedPartials = BuildAffectedPartialsLocked(affectedFiles, symbol.fileUri);
+    ApplyRuleIndexPartialsLocked(symbol.fileUri, std::move(freshPartial), std::move(affectedPartials));
 
     ++m_version;
 }
@@ -325,32 +389,7 @@ void SymbolTable::ClearDocumentSymbols(const std::string& fileUri)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
 
-    bool erasedMixin = false;
-    const auto fileEntry = m_keysByFile.find(fileUri);
-    if (fileEntry != m_keysByFile.end())
-    {
-        for (const auto& key : fileEntry->second)
-        {
-            const auto bucket = m_symbols.find(key);
-            if (bucket != m_symbols.end() && bucket->second)
-            {
-                for (const auto& sym : *bucket->second)
-                {
-                    if (sym.fileUri == fileUri && sym.type == SymbolType::Class &&
-                        std::holds_alternative<ClassSignature>(sym.signature) && sym.GetClass().modifiers.isMixin)
-                    {
-                        erasedMixin = true;
-                        break;
-                    }
-                }
-            }
-            if (erasedMixin)
-            {
-                break;
-            }
-        }
-    }
-
+    const bool erasedMixin = HasMixinSymbolLocked(fileUri);
     EraseDocumentSymbolsOnlyLocked(fileUri);
 
     std::vector<std::string> affectedFiles;
@@ -359,60 +398,8 @@ void SymbolTable::ClearDocumentSymbols(const std::string& fileUri)
         ResolveIncludedMixinsLocked(&affectedFiles);
     }
 
-    ankerl::unordered_dense::set<std::string> uniqueAffected;
-    for (const auto& affectedUri : affectedFiles)
-    {
-        if (affectedUri != fileUri && !affectedUri.empty())
-        {
-            uniqueAffected.insert(affectedUri);
-        }
-    }
-
-    std::vector<std::pair<std::string, rules::RuleIndexPartial>> affectedPartials;
-    affectedPartials.reserve(uniqueAffected.size());
-    for (const auto& affectedUri : uniqueAffected)
-    {
-        auto affectedPtrs = GetDocumentSymbolPointersLocked(affectedUri);
-        affectedPartials.emplace_back(affectedUri, rules::RuleIndex::BuildPartial(affectedUri, affectedPtrs));
-    }
-
-    {
-        std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
-        if (m_ruleIndex && m_ruleIndex.use_count() > 1)
-        {
-            m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
-        }
-
-        if (m_ruleIndexPartials)
-        {
-            auto oldIt = m_ruleIndexPartials->find(fileUri);
-            if (oldIt != m_ruleIndexPartials->end())
-            {
-                if (m_ruleIndex)
-                {
-                    m_ruleIndex->RemovePartial(oldIt->second);
-                }
-                m_ruleIndexPartials->erase(oldIt);
-            }
-
-            for (auto& [affectedUri, newPartial] : affectedPartials)
-            {
-                auto affIt = m_ruleIndexPartials->find(affectedUri);
-                if (affIt != m_ruleIndexPartials->end())
-                {
-                    if (m_ruleIndex)
-                    {
-                        m_ruleIndex->RemovePartial(affIt->second);
-                    }
-                }
-                if (m_ruleIndex)
-                {
-                    m_ruleIndex->ApplyPartial(newPartial);
-                }
-                (*m_ruleIndexPartials)[affectedUri] = std::move(newPartial);
-            }
-        }
-    }
+    auto affectedPartials = BuildAffectedPartialsLocked(affectedFiles, fileUri);
+    ApplyRuleIndexPartialsLocked(fileUri, std::nullopt, std::move(affectedPartials));
 
     ++m_version;
 }
@@ -478,33 +465,7 @@ void SymbolTable::PublishDocumentSymbols(const std::string& fileUri, std::vector
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
 
-    // Check if the document being erased contains any mixin classes
-    bool erasedMixin = false;
-    const auto fileEntry = m_keysByFile.find(fileUri);
-    if (fileEntry != m_keysByFile.end())
-    {
-        for (const auto& key : fileEntry->second)
-        {
-            const auto bucket = m_symbols.find(key);
-            if (bucket != m_symbols.end() && bucket->second)
-            {
-                for (const auto& sym : *bucket->second)
-                {
-                    if (sym.fileUri == fileUri && sym.type == SymbolType::Class &&
-                        std::holds_alternative<ClassSignature>(sym.signature) && sym.GetClass().modifiers.isMixin)
-                    {
-                        erasedMixin = true;
-                        break;
-                    }
-                }
-            }
-            if (erasedMixin)
-            {
-                break;
-            }
-        }
-    }
-
+    const bool erasedMixin = HasMixinSymbolLocked(fileUri);
     EraseDocumentSymbolsOnlyLocked(fileUri);
 
     bool addedMixin = false;
@@ -556,74 +517,35 @@ void SymbolTable::PublishDocumentSymbols(const std::string& fileUri, std::vector
 
     // Build partial for fileUri after mixin resolution
     auto freshPtrs = GetDocumentSymbolPointersLocked(fileUri);
-    rules::RuleIndexPartial freshPartial = rules::RuleIndex::BuildPartial(fileUri, freshPtrs);
-
-    ankerl::unordered_dense::set<std::string> uniqueAffected;
-    for (const auto& affectedUri : affectedFiles)
-    {
-        if (affectedUri != fileUri && !affectedUri.empty())
-        {
-            uniqueAffected.insert(affectedUri);
-        }
-    }
-
-    std::vector<std::pair<std::string, rules::RuleIndexPartial>> affectedPartials;
-    affectedPartials.reserve(uniqueAffected.size());
-    for (const auto& affectedUri : uniqueAffected)
-    {
-        auto affectedPtrs = GetDocumentSymbolPointersLocked(affectedUri);
-        affectedPartials.emplace_back(affectedUri, rules::RuleIndex::BuildPartial(affectedUri, affectedPtrs));
-    }
-
-    {
-        std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
-        if (!m_ruleIndex)
-        {
-            m_ruleIndex = std::make_shared<rules::RuleIndex>();
-        }
-        else if (m_ruleIndex.use_count() > 1)
-        {
-            m_ruleIndex = std::make_shared<rules::RuleIndex>(*m_ruleIndex);
-        }
-
-        if (!m_ruleIndexPartials)
-        {
-            m_ruleIndexPartials =
-                std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
-        }
-
-        auto oldIt = m_ruleIndexPartials->find(fileUri);
-        if (oldIt != m_ruleIndexPartials->end())
-        {
-            m_ruleIndex->RemovePartial(oldIt->second);
-        }
-        m_ruleIndex->ApplyPartial(freshPartial);
-        (*m_ruleIndexPartials)[fileUri] = std::move(freshPartial);
-
-        for (auto& [affectedUri, newPartial] : affectedPartials)
-        {
-            auto affIt = m_ruleIndexPartials->find(affectedUri);
-            if (affIt != m_ruleIndexPartials->end())
-            {
-                m_ruleIndex->RemovePartial(affIt->second);
-            }
-            m_ruleIndex->ApplyPartial(newPartial);
-            (*m_ruleIndexPartials)[affectedUri] = std::move(newPartial);
-        }
-    }
+    auto freshPartial = rules::RuleIndex::BuildPartial(fileUri, freshPtrs);
+    auto affectedPartials = BuildAffectedPartialsLocked(affectedFiles, fileUri);
+    ApplyRuleIndexPartialsLocked(fileUri, std::move(freshPartial), std::move(affectedPartials));
 
     ++m_version;
 }
 
-void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::string>& classKeys,
-                                                     std::vector<std::string>* outAffectedFiles)
+bool SymbolTable::IsMixinClassLocked(const std::string& cleanName) const
 {
-    if (classKeys.empty())
+    auto baseIt = m_symbols.find(cleanName);
+    if (baseIt == m_symbols.end() || !baseIt->second)
     {
-        return;
+        return false;
     }
+    for (const auto& cand : *baseIt->second)
+    {
+        if (cand.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cand.signature) &&
+            cand.GetClass().modifiers.isMixin)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 
-    // 1. Resolve includedMixins on class signatures and collect which mixins are needed
+ankerl::unordered_dense::set<std::string>
+SymbolTable::UpdateIncludedMixinsForClassesLocked(const std::vector<std::string>& classKeys,
+                                                  std::vector<std::string>* outAffectedFiles)
+{
     ankerl::unordered_dense::set<std::string> neededMixins;
 
     for (const auto& key : classKeys)
@@ -645,20 +567,10 @@ void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::stri
                 for (const auto& b : sig.bases)
                 {
                     std::string clean = CleanBaseType(b);
-                    auto baseIt = m_symbols.find(clean);
-                    if (baseIt != m_symbols.end() && baseIt->second)
+                    if (IsMixinClassLocked(clean))
                     {
-                        for (const auto& cand : *baseIt->second)
-                        {
-                            if (cand.type == SymbolType::Class &&
-                                std::holds_alternative<ClassSignature>(cand.signature) &&
-                                cand.GetClass().modifiers.isMixin)
-                            {
-                                sig.includedMixins.push_back(clean);
-                                neededMixins.insert(clean);
-                                break;
-                            }
-                        }
+                        sig.includedMixins.push_back(clean);
+                        neededMixins.insert(clean);
                     }
                 }
 
@@ -669,8 +581,11 @@ void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::stri
             }
         }
     }
+    return neededMixins;
+}
 
-    // 2. Clean up previously synthesized symbols for these host classes
+void SymbolTable::CleanSynthesizedSymbolsForClassesLocked(const std::vector<std::string>& classKeys)
+{
     for (const auto& key : classKeys)
     {
         auto it = m_symbols.find(key);
@@ -680,46 +595,46 @@ void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::stri
         }
         for (const auto& sym : *it->second)
         {
-            if (sym.type == SymbolType::Class)
+            if (sym.type != SymbolType::Class)
             {
-                const std::string hostQName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                const auto fileIt = m_keysByFile.find(sym.fileUri);
-                if (fileIt != m_keysByFile.end())
+                continue;
+            }
+            const std::string hostQName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            const auto fileIt = m_keysByFile.find(sym.fileUri);
+            if (fileIt == m_keysByFile.end())
+            {
+                continue;
+            }
+            const std::string prefix = hostQName + "::";
+            std::vector<std::string> keysToClean;
+            for (const auto& k : fileIt->second)
+            {
+                if (k.starts_with(prefix))
                 {
-                    const std::string prefix = hostQName + "::";
-                    std::vector<std::string> keysToClean;
-                    for (const auto& k : fileIt->second)
+                    auto bIt = m_symbols.find(k);
+                    if (bIt != m_symbols.end() && bIt->second)
                     {
-                        if (k.starts_with(prefix))
+                        auto& vec = MutableBucket(bIt->second);
+                        std::erase_if(vec, [](const Symbol& s) { return s.isSynthesized; });
+                        if (vec.empty())
                         {
-                            auto bIt = m_symbols.find(k);
-                            if (bIt != m_symbols.end() && bIt->second)
-                            {
-                                auto& vec = MutableBucket(bIt->second);
-                                std::erase_if(vec, [&](const Symbol& s) { return s.isSynthesized; });
-                                if (vec.empty())
-                                {
-                                    m_symbols.erase(bIt);
-                                    keysToClean.push_back(k);
-                                }
-                            }
+                            m_symbols.erase(bIt);
+                            keysToClean.push_back(k);
                         }
-                    }
-                    for (const auto& k : keysToClean)
-                    {
-                        fileIt->second.erase(k);
                     }
                 }
             }
+            for (const auto& k : keysToClean)
+            {
+                fileIt->second.erase(k);
+            }
         }
     }
+}
 
-    if (neededMixins.empty())
-    {
-        return;
-    }
-
-    // 3. Collect non-synthesized member functions of the needed mixins
+ankerl::unordered_dense::map<std::string, std::vector<Symbol>>
+SymbolTable::CollectMixinMemberFunctionsLocked(const ankerl::unordered_dense::set<std::string>& neededMixins) const
+{
     ankerl::unordered_dense::map<std::string, std::vector<Symbol>> mixinMembers;
     for (const auto& [k, bucket] : m_symbols)
     {
@@ -736,8 +651,60 @@ void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::stri
             }
         }
     }
+    return mixinMembers;
+}
 
-    // 4. Synthesize mixin member functions into each host class
+bool SymbolTable::HasSynthesizedMemberConflictLocked(const std::string& synthKey, const Symbol& mSym) const
+{
+    auto existingBucketIt = m_symbols.find(synthKey);
+    if (existingBucketIt == m_symbols.end() || !existingBucketIt->second)
+    {
+        return false;
+    }
+    for (const auto& existingSym : *existingBucketIt->second)
+    {
+        if (mSym.type == SymbolType::Function && existingSym.type == SymbolType::Function)
+        {
+            if (HasSameParameterList(existingSym, mSym))
+            {
+                return true;
+            }
+        }
+        else
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void SymbolTable::SynthesizeSingleMixinMemberLocked(const std::string& hostQName, const std::string& hostFileUri,
+                                                    const std::string& mixinName, const Symbol& mSym)
+{
+    const std::string synthKey = hostQName + "::" + mSym.name;
+    if (HasSynthesizedMemberConflictLocked(synthKey, mSym))
+    {
+        return;
+    }
+
+    Symbol synth = mSym;
+    synth.containerName = mSym.containerName.empty() ? mixinName : mSym.containerName;
+    synth.qualifiedName = synthKey;
+    synth.fileUri = mSym.fileUri;
+    synth.isSynthesized = true;
+    if (m_virtualMixinDocumentsEnabled)
+    {
+        synth.virtualFileUri = BuildVirtualMixinUri(hostQName, mixinName);
+    }
+
+    MutableBucket(m_symbols[synthKey]).push_back(std::move(synth));
+    IndexKeyForFileLocked(hostFileUri, synthKey);
+}
+
+void SymbolTable::SynthesizeMixinMembersIntoClassesLocked(
+    const std::vector<std::string>& classKeys,
+    const ankerl::unordered_dense::map<std::string, std::vector<Symbol>>& mixinMembers)
+{
     for (const auto& key : classKeys)
     {
         auto it = m_symbols.find(key);
@@ -772,54 +739,31 @@ void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::stri
 
                 for (const auto& mSym : mIt->second)
                 {
-                    const std::string synthKey = hostQName + "::" + mSym.name;
-
-                    // Check if already declared or synthesized in host class
-                    auto existingBucketIt = m_symbols.find(synthKey);
-                    bool alreadyPresent = false;
-                    if (existingBucketIt != m_symbols.end() && existingBucketIt->second)
-                    {
-                        for (const auto& existingSym : *existingBucketIt->second)
-                        {
-                            if (mSym.type == SymbolType::Function && existingSym.type == SymbolType::Function)
-                            {
-                                if (HasSameParameterList(existingSym, mSym))
-                                {
-                                    alreadyPresent = true;
-                                    break;
-                                }
-                            }
-                            else
-                            {
-                                alreadyPresent = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (alreadyPresent)
-                    {
-                        continue;
-                    }
-
-                    Symbol synth = mSym;
-                    // Retain originating containerName so callers know original source
-                    synth.containerName = mSym.containerName.empty() ? mixinName : mSym.containerName;
-                    synth.qualifiedName = synthKey;
-                    // Retain original mixin fileUri and ranges so Go-to-Definition navigates to the mixin source
-                    synth.fileUri = mSym.fileUri;
-                    synth.isSynthesized = true;
-                    if (m_virtualMixinDocumentsEnabled)
-                    {
-                        synth.virtualFileUri = BuildVirtualMixinUri(hostQName, mixinName);
-                    }
-
-                    MutableBucket(m_symbols[synthKey]).push_back(std::move(synth));
-                    IndexKeyForFileLocked(hostFileUri, synthKey);
+                    SynthesizeSingleMixinMemberLocked(hostQName, hostFileUri, mixinName, mSym);
                 }
             }
         }
     }
+}
+
+void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::string>& classKeys,
+                                                     std::vector<std::string>* outAffectedFiles)
+{
+    if (classKeys.empty())
+    {
+        return;
+    }
+
+    const auto neededMixins = UpdateIncludedMixinsForClassesLocked(classKeys, outAffectedFiles);
+    CleanSynthesizedSymbolsForClassesLocked(classKeys);
+
+    if (neededMixins.empty())
+    {
+        return;
+    }
+
+    const auto mixinMembers = CollectMixinMemberFunctionsLocked(neededMixins);
+    SynthesizeMixinMembersIntoClassesLocked(classKeys, mixinMembers);
 }
 
 void SymbolTable::ResolveIncludedMixinsLocked(std::vector<std::string>* outAffectedFiles)
@@ -1131,6 +1075,156 @@ void SymbolTable::EnsureRuleIndex() const
     GetRuleIndex();
 }
 
+namespace
+{
+void PrintFunctionSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
+                         const std::string& range)
+{
+    const auto& sig = sym.GetFunction();
+    const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+    std::vector<std::string> flags;
+    if (sig.modifiers.isShared)
+        flags.push_back("shared");
+    if (sig.modifiers.isOverride)
+        flags.push_back("override");
+    if (sig.modifiers.isFinal)
+        flags.push_back("final");
+    if (sig.modifiers.isReturnReference)
+        flags.push_back("ref_return");
+    if (sig.modifiers.isDelete)
+        flags.push_back("delete");
+    if (sig.modifiers.isExternal)
+        flags.push_back("external");
+    if (sig.modifiers.isExplicit)
+        flags.push_back("explicit");
+
+    std::string paramsStr;
+    std::vector<std::string> paramLines;
+    BuildParamStrings(sig.parameters, paramsStr, paramLines);
+
+    logger->LogInfo(fmt::format(
+        "  \u2022 [{}] Access: {} | Ret: \"{}\" | Name: \"{}\" | Params: \"{}\" | Flags: {} | {}", typeStr,
+        AccessModifierToString(sig.modifiers.access), sig.returnType, nameStr, paramsStr, JoinFlags(flags), range));
+
+    for (const auto& line : paramLines)
+        logger->LogInfo(line);
+}
+
+void PrintVariableSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
+                         const std::string& range)
+{
+    const auto& sig = sym.GetVariable();
+    const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+    std::vector<std::string> flags;
+    if (sig.modifiers.isShared)
+        flags.push_back("shared");
+    if (sig.modifiers.isConst)
+        flags.push_back("const");
+    if (sig.modifiers.isHandle)
+        flags.push_back("handle");
+
+    std::string defaultStr = sig.defaultValue.empty() ? "" : fmt::format(" | Default: \"{}\"", sig.defaultValue);
+
+    logger->LogInfo(fmt::format("  \u2022 [{}] Access: {} | Type: \"{}\" | Name: \"{}\"{}  | Flags: {} | {}", typeStr,
+                                AccessModifierToString(sig.modifiers.access), sig.typeName, nameStr, defaultStr,
+                                JoinFlags(flags), range));
+}
+
+void PrintClassSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
+                      const std::string& range)
+{
+    const auto& sig = sym.GetClass();
+    const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+    std::vector<std::string> flags;
+    if (sig.modifiers.isShared)
+        flags.push_back("shared");
+    if (sig.modifiers.isMixin)
+        flags.push_back("mixin");
+    if (sig.modifiers.isAbstract)
+        flags.push_back("abstract");
+    if (sig.modifiers.isFinal)
+        flags.push_back("final");
+
+    std::string basesStr = sig.bases.empty() ? "" : fmt::format(" | Bases: \"{}\"", JoinStrings(sig.bases));
+
+    logger->LogInfo(fmt::format("  \u2022 [{}] Access: {} | Name: \"{}\"{}  | Flags: {} | {}", typeStr,
+                                AccessModifierToString(sig.modifiers.access), nameStr, basesStr, JoinFlags(flags),
+                                range));
+}
+
+void PrintInterfaceSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
+                          const std::string& range)
+{
+    const auto& sig = sym.GetInterface();
+    const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+    std::vector<std::string> flags;
+    if (sig.modifiers.isShared)
+        flags.push_back("shared");
+
+    std::string basesStr =
+        sig.inheritedInterfaces.empty() ? "" : fmt::format(" | Extends: \"{}\"", JoinStrings(sig.inheritedInterfaces));
+
+    logger->LogInfo(fmt::format("  \u2022 [{}] Name: \"{}\"{}  | Flags: {} | {}", typeStr, nameStr, basesStr,
+                                JoinFlags(flags), range));
+}
+
+void PrintOtherSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
+                      const std::string& range)
+{
+    const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+    switch (sym.type)
+    {
+    case SymbolType::Enum:
+    {
+        const auto& sig = sym.GetEnum();
+        std::vector<std::string> flags;
+        if (sig.modifiers.isShared)
+            flags.push_back("shared");
+        logger->LogInfo(
+            fmt::format("  \u2022 [{}] Name: \"{}\" | Flags: {} | {}", typeStr, nameStr, JoinFlags(flags), range));
+        break;
+    }
+    case SymbolType::CallReference:
+    {
+        const auto& sig = sym.GetCallReference();
+        std::string objStr = sig.objectExpression.empty() ? "" : fmt::format(" | Object: \"{}\"", sig.objectExpression);
+        logger->LogInfo(fmt::format("  \u2022 [{}] Callee: \"{}\"{}  | Method: {} | {}", typeStr, sig.calleeName,
+                                    objStr, sig.isMethodCall ? "true" : "false", range));
+        break;
+    }
+    default:
+        logger->LogInfo(fmt::format("  \u2022 [{}] Name: \"{}\" | {}", typeStr, nameStr, range));
+        break;
+    }
+}
+
+void PrintSingleSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym)
+{
+    const std::string typeStr = SymbolTypeToString(sym.type);
+    const std::string range = fmt::format("[L{}:C{}-L{}:C{}]", sym.startLine + 1, sym.startCharacter + 1,
+                                          sym.endLine + 1, sym.endCharacter + 1);
+
+    switch (sym.type)
+    {
+    case SymbolType::Function:
+        PrintFunctionSymbol(logger, sym, typeStr, range);
+        break;
+    case SymbolType::Variable:
+        PrintVariableSymbol(logger, sym, typeStr, range);
+        break;
+    case SymbolType::Class:
+        PrintClassSymbol(logger, sym, typeStr, range);
+        break;
+    case SymbolType::Interface:
+        PrintInterfaceSymbol(logger, sym, typeStr, range);
+        break;
+    default:
+        PrintOtherSymbol(logger, sym, typeStr, range);
+        break;
+    }
+}
+} // namespace
+
 void SymbolTable::PrintSymbols(angel_lsp::utils::LspLogger* logger) const
 {
     if (!logger)
@@ -1143,147 +1237,7 @@ void SymbolTable::PrintSymbols(angel_lsp::utils::LspLogger* logger) const
     {
         for (const auto& sym : *symbols)
         {
-            const std::string typeStr = SymbolTypeToString(sym.type);
-            const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-            const std::string range = fmt::format("[L{}:C{}-L{}:C{}]", sym.startLine + 1, sym.startCharacter + 1,
-                                                  sym.endLine + 1, sym.endCharacter + 1);
-
-            switch (sym.type)
-            {
-            case SymbolType::Function:
-            {
-                const auto& sig = sym.GetFunction();
-                std::vector<std::string> flags;
-                if (sig.modifiers.isShared)
-                    flags.push_back("shared");
-                if (sig.modifiers.isOverride)
-                    flags.push_back("override");
-                if (sig.modifiers.isFinal)
-                    flags.push_back("final");
-                if (sig.modifiers.isReturnReference)
-                    flags.push_back("ref_return");
-                if (sig.modifiers.isDelete)
-                    flags.push_back("delete");
-                if (sig.modifiers.isExternal)
-                    flags.push_back("external");
-                if (sig.modifiers.isExplicit)
-                    flags.push_back("explicit");
-
-                std::string paramsStr;
-                std::vector<std::string> paramLines;
-                BuildParamStrings(sig.parameters, paramsStr, paramLines);
-
-                logger->LogInfo(fmt::format(
-                    "  \u2022 [{}] Access: {} | Ret: \"{}\" | Name: \"{}\" | Params: \"{}\" | Flags: {} | {}", typeStr,
-                    AccessModifierToString(sig.modifiers.access), sig.returnType, nameStr, paramsStr, JoinFlags(flags),
-                    range));
-
-                for (const auto& line : paramLines)
-                    logger->LogInfo(line);
-
-                break;
-            }
-            case SymbolType::Variable:
-            {
-                const auto& sig = sym.GetVariable();
-                std::vector<std::string> flags;
-                if (sig.modifiers.isShared)
-                    flags.push_back("shared");
-                if (sig.modifiers.isConst)
-                    flags.push_back("const");
-                if (sig.modifiers.isHandle)
-                    flags.push_back("handle");
-
-                std::string defaultStr =
-                    sig.defaultValue.empty() ? "" : fmt::format(" | Default: \"{}\"", sig.defaultValue);
-
-                logger->LogInfo(
-                    fmt::format("  \u2022 [{}] Access: {} | Type: \"{}\" | Name: \"{}\"{}  | Flags: {} | {}", typeStr,
-                                AccessModifierToString(sig.modifiers.access), sig.typeName, nameStr, defaultStr,
-                                JoinFlags(flags), range));
-                break;
-            }
-            case SymbolType::Class:
-            {
-                const auto& sig = sym.GetClass();
-                std::vector<std::string> flags;
-                if (sig.modifiers.isShared)
-                    flags.push_back("shared");
-                if (sig.modifiers.isMixin)
-                    flags.push_back("mixin");
-                if (sig.modifiers.isAbstract)
-                    flags.push_back("abstract");
-                if (sig.modifiers.isFinal)
-                    flags.push_back("final");
-
-                std::string basesStr = sig.bases.empty() ? "" : fmt::format(" | Bases: \"{}\"", JoinStrings(sig.bases));
-
-                logger->LogInfo(fmt::format("  \u2022 [{}] Access: {} | Name: \"{}\"{}  | Flags: {} | {}", typeStr,
-                                            AccessModifierToString(sig.modifiers.access), nameStr, basesStr,
-                                            JoinFlags(flags), range));
-                break;
-            }
-            case SymbolType::Interface:
-            {
-                const auto& sig = sym.GetInterface();
-                std::vector<std::string> flags;
-                if (sig.modifiers.isShared)
-                    flags.push_back("shared");
-
-                std::string basesStr = sig.inheritedInterfaces.empty()
-                                           ? ""
-                                           : fmt::format(" | Extends: \"{}\"", JoinStrings(sig.inheritedInterfaces));
-
-                logger->LogInfo(fmt::format("  \u2022 [{}] Name: \"{}\"{}  | Flags: {} | {}", typeStr, nameStr,
-                                            basesStr, JoinFlags(flags), range));
-                break;
-            }
-            case SymbolType::Enum:
-            {
-                const auto& sig = sym.GetEnum();
-                std::vector<std::string> flags;
-                if (sig.modifiers.isShared)
-                    flags.push_back("shared");
-
-                logger->LogInfo(fmt::format("  \u2022 [{}] Name: \"{}\" | Flags: {} | {}", typeStr, nameStr,
-                                            JoinFlags(flags), range));
-                break;
-            }
-            case SymbolType::Typedef:
-            {
-                logger->LogInfo(fmt::format("  \u2022 [{}] Name: \"{}\" | {}", typeStr, nameStr, range));
-                break;
-            }
-            case SymbolType::Funcdef:
-            {
-                logger->LogInfo(fmt::format("  \u2022 [{}] Name: \"{}\" | {}", typeStr, nameStr, range));
-                break;
-            }
-            case SymbolType::Property:
-            {
-                logger->LogInfo(fmt::format("  \u2022 [{}] Name: \"{}\" | {}", typeStr, nameStr, range));
-                break;
-            }
-            case SymbolType::Namespace:
-            {
-                logger->LogInfo(fmt::format("  \u2022 [{}] Name: \"{}\" | {}", typeStr, nameStr, range));
-                break;
-            }
-            case SymbolType::CallReference:
-            {
-                const auto& sig = sym.GetCallReference();
-                std::string objStr =
-                    sig.objectExpression.empty() ? "" : fmt::format(" | Object: \"{}\"", sig.objectExpression);
-                logger->LogInfo(fmt::format("  \u2022 [{}] Callee: \"{}\"{}  | Method: {} | {}", typeStr,
-                                            sig.calleeName, objStr, sig.isMethodCall ? "true" : "false", range));
-                break;
-            }
-            default:
-            {
-                logger->LogInfo(fmt::format("  \u2022 [{}] Name: \"{}\" | {}", typeStr, nameStr, range));
-                break;
-            }
-            }
+            PrintSingleSymbol(logger, sym);
         }
     }
 }
@@ -1324,6 +1278,79 @@ inline void HashParameter(uint64_t& h, const ParameterInformation& p)
     HashString(h, p.defaultValue);
 }
 
+void HashFunctionSignature(uint64_t& h, const FunctionSignature& fn)
+{
+    HashString(h, fn.returnType);
+    HashCombine(h, static_cast<uint64_t>(fn.returnTypeKind));
+    uint32_t fnFlags =
+        (fn.returnIsArray ? 1 : 0) | ((fn.returnIsConst ? 1 : 0) << 1) | ((fn.isInterfaceMethod ? 1 : 0) << 2);
+    HashCombine(h, fnFlags);
+    HashModifiers(h, fn.modifiers);
+    HashCombine(h, fn.parameters.size());
+    for (const auto& p : fn.parameters)
+    {
+        HashParameter(h, p);
+    }
+}
+
+void HashVariableSignature(uint64_t& h, const VariableSignature& v)
+{
+    HashString(h, v.typeName);
+    HashCombine(h, static_cast<uint64_t>(v.typeKind));
+    uint32_t vFlags = (v.isArray ? 1 : 0) | ((v.isVirtualProperty ? 1 : 0) << 1) | ((v.hasGet ? 1 : 0) << 2) |
+                      ((v.hasSet ? 1 : 0) << 3);
+    HashCombine(h, vFlags);
+    HashModifiers(h, v.modifiers);
+}
+
+void HashClassSignature(uint64_t& h, const ClassSignature& cls)
+{
+    HashModifiers(h, cls.modifiers);
+    for (const auto& b : cls.bases)
+    {
+        HashString(h, b);
+    }
+    for (const auto& m : cls.includedMixins)
+    {
+        HashString(h, m);
+    }
+    for (const auto& t : cls.templateParams)
+    {
+        HashString(h, t);
+    }
+}
+
+void HashInterfaceSignature(uint64_t& h, const InterfaceSignature& iface)
+{
+    HashModifiers(h, iface.modifiers);
+    for (const auto& b : iface.inheritedInterfaces)
+    {
+        HashString(h, b);
+    }
+}
+
+void HashEnumSignature(uint64_t& h, const EnumSignature& enm)
+{
+    HashModifiers(h, enm.modifiers);
+    for (const auto& m : enm.members)
+    {
+        HashString(h, m.name);
+        HashString(h, m.value);
+    }
+}
+
+void HashFuncdefSignature(uint64_t& h, const FuncdefSignature& fd)
+{
+    HashString(h, fd.returnType);
+    HashCombine(h, static_cast<uint64_t>(fd.returnTypeKind));
+    HashModifiers(h, fd.modifiers);
+    HashCombine(h, fd.parameters.size());
+    for (const auto& p : fd.parameters)
+    {
+        HashParameter(h, p);
+    }
+}
+
 void HashSymbolInterface(uint64_t& h, const Symbol& sym)
 {
     HashCombine(h, static_cast<uint64_t>(sym.type));
@@ -1333,64 +1360,23 @@ void HashSymbolInterface(uint64_t& h, const Symbol& sym)
 
     if (std::holds_alternative<FunctionSignature>(sym.signature))
     {
-        const auto& fn = std::get<FunctionSignature>(sym.signature);
-        HashString(h, fn.returnType);
-        HashCombine(h, static_cast<uint64_t>(fn.returnTypeKind));
-        uint32_t fnFlags =
-            (fn.returnIsArray ? 1 : 0) | ((fn.returnIsConst ? 1 : 0) << 1) | ((fn.isInterfaceMethod ? 1 : 0) << 2);
-        HashCombine(h, fnFlags);
-        HashModifiers(h, fn.modifiers);
-        HashCombine(h, fn.parameters.size());
-        for (const auto& p : fn.parameters)
-        {
-            HashParameter(h, p);
-        }
+        HashFunctionSignature(h, std::get<FunctionSignature>(sym.signature));
     }
     else if (std::holds_alternative<VariableSignature>(sym.signature))
     {
-        const auto& v = std::get<VariableSignature>(sym.signature);
-        HashString(h, v.typeName);
-        HashCombine(h, static_cast<uint64_t>(v.typeKind));
-        uint32_t vFlags = (v.isArray ? 1 : 0) | ((v.isVirtualProperty ? 1 : 0) << 1) | ((v.hasGet ? 1 : 0) << 2) |
-                          ((v.hasSet ? 1 : 0) << 3);
-        HashCombine(h, vFlags);
-        HashModifiers(h, v.modifiers);
+        HashVariableSignature(h, std::get<VariableSignature>(sym.signature));
     }
     else if (std::holds_alternative<ClassSignature>(sym.signature))
     {
-        const auto& cls = std::get<ClassSignature>(sym.signature);
-        HashModifiers(h, cls.modifiers);
-        for (const auto& b : cls.bases)
-        {
-            HashString(h, b);
-        }
-        for (const auto& m : cls.includedMixins)
-        {
-            HashString(h, m);
-        }
-        for (const auto& t : cls.templateParams)
-        {
-            HashString(h, t);
-        }
+        HashClassSignature(h, std::get<ClassSignature>(sym.signature));
     }
     else if (std::holds_alternative<InterfaceSignature>(sym.signature))
     {
-        const auto& iface = std::get<InterfaceSignature>(sym.signature);
-        HashModifiers(h, iface.modifiers);
-        for (const auto& b : iface.inheritedInterfaces)
-        {
-            HashString(h, b);
-        }
+        HashInterfaceSignature(h, std::get<InterfaceSignature>(sym.signature));
     }
     else if (std::holds_alternative<EnumSignature>(sym.signature))
     {
-        const auto& enm = std::get<EnumSignature>(sym.signature);
-        HashModifiers(h, enm.modifiers);
-        for (const auto& m : enm.members)
-        {
-            HashString(h, m.name);
-            HashString(h, m.value);
-        }
+        HashEnumSignature(h, std::get<EnumSignature>(sym.signature));
     }
     else if (std::holds_alternative<TypedefSignature>(sym.signature))
     {
@@ -1400,15 +1386,7 @@ void HashSymbolInterface(uint64_t& h, const Symbol& sym)
     }
     else if (std::holds_alternative<FuncdefSignature>(sym.signature))
     {
-        const auto& fd = std::get<FuncdefSignature>(sym.signature);
-        HashString(h, fd.returnType);
-        HashCombine(h, static_cast<uint64_t>(fd.returnTypeKind));
-        HashModifiers(h, fd.modifiers);
-        HashCombine(h, fd.parameters.size());
-        for (const auto& p : fd.parameters)
-        {
-            HashParameter(h, p);
-        }
+        HashFuncdefSignature(h, std::get<FuncdefSignature>(sym.signature));
     }
 }
 } // namespace

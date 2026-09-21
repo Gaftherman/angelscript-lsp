@@ -673,6 +673,47 @@ class SymbolTable
                                             std::vector<std::string>* outAffectedFiles = nullptr);
     uint64_t ComputeDocumentInterfaceHashLocked(const std::string& fileUri) const;
 
+    /** @brief Checks if document contains any mixin symbols. Caller holds the write lock. */
+    bool HasMixinSymbolLocked(const std::string& fileUri) const;
+
+    /** @brief Checks if a named symbol is a mixin class. Caller holds the write lock. */
+    bool IsMixinClassLocked(const std::string& cleanName) const;
+
+    /** @brief Builds partial indexes for unique affected files excluding excludeUri. Caller holds the write lock. */
+    std::vector<std::pair<std::string, rules::RuleIndexPartial>>
+    BuildAffectedPartialsLocked(const std::vector<std::string>& affectedFiles, const std::string& excludeUri) const;
+
+    /** @brief Applies document and affected partials to rule index. Caller holds write lock on table. */
+    void ApplyRuleIndexPartialsLocked(const std::string& fileUri, std::optional<rules::RuleIndexPartial> freshPartial,
+                                      std::vector<std::pair<std::string, rules::RuleIndexPartial>> affectedPartials);
+
+    /** @brief Applies an incremental single-symbol partial to the rule index. Caller holds write lock on table. */
+    void ApplySingleSymbolPartialLocked(const Symbol& symbol);
+
+    /** @brief Collects mixin member functions for needed mixin names. Caller holds write lock. */
+    ankerl::unordered_dense::map<std::string, std::vector<Symbol>>
+    CollectMixinMemberFunctionsLocked(const ankerl::unordered_dense::set<std::string>& neededMixins) const;
+
+    /** @brief Checks whether a synthesized member conflicts with an existing member. Caller holds write lock. */
+    bool HasSynthesizedMemberConflictLocked(const std::string& synthKey, const Symbol& mSym) const;
+
+    /** @brief Synthesizes a single mixin member into a host class. Caller holds write lock. */
+    void SynthesizeSingleMixinMemberLocked(const std::string& hostQName, const std::string& hostFileUri,
+                                           const std::string& mixinName, const Symbol& mSym);
+
+    /** @brief Synthesizes mixin member functions into host classes. Caller holds write lock. */
+    void SynthesizeMixinMembersIntoClassesLocked(
+        const std::vector<std::string>& classKeys,
+        const ankerl::unordered_dense::map<std::string, std::vector<Symbol>>& mixinMembers);
+
+    /** @brief Cleans up previously synthesized symbols for host classes. Caller holds write lock. */
+    void CleanSynthesizedSymbolsForClassesLocked(const std::vector<std::string>& classKeys);
+
+    /** @brief Updates included mixins on class signatures and collects needed mixin names. Caller holds write lock. */
+    ankerl::unordered_dense::set<std::string>
+    UpdateIncludedMixinsForClassesLocked(const std::vector<std::string>& classKeys,
+                                         std::vector<std::string>* outAffectedFiles);
+
     mutable std::shared_mutex m_mutex;
     ankerl::unordered_dense::map<std::string, std::shared_ptr<std::vector<Symbol>>, TransparentStringHash,
                                  std::equal_to<>>
