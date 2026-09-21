@@ -100,10 +100,16 @@ std::string PrimaryLanguageSubtag(const std::string& locale)
 // scripts/check-diagnostic-codes.py holds this list too and fails the build when the two drift
 // apart, in either direction. It is what found the two entries corrected above.
 // ---------------------------------------------------------------------------------
-I18n::I18n(const std::string& localeTag) : m_locale(PrimaryLanguageSubtag(localeTag))
+namespace
 {
-    const std::string& locale = m_locale;
+using MessageMap = ankerl::unordered_dense::map<std::string, std::string>;
 
+/**
+ * @brief Populates English diagnostic messages (batch 1).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateEnglishMessages1(MessageMap& m_messages)
+{
     m_messages["as-err-duplicate-symbol"] = "Duplicate symbol declaration '{}' in the same scope.";
     m_messages["as-err-mixin-final"] = "A mixin ('{}') cannot be declared as 'final'.";
     m_messages["as-err-mixin-abstract"] = "A mixin ('{}') cannot be declared as 'abstract'.";
@@ -135,6 +141,14 @@ I18n::I18n(const std::string& localeTag) : m_locale(PrimaryLanguageSubtag(locale
     m_messages["as-warn-unsupported-directive"] =
         "CScriptBuilder does not recognise '#{}', so it is left in the source and the compiler rejects it. If the host "
         "patched its copy of the add-on to support it, say so with the matching angelscript.preprocessor setting.";
+}
+
+/**
+ * @brief Populates English diagnostic messages (batch 2).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateEnglishMessages2(MessageMap& m_messages)
+{
     m_messages["as-err-unknown-directive"] =
         "'#{}' is not a directive. CScriptBuilder leaves anything it does not recognise in the source, and the "
         "compiler then rejects it. The names it reads are include, if, endif, pragma, else, elif, ifdef, ifndef and "
@@ -173,6 +187,14 @@ I18n::I18n(const std::string& localeTag) : m_locale(PrimaryLanguageSubtag(locale
     m_messages["as-err-destructor-param"] = "The destructor '{}' must not have any parameters.";
     m_messages["as-err-destructor-return-type"] = "The destructor '{}' must not have a return type.";
     m_messages["as-err-destructor-delete"] = "Cannot flag destructor '{}' with delete.";
+}
+
+/**
+ * @brief Populates English diagnostic messages (batch 3).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateEnglishMessages3(MessageMap& m_messages)
+{
     m_messages["as-err-class-member-const"] = "Class member '{}' cannot be declared as const.";
     m_messages["as-err-delete-with-body"] = "Deleted function '{}' cannot have a body.";
     m_messages["as-err-void-parameter"] = "Parameter '{}' in function '{}' cannot be of type 'void'.";
@@ -207,6 +229,14 @@ I18n::I18n(const std::string& localeTag) : m_locale(PrimaryLanguageSubtag(locale
     m_messages["as-err-typedef-non-primitive"] = "Typedef base type '{}' must be a primitive data type.";
     m_messages["as-err-signature-mismatch-func-handle"] = "Function signature does not match target funcdef signature.";
     m_messages["as-err-invalid-reference-return"] = "Not a valid reference type '{}'.";
+}
+
+/**
+ * @brief Populates English diagnostic messages (batch 4).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateEnglishMessages4(MessageMap& m_messages)
+{
     m_messages["as-err-external-not-found"] = "External shared entity '{}' not found.";
     m_messages["as-err-shared-not-allowed-on-entity"] = "Variables cannot be declared as 'shared' ('{}').";
     m_messages["as-err-shared-cannot-access-non-shared"] = "Shared entity cannot access non-shared symbol '{}'.";
@@ -233,6 +263,14 @@ I18n::I18n(const std::string& localeTag) : m_locale(PrimaryLanguageSubtag(locale
     m_messages["as-err-not-all-paths-return"] = "Not all paths of '{}' return a value.";
     m_messages["as-err-return-value-required"] = "'{}' must return a value.";
     m_messages["as-err-condition-not-boolean"] = "A condition must be a bool, not '{}'.";
+}
+
+/**
+ * @brief Populates English diagnostic messages (batch 5).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateEnglishMessages5(MessageMap& m_messages)
+{
     m_messages["as-err-const-assignment"] = "Expression is not an l-value: '{}' is declared const.";
     m_messages["as-err-const-method-required"] =
         "No matching signatures to '{}::{}() const'. The object is const, so only a const method can be called on it.";
@@ -278,6 +316,14 @@ I18n::I18n(const std::string& localeTag) : m_locale(PrimaryLanguageSubtag(locale
         "'{}' is a class, and under asEP_BOOL_CONVERSION_MODE 0 - the engine's own default - a class may not stand "
         "where a bool is expected, even one declaring '{}'. Call it explicitly, which compiles under both modes, or "
         "set angelscript.engine.boolConversionMode to 1 if your host does.";
+}
+
+/**
+ * @brief Populates English diagnostic messages (batch 6).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateEnglishMessages6(MessageMap& m_messages)
+{
     m_messages["as-hint-funcdef-missing"] = "'{}' is a function, not a type. A function handle needs a funcdef naming "
                                             "its signature; the compiler reports such a name as not being a data type.";
     m_messages["as-err-multiline-string"] =
@@ -324,6 +370,14 @@ I18n::I18n(const std::string& localeTag) : m_locale(PrimaryLanguageSubtag(locale
     m_messages["as-err-invalid-foreach-container"] =
         "Type '{}' is not a valid foreach container. Must implement opForBegin, opForEnd, opForNext and opForValue.";
     m_messages["as-err-no-matching-operator"] = "No matching operator '{}' found for types '{}' and '{}'.";
+}
+
+/**
+ * @brief Populates English diagnostic messages (batch 7).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateEnglishMessages7(MessageMap& m_messages)
+{
     m_messages["as-err-auto-requires-initializer"] = "'auto' variable requires an initializer.";
     m_messages["as-err-cannot-infer-void"] = "Cannot deduce 'auto' type from expression of type 'void'.";
     m_messages["as-err-cannot-infer-null"] = "Cannot deduce 'auto' type from 'null'.";
@@ -350,286 +404,368 @@ I18n::I18n(const std::string& localeTag) : m_locale(PrimaryLanguageSubtag(locale
         "is expected or assign it to a funcdef handle.";
     m_messages["as-err-readonly-handle"] = "Cannot reassign read-only handle '{}'.";
     m_messages["as-err-expression-is-data-type"] = "Expression '{}' is a data type.";
+}
 
-    if (locale == "es")
+/**
+ * @brief Populates all English diagnostic messages.
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateEnglishMessages(MessageMap& m_messages)
+{
+    PopulateEnglishMessages1(m_messages);
+    PopulateEnglishMessages2(m_messages);
+    PopulateEnglishMessages3(m_messages);
+    PopulateEnglishMessages4(m_messages);
+    PopulateEnglishMessages5(m_messages);
+    PopulateEnglishMessages6(m_messages);
+    PopulateEnglishMessages7(m_messages);
+}
+
+/**
+ * @brief Populates Spanish diagnostic messages (batch 1).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateSpanishMessages1(MessageMap& m_messages)
+{
+    m_messages["as-err-duplicate-symbol"] = "Redeclaración de símbolo '{}' en el mismo ámbito.";
+    m_messages["as-err-mixin-final"] = "Un mixin ('{}') no puede ser declarado como 'final'.";
+    m_messages["as-err-mixin-abstract"] = "Un mixin ('{}') no puede ser declarado como 'abstract'.";
+    m_messages["as-err-missing-body"] = "La función '{}' debe tener un cuerpo '{{}}'.";
+    m_messages["as-err-out-param-default"] = "El parámetro '&out' '{}' no puede tener un valor por defecto.";
+    m_messages["as-err-template-class-not-supported"] =
+        "La definición de clases plantilla/genéricas ('{}') solo está permitida en archivos predefinidos.";
+    m_messages["as-err-inherit-final"] = "No se puede heredar de la clase final '{}'.";
+    m_messages["as-syntax-error"] = "Error de sintaxis: \"{}\"";
+    m_messages["as-syntax-error-missing"] = "Error de sintaxis: falta '{}'";
+    m_messages["as-syntax-error-generic"] = "Error de sintaxis";
+    m_messages["as-err-declaration-missing-body"] =
+        "'{}' debe tener un cuerpo '{{}}'. Solo 'external shared' se declara sin él.";
+    m_messages["as-err-external-not-shared"] = "'external' requiere 'shared' en '{}'.";
+    m_messages["as-err-property-duplicate-accessor"] = "La propiedad virtual '{}' declara '{}' más de una vez.";
+    m_messages["as-err-unresolved-type"] = "Tipo desconocido '{}'.";
+    m_messages["as-err-handle-on-primitive"] = "No se puede usar handle '@' en el tipo primitivo '{}'.";
+    m_messages["as-err-void-variable"] = "No se puede declarar una variable de tipo 'void'.";
+    m_messages["as-err-multi-class-inherit"] = "La clase '{}' no puede heredar de múltiples clases.";
+    m_messages["as-err-base-not-found"] = "Tipo base '{}' no encontrado.";
+    m_messages["as-err-funcdef-not-handle"] =
+        "Variables o parámetros de tipo funcdef '{}' deben declararse como handle ('{}@').";
+    m_messages["as-err-duplicate-enum-member"] = "Miembro de enum duplicado '{}'.";
+    m_messages["as-err-duplicate-param"] = "Nombre de parámetro '{}' duplicado en la función '{}'.";
+    m_messages["as-warn-shadow-global"] = "El parámetro '{}' oculta una variable global con el mismo nombre.";
+    m_messages["as-hint-accessor-disabled"] =
+        "El tipo '{}' llega a '{}' mediante un accesor de propiedad de script, y este host los tiene desactivados "
+        "(asEP_PROPERTY_ACCESSOR_MODE 0 o 1). El compilador no lo acepta; llama a la funcion get_ o set_ "
+        "directamente.";
+    m_messages["as-warn-unsupported-directive"] =
+        "CScriptBuilder no reconoce '#{}', así que se queda en el código y el compilador lo rechaza. Si el host "
+        "parcheó su copia del add-on para soportarlo, indícalo con la opción angelscript.preprocessor "
+        "correspondiente.";
+}
+
+/**
+ * @brief Populates Spanish diagnostic messages (batch 2).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateSpanishMessages2(MessageMap& m_messages)
+{
+    m_messages["as-err-unknown-directive"] =
+        "'#{}' no es una directiva. CScriptBuilder deja en el código todo lo que no reconoce, y entonces el "
+        "compilador lo rechaza. Los nombres que lee son include, if, endif, pragma, else, elif, ifdef, ifndef y "
+        "define.";
+    m_messages["as-err-directive-space-after-hash"] =
+        "El nombre de una directiva tiene que ir pegado a '#'. '# {}' se lee como un '#' suelto y el compilador "
+        "rechaza la línea; '#{}' sí compila.";
+    m_messages["as-err-include-not-quoted"] =
+        "La ruta de un #include tiene que ir entre comillas dobles. Sin ellas CScriptBuilder no lee ningún nombre "
+        "de archivo, deja la línea en el código y el compilador la rechaza.";
+    m_messages["as-warn-include-not-found"] = "No se encontró el archivo incluido '{}'.";
+    m_messages["as-err-circular-inherit"] = "Herencia circular detectada: '{}' hereda de sí misma.";
+    m_messages["as-err-const-out-param"] = "El parámetro '{}' no puede ser 'const' y '&out' al mismo tiempo.";
+    m_messages["as-err-interface-impl-missing"] =
+        "La clase '{}' no implementa el método de interfaz '{}' de la interfaz '{}'.";
+    m_messages["as-err-attribute-repeated"] = "El atributo '{}' se informa múltiples veces.";
+    m_messages["as-err-reserved-keyword-name"] = "Se encontró la palabra reservada '{}' en lugar de un identificador.";
+    m_messages["as-err-reserved-word-as-parameter-name"] =
+        "La palabra reservada '{}' no se puede usar como un identificador aquí.";
+    m_messages["as-err-name-conflict"] = "Conflicto de nombre. '{}' ya está declarado como {}.";
+    m_messages["as-err-const-void-return"] = "El tipo de retorno no puede ser 'const void'.";
+    m_messages["as-err-global-function-qualifiers"] = "La función global '{}' no puede declararse 'const'.";
+    m_messages["as-err-override-no-base"] = "El método '{}' marcado como override no reemplaza ningún método de "
+                                            "clase base o interfaz en la clase '{}'.";
+    m_messages["as-err-default-param-order"] = "Todos los parámetros subsiguientes después del primer valor por "
+                                               "defecto deben tener valores por defecto en la función '{}'.";
+    m_messages["as-err-inout-on-primitive"] =
+        "Solo los tipos de objeto que admiten referencias pueden usar &inout ('{}').";
+    m_messages["as-err-global-variable-access-modifier"] =
+        "La variable global o de namespace '{}' no puede tener modificadores de acceso (private/protected).";
+    m_messages["as-err-enum-scope-required"] =
+        "'{}' necesita el ámbito de su enum en este host, que construye su motor con asEP_REQUIRE_ENUM_SCOPE.";
+    m_messages["as-err-global-vars-disallowed"] =
+        "La variable global '{}' no está permitida: la aplicación ha deshabilitado las variables globales.";
+    m_messages["as-err-void-reference"] = "El tipo 'void' no puede ser una referencia.";
+    m_messages["as-err-property-accessor-missing-body"] = "El accesor de propiedad '{}' debe tener una implementación.";
+    m_messages["as-err-destructor-param"] = "El destructor '{}' no debe tener ningún parámetro.";
+    m_messages["as-err-destructor-return-type"] = "El destructor '{}' no debe tener un tipo de retorno.";
+    m_messages["as-err-destructor-delete"] = "No se puede marcar el destructor '{}' con '= delete'.";
+}
+
+/**
+ * @brief Populates Spanish diagnostic messages (batch 3).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateSpanishMessages3(MessageMap& m_messages)
+{
+    m_messages["as-err-class-member-const"] = "El miembro de clase '{}' no puede ser declarado como 'const'.";
+    m_messages["as-err-delete-with-body"] = "La función eliminada con '= delete' ('{}') no puede tener un cuerpo.";
+    m_messages["as-err-void-parameter"] = "El parámetro '{}' en la función '{}' no puede ser de tipo 'void'.";
+    m_messages["as-err-binary-operator-arity"] =
+        "La sobrecarga del operador binario '{}' debe tomar exactamente 1 parámetro.";
+    m_messages["as-err-opindex-no-params"] = "El operador de índice 'opIndex' debe tomar al menos 1 parámetro.";
+    m_messages["as-err-opequals-return-bool"] = "El operador de igualdad 'opEquals' debe retornar 'bool'.";
+    m_messages["as-err-opcmp-return-int"] = "El operador de comparación 'opCmp' debe retornar 'int'.";
+    m_messages["as-err-override-final-method"] =
+        "No se puede sobrescribir el método '{}' declarado como 'final' en la clase base '{}'.";
+    m_messages["as-err-enum-invalid-initializer"] =
+        "El inicializador del miembro de enum '{}' debe ser una expresión entera constante.";
+    m_messages["as-err-standalone-reference"] = "La variable de referencia independiente '{}' no está soportada.";
+    m_messages["as-err-delete-with-other-qualifier"] =
+        "No se puede marcar con modificadores adicionales la función '{}' que será eliminada con '= delete'.";
+    m_messages["as-err-delete-not-auto-generated"] =
+        "No se puede marcar como eliminada la función '{}' porque el motor no la autogenera. Solo pueden "
+        "eliminarse el constructor por defecto, el constructor de copia u 'opAssign'.";
+    m_messages["as-err-explicit-not-member"] = "'explicit' solo se permite en un método de clase, y '{}' no lo es.";
+    m_messages["as-err-interface-method-attribute"] = "Un método de interfaz no puede llevar el atributo '{}' ('{}').";
+    m_messages["as-err-funcdef-attribute"] = "Un funcdef no puede llevar el atributo '{}' ('{}').";
+    m_messages["as-warn-global-function-attribute"] =
+        "'{}' describe la relación de un método con su clase, así que no significa nada en la función global '{}'. "
+        "AngelScript lo acepta y lo ignora.";
+    m_messages["as-err-private-member-access"] = "Acceso ilegal al miembro privado '{}', declarado en la clase '{}'.";
+    m_messages["as-err-protected-member-access"] =
+        "Acceso ilegal al miembro protegido '{}', declarado en la clase '{}'. Un miembro protegido es accesible "
+        "desde una clase derivada, y únicamente a través de un objeto del tipo de esa misma clase.";
+    m_messages["as-err-member-not-found"] = "La clase '{}' no tiene ningún miembro '{}'.";
+    m_messages["as-err-virtual-property-signature"] =
+        "Firma no válida para la propiedad virtual '{}'. Un accesor 'get_' devuelve un valor y toma como mucho un "
+        "índice; un accesor 'set_' devuelve void y toma el valor, precedido opcionalmente por un índice.";
+    m_messages["as-err-array-invalid-template"] = "Intento de instanciar un parámetro de plantilla no válido ('{}').";
+    m_messages["as-err-typedef-non-primitive"] = "El tipo base del typedef ('{}') debe ser un tipo de dato primitivo.";
+    m_messages["as-err-signature-mismatch-func-handle"] =
+        "La firma de la función no coincide con la firma del funcdef objetivo.";
+    m_messages["as-err-invalid-reference-return"] = "No es un tipo de retorno por referencia válido ('{}').";
+}
+
+/**
+ * @brief Populates Spanish diagnostic messages (batch 4).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateSpanishMessages4(MessageMap& m_messages)
+{
+    m_messages["as-err-external-not-found"] = "Entidad compartida externa ('{}') no encontrada.";
+    m_messages["as-err-shared-not-allowed-on-entity"] = "Las variables no pueden declararse como 'shared' ('{}').";
+    m_messages["as-err-shared-cannot-access-non-shared"] =
+        "La entidad compartida no puede acceder al símbolo no compartido '{}'.";
+    m_messages["as-err-mixin-child-type"] = "La clase mixin ('{}') no puede contener declaraciones de tipos hijos.";
+    m_messages["as-err-mixin-virtual-property"] =
+        "La sintaxis de propiedad virtual actualmente no está soportada para clases mixin.";
+    m_messages["as-err-double-reference"] =
+        "Formato inválido de cualificador de referencia de parámetro para el tipo '{}'.";
+    m_messages["as-err-interface-constructor"] = "La interfaz '{}' no puede declarar constructores ni destructores.";
+    m_messages["as-err-mixin-constructor"] = "La clase mixin '{}' no puede declarar un constructor.";
+    m_messages["as-err-mixin-destructor"] = "La clase mixin '{}' no puede declarar un destructor.";
+    m_messages["as-err-mixin-inherit-class"] = "La clase mixin '{}' no puede heredar de la clase '{}'.";
+    m_messages["as-err-mixin-instantiation-member-not-found"] =
+        "En el mixin '{}' instanciado para '{}': El miembro '{}' no está declarado en '{}' o sus clases base.";
+    m_messages["as-err-no-default-constructor"] = "La clase '{}' no tiene un constructor por defecto.";
+    m_messages["as-err-constructor-delegation-disallowed"] =
+        "La delegación de constructores no está soportada en AngelScript.";
+    m_messages["as-err-op-overload-global"] = "La sobrecarga del operador '{}' debe ser un método miembro de clase.";
+    m_messages["as-err-break-outside-loop"] =
+        "La sentencia 'break' solo puede usarse dentro de un bucle o un 'switch'.";
+    m_messages["as-err-continue-outside-loop"] = "La sentencia 'continue' solo puede usarse dentro de un bucle.";
+    m_messages["as-err-invalid-case-type"] =
+        "El valor de 'case' debe ser una expresión constante entera, de carácter o de enumeración.";
+    m_messages["as-err-duplicate-case-value"] = "Valor de 'case' duplicado ('{}') en la sentencia 'switch'.";
+    m_messages["as-err-default-must-be-last"] = "El caso por defecto (default) debe ser el último.";
+    m_messages["as-err-if-empty-statement"] = "'if' con sentencia vacía.";
+    m_messages["as-err-else-empty-statement"] = "'else' con sentencia vacía.";
+    m_messages["as-err-not-all-paths-return"] = "No todos los caminos de '{}' devuelven un valor.";
+    m_messages["as-err-return-value-required"] = "'{}' debe devolver un valor.";
+    m_messages["as-err-condition-not-boolean"] = "Una condición debe ser bool, no '{}'.";
+}
+
+/**
+ * @brief Populates Spanish diagnostic messages (batch 5).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateSpanishMessages5(MessageMap& m_messages)
+{
+    m_messages["as-err-const-assignment"] = "La expresión no es un l-value: '{}' está declarado const.";
+    m_messages["as-err-const-method-required"] = "No hay firmas que coincidan con '{}::{}() const'. El objeto es "
+                                                 "const, así que solo se puede llamar a un método const.";
+    m_messages["as-err-call-argument-count"] = "No hay firmas que coincidan con '{}' recibiendo {} argumento(s).";
+    m_messages["as-warn-unreachable-code"] = "Código inalcanzable.";
+    m_messages["as-err-abstract-instantiated"] =
+        "No se puede instanciar la clase abstracta '{}'. Declara un handle ('{}@') en su lugar.";
+    m_messages["as-err-interface-instantiated"] =
+        "No se puede instanciar la interfaz '{}'. Declara un handle ('{}@') en su lugar.";
+    m_messages["as-err-parameter-not-instantiable"] =
+        "El tipo de parámetro no puede ser '{}', porque ese tipo no se puede instanciar.";
+    m_messages["as-err-return-not-instantiable"] =
+        "El tipo de retorno no puede ser '{}', porque ese tipo no se puede instanciar.";
+    m_messages["as-err-mixin-not-a-type"] = "El mixin '{}' no puede ser usado como un tipo de dato.";
+    m_messages["as-warn-undeclared-identifier"] = "Identificador no declarado '{}'.";
+    m_messages["as-warn-unused-variable"] = "La variable local '{}' nunca se usa.";
+    m_messages["as-warn-signed-unsigned-mismatch"] =
+        "Discrepancia con/sin signo: se compara '{}' con '{}'. La mitad de un rango no tiene equivalente en el "
+        "otro, así que la conversión da la vuelta.";
+    m_messages["as-warn-float-truncation"] = "Valor flotante truncado en la conversión implícita a entero: '{}' "
+                                             "pasa a '{}'. La parte fraccionaria se descarta.";
+    m_messages["as-err-null-non-handle"] = "No se puede asignar 'null' al tipo no-handle '{}'.";
+    m_messages["as-err-no-implicit-conversion"] =
+        "No se puede convertir implícitamente '{}' a '{}'. Declara un constructor compatible, un 'opImplConv' o "
+        "una sobrecarga 'opAssign'.";
+    m_messages["as-err-no-explicit-conversion"] =
+        "No existe conversión de '{}' a '{}'. Declara un constructor compatible en el destino, o una sobrecarga "
+        "'opConv'/'opImplConv' en el origen.";
+    m_messages["as-err-invalid-cast"] = "No se puede convertir '{}' a '{}' con cast. Los tipos no están "
+                                        "relacionados y no hay sobrecarga 'opCast'/'opImplCast'.";
+    m_messages["as-warn-uninitialized-variable-read"] = "La variable local '{}' se usa antes de ser inicializada.";
+    m_messages["as-err-call-no-matching-signature"] = "No hay firmas coincidentes para la llamada a '{}'.";
+    m_messages["as-err-constructor-not-callable"] =
+        "'{}' es un constructor de '{}' y no se puede llamar sobre una instancia.";
+    m_messages["as-err-initializer-list-not-supported"] = "No se pueden usar listas de inicialización con '{}'.";
+    m_messages["as-hint-list-pattern-unknown"] =
+        "No hay un patrón de lista declarado para '{}', así que el contenido de esta lista no se verifica. Añade "
+        "una etiqueta /// @listpattern sobre su declaración en tu .as.predefined, copiada del registro "
+        "asBEHAVE_LIST_FACTORY del tipo - por ejemplo {{repeat T}}.";
+    m_messages["as-hint-accessor-portability"] =
+        "El accesor de la propiedad '{}' no lleva la palabra clave `property`. Es una propiedad bajo "
+        "asEP_PROPERTY_ACCESSOR_MODE 2 pero no bajo el modo 3, el predeterminado del propio motor. Añadir la "
+        "palabra clave se acepta en ambos.";
+    m_messages["as-hint-bool-conversion"] =
+        "'{}' es una clase, y bajo asEP_BOOL_CONVERSION_MODE 0 - el predeterminado del propio motor - una clase no "
+        "puede ir donde se espera un bool, ni siquiera declarando '{}'. Llámalo explícitamente, lo que compila en "
+        "ambos modos, o pon angelscript.engine.boolConversionMode en 1 si tu host lo hace.";
+}
+
+/**
+ * @brief Populates Spanish diagnostic messages (batch 6).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateSpanishMessages6(MessageMap& m_messages)
+{
+    m_messages["as-hint-funcdef-missing"] =
+        "'{}' es una función, no un tipo. Un handle de función necesita un funcdef que nombre su firma; el "
+        "compilador reporta tal nombre como que no es un tipo de datos.";
+    m_messages["as-err-multiline-string"] =
+        "Una cadena \"...\" normal no puede abarcar varias líneas. El motor la rechaza salvo que el host active "
+        "asEP_ALLOW_MULTILINE_STRINGS; usa un \"\"\"heredoc\"\"\", que abarca líneas con cualquier configuración.";
+    m_messages["as-err-value-assign-for-ref"] =
+        "No se permite la asignación por valor sobre el tipo por referencia '{}': el host construyó su motor con "
+        "asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE. Usa una asignación de handle, `@a = @b`.";
+    m_messages["as-err-named-argument-syntax"] =
+        "El argumento con nombre '{}' debe escribirse con dos puntos - `nombre: valor` - no con `=`. La forma con "
+        "`=` solo se acepta si el host activa asEP_ALTER_SYNTAX_NAMED_ARGS.";
+    m_messages["as-hint-integer-division"] =
+        "Ambos operandos son enteros, así que esto es división entera y trunca: 1 / 2 da 0, no 0.5. Solo pasa a "
+        "ser división flotante si el host activa asEP_DISABLE_INTEGER_DIVISION.";
+    m_messages["as-err-character-literal-is-string"] =
+        "Un literal 'x' es una cadena de un carácter, no un código de carácter, salvo que el host active "
+        "asEP_USE_CHARACTER_LITERALS - así que no puede inicializar '{}'. Usa un literal numérico, o pon "
+        "angelscript.engine.useCharacterLiterals en 1 si tu host lo hace.";
+    m_messages["as-err-empty-list-element"] = "No se permite un elemento vacío en la lista: el host construyó su "
+                                              "motor con asEP_DISALLOW_EMPTY_LIST_ELEMENTS.";
+    m_messages["as-err-foreach-unsupported"] =
+        "`foreach` no está disponible: el host construyó su motor con asEP_FOREACH_SUPPORT desactivado, y el "
+        "compilador reporta la variable del bucle como error de sintaxis. Usa un bucle `for` sobre el índice del "
+        "contenedor.";
+    m_messages["as-err-initializer-list-expected"] = "Se esperaba una lista entre {{ }} para coincidir con el patrón.";
+    m_messages["as-err-initializer-list-too-few"] = "No hay suficientes valores para coincidir con el patrón.";
+    m_messages["as-err-initializer-list-too-many"] = "Demasiados valores para coincidir con el patrón.";
+    m_messages["as-err-no-matching-constructor"] = "No coinciden las firmas con '{}'.";
+    m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua.";
+    m_messages["as-err-undefined-namespace"] = "Namespace no definido '{}'.";
+    m_messages["as-err-import-has-body"] = "La función importada '{}' no puede tener un cuerpo.";
+    m_messages["as-hint-import-unknown-module"] =
+        "No hay ningún módulo configurado que se llame '{}'. El compilador lo acepta igualmente - una función "
+        "importada se enlaza en tiempo de ejecución - pero el nombre no coincide con ninguno de los módulos de "
+        "angelscript.modules.";
+    m_messages["as-hint-file-in-several-modules"] =
+        "Este archivo está en el módulo '{}'. También está dentro de {}, y aquí un archivo se asigna a un solo "
+        "módulo: gana la reclamación más específica - primero un punto de entrada, luego la carpeta más profunda.";
+    m_messages["as-err-not-lvalue"] = "La expresión no es un l-value asignable.";
+    m_messages["as-err-assign-void"] = "No se puede asignar a una expresión de tipo 'void'.";
+    m_messages["as-err-assign-non-ref-call"] =
+        "No se puede asignar al resultado de una llamada a función a menos que devuelva una referencia.";
+    m_messages["as-err-ref-type-bool-conv-disallowed"] =
+        "La conversión booleana implícita en un tipo handle/referencia no está permitida. Compara explícitamente "
+        "con 'null' o llama a 'opImplConv()' directamente.";
+    m_messages["as-err-deleted-method-called"] = "No se puede invocar el método eliminado '{}::{}'.";
+    m_messages["as-err-invalid-foreach-container"] = "El tipo '{}' no es un contenedor foreach válido. Debe "
+                                                     "implementar opForBegin, opForEnd, opForNext y opForValue.";
+    m_messages["as-err-no-matching-operator"] =
+        "No se encontró un operador '{}' compatible para los tipos '{}' y '{}'.";
+}
+
+/**
+ * @brief Populates Spanish diagnostic messages (batch 7).
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateSpanishMessages7(MessageMap& m_messages)
+{
+    m_messages["as-err-auto-requires-initializer"] = "La variable 'auto' requiere un inicializador.";
+    m_messages["as-err-cannot-infer-void"] = "No se puede deducir el tipo 'auto' de una expresión de tipo 'void'.";
+    m_messages["as-err-cannot-infer-null"] = "No se puede deducir el tipo 'auto' de 'null'.";
+    m_messages["as-err-cyclic-auto-dependency"] = "La variable '{}' se usa en su propia inicialización 'auto'.";
+    m_messages["as-err-property-type-mismatch"] =
+        "El getter y setter para la propiedad '{}' tienen tipos incompatibles ('{}' vs '{}').";
+    m_messages["as-err-read-only-property"] = "No se puede asignar a la propiedad de solo lectura '{}'.";
+    m_messages["as-err-write-only-property"] = "No se puede leer de la propiedad de solo escritura '{}'.";
+    m_messages["as-err-inc-dec-on-virtual-prop"] =
+        "No se pueden usar operadores de incremento/decremento en la propiedad virtual '{}'.";
+    m_messages["as-err-compound-assign-on-value-prop"] =
+        "La asignación compuesta no está permitida en la propiedad virtual '{}' de un tipo de valor.";
+    m_messages["as-err-compound-assign-on-indexed-prop"] =
+        "La asignación compuesta no está permitida en la propiedad indexada '{}'.";
+    m_messages["as-err-case-not-constant"] = "El valor del case debe ser una expresión constante.";
+    m_messages["as-err-void-return-value"] = "Una función void no puede devolver un valor.";
+    m_messages["as-err-undefined-identifier"] = "Identificador no definido '{}'.";
+    m_messages["as-err-lvalue-required-for-out-param"] = "El parámetro de salida requiere un l-value mutable o 'void'.";
+    m_messages["as-err-positional-after-named-arg"] =
+        "Un argumento posicional no puede seguir a un argumento con nombre.";
+    m_messages["as-err-cannot-return-local-ref"] = "No se puede devolver una referencia a la variable local '{}'.";
+    m_messages["as-err-cannot-return-param-ref"] = "No se puede devolver una referencia al parámetro '{}'.";
+    m_messages["as-err-lambda-closure-disallowed"] =
+        "Las lambdas no pueden acceder a variables locales externas (sin clausuras).";
+    m_messages["as-err-standalone-anonymous-function"] =
+        "Una función anónima es una expresión y no puede usarse como una sentencia independiente. Pásala donde se "
+        "espere un funcdef o asígnala a un handle de funcdef.";
+    m_messages["as-err-readonly-handle"] = "No se puede reasignar el handle de solo lectura '{}'.";
+    m_messages["as-err-expression-is-data-type"] = "La expresión '{}' es un tipo de datos.";
+}
+
+/**
+ * @brief Populates all Spanish diagnostic messages.
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateSpanishMessages(MessageMap& m_messages)
+{
+    PopulateSpanishMessages1(m_messages);
+    PopulateSpanishMessages2(m_messages);
+    PopulateSpanishMessages3(m_messages);
+    PopulateSpanishMessages4(m_messages);
+    PopulateSpanishMessages5(m_messages);
+    PopulateSpanishMessages6(m_messages);
+    PopulateSpanishMessages7(m_messages);
+}
+} // namespace
+
+I18n::I18n(const std::string& localeTag) : m_locale(PrimaryLanguageSubtag(localeTag))
+{
+    PopulateEnglishMessages(m_messages);
+    if (m_locale == "es")
     {
-        m_messages["as-err-duplicate-symbol"] = "Redeclaración de símbolo '{}' en el mismo ámbito.";
-        m_messages["as-err-mixin-final"] = "Un mixin ('{}') no puede ser declarado como 'final'.";
-        m_messages["as-err-mixin-abstract"] = "Un mixin ('{}') no puede ser declarado como 'abstract'.";
-        m_messages["as-err-missing-body"] = "La función '{}' debe tener un cuerpo '{{}}'.";
-        m_messages["as-err-out-param-default"] = "El parámetro '&out' '{}' no puede tener un valor por defecto.";
-        m_messages["as-err-template-class-not-supported"] =
-            "La definición de clases plantilla/genéricas ('{}') solo está permitida en archivos predefinidos.";
-        m_messages["as-err-inherit-final"] = "No se puede heredar de la clase final '{}'.";
-        m_messages["as-syntax-error"] = "Error de sintaxis: \"{}\"";
-        m_messages["as-syntax-error-missing"] = "Error de sintaxis: falta '{}'";
-        m_messages["as-syntax-error-generic"] = "Error de sintaxis";
-        m_messages["as-err-declaration-missing-body"] =
-            "'{}' debe tener un cuerpo '{{}}'. Solo 'external shared' se declara sin él.";
-        m_messages["as-err-external-not-shared"] = "'external' requiere 'shared' en '{}'.";
-        m_messages["as-err-property-duplicate-accessor"] = "La propiedad virtual '{}' declara '{}' más de una vez.";
-        m_messages["as-err-unresolved-type"] = "Tipo desconocido '{}'.";
-        m_messages["as-err-handle-on-primitive"] = "No se puede usar handle '@' en el tipo primitivo '{}'.";
-        m_messages["as-err-void-variable"] = "No se puede declarar una variable de tipo 'void'.";
-        m_messages["as-err-multi-class-inherit"] = "La clase '{}' no puede heredar de múltiples clases.";
-        m_messages["as-err-base-not-found"] = "Tipo base '{}' no encontrado.";
-        m_messages["as-err-funcdef-not-handle"] =
-            "Variables o parámetros de tipo funcdef '{}' deben declararse como handle ('{}@').";
-        m_messages["as-err-duplicate-enum-member"] = "Miembro de enum duplicado '{}'.";
-        m_messages["as-err-duplicate-param"] = "Nombre de parámetro '{}' duplicado en la función '{}'.";
-        m_messages["as-warn-shadow-global"] = "El parámetro '{}' oculta una variable global con el mismo nombre.";
-        m_messages["as-hint-accessor-disabled"] =
-            "El tipo '{}' llega a '{}' mediante un accesor de propiedad de script, y este host los tiene desactivados "
-            "(asEP_PROPERTY_ACCESSOR_MODE 0 o 1). El compilador no lo acepta; llama a la funcion get_ o set_ "
-            "directamente.";
-        m_messages["as-warn-unsupported-directive"] =
-            "CScriptBuilder no reconoce '#{}', así que se queda en el código y el compilador lo rechaza. Si el host "
-            "parcheó su copia del add-on para soportarlo, indícalo con la opción angelscript.preprocessor "
-            "correspondiente.";
-        m_messages["as-err-unknown-directive"] =
-            "'#{}' no es una directiva. CScriptBuilder deja en el código todo lo que no reconoce, y entonces el "
-            "compilador lo rechaza. Los nombres que lee son include, if, endif, pragma, else, elif, ifdef, ifndef y "
-            "define.";
-        m_messages["as-err-directive-space-after-hash"] =
-            "El nombre de una directiva tiene que ir pegado a '#'. '# {}' se lee como un '#' suelto y el compilador "
-            "rechaza la línea; '#{}' sí compila.";
-        m_messages["as-err-include-not-quoted"] =
-            "La ruta de un #include tiene que ir entre comillas dobles. Sin ellas CScriptBuilder no lee ningún nombre "
-            "de archivo, deja la línea en el código y el compilador la rechaza.";
-        m_messages["as-warn-include-not-found"] = "No se encontró el archivo incluido '{}'.";
-        m_messages["as-err-circular-inherit"] = "Herencia circular detectada: '{}' hereda de sí misma.";
-        m_messages["as-err-const-out-param"] = "El parámetro '{}' no puede ser 'const' y '&out' al mismo tiempo.";
-        m_messages["as-err-interface-impl-missing"] =
-            "La clase '{}' no implementa el método de interfaz '{}' de la interfaz '{}'.";
-        m_messages["as-err-attribute-repeated"] = "El atributo '{}' se informa múltiples veces.";
-        m_messages["as-err-reserved-keyword-name"] =
-            "Se encontró la palabra reservada '{}' en lugar de un identificador.";
-        m_messages["as-err-reserved-word-as-parameter-name"] =
-            "La palabra reservada '{}' no se puede usar como un identificador aquí.";
-        m_messages["as-err-name-conflict"] = "Conflicto de nombre. '{}' ya está declarado como {}.";
-        m_messages["as-err-const-void-return"] = "El tipo de retorno no puede ser 'const void'.";
-        m_messages["as-err-global-function-qualifiers"] = "La función global '{}' no puede declararse 'const'.";
-        m_messages["as-err-override-no-base"] = "El método '{}' marcado como override no reemplaza ningún método de "
-                                                "clase base o interfaz en la clase '{}'.";
-        m_messages["as-err-default-param-order"] = "Todos los parámetros subsiguientes después del primer valor por "
-                                                   "defecto deben tener valores por defecto en la función '{}'.";
-        m_messages["as-err-inout-on-primitive"] =
-            "Solo los tipos de objeto que admiten referencias pueden usar &inout ('{}').";
-        m_messages["as-err-global-variable-access-modifier"] =
-            "La variable global o de namespace '{}' no puede tener modificadores de acceso (private/protected).";
-        m_messages["as-err-enum-scope-required"] =
-            "'{}' necesita el ámbito de su enum en este host, que construye su motor con asEP_REQUIRE_ENUM_SCOPE.";
-        m_messages["as-err-global-vars-disallowed"] =
-            "La variable global '{}' no está permitida: la aplicación ha deshabilitado las variables globales.";
-        m_messages["as-err-void-reference"] = "El tipo 'void' no puede ser una referencia.";
-        m_messages["as-err-property-accessor-missing-body"] =
-            "El accesor de propiedad '{}' debe tener una implementación.";
-        m_messages["as-err-destructor-param"] = "El destructor '{}' no debe tener ningún parámetro.";
-        m_messages["as-err-destructor-return-type"] = "El destructor '{}' no debe tener un tipo de retorno.";
-        m_messages["as-err-destructor-delete"] = "No se puede marcar el destructor '{}' con '= delete'.";
-        m_messages["as-err-class-member-const"] = "El miembro de clase '{}' no puede ser declarado como 'const'.";
-        m_messages["as-err-delete-with-body"] = "La función eliminada con '= delete' ('{}') no puede tener un cuerpo.";
-        m_messages["as-err-void-parameter"] = "El parámetro '{}' en la función '{}' no puede ser de tipo 'void'.";
-        m_messages["as-err-binary-operator-arity"] =
-            "La sobrecarga del operador binario '{}' debe tomar exactamente 1 parámetro.";
-        m_messages["as-err-opindex-no-params"] = "El operador de índice 'opIndex' debe tomar al menos 1 parámetro.";
-        m_messages["as-err-opequals-return-bool"] = "El operador de igualdad 'opEquals' debe retornar 'bool'.";
-        m_messages["as-err-opcmp-return-int"] = "El operador de comparación 'opCmp' debe retornar 'int'.";
-        m_messages["as-err-override-final-method"] =
-            "No se puede sobrescribir el método '{}' declarado como 'final' en la clase base '{}'.";
-        m_messages["as-err-enum-invalid-initializer"] =
-            "El inicializador del miembro de enum '{}' debe ser una expresión entera constante.";
-        m_messages["as-err-standalone-reference"] = "La variable de referencia independiente '{}' no está soportada.";
-        m_messages["as-err-delete-with-other-qualifier"] =
-            "No se puede marcar con modificadores adicionales la función '{}' que será eliminada con '= delete'.";
-        m_messages["as-err-delete-not-auto-generated"] =
-            "No se puede marcar como eliminada la función '{}' porque el motor no la autogenera. Solo pueden "
-            "eliminarse el constructor por defecto, el constructor de copia u 'opAssign'.";
-        m_messages["as-err-explicit-not-member"] = "'explicit' solo se permite en un método de clase, y '{}' no lo es.";
-        m_messages["as-err-interface-method-attribute"] =
-            "Un método de interfaz no puede llevar el atributo '{}' ('{}').";
-        m_messages["as-err-funcdef-attribute"] = "Un funcdef no puede llevar el atributo '{}' ('{}').";
-        m_messages["as-warn-global-function-attribute"] =
-            "'{}' describe la relación de un método con su clase, así que no significa nada en la función global '{}'. "
-            "AngelScript lo acepta y lo ignora.";
-        m_messages["as-err-private-member-access"] =
-            "Acceso ilegal al miembro privado '{}', declarado en la clase '{}'.";
-        m_messages["as-err-protected-member-access"] =
-            "Acceso ilegal al miembro protegido '{}', declarado en la clase '{}'. Un miembro protegido es accesible "
-            "desde una clase derivada, y únicamente a través de un objeto del tipo de esa misma clase.";
-        m_messages["as-err-member-not-found"] = "La clase '{}' no tiene ningún miembro '{}'.";
-        m_messages["as-err-virtual-property-signature"] =
-            "Firma no válida para la propiedad virtual '{}'. Un accesor 'get_' devuelve un valor y toma como mucho un "
-            "índice; un accesor 'set_' devuelve void y toma el valor, precedido opcionalmente por un índice.";
-        m_messages["as-err-array-invalid-template"] =
-            "Intento de instanciar un parámetro de plantilla no válido ('{}').";
-        m_messages["as-err-typedef-non-primitive"] =
-            "El tipo base del typedef ('{}') debe ser un tipo de dato primitivo.";
-        m_messages["as-err-signature-mismatch-func-handle"] =
-            "La firma de la función no coincide con la firma del funcdef objetivo.";
-        m_messages["as-err-invalid-reference-return"] = "No es un tipo de retorno por referencia válido ('{}').";
-        m_messages["as-err-external-not-found"] = "Entidad compartida externa ('{}') no encontrada.";
-        m_messages["as-err-shared-not-allowed-on-entity"] = "Las variables no pueden declararse como 'shared' ('{}').";
-        m_messages["as-err-shared-cannot-access-non-shared"] =
-            "La entidad compartida no puede acceder al símbolo no compartido '{}'.";
-        m_messages["as-err-mixin-child-type"] = "La clase mixin ('{}') no puede contener declaraciones de tipos hijos.";
-        m_messages["as-err-mixin-virtual-property"] =
-            "La sintaxis de propiedad virtual actualmente no está soportada para clases mixin.";
-        m_messages["as-err-double-reference"] =
-            "Formato inválido de cualificador de referencia de parámetro para el tipo '{}'.";
-        m_messages["as-err-interface-constructor"] =
-            "La interfaz '{}' no puede declarar constructores ni destructores.";
-        m_messages["as-err-mixin-constructor"] = "La clase mixin '{}' no puede declarar un constructor.";
-        m_messages["as-err-mixin-destructor"] = "La clase mixin '{}' no puede declarar un destructor.";
-        m_messages["as-err-mixin-inherit-class"] = "La clase mixin '{}' no puede heredar de la clase '{}'.";
-        m_messages["as-err-mixin-instantiation-member-not-found"] =
-            "En el mixin '{}' instanciado para '{}': El miembro '{}' no está declarado en '{}' o sus clases base.";
-        m_messages["as-err-no-default-constructor"] = "La clase '{}' no tiene un constructor por defecto.";
-        m_messages["as-err-constructor-delegation-disallowed"] =
-            "La delegación de constructores no está soportada en AngelScript.";
-        m_messages["as-err-op-overload-global"] =
-            "La sobrecarga del operador '{}' debe ser un método miembro de clase.";
-        m_messages["as-err-break-outside-loop"] =
-            "La sentencia 'break' solo puede usarse dentro de un bucle o un 'switch'.";
-        m_messages["as-err-continue-outside-loop"] = "La sentencia 'continue' solo puede usarse dentro de un bucle.";
-        m_messages["as-err-invalid-case-type"] =
-            "El valor de 'case' debe ser una expresión constante entera, de carácter o de enumeración.";
-        m_messages["as-err-duplicate-case-value"] = "Valor de 'case' duplicado ('{}') en la sentencia 'switch'.";
-        m_messages["as-err-default-must-be-last"] = "El caso por defecto (default) debe ser el último.";
-        m_messages["as-err-if-empty-statement"] = "'if' con sentencia vacía.";
-        m_messages["as-err-else-empty-statement"] = "'else' con sentencia vacía.";
-        m_messages["as-err-not-all-paths-return"] = "No todos los caminos de '{}' devuelven un valor.";
-        m_messages["as-err-return-value-required"] = "'{}' debe devolver un valor.";
-        m_messages["as-err-condition-not-boolean"] = "Una condición debe ser bool, no '{}'.";
-        m_messages["as-err-const-assignment"] = "La expresión no es un l-value: '{}' está declarado const.";
-        m_messages["as-err-const-method-required"] = "No hay firmas que coincidan con '{}::{}() const'. El objeto es "
-                                                     "const, así que solo se puede llamar a un método const.";
-        m_messages["as-err-call-argument-count"] = "No hay firmas que coincidan con '{}' recibiendo {} argumento(s).";
-        m_messages["as-warn-unreachable-code"] = "Código inalcanzable.";
-        m_messages["as-err-abstract-instantiated"] =
-            "No se puede instanciar la clase abstracta '{}'. Declara un handle ('{}@') en su lugar.";
-        m_messages["as-err-interface-instantiated"] =
-            "No se puede instanciar la interfaz '{}'. Declara un handle ('{}@') en su lugar.";
-        m_messages["as-err-parameter-not-instantiable"] =
-            "El tipo de parámetro no puede ser '{}', porque ese tipo no se puede instanciar.";
-        m_messages["as-err-return-not-instantiable"] =
-            "El tipo de retorno no puede ser '{}', porque ese tipo no se puede instanciar.";
-        m_messages["as-err-mixin-not-a-type"] = "El mixin '{}' no puede ser usado como un tipo de dato.";
-        m_messages["as-warn-undeclared-identifier"] = "Identificador no declarado '{}'.";
-        m_messages["as-warn-unused-variable"] = "La variable local '{}' nunca se usa.";
-        m_messages["as-warn-signed-unsigned-mismatch"] =
-            "Discrepancia con/sin signo: se compara '{}' con '{}'. La mitad de un rango no tiene equivalente en el "
-            "otro, así que la conversión da la vuelta.";
-        m_messages["as-warn-float-truncation"] = "Valor flotante truncado en la conversión implícita a entero: '{}' "
-                                                 "pasa a '{}'. La parte fraccionaria se descarta.";
-        m_messages["as-err-null-non-handle"] = "No se puede asignar 'null' al tipo no-handle '{}'.";
-        m_messages["as-err-no-implicit-conversion"] =
-            "No se puede convertir implícitamente '{}' a '{}'. Declara un constructor compatible, un 'opImplConv' o "
-            "una sobrecarga 'opAssign'.";
-        m_messages["as-err-no-explicit-conversion"] =
-            "No existe conversión de '{}' a '{}'. Declara un constructor compatible en el destino, o una sobrecarga "
-            "'opConv'/'opImplConv' en el origen.";
-        m_messages["as-err-invalid-cast"] = "No se puede convertir '{}' a '{}' con cast. Los tipos no están "
-                                            "relacionados y no hay sobrecarga 'opCast'/'opImplCast'.";
-        m_messages["as-warn-uninitialized-variable-read"] = "La variable local '{}' se usa antes de ser inicializada.";
-        m_messages["as-err-call-no-matching-signature"] = "No hay firmas coincidentes para la llamada a '{}'.";
-        m_messages["as-err-constructor-not-callable"] =
-            "'{}' es un constructor de '{}' y no se puede llamar sobre una instancia.";
-        m_messages["as-err-initializer-list-not-supported"] = "No se pueden usar listas de inicialización con '{}'.";
-        m_messages["as-hint-list-pattern-unknown"] =
-            "No hay un patrón de lista declarado para '{}', así que el contenido de esta lista no se verifica. Añade "
-            "una etiqueta /// @listpattern sobre su declaración en tu .as.predefined, copiada del registro "
-            "asBEHAVE_LIST_FACTORY del tipo - por ejemplo {{repeat T}}.";
-        m_messages["as-hint-accessor-portability"] =
-            "El accesor de la propiedad '{}' no lleva la palabra clave `property`. Es una propiedad bajo "
-            "asEP_PROPERTY_ACCESSOR_MODE 2 pero no bajo el modo 3, el predeterminado del propio motor. Añadir la "
-            "palabra clave se acepta en ambos.";
-        m_messages["as-hint-bool-conversion"] =
-            "'{}' es una clase, y bajo asEP_BOOL_CONVERSION_MODE 0 - el predeterminado del propio motor - una clase no "
-            "puede ir donde se espera un bool, ni siquiera declarando '{}'. Llámalo explícitamente, lo que compila en "
-            "ambos modos, o pon angelscript.engine.boolConversionMode en 1 si tu host lo hace.";
-        m_messages["as-hint-funcdef-missing"] =
-            "'{}' es una función, no un tipo. Un handle de función necesita un funcdef que nombre su firma; el "
-            "compilador reporta tal nombre como que no es un tipo de datos.";
-        m_messages["as-err-multiline-string"] =
-            "Una cadena \"...\" normal no puede abarcar varias líneas. El motor la rechaza salvo que el host active "
-            "asEP_ALLOW_MULTILINE_STRINGS; usa un \"\"\"heredoc\"\"\", que abarca líneas con cualquier configuración.";
-        m_messages["as-err-value-assign-for-ref"] =
-            "No se permite la asignación por valor sobre el tipo por referencia '{}': el host construyó su motor con "
-            "asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE. Usa una asignación de handle, `@a = @b`.";
-        m_messages["as-err-named-argument-syntax"] =
-            "El argumento con nombre '{}' debe escribirse con dos puntos - `nombre: valor` - no con `=`. La forma con "
-            "`=` solo se acepta si el host activa asEP_ALTER_SYNTAX_NAMED_ARGS.";
-        m_messages["as-hint-integer-division"] =
-            "Ambos operandos son enteros, así que esto es división entera y trunca: 1 / 2 da 0, no 0.5. Solo pasa a "
-            "ser división flotante si el host activa asEP_DISABLE_INTEGER_DIVISION.";
-        m_messages["as-err-character-literal-is-string"] =
-            "Un literal 'x' es una cadena de un carácter, no un código de carácter, salvo que el host active "
-            "asEP_USE_CHARACTER_LITERALS - así que no puede inicializar '{}'. Usa un literal numérico, o pon "
-            "angelscript.engine.useCharacterLiterals en 1 si tu host lo hace.";
-        m_messages["as-err-empty-list-element"] = "No se permite un elemento vacío en la lista: el host construyó su "
-                                                  "motor con asEP_DISALLOW_EMPTY_LIST_ELEMENTS.";
-        m_messages["as-err-foreach-unsupported"] =
-            "`foreach` no está disponible: el host construyó su motor con asEP_FOREACH_SUPPORT desactivado, y el "
-            "compilador reporta la variable del bucle como error de sintaxis. Usa un bucle `for` sobre el índice del "
-            "contenedor.";
-        m_messages["as-err-initializer-list-expected"] =
-            "Se esperaba una lista entre {{ }} para coincidir con el patrón.";
-        m_messages["as-err-initializer-list-too-few"] = "No hay suficientes valores para coincidir con el patrón.";
-        m_messages["as-err-initializer-list-too-many"] = "Demasiados valores para coincidir con el patrón.";
-        m_messages["as-err-no-matching-constructor"] = "No coinciden las firmas con '{}'.";
-        m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua.";
-        m_messages["as-err-undefined-namespace"] = "Namespace no definido '{}'.";
-        m_messages["as-err-import-has-body"] = "La función importada '{}' no puede tener un cuerpo.";
-        m_messages["as-hint-import-unknown-module"] =
-            "No hay ningún módulo configurado que se llame '{}'. El compilador lo acepta igualmente - una función "
-            "importada se enlaza en tiempo de ejecución - pero el nombre no coincide con ninguno de los módulos de "
-            "angelscript.modules.";
-        m_messages["as-hint-file-in-several-modules"] =
-            "Este archivo está en el módulo '{}'. También está dentro de {}, y aquí un archivo se asigna a un solo "
-            "módulo: gana la reclamación más específica - primero un punto de entrada, luego la carpeta más profunda.";
-        m_messages["as-err-not-lvalue"] = "La expresión no es un l-value asignable.";
-        m_messages["as-err-assign-void"] = "No se puede asignar a una expresión de tipo 'void'.";
-        m_messages["as-err-assign-non-ref-call"] =
-            "No se puede asignar al resultado de una llamada a función a menos que devuelva una referencia.";
-        m_messages["as-err-ref-type-bool-conv-disallowed"] =
-            "La conversión booleana implícita en un tipo handle/referencia no está permitida. Compara explícitamente "
-            "con 'null' o llama a 'opImplConv()' directamente.";
-        m_messages["as-err-deleted-method-called"] = "No se puede invocar el método eliminado '{}::{}'.";
-        m_messages["as-err-invalid-foreach-container"] = "El tipo '{}' no es un contenedor foreach válido. Debe "
-                                                         "implementar opForBegin, opForEnd, opForNext y opForValue.";
-        m_messages["as-err-no-matching-operator"] =
-            "No se encontró un operador '{}' compatible para los tipos '{}' y '{}'.";
-        m_messages["as-err-auto-requires-initializer"] = "La variable 'auto' requiere un inicializador.";
-        m_messages["as-err-cannot-infer-void"] = "No se puede deducir el tipo 'auto' de una expresión de tipo 'void'.";
-        m_messages["as-err-cannot-infer-null"] = "No se puede deducir el tipo 'auto' de 'null'.";
-        m_messages["as-err-cyclic-auto-dependency"] = "La variable '{}' se usa en su propia inicialización 'auto'.";
-        m_messages["as-err-property-type-mismatch"] =
-            "El getter y setter para la propiedad '{}' tienen tipos incompatibles ('{}' vs '{}').";
-        m_messages["as-err-read-only-property"] = "No se puede asignar a la propiedad de solo lectura '{}'.";
-        m_messages["as-err-write-only-property"] = "No se puede leer de la propiedad de solo escritura '{}'.";
-        m_messages["as-err-inc-dec-on-virtual-prop"] =
-            "No se pueden usar operadores de incremento/decremento en la propiedad virtual '{}'.";
-        m_messages["as-err-compound-assign-on-value-prop"] =
-            "La asignación compuesta no está permitida en la propiedad virtual '{}' de un tipo de valor.";
-        m_messages["as-err-compound-assign-on-indexed-prop"] =
-            "La asignación compuesta no está permitida en la propiedad indexada '{}'.";
-        m_messages["as-err-case-not-constant"] = "El valor del case debe ser una expresión constante.";
-        m_messages["as-err-void-return-value"] = "Una función void no puede devolver un valor.";
-        m_messages["as-err-undefined-identifier"] = "Identificador no definido '{}'.";
-        m_messages["as-err-lvalue-required-for-out-param"] =
-            "El parámetro de salida requiere un l-value mutable o 'void'.";
-        m_messages["as-err-positional-after-named-arg"] =
-            "Un argumento posicional no puede seguir a un argumento con nombre.";
-        m_messages["as-err-cannot-return-local-ref"] = "No se puede devolver una referencia a la variable local '{}'.";
-        m_messages["as-err-cannot-return-param-ref"] = "No se puede devolver una referencia al parámetro '{}'.";
-        m_messages["as-err-lambda-closure-disallowed"] =
-            "Las lambdas no pueden acceder a variables locales externas (sin clausuras).";
-        m_messages["as-err-standalone-anonymous-function"] =
-            "Una función anónima es una expresión y no puede usarse como una sentencia independiente. Pásala donde se "
-            "espere un funcdef o asígnala a un handle de funcdef.";
-        m_messages["as-err-readonly-handle"] = "No se puede reasignar el handle de solo lectura '{}'.";
-        m_messages["as-err-expression-is-data-type"] = "La expresión '{}' es un tipo de datos.";
+        PopulateSpanishMessages(m_messages);
     }
 }
 
