@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace angel_lsp::features
 {
@@ -13,6 +15,7 @@ namespace
 using analysis::Symbol;
 using analysis::SymbolTable;
 using analysis::SymbolType;
+using analysis::rules::RuleIndex;
 
 bool IsTypeSymbol(const Symbol& sym)
 {
@@ -118,6 +121,373 @@ std::string IdentifierAt(const TypeHierarchyPrepareRequest& request, TSNode& out
     }
     return request.sourceCode.substr(start, end - start);
 }
+
+/**
+ * @brief Attempts to find type declarations from a qualified type under the cursor.
+ * @param[in] node AST node at cursor.
+ * @param[in] sourceCode Document source text.
+ * @param[in] symbolTable Symbol table to look up types.
+ * @return List of matching type symbols if found.
+ */
+std::vector<Symbol> FindQualifiedTypeUnderCursor(TSNode node, std::string_view sourceCode,
+                                                 const SymbolTable& symbolTable)
+{
+    std::vector<Symbol> declarations;
+    TSNode p = node;
+    while (!ts_node_is_null(p))
+    {
+        const std::string_view pType = ts_node_type(p);
+        if (pType == "type" || pType == "scoped_identifier")
+        {
+            const std::string text = analysis::CleanBaseType(analysis::GetNodeText(p, sourceCode));
+            if (!text.empty() && text.find("::") != std::string::npos)
+            {
+                declarations = FindTypeDeclarations(text, symbolTable);
+                if (declarations.empty())
+                {
+                    for (const auto& container : analysis::GetEnclosingContainers(p, sourceCode))
+                    {
+                        if (container.kind == analysis::ContainerKind::Namespace)
+                        {
+                            declarations = FindTypeDeclarations(container.qualifiedName + "::" + text, symbolTable);
+                            if (!declarations.empty())
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (!declarations.empty())
+                {
+                    break;
+                }
+            }
+        }
+        if (pType == "class_declaration" || pType == "interface_declaration" || pType == "func_declaration" ||
+            pType == "statement_block")
+        {
+            break;
+        }
+        p = ts_node_parent(p);
+    }
+    return declarations;
+}
+
+/**
+ * @brief Resolves type declarations for an identifier name, checking namespaces and short names.
+ * @param[in] name Identifier name.
+ * @param[in] node AST node.
+ * @param[in] sourceCode Document source text.
+ * @param[in] symbolTable Symbol table.
+ * @return List of matching type symbols.
+ */
+std::vector<Symbol> FindTypeFromIdentifier(std::string_view name, TSNode node, std::string_view sourceCode,
+                                           const SymbolTable& symbolTable)
+{
+    const std::string nameStr(name);
+    auto declarations = FindTypeDeclarations(nameStr, symbolTable);
+    if (declarations.empty() && !ts_node_is_null(node))
+    {
+        for (const auto& container : analysis::GetEnclosingContainers(node, sourceCode))
+        {
+            if (container.kind == analysis::ContainerKind::Namespace)
+            {
+                declarations = FindTypeDeclarations(container.qualifiedName + "::" + nameStr, symbolTable);
+                if (!declarations.empty())
+                {
+                    break;
+                }
+            }
+        }
+    }
+    if (declarations.empty())
+    {
+        for (const auto& sym : symbolTable.FindTypeSymbolsByShortName(nameStr))
+        {
+            if (IsTypeSymbol(sym))
+            {
+                declarations.push_back(sym);
+            }
+        }
+    }
+    return declarations;
+}
+
+/**
+ * @brief Resolves the enclosing class or interface type containing the cursor node.
+ * @param[in] node AST node.
+ * @param[in] sourceCode Document source text.
+ * @param[in] symbolTable Symbol table.
+ * @return List of matching type symbols.
+ */
+std::vector<Symbol> FindEnclosingType(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable)
+{
+    std::vector<Symbol> declarations;
+    for (const auto& container : analysis::GetEnclosingContainers(node, sourceCode))
+    {
+        if (container.kind != analysis::ContainerKind::Class && container.kind != analysis::ContainerKind::Interface)
+        {
+            continue;
+        }
+        declarations = FindTypeDeclarations(container.qualifiedName, symbolTable);
+        if (declarations.empty())
+        {
+            declarations = FindTypeDeclarations(container.name, symbolTable);
+        }
+        if (declarations.empty())
+        {
+            for (const auto& sym : symbolTable.FindTypeSymbolsByShortName(container.name))
+            {
+                if (IsTypeSymbol(sym))
+                {
+                    declarations.push_back(sym);
+                }
+            }
+        }
+        break;
+    }
+    return declarations;
+}
+
+/**
+ * @brief Computes the effective range of a symbol, preferring selectionRange, then fullRange, then start/end.
+ * @param[in] sym Target symbol.
+ * @return Effective LSP Range.
+ */
+lsp::Range GetSymbolEffectiveRange(const Symbol& sym)
+{
+    if (sym.selectionRange.endLine != 0 || sym.selectionRange.endCharacter != 0)
+    {
+        return ToRange(sym.selectionRange);
+    }
+    if (sym.fullRange.endLine != 0 || sym.fullRange.endCharacter != 0)
+    {
+        return ToRange(sym.fullRange);
+    }
+    return lsp::Range{lsp::Position{sym.startLine, sym.startCharacter}, lsp::Position{sym.endLine, sym.endCharacter}};
+}
+
+/**
+ * @brief Checks if a candidate symbol matches the file URI and selection line of an item.
+ * @param[in] sym Candidate symbol.
+ * @param[in] item Target type hierarchy item.
+ * @param[in] itemUri Serialized document URI of the item.
+ * @return True if the symbol matches.
+ */
+bool MatchesItemLocation(const Symbol& sym, const lsp::TypeHierarchyItem& item, const std::string& itemUri)
+{
+    if (sym.fileUri != itemUri && angel_lsp::utils::PathToUri(sym.fileUri) != itemUri)
+    {
+        return false;
+    }
+    return GetSymbolEffectiveRange(sym).start.line == item.selectionRange.start.line;
+}
+
+/**
+ * @brief Resolves type declarations for an LSP TypeHierarchyItem, filtering by URI/range if needed.
+ * @param[in] item Target type hierarchy item.
+ * @param[in] symbolTable Symbol table.
+ * @return Filtered declaration symbols.
+ */
+std::vector<Symbol> ResolveItemDeclarations(const lsp::TypeHierarchyItem& item, const SymbolTable& symbolTable)
+{
+    std::vector<Symbol> declarations;
+    if (item.data.has_value() && item.data->isString() && !item.data->string().empty())
+    {
+        declarations = FindTypeDeclarations(item.data->string(), symbolTable);
+    }
+    if (declarations.empty())
+    {
+        declarations = FindTypeDeclarations(item.name, symbolTable);
+    }
+    if (declarations.empty())
+    {
+        for (const auto& sym : symbolTable.FindTypeSymbolsByShortName(item.name))
+        {
+            if (IsTypeSymbol(sym))
+            {
+                declarations.push_back(sym);
+            }
+        }
+    }
+    if (declarations.size() > 1 && item.uri.isValid())
+    {
+        const std::string itemUri = item.uri.toString();
+        auto it = std::find_if(declarations.begin(), declarations.end(),
+                               [&](const Symbol& sym) { return MatchesItemLocation(sym, item, itemUri); });
+        if (it != declarations.end())
+        {
+            declarations = {*it};
+        }
+    }
+    return declarations;
+}
+
+/**
+ * @brief Resolves candidate base type symbols in search order.
+ * @param[in] cleanBase Normalized base type name.
+ * @param[in] declPrefix Namespace prefix of the declaring type.
+ * @param[in] symbolTable Symbol table.
+ * @return Resolved base type symbols.
+ */
+std::vector<Symbol> ResolveBaseSymbols(const std::string& cleanBase, std::string_view declPrefix,
+                                       const SymbolTable& symbolTable)
+{
+    std::vector<Symbol> baseSymbols;
+    if (cleanBase.find("::") != std::string::npos)
+    {
+        baseSymbols = FindTypeDeclarations(cleanBase, symbolTable);
+    }
+    if (baseSymbols.empty() && !declPrefix.empty())
+    {
+        baseSymbols = FindTypeDeclarations(std::string(declPrefix) + "::" + cleanBase, symbolTable);
+    }
+    const std::string baseName = analysis::LastScopeSegment(cleanBase);
+    if (baseSymbols.empty() && !baseName.empty())
+    {
+        baseSymbols = FindTypeDeclarations(baseName, symbolTable);
+    }
+    if (baseSymbols.empty() && !baseName.empty())
+    {
+        for (const auto& sym : symbolTable.FindTypeSymbolsByShortName(baseName))
+        {
+            if (IsTypeSymbol(sym))
+            {
+                baseSymbols.push_back(sym);
+            }
+        }
+    }
+    return baseSymbols;
+}
+
+/**
+ * @brief Collects supertype items for a single declaration, tracking seen types to avoid duplicates.
+ * @param[in] declaration Declaring type symbol.
+ * @param[in] symbolTable Symbol table.
+ * @param[in,out] seen Set of already emitted type keys.
+ * @param[in,out] items Output list of supertype items.
+ */
+void CollectSupertypesForDeclaration(const Symbol& declaration, const SymbolTable& symbolTable,
+                                     std::vector<std::string>& seen, std::vector<lsp::TypeHierarchyItem>& items)
+{
+    std::string declPrefix;
+    const auto lastScope = declaration.name.rfind("::");
+    if (lastScope != std::string::npos)
+    {
+        declPrefix = declaration.name.substr(0, lastScope);
+    }
+
+    for (const auto& base : DeclaredBases(declaration))
+    {
+        const std::string cleanBase = analysis::CleanBaseType(base);
+        if (cleanBase.empty())
+        {
+            continue;
+        }
+
+        const auto baseSymbols = ResolveBaseSymbols(cleanBase, declPrefix, symbolTable);
+        for (const auto& baseSymbol : baseSymbols)
+        {
+            const std::string key = baseSymbol.qualifiedName.empty() ? baseSymbol.name : baseSymbol.qualifiedName;
+            if (std::find(seen.begin(), seen.end(), key) == seen.end())
+            {
+                seen.push_back(key);
+                items.push_back(ToItem(baseSymbol));
+            }
+        }
+    }
+}
+
+/**
+ * @brief Context for subtype search queries.
+ */
+struct SubtypeQueryContext
+{
+    std::string target;
+    std::string qualifiedTarget;
+    std::string itemName;
+    const SymbolTable& symbolTable;
+};
+
+/**
+ * @brief Queries rule index for derived subtypes of target and qualifiedTarget.
+ * @param[in] ruleIndex Rule index.
+ * @param[in] ctx Subtype query context.
+ * @param[in,out] items Output list of subtype items.
+ */
+void CollectSubtypesFromRuleIndex(const RuleIndex& ruleIndex, const SubtypeQueryContext& ctx,
+                                  std::vector<lsp::TypeHierarchyItem>& items)
+{
+    ankerl::unordered_dense::set<std::string> seen;
+    auto collectFrom = [&](const std::string& baseKey)
+    {
+        auto it = ruleIndex.derivedByBase.find(baseKey);
+        if (it == ruleIndex.derivedByBase.end())
+        {
+            return;
+        }
+        for (const auto& derived : it->second)
+        {
+            const std::string key = derived.qualifiedName.empty() ? derived.name : derived.qualifiedName;
+            if (!seen.insert(key).second)
+            {
+                continue;
+            }
+            const auto symList = ctx.symbolTable.FindSymbolsPtr(key);
+            if (symList)
+            {
+                for (const auto& sym : *symList)
+                {
+                    if (IsTypeSymbol(sym) && analysis::LastScopeSegment(sym.name) != ctx.target)
+                    {
+                        items.push_back(ToItem(sym));
+                    }
+                }
+            }
+        }
+    };
+
+    if (!ctx.qualifiedTarget.empty())
+    {
+        collectFrom(ctx.qualifiedTarget);
+    }
+    collectFrom(ctx.target);
+    if (ctx.itemName != ctx.target)
+    {
+        collectFrom(ctx.itemName);
+    }
+}
+
+/**
+ * @brief Fallback linear symbol table scan for derived subtypes.
+ * @param[in] ctx Subtype query context.
+ * @param[in,out] items Output list of subtype items.
+ */
+void CollectSubtypesByScan(const SubtypeQueryContext& ctx, std::vector<lsp::TypeHierarchyItem>& items)
+{
+    ctx.symbolTable.ForEachSymbol(
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+        {
+            for (const auto& sym : symbols)
+            {
+                if (!IsTypeSymbol(sym) || analysis::LastScopeSegment(sym.name) == ctx.target)
+                {
+                    continue;
+                }
+
+                for (const auto& base : DeclaredBases(sym))
+                {
+                    const std::string cleanBase = analysis::CleanBaseType(base);
+                    if ((!ctx.qualifiedTarget.empty() && cleanBase == ctx.qualifiedTarget) ||
+                        analysis::LastScopeSegment(cleanBase) == ctx.target)
+                    {
+                        items.push_back(ToItem(sym));
+                        break;
+                    }
+                }
+            }
+        });
+}
 } // namespace
 
 std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const TypeHierarchyPrepareRequest& request)
@@ -126,107 +496,17 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const Ty
     const std::string name = IdentifierAt(request, node);
 
     std::vector<Symbol> declarations;
-
-    // Check if cursor sits on or inside a qualified type (e.g. Outer::Widget or Other::Base)
     if (!ts_node_is_null(node))
     {
-        TSNode p = node;
-        while (!ts_node_is_null(p))
-        {
-            std::string_view pType = ts_node_type(p);
-            if (pType == "type" || pType == "scoped_identifier")
-            {
-                std::string text = analysis::CleanBaseType(analysis::GetNodeText(p, request.sourceCode));
-                if (!text.empty() && text.find("::") != std::string::npos)
-                {
-                    declarations = FindTypeDeclarations(text, request.symbolTable);
-                    if (declarations.empty())
-                    {
-                        for (const auto& container : analysis::GetEnclosingContainers(p, request.sourceCode))
-                        {
-                            if (container.kind == analysis::ContainerKind::Namespace)
-                            {
-                                declarations =
-                                    FindTypeDeclarations(container.qualifiedName + "::" + text, request.symbolTable);
-                                if (!declarations.empty())
-                                {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if (!declarations.empty())
-                    {
-                        break;
-                    }
-                }
-            }
-            if (pType == "class_declaration" || pType == "interface_declaration" || pType == "func_declaration" ||
-                pType == "statement_block")
-            {
-                break;
-            }
-            p = ts_node_parent(p);
-        }
+        declarations = FindQualifiedTypeUnderCursor(node, request.sourceCode, request.symbolTable);
     }
-
     if (declarations.empty() && !name.empty())
     {
-        declarations = FindTypeDeclarations(name, request.symbolTable);
-        if (declarations.empty() && !ts_node_is_null(node))
-        {
-            for (const auto& container : analysis::GetEnclosingContainers(node, request.sourceCode))
-            {
-                if (container.kind == analysis::ContainerKind::Namespace)
-                {
-                    declarations = FindTypeDeclarations(container.qualifiedName + "::" + name, request.symbolTable);
-                    if (!declarations.empty())
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-        if (declarations.empty())
-        {
-            for (const auto& sym : request.symbolTable.FindTypeSymbolsByShortName(name))
-            {
-                if (IsTypeSymbol(sym))
-                {
-                    declarations.push_back(sym);
-                }
-            }
-        }
+        declarations = FindTypeFromIdentifier(name, node, request.sourceCode, request.symbolTable);
     }
-
-    // Not on a type's name, but perhaps inside one's body - which is where a reader asking for
-    // the hierarchy usually has the cursor.
     if (declarations.empty() && !ts_node_is_null(node))
     {
-        for (const auto& container : analysis::GetEnclosingContainers(node, request.sourceCode))
-        {
-            if (container.kind != analysis::ContainerKind::Class &&
-                container.kind != analysis::ContainerKind::Interface)
-            {
-                continue;
-            }
-            declarations = FindTypeDeclarations(container.qualifiedName, request.symbolTable);
-            if (declarations.empty())
-            {
-                declarations = FindTypeDeclarations(container.name, request.symbolTable);
-            }
-            if (declarations.empty())
-            {
-                for (const auto& sym : request.symbolTable.FindTypeSymbolsByShortName(container.name))
-                {
-                    if (IsTypeSymbol(sym))
-                    {
-                        declarations.push_back(sym);
-                    }
-                }
-            }
-            break;
-        }
+        declarations = FindEnclosingType(node, request.sourceCode, request.symbolTable);
     }
 
     if (declarations.empty())
@@ -245,49 +525,7 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const Ty
 
 std::optional<std::vector<lsp::TypeHierarchyItem>> GetSupertypes(const TypeHierarchyItemRequest& request)
 {
-    std::vector<Symbol> declarations;
-    if (request.item.data.has_value() && request.item.data->isString() && !request.item.data->string().empty())
-    {
-        declarations = FindTypeDeclarations(request.item.data->string(), request.symbolTable);
-    }
-    if (declarations.empty())
-    {
-        declarations = FindTypeDeclarations(request.item.name, request.symbolTable);
-    }
-    if (declarations.empty())
-    {
-        for (const auto& sym : request.symbolTable.FindTypeSymbolsByShortName(request.item.name))
-        {
-            if (IsTypeSymbol(sym))
-            {
-                declarations.push_back(sym);
-            }
-        }
-    }
-    if (declarations.size() > 1 && request.item.uri.isValid())
-    {
-        const std::string itemUri = request.item.uri.toString();
-        auto it = std::find_if(declarations.begin(), declarations.end(),
-                               [&](const Symbol& sym)
-                               {
-                                   if (sym.fileUri != itemUri && angel_lsp::utils::PathToUri(sym.fileUri) != itemUri)
-                                   {
-                                       return false;
-                                   }
-                                   auto range =
-                                       (sym.selectionRange.endLine != 0 || sym.selectionRange.endCharacter != 0)
-                                           ? ToRange(sym.selectionRange)
-                                       : (sym.fullRange.endLine != 0 || sym.fullRange.endCharacter != 0)
-                                           ? ToRange(sym.fullRange)
-                                           : lsp::Range{lsp::Position{sym.startLine, sym.startCharacter},
-                                                        lsp::Position{sym.endLine, sym.endCharacter}};
-                                   return range.start.line == request.item.selectionRange.start.line;
-                               });
-        if (it != declarations.end())
-        {
-            declarations = {*it};
-        }
-    }
+    const auto declarations = ResolveItemDeclarations(request.item, request.symbolTable);
     if (declarations.empty())
     {
         return std::nullopt;
@@ -295,64 +533,11 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> GetSupertypes(const TypeHiera
 
     std::vector<lsp::TypeHierarchyItem> items;
     std::vector<std::string> seen;
-
     for (const auto& declaration : declarations)
     {
-        std::string declPrefix;
-        auto lastScope = declaration.name.rfind("::");
-        if (lastScope != std::string::npos)
-        {
-            declPrefix = declaration.name.substr(0, lastScope);
-        }
-
-        for (const auto& base : DeclaredBases(declaration))
-        {
-            const std::string cleanBase = analysis::CleanBaseType(base);
-            const std::string baseName = analysis::LastScopeSegment(cleanBase);
-            if (baseName.empty())
-            {
-                continue;
-            }
-
-            // Look up base types in order:
-            // 1. Fully qualified / written base (e.g. "Other::Base")
-            // 2. Enclosing namespace + clean base (e.g. "Game::Base")
-            // 3. Short name in table
-            // 4. Fallback: FindTypeSymbolsByShortName
-            std::vector<Symbol> baseSymbols;
-            if (cleanBase.find("::") != std::string::npos)
-            {
-                baseSymbols = FindTypeDeclarations(cleanBase, request.symbolTable);
-            }
-            if (baseSymbols.empty() && !declPrefix.empty())
-            {
-                baseSymbols = FindTypeDeclarations(declPrefix + "::" + cleanBase, request.symbolTable);
-            }
-            if (baseSymbols.empty())
-            {
-                baseSymbols = FindTypeDeclarations(baseName, request.symbolTable);
-            }
-            if (baseSymbols.empty())
-            {
-                for (const auto& sym : request.symbolTable.FindTypeSymbolsByShortName(baseName))
-                {
-                    if (IsTypeSymbol(sym))
-                    {
-                        baseSymbols.push_back(sym);
-                    }
-                }
-            }
-            for (const auto& baseSymbol : baseSymbols)
-            {
-                const std::string key = baseSymbol.qualifiedName.empty() ? baseSymbol.name : baseSymbol.qualifiedName;
-                if (std::find(seen.begin(), seen.end(), key) == seen.end())
-                {
-                    seen.push_back(key);
-                    items.push_back(ToItem(baseSymbol));
-                }
-            }
-        }
+        CollectSupertypesForDeclaration(declaration, request.symbolTable, seen, items);
     }
+
     return items.empty() ? std::nullopt : std::optional{items};
 }
 
@@ -370,73 +555,17 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> GetSubtypes(const TypeHierarc
         qualifiedTarget = request.item.data->string();
     }
 
+    SubtypeQueryContext ctx{target, std::move(qualifiedTarget), request.item.name, request.symbolTable};
     std::vector<lsp::TypeHierarchyItem> items;
+
     const auto ruleIndex = request.symbolTable.GetRuleIndex();
     if (ruleIndex)
     {
-        ankerl::unordered_dense::set<std::string> seen;
-        auto collectFrom = [&](const std::string& baseKey)
-        {
-            auto it = ruleIndex->derivedByBase.find(baseKey);
-            if (it == ruleIndex->derivedByBase.end())
-            {
-                return;
-            }
-            for (const auto& derived : it->second)
-            {
-                const std::string key = derived.qualifiedName.empty() ? derived.name : derived.qualifiedName;
-                if (!seen.insert(key).second)
-                {
-                    continue;
-                }
-                const auto symList = request.symbolTable.FindSymbolsPtr(key);
-                if (symList)
-                {
-                    for (const auto& sym : *symList)
-                    {
-                        if (IsTypeSymbol(sym) && analysis::LastScopeSegment(sym.name) != target)
-                        {
-                            items.push_back(ToItem(sym));
-                        }
-                    }
-                }
-            }
-        };
-
-        if (!qualifiedTarget.empty())
-        {
-            collectFrom(qualifiedTarget);
-        }
-        collectFrom(target);
-        if (request.item.name != target)
-        {
-            collectFrom(request.item.name);
-        }
+        CollectSubtypesFromRuleIndex(*ruleIndex, ctx, items);
     }
     else
     {
-        request.symbolTable.ForEachSymbol(
-            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
-            {
-                for (const auto& sym : symbols)
-                {
-                    if (!IsTypeSymbol(sym) || analysis::LastScopeSegment(sym.name) == target)
-                    {
-                        continue;
-                    }
-
-                    for (const auto& base : DeclaredBases(sym))
-                    {
-                        const std::string cleanBase = analysis::CleanBaseType(base);
-                        if ((!qualifiedTarget.empty() && cleanBase == qualifiedTarget) ||
-                            analysis::LastScopeSegment(cleanBase) == target)
-                        {
-                            items.push_back(ToItem(sym));
-                            break;
-                        }
-                    }
-                }
-            });
+        CollectSubtypesByScan(ctx, items);
     }
 
     return items.empty() ? std::nullopt : std::optional{items};
