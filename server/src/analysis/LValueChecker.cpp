@@ -37,65 +37,39 @@ std::string NodeText(TSNode node, std::string_view sourceCode)
     return std::string(sourceCode.substr(start, end - start));
 }
 
-void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const std::string& arg1 = "",
-                const std::string& arg2 = "")
+void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code)
 {
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, arg1, arg2);
+    ctx.EmitAtRange(start.row, start.column, end.row, end.column, code);
 }
 
-void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+struct CallCandidateContext
 {
-    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
-    if (ts_node_is_null(funcNode) && ts_node_child_count(callNode) > 0)
-    {
-        funcNode = ts_node_child(callNode, 0);
-    }
-    if (ts_node_is_null(funcNode))
+    const LValueCheckRequest& request;
+    const Scope* scope = nullptr;
+    DiagnosticContext& ctx;
+};
+
+void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
+{
+    TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
+    TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
+    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
     {
         return;
     }
-
-    std::vector<Symbol> candidates;
-    std::string_view funcNodeType = ts_node_type(funcNode);
-
-    if (funcNodeType == "member_expression")
+    std::string objType = ResolveExpressionType(objNode, cctx.scope, cctx.ctx.request.symbolTable,
+                                                cctx.request.sourceCode, cctx.ctx.request.fileUri);
+    std::string cleanObj = CleanBaseType(objType);
+    std::string memName = NodeText(memNode, cctx.request.sourceCode);
+    if (cleanObj.empty() || memName.empty())
     {
-        TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
-        TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
-        if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
-        {
-            std::string objType =
-                ResolveExpressionType(objNode, scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri);
-            std::string cleanObj = CleanBaseType(objType);
-            std::string memName = NodeText(memNode, request.sourceCode);
-
-            if (!cleanObj.empty() && !memName.empty())
-            {
-                auto hierarchy = GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable);
-                for (const auto& typeName : hierarchy)
-                {
-                    auto found = ctx.request.symbolTable.FindSymbolsPtr(typeName + "::" + memName);
-                    if (found)
-                    {
-                        for (const auto& sym : *found)
-                        {
-                            if (sym.type == SymbolType::Function)
-                            {
-                                candidates.push_back(sym);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        return;
     }
-    else if (funcNodeType == "scoped_identifier")
+    for (const auto& typeName : GetInheritedTypeHierarchy(cleanObj, cctx.ctx.request.symbolTable))
     {
-        std::string qName = NodeText(funcNode, request.sourceCode);
-        auto found = ctx.request.symbolTable.FindSymbolsPtr(qName);
-        if (found)
+        if (auto found = cctx.ctx.request.symbolTable.FindSymbolsPtr(typeName + "::" + memName))
         {
             for (const auto& sym : *found)
             {
@@ -106,46 +80,63 @@ void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const S
             }
         }
     }
-    else if (funcNodeType == "identifier")
+}
+
+void CollectScopedCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
+{
+    std::string qName = NodeText(funcNode, cctx.request.sourceCode);
+    if (auto found = cctx.ctx.request.symbolTable.FindSymbolsPtr(qName))
     {
-        std::string name = NodeText(funcNode, request.sourceCode);
-        auto inScope = FindSymbolsInScope(name, funcNode, request.sourceCode, ctx.request.symbolTable);
-        for (const auto& sym : inScope)
+        for (const auto& sym : *found)
         {
             if (sym.type == SymbolType::Function)
             {
                 candidates.push_back(sym);
             }
         }
-        if (candidates.empty())
+    }
+}
+
+void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
+{
+    std::string name = NodeText(funcNode, cctx.request.sourceCode);
+    for (const auto& sym : FindSymbolsInScope(name, funcNode, cctx.request.sourceCode, cctx.ctx.request.symbolTable))
+    {
+        if (sym.type == SymbolType::Function)
         {
-            auto containers = GetEnclosingContainers(funcNode, request.sourceCode);
-            for (const auto& c : containers)
-            {
-                if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
-                {
-                    auto hierarchy = GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName,
-                                                               ctx.request.symbolTable);
-                    for (const auto& cls : hierarchy)
-                    {
-                        auto found = ctx.request.symbolTable.FindSymbolsPtr(cls + "::" + name);
-                        if (found)
-                        {
-                            for (const auto& sym : *found)
-                            {
-                                if (sym.type == SymbolType::Function)
-                                {
-                                    candidates.push_back(sym);
-                                }
-                            }
-                        }
-                    }
-                    break;
-                }
-            }
+            candidates.push_back(sym);
         }
     }
+    if (!candidates.empty())
+    {
+        return;
+    }
+    for (const auto& c : GetEnclosingContainers(funcNode, cctx.request.sourceCode))
+    {
+        if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
+        {
+            auto hierarchy = GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName,
+                                                       cctx.ctx.request.symbolTable);
+            for (const auto& cls : hierarchy)
+            {
+                if (auto found = cctx.ctx.request.symbolTable.FindSymbolsPtr(cls + "::" + name))
+                {
+                    for (const auto& sym : *found)
+                    {
+                        if (sym.type == SymbolType::Function)
+                        {
+                            candidates.push_back(sym);
+                        }
+                    }
+                }
+            }
+            break;
+        }
+    }
+}
 
+void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symbol>& candidates, DiagnosticContext& ctx)
+{
     if (candidates.empty())
     {
         EmitAtNode(callNode, ctx, "as-err-assign-non-ref-call");
@@ -164,11 +155,7 @@ void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const S
 
         const auto& fn = sym.GetFunction();
         std::string retClean = CleanBaseType(fn.returnType);
-        if (fn.returnTypeKind == TypeKind::Void || retClean == "void")
-        {
-            // void return
-        }
-        else
+        if (fn.returnTypeKind != TypeKind::Void && retClean != "void")
         {
             allVoid = false;
         }
@@ -189,125 +176,154 @@ void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const S
     }
 }
 
-bool IsAssignableLValueNode(TSNode node, const Scope* scope, const LValueCheckRequest& request,
-                            const SymbolTable& table, int depth = 0)
+void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
 {
-    // See k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
-        return false;
+    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
+    if (ts_node_is_null(funcNode) && ts_node_child_count(callNode) > 0)
+    {
+        funcNode = ts_node_child(callNode, 0);
+    }
+    if (ts_node_is_null(funcNode))
+    {
+        return;
+    }
 
+    const CallCandidateContext cctx{request, scope, ctx};
+    std::vector<Symbol> candidates;
+    const std::string_view funcNodeType = ts_node_type(funcNode);
+
+    if (funcNodeType == "member_expression")
+    {
+        CollectMemberCandidates(funcNode, cctx, candidates);
+    }
+    else if (funcNodeType == "scoped_identifier")
+    {
+        CollectScopedCandidates(funcNode, cctx, candidates);
+    }
+    else if (funcNodeType == "identifier")
+    {
+        CollectIdentifierCandidates(funcNode, cctx, candidates);
+    }
+
+    ValidateCandidateReturnTypes(callNode, candidates, ctx);
+}
+
+TSNode UnwrapParentheses(TSNode node)
+{
+    TSNode current = node;
+    while (!ts_node_is_null(current) && std::string_view(ts_node_type(current)) == "parenthesized_expression")
+    {
+        uint32_t count = ts_node_named_child_count(current);
+        if (count > 0)
+        {
+            current = ts_node_named_child(current, 0);
+            continue;
+        }
+        TSNode found{};
+        for (uint32_t i = 0; i < ts_node_child_count(current); ++i)
+        {
+            TSNode ch = ts_node_child(current, i);
+            std::string_view ct = ts_node_type(ch);
+            if (ct != "(" && ct != ")")
+            {
+                found = ch;
+                break;
+            }
+        }
+        if (ts_node_is_null(found))
+        {
+            break;
+        }
+        current = found;
+    }
+    return current;
+}
+
+bool IsIdentifierAssignable(std::string_view name, const Scope* scope, const SymbolTable& table)
+{
+    if (scope)
+    {
+        const LocalDefinition* localDef = ResolveInScope(scope, name);
+        if (localDef)
+        {
+            return localDef->kind != LocalDefinitionKind::Function && localDef->kind != LocalDefinitionKind::Method;
+        }
+    }
+
+    auto symbols = table.FindSymbolsPtr(name);
+    if (symbols && !symbols->empty())
+    {
+        for (const auto& sym : *symbols)
+        {
+            if (sym.type != SymbolType::Function && sym.type != SymbolType::Funcdef)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+    return true;
+}
+
+bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const SymbolTable& table, std::string_view sourceCode);
+
+bool IsTernaryAssignable(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
+{
+    TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
+    TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
+    if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
+    {
+        if (ts_node_named_child_count(node) >= 3)
+        {
+            consequence = ts_node_named_child(node, 1);
+            alternative = ts_node_named_child(node, 2);
+        }
+    }
+    return IsAssignableLValueNode(consequence, scope, table, sourceCode) &&
+           IsAssignableLValueNode(alternative, scope, table, sourceCode);
+}
+
+bool IsUnaryAssignable(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
+{
+    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    if (!ts_node_is_null(opNode) && NodeText(opNode, sourceCode) == "@")
+    {
+        TSNode operand = parser::GetChildByField(node, parser::fields::Operand);
+        return IsAssignableLValueNode(operand, scope, table, sourceCode);
+    }
+    return false;
+}
+
+bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
+{
+    if (ts_node_is_null(rawNode))
+    {
+        return false;
+    }
+
+    TSNode node = UnwrapParentheses(rawNode);
     if (ts_node_is_null(node))
     {
         return false;
     }
 
-    std::string_view nodeType = ts_node_type(node);
-
-    // Parenthesized expression
-    if (nodeType == "parenthesized_expression")
-    {
-        uint32_t count = ts_node_named_child_count(node);
-        if (count > 0)
-        {
-            return IsAssignableLValueNode(ts_node_named_child(node, 0), scope, request, table, depth + 1);
-        }
-        for (uint32_t i = 0; i < ts_node_child_count(node); ++i)
-        {
-            TSNode ch = ts_node_child(node, i);
-            std::string_view ct = ts_node_type(ch);
-            if (ct != "(" && ct != ")")
-            {
-                return IsAssignableLValueNode(ch, scope, request, table, depth + 1);
-            }
-        }
-        return false;
-    }
-
-    // Ternary expression (e.g. cond ? a : b)
+    const std::string_view nodeType = ts_node_type(node);
     if (nodeType == "ternary_expression")
     {
-        TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
-        TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
-        if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
-        {
-            if (ts_node_named_child_count(node) >= 3)
-            {
-                consequence = ts_node_named_child(node, 1);
-                alternative = ts_node_named_child(node, 2);
-            }
-        }
-        return IsAssignableLValueNode(consequence, scope, request, table, depth + 1) &&
-               IsAssignableLValueNode(alternative, scope, request, table, depth + 1);
+        return IsTernaryAssignable(node, scope, table, sourceCode);
     }
-
-    // Literals are not lvalues
-    if (nodeType == "number_literal" || nodeType == "string_literal" || nodeType == "boolean_literal" ||
-        nodeType == "null_literal")
-    {
-        return false;
-    }
-
-    // Unary expression: only @handle is lvalue
     if (nodeType == "unary_expression")
     {
-        TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
-        if (!ts_node_is_null(opNode) && NodeText(opNode, request.sourceCode) == "@")
-        {
-            TSNode operand = parser::GetChildByField(node, parser::fields::Operand);
-            return IsAssignableLValueNode(operand, scope, request, table, depth + 1);
-        }
-        return false;
+        return IsUnaryAssignable(node, scope, table, sourceCode);
     }
-
-    // Binary and cast expressions are not lvalues
-    if (nodeType == "binary_expression" || nodeType == "cast_expression")
-    {
-        return false;
-    }
-
-    // Member access, indexing, subscripts
     if (nodeType == "member_expression" || nodeType == "index_expression")
     {
         return true;
     }
-
-    // Identifiers
     if (nodeType == "identifier" || nodeType == "scoped_identifier")
     {
-        std::string name = NodeText(node, request.sourceCode);
-        if (scope)
-        {
-            const LocalDefinition* localDef = ResolveInScope(scope, name);
-            if (localDef)
-            {
-                if (localDef->kind == LocalDefinitionKind::Function || localDef->kind == LocalDefinitionKind::Method)
-                {
-                    return false;
-                }
-                return true;
-            }
-        }
-
-        auto symbols = table.FindSymbolsPtr(name);
-        if (symbols && !symbols->empty())
-        {
-            bool onlyFunctions = true;
-            for (const auto& sym : *symbols)
-            {
-                if (sym.type != SymbolType::Function && sym.type != SymbolType::Funcdef)
-                {
-                    onlyFunctions = false;
-                    break;
-                }
-            }
-            if (onlyFunctions)
-            {
-                return false;
-            }
-        }
-        return true;
+        return IsIdentifierAssignable(NodeText(node, sourceCode), scope, table);
     }
-
     return false;
 }
 
@@ -319,36 +335,27 @@ void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request, const
         return;
     }
 
-    std::string_view targetType = ts_node_type(target);
-    TSNode unwrapped = target;
-    while (std::string_view(ts_node_type(unwrapped)) == "parenthesized_expression" &&
-           ts_node_named_child_count(unwrapped) > 0)
+    const std::string_view targetType = ts_node_type(target);
+
+    if (targetType == "call_expression")
     {
-        unwrapped = ts_node_named_child(unwrapped, 0);
+        CheckCallLValue(target, request, scope, ctx);
+        return;
     }
 
+    TSNode unwrapped = UnwrapParentheses(target);
     if (std::string_view(ts_node_type(unwrapped)) == "call_expression")
     {
         CheckCallLValue(unwrapped, request, scope, ctx);
         return;
     }
 
-    // A conditional is an l-value in AngelScript, so it is never the reason an assignment
-    // is illegal. Found on a real Cry of Fear weapon script:
-    //
-    //     (g_iMode == MODE_SLASH) ? pev.punchangle.y = f(-3, -2)
-    //                             : pev.punchangle.x = f(2, 3);
-    //
-    // Both compilers accept that, and both accept the shape it is being confused with -
-    // `(f ? a.y : a.x) = 1.0f;` - so nothing is given up by staying quiet here. Where this
-    // grammar puts the `=` relative to the `?:` is a question about the tree rather than
-    // about the language, and this rule is not the place to answer it.
     if (targetType == "ternary_expression")
     {
         return;
     }
 
-    if (!IsAssignableLValueNode(target, scope, request, ctx.request.symbolTable))
+    if (!IsAssignableLValueNode(target, scope, ctx.request.symbolTable, request.sourceCode))
     {
         EmitAtNode(target, ctx, "as-err-not-lvalue");
     }

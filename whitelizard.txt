@@ -28,12 +28,9 @@ angel_lsp::Server::ScheduleAnalysis
 angel_lsp::Server::ScheduleAnalysisImmediate
 angel_lsp::analysis::AssembleMarkdown
 angel_lsp::analysis::CheckCall
-angel_lsp::analysis::CheckCallLValue
-angel_lsp::analysis::CheckIdentifierNode
 angel_lsp::analysis::CheckInitializerListAgainstType
 angel_lsp::analysis::CheckInitializerLists
 angel_lsp::analysis::CheckLambdaArguments
-angel_lsp::analysis::CheckMemberExpression
 angel_lsp::analysis::CheckVariableDirectInitialization
 angel_lsp::analysis::CleanBaseType
 angel_lsp::analysis::CleanDescriptionLines
@@ -41,12 +38,10 @@ angel_lsp::analysis::DiagnosticContext::Emit
 angel_lsp::analysis::DiagnosticContext::EmitAtRange
 angel_lsp::analysis::DiagnosticContext::EmitAtTypeName
 angel_lsp::analysis::DiagnosticContext::EmitWithRelated
-angel_lsp::analysis::EmitAtNode
 angel_lsp::analysis::EmitWarningAtNode
 angel_lsp::analysis::ExtractBrief
 angel_lsp::analysis::ExtractCommentLines
 angel_lsp::analysis::FindFreeCandidates
-angel_lsp::analysis::FindMember
 angel_lsp::analysis::FindSymbolsInScope
 angel_lsp::analysis::FuncdefTargetOfLambda
 angel_lsp::analysis::GetAllRelatedClasses
@@ -58,7 +53,6 @@ angel_lsp::analysis::HashSymbolInterface
 angel_lsp::analysis::InspectAggregateStruct
 angel_lsp::analysis::InspectContainer
 angel_lsp::analysis::InspectDictionary
-angel_lsp::analysis::IsAssignableLValueNode
 angel_lsp::analysis::IsBareDataType
 angel_lsp::analysis::IsBaseConstructorCall
 angel_lsp::analysis::IsBlockCommand
@@ -75,10 +69,8 @@ angel_lsp::analysis::ReadLambdaParameters
 angel_lsp::analysis::RenderDoxygenMarkdown
 angel_lsp::analysis::RenderInlineNode
 angel_lsp::analysis::ResolveBestOverload
-angel_lsp::analysis::ResolveConstness
 angel_lsp::analysis::ResolveExpressionType
 angel_lsp::analysis::ResolveIndexedType
-angel_lsp::analysis::ResolveNameConstness
 angel_lsp::analysis::ResolveReceiverType
 angel_lsp::analysis::RewriteAtInlineCommands
 angel_lsp::analysis::ScoreArgumentMatch

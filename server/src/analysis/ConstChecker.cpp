@@ -6,6 +6,7 @@
 
 #include "parser/GrammarNames.h"
 #include <algorithm>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -66,13 +67,13 @@ bool TypeTextIsConst(std::string_view typeText)
  * quietly change what isHandleType and typeKind mean for every other reader of the scope
  * tree, including the null-assignment rule.
  *
- * @return True only when a parameter of that name was found and its type begins with const;
- *         `found` says whether the question was answerable at all.
+ * @param[in] node AST node inside the function or method.
+ * @param[in] name Parameter name to search for.
+ * @param[in] sourceCode Document source text.
+ * @return True/false if parameter found and whether its type is const; std::nullopt if not found.
  */
-bool ParameterIsConst(TSNode node, const std::string& name, std::string_view sourceCode, bool& found)
+std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::string_view sourceCode)
 {
-    found = false;
-
     TSNode owner = node;
     while (!ts_node_is_null(owner))
     {
@@ -86,13 +87,13 @@ bool ParameterIsConst(TSNode node, const std::string& name, std::string_view sou
     }
     if (ts_node_is_null(owner))
     {
-        return false;
+        return std::nullopt;
     }
 
     TSNode parameters = parser::GetChildByField(owner, parser::fields::Parameters);
     if (ts_node_is_null(parameters))
     {
-        return false;
+        return std::nullopt;
     }
 
     const uint32_t count = ts_node_named_child_count(parameters);
@@ -110,11 +111,10 @@ bool ParameterIsConst(TSNode node, const std::string& name, std::string_view sou
             continue;
         }
 
-        found = true;
         TSNode typeNode = parser::GetChildByField(parameter, parser::fields::ParamType);
         return !ts_node_is_null(typeNode) && TypeTextIsConst(NodeText(typeNode, sourceCode));
     }
-    return false;
+    return std::nullopt;
 }
 
 /** @brief What one expression is, as far as constness goes. */
@@ -125,12 +125,20 @@ enum class Constness
     Const
 };
 
-Constness ResolveConstness(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode,
-                           int depth = 0);
+/**
+ * @brief Context bundled for constness resolution queries.
+ */
+struct ConstContext
+{
+    const Scope* scope = nullptr;
+    const SymbolTable& table;
+    std::string_view sourceCode;
+};
+
+Constness ResolveConstness(TSNode node, const ConstContext& ctx, int depth = 0);
 
 /** @brief Constness of a plain name, whether it is a local, a parameter or a global. */
-Constness ResolveNameConstness(const std::string& name, TSNode node, const Scope* scope, const SymbolTable& table,
-                               std::string_view sourceCode)
+Constness ResolveNameConstness(std::string_view name, TSNode node, const ConstContext& ctx)
 {
     if (name.empty())
     {
@@ -138,9 +146,9 @@ Constness ResolveNameConstness(const std::string& name, TSNode node, const Scope
     }
 
     // A local or a parameter first, since either shadows a global of the same name.
-    if (scope)
+    if (ctx.scope)
     {
-        if (const LocalDefinition* def = ResolveInScope(scope, name))
+        if (const LocalDefinition* def = ResolveInScope(ctx.scope, name))
         {
             if (!def->typeName.empty())
             {
@@ -151,17 +159,16 @@ Constness ResolveNameConstness(const std::string& name, TSNode node, const Scope
             // keep, or a foreach variable, whose type is not written anywhere at all. The
             // first is answerable from the tree; the second is not, and Unknown is the only
             // honest answer for it.
-            bool found = false;
-            const bool isConst = ParameterIsConst(node, name, sourceCode, found);
-            if (found)
+            const auto isConst = ParameterIsConst(node, name, ctx.sourceCode);
+            if (isConst.has_value())
             {
-                return isConst ? Constness::Const : Constness::Mutable;
+                return *isConst ? Constness::Const : Constness::Mutable;
             }
             return Constness::Unknown;
         }
     }
 
-    const auto symbols = table.FindSymbolsPtr(name);
+    const auto symbols = ctx.table.FindSymbolsPtr(std::string(name));
     if (!symbols)
     {
         return Constness::Unknown;
@@ -177,16 +184,10 @@ Constness ResolveNameConstness(const std::string& name, TSNode node, const Scope
     return Constness::Unknown;
 }
 
-Constness ResolveConstness(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode,
-                           int depth)
+Constness ResolveConstness(TSNode node, const ConstContext& ctx, int depth)
 {
     // See k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
-    {
-        return Constness::Unknown;
-    }
-
-    if (ts_node_is_null(node))
+    if (depth > k_maxAstDepth || ts_node_is_null(node))
     {
         return Constness::Unknown;
     }
@@ -195,20 +196,20 @@ Constness ResolveConstness(TSNode node, const Scope* scope, const SymbolTable& t
 
     if (nodeType == "identifier")
     {
-        return ResolveNameConstness(NodeText(node, sourceCode), node, scope, table, sourceCode);
+        return ResolveNameConstness(NodeText(node, ctx.sourceCode), node, ctx);
     }
 
     if (nodeType == "scoped_identifier")
     {
         // Asked for whole first, the way ResolveExpressionType does, since a qualified name
         // is the key the collector stored it under.
-        const std::string whole = NodeText(node, sourceCode);
-        const Constness qualified = ResolveNameConstness(whole, node, scope, table, sourceCode);
+        const std::string whole = NodeText(node, ctx.sourceCode);
+        const Constness qualified = ResolveNameConstness(whole, node, ctx);
         if (qualified != Constness::Unknown)
         {
             return qualified;
         }
-        return ResolveNameConstness(LastScopeSegment(whole), node, scope, table, sourceCode);
+        return ResolveNameConstness(LastScopeSegment(whole), node, ctx);
     }
 
     // A member of a const object is const, which is what makes `e.field = 1` through a
@@ -217,16 +218,15 @@ Constness ResolveConstness(TSNode node, const Scope* scope, const SymbolTable& t
     // is nothing to conclude from one here.
     if (nodeType == "member_expression")
     {
-        const Constness object = ResolveConstness(parser::GetChildByField(node, parser::fields::Object), scope, table,
-                                                  sourceCode, depth + 1);
+        const Constness object =
+            ResolveConstness(parser::GetChildByField(node, parser::fields::Object), ctx, depth + 1);
         return object == Constness::Const ? Constness::Const : Constness::Unknown;
     }
 
     if (nodeType == "parenthesized_expression")
     {
-        return ts_node_named_child_count(node) > 0
-                   ? ResolveConstness(ts_node_named_child(node, 0), scope, table, sourceCode, depth + 1)
-                   : Constness::Unknown;
+        return ts_node_named_child_count(node) > 0 ? ResolveConstness(ts_node_named_child(node, 0), ctx, depth + 1)
+                                                   : Constness::Unknown;
     }
 
     // An index into a const container, a cast, a call result: each has an answer, and none
@@ -285,12 +285,21 @@ MethodLookup FindMethod(const std::string& typeName, const std::string& methodNa
     return result;
 }
 
-void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const std::string& arg1,
-                const std::string& arg2)
+/**
+ * @brief Arguments for constness diagnostic emission.
+ */
+struct DiagArgs
+{
+    std::string_view code;
+    std::string arg1 = "";
+    std::string arg2 = "";
+};
+
+void EmitAtNode(TSNode node, DiagnosticContext& ctx, const DiagArgs& diag)
 {
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, arg1, arg2);
+    ctx.EmitAtRange(start.row, start.column, end.row, end.column, diag.code, diag.arg1, diag.arg2);
 }
 
 bool TypeTextIsHandleConst(std::string_view typeText)
@@ -306,7 +315,7 @@ bool TypeTextIsHandleConst(std::string_view typeText)
     return typeText.ends_with(" const");
 }
 
-Constness ResolveHandleConstness(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
+Constness ResolveHandleConstness(TSNode node, const ConstContext& ctx)
 {
     if (ts_node_is_null(node))
     {
@@ -316,10 +325,10 @@ Constness ResolveHandleConstness(TSNode node, const Scope* scope, const SymbolTa
     const std::string_view nodeType = ts_node_type(node);
     if (nodeType == "identifier" || nodeType == "scoped_identifier")
     {
-        const std::string name = NodeText(node, sourceCode);
-        if (scope)
+        const std::string name = NodeText(node, ctx.sourceCode);
+        if (ctx.scope)
         {
-            if (const LocalDefinition* def = ResolveInScope(scope, LastScopeSegment(name)))
+            if (const LocalDefinition* def = ResolveInScope(ctx.scope, LastScopeSegment(name)))
             {
                 if (!def->typeName.empty())
                 {
@@ -327,7 +336,7 @@ Constness ResolveHandleConstness(TSNode node, const Scope* scope, const SymbolTa
                 }
             }
         }
-        if (const auto symbols = table.FindSymbolsPtr(name))
+        if (const auto symbols = ctx.table.FindSymbolsPtr(name))
         {
             for (const auto& sym : *symbols)
             {
@@ -365,27 +374,22 @@ void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope*
         }
     }
 
+    const ConstContext constCtx{scope, ctx.request.symbolTable, request.sourceCode};
     if (isHandleAssignment)
     {
-        if (ResolveHandleConstness(actualTarget, scope, ctx.request.symbolTable, request.sourceCode) ==
-            Constness::Const)
+        if (ResolveHandleConstness(actualTarget, constCtx) == Constness::Const)
         {
-            const std::string written = NodeText(target, request.sourceCode);
-            ctx.EmitAtRange(ts_node_start_point(target).row, ts_node_start_point(target).column,
-                            ts_node_end_point(target).row, ts_node_end_point(target).column, "as-err-const-assignment",
-                            written);
+            EmitAtNode(target, ctx, {"as-err-const-assignment", NodeText(target, request.sourceCode)});
         }
         return;
     }
 
-    if (ResolveConstness(target, scope, ctx.request.symbolTable, request.sourceCode) != Constness::Const)
+    if (ResolveConstness(target, constCtx) != Constness::Const)
     {
         return;
     }
 
-    const std::string written = NodeText(target, request.sourceCode);
-    ctx.EmitAtRange(ts_node_start_point(target).row, ts_node_start_point(target).column, ts_node_end_point(target).row,
-                    ts_node_end_point(target).column, "as-err-const-assignment", written);
+    EmitAtNode(target, ctx, {"as-err-const-assignment", NodeText(target, request.sourceCode)});
 }
 
 void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
@@ -404,7 +408,8 @@ void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope*
     }
 
     const SymbolTable& table = ctx.request.symbolTable;
-    if (ResolveConstness(objectNode, scope, table, request.sourceCode) != Constness::Const)
+    const ConstContext constCtx{scope, table, request.sourceCode};
+    if (ResolveConstness(objectNode, constCtx) != Constness::Const)
     {
         return;
     }
@@ -423,7 +428,8 @@ void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope*
         return;
     }
 
-    EmitAtNode(memberNode, ctx, "as-err-const-method-required", LastScopeSegment(method.declaringClass), methodName);
+    EmitAtNode(memberNode, ctx,
+               {"as-err-const-method-required", std::string(LastScopeSegment(method.declaringClass)), methodName});
 }
 
 void VisitNode(TSNode node, const ConstCheckRequest& request, DiagnosticContext& ctx, int depth = 0)
