@@ -1,23 +1,35 @@
 #include "utils/PreprocessorRegions.h"
 
 #include <cctype>
+#include <optional>
 #include <utility>
 
 namespace angel_lsp::utils
 {
 namespace
 {
+/**
+ * @brief Checks if character is a valid identifier character (alnum or underscore).
+ * @param[in] c Character to test.
+ * @return True if valid identifier char.
+ */
 bool IsIdentifierChar(char c)
 {
     return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
 }
 
 /**
+ * @brief Checks if character is a space or tab.
+ * @param[in] c Character to test.
+ * @return True if space or tab.
+ */
+bool IsSpaceOrTab(char c)
+{
+    return c == ' ' || c == '\t';
+}
+
+/**
  * @brief One `#if <word>` that has been opened and is waiting for its `#endif`.
- *
- * With no host extensions enabled there is exactly one branch, so `branchStart` is the
- * `#if` line and `takenAlready` never changes - which is what makes the stock path fall out
- * of the same code rather than needing its own.
  */
 struct OpenDirective
 {
@@ -34,178 +46,501 @@ struct DirectiveHit
     uint32_t endColumn = 0;   ///< One past the last character of the name.
     std::string_view name;
     std::string_view argument;
-
-    /**
-     * @brief True when the name begins in the character right after the `#`.
-     *
-     * Measured: `# include "helper.as"` and `#  if FOO` are both rejected by the compiler
-     * while `#include` and `#if` compile, so a space here is the difference between a
-     * directive and a stray `#`. This walk used to skip that whitespace, which meant it
-     * read `# if UNDEFINED` as a live directive and excluded a block the compiler keeps.
-     */
     bool touchesHash = true;
-
-    /**
-     * @brief First non-blank character after the name, or 0 at end of line.
-     *
-     * Only `#include` cares: it needs a quoted string, and `#include helper.as` is
-     * `ERROR (1, 1): Unexpected token '<unrecognized token>'` while the quoted form
-     * compiles. The name is spelled correctly in both, so nothing else in this walk can
-     * tell them apart.
-     */
     char firstArgChar = 0;
 };
 
 /**
+ * @brief State tracking for scanning lines and directives.
+ */
+struct LineScanState
+{
+    size_t index{0};
+    uint32_t currentLine{0};
+    size_t lineStart{0};
+    bool atLineStart{true};
+};
+
+/**
+ * @brief Advances index past spaces and tabs.
+ * @param[in] sourceCode Document text.
+ * @param[in,out] state Line scanner state.
+ */
+void SkipSpacesAndTabs(std::string_view sourceCode, LineScanState& state)
+{
+    const size_t n = sourceCode.size();
+    while (state.index < n && IsSpaceOrTab(sourceCode[state.index]))
+        ++state.index;
+}
+
+/**
+ * @brief Advances index until newline or end of source.
+ * @param[in] sourceCode Document text.
+ * @param[in,out] state Line scanner state.
+ */
+void SkipUntilNewline(std::string_view sourceCode, LineScanState& state)
+{
+    const size_t n = sourceCode.size();
+    while (state.index < n && sourceCode[state.index] != '\n' && sourceCode[state.index] != '\r')
+        ++state.index;
+}
+
+/**
+ * @brief Advances scan state past a newline sequence.
+ * @param[in] sourceCode Document text.
+ * @param[in,out] state Line scanner state.
+ * @return True if a newline was consumed.
+ */
+bool HandleNewline(std::string_view sourceCode, LineScanState& state)
+{
+    const char c = sourceCode[state.index];
+    if (c == '\r')
+    {
+        if (state.index + 1 < sourceCode.size() && sourceCode[state.index + 1] == '\n')
+            ++state.index;
+        ++state.currentLine;
+        ++state.index;
+        state.lineStart = state.index;
+        state.atLineStart = true;
+        return true;
+    }
+    if (c == '\n')
+    {
+        ++state.currentLine;
+        ++state.index;
+        state.lineStart = state.index;
+        state.atLineStart = true;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Advances scan state past a single-line comment.
+ * @param[in] sourceCode Document text.
+ * @param[in,out] state Line scanner state.
+ */
+void SkipLineComment(std::string_view sourceCode, LineScanState& state)
+{
+    state.index += 2;
+    SkipUntilNewline(sourceCode, state);
+}
+
+/**
+ * @brief Advances scan state past a multi-line block comment.
+ * @param[in] sourceCode Document text.
+ * @param[in,out] state Line scanner state.
+ */
+void SkipBlockComment(std::string_view sourceCode, LineScanState& state)
+{
+    state.index += 2;
+    const size_t n = sourceCode.size();
+    while (state.index < n)
+    {
+        if (sourceCode[state.index] == '\n')
+        {
+            ++state.currentLine;
+            state.lineStart = state.index + 1;
+            state.atLineStart = true;
+        }
+        else if (sourceCode[state.index] == '*' && state.index + 1 < n && sourceCode[state.index + 1] == '/')
+        {
+            state.index += 2;
+            break;
+        }
+        ++state.index;
+    }
+}
+
+/**
+ * @brief Tries to skip a line comment or block comment.
+ * @param[in] sourceCode Document text.
+ * @param[in,out] state Line scanner state.
+ * @return True if a comment was encountered and skipped.
+ */
+bool TrySkipComment(std::string_view sourceCode, LineScanState& state)
+{
+    if (sourceCode[state.index] != '/' || state.index + 1 >= sourceCode.size())
+        return false;
+    const char next = sourceCode[state.index + 1];
+    if (next == '/')
+    {
+        SkipLineComment(sourceCode, state);
+        return true;
+    }
+    if (next == '*')
+    {
+        SkipBlockComment(sourceCode, state);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Advances scan state past a quoted string or character literal.
+ * @param[in] sourceCode Document text.
+ * @param[in,out] state Line scanner state.
+ */
+void SkipStringLiteral(std::string_view sourceCode, LineScanState& state)
+{
+    const char quote = sourceCode[state.index];
+    ++state.index;
+    const size_t n = sourceCode.size();
+    while (state.index < n)
+    {
+        if (sourceCode[state.index] == '\\')
+        {
+            state.index += 2;
+            continue;
+        }
+        if (sourceCode[state.index] == quote)
+        {
+            ++state.index;
+            break;
+        }
+        if (sourceCode[state.index] == '\n' || sourceCode[state.index] == '\r')
+            break;
+        ++state.index;
+    }
+}
+
+/**
+ * @brief Parses a directive beginning with '#' at line start.
+ * @param[in] sourceCode Document text.
+ * @param[in,out] state Line scanner state.
+ * @return DirectiveHit if a valid directive candidate was found.
+ */
+std::optional<DirectiveHit> ParseDirectiveHit(std::string_view sourceCode, LineScanState& state)
+{
+    const size_t n = sourceCode.size();
+    DirectiveHit hit;
+    hit.line = state.currentLine;
+    hit.startColumn = static_cast<uint32_t>(state.index - state.lineStart);
+    ++state.index;
+
+    if (state.index < n && sourceCode[state.index] == '!')
+    {
+        SkipUntilNewline(sourceCode, state);
+        return std::nullopt;
+    }
+
+    const size_t afterHash = state.index;
+    SkipSpacesAndTabs(sourceCode, state);
+    hit.touchesHash = (state.index == afterHash);
+
+    const size_t nameStart = state.index;
+    while (state.index < n && IsIdentifierChar(sourceCode[state.index]))
+        ++state.index;
+    hit.name = sourceCode.substr(nameStart, state.index - nameStart);
+    hit.endColumn = static_cast<uint32_t>(state.index - state.lineStart);
+
+    SkipSpacesAndTabs(sourceCode, state);
+
+    hit.firstArgChar = (state.index < n && sourceCode[state.index] != '\n' && sourceCode[state.index] != '\r')
+                           ? sourceCode[state.index]
+                           : char{0};
+
+    const size_t argStart = state.index;
+    while (state.index < n && IsIdentifierChar(sourceCode[state.index]))
+        ++state.index;
+    hit.argument = sourceCode.substr(argStart, state.index - argStart);
+
+    SkipUntilNewline(sourceCode, state);
+    return hit;
+}
+
+/**
  * @brief Walks a document and reports every directive that starts a line.
- *
- * Comments and string literals are skipped so a `#if` written inside one is not mistaken
- * for a directive - the same discipline IncludeResolver::ExtractIncludes applies.
- *
- * Shared rather than written twice: reading `#define` out of a predefined stub needs
- * exactly this walk, and a second copy of it would drift from this one the first time
- * either learned about a new kind of literal.
- *
- * @param fn Called with one DirectiveHit per `#name argument`, where argument is the
- *        identifier that follows the name, empty when there is none. Both string views
- *        point into @p sourceCode.
- * @return The 0-based number of the last line scanned, for a directive left unclosed.
+ * @param[in] sourceCode Document text.
+ * @param[in] fn Callback invoked for each found directive.
+ * @return The 0-based number of the last line scanned.
  */
 template <typename Fn> uint32_t ForEachDirective(std::string_view sourceCode, Fn&& fn)
 {
     const size_t n = sourceCode.size();
-    size_t i = 0;
-    uint32_t currentLine = 0;
-    size_t lineStart = 0;
-    bool atLineStart = true;
+    LineScanState state;
 
-    while (i < n)
+    while (state.index < n)
     {
-        const char c = sourceCode[i];
-
-        if (c == '\r')
+        const char c = sourceCode[state.index];
+        if (HandleNewline(sourceCode, state))
+            continue;
+        if (IsSpaceOrTab(c))
         {
-            if (i + 1 < n && sourceCode[i + 1] == '\n')
-                ++i;
-            ++currentLine;
-            ++i;
-            lineStart = i;
-            atLineStart = true;
+            ++state.index;
             continue;
         }
-        if (c == '\n')
-        {
-            ++currentLine;
-            ++i;
-            lineStart = i;
-            atLineStart = true;
+        if (TrySkipComment(sourceCode, state))
             continue;
-        }
-        if (c == ' ' || c == '\t')
-        {
-            ++i;
-            continue;
-        }
-
-        if (c == '/' && i + 1 < n && sourceCode[i + 1] == '/')
-        {
-            i += 2;
-            while (i < n && sourceCode[i] != '\n' && sourceCode[i] != '\r')
-                ++i;
-            continue;
-        }
-        if (c == '/' && i + 1 < n && sourceCode[i + 1] == '*')
-        {
-            i += 2;
-            while (i < n)
-            {
-                if (sourceCode[i] == '\n')
-                {
-                    ++currentLine;
-                    lineStart = i + 1;
-                    atLineStart = true;
-                }
-                else if (sourceCode[i] == '*' && i + 1 < n && sourceCode[i + 1] == '/')
-                {
-                    i += 2;
-                    break;
-                }
-                ++i;
-            }
-            continue;
-        }
         if (c == '"' || c == '\'')
         {
-            const char quote = c;
-            ++i;
-            while (i < n)
-            {
-                if (sourceCode[i] == '\\')
-                {
-                    i += 2;
-                    continue;
-                }
-                if (sourceCode[i] == quote)
-                {
-                    ++i;
-                    break;
-                }
-                if (sourceCode[i] == '\n' || sourceCode[i] == '\r')
-                    break;
-                ++i;
-            }
+            SkipStringLiteral(sourceCode, state);
             continue;
         }
-
-        if (c == '#' && atLineStart)
+        if (c == '#' && state.atLineStart)
         {
-            DirectiveHit hit;
-            hit.line = currentLine;
-            hit.startColumn = static_cast<uint32_t>(i - lineStart);
-            ++i;
-
-            // A shebang is not a directive and never was. CScriptBuilder skips the line
-            // outright, and the compiler accepts it - measured, `#!/usr/bin/as` is exit 0.
-            if (i < n && sourceCode[i] == '!')
+            if (auto hit = ParseDirectiveHit(sourceCode, state))
             {
-                while (i < n && sourceCode[i] != '\n' && sourceCode[i] != '\r')
-                    ++i;
-                continue;
+                fn(*hit);
             }
-
-            const size_t afterHash = i;
-            while (i < n && (sourceCode[i] == ' ' || sourceCode[i] == '\t'))
-                ++i;
-            hit.touchesHash = (i == afterHash);
-
-            const size_t nameStart = i;
-            while (i < n && IsIdentifierChar(sourceCode[i]))
-                ++i;
-            hit.name = sourceCode.substr(nameStart, i - nameStart);
-            hit.endColumn = static_cast<uint32_t>(i - lineStart);
-
-            while (i < n && (sourceCode[i] == ' ' || sourceCode[i] == '\t'))
-                ++i;
-
-            hit.firstArgChar = (i < n && sourceCode[i] != '\n' && sourceCode[i] != '\r') ? sourceCode[i] : char{0};
-
-            const size_t argStart = i;
-            while (i < n && IsIdentifierChar(sourceCode[i]))
-                ++i;
-            hit.argument = sourceCode.substr(argStart, i - argStart);
-
-            fn(hit);
-
-            while (i < n && sourceCode[i] != '\n' && sourceCode[i] != '\r')
-                ++i;
             continue;
         }
-
-        atLineStart = false;
-        ++i;
+        state.atLineStart = false;
+        ++state.index;
     }
 
-    return currentLine;
+    return state.currentLine;
+}
+
+/**
+ * @brief Context state for preprocessor scanning and conditional evaluation.
+ */
+struct PreprocessorScanContext
+{
+    PreprocessorScan& scan;
+    std::vector<OpenDirective> stack;
+    int excludedNesting{0};
+    ankerl::unordered_dense::set<std::string> localWords;
+    const ankerl::unordered_dense::set<std::string>& definedWords;
+    const PreprocessorFeatures& features;
+    bool usingLocalWords{false};
+    bool sawMalformedIf{false};
+    bool reportPragma{false};
+
+    bool IsDefined(std::string_view word) const
+    {
+        const std::string key(word);
+        return usingLocalWords ? localWords.contains(key) : definedWords.contains(key);
+    }
+
+    void CloseBranch(OpenDirective& open, uint32_t boundaryLine)
+    {
+        if (open.excluded)
+        {
+            scan.excluded.push_back(ExcludedLineRange{open.branchStart, boundaryLine});
+        }
+        else
+        {
+            open.takenAlready = true;
+        }
+    }
+
+    void Report(const DirectiveHit& hit, DirectiveProblem problem)
+    {
+        scan.unsupported.push_back(
+            UnsupportedDirective{hit.line, hit.startColumn, hit.endColumn, problem, std::string(hit.name)});
+    }
+};
+
+/**
+ * @brief Checks if a directive name is one of the recognized preprocessor directives.
+ * @param[in] candidate Name to test.
+ * @return True if recognized.
+ */
+bool IsKnownDirectiveName(std::string_view candidate)
+{
+    return candidate == "include" || candidate == "if" || candidate == "endif" || candidate == "pragma" ||
+           candidate == "else" || candidate == "elif" || candidate == "ifdef" || candidate == "ifndef" ||
+           candidate == "define";
+}
+
+/**
+ * @brief Validates directive syntax and argument shape.
+ * @param[in,out] ctx Preprocessor scan context.
+ * @param[in] hit Found directive.
+ * @param[in] reaches True if the directive is in a live code block.
+ * @return True if syntax is valid, false otherwise.
+ */
+bool ValidateDirectiveSyntax(PreprocessorScanContext& ctx, const DirectiveHit& hit, bool reaches)
+{
+    if (!hit.touchesHash || !IsKnownDirectiveName(hit.name))
+    {
+        if (reaches)
+            ctx.Report(hit, hit.touchesHash ? DirectiveProblem::Unrecognised : DirectiveProblem::SpaceAfterHash);
+        return false;
+    }
+
+    if (hit.name == "include" && hit.firstArgChar != '"' && hit.firstArgChar != '\'')
+    {
+        if (reaches)
+            ctx.Report(hit, DirectiveProblem::IncludeNotQuoted);
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Checks if directive name opens a conditional region.
+ * @param[in] name Directive name.
+ * @param[in] ifdefSupport Whether host supports #ifdef/#ifndef.
+ * @return True if opens region.
+ */
+bool IsRegionOpener(std::string_view name, bool ifdefSupport)
+{
+    if (name == "if")
+        return true;
+    return ifdefSupport && (name == "ifdef" || name == "ifndef");
+}
+
+/**
+ * @brief Checks if directive name is a supported branch directive (#else/#elif).
+ * @param[in] name Directive name.
+ * @param[in] features Configured host features.
+ * @return True if supported branch directive.
+ */
+bool IsBranchDirective(std::string_view name, const PreprocessorFeatures& features)
+{
+    return (features.elseSupport && name == "else") || (features.elifSupport && name == "elif");
+}
+
+/**
+ * @brief Processes an `#if`, `#ifdef`, or `#ifndef` directive.
+ * @param[in,out] ctx Preprocessor scan context.
+ * @param[in] hit Found directive.
+ * @param[in] atExcludedTop True if top of stack is excluded.
+ */
+void ProcessOpenRegion(PreprocessorScanContext& ctx, const DirectiveHit& hit, bool atExcludedTop)
+{
+    if (atExcludedTop)
+    {
+        ++ctx.excludedNesting;
+        return;
+    }
+
+    if (hit.argument.empty())
+    {
+        ctx.Report(hit, DirectiveProblem::Unsupported);
+        ctx.sawMalformedIf = true;
+        return;
+    }
+
+    const bool defined = ctx.IsDefined(hit.argument);
+    const bool live = hit.name == "ifndef" ? !defined : defined;
+
+    OpenDirective open;
+    open.branchStart = hit.line;
+    open.excluded = !live;
+    ctx.stack.push_back(open);
+}
+
+/**
+ * @brief Records a script `#define` word into local definition set.
+ * @param[in,out] ctx Preprocessor scan context.
+ * @param[in] word Word to define.
+ */
+void ProcessDefine(PreprocessorScanContext& ctx, std::string_view word)
+{
+    if (!ctx.usingLocalWords)
+    {
+        ctx.localWords = ctx.definedWords;
+        ctx.usingLocalWords = true;
+    }
+    ctx.localWords.insert(std::string(word));
+}
+
+/**
+ * @brief Checks if a directive is unsupported given configured host features.
+ * @param[in,out] ctx Preprocessor scan context.
+ * @param[in] hit Found directive.
+ * @param[in] reaches True if the directive is in a live code block.
+ * @return True if unsupported and reported.
+ */
+bool CheckUnsupportedDirective(PreprocessorScanContext& ctx, const DirectiveHit& hit, bool reaches)
+{
+    if (!reaches)
+        return false;
+
+    const auto& d = hit.name;
+    const auto& f = ctx.features;
+    if ((!f.elseSupport && d == "else") || (!f.elifSupport && d == "elif") ||
+        (!f.ifdefSupport && (d == "ifdef" || d == "ifndef")) || (!f.defineInScripts && d == "define") ||
+        (ctx.reportPragma && d == "pragma"))
+    {
+        ctx.Report(hit, DirectiveProblem::Unsupported);
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Processes an `#else` or `#elif` branch transition.
+ * @param[in,out] ctx Preprocessor scan context.
+ * @param[in] hit Found directive.
+ */
+void ProcessBranch(PreprocessorScanContext& ctx, const DirectiveHit& hit)
+{
+    if (ctx.excludedNesting > 0 || ctx.stack.empty())
+        return;
+
+    OpenDirective& open = ctx.stack.back();
+    ctx.CloseBranch(open, hit.line);
+
+    const bool conditionHolds = hit.name == "else" || (!hit.argument.empty() && ctx.IsDefined(hit.argument));
+    open.branchStart = hit.line;
+    open.excluded = open.takenAlready || !conditionHolds;
+}
+
+/**
+ * @brief Processes an `#endif` directive.
+ * @param[in,out] ctx Preprocessor scan context.
+ * @param[in] hit Found directive.
+ */
+void ProcessEndif(PreprocessorScanContext& ctx, const DirectiveHit& hit)
+{
+    if (ctx.excludedNesting > 0)
+    {
+        --ctx.excludedNesting;
+    }
+    else if (!ctx.stack.empty())
+    {
+        OpenDirective open = ctx.stack.back();
+        ctx.stack.pop_back();
+        ctx.CloseBranch(open, hit.line);
+    }
+    else if (ctx.sawMalformedIf)
+    {
+        ctx.sawMalformedIf = false;
+    }
+    else
+    {
+        ctx.Report(hit, DirectiveProblem::Unsupported);
+    }
+}
+
+/**
+ * @brief Dispatches a directive hit to appropriate preprocessor logic.
+ * @param[in,out] ctx Preprocessor scan context.
+ * @param[in] hit Found directive.
+ */
+void ProcessDirectiveHit(PreprocessorScanContext& ctx, const DirectiveHit& hit)
+{
+    const bool atExcludedTop = !ctx.stack.empty() && ctx.stack.back().excluded;
+    const bool reaches = !atExcludedTop && ctx.excludedNesting == 0;
+
+    if (!ValidateDirectiveSyntax(ctx, hit, reaches))
+        return;
+
+    if (IsRegionOpener(hit.name, ctx.features.ifdefSupport))
+    {
+        ProcessOpenRegion(ctx, hit, atExcludedTop);
+    }
+    else if (ctx.features.defineInScripts && hit.name == "define" && !hit.argument.empty() && reaches)
+    {
+        ProcessDefine(ctx, hit.argument);
+    }
+    else if (CheckUnsupportedDirective(ctx, hit, reaches))
+    {
+        // Reported as unsupported directive
+    }
+    else if (IsBranchDirective(hit.name, ctx.features))
+    {
+        ProcessBranch(ctx, hit);
+    }
+    else if (hit.name == "endif")
+    {
+        ProcessEndif(ctx, hit);
+    }
 }
 } // namespace
 
@@ -214,225 +549,15 @@ PreprocessorScan ScanPreprocessor(std::string_view sourceCode,
                                   const PreprocessorFeatures& features, bool reportPragma)
 {
     PreprocessorScan scan;
-    std::vector<ExcludedLineRange>& ranges = scan.excluded;
+    PreprocessorScanContext ctx{scan, {}, 0, {}, definedWords, features, false, false, reportPragma};
 
-    std::vector<OpenDirective> stack;
+    const uint32_t lastLine =
+        ForEachDirective(sourceCode, [&](const DirectiveHit& hit) { ProcessDirectiveHit(ctx, hit); });
 
-    // Depth of `#if`s opened *inside* an already-excluded block. They are not evaluated - the
-    // whole region is going away regardless - but they have to be counted so the matching
-    // `#endif` of the outer directive is the one that closes it.
-    int excludedNesting = 0;
-
-    // Only ever written when features.defineInScripts is on. A `#define` in a script is a
-    // syntax error to the stock add-on, so without that switch this stays a view of the
-    // caller's set and a `#define` line means nothing here.
-    ankerl::unordered_dense::set<std::string> localWords;
-    bool usingLocalWords = false;
-
-    // True between a malformed `#if` and the `#endif` it failed to open, so the second is not
-    // reported as a mistake of its own.
-    bool sawMalformedIf = false;
-
-    const auto isDefined = [&](std::string_view word)
-    {
-        const std::string key(word);
-        return usingLocalWords ? localWords.contains(key) : definedWords.contains(key);
-    };
-
-    // Closes the branch that was open and opens the next one at the same line. `#endif` uses it
-    // too, with nothing following, which is why the dead-range bookkeeping lives in one place.
-    const auto closeBranch = [&](OpenDirective& open, uint32_t boundaryLine)
+    for (const auto& open : ctx.stack)
     {
         if (open.excluded)
-        {
-            // Inclusive of both directive lines: CScriptBuilder blanks those too.
-            ranges.push_back(ExcludedLineRange{open.branchStart, boundaryLine});
-        }
-        else
-        {
-            open.takenAlready = true;
-        }
-    };
-
-    const uint32_t lastLine = ForEachDirective(
-        sourceCode,
-        [&](const DirectiveHit& hit)
-        {
-            const uint32_t directiveLine = hit.line;
-            const std::string_view directive = hit.name;
-            const std::string_view word = hit.argument;
-
-            const bool atExcludedTop = !stack.empty() && stack.back().excluded;
-
-            // Anything inside a block that is going away is going away with it, whatever it is.
-            // Measured: `#define` and `#pragma` inside an excluded `#if` both compile, because
-            // the add-on blanks the whole region in its first pass and only looks for pragmas,
-            // includes and metadata in its second.
-            const bool reaches = !atExcludedTop && excludedNesting == 0;
-
-            const auto report = [&](DirectiveProblem problem)
-            {
-                scan.unsupported.push_back(
-                    UnsupportedDirective{hit.line, hit.startColumn, hit.endColumn, problem, std::string(hit.name)});
-            };
-
-            const auto reportUnsupported = [&]() { report(DirectiveProblem::Unsupported); };
-
-            // Every name CScriptBuilder looks for. The four this server models as optional host
-            // extensions are in here too: whether they are *supported* is the question the
-            // chain below answers, and it is a different question from whether the word is a
-            // directive name at all.
-            const auto isDirectiveName = [](std::string_view candidate)
-            {
-                return candidate == "include" || candidate == "if" || candidate == "endif" || candidate == "pragma" ||
-                       candidate == "else" || candidate == "elif" || candidate == "ifdef" || candidate == "ifndef" ||
-                       candidate == "define";
-            };
-
-            // Before every other branch, because a line that is not a directive must not open a
-            // region, close one, or define a word. `# if UNDEFINED` used to exclude the block
-            // below it, which silenced every diagnostic inside a region the compiler keeps -
-            // and said nothing about the line that caused it.
-            if (!hit.touchesHash || !isDirectiveName(directive))
-            {
-                if (reaches)
-                    report(hit.touchesHash ? DirectiveProblem::Unrecognised : DirectiveProblem::SpaceAfterHash);
-                return;
-            }
-
-            // A correctly spelled `#include` whose path is not quoted. CScriptBuilder reads a
-            // string token after the name and finds none, so the whole line stays in the
-            // source - measured, and its own problem because the name is right and the fix is
-            // a pair of quotes.
-            // Either quote. AngelScript's string literal is `'...'` as well as `"..."` at the
-            // engine's default settings, and CScriptBuilder reads whichever was used - measured,
-            // `#include 'helper.as'` compiles. Requiring a double quote reported every include
-            // in every Sven Co-op script as an error, which is a false positive on code that
-            // builds, and the one failure this project treats as fatal.
-            if (directive == "include" && hit.firstArgChar != '"' && hit.firstArgChar != '\'')
-            {
-                if (reaches)
-                    report(DirectiveProblem::IncludeNotQuoted);
-                return;
-            }
-
-            const bool opensRegion =
-                directive == "if" || (features.ifdefSupport && (directive == "ifdef" || directive == "ifndef"));
-
-            if (opensRegion)
-            {
-                if (atExcludedTop)
-                {
-                    // Inside a region already being dropped; only the nesting count matters.
-                    ++excludedNesting;
-                }
-                else if (word.empty())
-                {
-                    // `#if` with no identifier is not a directive CScriptBuilder recognises: it
-                    // needs `asTC_IDENTIFIER` after the keyword, and without one it overwrites
-                    // nothing, so the `#if` reaches the compiler and is rejected.
-                    //
-                    // Reported here, on the `#if` itself. It used to be silent, and the reader
-                    // was told about the `#endif` two lines below instead - which is a real
-                    // consequence, that `#endif` really is orphaned now, but it points at the
-                    // wrong line and names the wrong directive. The malformed `#if` is the
-                    // defect; the loose `#endif` is a symptom of it.
-                    reportUnsupported();
-                    sawMalformedIf = true;
-                }
-                else
-                {
-                    const bool defined = isDefined(word);
-                    const bool live = directive == "ifndef" ? !defined : defined;
-
-                    OpenDirective open;
-                    open.branchStart = directiveLine;
-                    open.excluded = !live;
-                    stack.push_back(open);
-                }
-            }
-            else if (features.defineInScripts && directive == "define" && !word.empty() && !atExcludedTop &&
-                     excludedNesting == 0)
-            {
-                // Copied lazily, and only once: most documents have no `#define` at all, and
-                // the ones that do should not pay for a set copy per directive.
-                if (!usingLocalWords)
-                {
-                    localWords = definedWords;
-                    usingLocalWords = true;
-                }
-                localWords.insert(std::string(word));
-            }
-            else if (reaches && !features.elseSupport && directive == "else")
-            {
-                reportUnsupported();
-            }
-            else if (reaches && !features.elifSupport && directive == "elif")
-            {
-                reportUnsupported();
-            }
-            else if (reaches && !features.ifdefSupport && (directive == "ifdef" || directive == "ifndef"))
-            {
-                reportUnsupported();
-            }
-            else if (reaches && !features.defineInScripts && directive == "define")
-            {
-                reportUnsupported();
-            }
-            else if (reaches && reportPragma && directive == "pragma")
-            {
-                reportUnsupported();
-            }
-            else if ((features.elseSupport && directive == "else") || (features.elifSupport && directive == "elif"))
-            {
-                // A branch boundary inside a nested dead region is part of that region, not of
-                // the directive this one belongs to.
-                if (excludedNesting > 0 || stack.empty())
-                    return;
-
-                OpenDirective& open = stack.back();
-                closeBranch(open, directiveLine);
-
-                // `#else` is unconditional; `#elif` still has to be true. Either way a branch
-                // after one that was already taken is dead - that is the whole of the rule.
-                const bool conditionHolds = directive == "else" || (!word.empty() && isDefined(word));
-
-                open.branchStart = directiveLine;
-                open.excluded = open.takenAlready || !conditionHolds;
-            }
-            else if (directive == "endif")
-            {
-                if (excludedNesting > 0)
-                {
-                    --excludedNesting;
-                }
-                else if (!stack.empty())
-                {
-                    OpenDirective open = stack.back();
-                    stack.pop_back();
-                    closeBranch(open, directiveLine);
-                }
-                else if (sawMalformedIf)
-                {
-                    // Orphaned only because a malformed `#if` above never opened anything. That
-                    // has already been reported at the line the reader has to fix; saying it
-                    // again here would be two complaints about one mistake.
-                    sawMalformedIf = false;
-                }
-                else
-                {
-                    // Nothing to close. The add-on only blanks an `#endif` that closes an `#if`
-                    // it opened, so this one stays in the source and the compiler rejects it.
-                    reportUnsupported();
-                }
-            }
-        });
-
-    // An `#if` never closed runs to the end of the file, which is how the compiler treats it.
-    for (const auto& open : stack)
-    {
-        if (open.excluded)
-            ranges.push_back(ExcludedLineRange{open.branchStart, lastLine});
+            scan.excluded.push_back(ExcludedLineRange{open.branchStart, lastLine});
     }
 
     return scan;
@@ -448,22 +573,20 @@ std::vector<ExcludedLineRange> FindExcludedLineRanges(std::string_view sourceCod
 std::vector<std::string> ScanDefinedWords(std::string_view sourceCode)
 {
     std::vector<std::string> words;
-
     ForEachDirective(sourceCode,
                      [&](const DirectiveHit& hit)
                      {
                          if (hit.name == "define" && !hit.argument.empty())
                              words.emplace_back(hit.argument);
                      });
-
     return words;
 }
 
 bool IsLineExcluded(const std::vector<ExcludedLineRange>& ranges, uint32_t line)
 {
-    for (const auto& range : ranges)
+    for (const auto& r : ranges)
     {
-        if (line >= range.startLine && line <= range.endLine)
+        if (line >= r.startLine && line <= r.endLine)
             return true;
     }
     return false;
