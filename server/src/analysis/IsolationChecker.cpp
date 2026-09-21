@@ -20,6 +20,56 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, cons
     ctx.EmitAtRange(start.row, start.column, end.row, end.column, code, arg);
 }
 
+std::string TrimWhitespace(std::string_view text)
+{
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
+    {
+        text.remove_prefix(1);
+    }
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t'))
+    {
+        text.remove_suffix(1);
+    }
+    return std::string(text);
+}
+
+std::string CleanSharedTypeName(std::string_view raw)
+{
+    std::string text(raw);
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
+    {
+        text.erase(text.begin());
+    }
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '@' || text.back() == '&'))
+    {
+        text.pop_back();
+    }
+    return text;
+}
+
+bool IsSymbolShared(const Symbol& s)
+{
+    switch (s.type)
+    {
+    case SymbolType::Class:
+        return s.GetClass().modifiers.isShared;
+    case SymbolType::Interface:
+        return s.GetInterface().modifiers.isShared;
+    case SymbolType::Enum:
+        return s.GetEnum().modifiers.isShared;
+    case SymbolType::Funcdef:
+        return s.GetFuncdef().modifiers.isShared;
+    default:
+        return true;
+    }
+}
+
+bool IsCoreOrRegisteredType(std::string_view typeName, const SemanticAnalysisRequest& request)
+{
+    return typeName.empty() || IsCorePrimitive(typeName) || typeName == request.GetStringTypeName() ||
+           typeName == request.GetArrayTypeName() || request.IsRegisteredSymbol(std::string(typeName));
+}
+
 /**
  * @brief Innermost containing scope, falling back to `root` rather than nullptr.
  *
@@ -107,6 +157,65 @@ bool NodeHasModifierToken(TSNode node, std::string_view modifierName, std::strin
     return false;
 }
 
+bool IsAllowedSharedEntity(std::string_view afterShared)
+{
+    if (afterShared.starts_with("class ") || afterShared.starts_with("class\t") ||
+        afterShared.starts_with("interface ") || afterShared.starts_with("interface\t") ||
+        afterShared.starts_with("enum ") || afterShared.starts_with("enum\t") || afterShared.starts_with("funcdef ") ||
+        afterShared.starts_with("funcdef\t") || afterShared.starts_with("external "))
+    {
+        return true;
+    }
+
+    size_t parenPos = afterShared.find('(');
+    size_t semiPos = afterShared.find(';');
+    size_t eqPos = afterShared.find('=');
+
+    return parenPos != std::string_view::npos && (semiPos == std::string_view::npos || parenPos < semiPos) &&
+           (eqPos == std::string_view::npos || parenPos < eqPos);
+}
+
+void CheckSharedLine(std::string_view line, uint32_t lineNum, DiagnosticContext& ctx)
+{
+    size_t col = 0;
+    while (col < line.size() && (line[col] == ' ' || line[col] == '\t'))
+    {
+        ++col;
+    }
+
+    std::string_view trimmed = line.substr(col);
+    if (trimmed.starts_with("//") || trimmed.starts_with("/*"))
+    {
+        return;
+    }
+
+    if (!trimmed.starts_with("shared ") && !trimmed.starts_with("shared\t"))
+    {
+        return;
+    }
+
+    std::string codePart(trimmed);
+    size_t commentIdx = codePart.find("//");
+    if (commentIdx != std::string::npos)
+    {
+        codePart = codePart.substr(0, commentIdx);
+    }
+
+    std::string afterShared = codePart.substr(6);
+    while (!afterShared.empty() && (afterShared.front() == ' ' || afterShared.front() == '\t'))
+    {
+        afterShared.erase(afterShared.begin());
+    }
+
+    if (!IsAllowedSharedEntity(afterShared))
+    {
+        uint32_t startCol = static_cast<uint32_t>(col);
+        uint32_t endCol = static_cast<uint32_t>(col + 6);
+        ctx.LogRule("CheckSharedEntityEligibility", "as-err-shared-not-allowed-on-entity", {});
+        ctx.EmitAtRange(lineNum, startCol, lineNum, endCol, "as-err-shared-not-allowed-on-entity");
+    }
+}
+
 void CheckSharedEntityEligibility(std::string_view sourceCode, DiagnosticContext& ctx)
 {
     size_t startPos = 0;
@@ -126,66 +235,42 @@ void CheckSharedEntityEligibility(std::string_view sourceCode, DiagnosticContext
             line.remove_suffix(1);
         }
 
-        size_t col = 0;
-        while (col < line.size() && (line[col] == ' ' || line[col] == '\t'))
-        {
-            ++col;
-        }
-
-        std::string_view trimmed = line.substr(col);
-        if (trimmed.starts_with("//") || trimmed.starts_with("/*"))
-        {
-            // Comment line
-        }
-        else if (trimmed.starts_with("shared ") || trimmed.starts_with("shared\t"))
-        {
-            std::string codePart(trimmed);
-            size_t commentIdx = codePart.find("//");
-            if (commentIdx != std::string::npos)
-            {
-                codePart = codePart.substr(0, commentIdx);
-            }
-
-            std::string afterShared = codePart.substr(6);
-            while (!afterShared.empty() && (afterShared.front() == ' ' || afterShared.front() == '\t'))
-            {
-                afterShared.erase(afterShared.begin());
-            }
-
-            bool isAllowed = false;
-            if (afterShared.starts_with("class ") || afterShared.starts_with("class\t") ||
-                afterShared.starts_with("interface ") || afterShared.starts_with("interface\t") ||
-                afterShared.starts_with("enum ") || afterShared.starts_with("enum\t") ||
-                afterShared.starts_with("funcdef ") || afterShared.starts_with("funcdef\t") ||
-                afterShared.starts_with("external "))
-            {
-                isAllowed = true;
-            }
-            else
-            {
-                size_t parenPos = afterShared.find('(');
-                size_t semiPos = afterShared.find(';');
-                size_t eqPos = afterShared.find('=');
-
-                if (parenPos != std::string::npos && (semiPos == std::string::npos || parenPos < semiPos) &&
-                    (eqPos == std::string::npos || parenPos < eqPos))
-                {
-                    isAllowed = true;
-                }
-            }
-
-            if (!isAllowed)
-            {
-                uint32_t startCol = static_cast<uint32_t>(col);
-                uint32_t endCol = static_cast<uint32_t>(col + 6);
-                ctx.LogRule("CheckSharedEntityEligibility", "as-err-shared-not-allowed-on-entity", {});
-                ctx.EmitAtRange(lineNum, startCol, lineNum, endCol, "as-err-shared-not-allowed-on-entity");
-            }
-        }
+        CheckSharedLine(line, lineNum, ctx);
 
         startPos = endPos + 1;
         ++lineNum;
     }
+}
+
+bool IsCallFunctionNode(TSNode p, TSNode node)
+{
+    TSNode fn = parser::GetChildByField(p, parser::fields::Function);
+    if (ts_node_is_null(fn))
+    {
+        fn = ts_node_child(p, 0);
+    }
+    return !ts_node_is_null(fn) && (fn.id == node.id || ts_node_parent(node).id == fn.id);
+}
+
+bool IsDeclarationNameNode(TSNode p, TSNode node, std::string_view pType)
+{
+    if (pType == "variable_declarator")
+    {
+        TSNode val = parser::GetChildByField(p, parser::fields::Value);
+        return ts_node_is_null(val) || ts_node_start_byte(node) < ts_node_start_byte(val);
+    }
+    if (pType == "func_declaration" || pType == "class_declaration" || pType == "parameter" || pType == "enum_member")
+    {
+        TSNode nameNode = parser::GetChildByField(p, parser::fields::Name);
+        return !ts_node_is_null(nameNode) &&
+               (nameNode.id == node.id || ts_node_start_byte(node) == ts_node_start_byte(nameNode));
+    }
+    if (pType == "member_expression")
+    {
+        TSNode propNode = parser::GetChildByField(p, parser::fields::Member);
+        return !ts_node_is_null(propNode) && propNode.id == node.id;
+    }
+    return false;
 }
 
 struct IsolationVisitor
@@ -195,13 +280,254 @@ struct IsolationVisitor
     std::string currentClassName;
     bool isCurrentClassShared = false;
 
+    bool IsClassShared(TSNode node, const std::string& className) const
+    {
+        if (NodeHasModifierToken(node, "shared", request.sourceCode))
+        {
+            return true;
+        }
+        if (!className.empty())
+        {
+            if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(className))
+            {
+                for (const auto& s : *syms)
+                {
+                    if (s.type == SymbolType::Class && s.fileUri == ctx.request.fileUri &&
+                        s.GetClass().modifiers.isShared)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    void VisitClassDeclaration(TSNode node, int depth)
+    {
+        TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
+        std::string className = GetNodeText(nameNode, request.sourceCode);
+        bool classShared = IsClassShared(node, className);
+
+        std::string oldClassName = currentClassName;
+        bool oldClassShared = isCurrentClassShared;
+        currentClassName = className;
+        isCurrentClassShared = classShared;
+
+        uint32_t count = ts_node_child_count(node);
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            Visit(ts_node_child(node, i), classShared, depth + 1);
+        }
+
+        currentClassName = oldClassName;
+        isCurrentClassShared = oldClassShared;
+    }
+
+    bool IsFunctionShared(TSNode node, bool inSharedContext) const
+    {
+        if (inSharedContext || NodeHasModifierToken(node, "shared", request.sourceCode))
+        {
+            return true;
+        }
+
+        TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
+        std::string funcName = GetNodeText(nameNode, request.sourceCode);
+        if (!funcName.empty())
+        {
+            std::string searchName = currentClassName.empty() ? funcName : currentClassName + "::" + funcName;
+            if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(searchName))
+            {
+                for (const auto& s : *syms)
+                {
+                    if (s.type == SymbolType::Function && s.fileUri == ctx.request.fileUri &&
+                        s.GetFunction().modifiers.isShared)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    void VisitFunctionDeclaration(TSNode node, bool inSharedContext, int depth)
+    {
+        bool funcShared = IsFunctionShared(node, inSharedContext);
+        uint32_t count = ts_node_child_count(node);
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            Visit(ts_node_child(node, i), funcShared, depth + 1);
+        }
+    }
+
+    void CheckSharedDatatype(TSNode node)
+    {
+        std::string typeName = CleanSharedTypeName(GetNodeText(node, request.sourceCode));
+        if (IsCoreOrRegisteredType(typeName, ctx.request))
+        {
+            return;
+        }
+
+        auto syms = ctx.request.symbolTable.FindSymbolsPtr(typeName);
+        if (!syms)
+        {
+            return;
+        }
+
+        for (const auto& s : *syms)
+        {
+            if (s.type != SymbolType::Class && s.type != SymbolType::Interface && s.type != SymbolType::Enum &&
+                s.type != SymbolType::Funcdef)
+            {
+                continue;
+            }
+
+            if (!IsSymbolShared(s) && !IsFromPredefinedStub(s, ctx))
+            {
+                ctx.LogRule("CheckSharedIsolation", "as-err-shared-cannot-access-non-shared", s);
+                EmitAtNode(node, ctx, "as-err-shared-cannot-access-non-shared", typeName);
+                break;
+            }
+        }
+    }
+
+    bool IsAllowedCallee(std::string_view calleeName) const
+    {
+        if (!currentClassName.empty())
+        {
+            std::string methodQual = currentClassName + "::" + std::string(calleeName);
+            if (ctx.request.symbolTable.HasSymbol(methodQual))
+            {
+                return true;
+            }
+        }
+        return ctx.request.IsRegisteredSymbol(std::string(calleeName));
+    }
+
+    void CheckSharedCallExpression(TSNode node)
+    {
+        TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
+        if (ts_node_is_null(funcNode))
+        {
+            funcNode = ts_node_child(node, 0);
+        }
+        if (ts_node_is_null(funcNode))
+        {
+            return;
+        }
+
+        std::string_view funcNodeType = ts_node_type(funcNode);
+        if (funcNodeType != "scoped_identifier" && funcNodeType != "identifier")
+        {
+            return;
+        }
+
+        std::string calleeName = TrimWhitespace(GetNodeText(funcNode, request.sourceCode));
+        if (calleeName.empty() || IsAllowedCallee(calleeName))
+        {
+            return;
+        }
+
+        if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(calleeName))
+        {
+            for (const auto& s : *syms)
+            {
+                if (s.type == SymbolType::Function && s.containerName.empty())
+                {
+                    if (!s.GetFunction().modifiers.isShared && !IsFromPredefinedStub(s, ctx))
+                    {
+                        ctx.LogRule("CheckSharedIsolation", "as-err-shared-cannot-access-non-shared", s);
+                        EmitAtNode(funcNode, ctx, "as-err-shared-cannot-access-non-shared", calleeName);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    bool IsIdentifierInSpecialContext(TSNode node) const
+    {
+        TSNode p = ts_node_parent(node);
+        while (!ts_node_is_null(p))
+        {
+            std::string_view pType = ts_node_type(p);
+            if (pType == "call_expression" && IsCallFunctionNode(p, node))
+            {
+                return true;
+            }
+            if (pType == "datatype" || pType == "type" || pType == "base_class_list")
+            {
+                return true;
+            }
+            if (IsDeclarationNameNode(p, node, pType))
+            {
+                return true;
+            }
+            if (pType == "statement_block" || pType == "func_declaration" || pType == "class_declaration")
+            {
+                break;
+            }
+            p = ts_node_parent(p);
+        }
+        return false;
+    }
+
+    bool IsAllowedVariable(std::string_view varName, TSNode node) const
+    {
+        TSPoint pt = ts_node_start_point(node);
+        const Scope* scope =
+            request.scopeRoot ? FindEnclosingScopeOrRoot(request.scopeRoot, pt.row, pt.column) : nullptr;
+        if (scope && IsLocalVariableOrParameter(scope, varName))
+        {
+            return true;
+        }
+
+        if (!currentClassName.empty())
+        {
+            std::string memberQual = currentClassName + "::" + std::string(varName);
+            if (ctx.request.symbolTable.HasSymbol(memberQual))
+            {
+                return true;
+            }
+        }
+
+        return ctx.request.IsRegisteredSymbol(std::string(varName));
+    }
+
+    void CheckSharedIdentifier(TSNode node)
+    {
+        if (IsIdentifierInSpecialContext(node))
+        {
+            return;
+        }
+
+        std::string varName = TrimWhitespace(GetNodeText(node, request.sourceCode));
+        if (varName.empty() || IsAllowedVariable(varName, node))
+        {
+            return;
+        }
+
+        if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(varName))
+        {
+            for (const auto& s : *syms)
+            {
+                if (s.type == SymbolType::Variable && s.containerName.empty())
+                {
+                    if (!s.GetVariable().modifiers.isShared && !IsFromPredefinedStub(s, ctx))
+                    {
+                        ctx.LogRule("CheckSharedIsolation", "as-err-shared-cannot-access-non-shared", s);
+                        EmitAtNode(node, ctx, "as-err-shared-cannot-access-non-shared", varName);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     void Visit(TSNode node, bool inSharedContext, int depth = 0)
     {
-        // See k_maxAstDepth in ASTUtils.h.
-        if (depth > k_maxAstDepth)
-            return;
-
-        if (ts_node_is_null(node))
+        if (depth > k_maxAstDepth || ts_node_is_null(node))
         {
             return;
         }
@@ -210,281 +536,29 @@ struct IsolationVisitor
 
         if (nodeType == "class_declaration")
         {
-            TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
-            std::string className = GetNodeText(nameNode, request.sourceCode);
-            bool classShared = NodeHasModifierToken(node, "shared", request.sourceCode);
-            if (!classShared && !className.empty())
-            {
-                if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(className))
-                {
-                    for (const auto& s : *syms)
-                    {
-                        if (s.type == SymbolType::Class && s.fileUri == ctx.request.fileUri &&
-                            s.GetClass().modifiers.isShared)
-                        {
-                            classShared = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            std::string oldClassName = currentClassName;
-            bool oldClassShared = isCurrentClassShared;
-            currentClassName = className;
-            isCurrentClassShared = classShared;
-
-            uint32_t count = ts_node_child_count(node);
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                Visit(ts_node_child(node, i), classShared, depth + 1);
-            }
-
-            currentClassName = oldClassName;
-            isCurrentClassShared = oldClassShared;
+            VisitClassDeclaration(node, depth);
             return;
         }
 
         if (nodeType == "func_declaration")
         {
-            bool funcShared = inSharedContext || NodeHasModifierToken(node, "shared", request.sourceCode);
-            if (!funcShared)
-            {
-                TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
-                std::string funcName = GetNodeText(nameNode, request.sourceCode);
-                if (!funcName.empty())
-                {
-                    std::string searchName = currentClassName.empty() ? funcName : currentClassName + "::" + funcName;
-                    if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(searchName))
-                    {
-                        for (const auto& s : *syms)
-                        {
-                            if (s.type == SymbolType::Function && s.fileUri == ctx.request.fileUri &&
-                                s.GetFunction().modifiers.isShared)
-                            {
-                                funcShared = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            uint32_t count = ts_node_child_count(node);
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                Visit(ts_node_child(node, i), funcShared, depth + 1);
-            }
+            VisitFunctionDeclaration(node, inSharedContext, depth);
             return;
         }
 
         if (inSharedContext)
         {
-            // 1. Check type references (e.g. NonSharedClass obj;)
             if (nodeType == "datatype")
             {
-                std::string typeName = GetNodeText(node, request.sourceCode);
-                while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
-                    typeName.erase(typeName.begin());
-                while (!typeName.empty() && (typeName.back() == ' ' || typeName.back() == '\t' ||
-                                             typeName.back() == '@' || typeName.back() == '&'))
-                    typeName.pop_back();
-
-                if (!typeName.empty() && !IsCorePrimitive(typeName) && typeName != ctx.request.GetStringTypeName() &&
-                    typeName != ctx.request.GetArrayTypeName() && !ctx.request.IsRegisteredSymbol(typeName))
-                {
-                    if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(typeName))
-                    {
-                        for (const auto& s : *syms)
-                        {
-                            if (s.type == SymbolType::Class || s.type == SymbolType::Interface ||
-                                s.type == SymbolType::Enum || s.type == SymbolType::Funcdef)
-                            {
-                                bool isShared = false;
-                                if (s.type == SymbolType::Class)
-                                    isShared = s.GetClass().modifiers.isShared;
-                                else if (s.type == SymbolType::Interface)
-                                    isShared = s.GetInterface().modifiers.isShared;
-                                else if (s.type == SymbolType::Enum)
-                                    isShared = s.GetEnum().modifiers.isShared;
-                                else if (s.type == SymbolType::Funcdef)
-                                    isShared = s.GetFuncdef().modifiers.isShared;
-
-                                if (!isShared && !IsFromPredefinedStub(s, ctx))
-                                {
-                                    ctx.LogRule("CheckSharedIsolation", "as-err-shared-cannot-access-non-shared", s);
-                                    EmitAtNode(node, ctx, "as-err-shared-cannot-access-non-shared", typeName);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
+                CheckSharedDatatype(node);
             }
-
-            // 2. Check direct function calls (e.g. NonSharedFunction())
-            if (nodeType == "call_expression")
+            else if (nodeType == "call_expression")
             {
-                TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
-                if (ts_node_is_null(funcNode))
-                {
-                    funcNode = ts_node_child(node, 0);
-                }
-                if (!ts_node_is_null(funcNode))
-                {
-                    std::string_view funcNodeType = ts_node_type(funcNode);
-                    if (funcNodeType == "scoped_identifier" || funcNodeType == "identifier")
-                    {
-                        std::string calleeName = GetNodeText(funcNode, request.sourceCode);
-                        while (!calleeName.empty() && (calleeName.front() == ' ' || calleeName.front() == '\t'))
-                            calleeName.erase(calleeName.begin());
-                        while (!calleeName.empty() && (calleeName.back() == ' ' || calleeName.back() == '\t'))
-                            calleeName.pop_back();
-
-                        bool isCurrentClassMethod = false;
-                        if (!currentClassName.empty())
-                        {
-                            std::string methodQual = currentClassName + "::" + calleeName;
-                            if (ctx.request.symbolTable.HasSymbol(methodQual))
-                            {
-                                isCurrentClassMethod = true;
-                            }
-                        }
-
-                        if (!isCurrentClassMethod && !ctx.request.IsRegisteredSymbol(calleeName))
-                        {
-                            if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(calleeName))
-                            {
-                                for (const auto& s : *syms)
-                                {
-                                    if (s.type == SymbolType::Function && s.containerName.empty())
-                                    {
-                                        if (!s.GetFunction().modifiers.isShared && !IsFromPredefinedStub(s, ctx))
-                                        {
-                                            ctx.LogRule("CheckSharedIsolation",
-                                                        "as-err-shared-cannot-access-non-shared", s);
-                                            EmitAtNode(funcNode, ctx, "as-err-shared-cannot-access-non-shared",
-                                                       calleeName);
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                CheckSharedCallExpression(node);
             }
-
-            // 3. Check global variable access
-            if (nodeType == "identifier")
+            else if (nodeType == "identifier")
             {
-                TSNode p = ts_node_parent(node);
-                bool isCallFunc = false;
-                bool isType = false;
-                bool isDeclName = false;
-                bool isMemberProp = false;
-
-                while (!ts_node_is_null(p))
-                {
-                    std::string_view pType = ts_node_type(p);
-                    if (pType == "call_expression")
-                    {
-                        TSNode fn = parser::GetChildByField(p, parser::fields::Function);
-                        if (ts_node_is_null(fn))
-                            fn = ts_node_child(p, 0);
-                        if (!ts_node_is_null(fn) && (fn.id == node.id || ts_node_parent(node).id == fn.id))
-                        {
-                            isCallFunc = true;
-                            break;
-                        }
-                    }
-                    if (pType == "datatype" || pType == "type" || pType == "base_class_list")
-                    {
-                        isType = true;
-                        break;
-                    }
-                    if (pType == "variable_declarator")
-                    {
-                        TSNode val = parser::GetChildByField(p, parser::fields::Value);
-                        if (ts_node_is_null(val) || ts_node_start_byte(node) < ts_node_start_byte(val))
-                        {
-                            isDeclName = true;
-                            break;
-                        }
-                    }
-                    if (pType == "func_declaration" || pType == "class_declaration" || pType == "parameter" ||
-                        pType == "enum_member")
-                    {
-                        TSNode nameNode = parser::GetChildByField(p, parser::fields::Name);
-                        if (!ts_node_is_null(nameNode) &&
-                            (nameNode.id == node.id || ts_node_start_byte(node) == ts_node_start_byte(nameNode)))
-                        {
-                            isDeclName = true;
-                            break;
-                        }
-                    }
-                    if (pType == "member_expression")
-                    {
-                        TSNode propNode = parser::GetChildByField(p, parser::fields::Member);
-                        if (!ts_node_is_null(propNode) && propNode.id == node.id)
-                        {
-                            isMemberProp = true;
-                            break;
-                        }
-                    }
-                    if (pType == "statement_block" || pType == "func_declaration" || pType == "class_declaration")
-                    {
-                        break;
-                    }
-                    p = ts_node_parent(p);
-                }
-
-                if (!isCallFunc && !isMemberProp && !isType && !isDeclName)
-                {
-                    std::string varName = GetNodeText(node, request.sourceCode);
-                    while (!varName.empty() && (varName.front() == ' ' || varName.front() == '\t'))
-                        varName.erase(varName.begin());
-                    while (!varName.empty() && (varName.back() == ' ' || varName.back() == '\t'))
-                        varName.pop_back();
-
-                    TSPoint pt = ts_node_start_point(node);
-                    const Scope* scope =
-                        request.scopeRoot ? FindEnclosingScopeOrRoot(request.scopeRoot, pt.row, pt.column) : nullptr;
-                    bool isLocal = scope ? IsLocalVariableOrParameter(scope, varName) : false;
-
-                    if (!isLocal)
-                    {
-                        bool isClassMember = false;
-                        if (!currentClassName.empty())
-                        {
-                            std::string memberQual = currentClassName + "::" + varName;
-                            if (ctx.request.symbolTable.HasSymbol(memberQual))
-                            {
-                                isClassMember = true;
-                            }
-                        }
-
-                        if (!isClassMember && !ctx.request.IsRegisteredSymbol(varName))
-                        {
-                            if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(varName))
-                            {
-                                for (const auto& s : *syms)
-                                {
-                                    if (s.type == SymbolType::Variable && s.containerName.empty())
-                                    {
-                                        if (!s.GetVariable().modifiers.isShared && !IsFromPredefinedStub(s, ctx))
-                                        {
-                                            ctx.LogRule("CheckSharedIsolation",
-                                                        "as-err-shared-cannot-access-non-shared", s);
-                                            EmitAtNode(node, ctx, "as-err-shared-cannot-access-non-shared", varName);
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                CheckSharedIdentifier(node);
             }
         }
 

@@ -41,7 +41,6 @@ angel_lsp::analysis::CheckInitializerLists
 angel_lsp::analysis::CheckLambdaArguments
 angel_lsp::analysis::CheckMemberExpression
 angel_lsp::analysis::CheckNamespacesAndScopes
-angel_lsp::analysis::CheckSharedEntityEligibility
 angel_lsp::analysis::CheckVariableDirectInitialization
 angel_lsp::analysis::CleanBaseType
 angel_lsp::analysis::CleanDescriptionLines
@@ -78,7 +77,6 @@ angel_lsp::analysis::IsBaseConstructorCall
 angel_lsp::analysis::IsBlockCommand
 angel_lsp::analysis::IsKnownScope
 angel_lsp::analysis::IsPrimitiveWidening
-angel_lsp::analysis::IsolationVisitor::Visit
 angel_lsp::analysis::LocalDefinition::LocalDefinition
 angel_lsp::analysis::MergeInlineTag
 angel_lsp::analysis::NodeIndex::Build
