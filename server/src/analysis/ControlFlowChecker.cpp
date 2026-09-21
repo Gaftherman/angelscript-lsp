@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -147,16 +148,6 @@ void CheckEmptyBranch(TSNode node, DiagnosticContext& ctx)
 // =====================================================================
 
 /**
- * @brief True when control cannot fall off the end of this statement.
- *
- * Deliberately one-sided. Answering "yes" wrongly hides a real missing return, which costs
- * nothing; answering "no" wrongly reports a function that is perfectly fine, which is the
- * failure that matters. So every construct whose exit conditions this pass cannot settle -
- * a try block, a loop with a computed condition - answers "no" only where "no" is also the
- * honest reading, and the loops whose condition is literally true answer "yes" because they
- * have no normal exit at all.
- */
-/**
  * @brief True for a return type that null cannot convert to.
  *
  * The primitives, by name. Deliberately not "anything that is not a handle": a value type
@@ -168,6 +159,21 @@ bool IsNonNullablePrimitiveName(std::string_view typeName)
     return parser::primitives::IsNonNullable(typeName);
 }
 
+bool BlockOrClauseDefinitelyReturns(TSNode node, std::string_view type, std::string_view sourceCode);
+bool IfDefinitelyReturns(TSNode node, std::string_view sourceCode);
+bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode);
+bool TryDefinitelyReturns(TSNode node, std::string_view sourceCode);
+
+/**
+ * @brief True when control cannot fall off the end of this statement.
+ *
+ * Deliberately one-sided. Answering "yes" wrongly hides a real missing return, which costs
+ * nothing; answering "no" wrongly reports a function that is perfectly fine, which is the
+ * failure that matters. So every construct whose exit conditions this pass cannot settle -
+ * a try block, a loop with a computed condition - answers "no" only where "no" is also the
+ * honest reading, and the loops whose condition is literally true answer "yes" because they
+ * have no normal exit at all.
+ */
 bool DefinitelyReturns(TSNode node, std::string_view sourceCode)
 {
     const std::string_view type = NodeType(node);
@@ -179,54 +185,17 @@ bool DefinitelyReturns(TSNode node, std::string_view sourceCode)
 
     if (type == "statement_block" || type == "case_clause")
     {
-        const uint32_t first = type == "case_clause" ? FirstStatementIndex(node) : 0u;
-        const uint32_t count = ts_node_named_child_count(node);
-        for (uint32_t i = first; i < count; ++i)
-        {
-            if (DefinitelyReturns(ts_node_named_child(node, i), sourceCode))
-            {
-                return true;
-            }
-        }
-        return false;
+        return BlockOrClauseDefinitelyReturns(node, type, sourceCode);
     }
 
     if (type == "if_statement")
     {
-        TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
-        if (ts_node_is_null(alternative))
-        {
-            return false;
-        }
-        TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
-        return DefinitelyReturns(consequence, sourceCode) && DefinitelyReturns(alternative, sourceCode);
+        return IfDefinitelyReturns(node, sourceCode);
     }
 
     if (type == "switch_statement")
     {
-        bool hasDefault = false;
-        bool allReturn = true;
-        const uint32_t count = ts_node_named_child_count(node);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            TSNode clause = ts_node_named_child(node, i);
-            if (NodeType(clause) != "case_clause")
-            {
-                continue;
-            }
-            if (IsDefaultClause(clause))
-            {
-                hasDefault = true;
-            }
-            // An empty clause falls through to the next one, which is ordinary and says
-            // nothing about whether the switch returns.
-            const bool hasStatements = ts_node_named_child_count(clause) > FirstStatementIndex(clause);
-            if (hasStatements && !DefinitelyReturns(clause, sourceCode))
-            {
-                allReturn = false;
-            }
-        }
-        return hasDefault && allReturn;
+        return SwitchDefinitelyReturns(node, sourceCode);
     }
 
     // No loop counts, whatever its condition says. This used to reason that `while (true)`
@@ -248,29 +217,86 @@ bool DefinitelyReturns(TSNode node, std::string_view sourceCode)
 
     if (type == "try_statement")
     {
-        // Every block has to return, because either one of them can be the path taken: the
-        // try block runs to its end, or an exception hands control to the catch block. The
-        // real compiler answers `try { return 1; } catch { }` with "Not all paths return a
-        // value" and accepts it once the catch returns too.
-        //
-        // The grammar gives `try` and `catch` a `statement_block` each and no fields, so the
-        // named children are exactly the blocks to check.
-        const uint32_t blockCount = ts_node_named_child_count(node);
-        if (blockCount == 0)
-        {
-            return false;
-        }
-        for (uint32_t i = 0; i < blockCount; ++i)
-        {
-            if (!DefinitelyReturns(ts_node_named_child(node, i), sourceCode))
-            {
-                return false;
-            }
-        }
-        return true;
+        return TryDefinitelyReturns(node, sourceCode);
     }
 
     return false;
+}
+
+bool BlockOrClauseDefinitelyReturns(TSNode node, std::string_view type, std::string_view sourceCode)
+{
+    const uint32_t first = type == "case_clause" ? FirstStatementIndex(node) : 0u;
+    const uint32_t count = ts_node_named_child_count(node);
+    for (uint32_t i = first; i < count; ++i)
+    {
+        if (DefinitelyReturns(ts_node_named_child(node, i), sourceCode))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IfDefinitelyReturns(TSNode node, std::string_view sourceCode)
+{
+    TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
+    if (ts_node_is_null(alternative))
+    {
+        return false;
+    }
+    TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
+    return DefinitelyReturns(consequence, sourceCode) && DefinitelyReturns(alternative, sourceCode);
+}
+
+bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode)
+{
+    bool hasDefault = false;
+    bool allReturn = true;
+    const uint32_t count = ts_node_named_child_count(node);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        TSNode clause = ts_node_named_child(node, i);
+        if (NodeType(clause) != "case_clause")
+        {
+            continue;
+        }
+        if (IsDefaultClause(clause))
+        {
+            hasDefault = true;
+        }
+        // An empty clause falls through to the next one, which is ordinary and says
+        // nothing about whether the switch returns.
+        const bool hasStatements = ts_node_named_child_count(clause) > FirstStatementIndex(clause);
+        if (hasStatements && !DefinitelyReturns(clause, sourceCode))
+        {
+            allReturn = false;
+        }
+    }
+    return hasDefault && allReturn;
+}
+
+bool TryDefinitelyReturns(TSNode node, std::string_view sourceCode)
+{
+    // Every block has to return, because either one of them can be the path taken: the
+    // try block runs to its end, or an exception hands control to the catch block. The
+    // real compiler answers `try { return 1; } catch { }` with "Not all paths return a
+    // value" and accepts it once the catch returns too.
+    //
+    // The grammar gives `try` and `catch` a `statement_block` each and no fields, so the
+    // named children are exactly the blocks to check.
+    const uint32_t blockCount = ts_node_named_child_count(node);
+    if (blockCount == 0)
+    {
+        return false;
+    }
+    for (uint32_t i = 0; i < blockCount; ++i)
+    {
+        if (!DefinitelyReturns(ts_node_named_child(node, i), sourceCode))
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 // =====================================================================
@@ -299,6 +325,75 @@ bool IsUnusableCaseValue(TSNode expression, std::string_view sourceCode)
     return false;
 }
 
+std::optional<long long> ParseDecimalInteger(std::string_view text)
+{
+    if (text.empty())
+    {
+        return std::nullopt;
+    }
+
+    size_t index = 0;
+    bool negative = false;
+    if (text[index] == '-' || text[index] == '+')
+    {
+        negative = text[index] == '-';
+        ++index;
+    }
+    if (index >= text.size())
+    {
+        return std::nullopt;
+    }
+
+    long long parsed = 0;
+    for (; index < text.size(); ++index)
+    {
+        if (text[index] < '0' || text[index] > '9')
+        {
+            return std::nullopt;
+        }
+        parsed = parsed * 10 + (text[index] - '0');
+    }
+
+    return negative ? -parsed : parsed;
+}
+
+std::optional<long long> ExtractMemberValue(const EnumSignature& enumSig, std::string_view label, bool& matched)
+{
+    for (const auto& member : enumSig.members)
+    {
+        if (member.name == label)
+        {
+            matched = true;
+            // No value written means the compiler counts it up from the previous one.
+            // Following that count is possible and is not done here: the value then
+            // depends on every member before it, and a wrong number would mean claiming
+            // a duplicate that is not one.
+            if (!member.value.empty())
+            {
+                return ParseDecimalInteger(member.value);
+            }
+            break;
+        }
+    }
+    return std::nullopt;
+}
+
+std::pair<std::string_view, std::string_view> SplitEnumeratorQualifier(std::string_view label)
+{
+    std::string_view enumName;
+    if (const size_t sep = label.rfind("::"); sep != std::string_view::npos)
+    {
+        enumName = label.substr(0, sep);
+        label = label.substr(sep + 2);
+
+        if (const size_t outer = enumName.rfind("::"); outer != std::string_view::npos)
+        {
+            enumName = enumName.substr(outer + 2);
+        }
+    }
+    return {enumName, label};
+}
+
 /**
  * @brief The number a case label stands for, when that can be known for certain.
  *
@@ -315,27 +410,17 @@ bool IsUnusableCaseValue(TSNode expression, std::string_view sourceCode)
  */
 std::optional<long long> EnumeratorValue(std::string_view label, const rules::RuleIndex& ruleIndex)
 {
-    // `meta_api::json::Type::Undefined` -> enum `Type`, member `Undefined`. The qualifier is
-    // not decoration: matching on the member name alone reported a duplicate in four real
-    // scripts, because some other enum in the same workspace happened to declare a member of
-    // the same name with a value that collided. Found by the corpus audit, on code that
-    // compiles.
-    std::string_view enumName;
-    if (const size_t sep = label.rfind("::"); sep != std::string_view::npos)
+    auto [enumName, memberLabel] = SplitEnumeratorQualifier(label);
+    if (memberLabel.empty())
     {
-        enumName = label.substr(0, sep);
-        label = label.substr(sep + 2);
-
-        if (const size_t outer = enumName.rfind("::"); outer != std::string_view::npos)
-            enumName = enumName.substr(outer + 2);
+        return std::nullopt;
     }
 
-    if (label.empty())
-        return std::nullopt;
-
-    const auto it = ruleIndex.enumSymbolsByMemberName.find(std::string(label));
+    const auto it = ruleIndex.enumSymbolsByMemberName.find(std::string(memberLabel));
     if (it == ruleIndex.enumSymbolsByMemberName.end())
+    {
         return std::nullopt;
+    }
 
     std::optional<long long> found;
     size_t declaringEnums = 0;
@@ -343,52 +428,24 @@ std::optional<long long> EnumeratorValue(std::string_view label, const rules::Ru
     for (const auto& sym : it->second)
     {
         if (sym.type != SymbolType::Enum || !std::holds_alternative<EnumSignature>(sym.signature))
+        {
             continue;
+        }
 
         // Written with a qualifier: only the enum it names may answer.
         if (!enumName.empty() && sym.name != enumName)
-            continue;
-
-        for (const auto& member : sym.GetEnum().members)
         {
-            if (member.name != label)
-                continue;
+            continue;
+        }
 
+        bool matched = false;
+        auto val = ExtractMemberValue(sym.GetEnum(), memberLabel, matched);
+        if (matched)
+        {
             ++declaringEnums;
-
-            // No value written means the compiler counts it up from the previous one.
-            // Following that count is possible and is not done here: the value then
-            // depends on every member before it, and a wrong number would mean claiming
-            // a duplicate that is not one.
-            if (member.value.empty())
-                break;
-
-            const std::string_view text(member.value);
-            size_t index = 0;
-            bool negative = false;
-            if (text[index] == '-' || text[index] == '+')
+            if (val)
             {
-                negative = text[index] == '-';
-                ++index;
-            }
-            if (index >= text.size())
-                break;
-
-            long long parsed = 0;
-            bool ok = true;
-            for (; index < text.size(); ++index)
-            {
-                if (text[index] < '0' || text[index] > '9')
-                {
-                    ok = false;
-                    break;
-                }
-                parsed = parsed * 10 + (text[index] - '0');
-            }
-
-            if (ok)
-            {
-                found = negative ? -parsed : parsed;
+                found = val;
             }
         }
     }
@@ -396,9 +453,121 @@ std::optional<long long> EnumeratorValue(std::string_view label, const rules::Ru
     // Written without a qualifier and declared by more than one enum: which one this label
     // means is the compiler's business and not knowable from here.
     if (declaringEnums != 1)
+    {
         return std::nullopt;
+    }
 
     return found;
+}
+
+bool CheckLocalCaseConstantness(TSNode value, const std::string& idText, DiagnosticContext& ctx)
+{
+    if (!ctx.request.scopeRoot)
+    {
+        return false;
+    }
+
+    const TSPoint at = ts_node_start_point(value);
+    const Scope* scope = FindInnermostScope(ctx.request.scopeRoot.get(), at.row, at.column);
+    if (!scope)
+    {
+        return false;
+    }
+
+    const Scope* owner = nullptr;
+    const LocalDefinition* def = ResolveInScope(scope, idText, &owner);
+
+    bool insideFunction = false;
+    for (const Scope* current = owner; current != nullptr; current = current->parent)
+    {
+        if (current->isFunctionScope)
+        {
+            insideFunction = true;
+            break;
+        }
+    }
+
+    if (def && insideFunction && def->kind == LocalDefinitionKind::Variable)
+    {
+        EmitAtNode(value, ctx, "as-err-case-not-constant");
+        return true;
+    }
+
+    return false;
+}
+
+void CheckCaseConstantness(TSNode value, std::string_view sourceCode, DiagnosticContext& ctx)
+{
+    const std::string_view nodeType = NodeType(value);
+    if (nodeType == "identifier" || nodeType == "scoped_identifier")
+    {
+        std::string idText(Trim(NodeText(value, sourceCode)));
+
+        bool reported = false;
+        auto syms = FindSymbolsInScope(idText, value, sourceCode, ctx.request.symbolTable);
+        for (const auto& s : syms)
+        {
+            if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
+            {
+                EmitAtNode(value, ctx, "as-err-case-not-constant");
+                reported = true;
+                break;
+            }
+        }
+
+        if (!reported)
+        {
+            CheckLocalCaseConstantness(value, idText, ctx);
+        }
+    }
+    else if (nodeType == "call_expression")
+    {
+        EmitAtNode(value, ctx, "as-err-case-not-constant");
+    }
+}
+
+std::string ComputeCaseKey(std::string_view text, const rules::RuleIndex& ruleIndex)
+{
+    if (const auto resolved = EnumeratorValue(text, ruleIndex))
+    {
+        return "#" + std::to_string(*resolved);
+    }
+    if (text.find_first_not_of("-+0123456789") == std::string::npos)
+    {
+        return "#" + std::to_string(std::stoll(std::string(text)));
+    }
+    return std::string(text);
+}
+
+void ProcessCaseClause(TSNode clause, std::string_view sourceCode, std::vector<std::string>& seenValues,
+                       DiagnosticContext& ctx)
+{
+    TSNode value = ts_node_named_child(clause, 0);
+    if (ts_node_is_null(value) || ClauseKeyword(clause) != "case")
+    {
+        return;
+    }
+
+    if (IsUnusableCaseValue(value, sourceCode))
+    {
+        EmitAtNode(value, ctx, "as-err-invalid-case-type");
+    }
+
+    CheckCaseConstantness(value, sourceCode, ctx);
+
+    std::string text(Trim(NodeText(value, sourceCode)));
+    if (!text.empty())
+    {
+        std::string key = ComputeCaseKey(text, ctx.request.GetRuleIndex());
+        if (std::find(seenValues.begin(), seenValues.end(), key) != seenValues.end())
+        {
+            EmitAtNode(value, ctx, "as-err-duplicate-case-value", text);
+        }
+        else
+        {
+            seenValues.push_back(std::move(key));
+        }
+    }
 }
 
 void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticContext& ctx)
@@ -430,107 +599,7 @@ void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticContext& ct
             defaultIsLast = false;
         }
 
-        // The label's expression is the clause's first named child; anything after it is a
-        // statement of the clause body.
-        TSNode value = ts_node_named_child(clause, 0);
-        if (ts_node_is_null(value))
-        {
-            continue;
-        }
-
-        // A clause body's first statement sits where the label would when the label is
-        // absent, which only happens on a malformed switch the parser already reported.
-        if (ClauseKeyword(clause) != "case")
-        {
-            continue;
-        }
-
-        if (IsUnusableCaseValue(value, sourceCode))
-        {
-            EmitAtNode(value, ctx, "as-err-invalid-case-type");
-        }
-
-        if (NodeType(value) == "identifier" || NodeType(value) == "scoped_identifier")
-        {
-            std::string idText(Trim(NodeText(value, sourceCode)));
-
-            bool reported = false;
-            auto syms = FindSymbolsInScope(idText, value, sourceCode, ctx.request.symbolTable);
-            for (const auto& s : syms)
-            {
-                if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
-                {
-                    EmitAtNode(value, ctx, "as-err-case-not-constant");
-                    reported = true;
-                    break;
-                }
-            }
-
-            // A LOCAL is not in the symbol table - locals live in the scope tree - so
-            // `void f() { int y = 2; switch (x) { case y: ... } }` went unreported while the
-            // same mistake with a global was caught. Measured: "Case expressions must be
-            // literal constants".
-            //
-            // Only a name that resolves to a local variable is reported. One that resolves
-            // to nothing at all stays silent, because an enum member the host registered in
-            // C++ and declared in no stub looks exactly like it from here - the same reason
-            // the undeclared-identifier rule is a warning rather than an error.
-            if (!reported && ctx.request.scopeRoot)
-            {
-                const TSPoint at = ts_node_start_point(value);
-                if (const Scope* scope = FindInnermostScope(ctx.request.scopeRoot.get(), at.row, at.column))
-                {
-                    const Scope* owner = nullptr;
-                    const LocalDefinition* def = ResolveInScope(scope, idText, &owner);
-
-                    // Inside a function body, and only there. The scope tree also holds
-                    // module-scope declarations, and it does not record `const` - so a
-                    // `const int` global used as a case label, which is legal and idiomatic,
-                    // looked exactly like a local from here and was reported. Requiring a
-                    // function scope is what tells the two apart.
-                    bool insideFunction = false;
-                    for (const Scope* current = owner; current != nullptr; current = current->parent)
-                    {
-                        if (current->isFunctionScope)
-                        {
-                            insideFunction = true;
-                            break;
-                        }
-                    }
-
-                    if (def && insideFunction && def->kind == LocalDefinitionKind::Variable)
-                    {
-                        EmitAtNode(value, ctx, "as-err-case-not-constant");
-                    }
-                }
-            }
-        }
-        else if (NodeType(value) == "call_expression")
-        {
-            EmitAtNode(value, ctx, "as-err-case-not-constant");
-        }
-
-        std::string text(Trim(NodeText(value, sourceCode)));
-        if (!text.empty())
-        {
-            // Compared by the number where the number is knowable, by the text otherwise.
-            // The key carries a marker so a label spelled `1` and a label named `A` that
-            // happens to be 1 collide - which they do, in the compiler.
-            std::string key = text;
-            if (const auto resolved = EnumeratorValue(text, ctx.request.GetRuleIndex()))
-                key = "#" + std::to_string(*resolved);
-            else if (text.find_first_not_of("-+0123456789") == std::string::npos)
-                key = "#" + std::to_string(std::stoll(text));
-
-            if (std::find(seenValues.begin(), seenValues.end(), key) != seenValues.end())
-            {
-                EmitAtNode(value, ctx, "as-err-duplicate-case-value", text);
-            }
-            else
-            {
-                seenValues.push_back(std::move(key));
-            }
-        }
+        ProcessCaseClause(clause, sourceCode, seenValues, ctx);
     }
 
     if (haveDefault && !defaultIsLast)
@@ -629,75 +698,56 @@ void CheckUnreachable(TSNode block, DiagnosticContext& ctx)
     }
 }
 
-void Visit(TSNode node, std::string_view sourceCode, FlowState state, DiagnosticContext& ctx, int depth = 0)
+class ControlFlowVisitor
 {
-    // See k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
-        return;
-
-    const std::string_view type = NodeType(node);
-
-    if (type == "break_statement")
+  public:
+    ControlFlowVisitor(std::string_view sourceCode, DiagnosticContext& ctx) : m_sourceCode(sourceCode), m_ctx(ctx)
     {
-        if (state.loopDepth == 0 && state.switchDepth == 0)
+    }
+
+    void Run(TSNode root)
+    {
+        Visit(root, FlowState{});
+    }
+
+  private:
+    std::string_view m_sourceCode;
+    DiagnosticContext& m_ctx;
+
+    void CheckReturnStatement(TSNode node, const FlowState& state)
+    {
+        // A bare `return;` in a function that owes a value. Measured: the compiler answers
+        // "Must return a value" and rejects the file, and nothing here saw it -
+        // as-err-not-all-paths-return asks only whether a return is *reached*, so
+        // `float FS(float f) { return; }` passed every check this analyzer had.
+        if (!state.requiredReturn.empty() && state.requiredReturn != "void" && ts_node_named_child_count(node) == 0)
         {
-            EmitAtNode(node, ctx, "as-err-break-outside-loop");
+            EmitAtNode(node, m_ctx, "as-err-return-value-required", state.functionName);
         }
-        return;
-    }
 
-    if (type == "continue_statement")
-    {
-        if (state.loopDepth == 0)
+        // The constructor half of the same rule. Reported here rather than in
+        // TypeConversionChecker because that one asks the return type node what is required,
+        // and a constructor has none - so the one function in the language that can only
+        // return void was the one nothing checked.
+        if (state.implicitVoid && ts_node_named_child_count(node) > 0)
         {
-            EmitAtNode(node, ctx, "as-err-continue-outside-loop");
+            EmitAtNode(node, m_ctx, "as-err-void-return-value");
         }
-        return;
+
+        // `int f() { return null; }` - "No conversion from '<null handle>' to 'int' available."
+        // as-err-null-non-handle says exactly this about a variable and had nothing to say
+        // about a return. Restricted to the primitives, and to a return type carrying no `@`,
+        // so a class or a handle - where null may well be legal, and where the host may have
+        // registered a conversion this analyzer cannot see - is left alone.
+        if (!state.requiredReturn.empty() && state.requiredReturn.find('@') == std::string::npos &&
+            IsNonNullablePrimitiveName(state.requiredReturn) && ts_node_named_child_count(node) == 1 &&
+            NodeType(ts_node_named_child(node, 0)) == node_types::NullLiteral)
+        {
+            EmitAtNode(node, m_ctx, "as-err-null-non-handle", state.requiredReturn);
+        }
     }
 
-    if (type == "statement_block" || type == "case_clause")
-    {
-        CheckUnreachable(node, ctx);
-    }
-
-    // A bare `return;` in a function that owes a value. Measured: the compiler answers
-    // "Must return a value" and rejects the file, and nothing here saw it -
-    // as-err-not-all-paths-return asks only whether a return is *reached*, so
-    // `float FS(float f) { return; }` passed every check this analyzer had.
-    //
-    // The opposite direction - a value returned from a void function - is
-    // as-err-void-return-value, in TypeConversionChecker, and stays there.
-    //
-    // Not an early return: a returned expression can contain a lambda with a body of its
-    // own, and that body still has to be walked.
-    if (type == "return_statement" && !state.requiredReturn.empty() && state.requiredReturn != "void" &&
-        ts_node_named_child_count(node) == 0)
-    {
-        EmitAtNode(node, ctx, "as-err-return-value-required", state.functionName);
-    }
-
-    // The constructor half of the same rule. Reported here rather than in
-    // TypeConversionChecker because that one asks the return type node what is required,
-    // and a constructor has none - so the one function in the language that can only
-    // return void was the one nothing checked.
-    if (type == "return_statement" && state.implicitVoid && ts_node_named_child_count(node) > 0)
-    {
-        EmitAtNode(node, ctx, "as-err-void-return-value");
-    }
-
-    // `int f() { return null; }` - "No conversion from '<null handle>' to 'int' available."
-    // as-err-null-non-handle says exactly this about a variable and had nothing to say
-    // about a return. Restricted to the primitives, and to a return type carrying no `@`,
-    // so a class or a handle - where null may well be legal, and where the host may have
-    // registered a conversion this analyzer cannot see - is left alone.
-    if (type == "return_statement" && !state.requiredReturn.empty() &&
-        state.requiredReturn.find('@') == std::string::npos && IsNonNullablePrimitiveName(state.requiredReturn) &&
-        ts_node_named_child_count(node) == 1 && NodeType(ts_node_named_child(node, 0)) == node_types::NullLiteral)
-    {
-        EmitAtNode(node, ctx, "as-err-null-non-handle", state.requiredReturn);
-    }
-
-    if (type == "func_declaration" || type == "lambda_expression")
+    void CheckFunctionDeclaration(TSNode node, FlowState& state)
     {
         // A nested function opens its own flow: a loop enclosing the declaration does not
         // make a `break` inside the nested body legal.
@@ -719,12 +769,12 @@ void Visit(TSNode node, std::string_view sourceCode, FlowState state, Diagnostic
         std::string reportedName;
         if (!ts_node_is_null(returnType))
         {
-            requiredReturn = Trim(NodeText(returnType, sourceCode));
-            reportedName = std::string(NodeText(name, sourceCode));
+            requiredReturn = Trim(NodeText(returnType, m_sourceCode));
+            reportedName = std::string(NodeText(name, m_sourceCode));
         }
-        else if (type == node_types::LambdaExpression)
+        else if (NodeType(node) == node_types::LambdaExpression)
         {
-            if (const auto target = FuncdefTargetOfLambda(node, ctx.request.symbolTable, sourceCode))
+            if (const auto target = FuncdefTargetOfLambda(node, m_ctx.request.symbolTable, m_sourceCode))
             {
                 requiredReturn = CleanBaseType(target->GetFuncdef().returnType);
                 reportedName = target->name;
@@ -732,9 +782,9 @@ void Visit(TSNode node, std::string_view sourceCode, FlowState state, Diagnostic
         }
 
         if (!ts_node_is_null(body) && !requiredReturn.empty() && requiredReturn != "void" &&
-            !DefinitelyReturns(body, sourceCode))
+            !DefinitelyReturns(body, m_sourceCode))
         {
-            EmitAtNode(ts_node_is_null(name) ? node : name, ctx, "as-err-not-all-paths-return", reportedName);
+            EmitAtNode(ts_node_is_null(name) ? node : name, m_ctx, "as-err-not-all-paths-return", reportedName);
         }
 
         // Carried into the body, so every `return` inside it knows what it owes. A lambda
@@ -742,29 +792,87 @@ void Visit(TSNode node, std::string_view sourceCode, FlowState state, Diagnostic
         // does nothing, which is the same silence the rule above keeps.
         state.requiredReturn = requiredReturn;
         state.functionName = reportedName;
-        state.implicitVoid = ts_node_is_null(returnType) && type != node_types::LambdaExpression;
-    }
-    else if (type == "while_statement" || type == "for_statement" || type == "foreach_statement" ||
-             type == "do_while_statement")
-    {
-        ++state.loopDepth;
-    }
-    else if (type == "switch_statement")
-    {
-        CheckSwitch(node, sourceCode, ctx);
-        ++state.switchDepth;
-    }
-    else if (type == "if_statement")
-    {
-        CheckEmptyBranch(node, ctx);
+        state.implicitVoid = ts_node_is_null(returnType) && NodeType(node) != node_types::LambdaExpression;
     }
 
-    const uint32_t count = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
+    bool CheckLoopControl(TSNode node, std::string_view type, const FlowState& state)
     {
-        Visit(ts_node_named_child(node, i), sourceCode, state, ctx, depth + 1);
+        if (type == "break_statement")
+        {
+            if (state.loopDepth == 0 && state.switchDepth == 0)
+            {
+                EmitAtNode(node, m_ctx, "as-err-break-outside-loop");
+            }
+            return true;
+        }
+        if (type == "continue_statement")
+        {
+            if (state.loopDepth == 0)
+            {
+                EmitAtNode(node, m_ctx, "as-err-continue-outside-loop");
+            }
+            return true;
+        }
+        return false;
     }
-}
+
+    void UpdateBranchState(TSNode node, std::string_view type, FlowState& state)
+    {
+        if (type == "while_statement" || type == "for_statement" || type == "foreach_statement" ||
+            type == "do_while_statement")
+        {
+            ++state.loopDepth;
+        }
+        else if (type == "switch_statement")
+        {
+            CheckSwitch(node, m_sourceCode, m_ctx);
+            ++state.switchDepth;
+        }
+        else if (type == "if_statement")
+        {
+            CheckEmptyBranch(node, m_ctx);
+        }
+    }
+
+    void Visit(TSNode node, FlowState state, int depth = 0)
+    {
+        // See k_maxAstDepth in ASTUtils.h.
+        if (depth > k_maxAstDepth)
+        {
+            return;
+        }
+
+        const std::string_view type = NodeType(node);
+
+        if (CheckLoopControl(node, type, state))
+        {
+            return;
+        }
+
+        if (type == "statement_block" || type == "case_clause")
+        {
+            CheckUnreachable(node, m_ctx);
+        }
+        else if (type == "return_statement")
+        {
+            CheckReturnStatement(node, state);
+        }
+        else if (type == "func_declaration" || type == "lambda_expression")
+        {
+            CheckFunctionDeclaration(node, state);
+        }
+        else
+        {
+            UpdateBranchState(node, type, state);
+        }
+
+        const uint32_t count = ts_node_named_child_count(node);
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            Visit(ts_node_named_child(node, i), state, depth + 1);
+        }
+    }
+};
 } // namespace
 
 void CheckControlFlow(const ControlFlowCheckRequest& request, DiagnosticContext& ctx)
@@ -774,6 +882,7 @@ void CheckControlFlow(const ControlFlowCheckRequest& request, DiagnosticContext&
         return;
     }
 
-    Visit(request.root, request.sourceCode, FlowState{}, ctx);
+    ControlFlowVisitor visitor(request.sourceCode, ctx);
+    visitor.Run(request.root);
 }
 } // namespace angel_lsp::analysis

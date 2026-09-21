@@ -42,13 +42,9 @@ angel_lsp::analysis::CheckLambdaArguments
 angel_lsp::analysis::CheckMemberExpression
 angel_lsp::analysis::CheckNamespacesAndScopes
 angel_lsp::analysis::CheckSharedEntityEligibility
-angel_lsp::analysis::CheckSwitch
 angel_lsp::analysis::CheckVariableDirectInitialization
 angel_lsp::analysis::CleanBaseType
 angel_lsp::analysis::CleanDescriptionLines
-angel_lsp::analysis::DefiniteAssignmentVisitor::AnalyzeStatement
-angel_lsp::analysis::DefiniteAssignmentVisitor::CheckExpressionReads
-angel_lsp::analysis::DefinitelyReturns
 angel_lsp::analysis::DetectEngineProfileFromWorkspace
 angel_lsp::analysis::DiagnosticContext::Emit
 angel_lsp::analysis::DiagnosticContext::EmitAtRange
@@ -56,7 +52,6 @@ angel_lsp::analysis::DiagnosticContext::EmitAtTypeName
 angel_lsp::analysis::DiagnosticContext::EmitWithRelated
 angel_lsp::analysis::EmitAtNode
 angel_lsp::analysis::EmitWarningAtNode
-angel_lsp::analysis::EnumeratorValue
 angel_lsp::analysis::ExtractBrief
 angel_lsp::analysis::ExtractCommentLines
 angel_lsp::analysis::ExtractDocComment
@@ -115,7 +110,6 @@ angel_lsp::analysis::SymbolTable::PublishDocumentSymbols
 angel_lsp::analysis::SymbolTable::ResolveIncludedMixinsForKeysLocked
 angel_lsp::analysis::ValidateList
 angel_lsp::analysis::ValidateMultiDimensionalContainer
-angel_lsp::analysis::Visit
 angel_lsp::analysis::Walk
 angel_lsp::analysis::rules::CheckBody
 angel_lsp::analysis::rules::CheckClassModifiers

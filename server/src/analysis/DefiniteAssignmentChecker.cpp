@@ -117,6 +117,12 @@ ankerl::unordered_dense::set<std::string> MergeBranchStates(const ankerl::unorde
     return result;
 }
 
+struct CallCandidateInfo
+{
+    const std::vector<Symbol>& candidates;
+    const FunctionSignature* sig = nullptr;
+};
+
 class DefiniteAssignmentVisitor
 {
   public:
@@ -160,13 +166,207 @@ class DefiniteAssignmentVisitor
     ankerl::unordered_dense::set<std::string> m_trackedLocals;
     ankerl::unordered_dense::set<std::string> m_reportedReads;
 
+    void CheckIdentifierRead(TSNode node, const FlowState& state)
+    {
+        std::string name = GetSimpleIdentifierName(node, m_request.sourceCode);
+        if (!name.empty() && m_trackedLocals.contains(name) && !state.assignedVars.contains(name))
+        {
+            TSPoint start = ts_node_start_point(node);
+            TSPoint end = ts_node_end_point(node);
+            std::string locationKey = name + ":" + std::to_string(start.row) + ":" + std::to_string(start.column);
+            if (m_reportedReads.insert(locationKey).second)
+            {
+                m_ctx.EmitAtRange(start.row, start.column, end.row, end.column, "as-warn-uninitialized-variable-read",
+                                  name, DiagnosticSeverity::Warning);
+            }
+        }
+    }
+
+    void CheckAssignmentExpressionReads(TSNode node, FlowState& state, int depth)
+    {
+        TSNode left = parser::GetChildByField(node, parser::fields::Left);
+        TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+        TSNode right = parser::GetChildByField(node, parser::fields::Right);
+        std::string op = NodeText(opNode, m_request.sourceCode);
+
+        // Evaluate right-hand side reads first
+        CheckExpressionReads(right, state, depth + 1);
+
+        if (op == "=")
+        {
+            std::string varName = GetSimpleIdentifierName(left, m_request.sourceCode);
+            if (!varName.empty() && m_trackedLocals.contains(varName))
+            {
+                state.assignedVars.insert(varName);
+                return;
+            }
+            // Non-bare identifier on left (e.g. obj.x = val, arr[i] = val)
+            CheckExpressionReads(left, state, depth + 1);
+        }
+        else
+        {
+            // Compound assignment (+=, -=, etc.): left is read before being written
+            CheckExpressionReads(left, state, depth + 1);
+        }
+    }
+
+    void CollectCallCandidates(TSNode funcNode, TSNode callNode, std::vector<Symbol>& candidates) const
+    {
+        std::string_view funcType = ts_node_type(funcNode);
+        if (funcType == "member_expression")
+        {
+            TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
+            TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
+            if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
+            {
+                const TSPoint objStart = ts_node_start_point(objNode);
+                const Scope* callScope = m_request.scopeRoot
+                                             ? FindEnclosingScope(m_request.scopeRoot, objStart.row, objStart.column)
+                                             : nullptr;
+                std::string objType =
+                    ResolveExpressionType(objNode, callScope ? callScope : m_request.scopeRoot,
+                                          m_ctx.request.symbolTable, m_request.sourceCode, m_ctx.request.fileUri);
+                std::string cleanObj = CleanBaseType(objType);
+                std::string memName = NodeText(memNode, m_request.sourceCode);
+                auto hierarchy = GetInheritedTypeHierarchy(cleanObj, m_ctx.request.symbolTable);
+                for (const auto& typeName : hierarchy)
+                {
+                    auto found = m_ctx.request.symbolTable.FindSymbolsPtr(typeName + "::" + memName);
+                    if (found)
+                    {
+                        for (const auto& sym : *found)
+                        {
+                            if (sym.type == SymbolType::Function)
+                            {
+                                candidates.push_back(sym);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            std::string funcName = NodeText(funcNode, m_request.sourceCode);
+            auto inScope = FindSymbolsInScope(funcName, callNode, m_request.sourceCode, m_ctx.request.symbolTable);
+            for (const auto& sym : inScope)
+            {
+                if (sym.type == SymbolType::Function)
+                {
+                    candidates.push_back(sym);
+                }
+            }
+        }
+    }
+
+    void CollectCallArguments(TSNode argsNode, std::vector<TSNode>& argNodes, std::vector<std::string>& argTypes) const
+    {
+        uint32_t rawChildCount = ts_node_child_count(argsNode);
+        for (uint32_t i = 0; i < rawChildCount; ++i)
+        {
+            TSNode child = ts_node_child(argsNode, i);
+            std::string_view ct = ts_node_type(child);
+            if (ct != "(" && ct != ")" && ct != "," && ct != "comment")
+            {
+                argNodes.push_back(child);
+                argTypes.push_back(ResolveExpressionType(child, m_request.scopeRoot, m_ctx.request.symbolTable,
+                                                         m_request.sourceCode, m_ctx.request.fileUri));
+            }
+        }
+    }
+
+    bool IsOutParameter(size_t i, const CallCandidateInfo& info) const
+    {
+        const auto declaresOutAt = [i](const FunctionSignature& candidate)
+        {
+            if (i >= candidate.parameters.size())
+            {
+                return false;
+            }
+            const auto& param = candidate.parameters[i];
+            return param.modifier == ParameterModifier::Out || param.typeName.find("&out") != std::string::npos ||
+                   param.rawText.find("&out") != std::string::npos;
+        };
+
+        if (info.sig && declaresOutAt(*info.sig))
+        {
+            return true;
+        }
+
+        for (const auto& candidate : info.candidates)
+        {
+            if (std::holds_alternative<FunctionSignature>(candidate.signature) &&
+                declaresOutAt(candidate.GetFunction()))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void CheckCallArguments(const std::vector<TSNode>& argNodes, const CallCandidateInfo& info, FlowState& state,
+                            int depth)
+    {
+        for (size_t i = 0; i < argNodes.size(); ++i)
+        {
+            if (IsOutParameter(i, info))
+            {
+                std::string varName = GetSimpleIdentifierName(argNodes[i], m_request.sourceCode);
+                if (!varName.empty() && m_trackedLocals.contains(varName))
+                {
+                    state.assignedVars.insert(varName);
+                    continue;
+                }
+            }
+
+            if (!info.sig)
+            {
+                const std::string bareName = GetSimpleIdentifierName(argNodes[i], m_request.sourceCode);
+                if (!bareName.empty() && m_trackedLocals.contains(bareName))
+                {
+                    state.assignedVars.insert(bareName);
+                    continue;
+                }
+            }
+
+            CheckExpressionReads(argNodes[i], state, depth + 1);
+        }
+    }
+
+    void CheckCallExpressionReads(TSNode node, FlowState& state, int depth)
+    {
+        TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
+        TSNode argsNode = parser::GetChildByField(node, parser::fields::Arguments);
+
+        CheckExpressionReads(funcNode, state, depth + 1);
+
+        if (ts_node_is_null(argsNode))
+        {
+            return;
+        }
+
+        std::vector<Symbol> candidates;
+        CollectCallCandidates(funcNode, node, candidates);
+
+        std::vector<TSNode> argNodes;
+        std::vector<std::string> argTypes;
+        CollectCallArguments(argsNode, argNodes, argTypes);
+
+        auto best = ResolveBestOverload(candidates, argTypes, m_ctx.request.symbolTable);
+        const FunctionSignature* sig =
+            (best.bestCandidate && std::holds_alternative<FunctionSignature>(best.bestCandidate->signature))
+                ? &best.bestCandidate->GetFunction()
+                : (!candidates.empty() && std::holds_alternative<FunctionSignature>(candidates[0].signature)
+                       ? &candidates[0].GetFunction()
+                       : nullptr);
+
+        CallCandidateInfo info{candidates, sig};
+        CheckCallArguments(argNodes, info, state, depth);
+    }
+
     void CheckExpressionReads(TSNode node, FlowState& state, int depth = 0)
     {
-        // See k_maxAstDepth in ASTUtils.h.
-        if (depth > k_maxAstDepth)
-            return;
-
-        if (ts_node_is_null(node))
+        if (depth > k_maxAstDepth || ts_node_is_null(node))
         {
             return;
         }
@@ -175,237 +375,26 @@ class DefiniteAssignmentVisitor
 
         if (type == "identifier" || type == "scoped_identifier")
         {
-            std::string name = GetSimpleIdentifierName(node, m_request.sourceCode);
-            if (!name.empty() && m_trackedLocals.contains(name) && !state.assignedVars.contains(name))
-            {
-                TSPoint start = ts_node_start_point(node);
-                TSPoint end = ts_node_end_point(node);
-                std::string locationKey = name + ":" + std::to_string(start.row) + ":" + std::to_string(start.column);
-                if (m_reportedReads.insert(locationKey).second)
-                {
-                    // A WARNING, which is what the AngelScript compiler produces
-                    // for uninitialized variable reads: a plain read, a read inside an expression,
-                    // a by-value argument, or a `const &in` argument are warnings rather than errors.
-                    m_ctx.EmitAtRange(start.row, start.column, end.row, end.column,
-                                      "as-warn-uninitialized-variable-read", name, DiagnosticSeverity::Warning);
-                }
-            }
+            CheckIdentifierRead(node, state);
             return;
         }
 
         if (type == "assignment_expression")
         {
-            TSNode left = parser::GetChildByField(node, parser::fields::Left);
-            TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
-            TSNode right = parser::GetChildByField(node, parser::fields::Right);
-            std::string op = NodeText(opNode, m_request.sourceCode);
-
-            // Evaluate right-hand side reads first
-            CheckExpressionReads(right, state);
-
-            if (op == "=")
-            {
-                std::string varName = GetSimpleIdentifierName(left, m_request.sourceCode);
-                if (!varName.empty() && m_trackedLocals.contains(varName))
-                {
-                    state.assignedVars.insert(varName);
-                    return;
-                }
-                // Non-bare identifier on left (e.g. obj.x = val, arr[i] = val)
-                CheckExpressionReads(left, state);
-            }
-            else
-            {
-                // Compound assignment (+=, -=, etc.): left is read before being written
-                CheckExpressionReads(left, state);
-            }
+            CheckAssignmentExpressionReads(node, state, depth);
             return;
         }
 
         if (type == "call_expression")
         {
-            TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
-            TSNode argsNode = parser::GetChildByField(node, parser::fields::Arguments);
-
-            // Check callee expression reads
-            CheckExpressionReads(funcNode, state);
-
-            if (ts_node_is_null(argsNode))
-            {
-                return;
-            }
-
-            std::vector<Symbol> candidates;
-            std::string_view funcType = ts_node_type(funcNode);
-            if (funcType == "member_expression")
-            {
-                TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
-                TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
-                if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
-                {
-                    // Resolved in the scope the call is written in, not at the root.
-                    //
-                    // The receiver of a method call is almost always a local - `Reader
-                    // reader; reader.Get(value)` - and a local is not in the root scope, so
-                    // resolving there answered nothing, the hierarchy came back empty, no
-                    // candidate was found and the `&out` parameter below was never
-                    // recognised. Every out-parameter of a METHOD was therefore read as a
-                    // read, and `int n; obj.Get(n);` - which is how you initialise `n` -
-                    // was reported as using it uninitialised. Free functions were fine,
-                    // because their lookup takes the node and not the root.
-                    const TSPoint objStart = ts_node_start_point(objNode);
-                    const Scope* callScope =
-                        m_request.scopeRoot ? FindEnclosingScope(m_request.scopeRoot, objStart.row, objStart.column)
-                                            : nullptr;
-                    std::string objType =
-                        ResolveExpressionType(objNode, callScope ? callScope : m_request.scopeRoot,
-                                              m_ctx.request.symbolTable, m_request.sourceCode, m_ctx.request.fileUri);
-                    std::string cleanObj = CleanBaseType(objType);
-                    std::string memName = NodeText(memNode, m_request.sourceCode);
-                    auto hierarchy = GetInheritedTypeHierarchy(cleanObj, m_ctx.request.symbolTable);
-                    for (const auto& typeName : hierarchy)
-                    {
-                        auto found = m_ctx.request.symbolTable.FindSymbolsPtr(typeName + "::" + memName);
-                        if (found)
-                        {
-                            for (const auto& sym : *found)
-                            {
-                                if (sym.type == SymbolType::Function)
-                                {
-                                    candidates.push_back(sym);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            else
-            {
-                std::string funcName = NodeText(funcNode, m_request.sourceCode);
-                auto inScope = FindSymbolsInScope(funcName, node, m_request.sourceCode, m_ctx.request.symbolTable);
-                for (const auto& sym : inScope)
-                {
-                    if (sym.type == SymbolType::Function)
-                    {
-                        candidates.push_back(sym);
-                    }
-                }
-            }
-
-            std::vector<std::string> argTypes;
-            std::vector<TSNode> argNodes;
-            uint32_t rawChildCount = ts_node_child_count(argsNode);
-            for (uint32_t i = 0; i < rawChildCount; ++i)
-            {
-                TSNode child = ts_node_child(argsNode, i);
-                std::string_view ct = ts_node_type(child);
-                if (ct != "(" && ct != ")" && ct != "," && ct != "comment")
-                {
-                    argNodes.push_back(child);
-                    argTypes.push_back(ResolveExpressionType(child, m_request.scopeRoot, m_ctx.request.symbolTable,
-                                                             m_request.sourceCode, m_ctx.request.fileUri));
-                }
-            }
-
-            auto best = ResolveBestOverload(candidates, argTypes, m_ctx.request.symbolTable);
-            const FunctionSignature* sig =
-                (best.bestCandidate && std::holds_alternative<FunctionSignature>(best.bestCandidate->signature))
-                    ? &best.bestCandidate->GetFunction()
-                    : (!candidates.empty() && std::holds_alternative<FunctionSignature>(candidates[0].signature)
-                           ? &candidates[0].GetFunction()
-                           : nullptr);
-
-            for (size_t i = 0; i < argNodes.size(); ++i)
-            {
-                // `&out` if ANY candidate declares one at this position, not only the one
-                // overload resolution happened to pick.
-                //
-                // Picking one is a guess whenever the candidates disagree, and a wrong
-                // guess here reports the line that initialises the variable. The corpus
-                // shape is `class json : meta_api::json::v2::json` restating its methods,
-                // so a member lookup finds the base's `Get` beside the derived one and the
-                // resolver has no reason to prefer either; reading `&out` off the loser
-                // produced the last six findings this rule made. Asking "could this be an
-                // out-parameter" instead of "is the chosen one" is the same
-                // silence-over-guessing the unknown-callee case above applies.
-                bool isOutParam = false;
-                const auto declaresOutAt = [i](const FunctionSignature& candidate)
-                {
-                    if (i >= candidate.parameters.size())
-                    {
-                        return false;
-                    }
-                    const auto& param = candidate.parameters[i];
-                    return param.modifier == ParameterModifier::Out ||
-                           param.typeName.find("&out") != std::string::npos ||
-                           param.rawText.find("&out") != std::string::npos;
-                };
-
-                if (sig && declaresOutAt(*sig))
-                {
-                    isOutParam = true;
-                }
-                else
-                {
-                    for (const auto& candidate : candidates)
-                    {
-                        if (std::holds_alternative<FunctionSignature>(candidate.signature) &&
-                            declaresOutAt(candidate.GetFunction()))
-                        {
-                            isOutParam = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (isOutParam)
-                {
-                    std::string varName = GetSimpleIdentifierName(argNodes[i], m_request.sourceCode);
-                    if (!varName.empty() && m_trackedLocals.contains(varName))
-                    {
-                        state.assignedVars.insert(varName);
-                        continue;
-                    }
-                }
-
-                // No visible declaration for the callee, so whether this parameter is
-                // `&out` is exactly what cannot be established - and `&out` is
-                // AngelScript's only way to return a second value, so it is what a bare
-                // local passed to an unknown function most often is.
-                //
-                // `g_Utility.GetCircularGaussianSpread(x, y)` writes both of them, and the
-                // analyzer cannot know that: g_Utility is registered by the game engine in
-                // C++ and declared in no script. Treating the argument as a read reported
-                // the line that initialises the variable. That, and the same shape
-                // repeated, is most of the 749 findings this rule produced over the corpus.
-                //
-                // Only a bare identifier is spared: `f(x + 1)` cannot be an out-argument -
-                // an out-parameter needs an l-value - so a compound expression is a read
-                // whoever the callee turns out to be, and stays judged.
-                if (!sig)
-                {
-                    const std::string bareName = GetSimpleIdentifierName(argNodes[i], m_request.sourceCode);
-                    if (!bareName.empty() && m_trackedLocals.contains(bareName))
-                    {
-                        // Marked assigned, not merely unread. The same ignorance runs both
-                        // ways: if the parameter may be `&out`, the variable may now hold a
-                        // value, and every later read of it is equally undecidable. Skipping
-                        // only this line left `g_Utility.GetCircularGaussianSpread(x, y);`
-                        // silent and then reported the next line that used x.
-                        state.assignedVars.insert(bareName);
-                        continue;
-                    }
-                }
-
-                CheckExpressionReads(argNodes[i], state);
-            }
+            CheckCallExpressionReads(node, state, depth);
             return;
         }
 
         if (type == "member_expression")
         {
             TSNode objNode = parser::GetChildByField(node, parser::fields::Object);
-            CheckExpressionReads(objNode, state);
+            CheckExpressionReads(objNode, state, depth + 1);
             return;
         }
 
@@ -416,13 +405,307 @@ class DefiniteAssignmentVisitor
         }
     }
 
+    void AnalyzeBlock(TSNode node, FlowState& state, int depth)
+    {
+        uint32_t count = ts_node_named_child_count(node);
+        for (uint32_t i = 0; i < count && !state.isTerminated && !state.hasReturned; ++i)
+        {
+            AnalyzeStatement(ts_node_named_child(node, i), state, depth + 1);
+        }
+    }
+
+    void AnalyzeVariableDeclarator(TSNode child, bool isPrimitive, FlowState& state, int depth)
+    {
+        TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
+        if (ts_node_is_null(nameNode) && ts_node_named_child_count(child) > 0)
+        {
+            nameNode = ts_node_named_child(child, 0);
+        }
+        if (ts_node_is_null(nameNode))
+        {
+            return;
+        }
+
+        std::string varName = NodeText(nameNode, m_request.sourceCode);
+        TSNode initNode = parser::GetChildByField(child, parser::fields::Value);
+        if (ts_node_is_null(initNode))
+        {
+            uint32_t rawCount = ts_node_child_count(child);
+            bool sawEq = false;
+            for (uint32_t j = 0; j < rawCount; ++j)
+            {
+                TSNode rawChild = ts_node_child(child, j);
+                if (sawEq)
+                {
+                    initNode = rawChild;
+                    break;
+                }
+                if (std::string_view(ts_node_type(rawChild)) == "=")
+                {
+                    sawEq = true;
+                }
+            }
+        }
+
+        if (!ts_node_is_null(initNode))
+        {
+            CheckExpressionReads(initNode, state, depth + 1);
+            state.assignedVars.insert(varName);
+        }
+        else
+        {
+            if (isPrimitive)
+            {
+                m_trackedLocals.insert(varName);
+            }
+            else
+            {
+                state.assignedVars.insert(varName);
+            }
+        }
+    }
+
+    void AnalyzeVariableDeclaration(TSNode node, FlowState& state, int depth)
+    {
+        TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
+        if (ts_node_is_null(typeNode))
+        {
+            typeNode = parser::GetChildByField(node, parser::fields::Type);
+        }
+
+        bool isPrimitive = false;
+        if (!ts_node_is_null(typeNode))
+        {
+            TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, std::string(m_request.sourceCode));
+            isPrimitive = (IsPrimitiveTypeName(typeInfo.baseTypeName) && !typeInfo.isArray && !typeInfo.isHandle &&
+                           typeInfo.templateName.empty());
+        }
+
+        uint32_t count = ts_node_named_child_count(node);
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            TSNode child = ts_node_named_child(node, i);
+            if (std::string_view(ts_node_type(child)) == "variable_declarator")
+            {
+                AnalyzeVariableDeclarator(child, isPrimitive, state, depth);
+            }
+        }
+    }
+
+    void AnalyzeIfStatement(TSNode node, FlowState& state, int depth)
+    {
+        TSNode cond = ts_node_named_child(node, 0);
+        TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
+        TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
+
+        CheckExpressionReads(cond, state, depth + 1);
+
+        FlowState thenState = state;
+        AnalyzeStatement(consequence, thenState, depth + 1);
+
+        FlowState elseState = state;
+        if (!ts_node_is_null(alternative))
+        {
+            AnalyzeStatement(alternative, elseState, depth + 1);
+        }
+
+        if (thenState.hasReturned && elseState.hasReturned)
+        {
+            state.hasReturned = true;
+        }
+        else if (thenState.hasReturned)
+        {
+            state = elseState;
+        }
+        else if (elseState.hasReturned)
+        {
+            state = thenState;
+        }
+        else
+        {
+            state.assignedVars = MergeBranchStates(thenState.assignedVars, elseState.assignedVars);
+        }
+    }
+
+    void AnalyzeWhileStatement(TSNode node, FlowState& state, int depth)
+    {
+        TSNode cond = ts_node_named_child(node, 0);
+        TSNode body = parser::GetChildByField(node, parser::fields::Body);
+
+        CheckExpressionReads(cond, state, depth + 1);
+
+        FlowState bodyState = state;
+        AnalyzeStatement(body, bodyState, depth + 1);
+
+        state.assignedVars = MergeBranchStates(state.assignedVars, bodyState.assignedVars);
+
+        std::string condText = NodeText(cond, m_request.sourceCode);
+        if (condText == "true" && !bodyState.hasReturned && !bodyState.isTerminated)
+        {
+            state = bodyState;
+        }
+    }
+
+    void AnalyzeDoWhileStatement(TSNode node, FlowState& state, int depth)
+    {
+        TSNode body = parser::GetChildByField(node, parser::fields::Body);
+        TSNode cond = ts_node_named_child(node, 1);
+
+        AnalyzeStatement(body, state, depth + 1);
+        CheckExpressionReads(cond, state, depth + 1);
+    }
+
+    void AnalyzeForStatement(TSNode node, FlowState& state, int depth)
+    {
+        TSNode init = parser::GetChildByField(node, parser::fields::Init);
+        TSNode cond = parser::GetChildByField(node, parser::fields::Condition);
+        TSNode step = parser::GetChildByField(node, parser::fields::Update);
+        TSNode body = parser::GetChildByField(node, parser::fields::Body);
+
+        if (!ts_node_is_null(init))
+        {
+            if (std::string_view(ts_node_type(init)) == "assignment_expression")
+            {
+                CheckExpressionReads(init, state, depth + 1);
+            }
+            else
+            {
+                AnalyzeStatement(init, state, depth + 1);
+            }
+        }
+
+        CheckExpressionReads(cond, state, depth + 1);
+
+        FlowState bodyState = state;
+        AnalyzeStatement(body, bodyState, depth + 1);
+        CheckExpressionReads(step, bodyState, depth + 1);
+
+        state.assignedVars = MergeBranchStates(state.assignedVars, bodyState.assignedVars);
+
+        std::string rawCond = NodeText(cond, m_request.sourceCode);
+        std::string_view condText = Trim(rawCond);
+        if ((condText.empty() || condText == "true" || condText == ";") && !bodyState.hasReturned &&
+            !bodyState.isTerminated)
+        {
+            state = bodyState;
+        }
+    }
+
+    FlowState AnalyzeCaseClause(TSNode child, const FlowState& parentState, int depth)
+    {
+        TSNode kw = ts_node_child(child, 0);
+        FlowState caseState = parentState;
+        uint32_t stmtCount = ts_node_named_child_count(child);
+        uint32_t first = (std::string_view(ts_node_type(kw)) == "default") ? 0u : 1u;
+        for (uint32_t j = first; j < stmtCount && !caseState.hasReturned; ++j)
+        {
+            TSNode stmtChild = ts_node_named_child(child, j);
+            if (std::string_view(ts_node_type(stmtChild)) == "break_statement")
+            {
+                break;
+            }
+            AnalyzeStatement(stmtChild, caseState, depth + 1);
+        }
+        return caseState;
+    }
+
+    void MergeSwitchCaseStates(const std::vector<FlowState>& caseStates, FlowState& state)
+    {
+        if (caseStates.empty())
+        {
+            return;
+        }
+
+        bool allReturn = true;
+        std::vector<ankerl::unordered_dense::set<std::string>> liveCaseSets;
+
+        for (const auto& cs : caseStates)
+        {
+            if (!cs.hasReturned)
+            {
+                allReturn = false;
+                liveCaseSets.push_back(cs.assignedVars);
+            }
+        }
+
+        if (allReturn)
+        {
+            state.hasReturned = true;
+        }
+        else if (!liveCaseSets.empty())
+        {
+            ankerl::unordered_dense::set<std::string> merged = liveCaseSets[0];
+            for (size_t i = 1; i < liveCaseSets.size(); ++i)
+            {
+                merged = MergeBranchStates(merged, liveCaseSets[i]);
+            }
+            state.assignedVars = std::move(merged);
+        }
+    }
+
+    void AnalyzeSwitchStatement(TSNode node, FlowState& state, int depth)
+    {
+        TSNode cond = ts_node_named_child(node, 0);
+        CheckExpressionReads(cond, state, depth + 1);
+
+        std::vector<FlowState> caseStates;
+        uint32_t count = ts_node_named_child_count(node);
+
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            TSNode child = ts_node_named_child(node, i);
+            if (std::string_view(ts_node_type(child)) == "case_clause")
+            {
+                caseStates.push_back(AnalyzeCaseClause(child, state, depth));
+            }
+        }
+
+        MergeSwitchCaseStates(caseStates, state);
+    }
+
+    bool AnalyzeLoopStatement(std::string_view type, TSNode node, FlowState& state, int depth)
+    {
+        if (type == "while_statement")
+        {
+            AnalyzeWhileStatement(node, state, depth);
+            return true;
+        }
+        if (type == "do_while_statement")
+        {
+            AnalyzeDoWhileStatement(node, state, depth);
+            return true;
+        }
+        if (type == "for_statement")
+        {
+            AnalyzeForStatement(node, state, depth);
+            return true;
+        }
+        return false;
+    }
+
+    bool AnalyzeJumpStatement(std::string_view type, TSNode node, FlowState& state, int depth)
+    {
+        if (type == "return_statement")
+        {
+            if (ts_node_named_child_count(node) > 0)
+            {
+                CheckExpressionReads(ts_node_named_child(node, 0), state, depth + 1);
+            }
+            state.hasReturned = true;
+            state.isTerminated = true;
+            return true;
+        }
+        if (type == "break_statement" || type == "continue_statement")
+        {
+            state.isTerminated = true;
+            return true;
+        }
+        return false;
+    }
+
     void AnalyzeStatement(TSNode node, FlowState& state, int depth = 0)
     {
-        // See k_maxAstDepth in ASTUtils.h.
-        if (depth > k_maxAstDepth)
-            return;
-
-        if (ts_node_is_null(node) || state.isTerminated || state.hasReturned)
+        if (depth > k_maxAstDepth || ts_node_is_null(node) || state.isTerminated || state.hasReturned)
         {
             return;
         }
@@ -431,11 +714,7 @@ class DefiniteAssignmentVisitor
 
         if (type == "statement_block")
         {
-            uint32_t count = ts_node_named_child_count(node);
-            for (uint32_t i = 0; i < count && !state.isTerminated && !state.hasReturned; ++i)
-            {
-                AnalyzeStatement(ts_node_named_child(node, i), state, depth + 1);
-            }
+            AnalyzeBlock(node, state, depth);
             return;
         }
 
@@ -443,333 +722,81 @@ class DefiniteAssignmentVisitor
         {
             if (ts_node_named_child_count(node) > 0)
             {
-                CheckExpressionReads(ts_node_named_child(node, 0), state);
+                CheckExpressionReads(ts_node_named_child(node, 0), state, depth + 1);
             }
             return;
         }
 
         if (type == "variable_declaration")
         {
-            TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
-            if (ts_node_is_null(typeNode))
-            {
-                typeNode = parser::GetChildByField(node, parser::fields::Type);
-            }
-
-            bool isPrimitive = false;
-            if (!ts_node_is_null(typeNode))
-            {
-                TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, std::string(m_request.sourceCode));
-                isPrimitive = (IsPrimitiveTypeName(typeInfo.baseTypeName) && !typeInfo.isArray && !typeInfo.isHandle &&
-                               typeInfo.templateName.empty());
-            }
-
-            uint32_t count = ts_node_named_child_count(node);
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                TSNode child = ts_node_named_child(node, i);
-                std::string_view childType = ts_node_type(child);
-                if (childType == "variable_declarator")
-                {
-                    TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
-                    if (ts_node_is_null(nameNode) && ts_node_named_child_count(child) > 0)
-                    {
-                        nameNode = ts_node_named_child(child, 0);
-                    }
-                    if (ts_node_is_null(nameNode))
-                    {
-                        continue;
-                    }
-
-                    std::string varName = NodeText(nameNode, m_request.sourceCode);
-                    TSNode initNode = parser::GetChildByField(child, parser::fields::Value);
-                    if (ts_node_is_null(initNode))
-                    {
-                        uint32_t rawCount = ts_node_child_count(child);
-                        bool sawEq = false;
-                        for (uint32_t j = 0; j < rawCount; ++j)
-                        {
-                            TSNode rawChild = ts_node_child(child, j);
-                            if (sawEq)
-                            {
-                                initNode = rawChild;
-                                break;
-                            }
-                            if (std::string_view(ts_node_type(rawChild)) == "=")
-                            {
-                                sawEq = true;
-                            }
-                        }
-                    }
-
-                    if (!ts_node_is_null(initNode))
-                    {
-                        CheckExpressionReads(initNode, state);
-                        state.assignedVars.insert(varName);
-                    }
-                    else
-                    {
-                        if (isPrimitive)
-                        {
-                            m_trackedLocals.insert(varName);
-                        }
-                        else
-                        {
-                            state.assignedVars.insert(varName);
-                        }
-                    }
-                }
-            }
+            AnalyzeVariableDeclaration(node, state, depth);
             return;
         }
 
         if (type == "if_statement")
         {
-            // `if_statement` has NO `condition` field - the expression is an unnamed child
-            // sitting before the `consequence`, which is a field. Asking for a field that
-            // does not exist returned null every time, so the condition was never analysed
-            // at all: reads inside it went unchecked, and - the visible half - an `&out`
-            // argument written there never marked its variable assigned. That is the
-            // `if (dict.get(key, value) && value != 0)` shape, which then reported `value`
-            // in the body. Same story in `while_statement`, below.
-            TSNode cond = ts_node_named_child(node, 0);
-            TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
-            TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
-
-            CheckExpressionReads(cond, state);
-
-            FlowState thenState = state;
-            AnalyzeStatement(consequence, thenState);
-
-            FlowState elseState = state;
-            if (!ts_node_is_null(alternative))
-            {
-                AnalyzeStatement(alternative, elseState);
-            }
-
-            if (thenState.hasReturned && elseState.hasReturned)
-            {
-                state.hasReturned = true;
-            }
-            else if (thenState.hasReturned)
-            {
-                state = elseState;
-            }
-            else if (elseState.hasReturned)
-            {
-                state = thenState;
-            }
-            else
-            {
-                state.assignedVars = MergeBranchStates(thenState.assignedVars, elseState.assignedVars);
-            }
-            return;
-        }
-
-        if (type == "while_statement")
-        {
-            // No `condition` field either - see the note in the if_statement branch.
-            TSNode cond = ts_node_named_child(node, 0);
-            TSNode body = parser::GetChildByField(node, parser::fields::Body);
-
-            CheckExpressionReads(cond, state);
-
-            FlowState bodyState = state;
-            AnalyzeStatement(body, bodyState);
-
-            // The body's assignments survive the loop, whether or not the loop provably
-            // runs. That is AngelScript's rule and not C#'s - `int x; while (c) { x = 5; }
-            // Print(x);` is clean to the compiler, and so is the same shape with a `for`.
-            // Only propagating them for `while (true)` was the "definitely assigned"
-            // reading, and it accounted for most of what this rule reported over the
-            // corpus: assigning inside a loop and reading after it is how ordinary code is
-            // written.
-            state.assignedVars = MergeBranchStates(state.assignedVars, bodyState.assignedVars);
-
-            std::string condText = NodeText(cond, m_request.sourceCode);
-            if (condText == "true" && !bodyState.hasReturned && !bodyState.isTerminated)
-            {
-                state = bodyState;
-            }
-            return;
-        }
-
-        if (type == "do_while_statement")
-        {
-            TSNode body = parser::GetChildByField(node, parser::fields::Body);
-            // No `condition` field here either; `body` is one, so the condition is the
-            // second named child. See the note in the if_statement branch.
-            TSNode cond = ts_node_named_child(node, 1);
-
-            AnalyzeStatement(body, state);
-            CheckExpressionReads(cond, state);
-            return;
-        }
-
-        if (type == "for_statement")
-        {
-            // The field is `init`, not `initializer` - see for_statement in grammar.js.
-            // Asking for the wrong name returned null every time, so the loop header was
-            // never analysed at all and `for (i = 0; i < n; i++)` reported the `i` in the
-            // condition as a read of an uninitialised variable. The header is where `i` is
-            // initialised.
-            TSNode init = parser::GetChildByField(node, parser::fields::Init);
-            TSNode cond = parser::GetChildByField(node, parser::fields::Condition);
-            TSNode step = parser::GetChildByField(node, parser::fields::Update);
-            TSNode body = parser::GetChildByField(node, parser::fields::Body);
-
-            if (!ts_node_is_null(init))
-            {
-                // `for (i = 0; ...)` initialises a variable declared earlier, and its
-                // initializer is an ASSIGNMENT rather than a declaration - the grammar puts
-                // the expression straight in the field, with no statement around it.
-                // AnalyzeStatement had no case for that, so it recursed into the children
-                // and reported the `i` on the left as a read of an uninitialised variable:
-                // the loop header that initialises it. CheckExpressionReads is the branch
-                // that understands an assignment, so an expression goes there.
-                if (std::string_view(ts_node_type(init)) == "assignment_expression")
-                {
-                    CheckExpressionReads(init, state);
-                }
-                else
-                {
-                    AnalyzeStatement(init, state);
-                }
-            }
-
-            CheckExpressionReads(cond, state);
-
-            FlowState bodyState = state;
-            AnalyzeStatement(body, bodyState);
-            CheckExpressionReads(step, bodyState);
-
-            // See the note in the `while` branch: an assignment in the body precedes any
-            // read after the loop, and that is all the compiler asks for.
-            state.assignedVars = MergeBranchStates(state.assignedVars, bodyState.assignedVars);
-
-            std::string rawCond = NodeText(cond, m_request.sourceCode);
-            std::string_view condText = Trim(rawCond);
-            if ((condText.empty() || condText == "true" || condText == ";") && !bodyState.hasReturned &&
-                !bodyState.isTerminated)
-            {
-                state = bodyState;
-            }
+            AnalyzeIfStatement(node, state, depth);
             return;
         }
 
         if (type == "switch_statement")
         {
-            // First named child, for the same reason as the others: the switched
-            // expression carries no field name.
-            TSNode cond = ts_node_named_child(node, 0);
-            CheckExpressionReads(cond, state);
-
-            std::vector<FlowState> caseStates;
-            uint32_t count = ts_node_named_child_count(node);
-
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                TSNode child = ts_node_named_child(node, i);
-                if (std::string_view(ts_node_type(child)) == "case_clause")
-                {
-                    TSNode kw = ts_node_child(child, 0);
-
-                    FlowState caseState = state;
-                    uint32_t stmtCount = ts_node_named_child_count(child);
-                    uint32_t first = (std::string_view(ts_node_type(kw)) == "default") ? 0u : 1u;
-                    for (uint32_t j = first; j < stmtCount && !caseState.hasReturned; ++j)
-                    {
-                        TSNode stmtChild = ts_node_named_child(child, j);
-                        if (std::string_view(ts_node_type(stmtChild)) == "break_statement")
-                        {
-                            break;
-                        }
-                        AnalyzeStatement(stmtChild, caseState);
-                    }
-                    caseStates.push_back(std::move(caseState));
-                }
-            }
-
-            // No `hasDefault` requirement, for the same reason the if/else join unions
-            // rather than intersects: a `default:` matters to "assigned on every path",
-            // which is not the question. Measured - both of these are clean:
-            //
-            //     int x; switch (v) { case 1: x=10; break; case 2: x=20; break; } Print(x);
-            //     int x; switch (v) { case 1: x=10; break; case 2: break;
-            //                         default: x=30; break; } Print(x);
-            //
-            // An assignment in one arm precedes the read, and that is all the compiler
-            // asks. Two tests asserted the opposite and have been inverted with these
-            // lines recorded beside them.
-            if (!caseStates.empty())
-            {
-                bool allReturn = true;
-                std::vector<ankerl::unordered_dense::set<std::string>> liveCaseSets;
-
-                for (const auto& cs : caseStates)
-                {
-                    if (!cs.hasReturned)
-                    {
-                        allReturn = false;
-                        liveCaseSets.push_back(cs.assignedVars);
-                    }
-                }
-
-                if (allReturn)
-                {
-                    state.hasReturned = true;
-                }
-                else if (!liveCaseSets.empty())
-                {
-                    ankerl::unordered_dense::set<std::string> merged = liveCaseSets[0];
-                    for (size_t i = 1; i < liveCaseSets.size(); ++i)
-                    {
-                        merged = MergeBranchStates(merged, liveCaseSets[i]);
-                    }
-                    state.assignedVars = std::move(merged);
-                }
-            }
+            AnalyzeSwitchStatement(node, state, depth);
             return;
         }
 
-        if (type == "return_statement")
+        if (AnalyzeLoopStatement(type, node, state, depth) || AnalyzeJumpStatement(type, node, state, depth))
         {
-            if (ts_node_named_child_count(node) > 0)
-            {
-                CheckExpressionReads(ts_node_named_child(node, 0), state);
-            }
-            state.hasReturned = true;
-            state.isTerminated = true;
             return;
         }
 
-        if (type == "break_statement" || type == "continue_statement")
-        {
-            state.isTerminated = true;
-            return;
-        }
-
-        CheckExpressionReads(node, state);
+        CheckExpressionReads(node, state, depth);
     }
 };
 
-void TraverseFunctions(TSNode node, DefiniteAssignmentVisitor& visitor, int depth = 0)
+void TraverseFunctions(TSNode root, DefiniteAssignmentVisitor& visitor)
 {
-    // See k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
+    if (ts_node_is_null(root))
+    {
         return;
-
-    std::string_view type = ts_node_type(node);
-    if (type == "func_declaration" || type == "lambda_expression")
-    {
-        visitor.AnalyzeFunction(node);
     }
 
-    uint32_t count = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(root);
+    bool reachedRoot = false;
+
+    while (!reachedRoot)
     {
-        TraverseFunctions(ts_node_named_child(node, i), visitor, depth + 1);
+        TSNode node = ts_tree_cursor_current_node(&cursor);
+        std::string_view type = ts_node_type(node);
+        if (type == "func_declaration" || type == "lambda_expression")
+        {
+            visitor.AnalyzeFunction(node);
+        }
+
+        if (ts_tree_cursor_goto_first_child(&cursor))
+        {
+            continue;
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            continue;
+        }
+
+        while (!reachedRoot)
+        {
+            if (!ts_tree_cursor_goto_parent(&cursor))
+            {
+                reachedRoot = true;
+                break;
+            }
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                break;
+            }
+        }
     }
+
+    ts_tree_cursor_delete(&cursor);
 }
 } // namespace
 
