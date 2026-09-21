@@ -106,7 +106,6 @@ angel_lsp::analysis::Walk
 angel_lsp::features::AddItemIfNew
 angel_lsp::features::CalculateActiveParameter
 angel_lsp::features::ClassifyOccurrence
-angel_lsp::features::CollectAstFoldingRanges
 angel_lsp::features::CollectInlayHintsFromNode
 angel_lsp::features::CollectReferencesInScope
 angel_lsp::features::CollectSubtypes
@@ -125,7 +124,6 @@ angel_lsp::features::GetCompletion
 angel_lsp::features::GetDefaultReturnValue
 angel_lsp::features::GetDefinition
 angel_lsp::features::GetDocumentHighlights
-angel_lsp::features::GetFoldingRanges
 angel_lsp::features::GetHighlightsQueryData
 angel_lsp::features::GetHover
 angel_lsp::features::GetImplementations

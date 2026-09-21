@@ -1,9 +1,9 @@
 #include "features/folding_range/FoldingRangeHandler.h"
 #include <algorithm>
+#include <array>
 #include <map>
-#include <set>
-#include <sstream>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace angel_lsp::features
@@ -12,6 +12,8 @@ namespace
 {
 /**
  * @brief Strips leading whitespace from a string view.
+ * @param[in] s Input string view.
+ * @return String view without leading spaces, tabs, or carriage returns.
  */
 std::string_view TrimLeading(std::string_view s)
 {
@@ -25,6 +27,8 @@ std::string_view TrimLeading(std::string_view s)
 
 /**
  * @brief Splits source code into lines (views without trailing \r or \n).
+ * @param[in] source Document source text.
+ * @return Vector of string views representing each line.
  */
 std::vector<std::string_view> SplitLines(std::string_view source)
 {
@@ -56,85 +60,172 @@ std::vector<std::string_view> SplitLines(std::string_view source)
 }
 
 /**
- * @brief Recursively traverses the AST and collects syntax-based folding ranges.
+ * @brief Checks if a grammar node type represents a foldable syntax block.
+ * @param[in] type AST node type string.
+ * @return True if the node type is foldable.
  */
-void CollectAstFoldingRanges(TSNode node, const std::string& sourceCode, std::vector<lsp::FoldingRange>& outRanges)
+bool IsSyntaxFoldingNode(std::string_view type)
 {
-    if (ts_node_is_null(node))
+    static constexpr std::array<std::string_view, 24> k_foldingTypes = {
+        "accessor",
+        "argument_list",
+        "case_clause",
+        "class_declaration",
+        "do_while_statement",
+        "enum_declaration",
+        "for_statement",
+        "foreach_statement",
+        "func_declaration",
+        "funcdef_declaration",
+        "if_statement",
+        "initializer_list",
+        "interface_declaration",
+        "interface_method",
+        "lambda_expression",
+        "mixin_declaration",
+        "namespace_declaration",
+        "parameter_list",
+        "statement_block",
+        "switch_statement",
+        "try_statement",
+        "typed_initializer_list",
+        "virtual_property",
+        "while_statement",
+    };
+    return std::binary_search(k_foldingTypes.begin(), k_foldingTypes.end(), type);
+}
+
+/**
+ * @brief Attempts to extract a syntax folding range from an AST node.
+ * @param[in] node AST node.
+ * @param[out] outFr Resulting folding range if applicable.
+ * @return True if a multi-line syntax folding range was extracted.
+ */
+bool TryExtractSyntaxFoldingRange(TSNode node, lsp::FoldingRange& outFr)
+{
+    const char* type = ts_node_type(node);
+    if (!type || !IsSyntaxFoldingNode(type))
+    {
+        return false;
+    }
+
+    const TSPoint startPt = ts_node_start_point(node);
+    const TSPoint endPt = ts_node_end_point(node);
+    if (startPt.row >= endPt.row)
+    {
+        return false;
+    }
+
+    outFr.startLine = startPt.row;
+    outFr.endLine = endPt.row;
+    outFr.startCharacter = startPt.column;
+    outFr.endCharacter = endPt.column;
+    outFr.kind = std::nullopt;
+    return true;
+}
+
+/**
+ * @brief Attempts to extract a block comment folding range from an AST node.
+ * @param[in] node AST node.
+ * @param[in] sourceCode Document source text.
+ * @param[out] outFr Resulting comment folding range if applicable.
+ * @return True if a multi-line block comment folding range was extracted.
+ */
+bool TryExtractCommentFoldingRange(TSNode node, std::string_view sourceCode, lsp::FoldingRange& outFr)
+{
+    const char* type = ts_node_type(node);
+    if (!type || std::string_view(type) != "comment")
+    {
+        return false;
+    }
+
+    const uint32_t startByte = ts_node_start_byte(node);
+    if (startByte + 2 > sourceCode.size() || sourceCode[startByte] != '/' || sourceCode[startByte + 1] != '*')
+    {
+        return false;
+    }
+
+    const TSPoint startPt = ts_node_start_point(node);
+    const TSPoint endPt = ts_node_end_point(node);
+    if (startPt.row >= endPt.row)
+    {
+        return false;
+    }
+
+    outFr.startLine = startPt.row;
+    outFr.endLine = endPt.row;
+    outFr.startCharacter = startPt.column;
+    outFr.endCharacter = endPt.column;
+    outFr.kind = lsp::FoldingRangeKind::Comment;
+    return true;
+}
+
+/**
+ * @brief Traverses the AST iteratively using TSTreeCursor and collects syntax-based folding ranges.
+ * @param[in] rootNode Root AST node.
+ * @param[in] sourceCode Document source text.
+ * @param[in,out] outRanges Output accumulator for folding ranges.
+ */
+void CollectAstFoldingRanges(TSNode rootNode, std::string_view sourceCode, std::vector<lsp::FoldingRange>& outRanges)
+{
+    if (ts_node_is_null(rootNode))
     {
         return;
     }
 
-    std::string_view type = ts_node_type(node);
-    TSPoint startPt = ts_node_start_point(node);
-    TSPoint endPt = ts_node_end_point(node);
+    TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
+    bool visiting = true;
 
-    if (startPt.row < endPt.row)
+    while (visiting)
     {
-        if (type == "class_declaration" || type == "mixin_declaration" || type == "interface_declaration" ||
-            type == "namespace_declaration" || type == "enum_declaration" || type == "func_declaration" ||
-            type == "interface_method" || type == "funcdef_declaration" || type == "lambda_expression" ||
-            type == "virtual_property" || type == "accessor" || type == "statement_block" ||
-            type == "switch_statement" || type == "case_clause" || type == "try_statement" || type == "if_statement" ||
-            type == "for_statement" || type == "foreach_statement" || type == "while_statement" ||
-            type == "do_while_statement" || type == "argument_list" || type == "parameter_list" ||
-            type == "initializer_list" || type == "typed_initializer_list")
+        TSNode node = ts_tree_cursor_current_node(&cursor);
+        lsp::FoldingRange fr;
+        if (TryExtractSyntaxFoldingRange(node, fr) || TryExtractCommentFoldingRange(node, sourceCode, fr))
         {
-            lsp::FoldingRange fr;
-            fr.startLine = startPt.row;
-            fr.endLine = endPt.row;
-            fr.startCharacter = startPt.column;
-            fr.endCharacter = endPt.column;
-            fr.kind = std::nullopt;
             outRanges.push_back(fr);
         }
-        else if (type == "comment")
+
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            uint32_t startByte = ts_node_start_byte(node);
-            if (startByte + 2 <= sourceCode.size() && sourceCode[startByte] == '/' && sourceCode[startByte + 1] == '*')
+            continue;
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            continue;
+        }
+
+        bool backtracked = false;
+        while (ts_tree_cursor_goto_parent(&cursor))
+        {
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
             {
-                lsp::FoldingRange fr;
-                fr.startLine = startPt.row;
-                fr.endLine = endPt.row;
-                fr.startCharacter = startPt.column;
-                fr.endCharacter = endPt.column;
-                fr.kind = lsp::FoldingRangeKind::Comment;
-                outRanges.push_back(fr);
+                backtracked = true;
+                break;
             }
+        }
+        if (!backtracked)
+        {
+            visiting = false;
         }
     }
 
-    uint32_t childCount = ts_node_child_count(node);
-    for (uint32_t i = 0; i < childCount; ++i)
-    {
-        CollectAstFoldingRanges(ts_node_child(node, i), sourceCode, outRanges);
-    }
+    ts_tree_cursor_delete(&cursor);
 }
-} // namespace
 
-std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& request)
+/**
+ * @brief Collects folding ranges for contiguous single-line comments (// ...).
+ * @param[in] lines Splitted document lines.
+ * @param[in,out] outRanges Output accumulator for folding ranges.
+ */
+void CollectSingleLineCommentRanges(const std::vector<std::string_view>& lines,
+                                    std::vector<lsp::FoldingRange>& outRanges)
 {
-    if (!request.tree || request.sourceCode.empty())
-    {
-        return std::nullopt;
-    }
-
-    std::vector<lsp::FoldingRange> rawRanges;
-
-    // 1. AST-based syntax and block comment ranges
-    TSNode rootNode = ts_tree_root_node(request.tree);
-    CollectAstFoldingRanges(rootNode, request.sourceCode, rawRanges);
-
-    // 2. Line-based processing: contiguous single-line comments, #region, #if, and imports
-    auto lines = SplitLines(request.sourceCode);
-
-    // Contiguous single-line comments (// ...)
     int commentStart = -1;
     int commentEnd = -1;
 
     for (int i = 0; i < static_cast<int>(lines.size()); ++i)
     {
-        std::string_view trimmed = TrimLeading(lines[i]);
+        const std::string_view trimmed = TrimLeading(lines[i]);
         if (trimmed.starts_with("//"))
         {
             if (commentStart == -1)
@@ -151,7 +242,7 @@ std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& re
                 fr.startLine = static_cast<uint32_t>(commentStart);
                 fr.endLine = static_cast<uint32_t>(commentEnd);
                 fr.kind = lsp::FoldingRangeKind::Comment;
-                rawRanges.push_back(fr);
+                outRanges.push_back(fr);
             }
             commentStart = -1;
             commentEnd = -1;
@@ -163,16 +254,24 @@ std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& re
         fr.startLine = static_cast<uint32_t>(commentStart);
         fr.endLine = static_cast<uint32_t>(commentEnd);
         fr.kind = lsp::FoldingRangeKind::Comment;
-        rawRanges.push_back(fr);
+        outRanges.push_back(fr);
     }
+}
 
-    // Contiguous imports / includes
+/**
+ * @brief Collects folding ranges for contiguous imports and #include directives.
+ * @param[in] lines Splitted document lines.
+ * @param[in,out] outRanges Output accumulator for folding ranges.
+ */
+void CollectImportAndIncludeRanges(const std::vector<std::string_view>& lines,
+                                   std::vector<lsp::FoldingRange>& outRanges)
+{
     int importStart = -1;
     int importEnd = -1;
 
     for (int i = 0; i < static_cast<int>(lines.size()); ++i)
     {
-        std::string_view trimmed = TrimLeading(lines[i]);
+        const std::string_view trimmed = TrimLeading(lines[i]);
         if (trimmed.starts_with("import ") || trimmed.starts_with("#include"))
         {
             if (importStart == -1)
@@ -189,7 +288,7 @@ std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& re
                 fr.startLine = static_cast<uint32_t>(importStart);
                 fr.endLine = static_cast<uint32_t>(importEnd);
                 fr.kind = lsp::FoldingRangeKind::Imports;
-                rawRanges.push_back(fr);
+                outRanges.push_back(fr);
             }
             importStart = -1;
             importEnd = -1;
@@ -201,16 +300,24 @@ std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& re
         fr.startLine = static_cast<uint32_t>(importStart);
         fr.endLine = static_cast<uint32_t>(importEnd);
         fr.kind = lsp::FoldingRangeKind::Imports;
-        rawRanges.push_back(fr);
+        outRanges.push_back(fr);
     }
+}
 
-    // Preprocessor directives: #region ... #endregion and #if ... #endif
+/**
+ * @brief Collects folding ranges for preprocessor directives (#region and #if).
+ * @param[in] lines Splitted document lines.
+ * @param[in,out] outRanges Output accumulator for folding ranges.
+ */
+void CollectPreprocessorFoldingRanges(const std::vector<std::string_view>& lines,
+                                      std::vector<lsp::FoldingRange>& outRanges)
+{
     std::vector<uint32_t> regionStack;
     std::vector<uint32_t> ifStack;
 
     for (uint32_t i = 0; i < lines.size(); ++i)
     {
-        std::string_view trimmed = TrimLeading(lines[i]);
+        const std::string_view trimmed = TrimLeading(lines[i]);
         if (trimmed.starts_with("#region"))
         {
             regionStack.push_back(i);
@@ -219,7 +326,7 @@ std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& re
         {
             if (!regionStack.empty())
             {
-                uint32_t start = regionStack.back();
+                const uint32_t start = regionStack.back();
                 regionStack.pop_back();
                 if (start < i)
                 {
@@ -227,7 +334,7 @@ std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& re
                     fr.startLine = start;
                     fr.endLine = i;
                     fr.kind = lsp::FoldingRangeKind::Region;
-                    rawRanges.push_back(fr);
+                    outRanges.push_back(fr);
                 }
             }
         }
@@ -239,7 +346,7 @@ std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& re
         {
             if (!ifStack.empty())
             {
-                uint32_t start = ifStack.back();
+                const uint32_t start = ifStack.back();
                 ifStack.pop_back();
                 if (start < i)
                 {
@@ -247,14 +354,20 @@ std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& re
                     fr.startLine = start;
                     fr.endLine = i;
                     fr.kind = std::nullopt;
-                    rawRanges.push_back(fr);
+                    outRanges.push_back(fr);
                 }
             }
         }
     }
+}
 
-    // 3. De-duplication and Sorting
-    // Map from (startLine, endLine) to folding range (preferring explicit kind over nullopt)
+/**
+ * @brief Deduplicates and orders raw folding ranges by start line ascending and end line descending.
+ * @param[in] rawRanges Unordered list of candidate folding ranges.
+ * @return Deduplicated and sorted folding ranges.
+ */
+FoldingRangeResult DeduplicateAndSortFoldingRanges(const std::vector<lsp::FoldingRange>& rawRanges)
+{
     std::map<std::pair<uint32_t, uint32_t>, lsp::FoldingRange> uniqueMap;
 
     for (const auto& fr : rawRanges)
@@ -264,19 +377,15 @@ std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& re
             continue;
         }
 
-        auto key = std::make_pair(fr.startLine, fr.endLine);
+        const auto key = std::make_pair(fr.startLine, fr.endLine);
         auto it = uniqueMap.find(key);
         if (it == uniqueMap.end())
         {
             uniqueMap[key] = fr;
         }
-        else
+        else if (fr.kind.has_value() && !it->second.kind.has_value())
         {
-            // If the new one has a kind and existing doesn't, override
-            if (fr.kind.has_value() && !it->second.kind.has_value())
-            {
-                it->second = fr;
-            }
+            it->second = fr;
         }
     }
 
@@ -298,5 +407,25 @@ std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& re
               });
 
     return result;
+}
+} // namespace
+
+std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& request)
+{
+    if (!request.tree || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+
+    std::vector<lsp::FoldingRange> rawRanges;
+    const TSNode rootNode = ts_tree_root_node(request.tree);
+    CollectAstFoldingRanges(rootNode, request.sourceCode, rawRanges);
+
+    const auto lines = SplitLines(request.sourceCode);
+    CollectSingleLineCommentRanges(lines, rawRanges);
+    CollectImportAndIncludeRanges(lines, rawRanges);
+    CollectPreprocessorFoldingRanges(lines, rawRanges);
+
+    return DeduplicateAndSortFoldingRanges(rawRanges);
 }
 } // namespace angel_lsp::features
