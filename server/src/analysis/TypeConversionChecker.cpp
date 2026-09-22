@@ -813,6 +813,23 @@ ExpressionType ResolveLiteralValueType(TSNode node, const DiagnosticContext& ctx
     return ExpressionType{};
 }
 
+static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx, int depth)
+{
+    const std::string op = NodeText(parser::GetChildByField(node, parser::fields::Operator), ctx.request.sourceCode);
+    if (op == "!" || op == "not")
+    {
+        return ExpressionType{"bool", true, false};
+    }
+    return ResolveValueType(parser::GetChildByField(node, parser::fields::Operand), scope, ctx, depth + 1);
+}
+
+static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext& ctx)
+{
+    const std::string typeText =
+        CleanBaseType(NodeText(parser::GetChildByField(node, parser::fields::Type), ctx.request.sourceCode));
+    return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false};
+}
+
 ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx, int depth)
 {
     const std::string_view nodeType = NodeType(node);
@@ -825,13 +842,7 @@ ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const D
 
     if (nodeType == "unary_expression")
     {
-        const std::string op =
-            NodeText(parser::GetChildByField(node, parser::fields::Operator), ctx.request.sourceCode);
-        if (op == "!" || op == "not")
-        {
-            return ExpressionType{"bool", true, false};
-        }
-        return ResolveValueType(parser::GetChildByField(node, parser::fields::Operand), scope, ctx, depth + 1);
+        return ResolveUnaryValueType(node, scope, ctx, depth);
     }
 
     if (nodeType == "identifier" || nodeType == "scoped_identifier")
@@ -846,9 +857,7 @@ ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const D
 
     if (nodeType == "cast_expression" || nodeType == "functional_cast_expression")
     {
-        const std::string typeText =
-            CleanBaseType(NodeText(parser::GetChildByField(node, parser::fields::Type), ctx.request.sourceCode));
-        return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false};
+        return ResolveCastValueType(node, ctx);
     }
 
     if (nodeType == "member_expression")
@@ -858,8 +867,6 @@ ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const D
         return resolved.empty() ? ExpressionType{} : ExpressionType{CleanBaseType(resolved), true, false};
     }
 
-    // Binary, conditional and assignment expressions need operator resolution this pass
-    // does not do, so their result type stays unknown rather than being guessed.
     return ExpressionType{};
 }
 
@@ -1517,6 +1524,23 @@ bool IsConstructibleFrom(const std::string& sourceBase, const std::string& targe
 }
 
 /** @brief Rule for a one-argument construction: `T(expr)` or `T v(expr);`. */
+static bool IsTargetTypeIgnoredForConstruction(const std::string& targetType, const SymbolTable& table,
+                                               const DiagnosticContext& ctx)
+{
+    if (IsBuiltInValueType(targetType, ctx))
+    {
+        return true;
+    }
+    return !FindTypeDeclaration(targetType, table).found && !ResolvesToEnum(targetType, table);
+}
+
+static bool IsSourceCompatibleWithTarget(const std::string& sourceBaseName, const std::string& targetType,
+                                         const SymbolTable& table)
+{
+    return AreHierarchyRelated(sourceBaseName, targetType, table) ||
+           DeclaresConversionTo(sourceBaseName, targetType, table, false);
+}
+
 void CheckConstruction(TSNode argumentListNode, const std::string& targetType, const Scope* scope,
                        DiagnosticContext& ctx)
 {
@@ -1535,14 +1559,8 @@ void CheckConstruction(TSNode argumentListNode, const std::string& targetType, c
     }
 
     const SymbolTable& table = ctx.request.symbolTable;
-    if (IsBuiltInValueType(targetType, ctx) ||
-        (!FindTypeDeclaration(targetType, table).found && !ResolvesToEnum(targetType, table)))
-    {
-        return;
-    }
-
-    if (AreHierarchyRelated(source.baseName, targetType, table) ||
-        DeclaresConversionTo(source.baseName, targetType, table, false))
+    if (IsTargetTypeIgnoredForConstruction(targetType, table, ctx) ||
+        IsSourceCompatibleWithTarget(source.baseName, targetType, table))
     {
         return;
     }
@@ -1757,29 +1775,32 @@ bool CheckLambdaFuncdefAssignment(TSNode targetNode, const FuncdefSignature& fun
     return true;
 }
 
-void CheckNamedFunctionFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode actualVal,
-                                         DiagnosticContext& ctx)
+static std::string TrimString(std::string str)
 {
-    std::string funcName = NodeText(actualVal, ctx.request.sourceCode);
-    while (!funcName.empty() && isspace(static_cast<unsigned char>(funcName.front())))
-        funcName.erase(funcName.begin());
-    while (!funcName.empty() && isspace(static_cast<unsigned char>(funcName.back())))
-        funcName.pop_back();
-
-    if (funcName.empty() || funcName == "null")
+    while (!str.empty() && isspace(static_cast<unsigned char>(str.front())))
     {
-        return;
+        str.erase(str.begin());
     }
+    while (!str.empty() && isspace(static_cast<unsigned char>(str.back())))
+    {
+        str.pop_back();
+    }
+    return str;
+}
 
+static std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName, const SymbolTable& table)
+{
     std::vector<Symbol> candidates;
     auto addCandidates = [&](const std::string& name)
     {
-        if (auto found = ctx.request.symbolTable.FindSymbolsPtr(name))
+        if (auto found = table.FindSymbolsPtr(name))
         {
             for (const auto& s : *found)
             {
                 if (s.type == SymbolType::Function)
+                {
                     candidates.push_back(s);
+                }
             }
         }
     };
@@ -1789,22 +1810,37 @@ void CheckNamedFunctionFuncdefAssignment(TSNode targetNode, const FuncdefSignatu
     {
         addCandidates(LastScopeSegment(funcName));
     }
+    return candidates;
+}
+
+static bool HasMatchingFuncdefCandidate(const std::vector<Symbol>& candidates, const FuncdefSignature& funcdefSig)
+{
+    for (const auto& cand : candidates)
+    {
+        if (MatchesFuncdefSignature(cand.GetFunction(), funcdefSig))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void CheckNamedFunctionFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode actualVal,
+                                         DiagnosticContext& ctx)
+{
+    const std::string funcName = TrimString(NodeText(actualVal, ctx.request.sourceCode));
+    if (funcName.empty() || funcName == "null")
+    {
+        return;
+    }
+
+    const std::vector<Symbol> candidates = CollectFunctionCandidates(funcName, ctx.request.symbolTable);
     if (candidates.empty())
     {
         return;
     }
 
-    bool matched = false;
-    for (const auto& cand : candidates)
-    {
-        if (MatchesFuncdefSignature(cand.GetFunction(), funcdefSig))
-        {
-            matched = true;
-            break;
-        }
-    }
-
-    if (!matched)
+    if (!HasMatchingFuncdefCandidate(candidates, funcdefSig))
     {
         EmitAtNode(targetNode, ctx, "as-err-signature-mismatch-func-handle");
     }
@@ -2043,6 +2079,16 @@ const std::string* BoolConversionOperator(const std::string& typeName, const Sym
  * Only the logical operators recurse. `a == b` also yields a bool but its operands are
  * compared, not converted to bool, and the engine's rules for that are a different question.
  */
+static bool IsLogicalBinaryOperator(std::string_view op)
+{
+    return op == "&&" || op == "and" || op == "||" || op == "or" || op == "^^" || op == "xor";
+}
+
+static bool IsLogicalUnaryOperator(std::string_view op)
+{
+    return op == "!" || op == "not";
+}
+
 void CollectBooleanOperands(TSNode expr, std::vector<TSNode>& operands, int depth = 0)
 {
     if (ts_node_is_null(expr) || depth > k_maxAstDepth)
@@ -2054,7 +2100,7 @@ void CollectBooleanOperands(TSNode expr, std::vector<TSNode>& operands, int dept
     {
         const TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
         const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
-        if (opText == "&&" || opText == "and" || opText == "||" || opText == "or" || opText == "^^" || opText == "xor")
+        if (IsLogicalBinaryOperator(opText))
         {
             CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Left), operands, depth + 1);
             CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Right), operands, depth + 1);
@@ -2065,7 +2111,7 @@ void CollectBooleanOperands(TSNode expr, std::vector<TSNode>& operands, int dept
     {
         const TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
         const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
-        if (opText == "!" || opText == "not")
+        if (IsLogicalUnaryOperator(opText))
         {
             CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Operand), operands, depth + 1);
             return;
@@ -2268,6 +2314,25 @@ void ProcessConditionNode(TSNode node, const TypeConversionCheckRequest& request
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
+static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
+{
+    return type.empty() || type == "auto" || type == "void";
+}
+
+static bool AreTernaryBranchesIncompatible(const std::string& clean1, const std::string& clean2, DiagnosticContext& ctx)
+{
+    if (IsStringType(clean1, ctx) != IsStringType(clean2, ctx))
+    {
+        return true;
+    }
+    if (ResolvesToEnum(clean1, ctx.request.symbolTable) && ResolvesToEnum(clean2, ctx.request.symbolTable) &&
+        clean1 != clean2)
+    {
+        return true;
+    }
+    return !IsConvertible(clean1, clean2, ctx) && !IsConvertible(clean2, clean1, ctx);
+}
+
 void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
@@ -2286,17 +2351,12 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
     const std::string clean1 = CanonicalizeType(CleanExpressionType(t1));
     const std::string clean2 = CanonicalizeType(CleanExpressionType(t2));
 
-    if (clean1.empty() || clean2.empty() || clean1 == "auto" || clean2 == "auto" || clean1 == "void" ||
-        clean2 == "void")
+    if (IsIncompleteOrIgnoredBranchType(clean1) || IsIncompleteOrIgnoredBranchType(clean2))
     {
         return;
     }
 
-    const bool isStringMismatch = (IsStringType(clean1, ctx) != IsStringType(clean2, ctx));
-    const bool isEnumMismatch = ResolvesToEnum(clean1, ctx.request.symbolTable) &&
-                                ResolvesToEnum(clean2, ctx.request.symbolTable) && clean1 != clean2;
-    if (isStringMismatch || isEnumMismatch ||
-        (!IsConvertible(clean1, clean2, ctx) && !IsConvertible(clean2, clean1, ctx)))
+    if (AreTernaryBranchesIncompatible(clean1, clean2, ctx))
     {
         EmitAtNode(alternative, ctx, "as-err-no-implicit-conversion", {clean2, clean1});
     }
