@@ -756,9 +756,8 @@ std::filesystem::path IncludeResolver::resolveInclude(const std::filesystem::pat
         }
     }
 
-    auto [rootMismatch, targetMismatch] = std::mismatch(
-        canonicalRoot.begin(), canonicalRoot.end(),
-        canonicalTarget.begin(), canonicalTarget.end());
+    auto [rootMismatch, targetMismatch] =
+        std::mismatch(canonicalRoot.begin(), canonicalRoot.end(), canonicalTarget.begin(), canonicalTarget.end());
 
     if (rootMismatch != canonicalRoot.end())
     {

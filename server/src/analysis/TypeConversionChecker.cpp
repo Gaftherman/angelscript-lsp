@@ -658,8 +658,7 @@ bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& 
     return CanConvertClasses(types.from, types.to, ctx, state);
 }
 
-bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
-                   ConversionState& state)
+bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, ConversionState& state)
 {
     if (state.depth >= TypeConversionChecker::MAX_CONVERSION_DEPTH)
     {

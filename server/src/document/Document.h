@@ -81,8 +81,8 @@ struct Document
 
     Document(DocumentSnapshot snapshot, TreePtr tr)
         : uri(std::move(snapshot.uri)), text(std::move(snapshot.text)), version(snapshot.version),
-          generation(snapshot.generation),
-          astTree_(tr ? SharedTree(ts_tree_copy(tr.get()), TSTreeDeleter{}) : nullptr), tree(std::move(tr))
+          generation(snapshot.generation), astTree_(tr ? SharedTree(ts_tree_copy(tr.get()), TSTreeDeleter{}) : nullptr),
+          tree(std::move(tr))
     {
     }
 
@@ -94,8 +94,8 @@ struct Document
     }
 
     Document(Document&& other) noexcept
-        : uri(std::move(other.uri)), text(std::move(other.text)), version(other.version),
-          generation(other.generation), tree(std::move(other.tree)), astTree_(std::move(other.astTree_))
+        : uri(std::move(other.uri)), text(std::move(other.text)), version(other.version), generation(other.generation),
+          tree(std::move(other.tree)), astTree_(std::move(other.astTree_))
     {
     }
 

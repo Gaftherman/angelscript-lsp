@@ -424,9 +424,8 @@ bool IsWithinDirectory(const std::filesystem::path& root, const std::filesystem:
         return false;
     }
 
-    auto [rootMismatch, targetMismatch] = std::mismatch(
-        canonicalRoot.begin(), canonicalRoot.end(),
-        canonicalTarget.begin(), canonicalTarget.end());
+    auto [rootMismatch, targetMismatch] =
+        std::mismatch(canonicalRoot.begin(), canonicalRoot.end(), canonicalTarget.begin(), canonicalTarget.end());
 
     return rootMismatch == canonicalRoot.end();
 }
