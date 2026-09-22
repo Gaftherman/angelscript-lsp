@@ -316,27 +316,34 @@ SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, co
 
 void SymbolCollector::ApplyAccessorTokens(TSNode accNode, bool isGet, bool isSet, VariableSignature& varSig) const
 {
-    uint32_t accChildCount = ts_node_child_count(accNode);
-    for (uint32_t c = 0; c < accChildCount; ++c)
+    TSTreeCursor cursor = ts_tree_cursor_new(accNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSSymbol cSym = ts_node_symbol(ts_node_child(accNode, c));
-        if (cSym == m_tokConst && isGet)
-            varSig.isGetConst = true;
-        else if (cSym == m_tokOverride)
+        do
         {
-            if (isGet)
-                varSig.isGetOverride = true;
-            else if (isSet)
-                varSig.isSetOverride = true;
-        }
-        else if (cSym == m_tokFinal)
-        {
-            if (isGet)
-                varSig.isGetFinal = true;
-            else if (isSet)
-                varSig.isSetFinal = true;
-        }
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            TSSymbol cSym = ts_node_symbol(child);
+            if (cSym == m_tokConst && isGet)
+            {
+                varSig.isGetConst = true;
+            }
+            else if (cSym == m_tokOverride)
+            {
+                if (isGet)
+                    varSig.isGetOverride = true;
+                else if (isSet)
+                    varSig.isSetOverride = true;
+            }
+            else if (cSym == m_tokFinal)
+            {
+                if (isGet)
+                    varSig.isGetFinal = true;
+                else if (isSet)
+                    varSig.isSetFinal = true;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
 }
 
 void SymbolCollector::ParseSingleAccessor(TSNode accNode, VariableSignature& varSig) const
@@ -370,15 +377,19 @@ void SymbolCollector::ParseSingleAccessor(TSNode accNode, VariableSignature& var
 
 void SymbolCollector::ParseAccessorNodes(TSNode node, VariableSignature& varSig) const
 {
-    uint32_t count = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode accNode = ts_node_named_child(node, i);
-        if (ts_node_symbol(accNode) == m_symAccessor)
+        do
         {
-            ParseSingleAccessor(accNode, varSig);
-        }
+            TSNode accNode = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_is_named(accNode) && ts_node_symbol(accNode) == m_symAccessor)
+            {
+                ParseSingleAccessor(accNode, varSig);
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
 }
 
 void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolCollectContext& sCtx,
@@ -420,22 +431,26 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     TSNode valueNode = GetChildByFieldName(declaratorNode, "value");
     if (ts_node_is_null(valueNode))
     {
-        uint32_t cCnt = ts_node_child_count(declaratorNode);
-        bool foundEq = false;
-        for (uint32_t c = 0; c < cCnt; ++c)
+        TSTreeCursor cursor = ts_tree_cursor_new(declaratorNode);
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            TSNode ch = ts_node_child(declaratorNode, c);
-            std::string chText = GetNodeText(ch, sCtx.request.sourceCode);
-            if (chText == "=")
+            bool foundEq = false;
+            do
             {
-                foundEq = true;
-            }
-            else if (foundEq)
-            {
-                valueNode = ch;
-                break;
-            }
+                TSNode ch = ts_tree_cursor_current_node(&cursor);
+                std::string chText = GetNodeText(ch, sCtx.request.sourceCode);
+                if (chText == "=")
+                {
+                    foundEq = true;
+                }
+                else if (foundEq)
+                {
+                    valueNode = ch;
+                    break;
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
         }
+        ts_tree_cursor_delete(&cursor);
     }
 
     SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
@@ -481,15 +496,19 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
 
     VariableHeaderInfo header{std::move(typeStr), std::move(typeInfo), modifiers, hasSemicolon};
 
-    uint32_t count = ts_node_named_child_count(varDeclNode);
-    for (uint32_t i = 0; i < count; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(varDeclNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode declaratorNode = ts_node_named_child(varDeclNode, i);
-        if (ts_node_symbol(declaratorNode) == m_symVariableDeclarator)
+        do
         {
-            CollectDeclaratorSymbol(declaratorNode, header, sCtx, ctx);
-        }
+            TSNode declaratorNode = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_is_named(declaratorNode) && ts_node_symbol(declaratorNode) == m_symVariableDeclarator)
+            {
+                CollectDeclaratorSymbol(declaratorNode, header, sCtx, ctx);
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
 }
 
 void SymbolCollector::ProcessVariable(TSNode varDeclNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
@@ -513,13 +532,20 @@ TSNode SymbolCollector::FindFunctionBody(TSNode funcNode) const
     if (!ts_node_is_null(bodyNode))
         return bodyNode;
 
-    uint32_t cCount = ts_node_child_count(funcNode);
-    for (uint32_t i = 0; i < cCount; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(funcNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode ch = ts_node_child(funcNode, i);
-        if (ts_node_symbol(ch) == m_symStatementBlock)
-            return ch;
+        do
+        {
+            TSNode ch = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_symbol(ch) == m_symStatementBlock)
+            {
+                ts_tree_cursor_delete(&cursor);
+                return ch;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
     return bodyNode;
 }
 
@@ -536,20 +562,25 @@ bool SymbolCollector::IsExternalFunction(TSNode funcNode) const
 
 std::string SymbolCollector::ExtractOriginModule(TSNode funcNode, const std::string& sourceCode) const
 {
-    uint32_t count = ts_node_child_count(funcNode);
-    for (uint32_t i = 0; i < count; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(funcNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode ch = ts_node_child(funcNode, i);
-        if (std::string_view(ts_node_type(ch)) == "string_literal")
+        do
         {
-            std::string modStr = GetNodeText(ch, sourceCode);
-            if (modStr.size() >= 2 && modStr.front() == '"' && modStr.back() == '"')
+            TSNode ch = ts_tree_cursor_current_node(&cursor);
+            if (std::string_view(ts_node_type(ch)) == "string_literal")
             {
-                return modStr.substr(1, modStr.size() - 2);
+                std::string modStr = GetNodeText(ch, sourceCode);
+                ts_tree_cursor_delete(&cursor);
+                if (modStr.size() >= 2 && modStr.front() == '"' && modStr.back() == '"')
+                {
+                    return modStr.substr(1, modStr.size() - 2);
+                }
+                return modStr;
             }
-            return modStr;
-        }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
     return "";
 }
 
@@ -569,12 +600,19 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     modifiers.isHandle = retInfo.isHandle || modifiers.isHandle;
     modifiers.isReturnReference = retInfo.isReference || modifiers.isReturnReference;
 
-    uint32_t funcChildCount = ts_node_child_count(funcNode);
-    for (uint32_t i = 0; i < funcChildCount; ++i)
+    TSTreeCursor delCursor = ts_tree_cursor_new(funcNode);
+    if (ts_tree_cursor_goto_first_child(&delCursor))
     {
-        if (ts_node_symbol(ts_node_child(funcNode, i)) == m_tokDelete)
-            modifiers.isDelete = true;
+        do
+        {
+            if (ts_node_symbol(ts_tree_cursor_current_node(&delCursor)) == m_tokDelete)
+            {
+                modifiers.isDelete = true;
+                break;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&delCursor));
     }
+    ts_tree_cursor_delete(&delCursor);
 
     SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
     Symbol sym = CreateSymbol(SymbolType::Function, funcNode, nameNode, loc);
@@ -620,16 +658,24 @@ void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx,
     TSNode templateParams = GetChildByFieldName(classNode, "template_params");
     if (!ts_node_is_null(templateParams))
     {
-        const uint32_t paramCount = ts_node_named_child_count(templateParams);
-        for (uint32_t i = 0; i < paramCount; ++i)
+        TSTreeCursor cursor = ts_tree_cursor_new(templateParams);
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            std::string paramName = GetNodeText(ts_node_named_child(templateParams, i), sCtx.request.sourceCode);
-            if (!paramName.empty())
+            do
             {
-                classSig.isTemplate = true;
-                classSig.templateParams.push_back(std::move(paramName));
-            }
+                TSNode child = ts_tree_cursor_current_node(&cursor);
+                if (ts_node_is_named(child))
+                {
+                    std::string paramName = GetNodeText(child, sCtx.request.sourceCode);
+                    if (!paramName.empty())
+                    {
+                        classSig.isTemplate = true;
+                        classSig.templateParams.push_back(std::move(paramName));
+                    }
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
         }
+        ts_tree_cursor_delete(&cursor);
     }
 
     size_t angleInName = sym.name.find('<');
@@ -728,36 +774,47 @@ void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, co
 
 bool SymbolCollector::EnumHasBraces(TSNode node) const
 {
-    uint32_t cCount = ts_node_child_count(node);
-    for (uint32_t c = 0; c < cCount; ++c)
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        if (ts_node_symbol(ts_node_child(node, c)) == m_tokOpenBrace)
-            return true;
+        do
+        {
+            if (ts_node_symbol(ts_tree_cursor_current_node(&cursor)) == m_tokOpenBrace)
+            {
+                ts_tree_cursor_delete(&cursor);
+                return true;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
     return false;
 }
 
 void SymbolCollector::CollectEnumMembers(TSNode node, const std::string& sourceCode, EnumSignature& enumSig) const
 {
-    uint32_t count = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode child = ts_node_named_child(node, i);
-        if (ts_node_symbol(child) != m_symEnumMember)
-            continue;
-
-        TSNode memberName = GetChildByFieldName(child, "name");
-        TSNode memberValue = GetChildByFieldName(child, "value");
-
-        EnumMemberInformation member;
-        member.name = GetNodeText(memberName, sourceCode);
-        member.value = GetNodeText(memberValue, sourceCode);
-        if (!ts_node_is_null(memberValue))
+        do
         {
-            member.valueNodeType = ts_node_type(memberValue);
-        }
-        enumSig.members.push_back(std::move(member));
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_is_named(child) && ts_node_symbol(child) == m_symEnumMember)
+            {
+                TSNode memberName = GetChildByFieldName(child, "name");
+                TSNode memberValue = GetChildByFieldName(child, "value");
+
+                EnumMemberInformation member;
+                member.name = GetNodeText(memberName, sourceCode);
+                member.value = GetNodeText(memberValue, sourceCode);
+                if (!ts_node_is_null(memberValue))
+                {
+                    member.valueNodeType = ts_node_type(memberValue);
+                }
+                enumSig.members.push_back(std::move(member));
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
 }
 
 void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumSig, SymbolCollectContext& sCtx,
@@ -767,20 +824,24 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
     std::string enumName = GetNodeText(nameNode, sCtx.request.sourceCode);
 
     ankerl::unordered_dense::map<std::string, MemberNodes> memberNodeMap;
-    uint32_t count = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode child = ts_node_named_child(node, i);
-        if (ts_node_symbol(child) == m_symEnumMember)
+        do
         {
-            TSNode mNameNode = GetChildByFieldName(child, "name");
-            std::string mName = GetNodeText(mNameNode, sCtx.request.sourceCode);
-            if (!mName.empty())
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_is_named(child) && ts_node_symbol(child) == m_symEnumMember)
             {
-                memberNodeMap[mName] = MemberNodes{child, mNameNode};
+                TSNode mNameNode = GetChildByFieldName(child, "name");
+                std::string mName = GetNodeText(mNameNode, sCtx.request.sourceCode);
+                if (!mName.empty())
+                {
+                    memberNodeMap[mName] = MemberNodes{child, mNameNode};
+                }
             }
-        }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
 
     std::string enumContainer = ctx.containerPath.empty() ? enumName : ctx.containerPath + "::" + enumName;
     for (const auto& m : enumSig.members)
@@ -956,43 +1017,52 @@ void SymbolCollector::CheckUsingDeclarationCapture(TSNode usingNode, SymbolColle
 void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollectContext& sCtx) const
 {
     ankerl::unordered_dense::set<std::string> seenModifiers;
-    uint32_t count = ts_node_child_count(declNode);
-    for (uint32_t i = 0; i < count; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(declNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode child = ts_node_child(declNode, i);
-        TSSymbol childSym = ts_node_symbol(child);
-        if (childSym != m_symDeclarationModifier && childSym != m_symSharedExternalModifier)
-            continue;
-
-        uint32_t modCount = ts_node_child_count(child);
-        for (uint32_t m = 0; m < modCount; ++m)
+        do
         {
-            TSNode modTokNode = ts_node_child(child, m);
-            std::string modText(GetNodeText(modTokNode, sCtx.request.sourceCode));
-            if (seenModifiers.contains(modText))
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            TSSymbol childSym = ts_node_symbol(child);
+            if (childSym != m_symDeclarationModifier && childSym != m_symSharedExternalModifier)
+                continue;
+
+            TSTreeCursor modCursor = ts_tree_cursor_new(child);
+            if (ts_tree_cursor_goto_first_child(&modCursor))
             {
-                TSPoint startPt = ts_node_start_point(modTokNode);
-                TSPoint endPt = ts_node_end_point(modTokNode);
-                Diagnostic diag;
-                diag.range.start.line = startPt.row;
-                diag.range.start.character = startPt.column;
-                diag.range.end.line = endPt.row;
-                diag.range.end.character = endPt.column;
-                diag.severity = DiagnosticSeverity::Warning;
-                diag.code = "as-err-attribute-repeated";
-                diag.source = "AngelScript";
-                diag.fileUri = sCtx.request.fileUri;
-                std::string pattern = sCtx.request.i18n ? sCtx.request.i18n->GetMessage("as-err-attribute-repeated")
-                                                        : "Attribute '{}' is informed multiple times.";
-                diag.message = fmt::format(fmt::runtime(pattern), modText);
-                sCtx.diagnostics.push_back(diag);
+                do
+                {
+                    TSNode modTokNode = ts_tree_cursor_current_node(&modCursor);
+                    std::string modText(GetNodeText(modTokNode, sCtx.request.sourceCode));
+                    if (seenModifiers.contains(modText))
+                    {
+                        TSPoint startPt = ts_node_start_point(modTokNode);
+                        TSPoint endPt = ts_node_end_point(modTokNode);
+                        Diagnostic diag;
+                        diag.range.start.line = startPt.row;
+                        diag.range.start.character = startPt.column;
+                        diag.range.end.line = endPt.row;
+                        diag.range.end.character = endPt.column;
+                        diag.severity = DiagnosticSeverity::Warning;
+                        diag.code = "as-err-attribute-repeated";
+                        diag.source = "AngelScript";
+                        diag.fileUri = sCtx.request.fileUri;
+                        std::string pattern = sCtx.request.i18n
+                                                  ? sCtx.request.i18n->GetMessage("as-err-attribute-repeated")
+                                                  : "Attribute '{}' is informed multiple times.";
+                        diag.message = fmt::format(fmt::runtime(pattern), modText);
+                        sCtx.diagnostics.push_back(diag);
+                    }
+                    else
+                    {
+                        seenModifiers.insert(modText);
+                    }
+                } while (ts_tree_cursor_goto_next_sibling(&modCursor));
             }
-            else
-            {
-                seenModifiers.insert(modText);
-            }
-        }
+            ts_tree_cursor_delete(&modCursor);
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
 }
 
 // =========================================================================================
@@ -1211,20 +1281,24 @@ void SymbolCollector::ProcessModifierChild(TSNode child, const std::string& sour
 
     if (isDeclMod || isFuncAttr)
     {
-        uint32_t modCount = ts_node_child_count(child);
-        for (uint32_t m = 0; m < modCount; ++m)
+        TSTreeCursor cursor = ts_tree_cursor_new(child);
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            TSNode grandChild = ts_node_child(child, m);
-            std::string_view gcText = TrimView(GetNodeView(grandChild, sourceCode));
-            ApplyModifierString(gcText, modifiers, isFuncAttr);
+            do
+            {
+                TSNode grandChild = ts_tree_cursor_current_node(&cursor);
+                std::string_view gcText = TrimView(GetNodeView(grandChild, sourceCode));
+                ApplyModifierString(gcText, modifiers, isFuncAttr);
 
-            TSSymbol tokSym = ts_node_symbol(grandChild);
-            ApplyModifierToken(tokSym, modifiers);
-            if (tokSym == m_tokFinal && !isFuncAttr)
-                modifiers.isDeclarationFinal = true;
-            else if (tokSym == m_tokAbstract && !isFuncAttr)
-                modifiers.isDeclarationAbstract = true;
+                TSSymbol tokSym = ts_node_symbol(grandChild);
+                ApplyModifierToken(tokSym, modifiers);
+                if (tokSym == m_tokFinal && !isFuncAttr)
+                    modifiers.isDeclarationFinal = true;
+                else if (tokSym == m_tokAbstract && !isFuncAttr)
+                    modifiers.isDeclarationAbstract = true;
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
         }
+        ts_tree_cursor_delete(&cursor);
     }
     else if (!ts_node_is_named(child))
     {
@@ -1238,11 +1312,15 @@ SymbolModifiers SymbolCollector::ExtractModifiers(TSNode node, const std::string
     if (ts_node_is_null(node))
         return modifiers;
 
-    uint32_t count = ts_node_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        ProcessModifierChild(ts_node_child(node, i), sourceCode, modifiers);
+        do
+        {
+            ProcessModifierChild(ts_tree_cursor_current_node(&cursor), sourceCode, modifiers);
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
     return modifiers;
 }
 
@@ -1300,53 +1378,61 @@ void SymbolCollector::ExtractParamTypeRefAndConst(TSNode pTypeNode, const std::s
     if (ts_node_is_null(pTypeNode))
         return;
 
-    uint32_t typeChildCount = ts_node_child_count(pTypeNode);
-    for (uint32_t i = 0; i < typeChildCount; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(pTypeNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode typeChild = ts_node_child(pTypeNode, i);
-        if (!ts_node_is_named(typeChild))
+        do
         {
-            std::string_view tok = GetNodeView(typeChild, sourceCode);
-            if (tok == "const")
-                paramInfo.isConst = true;
-            else if (tok == "&")
+            TSNode typeChild = ts_tree_cursor_current_node(&cursor);
+            if (!ts_node_is_named(typeChild))
             {
-                paramInfo.isReference = true;
-                refCount++;
+                std::string_view tok = GetNodeView(typeChild, sourceCode);
+                if (tok == "const")
+                    paramInfo.isConst = true;
+                else if (tok == "&")
+                {
+                    paramInfo.isReference = true;
+                    refCount++;
+                }
             }
-        }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
 }
 
 void SymbolCollector::ExtractParamModifierTokens(TSNode paramNode, const std::string& sourceCode,
                                                  ParameterInformation& paramInfo, uint32_t& refCount) const
 {
-    uint32_t paramChildCount = ts_node_child_count(paramNode);
-    for (uint32_t i = 0; i < paramChildCount; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(paramNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode child = ts_node_child(paramNode, i);
-        std::string_view tok = GetNodeView(child, sourceCode);
-        if (tok == "&")
+        do
         {
-            paramInfo.isReference = true;
-            refCount++;
-        }
-        else if (tok == "inout" || tok == "&inout")
-        {
-            paramInfo.modifier = ParameterModifier::InOut;
-            paramInfo.isReference = true;
-        }
-        else if (tok == "in" || tok == "&in")
-        {
-            paramInfo.modifier = ParameterModifier::In;
-            paramInfo.isReference = true;
-        }
-        else if (tok == "out" || tok == "&out")
-        {
-            paramInfo.modifier = ParameterModifier::Out;
-            paramInfo.isReference = true;
-        }
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            std::string_view tok = GetNodeView(child, sourceCode);
+            if (tok == "&")
+            {
+                paramInfo.isReference = true;
+                refCount++;
+            }
+            else if (tok == "inout" || tok == "&inout")
+            {
+                paramInfo.modifier = ParameterModifier::InOut;
+                paramInfo.isReference = true;
+            }
+            else if (tok == "in" || tok == "&in")
+            {
+                paramInfo.modifier = ParameterModifier::In;
+                paramInfo.isReference = true;
+            }
+            else if (tok == "out" || tok == "&out")
+            {
+                paramInfo.modifier = ParameterModifier::Out;
+                paramInfo.isReference = true;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
 }
 
 ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, const std::string& sourceCode) const
@@ -1393,16 +1479,19 @@ std::vector<ParameterInformation> SymbolCollector::ExtractParameters(TSNode para
     if (ts_node_is_null(paramsNode))
         return parameters;
 
-    uint32_t paramCount = ts_node_named_child_count(paramsNode);
-    parameters.reserve(paramCount);
-    for (uint32_t p = 0; p < paramCount; ++p)
+    TSTreeCursor cursor = ts_tree_cursor_new(paramsNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode child = ts_node_named_child(paramsNode, p);
-        if (ts_node_symbol(child) != m_symParameter)
-            continue;
-
-        parameters.push_back(ExtractParameterInfo(child, sourceCode));
+        do
+        {
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_is_named(child) && ts_node_symbol(child) == m_symParameter)
+            {
+                parameters.push_back(ExtractParameterInfo(child, sourceCode));
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
     if (parameters.size() == 1 && parameters[0].typeName == "void" && parameters[0].name.empty())
     {
         parameters.clear();
@@ -1439,23 +1528,34 @@ std::vector<std::string> SymbolCollector::ExtractBases(TSNode classNode, const s
 {
     std::vector<std::string> bases;
 
-    uint32_t namedCount = ts_node_named_child_count(classNode);
-    for (uint32_t i = 0; i < namedCount; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(classNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode child = ts_node_named_child(classNode, i);
-        if (ts_node_symbol(child) != m_symBaseClassList)
-            continue;
-
-        uint32_t baseCount = ts_node_named_child_count(child);
-        bases.reserve(baseCount);
-        for (uint32_t b = 0; b < baseCount; ++b)
+        do
         {
-            std::string text = GetNodeText(ts_node_named_child(child, b), sourceCode);
-            if (!text.empty())
-                bases.push_back(std::move(text));
-        }
-        break;
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_is_named(child) && ts_node_symbol(child) == m_symBaseClassList)
+            {
+                TSTreeCursor baseCursor = ts_tree_cursor_new(child);
+                if (ts_tree_cursor_goto_first_child(&baseCursor))
+                {
+                    do
+                    {
+                        TSNode baseChild = ts_tree_cursor_current_node(&baseCursor);
+                        if (ts_node_is_named(baseChild))
+                        {
+                            std::string text = GetNodeText(baseChild, sourceCode);
+                            if (!text.empty())
+                                bases.push_back(std::move(text));
+                        }
+                    } while (ts_tree_cursor_goto_next_sibling(&baseCursor));
+                }
+                ts_tree_cursor_delete(&baseCursor);
+                break;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
     return bases;
 }
 } // namespace angel_lsp::analysis

@@ -272,6 +272,11 @@ void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::ve
 void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, const std::vector<OpenScope>& stack,
                                                    const std::string& sourceCode) const
 {
+    if (ts_node_has_error(capture.node) || !ts_node_is_named(capture.node))
+    {
+        return;
+    }
+
     Scope* current = stack.back().scope;
     TSPoint startPt = ts_node_start_point(capture.node);
     TSPoint endPt = ts_node_end_point(capture.node);
@@ -360,9 +365,14 @@ void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode pare
         if (wpType == "call_expression")
         {
             TSNode funcChild = parser::GetChildByField(walkParent, parser::fields::Function);
-            if (ts_node_is_null(funcChild) && ts_node_child_count(walkParent) > 0)
+            if (ts_node_is_null(funcChild))
             {
-                funcChild = ts_node_child(walkParent, 0);
+                TSTreeCursor walkCursor = ts_tree_cursor_new(walkParent);
+                if (ts_tree_cursor_goto_first_child(&walkCursor))
+                {
+                    funcChild = ts_tree_cursor_current_node(&walkCursor);
+                }
+                ts_tree_cursor_delete(&walkCursor);
             }
             if (!ts_node_is_null(funcChild) &&
                 (ts_node_eq(funcChild, walk) || ts_node_start_byte(funcChild) == ts_node_start_byte(walk)))
@@ -388,9 +398,54 @@ void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode pare
     }
 }
 
+static bool IsTypeSpecifierNodeType(std::string_view nodeType)
+{
+    return nodeType == "datatype" || nodeType == "template_type_list" || nodeType == "base_class_list" ||
+           nodeType == "type";
+}
+
+static bool IsTypeSpecifierContext(TSNode node)
+{
+    TSNode parent = ts_node_parent(node);
+    if (ts_node_is_null(parent))
+    {
+        return false;
+    }
+    std::string_view parentType = ts_node_type(parent);
+    if (IsTypeSpecifierNodeType(parentType))
+    {
+        return true;
+    }
+    if (parentType == "scoped_identifier")
+    {
+        TSNode grandParent = ts_node_parent(parent);
+        if (!ts_node_is_null(grandParent) && IsTypeSpecifierNodeType(ts_node_type(grandParent)))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool IsMemberAccessNode(TSNode node, TSNode parent, TSSymbol memberExprSym)
+{
+    if (ts_node_symbol(parent) != memberExprSym)
+    {
+        return false;
+    }
+    TSNode memberField = parser::GetChildByField(parent, parser::fields::Member);
+    return ts_node_eq(memberField, node) ||
+           (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(node));
+}
+
 void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Scope* current,
                                                   const std::string& sourceCode) const
 {
+    if (ts_node_has_error(capture.node) || !ts_node_is_named(capture.node))
+    {
+        return;
+    }
+
     TSPoint startPt = ts_node_start_point(capture.node);
     TSPoint endPt = ts_node_end_point(capture.node);
 
@@ -399,33 +454,8 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
     TSNode parent = ts_node_parent(capture.node);
     if (!ts_node_is_null(parent))
     {
-        std::string_view parentType = ts_node_type(parent);
-        if (parentType == "datatype" || parentType == "template_type_list" || parentType == "base_class_list" ||
-            parentType == "type")
-        {
-            ref.isTypeSpecifier = true;
-        }
-        else if (parentType == "scoped_identifier")
-        {
-            TSNode grandParent = ts_node_parent(parent);
-            if (!ts_node_is_null(grandParent))
-            {
-                std::string_view grandParentType = ts_node_type(grandParent);
-                if (grandParentType == "datatype" || grandParentType == "template_type_list" ||
-                    grandParentType == "base_class_list" || grandParentType == "type")
-                {
-                    ref.isTypeSpecifier = true;
-                }
-            }
-        }
-        else if (ts_node_symbol(parent) == m_symMemberExpression)
-        {
-            TSNode memberField = parser::GetChildByField(parent, parser::fields::Member);
-            ref.isMemberAccess =
-                ts_node_eq(memberField, capture.node) ||
-                (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(capture.node));
-        }
-
+        ref.isTypeSpecifier = IsTypeSpecifierContext(capture.node);
+        ref.isMemberAccess = IsMemberAccessNode(capture.node, parent, m_symMemberExpression);
         DetermineCallReferenceInfo(capture.node, parent, ref);
     }
 
@@ -625,13 +655,22 @@ static TSNode FindDeclarationTypeNode(TSNode declarationNode, TSNode declaratorN
     {
         typeNode = parser::GetChildByField(declarationNode, parser::fields::Type);
     }
-    if (ts_node_is_null(typeNode) && ts_node_named_child_count(declarationNode) > 0)
+    if (ts_node_is_null(typeNode))
     {
-        TSNode firstChild = ts_node_named_child(declarationNode, 0);
-        if (!ts_node_eq(firstChild, declaratorNode))
+        TSTreeCursor cursor = ts_tree_cursor_new(declarationNode);
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            typeNode = firstChild;
+            do
+            {
+                TSNode child = ts_tree_cursor_current_node(&cursor);
+                if (ts_node_is_named(child) && !ts_node_eq(child, declaratorNode))
+                {
+                    typeNode = child;
+                    break;
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
         }
+        ts_tree_cursor_delete(&cursor);
     }
     return typeNode;
 }
