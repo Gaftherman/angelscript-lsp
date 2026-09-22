@@ -118,6 +118,40 @@ void ModuleIndex::RemoveIndexedPath(const std::string& path)
     m_indexedUriByPath.erase(path);
 }
 
+void ModuleIndex::AddExportedSymbol(ExportedSymbol symbol)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = std::lower_bound(m_exportedSymbols.begin(), m_exportedSymbols.end(), symbol.name,
+                               [](const ExportedSymbol& sym, std::string_view prefix) { return sym.name < prefix; });
+    m_exportedSymbols.insert(it, std::move(symbol));
+}
+
+void ModuleIndex::SetExportedSymbols(std::vector<ExportedSymbol> symbols)
+{
+    std::sort(symbols.begin(), symbols.end(),
+              [](const ExportedSymbol& a, const ExportedSymbol& b) { return a.name < b.name; });
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_exportedSymbols = std::move(symbols);
+}
+
+std::vector<ModuleIndex::ExportedSymbol> ModuleIndex::FindSymbolsByPrefix(std::string_view prefix) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (prefix.empty())
+    {
+        return m_exportedSymbols;
+    }
+    auto it = std::lower_bound(m_exportedSymbols.begin(), m_exportedSymbols.end(), prefix,
+                               [](const ExportedSymbol& sym, std::string_view p) { return sym.name < p; });
+    std::vector<ExportedSymbol> results;
+    while (it != m_exportedSymbols.end() && it->name.starts_with(prefix))
+    {
+        results.push_back(*it);
+        ++it;
+    }
+    return results;
+}
+
 void ModuleIndex::Clear()
 {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -125,5 +159,6 @@ void ModuleIndex::Clear()
     m_closureDocuments.clear();
     m_openDocumentClosures.clear();
     m_indexedUriByPath.clear();
+    m_exportedSymbols.clear();
 }
 } // namespace angel_lsp

@@ -77,7 +77,7 @@ static const TypeExtractionSymbols& GetTypeExtractionSymbols()
     return symbols;
 }
 
-static std::string GetNodeText(TSNode node, const std::string& sourceCode)
+static std::string GetNodeText(TSNode node, std::string_view sourceCode)
 {
     if (ts_node_is_null(node))
         return "";
@@ -88,10 +88,10 @@ static std::string GetNodeText(TSNode node, const std::string& sourceCode)
     if (start >= end || end > sourceCode.size())
         return "";
 
-    return sourceCode.substr(start, end - start);
+    return std::string(sourceCode.substr(start, end - start));
 }
 
-static std::string_view GetNodeView(TSNode node, const std::string& sourceCode)
+static std::string_view GetNodeView(TSNode node, std::string_view sourceCode)
 {
     if (ts_node_is_null(node))
         return {};
@@ -105,8 +105,7 @@ static std::string_view GetNodeView(TSNode node, const std::string& sourceCode)
     return std::string_view(sourceCode.data() + start, end - start);
 }
 
-static bool TryExtractPrimitiveOrIdentifier(TSNode typeNode, const std::string& sourceCode,
-                                            TypeExtractionResult& result)
+static bool TryExtractPrimitiveOrIdentifier(TSNode typeNode, std::string_view sourceCode, TypeExtractionResult& result)
 {
     const auto& symbols = GetTypeExtractionSymbols();
     const TSSymbol nodeSymbol = ts_node_symbol(typeNode);
@@ -140,7 +139,7 @@ static bool TryExtractPrimitiveOrIdentifier(TSNode typeNode, const std::string& 
     return false;
 }
 
-static void ProcessDatatypeChild(TSNode child, const std::string& sourceCode, TypeExtractionResult& result,
+static void ProcessDatatypeChild(TSNode child, std::string_view sourceCode, TypeExtractionResult& result,
                                  std::string& datatypeText)
 {
     TSNode inner = ts_node_named_child(child, 0);
@@ -158,7 +157,7 @@ static void ProcessDatatypeChild(TSNode child, const std::string& sourceCode, Ty
     }
 }
 
-static void ProcessTemplateTypeListChild(TSNode child, const std::string& sourceCode, const std::string& datatypeText,
+static void ProcessTemplateTypeListChild(TSNode child, std::string_view sourceCode, const std::string& datatypeText,
                                          TypeExtractionResult& result)
 {
     const auto& symbols = GetTypeExtractionSymbols();
@@ -188,7 +187,7 @@ static void ProcessTemplateTypeListChild(TSNode child, const std::string& source
     }
 }
 
-static void ProcessAnonymousModifier(TSNode child, TSNode prevChild, const std::string& sourceCode,
+static void ProcessAnonymousModifier(TSNode child, TSNode prevChild, std::string_view sourceCode,
                                      TypeExtractionResult& result)
 {
     const auto& symbols = GetTypeExtractionSymbols();
@@ -225,7 +224,7 @@ static void ProcessAnonymousModifier(TSNode child, TSNode prevChild, const std::
     }
 }
 
-TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, const std::string& sourceCode)
+TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view sourceCode)
 {
     TypeExtractionResult result;
     if (ts_node_is_null(typeNode))
@@ -240,28 +239,32 @@ TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, const std::string& 
 
     const auto& symbols = GetTypeExtractionSymbols();
     std::string datatypeText;
-    const uint32_t count = ts_node_child_count(typeNode);
-    TSNode prevChild = ts_node_child(typeNode, 0);
 
-    for (uint32_t i = 0; i < count; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(typeNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode child = ts_node_child(typeNode, i);
-        const TSSymbol childSym = ts_node_symbol(child);
+        TSNode prevChild = ts_tree_cursor_current_node(&cursor);
+        do
+        {
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            const TSSymbol childSym = ts_node_symbol(child);
 
-        if (childSym == symbols.symDatatype)
-        {
-            ProcessDatatypeChild(child, sourceCode, result, datatypeText);
-        }
-        else if (childSym == symbols.symTemplateTypeList)
-        {
-            ProcessTemplateTypeListChild(child, sourceCode, datatypeText, result);
-        }
-        else if (!ts_node_is_named(child))
-        {
-            ProcessAnonymousModifier(child, prevChild, sourceCode, result);
-        }
-        prevChild = child;
+            if (childSym == symbols.symDatatype)
+            {
+                ProcessDatatypeChild(child, sourceCode, result, datatypeText);
+            }
+            else if (childSym == symbols.symTemplateTypeList)
+            {
+                ProcessTemplateTypeListChild(child, sourceCode, datatypeText, result);
+            }
+            else if (!ts_node_is_named(child))
+            {
+                ProcessAnonymousModifier(child, prevChild, sourceCode, result);
+            }
+            prevChild = child;
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
 
     if (result.isArray)
     {

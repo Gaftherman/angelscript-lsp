@@ -1,4 +1,5 @@
 #include "lsp/ModuleIndex.h"
+#include "helpers/TestUtils.h"
 #include <doctest/doctest.h>
 #include <thread>
 #include <vector>
@@ -169,4 +170,52 @@ TEST_CASE("ModuleIndex - Concurrent access")
     {
         th.join();
     }
+}
+
+TEST_CASE("ModuleIndex - Exported symbols binary prefix lookup")
+{
+    ModuleIndex index;
+
+    const std::string prefixFoo = angel_lsp::test::GenerateRandomSymbolName("FooSym");
+    const std::string prefixBar = angel_lsp::test::GenerateRandomSymbolName("BarSym");
+
+    std::vector<ModuleIndex::ExportedSymbol> symbols = {
+        {prefixFoo + "_alpha", "Global", "file:///a.as", 10, 0}, {prefixFoo + "_beta", "Global", "file:///b.as", 20, 0},
+        {prefixFoo + "_gamma", "Global", "file:///c.as", 30, 0}, {prefixBar + "_one", "Global", "file:///d.as", 40, 0},
+        {prefixBar + "_two", "Global", "file:///e.as", 50, 0},
+    };
+
+    index.SetExportedSymbols(symbols);
+
+    auto fooMatches = index.FindSymbolsByPrefix(prefixFoo);
+    CHECK(fooMatches.size() == 3);
+    for (const auto& sym : fooMatches)
+    {
+        CHECK(sym.name.starts_with(prefixFoo));
+    }
+
+    auto barMatches = index.FindSymbolsByPrefix(prefixBar);
+    CHECK(barMatches.size() == 2);
+    for (const auto& sym : barMatches)
+    {
+        CHECK(sym.name.starts_with(prefixBar));
+    }
+
+    // Incremental addition via AddExportedSymbol
+    const std::string singleSym = prefixFoo + "_delta";
+    index.AddExportedSymbol({singleSym, "Global", "file:///f.as", 60, 0});
+    auto updatedFoo = index.FindSymbolsByPrefix(prefixFoo);
+    CHECK(updatedFoo.size() == 4);
+
+    // Empty prefix returns all
+    auto allSymbols = index.FindSymbolsByPrefix("");
+    CHECK(allSymbols.size() == 6);
+
+    // Non-existent prefix returns empty
+    auto noneMatches = index.FindSymbolsByPrefix("NonExistentPrefix_");
+    CHECK(noneMatches.empty());
+
+    // Clear purges exported symbols
+    index.Clear();
+    CHECK(index.FindSymbolsByPrefix("").empty());
 }

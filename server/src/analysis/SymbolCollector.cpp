@@ -274,7 +274,7 @@ void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCt
     ts_query_cursor_delete(cursor);
 }
 
-SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, const std::string& sourceCode) const
+SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, std::string_view sourceCode) const
 {
     CollectionContext ctx;
     TSNode current = ts_node_parent(node);
@@ -560,7 +560,7 @@ bool SymbolCollector::IsExternalFunction(TSNode funcNode) const
     return (p2Sym == m_symImportDeclaration || p2Sym == m_tokImport);
 }
 
-std::string SymbolCollector::ExtractOriginModule(TSNode funcNode, const std::string& sourceCode) const
+std::string SymbolCollector::ExtractOriginModule(TSNode funcNode, std::string_view sourceCode) const
 {
     TSTreeCursor cursor = ts_tree_cursor_new(funcNode);
     if (ts_tree_cursor_goto_first_child(&cursor))
@@ -790,7 +790,7 @@ bool SymbolCollector::EnumHasBraces(TSNode node) const
     return false;
 }
 
-void SymbolCollector::CollectEnumMembers(TSNode node, const std::string& sourceCode, EnumSignature& enumSig) const
+void SymbolCollector::CollectEnumMembers(TSNode node, std::string_view sourceCode, EnumSignature& enumSig) const
 {
     TSTreeCursor cursor = ts_tree_cursor_new(node);
     if (ts_tree_cursor_goto_first_child(&cursor))
@@ -1193,7 +1193,7 @@ std::string SymbolCollector::FormatSyntaxErrorMessage(const std::string& rawErrT
 // AST/Text Extraction Helpers
 // =========================================================================================
 
-std::string SymbolCollector::GetNodeText(TSNode node, const std::string& sourceCode) const
+std::string SymbolCollector::GetNodeText(TSNode node, std::string_view sourceCode) const
 {
     if (ts_node_is_null(node))
         return "";
@@ -1204,10 +1204,10 @@ std::string SymbolCollector::GetNodeText(TSNode node, const std::string& sourceC
     if (start >= end || end > sourceCode.size())
         return "";
 
-    return sourceCode.substr(start, end - start);
+    return std::string(sourceCode.substr(start, end - start));
 }
 
-std::string_view SymbolCollector::GetNodeView(TSNode node, const std::string& sourceCode) const
+std::string_view SymbolCollector::GetNodeView(TSNode node, std::string_view sourceCode) const
 {
     if (ts_node_is_null(node))
         return {};
@@ -1269,8 +1269,7 @@ void SymbolCollector::ApplyModifierString(std::string_view text, SymbolModifiers
         modifiers.isDelete = true;
 }
 
-void SymbolCollector::ProcessModifierChild(TSNode child, const std::string& sourceCode,
-                                           SymbolModifiers& modifiers) const
+void SymbolCollector::ProcessModifierChild(TSNode child, std::string_view sourceCode, SymbolModifiers& modifiers) const
 {
     std::string_view childText = TrimView(GetNodeView(child, sourceCode));
     bool isDeclMod =
@@ -1306,7 +1305,7 @@ void SymbolCollector::ProcessModifierChild(TSNode child, const std::string& sour
     }
 }
 
-SymbolModifiers SymbolCollector::ExtractModifiers(TSNode node, const std::string& sourceCode) const
+SymbolModifiers SymbolCollector::ExtractModifiers(TSNode node, std::string_view sourceCode) const
 {
     SymbolModifiers modifiers;
     if (ts_node_is_null(node))
@@ -1372,7 +1371,7 @@ void SymbolCollector::ApplyModifierToken(TSSymbol tokenSymbol, SymbolModifiers& 
         modifiers.isExternal = true;
 }
 
-void SymbolCollector::ExtractParamTypeRefAndConst(TSNode pTypeNode, const std::string& sourceCode,
+void SymbolCollector::ExtractParamTypeRefAndConst(TSNode pTypeNode, std::string_view sourceCode,
                                                   ParameterInformation& paramInfo, uint32_t& refCount) const
 {
     if (ts_node_is_null(pTypeNode))
@@ -1400,7 +1399,7 @@ void SymbolCollector::ExtractParamTypeRefAndConst(TSNode pTypeNode, const std::s
     ts_tree_cursor_delete(&cursor);
 }
 
-void SymbolCollector::ExtractParamModifierTokens(TSNode paramNode, const std::string& sourceCode,
+void SymbolCollector::ExtractParamModifierTokens(TSNode paramNode, std::string_view sourceCode,
                                                  ParameterInformation& paramInfo, uint32_t& refCount) const
 {
     TSTreeCursor cursor = ts_tree_cursor_new(paramNode);
@@ -1435,7 +1434,7 @@ void SymbolCollector::ExtractParamModifierTokens(TSNode paramNode, const std::st
     ts_tree_cursor_delete(&cursor);
 }
 
-ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, const std::string& sourceCode) const
+ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std::string_view sourceCode) const
 {
     TSNode pNameNode = GetChildByFieldName(paramNode, "name");
     TSNode pTypeNode = GetChildByFieldName(paramNode, "param_type");
@@ -1473,7 +1472,7 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, con
 }
 
 std::vector<ParameterInformation> SymbolCollector::ExtractParameters(TSNode paramsNode,
-                                                                     const std::string& sourceCode) const
+                                                                     std::string_view sourceCode) const
 {
     std::vector<ParameterInformation> parameters;
     if (ts_node_is_null(paramsNode))
@@ -1524,7 +1523,7 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
     return sym;
 }
 
-std::vector<std::string> SymbolCollector::ExtractBases(TSNode classNode, const std::string& sourceCode) const
+std::vector<std::string> SymbolCollector::ExtractBases(TSNode classNode, std::string_view sourceCode) const
 {
     std::vector<std::string> bases;
 

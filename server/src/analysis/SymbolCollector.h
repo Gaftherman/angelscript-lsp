@@ -31,18 +31,31 @@ struct SymbolCollectRequest
     /** @brief Document URI used to tag every collected symbol and diagnostic. */
     const std::string& fileUri;
     /** @brief Full text of the document. */
-    const std::string& sourceCode;
+    std::string_view sourceCode;
     /** @brief Optional localizer for diagnostic messages; English is used when null. */
     const angel_lsp::i18n::I18n* i18n = nullptr;
 
     /**
-     * @brief Constructs a SymbolCollectRequest bundle.
+     * @brief Constructs a SymbolCollectRequest bundle from a string or string_view.
      * @param[in] uri Document URI string.
      * @param[in] code Full text of the document.
      * @param[in] loc Optional localizer pointer.
      */
-    SymbolCollectRequest(const std::string& uri, const std::string& code, const angel_lsp::i18n::I18n* loc = nullptr)
+    SymbolCollectRequest(const std::string& uri, std::string_view code, const angel_lsp::i18n::I18n* loc = nullptr)
         : fileUri(uri), sourceCode(code), i18n(loc)
+    {
+    }
+
+    /**
+     * @brief Constructs a SymbolCollectRequest bundle from a buffer pointer and byte count.
+     * @param[in] uri Document URI string.
+     * @param[in] sourceBuffer Pointer to start of source buffer.
+     * @param[in] length Number of bytes in source buffer.
+     * @param[in] loc Optional localizer pointer.
+     */
+    SymbolCollectRequest(const std::string& uri, const char* sourceBuffer, size_t length,
+                         const angel_lsp::i18n::I18n* loc = nullptr)
+        : fileUri(uri), sourceCode(sourceBuffer, length), i18n(loc)
     {
     }
 };
@@ -205,7 +218,7 @@ class SymbolCollector
     /** @brief Bundles URI and source context for symbol creation. */
     struct SymbolLocationContext
     {
-        const std::string& sourceCode;
+        std::string_view sourceCode;
         const std::string& fileUri;
         const std::string& containerPath;
     };
@@ -252,7 +265,7 @@ class SymbolCollector
     void CollectFromTree(TSNode rootNode, SymbolCollectContext& sCtx);
 
     /** @brief Walks node's ancestors to derive the enclosing container path and nesting flags. */
-    CollectionContext BuildContext(TSNode node, const std::string& sourceCode) const;
+    CollectionContext BuildContext(TSNode node, std::string_view sourceCode) const;
 
     // =====================================================================================
     // Declaration Collectors (TAGS_QUERY @definition.* handlers)
@@ -270,7 +283,7 @@ class SymbolCollector
     void ProcessFunction(TSNode funcNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
     TSNode FindFunctionBody(TSNode funcNode) const;
     bool IsExternalFunction(TSNode funcNode) const;
-    std::string ExtractOriginModule(TSNode funcNode, const std::string& sourceCode) const;
+    std::string ExtractOriginModule(TSNode funcNode, std::string_view sourceCode) const;
 
     void ProcessClass(TSNode classNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
     void ProcessNamespace(TSNode namespaceNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
@@ -279,7 +292,7 @@ class SymbolCollector
 
     void ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
     bool EnumHasBraces(TSNode node) const;
-    void CollectEnumMembers(TSNode node, const std::string& sourceCode, EnumSignature& enumSig) const;
+    void CollectEnumMembers(TSNode node, std::string_view sourceCode, EnumSignature& enumSig) const;
     void PublishEnumMembers(TSNode node, const EnumSignature& enumSig, SymbolCollectContext& sCtx,
                             const CollectionContext& ctx);
 
@@ -312,26 +325,26 @@ class SymbolCollector
     // AST/Text Extraction Helpers
     // =====================================================================================
 
-    std::string GetNodeText(TSNode node, const std::string& sourceCode) const;
-    std::string_view GetNodeView(TSNode node, const std::string& sourceCode) const;
+    std::string GetNodeText(TSNode node, std::string_view sourceCode) const;
+    std::string_view GetNodeView(TSNode node, std::string_view sourceCode) const;
 
-    SymbolModifiers ExtractModifiers(TSNode node, const std::string& sourceCode) const;
-    void ProcessModifierChild(TSNode child, const std::string& sourceCode, SymbolModifiers& modifiers) const;
+    SymbolModifiers ExtractModifiers(TSNode node, std::string_view sourceCode) const;
+    void ProcessModifierChild(TSNode child, std::string_view sourceCode, SymbolModifiers& modifiers) const;
     void ApplyModifierString(std::string_view text, SymbolModifiers& modifiers, bool isFuncAttr) const;
     bool ApplyAccessOrStorageString(std::string_view text, SymbolModifiers& modifiers) const;
     void ApplyModifierToken(TSSymbol tokenSymbol, SymbolModifiers& modifiers) const;
     bool ApplyParamModifierToken(TSSymbol tokenSymbol, SymbolModifiers& modifiers) const;
 
-    ParameterInformation ExtractParameterInfo(TSNode paramNode, const std::string& sourceCode) const;
-    void ExtractParamTypeRefAndConst(TSNode pTypeNode, const std::string& sourceCode, ParameterInformation& paramInfo,
+    ParameterInformation ExtractParameterInfo(TSNode paramNode, std::string_view sourceCode) const;
+    void ExtractParamTypeRefAndConst(TSNode pTypeNode, std::string_view sourceCode, ParameterInformation& paramInfo,
                                      uint32_t& refCount) const;
-    void ExtractParamModifierTokens(TSNode paramNode, const std::string& sourceCode, ParameterInformation& paramInfo,
+    void ExtractParamModifierTokens(TSNode paramNode, std::string_view sourceCode, ParameterInformation& paramInfo,
                                     uint32_t& refCount) const;
 
-    std::vector<ParameterInformation> ExtractParameters(TSNode paramsNode, const std::string& sourceCode) const;
+    std::vector<ParameterInformation> ExtractParameters(TSNode paramsNode, std::string_view sourceCode) const;
 
     Symbol CreateSymbol(SymbolType type, TSNode node, TSNode nameNode, const SymbolLocationContext& loc) const;
 
-    std::vector<std::string> ExtractBases(TSNode classNode, const std::string& sourceCode) const;
+    std::vector<std::string> ExtractBases(TSNode classNode, std::string_view sourceCode) const;
 };
 } // namespace angel_lsp::analysis

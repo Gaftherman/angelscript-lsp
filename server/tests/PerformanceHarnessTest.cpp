@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "helpers/TestUtils.h"
+#include "lsp/ModuleIndex.h"
 #include "utils/IncludeResolver.h"
 #include "utils/WorkspaceIncludeGraph.h"
 
@@ -47,13 +48,6 @@ struct TempDirectoryGuard
     }
 };
 
-struct SyntheticSymbol
-{
-    std::string name;
-    std::string qualifiedName;
-    uint32_t line = 0;
-};
-
 /**
  * @brief Constructs a randomized DAG of script files with diamond inclusions.
  */
@@ -88,23 +82,6 @@ std::vector<std::string> GenerateRandomDAG(const TempDirectoryGuard& temp, size_
     return fullPaths;
 }
 
-/**
- * @brief Performs binary search for symbols having a specified prefix.
- */
-std::vector<const SyntheticSymbol*> FindSymbolsByPrefix(const std::vector<SyntheticSymbol>& symbols,
-                                                        std::string_view prefix)
-{
-    auto it = std::lower_bound(symbols.begin(), symbols.end(), prefix,
-                               [](const SyntheticSymbol& sym, std::string_view p) { return sym.name < p; });
-
-    std::vector<const SyntheticSymbol*> matches;
-    while (it != symbols.end() && it->name.starts_with(prefix))
-    {
-        matches.push_back(&(*it));
-        ++it;
-    }
-    return matches;
-}
 } // namespace
 
 TEST_CASE("Performance - PERF-01 Randomized DAG Topological Invalidation Invariant")
@@ -156,7 +133,7 @@ TEST_CASE("Performance - PERF-03 Randomized Prefix Lookup Benchmark Invariant")
     constexpr size_t k_symbolCount = 10000;
     constexpr size_t k_queryCount = 500;
 
-    std::vector<SyntheticSymbol> symbols;
+    std::vector<angel_lsp::ModuleIndex::ExportedSymbol> symbols;
     symbols.reserve(k_symbolCount);
     std::vector<std::string> prefixes = {"var_", "func_", "cls_", "prop_", "field_"};
 
@@ -164,19 +141,20 @@ TEST_CASE("Performance - PERF-03 Randomized Prefix Lookup Benchmark Invariant")
     {
         const std::string prefix = prefixes[i % prefixes.size()];
         const std::string symName = prefix + std::to_string(i);
-        symbols.push_back(SyntheticSymbol{symName, "NS::" + symName, static_cast<uint32_t>(i)});
+        symbols.push_back(angel_lsp::ModuleIndex::ExportedSymbol{symName, "NS::" + symName, "file:///doc.as",
+                                                                 static_cast<uint32_t>(i), 0});
     }
 
-    std::sort(symbols.begin(), symbols.end(),
-              [](const SyntheticSymbol& a, const SyntheticSymbol& b) { return a.name < b.name; });
+    angel_lsp::ModuleIndex index;
+    index.SetExportedSymbols(std::move(symbols));
 
     const auto start = std::chrono::steady_clock::now();
     for (size_t q = 0; q < k_queryCount; ++q)
     {
         const std::string query = prefixes[q % prefixes.size()] + std::to_string(q % 100);
-        auto matches = FindSymbolsByPrefix(symbols, query);
-        for (const auto* sym : matches)
-            CHECK(sym->name.starts_with(query));
+        auto matches = index.FindSymbolsByPrefix(query);
+        for (const auto& sym : matches)
+            CHECK(sym.name.starts_with(query));
     }
     const auto elapsed =
         std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);

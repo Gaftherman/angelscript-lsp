@@ -21,7 +21,7 @@ AngelScriptParser::~AngelScriptParser()
     }
 }
 
-TSTree* AngelScriptParser::Parse(const std::string& sourceCode, TSTree* oldTree)
+TSTree* AngelScriptParser::Parse(std::string_view sourceCode, TSTree* oldTree)
 {
     if (sourceCode.empty())
     {
@@ -31,7 +31,7 @@ TSTree* AngelScriptParser::Parse(const std::string& sourceCode, TSTree* oldTree)
     }
 
     TSTree* tree =
-        ts_parser_parse_string(m_parser, oldTree, sourceCode.c_str(), static_cast<uint32_t>(sourceCode.size()));
+        ts_parser_parse_string(m_parser, oldTree, sourceCode.data(), static_cast<uint32_t>(sourceCode.size()));
 
     if (!tree && m_logger)
     {
@@ -41,7 +41,7 @@ TSTree* AngelScriptParser::Parse(const std::string& sourceCode, TSTree* oldTree)
     return tree;
 }
 
-std::string_view AngelScriptParser::GetNodeText(TSNode node, const std::string& sourceCode)
+std::string_view AngelScriptParser::GetNodeText(TSNode node, std::string_view sourceCode)
 {
     if (ts_node_is_null(node))
         return std::string_view();

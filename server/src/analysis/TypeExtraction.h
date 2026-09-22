@@ -7,7 +7,7 @@
 
 namespace angel_lsp::analysis
 {
-TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, const std::string& sourceCode);
+TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view sourceCode);
 
 /**
  * @brief True if valueNode's own top-level value is a null literal, e.g. "null" or "(null)".

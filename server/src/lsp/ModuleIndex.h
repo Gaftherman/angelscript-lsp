@@ -116,7 +116,38 @@ class ModuleIndex
     void RemoveIndexedPath(const std::string& path);
 
     /**
-     * @brief Clears all include graph and closure state.
+     * @brief An exported symbol indexed across modules.
+     */
+    struct ExportedSymbol
+    {
+        std::string name;
+        std::string containerName;
+        std::string fileUri;
+        uint32_t line = 0;
+        uint32_t character = 0;
+    };
+
+    /**
+     * @brief Adds an exported symbol into the index, keeping the symbol table sorted.
+     * @param[in] symbol Symbol information to insert.
+     */
+    void AddExportedSymbol(ExportedSymbol symbol);
+
+    /**
+     * @brief Sets the entire collection of exported symbols, sorting them for binary search.
+     * @param[in] symbols Vector of exported symbols.
+     */
+    void SetExportedSymbols(std::vector<ExportedSymbol> symbols);
+
+    /**
+     * @brief Performs an O(log N + K) binary prefix search for exported symbols.
+     * @param[in] prefix Case-sensitive prefix to match against symbol names.
+     * @return Vector of matched symbols starting with prefix.
+     */
+    [[nodiscard]] std::vector<ExportedSymbol> FindSymbolsByPrefix(std::string_view prefix) const;
+
+    /**
+     * @brief Clears all include graph, closure, and exported symbol state.
      */
     void Clear();
 
@@ -126,5 +157,6 @@ class ModuleIndex
     ankerl::unordered_dense::map<std::string, std::string> m_closureDocuments;
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_openDocumentClosures;
     ankerl::unordered_dense::map<std::string, std::string> m_indexedUriByPath;
+    std::vector<ExportedSymbol> m_exportedSymbols;
 };
 } // namespace angel_lsp
