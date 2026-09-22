@@ -209,7 +209,8 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         const NodeIndex* indexPtr = request.nodeIndex;
         if (!indexPtr && request.tree)
         {
-            localNodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(request.tree));
+            localNodeIndex =
+                std::make_unique<NodeIndex>(ts_tree_root_node(request.tree), nullptr, request.traversalBudget);
             indexPtr = localNodeIndex.get();
         }
 

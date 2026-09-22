@@ -258,34 +258,37 @@ uint32_t CalculateActiveParameter(const std::string& sourceCode, uint32_t argSta
 }
 
 /**
- * @brief Formats parameter declarations into comma-separated text.
+ * @brief Appends parameter declarations into comma-separated text in result.
+ * @param[in,out] result Destination string.
  * @param[in] parameters List of parameter symbols.
- * @return Formatted parameter string.
  */
-std::string FormatParameters(const std::vector<analysis::ParameterInformation>& parameters)
+void AppendParameters(std::string& result, const std::vector<analysis::ParameterInformation>& parameters)
 {
-    std::ostringstream oss;
     for (size_t i = 0; i < parameters.size(); ++i)
     {
         if (i > 0)
         {
-            oss << ", ";
+            result += ", ";
         }
         const auto& param = parameters[i];
         if (!param.typeName.empty())
         {
-            oss << param.typeName;
+            result += param.typeName;
         }
         if (!param.name.empty())
         {
-            oss << " " << param.name;
+            if (!result.empty() && result.back() != ' ')
+            {
+                result += " ";
+            }
+            result += param.name;
         }
         if (!param.defaultValue.empty())
         {
-            oss << " = " << param.defaultValue;
+            result += " = ";
+            result += param.defaultValue;
         }
     }
-    return oss.str();
 }
 
 /**
@@ -300,13 +303,14 @@ std::string FormatSignatureLabel(const analysis::Symbol& sym)
         return "";
     }
 
-    std::ostringstream oss;
-    std::string returnType;
+    std::string result;
+    result.reserve(64);
+    std::string_view returnType;
     const std::vector<analysis::ParameterInformation>* parameters = nullptr;
 
     if (sym.type == analysis::SymbolType::Funcdef)
     {
-        oss << "funcdef ";
+        result += "funcdef ";
         const auto& sig = sym.GetFuncdef();
         returnType = sig.returnType;
         parameters = &sig.parameters;
@@ -318,21 +322,31 @@ std::string FormatSignatureLabel(const analysis::Symbol& sym)
         parameters = &sig.parameters;
     }
 
-    oss << (returnType.empty() ? "void " : returnType + " ");
+    if (returnType.empty())
+    {
+        result += "void ";
+    }
+    else
+    {
+        result += returnType;
+        result += " ";
+    }
 
     if (!sym.containerName.empty())
     {
-        oss << sym.containerName << "::";
+        result += sym.containerName;
+        result += "::";
     }
-    oss << sym.name << "(";
+    result += sym.name;
+    result += "(";
 
     if (parameters)
     {
-        oss << FormatParameters(*parameters);
+        AppendParameters(result, *parameters);
     }
 
-    oss << ")";
-    return oss.str();
+    result += ")";
+    return result;
 }
 
 /**
@@ -465,7 +479,7 @@ TSNode ExtractFunctionNode(TSNode callNode)
  * @param[in] funcNode Member expression AST node.
  * @return Matching symbol candidates from the receiver hierarchy.
  */
-std::vector<analysis::Symbol> ResolveMemberCandidates(const SignatureHelpRequest& request, TSNode funcNode)
+std::vector<const analysis::Symbol*> ResolveMemberCandidates(const SignatureHelpRequest& request, TSNode funcNode)
 {
     TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
     TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
@@ -474,8 +488,14 @@ std::vector<analysis::Symbol> ResolveMemberCandidates(const SignatureHelpRequest
         return {};
     }
 
-    std::string memText =
-        request.sourceCode.substr(ts_node_start_byte(memNode), ts_node_end_byte(memNode) - ts_node_start_byte(memNode));
+    const uint32_t memStart = ts_node_start_byte(memNode);
+    const uint32_t memEnd = ts_node_end_byte(memNode);
+    if (memStart >= request.sourceCode.size() || memEnd > request.sourceCode.size() || memStart >= memEnd)
+    {
+        return {};
+    }
+    const std::string_view memText = std::string_view(request.sourceCode).substr(memStart, memEnd - memStart);
+
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     const analysis::Scope* scope =
         rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character) : nullptr;
@@ -490,39 +510,20 @@ std::vector<analysis::Symbol> ResolveMemberCandidates(const SignatureHelpRequest
     auto hierarchy = GetInheritedTypeHierarchy(request.symbolTable, receiverTypeName);
     for (const auto& typeName : hierarchy)
     {
-        std::string qualifiedName = typeName + "::" + memText;
-        auto found = request.symbolTable.FindSymbols(qualifiedName);
-        if (!found.empty())
+        std::string qualifiedName = typeName + "::" + std::string(memText);
+        auto found = request.symbolTable.FindSymbolsPtr(qualifiedName);
+        if (found && !found->empty())
         {
-            return found;
+            std::vector<const analysis::Symbol*> ptrs;
+            ptrs.reserve(found->size());
+            for (const auto& sym : *found)
+            {
+                ptrs.push_back(&sym);
+            }
+            return ptrs;
         }
     }
     return {};
-}
-
-/**
- * @brief Resolves candidate function symbols for a call expression.
- * @param[in] request Signature help request.
- * @param[in] funcNode Function callee AST node.
- * @return List of matching function/funcdef candidates.
- */
-std::vector<analysis::Symbol> ResolveCandidateSymbols(const SignatureHelpRequest& request, TSNode funcNode)
-{
-    uint32_t fStart = ts_node_start_byte(funcNode);
-    uint32_t fEnd = ts_node_end_byte(funcNode);
-    if (fStart >= request.sourceCode.size() || fEnd > request.sourceCode.size() || fStart >= fEnd)
-    {
-        return {};
-    }
-
-    std::string_view funcType = ts_node_type(funcNode);
-    if (funcType == "member_expression")
-    {
-        return ResolveMemberCandidates(request, funcNode);
-    }
-
-    std::string calleeName = request.sourceCode.substr(fStart, fEnd - fStart);
-    return request.symbolTable.FindSymbols(calleeName);
 }
 
 /**
@@ -539,6 +540,7 @@ std::vector<lsp::ParameterInformation> BuildParameterList(const std::vector<anal
     {
         lsp::ParameterInformation pInfo;
         std::string pLabel;
+        pLabel.reserve(param.typeName.size() + param.name.size() + param.defaultValue.size() + 4);
         if (!param.typeName.empty())
         {
             pLabel += param.typeName;
@@ -553,41 +555,68 @@ std::vector<lsp::ParameterInformation> BuildParameterList(const std::vector<anal
         }
         if (!param.defaultValue.empty())
         {
-            pLabel += " = " + param.defaultValue;
+            pLabel += " = ";
+            pLabel += param.defaultValue;
         }
-        pInfo.label = pLabel;
+        pInfo.label = std::move(pLabel);
         params.push_back(std::move(pInfo));
     }
     return params;
 }
 
 /**
+ * @brief Appends candidate signature to LSP signature list if valid.
+ * @tparam T Candidate type (Symbol or const Symbol*).
+ * @param[in,out] signatures Destination signature list.
+ * @param[in] candidate Candidate symbol reference or pointer.
+ */
+template <typename T>
+void AppendCandidateSignature(std::vector<lsp::SignatureInformation>& signatures, const T& candidate)
+{
+    const analysis::Symbol* symPtr = nullptr;
+    if constexpr (std::is_pointer_v<T>)
+    {
+        symPtr = candidate;
+    }
+    else
+    {
+        symPtr = &candidate;
+    }
+
+    if (!symPtr || (symPtr->type != analysis::SymbolType::Function && symPtr->type != analysis::SymbolType::Funcdef))
+    {
+        return;
+    }
+
+    lsp::SignatureInformation sigInfo;
+    sigInfo.label = FormatSignatureLabel(*symPtr);
+    const std::vector<analysis::ParameterInformation>* parameters =
+        (symPtr->type == analysis::SymbolType::Function) ? &symPtr->GetFunction().parameters
+                                                         : &symPtr->GetFuncdef().parameters;
+
+    if (parameters && !parameters->empty())
+    {
+        sigInfo.parameters = BuildParameterList(*parameters);
+    }
+
+    signatures.push_back(std::move(sigInfo));
+}
+
+/**
  * @brief Constructs LSP signature information objects for candidate symbols.
+ * @tparam Range Range of Symbol or Symbol pointers.
  * @param[in] candidateSymbols Candidate function or funcdef symbols.
  * @return List of LSP signature entries.
  */
-std::vector<lsp::SignatureInformation> BuildSignatureList(const std::vector<analysis::Symbol>& candidateSymbols)
+template <typename Range>
+std::vector<lsp::SignatureInformation> BuildSignatureList(const Range& candidateSymbols)
 {
     std::vector<lsp::SignatureInformation> signatures;
+    signatures.reserve(std::size(candidateSymbols));
 
-    for (const auto& sym : candidateSymbols)
+    for (const auto& item : candidateSymbols)
     {
-        if (sym.type != analysis::SymbolType::Function && sym.type != analysis::SymbolType::Funcdef)
-        {
-            continue;
-        }
-
-        lsp::SignatureInformation sigInfo;
-        sigInfo.label = FormatSignatureLabel(sym);
-        const std::vector<analysis::ParameterInformation>* parameters =
-            (sym.type == analysis::SymbolType::Function) ? &sym.GetFunction().parameters : &sym.GetFuncdef().parameters;
-
-        if (parameters && !parameters->empty())
-        {
-            sigInfo.parameters = BuildParameterList(*parameters);
-        }
-
-        signatures.push_back(std::move(sigInfo));
+        AppendCandidateSignature(signatures, item);
     }
     return signatures;
 }
@@ -642,8 +671,28 @@ std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& r
         return std::nullopt;
     }
 
-    auto candidateSymbols = ResolveCandidateSymbols(request, funcNode);
-    auto signatures = BuildSignatureList(candidateSymbols);
+    std::vector<lsp::SignatureInformation> signatures;
+    std::string_view funcType = ts_node_type(funcNode);
+    if (funcType == "member_expression")
+    {
+        auto candidateSymbols = ResolveMemberCandidates(request, funcNode);
+        signatures = BuildSignatureList(candidateSymbols);
+    }
+    else
+    {
+        uint32_t fStart = ts_node_start_byte(funcNode);
+        uint32_t fEnd = ts_node_end_byte(funcNode);
+        if (fStart < request.sourceCode.size() && fEnd <= request.sourceCode.size() && fStart < fEnd)
+        {
+            std::string_view calleeName = std::string_view(request.sourceCode).substr(fStart, fEnd - fStart);
+            auto found = request.symbolTable.FindSymbolsPtr(calleeName);
+            if (found && !found->empty())
+            {
+                signatures = BuildSignatureList(*found);
+            }
+        }
+    }
+
     if (signatures.empty())
     {
         return std::nullopt;

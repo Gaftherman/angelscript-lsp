@@ -6,9 +6,9 @@ extern "C" const TSLanguage* tree_sitter_angelscript();
 
 namespace angel_lsp::analysis
 {
-NodeIndex::NodeIndex(TSNode root, const TSLanguage* lang)
+NodeIndex::NodeIndex(TSNode root, const TSLanguage* lang, TraversalBudget* budget)
 {
-    Build(root, lang);
+    Build(root, lang, budget);
 }
 
 void NodeIndex::PopulatePredefinedSymbols(const TSLanguage* lang)
@@ -27,8 +27,13 @@ void NodeIndex::PopulatePredefinedSymbols(const TSLanguage* lang)
     }
 }
 
-void NodeIndex::IndexNode(TSNode node)
+void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget)
 {
+    if (budget)
+    {
+        budget->RecordVisit(node);
+    }
+
     m_allNodes.push_back(node);
 
     const TSSymbol sym = ts_node_symbol(node);
@@ -45,7 +50,7 @@ void NodeIndex::IndexNode(TSNode node)
     }
 }
 
-void NodeIndex::TraverseTree(TSNode root)
+void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(root);
     int depth = 0;
@@ -54,7 +59,7 @@ void NodeIndex::TraverseTree(TSNode root)
     while (visiting)
     {
         TSNode node = ts_tree_cursor_current_node(&cursor);
-        IndexNode(node);
+        IndexNode(node, budget);
 
         if (depth < k_maxAstDepth && ts_tree_cursor_goto_first_child(&cursor))
         {
@@ -87,7 +92,7 @@ void NodeIndex::TraverseTree(TSNode root)
     ts_tree_cursor_delete(&cursor);
 }
 
-void NodeIndex::Build(TSNode root, const TSLanguage* lang)
+void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budget)
 {
     Clear();
     m_root = root;
@@ -98,7 +103,7 @@ void NodeIndex::Build(TSNode root, const TSLanguage* lang)
 
     m_language = lang ? lang : tree_sitter_angelscript();
     PopulatePredefinedSymbols(m_language);
-    TraverseTree(root);
+    TraverseTree(root, budget);
 }
 
 std::span<const TSNode> NodeIndex::Nodes(TSSymbol symbol) const noexcept

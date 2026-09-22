@@ -192,7 +192,7 @@ bool IsReservedKeyword(const std::string& name);
  * @param name Symbol or type name to check.
  * @return True if name is a primitive type name.
  */
-bool IsPrimitiveTypeName(const std::string& name);
+bool IsPrimitiveTypeName(std::string_view name);
 
 /**
  * @brief Semantically classifies the token text of an initializer item.

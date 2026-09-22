@@ -57,4 +57,13 @@ struct CallCheckRequest
  * @param ctx Diagnostic sink and the analysis request behind it.
  */
 void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Filters candidate symbols to those whose arity can accept argumentCount.
+ * @param[in] candidates Candidate symbols to inspect.
+ * @param[in] argumentCount Argument count supplied.
+ * @return Vector of non-owning pointers to matching arity symbols.
+ */
+std::vector<const Symbol*> FilterMatchingArityCandidates(const std::vector<Symbol>& candidates, uint32_t argumentCount);
 } // namespace angel_lsp::analysis
+

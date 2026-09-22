@@ -9,6 +9,8 @@
 
 namespace angel_lsp::analysis
 {
+class TraversalBudget;
+
 /**
  * @brief Single-pass index of AST nodes grouped by Tree-Sitter symbol for O(1) retrieval.
  *
@@ -25,8 +27,9 @@ class NodeIndex
      * @brief Constructs a NodeIndex and builds it from the given root node.
      * @param root The root AST node of the document.
      * @param lang The language definition (defaults to tree_sitter_angelscript() if null).
+     * @param budget Optional traversal budget to track and enforce node visits.
      */
-    explicit NodeIndex(TSNode root, const TSLanguage* lang = nullptr);
+    explicit NodeIndex(TSNode root, const TSLanguage* lang = nullptr, TraversalBudget* budget = nullptr);
 
     ~NodeIndex() = default;
     NodeIndex(const NodeIndex&) = default;
@@ -38,8 +41,9 @@ class NodeIndex
      * @brief Builds or rebuilds the index from an AST root node.
      * @param root The root node of the syntax tree.
      * @param lang The language definition (defaults to tree_sitter_angelscript() if null).
+     * @param budget Optional traversal budget to track and enforce node visits.
      */
-    void Build(TSNode root, const TSLanguage* lang = nullptr);
+    void Build(TSNode root, const TSLanguage* lang = nullptr, TraversalBudget* budget = nullptr);
 
     /**
      * @brief Returns all nodes of a given grammar symbol id in document (preorder) order.
@@ -89,8 +93,8 @@ class NodeIndex
 
   private:
     void PopulatePredefinedSymbols(const TSLanguage* lang);
-    void IndexNode(TSNode node);
-    void TraverseTree(TSNode root);
+    void IndexNode(TSNode node, TraversalBudget* budget = nullptr);
+    void TraverseTree(TSNode root, TraversalBudget* budget = nullptr);
 
     TSNode m_root{};
     const TSLanguage* m_language = nullptr;

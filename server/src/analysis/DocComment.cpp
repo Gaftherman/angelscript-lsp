@@ -189,7 +189,8 @@ std::vector<std::string> CollectPrecedingDocComments(const std::vector<std::stri
 
 std::string ExtractDocComment(const std::string& sourceCode, uint32_t declStartLine)
 {
-    if (sourceCode.empty())
+    if (sourceCode.empty() ||
+        (sourceCode.find("//") == std::string::npos && sourceCode.find("/*") == std::string::npos))
     {
         return "";
     }

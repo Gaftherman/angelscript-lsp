@@ -1206,17 +1206,8 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
     }
     return result;
 }
+} // namespace
 
-/**
- * @brief Filters candidate symbols to those whose arity can accept argumentCount.
- *
- * Inspects candidate function signatures and returns non-owning pointers to those
- * that match the supplied argument count, including variadic or optional-parameter functions.
- *
- * @param[in] candidates Candidate symbols to inspect.
- * @param[in] argumentCount Argument count supplied.
- * @return Vector of non-owning pointers to matching arity symbols.
- */
 std::vector<const Symbol*> FilterMatchingArityCandidates(const std::vector<Symbol>& candidates, uint32_t argumentCount)
 {
     std::vector<const Symbol*> matching;
@@ -1235,6 +1226,8 @@ std::vector<const Symbol*> FilterMatchingArityCandidates(const std::vector<Symbo
     return matching;
 }
 
+namespace
+{
 /**
  * @brief Checks initializer list arguments against parameter target types.
  *

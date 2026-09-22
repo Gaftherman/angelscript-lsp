@@ -294,6 +294,18 @@ if(TEST_SOURCES)
     endif()
     add_test(NAME angel_lsp_tests COMMAND angel_lsp_tests)
 
+    add_custom_command(TARGET angel_lsp_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/bin"
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:angel_lsp_tests> "${CMAKE_CURRENT_BINARY_DIR}/bin/$<TARGET_FILE_NAME:angel_lsp_tests>"
+        COMMENT "Deploying compiled test binary to server/build/bin"
+    )
+    if(MSVC)
+        add_custom_command(TARGET angel_lsp_tests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_PDB_FILE:angel_lsp_tests> "${CMAKE_CURRENT_BINARY_DIR}/bin/"
+            COMMENT "Deploying test PDB to server/build/bin"
+        )
+    endif()
+
     # The full angelscript/ corpus audit test case is skip()-decorated in-code, so it is
     # excluded from the angel_lsp_tests run above. It is deliberately NOT registered as its
     # own add_test() - any add_test() runs on every plain `ctest` invocation regardless of

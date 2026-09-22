@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ankerl/unordered_dense.h>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -473,6 +474,24 @@ class SymbolTable
     [[nodiscard]] std::unique_ptr<SymbolTable> CreateAnalysisSnapshot(const std::string& uriStr,
                                                                       const SymbolTable& staging) const;
 
+    /** @brief Returns total number of table clones created via CreateAnalysisSnapshot. */
+    [[nodiscard]] static uint64_t GetTableCloneCount() noexcept
+    {
+        return s_tableCloneCount.load(std::memory_order_relaxed);
+    }
+
+    /** @brief Resets the table clone counter to zero. */
+    static void ResetTableCloneCount() noexcept
+    {
+        s_tableCloneCount.store(0, std::memory_order_relaxed);
+    }
+
+    /** @brief Increments the table clone counter. */
+    static void IncrementTableCloneCount() noexcept
+    {
+        s_tableCloneCount.fetch_add(1, std::memory_order_relaxed);
+    }
+
     void ResolveIncludedMixins();
 
     /** @brief Controls whether synthetic virtual mixin document URIs are generated during mixin resolution. */
@@ -740,6 +759,7 @@ class SymbolTable
     mutable std::unique_ptr<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>> m_ruleIndexPartials;
 
     bool m_virtualMixinDocumentsEnabled = false;
+    inline static std::atomic<uint64_t> s_tableCloneCount{0};
 };
 
 /** @brief Converts SymbolType enum to lower/string representation. */

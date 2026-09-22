@@ -877,7 +877,7 @@ struct HoverQueryContext
 std::optional<lsp::Hover> TryHoverPrimitiveType(std::string_view nodeText, const lsp::Range& range,
                                                 HoverProfiler& profiler)
 {
-    if (!analysis::IsPrimitiveTypeName(std::string(nodeText)))
+    if (!analysis::IsPrimitiveTypeName(nodeText))
     {
         return std::nullopt;
     }
@@ -1126,26 +1126,28 @@ std::string InferTypeFromAst(TSNode node, const std::string& sourceCode)
 }
 
 void FormatParameterHover(const analysis::LocalDefinition& def, const std::string& typeName,
-                          const HoverQueryContext& ctx, std::ostringstream& oss)
+                          const HoverQueryContext& ctx, std::string& md)
 {
-    oss << "(parameter) ";
+    md += "(parameter) ";
     TSNode rootNode = ts_tree_root_node(ctx.request.tree);
     const std::string declText =
         ExtractDeclarationTextAt(rootNode, ctx.request.sourceCode, {def.startLine, def.startCharacter}, "parameter");
     if (!declText.empty())
     {
-        oss << declText;
+        md += declText;
     }
     else
     {
         if (!typeName.empty())
         {
-            oss << typeName << " ";
+            md += typeName;
+            md += " ";
         }
-        oss << def.name;
+        md += def.name;
         if (!def.defaultValue.empty())
         {
-            oss << " = " << def.defaultValue;
+            md += " = ";
+            md += def.defaultValue;
         }
     }
 }
@@ -1182,10 +1184,26 @@ std::optional<analysis::Symbol> FindMatchingGlobalSymbol(const analysis::LocalDe
     return std::nullopt;
 }
 
-void FormatVariableHover(const analysis::LocalDefinition& def, const std::string& typeName,
-                         const HoverQueryContext& ctx, std::ostringstream& oss)
+const analysis::Scope* FindDefinitionScope(const HoverQueryContext& ctx, const analysis::LocalDefinition& def)
 {
-    const analysis::Scope* declaringScope = FindScopeDeclaringDefinition(ctx.vctx.rootScope.get(), def);
+    for (const analysis::Scope* s = ctx.scope; s != nullptr; s = s->parent)
+    {
+        for (const auto& d : s->definitions)
+        {
+            if (d.name == def.name && d.startLine == def.startLine && d.startCharacter == def.startCharacter)
+            {
+                return s;
+            }
+        }
+    }
+    return FindScopeDeclaringDefinition(ctx.vctx.rootScope.get(), def);
+}
+
+void FormatVariableHover(const analysis::LocalDefinition& def, const std::string& typeName,
+                         const HoverQueryContext& ctx, std::string& md)
+{
+    const analysis::Scope* declaringScope = FindDefinitionScope(ctx, def);
+
     bool isInsideFunction = false;
     for (const analysis::Scope* s = declaringScope; s != nullptr; s = s->parent)
     {
@@ -1201,33 +1219,37 @@ void FormatVariableHover(const analysis::LocalDefinition& def, const std::string
         auto globalSym = FindMatchingGlobalSymbol(def, ctx);
         if (globalSym.has_value())
         {
-            oss << FormatVariableSignature(*globalSym, "(global variable) ");
+            md += FormatVariableSignature(*globalSym, "(global variable) ");
         }
         else
         {
-            oss << "(global variable) ";
+            md += "(global variable) ";
             if (!typeName.empty())
             {
-                oss << typeName << " ";
+                md += typeName;
+                md += " ";
             }
-            oss << def.name;
+            md += def.name;
             if (!def.defaultValue.empty())
             {
-                oss << " = " << def.defaultValue;
+                md += " = ";
+                md += def.defaultValue;
             }
         }
     }
     else
     {
-        oss << "(local variable) ";
+        md += "(local variable) ";
         if (!typeName.empty())
         {
-            oss << typeName << " ";
+            md += typeName;
+            md += " ";
         }
-        oss << def.name;
+        md += def.name;
         if (!def.defaultValue.empty())
         {
-            oss << " = " << def.defaultValue;
+            md += " = ";
+            md += def.defaultValue;
         }
     }
 }
@@ -1262,27 +1284,29 @@ std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
 
     ctx.profiler.symMs += symTimer.ElapsedMs();
     utils::HighResTimer fmtTimer;
-    std::ostringstream oss;
-    oss << "```angelscript\n";
+    std::string md;
+    md.reserve(128);
+    md += "```angelscript\n";
 
     if (def->kind == analysis::LocalDefinitionKind::Parameter)
     {
-        FormatParameterHover(*def, typeName, ctx, oss);
+        FormatParameterHover(*def, typeName, ctx, md);
     }
     else
     {
-        FormatVariableHover(*def, typeName, ctx, oss);
+        FormatVariableHover(*def, typeName, ctx, md);
     }
-    oss << "\n```";
+    md += "\n```";
 
     std::string doc = analysis::ExtractDocComment(ctx.request.sourceCode, def->startLine);
     if (!doc.empty())
     {
-        oss << "\n\n" << doc;
+        md += "\n\n";
+        md += doc;
     }
 
     ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
-    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
+    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, ctx.range};
 }
 
 void AppendEnclosingClassMethods(TSNode node, std::string_view nodeText, const HoverRequest& request,

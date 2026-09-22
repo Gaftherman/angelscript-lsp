@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <stdexcept>
+#include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
 
@@ -87,4 +89,229 @@ inline constexpr int k_maxAstDepth = 64;
     }
     return text;
 }
+
+/**
+ * @brief Counts the total number of named AST nodes in the subtree rooted at root.
+ * @param[in] root Root node of the AST subtree.
+ * @return Count of named nodes in the subtree.
+ */
+[[nodiscard]] inline size_t CountNamedNodes(TSNode root) noexcept
+{
+    if (ts_node_is_null(root))
+    {
+        return 0;
+    }
+    size_t count = 0;
+    TSTreeCursor cursor = ts_tree_cursor_new(root);
+    bool visiting = true;
+
+    while (visiting)
+    {
+        const TSNode current = ts_tree_cursor_current_node(&cursor);
+        if (ts_node_is_named(current))
+        {
+            ++count;
+        }
+
+        if (ts_tree_cursor_goto_first_child(&cursor))
+        {
+            continue;
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            continue;
+        }
+
+        bool backtracked = false;
+        while (ts_tree_cursor_goto_parent(&cursor))
+        {
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                backtracked = true;
+                break;
+            }
+        }
+        if (!backtracked)
+        {
+            visiting = false;
+        }
+    }
+
+    ts_tree_cursor_delete(&cursor);
+    return count;
+}
+
+/**
+ * @brief Exception thrown when an AST traversal or checker exceeds its node visit budget.
+ */
+class BudgetExceededException : public std::runtime_error
+{
+  public:
+    /**
+     * @brief Constructs a BudgetExceededException with node visit metrics.
+     * @param[in] visits Total node visits recorded when budget was exceeded.
+     * @param[in] maxAllowed Maximum allowed node visits under the budget.
+     */
+    explicit BudgetExceededException(size_t visits, size_t maxAllowed)
+        : std::runtime_error("AST traversal budget exceeded: " + std::to_string(visits) +
+                             " visits exceeds ceiling of " + std::to_string(maxAllowed)),
+          m_visits(visits),
+          m_maxAllowed(maxAllowed)
+    {
+    }
+
+    /**
+     * @brief Constructs a BudgetExceededException with an explicit message.
+     * @param[in] message Custom diagnostic explanation.
+     */
+    explicit BudgetExceededException(const std::string& message)
+        : std::runtime_error(message), m_visits(0), m_maxAllowed(0)
+    {
+    }
+
+    /**
+     * @brief Returns total visits attempted.
+     * @return Number of node visits.
+     */
+    [[nodiscard]] size_t GetVisits() const noexcept
+    {
+        return m_visits;
+    }
+
+    /**
+     * @brief Returns maximum allowed visits under the budget.
+     * @return Budget ceiling.
+     */
+    [[nodiscard]] size_t GetMaxAllowed() const noexcept
+    {
+        return m_maxAllowed;
+    }
+
+  private:
+    size_t m_visits = 0;
+    size_t m_maxAllowed = 0;
+};
+
+/**
+ * @brief Enforces an $O(N)$ iteration ceiling on AST node traversals relative to named nodes.
+ *
+ * Exceeding 3 * M_nodes throws BudgetExceededException to ensure checkers maintain linear complexity.
+ */
+class TraversalBudget
+{
+  public:
+    /**
+     * @brief Default constructor creating an unconstrained budget.
+     */
+    TraversalBudget() = default;
+
+    /**
+     * @brief Constructs a budget tied to named node count with a multiplier.
+     * @param[in] namedNodeCount Total named nodes in the syntax tree ($M_{nodes}$).
+     * @param[in] multiplier Visit multiplier relative to named nodes (defaults to 3.0).
+     */
+    explicit TraversalBudget(size_t namedNodeCount, double multiplier = 3.0)
+        : m_namedNodeCount(namedNodeCount),
+          m_maxAllowed(static_cast<size_t>(static_cast<double>(namedNodeCount) * multiplier)),
+          m_currentVisits(0)
+    {
+    }
+
+    /**
+     * @brief Constructs a budget directly from an AST root node.
+     * @param[in] root Root node of the AST.
+     * @param[in] multiplier Visit multiplier relative to named nodes (defaults to 3.0).
+     */
+    explicit TraversalBudget(TSNode root, double multiplier = 3.0)
+        : TraversalBudget(CountNamedNodes(root), multiplier)
+    {
+    }
+
+    /**
+     * @brief Records a batch of AST node visits and enforces the budget ceiling.
+     * @param[in] count Number of visits to record.
+     * @throws BudgetExceededException if current visits exceed maxAllowed.
+     */
+    void RecordVisit(size_t count = 1)
+    {
+        m_currentVisits += count;
+        if (m_maxAllowed > 0 && m_currentVisits > m_maxAllowed)
+        {
+            throw BudgetExceededException(m_currentVisits, m_maxAllowed);
+        }
+    }
+
+    /**
+     * @brief Records a single AST node visit and enforces the budget ceiling.
+     * @param[in] node AST node visited.
+     * @note Silences unused node parameter while fulfilling the AST visit contract.
+     * @throws BudgetExceededException if current visits exceed maxAllowed.
+     */
+    void RecordVisit([[maybe_unused]] TSNode node)
+    {
+        RecordVisit(1);
+    }
+
+    /**
+     * @brief Returns current accumulated node visits.
+     * @return Accumulated visit count.
+     */
+    [[nodiscard]] size_t GetCurrentVisits() const noexcept
+    {
+        return m_currentVisits;
+    }
+
+    /**
+     * @brief Returns the maximum visits permitted under this budget.
+     * @return Maximum allowed visits.
+     */
+    [[nodiscard]] size_t GetMaxAllowed() const noexcept
+    {
+        return m_maxAllowed;
+    }
+
+    /**
+     * @brief Returns the named node count ($M_{nodes}$) used to configure the budget.
+     * @return Named node count.
+     */
+    [[nodiscard]] size_t GetNamedNodeCount() const noexcept
+    {
+        return m_namedNodeCount;
+    }
+
+    /**
+     * @brief Checks if the budget has been exceeded without throwing.
+     * @return True if visits exceed maximum allowed.
+     */
+    [[nodiscard]] bool IsExceeded() const noexcept
+    {
+        return m_maxAllowed > 0 && m_currentVisits > m_maxAllowed;
+    }
+
+    /**
+     * @brief Resets current visits to zero while keeping the budget ceiling.
+     */
+    void Reset() noexcept
+    {
+        m_currentVisits = 0;
+    }
+
+    /**
+     * @brief Configures budget ceiling from a new AST root node.
+     * @param[in] root The AST root node.
+     * @param[in] multiplier Visit multiplier relative to named nodes.
+     */
+    void SetRoot(TSNode root, double multiplier = 3.0)
+    {
+        m_namedNodeCount = CountNamedNodes(root);
+        m_maxAllowed = static_cast<size_t>(static_cast<double>(m_namedNodeCount) * multiplier);
+        m_currentVisits = 0;
+    }
+
+  private:
+    size_t m_namedNodeCount = 0;
+    size_t m_maxAllowed = 0;
+    size_t m_currentVisits = 0;
+};
 } // namespace angel_lsp::analysis
+

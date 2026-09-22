@@ -439,6 +439,7 @@ void SymbolTable::ReplaceDocumentSymbols(const std::string& fileUri, SymbolTable
 std::unique_ptr<SymbolTable> SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr,
                                                                  const SymbolTable& staging) const
 {
+    IncrementTableCloneCount();
     auto snapshot = std::make_unique<SymbolTable>();
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);

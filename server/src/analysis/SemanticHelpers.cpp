@@ -68,7 +68,7 @@ bool IsKeyword(std::string_view word) noexcept
     return parser::keywords::IsKeyword(word);
 }
 
-bool IsPrimitiveTypeName(const std::string& name)
+bool IsPrimitiveTypeName(std::string_view name)
 {
     return IsCorePrimitive(name);
 }
