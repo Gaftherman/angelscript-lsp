@@ -1,4 +1,6 @@
 #include <doctest/doctest.h>
+#include "helpers/TestUtils.h"
+#include <random>
 
 #include "features/signature_help/SignatureHelpHandler.h"
 #include "analysis/SymbolCollector.h"
@@ -14,6 +16,29 @@ using namespace angel_lsp::parser;
 
 namespace
 {
+    struct SourcePos
+    {
+        uint32_t line = 0;
+        uint32_t character = 0;
+    };
+
+    SourcePos FindPos(const std::string& source, const std::string& needle, size_t startAt = 0)
+    {
+        size_t pos = source.find(needle, startAt);
+        if (pos == std::string::npos) return {0, 0};
+        uint32_t line = 0;
+        size_t lineStart = 0;
+        for (size_t i = 0; i < pos; ++i)
+        {
+            if (source[i] == '\n')
+            {
+                ++line;
+                lineStart = i + 1;
+            }
+        }
+        return {line, static_cast<uint32_t>(pos - lineStart)};
+    }
+
     struct TestEnvironment
     {
         AngelScriptParser parser;
@@ -171,4 +196,36 @@ TEST_CASE("SignatureHelpHandler - The bracket spelling of an array resolves the 
     REQUIRE(help.has_value());
     REQUIRE_FALSE(help->signatures.empty());
     CHECK(help->signatures[0].label.find("insertLast") != std::string::npos);
+}
+
+TEST_CASE("SignatureHelpHandler - Invariant: Active parameter index tracks comma positions")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "MultiParamFunc");
+    const std::string code =
+        "void " + fnName + "(int a, float b, string c) {}\n"
+        "void main() {\n"
+        "    " + fnName + "(10, 20.0f, \"text\");\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const size_t callLineStart = code.find(fnName + "(10");
+
+    auto posArg0 = FindPos(code, "10", callLineStart);
+    auto help0 = env.SigHelpAt(posArg0.line, posArg0.character);
+    REQUIRE(help0.has_value());
+    REQUIRE(help0->activeParameter.has_value());
+    CHECK(help0->activeParameter.value().value() == 0u);
+
+    auto posArg1 = FindPos(code, "20.0f", callLineStart);
+    auto help1 = env.SigHelpAt(posArg1.line, posArg1.character);
+    REQUIRE(help1.has_value());
+    REQUIRE(help1->activeParameter.has_value());
+    CHECK(help1->activeParameter.value().value() == 1u);
+
+    auto posArg2 = FindPos(code, "\"text\"", callLineStart);
+    auto help2 = env.SigHelpAt(posArg2.line, posArg2.character);
+    REQUIRE(help2.has_value());
+    REQUIRE(help2->activeParameter.has_value());
+    CHECK(help2->activeParameter.value().value() == 2u);
 }

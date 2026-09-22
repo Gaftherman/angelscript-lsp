@@ -8,6 +8,9 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "parser/AngelScriptParser.h"
 
+#include "helpers/TestUtils.h"
+#include <random>
+
 using namespace angel_lsp;
 using namespace angel_lsp::features;
 using namespace angel_lsp::analysis;
@@ -15,6 +18,29 @@ using namespace angel_lsp::parser;
 
 namespace
 {
+    struct SourcePos
+    {
+        uint32_t line = 0;
+        uint32_t character = 0;
+    };
+
+    SourcePos FindPos(const std::string& source, const std::string& needle, size_t startAt = 0)
+    {
+        size_t pos = source.find(needle, startAt);
+        if (pos == std::string::npos) return {0, 0};
+        uint32_t line = 0;
+        size_t lineStart = 0;
+        for (size_t i = 0; i < pos; ++i)
+        {
+            if (source[i] == '\n')
+            {
+                ++line;
+                lineStart = i + 1;
+            }
+        }
+        return {line, static_cast<uint32_t>(pos - lineStart)};
+    }
+
     struct TestEnvironment
     {
         AngelScriptParser parser;
@@ -65,50 +91,101 @@ namespace
 
 TEST_CASE("DefinitionHandler - Go to Definition for Local Variable and Parameter")
 {
+    std::mt19937_64 rng(0x1337BEEF);
+    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Test");
+    const std::string paramName = angel_lsp::test::GenerateIdentifier(rng, "paramA");
+    const std::string localVar = angel_lsp::test::GenerateIdentifier(rng, "localB");
+
     std::string code = 
-        "void Test(int paramA) {\n"
-        "    int localB = 100;\n"
-        "    int x = paramA + localB;\n"
+        "void " + fnName + "(int " + paramName + ") {\n"
+        "    int " + localVar + " = 100;\n"
+        "    int x = " + paramName + " + " + localVar + ";\n"
         "}\n";
 
     TestEnvironment env(code);
 
-    // Go to def of paramA on line 2
-    auto defParam = env.DefAt(2, 13);
+    const SourcePos paramDeclPos = FindPos(code, paramName);
+    const SourcePos paramUsePos = FindPos(code, paramName, code.find("int x ="));
+    auto defParam = env.DefAt(paramUsePos.line, paramUsePos.character);
     REQUIRE(defParam.has_value());
     REQUIRE(defParam->size() == 1);
-    CHECK((*defParam)[0].range.start.line == 0);
+    CHECK((*defParam)[0].range.start.line == paramDeclPos.line);
+    CHECK((*defParam)[0].range.start.character <= paramDeclPos.character);
+    CHECK((*defParam)[0].range.end.character >= paramDeclPos.character + paramName.size());
 
-    // Go to def of localB on line 2
-    auto defVar = env.DefAt(2, 22);
+    const SourcePos varDeclPos = FindPos(code, localVar);
+    const SourcePos varUsePos = FindPos(code, localVar, code.find("int x ="));
+    auto defVar = env.DefAt(varUsePos.line, varUsePos.character);
     REQUIRE(defVar.has_value());
     REQUIRE(defVar->size() == 1);
-    CHECK((*defVar)[0].range.start.line == 1);
+    CHECK((*defVar)[0].range.start.line == varDeclPos.line);
+    CHECK((*defVar)[0].range.start.character <= varDeclPos.character);
+    CHECK((*defVar)[0].range.end.character >= varDeclPos.character + localVar.size());
 }
 
 TEST_CASE("DefinitionHandler - Go to Definition for Global Functions and Classes")
 {
+    std::mt19937_64 rng(0x1337BEF0);
+    const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "TargetClass");
+    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "TargetFunc");
+
     std::string code = 
-        "class TargetClass {}\n"
-        "void TargetFunc() {}\n"
+        "class " + clsName + " {}\n"
+        "void " + fnName + "() {}\n"
         "void main() {\n"
-        "    TargetClass tc;\n"
-        "    TargetFunc();\n"
+        "    " + clsName + " tc;\n"
+        "    " + fnName + "();\n"
         "}\n";
 
     TestEnvironment env(code);
 
-    // Go to def of TargetClass on line 3
-    auto defClass = env.DefAt(3, 5);
+    const SourcePos clsDeclPos = FindPos(code, clsName);
+    const SourcePos clsUsePos = FindPos(code, clsName, code.find("void main"));
+    auto defClass = env.DefAt(clsUsePos.line, clsUsePos.character);
     REQUIRE(defClass.has_value());
     REQUIRE(defClass->size() == 1);
-    CHECK((*defClass)[0].range.start.line == 0);
+    CHECK((*defClass)[0].range.start.line == clsDeclPos.line);
+    CHECK((*defClass)[0].range.start.character <= clsDeclPos.character);
+    CHECK((*defClass)[0].range.end.character >= clsDeclPos.character + clsName.size());
 
-    // Go to def of TargetFunc on line 4
-    auto defFunc = env.DefAt(4, 5);
+    const SourcePos fnDeclPos = FindPos(code, fnName);
+    const SourcePos fnUsePos = FindPos(code, fnName, code.find("void main"));
+    auto defFunc = env.DefAt(fnUsePos.line, fnUsePos.character);
     REQUIRE(defFunc.has_value());
     REQUIRE(defFunc->size() == 1);
-    CHECK((*defFunc)[0].range.start.line == 1);
+    CHECK((*defFunc)[0].range.start.line == fnDeclPos.line);
+    CHECK((*defFunc)[0].range.start.character <= fnDeclPos.character);
+    CHECK((*defFunc)[0].range.end.character >= fnDeclPos.character + fnName.size());
+}
+
+TEST_CASE("DefinitionHandler - Invariant: Definition coordinates resilient to randomized padding and symbol names")
+{
+    std::mt19937_64 rng(0x1337BEF1);
+    const std::string pad1 = angel_lsp::test::GenerateRandomPadding(rng);
+    const std::string pad2 = angel_lsp::test::GenerateRandomPadding(rng);
+    const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "Class");
+    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Func");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "var");
+
+    std::string code =
+        pad1 +
+        "class " + clsName + " {}\n" +
+        pad2 +
+        "void " + fnName + "() {\n" +
+        "    " + clsName + " " + varName + ";\n" +
+        "}\n";
+
+    TestEnvironment env(code);
+
+    const SourcePos declPos = FindPos(code, clsName);
+    const SourcePos usePos = FindPos(code, clsName, code.find("void " + fnName));
+
+    auto defClass = env.DefAt(usePos.line, usePos.character);
+    REQUIRE(defClass.has_value());
+    REQUIRE(defClass->size() == 1);
+    CHECK((*defClass)[0].range.start.line == declPos.line);
+    CHECK((*defClass)[0].range.start.character <= declPos.character);
+    CHECK((*defClass)[0].range.end.character >= declPos.character + clsName.size());
 }
 
 TEST_CASE("DefinitionHandler - Go to Definition for Class Member Access")

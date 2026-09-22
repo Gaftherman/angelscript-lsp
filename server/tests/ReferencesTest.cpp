@@ -1,6 +1,7 @@
-#include <iostream>
 #include <string>
+#include <random>
 #include <doctest/doctest.h>
+#include "helpers/TestUtils.h"
 
 #include "features/references/ReferencesHandler.h"
 #include "analysis/SymbolCollector.h"
@@ -609,5 +610,29 @@ TEST_CASE("ReferencesHandler - Sibling Method Isolation on Overridden Virtual Ho
     }
     CHECK((*refsA)[0].range.start.line == 1);
     CHECK((*refsA)[1].range.start.line == 3);
+}
+
+TEST_CASE("ReferencesHandler - Invariant: N reference expressions yield exactly N references")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "targetVar");
+    const size_t N = 8;
+
+    std::string code = "void Runner() {\n";
+    code += "    int " + varName + " = 0;\n";
+    for (size_t i = 0; i < N; ++i)
+    {
+        code += "    " + varName + " += " + std::to_string(i + 1) + ";\n";
+    }
+    code += "}\n";
+
+    TestEnvironment env(code);
+    auto refsWithDecl = env.RefsAt(1, 8, true);
+    REQUIRE(refsWithDecl.has_value());
+    CHECK(refsWithDecl->size() == N + 1);
+
+    auto refsWithoutDecl = env.RefsAt(1, 8, false);
+    REQUIRE(refsWithoutDecl.has_value());
+    CHECK(refsWithoutDecl->size() == N);
 }
 

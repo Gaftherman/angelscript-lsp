@@ -778,22 +778,28 @@ TEST_CASE("CompletionHandler - A host with accessors switched off is offered non
 
 namespace
 {
+struct IncludeCompleteTarget
+{
+    std::string code;
+    std::string documentPath;
+    std::vector<std::string> workspaceFiles;
+};
+
 /** @brief Completes inside a document at a position, against a fixed list of workspace files. */
-std::vector<lsp::CompletionItem> CompleteIncludeAt(const std::string& code, const std::string& documentPath,
-                                                   const std::vector<std::string>& workspaceFiles, uint32_t line,
-                                                   uint32_t character, const std::string& implicitExtension = "")
+std::vector<lsp::CompletionItem> CompleteIncludeAt(const IncludeCompleteTarget& target, lsp::Position pos,
+                                                   const std::string& implicitExtension = "")
 {
     AngelScriptParser parser;
-    TSTree* tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(target.code);
 
     SymbolTable table;
     ScopeIndex scopes;
     const std::string uri = "file:///main.as";
 
-    CompletionRequest request{uri, code, tree, table, scopes, lsp::Position{line, character}, nullptr, false};
-    request.documentPath = documentPath;
+    CompletionRequest request{uri, target.code, tree, table, scopes, pos, nullptr, false};
+    request.documentPath = target.documentPath;
     request.implicitExtension = implicitExtension;
-    request.listIncludeCandidates = [&workspaceFiles]() { return workspaceFiles; };
+    request.listIncludeCandidates = [&target]() { return target.workspaceFiles; };
 
     auto items = GetCompletion(request);
     ts_tree_delete(tree);
@@ -833,7 +839,7 @@ TEST_CASE("Completion - An empty include offers the workspace's scripts")
     const IncludeFixture fixture;
     const std::string code = "#include \"\"\n";
 
-    const auto items = CompleteIncludeAt(code, fixture.Main(), fixture.Files(), 0, 10);
+    const auto items = CompleteIncludeAt({code, fixture.Main(), fixture.Files()}, {0, 10});
 
     const auto labels = LabelsOf(items);
     INFO("labels: " << labels.size());
@@ -849,7 +855,7 @@ TEST_CASE("Completion - An empty include offers the workspace's scripts")
 TEST_CASE("Completion - A file does not offer to include itself")
 {
     const IncludeFixture fixture;
-    const auto items = CompleteIncludeAt("#include \"\"\n", fixture.Main(), fixture.Files(), 0, 10);
+    const auto items = CompleteIncludeAt({"#include \"\"\n", fixture.Main(), fixture.Files()}, {0, 10});
 
     for (const auto& item : items)
     {
@@ -865,7 +871,7 @@ TEST_CASE("Completion - An include item replaces what was typed rather than appe
     const IncludeFixture fixture;
     const std::string code = "#include \"ano\"\n";
 
-    const auto items = CompleteIncludeAt(code, fixture.Main(), fixture.Files(), 0, 13);
+    const auto items = CompleteIncludeAt({code, fixture.Main(), fixture.Files()}, {0, 13});
 
     const auto found = std::find_if(items.begin(), items.end(),
                                     [](const lsp::CompletionItem& item) { return item.label == "../anotherfile.as"; });
@@ -884,7 +890,7 @@ TEST_CASE("Completion - With an implicit extension the inserted path leaves it o
     // correct form there and the long one would not open. See ServerConfig::implicitIncludeExtension.
     const IncludeFixture fixture;
 
-    const auto items = CompleteIncludeAt("#include \"\"\n", fixture.Main(), fixture.Files(), 0, 10, ".as");
+    const auto items = CompleteIncludeAt({"#include \"\"\n", fixture.Main(), fixture.Files()}, {0, 10}, ".as");
 
     const auto labels = LabelsOf(items);
     CHECK(std::find(labels.begin(), labels.end(), "path/file") != labels.end());
@@ -898,7 +904,7 @@ TEST_CASE("Completion - A spaced directive is not an include")
     // would offer help with a line the analyzer is calling an error one pass away.
     const IncludeFixture fixture;
 
-    const auto items = CompleteIncludeAt("# include \"\"\n", fixture.Main(), fixture.Files(), 0, 11);
+    const auto items = CompleteIncludeAt({"# include \"\"\n", fixture.Main(), fixture.Files()}, {0, 11});
 
     CHECK(items.empty());
 }
@@ -910,7 +916,7 @@ TEST_CASE("Completion - An ordinary string literal still offers nothing")
     // every string in the language.
     const IncludeFixture fixture;
 
-    const auto items = CompleteIncludeAt("string s = \"\";\n", fixture.Main(), fixture.Files(), 0, 12);
+    const auto items = CompleteIncludeAt({"string s = \"\";\n", fixture.Main(), fixture.Files()}, {0, 12});
 
     CHECK(items.empty());
 }
@@ -1163,4 +1169,62 @@ TEST_CASE("Completion - Module symbols populated via findModuleSymbols callback"
     const auto* found = FindItemOfKind(items, modName, lsp::CompletionItemKind::Module);
     REQUIRE(found != nullptr);
     CHECK(found->label == modName);
+}
+
+TEST_CASE("Completion - Invariant: Prefix filtering returns 100% matching and 0% non-matching symbols")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    const std::string matchPrefix = angel_lsp::test::GenerateIdentifier(rng, "MatchPref");
+    const std::string otherPrefix = angel_lsp::test::GenerateIdentifier(rng, "OtherPref");
+
+    std::vector<std::string> matchingSymbols;
+    std::vector<std::string> nonMatchingSymbols;
+    std::string decls;
+
+    for (int i = 0; i < 3; ++i)
+    {
+        std::string mSym = matchPrefix + "_" + angel_lsp::test::GenerateIdentifier(rng, "fn");
+        std::string oSym = otherPrefix + "_" + angel_lsp::test::GenerateIdentifier(rng, "fn");
+        matchingSymbols.push_back(mSym);
+        nonMatchingSymbols.push_back(oSym);
+        decls += "void " + mSym + "() {}\n";
+        decls += "void " + oSym + "() {}\n";
+    }
+
+    std::string code = "void Main() {\n    " + matchPrefix + "\n}\n";
+    TestEnvironment env(code);
+
+    AngelScriptParser extParser;
+    SymbolCollector extCollector(nullptr);
+    extCollector.CollectSymbols("file:///external.as", decls, extParser, env.symbolTable);
+
+    size_t prefPos = code.rfind(matchPrefix);
+    REQUIRE(prefPos != std::string::npos);
+    prefPos += matchPrefix.size();
+
+    uint32_t line = 0;
+    uint32_t col = 0;
+    for (size_t i = 0; i < prefPos; ++i)
+    {
+        if (code[i] == '\n')
+        {
+            line++;
+            col = 0;
+        }
+        else
+        {
+            col++;
+        }
+    }
+
+    auto items = env.CompleteAt(line, col);
+
+    for (const auto& sym : matchingSymbols)
+    {
+        CHECK(HasItem(items, sym));
+    }
+    for (const auto& sym : nonMatchingSymbols)
+    {
+        CHECK_FALSE(HasItem(items, sym));
+    }
 }

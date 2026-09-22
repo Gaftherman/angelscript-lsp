@@ -1,4 +1,6 @@
 #include <doctest/doctest.h>
+#include "helpers/TestUtils.h"
+#include <random>
 
 #include "features/references/ReferencesHandler.h"
 #include "features/rename/RenameHandler.h"
@@ -296,3 +298,21 @@ TEST_CASE("Rename and references agree where a local shadows a member")
 
     RequireAgreement(env, "file:///shadow.as");
 }
+
+TEST_CASE("Rename and references agree on randomized identifiers across multiple scopes")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Compute");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "accum");
+
+    ParityEnv env;
+    std::string code =
+        "int " + fnName + "(int " + varName + ")\n"
+        "{\n"
+        "    " + varName + " = " + varName + " * 2;\n"
+        "    return " + varName + ";\n"
+        "}\n";
+    env.AddFile("file:///fuzz_parity.as", code);
+    RequireAgreement(env, "file:///fuzz_parity.as");
+}
+

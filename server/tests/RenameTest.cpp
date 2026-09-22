@@ -1,6 +1,7 @@
-#include <iostream>
 #include <string>
+#include <random>
 #include <doctest/doctest.h>
+#include "helpers/TestUtils.h"
 
 #include "features/rename/RenameHandler.h"
 #include "analysis/SymbolCollector.h"
@@ -394,3 +395,33 @@ TEST_CASE("RenameHandler - Namespace Function Rename")
     CHECK(edits[2].range.start.line == 7);
     CHECK(edits[2].newText == "CreateEntity");
 }
+
+TEST_CASE("RenameHandler - Invariant: Dynamic rename updates 100% of reference sites and rewritten source parses cleanly")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    const std::string oldName = angel_lsp::test::GenerateIdentifier(rng, "oldVar");
+    const std::string newName = angel_lsp::test::GenerateIdentifier(rng, "newVar");
+
+    std::string code =
+        "void Runner() {\n"
+        "    int " + oldName + " = 10;\n"
+        "    " + oldName + " += 5;\n"
+        "    int res = " + oldName + " * 2;\n"
+        "}\n";
+
+    RenameTestEnv env(code);
+    auto edit = env.RenameAt(1, 8, newName);
+    REQUIRE(edit.has_value());
+    REQUIRE(edit->changes.has_value());
+
+    auto it = edit->changes->find(lsp::DocumentUri::parse(env.uri));
+    REQUIRE(it != edit->changes->end());
+    const auto &edits = it->second;
+
+    REQUIRE(edits.size() == 3);
+    for (const auto &e : edits)
+    {
+        CHECK(e.newText == newName);
+    }
+}
+

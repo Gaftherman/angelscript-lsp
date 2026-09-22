@@ -1,4 +1,6 @@
 #include <doctest/doctest.h>
+#include "helpers/TestUtils.h"
+#include <random>
 
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
 #include "analysis/SymbolCollector.h"
@@ -378,4 +380,29 @@ TEST_CASE("TypeHierarchy - Supertypes isolates bases of same-named types across 
     REQUIRE(supertypes2.has_value());
     CHECK(supertypes2->size() == 1);
     CHECK((*supertypes2)[0].name == "Base2");
+}
+
+TEST_CASE("TypeHierarchy - Invariant: Dynamic inheritance supertypes and subtypes")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    const std::string baseName = angel_lsp::test::GenerateIdentifier(rng, "Base");
+    const std::string derivedName = angel_lsp::test::GenerateIdentifier(rng, "Derived");
+
+    std::string code =
+        "class " + baseName + " { }\n" +
+        "class " + derivedName + " : " + baseName + " { }\n";
+
+    Fixture fixture(code);
+    const auto items = fixture.Prepare(1, 8);
+    REQUIRE(items.has_value());
+    REQUIRE(items->size() == 1);
+    CHECK((*items)[0].name == derivedName);
+
+    const auto supers = fixture.Supertypes((*items)[0]);
+    CHECK(HasName(supers, baseName));
+
+    const auto baseItems = fixture.Prepare(0, 8);
+    REQUIRE(baseItems.has_value());
+    const auto subs = fixture.Subtypes((*baseItems)[0]);
+    CHECK(HasName(subs, derivedName));
 }
