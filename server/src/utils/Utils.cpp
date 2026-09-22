@@ -404,4 +404,30 @@ bool IsExcludedDirectory(std::string_view path, const std::vector<std::string>& 
                            return !trimmed.empty() && MatchesGlob(path, trimmed);
                        });
 }
+
+bool IsWithinDirectory(const std::filesystem::path& root, const std::filesystem::path& target)
+{
+    std::error_code ec;
+    std::filesystem::path canonicalRoot = std::filesystem::canonical(root, ec);
+    if (ec)
+    {
+        canonicalRoot = std::filesystem::weakly_canonical(root, ec);
+        if (ec)
+        {
+            return false;
+        }
+    }
+
+    const std::filesystem::path canonicalTarget = std::filesystem::weakly_canonical(target, ec);
+    if (ec)
+    {
+        return false;
+    }
+
+    auto [rootMismatch, targetMismatch] = std::mismatch(
+        canonicalRoot.begin(), canonicalRoot.end(),
+        canonicalTarget.begin(), canonicalTarget.end());
+
+    return rootMismatch == canonicalRoot.end();
+}
 } // namespace angel_lsp::utils

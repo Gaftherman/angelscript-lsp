@@ -5,6 +5,7 @@
 #include "helpers/TestUtils.h"
 #include "lsp/Server.h"
 #include "utils/IncludeResolver.h"
+#include "utils/Utils.h"
 
 #include <chrono>
 #include <cstdint>
@@ -182,5 +183,33 @@ TEST_CASE("Security - SEC-03 JSON-RPC Transport Header Fuzzing Invariant")
             Server server(config, stream);
             server.Run();
         });
+    }
+}
+
+TEST_CASE("Security - SEC-01 Canonical Workspace Containment Invariant")
+{
+    SandboxGuard sandbox;
+    const std::string validDir = test::GenerateRandomSymbolName("vdir");
+    const std::string validFile = test::GenerateRandomSymbolName("vscript") + ".as";
+    const std::string fullPath = sandbox.WriteFile(validDir + "/" + validFile, "void run() {}\n");
+
+    std::mt19937_64 rng(std::random_device{}());
+
+    // Valid file within workspace
+    auto resValid = IncludeResolver::resolveInclude(sandbox.root, fullPath, validFile);
+    CHECK(!resValid.empty());
+    CHECK(utils::IsWithinDirectory(sandbox.root, resValid));
+
+    for (int iter = 0; iter < 100; ++iter)
+    {
+        const std::string attack = GenerateFuzzedPath(rng, validDir, validFile);
+        auto resolved = IncludeResolver::resolveInclude(sandbox.root, fullPath, attack);
+        if (!resolved.empty())
+        {
+            CHECK(utils::IsWithinDirectory(sandbox.root, resolved));
+            std::error_code ec;
+            CHECK(std::filesystem::exists(resolved, ec));
+            CHECK(std::filesystem::is_regular_file(resolved, ec));
+        }
     }
 }

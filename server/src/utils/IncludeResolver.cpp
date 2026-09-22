@@ -726,4 +726,50 @@ std::vector<std::string> IncludeResolver::ResolveAllIncludes(std::string_view ro
 
     return resolvedFiles;
 }
+
+std::filesystem::path IncludeResolver::resolveInclude(const std::filesystem::path& workspaceRoot,
+                                                      const std::filesystem::path& currentFilePath,
+                                                      std::string_view includePath)
+{
+    if (includePath.empty())
+    {
+        return {};
+    }
+
+    const std::filesystem::path inc(includePath);
+    const std::filesystem::path target = inc.is_absolute() ? inc : (currentFilePath.parent_path() / inc);
+
+    std::error_code ec;
+    const std::filesystem::path canonicalTarget = std::filesystem::weakly_canonical(target, ec);
+    if (ec)
+    {
+        return {};
+    }
+
+    std::filesystem::path canonicalRoot = std::filesystem::canonical(workspaceRoot, ec);
+    if (ec)
+    {
+        canonicalRoot = std::filesystem::weakly_canonical(workspaceRoot, ec);
+        if (ec)
+        {
+            return {};
+        }
+    }
+
+    auto [rootMismatch, targetMismatch] = std::mismatch(
+        canonicalRoot.begin(), canonicalRoot.end(),
+        canonicalTarget.begin(), canonicalTarget.end());
+
+    if (rootMismatch != canonicalRoot.end())
+    {
+        return {};
+    }
+
+    if (!std::filesystem::is_regular_file(canonicalTarget, ec) || ec)
+    {
+        return {};
+    }
+
+    return canonicalTarget;
+}
 } // namespace angel_lsp::utils

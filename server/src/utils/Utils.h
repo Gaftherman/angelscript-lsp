@@ -107,4 +107,12 @@ bool IsExcludedDirectory(std::string_view path, const std::vector<std::string>& 
  * @return True if the type is a standard AngelScript primitive type; otherwise false.
  */
 bool IsPrimitiveType(const std::string& typeName);
+
+/**
+ * @brief Checks whether a target path is strictly contained within a root directory.
+ * @param[in] root Root directory path.
+ * @param[in] target Target path to test for containment.
+ * @return True if target is contained within root, false otherwise.
+ */
+bool IsWithinDirectory(const std::filesystem::path& root, const std::filesystem::path& target);
 } // namespace angel_lsp::utils

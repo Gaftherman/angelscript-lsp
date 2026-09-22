@@ -154,6 +154,17 @@ class IncludeResolver
                                           const std::vector<std::string>& allowedRoots = {});
 
     /**
+     * @brief Resolves an include directive path strictly contained within the workspace root.
+     * @param[in] workspaceRoot The root directory of the workspace.
+     * @param[in] currentFilePath The absolute path of the file containing the include.
+     * @param[in] includePath The raw include path string from the directive.
+     * @return The canonical path if valid and contained within workspace, otherwise an empty path.
+     */
+    static std::filesystem::path resolveInclude(const std::filesystem::path& workspaceRoot,
+                                                const std::filesystem::path& currentFilePath,
+                                                std::string_view includePath);
+
+    /**
      * @brief Recursively discovers all resolved include files starting from rootFilePath.
      *        Guards against cyclic dependencies and diamond include patterns using visited tracking.
      * @param rootFilePath The entry-point file path to start resolution from.
@@ -168,3 +179,8 @@ class IncludeResolver
                        const std::vector<std::string>& allowedRoots = {});
 };
 } // namespace angel_lsp::utils
+
+namespace angel_lsp
+{
+using utils::IncludeResolver;
+} // namespace angel_lsp
