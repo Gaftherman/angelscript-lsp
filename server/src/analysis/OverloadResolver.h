@@ -2,7 +2,10 @@
 
 #include "analysis/SymbolTable.h"
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -77,6 +80,56 @@ struct OverloadMatchResult
     std::vector<int> bestCostVector;             ///< Argument conversion penalty vector of best candidate
     bool isAmbiguous = false;                    ///< True if two or more candidates tied for best score
     std::vector<const Symbol*> viableCandidates; ///< All viable candidates with finite penalty scores
+};
+
+using FunctionSymbol = Symbol;
+
+/**
+ * @brief Arity-partitioned overload index for O(1) candidate lookup.
+ */
+class OverloadResolver
+{
+  public:
+    OverloadResolver() = default;
+
+    /**
+     * @brief Indexes a function candidate by its name and parameter count.
+     * @param[in] sym The function symbol to index.
+     */
+    void addFunction(const FunctionSymbol& sym);
+
+    /**
+     * @brief Populates index from a collection of candidate symbols.
+     * @param[in] symbols Candidate symbol collection.
+     */
+    void indexCandidates(std::span<const FunctionSymbol> symbols);
+
+    /**
+     * @brief Clears all indexed functions.
+     */
+    void clear();
+
+    /**
+     * @brief Finds candidates matching the given name and parameter count in O(1).
+     * @param[in] name Function identifier.
+     * @param[in] argCount Parameter count.
+     * @return Span of matching candidate symbols.
+     */
+    [[nodiscard]] std::span<const FunctionSymbol> findCandidates(std::string_view name, size_t argCount) const;
+
+    /**
+     * @brief Direct accessor to the internal function index map.
+     * @return Const reference to internal map.
+     */
+    [[nodiscard]] const std::unordered_map<std::string, std::unordered_map<size_t, std::vector<FunctionSymbol>>>&
+    getFunctionIndex() const
+    {
+        return functionIndex_;
+    }
+
+  private:
+    // Key: Function Identifier -> Map: Parameter Arity -> List of Candidates
+    std::unordered_map<std::string, std::unordered_map<size_t, std::vector<FunctionSymbol>>> functionIndex_;
 };
 
 /**

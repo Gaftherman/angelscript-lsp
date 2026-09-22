@@ -910,6 +910,42 @@ int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& p
     return ScoreConversionMatch(ctx);
 }
 
+void OverloadResolver::addFunction(const FunctionSymbol& sym)
+{
+    if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+    {
+        const auto& sig = sym.GetFunction();
+        functionIndex_[sym.name][sig.parameters.size()].push_back(sym);
+    }
+}
+
+void OverloadResolver::indexCandidates(std::span<const FunctionSymbol> symbols)
+{
+    for (const auto& sym : symbols)
+    {
+        addFunction(sym);
+    }
+}
+
+void OverloadResolver::clear()
+{
+    functionIndex_.clear();
+}
+
+std::span<const FunctionSymbol> OverloadResolver::findCandidates(std::string_view name, size_t argCount) const
+{
+    auto itName = functionIndex_.find(std::string(name));
+    if (itName != functionIndex_.end())
+    {
+        auto itArity = itName->second.find(argCount);
+        if (itArity != itName->second.end())
+        {
+            return itArity->second;
+        }
+    }
+    return {};
+}
+
 OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable)
 {

@@ -266,3 +266,44 @@ TEST_CASE("Overload resolution - Explicit int32/uint32 spellings rank like int/u
         CHECK(d.code != "as-err-call-ambiguous");
     }
 }
+
+TEST_CASE("Overload resolution - PERF-01 Arity Hash Bucket Indexing Invariant")
+{
+    angel_lsp::analysis::OverloadResolver resolver;
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("func");
+
+    std::vector<Symbol> symbols;
+    for (size_t arity = 0; arity < 5; ++arity)
+    {
+        Symbol sym;
+        sym.name = fnName;
+        sym.type = SymbolType::Function;
+        FunctionSignature sig;
+        for (size_t p = 0; p < arity; ++p)
+        {
+            ParameterInformation param;
+            param.name = "p" + std::to_string(p);
+            param.typeName = "int";
+            sig.parameters.push_back(std::move(param));
+        }
+        sym.signature = sig;
+        symbols.push_back(sym);
+        resolver.addFunction(sym);
+    }
+
+    for (size_t arity = 0; arity < 5; ++arity)
+    {
+        auto candidates = resolver.findCandidates(fnName, arity);
+        REQUIRE(candidates.size() == 1);
+        CHECK(candidates.front().name == fnName);
+        CHECK(candidates.front().GetFunction().parameters.size() == arity);
+    }
+
+    // Non-existent arity
+    auto noCandidates = resolver.findCandidates(fnName, 99);
+    CHECK(noCandidates.empty());
+
+    // Non-existent name
+    auto wrongName = resolver.findCandidates("NonExistent", 0);
+    CHECK(wrongName.empty());
+}
