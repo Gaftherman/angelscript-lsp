@@ -725,6 +725,8 @@ class Server
      */
     void ParserPredefined(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
                           bool forceReload = false);
+    void ParserPredefinedInternal(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
+                                  bool forceReload, std::unordered_set<std::string>& visited);
 
     /**
      * @brief Marks whether predefined stubs and engine profiles are ready for document analysis.
@@ -1029,6 +1031,10 @@ class Server
     // chosen. Empty while every discovered stub is being merged, which is what the picker shows
     // as "all". Guarded by m_runtimeConfigMutex, like the list above it.
     std::string m_effectivePredefined;
+
+    // Transitive #include paths discovered inside contributing predefined stubs.
+    // Guarded by m_runtimeConfigMutex.
+    ankerl::unordered_dense::set<std::string> m_predefinedTransitiveIncludes;
 
     /**
      * @brief True when the client asked for diagnostics with textDocument/diagnostic.
@@ -1750,6 +1756,17 @@ class Server
         return m_formatBraceStyleKR.load(std::memory_order_relaxed) ? features::BraceStyle::KAndR
                                                                     : features::BraceStyle::Allman;
     }
+
+    /**
+     * @brief Computes the module closure paths for an open document path.
+     *
+     * Considers entry-point forward scoping if configured, otherwise falls back
+     * to full module closure, and appends any forced includes and their closures.
+     *
+     * @param[in] openPath Canonical path of the opened file.
+     * @return Vector of canonical file paths belonging to the module closure.
+     */
+    std::vector<std::string> ComputeModuleClosure(const std::string& openPath) const;
 
     /**
      * @brief Indexes every other file in the opened document's #include module.

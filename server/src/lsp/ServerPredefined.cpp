@@ -212,7 +212,12 @@ void Server::UnloadUnselectedPredefinedStubs(const std::vector<std::string>& wan
     {
         const bool wanted = std::any_of(wantedPaths.begin(), wantedPaths.end(), [&path](const std::string& candidate)
                                         { return PathsAreSameFile(candidate, path); });
-        if (!wanted)
+        bool isTransitive = false;
+        {
+            std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+            isTransitive = m_predefinedTransitiveIncludes.contains(path);
+        }
+        if (!wanted && !isTransitive)
             stale.push_back(uri);
     }
 
@@ -330,12 +335,19 @@ bool Server::PredefinedStubContributes(const std::string& uriStr) const
     }
 
     std::string effective;
+    bool isTransitive = false;
+    const std::string path = CanonicalPathFromUri(uriStr);
+
     {
         std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
         effective = m_effectivePredefined;
+        isTransitive = m_predefinedTransitiveIncludes.contains(path);
     }
 
-    const std::string path = CanonicalPathFromUri(uriStr);
+    if (isTransitive)
+    {
+        return true;
+    }
 
     for (const auto& configured : m_config.predefinedFiles)
     {
@@ -371,6 +383,19 @@ bool Server::ClaimPredefinedFile(const std::string& uriStr, bool forceReload)
 void Server::ParserPredefined(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
                               bool forceReload)
 {
+    std::unordered_set<std::string> visited;
+    ParserPredefinedInternal(filePath, parser, forceReload, visited);
+}
+
+void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
+                                      bool forceReload, std::unordered_set<std::string>& visited)
+{
+    const std::string normPath = angel_lsp::utils::IncludeResolver::NormalizePath(filePath);
+    if (!visited.insert(normPath).second)
+    {
+        return;
+    }
+
     utils::HighResTimer totalTimer;
     std::string uri = UriFromPath(filePath);
 
@@ -405,8 +430,7 @@ void Server::ParserPredefined(const std::string& filePath, angel_lsp::parser::An
     tree.reset();
     int64_t scopeUs = scopeTimer.ElapsedUs();
 
-    if (SetDefinedWordsFrom(angel_lsp::utils::IncludeResolver::NormalizePath(filePath),
-                            angel_lsp::utils::ScanDefinedWords(content)))
+    if (SetDefinedWordsFrom(normPath, angel_lsp::utils::ScanDefinedWords(content)))
         LogInfo(fmt::format("Defined words changed after loading: {}", filePath));
 
     int64_t totalUs = totalTimer.ElapsedUs();
@@ -414,6 +438,21 @@ void Server::ParserPredefined(const std::string& filePath, angel_lsp::parser::An
         fmt::format("[ParserPredefined Profile] File: {} | Total: {} us (Parse: {} us, Symbols: {} us, Scopes: {} us)",
                     filePath, totalUs, parseUs, symUs, scopeUs));
     LogInfo(fmt::format("Loaded predefined file: {}", filePath));
+
+    for (const auto& inc : angel_lsp::utils::IncludeResolver::ExtractIncludes(content))
+    {
+        std::string resolved = angel_lsp::utils::IncludeResolver::ResolveIncludePath(inc.rawPath, filePath,
+                                                                                     m_config.searchDirectories, {});
+        if (!resolved.empty())
+        {
+            const std::string normInc = angel_lsp::utils::IncludeResolver::NormalizePath(resolved);
+            {
+                std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+                m_predefinedTransitiveIncludes.insert(normInc);
+            }
+            ParserPredefinedInternal(normInc, parser, forceReload, visited);
+        }
+    }
 }
 
 void Server::SetPredefinedReady(bool ready)

@@ -53,8 +53,7 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     if (const std::string ownPath = CanonicalPathFromUri(uriStr); !ownPath.empty())
     {
         request.moduleFileUris.insert(uriStr);
-
-        for (const auto& path : m_includeGraph.GetModuleClosure(ownPath))
+        for (const auto& path : ComputeModuleClosure(ownPath))
         {
             if (path == ownPath)
                 continue;
@@ -410,6 +409,11 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
 
 void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
 {
+    if (m_config.features.enablePredefinedLoader && !IsPredefinedReady())
+    {
+        WaitForPredefinedReady(std::chrono::milliseconds(5000));
+    }
+
     IndexModuleClosure(req.uriStr);
 
     utils::HighResTimer parseTimer;
@@ -458,22 +462,19 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
     AppendIncludeDiagnostics(req.uriStr, req.text, diagnostics);
 
-    CommitAnalysisResults({
-        .uriStr = req.uriStr,
-        .version = req.version,
-        .generation = req.generation,
-        .configRevision = req.configRevision,
-        .staging = &staging,
-        .scopeRoot = std::move(scopeRoot),
-        .calls = std::move(calls),
-        .diagnostics = std::move(diagnostics),
-        .text = req.text,
-    });
+    CommitAnalysisResults({.uriStr = req.uriStr,
+                           .version = req.version,
+                           .generation = req.generation,
+                           .configRevision = req.configRevision,
+                           .staging = &staging,
+                           .scopeRoot = std::move(scopeRoot),
+                           .calls = std::move(calls),
+                           .diagnostics = std::move(diagnostics),
+                           .text = req.text});
 
-    double totalMs = totalTimer.ElapsedMs();
     LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, "
                         "Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
-                        req.uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
+                        req.uriStr, totalTimer.ElapsedMs(), parseMs, colMs, scopeMs, checkMs));
 }
 
 void Server::AnalyzeDocument(AnalyzeDocumentRequest req)

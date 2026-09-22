@@ -334,7 +334,7 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
 
     if (m_config.features.enablePredefinedLoader && !IsPredefinedReady())
     {
-        WaitForPredefinedReady(std::chrono::milliseconds(1000));
+        WaitForPredefinedReady(std::chrono::milliseconds(5000));
     }
 
     utils::HighResTimer colTimer;
