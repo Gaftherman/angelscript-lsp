@@ -4,6 +4,18 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.9-exp.2] - 2026-09-21
+
+### Security Remediation & Performance Hardening
+
+- Perimeter Security & Sandbox Confinement:
+  - Fixed single-file mode sandbox escape (SEC-01) by confining include resolution to the active document's parent directory when workspace folders are absent.
+  - Neutralized Windows UNC network path traversal and NTLM credential challenge attacks (SEC-02) by rejecting `\\\\` and `//` include paths prior to filesystem queries.
+  - Enforced an 8 KB buffer limit on JSON-RPC transport header fields (ROBUST-01) preventing unbounded memory consumption.
+- Performance & Zero-Copy Optimization:
+  - Implemented `ForEachSymbolWithPrefix` on `SymbolTable` to eliminate deep-copy cloning of whole symbol sets during autocomplete (PERF-01).
+  - Refactored overload candidate filtering in `CallChecker` and `OverloadResolver` to eliminate local index instantiations and redundant symbol copies (PERF-02).
+
 ## [0.7.9-exp.1] - 2026-09-21
 
 ### Architectural Refactoring & Technical Debt Elimination
