@@ -56,6 +56,7 @@ struct TypeExtractionSymbols
         addPrimitive("float", 5, TypeKind::Float);
         addPrimitive("double", 6, TypeKind::Double);
         addPrimitive("bool", 4, TypeKind::Bool);
+        addPrimitive("char", 4, TypeKind::UInt8);
         addPrimitive("string", 6, TypeKind::String);
         addPrimitive("auto", 4, TypeKind::Auto);
     }
@@ -269,6 +270,10 @@ TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view so
     if (result.isArray)
     {
         result.kind = TypeKind::Array;
+        if (result.templateName.empty())
+        {
+            result.templateName = "array";
+        }
     }
     else if (result.isHandle && result.kind == TypeKind::Unknown)
     {

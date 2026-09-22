@@ -3007,13 +3007,9 @@ static std::string ResolveCallExpr(TSNode exprNode, const ExpressionTypeContext&
     std::string cleanCallee = CleanBaseType(calleeType);
     if (!cleanCallee.empty())
     {
-        auto funcdefSymbols = ctx.symbolTable.FindSymbols(cleanCallee);
-        for (const auto& s : funcdefSymbols)
+        if (auto funcdef = FindFuncdefSymbol(cleanCallee, ctx.symbolTable))
         {
-            if (s.type == SymbolType::Funcdef)
-            {
-                return CleanExpressionType(s.GetFuncdef().returnType);
-            }
+            return CleanExpressionType(funcdef->GetFuncdef().returnType);
         }
     }
     return calleeType;
