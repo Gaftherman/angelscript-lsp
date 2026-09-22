@@ -1,11 +1,13 @@
 #include <doctest/doctest.h>
 
 #include "utils/IncludeResolver.h"
+#include "helpers/TestUtils.h"
 
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <random>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -746,4 +748,62 @@ TEST_CASE("IncludeResolver - A single-quoted include is extracted like a double-
     CHECK(directives[0].rawPath == "pcp_misc/misc");
     CHECK_FALSE(directives[0].isAngled);
     CHECK(directives[1].rawPath == "other.as");
+}
+
+TEST_CASE("IncludeResolver - Invariant: Multi-depth randomized traversal containment in sandbox")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    TempDirGuard temp("inc_containment_fuzz");
+
+    const std::string d1 = angel_lsp::test::GenerateIdentifier(rng, "dirA");
+    const std::string d2 = angel_lsp::test::GenerateIdentifier(rng, "dirB");
+    const std::string d3 = angel_lsp::test::GenerateIdentifier(rng, "dirC");
+    const std::string targetName = angel_lsp::test::GenerateIdentifier(rng, "target") + ".as";
+
+    const std::string targetRel = d1 + "/" + d2 + "/" + d3 + "/" + targetName;
+    temp.WriteFile(targetRel, "void InvariantTarget() {}\n");
+
+    const std::string startRel = d1 + "/" + d2 + "/start.as";
+    temp.WriteFile(startRel, "// start\n");
+
+    const std::string currentFile = temp.PathString(startRel);
+    const std::string expectedTarget = temp.PathString(targetRel);
+    const std::vector<std::string> roots{temp.PathString()};
+
+    // 1. Valid multi-depth traversals strictly contained inside sandbox root
+    const std::vector<std::string> insideTraversals = {
+        d3 + "/" + targetName,
+        "../" + d2 + "/" + d3 + "/" + targetName,
+        "../../" + d1 + "/" + d2 + "/" + d3 + "/" + targetName,
+        d3 + "/../" + d3 + "/" + targetName,
+    };
+
+    for (const auto& incPath : insideTraversals)
+    {
+        const std::string resolved = IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+            .includePath = incPath,
+            .currentFilePath = currentFile,
+            .allowedRoots = roots,
+        });
+        CHECK(resolved == expectedTarget);
+    }
+
+    // 2. Escaping traversals attempting to break out of allowed roots
+    const std::vector<std::string> escapingTraversals = {
+        "../../../escaped.as",
+        "../../../../escaped.as",
+        "../../../../" + angel_lsp::test::GenerateIdentifier(rng, "secret"),
+        "//evil-server/share/" + targetName,
+        "\\\\evil-server\\share\\" + targetName,
+    };
+
+    for (const auto& incPath : escapingTraversals)
+    {
+        const std::string resolved = IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
+            .includePath = incPath,
+            .currentFilePath = currentFile,
+            .allowedRoots = roots,
+        });
+        CHECK(resolved.empty());
+    }
 }

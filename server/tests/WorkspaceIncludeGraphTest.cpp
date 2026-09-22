@@ -1,11 +1,13 @@
 #include <doctest/doctest.h>
 
 #include "utils/WorkspaceIncludeGraph.h"
+#include "helpers/TestUtils.h"
 
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <random>
 #include <set>
 #include <string>
 
@@ -400,4 +402,68 @@ TEST_CASE("WorkspaceIncludeGraph - BuildFromFiles produces identical graph to Bu
     std::sort(closureBuild.begin(), closureBuild.end());
 
     CHECK(closureFiles == closureBuild);
+}
+
+TEST_CASE("WorkspaceIncludeGraph - Invariant: Randomized DAG topological ordering and zero duplicates")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    GraphFixture fixture;
+    constexpr size_t k_nodeCount = 60;
+
+    std::vector<std::string> fileNames;
+    fileNames.reserve(k_nodeCount);
+    for (size_t i = 0; i < k_nodeCount; ++i)
+    {
+        fileNames.push_back("node_" + std::to_string(i) + ".as");
+    }
+
+    for (size_t i = 0; i < k_nodeCount; ++i)
+    {
+        std::string content;
+        if (i > 0)
+        {
+            std::uniform_int_distribution<size_t> parentDist(0, i - 1);
+            size_t p1 = parentDist(rng);
+            content += "#include \"" + fileNames[p1] + "\"\n";
+            if (i > 1)
+            {
+                size_t p2 = parentDist(rng);
+                if (p2 != p1)
+                {
+                    content += "#include \"" + fileNames[p2] + "\"\n";
+                }
+            }
+        }
+        content += "void fn_" + std::to_string(i) + "() {}\n";
+        fixture.Write(fileNames[i], content);
+    }
+
+    fixture.Build();
+    const std::string rootNode = fixture.Path(fileNames[0]);
+
+    const auto revDeps = fixture.graph.GetReverseDependenciesTopological(rootNode);
+
+    // Invariant 1: Zero duplicates
+    std::vector<std::string> deduplicated = revDeps;
+    std::sort(deduplicated.begin(), deduplicated.end());
+    CHECK(std::adjacent_find(deduplicated.begin(), deduplicated.end()) == deduplicated.end());
+
+    // Invariant 2: Strictly topological ordering (prerequisites appear before dependents)
+    ankerl::unordered_dense::map<std::string, size_t> positionMap;
+    for (size_t i = 0; i < revDeps.size(); ++i)
+    {
+        positionMap[revDeps[i]] = i;
+    }
+
+    for (size_t i = 0; i < revDeps.size(); ++i)
+    {
+        auto includers = fixture.graph.GetFilesIncluding(revDeps[i]);
+        for (const auto& inc : includers)
+        {
+            if (positionMap.contains(inc))
+            {
+                CHECK(positionMap[revDeps[i]] < positionMap[inc]);
+            }
+        }
+    }
 }
