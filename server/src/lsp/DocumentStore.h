@@ -3,8 +3,8 @@
 #include "document/Document.h"
 #include <ankerl/unordered_dense.h>
 #include <memory>
-#include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <vector>
 
@@ -194,8 +194,39 @@ class DocumentStore
      */
     [[nodiscard]] size_t Size() const;
 
+    /**
+     * @brief Concurrency helper to get a document handle under shared lock.
+     * @param[in] uri Document URI.
+     * @return Shared pointer to const Document.
+     */
+    [[nodiscard]] std::shared_ptr<const document::Document> getDocument(const std::string& uri) const
+    {
+        return GetDocument(uri);
+    }
+
+    /**
+     * @brief Concurrency helper to put a document into store under unique lock.
+     * @param[in] uri Document URI.
+     * @param[in] text Source text.
+     * @param[in] version Document version.
+     * @param[in] tree Parsed AST handle.
+     */
+    void putDocument(const std::string& uri, std::string text, int version, document::TreePtr tree)
+    {
+        OpenDocument(uri, std::move(text), version, std::move(tree));
+    }
+
+    /**
+     * @brief Concurrency helper to remove a document from store under unique lock.
+     * @param[in] uri Document URI.
+     */
+    void removeDocument(const std::string& uri)
+    {
+        CloseDocument(uri);
+    }
+
   private:
-    mutable std::mutex m_mutex;
+    mutable std::shared_mutex m_mutex;
     uint64_t m_nextGeneration = 1;
     ankerl::unordered_dense::map<std::string, std::shared_ptr<const document::Document>> m_documents;
     ankerl::unordered_dense::map<std::string, std::string> m_clientUriByKey;

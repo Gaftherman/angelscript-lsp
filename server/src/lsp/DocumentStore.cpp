@@ -4,7 +4,7 @@ namespace angel_lsp
 {
 void DocumentStore::OpenDocument(OpenDocumentRequest request)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     if (!request.clientUri.empty())
     {
         m_clientUriByKey[request.uri] = request.clientUri;
@@ -24,7 +24,7 @@ void DocumentStore::OpenDocument(const std::string& uri, std::string text, int v
 
 void DocumentStore::UpdateDocument(const std::string& uri, std::string text, int version, document::TreePtr tree)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end())
     {
         const uint64_t gen = it->second ? it->second->generation : m_nextGeneration++;
@@ -42,19 +42,19 @@ void DocumentStore::UpdateDocument(const std::string& uri, std::string text, int
 
 void DocumentStore::CloseDocument(const std::string& uri)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     m_documents.erase(uri);
 }
 
 bool DocumentStore::IsOpen(const std::string& uri) const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     return m_documents.contains(uri);
 }
 
 std::optional<std::string> DocumentStore::GetText(const std::string& uri) const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
     {
         return it->second->text;
@@ -64,7 +64,7 @@ std::optional<std::string> DocumentStore::GetText(const std::string& uri) const
 
 int DocumentStore::GetVersion(const std::string& uri) const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
     {
         return it->second->version;
@@ -74,7 +74,7 @@ int DocumentStore::GetVersion(const std::string& uri) const
 
 void DocumentStore::SetVersion(const std::string& uri, int version)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
     {
         document::TreePtr treeCopy =
@@ -86,7 +86,7 @@ void DocumentStore::SetVersion(const std::string& uri, int version)
 
 TSTree* DocumentStore::GetTree(const std::string& uri) const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
     {
         return it->second->tree.get();
@@ -96,7 +96,7 @@ TSTree* DocumentStore::GetTree(const std::string& uri) const
 
 void DocumentStore::SetTree(const std::string& uri, document::TreePtr tree)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
     {
         it->second = std::make_shared<const document::Document>(
@@ -107,7 +107,7 @@ void DocumentStore::SetTree(const std::string& uri, document::TreePtr tree)
 
 std::string DocumentStore::GetClientUri(const std::string& uri) const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_clientUriByKey.find(uri); it != m_clientUriByKey.end())
     {
         return it->second;
@@ -117,19 +117,19 @@ std::string DocumentStore::GetClientUri(const std::string& uri) const
 
 void DocumentStore::SetClientUri(const std::string& uri, const std::string& clientUri)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     m_clientUriByKey[uri] = clientUri;
 }
 
 void DocumentStore::RemoveClientUri(const std::string& uri)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     m_clientUriByKey.erase(uri);
 }
 
 std::vector<std::pair<std::string, std::string>> DocumentStore::GetSnapshot() const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     std::vector<std::pair<std::string, std::string>> snapshot;
     snapshot.reserve(m_documents.size());
     for (const auto& [uri, doc] : m_documents)
@@ -144,7 +144,7 @@ std::vector<std::pair<std::string, std::string>> DocumentStore::GetSnapshot() co
 
 std::vector<std::string> DocumentStore::GetOpenUris() const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     std::vector<std::string> uris;
     uris.reserve(m_documents.size());
     for (const auto& [uri, doc] : m_documents)
@@ -156,14 +156,14 @@ std::vector<std::string> DocumentStore::GetOpenUris() const
 
 void DocumentStore::Clear()
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
     m_documents.clear();
     m_clientUriByKey.clear();
 }
 
 uint64_t DocumentStore::GetGeneration(const std::string& uri) const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
     {
         return it->second->generation;
@@ -173,7 +173,7 @@ uint64_t DocumentStore::GetGeneration(const std::string& uri) const
 
 bool DocumentStore::IsCurrent(const std::string& uri, uint64_t generation, int version) const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     auto it = m_documents.find(uri);
     if (it == m_documents.end() || !it->second)
     {
@@ -192,7 +192,7 @@ bool DocumentStore::IsCurrent(const std::string& uri, uint64_t generation, int v
 
 std::shared_ptr<const document::Document> DocumentStore::GetDocument(const std::string& uri) const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end())
     {
         return it->second;
@@ -202,7 +202,7 @@ std::shared_ptr<const document::Document> DocumentStore::GetDocument(const std::
 
 const std::string* DocumentStore::GetTextPtr(const std::string& uri) const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
     {
         return &it->second->text;
@@ -212,7 +212,7 @@ const std::string* DocumentStore::GetTextPtr(const std::string& uri) const
 
 std::vector<std::shared_ptr<const document::Document>> DocumentStore::GetAllDocuments() const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     std::vector<std::shared_ptr<const document::Document>> docs;
     docs.reserve(m_documents.size());
     for (const auto& [uri, doc] : m_documents)
@@ -227,7 +227,7 @@ std::vector<std::shared_ptr<const document::Document>> DocumentStore::GetAllDocu
 
 size_t DocumentStore::Size() const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
     return m_documents.size();
 }
 } // namespace angel_lsp

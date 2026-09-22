@@ -28,7 +28,8 @@ void Server::ReanalyseOpenDocuments()
             continue;
         }
         IndexModuleClosure(doc->uri);
-        document::TreePtr treeCopy = document::MakeTreePtr(doc->tree ? ts_tree_copy(doc->tree.get()) : nullptr);
+        SharedTree astSnapshot = doc->getAST();
+        document::TreePtr treeCopy = document::MakeTreePtr(astSnapshot ? ts_tree_copy(astSnapshot.get()) : nullptr);
         ScheduleAnalysis(ScheduleAnalysisRequest{.uriStr = doc->uri,
                                                  .text = doc->text,
                                                  .force = false,
