@@ -562,6 +562,22 @@ std::vector<std::string> Server::IncludeAllowedRoots() const
             roots.push_back(definition.folder);
     }
 
+    if (roots.empty())
+    {
+        for (const auto& uri : m_documentStore.GetOpenUris())
+        {
+            const std::string p = CanonicalPathFromUri(uri);
+            if (!p.empty())
+            {
+                std::filesystem::path fp(p);
+                if (fp.has_parent_path())
+                {
+                    roots.push_back(fp.parent_path().string());
+                }
+            }
+        }
+    }
+
     return roots;
 }
 

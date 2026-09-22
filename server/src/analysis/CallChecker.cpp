@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cctype>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -534,7 +535,8 @@ void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>& accept
  * @param[in] lctx Lambda verification context.
  * @param[in,out] ctx Diagnostic context.
  */
-void CheckLambdaArguments(const std::vector<Symbol>& candidates, const LambdaCheckContext& lctx, DiagnosticContext& ctx)
+void CheckLambdaArguments(std::span<const Symbol* const> candidates, const LambdaCheckContext& lctx,
+                          DiagnosticContext& ctx)
 {
     if (lctx.lambdaPositions.empty() || candidates.empty())
     {
@@ -542,10 +544,14 @@ void CheckLambdaArguments(const std::vector<Symbol>& candidates, const LambdaChe
     }
 
     std::vector<std::vector<std::string>> acceptedShapes;
-    for (const auto& candidate : candidates)
+    for (const auto* candidate : candidates)
     {
+        if (!candidate)
+        {
+            continue;
+        }
         std::vector<std::string> shape;
-        const auto status = EvaluateCandidateLambdaShape(candidate, lctx, shape);
+        const auto status = EvaluateCandidateLambdaShape(*candidate, lctx, shape);
         if (status == LambdaCandidateStatus::UnresolvableFuncdef)
         {
             return;
@@ -943,38 +949,25 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
 /**
  * @brief Filters candidate symbols to those whose arity can accept argumentCount.
  *
- * Uses OverloadResolver to index candidates and query matching arity in O(1),
- * while also retaining any variadic or optional-parameter functions that match.
+ * Inspects candidate function signatures and returns non-owning pointers to those
+ * that match the supplied argument count, including variadic or optional-parameter functions.
  *
- * @param[in] name Callee function name to query.
  * @param[in] candidates Candidate symbols to inspect.
  * @param[in] argumentCount Argument count supplied.
- * @return Subvector of matching arity symbols.
+ * @return Vector of non-owning pointers to matching arity symbols.
  */
-std::vector<Symbol> FilterMatchingArityCandidates(std::string_view name, const std::vector<Symbol>& candidates,
-                                                  uint32_t argumentCount)
+std::vector<const Symbol*> FilterMatchingArityCandidates(const std::vector<Symbol>& candidates, uint32_t argumentCount)
 {
-    OverloadResolver resolver;
-    resolver.indexCandidates(candidates);
-    const auto exactMatches = resolver.findCandidates(name, argumentCount);
-
-    std::vector<Symbol> matching(exactMatches.begin(), exactMatches.end());
+    std::vector<const Symbol*> matching;
+    matching.reserve(candidates.size());
     for (const auto& sym : candidates)
     {
-        const Arity arity = ArityOf(sym.GetFunction());
-        if (arity.variadic || (argumentCount >= arity.required && argumentCount <= arity.maximum))
+        if (std::holds_alternative<FunctionSignature>(sym.signature))
         {
-            const bool alreadyPresent =
-                std::any_of(matching.begin(), matching.end(),
-                            [&](const Symbol& m)
-                            {
-                                return m.name == sym.name && m.containerName == sym.containerName &&
-                                       m.startLine == sym.startLine && m.startCharacter == sym.startCharacter &&
-                                       m.fileUri == sym.fileUri;
-                            });
-            if (!alreadyPresent)
+            const Arity arity = ArityOf(sym.GetFunction());
+            if (arity.variadic || (argumentCount >= arity.required && argumentCount <= arity.maximum))
             {
-                matching.push_back(sym);
+                matching.push_back(&sym);
             }
         }
     }
@@ -1010,13 +1003,13 @@ void CheckInitializerListArgs(const std::vector<TSNode>& argNodes, const Functio
  * @param[in] valCtx Call validation context.
  */
 void CheckMalformedTernaryArgs(const std::vector<TSNode>& argNodes, const std::vector<std::string>& argTypes,
-                               const std::vector<Symbol>& candidates, const CallValidationContext& valCtx)
+                               std::span<const Symbol* const> candidates, const CallValidationContext& valCtx)
 {
-    if (candidates.empty())
+    if (candidates.empty() || !candidates[0])
     {
         return;
     }
-    const auto& fn = candidates[0].GetFunction();
+    const auto& fn = candidates[0]->GetFunction();
 
     for (size_t i = 0; i < argNodes.size() && i < argTypes.size() && i < fn.parameters.size(); ++i)
     {
@@ -1080,7 +1073,7 @@ size_t FindCandidateBadArgument(const Symbol& candidate, const std::vector<std::
  * @param[in] table Symbol table.
  * @return Blamed argument index if agreed, or std::nullopt.
  */
-std::optional<size_t> FindAgreedBlamedArgument(const std::vector<Symbol>& candidates,
+std::optional<size_t> FindAgreedBlamedArgument(std::span<const Symbol* const> candidates,
                                                const std::vector<std::string>& argTypes, const SymbolTable& table)
 {
     if (candidates.empty())
@@ -1089,9 +1082,13 @@ std::optional<size_t> FindAgreedBlamedArgument(const std::vector<Symbol>& candid
     }
 
     size_t blamed = argTypes.size();
-    for (const auto& candidate : candidates)
+    for (const auto* candidate : candidates)
     {
-        const size_t firstBad = FindCandidateBadArgument(candidate, argTypes, table);
+        if (!candidate)
+        {
+            continue;
+        }
+        const size_t firstBad = FindCandidateBadArgument(*candidate, argTypes, table);
         if (firstBad == argTypes.size())
         {
             return std::nullopt;
@@ -1116,13 +1113,13 @@ std::optional<size_t> FindAgreedBlamedArgument(const std::vector<Symbol>& candid
  * @param[in] reportedName Reported callee name.
  * @param[in] valCtx Call validation context.
  */
-void ReportOverloadResolutionFailure(const std::vector<Symbol>& candidates, const CallArgTypes& args,
+void ReportOverloadResolutionFailure(std::span<const Symbol* const> candidates, const CallArgTypes& args,
                                      const std::string& reportedName, const CallValidationContext& valCtx)
 {
     const auto blamedArg = FindAgreedBlamedArgument(candidates, args.argTypes, valCtx.ctx.request.symbolTable);
     if (blamedArg && *blamedArg < args.argNodes.size())
     {
-        const auto& fn = candidates[0].GetFunction();
+        const auto& fn = candidates[0]->GetFunction();
         const std::string expected =
             *blamedArg < fn.parameters.size() ? fn.parameters[*blamedArg].typeName : std::string();
         const TSPoint aStart = ts_node_start_point(args.argNodes[*blamedArg]);
@@ -1252,7 +1249,7 @@ void ValidateOutArguments(const Symbol& candidate, const std::vector<TSNode>& ar
  * @param[in] calleeRes Callee resolution details.
  * @param[in] valCtx Call validation context.
  */
-void CheckCallOverloads(const std::vector<Symbol>& matchingArity, const CallArgTypes& args,
+void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const CallArgTypes& args,
                         const CalleeResolution& calleeRes, const CallValidationContext& valCtx)
 {
     if ((args.argTypes.empty() && !calleeRes.candidatesAreFreeFunctions) || matchingArity.empty())
@@ -1274,7 +1271,7 @@ void CheckCallOverloads(const std::vector<Symbol>& matchingArity, const CallArgT
     }
     else
     {
-        const auto& target = match.bestCandidate ? *match.bestCandidate : matchingArity[0];
+        const auto& target = match.bestCandidate ? *match.bestCandidate : *matchingArity[0];
         ValidateOutArguments(target, args.argNodes, valCtx);
     }
 }
@@ -1363,12 +1360,11 @@ void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope,
     }
 
     const CallArgTypes args = ResolveCallArguments(valCtx);
-    const std::vector<Symbol> matchingArity =
-        FilterMatchingArityCandidates(calleeRes.reportedName, calleeRes.candidates, argumentCount);
+    const std::vector<const Symbol*> matchingArity = FilterMatchingArityCandidates(calleeRes.candidates, argumentCount);
 
-    if (matchingArity.size() == 1 && !sawNamedArg)
+    if (matchingArity.size() == 1 && !sawNamedArg && matchingArity.front())
     {
-        CheckInitializerListArgs(args.argNodes, matchingArity.front().GetFunction(), valCtx);
+        CheckInitializerListArgs(args.argNodes, matchingArity.front()->GetFunction(), valCtx);
     }
 
     if (!sawNamedArg)
@@ -1646,19 +1642,8 @@ std::vector<Symbol> SpecializeConstructors(const std::vector<Symbol>& rawConstru
 void CheckConstructorOverload(TSNode argListNode, const std::vector<Symbol>& candidates,
                               const std::vector<std::string>& argTypes, const VarInitContext& vctx)
 {
-    std::vector<Symbol> matchingArity;
     const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
-    for (const auto& sym : candidates)
-    {
-        if (std::holds_alternative<FunctionSignature>(sym.signature))
-        {
-            const Arity arity = ArityOf(sym.GetFunction());
-            if (arity.variadic || (argCount >= arity.required && argCount <= arity.maximum))
-            {
-                matchingArity.push_back(sym);
-            }
-        }
-    }
+    const std::vector<const Symbol*> matchingArity = FilterMatchingArityCandidates(candidates, argCount);
 
     if (matchingArity.empty())
     {

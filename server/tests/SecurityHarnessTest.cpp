@@ -213,3 +213,98 @@ TEST_CASE("Security - SEC-01 Canonical Workspace Containment Invariant")
         }
     }
 }
+
+TEST_CASE("Security - SEC-01 Single-File Sandbox Mode Confinement")
+{
+    struct IsolatedModeGuard
+    {
+        bool prev;
+        explicit IsolatedModeGuard(bool mode) : prev(IncludeResolver::IsIsolatedHarnessMode())
+        {
+            IncludeResolver::SetIsolatedHarnessMode(mode);
+        }
+        ~IsolatedModeGuard()
+        {
+            IncludeResolver::SetIsolatedHarnessMode(prev);
+        }
+    } modeGuard(false);
+
+    SandboxGuard sandbox;
+    const std::string docDir = test::GenerateRandomSymbolName("doc_dir");
+    const std::string outsideDir = test::GenerateRandomSymbolName("outside_dir");
+    const std::string docName = test::GenerateRandomSymbolName("main") + ".as";
+    const std::string siblingName = test::GenerateRandomSymbolName("sibling") + ".as";
+    const std::string outsideName = test::GenerateRandomSymbolName("outside") + ".as";
+
+    const std::string docPath = sandbox.WriteFile(docDir + "/" + docName, "void main() {}\n");
+    const std::string siblingPath = sandbox.WriteFile(docDir + "/" + siblingName, "void sibling() {}\n");
+    sandbox.WriteFile(outsideDir + "/" + outsideName, "void secret() {}\n");
+
+    // In single-file mode without workspace roots, allowedRoots is empty
+    const std::vector<std::string> emptyAllowedRoots;
+
+    // Sibling in the same directory must resolve
+    const std::string resolvedSibling =
+        IncludeResolver::ResolveIncludePath(siblingName, docPath, {}, emptyAllowedRoots);
+    CHECK_FALSE(resolvedSibling.empty());
+    CHECK(IncludeResolver::NormalizePath(resolvedSibling) == IncludeResolver::NormalizePath(siblingPath));
+
+    std::mt19937_64 rng(std::random_device{}());
+    for (int iter = 0; iter < 50; ++iter)
+    {
+        const std::string attack = "../" + outsideDir + "/" + outsideName;
+        const std::string resolvedOutside = IncludeResolver::ResolveIncludePath(attack, docPath, {}, emptyAllowedRoots);
+        CHECK(resolvedOutside.empty());
+
+        const std::string sysAttack = GenerateFuzzedPath(rng, docDir, docName);
+        const std::string resolvedSys = IncludeResolver::ResolveIncludePath(sysAttack, docPath, {}, emptyAllowedRoots);
+        if (!resolvedSys.empty())
+        {
+            // If resolved, must be within the parent directory of docPath
+            const auto parentDir = std::filesystem::path(docPath).parent_path().string();
+            const std::vector<std::string> parentRoots = {parentDir};
+            CHECK(IncludeResolver::IsWithinRoots(resolvedSys, parentRoots));
+        }
+    }
+}
+
+TEST_CASE("Security - SEC-02 Windows UNC / NTLM Hash Leak Invariant")
+{
+    SandboxGuard sandbox;
+    const std::string docName = test::GenerateRandomSymbolName("entry") + ".as";
+    const std::string docPath = sandbox.WriteFile(docName, "void start() {}\n");
+
+    const std::vector<std::string> allowedRoots = {sandbox.root.string()};
+
+    // Randomized hostnames and shares
+    for (int iter = 0; iter < 50; ++iter)
+    {
+        const std::string host = test::GenerateRandomSymbolName("host");
+        const std::string share = test::GenerateRandomSymbolName("share");
+        const std::string file = test::GenerateRandomSymbolName("payload") + ".as";
+
+        // Backslash UNC
+        const std::string uncBackslash = "\\\\" + host + "\\" + share + "\\" + file;
+        CHECK(IncludeResolver::ResolveIncludePath(uncBackslash, docPath, {}, allowedRoots).empty());
+
+        // Forward slash UNC
+        const std::string uncForwardSlash = "//" + host + "/" + share + "/" + file;
+        CHECK(IncludeResolver::ResolveIncludePath(uncForwardSlash, docPath, {}, allowedRoots).empty());
+    }
+}
+
+TEST_CASE("Security - ROBUST-01 JSON-RPC Header Line Buffer Limit")
+{
+    config::ServerConfig config;
+    test::ScriptedStream stream;
+
+    // Header line exceeding 8 KB limit
+    const std::string hugeHeaderKey = "X-Fuzzed-Header-" + test::GenerateRandomSymbolName();
+    const std::string hugeHeaderValue(9000, 'A');
+    stream.PushRaw(hugeHeaderKey + ": " + hugeHeaderValue + "\r\n\r\n");
+
+    CHECK_NOTHROW({
+        Server server(config, stream);
+        server.Run();
+    });
+}

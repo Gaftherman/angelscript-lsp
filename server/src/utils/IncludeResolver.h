@@ -133,6 +133,18 @@ class IncludeResolver
     static bool IsWithinRoots(const std::string& normalizedPath, std::span<const std::string> allowedRoots);
 
     /**
+     * @brief Configures whether empty allowedRoots permits unconfined resolution (unit test harness mode).
+     * @param[in] enabled True to enable unconfined test mode, false for strict production confinement.
+     */
+    static void SetIsolatedHarnessMode(bool enabled);
+
+    /**
+     * @brief Queries whether unconfined unit test harness mode is currently active.
+     * @return True if unconfined harness mode is active.
+     */
+    static bool IsIsolatedHarnessMode();
+
+    /**
      * @brief Resolves a single include path against the current file's directory and search directories.
      * @param[in] request The bundled include resolution parameters.
      * @return Canonicalized/normalized absolute path if found and permitted, else empty string.

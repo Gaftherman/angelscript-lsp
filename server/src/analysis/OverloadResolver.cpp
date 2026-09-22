@@ -946,17 +946,21 @@ std::span<const FunctionSymbol> OverloadResolver::findCandidates(std::string_vie
     return {};
 }
 
-OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable)
 {
     OverloadMatchResult result;
     std::vector<EvaluatedCandidate> evaluated;
 
-    for (const auto& sym : candidates)
+    for (const Symbol* sym : candidates)
     {
-        if (auto cand = EvaluateCandidate(sym, argumentTypes, symbolTable))
+        if (!sym)
         {
-            result.viableCandidates.push_back(&sym);
+            continue;
+        }
+        if (auto cand = EvaluateCandidate(*sym, argumentTypes, symbolTable))
+        {
+            result.viableCandidates.push_back(sym);
             evaluated.push_back(std::move(*cand));
         }
     }
@@ -981,5 +985,17 @@ OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
     result.isAmbiguous = CheckOverloadAmbiguity(nonDominated, argumentTypes);
 
     return result;
+}
+
+OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
+                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable)
+{
+    std::vector<const Symbol*> ptrs;
+    ptrs.reserve(candidates.size());
+    for (const auto& sym : candidates)
+    {
+        ptrs.push_back(&sym);
+    }
+    return ResolveBestOverload(ptrs, argumentTypes, symbolTable);
 }
 } // namespace angel_lsp::analysis

@@ -1,6 +1,7 @@
 #include "utils/IncludeResolver.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <fstream>
 #include <mutex>
@@ -13,6 +14,8 @@ namespace angel_lsp::utils
 {
 namespace
 {
+std::atomic<bool> s_isolatedHarnessMode{false};
+
 /**
  * @brief Canonical form of a directory, remembered so a workspace walk pays for it once.
  *
@@ -418,6 +421,14 @@ std::optional<IncludeDirective> TryExtractDirective(std::string_view sourceCode,
 std::filesystem::path FirstExisting(const std::filesystem::path& directory, const std::filesystem::path& name,
                                     std::string_view implicitExtension)
 {
+#if defined(_WIN32)
+    const std::string nameStr = name.string();
+    if (nameStr.starts_with("\\\\") || nameStr.starts_with("//"))
+    {
+        return {};
+    }
+#endif
+
     std::error_code inner;
     std::filesystem::path exact = directory / name;
     if (std::filesystem::exists(exact, inner) && !std::filesystem::is_directory(exact, inner))
@@ -496,13 +507,22 @@ std::string IncludeResolver::NormalizeWalkedPath(const std::filesystem::path& pa
     return TrimAndSlash((std::filesystem::path(CanonicalDirectory(path.parent_path())) / path.filename()).string());
 }
 
+void IncludeResolver::SetIsolatedHarnessMode(bool enabled)
+{
+    s_isolatedHarnessMode.store(enabled);
+}
+
+bool IncludeResolver::IsIsolatedHarnessMode()
+{
+    return s_isolatedHarnessMode.load();
+}
+
 bool IncludeResolver::IsWithinRoots(const std::string& normalizedPath, std::span<const std::string> allowedRoots)
 {
-    // No roots configured means no confinement. Unit tests and any library caller with no
-    // workspace context rely on this; the server always supplies roots.
+    // No roots configured means no confinement only when explicitly running in unit-test harness mode.
     if (allowedRoots.empty())
     {
-        return true;
+        return s_isolatedHarnessMode.load();
     }
 
     if (normalizedPath.empty())
@@ -613,8 +633,26 @@ std::string IncludeResolver::ResolveIncludePath(const IncludeResolveRequest& req
         return "";
     }
 
-    const auto permit = [&request](std::string resolved) -> std::string
-    { return IsWithinRoots(resolved, request.allowedRoots) ? resolved : std::string(); };
+#if defined(_WIN32)
+    if (request.includePath.starts_with("\\\\") || request.includePath.starts_with("//"))
+    {
+        return "";
+    }
+#endif
+
+    std::vector<std::string> fallbackRoots;
+    std::span<const std::string> effectiveRoots = request.allowedRoots;
+    if (effectiveRoots.empty() && !s_isolatedHarnessMode.load())
+    {
+        if (!request.currentFilePath.empty())
+        {
+            fallbackRoots.push_back(NormalizePathString(GetParentDirectory(request.currentFilePath)));
+            effectiveRoots = fallbackRoots;
+        }
+    }
+
+    const auto permit = [&](std::string resolved) -> std::string
+    { return IsWithinRoots(resolved, effectiveRoots) ? resolved : std::string(); };
 
     std::error_code ec;
     const std::filesystem::path inc(request.includePath);

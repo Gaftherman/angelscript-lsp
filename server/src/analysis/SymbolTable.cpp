@@ -977,19 +977,44 @@ bool SymbolTable::HasSymbolAnywhere(std::string_view name) const
     return index && (index->allNames.contains(searchName) || index->allNames.contains(name));
 }
 
-void SymbolTable::ForEachSymbol(
-    const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const
+void SymbolTable::ForEachSymbolWithPrefix(
+    std::string_view prefix, const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const
 {
     std::vector<std::pair<const std::string*, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        snapshot.reserve(m_symbols.size());
-        for (const auto& [key, symbols] : m_symbols)
-            snapshot.emplace_back(&key, symbols);
+        if (prefix.empty())
+        {
+            snapshot.reserve(m_symbols.size());
+            for (const auto& [key, symbols] : m_symbols)
+            {
+                snapshot.emplace_back(&key, symbols);
+            }
+        }
+        else
+        {
+            for (const auto& [key, symbols] : m_symbols)
+            {
+                if (key.starts_with(prefix) ||
+                    (key.starts_with("get_") && std::string_view(key).substr(4).starts_with(prefix)) ||
+                    (key.starts_with("set_") && std::string_view(key).substr(4).starts_with(prefix)))
+                {
+                    snapshot.emplace_back(&key, symbols);
+                }
+            }
+        }
     }
 
     for (const auto& [key, symbols] : snapshot)
+    {
         visitor(*key, *symbols);
+    }
+}
+
+void SymbolTable::ForEachSymbol(
+    const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const
+{
+    ForEachSymbolWithPrefix({}, visitor);
 }
 
 std::vector<Symbol> SymbolTable::GetAllSymbols() const

@@ -14,6 +14,19 @@ using namespace angel_lsp::utils;
 
 namespace
 {
+struct HarnessGuard
+{
+    HarnessGuard()
+    {
+        IncludeResolver::SetIsolatedHarnessMode(true);
+    }
+    ~HarnessGuard()
+    {
+        IncludeResolver::SetIsolatedHarnessMode(false);
+    }
+};
+static HarnessGuard s_harnessGuard;
+
 /**
  * @brief RAII helper to create and automatically clean up temporary directories for disk-based tests.
  */

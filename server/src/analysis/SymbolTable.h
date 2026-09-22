@@ -597,6 +597,15 @@ class SymbolTable
     /** @brief Returns a copy of all symbols currently present in the table. */
     std::vector<Symbol> GetAllSymbols() const;
 
+    /**
+     * @brief Iterates symbols in the table whose qualified names match a prefix filter.
+     * @param prefix Prefix to match against bucket qualified names, or empty for all.
+     * @param visitor Callback invoked for each matching (qualifiedName, symbol_list) pair.
+     */
+    void
+    ForEachSymbolWithPrefix(std::string_view prefix,
+                            const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const;
+
     /** @brief Iterates all symbols in the table.
      *  @param visitor Callback invoked for each (qualifiedName, symbol_list) pair.
      *  @note The buckets are snapshotted under the lock and visited outside it, so a visitor

@@ -152,6 +152,16 @@ OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable);
 
 /**
+ * @brief Selects the optimal function/method symbol from a candidate overload pointer set.
+ * @param candidates Span of candidate function symbol pointers.
+ * @param argumentTypes Deduced argument types for each argument expression.
+ * @param symbolTable Symbol table for hierarchy and conversion lookups.
+ * @return OverloadMatchResult containing the best candidate and match metrics.
+ */
+OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
+                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable);
+
+/**
  * @brief Checks whether fromType can be widened to toType without precision loss.
  * @param fromType Source primitive type.
  * @param toType Destination primitive type.

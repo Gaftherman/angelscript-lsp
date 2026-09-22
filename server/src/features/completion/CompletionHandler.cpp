@@ -1775,7 +1775,8 @@ bool BucketMatchesPrefix(const std::string& qualifiedName, std::string_view quer
 void CollectGlobalSymbols(bool accessorsAreProperties, bool accessorKeywordRequired, std::string_view queryPrefix,
                           CompletionCollector& collector)
 {
-    collector.request.symbolTable.ForEachSymbol(
+    collector.request.symbolTable.ForEachSymbolWithPrefix(
+        queryPrefix,
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
         {
             if (!BucketMatchesPrefix(qualifiedName, queryPrefix, accessorsAreProperties))
