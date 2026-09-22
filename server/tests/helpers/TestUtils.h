@@ -20,6 +20,7 @@
 #include <memory>
 #include <random>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::test
@@ -35,6 +36,84 @@ inline std::string GenerateRandomSymbolName(const std::string& prefix = "var")
     static thread_local std::mt19937_64 rng{std::random_device{}()};
     std::uniform_int_distribution<uint64_t> dist(100000, 999999999);
     return prefix + "_" + std::to_string(dist(rng));
+}
+
+/**
+ * @brief Generates a deterministic pseudo-random AngelScript identifier using a seeded engine.
+ * @param[in,out] rng Seeded 64-bit Mersenne Twister pseudo-random number generator.
+ * @param[in] prefix Optional identifier prefix (defaults to "id").
+ * @return Formatted identifier string (e.g. "id_123456789").
+ */
+inline std::string GenerateIdentifier(std::mt19937_64& rng, std::string_view prefix = "id")
+{
+    std::uniform_int_distribution<uint64_t> dist(100000, 999999999);
+    return std::string(prefix) + "_" + std::to_string(dist(rng));
+}
+
+/**
+ * @brief Selects a deterministic pseudo-random AngelScript primitive type name.
+ * @param[in,out] rng Seeded 64-bit Mersenne Twister pseudo-random number generator.
+ * @return Valid AngelScript primitive type string (e.g. "int", "float", "bool").
+ */
+inline std::string GenerateRandomPrimitiveType(std::mt19937_64& rng)
+{
+    static constexpr std::string_view kPrimitives[] = {
+        "int", "int8", "int16", "int32", "int64",
+        "uint", "uint8", "uint16", "uint32", "uint64",
+        "float", "double", "bool", "string"
+    };
+    std::uniform_int_distribution<size_t> dist(0, sizeof(kPrimitives) / sizeof(kPrimitives[0]) - 1);
+    return std::string(kPrimitives[dist(rng)]);
+}
+
+/**
+ * @brief Constructs a synthetic AngelScript class declaration with randomized member properties.
+ * @param[in,out] rng Seeded 64-bit Mersenne Twister pseudo-random number generator.
+ * @param[in] className Name of the generated class.
+ * @param[in] propertyCount Number of randomized properties to generate.
+ * @return Source code snippet containing class declaration.
+ */
+inline std::string GenerateRandomClassDeclaration(std::mt19937_64& rng, std::string_view className, size_t propertyCount)
+{
+    std::string decl = "class " + std::string(className) + "\n{\n";
+    for (size_t i = 0; i < propertyCount; ++i)
+    {
+        std::string propType = GenerateRandomPrimitiveType(rng);
+        std::string propName = GenerateIdentifier(rng, "prop");
+        decl += "    " + propType + " " + propName + ";\n";
+    }
+    decl += "}\n";
+    return decl;
+}
+
+/**
+ * @brief Generates randomized whitespace and comment lines to test range and offset invariance.
+ * @param[in,out] rng Seeded 64-bit Mersenne Twister pseudo-random number generator.
+ * @return Multi-line string containing whitespace and comment padding.
+ */
+inline std::string GenerateRandomPadding(std::mt19937_64& rng)
+{
+    std::uniform_int_distribution<size_t> countDist(1, 4);
+    const size_t count = countDist(rng);
+    std::string padding;
+    std::uniform_int_distribution<int> typeDist(0, 2);
+    for (size_t i = 0; i < count; ++i)
+    {
+        const int kind = typeDist(rng);
+        if (kind == 0)
+        {
+            padding += "\n";
+        }
+        else if (kind == 1)
+        {
+            padding += "// padding comment " + std::to_string(rng()) + "\n";
+        }
+        else
+        {
+            padding += "    \n";
+        }
+    }
+    return padding;
 }
 
 struct Position
