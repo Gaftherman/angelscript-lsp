@@ -114,7 +114,6 @@ void Server::LoadEngineProfileStub(angel_lsp::analysis::EngineProfileKind pKind,
 
     m_scopeIndex.ClearDocument(syntheticUri);
     m_callGraph.ClearDocument(syntheticUri);
-    m_scopeIndex.SetScopeTree(syntheticUri, m_localScopeCollector->CollectScopes(std::string(stubSource), parser));
 
     LogInfo(fmt::format("Loaded built-in engine profile: {}", angel_lsp::analysis::EngineProfileKindToString(pKind)));
 }
@@ -403,11 +402,6 @@ void Server::ParserPredefined(const std::string& filePath, angel_lsp::parser::An
     utils::HighResTimer scopeTimer;
     m_scopeIndex.ClearDocument(uri);
     m_callGraph.ClearDocument(uri);
-    if (tree)
-    {
-        m_scopeIndex.SetScopeTree(uri,
-                                  m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree.get()), content));
-    }
     tree.reset();
     int64_t scopeUs = scopeTimer.ElapsedUs();
 
@@ -420,5 +414,29 @@ void Server::ParserPredefined(const std::string& filePath, angel_lsp::parser::An
         fmt::format("[ParserPredefined Profile] File: {} | Total: {} us (Parse: {} us, Symbols: {} us, Scopes: {} us)",
                     filePath, totalUs, parseUs, symUs, scopeUs));
     LogInfo(fmt::format("Loaded predefined file: {}", filePath));
+}
+
+void Server::SetPredefinedReady(bool ready)
+{
+    {
+        std::lock_guard<std::mutex> lock(m_predefinedMutex);
+        m_predefinedReady.store(ready, std::memory_order_release);
+    }
+    m_predefinedCv.notify_all();
+}
+
+bool Server::WaitForPredefinedReady(std::chrono::milliseconds timeout) const
+{
+    if (m_predefinedReady.load(std::memory_order_acquire))
+    {
+        return true;
+    }
+    std::unique_lock<std::mutex> lock(m_predefinedMutex);
+    return m_predefinedCv.wait_for(lock, timeout, [this] { return m_predefinedReady.load(std::memory_order_acquire); });
+}
+
+bool Server::IsPredefinedReady() const noexcept
+{
+    return m_predefinedReady.load(std::memory_order_acquire);
 }
 } // namespace angel_lsp

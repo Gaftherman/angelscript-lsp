@@ -102,7 +102,7 @@ void SemanticAnalyzer::RunExpressionRules(const SemanticAnalysisRequest& request
     CheckCallArguments(callRequest, ctx);
 
     const DefiniteAssignmentCheckRequest assignRequest{ts_tree_root_node(request.tree), request.sourceCode,
-                                                       request.scopeRoot.get()};
+                                                       request.scopeRoot.get(), indexPtr};
     CheckDefiniteAssignment(assignRequest, ctx);
     if (indexPtr)
     {
@@ -200,7 +200,10 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         DiagnosticContext ctx{request, diagnostics, m_logger};
         CheckNullAssignedToNonHandle(request.symbolTable, ctx);
         CheckDeclarationRules(request.symbolTable, ctx);
+
+        utils::HighResTimer scopeTimer;
         RunScopeRules(request, ctx);
+        double scopeMs = scopeTimer.ElapsedMs();
 
         std::unique_ptr<NodeIndex> localNodeIndex;
         const NodeIndex* indexPtr = request.nodeIndex;
@@ -210,14 +213,32 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
             indexPtr = localNodeIndex.get();
         }
 
+        double stmtMs = 0.0;
+        double exprMs = 0.0;
+        double typeMs = 0.0;
         if (request.tree && !request.sourceCode.empty())
         {
+            utils::HighResTimer stmtTimer;
             RunStatementAndControlFlowRules(request, indexPtr, ctx);
+            stmtMs = stmtTimer.ElapsedMs();
+
+            utils::HighResTimer exprTimer;
             RunExpressionRules(request, indexPtr, ctx);
+            exprMs = exprTimer.ElapsedMs();
+
+            utils::HighResTimer typeTimer;
             RunTypeAndStructureRules(request, indexPtr, ctx);
+            typeMs = typeTimer.ElapsedMs();
         }
 
         CheckDirectivesAndModules(request, ctx);
+
+        if (m_logger && m_logger->IsEnabled(utils::LogLevel::Info))
+        {
+            m_logger->LogInfo(fmt::format("[Checkers Breakdown] File: {} | ScopeRules: {:.2f} ms, StmtFlow: {:.2f} ms, "
+                                          "ExprRules: {:.2f} ms, TypeRules: {:.2f} ms",
+                                          request.fileUri, scopeMs, stmtMs, exprMs, typeMs));
+        }
     }
 
     if (!request.excludedLineRanges.empty())
@@ -883,6 +904,27 @@ void CheckScopeReferences(
                         "as-warn-undeclared-identifier", ref.name, DiagnosticSeverity::Warning);
     }
 }
+struct UndefinedIdentifierContext
+{
+    const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames;
+    const MixinRanges& mixinRanges;
+    DiagnosticContext& ctx;
+};
+
+void CheckUndefinedIdentifiersRecursive(const Scope* scope, const UndefinedIdentifierContext& uCtx, int depth)
+{
+    if (depth > k_maxAstDepth || !scope)
+    {
+        return;
+    }
+
+    CheckScopeReferences(scope, uCtx.knownGlobalNames, uCtx.mixinRanges, uCtx.ctx);
+
+    for (const auto& child : scope->children)
+    {
+        CheckUndefinedIdentifiersRecursive(child.get(), uCtx, depth + 1);
+    }
+}
 } // namespace
 
 void SemanticAnalyzer::CheckUndefinedIdentifiers(
@@ -892,13 +934,13 @@ void SemanticAnalyzer::CheckUndefinedIdentifiers(
 {
     // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
     if (depth > k_maxAstDepth || !scope)
+    {
         return;
+    }
 
     const MixinRanges mixinRanges = CollectMixinRanges(ctx.request.symbolTable, ctx.request.fileUri);
-    CheckScopeReferences(scope, knownGlobalNames, mixinRanges, ctx);
-
-    for (const auto& child : scope->children)
-        CheckUndefinedIdentifiers(child.get(), knownGlobalNames, ctx, depth + 1);
+    const UndefinedIdentifierContext uCtx{knownGlobalNames, mixinRanges, ctx};
+    CheckUndefinedIdentifiersRecursive(scope, uCtx, depth);
 }
 
 void SemanticAnalyzer::CollectUsedDefinitions(const Scope* scope,

@@ -332,6 +332,11 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
         return;
     }
 
+    if (m_config.features.enablePredefinedLoader && !IsPredefinedReady())
+    {
+        WaitForPredefinedReady(std::chrono::milliseconds(1000));
+    }
+
     utils::HighResTimer colTimer;
     auto diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
     double colMs = colTimer.ElapsedMs();
@@ -356,7 +361,14 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
 
     AppendIncludeDiagnostics(uriStr, analysisText, diagnostics);
 
-    PublishDiagnostics(uriStr, analysisText, diagnostics, version);
+    if (m_config.features.enablePredefinedLoader && !IsPredefinedReady())
+    {
+        LogInfo(fmt::format("Predefined stubs still indexing; deferring initial diagnostics for {}", uriStr));
+    }
+    else
+    {
+        PublishDiagnostics(uriStr, analysisText, diagnostics, version);
+    }
 
     double totalMs = totalTimer.ElapsedMs();
     LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, "

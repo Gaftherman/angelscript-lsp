@@ -338,6 +338,7 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
         Server* server;
         ~ReanalyseOnExit()
         {
+            server->SetPredefinedReady(true);
             server->m_workspaceScanComplete.store(true);
             server->ScheduleOpenDocumentsForReanalysis();
         }
@@ -359,6 +360,7 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
             return;
         }
     }
+    SetPredefinedReady(true);
 
     BuildIncludeGraphAndModules(walkResult.allScriptFiles, roots, stopToken, backgroundParser);
     if (stopToken.stop_requested())

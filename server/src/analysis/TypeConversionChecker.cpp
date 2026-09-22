@@ -8,6 +8,7 @@
 #include "parser/Primitives.h"
 #include "utils/LspLogger.h"
 #include <algorithm>
+#include <ankerl/unordered_dense.h>
 #include <functional>
 #include <spdlog/fmt/fmt.h>
 #include <string_view>
@@ -688,17 +689,17 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
         }
     } guard{state.visitedEdges, std::move(edgeKey)};
 
-    // Implicit widening from enum to integer primitives (int, uint, int64, etc.)
-    if (ResolvesToEnum(from, table) && parser::primitives::IsInteger(CanonicalizeType(to)))
-    {
-        return true;
-    }
-
     const bool fromBuiltIn = IsBuiltInValueType(from, ctx);
     const bool toBuiltIn = IsBuiltInValueType(to, ctx);
     if (fromBuiltIn && toBuiltIn)
     {
         return CanConvertBuiltins(from, to, ctx);
+    }
+
+    // Implicit widening from enum to integer primitives (int, uint, int64, etc.)
+    if (ResolvesToEnum(from, table) && parser::primitives::IsInteger(CanonicalizeType(to)))
+    {
+        return true;
     }
 
     if (ResolvesToEnum(to, table))
@@ -3369,9 +3370,24 @@ void ProcessExpressionNode(std::string_view nodeType, TSNode node, const TypeCon
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
+bool IsConversionRelevantNodeType(std::string_view type)
+{
+    static const ankerl::unordered_dense::set<std::string_view> kRelevantTypes = {
+        "if_statement",       "while_statement",          "do_while_statement",    "for_statement",
+        "ternary_expression", "expression_statement",     "foreach_statement",     "variable_declaration",
+        "return_statement",   "func_declaration",         "assignment_expression", "binary_expression",
+        "unary_expression",   "postfix_expression",       "member_expression",     "cast_expression",
+        "call_expression",    "construct_call_expression"};
+    return kRelevantTypes.contains(type);
+}
+
 void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     const std::string_view nodeType = NodeType(node);
+    if (!IsConversionRelevantNodeType(nodeType))
+    {
+        return;
+    }
 
     if (nodeType == "if_statement" || nodeType == "while_statement" || nodeType == "do_while_statement" ||
         nodeType == "for_statement")

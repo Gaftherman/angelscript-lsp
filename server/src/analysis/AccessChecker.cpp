@@ -3,6 +3,7 @@
 #include "analysis/NodeIndex.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/rules/RuleIndex.h"
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
@@ -295,9 +296,21 @@ MemberAccess FindMember(const std::string& typeName, const std::string& memberNa
         return result;
     }
 
+    const auto ruleIndex = table.GetRuleIndex();
     const MemberLookupContext ctx{typeName, table, accessorKeywordRequired};
     for (const auto& owner : GetInheritedTypeHierarchy(typeName, table))
     {
+        if (ruleIndex)
+        {
+            const auto& members = ruleIndex->Members(owner);
+            const bool hasPotential = members.allMemberNames.contains(memberName) ||
+                                      members.allMemberNames.contains("get_" + memberName) ||
+                                      members.allMemberNames.contains("set_" + memberName);
+            if (!hasPotential)
+            {
+                continue;
+            }
+        }
         auto candidates = CollectOwnerCandidates(owner, memberName, ctx, result.viaAccessor);
         if (ApplyCandidatesAccess(candidates, owner, ctx, result))
         {
@@ -621,18 +634,18 @@ bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_v
  */
 void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view idText, DiagnosticContext& ctx)
 {
+    const LocalDefinition* localDef = ResolveInScope(scope, idText);
+    if (localDef &&
+        (localDef->kind == LocalDefinitionKind::Variable || localDef->kind == LocalDefinitionKind::Parameter))
+    {
+        return;
+    }
+
     const SymbolTable& table = ctx.request.symbolTable;
 
     bool insideMixin = false;
     const std::string accessingClass = EnclosingClass(node, ctx.request.sourceCode, insideMixin, table);
     if (accessingClass.empty())
-    {
-        return;
-    }
-
-    const LocalDefinition* localDef = ResolveInScope(scope, idText);
-    if (localDef &&
-        (localDef->kind == LocalDefinitionKind::Variable || localDef->kind == LocalDefinitionKind::Parameter))
     {
         return;
     }
@@ -752,6 +765,11 @@ void CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx
             else
             {
                 TSNode node = idents[k++];
+                TSNode parent = ts_node_parent(node);
+                if (ShouldSkipIdentifierNode(node, parent))
+                {
+                    continue;
+                }
                 const TSPoint start = ts_node_start_point(node);
                 CheckIdentifierNode(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
             }

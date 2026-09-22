@@ -96,6 +96,11 @@ class Server
 
     /** @brief Set once the first workspace scan finishes; used to defer initial diagnostics. */
     std::atomic<bool> m_workspaceScanComplete{false};
+
+    /** @brief Barrier signaling that predefined stubs and engine profiles have loaded. */
+    std::atomic<bool> m_predefinedReady{false};
+    mutable std::mutex m_predefinedMutex;
+    mutable std::condition_variable m_predefinedCv;
     std::mutex m_messageHandlerMutex;
     std::unique_ptr<angel_lsp::utils::LspLogger> m_logger;
     std::unique_ptr<angel_lsp::parser::AngelScriptParser> m_parser;
@@ -720,6 +725,25 @@ class Server
      */
     void ParserPredefined(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
                           bool forceReload = false);
+
+    /**
+     * @brief Marks whether predefined stubs and engine profiles are ready for document analysis.
+     * @param[in] ready True if predefined stubs are loaded and ready.
+     */
+    void SetPredefinedReady(bool ready);
+
+    /**
+     * @brief Waits up to timeout for predefined stubs to finish loading.
+     * @param[in] timeout Maximum duration to wait.
+     * @return True if predefined stubs are ready, false if timed out.
+     */
+    bool WaitForPredefinedReady(std::chrono::milliseconds timeout) const;
+
+    /**
+     * @brief Checks whether predefined stubs have finished loading.
+     * @return True if predefined stubs are loaded.
+     */
+    [[nodiscard]] bool IsPredefinedReady() const noexcept;
 
     /**
      * @brief Loads the predefined stubs named by ServerConfig::predefinedFiles.

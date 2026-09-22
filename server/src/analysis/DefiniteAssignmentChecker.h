@@ -6,6 +6,8 @@
 
 namespace angel_lsp::analysis
 {
+class NodeIndex;
+
 /**
  * @brief Context parameters for definite assignment dataflow analysis.
  */
@@ -14,6 +16,7 @@ struct DefiniteAssignmentCheckRequest
     TSNode root;
     std::string_view sourceCode;
     const Scope* scopeRoot = nullptr;
+    const NodeIndex* nodeIndex = nullptr;
 };
 
 /**

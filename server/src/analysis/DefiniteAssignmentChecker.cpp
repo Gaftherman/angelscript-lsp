@@ -1,5 +1,6 @@
 #include "analysis/DefiniteAssignmentChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
@@ -259,7 +260,7 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    void CollectCallArguments(TSNode argsNode, std::vector<TSNode>& argNodes, std::vector<std::string>& argTypes) const
+    void ExtractRawArgNodes(TSNode argsNode, std::vector<TSNode>& argNodes) const
     {
         uint32_t rawChildCount = ts_node_child_count(argsNode);
         for (uint32_t i = 0; i < rawChildCount; ++i)
@@ -269,10 +270,25 @@ class DefiniteAssignmentVisitor
             if (ct != "(" && ct != ")" && ct != "," && ct != "comment")
             {
                 argNodes.push_back(child);
-                argTypes.push_back(ResolveExpressionType(child, {m_request.scopeRoot, m_ctx.request.symbolTable,
-                                                                 m_request.sourceCode, m_ctx.request.fileUri}));
             }
         }
+    }
+
+    bool HasAnyUnassignedTrackedLocal(const std::vector<TSNode>& argNodes, const FlowState& state) const
+    {
+        if (m_trackedLocals.empty())
+        {
+            return false;
+        }
+        for (TSNode arg : argNodes)
+        {
+            std::string varName = GetSimpleIdentifierName(arg, m_request.sourceCode);
+            if (!varName.empty() && m_trackedLocals.contains(varName) && !state.assignedVars.contains(varName))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     bool IsOutParameter(size_t i, const CallCandidateInfo& info) const
@@ -345,12 +361,28 @@ class DefiniteAssignmentVisitor
             return;
         }
 
+        std::vector<TSNode> argNodes;
+        ExtractRawArgNodes(argsNode, argNodes);
+
+        if (!HasAnyUnassignedTrackedLocal(argNodes, state))
+        {
+            for (TSNode arg : argNodes)
+            {
+                CheckExpressionReads(arg, state, depth + 1);
+            }
+            return;
+        }
+
         std::vector<Symbol> candidates;
         CollectCallCandidates(funcNode, node, candidates);
 
-        std::vector<TSNode> argNodes;
         std::vector<std::string> argTypes;
-        CollectCallArguments(argsNode, argNodes, argTypes);
+        argTypes.reserve(argNodes.size());
+        for (TSNode arg : argNodes)
+        {
+            argTypes.push_back(ResolveExpressionType(
+                arg, {m_request.scopeRoot, m_ctx.request.symbolTable, m_request.sourceCode, m_ctx.request.fileUri}));
+        }
 
         auto best = ResolveBestOverload(candidates, argTypes, m_ctx.request.symbolTable);
         const FunctionSignature* sig =
@@ -476,7 +508,7 @@ class DefiniteAssignmentVisitor
         bool isPrimitive = false;
         if (!ts_node_is_null(typeNode))
         {
-            TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, std::string(m_request.sourceCode));
+            TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, m_request.sourceCode);
             isPrimitive = (IsPrimitiveTypeName(typeInfo.baseTypeName) && !typeInfo.isArray && !typeInfo.isHandle &&
                            typeInfo.templateName.empty());
         }
@@ -813,6 +845,19 @@ void CheckDefiniteAssignment(const DefiniteAssignmentCheckRequest& request, Diag
     }
 
     DefiniteAssignmentVisitor visitor(request, ctx);
+    if (request.nodeIndex)
+    {
+        for (TSNode funcNode : request.nodeIndex->Nodes(parser::nodes::FuncDeclaration))
+        {
+            visitor.AnalyzeFunction(funcNode);
+        }
+        for (TSNode lambdaNode : request.nodeIndex->Nodes(parser::nodes::LambdaExpression))
+        {
+            visitor.AnalyzeFunction(lambdaNode);
+        }
+        return;
+    }
+
     TraverseFunctions(request.root, visitor);
 }
 } // namespace angel_lsp::analysis

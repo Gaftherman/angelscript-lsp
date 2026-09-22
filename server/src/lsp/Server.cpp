@@ -161,6 +161,10 @@ std::optional<int> FindSectionInt(const lsp::LSPObject* initSection, const lsp::
 Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& stream)
 {
     m_config = config;
+    if (!m_config.features.enablePredefinedLoader)
+    {
+        m_predefinedReady.store(true);
+    }
 
     m_connection = std::make_unique<lsp::Connection>(stream);
     m_messageHandler = std::make_unique<lsp::MessageHandler>(*m_connection);
