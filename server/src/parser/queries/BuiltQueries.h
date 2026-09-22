@@ -348,6 +348,7 @@ namespace angel_lsp::parser::queries
 ; =============================================================================
 
 (identifier) @local.reference
+["function" "get" "set" "shared"] @local.reference
 )SCM";
 
 [[maybe_unused]] inline constexpr const char* TAGS_QUERY = R"SCM(

@@ -429,23 +429,30 @@ void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC
     sCtx.symbolTable.AddSymbol(sym);
 }
 
-void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const VariableHeaderInfo& header,
-                                              SymbolCollectContext& sCtx, const CollectionContext& ctx)
+static TSNode FindDeclaratorValueNode(TSNode declaratorNode, std::string_view sourceCode)
 {
-    TSNode varDeclNode = ts_node_parent(declaratorNode);
-    TSNode nameNode = GetChildByFieldName(declaratorNode, "name");
-    TSNode valueNode = GetChildByFieldName(declaratorNode, "value");
-    if (ts_node_is_null(valueNode))
+    TSNode valueNode = parser::GetChildByField(declaratorNode, parser::fields::Value);
+    if (!ts_node_is_null(valueNode))
     {
-        TSTreeCursor cursor = ts_tree_cursor_new(declaratorNode);
-        if (ts_tree_cursor_goto_first_child(&cursor))
+        return valueNode;
+    }
+    TSTreeCursor cursor = ts_tree_cursor_new(declaratorNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        bool foundEq = false;
+        do
         {
-            bool foundEq = false;
-            do
+            TSNode ch = ts_tree_cursor_current_node(&cursor);
+            const uint32_t start = ts_node_start_byte(ch);
+            const uint32_t end = ts_node_end_byte(ch);
+            if (start < end && end <= sourceCode.size())
             {
-                TSNode ch = ts_tree_cursor_current_node(&cursor);
-                std::string chText = GetNodeText(ch, sCtx.request.sourceCode);
-                if (chText == "=")
+                std::string_view text = sourceCode.substr(start, end - start);
+                while (!text.empty() && isspace(static_cast<unsigned char>(text.front())))
+                    text.remove_prefix(1);
+                while (!text.empty() && isspace(static_cast<unsigned char>(text.back())))
+                    text.remove_suffix(1);
+                if (text == "=")
                 {
                     foundEq = true;
                 }
@@ -454,10 +461,19 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
                     valueNode = ch;
                     break;
                 }
-            } while (ts_tree_cursor_goto_next_sibling(&cursor));
-        }
-        ts_tree_cursor_delete(&cursor);
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
+    return valueNode;
+}
+
+void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const VariableHeaderInfo& header,
+                                              SymbolCollectContext& sCtx, const CollectionContext& ctx)
+{
+    TSNode varDeclNode = ts_node_parent(declaratorNode);
+    TSNode nameNode = GetChildByFieldName(declaratorNode, "name");
+    TSNode valueNode = FindDeclaratorValueNode(declaratorNode, sCtx.request.sourceCode);
 
     SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
     Symbol sym = CreateSymbol(SymbolType::Variable, varDeclNode, nameNode, loc);
@@ -485,6 +501,20 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
 
     sym.signature = varSig;
     sCtx.symbolTable.AddSymbol(sym);
+
+    if (!ctx.isInsideFunction)
+    {
+        TSNode argsNode = GetChildByFieldName(declaratorNode, "arguments");
+        if (!ts_node_is_null(argsNode) && !header.typeStr.empty())
+        {
+            CallReferenceSignature callSig;
+            callSig.calleeName = header.typeStr;
+            SymbolLocationContext callLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+            Symbol callSym = CreateSymbol(SymbolType::CallReference, declaratorNode, declaratorNode, callLoc);
+            callSym.signature = callSig;
+            sCtx.symbolTable.AddSymbol(callSym);
+        }
+    }
 }
 
 void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectContext& sCtx,

@@ -426,12 +426,42 @@ static bool IsMemberAccessNode(TSNode node, TSNode parent, TSSymbol memberExprSy
            (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(node));
 }
 
+/**
+ * @brief Checks if an anonymous token is in a declaration or modifier context.
+ * @param[in] node Anonymous token AST node.
+ * @return True if node is a keyword in a declaration/modifier construct.
+ */
+static bool IsKeywordDeclarationContext(TSNode node)
+{
+    TSNode parent = ts_node_parent(node);
+    if (ts_node_is_null(parent))
+    {
+        return true;
+    }
+    const std::string_view parentType = ts_node_type(parent);
+    return parentType == "accessor" || parentType == "func_declaration" || parentType == "class_declaration" ||
+           parentType == "interface_declaration" || parentType == "enum_declaration" ||
+           parentType == "funcdef_declaration" || parentType == "mixin_declaration";
+}
+
 void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Scope* current,
                                                   const std::string& sourceCode) const
 {
-    if (ts_node_has_error(capture.node) || !ts_node_is_named(capture.node))
+    if (ts_node_has_error(capture.node))
     {
         return;
+    }
+    if (!ts_node_is_named(capture.node))
+    {
+        const std::string_view nodeType = ts_node_type(capture.node);
+        if (nodeType != "function" && nodeType != "get" && nodeType != "set" && nodeType != "shared")
+        {
+            return;
+        }
+        if (IsKeywordDeclarationContext(capture.node))
+        {
+            return;
+        }
     }
 
     TSPoint startPt = ts_node_start_point(capture.node);
