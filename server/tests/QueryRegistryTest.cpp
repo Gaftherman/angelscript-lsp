@@ -4,6 +4,7 @@
 #include "parser/AngelScriptParser.h"
 #include "parser/QueryRegistry.h"
 
+#include <atomic>
 #include <thread>
 #include <vector>
 
@@ -36,16 +37,80 @@ TEST_CASE("QueryRegistry - Precompiled queries and thread-local cursor invariant
     std::vector<std::thread> workers;
     std::vector<const TSQuery*> threadTags(kThreads, nullptr);
     std::vector<TSQueryCursor*> threadCursors(kThreads, nullptr);
+    std::vector<bool> threadMatches(kThreads, false);
+
+    std::atomic<int> readyThreads{0};
+    std::atomic<bool> startWork{false};
+    std::atomic<int> doneWork{0};
+    std::atomic<bool> allowExit{false};
 
     for (int i = 0; i < kThreads; ++i)
     {
         workers.emplace_back(
-            [i, &threadTags, &threadCursors]()
+            [i, &threadTags, &threadCursors, &threadMatches, &readyThreads, &startWork, &doneWork, &allowExit, tags]()
             {
                 threadTags[i] = parser::QueryRegistry::GetTagsQuery();
                 threadCursors[i] = parser::QueryRegistry::GetThreadLocalCursor();
+
+                readyThreads.fetch_add(1, std::memory_order_release);
+
+                while (!startWork.load(std::memory_order_acquire))
+                {
+                    std::this_thread::yield();
+                }
+
+                const std::string sym = test::GenerateRandomSymbolName("WorkerFunc");
+                const std::string code = "void " + sym + "(int x) { int y = x * 2; }\n";
+                parser::AngelScriptParser threadParser;
+                TSTree* threadTree = threadParser.Parse(code);
+                if (threadTree)
+                {
+                    TSNode root = ts_tree_root_node(threadTree);
+                    ts_query_cursor_exec(threadCursors[i], tags, root);
+                    TSQueryMatch match;
+                    while (ts_query_cursor_next_match(threadCursors[i], &match))
+                    {
+                        if (match.capture_count > 0)
+                        {
+                            threadMatches[i] = true;
+                            break;
+                        }
+                    }
+                    ts_tree_delete(threadTree);
+                }
+
+                doneWork.fetch_add(1, std::memory_order_release);
+
+                while (!allowExit.load(std::memory_order_acquire))
+                {
+                    std::this_thread::yield();
+                }
             });
     }
+
+    while (readyThreads.load(std::memory_order_acquire) < kThreads)
+    {
+        std::this_thread::yield();
+    }
+
+    for (int i = 0; i < kThreads; ++i)
+    {
+        CHECK(threadTags[i] == tags);
+        REQUIRE(threadCursors[i] != nullptr);
+        for (int j = i + 1; j < kThreads; ++j)
+        {
+            CHECK(threadCursors[i] != threadCursors[j]);
+        }
+    }
+
+    startWork.store(true, std::memory_order_release);
+
+    while (doneWork.load(std::memory_order_acquire) < kThreads)
+    {
+        std::this_thread::yield();
+    }
+
+    allowExit.store(true, std::memory_order_release);
 
     for (auto& w : workers)
     {
@@ -54,13 +119,7 @@ TEST_CASE("QueryRegistry - Precompiled queries and thread-local cursor invariant
 
     for (int i = 0; i < kThreads; ++i)
     {
-        CHECK(threadTags[i] == tags);
-        CHECK(threadCursors[i] != nullptr);
-        // Each worker thread must have its own distinct cursor instance
-        for (int j = i + 1; j < kThreads; ++j)
-        {
-            CHECK(threadCursors[i] != threadCursors[j]);
-        }
+        CHECK(threadMatches[i]);
     }
 
     // Invariant 5: Cursor execution on AST with randomized symbol

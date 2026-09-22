@@ -51,6 +51,7 @@ endif()
 
 # project() takes only the numeric part, so a pre-release suffix like 0.1.0-rc.1 or v0.7.4-exp.1 does not break configure.
 string(REGEX REPLACE "^v" "" ANGELLSP_VERSION_CLEAN "${ANGELLSP_VERSION}")
+set(ANGELLSP_VERSION "${ANGELLSP_VERSION_CLEAN}")
 string(REGEX MATCH "^[0-9]+(\\.[0-9]+)*" ANGELLSP_VERSION_NUMERIC "${ANGELLSP_VERSION_CLEAN}")
 if(NOT ANGELLSP_VERSION_NUMERIC)
     set(ANGELLSP_VERSION_NUMERIC "0.0.0")
