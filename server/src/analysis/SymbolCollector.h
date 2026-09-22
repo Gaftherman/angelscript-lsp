@@ -152,7 +152,7 @@ class SymbolCollector
 
   private:
     utils::LspLogger* m_logger;
-    TSQuery* m_tagsQuery = nullptr;
+    const TSQuery* m_tagsQuery = nullptr;
 
     // =====================================================================================
     // Cached grammar symbols (tree-sitter TSSymbol IDs, resolved once per instance)
@@ -260,7 +260,7 @@ class SymbolCollector
     // =====================================================================================
 
     void ResolveGrammarSymbols(const TSLanguage* lang);
-    void InitQueryDispatch(const TSLanguage* lang);
+    void InitQueryDispatch();
     void PopulateDispatchTables();
     ProcessFn ResolveCaptureHandler(std::string_view captureName) const;
     ValidationFn ResolveValidationHandler(std::string_view captureName) const;

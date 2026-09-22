@@ -1,6 +1,7 @@
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
+#include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/Constants.h"
@@ -36,16 +37,11 @@ LocalScopeCollector::LocalScopeCollector(angel_lsp::utils::LspLogger* logger) : 
     m_symForeachVariable =
         ts_language_symbol_for_name(lang, "foreach_variable", static_cast<uint32_t>(strlen("foreach_variable")), true);
 
-    uint32_t errorOffset = 0;
-    TSQueryError errorType = TSQueryErrorNone;
-    m_localsQuery =
-        ts_query_new(lang, angel_lsp::parser::queries::LOCALS_QUERY,
-                     static_cast<uint32_t>(strlen(angel_lsp::parser::queries::LOCALS_QUERY)), &errorOffset, &errorType);
-
+    m_localsQuery = parser::QueryRegistry::GetLocalsQuery();
     if (!m_localsQuery)
     {
         if (m_logger)
-            m_logger->LogError(fmt::format("Failed to compile LOCALS_QUERY at offset: {}", errorOffset));
+            m_logger->LogError("Failed to get LOCALS_QUERY from QueryRegistry");
         return;
     }
 
@@ -99,13 +95,7 @@ void LocalScopeCollector::InitializeCaptureKinds(std::vector<CaptureKind>& kinds
     }
 }
 
-LocalScopeCollector::~LocalScopeCollector()
-{
-    if (m_localsQuery)
-    {
-        ts_query_delete(m_localsQuery);
-    }
-}
+LocalScopeCollector::~LocalScopeCollector() = default;
 
 std::unique_ptr<Scope> LocalScopeCollector::CollectScopes(const std::string& sourceCode,
                                                           angel_lsp::parser::AngelScriptParser& parser) const
@@ -128,7 +118,7 @@ std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNod
 
     std::vector<RawCapture> captures;
 
-    TSQueryCursor* cursor = ts_query_cursor_new();
+    TSQueryCursor* cursor = angel_lsp::parser::QueryRegistry::GetThreadLocalCursor();
     ts_query_cursor_exec(cursor, m_localsQuery, rootNode);
 
     TSQueryMatch match;
@@ -149,8 +139,6 @@ std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNod
                                                                           : LocalDefinitionKind::Variable});
         }
     }
-
-    ts_query_cursor_delete(cursor);
 
     return BuildScopeTree(captures, sourceCode);
 }

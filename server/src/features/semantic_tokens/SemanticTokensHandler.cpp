@@ -2,6 +2,7 @@
 #include "analysis/NodeIndex.h"
 #include "analysis/rules/RuleIndex.h"
 #include "parser/GrammarNames.h"
+#include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
@@ -1341,7 +1342,7 @@ void EmitTokenOrSplitLines(TSNode node, TokenMeta meta, const std::vector<std::s
 void CollectHighlightsTokens(const HighlightsQueryData& highlights, const TokenRefinementContext& ctx,
                              const std::vector<std::string_view>& sourceLines, std::vector<RawToken>& rawTokens)
 {
-    TSQueryCursor* cursor = ts_query_cursor_new();
+    TSQueryCursor* cursor = parser::QueryRegistry::GetThreadLocalCursor();
     ts_query_cursor_exec(cursor, highlights.query, ts_tree_root_node(ctx.request.tree));
 
     TSQueryMatch match;
@@ -1394,8 +1395,6 @@ void CollectHighlightsTokens(const HighlightsQueryData& highlights, const TokenR
 
         EmitTokenOrSplitLines(node, TokenMeta{tokenType, tokenMod, priority}, sourceLines, rawTokens);
     }
-
-    ts_query_cursor_delete(cursor);
 }
 
 /**

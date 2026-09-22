@@ -53,7 +53,7 @@ class LocalScopeCollector
 
   private:
     utils::LspLogger* m_logger;
-    TSQuery* m_localsQuery;
+    const TSQuery* m_localsQuery;
 
     /** @brief Cached grammar symbol for member_expression, used to flag a reference as a member access (see
      * ScopeTree.h::LocalReference::isMemberAccess). */

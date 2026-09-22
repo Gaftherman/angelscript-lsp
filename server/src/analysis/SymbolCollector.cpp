@@ -1,5 +1,6 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/SemanticHelpers.h"
+#include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
@@ -64,7 +65,7 @@ SymbolCollector::SymbolCollector(angel_lsp::utils::LspLogger* logger) : m_logger
 {
     const TSLanguage* lang = tree_sitter_angelscript();
     ResolveGrammarSymbols(lang);
-    InitQueryDispatch(lang);
+    InitQueryDispatch();
 }
 
 void SymbolCollector::ResolveGrammarSymbols(const TSLanguage* lang)
@@ -114,19 +115,14 @@ void SymbolCollector::ResolveGrammarSymbols(const TSLanguage* lang)
     m_tokOpenBrace = ts_language_symbol_for_name(lang, SYM_NAME("{"), false);
 }
 
-void SymbolCollector::InitQueryDispatch(const TSLanguage* lang)
+void SymbolCollector::InitQueryDispatch()
 {
-    uint32_t errorOffset = 0;
-    TSQueryError errorType = TSQueryErrorNone;
-    m_tagsQuery =
-        ts_query_new(lang, angel_lsp::parser::queries::TAGS_QUERY,
-                     static_cast<uint32_t>(strlen(angel_lsp::parser::queries::TAGS_QUERY)), &errorOffset, &errorType);
-
+    m_tagsQuery = angel_lsp::parser::QueryRegistry::GetTagsQuery();
     if (!m_tagsQuery)
     {
         if (m_logger)
         {
-            m_logger->LogError(fmt::format("Error al compilar TAGS_QUERY en offset: {}", errorOffset));
+            m_logger->LogError("Failed to get TAGS_QUERY from QueryRegistry");
         }
         return;
     }
@@ -186,13 +182,7 @@ void SymbolCollector::PopulateDispatchTables()
     }
 }
 
-SymbolCollector::~SymbolCollector()
-{
-    if (m_tagsQuery)
-    {
-        ts_query_delete(m_tagsQuery);
-    }
-}
+SymbolCollector::~SymbolCollector() = default;
 
 std::vector<Diagnostic> SymbolCollector::CollectSymbols(const SymbolCollectRequest& request,
                                                         angel_lsp::parser::AngelScriptParser& parser,
@@ -250,7 +240,7 @@ void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCt
 {
     ReportParseErrors(rootNode, sCtx);
 
-    TSQueryCursor* cursor = ts_query_cursor_new();
+    TSQueryCursor* cursor = angel_lsp::parser::QueryRegistry::GetThreadLocalCursor();
     ts_query_cursor_exec(cursor, m_tagsQuery, rootNode);
 
     TSQueryMatch match;
@@ -270,8 +260,6 @@ void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCt
             }
         }
     }
-
-    ts_query_cursor_delete(cursor);
 }
 
 SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, std::string_view sourceCode) const
