@@ -322,6 +322,11 @@ bool Server::ProcessIncomingMessageStep()
         LogError(fmt::format("Unhandled exception handling message: {}", e.what()));
         return false;
     }
+    catch (...)
+    {
+        LogError("Unknown fatal exception in message step; recovering.");
+        return false;
+    }
 }
 
 void Server::Run()
@@ -330,22 +335,33 @@ void Server::Run()
 
     while (m_running)
     {
-        if (ProcessIncomingMessageStep())
+        try
         {
-            consecutiveErrors = 0;
-            continue;
-        }
+            if (ProcessIncomingMessageStep())
+            {
+                consecutiveErrors = 0;
+                continue;
+            }
 
-        if (!m_running)
-        {
-            break;
-        }
+            if (!m_running)
+            {
+                break;
+            }
 
-        if (++consecutiveErrors >= k_maxConsecutiveMessageErrors)
+            if (++consecutiveErrors >= k_maxConsecutiveMessageErrors)
+            {
+                LogError(fmt::format("Giving up after {} consecutive message errors; closing the session.",
+                                     consecutiveErrors));
+                m_running = false;
+            }
+        }
+        catch (const std::exception& e)
         {
-            LogError(
-                fmt::format("Giving up after {} consecutive message errors; closing the session.", consecutiveErrors));
-            m_running = false;
+            LogError(fmt::format("Fatal exception in main server loop recovered: {}", e.what()));
+        }
+        catch (...)
+        {
+            LogError("Unknown fatal exception in main server loop recovered.");
         }
     }
 }
