@@ -4,6 +4,32 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.0] - 2026-09-22
+
+### Runtime Verification Harnesses & Semantic Parity Remediation
+
+- Runtime Verification & Empirical DAP Inspection:
+  - Implemented `TraversalBudget` inside `ASTUtils.h` enforcing asymptotic O(N) node-visit ceilings with `BudgetExceededException`.
+  - Implemented `ScopedAllocationCounter` utilizing MSVC CRT Debug hooks (`_CrtSetAllocHook`) and zero-clone telemetry.
+  - Empirically verified live call candidate filtering and variable bounds via DebugMCP (`debugmcp`) under MSVC DAP.
+- Sven Co-op Semantic Parity & Workspace Hardening:
+  - Recursive `#include` directive resolution within `.as.predefined` stubs via `PredefinedLoadContext`.
+  - Guaranteed `forceIncludeFiles` inclusion in module forward dependency closures and synthetic entry point scoping.
+  - Corrected overload resolution arity for variadic `?&in` parameters with default arguments and prioritized non-variadic exact matches.
+  - Enforced R-value disqualification from binding to mutable reference parameters (`&out`, `&inout`, and `InOut`).
+  - Added template instantiation disambiguation (`AreIncompatibleTemplateTypes`) rejecting implicit conversions between incompatible types (e.g. `array<T1>` vs `array<T2>`).
+  - Resolved return types for local and member funcdef handle invocations.
+  - Added support for constructor-style primitive casting (e.g. `char(uint8)`).
+  - Resolved direct initialization constructor shadowing (e.g. `Logger Logger(...)`) and emitted `CallReference` for class constructors.
+  - Permitted contextual keywords (`function`, `get`, `set`, `shared`) as valid identifiers in variable declarations, comparisons, and l-value assignments.
+- Invariant Test Suites:
+  - `IterationBudgetHarnessTest`: Generative multi-scale linear traversal scaling and budget exhaustion invariants.
+  - `AllocationBudgetHarnessTest`: Zero-clone and low-churn heap allocation verification.
+  - `PredefinedIncludeTest`: Dynamic sandbox `#include` resolution and forward dependency closure checks.
+  - `FuncdefInvocationTest`: Return type inference for local and member funcdef calls.
+  - `OverloadResolutionSvenCoopTest`: Variadic matching, mutable reference R-value rejection, and template disambiguation.
+  - `PrimitiveCastTest`: Primitive casting, constructor shadowing, and contextual keyword variables.
+
 ## [0.7.9-exp.4] - 2026-09-22
 
 ### Generative Invariant-Based Testing & Server Stability
