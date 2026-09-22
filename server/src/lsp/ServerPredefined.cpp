@@ -445,10 +445,37 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
                     filePath, totalUs, parseUs, symUs, scopeUs));
     LogInfo(fmt::format("Loaded predefined file: {}", filePath));
 
+    PredefinedLoadContext ctx{parser, forceReload, visited};
+    LoadPredefinedIncludes(content, filePath, ctx);
+}
+
+void Server::LoadPredefinedIncludes(const std::string& content, const std::string& filePath,
+                                    PredefinedLoadContext& ctx)
+{
+    std::vector<std::string> searchDirs;
+    if (const auto dirs = SearchDirectories())
+    {
+        searchDirs.insert(searchDirs.end(), dirs->begin(), dirs->end());
+    }
+    for (const auto& wsRoot : WorkspaceRoots())
+    {
+        if (std::string wsPath = angel_lsp::utils::UriToPath(wsRoot); !wsPath.empty())
+        {
+            searchDirs.push_back(std::move(wsPath));
+        }
+    }
+    const auto allowedRoots = IncludeAllowedRoots();
+
     for (const auto& inc : angel_lsp::utils::IncludeResolver::ExtractIncludes(content))
     {
-        std::string resolved = angel_lsp::utils::IncludeResolver::ResolveIncludePath(inc.rawPath, filePath,
-                                                                                     m_config.searchDirectories, {});
+        std::string resolved = angel_lsp::utils::IncludeResolver::ResolveIncludePath(
+            angel_lsp::utils::IncludeResolveRequest{
+                .includePath = inc.rawPath,
+                .currentFilePath = filePath,
+                .searchDirectories = searchDirs,
+                .allowedRoots = allowedRoots,
+                .implicitExtension = ImplicitIncludeExtension(),
+            });
         if (!resolved.empty())
         {
             const std::string normInc = angel_lsp::utils::IncludeResolver::NormalizePath(resolved);
@@ -456,7 +483,7 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
                 std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
                 m_predefinedTransitiveIncludes.insert(normInc);
             }
-            ParserPredefinedInternal(normInc, parser, forceReload, visited);
+            ParserPredefinedInternal(normInc, ctx.parser, ctx.forceReload, ctx.visited);
         }
     }
 }

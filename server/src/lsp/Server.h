@@ -725,6 +725,32 @@ class Server
      */
     void ParserPredefined(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
                           bool forceReload = false);
+    /**
+     * @brief Context parameters for recursive predefined stub loading and include parsing.
+     */
+    struct PredefinedLoadContext
+    {
+        angel_lsp::parser::AngelScriptParser& parser;
+        bool forceReload = false;
+        std::unordered_set<std::string>& visited;
+    };
+
+    /**
+     * @brief Resolves and parses `#include` directives discovered inside a predefined stub.
+     * @param[in] content Textual content of the predefined stub.
+     * @param[in] filePath Path of the predefined stub on disk.
+     * @param[in,out] ctx Predefined loading context.
+     */
+    void LoadPredefinedIncludes(const std::string& content, const std::string& filePath,
+                                PredefinedLoadContext& ctx);
+
+    /**
+     * @brief Recursively loads and indexes a predefined stub with cycle detection.
+     * @param[in] filePath Path of the predefined stub on disk.
+     * @param[in,out] parser Parser instance to reuse.
+     * @param[in] forceReload True to re-index even if already owned.
+     * @param[in,out] visited Set of visited normalized paths.
+     */
     void ParserPredefinedInternal(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
                                   bool forceReload, std::unordered_set<std::string>& visited);
 

@@ -72,6 +72,14 @@ struct TemplateTypeInfo
 TemplateTypeInfo ParseTemplateType(std::string_view typeName);
 
 /**
+ * @brief Checks whether two types are incompatible template instantiations or shapes.
+ * @param[in] from Source type name.
+ * @param[in] to Destination type name.
+ * @return True if incompatible template types.
+ */
+bool AreIncompatibleTemplateTypes(std::string_view from, std::string_view to);
+
+/**
  * @brief Normalizes a type name by stripping const, references, and whitespace.
  * @param typeName The raw type name string.
  * @return Cleaned type name.

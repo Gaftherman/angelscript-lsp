@@ -66,6 +66,21 @@ bool Server::PopulateModuleEntryClosure(const std::string& entry, ModuleView& vi
 
     view.closurePaths.insert(view.entryPath);
     view.memberPaths.insert(view.entryPath);
+
+    for (const auto& forceFile : m_config.forceIncludeFiles)
+    {
+        const std::string resolvedForce = ResolveConfiguredPath(forceFile);
+        if (!resolvedForce.empty())
+        {
+            view.closurePaths.insert(resolvedForce);
+            view.memberPaths.insert(resolvedForce);
+            for (const auto& fwd : m_includeGraph.GetForwardClosure(resolvedForce))
+            {
+                view.closurePaths.insert(fwd);
+                view.memberPaths.insert(fwd);
+            }
+        }
+    }
     return true;
 }
 
@@ -112,12 +127,26 @@ Server::ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& de
 
 void Server::BuildModuleIndex()
 {
+    std::vector<config::ServerConfig::ModuleDefinition> allDefs = m_config.modules;
+    if (!m_config.moduleEntryPoint.empty())
+    {
+        const bool exists = std::any_of(allDefs.begin(), allDefs.end(),
+                                        [this](const auto& def) { return def.entry == m_config.moduleEntryPoint; });
+        if (!exists)
+        {
+            config::ServerConfig::ModuleDefinition entryDef;
+            entryDef.name = "default";
+            entryDef.entry = m_config.moduleEntryPoint;
+            allDefs.push_back(std::move(entryDef));
+        }
+    }
+
     std::vector<ModuleView> resolved;
-    resolved.reserve(m_config.modules.size());
+    resolved.reserve(allDefs.size());
 
     const std::vector<std::string> workspaceFiles = m_includeGraph.AllFiles();
 
-    for (const auto& definition : m_config.modules)
+    for (const auto& definition : allDefs)
     {
         if (auto view = ResolveModuleDefinition(definition, resolved, workspaceFiles))
         {

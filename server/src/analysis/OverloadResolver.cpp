@@ -457,8 +457,10 @@ bool IsSameType(const std::string& a, const std::string& b)
 
 bool IsOutParameter(const ParameterInformation& param)
 {
-    return param.modifier == ParameterModifier::Out || param.rawText.find("&out") != std::string::npos ||
-           param.typeName.find("&out") != std::string::npos || param.typeName.find("& out") != std::string::npos;
+    return param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut ||
+           param.rawText.find("&out") != std::string::npos || param.rawText.find("&inout") != std::string::npos ||
+           param.typeName.find("&out") != std::string::npos || param.typeName.find("&inout") != std::string::npos ||
+           param.typeName.find("& out") != std::string::npos;
 }
 
 bool IsContainerParameter(const ParameterInformation& param)
@@ -636,32 +638,6 @@ std::optional<int> ScorePrimitiveOrEnumConversion(const MatchContext& ctx)
     return std::nullopt;
 }
 
-bool AreIncompatibleTemplateTypes(std::string_view cleanArg, std::string_view cleanParam)
-{
-    const bool argIsTmpl = (cleanArg.find('<') != std::string_view::npos && cleanArg.ends_with('>'));
-    const bool paramIsTmpl = (cleanParam.find('<') != std::string_view::npos && cleanParam.ends_with('>'));
-    if (argIsTmpl != paramIsTmpl)
-    {
-        return true;
-    }
-    if (argIsTmpl && paramIsTmpl)
-    {
-        const size_t argOpen = cleanArg.find('<');
-        const size_t paramOpen = cleanParam.find('<');
-        if (cleanArg.substr(0, argOpen) != cleanParam.substr(0, paramOpen))
-        {
-            return true;
-        }
-        const auto argInner = cleanArg.substr(argOpen + 1, cleanArg.size() - argOpen - 2);
-        const auto paramInner = cleanParam.substr(paramOpen + 1, cleanParam.size() - paramOpen - 2);
-        if (argInner != paramInner)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
 int ScoreCustomOrUnresolvedConversion(const MatchContext& ctx)
 {
     if (HasUserConversion(ctx.cleanArg, ctx.cleanParam, ctx.table))
@@ -724,13 +700,13 @@ ArityInfo InspectFunctionArity(const FunctionSignature& sig)
     ArityInfo info;
     for (const auto& param : sig.parameters)
     {
-        if (param.rawText.find("...") != std::string::npos)
+        if (param.rawText.find("...") != std::string::npos || param.typeName.find("...") != std::string::npos)
         {
             info.isVariadic = true;
             continue;
         }
         ++info.maxParams;
-        if (param.defaultValue.empty())
+        if (param.defaultValue.empty() && param.rawText.find('=') == std::string::npos)
         {
             ++info.requiredParams;
         }
@@ -909,8 +885,11 @@ bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
 bool IsMutableReferenceParam(const ParameterInformation& param, bool paramIsConst)
 {
     const bool isRefOrOut =
-        param.isReference || param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut;
-    return isRefOrOut && !paramIsConst && param.modifier != ParameterModifier::In;
+        param.isReference || param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut ||
+        param.rawText.find("&inout") != std::string::npos || param.typeName.find("&inout") != std::string::npos ||
+        param.rawText.find("&out") != std::string::npos || param.typeName.find("&out") != std::string::npos;
+    return isRefOrOut && !paramIsConst && param.modifier != ParameterModifier::In &&
+           param.rawText.find("&in") == std::string::npos;
 }
 
 /**

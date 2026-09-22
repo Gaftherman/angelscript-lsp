@@ -502,18 +502,18 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     sym.signature = varSig;
     sCtx.symbolTable.AddSymbol(sym);
 
-    if (!ctx.isInsideFunction)
+    TSNode argsNode = GetChildByFieldName(declaratorNode, "arguments");
+    if (!ts_node_is_null(argsNode) && !header.typeStr.empty())
     {
-        TSNode argsNode = GetChildByFieldName(declaratorNode, "arguments");
-        if (!ts_node_is_null(argsNode) && !header.typeStr.empty())
-        {
-            CallReferenceSignature callSig;
-            callSig.calleeName = header.typeStr;
-            SymbolLocationContext callLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
-            Symbol callSym = CreateSymbol(SymbolType::CallReference, declaratorNode, declaratorNode, callLoc);
-            callSym.signature = callSig;
-            sCtx.symbolTable.AddSymbol(callSym);
-        }
+        CallReferenceSignature callSig;
+        callSig.calleeName = header.typeStr;
+        SymbolLocationContext callLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+        TSNode varTypeNode = GetChildByFieldName(varDeclNode, "var_type");
+        TSNode refNode = ts_node_is_null(varTypeNode) ? declaratorNode : varTypeNode;
+        Symbol callSym = CreateSymbol(SymbolType::CallReference, declaratorNode, refNode, callLoc);
+        callSym.name = header.typeStr;
+        callSym.signature = callSig;
+        sCtx.symbolTable.AddSymbol(callSym);
     }
 }
 
@@ -1493,6 +1493,23 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std
     paramInfo.hasPrimitiveHandle = pInfo.hasPrimitiveHandle;
     paramInfo.arrayDepth = pInfo.arrayDepth;
     paramInfo.defaultValue = GetNodeText(pDefaultNode, sourceCode);
+    if (paramInfo.defaultValue.empty())
+    {
+        const size_t eqPos = paramInfo.rawText.find('=');
+        if (eqPos != std::string::npos)
+        {
+            std::string_view defVal = std::string_view(paramInfo.rawText).substr(eqPos + 1);
+            while (!defVal.empty() && (defVal.front() == ' ' || defVal.front() == '\t'))
+            {
+                defVal.remove_prefix(1);
+            }
+            while (!defVal.empty() && (defVal.back() == ' ' || defVal.back() == '\t'))
+            {
+                defVal.remove_suffix(1);
+            }
+            paramInfo.defaultValue = std::string(defVal);
+        }
+    }
     paramInfo.isHandle = pInfo.isHandle;
     paramInfo.startLine = startPt.row;
     paramInfo.startCharacter = startPt.column;

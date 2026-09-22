@@ -707,6 +707,11 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
         return CanConvertEnumTarget(from, to, table, ctx);
     }
 
+    if (AreIncompatibleTemplateTypes(from, to))
+    {
+        return false;
+    }
+
     if (IsUnresolvedOrExternalType(from, fromBuiltIn, table) || IsUnresolvedOrExternalType(to, toBuiltIn, table))
     {
         return true;

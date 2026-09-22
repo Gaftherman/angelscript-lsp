@@ -8,6 +8,7 @@
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
+#include "parser/Keywords.h"
 #include <algorithm>
 #include <cctype>
 #include <optional>
@@ -264,14 +265,14 @@ Arity ArityOf(const FunctionSignature& sig)
     for (const auto& param : sig.parameters)
     {
         // `...` reaches the collector as a parameter with nothing in it but its own text.
-        if (param.rawText.find("...") != std::string::npos)
+        if (param.rawText.find("...") != std::string::npos || param.typeName.find("...") != std::string::npos)
         {
             arity.variadic = true;
             continue;
         }
 
         ++arity.maximum;
-        if (param.defaultValue.empty())
+        if (param.defaultValue.empty() && param.rawText.find('=') == std::string::npos)
         {
             ++arity.required;
         }
@@ -298,14 +299,22 @@ bool NamesAType(const std::string& name, const SymbolTable& table)
     {
         return true;
     }
-    const auto symbols = table.FindSymbolsPtr(name);
-    return symbols && std::any_of(symbols->begin(), symbols->end(),
-                                  [](const Symbol& sym)
-                                  {
-                                      return sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
-                                             sym.type == SymbolType::Funcdef || sym.type == SymbolType::Enum ||
-                                             sym.type == SymbolType::Typedef;
-                                  });
+    if (const auto symbols = table.FindSymbolsPtr(name))
+    {
+        if (std::any_of(symbols->begin(), symbols->end(),
+                        [](const Symbol& sym)
+                        {
+                            return sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
+                                   sym.type == SymbolType::Funcdef || sym.type == SymbolType::Enum ||
+                                   sym.type == SymbolType::Typedef;
+                        }))
+        {
+            return true;
+        }
+    }
+    const std::string shortName = LastScopeSegment(name);
+    const auto matches = table.FindTypeSymbolsByShortName(shortName);
+    return !matches.empty();
 }
 
 /**
@@ -1530,17 +1539,24 @@ bool CheckCandidateNamedArgs(const FunctionSignature& sig, const std::vector<std
             paramIdx = i;
             if (paramIdx >= sig.parameters.size())
             {
-                return false;
+                const auto arity = ArityOf(sig);
+                if (!arity.variadic)
+                {
+                    return false;
+                }
             }
         }
-        matchedParams.insert(paramIdx);
-
-        if (paramIdx < sig.parameters.size() && !argTypes[i].empty())
+        if (paramIdx < sig.parameters.size())
         {
-            const int score = ScoreArgumentMatch(argTypes[i], sig.parameters[paramIdx], symbolTable, true);
-            if (score >= static_cast<int>(OverloadMatchPenalty::Incompatible))
+            matchedParams.insert(paramIdx);
+
+            if (!argTypes[i].empty())
             {
-                return false;
+                const int score = ScoreArgumentMatch(argTypes[i], sig.parameters[paramIdx], symbolTable, true);
+                if (score >= static_cast<int>(OverloadMatchPenalty::Incompatible))
+                {
+                    return false;
+                }
             }
         }
     }
@@ -1644,7 +1660,8 @@ CalleeResolution ResolveCalleeCandidates(const CallValidationContext& valCtx)
     {
         return ResolveMemberCallee(valCtx);
     }
-    if (calleeType == "scoped_identifier" || calleeType == "identifier")
+    if (calleeType == "scoped_identifier" || calleeType == "identifier" || calleeType == "function" ||
+        parser::keywords::IsKeyword(calleeType))
     {
         return ResolveIdentifierCallee(valCtx);
     }
@@ -1864,6 +1881,16 @@ std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const Sym
     {
         collectFunctions(baseName);
     }
+    if (rawConstructors.empty())
+    {
+        for (const auto& sym : table.FindTypeSymbolsByShortName(shortName))
+        {
+            if (sym.type == SymbolType::Class)
+            {
+                collectFunctions(sym.name + "::" + shortName);
+            }
+        }
+    }
     return rawConstructors;
 }
 
@@ -1877,9 +1904,9 @@ std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const Sym
  */
 bool IsClassDeclarationVisible(const std::string& baseName, const SymbolTable& table, const std::string& predefinedExt)
 {
-    if (const auto declarations = table.FindSymbolsPtr(baseName))
+    auto checkBucket = [&](const std::vector<Symbol>& syms)
     {
-        for (const auto& declaration : *declarations)
+        for (const auto& declaration : syms)
         {
             if (declaration.type == SymbolType::Class &&
                 std::holds_alternative<ClassSignature>(declaration.signature) &&
@@ -1888,8 +1915,18 @@ bool IsClassDeclarationVisible(const std::string& baseName, const SymbolTable& t
                 return true;
             }
         }
+        return false;
+    };
+
+    if (const auto declarations = table.FindSymbolsPtr(baseName))
+    {
+        if (checkBucket(*declarations))
+        {
+            return true;
+        }
     }
-    return false;
+    const std::string shortName = LastScopeSegment(baseName);
+    return checkBucket(table.FindTypeSymbolsByShortName(shortName));
 }
 
 /**

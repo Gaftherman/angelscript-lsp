@@ -832,6 +832,48 @@ TemplateTypeInfo ParseTemplateType(std::string_view typeName)
     return info;
 }
 
+namespace
+{
+/**
+ * @brief Checks if a type name should be ignored when comparing template compatibility.
+ * @param[in] s Type name to check.
+ * @return True if the type name is empty, wildcard, or untyped.
+ */
+bool IsIgnoredTemplateType(std::string_view s)
+{
+    return s.empty() || s == "null" || s == "auto" || s == "void";
+}
+} // namespace
+
+bool AreIncompatibleTemplateTypes(std::string_view from, std::string_view to)
+{
+    StripTemplateDecorations(from);
+    StripTemplateDecorations(to);
+    if (IsIgnoredTemplateType(from) || IsIgnoredTemplateType(to))
+    {
+        return false;
+    }
+    const bool fromIsTmpl = (from.find('<') != std::string_view::npos && from.ends_with('>'));
+    const bool toIsTmpl = (to.find('<') != std::string_view::npos && to.ends_with('>'));
+    if (fromIsTmpl != toIsTmpl)
+    {
+        return true;
+    }
+    if (fromIsTmpl && toIsTmpl)
+    {
+        const size_t fromOpen = from.find('<');
+        const size_t toOpen = to.find('<');
+        if (from.substr(0, fromOpen) != to.substr(0, toOpen))
+        {
+            return true;
+        }
+        const auto fromInner = from.substr(fromOpen + 1, from.size() - fromOpen - 2);
+        const auto toInner = to.substr(toOpen + 1, to.size() - toOpen - 2);
+        return fromInner != toInner;
+    }
+    return false;
+}
+
 std::string PropertyNameFromAccessor(const Symbol& sym, bool keywordRequired)
 {
     if (!std::holds_alternative<FunctionSignature>(sym.signature))
@@ -2950,6 +2992,10 @@ static std::string ResolveBareCallExpr(TSNode exprNode, TSNode funcNode, const s
                                        const ExpressionTypeContext& ctx)
 {
     std::string funcName = GetTrimmedNodeText(funcNode, ctx.sourceCode);
+    if (argTypes.size() == 1 && IsCorePrimitive(funcName))
+    {
+        return funcName;
+    }
     std::vector<Symbol> candidates = CollectEnclosingCallCandidates(exprNode, funcName, ctx);
     if (candidates.empty())
     {
@@ -3175,7 +3221,7 @@ static std::optional<std::string> ResolvePrimaryExpr(std::string_view nodeType, 
     {
         return ResolveScopedIdentifierExpr(exprNode, ctx, depth);
     }
-    if (nodeType == "identifier")
+    if (nodeType == "identifier" || nodeType == "function" || parser::keywords::IsKeyword(nodeType))
     {
         return ResolveIdentifierExpr(exprNode, ctx);
     }
@@ -3663,6 +3709,16 @@ std::optional<Symbol> FindFuncdefSymbol(const std::string& typeName, const Symbo
         if (sym.type == SymbolType::Funcdef)
         {
             return sym;
+        }
+    }
+    if (const auto bucket = table.FindSymbolsPtr(bare))
+    {
+        for (const auto& sym : *bucket)
+        {
+            if (sym.type == SymbolType::Funcdef)
+            {
+                return sym;
+            }
         }
     }
     return std::nullopt;

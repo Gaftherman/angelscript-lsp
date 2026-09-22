@@ -200,7 +200,7 @@ void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const S
     {
         CollectScopedCandidates(funcNode, cctx, candidates);
     }
-    else if (funcNodeType == "identifier")
+    else if (funcNodeType == "identifier" || funcNodeType == "function")
     {
         CollectIdentifierCandidates(funcNode, cctx, candidates);
     }
@@ -320,7 +320,7 @@ bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const SymbolTabl
     {
         return true;
     }
-    if (nodeType == "identifier" || nodeType == "scoped_identifier")
+    if (nodeType == "identifier" || nodeType == "scoped_identifier" || nodeType == "function")
     {
         return IsIdentifierAssignable(NodeText(node, sourceCode), scope, table);
     }
