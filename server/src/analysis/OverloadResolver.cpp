@@ -944,6 +944,10 @@ int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& p
 {
     if (auto specialScore = ScoreSpecialArgumentMatch(argType, param))
     {
+        if (!argIsLValue && IsOutParameter(param))
+        {
+            return static_cast<int>(OverloadMatchPenalty::RValueToOutParam);
+        }
         return *specialScore;
     }
 
@@ -980,7 +984,18 @@ void OverloadResolver::addFunction(const FunctionSymbol& sym)
     if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
     {
         const auto& sig = sym.GetFunction();
-        functionIndex_[sym.name][sig.parameters.size()].push_back(sym);
+        const auto arity = InspectFunctionArity(sig);
+        for (size_t a = arity.requiredParams; a <= arity.maxParams; ++a)
+        {
+            functionIndex_[sym.name][a].push_back(sym);
+        }
+        if (arity.isVariadic)
+        {
+            for (size_t a = arity.maxParams + 1; a <= std::max<size_t>(arity.maxParams + 16, 20); ++a)
+            {
+                functionIndex_[sym.name][a].push_back(sym);
+            }
+        }
     }
 }
 

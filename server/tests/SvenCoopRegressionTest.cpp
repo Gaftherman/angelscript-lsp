@@ -253,4 +253,144 @@ TEST_CASE("SvenCoopRegression - Primitive char recognition")
     CHECK(parser::primitives::IsPrimitive("char"));
     CHECK(parser::primitives::IsNonNullable("char"));
 }
+
+TEST_CASE("SvenCoopRegression - Empty source code parsing returns valid tree without crashing")
+{
+    parser::AngelScriptParser parser;
+    TSTree* tree = parser.Parse("");
+    REQUIRE(tree != nullptr);
+    TSNode root = ts_tree_root_node(tree);
+    CHECK_FALSE(ts_node_is_null(root));
+    CHECK(std::string_view(ts_node_type(root)) == "script");
+    CHECK(ts_node_child_count(root) == 0);
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("SvenCoopRegression - Overload candidate selection with ?& in varargs")
+{
+    const std::string funcName = GenerateRandomSymbolName("SetTimeout");
+    analysis::SymbolTable table;
+
+    // Overload 1: void SetTimeout(const string &in, float)
+    analysis::FunctionSignature sig2;
+    sig2.returnType = "void";
+    analysis::ParameterInformation p1;
+    p1.name = "fn";
+    p1.typeName = "string";
+    p1.modifier = analysis::ParameterModifier::In;
+    p1.isReference = true;
+    sig2.parameters.push_back(p1);
+    analysis::ParameterInformation p2;
+    p2.name = "delay";
+    p2.typeName = "float";
+    sig2.parameters.push_back(p2);
+
+    analysis::Symbol sym2;
+    sym2.name = funcName;
+    sym2.type = analysis::SymbolType::Function;
+    sym2.signature = sig2;
+
+    // Overload 2: void SetTimeout(const string &in, float, ?& in)
+    analysis::FunctionSignature sig3 = sig2;
+    analysis::ParameterInformation p3;
+    p3.name = "arg1";
+    p3.typeName = "?";
+    p3.rawText = "?& in";
+    p3.modifier = analysis::ParameterModifier::In;
+    p3.isReference = true;
+    sig3.parameters.push_back(p3);
+
+    analysis::Symbol sym3;
+    sym3.name = funcName;
+    sym3.type = analysis::SymbolType::Function;
+    sym3.signature = sig3;
+
+    // Overload 3: void SetTimeout(const string &in, float, ?& in, ?& in)
+    analysis::FunctionSignature sig4 = sig3;
+    analysis::ParameterInformation p4;
+    p4.name = "arg2";
+    p4.typeName = "?";
+    p4.rawText = "?& in";
+    p4.modifier = analysis::ParameterModifier::In;
+    p4.isReference = true;
+    sig4.parameters.push_back(p4);
+
+    analysis::Symbol sym4;
+    sym4.name = funcName;
+    sym4.type = analysis::SymbolType::Function;
+    sym4.signature = sig4;
+
+    const std::vector<analysis::Symbol> candidates = {sym2, sym3, sym4};
+
+    // Call with 3 arguments ("Reset", 0.1f, EHandle)
+    const std::string customType = GenerateRandomSymbolName("EHandle");
+    auto match3 = analysis::ResolveBestOverload(candidates, {"string", "float", customType}, table);
+    REQUIRE(match3.bestCandidate != nullptr);
+    CHECK(match3.bestCandidate->GetFunction().parameters.size() == 3);
+
+    // Call with 4 arguments ("Reset", 0.1f, EHandle, int)
+    auto match4 = analysis::ResolveBestOverload(candidates, {"string", "float", customType, "int"}, table);
+    REQUIRE(match4.bestCandidate != nullptr);
+    CHECK(match4.bestCandidate->GetFunction().parameters.size() == 4);
+}
+
+TEST_CASE("SvenCoopRegression - Overload resolver handles optional parameters with defaults")
+{
+    const std::string funcName = GenerateRandomSymbolName("SetInterval");
+    analysis::SymbolTable table;
+
+    // void SetInterval(const string &in, float, uint repeatCount = 0)
+    analysis::FunctionSignature sig;
+    sig.returnType = "void";
+    analysis::ParameterInformation p1;
+    p1.name = "fn";
+    p1.typeName = "string";
+    sig.parameters.push_back(p1);
+
+    analysis::ParameterInformation p2;
+    p2.name = "interval";
+    p2.typeName = "float";
+    sig.parameters.push_back(p2);
+
+    analysis::ParameterInformation p3;
+    p3.name = "repeatCount";
+    p3.typeName = "uint";
+    p3.defaultValue = "0";
+    sig.parameters.push_back(p3);
+
+    analysis::Symbol sym;
+    sym.name = funcName;
+    sym.type = analysis::SymbolType::Function;
+    sym.signature = sig;
+
+    const std::vector<analysis::Symbol> candidates = {sym};
+
+    // Called with 2 arguments (omitting repeatCount)
+    auto match2 = analysis::ResolveBestOverload(candidates, {"string", "float"}, table);
+    REQUIRE(match2.bestCandidate != nullptr);
+    CHECK(match2.bestCandidate->name == funcName);
+
+    // Called with 3 arguments
+    auto match3 = analysis::ResolveBestOverload(candidates, {"string", "float", "uint"}, table);
+    REQUIRE(match3.bestCandidate != nullptr);
+    CHECK(match3.bestCandidate->name == funcName);
+
+    // OverloadResolver index lookup
+    analysis::OverloadResolver resolver;
+    resolver.addFunction(sym);
+    CHECK(resolver.findCandidates(funcName, 2).size() == 1);
+    CHECK(resolver.findCandidates(funcName, 3).size() == 1);
+    CHECK(resolver.findCandidates(funcName, 1).empty());
+}
+
+TEST_CASE("SvenCoopRegression - Named arguments in function call")
+{
+    const std::string fnName = GenerateRandomSymbolName("TestNamed");
+    const std::string code = "void " + fnName + "(int a, int b) {}\n" + "void Main()\n" + "{\n" + "    " + fnName +
+                             "(b: 2, a: 1);\n" + "}\n";
+
+    auto diags = AnalyzeSnippet(code);
+    CHECK_FALSE(HasDiagCode(diags, diagnostics::codes::CallArgumentCount));
+    CHECK_FALSE(HasDiagCode(diags, diagnostics::codes::CallNoMatchingSignature));
+}
 } // namespace angel_lsp::test

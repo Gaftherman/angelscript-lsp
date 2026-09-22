@@ -111,6 +111,37 @@ uint32_t CountArguments(TSNode argumentList)
  * @param[in] argumentList AST node representing the argument list.
  * @return Vector of AST nodes for each argument expression.
  */
+/**
+ * @brief Selects the argument expression node from a comma-separated argument group.
+ *
+ * If the group contains a colon ':' (named argument, e.g. `name: expr`), the expression
+ * following the colon is returned. Otherwise, the primary expression node is returned.
+ *
+ * @param[in] group AST nodes within one argument position.
+ * @return TSNode representing the argument value expression.
+ */
+TSNode ExtractArgumentExpression(const std::vector<TSNode>& group)
+{
+    if (group.empty())
+    {
+        return TSNode{};
+    }
+    for (size_t i = 0; i < group.size(); ++i)
+    {
+        if (std::string_view(ts_node_type(group[i])) == ":" && i + 1 < group.size())
+        {
+            return group[i + 1];
+        }
+    }
+    return group.front();
+}
+
+/**
+ * @brief Extracts argument expression nodes from an argument list AST node.
+ *
+ * @param[in] argumentList AST node representing the argument list.
+ * @return Vector of AST nodes for each argument expression.
+ */
 std::vector<TSNode> GetArgumentNodes(TSNode argumentList)
 {
     std::vector<TSNode> argNodes;
@@ -120,16 +151,97 @@ std::vector<TSNode> GetArgumentNodes(TSNode argumentList)
     }
 
     const uint32_t count = ts_node_child_count(argumentList);
+    std::vector<TSNode> currentGroup;
     for (uint32_t i = 0; i < count; ++i)
     {
         TSNode child = ts_node_child(argumentList, i);
         const std::string_view childType = ts_node_type(child);
-        if (childType != "(" && childType != ")" && childType != "," && childType != "comment")
+        if (childType == "(" || childType == ")" || childType == "comment")
         {
-            argNodes.push_back(child);
+            continue;
+        }
+        if (childType == ",")
+        {
+            if (!currentGroup.empty())
+            {
+                argNodes.push_back(ExtractArgumentExpression(currentGroup));
+                currentGroup.clear();
+            }
+        }
+        else
+        {
+            currentGroup.push_back(child);
         }
     }
+    if (!currentGroup.empty())
+    {
+        argNodes.push_back(ExtractArgumentExpression(currentGroup));
+    }
     return argNodes;
+}
+
+/**
+ * @brief Extracts the parameter name from a named argument token group (e.g. `name: expr`).
+ * @param[in] group AST nodes within one argument position.
+ * @param[in] sourceCode Document source text.
+ * @return Argument identifier name if named argument, otherwise empty string.
+ */
+std::string ExtractArgumentName(const std::vector<TSNode>& group, std::string_view sourceCode)
+{
+    for (size_t i = 0; i < group.size(); ++i)
+    {
+        if (std::string_view(ts_node_type(group[i])) == ":" && i > 0)
+        {
+            std::string name = NodeText(group[i - 1], sourceCode);
+            TrimString(name);
+            return name;
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Extracts parameter names for each argument in an argument list AST node.
+ * @param[in] argumentList AST node representing the argument list.
+ * @param[in] sourceCode Document source text.
+ * @return Vector of argument names (empty string for positional arguments).
+ */
+std::vector<std::string> GetArgumentNames(TSNode argumentList, std::string_view sourceCode)
+{
+    std::vector<std::string> argNames;
+    if (ts_node_is_null(argumentList))
+    {
+        return argNames;
+    }
+
+    const uint32_t count = ts_node_child_count(argumentList);
+    std::vector<TSNode> currentGroup;
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        TSNode child = ts_node_child(argumentList, i);
+        const std::string_view childType = ts_node_type(child);
+        if (childType == "(" || childType == ")" || childType == "comment")
+        {
+            continue;
+        }
+        if (childType == ",")
+        {
+            if (!currentGroup.empty())
+            {
+                argNames.push_back(ExtractArgumentName(currentGroup, sourceCode));
+                currentGroup.clear();
+            }
+        }
+        else
+        {
+            currentGroup.push_back(child);
+        }
+    }
+    if (!currentGroup.empty())
+    {
+        argNames.push_back(ExtractArgumentName(currentGroup, sourceCode));
+    }
+    return argNames;
 }
 
 /** @brief What one declaration will accept, in argument counts. */
@@ -229,12 +341,7 @@ CandidateSet JudgeAgainst(const std::vector<Symbol>& candidates, uint32_t argume
         result.decided = true;
 
         const Arity arity = ArityOf(sym.GetFunction());
-        if (arity.variadic)
-        {
-            result.accepts = true;
-            return result;
-        }
-        if (argumentCount >= arity.required && argumentCount <= arity.maximum)
+        if (argumentCount >= arity.required && (arity.variadic || argumentCount <= arity.maximum))
         {
             result.accepts = true;
             return result;
@@ -1055,6 +1162,7 @@ struct CallArgTypes
 {
     std::vector<TSNode> argNodes;
     std::vector<std::string> argTypes;
+    std::vector<std::string> argNames;
     std::vector<bool> argIsLValue;
     bool allArgsResolved = true;
 };
@@ -1069,6 +1177,7 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
 {
     CallArgTypes result;
     result.argNodes = GetArgumentNodes(valCtx.arguments);
+    result.argNames = GetArgumentNames(valCtx.arguments, valCtx.request.sourceCode);
 
     for (const auto& argNode : result.argNodes)
     {
@@ -1117,7 +1226,7 @@ std::vector<const Symbol*> FilterMatchingArityCandidates(const std::vector<Symbo
         if (std::holds_alternative<FunctionSignature>(sym.signature))
         {
             const Arity arity = ArityOf(sym.GetFunction());
-            if (arity.variadic || (argumentCount >= arity.required && argumentCount <= arity.maximum))
+            if (argumentCount >= arity.required && (arity.variadic || argumentCount <= arity.maximum))
             {
                 matching.push_back(&sym);
             }
@@ -1394,6 +1503,98 @@ void ValidateOutArguments(const Symbol& candidate, const std::vector<TSNode>& ar
 }
 
 /**
+ * @brief Validates if candidate signature can accept named and positional arguments.
+ * @param[in] sig Candidate function signature.
+ * @param[in] argNames Vector of argument names (empty for positional).
+ * @param[in] argTypes Vector of argument types.
+ * @param[in] symbolTable Symbol table for type conversion checking.
+ * @return True if candidate matches the named arguments call.
+ */
+bool CheckCandidateNamedArgs(const FunctionSignature& sig, const std::vector<std::string>& argNames,
+                             const std::vector<std::string>& argTypes, const SymbolTable& symbolTable)
+{
+    std::unordered_set<size_t> matchedParams;
+    for (size_t i = 0; i < argNames.size(); ++i)
+    {
+        size_t paramIdx = size_t(-1);
+        if (!argNames[i].empty())
+        {
+            for (size_t p = 0; p < sig.parameters.size(); ++p)
+            {
+                if (sig.parameters[p].name == argNames[i])
+                {
+                    paramIdx = p;
+                    break;
+                }
+            }
+            if (paramIdx == size_t(-1) || matchedParams.contains(paramIdx))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            paramIdx = i;
+            if (paramIdx >= sig.parameters.size())
+            {
+                return false;
+            }
+        }
+        matchedParams.insert(paramIdx);
+
+        if (paramIdx < sig.parameters.size() && !argTypes[i].empty())
+        {
+            const int score = ScoreArgumentMatch(argTypes[i], sig.parameters[paramIdx], symbolTable, true);
+            if (score >= static_cast<int>(OverloadMatchPenalty::Incompatible))
+            {
+                return false;
+            }
+        }
+    }
+
+    for (size_t p = 0; p < sig.parameters.size(); ++p)
+    {
+        if (!matchedParams.contains(p) && sig.parameters[p].defaultValue.empty())
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Checks overload resolution for calls specifying named arguments.
+ * @param[in] matchingArity Candidates of matching arity.
+ * @param[in] args Resolved call arguments.
+ * @param[in] calleeRes Callee resolution details.
+ * @param[in] valCtx Call validation context.
+ */
+void HandleNamedCallOverloads(std::span<const Symbol* const> matchingArity, const CallArgTypes& args,
+                              const CalleeResolution& calleeRes, const CallValidationContext& valCtx)
+{
+    bool matchedAny = false;
+    for (const Symbol* cand : matchingArity)
+    {
+        if (cand && std::holds_alternative<FunctionSignature>(cand->signature))
+        {
+            if (CheckCandidateNamedArgs(cand->GetFunction(), args.argNames, args.argTypes,
+                                        valCtx.ctx.request.symbolTable))
+            {
+                matchedAny = true;
+                break;
+            }
+        }
+    }
+    if (!matchedAny && args.allArgsResolved)
+    {
+        const TSPoint start = ts_node_start_point(valCtx.callee);
+        const TSPoint end = ts_node_end_point(valCtx.arguments);
+        valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-no-matching-signature",
+                               calleeRes.reportedName);
+    }
+}
+
+/**
  * @brief Dispatches overload resolution and checks ambiguity, conversions, and out parameters.
  *
  * @param[in] matchingArity Candidates of matching arity.
@@ -1406,6 +1607,14 @@ void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const Call
 {
     if ((args.argTypes.empty() && !calleeRes.candidatesAreFreeFunctions) || matchingArity.empty())
     {
+        return;
+    }
+
+    const bool hasNamedArgs =
+        std::any_of(args.argNames.begin(), args.argNames.end(), [](const std::string& n) { return !n.empty(); });
+    if (hasNamedArgs)
+    {
+        HandleNamedCallOverloads(matchingArity, args, calleeRes, valCtx);
         return;
     }
 
