@@ -4,6 +4,22 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.7.9-exp.4] - 2026-09-22
+
+### Generative Invariant-Based Testing & Server Stability
+
+- Codebase-wide migration of unit and feature test suites to Generative Invariant-Based Testing:
+  - Seeded deterministic random symbol generation (`angel_lsp::test::GenerateIdentifier`).
+  - AST coordinate enclosure invariants for Go-to-Definition.
+  - Prefix filtering invariants for completion.
+  - Multi-depth sandbox directory traversal fuzzing for include resolution.
+  - Randomized DAG reverse dependency topological invalidation with zero duplicates.
+- Sven Co-op module stability remediation:
+  - Default profile disabled (`none`) to prevent builtin stub symbol collision crashes.
+  - Safe empty source parsing and graceful stub failure handling.
+  - Candidate arity filtering with default arguments and variadic parameter matching.
+  - Server loop exception isolation to prevent unexpected termination.
+
 ## [0.7.9-exp.2] - 2026-09-21
 
 ### Security Remediation & Performance Hardening
