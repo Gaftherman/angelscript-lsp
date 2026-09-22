@@ -150,6 +150,19 @@ class WorkspaceIncludeGraph
     std::vector<std::string> GetModuleClosure(const std::string& filePath) const;
 
     /**
+     * @brief Computes strictly forward dependency closure originating from an entry point.
+     *
+     * Traverses forward include edges (`m_includes`) and sorts the reachable subgraph
+     * topologically so that prerequisites appear strictly before dependent nodes.
+     * Unlike GetModuleClosure, this never ascends reverse edges, preventing sibling modules
+     * that share common includes from leaking into this module's compilation unit.
+     *
+     * @param[in] entryFilePath Entry-point script path; need not be normalized.
+     * @return Deduplicated list of included files including entryFilePath in topological order.
+     */
+    std::vector<std::string> GetForwardClosure(const std::string& entryFilePath) const;
+
+    /**
      * @brief The files whose `#include` lines name this one, directly.
      *
      * The graph has always held this edge - it is what GetModuleClosure ascends - but only ever

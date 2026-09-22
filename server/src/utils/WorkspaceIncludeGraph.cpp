@@ -346,6 +346,30 @@ CollectReachableDependents(const std::string& startNode,
     return reachable;
 }
 
+ankerl::unordered_dense::set<std::string>
+CollectReachableIncludes(const std::string& root,
+                         const ankerl::unordered_dense::map<std::string, std::vector<std::string>>& includes)
+{
+    ankerl::unordered_dense::set<std::string> reachable;
+    std::vector<std::string> queue;
+    reachable.insert(root);
+    queue.push_back(root);
+
+    for (size_t i = 0; i < queue.size(); ++i)
+    {
+        const auto it = includes.find(queue[i]);
+        if (it != includes.end())
+        {
+            for (const auto& next : it->second)
+            {
+                if (reachable.insert(next).second)
+                    queue.push_back(next);
+            }
+        }
+    }
+    return reachable;
+}
+
 /**
  * @brief Performs topological sorting via Kahn's algorithm over a reachable dependency subgraph.
  */
@@ -404,6 +428,18 @@ SortReachableTopological(const ankerl::unordered_dense::set<std::string>& reacha
     return result;
 }
 } // namespace
+
+std::vector<std::string> WorkspaceIncludeGraph::GetForwardClosure(const std::string& entryFilePath) const
+{
+    const std::string normalized = IncludeResolver::NormalizePath(entryFilePath);
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+
+    auto reachable = CollectReachableIncludes(normalized, m_includes);
+    if (reachable.empty())
+        return {};
+
+    return SortReachableTopological(reachable, m_includes, m_includedBy);
+}
 
 std::vector<std::string> WorkspaceIncludeGraph::GetReverseDependenciesTopological(const std::string& filePath) const
 {

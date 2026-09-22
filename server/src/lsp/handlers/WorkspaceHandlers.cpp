@@ -307,16 +307,10 @@ void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
     }
 }
 
-bool Server::UpdateModulesConfiguration(const lsp::LSPObject& section)
+static std::vector<config::ServerConfig::ModuleDefinition> ParseModuleDefinitions(const lsp::LSPArray& items)
 {
-    const auto* modulesVal = section.find("modules");
-    if (!modulesVal || !modulesVal->isArray())
-    {
-        return false;
-    }
-
     std::vector<config::ServerConfig::ModuleDefinition> parsed;
-    for (const auto& item : modulesVal->array())
+    for (const auto& item : items)
     {
         if (!item.isObject())
         {
@@ -333,6 +327,29 @@ bool Server::UpdateModulesConfiguration(const lsp::LSPObject& section)
 
         parsed.push_back(std::move(definition));
     }
+    return parsed;
+}
+
+bool Server::UpdateModulesConfiguration(const lsp::LSPObject& section)
+{
+    bool entryPointChanged = false;
+    if (const auto* entryVal = section.find("moduleEntryPoint"); entryVal && entryVal->isString())
+    {
+        if (entryVal->string() != m_config.moduleEntryPoint)
+        {
+            m_config.moduleEntryPoint = entryVal->string();
+            entryPointChanged = true;
+            LogInfo(fmt::format("Module entry point changed to '{}'", m_config.moduleEntryPoint));
+        }
+    }
+
+    const auto* modulesVal = section.find("modules");
+    if (!modulesVal || !modulesVal->isArray())
+    {
+        return entryPointChanged;
+    }
+
+    auto parsed = ParseModuleDefinitions(modulesVal->array());
 
     const bool changed =
         parsed.size() != m_config.modules.size() ||
@@ -346,11 +363,12 @@ bool Server::UpdateModulesConfiguration(const lsp::LSPObject& section)
         LogInfo(fmt::format("Modules changed ({} configured); rescanning", m_config.modules.size()));
         return true;
     }
-    return false;
+    return entryPointChanged;
 }
 
 bool Server::UpdateIncludeConfiguration(const lsp::LSPObject& section)
 {
+    bool changed = false;
     if (const auto* includeVal = section.find("include"); includeVal && includeVal->isObject())
     {
         if (const auto* implicitVal = includeVal->object().find("implicitExtension");
@@ -361,11 +379,27 @@ bool Server::UpdateIncludeConfiguration(const lsp::LSPObject& section)
                 m_config.implicitIncludeExtension = implicitVal->boolean();
                 LogInfo(fmt::format("Implicit include extension {}; rebuilding the include graph",
                                     m_config.implicitIncludeExtension ? "on" : "off"));
-                return true;
+                changed = true;
             }
         }
     }
-    return false;
+
+    if (const auto* forceVal = section.find("forceIncludeFiles"); forceVal && forceVal->isArray())
+    {
+        std::vector<std::string> updated;
+        for (const auto& item : forceVal->array())
+        {
+            if (item.isString() && !item.string().empty())
+                updated.push_back(item.string());
+        }
+        if (updated != m_config.forceIncludeFiles)
+        {
+            m_config.forceIncludeFiles = std::move(updated);
+            LogInfo(fmt::format("Force include files changed ({} entries)", m_config.forceIncludeFiles.size()));
+            changed = true;
+        }
+    }
+    return changed;
 }
 
 bool Server::UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& section)

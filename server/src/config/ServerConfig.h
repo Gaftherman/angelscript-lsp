@@ -566,6 +566,24 @@ struct ServerConfig
     std::vector<std::string> predefinedFiles;
 
     /**
+     * @brief Files to force-include before analyzing any module or script.
+     *
+     * In hosts like Sven Co-op or specialized game engines, common headers or API bridges
+     * are automatically included into every compilation unit without explicit `#include`.
+     * Listing them here ensures their symbols and declarations are always visible.
+     */
+    std::vector<std::string> forceIncludeFiles;
+
+    /**
+     * @brief Global module entry-point script path.
+     *
+     * When configured, restricts the compilation closure of scripts participating in this
+     * entry point to the strictly forward dependency DAG originating from this file,
+     * preventing sibling modules with common includes from merging into one module closure.
+     */
+    std::string moduleEntryPoint;
+
+    /**
      * @brief Whether `#include "helper"` may mean `helper.as`.
      *
      * Off by default, which is AngelScript's own behaviour: CScriptBuilder opens exactly the

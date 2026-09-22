@@ -308,6 +308,21 @@
           "default": [],
           "markdownDescription": "%config.predefinedFiles.description%"
         },
+        "angelscript.forceIncludeFiles": {
+          "type": "array",
+          "scope": "resource",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Files to force-include before analyzing any module or script."
+        },
+        "angelscript.moduleEntryPoint": {
+          "type": "string",
+          "scope": "resource",
+          "default": "",
+          "markdownDescription": "Global module entry-point script path. Restricts compilation closure to its forward dependency DAG."
+        },
         "angelscript.predefinedExtension": {
           "type": "string",
           "scope": "resource",

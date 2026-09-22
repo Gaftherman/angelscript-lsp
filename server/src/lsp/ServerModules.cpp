@@ -58,7 +58,7 @@ bool Server::PopulateModuleEntryClosure(const std::string& entry, ModuleView& vi
         return false;
     }
 
-    for (const auto& member : m_includeGraph.GetModuleClosure(view.entryPath))
+    for (const auto& member : m_includeGraph.GetForwardClosure(view.entryPath))
     {
         view.closurePaths.insert(member);
         view.memberPaths.insert(member);
@@ -652,6 +652,43 @@ void Server::PurgeClosureFile(const std::string& uriStr)
     }
 }
 
+std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPath) const
+{
+    std::vector<std::string> closure;
+    if (!m_config.moduleEntryPoint.empty())
+    {
+        const std::string entryPath = ResolveConfiguredPath(m_config.moduleEntryPoint);
+        auto fwd = m_includeGraph.GetForwardClosure(entryPath);
+        if (std::any_of(fwd.begin(), fwd.end(),
+                        [&openPath](const std::string& p) { return PathsAreSameFile(p, openPath); }))
+        {
+            closure = std::move(fwd);
+        }
+        else
+        {
+            closure = m_includeGraph.GetModuleClosure(openPath);
+        }
+    }
+    else
+    {
+        closure = m_includeGraph.GetModuleClosure(openPath);
+    }
+
+    for (const auto& forceFile : m_config.forceIncludeFiles)
+    {
+        const std::string resolvedForce = ResolveConfiguredPath(forceFile);
+        if (!resolvedForce.empty())
+        {
+            closure.push_back(resolvedForce);
+            for (const auto& fwd : m_includeGraph.GetForwardClosure(resolvedForce))
+            {
+                closure.push_back(fwd);
+            }
+        }
+    }
+    return closure;
+}
+
 void Server::IndexModuleClosure(const std::string& openUriStr)
 {
     const std::string openPath = CanonicalPathFromUri(openUriStr);
@@ -668,8 +705,9 @@ void Server::IndexModuleClosure(const std::string& openUriStr)
     std::vector<std::string> indexed;
     size_t newlyIndexed = 0;
     angel_lsp::parser::AngelScriptParser closureParser(m_logger.get());
+    const std::vector<std::string> closure = ComputeModuleClosure(openPath);
 
-    for (const auto& path : m_includeGraph.GetModuleClosure(openPath))
+    for (const auto& path : closure)
     {
         if (path == openPath)
             continue;

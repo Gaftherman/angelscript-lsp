@@ -651,6 +651,29 @@ bool TryParsePredefinedOptions(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
+bool TryParseModuleIncludeOptions(ServerConfig& config, ArgParseContext& ctx)
+{
+    if (ctx.key == "--force-include" || ctx.key == "--force-include-file")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.forceIncludeFiles.push_back(std::string(val));
+        }
+        return true;
+    }
+    if (ctx.key == "--module-entry-point" || ctx.key == "--module-entry")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.moduleEntryPoint = std::string(val);
+        }
+        return true;
+    }
+    return false;
+}
+
 bool TryParseDirectoryOptions(ServerConfig& config, ArgParseContext& ctx, bool& sawExclude)
 {
     if (ctx.key == "--exclude")
@@ -855,7 +878,7 @@ bool TryParseArg(ServerConfig& config, ArgParseContext& ctx)
 {
     return TryParseHelpOrVersion(config, ctx) || TryParseFeatureFlag(config, ctx) ||
            TryParseDiagnosticFlag(config, ctx) || TryParseModuleOption(config, ctx) ||
-           TryParsePredefinedOptions(config, ctx);
+           TryParsePredefinedOptions(config, ctx) || TryParseModuleIncludeOptions(config, ctx);
 }
 
 bool TryParseArgExtended(ServerConfig& config, ArgParseContext& ctx, bool& sawExclude)
