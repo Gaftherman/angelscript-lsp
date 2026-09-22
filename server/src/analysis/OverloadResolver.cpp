@@ -97,11 +97,6 @@ bool HasHandleModifier(std::string_view typeName)
     return typeName.find('@') != std::string_view::npos;
 }
 
-bool HasConstModifier(std::string_view typeName)
-{
-    return typeName.starts_with("const ") || typeName.ends_with(" const");
-}
-
 bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
 {
     auto toSyms = symbolTable.FindSymbolsPtr(toType + "::" + toType);
@@ -641,12 +636,44 @@ std::optional<int> ScorePrimitiveOrEnumConversion(const MatchContext& ctx)
     return std::nullopt;
 }
 
+bool AreIncompatibleTemplateTypes(std::string_view cleanArg, std::string_view cleanParam)
+{
+    const bool argIsTmpl = (cleanArg.find('<') != std::string_view::npos && cleanArg.ends_with('>'));
+    const bool paramIsTmpl = (cleanParam.find('<') != std::string_view::npos && cleanParam.ends_with('>'));
+    if (argIsTmpl != paramIsTmpl)
+    {
+        return true;
+    }
+    if (argIsTmpl && paramIsTmpl)
+    {
+        const size_t argOpen = cleanArg.find('<');
+        const size_t paramOpen = cleanParam.find('<');
+        if (cleanArg.substr(0, argOpen) != cleanParam.substr(0, paramOpen))
+        {
+            return true;
+        }
+        const auto argInner = cleanArg.substr(argOpen + 1, cleanArg.size() - argOpen - 2);
+        const auto paramInner = cleanParam.substr(paramOpen + 1, cleanParam.size() - paramOpen - 2);
+        if (argInner != paramInner)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 int ScoreCustomOrUnresolvedConversion(const MatchContext& ctx)
 {
     if (HasUserConversion(ctx.cleanArg, ctx.cleanParam, ctx.table))
     {
         return static_cast<int>(OverloadMatchPenalty::UserDefined);
     }
+
+    if (AreIncompatibleTemplateTypes(ctx.cleanArg, ctx.cleanParam))
+    {
+        return static_cast<int>(OverloadMatchPenalty::Incompatible);
+    }
+
     const auto isNamedAndUnresolved = [&ctx](const std::string& typeName)
     {
         if (typeName.empty() || IsCorePrimitive(typeName) || typeName == "string")
@@ -728,7 +755,8 @@ struct CandidateScores
 
 std::optional<CandidateScores> ScoreCandidateArguments(const FunctionSignature& sig,
                                                        const std::vector<std::string>& argumentTypes,
-                                                       const SymbolTable& symbolTable)
+                                                       const SymbolTable& symbolTable,
+                                                       const std::vector<bool>& argIsLValue)
 {
     CandidateScores scores;
     scores.costVector.reserve(argumentTypes.size());
@@ -736,7 +764,8 @@ std::optional<CandidateScores> ScoreCandidateArguments(const FunctionSignature& 
     {
         if (i < sig.parameters.size())
         {
-            int paramScore = ScoreArgumentMatch(argumentTypes[i], sig.parameters[i], symbolTable);
+            const bool isLVal = i < argIsLValue.size() ? argIsLValue[i] : true;
+            int paramScore = ScoreArgumentMatch(argumentTypes[i], sig.parameters[i], symbolTable, isLVal);
             if (paramScore >= static_cast<int>(OverloadMatchPenalty::Incompatible))
             {
                 return std::nullopt;
@@ -754,7 +783,8 @@ std::optional<CandidateScores> ScoreCandidateArguments(const FunctionSignature& 
 }
 
 std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, const std::vector<std::string>& argumentTypes,
-                                                    const SymbolTable& symbolTable)
+                                                    const SymbolTable& symbolTable,
+                                                    const std::vector<bool>& argIsLValue)
 {
     if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
     {
@@ -769,7 +799,7 @@ std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, const std
         return std::nullopt;
     }
 
-    auto scores = ScoreCandidateArguments(sig, argumentTypes, symbolTable);
+    auto scores = ScoreCandidateArguments(sig, argumentTypes, symbolTable, argIsLValue);
     if (!scores)
     {
         return std::nullopt;
@@ -869,9 +899,48 @@ bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
     }
     return false;
 }
+
+/**
+ * @brief Checks whether a parameter denotes a mutable reference or out parameter.
+ * @param[in] param Parameter to inspect.
+ * @param[in] paramIsConst Flag indicating if the parameter type has const modifier.
+ * @return True if mutable reference.
+ */
+bool IsMutableReferenceParam(const ParameterInformation& param, bool paramIsConst)
+{
+    const bool isRefOrOut =
+        param.isReference || param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut;
+    return isRefOrOut && !paramIsConst && param.modifier != ParameterModifier::In;
+}
+
+/**
+ * @brief Computes type conversion score between argument and parameter.
+ * @param[in] param Target parameter information.
+ * @param[in] ctx Match evaluation context.
+ * @return Penalty score integer.
+ */
+int ScoreCandidateTypeMatch(const ParameterInformation& param, const MatchContext& ctx)
+{
+    if (auto refScore = ScoreMutableRefMatch(param, ctx))
+    {
+        return *refScore;
+    }
+    if (auto exactScore = ScoreSameTypeOrSubtypeMatch(param, ctx))
+    {
+        return *exactScore;
+    }
+    return ScoreConversionMatch(ctx);
+}
 } // namespace
 
-int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& param, const SymbolTable& symbolTable)
+bool HasConstModifier(std::string_view typeName)
+{
+    return typeName == "const" || typeName.starts_with("const ") || typeName.ends_with(" const") ||
+           typeName.ends_with("const");
+}
+
+int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& param, const SymbolTable& symbolTable,
+                       bool argIsLValue)
 {
     if (auto specialScore = ScoreSpecialArgumentMatch(argType, param))
     {
@@ -886,9 +955,7 @@ int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& p
     }
 
     const bool paramIsConst = param.isConst || HasConstModifier(param.typeName);
-    const bool isMutableRef =
-        (param.isReference || param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut) &&
-        !paramIsConst && param.modifier != ParameterModifier::In;
+    const bool isMutableRef = IsMutableReferenceParam(param, paramIsConst);
 
     const MatchContext ctx{cleanArg,
                            cleanParam,
@@ -899,15 +966,13 @@ int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& p
                            isMutableRef,
                            symbolTable};
 
-    if (auto refScore = ScoreMutableRefMatch(param, ctx))
+    const int score = ScoreCandidateTypeMatch(param, ctx);
+    if (!argIsLValue && (isMutableRef || IsOutParameter(param)) &&
+        score < static_cast<int>(OverloadMatchPenalty::Incompatible))
     {
-        return *refScore;
+        return static_cast<int>(OverloadMatchPenalty::RValueToOutParam);
     }
-    if (auto exactScore = ScoreSameTypeOrSubtypeMatch(param, ctx))
-    {
-        return *exactScore;
-    }
-    return ScoreConversionMatch(ctx);
+    return score;
 }
 
 void OverloadResolver::addFunction(const FunctionSymbol& sym)
@@ -947,7 +1012,8 @@ std::span<const FunctionSymbol> OverloadResolver::findCandidates(std::string_vie
 }
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
-                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable)
+                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue)
 {
     OverloadMatchResult result;
     std::vector<EvaluatedCandidate> evaluated;
@@ -958,7 +1024,7 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
         {
             continue;
         }
-        if (auto cand = EvaluateCandidate(*sym, argumentTypes, symbolTable))
+        if (auto cand = EvaluateCandidate(*sym, argumentTypes, symbolTable, argIsLValue))
         {
             result.viableCandidates.push_back(sym);
             evaluated.push_back(std::move(*cand));
@@ -988,7 +1054,8 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
 }
 
 OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
-                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable)
+                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue)
 {
     std::vector<const Symbol*> ptrs;
     ptrs.reserve(candidates.size());
@@ -996,6 +1063,6 @@ OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
     {
         ptrs.push_back(&sym);
     }
-    return ResolveBestOverload(ptrs, argumentTypes, symbolTable);
+    return ResolveBestOverload(ptrs, argumentTypes, symbolTable, argIsLValue);
 }
 } // namespace angel_lsp::analysis

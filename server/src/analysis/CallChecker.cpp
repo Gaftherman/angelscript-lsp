@@ -182,6 +182,10 @@ Arity ArityOf(const FunctionSignature& sig)
  */
 bool NamesAType(const std::string& name, const SymbolTable& table)
 {
+    if (IsCorePrimitive(name))
+    {
+        return true;
+    }
     const auto symbols = table.FindSymbolsPtr(name);
     return symbols && std::any_of(symbols->begin(), symbols->end(),
                                   [](const Symbol& sym)
@@ -296,8 +300,13 @@ std::vector<Symbol> FindMethodCandidates(const std::string& typeName, const std:
                 continue;
             }
 
-            const bool overriddenLower = std::any_of(candidates.begin(), candidates.end(), [&sym](const Symbol& kept)
-                                                     { return HasSameParameterList(kept, sym); });
+            const bool overriddenLower =
+                std::any_of(candidates.begin(), candidates.end(),
+                            [&sym](const Symbol& kept)
+                            {
+                                return HasSameParameterList(kept, sym) &&
+                                       kept.GetFunction().modifiers.isConst == sym.GetFunction().modifiers.isConst;
+                            });
             if (!overriddenLower)
             {
                 candidates.push_back(sym);
@@ -583,6 +592,7 @@ struct CalleeResolution
     std::string reportedName;
     bool candidatesAreFreeFunctions = false;
     bool isUnqualifiedClassCall = false;
+    bool isReceiverConst = false;
     bool shouldCheck = true;
 };
 
@@ -591,7 +601,49 @@ struct ObjectTypeInfo
 {
     std::string objectType;
     std::vector<std::string> templateArgs;
+    bool isConst = false;
 };
+
+/**
+ * @brief Checks whether an object expression node resolves to a const variable or property.
+ *
+ * @param[in] objectNode AST node of object expression.
+ * @param[in] valCtx Call validation context.
+ * @return True if the object node is const.
+ */
+bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& valCtx)
+{
+    const std::string_view nodeType = ts_node_type(objectNode);
+    if (nodeType != "identifier" && nodeType != "scoped_identifier")
+    {
+        return false;
+    }
+
+    const std::string name = NodeText(objectNode, valCtx.request.sourceCode);
+    if (valCtx.scope)
+    {
+        if (const auto* def = ResolveInScope(valCtx.scope, name))
+        {
+            if (!def->typeName.empty() && HasConstModifier(def->typeName))
+            {
+                return true;
+            }
+        }
+    }
+
+    if (const auto syms = valCtx.ctx.request.symbolTable.FindSymbolsPtr(name))
+    {
+        for (const auto& sym : *syms)
+        {
+            if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                sym.GetVariable().modifiers.isConst)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 /**
  * @brief Resolves object type and template arguments from member expression.
@@ -608,6 +660,8 @@ ObjectTypeInfo ResolveMemberObjectType(TSNode objectNode, const CallValidationCo
                                            valCtx.ctx.request.fileUri}),
         valCtx.ctx.request.GetArrayTypeName().empty() ? "array" : valCtx.ctx.request.GetArrayTypeName());
     info.objectType = CleanBaseType(rawObjType);
+    info.isConst = rawObjType.starts_with("const ") || rawObjType.ends_with("const") || HasConstModifier(rawObjType) ||
+                   IsObjectNodeConst(objectNode, valCtx);
 
     if (rawObjType.find('<') != std::string::npos && rawObjType.ends_with('>'))
     {
@@ -688,6 +742,94 @@ void ApplyTemplateSubstitutions(std::vector<Symbol>& candidates, const std::stri
 }
 
 /**
+ * @brief Filters method candidates based on the constness of the receiver.
+ *
+ * A const receiver can only call const methods. A mutable receiver prefers
+ * non-const methods over const methods when parameter signatures are identical.
+ *
+ * @param[in,out] candidates Candidate symbols to filter.
+ * @param[in] isReceiverConst Whether the receiver object is const.
+ */
+void FilterMethodCandidatesConstness(std::vector<Symbol>& candidates, bool isReceiverConst)
+{
+    if (isReceiverConst)
+    {
+        const bool hasConst = std::any_of(candidates.begin(), candidates.end(),
+                                          [](const Symbol& sym)
+                                          {
+                                              return sym.type == SymbolType::Function &&
+                                                     std::holds_alternative<FunctionSignature>(sym.signature) &&
+                                                     sym.GetFunction().modifiers.isConst;
+                                          });
+        if (hasConst)
+        {
+            std::erase_if(candidates,
+                          [](const Symbol& sym)
+                          {
+                              return sym.type == SymbolType::Function &&
+                                     std::holds_alternative<FunctionSignature>(sym.signature) &&
+                                     !sym.GetFunction().modifiers.isConst;
+                          });
+        }
+        else
+        {
+            candidates.clear();
+        }
+    }
+    else
+    {
+        std::erase_if(candidates,
+                      [&candidates](const Symbol& sym)
+                      {
+                          if (sym.type != SymbolType::Function ||
+                              !std::holds_alternative<FunctionSignature>(sym.signature) ||
+                              !sym.GetFunction().modifiers.isConst)
+                          {
+                              return false;
+                          }
+                          return std::any_of(candidates.begin(), candidates.end(),
+                                             [&sym](const Symbol& other)
+                                             {
+                                                 return &sym != &other && other.type == SymbolType::Function &&
+                                                        std::holds_alternative<FunctionSignature>(other.signature) &&
+                                                        !other.GetFunction().modifiers.isConst &&
+                                                        HasSameParameterList(sym, other);
+                                             });
+                      });
+    }
+}
+
+/**
+ * @brief Checks if a node is enclosed within a const method declaration.
+ *
+ * @param[in] node AST node.
+ * @param[in] sourceCode Document source text.
+ * @return True if enclosed within a const method.
+ */
+bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
+{
+    TSNode curr = node;
+    while (!ts_node_is_null(curr))
+    {
+        if (std::string_view(ts_node_type(curr)) == parser::nodes::FuncDeclaration)
+        {
+            const uint32_t childCount = ts_node_named_child_count(curr);
+            for (uint32_t i = 0; i < childCount; ++i)
+            {
+                TSNode child = ts_node_named_child(curr, i);
+                if (std::string_view(ts_node_type(child)) == parser::nodes::FuncAttributes)
+                {
+                    return NodeText(child, sourceCode).find("const") != std::string::npos;
+                }
+            }
+            return false;
+        }
+        curr = ts_node_parent(curr);
+    }
+    return false;
+}
+
+/**
  * @brief Resolves candidates and reports invalid constructors for member calls.
  *
  * @param[in] valCtx Call validation context.
@@ -722,7 +864,9 @@ CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
         return res;
     }
 
+    res.isReceiverConst = objInfo.isConst;
     res.candidates = FindMethodCandidates(objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable);
+    FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
     ApplyTemplateSubstitutions(res.candidates, objInfo.objectType, objInfo.templateArgs,
                                valCtx.ctx.request.symbolTable);
     return res;
@@ -815,6 +959,8 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
         {
             res.candidatesAreFreeFunctions = false;
             res.isUnqualifiedClassCall = true;
+            res.isReceiverConst = IsEnclosingMethodConst(valCtx.callNode, valCtx.request.sourceCode);
+            FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
             ApplyTemplateSubstitutions(res.candidates, enclosingClass, {}, valCtx.ctx.request.symbolTable);
             return res;
         }
@@ -902,11 +1048,14 @@ bool ValidateArgumentOrdering(TSNode arguments, bool& sawNamedArg, DiagnosticCon
     return true;
 }
 
+bool CheckArgIsLValue(TSNode argNode, std::string_view sourceCode, const Scope* scope, const SymbolTable& table);
+
 /** @brief Argument nodes and resolved types for a call expression. */
 struct CallArgTypes
 {
     std::vector<TSNode> argNodes;
     std::vector<std::string> argTypes;
+    std::vector<bool> argIsLValue;
     bool allArgsResolved = true;
 };
 
@@ -923,6 +1072,9 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
 
     for (const auto& argNode : result.argNodes)
     {
+        result.argIsLValue.push_back(
+            CheckArgIsLValue(argNode, valCtx.request.sourceCode, valCtx.scope, valCtx.ctx.request.symbolTable));
+
         if (auto dataTypeName =
                 IsBareDataType(argNode, valCtx.scope, valCtx.ctx.request.symbolTable, valCtx.request.sourceCode))
         {
@@ -1257,7 +1409,8 @@ void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const Call
         return;
     }
 
-    OverloadMatchResult match = ResolveBestOverload(matchingArity, args.argTypes, valCtx.ctx.request.symbolTable);
+    OverloadMatchResult match =
+        ResolveBestOverload(matchingArity, args.argTypes, valCtx.ctx.request.symbolTable, args.argIsLValue);
     if (match.isAmbiguous && args.allArgsResolved)
     {
         const TSPoint start = ts_node_start_point(valCtx.callee);
@@ -1499,7 +1652,12 @@ std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const Sym
         }
     };
 
-    collectFunctions(baseName + "::" + baseName);
+    const std::string shortName = LastScopeSegment(baseName);
+    collectFunctions(baseName + "::" + shortName);
+    if (shortName != baseName)
+    {
+        collectFunctions(baseName + "::" + baseName);
+    }
     if (rawConstructors.empty())
     {
         collectFunctions(baseName);

@@ -67,6 +67,14 @@ enum class OverloadMatchPenalty : int
      */
     UnknownTypes = 8,
 
+    /**
+     * @brief R-value passed to an &out or mutable reference parameter.
+     *
+     * Penalized so that by-value or const-reference overloads win, while single-candidate
+     * calls can still proceed to emit specialized l-value required diagnostics.
+     */
+    RValueToOutParam = 20,
+
     Incompatible = 999 ///< No viable conversion
 };
 
@@ -139,27 +147,32 @@ class OverloadResolver
  * @param symbolTable Symbol table for hierarchy and conversion lookups.
  * @return Penalty score integer (0 = exact, >= 999 = incompatible).
  */
-int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& param, const SymbolTable& symbolTable);
+int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& param, const SymbolTable& symbolTable,
+                       bool argIsLValue = true);
 
 /**
  * @brief Selects the optimal function/method symbol from a candidate overload set.
  * @param candidates Set of candidate function symbols.
  * @param argumentTypes Deduced argument types for each argument expression.
  * @param symbolTable Symbol table for hierarchy and conversion lookups.
+ * @param argIsLValue Optional flags indicating whether each argument expression is an L-value.
  * @return OverloadMatchResult containing the best candidate and match metrics.
  */
 OverloadMatchResult ResolveBestOverload(const std::vector<Symbol>& candidates,
-                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable);
+                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue = {});
 
 /**
  * @brief Selects the optimal function/method symbol from a candidate overload pointer set.
  * @param candidates Span of candidate function symbol pointers.
  * @param argumentTypes Deduced argument types for each argument expression.
  * @param symbolTable Symbol table for hierarchy and conversion lookups.
+ * @param argIsLValue Optional flags indicating whether each argument expression is an L-value.
  * @return OverloadMatchResult containing the best candidate and match metrics.
  */
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
-                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable);
+                                        const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
+                                        const std::vector<bool>& argIsLValue = {});
 
 /**
  * @brief Checks whether fromType can be widened to toType without precision loss.
@@ -177,6 +190,13 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
  * are one method rather than a choice between two.
  */
 bool HasSameParameterList(const Symbol& left, const Symbol& right);
+
+/**
+ * @brief Checks whether a type name string carries a const modifier.
+ * @param typeName Type name string to inspect.
+ * @return True if const modifier is present.
+ */
+bool HasConstModifier(std::string_view typeName);
 
 bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType);
 
