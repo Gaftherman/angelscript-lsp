@@ -91,6 +91,10 @@ static constexpr std::string_view kTwoCharOperators[] = {
 
 struct TokenizeState
 {
+    explicit TokenizeState(std::string_view source) : src(source)
+    {
+    }
+
     std::string_view src;
     size_t i = 0;
     uint32_t curLine = 0;
@@ -157,7 +161,7 @@ bool TryConsumeLineComment(TokenizeState& state)
 }
 
 /**
- * @brief Consumes a block comment beginning with `/*`.
+ * @brief Consumes a block comment beginning with slash-star.
  * @param[in,out] state Active tokenizer state.
  * @return True if a block comment was consumed, false otherwise.
  */

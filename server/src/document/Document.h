@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <shared_mutex>
 #include <string>
 #include <tree_sitter/api.h>
@@ -74,15 +75,15 @@ struct Document
     }
 
     Document(std::string u, std::string t, int v, TreePtr tr)
-        : uri(std::move(u)), text(std::move(t)), version(v), generation(0),
-          astTree_(tr ? SharedTree(ts_tree_copy(tr.get()), TSTreeDeleter{}) : nullptr), tree(std::move(tr))
+        : uri(std::move(u)), text(std::move(t)), version(v), generation(0), tree(std::move(tr)),
+          astTree_(tree ? SharedTree(ts_tree_copy(tree.get()), TSTreeDeleter{}) : nullptr)
     {
     }
 
     Document(DocumentSnapshot snapshot, TreePtr tr)
         : uri(std::move(snapshot.uri)), text(std::move(snapshot.text)), version(snapshot.version),
-          generation(snapshot.generation), astTree_(tr ? SharedTree(ts_tree_copy(tr.get()), TSTreeDeleter{}) : nullptr),
-          tree(std::move(tr))
+          generation(snapshot.generation), tree(std::move(tr)),
+          astTree_(tree ? SharedTree(ts_tree_copy(tree.get()), TSTreeDeleter{}) : nullptr)
     {
     }
 

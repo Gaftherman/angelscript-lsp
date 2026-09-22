@@ -5,6 +5,7 @@
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <shared_mutex>
 #include <string>
 #include <string_view>

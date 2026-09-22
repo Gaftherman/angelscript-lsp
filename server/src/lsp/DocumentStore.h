@@ -3,6 +3,7 @@
 #include "document/Document.h"
 #include <ankerl/unordered_dense.h>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <string>
