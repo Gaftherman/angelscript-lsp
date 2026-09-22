@@ -2,6 +2,7 @@
 
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
+#include "helpers/TestUtils.h"
 #include "analysis/rules/VariableRules.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
@@ -55,51 +56,64 @@ namespace
 
 TEST_CASE("VariableRules - Reports a variable declared void")
 {
-    CHECK(HasCode(AnalyzeVariableSnippet("void g_nothing;\n"), "as-err-void-variable"));
+    std::mt19937_64 rng(0x1337BEEF);
+    const std::string name = angel_lsp::test::GenerateIdentifier(rng, "g_void");
+    CHECK(HasCode(AnalyzeVariableSnippet("void " + name + ";\n"), "as-err-void-variable"));
 }
 
 TEST_CASE("VariableRules - Reports a handle on a primitive")
 {
-    CHECK(HasCode(AnalyzeVariableSnippet("int@ g_broken;\n"), "as-err-handle-on-primitive"));
+    std::mt19937_64 rng(0x1337BEF0);
+    const std::string name = angel_lsp::test::GenerateIdentifier(rng, "g_broken");
+    CHECK(HasCode(AnalyzeVariableSnippet("int@ " + name + ";\n"), "as-err-handle-on-primitive"));
 }
 
 TEST_CASE("VariableRules - Reports a funcdef declared without a handle")
 {
+    std::mt19937_64 rng(0x1337BEF1);
+    const std::string cbName = angel_lsp::test::GenerateIdentifier(rng, "Callback");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "g_handler");
     const std::string code =
-        "funcdef void Callback();\n"
-        "Callback g_handler;\n";
+        "funcdef void " + cbName + "();\n" +
+        cbName + " " + varName + ";\n";
 
     CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-funcdef-not-handle"));
 }
 
 TEST_CASE("VariableRules - A funcdef handle is accepted")
 {
+    std::mt19937_64 rng(0x1337BEF2);
+    const std::string cbName = angel_lsp::test::GenerateIdentifier(rng, "Callback");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "g_handler");
     const std::string code =
-        "funcdef void Callback();\n"
-        "Callback@ g_handler;\n";
+        "funcdef void " + cbName + "();\n" +
+        cbName + "@ " + varName + ";\n";
 
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-funcdef-not-handle"));
 }
 
 TEST_CASE("VariableRules - Reports a mixin used as a data type")
 {
+    std::mt19937_64 rng(0x1337BEF3);
+    const std::string mixinName = angel_lsp::test::GenerateIdentifier(rng, "Helper");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "g_helper");
     const std::string code =
-        "mixin class Helper {}\n"
-        "Helper g_helper;\n";
+        "mixin class " + mixinName + " {}\n" +
+        mixinName + " " + varName + ";\n";
 
     CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-mixin-not-a-type"));
 }
 
 TEST_CASE("VariableRules - An array of handles is not a double handle")
 {
-    // Regression, and a collector bug rather than a rule one: TypeExtraction folded the template
-    // argument's handle into the outer type, so the '@' of `array<Foo@>@` read as a second handle
-    // and every such declaration was reported as a handle on a primitive. It is ordinary
-    // AngelScript and appears throughout the corpus.
+    std::mt19937_64 rng(0x1337BEF4);
+    const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "Schedule");
+    const std::string varA = angel_lsp::test::GenerateIdentifier(rng, "g_schedules");
+    const std::string varB = angel_lsp::test::GenerateIdentifier(rng, "g_owned");
     const std::string code =
-        "class Schedule {}\n"
-        "array<Schedule@>@ g_schedules;\n"
-        "array<Schedule@> g_owned;\n";
+        "class " + clsName + " {}\n"
+        "array<" + clsName + "@>@ " + varA + ";\n"
+        "array<" + clsName + "@> " + varB + ";\n";
 
     for (const auto &d : AnalyzeVariableSnippet(code))
     {
@@ -488,11 +502,14 @@ TEST_CASE("VariableRules - A handle on a real primitive is still reported")
 
 TEST_CASE("VariableRules - Reports a local declared twice in one scope")
 {
+    std::mt19937_64 rng(0x1337BEF5);
+    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Func");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "localVar");
     const std::string code =
-        "void F()\n"
+        "void " + fnName + "()\n"
         "{\n"
-        "    float f;\n"
-        "    float f;\n"
+        "    float " + varName + ";\n"
+        "    float " + varName + ";\n"
         "}\n";
 
     CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-duplicate-symbol"));
@@ -500,11 +517,13 @@ TEST_CASE("VariableRules - Reports a local declared twice in one scope")
 
 TEST_CASE("VariableRules - Reports a local that repeats a parameter")
 {
-    // `void F(float f) { float f; }` is "'f' is already declared" to the compiler: parameters
-    // belong to the body. The scope tree puts them on the func_declaration scope and the body in
-    // its child, so this is the one nesting that is not a nesting.
-    CHECK(HasCode(AnalyzeVariableSnippet("void F(float f) { float f; }\n"), "as-err-duplicate-symbol"));
-    CHECK(HasCode(AnalyzeVariableSnippet("class C { void M(float f) { float f; } }\n"),
+    std::mt19937_64 rng(0x1337BEF6);
+    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Func");
+    const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "Cls");
+    const std::string paramName = angel_lsp::test::GenerateIdentifier(rng, "param");
+
+    CHECK(HasCode(AnalyzeVariableSnippet("void " + fnName + "(float " + paramName + ") { float " + paramName + "; }\n"), "as-err-duplicate-symbol"));
+    CHECK(HasCode(AnalyzeVariableSnippet("class " + clsName + " { void M(float " + paramName + ") { float " + paramName + "; } }\n"),
                   "as-err-duplicate-symbol"));
 }
 
@@ -524,4 +543,38 @@ TEST_CASE("VariableRules - Two locals of the same type and different names are n
 {
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet("void F() { float a, b; a = b; }\n"),
                         "as-err-duplicate-symbol"));
+}
+
+TEST_CASE("VariableRules - Invariant: Lexical scope visibility and undeclared access")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    const std::string parentVar = angel_lsp::test::GenerateIdentifier(rng, "pVar");
+    const std::string childVar = angel_lsp::test::GenerateIdentifier(rng, "cVar");
+
+    const std::string code =
+        "void TestScope()\n"
+        "{\n"
+        "    int " + parentVar + " = 1;\n"
+        "    {\n"
+        "        int " + childVar + " = " + parentVar + " + 1;\n"
+        "    }\n"
+        "    int badAccess = " + childVar + ";\n"
+        "}\n";
+
+    const auto diags = AnalyzeVariableSnippet(code);
+    CHECK(HasCode(diags, "as-warn-undeclared-identifier"));
+}
+
+TEST_CASE("VariableRules - Invariant: Child scope parameter shadowing parent parameter")
+{
+    std::mt19937_64 rng(0xCAFEBABE);
+    const std::string shadowedName = angel_lsp::test::GenerateIdentifier(rng, "shadowed");
+    const std::string code =
+        "void Outer(int " + shadowedName + ")\n"
+        "{\n"
+        "    int " + shadowedName + " = 2;\n"
+        "}\n";
+
+    const auto diags = AnalyzeVariableSnippet(code);
+    CHECK(HasCode(diags, "as-err-duplicate-symbol"));
 }

@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-
+#include "helpers/TestUtils.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SymbolCollector.h"
@@ -732,5 +732,20 @@ TEST_CASE("InitializerList - distinct types with identical names across namespac
     CHECK_FALSE(HasAnyCode(diags, "as-err-initializer-list-too-many"));
     CHECK_FALSE(HasAnyCode(diags, "as-err-initializer-list-too-few"));
     CHECK_FALSE(HasAnyCode(diags, "as-err-initializer-list-not-supported"));
+}
+
+TEST_CASE("InitializerList - Invariant: Primitives reject initializer lists across randomized primitive types")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    for (size_t i = 0; i < 5; ++i)
+    {
+        const std::string primType = angel_lsp::test::GenerateRandomPrimitiveType(rng);
+        if (primType == "string")
+            continue;
+        const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "v");
+        const std::string code = "void main() { " + primType + " " + varName + " = { 1 }; }\n";
+        const auto diags = Diagnose(code);
+        CHECK(HasAnyCode(diags, "as-err-initializer-list-not-supported"));
+    }
 }
 

@@ -1454,5 +1454,39 @@ TEST_CASE("CallChecker - Calling function with same-type ternary Vector argument
     CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
 }
 
+TEST_CASE("CallChecker - Invariant: R-value is disqualified from binding to &out parameter")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "WriteOut");
+    const std::string code =
+        "void " + fnName + "(int &out val) {}\n"
+        "void main() {\n"
+        "    " + fnName + "(42);\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-lvalue-required-for-out-param"));
+}
+
+TEST_CASE("CallChecker - Invariant: Const receiver selects const method candidate")
+{
+    std::mt19937_64 rng(0x1337BEF0);
+    const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "Receiver");
+    const std::string methName = angel_lsp::test::GenerateIdentifier(rng, "Get");
+    const std::string code =
+        "class " + clsName + "\n"
+        "{\n"
+        "    int " + methName + "() { return 1; }\n"
+        "    int " + methName + "() const { return 2; }\n"
+        "}\n"
+        "void Inspect(const " + clsName + "@ r) {\n"
+        "    r." + methName + "();\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-ambiguous"));
+}
+
 
 

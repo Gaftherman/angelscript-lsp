@@ -2411,4 +2411,36 @@ TEST_CASE("TypeConversion - SEC-03 Recursion Depth Guard & Cycle Breaker")
     CHECK_FALSE(canConvertImplicitly(typeA, typeB, MAX_CONVERSION_DEPTH, visited));
 }
 
+TEST_CASE("TypeConversion - Invariant: Multi-level inheritance derived-to-base conversion")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    const size_t depth = 3;
+    std::vector<std::string> classes;
+    classes.reserve(depth);
+    for (size_t i = 0; i < depth; ++i)
+    {
+        classes.push_back(angel_lsp::test::GenerateIdentifier(rng, "ClassLevel" + std::to_string(i)));
+    }
+
+    std::string code;
+    code += "class " + classes[0] + " {}\n";
+    for (size_t i = 1; i < depth; ++i)
+    {
+        code += "class " + classes[i] + " : " + classes[i - 1] + " {}\n";
+    }
+
+    code += "void TestDerivedToBase(" + classes.back() + "@ d) {\n";
+    code += "    " + classes.front() + "@ b = d;\n";
+    code += "}\n";
+
+    code += "void TestBaseToDerived(" + classes.front() + "@ b) {\n";
+    code += "    " + classes.back() + "@ d = b;\n";
+    code += "}\n";
+
+    const auto diags = ConversionDiagnostics(code);
+    CHECK_FALSE(diags.empty());
+    CHECK(std::any_of(diags.begin(), diags.end(),
+                      [](const Diagnostic &d) { return d.code == "as-err-no-implicit-conversion"; }));
+}
+
 

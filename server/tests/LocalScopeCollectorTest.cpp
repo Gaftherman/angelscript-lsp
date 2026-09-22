@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "helpers/CorpusDirectory.h"
+#include "helpers/TestUtils.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
 #include "parser/AngelScriptParser.h"
@@ -172,23 +173,26 @@ namespace
 
 TEST_CASE("LocalScopeCollector - parameter definition and body reference resolve together")
 {
-    std::string source = R"AS(
-void Foo(int x)
-{
-    return x + 1;
-}
-)AS";
+    std::mt19937_64 rng(0x1337BEEF);
+    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Func");
+    const std::string paramName = angel_lsp::test::GenerateIdentifier(rng, "param");
+
+    std::string source =
+        "void " + fnName + "(int " + paramName + ")\n"
+        "{\n"
+        "    return " + paramName + " + 1;\n"
+        "}\n";
 
     auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
 
-    SourcePos refPos = FindPosition(source, "x + 1");
+    SourcePos refPos = FindPosition(source, paramName + " + 1");
     const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *resolved = ResolveInScope(innermost, "x");
+    const LocalDefinition *resolved = ResolveInScope(innermost, paramName);
     REQUIRE(resolved != nullptr);
-    CHECK(resolved->name == "x");
+    CHECK(resolved->name == paramName);
     CHECK(resolved->kind == LocalDefinitionKind::Parameter);
 }
 
@@ -198,61 +202,101 @@ void Foo(int x)
 
 TEST_CASE("LocalScopeCollector - nested block shadowing resolves to the innermost definition")
 {
-    std::string source = R"AS(
-void Foo()
-{
-    for (int i = 0; i < 10; i++)
-    {
-        if (true)
-        {
-            int i = 5;
-            i = i + 1;
-        }
-    }
-}
-)AS";
+    std::mt19937_64 rng(0x1337BEF1);
+    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Func");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "idx");
+
+    std::string source =
+        "void " + fnName + "()\n"
+        "{\n"
+        "    for (int " + varName + " = 0; " + varName + " < 10; " + varName + "++)\n"
+        "    {\n"
+        "        if (true)\n"
+        "        {\n"
+        "            int " + varName + " = 5;\n"
+        "            " + varName + " = " + varName + " + 1;\n"
+        "        }\n"
+        "    }\n"
+        "}\n";
 
     auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
 
-    SourcePos refPos = FindPosition(source, "i + 1");
+    SourcePos refPos = FindPosition(source, varName + " + 1");
     const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *resolved = ResolveInScope(innermost, "i");
+    const LocalDefinition *resolved = ResolveInScope(innermost, varName);
     REQUIRE(resolved != nullptr);
     CHECK(resolved->kind == LocalDefinitionKind::Variable);
 
-    SourcePos innerDefPos = FindPosition(source, "i = 5");
+    SourcePos innerDefPos = FindPosition(source, varName + " = 5");
     CHECK(resolved->startLine == innerDefPos.line);
     CHECK(resolved->startCharacter == innerDefPos.character);
 }
 
 TEST_CASE("LocalScopeCollector - lambda parameters are captured as definitions")
 {
-    // Matches the real-world shape found across 17 corpus files: an untyped lambda
-    // parameter list passed as a callback argument, e.g. arr.sort(function(a, b) {...}).
-    std::string source = R"AS(
-void Foo()
-{
-    SomeCall(function(a, b) { return a < b; });
-}
-)AS";
+    std::mt19937_64 rng(0x1337BEF2);
+    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Func");
+    const std::string paramA = angel_lsp::test::GenerateIdentifier(rng, "pA");
+    const std::string paramB = angel_lsp::test::GenerateIdentifier(rng, "pB");
+
+    std::string source =
+        "void " + fnName + "()\n"
+        "{\n"
+        "    SomeCall(function(" + paramA + ", " + paramB + ") { return " + paramA + " < " + paramB + "; });\n"
+        "}\n";
 
     auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
 
-    SourcePos refPos = FindPosition(source, "a < b");
+    SourcePos refPos = FindPosition(source, paramA + " < " + paramB);
     const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *resolvedA = ResolveInScope(innermost, "a");
+    const LocalDefinition *resolvedA = ResolveInScope(innermost, paramA);
     REQUIRE(resolvedA != nullptr);
     CHECK(resolvedA->kind == LocalDefinitionKind::Parameter);
 
-    const LocalDefinition *resolvedB = ResolveInScope(innermost, "b");
+    const LocalDefinition *resolvedB = ResolveInScope(innermost, paramB);
     REQUIRE(resolvedB != nullptr);
     CHECK(resolvedB->kind == LocalDefinitionKind::Parameter);
+}
+
+TEST_CASE("LocalScopeCollector - Invariant: Multi-level nested scope visibility")
+{
+    std::mt19937_64 rng(0x1337BEEF);
+    const std::string varRoot = angel_lsp::test::GenerateIdentifier(rng, "rootVar");
+    const std::string varChild1 = angel_lsp::test::GenerateIdentifier(rng, "midVar");
+    const std::string varChild2 = angel_lsp::test::GenerateIdentifier(rng, "leafVar");
+
+    std::string source =
+        "void Main()\n"
+        "{\n"
+        "    int " + varRoot + " = 10;\n"
+        "    {\n"
+        "        int " + varChild1 + " = 20;\n"
+        "        {\n"
+        "            int " + varChild2 + " = " + varRoot + " + " + varChild1 + ";\n"
+        "        }\n"
+        "    }\n"
+        "}\n";
+
+    auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+
+    SourcePos refPos = FindPosition(source, varRoot + " + " + varChild1);
+    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
+    REQUIRE(innermost != nullptr);
+
+    const LocalDefinition *defRoot = ResolveInScope(innermost, varRoot);
+    REQUIRE(defRoot != nullptr);
+    CHECK(defRoot->name == varRoot);
+
+    const LocalDefinition *defMid = ResolveInScope(innermost, varChild1);
+    REQUIRE(defMid != nullptr);
+    CHECK(defMid->name == varChild1);
 }
 
 TEST_CASE("LocalScopeCollector - member access identifiers are flagged as such")
@@ -589,6 +633,43 @@ TEST_CASE("LocalScopeCollector - builds scope trees for real-world AngelScript f
 // `angel_lsp_tests.exe --no-skip --test-case="*Local Scope Corpus Audit*"`)
 // =====================================================================================
 
+    struct AuditStats
+    {
+        size_t totalFiles = 0;
+        size_t totalScopes = 0;
+        size_t totalDefinitions = 0;
+        size_t totalReferences = 0;
+        double totalSeconds = 0.0;
+        std::unordered_map<std::string, size_t> definitionKindCounts;
+        std::vector<std::string> zeroDefinitionFiles;
+    };
+
+    void AuditCorpusPath(const std::filesystem::path& path, AuditStats& stats)
+    {
+        std::string sourceCode = ReadCorpusFile(path.filename().string());
+        if (sourceCode.empty())
+            return;
+
+        ++stats.totalFiles;
+
+        std::unique_ptr<Scope> root;
+        auto start = std::chrono::steady_clock::now();
+        root = CollectScopesFromSource(sourceCode);
+        stats.totalSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+
+        if (!root)
+            return;
+
+        stats.totalScopes += CountScopes(root.get());
+        size_t fileDefinitions = CountDefinitions(root.get());
+        stats.totalDefinitions += fileDefinitions;
+        stats.totalReferences += CountReferences(root.get());
+
+        TallyDefinitionsByKind(root.get(), stats.definitionKindCounts);
+        if (fileDefinitions == 0)
+            stats.zeroDefinitionFiles.push_back(path.filename().string());
+    }
+
 TEST_CASE("LocalScopeCollector - Local Scope Corpus Audit Across All angelscript Files" * doctest::skip(true))
 {
     if (!angel_lsp::test::CorpusIsAvailable())
@@ -598,7 +679,6 @@ TEST_CASE("LocalScopeCollector - Local Scope Corpus Audit Across All angelscript
     }
 
     namespace fs = std::filesystem;
-
     std::vector<fs::path> files;
     for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
@@ -608,67 +688,24 @@ TEST_CASE("LocalScopeCollector - Local Scope Corpus Audit Across All angelscript
     REQUIRE_MESSAGE(!files.empty(), "Expected the angelscript/ corpus directory to contain .as files");
     std::sort(files.begin(), files.end());
 
-    size_t totalFiles = 0;
-    size_t totalScopes = 0;
-    size_t totalDefinitions = 0;
-    size_t totalReferences = 0;
-    double totalSeconds = 0.0;
-    std::unordered_map<std::string, size_t> definitionKindCounts;
-    std::vector<std::string> zeroDefinitionFiles;
-
+    AuditStats stats;
     for (const auto &path : files)
     {
-        std::string sourceCode = ReadCorpusFile(path.filename().string());
-        if (sourceCode.empty())
-            continue;
-
-        ++totalFiles;
-
-        std::unique_ptr<Scope> root;
-        auto start = std::chrono::steady_clock::now();
-        CHECK_NOTHROW(root = CollectScopesFromSource(sourceCode));
-        totalSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-
-        if (!root)
-            continue;
-
-        size_t fileScopes = CountScopes(root.get());
-        size_t fileDefinitions = CountDefinitions(root.get());
-        size_t fileReferences = CountReferences(root.get());
-
-        totalScopes += fileScopes;
-        totalDefinitions += fileDefinitions;
-        totalReferences += fileReferences;
-
-        TallyDefinitionsByKind(root.get(), definitionKindCounts);
-
-        if (fileDefinitions == 0)
-            zeroDefinitionFiles.push_back(path.filename().string());
+        AuditCorpusPath(path, stats);
     }
 
-    MESSAGE("Local scope corpus audit: files=" << totalFiles
-            << " totalScopes=" << totalScopes
-            << " totalDefinitions=" << totalDefinitions
-            << " totalReferences=" << totalReferences
-            << " totalSeconds=" << totalSeconds
-            << " avgMsPerFile=" << (totalFiles ? (totalSeconds * 1000.0 / static_cast<double>(totalFiles)) : 0.0));
+    MESSAGE("Local scope corpus audit: files=" << stats.totalFiles
+            << " totalScopes=" << stats.totalScopes
+            << " totalDefinitions=" << stats.totalDefinitions
+            << " totalReferences=" << stats.totalReferences
+            << " totalSeconds=" << stats.totalSeconds
+            << " avgMsPerFile=" << (stats.totalFiles ? (stats.totalSeconds * 1000.0 / static_cast<double>(stats.totalFiles)) : 0.0));
 
-    for (const auto &[kindName, count] : definitionKindCounts)
+    for (const auto &[kindName, count] : stats.definitionKindCounts)
         MESSAGE("  " << kindName << ": " << count);
 
-    if (!zeroDefinitionFiles.empty())
-    {
-        std::string list;
-        for (const auto &fileName : zeroDefinitionFiles)
-        {
-            list += fileName;
-            list += ", ";
-        }
-        MESSAGE("Files that yielded zero local definitions (" << zeroDefinitionFiles.size() << "): " << list);
-    }
-
-    CHECK(totalFiles > 0);
-    CHECK(totalDefinitions > 0);
+    CHECK(stats.totalFiles > 0);
+    CHECK(stats.totalDefinitions > 0);
 }
 
 // =====================================================================================
