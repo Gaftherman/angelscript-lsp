@@ -1,13 +1,14 @@
 #include <doctest/doctest.h>
 
-#include "features/completion/CompletionHandler.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
-#include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
 #include "config/ServerConfig.h"
+#include "features/completion/CompletionHandler.h"
+#include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
@@ -21,112 +22,108 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct TestEnvironment
+struct TestEnvironment
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    angel_lsp::i18n::I18n i18n;
+    std::string uri = "file:///test.as";
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    /**
+     * @param runAnalyzer Mirror the server's own order - collect scopes, analyse the *unpublished*
+     *                    tree, then publish it. Some completions depend on a type the analyzer
+     *                    deduces and writes back: `auto`, and a foreach variable's element type.
+     *                    Skipping this step is why a test can see an empty member list for a
+     *                    name the running server completes perfectly well
+     *                    (Server::CollectScopesAndAnalyze).
+     */
+    TestEnvironment(const std::string& code, bool runAnalyzer = false) : sourceCode(code)
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        angel_lsp::i18n::I18n i18n;
-        std::string uri = "file:///test.as";
-        std::string sourceCode;
-        TSTree *tree = nullptr;
+        tree = parser.Parse(sourceCode);
+        symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
+        std::shared_ptr<Scope> rootScope = scopeCollector.CollectScopes(sourceCode, parser);
 
-        /**
-         * @param runAnalyzer Mirror the server's own order - collect scopes, analyse the *unpublished*
-         *                    tree, then publish it. Some completions depend on a type the analyzer
-         *                    deduces and writes back: `auto`, and a foreach variable's element type.
-         *                    Skipping this step is why a test can see an empty member list for a
-         *                    name the running server completes perfectly well
-         *                    (Server::CollectScopesAndAnalyze).
-         */
-        TestEnvironment(const std::string &code, bool runAnalyzer = false)
-            : sourceCode(code)
+        if (rootScope && runAnalyzer)
         {
-            tree = parser.Parse(sourceCode);
-            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-            std::shared_ptr<Scope> rootScope = scopeCollector.CollectScopes(sourceCode, parser);
+            angel_lsp::config::TypeConfig types;
+            SemanticAnalysisRequest request{symbolTable, uri, ".as.predefined", &i18n};
+            request.typeConfig = &types;
+            request.sourceCode = sourceCode;
+            request.tree = tree;
+            request.scopeRoot = rootScope;
+            // The caller still owns this tree exclusively, which is what makes the write-back
+            // sound - see TypeConversionChecker.h on mutableScopeRoot.
+            request.mutableScopeRoot = rootScope.get();
 
-            if (rootScope && runAnalyzer)
-            {
-                angel_lsp::config::TypeConfig types;
-                SemanticAnalysisRequest request{ symbolTable, uri, ".as.predefined", &i18n };
-                request.typeConfig = &types;
-                request.sourceCode = sourceCode;
-                request.tree = tree;
-                request.scopeRoot = rootScope;
-                // The caller still owns this tree exclusively, which is what makes the write-back
-                // sound - see TypeConversionChecker.h on mutableScopeRoot.
-                request.mutableScopeRoot = rootScope.get();
-
-                SemanticAnalyzer analyzer(nullptr);
-                analyzer.Analyze(request);
-            }
-
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(uri, std::shared_ptr<const Scope>(std::move(rootScope)));
-            }
+            SemanticAnalyzer analyzer(nullptr);
+            analyzer.Analyze(request);
         }
 
-        ~TestEnvironment()
+        if (rootScope)
         {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
+            scopeIndex.SetScopeTree(uri, std::shared_ptr<const Scope>(std::move(rootScope)));
         }
-
-        std::vector<lsp::CompletionItem> CompleteAt(uint32_t line, uint32_t character,
-                                                    bool snippetSupport = false)
-        {
-            CompletionRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex,
-                                   lsp::Position{ line, character }, nullptr, snippetSupport };
-            return GetCompletion(req);
-        }
-
-        /** @brief The same, for a host whose asEP_PROPERTY_ACCESSOR_MODE is not this server's default. */
-        std::vector<lsp::CompletionItem> CompleteAtWithAccessorMode(uint32_t line, uint32_t character,
-                                                                    int accessorMode)
-        {
-            angel_lsp::config::ServerConfig config;
-            config.engine.propertyAccessorMode = accessorMode;
-
-            CompletionRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex,
-                                   lsp::Position{ line, character }, &config, false };
-            return GetCompletion(req);
-        }
-    };
-
-    bool HasItem(const std::vector<lsp::CompletionItem> &items, const std::string &label)
-    {
-        for (const auto &item : items)
-        {
-            if (item.label == label)
-            {
-                return true;
-            }
-        }
-        return false;
     }
+
+    ~TestEnvironment()
+    {
+        if (tree)
+        {
+            ts_tree_delete(tree);
+        }
+    }
+
+    std::vector<lsp::CompletionItem> CompleteAt(uint32_t line, uint32_t character, bool snippetSupport = false)
+    {
+        CompletionRequest req{uri,     sourceCode,    tree, symbolTable, scopeIndex, lsp::Position{line, character},
+                              nullptr, snippetSupport};
+        return GetCompletion(req);
+    }
+
+    /** @brief The same, for a host whose asEP_PROPERTY_ACCESSOR_MODE is not this server's default. */
+    std::vector<lsp::CompletionItem> CompleteAtWithAccessorMode(uint32_t line, uint32_t character, int accessorMode)
+    {
+        angel_lsp::config::ServerConfig config;
+        config.engine.propertyAccessorMode = accessorMode;
+
+        CompletionRequest req{uri,     sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character},
+                              &config, false};
+        return GetCompletion(req);
+    }
+};
+
+bool HasItem(const std::vector<lsp::CompletionItem>& items, const std::string& label)
+{
+    for (const auto& item : items)
+    {
+        if (item.label == label)
+        {
+            return true;
+        }
+    }
+    return false;
 }
+} // namespace
 
 TEST_CASE("CompletionHandler - Member Access Completion")
 {
-    std::string code = 
-        "class Player {\n"
-        "    int health;\n"
-        "    void Jump() {}\n"
-        "}\n"
-        "void main() {\n"
-        "    Player p;\n"
-        "    p.\n"
-        "}\n";
+    std::string code = "class Player {\n"
+                       "    int health;\n"
+                       "    void Jump() {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Player p;\n"
+                       "    p.\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto items = env.CompleteAt(6, 6); // right after 'p.'
-    
+
     CHECK(HasItem(items, "health"));
     CHECK(HasItem(items, "Jump"));
     // Unrelated keywords / globals shouldn't pollute member access
@@ -136,15 +133,14 @@ TEST_CASE("CompletionHandler - Member Access Completion")
 
 TEST_CASE("CompletionHandler - Scope Resolution Completion")
 {
-    std::string code = 
-        "enum State {\n"
-        "    Idle,\n"
-        "    Running,\n"
-        "    Jumping\n"
-        "}\n"
-        "void main() {\n"
-        "    State::\n"
-        "}\n";
+    std::string code = "enum State {\n"
+                       "    Idle,\n"
+                       "    Running,\n"
+                       "    Jumping\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    State::\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto items = env.CompleteAt(6, 11); // right after 'State::'
@@ -156,13 +152,12 @@ TEST_CASE("CompletionHandler - Scope Resolution Completion")
 
 TEST_CASE("CompletionHandler - Global and Lexical Scope Completion")
 {
-    std::string code = 
-        "int g_globalVar = 10;\n"
-        "void GlobalFunc() {}\n"
-        "void main() {\n"
-        "    int localVar = 5;\n"
-        "    \n"
-        "}\n";
+    std::string code = "int g_globalVar = 10;\n"
+                       "void GlobalFunc() {}\n"
+                       "void main() {\n"
+                       "    int localVar = 5;\n"
+                       "    \n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto items = env.CompleteAt(4, 4); // inside main body
@@ -177,10 +172,9 @@ TEST_CASE("CompletionHandler - Global and Lexical Scope Completion")
 
 TEST_CASE("CompletionHandler - Symbol items carry the identity a resolve needs")
 {
-    const std::string code =
-        "/// Spawns the entity at its start position.\n"
-        "void Spawn(int id) {}\n"
-        "void main() { Sp }\n";
+    const std::string code = "/// Spawns the entity at its start position.\n"
+                             "void Spawn(int id) {}\n"
+                             "void main() { Sp }\n";
 
     AngelScriptParser parser;
     SymbolCollector collector(nullptr);
@@ -189,18 +183,18 @@ TEST_CASE("CompletionHandler - Symbol items carry the identity a resolve needs")
     ScopeIndex index;
     const std::string uri = "file:///resolve.as";
 
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     collector.CollectSymbols(uri, code, parser, table);
     if (auto root = scopes.CollectScopes(code, parser))
     {
         index.SetScopeTree(uri, std::move(root));
     }
 
-    CompletionRequest request{ uri, code, tree, table, index, lsp::Position{ 2, 16 }, nullptr };
+    CompletionRequest request{uri, code, tree, table, index, lsp::Position{2, 16}, nullptr};
     const auto items = GetCompletion(request);
 
-    const auto spawn = std::find_if(items.begin(), items.end(),
-                                    [](const lsp::CompletionItem &item) { return item.label == "Spawn"; });
+    const auto spawn =
+        std::find_if(items.begin(), items.end(), [](const lsp::CompletionItem& item) { return item.label == "Spawn"; });
     REQUIRE(spawn != items.end());
 
     // Nothing is resolved yet: the list is cheap on purpose.
@@ -214,9 +208,8 @@ TEST_CASE("CompletionHandler - Symbol items carry the identity a resolve needs")
 
 TEST_CASE("CompletionHandler - Resolve attaches the declaration's doc comment")
 {
-    const std::string code =
-        "/// Spawns the entity at its start position.\n"
-        "void Spawn(int id) {}\n";
+    const std::string code = "/// Spawns the entity at its start position.\n"
+                             "void Spawn(int id) {}\n";
 
     AngelScriptParser parser;
     SymbolCollector collector(nullptr);
@@ -228,15 +221,12 @@ TEST_CASE("CompletionHandler - Resolve attaches the declaration's doc comment")
     item.label = "Spawn";
     item.data = lsp::LSPAny(std::string("Spawn"));
 
-    CompletionResolveRequest request{
-        item,
-        table,
-        [&](const std::string &wanted) -> const std::string * { return wanted == uri ? &code : nullptr; }
-    };
+    CompletionResolveRequest request{item, table, [&](const std::string& wanted) -> const std::string*
+                                     { return wanted == uri ? &code : nullptr; }};
 
     const auto resolved = ResolveCompletionItem(request);
     REQUIRE(resolved.documentation.has_value());
-    const auto &markup = std::get<lsp::MarkupContent>(*resolved.documentation);
+    const auto& markup = std::get<lsp::MarkupContent>(*resolved.documentation);
     CHECK(markup.value.find("Spawns the entity") != std::string::npos);
 }
 
@@ -249,8 +239,7 @@ TEST_CASE("CompletionHandler - Resolve leaves an item it cannot identify alone")
         lsp::CompletionItem item;
         item.label = "while";
 
-        CompletionResolveRequest request{
-            item, table, [](const std::string &) -> const std::string * { return nullptr; } };
+        CompletionResolveRequest request{item, table, [](const std::string&) -> const std::string* { return nullptr; }};
 
         CHECK_FALSE(ResolveCompletionItem(request).documentation.has_value());
     }
@@ -261,8 +250,7 @@ TEST_CASE("CompletionHandler - Resolve leaves an item it cannot identify alone")
         item.label = "Ghost";
         item.data = lsp::LSPAny(std::string("Ghost"));
 
-        CompletionResolveRequest request{
-            item, table, [](const std::string &) -> const std::string * { return nullptr; } };
+        CompletionResolveRequest request{item, table, [](const std::string&) -> const std::string* { return nullptr; }};
 
         CHECK_FALSE(ResolveCompletionItem(request).documentation.has_value());
     }
@@ -280,10 +268,9 @@ TEST_CASE("CompletionHandler - Resolve keeps documentation an item already had")
     lsp::CompletionItem item;
     item.label = "Spawn";
     item.data = lsp::LSPAny(std::string("Spawn"));
-    item.documentation = lsp::MarkupContent{ lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), "Already known." };
+    item.documentation = lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), "Already known."};
 
-    CompletionResolveRequest request{
-        item, table, [&](const std::string &) -> const std::string * { return &code; } };
+    CompletionResolveRequest request{item, table, [&](const std::string&) -> const std::string* { return &code; }};
 
     const auto resolved = ResolveCompletionItem(request);
     REQUIRE(resolved.documentation.has_value());
@@ -302,20 +289,19 @@ TEST_CASE("CompletionHandler - Resolve keeps documentation an item already had")
 
 TEST_CASE("Completion - Constructors and destructors are not offered as instance members")
 {
-    const std::string code =
-        "class Matrix\n"                 // 0
-        "{\n"                            // 1
-        "    Matrix() {}\n"              // 2
-        "    Matrix(int rows) {}\n"      // 3
-        "    ~Matrix() {}\n"             // 4
-        "    int Rows() { return 0; }\n" // 5
-        "    int size;\n"                // 6
-        "}\n"                            // 7
-        "void main()\n"                  // 8
-        "{\n"                            // 9
-        "    Matrix m;\n"                // 10
-        "    m.\n"                       // 11
-        "}\n";                           // 12
+    const std::string code = "class Matrix\n"                 // 0
+                             "{\n"                            // 1
+                             "    Matrix() {}\n"              // 2
+                             "    Matrix(int rows) {}\n"      // 3
+                             "    ~Matrix() {}\n"             // 4
+                             "    int Rows() { return 0; }\n" // 5
+                             "    int size;\n"                // 6
+                             "}\n"                            // 7
+                             "void main()\n"                  // 8
+                             "{\n"                            // 9
+                             "    Matrix m;\n"                // 10
+                             "    m.\n"                       // 11
+                             "}\n";                           // 12
 
     TestEnvironment env(code);
     const auto items = env.CompleteAt(11, 6);
@@ -339,60 +325,57 @@ TEST_CASE("Completion - Constructors and destructors are not offered as instance
 
 namespace
 {
-    /**
-     * @brief Finds the item with this label AND this kind.
-     *
-     * A snippet and the bare keyword deliberately share one label - `class` writes a class, `class`
-     * is the word - so a lookup by label alone would be answered by whichever came first, and a
-     * regression that dropped the other would still pass.
-     */
-    const lsp::CompletionItem *FindItemOfKind(const std::vector<lsp::CompletionItem> &items,
-                                              const std::string &label,
-                                              lsp::CompletionItemKind kind)
+/**
+ * @brief Finds the item with this label AND this kind.
+ *
+ * A snippet and the bare keyword deliberately share one label - `class` writes a class, `class`
+ * is the word - so a lookup by label alone would be answered by whichever came first, and a
+ * regression that dropped the other would still pass.
+ */
+const lsp::CompletionItem* FindItemOfKind(const std::vector<lsp::CompletionItem>& items, const std::string& label,
+                                          lsp::CompletionItemKind kind)
+{
+    for (const auto& item : items)
     {
-        for (const auto &item : items)
+        if (item.label == label && item.kind == kind)
         {
-            if (item.label == label && item.kind == kind)
-            {
-                return &item;
-            }
+            return &item;
         }
-        return nullptr;
     }
-
-    const lsp::CompletionItem *FindItem(const std::vector<lsp::CompletionItem> &items,
-                                        const std::string &label)
-    {
-        for (const auto &item : items)
-        {
-            if (item.label == label)
-            {
-                return &item;
-            }
-        }
-        return nullptr;
-    }
+    return nullptr;
 }
+
+const lsp::CompletionItem* FindItem(const std::vector<lsp::CompletionItem>& items, const std::string& label)
+{
+    for (const auto& item : items)
+    {
+        if (item.label == label)
+        {
+            return &item;
+        }
+    }
+    return nullptr;
+}
+} // namespace
 
 TEST_CASE("Completion - A template class completes with its argument list")
 {
     // The declarations come after `main` so the cursor is not inside any class body: a class the
     // cursor sits within is completed through a different path, which would make this test measure
     // the wrong one.
-    const std::string code =
-        "void main()\n"       // 0
-        "{\n"                 // 1
-        "    arr\n"           // 2
-        "}\n"                 // 3
-        "class array<T>\n"    // 4
-        "{\n"                 // 5
-        "    uint length();\n"// 6
-        "}\n";                // 7
+    const std::string code = "void main()\n"        // 0
+                             "{\n"                  // 1
+                             "    arr\n"            // 2
+                             "}\n"                  // 3
+                             "class array<T>\n"     // 4
+                             "{\n"                  // 5
+                             "    uint length();\n" // 6
+                             "}\n";                 // 7
 
     TestEnvironment env(code);
 
     const auto items = env.CompleteAt(2, 7, /*snippetSupport=*/true);
-    const lsp::CompletionItem *item = FindItem(items, "array");
+    const lsp::CompletionItem* item = FindItem(items, "array");
     REQUIRE(item != nullptr);
     REQUIRE(item->insertText.has_value());
     CHECK(item->insertText.value() == "array<${1:T}>$0");
@@ -402,23 +385,22 @@ TEST_CASE("Completion - A template class completes with its argument list")
     // A client that did not advertise snippet support gets the plain name instead of six
     // characters of placeholder syntax printed into its buffer.
     const auto plain = env.CompleteAt(2, 7, /*snippetSupport=*/false);
-    const lsp::CompletionItem *plainItem = FindItem(plain, "array");
+    const lsp::CompletionItem* plainItem = FindItem(plain, "array");
     REQUIRE(plainItem != nullptr);
     CHECK_FALSE(plainItem->insertText.has_value());
 }
 
 TEST_CASE("Completion - Inside template brackets only types are offered")
 {
-    const std::string code =
-        "void main()\n"          // 0
-        "{\n"                    // 1
-        "    int counter = 0;\n" // 2
-        "    array<\n"           // 3
-        "}\n"                    // 4
-        "class array<T> {}\n"    // 5
-        "class Vector {}\n"      // 6
-        "enum Team { Red }\n"    // 7
-        "void Helper() {}\n";    // 8
+    const std::string code = "void main()\n"          // 0
+                             "{\n"                    // 1
+                             "    int counter = 0;\n" // 2
+                             "    array<\n"           // 3
+                             "}\n"                    // 4
+                             "class array<T> {}\n"    // 5
+                             "class Vector {}\n"      // 6
+                             "enum Team { Red }\n"    // 7
+                             "void Helper() {}\n";    // 8
 
     TestEnvironment env(code);
     const auto items = env.CompleteAt(3, 10);
@@ -437,12 +419,11 @@ TEST_CASE("Completion - A less-than comparison is not a template argument list")
 {
     // The whole risk of the backwards scan is reading `a < b` as an unclosed argument list and
     // then refusing to offer the local the user is halfway through typing.
-    const std::string code =
-        "void main()\n"          // 0
-        "{\n"                    // 1
-        "    int counter = 0;\n" // 2
-        "    if (counter < c\n"  // 3
-        "}\n";
+    const std::string code = "void main()\n"          // 0
+                             "{\n"                    // 1
+                             "    int counter = 0;\n" // 2
+                             "    if (counter < c\n"  // 3
+                             "}\n";
 
     TestEnvironment env(code);
     const auto items = env.CompleteAt(3, 19);
@@ -451,13 +432,12 @@ TEST_CASE("Completion - A less-than comparison is not a template argument list")
 
 TEST_CASE("Completion - A closed argument list is not still open")
 {
-    const std::string code =
-        "void main()\n"                       // 0
-        "{\n"                                 // 1
-        "    array<array<int>> grid;\n"       // 2
-        "    gr\n"                            // 3
-        "}\n"                                 // 4
-        "class array<T> {}\n";                // 5
+    const std::string code = "void main()\n"                 // 0
+                             "{\n"                           // 1
+                             "    array<array<int>> grid;\n" // 2
+                             "    gr\n"                      // 3
+                             "}\n"                           // 4
+                             "class array<T> {}\n";          // 5
 
     TestEnvironment env(code);
     const auto items = env.CompleteAt(3, 6);
@@ -476,21 +456,20 @@ TEST_CASE("Completion - A closed argument list is not still open")
 
 TEST_CASE("Completion - A foreach variable completes as the container's element type")
 {
-    const std::string code =
-        "void main()\n"                          // 0
-        "{\n"                                    // 1
-        "    array<Item> items;\n"               // 2
-        "    foreach (auto entry : items)\n"     // 3
-        "    {\n"                                // 4
-        "        entry.\n"                       // 5
-        "    }\n"                                // 6
-        "}\n"                                    // 7
-        "class Item { int health; void Spawn() {} }\n"  // 8
-        "class array<T>\n"                       // 9
-        "{\n"                                    // 10
-        "    const T& opForValue0(uint index) const;\n"  // 11
-        "    uint opForValue1(uint index) const;\n"      // 12
-        "}\n";                                   // 13
+    const std::string code = "void main()\n"                                 // 0
+                             "{\n"                                           // 1
+                             "    array<Item> items;\n"                      // 2
+                             "    foreach (auto entry : items)\n"            // 3
+                             "    {\n"                                       // 4
+                             "        entry.\n"                              // 5
+                             "    }\n"                                       // 6
+                             "}\n"                                           // 7
+                             "class Item { int health; void Spawn() {} }\n"  // 8
+                             "class array<T>\n"                              // 9
+                             "{\n"                                           // 10
+                             "    const T& opForValue0(uint index) const;\n" // 11
+                             "    uint opForValue1(uint index) const;\n"     // 12
+                             "}\n";                                          // 13
 
     TestEnvironment env(code, /*runAnalyzer=*/true);
     const auto items = env.CompleteAt(5, 14);
@@ -501,21 +480,20 @@ TEST_CASE("Completion - A foreach variable completes as the container's element 
 
 TEST_CASE("Completion - The second foreach variable is the index, not the element")
 {
-    const std::string code =
-        "void main()\n"                                  // 0
-        "{\n"                                            // 1
-        "    array<Item> items;\n"                       // 2
-        "    foreach (auto entry, auto index : items)\n" // 3
-        "    {\n"                                        // 4
-        "        index.\n"                               // 5
-        "    }\n"                                        // 6
-        "}\n"                                            // 7
-        "class Item { int health; }\n"                   // 8
-        "class array<T>\n"                               // 9
-        "{\n"                                            // 10
-        "    const T& opForValue0(uint index) const;\n"  // 11
-        "    uint opForValue1(uint index) const;\n"      // 12
-        "}\n";                                           // 13
+    const std::string code = "void main()\n"                                  // 0
+                             "{\n"                                            // 1
+                             "    array<Item> items;\n"                       // 2
+                             "    foreach (auto entry, auto index : items)\n" // 3
+                             "    {\n"                                        // 4
+                             "        index.\n"                               // 5
+                             "    }\n"                                        // 6
+                             "}\n"                                            // 7
+                             "class Item { int health; }\n"                   // 8
+                             "class array<T>\n"                               // 9
+                             "{\n"                                            // 10
+                             "    const T& opForValue0(uint index) const;\n"  // 11
+                             "    uint opForValue1(uint index) const;\n"      // 12
+                             "}\n";                                           // 13
 
     TestEnvironment env(code, /*runAnalyzer=*/true);
     const auto items = env.CompleteAt(5, 14);
@@ -537,12 +515,11 @@ TEST_CASE("Completion - The second foreach variable is the index, not the elemen
 
 TEST_CASE("Completion - A line comment offers nothing")
 {
-    const std::string code =
-        "int gHealth;\n" // 0
-        "void main()\n"  // 1
-        "{\n"            // 2
-        "    // gH\n"    // 3
-        "}\n";           // 4
+    const std::string code = "int gHealth;\n" // 0
+                             "void main()\n"  // 1
+                             "{\n"            // 2
+                             "    // gH\n"    // 3
+                             "}\n";           // 4
 
     TestEnvironment env(code);
     const auto items = env.CompleteAt(3, 9);
@@ -551,12 +528,11 @@ TEST_CASE("Completion - A line comment offers nothing")
 
 TEST_CASE("Completion - A block comment offers nothing on any of its lines")
 {
-    const std::string code =
-        "int gHealth;\n"     // 0
-        "/*\n"               // 1
-        " gH\n"              // 2
-        "*/\n"               // 3
-        "void main() { }\n"; // 4
+    const std::string code = "int gHealth;\n"     // 0
+                             "/*\n"               // 1
+                             " gH\n"              // 2
+                             "*/\n"               // 3
+                             "void main() { }\n"; // 4
 
     TestEnvironment env(code);
     const auto items = env.CompleteAt(2, 3);
@@ -565,12 +541,11 @@ TEST_CASE("Completion - A block comment offers nothing on any of its lines")
 
 TEST_CASE("Completion - A closed comment does not swallow the code after it")
 {
-    const std::string code =
-        "int gHealth;\n"           // 0
-        "/* note */ void main()\n" // 1
-        "{\n"                      // 2
-        "    gH\n"                 // 3
-        "}\n";                     // 4
+    const std::string code = "int gHealth;\n"           // 0
+                             "/* note */ void main()\n" // 1
+                             "{\n"                      // 2
+                             "    gH\n"                 // 3
+                             "}\n";                     // 4
 
     TestEnvironment env(code);
     const auto items = env.CompleteAt(3, 6);
@@ -579,12 +554,11 @@ TEST_CASE("Completion - A closed comment does not swallow the code after it")
 
 TEST_CASE("Completion - A string literal offers nothing")
 {
-    const std::string code =
-        "int gHealth;\n"           // 0
-        "void main()\n"            // 1
-        "{\n"                      // 2
-        "    string s = \"gH\";\n" // 3
-        "}\n";                     // 4
+    const std::string code = "int gHealth;\n"           // 0
+                             "void main()\n"            // 1
+                             "{\n"                      // 2
+                             "    string s = \"gH\";\n" // 3
+                             "}\n";                     // 4
 
     TestEnvironment env(code);
     CHECK(env.CompleteAt(3, 18).empty());
@@ -593,12 +567,11 @@ TEST_CASE("Completion - A string literal offers nothing")
 TEST_CASE("Completion - A single-quoted string offers nothing")
 {
     // `'...'` is a string by default too: asEP_USE_CHARACTER_LITERALS is off.
-    const std::string code =
-        "int gHealth;\n"        // 0
-        "void main()\n"         // 1
-        "{\n"                   // 2
-        "    string s = 'gH';\n"// 3
-        "}\n";                  // 4
+    const std::string code = "int gHealth;\n"         // 0
+                             "void main()\n"          // 1
+                             "{\n"                    // 2
+                             "    string s = 'gH';\n" // 3
+                             "}\n";                   // 4
 
     TestEnvironment env(code);
     CHECK(env.CompleteAt(3, 18).empty());
@@ -606,12 +579,11 @@ TEST_CASE("Completion - A single-quoted string offers nothing")
 
 TEST_CASE("Completion - A heredoc offers nothing across its lines")
 {
-    const std::string code =
-        "int gHealth;\n"        // 0
-        "string s = \"\"\"\n"   // 1
-        "gH\n"                  // 2
-        "\"\"\";\n"             // 3
-        "void main() { }\n";    // 4
+    const std::string code = "int gHealth;\n"      // 0
+                             "string s = \"\"\"\n" // 1
+                             "gH\n"                // 2
+                             "\"\"\";\n"           // 3
+                             "void main() { }\n";  // 4
 
     TestEnvironment env(code);
     CHECK(env.CompleteAt(2, 2).empty());
@@ -619,12 +591,11 @@ TEST_CASE("Completion - A heredoc offers nothing across its lines")
 
 TEST_CASE("Completion - Code after a closed string is completed")
 {
-    const std::string code =
-        "int gHealth;\n"            // 0
-        "void main()\n"             // 1
-        "{\n"                       // 2
-        "    string s = \"x\"; gH\n"// 3
-        "}\n";                      // 4
+    const std::string code = "int gHealth;\n"             // 0
+                             "void main()\n"              // 1
+                             "{\n"                        // 2
+                             "    string s = \"x\"; gH\n" // 3
+                             "}\n";                       // 4
 
     TestEnvironment env(code);
     const auto items = env.CompleteAt(3, 22);
@@ -636,13 +607,12 @@ TEST_CASE("Completion - An unterminated string ends at the line break")
     // The default engine rejects a string spanning a newline, so the suppression has to end there
     // as well. Letting it run on would silence completion for the rest of the file over one
     // missing quote.
-    const std::string code =
-        "int gHealth;\n"             // 0
-        "void main()\n"              // 1
-        "{\n"                        // 2
-        "    string s = \"oops\n"    // 3
-        "    gH\n"                   // 4
-        "}\n";                       // 5
+    const std::string code = "int gHealth;\n"          // 0
+                             "void main()\n"           // 1
+                             "{\n"                     // 2
+                             "    string s = \"oops\n" // 3
+                             "    gH\n"                // 4
+                             "}\n";                    // 5
 
     TestEnvironment env(code);
     const auto items = env.CompleteAt(4, 6);
@@ -651,16 +621,15 @@ TEST_CASE("Completion - An unterminated string ends at the line break")
 
 TEST_CASE("Completion - The colon of a case label offers nothing")
 {
-    const std::string code =
-        "int gHealth;\n"      // 0
-        "void main()\n"       // 1
-        "{\n"                 // 2
-        "    int mode = 0;\n" // 3
-        "    switch (mode)\n" // 4
-        "    {\n"             // 5
-        "    case 1:\n"       // 6
-        "    }\n"             // 7
-        "}\n";                // 8
+    const std::string code = "int gHealth;\n"      // 0
+                             "void main()\n"       // 1
+                             "{\n"                 // 2
+                             "    int mode = 0;\n" // 3
+                             "    switch (mode)\n" // 4
+                             "    {\n"             // 5
+                             "    case 1:\n"       // 6
+                             "    }\n"             // 7
+                             "}\n";                // 8
 
     TestEnvironment env(code);
     CHECK(env.CompleteAt(6, 11).empty());
@@ -668,16 +637,15 @@ TEST_CASE("Completion - The colon of a case label offers nothing")
 
 TEST_CASE("Completion - The colon of a default label offers nothing")
 {
-    const std::string code =
-        "int gHealth;\n"      // 0
-        "void main()\n"       // 1
-        "{\n"                 // 2
-        "    int mode = 0;\n" // 3
-        "    switch (mode)\n" // 4
-        "    {\n"             // 5
-        "    default:\n"      // 6
-        "    }\n"             // 7
-        "}\n";                // 8
+    const std::string code = "int gHealth;\n"      // 0
+                             "void main()\n"       // 1
+                             "{\n"                 // 2
+                             "    int mode = 0;\n" // 3
+                             "    switch (mode)\n" // 4
+                             "    {\n"             // 5
+                             "    default:\n"      // 6
+                             "    }\n"             // 7
+                             "}\n";                // 8
 
     TestEnvironment env(code);
     CHECK(env.CompleteAt(6, 12).empty());
@@ -686,15 +654,14 @@ TEST_CASE("Completion - The colon of a default label offers nothing")
 TEST_CASE("Completion - A case label still completes through a qualifier")
 {
     // `case Mode::` ends in `::`, which is the scope-resolution context and not a finished label.
-    const std::string code =
-        "enum Mode { Idle, Busy }\n" // 0
-        "void main()\n"              // 1
-        "{\n"                        // 2
-        "    switch (m)\n"           // 3
-        "    {\n"                    // 4
-        "    case Mode::\n"          // 5
-        "    }\n"                    // 6
-        "}\n";                       // 7
+    const std::string code = "enum Mode { Idle, Busy }\n" // 0
+                             "void main()\n"              // 1
+                             "{\n"                        // 2
+                             "    switch (m)\n"           // 3
+                             "    {\n"                    // 4
+                             "    case Mode::\n"          // 5
+                             "    }\n"                    // 6
+                             "}\n";                       // 7
 
     TestEnvironment env(code);
     const auto items = env.CompleteAt(5, 15);
@@ -715,35 +682,33 @@ TEST_CASE("Completion - A case label still completes through a qualifier")
 
 namespace
 {
-    const std::string k_accessorClass =
-        "class HostEntityA\n"
-        "{\n"
-        "    int m_health;\n"
-        "    void Spawn() { }\n"
-        "    int get_Health() const property { return m_health; }\n"
-        "    void set_Health(int v) property { m_health = v; }\n"
-        "}\n"
-        "void main()\n"
-        "{\n"
-        "    HostEntityA e;\n"
-        "    e.\n"
-        "}\n";
+const std::string k_accessorClass = "class HostEntityA\n"
+                                    "{\n"
+                                    "    int m_health;\n"
+                                    "    void Spawn() { }\n"
+                                    "    int get_Health() const property { return m_health; }\n"
+                                    "    void set_Health(int v) property { m_health = v; }\n"
+                                    "}\n"
+                                    "void main()\n"
+                                    "{\n"
+                                    "    HostEntityA e;\n"
+                                    "    e.\n"
+                                    "}\n";
 
-    /** @brief The same class with the keyword left off, which mode 3 rejects and mode 2 accepts. */
-    const std::string k_accessorClassNoKeyword =
-        "class HostEntityA\n"
-        "{\n"
-        "    int m_health;\n"
-        "    void Spawn() { }\n"
-        "    int get_Health() const { return m_health; }\n"
-        "    void set_Health(int v) { m_health = v; }\n"
-        "}\n"
-        "void main()\n"
-        "{\n"
-        "    HostEntityA e;\n"
-        "    e.\n"
-        "}\n";
-}
+/** @brief The same class with the keyword left off, which mode 3 rejects and mode 2 accepts. */
+const std::string k_accessorClassNoKeyword = "class HostEntityA\n"
+                                             "{\n"
+                                             "    int m_health;\n"
+                                             "    void Spawn() { }\n"
+                                             "    int get_Health() const { return m_health; }\n"
+                                             "    void set_Health(int v) { m_health = v; }\n"
+                                             "}\n"
+                                             "void main()\n"
+                                             "{\n"
+                                             "    HostEntityA e;\n"
+                                             "    e.\n"
+                                             "}\n";
+} // namespace
 
 TEST_CASE("CompletionHandler - Accessors offer the property they stand for")
 {
@@ -765,7 +730,7 @@ TEST_CASE("CompletionHandler - The property carries the accessor's type")
     auto items = env.CompleteAt(10, 6);
 
     const auto found = std::find_if(items.begin(), items.end(),
-                                    [](const lsp::CompletionItem &item) { return item.label == "Health"; });
+                                    [](const lsp::CompletionItem& item) { return item.label == "Health"; });
     REQUIRE(found != items.end());
     CHECK(found->kind == lsp::CompletionItemKind::Property);
     CHECK(found->detail.value_or("") == "int");
@@ -813,59 +778,55 @@ TEST_CASE("CompletionHandler - A host with accessors switched off is offered non
 
 namespace
 {
-    /** @brief Completes inside a document at a position, against a fixed list of workspace files. */
-    std::vector<lsp::CompletionItem> CompleteIncludeAt(const std::string &code,
-                                                       const std::string &documentPath,
-                                                       const std::vector<std::string> &workspaceFiles,
-                                                       uint32_t line,
-                                                       uint32_t character,
-                                                       const std::string &implicitExtension = "")
-    {
-        AngelScriptParser parser;
-        TSTree *tree = parser.Parse(code);
+/** @brief Completes inside a document at a position, against a fixed list of workspace files. */
+std::vector<lsp::CompletionItem> CompleteIncludeAt(const std::string& code, const std::string& documentPath,
+                                                   const std::vector<std::string>& workspaceFiles, uint32_t line,
+                                                   uint32_t character, const std::string& implicitExtension = "")
+{
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
 
-        SymbolTable table;
-        ScopeIndex scopes;
-        const std::string uri = "file:///main.as";
+    SymbolTable table;
+    ScopeIndex scopes;
+    const std::string uri = "file:///main.as";
 
-        CompletionRequest request{ uri, code, tree, table, scopes,
-                                   lsp::Position{ line, character }, nullptr, false };
-        request.documentPath = documentPath;
-        request.implicitExtension = implicitExtension;
-        request.listIncludeCandidates = [&workspaceFiles]() { return workspaceFiles; };
+    CompletionRequest request{uri, code, tree, table, scopes, lsp::Position{line, character}, nullptr, false};
+    request.documentPath = documentPath;
+    request.implicitExtension = implicitExtension;
+    request.listIncludeCandidates = [&workspaceFiles]() { return workspaceFiles; };
 
-        auto items = GetCompletion(request);
-        ts_tree_delete(tree);
-        return items;
-    }
-
-    /** @brief The labels of a completion list, sorted, so an assertion reads as a set. */
-    std::vector<std::string> LabelsOf(const std::vector<lsp::CompletionItem> &items)
-    {
-        std::vector<std::string> labels;
-        labels.reserve(items.size());
-        for (const auto &item : items)
-            labels.push_back(item.label);
-        std::sort(labels.begin(), labels.end());
-        return labels;
-    }
-
-    /** @brief A workspace laid out the way the report described it. */
-    struct IncludeFixture
-    {
-        std::string root = "/work";
-
-        std::string Main() const { return root + "/some/file.as"; }
-
-        std::vector<std::string> Files() const
-        {
-            return { root + "/some/path/file.as",
-                     root + "/some/file.as",
-                     root + "/file.as",
-                     root + "/anotherfile.as" };
-        }
-    };
+    auto items = GetCompletion(request);
+    ts_tree_delete(tree);
+    return items;
 }
+
+/** @brief The labels of a completion list, sorted, so an assertion reads as a set. */
+std::vector<std::string> LabelsOf(const std::vector<lsp::CompletionItem>& items)
+{
+    std::vector<std::string> labels;
+    labels.reserve(items.size());
+    for (const auto& item : items)
+        labels.push_back(item.label);
+    std::sort(labels.begin(), labels.end());
+    return labels;
+}
+
+/** @brief A workspace laid out the way the report described it. */
+struct IncludeFixture
+{
+    std::string root = "/work";
+
+    std::string Main() const
+    {
+        return root + "/some/file.as";
+    }
+
+    std::vector<std::string> Files() const
+    {
+        return {root + "/some/path/file.as", root + "/some/file.as", root + "/file.as", root + "/anotherfile.as"};
+    }
+};
+} // namespace
 
 TEST_CASE("Completion - An empty include offers the workspace's scripts")
 {
@@ -890,7 +851,7 @@ TEST_CASE("Completion - A file does not offer to include itself")
     const IncludeFixture fixture;
     const auto items = CompleteIncludeAt("#include \"\"\n", fixture.Main(), fixture.Files(), 0, 10);
 
-    for (const auto &item : items)
+    for (const auto& item : items)
     {
         INFO("label: " << item.label);
         CHECK(item.label != "file.as");
@@ -907,13 +868,13 @@ TEST_CASE("Completion - An include item replaces what was typed rather than appe
     const auto items = CompleteIncludeAt(code, fixture.Main(), fixture.Files(), 0, 13);
 
     const auto found = std::find_if(items.begin(), items.end(),
-        [](const lsp::CompletionItem &item) { return item.label == "../anotherfile.as"; });
+                                    [](const lsp::CompletionItem& item) { return item.label == "../anotherfile.as"; });
     REQUIRE(found != items.end());
     REQUIRE(found->textEdit.has_value());
 
-    const auto &edit = std::get<lsp::TextEdit>(found->textEdit.value());
-    CHECK(edit.range.start.character == 10);  // just past the opening quote
-    CHECK(edit.range.end.character == 13);    // the cursor
+    const auto& edit = std::get<lsp::TextEdit>(found->textEdit.value());
+    CHECK(edit.range.start.character == 10); // just past the opening quote
+    CHECK(edit.range.end.character == 13);   // the cursor
     CHECK(edit.newText == "../anotherfile.as");
 }
 
@@ -980,16 +941,13 @@ TEST_CASE("Completion - Declaration snippets exist, carry Snippet format, and so
     // Both items carry the SAME label, so they have to be told apart by kind - which is also what
     // makes this a real check. Asking FindItem for "class" would be answered by whichever of the
     // pair came first, and a regression that dropped the other would still pass.
-    for (const std::string &word : { std::string("class"), std::string("interface"),
-                                     std::string("mixin"), std::string("function"),
-                                     std::string("enum"), std::string("funcdef"),
-                                     std::string("switch"), std::string("if"),
-                                     std::string("else"), std::string("for"),
-                                     std::string("while"), std::string("do"),
-                                     std::string("try") })
+    for (const std::string& word :
+         {std::string("class"), std::string("interface"), std::string("mixin"), std::string("function"),
+          std::string("enum"), std::string("funcdef"), std::string("switch"), std::string("if"), std::string("else"),
+          std::string("for"), std::string("while"), std::string("do"), std::string("try")})
     {
-        const auto *snippet = FindItemOfKind(items, word, lsp::CompletionItemKind::Snippet);
-        const auto *keyword = FindItemOfKind(items, word, lsp::CompletionItemKind::Keyword);
+        const auto* snippet = FindItemOfKind(items, word, lsp::CompletionItemKind::Snippet);
+        const auto* keyword = FindItemOfKind(items, word, lsp::CompletionItemKind::Keyword);
 
         REQUIRE_MESSAGE(snippet != nullptr, "snippet item not found: ", word);
         REQUIRE_MESSAGE(keyword != nullptr, "bare keyword item not found: ", word);
@@ -1006,7 +964,7 @@ TEST_CASE("Completion - Declaration snippets exist, carry Snippet format, and so
 
     // The class snippet is the one the user asked for by name: it writes the constructor and the
     // destructor, not just the word.
-    const auto *classSnippet = FindItemOfKind(items, "class", lsp::CompletionItemKind::Snippet);
+    const auto* classSnippet = FindItemOfKind(items, "class", lsp::CompletionItemKind::Snippet);
     REQUIRE(classSnippet != nullptr);
     REQUIRE(classSnippet->insertText.has_value());
     CHECK(classSnippet->insertText.value().find("${1:Name}()") != std::string::npos);
@@ -1036,7 +994,7 @@ TEST_CASE("Completion - #include is offered, and leaves the cursor inside the qu
     TestEnvironment env("void Main() { }\n");
     const auto items = env.CompleteAt(0, 0, /*snippetSupport=*/true);
 
-    const auto *include = FindItemOfKind(items, "#include", lsp::CompletionItemKind::Snippet);
+    const auto* include = FindItemOfKind(items, "#include", lsp::CompletionItemKind::Snippet);
     REQUIRE(include != nullptr);
     REQUIRE(include->insertTextFormat.has_value());
     CHECK(include->insertTextFormat.value() == lsp::InsertTextFormat::Snippet);
@@ -1058,14 +1016,13 @@ TEST_CASE("Completion - Without snippetSupport, #include is not offered as a sni
 
 TEST_CASE("Completion - A function completes to its call, with the arguments as placeholders")
 {
-    TestEnvironment env(
-        "void AnotherFunctionName(bool first, bool second) { }\n"
-        "void NoArguments() { }\n"
-        "void Main() { }\n");
+    TestEnvironment env("void AnotherFunctionName(bool first, bool second) { }\n"
+                        "void NoArguments() { }\n"
+                        "void Main() { }\n");
 
     const auto items = env.CompleteAt(2, 14, /*snippetSupport=*/true);
 
-    const auto *twoArgs = FindItemOfKind(items, "AnotherFunctionName", lsp::CompletionItemKind::Function);
+    const auto* twoArgs = FindItemOfKind(items, "AnotherFunctionName", lsp::CompletionItemKind::Function);
     REQUIRE(twoArgs != nullptr);
     REQUIRE(twoArgs->insertText.has_value());
     REQUIRE(twoArgs->insertTextFormat.has_value());
@@ -1076,7 +1033,7 @@ TEST_CASE("Completion - A function completes to its call, with the arguments as 
     // paraphrase it.
     CHECK(twoArgs->insertText.value() == "AnotherFunctionName(${1:bool first}, ${2:bool second})$0");
 
-    const auto *none = FindItemOfKind(items, "NoArguments", lsp::CompletionItemKind::Function);
+    const auto* none = FindItemOfKind(items, "NoArguments", lsp::CompletionItemKind::Function);
     REQUIRE(none != nullptr);
     REQUIRE(none->insertText.has_value());
     CHECK(none->insertText.value() == "NoArguments()$0");
@@ -1085,107 +1042,125 @@ TEST_CASE("Completion - A function completes to its call, with the arguments as 
 TEST_CASE("Completion - Without snippetSupport a function still completes to its bare name")
 {
     // A client that cannot expand a snippet would otherwise be handed `${1:bool first}` as text.
-    TestEnvironment env(
-        "void AnotherFunctionName(bool first, bool second) { }\n"
-        "void Main() { }\n");
+    TestEnvironment env("void AnotherFunctionName(bool first, bool second) { }\n"
+                        "void Main() { }\n");
 
     const auto items = env.CompleteAt(1, 14, /*snippetSupport=*/false);
 
-    const auto *fn = FindItemOfKind(items, "AnotherFunctionName", lsp::CompletionItemKind::Function);
+    const auto* fn = FindItemOfKind(items, "AnotherFunctionName", lsp::CompletionItemKind::Function);
     REQUIRE(fn != nullptr);
     CHECK_FALSE(fn->insertText.has_value());
 }
 
 TEST_CASE("Completion - Global property accessor completes to property item")
 {
-    TestEnvironment env(
-        "class CModule { }\n"
-        "CModule@ get_g_Module();\n"
-        "void Main() {\n"
-        "    g_\n"
-        "}\n");
+    TestEnvironment env("class CModule { }\n"
+                        "CModule@ get_g_Module();\n"
+                        "void Main() {\n"
+                        "    g_\n"
+                        "}\n");
 
     const auto items = env.CompleteAt(3, 6);
-    const auto *prop = FindItemOfKind(items, "g_Module", lsp::CompletionItemKind::Property);
+    const auto* prop = FindItemOfKind(items, "g_Module", lsp::CompletionItemKind::Property);
     REQUIRE(prop != nullptr);
     CHECK(prop->detail == "CModule@");
 }
 
 TEST_CASE("Completion - Chained member access completes across multiple levels")
 {
-    TestEnvironment env(
-        "class CScriptInfo { int version; void Reset() {} }\n"
-        "class CModule { CScriptInfo@ get_ScriptInfo(); }\n"
-        "CModule@ get_g_Module();\n"
-        "void Main() {\n"
-        "    g_Module.ScriptInfo.\n"
-        "}\n");
+    TestEnvironment env("class CScriptInfo { int version; void Reset() {} }\n"
+                        "class CModule { CScriptInfo@ get_ScriptInfo(); }\n"
+                        "CModule@ get_g_Module();\n"
+                        "void Main() {\n"
+                        "    g_Module.ScriptInfo.\n"
+                        "}\n");
 
     const auto items = env.CompleteAt(4, 24);
-    const auto *ver = FindItemOfKind(items, "version", lsp::CompletionItemKind::Field);
+    const auto* ver = FindItemOfKind(items, "version", lsp::CompletionItemKind::Field);
     REQUIRE(ver != nullptr);
-    const auto *reset = FindItemOfKind(items, "Reset", lsp::CompletionItemKind::Method);
+    const auto* reset = FindItemOfKind(items, "Reset", lsp::CompletionItemKind::Method);
     REQUIRE(reset != nullptr);
 }
 
 TEST_CASE("Completion - Chained member access completes with whitespace around access operators")
 {
-    TestEnvironment env(
-        "class CScriptInfo { int version; void Reset() {} }\n"
-        "class CModule { CScriptInfo@ get_ScriptInfo(); }\n"
-        "CModule@ get_g_Module();\n"
-        "void Main() {\n"
-        "    g_Module . ScriptInfo .\n"
-        "}\n");
+    TestEnvironment env("class CScriptInfo { int version; void Reset() {} }\n"
+                        "class CModule { CScriptInfo@ get_ScriptInfo(); }\n"
+                        "CModule@ get_g_Module();\n"
+                        "void Main() {\n"
+                        "    g_Module . ScriptInfo .\n"
+                        "}\n");
 
     const auto items = env.CompleteAt(4, 27);
-    const auto *ver = FindItemOfKind(items, "version", lsp::CompletionItemKind::Field);
+    const auto* ver = FindItemOfKind(items, "version", lsp::CompletionItemKind::Field);
     REQUIRE(ver != nullptr);
-    const auto *reset = FindItemOfKind(items, "Reset", lsp::CompletionItemKind::Method);
+    const auto* reset = FindItemOfKind(items, "Reset", lsp::CompletionItemKind::Method);
     REQUIRE(reset != nullptr);
 }
 
 TEST_CASE("Completion - Member completion on unqualified namespaced class")
 {
-    TestEnvironment env(
-        "namespace INS2PROP {\n"
-        "    class CIns2Prop {\n"
-        "        int health;\n"
-        "        void Fire() {}\n"
-        "    }\n"
-        "}\n"
-        "void Main() {\n"
-        "    CIns2Prop@ n;\n"
-        "    n.\n"
-        "}\n");
+    TestEnvironment env("namespace INS2PROP {\n"
+                        "    class CIns2Prop {\n"
+                        "        int health;\n"
+                        "        void Fire() {}\n"
+                        "    }\n"
+                        "}\n"
+                        "void Main() {\n"
+                        "    CIns2Prop@ n;\n"
+                        "    n.\n"
+                        "}\n");
 
     const auto items = env.CompleteAt(8, 6);
-    const auto *h = FindItemOfKind(items, "health", lsp::CompletionItemKind::Field);
+    const auto* h = FindItemOfKind(items, "health", lsp::CompletionItemKind::Field);
     REQUIRE(h != nullptr);
-    const auto *f = FindItemOfKind(items, "Fire", lsp::CompletionItemKind::Method);
+    const auto* f = FindItemOfKind(items, "Fire", lsp::CompletionItemKind::Method);
     REQUIRE(f != nullptr);
 }
 
 TEST_CASE("Completion - Member completion on class member variable of unqualified namespaced class")
 {
-    TestEnvironment env(
-        "namespace INS2PROP {\n"
-        "    class CIns2Prop {\n"
-        "        int health;\n"
-        "        void Fire() {}\n"
-        "    }\n"
-        "}\n"
-        "class Weapon {\n"
-        "    CIns2Prop@ n;\n"
-        "    void Attack() {\n"
-        "        n.\n"
-        "    }\n"
-        "}\n");
+    TestEnvironment env("namespace INS2PROP {\n"
+                        "    class CIns2Prop {\n"
+                        "        int health;\n"
+                        "        void Fire() {}\n"
+                        "    }\n"
+                        "}\n"
+                        "class Weapon {\n"
+                        "    CIns2Prop@ n;\n"
+                        "    void Attack() {\n"
+                        "        n.\n"
+                        "    }\n"
+                        "}\n");
 
     const auto items = env.CompleteAt(9, 10);
-    const auto *h = FindItemOfKind(items, "health", lsp::CompletionItemKind::Field);
+    const auto* h = FindItemOfKind(items, "health", lsp::CompletionItemKind::Field);
     REQUIRE(h != nullptr);
-    const auto *f = FindItemOfKind(items, "Fire", lsp::CompletionItemKind::Method);
+    const auto* f = FindItemOfKind(items, "Fire", lsp::CompletionItemKind::Method);
     REQUIRE(f != nullptr);
 }
 
+TEST_CASE("Completion - Module symbols populated via findModuleSymbols callback")
+{
+    const std::string modName = angel_lsp::test::GenerateRandomSymbolName("Mod");
+    TestEnvironment env("void Main() { " + modName.substr(0, 3));
+
+    angel_lsp::features::CompletionRequest req{
+        env.uri,         env.sourceCode, env.tree,
+        env.symbolTable, env.scopeIndex, lsp::Position{0, static_cast<uint32_t>(env.sourceCode.size())},
+        nullptr,         false};
+    req.findModuleSymbols = [&](std::string_view prefix)
+    {
+        std::vector<std::pair<std::string, std::string>> results;
+        if (modName.starts_with(prefix))
+        {
+            results.emplace_back(modName, "module detail");
+        }
+        return results;
+    };
+
+    const auto items = angel_lsp::features::GetCompletion(req);
+    const auto* found = FindItemOfKind(items, modName, lsp::CompletionItemKind::Module);
+    REQUIRE(found != nullptr);
+    CHECK(found->label == modName);
+}

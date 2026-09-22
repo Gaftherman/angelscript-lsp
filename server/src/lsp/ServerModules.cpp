@@ -126,6 +126,7 @@ void Server::BuildModuleIndex()
     }
 
     m_modules = std::move(resolved);
+    SyncModuleIndexSymbols();
 }
 
 bool Server::PathIsInside(const std::string& normalizedPath, const std::string& normalizedDirectory)
@@ -429,6 +430,7 @@ void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser
             m_indexedUriByPath[path] = uriStr;
         }
     }
+    SyncModuleIndexSymbols();
 }
 
 namespace
@@ -448,6 +450,28 @@ bool SymbolDeclaresShared(const angel_lsp::analysis::Symbol& symbol)
     return false;
 }
 } // namespace
+
+void Server::SyncModuleIndexSymbols()
+{
+    std::vector<ModuleIndex::ExportedSymbol> exported;
+    for (const auto& view : m_modules)
+    {
+        exported.push_back(ModuleIndex::ExportedSymbol{view.name, view.folderPath, "", 0, 0});
+    }
+    m_symbolTable.ForEachSymbol(
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<angel_lsp::analysis::Symbol>& syms)
+        {
+            for (const auto& sym : syms)
+            {
+                if (SymbolDeclaresShared(sym))
+                {
+                    exported.push_back(ModuleIndex::ExportedSymbol{sym.name, sym.containerName, sym.fileUri,
+                                                                   sym.startLine, sym.startCharacter});
+                }
+            }
+        });
+    m_moduleIndex.SetExportedSymbols(std::move(exported));
+}
 
 void Server::CollectSharedSymbolsElsewhere(const ModuleView& owning,
                                            ankerl::unordered_dense::set<std::string>& outShared) const

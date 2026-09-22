@@ -333,6 +333,15 @@ Server::HandleRequestsTextDocument_Completion(lsp::requests::TextDocument_Comple
     cr.documentPath = CanonicalPathFromUri(doc->uri);
     cr.implicitExtension = std::string(ImplicitIncludeExtension());
     cr.listIncludeCandidates = [this]() { return IncludableFiles(); };
+    cr.findModuleSymbols = [this](std::string_view prefix)
+    {
+        std::vector<std::pair<std::string, std::string>> results;
+        for (const auto& sym : m_moduleIndex.FindSymbolsByPrefix(prefix))
+        {
+            results.emplace_back(sym.name, sym.containerName);
+        }
+        return results;
+    };
 
     return features::GetCompletion(cr);
 }

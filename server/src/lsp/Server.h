@@ -13,6 +13,7 @@
 #include "i18n/i18n.h"
 #include "lsp/AnalysisScheduler.h"
 #include "lsp/DocumentStore.h"
+#include "lsp/ModuleIndex.h"
 #include "lsp/PredefinedStubManager.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/LspLogger.h"
@@ -194,6 +195,7 @@ class Server
     ankerl::unordered_dense::map<std::string, angel_lsp::analysis::DiagnosticSeverity> m_diagnosticSeverities;
 
     angel_lsp::utils::WorkspaceIncludeGraph m_includeGraph;
+    angel_lsp::ModuleIndex m_moduleIndex;
 
     // Debounced re-analysis. Reparsing is cheap and stays on the message loop so requests
     // always see a current tree, but symbol collection, scope building and semantic analysis
@@ -529,6 +531,11 @@ class Server
      * for them all to be read.
      */
     void IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser);
+
+    /**
+     * @brief Synchronizes exported module symbols into m_moduleIndex for prefix completion.
+     */
+    void SyncModuleIndexSymbols();
 
     /**
      * @brief Purges symbols and state for indexed closure files that no longer belong to

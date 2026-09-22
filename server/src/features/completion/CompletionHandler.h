@@ -60,6 +60,11 @@ struct CompletionRequest
      * would insert something the host cannot open. See ServerConfig::implicitIncludeExtension.
      */
     std::string implicitExtension = {};
+
+    /**
+     * @brief Optional callback returning module symbols matching a prefix as (name, detail) pairs.
+     */
+    std::function<std::vector<std::pair<std::string, std::string>>(std::string_view prefix)> findModuleSymbols = {};
 };
 
 /**

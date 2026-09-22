@@ -1790,6 +1790,14 @@ void CollectGlobalSymbols(bool accessorsAreProperties, bool accessorKeywordRequi
                 }
             }
         });
+
+    if (collector.request.findModuleSymbols)
+    {
+        for (const auto& [name, detail] : collector.request.findModuleSymbols(queryPrefix))
+        {
+            AddItemIfNew(collector, {name, lsp::CompletionItemKind::Module, detail, "", name});
+        }
+    }
 }
 
 /**
