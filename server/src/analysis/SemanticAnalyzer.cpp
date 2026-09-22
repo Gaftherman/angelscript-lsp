@@ -135,7 +135,7 @@ void SemanticAnalyzer::RunTypeAndStructureRules(const SemanticAnalysisRequest& r
                           ctx);
 }
 
-void SemanticAnalyzer::CheckDirectivesAndModules(const SemanticAnalysisRequest& request, DiagnosticContext& ctx) const
+static void CheckModuleContext(const SemanticAnalysisRequest& request, DiagnosticContext& ctx)
 {
     if (request.moduleContext.has_value() && !request.moduleContext->name.empty() &&
         !request.moduleContext->alsoClaimedBy.empty())
@@ -152,32 +152,42 @@ void SemanticAnalyzer::CheckDirectivesAndModules(const SemanticAnalysisRequest& 
         ctx.EmitAtRange({0, 0, 0, 0}, "as-hint-file-in-several-modules", {request.moduleContext->name, others},
                         DiagnosticSeverity::Hint);
     }
+}
 
+static void CheckUnsupportedDirective(const utils::UnsupportedDirective& directive,
+                                      const SemanticAnalysisRequest& request, DiagnosticContext& ctx)
+{
+    if (directive.problem == utils::DirectiveProblem::Unrecognised)
+    {
+        ctx.EmitAtRange({directive.line, directive.startColumn, directive.line, directive.endColumn},
+                        "as-err-unknown-directive", directive.name, DiagnosticSeverity::Error);
+        return;
+    }
+    if (directive.problem == utils::DirectiveProblem::IncludeNotQuoted)
+    {
+        ctx.EmitAtRange({directive.line, directive.startColumn, directive.line, directive.endColumn},
+                        "as-err-include-not-quoted", DiagnosticSeverity::Error);
+        return;
+    }
+    if (directive.problem == utils::DirectiveProblem::SpaceAfterHash)
+    {
+        ctx.EmitAtRange({directive.line, directive.startColumn, directive.line, directive.endColumn},
+                        "as-err-directive-space-after-hash", {directive.name, directive.name},
+                        DiagnosticSeverity::Error);
+        return;
+    }
+
+    ctx.EmitAtRange({directive.line, directive.startColumn, directive.line, directive.endColumn},
+                    "as-warn-unsupported-directive", directive.name,
+                    directive.name == "pragma" ? request.pragmaSeverity : DiagnosticSeverity::Warning);
+}
+
+void SemanticAnalyzer::CheckDirectivesAndModules(const SemanticAnalysisRequest& request, DiagnosticContext& ctx) const
+{
+    CheckModuleContext(request, ctx);
     for (const auto& directive : request.unsupportedDirectives)
     {
-        if (directive.problem == utils::DirectiveProblem::Unrecognised)
-        {
-            ctx.EmitAtRange({directive.line, directive.startColumn, directive.line, directive.endColumn},
-                            "as-err-unknown-directive", directive.name, DiagnosticSeverity::Error);
-            continue;
-        }
-        if (directive.problem == utils::DirectiveProblem::IncludeNotQuoted)
-        {
-            ctx.EmitAtRange({directive.line, directive.startColumn, directive.line, directive.endColumn},
-                            "as-err-include-not-quoted", DiagnosticSeverity::Error);
-            continue;
-        }
-        if (directive.problem == utils::DirectiveProblem::SpaceAfterHash)
-        {
-            ctx.EmitAtRange({directive.line, directive.startColumn, directive.line, directive.endColumn},
-                            "as-err-directive-space-after-hash", {directive.name, directive.name},
-                            DiagnosticSeverity::Error);
-            continue;
-        }
-
-        ctx.EmitAtRange({directive.line, directive.startColumn, directive.line, directive.endColumn},
-                        "as-warn-unsupported-directive", directive.name,
-                        directive.name == "pragma" ? request.pragmaSeverity : DiagnosticSeverity::Warning);
+        CheckUnsupportedDirective(directive, request, ctx);
     }
 }
 
@@ -254,45 +264,99 @@ static void CheckDialectEmptyListElements(const NodeIndex& nodeIndex, Diagnostic
     }
 }
 
+static void CheckCharLiteralDeclarator(TSNode declarator, const std::string& declared, DiagnosticContext& ctx)
+{
+    if (std::string_view(ts_node_type(declarator)) != "variable_declarator")
+    {
+        return;
+    }
+
+    const TSNode value = parser::GetChildByField(declarator, parser::fields::Value);
+    if (ts_node_is_null(value) || std::string_view(ts_node_type(value)) != "string_literal")
+    {
+        return;
+    }
+
+    const uint32_t from = ts_node_start_byte(value);
+    if (from < ctx.request.sourceCode.size() && ctx.request.sourceCode[from] == '\'')
+    {
+        const TSPoint start = ts_node_start_point(value);
+        const TSPoint end = ts_node_end_point(value);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-character-literal-is-string", declared,
+                        DiagnosticSeverity::Error);
+    }
+}
+
+static void CheckDialectVariableDeclarationNode(TSNode node, DiagnosticContext& ctx)
+{
+    if (ctx.request.CharacterLiteralMode() != 0)
+    {
+        return;
+    }
+
+    const TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
+    if (ts_node_is_null(typeNode))
+    {
+        return;
+    }
+
+    const std::string declared = CleanBaseType(GetNodeText(typeNode, ctx.request.sourceCode));
+    if (!IsPrimitiveTypeName(declared) || declared == "auto" || declared == "void")
+    {
+        return;
+    }
+
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            CheckCharLiteralDeclarator(ts_tree_cursor_current_node(&cursor), declared, ctx);
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+}
+
 static void CheckDialectCharacterLiterals(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
 {
-    if (ctx.request.CharacterLiteralMode() == 0)
+    if (ctx.request.CharacterLiteralMode() != 0)
     {
-        for (TSNode node : nodeIndex.Nodes(parser::nodes::VariableDeclaration))
-        {
-            const TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
-            if (!ts_node_is_null(typeNode))
-            {
-                const std::string declared = CleanBaseType(GetNodeText(typeNode, ctx.request.sourceCode));
-                if (IsPrimitiveTypeName(declared) && declared != "auto" && declared != "void")
-                {
-                    const uint32_t declaratorCount = ts_node_child_count(node);
-                    for (uint32_t i = 0; i < declaratorCount; ++i)
-                    {
-                        const TSNode declarator = ts_node_child(node, i);
-                        if (std::string_view(ts_node_type(declarator)) != "variable_declarator")
-                        {
-                            continue;
-                        }
+        return;
+    }
 
-                        const TSNode value = parser::GetChildByField(declarator, parser::fields::Value);
-                        if (ts_node_is_null(value) || std::string_view(ts_node_type(value)) != "string_literal")
-                        {
-                            continue;
-                        }
+    for (TSNode node : nodeIndex.Nodes(parser::nodes::VariableDeclaration))
+    {
+        CheckDialectVariableDeclarationNode(node, ctx);
+    }
+}
 
-                        const uint32_t from = ts_node_start_byte(value);
-                        if (from < ctx.request.sourceCode.size() && ctx.request.sourceCode[from] == '\'')
-                        {
-                            const TSPoint start = ts_node_start_point(value);
-                            const TSPoint end = ts_node_end_point(value);
-                            ctx.EmitAtRange({start.row, start.column, end.row, end.column},
-                                            "as-err-character-literal-is-string", declared, DiagnosticSeverity::Error);
-                        }
-                    }
-                }
-            }
-        }
+static bool IsIntegerLiteral(TSNode candidate, std::string_view sourceCode)
+{
+    if (ts_node_is_null(candidate) || std::string_view(ts_node_type(candidate)) != "number_literal")
+    {
+        return false;
+    }
+    const std::string text = GetNodeText(candidate, sourceCode);
+    return text.find_first_of(".eEfF") == std::string::npos;
+}
+
+static void CheckDialectIntegerDivisionNode(TSNode node, DiagnosticContext& ctx)
+{
+    const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
+    if (ts_node_is_null(op) || std::string_view(ts_node_type(op)) != "/")
+    {
+        return;
+    }
+
+    const TSNode left = parser::GetChildByField(node, parser::fields::Left);
+    const TSNode right = parser::GetChildByField(node, parser::fields::Right);
+
+    if (IsIntegerLiteral(left, ctx.request.sourceCode) && IsIntegerLiteral(right, ctx.request.sourceCode))
+    {
+        const TSPoint start = ts_node_start_point(node);
+        const TSPoint end = ts_node_end_point(node);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-hint-integer-division",
+                        DiagnosticSeverity::Hint);
     }
 }
 
@@ -303,32 +367,7 @@ static void CheckDialectIntegerDivision(const NodeIndex& nodeIndex, DiagnosticCo
     {
         for (TSNode node : nodeIndex.Nodes(parser::nodes::BinaryExpression))
         {
-            const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
-            if (!ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "/")
-            {
-                const TSNode left = parser::GetChildByField(node, parser::fields::Left);
-                const TSNode right = parser::GetChildByField(node, parser::fields::Right);
-
-                const auto isIntegerLiteral = [&ctx](TSNode candidate)
-                {
-                    if (ts_node_is_null(candidate) || std::string_view(ts_node_type(candidate)) != "number_literal")
-                    {
-                        return false;
-                    }
-                    const std::string text = GetNodeText(candidate, ctx.request.sourceCode);
-                    return text.find('.') == std::string::npos && text.find('e') == std::string::npos &&
-                           text.find('E') == std::string::npos && text.find('f') == std::string::npos &&
-                           text.find('F') == std::string::npos;
-                };
-
-                if (isIntegerLiteral(left) && isIntegerLiteral(right))
-                {
-                    const TSPoint start = ts_node_start_point(node);
-                    const TSPoint end = ts_node_end_point(node);
-                    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-hint-integer-division",
-                                    DiagnosticSeverity::Hint);
-                }
-            }
+            CheckDialectIntegerDivisionNode(node, ctx);
         }
     }
 }
@@ -375,52 +414,69 @@ static void CheckDialectNamedArguments(const NodeIndex& nodeIndex, DiagnosticCon
     }
 }
 
+static bool IsHandleAssignmentTarget(TSNode target)
+{
+    if (std::string_view(ts_node_type(target)) != "unary_expression")
+    {
+        return false;
+    }
+    const TSNode prefix = parser::GetChildByField(target, parser::fields::Operator);
+    return !ts_node_is_null(prefix) && std::string_view(ts_node_type(prefix)) == "@";
+}
+
+static bool IsSymbolTableClass(const SymbolTable& table, const std::string& typeName)
+{
+    if (const auto symbols = table.FindSymbolsPtr(typeName))
+    {
+        for (const auto& sym : *symbols)
+        {
+            if (sym.type == SymbolType::Class)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static void CheckDialectAssignmentExpressionNode(TSNode node, DiagnosticContext& ctx)
+{
+    const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
+    const TSNode target = parser::GetChildByField(node, parser::fields::Left);
+
+    if (ts_node_is_null(op) || std::string_view(ts_node_type(op)) != "=" || ts_node_is_null(target))
+    {
+        return;
+    }
+
+    if (IsHandleAssignmentTarget(target))
+    {
+        return;
+    }
+
+    const Scope* scope = ctx.request.scopeRoot
+                             ? FindInnermostScope(ctx.request.scopeRoot.get(), ts_node_start_point(target).row,
+                                                  ts_node_start_point(target).column)
+                             : nullptr;
+    const std::string targetType = CleanBaseType(
+        ResolveExpressionType(target, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri}));
+
+    if (IsSymbolTableClass(ctx.request.symbolTable, targetType))
+    {
+        const TSPoint start = ts_node_start_point(node);
+        const TSPoint end = ts_node_end_point(node);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-value-assign-for-ref", targetType,
+                        DiagnosticSeverity::Error);
+    }
+}
+
 static void CheckDialectValueAssignForRef(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
 {
     if (ctx.request.DisallowsValueAssignForRef())
     {
         for (TSNode node : nodeIndex.Nodes(parser::nodes::AssignmentExpression))
         {
-            const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
-            const TSNode target = parser::GetChildByField(node, parser::fields::Left);
-
-            if (!ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "=" && !ts_node_is_null(target))
-            {
-                bool isHandleAssignment = false;
-                if (std::string_view(ts_node_type(target)) == "unary_expression")
-                {
-                    const TSNode prefix = parser::GetChildByField(target, parser::fields::Operator);
-                    isHandleAssignment = !ts_node_is_null(prefix) && std::string_view(ts_node_type(prefix)) == "@";
-                }
-
-                const Scope* scope = ctx.request.scopeRoot ? FindInnermostScope(ctx.request.scopeRoot.get(),
-                                                                                ts_node_start_point(target).row,
-                                                                                ts_node_start_point(target).column)
-                                                           : nullptr;
-                const std::string targetType = CleanBaseType(ResolveExpressionType(
-                    target, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri}));
-
-                bool isVisibleClass = false;
-                if (const auto symbols = ctx.request.symbolTable.FindSymbolsPtr(targetType))
-                {
-                    for (const auto& sym : *symbols)
-                    {
-                        if (sym.type == SymbolType::Class)
-                        {
-                            isVisibleClass = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (isVisibleClass && !isHandleAssignment)
-                {
-                    const TSPoint start = ts_node_start_point(node);
-                    const TSPoint end = ts_node_end_point(node);
-                    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-value-assign-for-ref",
-                                    targetType, DiagnosticSeverity::Error);
-                }
-            }
+            CheckDialectAssignmentExpressionNode(node, ctx);
         }
     }
 }
@@ -492,41 +548,7 @@ static void CheckDialectNodeInitializerList(TSNode node, DiagnosticContext& ctx)
 
 static void CheckDialectNodeVariableDeclaration(TSNode node, DiagnosticContext& ctx)
 {
-    if (ctx.request.CharacterLiteralMode() == 0)
-    {
-        const TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
-        if (!ts_node_is_null(typeNode))
-        {
-            const std::string declared = CleanBaseType(GetNodeText(typeNode, ctx.request.sourceCode));
-            if (IsPrimitiveTypeName(declared) && declared != "auto" && declared != "void")
-            {
-                const uint32_t declaratorCount = ts_node_child_count(node);
-                for (uint32_t i = 0; i < declaratorCount; ++i)
-                {
-                    const TSNode declarator = ts_node_child(node, i);
-                    if (std::string_view(ts_node_type(declarator)) != "variable_declarator")
-                    {
-                        continue;
-                    }
-
-                    const TSNode value = parser::GetChildByField(declarator, parser::fields::Value);
-                    if (ts_node_is_null(value) || std::string_view(ts_node_type(value)) != "string_literal")
-                    {
-                        continue;
-                    }
-
-                    const uint32_t from = ts_node_start_byte(value);
-                    if (from < ctx.request.sourceCode.size() && ctx.request.sourceCode[from] == '\'')
-                    {
-                        const TSPoint start = ts_node_start_point(value);
-                        const TSPoint end = ts_node_end_point(value);
-                        ctx.EmitAtRange({start.row, start.column, end.row, end.column},
-                                        "as-err-character-literal-is-string", declared, DiagnosticSeverity::Error);
-                    }
-                }
-            }
-        }
-    }
+    CheckDialectVariableDeclarationNode(node, ctx);
 }
 
 static void CheckDialectNodeBinaryExpression(TSNode node, DiagnosticContext& ctx)
@@ -534,32 +556,7 @@ static void CheckDialectNodeBinaryExpression(TSNode node, DiagnosticContext& ctx
     if (ctx.request.diagnostics && ctx.request.diagnostics->reportIntegerDivision &&
         !ctx.request.DisablesIntegerDivision())
     {
-        const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
-        if (!ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "/")
-        {
-            const TSNode left = parser::GetChildByField(node, parser::fields::Left);
-            const TSNode right = parser::GetChildByField(node, parser::fields::Right);
-
-            const auto isIntegerLiteral = [&ctx](TSNode candidate)
-            {
-                if (ts_node_is_null(candidate) || std::string_view(ts_node_type(candidate)) != "number_literal")
-                {
-                    return false;
-                }
-                const std::string text = GetNodeText(candidate, ctx.request.sourceCode);
-                return text.find('.') == std::string::npos && text.find('e') == std::string::npos &&
-                       text.find('E') == std::string::npos && text.find('f') == std::string::npos &&
-                       text.find('F') == std::string::npos;
-            };
-
-            if (isIntegerLiteral(left) && isIntegerLiteral(right))
-            {
-                const TSPoint start = ts_node_start_point(node);
-                const TSPoint end = ts_node_end_point(node);
-                ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-hint-integer-division",
-                                DiagnosticSeverity::Hint);
-            }
-        }
+        CheckDialectIntegerDivisionNode(node, ctx);
     }
 }
 
@@ -606,46 +603,7 @@ static void CheckDialectNodeAssignmentExpression(TSNode node, DiagnosticContext&
 {
     if (ctx.request.DisallowsValueAssignForRef())
     {
-        const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
-        const TSNode target = parser::GetChildByField(node, parser::fields::Left);
-
-        if (!ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "=" && !ts_node_is_null(target))
-        {
-            bool isHandleAssignment = false;
-            if (std::string_view(ts_node_type(target)) == "unary_expression")
-            {
-                const TSNode prefix = parser::GetChildByField(target, parser::fields::Operator);
-                isHandleAssignment = !ts_node_is_null(prefix) && std::string_view(ts_node_type(prefix)) == "@";
-            }
-
-            const Scope* scope = ctx.request.scopeRoot
-                                     ? FindInnermostScope(ctx.request.scopeRoot.get(), ts_node_start_point(target).row,
-                                                          ts_node_start_point(target).column)
-                                     : nullptr;
-            const std::string targetType = CleanBaseType(ResolveExpressionType(
-                target, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri}));
-
-            bool isVisibleClass = false;
-            if (const auto symbols = ctx.request.symbolTable.FindSymbolsPtr(targetType))
-            {
-                for (const auto& sym : *symbols)
-                {
-                    if (sym.type == SymbolType::Class)
-                    {
-                        isVisibleClass = true;
-                        break;
-                    }
-                }
-            }
-
-            if (isVisibleClass && !isHandleAssignment)
-            {
-                const TSPoint start = ts_node_start_point(node);
-                const TSPoint end = ts_node_end_point(node);
-                ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-value-assign-for-ref",
-                                targetType, DiagnosticSeverity::Error);
-            }
-        }
+        CheckDialectAssignmentExpressionNode(node, ctx);
     }
 }
 
@@ -739,60 +697,52 @@ void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& c
     ts_tree_cursor_delete(&cursor);
 }
 
+static void DispatchDeclarationRule(const Symbol& sym, DiagnosticContext& ctx)
+{
+    switch (sym.type)
+    {
+    case SymbolType::Class:
+        rules::ValidateClass(sym, ctx);
+        break;
+    case SymbolType::Interface:
+        rules::ValidateClass(sym, ctx);
+        rules::ValidateInterfaceMembers(sym, ctx);
+        break;
+    case SymbolType::Typedef:
+        rules::ValidateTypedef(sym, ctx);
+        break;
+    case SymbolType::Function:
+        rules::ValidateFunction(sym, ctx);
+        rules::ValidateOperator(sym, ctx);
+        break;
+    case SymbolType::Funcdef:
+        rules::ValidateFuncdef(sym, ctx);
+        rules::ValidateParameters(sym, sym.GetFuncdef().parameters, true, ctx);
+        break;
+    case SymbolType::Enum:
+        rules::ValidateEnum(sym, ctx);
+        break;
+    case SymbolType::Variable:
+    case SymbolType::Property:
+        rules::ValidateVariable(sym, ctx);
+        break;
+    default:
+        break;
+    }
+}
+
 void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, DiagnosticContext& ctx) const
 {
-    // Only the buckets this document touches. Every rule below either filters to the analysed
-    // file or, in ValidateDuplicates' case, needs the whole bucket - which it still gets. The
-    // rest of the workspace's fifty thousand symbols have nothing to contribute here.
     symbolTable.ForEachSymbolInFile(
         ctx.request.fileUri,
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
         {
-            // Whether a name is redeclared is a property of the whole overload bucket, so
-            // this one is handed the set rather than each member of it.
             rules::ValidateDuplicates(symbols, ctx);
-
             for (const auto& sym : symbols)
             {
-                // Only the document under analysis is reported on. Its module's other files
-                // are indexed alongside it so their declarations resolve, but diagnosing
-                // them here would attach findings to files the user did not open.
-                if (sym.fileUri != ctx.request.fileUri)
+                if (sym.fileUri == ctx.request.fileUri)
                 {
-                    continue;
-                }
-
-                switch (sym.type)
-                {
-                case SymbolType::Class:
-                    rules::ValidateClass(sym, ctx);
-                    break;
-                case SymbolType::Interface:
-                    rules::ValidateClass(sym, ctx);
-                    rules::ValidateInterfaceMembers(sym, ctx);
-                    break;
-                case SymbolType::Typedef:
-                    rules::ValidateTypedef(sym, ctx);
-                    break;
-                case SymbolType::Function:
-                    rules::ValidateFunction(sym, ctx);
-                    rules::ValidateOperator(sym, ctx);
-                    break;
-                case SymbolType::Funcdef:
-                    rules::ValidateFuncdef(sym, ctx);
-                    // A funcdef's parameter list obeys the same rules as a function's,
-                    // minus everything that presumes a body or a container.
-                    rules::ValidateParameters(sym, sym.GetFuncdef().parameters, true, ctx);
-                    break;
-                case SymbolType::Enum:
-                    rules::ValidateEnum(sym, ctx);
-                    break;
-                case SymbolType::Variable:
-                case SymbolType::Property:
-                    rules::ValidateVariable(sym, ctx);
-                    break;
-                default:
-                    break;
+                    DispatchDeclarationRule(sym, ctx);
                 }
             }
         });
