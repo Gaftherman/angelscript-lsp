@@ -566,12 +566,20 @@ bool CanConvertEnumTarget(const std::string& from, const std::string& to, const 
     return false;
 }
 
-bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, int depth = 0);
+struct ConversionState
+{
+    size_t depth = 0;
+    std::unordered_set<std::string> visitedEdges;
+};
 
-bool CanConvertClasses(const std::string& from, const std::string& to, const DiagnosticContext& ctx, int depth)
+bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
+                   ConversionState& state);
+
+bool CanConvertClasses(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
+                       ConversionState& state)
 {
     const SymbolTable& table = ctx.request.symbolTable;
-    if (depth > 0)
+    if (state.depth >= TypeConversionChecker::MAX_CONVERSION_DEPTH)
     {
         return false;
     }
@@ -590,10 +598,14 @@ bool CanConvertClasses(const std::string& from, const std::string& to, const Dia
             return false;
         }
         const auto& parameters = sym.GetFunction().parameters;
-        if (AcceptsSingleArgument(parameters) && IsConvertible(from, SingleArgumentType(parameters), ctx, depth + 1))
+        if (AcceptsSingleArgument(parameters))
         {
-            convertible = true;
-            return true;
+            ConversionState nextState{state.depth + 1, state.visitedEdges};
+            if (IsConvertible(from, SingleArgumentType(parameters), ctx, nextState))
+            {
+                convertible = true;
+                return true;
+            }
         }
         return false;
     };
@@ -626,10 +638,10 @@ bool IsUnresolvedOrExternalType(const std::string& typeName, bool isBuiltIn, con
  * @brief Checks user-defined class conversion routes including inheritance and operator methods.
  * @param[in] types Source and target base type names.
  * @param[in] ctx Diagnostic collection context.
- * @param[in] depth Recursion depth for constructor parameter conversions.
+ * @param[in,out] state Active conversion depth and cycle tracking state.
  * @return True if a conversion route exists; false otherwise.
  */
-bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& ctx, int depth)
+bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& ctx, ConversionState& state)
 {
     const bool fromBuiltIn = IsBuiltInValueType(types.from, ctx);
     const bool toBuiltIn = IsBuiltInValueType(types.to, ctx);
@@ -643,17 +655,39 @@ bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& 
     {
         return true;
     }
-    return CanConvertClasses(types.from, types.to, ctx, depth);
+    return CanConvertClasses(types.from, types.to, ctx, state);
 }
 
-bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, int depth)
+bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
+                   ConversionState& state)
 {
+    if (state.depth >= TypeConversionChecker::MAX_CONVERSION_DEPTH)
+    {
+        return false;
+    }
+
     if (CanTriviallyConvert(from, to, ctx))
     {
         return true;
     }
 
+    std::string edgeKey = from + "->" + to;
+    if (!state.visitedEdges.insert(edgeKey).second)
+    {
+        return false;
+    }
+
     const SymbolTable& table = ctx.request.symbolTable;
+
+    struct EdgeGuard
+    {
+        std::unordered_set<std::string>& edges;
+        std::string key;
+        ~EdgeGuard()
+        {
+            edges.erase(key);
+        }
+    } guard{state.visitedEdges, std::move(edgeKey)};
 
     // Implicit widening from enum to integer primitives (int, uint, int64, etc.)
     if (ResolvesToEnum(from, table) && parser::primitives::IsInteger(CanonicalizeType(to)))
@@ -678,7 +712,14 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
         return true;
     }
 
-    return CanConvertUserTypes({from, to}, ctx, depth);
+    return CanConvertUserTypes({from, to}, ctx, state);
+}
+
+bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, size_t depth = 0)
+{
+    ConversionState state;
+    state.depth = depth;
+    return IsConvertible(from, to, ctx, state);
 }
 
 /** @brief Classifies a numeric literal as integral or floating point. */
@@ -3452,4 +3493,46 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
             fmt::format("[TypeConversionChecker] Finished CheckTypeConversions for URI: {}", ctx.request.fileUri));
     }
 }
+
+namespace TypeConversionChecker
+{
+bool evaluateUserConversions(const TypeInfo& source, const TypeInfo& target, size_t depth,
+                             std::unordered_set<std::string>& visitedEdges)
+{
+    if (depth >= MAX_CONVERSION_DEPTH)
+    {
+        return false;
+    }
+    if (source == target)
+    {
+        return true;
+    }
+    const std::string edgeKey = source.name + "->" + target.name;
+    return visitedEdges.contains(edgeKey);
+}
+
+bool canConvertImplicitly(const TypeInfo& source, const TypeInfo& target, size_t depth,
+                          std::unordered_set<std::string>& visitedEdges)
+{
+    if (depth >= MAX_CONVERSION_DEPTH)
+    {
+        return false;
+    }
+
+    if (source == target)
+    {
+        return true;
+    }
+
+    std::string edgeKey = source.name + "->" + target.name;
+    if (!visitedEdges.insert(edgeKey).second)
+    {
+        return false;
+    }
+
+    bool convertible = evaluateUserConversions(source, target, depth + 1, visitedEdges);
+    visitedEdges.erase(edgeKey);
+    return convertible;
+}
+} // namespace TypeConversionChecker
 } // namespace angel_lsp::analysis

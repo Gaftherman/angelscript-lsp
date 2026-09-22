@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "helpers/CorpusDirectory.h"
+#include "helpers/TestUtils.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SymbolCollector.h"
@@ -2388,6 +2389,26 @@ TEST_CASE("TypeConversion - Incompatible ternary branches with enum emit diagnos
                       {
                           return d.code == "as-err-no-implicit-conversion";
                       }));
+}
+
+TEST_CASE("TypeConversion - SEC-03 Recursion Depth Guard & Cycle Breaker")
+{
+    using namespace angel_lsp::analysis::TypeConversionChecker;
+    const std::string nameA = angel_lsp::test::GenerateRandomSymbolName("TypeA");
+    const std::string nameB = angel_lsp::test::GenerateRandomSymbolName("TypeB");
+    TypeInfo typeA{nameA};
+    TypeInfo typeB{nameB};
+
+    // Self conversion
+    CHECK(canConvertImplicitly(typeA, typeA));
+
+    // Direct cycle detection
+    std::unordered_set<std::string> visited;
+    visited.insert(nameA + "->" + nameB);
+    CHECK_FALSE(canConvertImplicitly(typeA, typeB, 0, visited));
+
+    // Exceeding MAX_CONVERSION_DEPTH
+    CHECK_FALSE(canConvertImplicitly(typeA, typeB, MAX_CONVERSION_DEPTH, visited));
 }
 
 

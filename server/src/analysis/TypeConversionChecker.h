@@ -4,6 +4,7 @@
 
 #include <string>
 #include <tree_sitter/api.h>
+#include <unordered_set>
 
 namespace angel_lsp::analysis
 {
@@ -96,6 +97,56 @@ bool IsTruthyCondition(const std::string& typeName, const SymbolTable& table);
 
 namespace TypeConversionChecker
 {
+inline constexpr size_t MAX_CONVERSION_DEPTH = 32;
+
+/**
+ * @brief Simple type representation for conversion cycle checking.
+ */
+struct TypeInfo
+{
+    std::string name;
+
+    bool operator==(const TypeInfo& other) const noexcept
+    {
+        return name == other.name;
+    }
+};
+
+/**
+ * @brief Evaluates whether user conversions can bridge source and target types.
+ * @param[in] source Source type information.
+ * @param[in] target Target type information.
+ * @param[in] depth Current conversion depth.
+ * @param[in,out] visitedEdges Active edge traversal set for cycle breaking.
+ * @return True if a conversion path exists; false on cycle or depth limit.
+ */
+bool evaluateUserConversions(const TypeInfo& source, const TypeInfo& target, size_t depth,
+                             std::unordered_set<std::string>& visitedEdges);
+
+/**
+ * @brief Checks implicit type conversion with recursion depth guard and cycle tracking.
+ * @param[in] source Source type information.
+ * @param[in] target Target type information.
+ * @param[in] depth Current recursion depth (default 0).
+ * @param[in,out] visitedEdges Active cycle tracking edge set.
+ * @return True if implicitly convertible; false otherwise.
+ */
+bool canConvertImplicitly(const TypeInfo& source, const TypeInfo& target, size_t depth,
+                          std::unordered_set<std::string>& visitedEdges);
+
+/**
+ * @brief Checks implicit type conversion with default parameters (depth = 0, empty visited set).
+ * @param[in] source Source type information.
+ * @param[in] target Target type information.
+ * @param[in] depth Current recursion depth (default 0).
+ * @return True if implicitly convertible; false otherwise.
+ */
+inline bool canConvertImplicitly(const TypeInfo& source, const TypeInfo& target, size_t depth = 0)
+{
+    std::unordered_set<std::string> visitedEdges;
+    return canConvertImplicitly(source, target, depth, visitedEdges);
+}
+
 inline bool IsTruthyCondition(const std::string& typeName, const SymbolTable& table)
 {
     return ::angel_lsp::analysis::IsTruthyCondition(typeName, table);
