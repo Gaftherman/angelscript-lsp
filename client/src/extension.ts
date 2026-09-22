@@ -365,16 +365,24 @@ export function resolveServerBinary(context: ExtensionContext): ServerBinary {
     const binaryName = isWindows ? 'angel_lsp.exe' : 'angel_lsp';
 
     const config = workspace.getConfiguration('angelscript');
-    const customPath = config.get<string>('server.executablePath') ?? config.get<string>('executablePath');
+    const inspection = config.inspect<string>('server.executablePath') ?? config.inspect<string>('executablePath');
+    let customPath: string | undefined;
+
+    if (!workspace.isTrusted) {
+        // In untrusted workspaces, custom server executable paths are disabled,
+        // and workspace/workspaceFolder overrides must be strictly rejected.
+        customPath = undefined;
+    } else {
+        customPath = config.get<string>('server.executablePath') ?? config.get<string>('executablePath');
+    }
+
     if (customPath && customPath.trim().length > 0) {
-        if (workspace.isTrusted) {
-            const resolved = path.isAbsolute(customPath) ? customPath : context.asAbsolutePath(customPath);
-            return {
-                path: resolved,
-                found: fs.existsSync(resolved),
-                searched: [resolved]
-            };
-        }
+        const resolved = path.isAbsolute(customPath) ? customPath : context.asAbsolutePath(customPath);
+        return {
+            path: resolved,
+            found: fs.existsSync(resolved),
+            searched: [resolved]
+        };
     }
 
     const candidates: string[] = [];

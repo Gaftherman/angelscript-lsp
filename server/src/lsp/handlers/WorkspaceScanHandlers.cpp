@@ -789,7 +789,7 @@ std::optional<lsp::TextDocumentEdit> Server::BuildIncludeRewrite(const std::stri
     // user is looking at.
     const std::string includerUri = UriFromPath(includerPath);
     std::string text;
-    if (const std::string* open = FindDocumentText(includerUri))
+    if (auto open = FindDocumentText(includerUri))
     {
         text = *open;
     }

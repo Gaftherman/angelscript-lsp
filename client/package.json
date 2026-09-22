@@ -30,6 +30,12 @@
   },
   "main": "./dist/extension.js",
   "l10n": "./l10n",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Custom server executable paths are disabled in untrusted workspaces."
+    }
+  },
   "contributes": {
     "languages": [
       {
@@ -250,6 +256,12 @@
       "type": "object",
       "title": "%configuration.title%",
       "properties": {
+        "angelscript.server.executablePath": {
+          "type": "string",
+          "scope": "machine",
+          "default": "",
+          "markdownDescription": "%config.server.executablePath.description%"
+        },
         "angelscript.exclude": {
           "type": "array",
           "scope": "resource",

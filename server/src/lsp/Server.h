@@ -291,6 +291,12 @@ class Server
     ~Server();
 
     void Run();
+
+    /**
+     * @brief Processes a single iteration of incoming transport messages.
+     * @return True if message processed without error, false on failure or transport close.
+     */
+    bool ProcessIncomingMessageStep();
     void InitHandles();
     void RegisterWorkspaceHandlers();
     void RegisterTextDocumentHandlers();
@@ -1597,7 +1603,7 @@ class Server
      * server has no text for are handed back in byte columns unchanged - wrong only on
      * non-ASCII lines, and strictly better than dropping the result.
      */
-    const std::string* FindDocumentText(const std::string& uri) const;
+    std::shared_ptr<const std::string> FindDocumentText(const std::string& uri) const;
 
     /**
      * @brief Canonical filesystem path behind a document URI, or empty for a non-file URI.
@@ -1881,7 +1887,7 @@ class Server
         if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
             return;
 
-        if (const std::string* text = FindDocumentText(item.uri.toString()))
+        if (auto text = FindDocumentText(item.uri.toString()))
         {
             EncodeIn(*text, item.range);
             EncodeIn(*text, item.selectionRange);

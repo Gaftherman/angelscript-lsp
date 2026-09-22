@@ -35,13 +35,23 @@ Server::HandleRequestsTextDocument_Hover(lsp::requests::TextDocument_Hover::Para
         return lsp::Null{};
     }
 
+    auto heldDocs = std::make_shared<std::vector<std::shared_ptr<const std::string>>>();
     features::HoverRequest hr{doc->uri,
                               *doc->text,
                               doc->tree,
                               m_symbolTable,
                               m_scopeIndex,
                               codec::Decode(*doc->text, m_positionEncoding, req.position),
-                              [this](const std::string& uri) { return FindDocumentText(uri); },
+                              [this, heldDocs](const std::string& uri) -> const std::string*
+                              {
+                                  auto sp = FindDocumentText(uri);
+                                  if (!sp)
+                                  {
+                                      return nullptr;
+                                  }
+                                  heldDocs->push_back(sp);
+                                  return sp.get();
+                              },
                               &m_config,
                               [this, uriStr = doc->uri](const std::string& rawPath)
                               {
@@ -335,8 +345,18 @@ Server::HandleRequestsCompletionItem_Resolve(lsp::requests::CompletionItem_Resol
         return req;
     }
 
+    auto heldDocs = std::make_shared<std::vector<std::shared_ptr<const std::string>>>();
     features::CompletionResolveRequest rr{req, m_symbolTable,
-                                          [this](const std::string& uri) { return FindDocumentText(uri); }};
+                                          [this, heldDocs](const std::string& uri) -> const std::string*
+                                          {
+                                              auto sp = FindDocumentText(uri);
+                                              if (!sp)
+                                              {
+                                                  return nullptr;
+                                              }
+                                              heldDocs->push_back(sp);
+                                              return sp.get();
+                                          }};
     return features::ResolveCompletionItem(rr);
 }
 
@@ -441,8 +461,8 @@ Server::HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAc
     }
 
     features::CodeActionRequest car{
-        doc->uri, *doc->text,    doc->tree,   codec::Decode(*doc->text, m_positionEncoding, req.range),
-        context,  m_symbolTable, m_scopeIndex};
+        doc->uri, *doc->text,    doc->tree,    codec::Decode(*doc->text, m_positionEncoding, req.range),
+        context,  m_symbolTable, m_scopeIndex, IncludeAllowedRoots()};
     auto actions = features::GetCodeActions(car);
     if (actions.has_value())
     {
@@ -772,7 +792,7 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
     // analysis onward, so every later pull was answered from whatever had been computed before
     // the edit in hand. The editor renders push and pull as two separate collections, so the
     // stale pull answer sat beside the correct push one and only cleared on the next keystroke.
-    const std::string* current = FindDocumentText(uriStr);
+    const auto current = FindDocumentText(uriStr);
     const size_t currentHash = current ? std::hash<std::string>{}(*current) : 0;
     const int currentVersion = GetDocumentVersion(uriStr);
     const uint64_t currentGen = m_documentStore.GetGeneration(uriStr);
@@ -818,7 +838,7 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
     // clean", which is a claim this server is in no position to make about a document it has not
     // looked at - and rather than answering with the previous one, which says something worse:
     // that a mistake the user has already corrected is still there.
-    if (const std::string* text = FindDocumentText(uriStr))
+    if (const auto text = FindDocumentText(uriStr))
         ScheduleAnalysis(uriStr, *text);
 
     lsp::json::Object retrigger;
@@ -1089,7 +1109,7 @@ std::string Server::GenerateVirtualMixinDocument(std::string_view uri)
     std::string sourceText;
     if (!loc.fileUri.empty())
     {
-        if (const std::string* docText = FindDocumentText(loc.fileUri))
+        if (auto docText = FindDocumentText(loc.fileUri))
         {
             sourceText = *docText;
         }

@@ -1724,16 +1724,64 @@ void CollectGlobalSymbolItem(const analysis::Symbol& sym, bool accessorsArePrope
 }
 
 /**
+ * @brief Extracts the trailing identifier query prefix from a line prefix.
+ * @param[in] linePrefix Line text up to the cursor position.
+ * @return Extracted identifier query prefix, or empty if none.
+ */
+std::string_view ExtractQueryPrefix(std::string_view linePrefix)
+{
+    size_t i = linePrefix.size();
+    while (i > 0 && (std::isalnum(static_cast<unsigned char>(linePrefix[i - 1])) || linePrefix[i - 1] == '_'))
+    {
+        --i;
+    }
+    return linePrefix.substr(i);
+}
+
+/**
+ * @brief Checks if a symbol table bucket can contain symbols matching queryPrefix.
+ * @param[in] qualifiedName Symbol table bucket key.
+ * @param[in] queryPrefix User query prefix.
+ * @param[in] accessorsAreProperties Whether get_/set_ accessors can synthesize properties.
+ * @return True if bucket should be inspected.
+ */
+bool BucketMatchesPrefix(const std::string& qualifiedName, std::string_view queryPrefix, bool accessorsAreProperties)
+{
+    if (queryPrefix.empty() || qualifiedName.starts_with(queryPrefix))
+    {
+        return true;
+    }
+    if (accessorsAreProperties)
+    {
+        if (qualifiedName.starts_with("get_") && std::string_view(qualifiedName).substr(4).starts_with(queryPrefix))
+        {
+            return true;
+        }
+        if (qualifiedName.starts_with("set_") && std::string_view(qualifiedName).substr(4).starts_with(queryPrefix))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * @brief Collects all global scope symbols from the symbol table.
  * @param[in] accessorsAreProperties Whether property accessors are exposed.
  * @param[in] accessorKeywordRequired Whether property keyword is required.
+ * @param[in] queryPrefix Prefix to filter symbol table buckets by.
  * @param[in,out] collector Completion collector context.
  */
-void CollectGlobalSymbols(bool accessorsAreProperties, bool accessorKeywordRequired, CompletionCollector& collector)
+void CollectGlobalSymbols(bool accessorsAreProperties, bool accessorKeywordRequired, std::string_view queryPrefix,
+                          CompletionCollector& collector)
 {
     collector.request.symbolTable.ForEachSymbol(
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
         {
+            if (!BucketMatchesPrefix(qualifiedName, queryPrefix, accessorsAreProperties))
+            {
+                return;
+            }
             for (const auto& sym : symList)
             {
                 if (sym.containerName.empty() && sym.type != analysis::SymbolType::CallReference)
@@ -1859,7 +1907,8 @@ std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
 
     CollectScopeDefinitions(innermostScope, collector);
     CollectEnclosingClassMembers(collector);
-    CollectGlobalSymbols(accessorsAreProperties, accessorKeywordRequired, collector);
+    const std::string_view queryPrefix = ExtractQueryPrefix(prefix);
+    CollectGlobalSymbols(accessorsAreProperties, accessorKeywordRequired, queryPrefix, collector);
     CollectDeclarationSnippets(collector);
     CollectKeywords(collector);
 

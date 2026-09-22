@@ -941,21 +941,41 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
 }
 
 /**
- * @brief Filters candidates whose arity matches the provided argument count.
+ * @brief Filters candidate symbols to those whose arity can accept argumentCount.
  *
- * @param[in] candidates Candidate symbols.
- * @param[in] argumentCount Argument count.
+ * Uses OverloadResolver to index candidates and query matching arity in O(1),
+ * while also retaining any variadic or optional-parameter functions that match.
+ *
+ * @param[in] name Callee function name to query.
+ * @param[in] candidates Candidate symbols to inspect.
+ * @param[in] argumentCount Argument count supplied.
  * @return Subvector of matching arity symbols.
  */
-std::vector<Symbol> FilterMatchingArityCandidates(const std::vector<Symbol>& candidates, uint32_t argumentCount)
+std::vector<Symbol> FilterMatchingArityCandidates(std::string_view name, const std::vector<Symbol>& candidates,
+                                                  uint32_t argumentCount)
 {
-    std::vector<Symbol> matching;
+    OverloadResolver resolver;
+    resolver.indexCandidates(candidates);
+    const auto exactMatches = resolver.findCandidates(name, argumentCount);
+
+    std::vector<Symbol> matching(exactMatches.begin(), exactMatches.end());
     for (const auto& sym : candidates)
     {
         const Arity arity = ArityOf(sym.GetFunction());
         if (arity.variadic || (argumentCount >= arity.required && argumentCount <= arity.maximum))
         {
-            matching.push_back(sym);
+            const bool alreadyPresent =
+                std::any_of(matching.begin(), matching.end(),
+                            [&](const Symbol& m)
+                            {
+                                return m.name == sym.name && m.containerName == sym.containerName &&
+                                       m.startLine == sym.startLine && m.startCharacter == sym.startCharacter &&
+                                       m.fileUri == sym.fileUri;
+                            });
+            if (!alreadyPresent)
+            {
+                matching.push_back(sym);
+            }
         }
     }
     return matching;
@@ -1343,7 +1363,8 @@ void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope,
     }
 
     const CallArgTypes args = ResolveCallArguments(valCtx);
-    const std::vector<Symbol> matchingArity = FilterMatchingArityCandidates(calleeRes.candidates, argumentCount);
+    const std::vector<Symbol> matchingArity =
+        FilterMatchingArityCandidates(calleeRes.reportedName, calleeRes.candidates, argumentCount);
 
     if (matchingArity.size() == 1 && !sawNamedArg)
     {

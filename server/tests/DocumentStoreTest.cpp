@@ -1,4 +1,5 @@
 #include "lsp/DocumentStore.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 #include <doctest/doctest.h>
 #include <thread>
@@ -119,4 +120,27 @@ TEST_CASE("DocumentStore - Generation invalidation on close and reopen")
     CHECK(gen2 > gen1);
     CHECK_FALSE(store.IsCurrent(uri, gen1, 1)); // Stale gen1 must be rejected
     CHECK(store.IsCurrent(uri, gen2, 1));       // Fresh gen2 is accepted
+}
+
+TEST_CASE("DocumentStore - GetTextShared keeps text alive across close")
+{
+    DocumentStore store;
+    const std::string sym = test::GenerateRandomSymbolName("sym");
+    const std::string uri = "file:///test/" + sym + ".as";
+    const std::string text = "int " + sym + " = 42;";
+
+    store.OpenDocument(uri, text, 1, document::MakeTreePtr(nullptr));
+
+    std::shared_ptr<const std::string> sharedText = store.GetTextShared(uri);
+    REQUIRE(sharedText.get() != nullptr);
+    CHECK(*sharedText == text);
+
+    // Now close the document in the store
+    store.CloseDocument(uri);
+    CHECK_FALSE(store.IsOpen(uri));
+    CHECK(store.GetText(uri) == std::nullopt);
+    CHECK(store.GetTextShared(uri).get() == nullptr);
+
+    // The aliased shared_ptr must still hold valid string data without UAF
+    CHECK(*sharedText == text);
 }

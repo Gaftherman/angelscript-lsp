@@ -1,5 +1,6 @@
 {
   "configuration.title": "AngelScript Language Server",
+  "config.server.executablePath.description": "Path to the AngelScript Language Server executable.",
   "config.exclude.description": "Directory globs the workspace scans do not descend into. Supports `?`, `*` within a path segment and `**` across segments. Setting this replaces the defaults rather than adding to them.",
   "config.searchDirectories.description": "Custom directory search paths for resolving included script files (`#include \"path.as\"`).\n\nAccepts the `${...}` variables `launch.json` uses: `${workspaceFolder}`, `${workspaceFolder:name}`, `${userHome}` and `${env:NAME}`. VS Code does not expand these in ordinary settings, so the extension does it - a variable this window cannot answer is left in the path as written and noted in the server log.",
   "config.define.description": "Words `#if` treats as defined, matching the words the host application passes to `CScriptBuilder::DefineWord`. A `#if WORD` whose word is not listed here is excluded from compilation, exactly as it is by the real preprocessor, and no diagnostics are reported inside it. A predefined stub can declare the same words with `#define WORD`, which is usually the better place for them: the stub already describes the host's engine setup and travels with it.",

@@ -277,61 +277,66 @@ bool Server::SetDefinedWordsFrom(const std::string& source, std::vector<std::str
     return true;
 }
 
+bool Server::ProcessIncomingMessageStep()
+{
+    try
+    {
+        m_messageHandler->processIncomingMessages();
+        return true;
+    }
+    catch (const lsp::ConnectionError& e)
+    {
+        const std::string_view msg = e.what();
+        if (msg.find("exceeds maximum allowable LSP envelope") != std::string_view::npos ||
+            msg.starts_with("Protocol:"))
+        {
+            LogError(fmt::format("Protocol error, message discarded: {}", e.what()));
+            return false;
+        }
+        LogInfo(fmt::format("Connection closed: {}", e.what()));
+        m_running = false;
+        return false;
+    }
+    catch (const lsp::io::Error& e)
+    {
+        LogInfo(fmt::format("Transport closed: {}", e.what()));
+        m_running = false;
+        return false;
+    }
+    catch (const lsp::json::ParseError& e)
+    {
+        LogError(fmt::format("Malformed JSON-RPC message discarded: {}", e.what()));
+        return false;
+    }
+    catch (const lsp::jsonrpc::ProtocolError& e)
+    {
+        LogError(fmt::format("Protocol error, message discarded: {}", e.what()));
+        return false;
+    }
+    catch (const std::exception& e)
+    {
+        LogError(fmt::format("Unhandled exception handling message: {}", e.what()));
+        return false;
+    }
+}
+
 void Server::Run()
 {
-    // A malformed message must not end the session. The framework rethrows json::ParseError
-    // and jsonrpc::ProtocolError out of readMessage after having already written the JSON-RPC
-    // error response - its own source calls that a FIXME - and neither derives from
-    // ConnectionError, so before this loop caught them they escaped main() and hit
-    // std::terminate. One stray byte from the client killed the server, and ~Server never ran,
-    // which meant the analysis and workspace threads were torn down mid-flight.
-    //
-    // Recovery is safe because the offending frame was fully consumed before the throw: the
-    // stream is still aligned on a message boundary and the next read starts on a fresh header.
     unsigned consecutiveErrors = 0;
 
     while (m_running)
     {
-        // A closed transport is how this process normally ends: the editor exits, stdin hits
-        // end of file, and the framework reports it by throwing. Letting that escape main()
-        // would turn an ordinary shutdown into a crash, and the destructors that join the
-        // background threads would never run.
-        try
+        if (ProcessIncomingMessageStep())
         {
-            m_messageHandler->processIncomingMessages();
             consecutiveErrors = 0;
             continue;
         }
-        catch (const lsp::ConnectionError& e)
+
+        if (!m_running)
         {
-            LogInfo(fmt::format("Connection closed: {}", e.what()));
-            m_running = false;
-            continue;
-        }
-        catch (const lsp::io::Error& e)
-        {
-            LogInfo(fmt::format("Transport closed: {}", e.what()));
-            m_running = false;
-            continue;
-        }
-        catch (const lsp::json::ParseError& e)
-        {
-            LogError(fmt::format("Malformed JSON-RPC message discarded: {}", e.what()));
-        }
-        catch (const lsp::jsonrpc::ProtocolError& e)
-        {
-            LogError(fmt::format("Protocol error, message discarded: {}", e.what()));
-        }
-        catch (const std::exception& e)
-        {
-            // A bug in one handler is not a reason to drop the session. The transport wraps
-            // everything it does not recognise into ConnectionError, so anything arriving here
-            // came from message dispatch, not from the stream.
-            LogError(fmt::format("Unhandled exception handling message: {}", e.what()));
+            break;
         }
 
-        // Guard against a stream that fails the same way forever - recovering from a frame we
-        // cannot consume would spin this loop at full tilt with no way out.
         if (++consecutiveErrors >= k_maxConsecutiveMessageErrors)
         {
             LogError(
@@ -844,19 +849,19 @@ std::string Server::UriFromPath(const std::string& path)
     return angel_lsp::utils::PathToUri(angel_lsp::utils::IncludeResolver::NormalizePath(path));
 }
 
-const std::string* Server::FindDocumentText(const std::string& uri) const
+std::shared_ptr<const std::string> Server::FindDocumentText(const std::string& uri) const
 {
     const std::string key = DocumentKey(uri);
 
     if (angel_lsp::utils::IsPredefinedFile(key, m_config.info.predefinedFileExtension))
     {
-        if (const std::string* predefined = m_predefinedManager.GetDocumentTextPtr(key))
+        if (auto predefined = m_predefinedManager.GetDocumentTextShared(key))
         {
             return predefined;
         }
     }
 
-    if (const std::string* open = m_documentStore.GetTextPtr(key))
+    if (auto open = m_documentStore.GetTextShared(key))
     {
         return open;
     }
@@ -865,7 +870,7 @@ const std::string* Server::FindDocumentText(const std::string& uri) const
     // definitions and multi-file rename edits, so their text has to be reachable too.
     if (const auto closure = m_closureDocuments.find(key); closure != m_closureDocuments.end())
     {
-        return &closure->second;
+        return std::shared_ptr<const std::string>(std::shared_ptr<void>(), &closure->second);
     }
 
     return nullptr;

@@ -176,11 +176,20 @@ class DocumentStore
     [[nodiscard]] std::shared_ptr<const document::Document> GetDocument(const std::string& uri) const;
 
     /**
+     * @brief Returns a shared pointer handle to the document text, preserving lifetime. Thread-safe.
+     * @param uri Canonical URI key.
+     * @return Shared pointer to const document text or nullptr.
+     */
+    [[nodiscard]] std::shared_ptr<const std::string> GetTextShared(const std::string& uri) const;
+
+    /**
      * @brief Borrows pointer to document source text, or nullptr if not open. Thread-safe.
      * @param uri Canonical URI key.
      * @return Pointer to document text or nullptr.
+     * @note Deprecated in favor of GetTextShared() to prevent dangling pointer risk.
      */
-    [[nodiscard]] const std::string* GetTextPtr(const std::string& uri) const;
+    [[deprecated("Use GetTextShared or GetDocument to prevent dangling references")]] [[nodiscard]] const std::string*
+    GetTextPtr(const std::string& uri) const;
 
     /**
      * @brief Returns thread-safe snapshot list of all open documents as immutable handles.

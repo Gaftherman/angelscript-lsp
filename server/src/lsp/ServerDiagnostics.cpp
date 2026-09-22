@@ -146,7 +146,7 @@ void Server::EncodeAcrossDocuments(std::vector<lsp::Location>& locations) const
 
     for (auto& location : locations)
     {
-        if (const std::string* text = FindDocumentText(DocumentKey(location.uri.toString())))
+        if (auto text = FindDocumentText(DocumentKey(location.uri.toString())))
             codec::Encode(*text, m_positionEncoding, location.range);
     }
 }
@@ -158,7 +158,7 @@ void Server::EncodeAcrossDocuments(std::vector<lsp::SymbolInformation>& symbols)
 
     for (auto& symbol : symbols)
     {
-        if (const std::string* text = FindDocumentText(DocumentKey(symbol.location.uri.toString())))
+        if (auto text = FindDocumentText(DocumentKey(symbol.location.uri.toString())))
             codec::Encode(*text, m_positionEncoding, symbol.location.range);
     }
 }
@@ -172,7 +172,7 @@ void Server::EncodeAcrossDocuments(lsp::WorkspaceEdit& edit) const
     {
         for (auto& [uri, edits] : edit.changes.value())
         {
-            if (const std::string* text = FindDocumentText(uri.toString()))
+            if (auto text = FindDocumentText(uri.toString()))
                 EncodeIn(*text, edits);
         }
     }
@@ -184,7 +184,7 @@ void Server::EncodeAcrossDocuments(lsp::WorkspaceEdit& edit) const
             if (std::holds_alternative<lsp::TextDocumentEdit>(docChange))
             {
                 auto& docEdit = std::get<lsp::TextDocumentEdit>(docChange);
-                if (const std::string* text = FindDocumentText(DocumentKey(docEdit.textDocument.uri.toString())))
+                if (auto text = FindDocumentText(DocumentKey(docEdit.textDocument.uri.toString())))
                 {
                     for (auto& e : docEdit.edits)
                     {
@@ -215,7 +215,7 @@ void Server::EncodeRangesIn(const std::string& uri, std::vector<lsp::Range>& ran
     if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
         return;
 
-    if (const std::string* text = FindDocumentText(uri))
+    if (auto text = FindDocumentText(uri))
     {
         for (auto& range : ranges)
             codec::Encode(*text, m_positionEncoding, range);
@@ -237,7 +237,7 @@ void Server::EncodeAcrossDocuments(std::vector<lsp::CodeAction>& actions) const
 void Server::PublishDiagnostics(const std::string& uriStr,
                                 const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics, int version)
 {
-    const std::string* docText = FindDocumentText(uriStr);
+    auto docText = FindDocumentText(uriStr);
     if (version < 0)
     {
         version = GetDocumentVersion(uriStr);

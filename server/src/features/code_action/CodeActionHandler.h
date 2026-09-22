@@ -23,6 +23,7 @@ struct CodeActionRequest
     lsp::CodeActionContext context;
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
+    std::vector<std::string> allowedRoots = {};
 };
 
 /**
