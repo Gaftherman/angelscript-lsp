@@ -755,7 +755,7 @@
             "none",
             "auto"
           ],
-          "default": "standard",
+          "default": "none",
           "markdownDescription": "%config.engine.profile.description%"
         },
         "angelscript.statusBar.alignment": {

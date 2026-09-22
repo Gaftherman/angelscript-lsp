@@ -436,10 +436,21 @@ bool Server::HandleWatchedFileDeleted(const std::string& path, const std::string
             }
         }
 
-        if (const auto owner = m_predefinedManager.GetUriByPath(path))
+        std::optional<std::string> owner = m_predefinedManager.GetUriByPath(path);
+        if (!owner)
+        {
+            owner = m_predefinedManager.GetUriByPath(deletedPath);
+        }
+        if (!owner && !uriStr.empty() && m_predefinedManager.HasStub(uriStr))
+        {
+            owner = uriStr;
+        }
+
+        if (owner)
         {
             UnloadPredefinedUri(*owner);
             SetDefinedWordsFrom(path, {});
+            SetDefinedWordsFrom(deletedPath, {});
             return true;
         }
         return false;

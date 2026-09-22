@@ -21,6 +21,10 @@ Server::ResolveTargetEngineProfile(const angel_lsp::utils::StopFlag& stopToken)
     }
 
     const std::string profileName = EngineProfile();
+    if (profileName.empty() || profileName == "none")
+    {
+        return std::nullopt;
+    }
     auto kind = angel_lsp::analysis::ParseEngineProfileKind(profileName);
 
     if (!profileName.empty() && !angel_lsp::analysis::IsKnownEngineProfileName(profileName))
@@ -122,8 +126,9 @@ void Server::LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser& par
                                        const angel_lsp::utils::StopFlag& stopToken)
 {
     const auto targetKind = ResolveTargetEngineProfile(stopToken);
-    if (!targetKind.has_value())
+    if (!targetKind.has_value() || *targetKind == angel_lsp::analysis::EngineProfileKind::None)
     {
+        UnloadStaleBuiltinEngineProfiles({});
         return;
     }
 
@@ -403,6 +408,7 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
     if (!file.is_open())
     {
         LogError(fmt::format("Cannot open predefined file: {}", filePath));
+        UnloadPredefinedUri(uri);
         return;
     }
 

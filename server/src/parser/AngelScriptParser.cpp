@@ -25,9 +25,7 @@ TSTree* AngelScriptParser::Parse(std::string_view sourceCode, TSTree* oldTree)
 {
     if (sourceCode.empty())
     {
-        if (m_logger)
-            m_logger->LogError("Source code is empty.");
-        return nullptr;
+        return ts_parser_parse_string(m_parser, oldTree, "", 0);
     }
 
     TSTree* tree =

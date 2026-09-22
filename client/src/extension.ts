@@ -685,6 +685,19 @@ export function buildServerArgs(): string[] {
         }
     }
 
+    for (const entry of config.get<string[]>('forceIncludeFiles', [])) {
+        for (const resolved of resolveAgainstWorkspace(entry)) {
+            args.push(`--force-include=${resolved}`);
+        }
+    }
+
+    const moduleEntryPoint = config.get<string>('moduleEntryPoint', '').trim();
+    if (moduleEntryPoint.length > 0) {
+        for (const resolved of resolveAgainstWorkspace(moduleEntryPoint)) {
+            args.push(`--module-entry-point=${resolved}`);
+        }
+    }
+
     // Migration path for the old `angelscript.predefinedFile` string setting, which promised a
     // path and delivered a suffix. Read as what it always claimed to be so existing settings start
     // working rather than silently staying broken.
@@ -865,7 +878,7 @@ export function buildServerArgs(): string[] {
 
     // The host dialect. An enum rather than a boolean, so it is not one of ENGINE_PROPERTIES above
     // and needs its own line; without it the setting was declared, documented and inert.
-    const engineProfile = config.get<string>('engine.profile', '').trim();
+    const engineProfile = config.get<string>('engine.profile', 'none').trim();
     if (engineProfile.length > 0) {
         args.push(`--engine-profile=${engineProfile}`);
     }
@@ -1136,6 +1149,12 @@ export async function activate(context: ExtensionContext) {
     const virtualMixinProvider = new VirtualMixinContentProvider();
     context.subscriptions.push(
         workspace.registerTextDocumentContentProvider('angelscript-virtual', virtualMixinProvider));
+    context.subscriptions.push(
+        workspace.registerTextDocumentContentProvider('builtin', {
+            provideTextDocumentContent(uri: Uri): string {
+                return `// Built-in AngelScript predefined symbols: ${uri.path}\n`;
+            }
+        }));
 
     // An editor can appear after the notification that described its document - a second group, or
     // a tab returned to - and there is nothing to recompute from at that point, so the last thing
