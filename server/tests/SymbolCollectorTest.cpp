@@ -1,5 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "helpers/CorpusDirectory.h"
+#include "helpers/TestUtils.h"
 #include <doctest/doctest.h>
 
 #include "analysis/SymbolCollector.h"
@@ -709,4 +710,95 @@ TEST_CASE("Grammar - An omitted initializer element leaves its declaration intac
     SymbolTable table;
     CollectFromSource(code, table);
     CHECK_FALSE(table.FindSymbols("main").empty());
+}
+
+// =====================================================================================
+// PERF-02: Zero-allocation Qualified Name Formatting & Randomized Hierarchy Invariant
+// =====================================================================================
+
+TEST_CASE("SymbolCollector - appendQualifiedName handles empty scope, single scope, and multi-level nesting")
+{
+    std::string out;
+
+    // 1. Empty scope
+    const std::string rootSym = angel_lsp::test::GenerateRandomSymbolName("root");
+    SymbolCollector::appendQualifiedName(out, "", rootSym);
+    CHECK(out == rootSym);
+
+    // 2. Single scope
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("ns");
+    const std::string member = angel_lsp::test::GenerateRandomSymbolName("member");
+    SymbolCollector::appendQualifiedName(out, ns, member);
+    CHECK(out == ns + "::" + member);
+
+    // 3. Multi-level nesting via chained buffers
+    const std::string outer = angel_lsp::test::GenerateRandomSymbolName("Outer");
+    const std::string inner = angel_lsp::test::GenerateRandomSymbolName("Inner");
+    const std::string fn = angel_lsp::test::GenerateRandomSymbolName("fn");
+    std::string fullScope;
+    SymbolCollector::appendQualifiedName(fullScope, outer, inner);
+    CHECK(fullScope == outer + "::" + inner);
+
+    SymbolCollector::appendQualifiedName(out, fullScope, fn);
+    CHECK(out == outer + "::" + inner + "::" + fn);
+}
+
+TEST_CASE("SymbolCollector - Invariant: Randomized Nested Declarations Construct Exact Qualified Names")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("NS");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Cls");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("func");
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("Enum");
+    const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("MEM");
+
+    const std::string code = "namespace " + nsName +
+                             "\n"
+                             "{\n"
+                             "    class " +
+                             clsName +
+                             "\n"
+                             "    {\n"
+                             "        void " +
+                             fnName +
+                             "() {}\n"
+                             "    }\n"
+                             "    enum " +
+                             enumName +
+                             "\n"
+                             "    {\n"
+                             "        " +
+                             memberName +
+                             "\n"
+                             "    }\n"
+                             "}\n";
+
+    SymbolTable table;
+    CollectFromSource(code, table);
+
+    // Check Class symbol and its qualified name
+    auto clsSymbols = table.FindSymbols(nsName + "::" + clsName);
+    REQUIRE_FALSE(clsSymbols.empty());
+    CHECK(clsSymbols[0].name == clsName);
+    CHECK(clsSymbols[0].containerName == nsName);
+    CHECK(clsSymbols[0].qualifiedName == nsName + "::" + clsName);
+
+    // Check Method symbol and its qualified name
+    auto fnSymbols = table.FindSymbols(nsName + "::" + clsName + "::" + fnName);
+    REQUIRE_FALSE(fnSymbols.empty());
+    CHECK(fnSymbols[0].name == fnName);
+    CHECK(fnSymbols[0].containerName == nsName + "::" + clsName);
+    CHECK(fnSymbols[0].qualifiedName == nsName + "::" + clsName + "::" + fnName);
+
+    // Check Enum Member symbol and both its unqualified and qualified container registrations
+    auto nsScopedMem = table.FindSymbols(nsName + "::" + memberName);
+    REQUIRE_FALSE(nsScopedMem.empty());
+    CHECK(nsScopedMem[0].name == memberName);
+    CHECK(nsScopedMem[0].containerName == nsName);
+    CHECK(nsScopedMem[0].qualifiedName == nsName + "::" + memberName);
+
+    auto enumScopedMem = table.FindSymbols(nsName + "::" + enumName + "::" + memberName);
+    REQUIRE_FALSE(enumScopedMem.empty());
+    CHECK(enumScopedMem[0].name == memberName);
+    CHECK(enumScopedMem[0].containerName == nsName + "::" + enumName);
+    CHECK(enumScopedMem[0].qualifiedName == nsName + "::" + enumName + "::" + memberName);
 }

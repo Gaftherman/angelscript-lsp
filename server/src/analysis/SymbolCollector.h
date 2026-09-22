@@ -142,6 +142,14 @@ class SymbolCollector
         return parser::GetChildByField(node, fieldName);
     }
 
+    /**
+     * @brief Appends a qualified symbol name into outBuffer with zero intermediate heap allocations.
+     * @param[in,out] outBuffer String buffer to append into.
+     * @param[in] scope Enclosing scope or namespace prefix.
+     * @param[in] name Symbol identifier name.
+     */
+    static void appendQualifiedName(std::string& outBuffer, std::string_view scope, std::string_view name);
+
   private:
     utils::LspLogger* m_logger;
     TSQuery* m_tagsQuery = nullptr;

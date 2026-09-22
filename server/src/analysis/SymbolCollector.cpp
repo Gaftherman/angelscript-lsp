@@ -294,7 +294,16 @@ SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, st
             TSNode parentDecl = ts_node_parent(current);
             TSNode nameNode = GetChildByFieldName(parentDecl, "name");
             std::string name = GetNodeText(nameNode, sourceCode);
-            ctx.containerPath = ctx.containerPath.empty() ? name : name + "::" + ctx.containerPath;
+            if (ctx.containerPath.empty())
+            {
+                ctx.containerPath = std::move(name);
+            }
+            else
+            {
+                std::string tmp;
+                appendQualifiedName(tmp, name, ctx.containerPath);
+                ctx.containerPath = std::move(tmp);
+            }
         }
         else if (sym == m_symNamespaceBody)
         {
@@ -302,7 +311,16 @@ SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, st
             TSNode parentDecl = ts_node_parent(current);
             TSNode nameNode = GetChildByFieldName(parentDecl, "name");
             std::string name = GetNodeText(nameNode, sourceCode);
-            ctx.containerPath = ctx.containerPath.empty() ? name : name + "::" + ctx.containerPath;
+            if (ctx.containerPath.empty())
+            {
+                ctx.containerPath = std::move(name);
+            }
+            else
+            {
+                std::string tmp;
+                appendQualifiedName(tmp, name, ctx.containerPath);
+                ctx.containerPath = std::move(tmp);
+            }
         }
 
         current = ts_node_parent(current);
@@ -843,7 +861,8 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
     }
     ts_tree_cursor_delete(&cursor);
 
-    std::string enumContainer = ctx.containerPath.empty() ? enumName : ctx.containerPath + "::" + enumName;
+    std::string enumContainer;
+    appendQualifiedName(enumContainer, ctx.containerPath, enumName);
     for (const auto& m : enumSig.members)
     {
         if (m.name.empty())
@@ -866,7 +885,7 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
         SymbolLocationContext contLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
         Symbol mSym = CreateSymbol(SymbolType::Variable, memberDeclNode, memberNameNode, contLoc);
         mSym.name = m.name;
-        mSym.qualifiedName = ctx.containerPath.empty() ? m.name : ctx.containerPath + "::" + m.name;
+        appendQualifiedName(mSym.qualifiedName, ctx.containerPath, m.name);
         mSym.containerName = ctx.containerPath;
         mSym.signature = varSig;
         sCtx.symbolTable.AddSymbol(mSym);
@@ -874,7 +893,7 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
         SymbolLocationContext enumLoc{sCtx.request.sourceCode, sCtx.request.fileUri, enumContainer};
         Symbol mSymScoped = CreateSymbol(SymbolType::Variable, memberDeclNode, memberNameNode, enumLoc);
         mSymScoped.name = m.name;
-        mSymScoped.qualifiedName = enumContainer + "::" + m.name;
+        appendQualifiedName(mSymScoped.qualifiedName, enumContainer, m.name);
         mSymScoped.containerName = enumContainer;
         mSymScoped.signature = varSig;
         sCtx.symbolTable.AddSymbol(mSymScoped);
@@ -1498,6 +1517,18 @@ std::vector<ParameterInformation> SymbolCollector::ExtractParameters(TSNode para
     return parameters;
 }
 
+void SymbolCollector::appendQualifiedName(std::string& outBuffer, std::string_view scope, std::string_view name)
+{
+    outBuffer.clear();
+    outBuffer.reserve(scope.size() + (scope.empty() ? 0 : 2) + name.size());
+    if (!scope.empty())
+    {
+        outBuffer.append(scope);
+        outBuffer.append("::");
+    }
+    outBuffer.append(name);
+}
+
 Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNode,
                                      const SymbolLocationContext& loc) const
 {
@@ -1510,7 +1541,7 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
     sym.type = type;
     sym.name = GetNodeText(nameNode, loc.sourceCode);
     sym.containerName = loc.containerPath;
-    sym.qualifiedName = loc.containerPath.empty() ? sym.name : loc.containerPath + "::" + sym.name;
+    appendQualifiedName(sym.qualifiedName, loc.containerPath, sym.name);
     sym.fileUri = loc.fileUri;
     sym.startLine = startPt.row;
     sym.startCharacter = startPt.column;
