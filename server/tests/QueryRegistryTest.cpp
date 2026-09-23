@@ -4,6 +4,7 @@
 #include "parser/AngelScriptParser.h"
 #include "parser/QueryRegistry.h"
 
+#include <array>
 #include <atomic>
 #include <thread>
 #include <vector>
@@ -37,7 +38,7 @@ TEST_CASE("QueryRegistry - Precompiled queries and thread-local cursor invariant
     std::vector<std::thread> workers;
     std::vector<const TSQuery*> threadTags(kThreads, nullptr);
     std::vector<TSQueryCursor*> threadCursors(kThreads, nullptr);
-    std::vector<bool> threadMatches(kThreads, false);
+    std::array<std::atomic<bool>, kThreads> threadMatches{};
 
     std::atomic<int> readyThreads{0};
     std::atomic<bool> startWork{false};
@@ -72,7 +73,7 @@ TEST_CASE("QueryRegistry - Precompiled queries and thread-local cursor invariant
                     {
                         if (match.capture_count > 0)
                         {
-                            threadMatches[i] = true;
+                            threadMatches[i].store(true, std::memory_order_release);
                             break;
                         }
                     }
@@ -119,7 +120,7 @@ TEST_CASE("QueryRegistry - Precompiled queries and thread-local cursor invariant
 
     for (int i = 0; i < kThreads; ++i)
     {
-        CHECK(threadMatches[i]);
+        CHECK(threadMatches[i].load(std::memory_order_acquire));
     }
 
     // Invariant 5: Cursor execution on AST with randomized symbol
