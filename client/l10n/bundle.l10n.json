@@ -40,5 +40,8 @@
   "Formatted \"{0}\". Save it to keep the change.": "Formatted \"{0}\". Save it to keep the change.",
   "The edit that formats this stub was rejected.": "The edit that formats this stub was rejected.",
   "Enter host class name": "Enter host class name",
-  "Enter mixin name": "Enter mixin name"
+  "Enter mixin name": "Enter mixin name",
+  "Open Logs Folder": "Open Logs Folder",
+  "No workspace folder is currently open.": "No workspace folder is currently open.",
+  "Opens the directory containing server disk logs.": "Opens the directory containing server disk logs."
 }

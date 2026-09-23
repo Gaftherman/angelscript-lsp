@@ -102,38 +102,6 @@ std::string GetNodeTextAt(const DefinitionRequest& request, TSNode& outNode)
     return ExtractValidNodeText(node, request.sourceCode);
 }
 
-/**
- * @brief Recursively traverses scope hierarchy to locate the scope declaring a definition.
- * @param[in] current Root or parent scope to inspect.
- * @param[in] def Target local definition.
- * @return Pointer to declaring scope, or nullptr if not found.
- */
-const analysis::Scope* FindScopeDeclaringDefinition(const analysis::Scope* current,
-                                                    const analysis::LocalDefinition& def)
-{
-    if (!current)
-    {
-        return nullptr;
-    }
-
-    for (const auto& d : current->definitions)
-    {
-        if (d.name == def.name && d.startLine == def.startLine && d.startCharacter == def.startCharacter)
-        {
-            return current;
-        }
-    }
-
-    for (const auto& child : current->children)
-    {
-        if (const auto* found = FindScopeDeclaringDefinition(child.get(), def))
-        {
-            return found;
-        }
-    }
-
-    return nullptr;
-}
 
 /**
  * @brief Locates the enclosing call expression node if target node represents the callee.
@@ -928,8 +896,12 @@ lsp::Location MakeLocalDefinitionLocation(const analysis::LocalDefinition& def, 
  */
 bool IsDefinitionInsideFunction(const analysis::Scope* rootScope, const analysis::LocalDefinition& def)
 {
-    const analysis::Scope* declaringScope = FindScopeDeclaringDefinition(rootScope, def);
-    for (const analysis::Scope* s = declaringScope; s != nullptr; s = s->parent)
+    const analysis::Scope* declaringScope = analysis::FindScopeDeclaringDefinition(rootScope, def);
+    size_t depth = 0;
+    ankerl::unordered_dense::set<const analysis::Scope*> visited;
+    for (const analysis::Scope* s = declaringScope;
+         s != nullptr && visited.insert(s).second && ++depth <= analysis::kMaxScopeDepth;
+         s = s->parent)
     {
         if (s->isFunctionScope)
         {

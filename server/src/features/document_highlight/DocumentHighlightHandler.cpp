@@ -13,45 +13,6 @@ namespace angel_lsp::features
 namespace
 {
 
-/**
- * @brief Iteratively searches for the Scope that contains the given LocalDefinition.
- * @param[in] root Document root scope node.
- * @param[in] def Target local definition to match.
- * @return Pointer to declaring Scope or nullptr if not found.
- */
-const analysis::Scope* FindScopeDeclaringDefinition(const analysis::Scope* root, const analysis::LocalDefinition& def)
-{
-    if (!root)
-    {
-        return nullptr;
-    }
-
-    std::vector<const analysis::Scope*> stack{root};
-    while (!stack.empty())
-    {
-        const analysis::Scope* s = stack.back();
-        stack.pop_back();
-
-        for (const auto& d : s->definitions)
-        {
-            if (d.name == def.name && d.startLine == def.startLine && d.startCharacter == def.startCharacter &&
-                d.endLine == def.endLine && d.endCharacter == def.endCharacter)
-            {
-                return s;
-            }
-        }
-
-        for (const auto& child : s->children)
-        {
-            if (child)
-            {
-                stack.push_back(child.get());
-            }
-        }
-    }
-
-    return nullptr;
-}
 
 /**
  * @brief Checks whether a definition's declaring scope is inside any function/method/lambda body.
@@ -60,8 +21,14 @@ const analysis::Scope* FindScopeDeclaringDefinition(const analysis::Scope* root,
  */
 bool IsDeclaredInFunctionScope(const analysis::Scope* defScope)
 {
+    size_t depth = 0;
+    ankerl::unordered_dense::set<const analysis::Scope*> visited;
     for (const analysis::Scope* cur = defScope; cur != nullptr; cur = cur->parent)
     {
+        if (++depth > analysis::kMaxScopeDepth || !visited.insert(cur).second)
+        {
+            break;
+        }
         if (cur->isFunctionScope)
         {
             return true;
@@ -837,7 +804,7 @@ void ResolveLocalTarget(const std::string& nodeText, const DocumentHighlightRequ
         matchedDef = analysis::ResolveInScope(innerScope, nodeText, nullptr, false);
         if (matchedDef)
         {
-            declScope = FindScopeDeclaringDefinition(rootScope.get(), *matchedDef);
+            declScope = analysis::FindScopeDeclaringDefinition(rootScope.get(), *matchedDef);
         }
     }
     if (!matchedDef || !declScope)
@@ -1540,7 +1507,7 @@ bool IsShadowedByFunctionLocal(const analysis::Scope* scope, const std::string& 
     {
         return false;
     }
-    const analysis::Scope* defScope = FindScopeDeclaringDefinition(rootScope, *localDef);
+    const analysis::Scope* defScope = analysis::FindScopeDeclaringDefinition(rootScope, *localDef);
     return defScope && IsDeclaredInFunctionScope(defScope);
 }
 

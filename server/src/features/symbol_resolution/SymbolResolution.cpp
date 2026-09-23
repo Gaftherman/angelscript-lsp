@@ -18,40 +18,6 @@ namespace angel_lsp::features::resolution
 namespace
 {
 
-/**
- * @brief Searches for the Scope that contains the given LocalDefinition.
- * @param[in] current Current scope node in the tree.
- * @param[in] def Target local definition to match.
- * @return Pointer to declaring Scope or nullptr if not found.
- */
-const analysis::Scope* FindScopeDeclaringDefinition(const analysis::Scope* current,
-                                                    const analysis::LocalDefinition& def)
-{
-    if (!current)
-    {
-        return nullptr;
-    }
-
-    for (const auto& d : current->definitions)
-    {
-        if (d.name == def.name && d.startLine == def.startLine && d.startCharacter == def.startCharacter &&
-            d.endLine == def.endLine && d.endCharacter == def.endCharacter)
-        {
-            return current;
-        }
-    }
-
-    for (const auto& child : current->children)
-    {
-        const analysis::Scope* found = FindScopeDeclaringDefinition(child.get(), def);
-        if (found)
-        {
-            return found;
-        }
-    }
-
-    return nullptr;
-}
 
 /**
  * @brief Checks if a node type represents an identifier or type token.
@@ -160,8 +126,14 @@ std::string GetNodeTextAt(const std::string& sourceCode, TSTree* tree, lsp::Posi
  */
 bool IsDeclaredInFunctionScope(const analysis::Scope* defScope)
 {
+    size_t depth = 0;
+    ankerl::unordered_dense::set<const analysis::Scope*> visited;
     for (const analysis::Scope* cur = defScope; cur != nullptr; cur = cur->parent)
     {
+        if (++depth > analysis::kMaxScopeDepth || !visited.insert(cur).second)
+        {
+            break;
+        }
         if (cur->isFunctionScope)
         {
             return true;
@@ -364,8 +336,14 @@ const analysis::LocalDefinition* FindLocalDefinitionAtLine(const analysis::Scope
                                                            const std::string& nodeText, uint32_t line,
                                                            const analysis::Scope*& outDeclScope)
 {
+    size_t depth = 0;
+    ankerl::unordered_dense::set<const analysis::Scope*> visited;
     for (const analysis::Scope* cur = innerScope; cur != nullptr; cur = cur->parent)
     {
+        if (++depth > analysis::kMaxScopeDepth || !visited.insert(cur).second)
+        {
+            break;
+        }
         for (const auto& d : cur->definitions)
         {
             if (d.name == nodeText && line >= d.startLine && line <= d.endLine)
@@ -406,7 +384,7 @@ void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& rootScope,
         matchedDef = analysis::ResolveInScope(innerScope, nodeText);
         if (matchedDef)
         {
-            declScope = FindScopeDeclaringDefinition(rootScope.get(), *matchedDef);
+            declScope = analysis::FindScopeDeclaringDefinition(rootScope.get(), *matchedDef);
         }
     }
     if (!matchedDef || !declScope)
@@ -1401,7 +1379,7 @@ bool IsShadowedInFunctionScope(const analysis::Scope* scope, const std::string& 
     {
         return false;
     }
-    const analysis::Scope* defScope = FindScopeDeclaringDefinition(root, *localDef);
+    const analysis::Scope* defScope = analysis::FindScopeDeclaringDefinition(root, *localDef);
     return defScope && IsDeclaredInFunctionScope(defScope);
 }
 

@@ -210,6 +210,8 @@ suite('activation', () => {
                   'angelscript.restartServer was declared in package.json but never registered');
         assert.ok(registered.includes('angelscript.showServerLog'),
                   'angelscript.showServerLog was declared in package.json but never registered');
+        assert.ok(registered.includes('angelscript.openLogsFolder'),
+                  'angelscript.openLogsFolder was declared in package.json but never registered');
 
         // Declared in package.json's contributes.commands, so a command palette entry exists
         // whether or not anything registered it. One that is declared and not registered fails

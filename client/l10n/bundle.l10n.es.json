@@ -40,5 +40,8 @@
   "Formatted \"{0}\". Save it to keep the change.": "Se formateó \"{0}\". Guárdalo para conservar el cambio.",
   "The edit that formats this stub was rejected.": "La edición que formatea este stub fue rechazada.",
   "Enter host class name": "Nombre de la clase anfitriona",
-  "Enter mixin name": "Nombre del mixin"
+  "Enter mixin name": "Nombre del mixin",
+  "Open Logs Folder": "Abrir carpeta de registros",
+  "No workspace folder is currently open.": "No hay ninguna carpeta de espacio de trabajo abierta actualmente.",
+  "Opens the directory containing server disk logs.": "Abre la carpeta que contiene los registros del servidor en disco."
 }

@@ -228,6 +228,11 @@ struct Scope
 };
 
 /**
+ * @brief Maximum recursion or traversal depth allowed when walking scope hierarchies.
+ */
+inline constexpr size_t kMaxScopeDepth = 32;
+
+/**
  * @brief Resolves name to the nearest enclosing definition starting from scope and walking up
  *        through Scope::parent, returning the first match found in the closest scope.
  * @param scope Scope to start resolution from.
@@ -243,6 +248,14 @@ const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name,
                                       bool respectClosureBarrier = true);
 
 const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name, bool respectClosureBarrier);
+
+/**
+ * @brief Searches the scope tree starting from root for the scope that declares def.
+ * @param[in] root Root scope to begin search.
+ * @param[in] def Definition to locate.
+ * @return Pointer to declaring Scope if found, nullptr otherwise.
+ */
+const Scope* FindScopeDeclaringDefinition(const Scope* root, const LocalDefinition& def);
 
 /**
  * @brief Finds the innermost Scope containing the given source line and character.

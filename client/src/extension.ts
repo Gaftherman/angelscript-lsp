@@ -110,6 +110,9 @@ const SHOW_LOG_COMMAND = 'angelscript.showServerLog';
 /** @brief Command that stops the running server and starts a fresh one with current settings. */
 const RESTART_COMMAND = 'angelscript.restartServer';
 
+/** @brief Command that opens the folder containing the disk logs. */
+const OPEN_LOGS_FOLDER_COMMAND = 'angelscript.openLogsFolder';
+
 /** @brief Command that prompts the user to select an active predefined API stub or merge all. */
 const SELECT_PREDEFINED_COMMAND = 'angelscript.selectPredefined';
 
@@ -327,8 +330,9 @@ function setStatus(state: 'starting' | 'running' | 'failed', tooltip: string): v
  *
  * @param summary One line, and the only part most users will read.
  * @param detail  What was tried, written to the log in full.
+ * @param isCrash If true, offers "Restart Server" and "Open Logs Folder" in addition to "Show Log".
  */
-function reportFailure(summary: string, detail?: string): void {
+function reportFailure(summary: string, detail?: string, isCrash = false): void {
     lspOutputChannel.appendLine(summary);
     if (detail) {
         lspOutputChannel.appendLine(detail);
@@ -336,12 +340,75 @@ function reportFailure(summary: string, detail?: string): void {
 
     setStatus('failed', summary);
 
-    const action = showLogAction();
-    void window.showErrorMessage(`AngelScript: ${summary}`, action).then(choice => {
-        if (choice === action) {
+    const restartAction = l10n.t('Restart Server');
+    const openLogsAction = l10n.t('Open Logs Folder');
+    const showLog = showLogAction();
+
+    const actions = isCrash
+        ? [restartAction, openLogsAction, showLog]
+        : [showLog];
+
+    void window.showErrorMessage(`AngelScript: ${summary}`, ...actions).then(choice => {
+        if (choice === restartAction) {
+            void commands.executeCommand(RESTART_COMMAND);
+        } else if (choice === openLogsAction) {
+            void commands.executeCommand(OPEN_LOGS_FOLDER_COMMAND);
+        } else if (choice === showLog) {
             lspOutputChannel.show(true);
         }
     });
+}
+
+/**
+ * @brief Opens the folder containing the disk logs in the OS file manager.
+ */
+async function openLogsFolder(): Promise<void> {
+    const folders = workspace.workspaceFolders ?? [];
+    if (folders.length === 0) {
+        void window.showInformationMessage(l10n.t('No workspace folder is currently open.'));
+        return;
+    }
+
+    let targetUri: Uri | undefined;
+
+    for (const folder of folders) {
+        const lspDir = path.join(folder.uri.fsPath, '.vscode', 'lsp');
+        if (fs.existsSync(lspDir)) {
+            try {
+                const entries = fs.readdirSync(lspDir, { withFileTypes: true });
+                const logDirs = entries
+                    .filter(e => e.isDirectory() && e.name.startsWith('logs-'))
+                    .map(e => e.name)
+                    .sort()
+                    .reverse();
+
+                if (logDirs.length > 0) {
+                    targetUri = Uri.file(path.join(lspDir, logDirs[0]));
+                    break;
+                }
+            } catch {
+                // fall through
+            }
+            targetUri = Uri.file(lspDir);
+            break;
+        }
+    }
+
+    if (!targetUri) {
+        const fallbackPath = path.join(folders[0].uri.fsPath, '.vscode', 'lsp');
+        try {
+            fs.mkdirSync(fallbackPath, { recursive: true });
+        } catch {
+            // Ignore
+        }
+        targetUri = Uri.file(fallbackPath);
+    }
+
+    try {
+        await commands.executeCommand('revealFileInOS', targetUri);
+    } catch {
+        await env.openExternal(targetUri);
+    }
 }
 
 /** @brief Where the server binary was found, or every place that was looked when it was not. */
@@ -977,7 +1044,8 @@ async function startClient(context: ExtensionContext): Promise<void> {
             if (count !== undefined && count > 3) {
                 reportFailure(
                     l10n.t('the language server connection keeps failing, so it has been shut down.'),
-                    error.message);
+                    error.message,
+                    true);
                 return { action: ErrorAction.Shutdown, handled: true };
             }
             lspOutputChannel.appendLine(`Language server connection error: ${error.message}`);
@@ -988,7 +1056,9 @@ async function startClient(context: ExtensionContext): Promise<void> {
             if (unexpectedExits > MAX_SILENT_RESTARTS) {
                 reportFailure(
                     l10n.t('the language server stopped {0} times and will not be restarted again.',
-                           unexpectedExits));
+                           unexpectedExits),
+                    undefined,
+                    true);
                 return { action: CloseAction.DoNotRestart, handled: true };
             }
             lspOutputChannel.appendLine(
@@ -1070,7 +1140,8 @@ async function startClient(context: ExtensionContext): Promise<void> {
     } catch (error) {
         reportFailure(
             l10n.t('the language server failed to start. Editor features are unavailable.'),
-            `Failed to start Language Client: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+            `Failed to start Language Client: ${error instanceof Error ? error.stack ?? error.message : String(error)}`,
+            true);
     }
 }
 
@@ -1117,6 +1188,9 @@ export async function activate(context: ExtensionContext) {
     timed('registerCommands', () => {
         context.subscriptions.push(
             commands.registerCommand(SHOW_LOG_COMMAND, () => lspOutputChannel.show(true)));
+
+        context.subscriptions.push(
+            commands.registerCommand(OPEN_LOGS_FOLDER_COMMAND, () => openLogsFolder()));
 
         context.subscriptions.push(
             commands.registerCommand(RESTART_COMMAND, () => restartClient(context, 'Restart requested from the command palette.')));
@@ -1259,6 +1333,11 @@ async function showStatusMenu(context: ExtensionContext): Promise<void> {
             label: '$(output) ' + l10n.t('Show Server Log'),
             description: l10n.t('Everything the server has reported this session.'),
             run: () => lspOutputChannel.show(true)
+        },
+        {
+            label: '$(folder) ' + l10n.t('Open Logs Folder'),
+            description: l10n.t('Opens the directory containing server disk logs.'),
+            run: () => openLogsFolder()
         },
         {
             label: '$(debug-restart) ' + l10n.t('Restart Server'),

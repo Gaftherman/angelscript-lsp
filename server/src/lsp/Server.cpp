@@ -24,6 +24,7 @@
 #include "features/workspace_symbol/WorkspaceSymbolHandler.h"
 #include "lsp/PositionCodec.h"
 #include "utils/Constants.h"
+#include "utils/MultiFileLogger.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Timer.h"
 #include "utils/Utils.h"
@@ -350,18 +351,24 @@ void Server::Run()
 
             if (++consecutiveErrors >= k_maxConsecutiveMessageErrors)
             {
-                LogError(fmt::format("Giving up after {} consecutive message errors; closing the session.",
-                                     consecutiveErrors));
+                std::string err = fmt::format("Giving up after {} consecutive message errors; closing the session.",
+                                              consecutiveErrors);
+                LogError(err);
+                angel_lsp::utils::MultiFileLogger::Instance().LogCrash(err);
                 m_running = false;
             }
         }
         catch (const std::exception& e)
         {
-            LogError(fmt::format("Fatal exception in main server loop recovered: {}", e.what()));
+            std::string err = fmt::format("Fatal exception in main server loop recovered: {}", e.what());
+            LogError(err);
+            angel_lsp::utils::MultiFileLogger::Instance().LogCrash(err);
         }
         catch (...)
         {
             LogError("Unknown fatal exception in main server loop recovered.");
+            angel_lsp::utils::MultiFileLogger::Instance().LogCrash(
+                "Unknown fatal exception in main server loop recovered.");
         }
     }
 }
@@ -400,6 +407,11 @@ void Server::ExtractInitialWorkspaceRoots(const lsp::requests::Initialize::Param
         {
             m_workspacesRoot.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(root));
         }
+    }
+
+    if (!m_workspacesRoot.empty())
+    {
+        angel_lsp::utils::MultiFileLogger::Instance().Initialize(m_workspacesRoot.front());
     }
 }
 

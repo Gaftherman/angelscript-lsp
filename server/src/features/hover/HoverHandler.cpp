@@ -5,6 +5,7 @@
 #include "analysis/SignatureFormatter.h"
 #include "parser/GrammarNames.h"
 #include "utils/LspLogger.h"
+#include "utils/MultiFileLogger.h"
 #include "utils/Timer.h"
 #include "utils/Utils.h"
 #include <algorithm>
@@ -158,40 +159,6 @@ std::string DocCommentForSymbol(const HoverRequest& request, const analysis::Sym
     }
 
     return InheritedDocComment(request, symbol);
-}
-
-const analysis::Scope* FindScopeDeclaringDefinition(const analysis::Scope* current,
-                                                    const analysis::LocalDefinition& def)
-{
-    if (!current)
-    {
-        return nullptr;
-    }
-
-    std::vector<const analysis::Scope*> worklist{current};
-    while (!worklist.empty())
-    {
-        const analysis::Scope* scope = worklist.back();
-        worklist.pop_back();
-
-        for (const auto& d : scope->definitions)
-        {
-            if (d.name == def.name && d.startLine == def.startLine && d.startCharacter == def.startCharacter)
-            {
-                return scope;
-            }
-        }
-
-        for (const auto& child : scope->children)
-        {
-            if (child)
-            {
-                worklist.push_back(child.get());
-            }
-        }
-    }
-
-    return nullptr;
 }
 
 std::string FormatFunctionSignature(const analysis::Symbol& sym)
@@ -512,8 +479,13 @@ namespace
  */
 const analysis::LocalDefinition* DefinitionAtPosition(const analysis::Scope* scope, const lsp::Position& position)
 {
+    size_t depth = 0;
     for (const analysis::Scope* current = scope; current != nullptr; current = current->parent)
     {
+        if (++depth > analysis::kMaxScopeDepth)
+        {
+            break;
+        }
         for (const analysis::LocalDefinition& def : current->definitions)
         {
             const bool afterStart = position.line > def.startLine ||
@@ -847,9 +819,11 @@ struct HoverProfiler
         {
             emitted = true;
             double totalMs = totalTimer.ElapsedMs();
-            m_logger->LogInfo(fmt::format("[Hover Profile] Total: {:.2f} ms (NodeLookup: {:.2f} ms, SymbolResolve: "
-                                          "{:.2f} ms, Formatting: {:.2f} ms) at {}:{}",
-                                          totalMs, nodeMs, symMs, fmtMs, line, character));
+            std::string logMsg = fmt::format("[Hover Profile] Total: {:.2f} ms (NodeLookup: {:.2f} ms, SymbolResolve: "
+                                             "{:.2f} ms, Formatting: {:.2f} ms) at {}:{}",
+                                             totalMs, nodeMs, symMs, fmtMs, line, character);
+            m_logger->LogInfo(logMsg);
+            utils::MultiFileLogger::Instance().LogHover(utils::MultiFileLogLevel::Info, logMsg, totalMs);
         }
     }
 
@@ -1085,13 +1059,19 @@ std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& membe
     {
         oss << "(property) " << accessorPropertyType << " " << ctx.nodeText << "\n";
     }
-    for (size_t i = 0; i < memberSymbols.size(); ++i)
+    constexpr size_t kMaxMemberSymbols = 16;
+    const size_t displayCount = std::min(memberSymbols.size(), kMaxMemberSymbols);
+    for (size_t i = 0; i < displayCount; ++i)
     {
         if (i > 0)
         {
             oss << "\n";
         }
         oss << FormatDeclarationText(memberSymbols[i]);
+    }
+    if (memberSymbols.size() > kMaxMemberSymbols)
+    {
+        oss << "\n// ... and " << (memberSymbols.size() - kMaxMemberSymbols) << " more overloads";
     }
     oss << "\n```";
 
@@ -1253,8 +1233,13 @@ std::optional<analysis::Symbol> FindMatchingGlobalSymbol(const analysis::LocalDe
 
 const analysis::Scope* FindDefinitionScope(const HoverQueryContext& ctx, const analysis::LocalDefinition& def)
 {
+    size_t depth = 0;
     for (const analysis::Scope* s = ctx.scope; s != nullptr; s = s->parent)
     {
+        if (++depth > analysis::kMaxScopeDepth)
+        {
+            break;
+        }
         for (const auto& d : s->definitions)
         {
             if (d.name == def.name && d.startLine == def.startLine && d.startCharacter == def.startCharacter)
@@ -1263,7 +1248,7 @@ const analysis::Scope* FindDefinitionScope(const HoverQueryContext& ctx, const a
             }
         }
     }
-    return FindScopeDeclaringDefinition(ctx.vctx.rootScope.get(), def);
+    return analysis::FindScopeDeclaringDefinition(ctx.vctx.rootScope.get(), def);
 }
 
 void FormatVariableHover(const analysis::LocalDefinition& def, const std::string& typeName,
@@ -1272,8 +1257,13 @@ void FormatVariableHover(const analysis::LocalDefinition& def, const std::string
     const analysis::Scope* declaringScope = FindDefinitionScope(ctx, def);
 
     bool isInsideFunction = false;
+    size_t depth = 0;
     for (const analysis::Scope* s = declaringScope; s != nullptr; s = s->parent)
     {
+        if (++depth > analysis::kMaxScopeDepth)
+        {
+            break;
+        }
         if (s->isFunctionScope)
         {
             isInsideFunction = true;
@@ -1578,13 +1568,19 @@ lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::strin
         oss << "(property) " << accessorPropertyType << " " << ctx.nodeText << "\n";
     }
 
-    for (size_t i = 0; i < symbols.size(); ++i)
+    constexpr size_t kMaxHoverSymbols = 16;
+    const size_t displayCount = std::min(symbols.size(), kMaxHoverSymbols);
+    for (size_t i = 0; i < displayCount; ++i)
     {
         if (i > 0)
         {
             oss << "\n";
         }
         oss << FormatDeclarationText(symbols[i], &ctx.request.symbolTable);
+    }
+    if (symbols.size() > kMaxHoverSymbols)
+    {
+        oss << "\n// ... and " << (symbols.size() - kMaxHoverSymbols) << " more overloads";
     }
     oss << "\n```";
 

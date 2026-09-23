@@ -84,6 +84,8 @@
   "config.format.braceStyle.enum.1": "La llave de apertura de un bloque va al final de la línea de la instrucción, y else se ubica junto a la llave que cerró el if.",
   "command.showServerLog.title": "Mostrar registro del servidor",
   "command.showServerLog.category": "AngelScript",
+  "command.openLogsFolder.title": "Abrir carpeta de registros",
+  "command.openLogsFolder.category": "AngelScript",
   "command.restartServer.title": "Reiniciar servidor",
   "command.restartServer.category": "AngelScript",
   "command.statusMenu.title": "Menu de estado de AngelScript",

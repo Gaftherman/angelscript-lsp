@@ -76,6 +76,11 @@
         "category": "%command.showServerLog.category%"
       },
       {
+        "command": "angelscript.openLogsFolder",
+        "title": "%command.openLogsFolder.title%",
+        "category": "%command.openLogsFolder.category%"
+      },
+      {
         "command": "angelscript.restartServer",
         "title": "%command.restartServer.title%",
         "category": "%command.restartServer.category%"

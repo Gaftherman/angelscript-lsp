@@ -84,6 +84,8 @@
   "config.format.braceStyle.enum.1": "The opening brace of a block goes at the end of the statement line, and else sits beside the brace that closed the if.",
   "command.showServerLog.title": "Show Server Log",
   "command.showServerLog.category": "AngelScript",
+  "command.openLogsFolder.title": "Open Logs Folder",
+  "command.openLogsFolder.category": "AngelScript",
   "command.restartServer.title": "Restart Server",
   "command.restartServer.category": "AngelScript",
   "command.statusMenu.title": "AngelScript Status Menu",

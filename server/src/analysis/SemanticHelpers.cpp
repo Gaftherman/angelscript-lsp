@@ -1527,7 +1527,8 @@ std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view 
     }
 
     TSNode current = ts_node_parent(AdjustStartNodeIfDeclarationName(node));
-    while (!ts_node_is_null(current))
+    size_t depth = 0;
+    while (!ts_node_is_null(current) && ++depth <= kMaxScopeDepth)
     {
         if (const auto kind = ClassifyContainerKind(ts_node_type(current)))
         {
@@ -1705,8 +1706,19 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
                                                           const std::vector<ContainerInfo>& containers,
                                                           const std::string& name)
 {
+    size_t hops = 0;
+    ankerl::unordered_dense::set<std::string> visitedContainers;
     for (const auto& container : containers)
     {
+        if (++hops > kMaxScopeDepth)
+        {
+            break;
+        }
+        if (!visitedContainers.insert(container.qualifiedName).second)
+        {
+            continue;
+        }
+
         if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
         {
             auto hierarchy = GetInheritedTypeHierarchy(container.qualifiedName, symbolTable);
