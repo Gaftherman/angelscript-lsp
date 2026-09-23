@@ -19,7 +19,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
   - Enforced R-value disqualification from binding to mutable reference parameters (`&out`, `&inout`, and `InOut`).
   - Added template instantiation disambiguation (`AreIncompatibleTemplateTypes`) rejecting implicit conversions between incompatible types (e.g. `array<T1>` vs `array<T2>`).
   - Resolved return types for local and member funcdef handle invocations.
-  - Added support for constructor-style primitive casting (e.g. `char(uint8)`).
+  - Added support for constructor-style scalar primitive casting (e.g. `int(uint8)`) and enforced strict constructor resolution for user-defined `char` class.
   - Resolved direct initialization constructor shadowing (e.g. `Logger Logger(...)`) and emitted `CallReference` for class constructors.
   - Permitted contextual keywords (`function`, `get`, `set`, `shared`) as valid identifiers in variable declarations, comparisons, and l-value assignments.
 - Invariant Test Suites:
@@ -29,6 +29,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
   - `FuncdefInvocationTest`: Return type inference for local and member funcdef calls.
   - `OverloadResolutionSvenCoopTest`: Variadic matching, mutable reference R-value rejection, and template disambiguation.
   - `PrimitiveCastTest`: Primitive casting, constructor shadowing, and contextual keyword variables.
+  - `PrimitiveVsCustomClassCastTest`: Invariant verification for genuine primitive functional casts vs user-defined class constructors.
 
 ## [0.7.9-exp.4] - 2026-09-22
 
