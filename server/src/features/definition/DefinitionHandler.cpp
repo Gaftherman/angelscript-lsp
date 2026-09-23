@@ -515,8 +515,9 @@ lsp::Location MakeLocation(const analysis::Symbol& sym, const DefinitionRequest&
         }
     }
 
+    const std::string& targetUri = sym.fileUri.empty() ? request.uri : sym.fileUri;
     return lsp::Location{
-        lsp::DocumentUri::parse(sym.fileUri),
+        lsp::DocumentUri::parse(targetUri),
         lsp::Range{lsp::Position{sym.startLine, sym.startCharacter}, lsp::Position{sym.endLine, sym.endCharacter}}};
 }
 
@@ -791,7 +792,24 @@ std::vector<lsp::Location> ConvertSymbolsToLocations(const std::vector<analysis:
     {
         if (sym.type != analysis::SymbolType::CallReference)
         {
-            locations.push_back(MakeLocation(sym, request));
+            auto loc = MakeLocation(sym, request);
+            bool duplicate = false;
+            for (const auto& existing : locations)
+            {
+                if (existing.uri.toString() == loc.uri.toString() &&
+                    existing.range.start.line == loc.range.start.line &&
+                    existing.range.start.character == loc.range.start.character &&
+                    existing.range.end.line == loc.range.end.line &&
+                    existing.range.end.character == loc.range.end.character)
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate)
+            {
+                locations.push_back(std::move(loc));
+            }
         }
     }
     return locations;
@@ -989,8 +1007,8 @@ std::vector<analysis::Symbol> FindSymbolsForNode(TSNode node, const std::string&
     if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "scoped_identifier")
     {
         uint32_t pStart = ts_node_start_byte(parent);
-        uint32_t pEnd = ts_node_end_byte(parent);
-        if (pStart < request.sourceCode.size() && pEnd <= request.sourceCode.size())
+        uint32_t pEnd = ts_node_end_byte(node);
+        if (pStart < request.sourceCode.size() && pEnd <= request.sourceCode.size() && pStart < pEnd)
         {
             std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
             symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);

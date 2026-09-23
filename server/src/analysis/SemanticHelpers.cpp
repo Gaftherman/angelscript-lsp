@@ -863,13 +863,33 @@ bool AreIncompatibleTemplateTypes(std::string_view from, std::string_view to)
     {
         const size_t fromOpen = from.find('<');
         const size_t toOpen = to.find('<');
-        if (from.substr(0, fromOpen) != to.substr(0, toOpen))
+        const auto fromContainer = from.substr(0, fromOpen);
+        const auto toContainer = to.substr(0, toOpen);
+        if (fromContainer != toContainer &&
+            LastScopeSegment(std::string(fromContainer)) != LastScopeSegment(std::string(toContainer)))
         {
             return true;
         }
         const auto fromInner = from.substr(fromOpen + 1, from.size() - fromOpen - 2);
         const auto toInner = to.substr(toOpen + 1, to.size() - toOpen - 2);
-        return fromInner != toInner;
+        auto fromArgs = SplitTemplateArguments(fromInner);
+        auto toArgs = SplitTemplateArguments(toInner);
+        if (fromArgs.size() != toArgs.size())
+        {
+            return true;
+        }
+        for (size_t i = 0; i < fromArgs.size(); ++i)
+        {
+            std::string_view va = fromArgs[i];
+            std::string_view vb = toArgs[i];
+            TrimTypeWhitespace(va);
+            TrimTypeWhitespace(vb);
+            if (va != vb && LastScopeSegment(std::string(va)) != LastScopeSegment(std::string(vb)))
+            {
+                return true;
+            }
+        }
+        return false;
     }
     return false;
 }

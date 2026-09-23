@@ -23,7 +23,8 @@ enum class LogChannel
     Hover,
     Analysis,
     Symbols,
-    Crash
+    Crash,
+    Overload
 };
 
 /**
@@ -98,6 +99,14 @@ public:
     void LogSymbols(MultiFileLogLevel level, std::string_view message, double durationMs = -1.0);
 
     /**
+     * @brief Convenience helper to log to Overload channel.
+     * @param[in] level Severity level.
+     * @param[in] message Log body.
+     * @param[in] durationMs Optional elapsed duration in milliseconds.
+     */
+    void LogOverload(MultiFileLogLevel level, std::string_view message, double durationMs = -1.0);
+
+    /**
      * @brief Convenience helper to log emergency crash/panic dumps with immediate flush.
      * @param[in] message Crash summary or panic traceback.
      */
@@ -167,5 +176,6 @@ private:
     std::ofstream m_analysisSink;
     std::ofstream m_symbolsSink;
     std::ofstream m_crashSink;
+    std::ofstream m_overloadSink;
 };
 } // namespace angel_lsp::utils

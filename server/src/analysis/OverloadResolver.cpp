@@ -1,5 +1,6 @@
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
+#include "utils/MultiFileLogger.h"
 #include <algorithm>
 #include <initializer_list>
 #include <optional>
@@ -515,33 +516,49 @@ struct MatchContext
     const SymbolTable& table;
 };
 
+static bool IsMutableRefParam(const ParameterInformation& param)
+{
+    return param.isReference || param.modifier == ParameterModifier::InOut || param.modifier == ParameterModifier::Out;
+}
+
+static std::optional<int> ScoreNumericMutableRef(const MatchContext& ctx)
+{
+    if (!IsNumericPrimitive(ctx.cleanArg) || !IsNumericPrimitive(ctx.cleanParam))
+    {
+        return std::nullopt;
+    }
+    if (IsPrimitiveWidening(ctx.cleanArg, ctx.cleanParam))
+    {
+        const bool crossesKind = IsIntegerType(ctx.cleanArg) && IsFloatingPointType(ctx.cleanParam);
+        return static_cast<int>(crossesKind ? OverloadMatchPenalty::WideningAcrossKind
+                                            : OverloadMatchPenalty::Widening);
+    }
+    return static_cast<int>(OverloadMatchPenalty::Narrowing);
+}
+
 std::optional<int> ScoreMutableRefMatch(const ParameterInformation& param, const MatchContext& ctx)
 {
     if (!ctx.isMutableRef)
     {
         return std::nullopt;
     }
-    const bool handleToObjectRef =
-        ctx.argIsHandle && !ctx.paramIsHandle &&
-        (param.isReference || param.modifier == ParameterModifier::InOut || param.modifier == ParameterModifier::Out);
-
-    if ((ctx.argIsHandle != ctx.paramIsHandle && !handleToObjectRef) || ctx.argIsConst)
+    if (ctx.argIsConst)
+    {
+        return static_cast<int>(OverloadMatchPenalty::Incompatible);
+    }
+    if (ctx.argIsHandle != ctx.paramIsHandle && !IsMutableRefParam(param))
     {
         return static_cast<int>(OverloadMatchPenalty::Incompatible);
     }
     if (IsSameType(ctx.cleanArg, ctx.cleanParam))
     {
-        return static_cast<int>(OverloadMatchPenalty::Exact);
+        const bool objectToHandleRef = !ctx.argIsHandle && ctx.paramIsHandle;
+        return static_cast<int>(objectToHandleRef ? OverloadMatchPenalty::ConstRef
+                                                  : OverloadMatchPenalty::Exact);
     }
-    if (IsNumericPrimitive(ctx.cleanArg) && IsNumericPrimitive(ctx.cleanParam))
+    if (auto numScore = ScoreNumericMutableRef(ctx))
     {
-        if (IsPrimitiveWidening(ctx.cleanArg, ctx.cleanParam))
-        {
-            const bool crossesKind = IsIntegerType(ctx.cleanArg) && IsFloatingPointType(ctx.cleanParam);
-            return static_cast<int>(crossesKind ? OverloadMatchPenalty::WideningAcrossKind
-                                                : OverloadMatchPenalty::Widening);
-        }
-        return static_cast<int>(OverloadMatchPenalty::Narrowing);
+        return *numScore;
     }
     return static_cast<int>(OverloadMatchPenalty::Incompatible);
 }
@@ -936,6 +953,10 @@ int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& p
     {
         return static_cast<int>(OverloadMatchPenalty::UnknownTypes);
     }
+    if (AreIncompatibleTemplateTypes(cleanArg, cleanParam))
+    {
+        return static_cast<int>(OverloadMatchPenalty::Incompatible);
+    }
 
     const bool paramIsConst = param.isConst || HasConstModifier(param.typeName);
     const bool isMutableRef = IsMutableReferenceParam(param, paramIsConst);
@@ -1005,6 +1026,120 @@ std::span<const FunctionSymbol> OverloadResolver::findCandidates(std::string_vie
     return {};
 }
 
+std::string FormatCandidateSignature(const Symbol& sym)
+{
+    if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
+    {
+        return sym.name;
+    }
+    const auto& sig = sym.GetFunction();
+    std::string res = sym.name + "(";
+    for (size_t i = 0; i < sig.parameters.size(); ++i)
+    {
+        if (i > 0)
+        {
+            res += ", ";
+        }
+        res += sig.parameters[i].typeName;
+        if (!sig.parameters[i].name.empty())
+        {
+            res += " " + sig.parameters[i].name;
+        }
+    }
+    res += ")";
+    return res;
+}
+
+std::string FindRejectionReason(const Symbol& sym, const std::vector<std::string>& argumentTypes)
+{
+    if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
+    {
+        return "Not a function";
+    }
+    const auto& sig = sym.GetFunction();
+    const auto arity = InspectFunctionArity(sig);
+    if (!IsArityCompatible(arity, static_cast<uint32_t>(argumentTypes.size())))
+    {
+        return "Arity mismatch: expected " + std::to_string(arity.requiredParams) + ".." +
+               std::to_string(arity.maxParams) + ", got " + std::to_string(argumentTypes.size());
+    }
+    for (size_t i = 0; i < argumentTypes.size() && i < sig.parameters.size(); ++i)
+    {
+        if (AreIncompatibleTemplateTypes(argumentTypes[i], sig.parameters[i].typeName))
+        {
+            return "Template arg mismatch: '" + argumentTypes[i] + "' vs '" + sig.parameters[i].typeName + "'";
+        }
+    }
+    return "Type conversion incompatible";
+}
+
+struct OverloadLogRequest
+{
+    std::span<const Symbol* const> candidates;
+    const std::vector<std::string>& argumentTypes;
+    const OverloadMatchResult& result;
+    const std::vector<EvaluatedCandidate>& evaluated;
+};
+
+void LogOverloadTelemetry(const OverloadLogRequest& req)
+{
+    if (!utils::MultiFileLogger::Instance().IsInitialized() || req.candidates.empty())
+    {
+        return;
+    }
+    std::string fnName = req.candidates.front() ? req.candidates.front()->name : "unknown";
+    std::string argsStr;
+    for (size_t i = 0; i < req.argumentTypes.size(); ++i)
+    {
+        if (i > 0)
+        {
+            argsStr += ", ";
+        }
+        argsStr += req.argumentTypes[i];
+    }
+    utils::MultiFileLogger::Instance().LogOverload(
+        utils::MultiFileLogLevel::Info,
+        "Resolving '" + fnName + "' with args: (" + argsStr + ")");
+
+    for (size_t i = 0; i < req.candidates.size(); ++i)
+    {
+        const Symbol* sym = req.candidates[i];
+        if (!sym)
+        {
+            continue;
+        }
+        std::string candSig = FormatCandidateSignature(*sym);
+        auto it = std::find_if(req.evaluated.begin(), req.evaluated.end(),
+                               [sym](const EvaluatedCandidate& e) { return e.symbol == sym; });
+        if (it != req.evaluated.end())
+        {
+            utils::MultiFileLogger::Instance().LogOverload(
+                utils::MultiFileLogLevel::Info,
+                "  Candidate " + std::to_string(i + 1) + " '" + candSig + "': ACCEPTED (Score=" +
+                    std::to_string(it->totalCost) + ")");
+        }
+        else
+        {
+            std::string reason = FindRejectionReason(*sym, req.argumentTypes);
+            utils::MultiFileLogger::Instance().LogOverload(
+                utils::MultiFileLogLevel::Info,
+                "  Candidate " + std::to_string(i + 1) + " '" + candSig + "': REJECTED (" + reason + ")");
+        }
+    }
+    if (req.result.bestCandidate)
+    {
+        utils::MultiFileLogger::Instance().LogOverload(
+            utils::MultiFileLogLevel::Info,
+            "Winner: " + FormatCandidateSignature(*req.result.bestCandidate));
+    }
+    else
+    {
+        utils::MultiFileLogger::Instance().LogOverload(
+            utils::MultiFileLogLevel::Info,
+            "Winner: None (no viable overload)");
+    }
+}
+
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,
                                         const std::vector<bool>& argIsLValue)
@@ -1027,6 +1162,8 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
 
     if (evaluated.empty())
     {
+        OverloadLogRequest logReq{candidates, argumentTypes, result, evaluated};
+        LogOverloadTelemetry(logReq);
         return result;
     }
 
@@ -1035,6 +1172,8 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
         result.bestCandidate = evaluated.front().symbol;
         result.bestScore = evaluated.front().totalCost;
         result.bestCostVector = std::move(evaluated.front().costVector);
+        OverloadLogRequest logReq{candidates, argumentTypes, result, evaluated};
+        LogOverloadTelemetry(logReq);
         return result;
     }
 
@@ -1044,6 +1183,8 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
     result.bestCostVector = nonDominated.front().costVector;
     result.isAmbiguous = CheckOverloadAmbiguity(nonDominated, argumentTypes);
 
+    OverloadLogRequest logReq{candidates, argumentTypes, result, evaluated};
+    LogOverloadTelemetry(logReq);
     return result;
 }
 

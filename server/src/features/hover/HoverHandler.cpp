@@ -311,6 +311,19 @@ bool IsVariableProperty(const analysis::Symbol& sym, const analysis::SymbolTable
     return IsEnumType(sym.GetVariable().typeName, symbolTable);
 }
 
+static std::string FormatNamespaceDeclaration(const analysis::Symbol& sym)
+{
+    if (!sym.qualifiedName.empty())
+    {
+        return "namespace " + sym.qualifiedName;
+    }
+    if (!sym.containerName.empty())
+    {
+        return "namespace " + sym.containerName + "::" + sym.name;
+    }
+    return "namespace " + sym.name;
+}
+
 /** @brief Renders the single hover line that describes a symbol of any kind. */
 std::string FormatDeclarationText(const analysis::Symbol& sym, const analysis::SymbolTable* symbolTable = nullptr)
 {
@@ -332,7 +345,7 @@ std::string FormatDeclarationText(const analysis::Symbol& sym, const analysis::S
     case analysis::SymbolType::Typedef:
         return "typedef " + sym.GetTypedef().baseType + " " + sym.name;
     case analysis::SymbolType::Namespace:
-        return "namespace " + sym.name;
+        return FormatNamespaceDeclaration(sym);
     case analysis::SymbolType::Property:
         if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
         {
@@ -736,6 +749,10 @@ int ScoreCandidateFallback(const analysis::FunctionSignature& sig, const std::ve
             {
                 score += 10;
             }
+            else
+            {
+                score -= 50;
+            }
         }
     }
     return score;
@@ -808,22 +825,42 @@ struct HoverProfiler
     angel_lsp::utils::LspLogger* m_logger = nullptr;
     uint32_t line = 0;
     uint32_t character = 0;
+    const char* nodeType = "";
+    std::string pathText;
+    std::string symbolName;
     double nodeMs = 0.0;
     double symMs = 0.0;
     double fmtMs = 0.0;
     bool emitted = false;
 
+    [[nodiscard]] bool IsActive() const noexcept
+    {
+        return m_logger != nullptr || utils::MultiFileLogger::Instance().IsInitialized();
+    }
+
     void Emit()
     {
-        if (!emitted && m_logger)
+        if (emitted)
         {
-            emitted = true;
-            double totalMs = totalTimer.ElapsedMs();
-            std::string logMsg = fmt::format("[Hover Profile] Total: {:.2f} ms (NodeLookup: {:.2f} ms, SymbolResolve: "
-                                             "{:.2f} ms, Formatting: {:.2f} ms) at {}:{}",
-                                             totalMs, nodeMs, symMs, fmtMs, line, character);
-            m_logger->LogInfo(logMsg);
-            utils::MultiFileLogger::Instance().LogHover(utils::MultiFileLogLevel::Info, logMsg, totalMs);
+            return;
+        }
+        emitted = true;
+        double totalMs = totalTimer.ElapsedMs();
+        if (m_logger)
+        {
+            std::string lspMsg =
+                fmt::format("[Hover Profile] Total: {:.2f} ms (NodeLookup: {:.2f} ms, SymbolResolve: {:.2f} ms, "
+                            "Formatting: {:.2f} ms) at {}:{}",
+                            totalMs, nodeMs, symMs, fmtMs, line, character);
+            m_logger->LogInfo(lspMsg);
+        }
+        if (utils::MultiFileLogger::Instance().IsInitialized())
+        {
+            std::string fileLogMsg =
+                fmt::format("Pos({}:{}) Node='{}' Path='{}' Symbol='{}' [NodeLookup={:.2f}ms SymbolResolve={:.2f}ms "
+                            "Formatting={:.2f}ms Total={:.2f}ms]",
+                            line, character, nodeType, pathText, symbolName, nodeMs, symMs, fmtMs, totalMs);
+            utils::MultiFileLogger::Instance().LogHover(utils::MultiFileLogLevel::Info, fileLogMsg, totalMs);
         }
     }
 
@@ -915,6 +952,12 @@ std::optional<lsp::Hover> TryHoverPrimitiveType(std::string_view nodeText, const
     {
         return std::nullopt;
     }
+    profiler.nodeType = "primitive_type";
+    if (profiler.IsActive())
+    {
+        profiler.pathText = std::string(nodeText);
+        profiler.symbolName = std::string(nodeText);
+    }
     utils::HighResTimer fmtTimer;
     std::string md = "```angelscript\n(primitive type) " + std::string(nodeText) + "\n```";
     profiler.fmtMs += fmtTimer.ElapsedMs();
@@ -949,6 +992,13 @@ std::optional<lsp::Hover> TryHoverThis(const HoverQueryContext& ctx)
     if (className.empty())
     {
         return std::nullopt;
+    }
+
+    ctx.profiler.nodeType = "this";
+    if (ctx.profiler.IsActive())
+    {
+        ctx.profiler.pathText = "this";
+        ctx.profiler.symbolName = className;
     }
 
     utils::HighResTimer fmtTimer;
@@ -1050,6 +1100,10 @@ std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& membe
     }
 
     RemoveDuplicateSymbols(memberSymbols);
+    if (!memberSymbols.empty() && ctx.profiler.IsActive())
+    {
+        ctx.profiler.symbolName = memberSymbols.front().name;
+    }
 
     utils::HighResTimer fmtTimer;
     std::ostringstream oss;
@@ -1137,6 +1191,10 @@ std::optional<lsp::Hover> TryHoverMemberAccess(const HoverQueryContext& ctx)
         return std::nullopt;
     }
 
+    if (ctx.profiler.IsActive())
+    {
+        ctx.profiler.pathText = receiverTypeName + "." + ctx.nodeText;
+    }
     ctx.profiler.symMs += symTimer.ElapsedMs();
     return FormatMemberHover(memberSymbols, accessorPropertyType, ctx);
 }
@@ -1339,6 +1397,10 @@ std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
         typeName = InferTypeFromAst(ctx.node, ctx.request.sourceCode);
     }
 
+    if (ctx.profiler.IsActive())
+    {
+        ctx.profiler.symbolName = def->name;
+    }
     ctx.profiler.symMs += symTimer.ElapsedMs();
     utils::HighResTimer fmtTimer;
     std::string md;
@@ -1533,6 +1595,10 @@ std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
         if (pStart < ctx.request.sourceCode.size() && nEnd <= ctx.request.sourceCode.size() && pStart < nEnd)
         {
             const std::string scopedPrefix = ctx.request.sourceCode.substr(pStart, nEnd - pStart);
+            if (ctx.profiler.IsActive())
+            {
+                ctx.profiler.pathText = scopedPrefix;
+            }
             symbols =
                 analysis::FindSymbolsInScope(scopedPrefix, ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
         }
@@ -1558,6 +1624,10 @@ lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::strin
     }
 
     RemoveDuplicateSymbols(symbols);
+    if (!symbols.empty() && ctx.profiler.IsActive())
+    {
+        ctx.profiler.symbolName = symbols.front().name;
+    }
 
     utils::HighResTimer fmtTimer;
     std::ostringstream oss;
@@ -1672,10 +1742,16 @@ std::optional<lsp::Hover> GetHover(const HoverRequest& request)
         return std::nullopt;
     }
 
-    HoverProfiler profiler{{}, request.logger, request.position.line, request.position.character};
+    HoverProfiler profiler;
+    profiler.m_logger = request.logger;
+    profiler.line = request.position.line;
+    profiler.character = request.position.character;
 
     if (auto includeHover = HoverIncludeDirective(request))
     {
+        profiler.nodeType = "include";
+        profiler.pathText = "include";
+        profiler.symbolName = "include";
         return includeHover;
     }
 
@@ -1686,6 +1762,13 @@ std::optional<lsp::Hover> GetHover(const HoverRequest& request)
     if (!target)
     {
         return std::nullopt;
+    }
+
+    profiler.nodeType = ts_node_type(target->node);
+    if (profiler.IsActive())
+    {
+        profiler.pathText = target->text;
+        profiler.symbolName = target->text;
     }
 
     if (auto primHover = TryHoverPrimitiveType(target->text, target->range, profiler))

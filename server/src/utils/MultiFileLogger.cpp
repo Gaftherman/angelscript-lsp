@@ -43,6 +43,8 @@ std::string_view ChannelToString(LogChannel channel)
         return "SYMBOLS";
     case LogChannel::Crash:
         return "CRASH";
+    case LogChannel::Overload:
+        return "OVERLOAD";
     }
     return "UNKNOWN";
 }
@@ -221,6 +223,11 @@ void MultiFileLogger::LogSymbols(MultiFileLogLevel level, std::string_view messa
     Log(LogChannel::Symbols, level, message, durationMs);
 }
 
+void MultiFileLogger::LogOverload(MultiFileLogLevel level, std::string_view message, double durationMs)
+{
+    Log(LogChannel::Overload, level, message, durationMs);
+}
+
 void MultiFileLogger::LogCrash(std::string_view message)
 {
     Log(LogChannel::Crash, MultiFileLogLevel::Fatal, message);
@@ -324,6 +331,8 @@ std::ofstream* MultiFileLogger::GetChannelSink(LogChannel channel)
         return &m_symbolsSink;
     case LogChannel::Crash:
         return &m_crashSink;
+    case LogChannel::Overload:
+        return &m_overloadSink;
     case LogChannel::Master:
     default:
         return nullptr;
@@ -371,6 +380,7 @@ void MultiFileLogger::FlushAllSinks()
     if (m_analysisSink.is_open()) m_analysisSink.flush();
     if (m_symbolsSink.is_open()) m_symbolsSink.flush();
     if (m_crashSink.is_open()) m_crashSink.flush();
+    if (m_overloadSink.is_open()) m_overloadSink.flush();
 }
 
 void MultiFileLogger::EnsureSinksOpen()
@@ -384,6 +394,7 @@ void MultiFileLogger::EnsureSinksOpen()
     m_analysisSink.open(m_logDirectory / "analysis.log", std::ios::out | std::ios::app);
     m_symbolsSink.open(m_logDirectory / "symbols.log", std::ios::out | std::ios::app);
     m_crashSink.open(m_logDirectory / "crash.log", std::ios::out | std::ios::app);
+    m_overloadSink.open(m_logDirectory / "overload.log", std::ios::out | std::ios::app);
 }
 
 void MultiFileLogger::CloseSinks()
@@ -394,5 +405,6 @@ void MultiFileLogger::CloseSinks()
     if (m_analysisSink.is_open()) m_analysisSink.close();
     if (m_symbolsSink.is_open()) m_symbolsSink.close();
     if (m_crashSink.is_open()) m_crashSink.close();
+    if (m_overloadSink.is_open()) m_overloadSink.close();
 }
 } // namespace angel_lsp::utils
