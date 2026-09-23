@@ -2576,19 +2576,34 @@ static std::vector<std::string> OrderMemberPropertySearchHierarchy(const std::st
 }
 
 /**
+ * @brief Checks if a symbol is an instance member rather than an enum constant.
+ */
+static bool IsNonEnumSymbol(const Symbol& s)
+{
+    if (s.type == SymbolType::Variable && std::holds_alternative<VariableSignature>(s.signature))
+    {
+        return !s.GetVariable().isEnumConstant;
+    }
+    return true;
+}
+
+/**
  * @brief Finds candidate member symbols in a specific type.
  */
 static std::vector<Symbol> FindMemberSymbolsInType(const std::string& typeName, const std::string& memName,
                                                    const SymbolTable& symbolTable)
 {
     auto found = symbolTable.FindSymbols(typeName + "::" + memName);
-    if (found.empty())
+    const bool hasInstance = std::any_of(found.begin(), found.end(), IsNonEnumSymbol);
+    if (!hasInstance)
     {
-        found = symbolTable.FindSymbols(typeName + "::get_" + memName);
-    }
-    if (found.empty())
-    {
-        found = symbolTable.FindSymbols(typeName + "::set_" + memName);
+        auto getters = symbolTable.FindSymbols(typeName + "::get_" + memName);
+        auto setters = symbolTable.FindSymbols(typeName + "::set_" + memName);
+        if (!getters.empty() || !setters.empty())
+        {
+            found.insert(found.begin(), setters.begin(), setters.end());
+            found.insert(found.begin(), getters.begin(), getters.end());
+        }
     }
     if (found.empty())
     {
@@ -2601,6 +2616,7 @@ static std::vector<Symbol> FindMemberSymbolsInType(const std::string& typeName, 
             }
         }
     }
+    std::stable_partition(found.begin(), found.end(), IsNonEnumSymbol);
     return found;
 }
 
@@ -3147,24 +3163,75 @@ static std::string ResolveConstructCallExpr(TSNode exprNode, std::string_view so
 }
 
 /**
+ * @brief Resolves cast or constructor call expression types.
+ * @param[in] nodeType Tree-sitter AST node type string.
+ * @param[in] exprNode Expression AST node.
+ * @param[in] sourceCode Document source text.
+ * @return Resolved expression type string if handled, std::nullopt otherwise.
+ */
+static std::optional<std::string> ResolveCastOrConstructExpr(std::string_view nodeType, TSNode exprNode,
+                                                            std::string_view sourceCode)
+{
+    if (nodeType == "cast_expression" || nodeType == "functional_cast_expression")
+    {
+        TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
+        return ts_node_is_null(typeNode) ? "" : CleanExpressionType(GetNodeText(typeNode, sourceCode));
+    }
+    if (nodeType == "construct_call_expression")
+    {
+        return ResolveConstructCallExpr(exprNode, sourceCode);
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief Resolves initializer list or lambda expression types.
+ * @param[in] nodeType Tree-sitter AST node type string.
+ * @param[in] exprNode Expression AST node.
+ * @param[in] ctx Expression type resolution context.
+ * @param[in] depth Current AST recursion depth.
+ * @return Resolved expression type string if handled, std::nullopt otherwise.
+ */
+static std::optional<std::string> ResolveLambdaOrInitExpr(std::string_view nodeType, TSNode exprNode,
+                                                          const ExpressionTypeContext& ctx, int depth)
+{
+    if (nodeType == "initializer_list")
+    {
+        if (ts_node_named_child_count(exprNode) > 0)
+        {
+            return "{" + ResolveExpressionType(ts_node_named_child(exprNode, 0), ctx, depth + 1) + "}";
+        }
+        return "{}";
+    }
+    if (nodeType == "lambda_expression")
+    {
+        if (auto target = FuncdefTargetOfLambda(exprNode, ctx.symbolTable, ctx.sourceCode))
+        {
+            return target->qualifiedName.empty() ? target->name : target->qualifiedName;
+        }
+        return "";
+    }
+    return std::nullopt;
+}
+
+/**
  * @brief Resolves miscellaneous and secondary expression types.
  */
 static std::string ResolveOtherExpr(std::string_view nodeType, TSNode exprNode, const ExpressionTypeContext& ctx,
                                     int depth)
 {
+    if (auto castOrConstruct = ResolveCastOrConstructExpr(nodeType, exprNode, ctx.sourceCode))
+    {
+        return *castOrConstruct;
+    }
+    if (auto lambdaOrInit = ResolveLambdaOrInitExpr(nodeType, exprNode, ctx, depth))
+    {
+        return *lambdaOrInit;
+    }
     if (nodeType == "assignment_expression")
     {
         TSNode left = parser::GetChildByField(exprNode, parser::fields::Left);
         return ts_node_is_null(left) ? "" : ResolveExpressionType(left, ctx, depth + 1);
-    }
-    if (nodeType == "cast_expression" || nodeType == "functional_cast_expression")
-    {
-        TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
-        return ts_node_is_null(typeNode) ? "" : CleanExpressionType(GetNodeText(typeNode, ctx.sourceCode));
-    }
-    if (nodeType == "construct_call_expression")
-    {
-        return ResolveConstructCallExpr(exprNode, ctx.sourceCode);
     }
     if (nodeType == "index_expression")
     {
@@ -3182,14 +3249,6 @@ static std::string ResolveOtherExpr(std::string_view nodeType, TSNode exprNode, 
     {
         TSNode operandNode = parser::GetChildByField(exprNode, parser::fields::Operand);
         return ts_node_is_null(operandNode) ? "" : ResolveExpressionType(operandNode, ctx, depth + 1);
-    }
-    if (nodeType == "initializer_list")
-    {
-        if (ts_node_named_child_count(exprNode) > 0)
-        {
-            return "{" + ResolveExpressionType(ts_node_named_child(exprNode, 0), ctx, depth + 1) + "}";
-        }
-        return "{}";
     }
     return "";
 }
@@ -3801,6 +3860,7 @@ struct FuncdefAgreement
 {
     std::optional<Symbol> agreed;
     bool sawCandidate = false;
+    bool conflict = false;
 };
 } // namespace
 
@@ -3810,6 +3870,10 @@ struct FuncdefAgreement
 static bool MatchCandidateFuncdef(const SymbolTable& table, const std::string& name, uint32_t position,
                                   FuncdefAgreement& agreement)
 {
+    if (agreement.conflict)
+    {
+        return false;
+    }
     const auto bucket = table.FindSymbolsPtr(name);
     if (!bucket)
     {
@@ -3824,21 +3888,58 @@ static bool MatchCandidateFuncdef(const SymbolTable& table, const std::string& n
         const auto& parameters = sym.GetFunction().parameters;
         if (position >= parameters.size())
         {
-            return false;
+            continue;
         }
         auto funcdef = FindFuncdefSymbol(CleanBaseType(parameters[position].typeName), table);
         if (!funcdef)
         {
-            return false;
+            continue;
         }
         if (agreement.sawCandidate && agreement.agreed && agreement.agreed->name != funcdef->name)
         {
+            agreement.agreed = std::nullopt;
+            agreement.conflict = true;
             return false;
         }
         agreement.agreed = std::move(funcdef);
         agreement.sawCandidate = true;
     }
-    return agreement.sawCandidate;
+    return agreement.sawCandidate && !agreement.conflict;
+}
+
+/**
+ * @brief Finds the target funcdef symbol for an assignment expression.
+ */
+static std::optional<Symbol> FindAssignmentFuncdefTarget(TSNode parent, const SymbolTable& table,
+                                                         std::string_view sourceCode)
+{
+    TSNode leftNode = parser::GetChildByField(parent, parser::fields::Left);
+    if (ts_node_is_null(leftNode))
+    {
+        return std::nullopt;
+    }
+    std::string varName = CleanBaseType(GetNodeText(leftNode, sourceCode));
+    const size_t dot = varName.rfind('.');
+    if (dot != std::string::npos)
+    {
+        varName = varName.substr(dot + 1);
+    }
+    const auto syms = table.FindSymbolsPtr(varName);
+    if (!syms)
+    {
+        return std::nullopt;
+    }
+    for (const auto& s : *syms)
+    {
+        if (s.type == SymbolType::Variable && std::holds_alternative<VariableSignature>(s.signature))
+        {
+            if (auto funcdef = FindFuncdefSymbol(CleanBaseType(s.GetVariable().typeName), table))
+            {
+                return funcdef;
+            }
+        }
+    }
+    return std::nullopt;
 }
 
 /**
@@ -3851,15 +3952,41 @@ static std::optional<Symbol> FindCallArgumentFuncdef(const SymbolTable& table, c
     auto lookUp = [&](const std::string& name) -> bool
     { return MatchCandidateFuncdef(table, name, position, agreement); };
 
-    const size_t lastSeparator = calleeName.rfind("::");
-    const std::string memberName =
-        calleeName.rfind('.') != std::string::npos ? calleeName.substr(calleeName.rfind('.') + 1) : calleeName;
-    if (!lookUp(calleeName) && !lookUp(memberName) &&
-        !(lastSeparator != std::string::npos && lookUp(calleeName.substr(lastSeparator + 2))))
+    if (lookUp(calleeName))
+    {
+        return agreement.agreed;
+    }
+    if (agreement.conflict)
     {
         return std::nullopt;
     }
-    return agreement.agreed;
+
+    const size_t dot = calleeName.rfind('.');
+    if (dot != std::string::npos && lookUp(calleeName.substr(dot + 1)))
+    {
+        return agreement.agreed;
+    }
+    if (agreement.conflict)
+    {
+        return std::nullopt;
+    }
+
+    if (calleeName.find("::") == std::string::npos && lookUp(calleeName + "::" + calleeName))
+    {
+        return agreement.agreed;
+    }
+    if (agreement.conflict)
+    {
+        return std::nullopt;
+    }
+
+    const size_t lastSeparator = calleeName.rfind("::");
+    if (lastSeparator != std::string::npos && lookUp(calleeName.substr(lastSeparator + 2)))
+    {
+        return agreement.agreed;
+    }
+
+    return std::nullopt;
 }
 
 std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable& table, std::string_view sourceCode)
@@ -3879,6 +4006,10 @@ std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable
     if (parentType == "variable_declarator")
     {
         return FindDeclaratorFuncdefTarget(parent, table, sourceCode);
+    }
+    if (parentType == "assignment_expression")
+    {
+        return FindAssignmentFuncdefTarget(parent, table, sourceCode);
     }
     if (parentType != "argument_list")
     {

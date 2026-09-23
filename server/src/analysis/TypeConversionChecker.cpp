@@ -2502,33 +2502,120 @@ void ProcessForeachNode(TSNode node, const TypeConversionCheckRequest& request, 
 }
 
 /**
- * @brief Detects cyclic dependencies in auto initializers.
+ * @brief Checks if an AST node is the member field of a member expression.
+ * @param[in] parent Candidate member expression node.
+ * @param[in] target Target AST node.
+ * @return True if target matches the member field.
+ */
+static bool IsMemberFieldMatch(TSNode parent, TSNode target)
+{
+    if (std::string_view(ts_node_type(parent)) != "member_expression")
+    {
+        return false;
+    }
+    TSNode memberNode = parser::GetChildByField(parent, parser::fields::Member);
+    return !ts_node_is_null(memberNode) &&
+           (ts_node_eq(memberNode, target) || ts_node_start_byte(memberNode) == ts_node_start_byte(target));
+}
+
+/**
+ * @brief Checks if a scoped identifier is qualified or accessed as a member.
+ * @param[in] parent Scoped identifier AST node.
+ * @param[in] sourceCode Document source text.
+ * @return True if qualified or member access.
+ */
+static bool IsScopedIdentifierQualified(TSNode parent, std::string_view sourceCode)
+{
+    const uint32_t pStart = ts_node_start_byte(parent);
+    const uint32_t pEnd = ts_node_end_byte(parent);
+    if (pStart < sourceCode.size() && pEnd <= sourceCode.size() && pStart < pEnd)
+    {
+        const std::string_view scopedText = sourceCode.substr(pStart, pEnd - pStart);
+        if (scopedText.find("::") != std::string_view::npos)
+        {
+            return true;
+        }
+    }
+    TSNode grandParent = ts_node_parent(parent);
+    return !ts_node_is_null(grandParent) && IsMemberFieldMatch(grandParent, parent);
+}
+
+/**
+ * @brief Checks if an identifier node is a qualified name or member access.
+ * @param[in] node Identifier syntax node.
+ * @param[in] sourceCode Document source text.
+ * @return True if qualified or member access.
+ */
+static bool IsQualifiedOrMemberIdentifier(TSNode node, std::string_view sourceCode)
+{
+    TSNode parent = ts_node_parent(node);
+    if (ts_node_is_null(parent))
+    {
+        return false;
+    }
+    const std::string_view parentType = ts_node_type(parent);
+    if (parentType == "parameter" || IsMemberFieldMatch(parent, node))
+    {
+        return true;
+    }
+    return (parentType == "scoped_identifier") && IsScopedIdentifierQualified(parent, sourceCode);
+}
+
+/**
+ * @brief Detects cyclic dependencies in auto initializers via AST inspection.
+ * @param[in] valueNode Initializer value syntax node.
  * @param[in] varName Declared variable name.
- * @param[in] valueText Initializer expression source text.
+ * @param[in] sourceCode Document source text.
  * @return True if a cyclic reference is detected; false otherwise.
  */
-bool IsCyclicAutoDependency(const std::string& varName, const std::string& valueText)
+static bool IsCyclicAutoDependency(TSNode valueNode, const std::string& varName, std::string_view sourceCode)
 {
-    if (varName.empty())
+    if (ts_node_is_null(valueNode) || varName.empty())
     {
         return false;
     }
 
-    size_t pos = 0;
-    while ((pos = valueText.find(varName, pos)) != std::string::npos)
+    TSTreeCursor cursor = ts_tree_cursor_new(valueNode);
+    bool hasChild = true;
+    bool cyclic = false;
+
+    while (hasChild && !cyclic)
     {
-        const bool leftBoundary =
-            (pos == 0 || (!isalnum(static_cast<unsigned char>(valueText[pos - 1])) && valueText[pos - 1] != '_'));
-        const bool rightBoundary = (pos + varName.size() >= valueText.size() ||
-                                    (!isalnum(static_cast<unsigned char>(valueText[pos + varName.size()])) &&
-                                     valueText[pos + varName.size()] != '_'));
-        if (leftBoundary && rightBoundary)
+        TSNode node = ts_tree_cursor_current_node(&cursor);
+        if (std::string_view(ts_node_type(node)) == "identifier" && NodeText(node, sourceCode) == varName)
         {
-            return true;
+            if (!IsQualifiedOrMemberIdentifier(node, sourceCode))
+            {
+                cyclic = true;
+                break;
+            }
         }
-        pos += varName.size();
+
+        if (ts_tree_cursor_goto_first_child(&cursor))
+        {
+            continue;
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            continue;
+        }
+        hasChild = false;
+        while (!ts_node_eq(ts_tree_cursor_current_node(&cursor), valueNode) &&
+               ts_tree_cursor_goto_parent(&cursor))
+        {
+            if (ts_node_eq(ts_tree_cursor_current_node(&cursor), valueNode))
+            {
+                break;
+            }
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                hasChild = true;
+                break;
+            }
+        }
     }
-    return false;
+    ts_tree_cursor_delete(&cursor);
+    return cyclic;
 }
 
 /**
@@ -2580,8 +2667,7 @@ void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& reque
         return;
     }
 
-    const std::string valueText = NodeText(valueNode, request.sourceCode);
-    if (IsCyclicAutoDependency(varName, valueText))
+    if (IsCyclicAutoDependency(valueNode, varName, request.sourceCode))
     {
         EmitAtNode(valueNode, ctx, "as-err-cyclic-auto-dependency", varName);
         return;

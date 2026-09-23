@@ -52,23 +52,56 @@ std::string OwnDocComment(const HoverRequest& request, const analysis::Symbol& s
 }
 
 /**
- * @brief The comment on a symbol, or the one on the declaration it overrides.
- *
- * An implementation carries no comment of its own far more often than not - the interface
- * is where the contract is written, and repeating it on every implementer is exactly what
- * nobody does. Inherited only when the method has none itself, and only from an ancestor
- * of its own container, so an unrelated method with the same name elsewhere is never
- * consulted. The hierarchy walk returns the container first, so the loop skips it: it was
- * already asked, and it answered nothing.
+ * @brief Retrieves doc comment from a companion property or getter/setter.
+ * @param[in] request Hover request context.
+ * @param[in] symbol Symbol being hovered.
+ * @return Companion doc comment string, or empty if none found.
  */
-std::string DocCommentForSymbol(const HoverRequest& request, const analysis::Symbol& symbol)
+static std::string CompanionDocComment(const HoverRequest& request, const analysis::Symbol& symbol)
 {
-    std::string own = OwnDocComment(request, symbol);
-    if (!own.empty())
+    if (symbol.containerName.empty())
     {
-        return own;
+        return "";
     }
+    std::string propName = symbol.name;
+    if (propName.starts_with("get_") || propName.starts_with("set_"))
+    {
+        propName = propName.substr(4);
+    }
+    const std::string candidates[] = {symbol.containerName + "::" + propName,
+                                      symbol.containerName + "::get_" + propName,
+                                      symbol.containerName + "::set_" + propName};
+    for (const auto& candidateName : candidates)
+    {
+        if (candidateName == symbol.qualifiedName)
+        {
+            continue;
+        }
+        const auto companionSyms = request.symbolTable.FindSymbolsPtr(candidateName);
+        if (!companionSyms)
+        {
+            continue;
+        }
+        for (const auto& comp : *companionSyms)
+        {
+            std::string doc = OwnDocComment(request, comp);
+            if (!doc.empty())
+            {
+                return doc;
+            }
+        }
+    }
+    return "";
+}
 
+/**
+ * @brief Retrieves doc comment from an overridden method in ancestor types.
+ * @param[in] request Hover request context.
+ * @param[in] symbol Symbol being hovered.
+ * @return Inherited doc comment string, or empty if none found.
+ */
+static std::string InheritedDocComment(const HoverRequest& request, const analysis::Symbol& symbol)
+{
     if (symbol.type != analysis::SymbolType::Function || symbol.containerName.empty())
     {
         return "";
@@ -98,6 +131,33 @@ std::string DocCommentForSymbol(const HoverRequest& request, const analysis::Sym
     }
 
     return "";
+}
+
+/**
+ * @brief The comment on a symbol, or the one on the declaration it overrides.
+ *
+ * An implementation carries no comment of its own far more often than not - the interface
+ * is where the contract is written, and repeating it on every implementer is exactly what
+ * nobody does. Inherited only when the method has none itself, and only from an ancestor
+ * of its own container, so an unrelated method with the same name elsewhere is never
+ * consulted. The hierarchy walk returns the container first, so the loop skips it: it was
+ * already asked, and it answered nothing.
+ */
+std::string DocCommentForSymbol(const HoverRequest& request, const analysis::Symbol& symbol)
+{
+    std::string own = OwnDocComment(request, symbol);
+    if (!own.empty())
+    {
+        return own;
+    }
+
+    std::string companion = CompanionDocComment(request, symbol);
+    if (!companion.empty())
+    {
+        return companion;
+    }
+
+    return InheritedDocComment(request, symbol);
 }
 
 const analysis::Scope* FindScopeDeclaringDefinition(const analysis::Scope* current,
@@ -992,6 +1052,13 @@ std::vector<analysis::Symbol> CollectReceiverMemberSymbols(const std::string& re
             }
         }
     }
+    std::stable_partition(memberSymbols.begin(), memberSymbols.end(), [](const analysis::Symbol& s) {
+        if (s.type == analysis::SymbolType::Variable && std::holds_alternative<analysis::VariableSignature>(s.signature))
+        {
+            return !s.GetVariable().isEnumConstant;
+        }
+        return true;
+    });
     return memberSymbols;
 }
 
@@ -1471,19 +1538,13 @@ std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
     std::vector<analysis::Symbol> symbols;
     if (!ts_node_is_null(ctx.parent) && std::string_view(ts_node_type(ctx.parent)) == "scoped_identifier")
     {
-        uint32_t pStart = ts_node_start_byte(ctx.parent);
-        uint32_t pEnd = ts_node_end_byte(ctx.parent);
-        if (pStart < ctx.request.sourceCode.size() && pEnd <= ctx.request.sourceCode.size())
+        const uint32_t pStart = ts_node_start_byte(ctx.parent);
+        const uint32_t nEnd = ts_node_end_byte(ctx.node);
+        if (pStart < ctx.request.sourceCode.size() && nEnd <= ctx.request.sourceCode.size() && pStart < nEnd)
         {
-            std::string scopedText = ctx.request.sourceCode.substr(pStart, pEnd - pStart);
+            const std::string scopedPrefix = ctx.request.sourceCode.substr(pStart, nEnd - pStart);
             symbols =
-                analysis::FindSymbolsInScope(scopedText, ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
-            if (!symbols.empty())
-            {
-                TSPoint pStartPt = ts_node_start_point(ctx.parent);
-                TSPoint pEndPt = ts_node_end_point(ctx.parent);
-                ctx.range = lsp::Range{{pStartPt.row, pStartPt.column}, {pEndPt.row, pEndPt.column}};
-            }
+                analysis::FindSymbolsInScope(scopedPrefix, ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
         }
     }
     if (symbols.empty())

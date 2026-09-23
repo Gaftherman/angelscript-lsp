@@ -395,16 +395,28 @@ void Server::ParserPredefined(const std::string& filePath, angel_lsp::parser::An
 void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
                                       bool forceReload, std::unordered_set<std::string>& visited)
 {
-    const std::string normPath = angel_lsp::utils::IncludeResolver::NormalizePath(filePath);
+    std::error_code ec;
+    const std::filesystem::path p(filePath);
+    const auto canon = std::filesystem::weakly_canonical(p, ec);
+    const std::string normPath = angel_lsp::utils::IncludeResolver::NormalizePath(ec ? p : canon);
     if (!visited.insert(normPath).second)
     {
         return;
     }
 
-    utils::HighResTimer totalTimer;
-    std::string uri = UriFromPath(filePath);
+    if (!forceReload && m_predefinedManager.IsCanonicalPathLoaded(normPath))
+    {
+        return;
+    }
 
-    std::ifstream file(filePath, std::ios::binary);
+    utils::HighResTimer totalTimer;
+    std::string uri = UriFromPath(normPath);
+
+    std::ifstream file(normPath, std::ios::binary);
+    if (!file.is_open())
+    {
+        file.open(filePath, std::ios::binary);
+    }
     if (!file.is_open())
     {
         LogError(fmt::format("Cannot open predefined file: {}", filePath));

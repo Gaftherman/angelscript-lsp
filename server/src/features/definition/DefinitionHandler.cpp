@@ -759,13 +759,34 @@ std::vector<analysis::Symbol> FindMemberSymbolsInHierarchy(const std::string& re
                                                            const analysis::SymbolTable& symbolTable)
 {
     auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, symbolTable);
+    std::vector<analysis::Symbol> enumFallback;
     for (const auto& typeName : hierarchy)
     {
         std::string qualifiedMember = typeName + "::" + nodeText;
         auto found = symbolTable.FindSymbols(qualifiedMember);
         if (!found.empty())
         {
-            return found;
+            std::stable_partition(found.begin(), found.end(), [](const analysis::Symbol& s) {
+                if (s.type == analysis::SymbolType::Variable &&
+                    std::holds_alternative<analysis::VariableSignature>(s.signature))
+                {
+                    return !s.GetVariable().isEnumConstant;
+                }
+                return true;
+            });
+            const bool hasInstance = std::any_of(found.begin(), found.end(), [](const analysis::Symbol& s) {
+                return !(s.type == analysis::SymbolType::Variable &&
+                         std::holds_alternative<analysis::VariableSignature>(s.signature) &&
+                         s.GetVariable().isEnumConstant);
+            });
+            if (hasInstance)
+            {
+                return found;
+            }
+            if (enumFallback.empty())
+            {
+                enumFallback = std::move(found);
+            }
         }
     }
     for (const auto& typeName : hierarchy)
@@ -775,6 +796,10 @@ std::vector<analysis::Symbol> FindMemberSymbolsInHierarchy(const std::string& re
         {
             return accessors;
         }
+    }
+    if (!enumFallback.empty())
+    {
+        return enumFallback;
     }
     auto directMatches = symbolTable.FindSymbols(receiverTypeName + "::" + nodeText);
     if (!directMatches.empty())

@@ -441,7 +441,8 @@ static bool IsKeywordDeclarationContext(TSNode node)
     const std::string_view parentType = ts_node_type(parent);
     return parentType == "accessor" || parentType == "func_declaration" || parentType == "class_declaration" ||
            parentType == "interface_declaration" || parentType == "enum_declaration" ||
-           parentType == "funcdef_declaration" || parentType == "mixin_declaration";
+           parentType == "funcdef_declaration" || parentType == "mixin_declaration" ||
+           parentType == "lambda_expression";
 }
 
 void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Scope* current,

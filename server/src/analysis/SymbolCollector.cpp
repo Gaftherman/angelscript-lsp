@@ -890,6 +890,7 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
         varSig.typeName = enumContainer;
         varSig.defaultValue = m.value;
         varSig.modifiers.isConst = true;
+        varSig.isEnumConstant = true;
 
         TSNode memberDeclNode = node;
         TSNode memberNameNode = nameNode;

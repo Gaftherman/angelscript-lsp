@@ -822,6 +822,15 @@ bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticContext& c
         }
     }
 
+    if (ref.name == "function" && ctx.request.tree)
+    {
+        const TSPoint at{ref.startLine, ref.startCharacter};
+        const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(ctx.request.tree), at, at);
+        TSNode parent = ts_node_parent(node);
+        if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "lambda_expression")
+            return true;
+    }
+
     return false;
 }
 

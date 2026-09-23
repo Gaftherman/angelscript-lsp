@@ -242,6 +242,7 @@ struct VariableSignature
     bool hasNullInitializer = false;
     bool hasSemicolon = true;
     bool isLocal = false;
+    bool isEnumConstant = false;
 };
 
 struct EnumMemberInformation

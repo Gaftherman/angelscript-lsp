@@ -132,6 +132,27 @@ class PredefinedStubManager
     [[nodiscard]] const std::string* GetDocumentTextPtr(const std::string& uri) const;
 
     /**
+     * @brief Computes weakly canonical and normalized path for predefined stubs.
+     * @param path Filesystem path.
+     * @return Canonical normalized path string, or empty if input is empty.
+     */
+    [[nodiscard]] static std::string CanonicalizeStubPath(const std::string& path);
+
+    /**
+     * @brief Checks if a canonical stub path has already been indexed.
+     * @param path Filesystem path (relative or absolute).
+     * @return True if already loaded.
+     */
+    [[nodiscard]] bool IsCanonicalPathLoaded(const std::string& path) const;
+
+    /**
+     * @brief Marks a canonical stub path as loaded.
+     * @param path Filesystem path (relative or absolute).
+     * @return True if newly marked, false if already marked.
+     */
+    bool MarkCanonicalPathLoaded(const std::string& path);
+
+    /**
      * @brief Clears all registered stubs and path mappings.
      */
     void Clear();
@@ -145,6 +166,7 @@ class PredefinedStubManager
     mutable std::mutex m_mutex;
     ankerl::unordered_dense::set<std::string> m_predefinedUris;
     ankerl::unordered_dense::map<std::string, std::string> m_predefinedUriByPath;
+    ankerl::unordered_dense::set<std::string> m_loadedCanonicalPaths;
     ankerl::unordered_dense::map<std::string, std::shared_ptr<std::string>> m_predefinedDocuments;
 };
 } // namespace angel_lsp
