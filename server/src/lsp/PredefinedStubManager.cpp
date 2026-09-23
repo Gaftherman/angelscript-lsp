@@ -10,20 +10,42 @@ std::string PredefinedStubManager::CanonicalizeStubPath(const std::string& path)
     {
         return "";
     }
+
+#if !defined(_WIN32)
+    if (path.size() >= 2 && std::isalpha(static_cast<unsigned char>(path[0])) && path[1] == ':')
+    {
+        std::filesystem::path p(path);
+        std::string s = p.lexically_normal().string();
+        std::replace(s.begin(), s.end(), '\\', '/');
+        return s;
+    }
+#endif
+
     std::error_code ec;
     const std::filesystem::path p(path);
-    const auto absP = p.is_relative() ? std::filesystem::absolute(p, ec) : p;
-    const auto canon = std::filesystem::weakly_canonical(ec ? p : absP, ec);
-    return angel_lsp::utils::IncludeResolver::NormalizePath(ec ? (p.is_absolute() ? p : absP) : canon);
+    if (std::filesystem::exists(p, ec))
+    {
+        const auto canon = std::filesystem::weakly_canonical(p, ec);
+        if (!ec)
+        {
+            return angel_lsp::utils::IncludeResolver::NormalizePath(canon);
+        }
+    }
+
+    const auto canon = std::filesystem::weakly_canonical(p, ec);
+    return angel_lsp::utils::IncludeResolver::NormalizePath(ec ? p.lexically_normal() : canon);
 }
 
 void PredefinedStubManager::RegisterStub(const std::string& path, const std::string& uri, std::string content)
 {
     const std::string canon = CanonicalizeStubPath(path);
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (!path.empty())
+    {
+        m_predefinedUriByPath[path] = uri;
+    }
     if (!canon.empty())
     {
-        m_predefinedUriByPath[canon] = uri;
         m_loadedCanonicalPaths.insert(canon);
     }
     m_predefinedUris.insert(uri);
@@ -55,11 +77,18 @@ void PredefinedStubManager::SetDocumentText(const std::string& uri, std::string 
 
 std::optional<std::string> PredefinedStubManager::GetUriByPath(const std::string& path) const
 {
-    const std::string canon = CanonicalizeStubPath(path);
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (auto it = m_predefinedUriByPath.find(canon); it != m_predefinedUriByPath.end())
+    if (auto it = m_predefinedUriByPath.find(path); it != m_predefinedUriByPath.end())
     {
         return it->second;
+    }
+    const std::string canon = CanonicalizeStubPath(path);
+    if (!canon.empty() && canon != path)
+    {
+        if (auto it = m_predefinedUriByPath.find(canon); it != m_predefinedUriByPath.end())
+        {
+            return it->second;
+        }
     }
     return std::nullopt;
 }
@@ -68,9 +97,12 @@ void PredefinedStubManager::SetUriForPath(const std::string& path, const std::st
 {
     const std::string canon = CanonicalizeStubPath(path);
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (!path.empty())
+    {
+        m_predefinedUriByPath[path] = uri;
+    }
     if (!canon.empty())
     {
-        m_predefinedUriByPath[canon] = uri;
         m_loadedCanonicalPaths.insert(canon);
     }
 }
@@ -88,7 +120,7 @@ bool PredefinedStubManager::IsCanonicalPathLoaded(const std::string& path) const
         return false;
     }
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_loadedCanonicalPaths.contains(canon) || m_predefinedUriByPath.contains(canon);
+    return m_loadedCanonicalPaths.contains(canon);
 }
 
 bool PredefinedStubManager::MarkCanonicalPathLoaded(const std::string& path)
@@ -105,14 +137,13 @@ bool PredefinedStubManager::MarkCanonicalPathLoaded(const std::string& path)
 bool PredefinedStubManager::ClaimFile(const std::string& uri, const std::string& path, bool forceReload,
                                       std::string* outPreviousUri)
 {
-    const std::string canon = CanonicalizeStubPath(path);
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (canon.empty())
+    if (path.empty())
     {
         return m_predefinedUris.insert(uri).second || forceReload;
     }
 
-    if (const auto owner = m_predefinedUriByPath.find(canon); owner != m_predefinedUriByPath.end())
+    if (const auto owner = m_predefinedUriByPath.find(path); owner != m_predefinedUriByPath.end())
     {
         if (owner->second == uri)
         {
@@ -128,8 +159,12 @@ bool PredefinedStubManager::ClaimFile(const std::string& uri, const std::string&
         m_predefinedDocuments.erase(previous);
     }
 
-    m_predefinedUriByPath[canon] = uri;
-    m_loadedCanonicalPaths.insert(canon);
+    m_predefinedUriByPath[path] = uri;
+    const std::string canon = CanonicalizeStubPath(path);
+    if (!canon.empty())
+    {
+        m_loadedCanonicalPaths.insert(canon);
+    }
     m_predefinedUris.insert(uri);
     return true;
 }
@@ -153,7 +188,11 @@ bool PredefinedStubManager::UnloadUri(const std::string& uri, std::string* outPa
             {
                 *outPath = it->first;
             }
-            m_loadedCanonicalPaths.erase(it->first);
+            const std::string canon = CanonicalizeStubPath(it->first);
+            if (!canon.empty())
+            {
+                m_loadedCanonicalPaths.erase(canon);
+            }
             m_predefinedUriByPath.erase(it);
             break;
         }
