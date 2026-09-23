@@ -4,6 +4,25 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.3-exp.3] - 2026-09-23
+
+### Formal Conversion Rank Lattice, Pairwise Partial Ordering & Scope Cycle Defense
+
+- Conversion Rank Lattice & Overload Resolution:
+  - Replaced scalar scoring heuristics (`score += penalty`, magic numbers `>= 999`, `+50`, `999999`) with a formal conversion rank lattice (`Exact < Promotion < StandardConv < UserDefined < Incompatible`).
+  - Added `ArgumentConversion` with three-way comparison (`operator<=>`) tracking rank, inheritance distance, handle penalty, and template container viability.
+  - Enforced template container specialization rules: mismatched template container arguments (e.g. `array<T1>` vs `array<T2>`) are short-circuited as `Incompatible`.
+  - Implemented component-wise dominance ordering: a candidate dominates another only if it is as good in all arguments and strictly better in at least one.
+  - Ambiguous overloads strictly gate code generation and call resolution with `bestCandidate = nullptr` and `isAmbiguous = true`, eliminating silent fallback to arbitrary indices.
+- Zero-Allocation Scope Hierarchy Cycle Defense:
+  - Introduced `ScopeTraversalGuard` backed by stack storage (`std::array<const Scope*, kMaxScopeDepth>`) to detect circular scope chains with zero heap allocations.
+  - Protected parent scope walks in `ResolveInScope`, `DefinitionAtPosition`, `FindDefinitionScope`, and `FormatVariableHover`.
+  - Preserved warm-query allocation invariants in `AllocationBudgetHarnessTest` (<= 25 allocations).
+- Lexical Scope Cyclic Auto Resolution:
+  - Refactored `IsCyclicAutoDependency` in `TypeConversionChecker` to resolve against lexical scopes using Tree-Sitter cursors, eliminating false positives on member access (`pmove.player`), string literals, and comments.
+- Invariant-Based Testing:
+  - Added comprehensive test suite `OverloadRankingAndScopeTests` asserting formal lattice ordering, container specialization, ambiguity gating, and scope cycle defense.
+
 ## [0.8.2-exp.2] - 2026-09-23
 
 ### Template Container Overload Resolution, Intermediate Scoped Navigation & Overload Telemetry
