@@ -301,8 +301,11 @@ if(TEST_SOURCES)
     )
     if(MSVC)
         add_custom_command(TARGET angel_lsp_tests POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_PDB_FILE:angel_lsp_tests> "${CMAKE_CURRENT_BINARY_DIR}/bin/"
-            COMMENT "Deploying test PDB to server/build/bin"
+            COMMAND ${CMAKE_COMMAND}
+                -D "PDB_FILE=$<TARGET_PDB_FILE:angel_lsp_tests>"
+                -D "DEST_DIR=${CMAKE_CURRENT_BINARY_DIR}/bin"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyPdbIfExists.cmake"
+            COMMENT "Deploying test PDB to server/build/bin if present"
         )
     endif()
 
