@@ -4,6 +4,27 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.2] - 2026-09-23
+
+### Semantic Analysis Disambiguation & Sven Co-op Pattern Support
+
+- Predefined Stub Path Deduplication:
+  - Canonicalized stub paths using `std::filesystem::weakly_canonical` and normalized absolute anchors in `PredefinedStubManager`.
+  - Prevented redundant file I/O and duplicate symbol registration when stubs are loaded via relative and absolute paths.
+- AST-Aware Cyclic `auto` Dependency Detection:
+  - Replaced naive string search with flat `TSTreeCursor` AST traversal.
+  - Suppressed false positives from string literals, comments, parameter definitions, and member accesses (`obj.prop`), triggering only on direct unqualified self-references.
+- Member vs Class-Scoped Enum Disambiguation:
+  - Added `isEnumConstant` tracking to prioritize member functions, properties, and instance variables over enum constants on instance invocations (`this.Error`).
+- Anonymous Callback Function (Lambda) Recognition:
+  - Recognized `function(args) { ... }` as valid inline callback declarations without emitting undeclared identifier warnings on `"function"`.
+  - Added `funcdef` signature inference for callbacks passed to functions, assignments, and constructor call expressions.
+- Scoped Identifier Hover & Property DocComments:
+  - Enabled hover inspection across intermediate namespace and class segments (`A::B::C::D`) without altering the hover range.
+  - Attached doc comments from companion property declarations and companion `get_`/`set_` accessors.
+- Integration Test Suite:
+  - Added `SvenCoopComplexPatternsTest` validating all 5 patterns under randomized invariant testing.
+
 ## [0.8.1] - 2026-09-22
 
 ### Semantic Analysis & Fluent Method Chaining Enhancements
