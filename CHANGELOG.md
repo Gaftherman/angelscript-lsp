@@ -4,6 +4,24 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.2-exp.2] - 2026-09-23
+
+### Template Container Overload Resolution, Intermediate Scoped Navigation & Overload Telemetry
+
+- Template Container Overload Disambiguation:
+  - Enabled binding value containers (`array<T>`) to output handle references (`array<T>@ &out`) in `ScoreMutableRefMatch`, scoring matching element types with `ConstRef` or `Exact`.
+  - Added early rejection in `ScoreArgumentMatch` via `AreIncompatibleTemplateTypes` when container element types conflict (e.g. `array<string>` vs `array<float>@ &out`).
+  - Enhanced template argument splitting and namespace-normalized element comparison in `SemanticHelpers`.
+- Qualified Namespace Scope Resolution & Safe Navigation:
+  - Fixed `FindSymbolsForNode` in `DefinitionHandler` to use node end byte instead of parent end byte, enabling safe Ctrl+Click Go-To-Definition across intermediate tokens of nested namespaces (e.g. `fmt` or `v2` in `meta_api::json::v2::fmt::ToArray`).
+  - Added location deduplication and safe URI fallback in definition handling.
+  - Canonical hierarchical namespace hover formatting in `HoverHandler` (`namespace meta_api::json::v2`).
+  - Penalized incompatible candidates in `ScoreCandidateFallback` by 50 points to prevent ties with matching overloads.
+- Overload Channel & Enriched Multi-Sink Telemetry:
+  - Added `overload.log` logging candidate evaluations, parameter comparisons, rejection reasons, and winner signatures, mirrored to `master.log`.
+  - Enriched `hover.log` with `Pos(line:col) Node='...' Path='...' Symbol='...' [NodeLookup=... SymbolResolve=... Formatting=... Total=...]`.
+  - Optimized `HoverProfiler` with zero heap allocations on warm queries when logging is inactive.
+
 ## [0.8.2-exp.1] - 2026-09-23
 
 ### Reliability, Scope Recursion Protection & Multi-File Logging
