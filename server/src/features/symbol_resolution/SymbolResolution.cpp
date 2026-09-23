@@ -18,7 +18,6 @@ namespace angel_lsp::features::resolution
 namespace
 {
 
-
 /**
  * @brief Checks if a node type represents an identifier or type token.
  * @param[in] nodeType Tree-Sitter node type.

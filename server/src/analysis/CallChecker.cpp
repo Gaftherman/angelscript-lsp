@@ -1320,7 +1320,7 @@ size_t FindCandidateBadArgument(const Symbol& candidate, const std::vector<std::
     const auto& fn = candidate.GetFunction();
     for (size_t i = 0; i < argTypes.size() && i < fn.parameters.size(); ++i)
     {
-        if (ScoreArgumentMatch(argTypes[i], fn.parameters[i], table) >= 999)
+        if (!EvaluateArgumentConversion(argTypes[i], fn.parameters[i], table).IsViable())
         {
             return i;
         }
@@ -1552,8 +1552,8 @@ bool CheckCandidateNamedArgs(const FunctionSignature& sig, const std::vector<std
 
             if (!argTypes[i].empty())
             {
-                const int score = ScoreArgumentMatch(argTypes[i], sig.parameters[paramIdx], symbolTable, true);
-                if (score >= static_cast<int>(OverloadMatchPenalty::Incompatible))
+                const auto conv = EvaluateArgumentConversion(argTypes[i], sig.parameters[paramIdx], symbolTable, true);
+                if (!conv.IsViable())
                 {
                     return false;
                 }
@@ -1636,14 +1636,13 @@ void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const Call
         valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-ambiguous",
                                calleeRes.reportedName);
     }
-    else if (match.viableCandidates.empty() || match.bestScore >= 999)
+    else if (match.viableCandidates.empty() || match.bestCandidate == nullptr)
     {
         ReportOverloadResolutionFailure(matchingArity, args, calleeRes.reportedName, valCtx);
     }
     else
     {
-        const auto& target = match.bestCandidate ? *match.bestCandidate : *matchingArity[0];
-        ValidateOutArguments(target, args.argNodes, valCtx);
+        ValidateOutArguments(*match.bestCandidate, args.argNodes, valCtx);
     }
 }
 
@@ -1836,8 +1835,8 @@ void CheckPrimitiveDirectInit(TSNode argListNode, const std::vector<std::string>
     else
     {
         ParameterInformation dummyParam{vctx.baseName, vctx.baseName, "", ""};
-        int score = ScoreArgumentMatch(argTypes[0], dummyParam, vctx.ctx.request.symbolTable);
-        if (score >= 999)
+        const auto conv = EvaluateArgumentConversion(argTypes[0], dummyParam, vctx.ctx.request.symbolTable);
+        if (!conv.IsViable())
         {
             const TSPoint aStart = ts_node_start_point(argListNode);
             const TSPoint aEnd = ts_node_end_point(argListNode);
@@ -2052,7 +2051,7 @@ void CheckConstructorOverload(TSNode argListNode, const std::vector<Symbol>& can
     }
 
     auto match = ResolveBestOverload(matchingArity, argTypes, vctx.ctx.request.symbolTable);
-    if (match.bestScore >= 999 || match.bestCandidate == nullptr)
+    if (match.bestCandidate == nullptr)
     {
         const TSPoint aStart = ts_node_start_point(argListNode);
         const TSPoint aEnd = ts_node_end_point(argListNode);

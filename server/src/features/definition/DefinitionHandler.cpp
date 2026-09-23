@@ -102,7 +102,6 @@ std::string GetNodeTextAt(const DefinitionRequest& request, TSNode& outNode)
     return ExtractValidNodeText(node, request.sourceCode);
 }
 
-
 /**
  * @brief Locates the enclosing call expression node if target node represents the callee.
  * @param[in] node Target identifier node.
@@ -735,19 +734,24 @@ std::vector<analysis::Symbol> FindMemberSymbolsInHierarchy(const std::string& re
         auto found = symbolTable.FindSymbols(qualifiedMember);
         if (!found.empty())
         {
-            std::stable_partition(found.begin(), found.end(), [](const analysis::Symbol& s) {
-                if (s.type == analysis::SymbolType::Variable &&
-                    std::holds_alternative<analysis::VariableSignature>(s.signature))
-                {
-                    return !s.GetVariable().isEnumConstant;
-                }
-                return true;
-            });
-            const bool hasInstance = std::any_of(found.begin(), found.end(), [](const analysis::Symbol& s) {
-                return !(s.type == analysis::SymbolType::Variable &&
-                         std::holds_alternative<analysis::VariableSignature>(s.signature) &&
-                         s.GetVariable().isEnumConstant);
-            });
+            std::stable_partition(found.begin(), found.end(),
+                                  [](const analysis::Symbol& s)
+                                  {
+                                      if (s.type == analysis::SymbolType::Variable &&
+                                          std::holds_alternative<analysis::VariableSignature>(s.signature))
+                                      {
+                                          return !s.GetVariable().isEnumConstant;
+                                      }
+                                      return true;
+                                  });
+            const bool hasInstance =
+                std::any_of(found.begin(), found.end(),
+                            [](const analysis::Symbol& s)
+                            {
+                                return !(s.type == analysis::SymbolType::Variable &&
+                                         std::holds_alternative<analysis::VariableSignature>(s.signature) &&
+                                         s.GetVariable().isEnumConstant);
+                            });
             if (hasInstance)
             {
                 return found;
@@ -918,8 +922,7 @@ bool IsDefinitionInsideFunction(const analysis::Scope* rootScope, const analysis
     size_t depth = 0;
     ankerl::unordered_dense::set<const analysis::Scope*> visited;
     for (const analysis::Scope* s = declaringScope;
-         s != nullptr && visited.insert(s).second && ++depth <= analysis::kMaxScopeDepth;
-         s = s->parent)
+         s != nullptr && visited.insert(s).second && ++depth <= analysis::kMaxScopeDepth; s = s->parent)
     {
         if (s->isFunctionScope)
         {

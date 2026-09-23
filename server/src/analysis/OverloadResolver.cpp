@@ -476,30 +476,47 @@ bool IsWildcardParameter(const ParameterInformation& param)
            IsVariableType(param.rawText);
 }
 
-std::optional<int> ScoreSpecialArgumentMatch(const std::string& argType, const ParameterInformation& param)
+std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string& argType,
+                                                               const ParameterInformation& param)
 {
     if (IsWildcardParameter(param))
     {
-        return 10;
+        return ArgumentConversion{ConversionRank::StandardConv, 220, 0, false, 10};
     }
     if (argType.empty() || argType == "auto")
     {
-        return 0;
+        return ArgumentConversion{ConversionRank::Exact, 0, 0, false, 0};
     }
     if (argType == "null")
     {
         const bool paramIsHandle = param.isHandle || HasHandleModifier(param.typeName);
-        return static_cast<int>(paramIsHandle ? OverloadMatchPenalty::Exact : OverloadMatchPenalty::Incompatible);
+        if (paramIsHandle)
+        {
+            return ArgumentConversion{ConversionRank::Exact, 0, 0, false,
+                                      static_cast<int>(OverloadMatchPenalty::Exact)};
+        }
+        return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Incompatible)};
     }
     if (argType == "void")
     {
-        return static_cast<int>(IsOutParameter(param) ? OverloadMatchPenalty::Exact
-                                                      : OverloadMatchPenalty::Incompatible);
+        if (IsOutParameter(param))
+        {
+            return ArgumentConversion{ConversionRank::Exact, 0, 0, false,
+                                      static_cast<int>(OverloadMatchPenalty::Exact)};
+        }
+        return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Incompatible)};
     }
     if (argType == "init_list")
     {
-        return static_cast<int>(IsContainerParameter(param) ? OverloadMatchPenalty::Exact
-                                                            : OverloadMatchPenalty::Incompatible);
+        if (IsContainerParameter(param))
+        {
+            return ArgumentConversion{ConversionRank::Exact, 0, 0, false,
+                                      static_cast<int>(OverloadMatchPenalty::Exact)};
+        }
+        return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Incompatible)};
     }
     return std::nullopt;
 }
@@ -521,7 +538,7 @@ static bool IsMutableRefParam(const ParameterInformation& param)
     return param.isReference || param.modifier == ParameterModifier::InOut || param.modifier == ParameterModifier::Out;
 }
 
-static std::optional<int> ScoreNumericMutableRef(const MatchContext& ctx)
+static std::optional<ArgumentConversion> EvaluateNumericMutableRef(const MatchContext& ctx)
 {
     if (!IsNumericPrimitive(ctx.cleanArg) || !IsNumericPrimitive(ctx.cleanParam))
     {
@@ -530,13 +547,19 @@ static std::optional<int> ScoreNumericMutableRef(const MatchContext& ctx)
     if (IsPrimitiveWidening(ctx.cleanArg, ctx.cleanParam))
     {
         const bool crossesKind = IsIntegerType(ctx.cleanArg) && IsFloatingPointType(ctx.cleanParam);
-        return static_cast<int>(crossesKind ? OverloadMatchPenalty::WideningAcrossKind
-                                            : OverloadMatchPenalty::Widening);
+        if (crossesKind)
+        {
+            return ArgumentConversion{ConversionRank::StandardConv, 30, 0, false,
+                                      static_cast<int>(OverloadMatchPenalty::WideningAcrossKind)};
+        }
+        return ArgumentConversion{ConversionRank::Promotion, 0, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Widening)};
     }
-    return static_cast<int>(OverloadMatchPenalty::Narrowing);
+    return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
+                              static_cast<int>(OverloadMatchPenalty::Narrowing)};
 }
 
-std::optional<int> ScoreMutableRefMatch(const ParameterInformation& param, const MatchContext& ctx)
+std::optional<ArgumentConversion> EvaluateMutableRefMatch(const ParameterInformation& param, const MatchContext& ctx)
 {
     if (!ctx.isMutableRef)
     {
@@ -544,23 +567,27 @@ std::optional<int> ScoreMutableRefMatch(const ParameterInformation& param, const
     }
     if (ctx.argIsConst)
     {
-        return static_cast<int>(OverloadMatchPenalty::Incompatible);
+        return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Incompatible)};
     }
     if (ctx.argIsHandle != ctx.paramIsHandle && !IsMutableRefParam(param))
     {
-        return static_cast<int>(OverloadMatchPenalty::Incompatible);
+        return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Incompatible)};
     }
     if (IsSameType(ctx.cleanArg, ctx.cleanParam))
     {
         const bool objectToHandleRef = !ctx.argIsHandle && ctx.paramIsHandle;
-        return static_cast<int>(objectToHandleRef ? OverloadMatchPenalty::ConstRef
-                                                  : OverloadMatchPenalty::Exact);
+        return ArgumentConversion{ConversionRank::Exact, 0, 0, objectToHandleRef,
+                                  objectToHandleRef ? static_cast<int>(OverloadMatchPenalty::ConstRef)
+                                                    : static_cast<int>(OverloadMatchPenalty::Exact)};
     }
-    if (auto numScore = ScoreNumericMutableRef(ctx))
+    if (auto numConv = EvaluateNumericMutableRef(ctx))
     {
-        return *numScore;
+        return numConv;
     }
-    return static_cast<int>(OverloadMatchPenalty::Incompatible);
+    return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
+                              static_cast<int>(OverloadMatchPenalty::Incompatible)};
 }
 
 bool IsHandleToReferenceBinding(bool argIsHandle, bool paramIsHandle, const ParameterInformation& param)
@@ -570,7 +597,8 @@ bool IsHandleToReferenceBinding(bool argIsHandle, bool paramIsHandle, const Para
             param.modifier == ParameterModifier::InOut || param.modifier == ParameterModifier::Out);
 }
 
-std::optional<int> ScoreSameTypeMatch(const MatchContext& ctx, bool isHandleToRef, bool isValueToHandle)
+std::optional<ArgumentConversion> EvaluateSameTypeMatch(const MatchContext& ctx, bool isHandleToRef,
+                                                        bool isValueToHandle)
 {
     if (!IsSameType(ctx.cleanArg, ctx.cleanParam))
     {
@@ -578,18 +606,26 @@ std::optional<int> ScoreSameTypeMatch(const MatchContext& ctx, bool isHandleToRe
     }
     if (ctx.argIsHandle == ctx.paramIsHandle)
     {
-        return static_cast<int>(ctx.argIsConst == ctx.paramIsConst ? OverloadMatchPenalty::Exact
-                                                                   : OverloadMatchPenalty::ConstRef);
+        const bool constDiff = (ctx.argIsConst != ctx.paramIsConst);
+        return ArgumentConversion{ConversionRank::Exact, 0, 0, constDiff,
+                                  constDiff ? static_cast<int>(OverloadMatchPenalty::ConstRef)
+                                            : static_cast<int>(OverloadMatchPenalty::Exact)};
     }
     if (isHandleToRef || isValueToHandle)
     {
-        return static_cast<int>(ctx.paramIsConst || !ctx.argIsConst ? OverloadMatchPenalty::Exact
-                                                                    : OverloadMatchPenalty::Incompatible);
+        if (ctx.paramIsConst || !ctx.argIsConst)
+        {
+            return ArgumentConversion{ConversionRank::Exact, 0, 0, false,
+                                      static_cast<int>(OverloadMatchPenalty::Exact)};
+        }
+        return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Incompatible)};
     }
-    return static_cast<int>(OverloadMatchPenalty::ConstRef);
+    return ArgumentConversion{ConversionRank::Exact, 0, 0, true, static_cast<int>(OverloadMatchPenalty::ConstRef)};
 }
 
-std::optional<int> ScoreInheritedSubtypeMatch(const MatchContext& ctx, bool isValueToHandle, bool isHandleToRef)
+std::optional<ArgumentConversion> EvaluateInheritedSubtypeMatch(const MatchContext& ctx, bool isValueToHandle,
+                                                                bool isHandleToRef)
 {
     if (ctx.argIsHandle != ctx.paramIsHandle && !isValueToHandle && !isHandleToRef)
     {
@@ -601,30 +637,29 @@ std::optional<int> ScoreInheritedSubtypeMatch(const MatchContext& ctx, bool isVa
     {
         if (IsSameType(NormalizeType(hierarchy[dist]), ctx.cleanParam))
         {
-            int basePenalty = static_cast<int>(OverloadMatchPenalty::Inheritance);
-            if (isValueToHandle)
-            {
-                basePenalty += 1;
-            }
-            return basePenalty + static_cast<int>(dist);
+            const uint8_t distance = static_cast<uint8_t>(std::min<size_t>(dist + 1, 255));
+            const int basePenalty = static_cast<int>(OverloadMatchPenalty::Inheritance) + (isValueToHandle ? 1 : 0) +
+                                    static_cast<int>(dist);
+            return ArgumentConversion{ConversionRank::StandardConv, 0, distance, false, basePenalty};
         }
     }
     return std::nullopt;
 }
 
-std::optional<int> ScoreSameTypeOrSubtypeMatch(const ParameterInformation& param, const MatchContext& ctx)
+std::optional<ArgumentConversion> EvaluateSameTypeOrSubtypeMatch(const ParameterInformation& param,
+                                                                 const MatchContext& ctx)
 {
     const bool isHandleToRef = IsHandleToReferenceBinding(ctx.argIsHandle, ctx.paramIsHandle, param);
     const bool isValueToHandle = !ctx.argIsHandle && ctx.paramIsHandle;
 
-    if (auto sameScore = ScoreSameTypeMatch(ctx, isHandleToRef, isValueToHandle))
+    if (auto sameConv = EvaluateSameTypeMatch(ctx, isHandleToRef, isValueToHandle))
     {
-        return sameScore;
+        return sameConv;
     }
-    return ScoreInheritedSubtypeMatch(ctx, isValueToHandle, isHandleToRef);
+    return EvaluateInheritedSubtypeMatch(ctx, isValueToHandle, isHandleToRef);
 }
 
-std::optional<int> ScorePrimitiveOrEnumConversion(const MatchContext& ctx)
+std::optional<ArgumentConversion> EvaluatePrimitiveOrEnumConversion(const MatchContext& ctx)
 {
     const auto namesAnEnum = [&ctx](const std::string& typeName)
     {
@@ -635,36 +670,46 @@ std::optional<int> ScorePrimitiveOrEnumConversion(const MatchContext& ctx)
 
     if (IsIntegerType(ctx.cleanParam) && namesAnEnum(ctx.cleanArg))
     {
-        return static_cast<int>(OverloadMatchPenalty::Widening);
+        return ArgumentConversion{ConversionRank::Promotion, 0, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Widening)};
     }
     if (IsIntegerType(ctx.cleanArg) && IsIntegerType(ctx.cleanParam) &&
         IsUnsignedInteger(ctx.cleanArg) != IsUnsignedInteger(ctx.cleanParam))
     {
-        return static_cast<int>(OverloadMatchPenalty::SignednessChange);
+        return ArgumentConversion{ConversionRank::StandardConv, 20, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::SignednessChange)};
     }
     if (IsPrimitiveWidening(ctx.cleanArg, ctx.cleanParam))
     {
         const bool crossesKind = IsIntegerType(ctx.cleanArg) && IsFloatingPointType(ctx.cleanParam);
-        return static_cast<int>(crossesKind ? OverloadMatchPenalty::WideningAcrossKind
-                                            : OverloadMatchPenalty::Widening);
+        if (crossesKind)
+        {
+            return ArgumentConversion{ConversionRank::StandardConv, 30, 0, false,
+                                      static_cast<int>(OverloadMatchPenalty::WideningAcrossKind)};
+        }
+        return ArgumentConversion{ConversionRank::Promotion, 0, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Widening)};
     }
     if (IsPrimitiveNarrowing(ctx.cleanArg, ctx.cleanParam))
     {
-        return static_cast<int>(OverloadMatchPenalty::Narrowing);
+        return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Narrowing)};
     }
     return std::nullopt;
 }
 
-int ScoreCustomOrUnresolvedConversion(const MatchContext& ctx)
+ArgumentConversion EvaluateCustomOrUnresolvedConversion(const MatchContext& ctx)
 {
     if (HasUserConversion(ctx.cleanArg, ctx.cleanParam, ctx.table))
     {
-        return static_cast<int>(OverloadMatchPenalty::UserDefined);
+        return ArgumentConversion{ConversionRank::UserDefined, 0, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::UserDefined)};
     }
 
     if (AreIncompatibleTemplateTypes(ctx.cleanArg, ctx.cleanParam))
     {
-        return static_cast<int>(OverloadMatchPenalty::Incompatible);
+        return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Incompatible)};
     }
 
     const auto isNamedAndUnresolved = [&ctx](const std::string& typeName)
@@ -679,27 +724,128 @@ int ScoreCustomOrUnresolvedConversion(const MatchContext& ctx)
 
     if (isNamedAndUnresolved(ctx.cleanArg) && isNamedAndUnresolved(ctx.cleanParam))
     {
-        return static_cast<int>(OverloadMatchPenalty::UnknownTypes);
+        return ArgumentConversion{ConversionRank::StandardConv, 100, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::UnknownTypes)};
     }
-    return static_cast<int>(OverloadMatchPenalty::Incompatible);
+    return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
+                              static_cast<int>(OverloadMatchPenalty::Incompatible)};
 }
 
-int ScoreConversionMatch(const MatchContext& ctx)
+ArgumentConversion EvaluateConversionMatch(const MatchContext& ctx)
 {
     if (ctx.cleanArg == "auto" || ctx.cleanParam == "auto")
     {
-        return static_cast<int>(OverloadMatchPenalty::UnknownTypes);
+        return ArgumentConversion{ConversionRank::StandardConv, 100, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::UnknownTypes)};
     }
-    if (auto score = ScorePrimitiveOrEnumConversion(ctx))
+    if (auto conv = EvaluatePrimitiveOrEnumConversion(ctx))
     {
-        return *score;
+        return *conv;
     }
-    return ScoreCustomOrUnresolvedConversion(ctx);
+    return EvaluateCustomOrUnresolvedConversion(ctx);
 }
 
+/**
+ * @brief Checks whether a parameter denotes a mutable reference or out parameter.
+ * @param[in] param Parameter to inspect.
+ * @param[in] paramIsConst Flag indicating if the parameter type has const modifier.
+ * @return True if mutable reference.
+ */
+bool IsMutableReferenceParam(const ParameterInformation& param, bool paramIsConst)
+{
+    const bool isRefOrOut =
+        param.isReference || param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut ||
+        param.rawText.find("&inout") != std::string::npos || param.typeName.find("&inout") != std::string::npos ||
+        param.rawText.find("&out") != std::string::npos || param.typeName.find("&out") != std::string::npos;
+    return isRefOrOut && !paramIsConst && param.modifier != ParameterModifier::In &&
+           param.rawText.find("&in") == std::string::npos;
+}
+
+/**
+ * @brief Evaluates type conversion between argument and parameter within given match context.
+ * @param[in] param Target parameter information.
+ * @param[in] ctx Match evaluation context.
+ * @return Evaluated ArgumentConversion.
+ */
+ArgumentConversion EvaluateCandidateTypeMatch(const ParameterInformation& param, const MatchContext& ctx)
+{
+    if (auto refScore = EvaluateMutableRefMatch(param, ctx))
+    {
+        return *refScore;
+    }
+    if (auto exactScore = EvaluateSameTypeOrSubtypeMatch(param, ctx))
+    {
+        return *exactScore;
+    }
+    return EvaluateConversionMatch(ctx);
+}
+} // namespace
+
+bool HasConstModifier(std::string_view typeName)
+{
+    return typeName == "const" || typeName.starts_with("const ") || typeName.ends_with(" const") ||
+           typeName.ends_with("const");
+}
+
+ArgumentConversion EvaluateArgumentConversion(const std::string& argType, const ParameterInformation& param,
+                                              const SymbolTable& symbolTable, bool argIsLValue)
+{
+    if (auto specialScore = EvaluateSpecialArgumentMatch(argType, param))
+    {
+        if (!argIsLValue && IsOutParameter(param))
+        {
+            return ArgumentConversion{ConversionRank::StandardConv, 200, 0, false,
+                                      static_cast<int>(OverloadMatchPenalty::RValueToOutParam)};
+        }
+        return *specialScore;
+    }
+
+    const std::string cleanArg = UnwrapTypedef(NormalizeType(argType), symbolTable);
+    const std::string cleanParam = UnwrapTypedef(NormalizeType(param.typeName), symbolTable);
+    if (cleanArg.empty() || cleanParam.empty())
+    {
+        return ArgumentConversion{ConversionRank::StandardConv, 100, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::UnknownTypes)};
+    }
+    if (AreIncompatibleTemplateTypes(cleanArg, cleanParam))
+    {
+        return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Incompatible)};
+    }
+
+    const bool paramIsConst = param.isConst || HasConstModifier(param.typeName);
+    const bool isMutableRef = IsMutableReferenceParam(param, paramIsConst);
+
+    const MatchContext ctx{cleanArg,
+                           cleanParam,
+                           HasHandleModifier(argType),
+                           HasConstModifier(argType),
+                           param.isHandle || HasHandleModifier(param.typeName),
+                           paramIsConst,
+                           isMutableRef,
+                           symbolTable};
+
+    ArgumentConversion conv = EvaluateCandidateTypeMatch(param, ctx);
+    if (!argIsLValue && (isMutableRef || IsOutParameter(param)) && conv.IsViable())
+    {
+        return ArgumentConversion{ConversionRank::StandardConv, 200, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::RValueToOutParam)};
+    }
+    return conv;
+}
+
+int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& param, const SymbolTable& symbolTable,
+                       bool argIsLValue)
+{
+    return EvaluateArgumentConversion(argType, param, symbolTable, argIsLValue).legacyScore;
+}
+
+namespace
+{
 struct EvaluatedCandidate
 {
     const Symbol* symbol = nullptr;
+    std::vector<ArgumentConversion> conversions;
     std::vector<int> costVector;
     int defaultArgs = 0;
     int totalCost = 0;
@@ -740,36 +886,42 @@ bool IsArityCompatible(const ArityInfo& arity, uint32_t argCount)
     return argCount >= arity.requiredParams;
 }
 
-struct CandidateScores
+struct CandidateConversions
 {
+    std::vector<ArgumentConversion> conversions;
     std::vector<int> costVector;
     int totalScore = 0;
 };
 
-std::optional<CandidateScores> ScoreCandidateArguments(const FunctionSignature& sig,
-                                                       const std::vector<std::string>& argumentTypes,
-                                                       const SymbolTable& symbolTable,
-                                                       const std::vector<bool>& argIsLValue)
+std::optional<CandidateConversions> ScoreCandidateArguments(const FunctionSignature& sig,
+                                                            const std::vector<std::string>& argumentTypes,
+                                                            const SymbolTable& symbolTable,
+                                                            const std::vector<bool>& argIsLValue)
 {
-    CandidateScores scores;
+    CandidateConversions scores;
+    scores.conversions.reserve(argumentTypes.size());
     scores.costVector.reserve(argumentTypes.size());
     for (uint32_t i = 0; i < argumentTypes.size(); ++i)
     {
         if (i < sig.parameters.size())
         {
             const bool isLVal = i < argIsLValue.size() ? argIsLValue[i] : true;
-            int paramScore = ScoreArgumentMatch(argumentTypes[i], sig.parameters[i], symbolTable, isLVal);
-            if (paramScore >= static_cast<int>(OverloadMatchPenalty::Incompatible))
+            ArgumentConversion conv =
+                EvaluateArgumentConversion(argumentTypes[i], sig.parameters[i], symbolTable, isLVal);
+            if (!conv.IsViable())
             {
                 return std::nullopt;
             }
-            scores.costVector.push_back(paramScore);
-            scores.totalScore += paramScore;
+            scores.costVector.push_back(conv.legacyScore);
+            scores.totalScore += conv.legacyScore;
+            scores.conversions.push_back(conv);
         }
         else
         {
-            scores.costVector.push_back(10);
-            scores.totalScore += 10;
+            ArgumentConversion varargConv{ConversionRank::StandardConv, 220, 0, false, 10};
+            scores.costVector.push_back(varargConv.legacyScore);
+            scores.totalScore += varargConv.legacyScore;
+            scores.conversions.push_back(varargConv);
         }
     }
     return scores;
@@ -805,19 +957,24 @@ std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, const std
         scores->totalScore += defaultArgs * 1;
     }
 
-    return EvaluatedCandidate{&sym, std::move(scores->costVector), defaultArgs, scores->totalScore};
+    return EvaluatedCandidate{&sym, std::move(scores->conversions), std::move(scores->costVector), defaultArgs,
+                              scores->totalScore};
 }
 
 bool IsStrictlyBetter(const EvaluatedCandidate& a, const EvaluatedCandidate& b)
 {
-    bool hasStrictlyBetterArg = false;
-    for (size_t i = 0; i < a.costVector.size(); ++i)
+    if (a.conversions.size() != b.conversions.size())
     {
-        if (a.costVector[i] > b.costVector[i])
+        return false;
+    }
+    bool hasStrictlyBetterArg = false;
+    for (size_t i = 0; i < a.conversions.size(); ++i)
+    {
+        if (a.conversions[i] > b.conversions[i])
         {
             return false;
         }
-        if (a.costVector[i] < b.costVector[i])
+        if (a.conversions[i] < b.conversions[i])
         {
             hasStrictlyBetterArg = true;
         }
@@ -826,31 +983,18 @@ bool IsStrictlyBetter(const EvaluatedCandidate& a, const EvaluatedCandidate& b)
     {
         return true;
     }
-    return a.costVector == b.costVector && a.defaultArgs < b.defaultArgs;
+    return a.defaultArgs < b.defaultArgs;
 }
 
 std::vector<EvaluatedCandidate> FilterNonDominatedCandidates(const std::vector<EvaluatedCandidate>& evaluated)
 {
-    std::vector<EvaluatedCandidate> exactMatches;
-    for (const auto& cand : evaluated)
-    {
-        if (cand.totalCost == 0 && cand.defaultArgs == 0)
-        {
-            exactMatches.push_back(cand);
-        }
-    }
-    if (!exactMatches.empty())
-    {
-        return exactMatches;
-    }
-
     std::vector<EvaluatedCandidate> nonDominated;
     for (const auto& cand : evaluated)
     {
         bool dominated = false;
         for (const auto& other : evaluated)
         {
-            if (&cand != &other && other.totalCost < cand.totalCost && IsStrictlyBetter(other, cand))
+            if (&cand != &other && IsStrictlyBetter(other, cand))
             {
                 dominated = true;
                 break;
@@ -861,7 +1005,7 @@ std::vector<EvaluatedCandidate> FilterNonDominatedCandidates(const std::vector<E
             nonDominated.push_back(cand);
         }
     }
-    return nonDominated.empty() ? std::vector<EvaluatedCandidate>{evaluated.front()} : nonDominated;
+    return nonDominated;
 }
 
 bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
@@ -892,92 +1036,7 @@ bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
     }
     return false;
 }
-
-/**
- * @brief Checks whether a parameter denotes a mutable reference or out parameter.
- * @param[in] param Parameter to inspect.
- * @param[in] paramIsConst Flag indicating if the parameter type has const modifier.
- * @return True if mutable reference.
- */
-bool IsMutableReferenceParam(const ParameterInformation& param, bool paramIsConst)
-{
-    const bool isRefOrOut =
-        param.isReference || param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut ||
-        param.rawText.find("&inout") != std::string::npos || param.typeName.find("&inout") != std::string::npos ||
-        param.rawText.find("&out") != std::string::npos || param.typeName.find("&out") != std::string::npos;
-    return isRefOrOut && !paramIsConst && param.modifier != ParameterModifier::In &&
-           param.rawText.find("&in") == std::string::npos;
-}
-
-/**
- * @brief Computes type conversion score between argument and parameter.
- * @param[in] param Target parameter information.
- * @param[in] ctx Match evaluation context.
- * @return Penalty score integer.
- */
-int ScoreCandidateTypeMatch(const ParameterInformation& param, const MatchContext& ctx)
-{
-    if (auto refScore = ScoreMutableRefMatch(param, ctx))
-    {
-        return *refScore;
-    }
-    if (auto exactScore = ScoreSameTypeOrSubtypeMatch(param, ctx))
-    {
-        return *exactScore;
-    }
-    return ScoreConversionMatch(ctx);
-}
 } // namespace
-
-bool HasConstModifier(std::string_view typeName)
-{
-    return typeName == "const" || typeName.starts_with("const ") || typeName.ends_with(" const") ||
-           typeName.ends_with("const");
-}
-
-int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& param, const SymbolTable& symbolTable,
-                       bool argIsLValue)
-{
-    if (auto specialScore = ScoreSpecialArgumentMatch(argType, param))
-    {
-        if (!argIsLValue && IsOutParameter(param))
-        {
-            return static_cast<int>(OverloadMatchPenalty::RValueToOutParam);
-        }
-        return *specialScore;
-    }
-
-    const std::string cleanArg = UnwrapTypedef(NormalizeType(argType), symbolTable);
-    const std::string cleanParam = UnwrapTypedef(NormalizeType(param.typeName), symbolTable);
-    if (cleanArg.empty() || cleanParam.empty())
-    {
-        return static_cast<int>(OverloadMatchPenalty::UnknownTypes);
-    }
-    if (AreIncompatibleTemplateTypes(cleanArg, cleanParam))
-    {
-        return static_cast<int>(OverloadMatchPenalty::Incompatible);
-    }
-
-    const bool paramIsConst = param.isConst || HasConstModifier(param.typeName);
-    const bool isMutableRef = IsMutableReferenceParam(param, paramIsConst);
-
-    const MatchContext ctx{cleanArg,
-                           cleanParam,
-                           HasHandleModifier(argType),
-                           HasConstModifier(argType),
-                           param.isHandle || HasHandleModifier(param.typeName),
-                           paramIsConst,
-                           isMutableRef,
-                           symbolTable};
-
-    const int score = ScoreCandidateTypeMatch(param, ctx);
-    if (!argIsLValue && (isMutableRef || IsOutParameter(param)) &&
-        score < static_cast<int>(OverloadMatchPenalty::Incompatible))
-    {
-        return static_cast<int>(OverloadMatchPenalty::RValueToOutParam);
-    }
-    return score;
-}
 
 void OverloadResolver::addFunction(const FunctionSymbol& sym)
 {
@@ -1097,9 +1156,8 @@ void LogOverloadTelemetry(const OverloadLogRequest& req)
         }
         argsStr += req.argumentTypes[i];
     }
-    utils::MultiFileLogger::Instance().LogOverload(
-        utils::MultiFileLogLevel::Info,
-        "Resolving '" + fnName + "' with args: (" + argsStr + ")");
+    utils::MultiFileLogger::Instance().LogOverload(utils::MultiFileLogLevel::Info,
+                                                   "Resolving '" + fnName + "' with args: (" + argsStr + ")");
 
     for (size_t i = 0; i < req.candidates.size(); ++i)
     {
@@ -1114,29 +1172,26 @@ void LogOverloadTelemetry(const OverloadLogRequest& req)
         if (it != req.evaluated.end())
         {
             utils::MultiFileLogger::Instance().LogOverload(
-                utils::MultiFileLogLevel::Info,
-                "  Candidate " + std::to_string(i + 1) + " '" + candSig + "': ACCEPTED (Score=" +
-                    std::to_string(it->totalCost) + ")");
+                utils::MultiFileLogLevel::Info, "  Candidate " + std::to_string(i + 1) + " '" + candSig +
+                                                    "': ACCEPTED (Score=" + std::to_string(it->totalCost) + ")");
         }
         else
         {
             std::string reason = FindRejectionReason(*sym, req.argumentTypes);
-            utils::MultiFileLogger::Instance().LogOverload(
-                utils::MultiFileLogLevel::Info,
-                "  Candidate " + std::to_string(i + 1) + " '" + candSig + "': REJECTED (" + reason + ")");
+            utils::MultiFileLogger::Instance().LogOverload(utils::MultiFileLogLevel::Info,
+                                                           "  Candidate " + std::to_string(i + 1) + " '" + candSig +
+                                                               "': REJECTED (" + reason + ")");
         }
     }
     if (req.result.bestCandidate)
     {
         utils::MultiFileLogger::Instance().LogOverload(
-            utils::MultiFileLogLevel::Info,
-            "Winner: " + FormatCandidateSignature(*req.result.bestCandidate));
+            utils::MultiFileLogLevel::Info, "Winner: " + FormatCandidateSignature(*req.result.bestCandidate));
     }
     else
     {
-        utils::MultiFileLogger::Instance().LogOverload(
-            utils::MultiFileLogLevel::Info,
-            "Winner: None (no viable overload)");
+        utils::MultiFileLogger::Instance().LogOverload(utils::MultiFileLogLevel::Info,
+                                                       "Winner: None (no viable overload)");
     }
 }
 
@@ -1172,16 +1227,32 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
         result.bestCandidate = evaluated.front().symbol;
         result.bestScore = evaluated.front().totalCost;
         result.bestCostVector = std::move(evaluated.front().costVector);
+        result.bestConversions = std::move(evaluated.front().conversions);
         OverloadLogRequest logReq{candidates, argumentTypes, result, evaluated};
         LogOverloadTelemetry(logReq);
         return result;
     }
 
     auto nonDominated = FilterNonDominatedCandidates(evaluated);
-    result.bestCandidate = nonDominated.front().symbol;
-    result.bestScore = nonDominated.front().totalCost;
-    result.bestCostVector = nonDominated.front().costVector;
+    if (nonDominated.empty())
+    {
+        OverloadLogRequest logReq{candidates, argumentTypes, result, evaluated};
+        LogOverloadTelemetry(logReq);
+        return result;
+    }
+
     result.isAmbiguous = CheckOverloadAmbiguity(nonDominated, argumentTypes);
+    if (result.isAmbiguous)
+    {
+        result.bestCandidate = nullptr;
+    }
+    else
+    {
+        result.bestCandidate = nonDominated.front().symbol;
+        result.bestScore = nonDominated.front().totalCost;
+        result.bestCostVector = nonDominated.front().costVector;
+        result.bestConversions = nonDominated.front().conversions;
+    }
 
     OverloadLogRequest logReq{candidates, argumentTypes, result, evaluated};
     LogOverloadTelemetry(logReq);

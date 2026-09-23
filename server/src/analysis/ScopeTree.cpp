@@ -49,10 +49,10 @@ const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name,
                                       bool respectClosureBarrier)
 {
     bool crossedClosure = false;
-    size_t depth = 0;
+    ScopeTraversalGuard cycleGuard;
     for (const Scope* current = scope; current != nullptr; current = current->parent)
     {
-        if (++depth > kMaxScopeDepth)
+        if (!cycleGuard.CheckAndInsert(current))
         {
             break;
         }

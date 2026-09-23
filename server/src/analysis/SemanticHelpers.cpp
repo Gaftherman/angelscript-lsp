@@ -3202,7 +3202,7 @@ static std::string ResolveConstructCallExpr(TSNode exprNode, std::string_view so
  * @return Resolved expression type string if handled, std::nullopt otherwise.
  */
 static std::optional<std::string> ResolveCastOrConstructExpr(std::string_view nodeType, TSNode exprNode,
-                                                            std::string_view sourceCode)
+                                                             std::string_view sourceCode)
 {
     if (nodeType == "cast_expression" || nodeType == "functional_cast_expression")
     {

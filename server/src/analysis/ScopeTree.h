@@ -3,6 +3,7 @@
 #include "analysis/SymbolTable.h"
 
 #include <ankerl/unordered_dense.h>
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -231,6 +232,39 @@ struct Scope
  * @brief Maximum recursion or traversal depth allowed when walking scope hierarchies.
  */
 inline constexpr size_t kMaxScopeDepth = 32;
+
+/**
+ * @brief Zero-allocation stack cycle guard for scope hierarchy parent traversals.
+ */
+class ScopeTraversalGuard
+{
+  public:
+    /**
+     * @brief Records a visited scope pointer and checks for cycle formation.
+     * @param[in] scope Scope pointer being traversed.
+     * @return True if scope is novel and within depth limits; false if cycle or limit reached.
+     */
+    bool CheckAndInsert(const Scope* scope) noexcept
+    {
+        if (scope == nullptr || m_count >= kMaxScopeDepth)
+        {
+            return false;
+        }
+        for (size_t i = 0; i < m_count; ++i)
+        {
+            if (m_visited[i] == scope)
+            {
+                return false;
+            }
+        }
+        m_visited[m_count++] = scope;
+        return true;
+    }
+
+  private:
+    std::array<const Scope*, kMaxScopeDepth> m_visited{};
+    size_t m_count = 0;
+};
 
 /**
  * @brief Resolves name to the nearest enclosing definition starting from scope and walking up

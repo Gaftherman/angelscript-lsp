@@ -160,16 +160,22 @@ std::vector<Symbol> CollectDirectCandidates(const std::string& owner, const std:
     if (candidatesPtr && !candidatesPtr->empty())
     {
         candidates.insert(candidates.end(), candidatesPtr->begin(), candidatesPtr->end());
-        const bool hasInstance = std::any_of(candidates.begin(), candidates.end(), [](const Symbol& s) {
-            return !(s.type == SymbolType::Variable && std::holds_alternative<VariableSignature>(s.signature) &&
-                     s.GetVariable().isEnumConstant);
-        });
+        const bool hasInstance = std::any_of(candidates.begin(), candidates.end(),
+                                             [](const Symbol& s)
+                                             {
+                                                 return !(s.type == SymbolType::Variable &&
+                                                          std::holds_alternative<VariableSignature>(s.signature) &&
+                                                          s.GetVariable().isEnumConstant);
+                                             });
         if (hasInstance)
         {
-            std::stable_partition(candidates.begin(), candidates.end(), [](const Symbol& s) {
-                return !(s.type == SymbolType::Variable && std::holds_alternative<VariableSignature>(s.signature) &&
-                         s.GetVariable().isEnumConstant);
-            });
+            std::stable_partition(candidates.begin(), candidates.end(),
+                                  [](const Symbol& s)
+                                  {
+                                      return !(s.type == SymbolType::Variable &&
+                                               std::holds_alternative<VariableSignature>(s.signature) &&
+                                               s.GetVariable().isEnumConstant);
+                                  });
             return candidates;
         }
     }
@@ -190,10 +196,13 @@ std::vector<Symbol> CollectDirectCandidates(const std::string& owner, const std:
             }
         }
     }
-    std::stable_partition(candidates.begin(), candidates.end(), [](const Symbol& s) {
-        return !(s.type == SymbolType::Variable && std::holds_alternative<VariableSignature>(s.signature) &&
-                 s.GetVariable().isEnumConstant);
-    });
+    std::stable_partition(candidates.begin(), candidates.end(),
+                          [](const Symbol& s)
+                          {
+                              return !(s.type == SymbolType::Variable &&
+                                       std::holds_alternative<VariableSignature>(s.signature) &&
+                                       s.GetVariable().isEnumConstant);
+                          });
     return candidates;
 }
 

@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
-#include <unordered_set>
 #include <vector>
 
 namespace angel_lsp::features
@@ -492,10 +491,10 @@ namespace
  */
 const analysis::LocalDefinition* DefinitionAtPosition(const analysis::Scope* scope, const lsp::Position& position)
 {
-    size_t depth = 0;
+    analysis::ScopeTraversalGuard cycleGuard;
     for (const analysis::Scope* current = scope; current != nullptr; current = current->parent)
     {
-        if (++depth > analysis::kMaxScopeDepth)
+        if (!cycleGuard.CheckAndInsert(current))
         {
             break;
         }
@@ -1076,13 +1075,16 @@ std::vector<analysis::Symbol> CollectReceiverMemberSymbols(const std::string& re
             }
         }
     }
-    std::stable_partition(memberSymbols.begin(), memberSymbols.end(), [](const analysis::Symbol& s) {
-        if (s.type == analysis::SymbolType::Variable && std::holds_alternative<analysis::VariableSignature>(s.signature))
-        {
-            return !s.GetVariable().isEnumConstant;
-        }
-        return true;
-    });
+    std::stable_partition(memberSymbols.begin(), memberSymbols.end(),
+                          [](const analysis::Symbol& s)
+                          {
+                              if (s.type == analysis::SymbolType::Variable &&
+                                  std::holds_alternative<analysis::VariableSignature>(s.signature))
+                              {
+                                  return !s.GetVariable().isEnumConstant;
+                              }
+                              return true;
+                          });
     return memberSymbols;
 }
 
@@ -1291,10 +1293,10 @@ std::optional<analysis::Symbol> FindMatchingGlobalSymbol(const analysis::LocalDe
 
 const analysis::Scope* FindDefinitionScope(const HoverQueryContext& ctx, const analysis::LocalDefinition& def)
 {
-    size_t depth = 0;
+    analysis::ScopeTraversalGuard cycleGuard;
     for (const analysis::Scope* s = ctx.scope; s != nullptr; s = s->parent)
     {
-        if (++depth > analysis::kMaxScopeDepth)
+        if (!cycleGuard.CheckAndInsert(s))
         {
             break;
         }
@@ -1315,10 +1317,10 @@ void FormatVariableHover(const analysis::LocalDefinition& def, const std::string
     const analysis::Scope* declaringScope = FindDefinitionScope(ctx, def);
 
     bool isInsideFunction = false;
-    size_t depth = 0;
+    analysis::ScopeTraversalGuard cycleGuard;
     for (const analysis::Scope* s = declaringScope; s != nullptr; s = s->parent)
     {
-        if (++depth > analysis::kMaxScopeDepth)
+        if (!cycleGuard.CheckAndInsert(s))
         {
             break;
         }

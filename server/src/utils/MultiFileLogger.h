@@ -44,7 +44,7 @@ enum class MultiFileLogLevel
  */
 class MultiFileLogger
 {
-public:
+  public:
     MultiFileLogger();
     explicit MultiFileLogger(const std::filesystem::path& logDirectory);
     ~MultiFileLogger();
@@ -142,7 +142,7 @@ public:
      */
     static MultiFileLogger& Instance();
 
-private:
+  private:
     struct LogEntry
     {
         LogChannel channel;

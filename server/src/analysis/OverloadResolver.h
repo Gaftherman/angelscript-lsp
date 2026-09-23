@@ -11,7 +11,64 @@
 namespace angel_lsp::analysis
 {
 /**
- * @brief Match penalty categories for argument-to-parameter type conversion.
+ * @brief Formal conversion rank hierarchy according to standard compiler design.
+ */
+enum class ConversionRank : uint8_t
+{
+    Exact = 0,        ///< Identity or const/reference adjustment with no data conversion
+    Promotion = 1,    ///< Value-preserving promotion (widening within kind, e.g. int8 -> int32, float -> double)
+    StandardConv = 2, ///< Standard language conversion (numeric cross-kind/narrowing, base/derived inheritance)
+    UserDefined = 3,  ///< Explicit/implicit constructor or conversion method (opImplConv / opImplCast)
+    Incompatible = 4  ///< No valid conversion exists
+};
+
+/**
+ * @brief Formal argument-to-parameter type conversion representation.
+ */
+struct ArgumentConversion
+{
+    ConversionRank rank = ConversionRank::Incompatible;
+    uint8_t subRank = 0;             ///< Secondary ordering within rank
+    uint8_t inheritanceDistance = 0; ///< Distance in inheritance hierarchy (0 = exact / same class)
+    bool isConstAdjustment = false;  ///< Const/reference qualification adjustment
+    int legacyScore = 999;           ///< Legacy scalar score for backwards compatibility
+
+    /**
+     * @brief Checks if conversion is viable for candidate invocation.
+     * @return True if conversion rank is not Incompatible.
+     */
+    [[nodiscard]] constexpr bool IsViable() const noexcept
+    {
+        return rank != ConversionRank::Incompatible;
+    }
+
+    /**
+     * @brief Three-way lexicographical comparison between argument conversions.
+     * @param[in] other Other conversion to compare against.
+     * @return Strong ordering comparison result.
+     */
+    [[nodiscard]] auto operator<=>(const ArgumentConversion& other) const noexcept
+    {
+        if (auto cmp = rank <=> other.rank; cmp != 0)
+        {
+            return cmp;
+        }
+        if (auto cmp = inheritanceDistance <=> other.inheritanceDistance; cmp != 0)
+        {
+            return cmp;
+        }
+        if (auto cmp = isConstAdjustment <=> other.isConstAdjustment; cmp != 0)
+        {
+            return cmp;
+        }
+        return subRank <=> other.subRank;
+    }
+
+    [[nodiscard]] bool operator==(const ArgumentConversion& other) const noexcept = default;
+};
+
+/**
+ * @brief Match penalty categories for argument-to-parameter type conversion (legacy compatibility).
  */
 enum class OverloadMatchPenalty : int
 {
@@ -83,11 +140,12 @@ enum class OverloadMatchPenalty : int
  */
 struct OverloadMatchResult
 {
-    const Symbol* bestCandidate = nullptr;       ///< Best matching function candidate, or nullptr if none
-    int bestScore = 999999;                      ///< Cumulative penalty score of best candidate
-    std::vector<int> bestCostVector;             ///< Argument conversion penalty vector of best candidate
-    bool isAmbiguous = false;                    ///< True if two or more candidates tied for best score
-    std::vector<const Symbol*> viableCandidates; ///< All viable candidates with finite penalty scores
+    const Symbol* bestCandidate = nullptr;           ///< Best matching function candidate, or nullptr if none
+    int bestScore = 999999;                          ///< Cumulative penalty score of best candidate (legacy)
+    std::vector<int> bestCostVector;                 ///< Argument conversion penalty vector of best candidate (legacy)
+    std::vector<ArgumentConversion> bestConversions; ///< Argument conversion ranks of best candidate
+    bool isAmbiguous = false;                        ///< True if two or more candidates tied for best score
+    std::vector<const Symbol*> viableCandidates;     ///< All viable candidates with finite penalty scores
 };
 
 using FunctionSymbol = Symbol;
@@ -141,10 +199,22 @@ class OverloadResolver
 };
 
 /**
+ * @brief Evaluates formal conversion rank for passing an argument of type argType to parameter param.
+ * @param[in] argType Cleaned type of the argument expression.
+ * @param[in] param Target parameter specification.
+ * @param[in] symbolTable Symbol table for hierarchy and conversion lookups.
+ * @param[in] argIsLValue Whether argument is an L-value.
+ * @return Formal ArgumentConversion structure.
+ */
+ArgumentConversion EvaluateArgumentConversion(const std::string& argType, const ParameterInformation& param,
+                                              const SymbolTable& symbolTable, bool argIsLValue = true);
+
+/**
  * @brief Computes the penalty score for passing an argument of type argType to parameter param.
  * @param argType Cleaned type of the argument expression.
  * @param param Target parameter specification.
  * @param symbolTable Symbol table for hierarchy and conversion lookups.
+ * @param argIsLValue Optional flag indicating if argument is an L-value.
  * @return Penalty score integer (0 = exact, >= 999 = incompatible).
  */
 int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& param, const SymbolTable& symbolTable,

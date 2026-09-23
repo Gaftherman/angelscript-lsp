@@ -24,8 +24,7 @@ std::string GetCurrentDateString(std::chrono::system_clock::time_point time)
     localtime_r(&tt, &tmBuf);
 #endif
     char buf[32];
-    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d",
-                  tmBuf.tm_year + 1900, tmBuf.tm_mon + 1, tmBuf.tm_mday);
+    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d", tmBuf.tm_year + 1900, tmBuf.tm_mon + 1, tmBuf.tm_mday);
     return std::string(buf);
 }
 
@@ -68,14 +67,12 @@ std::string_view LevelToString(MultiFileLogLevel level)
 }
 } // namespace
 
-MultiFileLogger::MultiFileLogger()
-    : m_running(true)
+MultiFileLogger::MultiFileLogger() : m_running(true)
 {
     m_worker = std::thread(&MultiFileLogger::WorkerLoop, this);
 }
 
-MultiFileLogger::MultiFileLogger(const std::filesystem::path& logDirectory)
-    : m_running(true)
+MultiFileLogger::MultiFileLogger(const std::filesystem::path& logDirectory) : m_running(true)
 {
     m_worker = std::thread(&MultiFileLogger::WorkerLoop, this);
     Initialize(logDirectory);
@@ -114,10 +111,8 @@ std::string MultiFileLogger::FormatTimestamp(std::chrono::system_clock::time_poi
     localtime_r(&tt, &tmBuf);
 #endif
     char buf[64];
-    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d.%03lld",
-                  tmBuf.tm_year + 1900, tmBuf.tm_mon + 1, tmBuf.tm_mday,
-                  tmBuf.tm_hour, tmBuf.tm_min, tmBuf.tm_sec,
-                  static_cast<long long>(ms.count()));
+    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d.%03lld", tmBuf.tm_year + 1900, tmBuf.tm_mon + 1,
+                  tmBuf.tm_mday, tmBuf.tm_hour, tmBuf.tm_min, tmBuf.tm_sec, static_cast<long long>(ms.count()));
     return std::string(buf);
 }
 
@@ -271,9 +266,7 @@ void MultiFileLogger::WorkerLoop()
         std::vector<LogEntry> batch;
         {
             std::unique_lock<std::mutex> lock(m_mutex);
-            m_cv.wait_for(lock, std::chrono::milliseconds(500), [this]() {
-                return !m_running || !m_queue.empty();
-            });
+            m_cv.wait_for(lock, std::chrono::milliseconds(500), [this]() { return !m_running || !m_queue.empty(); });
 
             while (!m_queue.empty())
             {
@@ -358,8 +351,7 @@ void MultiFileLogger::WriteEntry(const LogEntry& entry)
         *channelSink << line;
     }
 
-    const bool shouldFlush = (entry.level >= MultiFileLogLevel::Warn ||
-                              entry.channel == LogChannel::Crash);
+    const bool shouldFlush = (entry.level >= MultiFileLogLevel::Warn || entry.channel == LogChannel::Crash);
     if (shouldFlush)
     {
         if (m_masterSink.is_open())
@@ -375,12 +367,18 @@ void MultiFileLogger::WriteEntry(const LogEntry& entry)
 
 void MultiFileLogger::FlushAllSinks()
 {
-    if (m_masterSink.is_open()) m_masterSink.flush();
-    if (m_hoverSink.is_open()) m_hoverSink.flush();
-    if (m_analysisSink.is_open()) m_analysisSink.flush();
-    if (m_symbolsSink.is_open()) m_symbolsSink.flush();
-    if (m_crashSink.is_open()) m_crashSink.flush();
-    if (m_overloadSink.is_open()) m_overloadSink.flush();
+    if (m_masterSink.is_open())
+        m_masterSink.flush();
+    if (m_hoverSink.is_open())
+        m_hoverSink.flush();
+    if (m_analysisSink.is_open())
+        m_analysisSink.flush();
+    if (m_symbolsSink.is_open())
+        m_symbolsSink.flush();
+    if (m_crashSink.is_open())
+        m_crashSink.flush();
+    if (m_overloadSink.is_open())
+        m_overloadSink.flush();
 }
 
 void MultiFileLogger::EnsureSinksOpen()
@@ -400,11 +398,17 @@ void MultiFileLogger::EnsureSinksOpen()
 void MultiFileLogger::CloseSinks()
 {
     FlushAllSinks();
-    if (m_masterSink.is_open()) m_masterSink.close();
-    if (m_hoverSink.is_open()) m_hoverSink.close();
-    if (m_analysisSink.is_open()) m_analysisSink.close();
-    if (m_symbolsSink.is_open()) m_symbolsSink.close();
-    if (m_crashSink.is_open()) m_crashSink.close();
-    if (m_overloadSink.is_open()) m_overloadSink.close();
+    if (m_masterSink.is_open())
+        m_masterSink.close();
+    if (m_hoverSink.is_open())
+        m_hoverSink.close();
+    if (m_analysisSink.is_open())
+        m_analysisSink.close();
+    if (m_symbolsSink.is_open())
+        m_symbolsSink.close();
+    if (m_crashSink.is_open())
+        m_crashSink.close();
+    if (m_overloadSink.is_open())
+        m_overloadSink.close();
 }
 } // namespace angel_lsp::utils

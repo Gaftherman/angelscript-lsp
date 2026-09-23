@@ -2561,57 +2561,96 @@ static bool IsQualifiedOrMemberIdentifier(TSNode node, std::string_view sourceCo
     return (parentType == "scoped_identifier") && IsScopedIdentifierQualified(parent, sourceCode);
 }
 
-/**
- * @brief Detects cyclic dependencies in auto initializers via AST inspection.
- * @param[in] valueNode Initializer value syntax node.
- * @param[in] varName Declared variable name.
- * @param[in] sourceCode Document source text.
- * @return True if a cyclic reference is detected; false otherwise.
- */
-static bool IsCyclicAutoDependency(TSNode valueNode, const std::string& varName, std::string_view sourceCode)
+static bool AdvanceCursorSkipChildren(TSTreeCursor& cursor, TSNode rootNode)
 {
-    if (ts_node_is_null(valueNode) || varName.empty())
+    if (ts_tree_cursor_goto_next_sibling(&cursor))
+    {
+        return true;
+    }
+    while (!ts_node_eq(ts_tree_cursor_current_node(&cursor), rootNode) && ts_tree_cursor_goto_parent(&cursor))
+    {
+        if (ts_node_eq(ts_tree_cursor_current_node(&cursor), rootNode))
+        {
+            return false;
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool AdvanceCursor(TSTreeCursor& cursor, TSNode rootNode)
+{
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        return true;
+    }
+    return AdvanceCursorSkipChildren(cursor, rootNode);
+}
+
+static bool IsMatchingLocalDefinition(const Scope* scope, std::string_view name, TSPoint nameStart)
+{
+    if (scope == nullptr)
+    {
+        return false;
+    }
+    const LocalDefinition* def = ResolveInScope(scope, name);
+    return def != nullptr && def->name == name && def->startLine == nameStart.row &&
+           def->startCharacter == nameStart.column;
+}
+
+/**
+ * @brief Detects cyclic dependencies in auto initializers via lexical scope resolution.
+ * @param[in] valueNode Initializer value syntax node.
+ * @param[in] nameNode Declared variable name syntax node.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in] sourceCode Document source text.
+ * @return True if a cyclic reference to the declared variable is detected.
+ */
+static bool IsCyclicAutoDependency(TSNode valueNode, TSNode nameNode, const Scope* scope, std::string_view sourceCode)
+{
+    if (ts_node_is_null(valueNode) || ts_node_is_null(nameNode))
+    {
+        return false;
+    }
+    const std::string varName = NodeText(nameNode, sourceCode);
+    if (varName.empty())
     {
         return false;
     }
 
+    const TSPoint nameStart = ts_node_start_point(nameNode);
     TSTreeCursor cursor = ts_tree_cursor_new(valueNode);
-    bool hasChild = true;
     bool cyclic = false;
 
-    while (hasChild && !cyclic)
+    while (!cyclic)
     {
         TSNode node = ts_tree_cursor_current_node(&cursor);
-        if (std::string_view(ts_node_type(node)) == "identifier" && NodeText(node, sourceCode) == varName)
+        const std::string_view nodeType = ts_node_type(node);
+        if (nodeType == "comment" || nodeType == "string_literal" || nodeType == "concatenated_string")
         {
-            if (!IsQualifiedOrMemberIdentifier(node, sourceCode))
+            if (!AdvanceCursorSkipChildren(cursor, valueNode))
+            {
+                break;
+            }
+            continue;
+        }
+
+        if (nodeType == "identifier" && NodeText(node, sourceCode) == varName &&
+            !IsQualifiedOrMemberIdentifier(node, sourceCode))
+        {
+            if (scope == nullptr || IsMatchingLocalDefinition(scope, varName, nameStart))
             {
                 cyclic = true;
                 break;
             }
         }
 
-        if (ts_tree_cursor_goto_first_child(&cursor))
+        if (!AdvanceCursor(cursor, valueNode))
         {
-            continue;
-        }
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            continue;
-        }
-        hasChild = false;
-        while (!ts_node_eq(ts_tree_cursor_current_node(&cursor), valueNode) &&
-               ts_tree_cursor_goto_parent(&cursor))
-        {
-            if (ts_node_eq(ts_tree_cursor_current_node(&cursor), valueNode))
-            {
-                break;
-            }
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                hasChild = true;
-                break;
-            }
+            break;
         }
     }
     ts_tree_cursor_delete(&cursor);
@@ -2667,13 +2706,12 @@ void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& reque
         return;
     }
 
-    if (IsCyclicAutoDependency(valueNode, varName, request.sourceCode))
+    const Scope* scope = ResolveNodeScope(child, request);
+    if (IsCyclicAutoDependency(valueNode, nameNode, scope, request.sourceCode))
     {
         EmitAtNode(valueNode, ctx, "as-err-cyclic-auto-dependency", varName);
         return;
     }
-
-    const Scope* scope = ResolveNodeScope(child, request);
     const std::string rhsType =
         ResolveExpressionType(valueNode, {scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri});
 

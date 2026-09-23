@@ -13,7 +13,6 @@ namespace angel_lsp::features
 namespace
 {
 
-
 /**
  * @brief Checks whether a definition's declaring scope is inside any function/method/lambda body.
  * @param[in] defScope Definition declaring scope.
