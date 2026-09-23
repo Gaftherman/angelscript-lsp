@@ -4,6 +4,20 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.2-exp.1] - 2026-09-23
+
+### Reliability, Scope Recursion Protection & Multi-File Logging
+
+- Scope Recursion & OOM Protection:
+  - Added bounded depth limit (`kMaxScopeDepth = 32`) and non-recursive BFS in `ScopeTree` and `HoverHandler` to eliminate stack overflow and out-of-memory crashes on deeply nested and cyclic scopes.
+  - Hardened symbol resolution and hover formatting against cyclic container hierarchies.
+- Asynchronous Multi-File Disk Logger:
+  - Added multi-file disk logger (`MultiFileLogger`) routing isolated channels (`master.log`, `hover.log`, `analysis.log`, `symbols.log`, `crash.log`) with millisecond timestamps to `.vscode/lsp/logs-YYYY-MM-DD/`.
+  - Non-blocking lock-free queue with automatic 500ms background flush and immediate disk flush on warnings, errors, and fatal panics.
+- Client Crash Recovery & Logs Folder Command:
+  - Intercepted server crashes in `client/src/extension.ts` without crashing VS Code.
+  - Added notification action and command `angelscript.openLogsFolder` to reveal the latest logs directory in the OS file explorer.
+
 ## [0.8.2] - 2026-09-23
 
 ### Semantic Analysis Disambiguation & Sven Co-op Pattern Support
