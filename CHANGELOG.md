@@ -4,6 +4,17 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.1] - 2026-09-22
+
+### Semantic Analysis & Fluent Method Chaining Enhancements
+
+- Fluent Self-Reference Return Analysis:
+  - Allowed methods returning self-references (e.g. `Type& Method()` like `string& ToLowercase()`) to be called on `const` receivers and `const &in` parameters without emitting false-positive `as-err-const-method-required`.
+  - Preserved unmodified original Sven Co-op and engine stub signatures in `predefined/sven.as.predefined`.
+- Invariant Test Suites:
+  - `ConstCheckerTest`: Added randomized invariant testing asserting fluent self-reference returning methods on const objects.
+  - `SvenCoopScriptReproductionTest`: Added end-to-end integration tests reproducing namespace scope lookups, generic subscript unpacking, and const method calling patterns.
+
 ## [0.8.0] - 2026-09-22
 
 ### Runtime Verification Harnesses & Semantic Parity Remediation
