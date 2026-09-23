@@ -155,8 +155,7 @@ class BudgetExceededException : public std::runtime_error
     explicit BudgetExceededException(size_t visits, size_t maxAllowed)
         : std::runtime_error("AST traversal budget exceeded: " + std::to_string(visits) +
                              " visits exceeds ceiling of " + std::to_string(maxAllowed)),
-          m_visits(visits),
-          m_maxAllowed(maxAllowed)
+          m_visits(visits), m_maxAllowed(maxAllowed)
     {
     }
 
@@ -212,8 +211,7 @@ class TraversalBudget
      */
     explicit TraversalBudget(size_t namedNodeCount, double multiplier = 3.0)
         : m_namedNodeCount(namedNodeCount),
-          m_maxAllowed(static_cast<size_t>(static_cast<double>(namedNodeCount) * multiplier)),
-          m_currentVisits(0)
+          m_maxAllowed(static_cast<size_t>(static_cast<double>(namedNodeCount) * multiplier)), m_currentVisits(0)
     {
     }
 
@@ -222,8 +220,7 @@ class TraversalBudget
      * @param[in] root Root node of the AST.
      * @param[in] multiplier Visit multiplier relative to named nodes (defaults to 3.0).
      */
-    explicit TraversalBudget(TSNode root, double multiplier = 3.0)
-        : TraversalBudget(CountNamedNodes(root), multiplier)
+    explicit TraversalBudget(TSNode root, double multiplier = 3.0) : TraversalBudget(CountNamedNodes(root), multiplier)
     {
     }
 
@@ -314,4 +311,3 @@ class TraversalBudget
     size_t m_currentVisits = 0;
 };
 } // namespace angel_lsp::analysis
-

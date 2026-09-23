@@ -66,4 +66,3 @@ void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)
  */
 std::vector<const Symbol*> FilterMatchingArityCandidates(const std::vector<Symbol>& candidates, uint32_t argumentCount);
 } // namespace angel_lsp::analysis
-

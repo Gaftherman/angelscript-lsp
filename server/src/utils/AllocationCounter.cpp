@@ -31,7 +31,9 @@ std::atomic<ScopedAllocationCounter::TableCloneProvider> s_tableCloneProvider{nu
  * @param[in] lineNumber Source line number where allocation originated.
  * @return Non-zero integer to allow allocation to proceed.
  */
-#define CRT_HOOK_ARGS int allocType, void* userData, size_t size, int blockType, long requestNumber, const unsigned char* filename, int lineNumber
+#define CRT_HOOK_ARGS                                                                                                  \
+    int allocType, void *userData, size_t size, int blockType, long requestNumber, const unsigned char *filename,      \
+        int lineNumber
 
 int __cdecl CrtAllocationHook(CRT_HOOK_ARGS)
 {
@@ -68,11 +70,8 @@ uint64_t QueryTableClones() noexcept
 } // namespace
 
 ScopedAllocationCounter::ScopedAllocationCounter(bool enable)
-    : m_wasActive(t_trackingActive),
-      m_startAllocations(t_allocCount),
-      m_startDeallocations(t_deallocCount),
-      m_startBytes(t_allocBytes),
-      m_startTableClones(QueryTableClones())
+    : m_wasActive(t_trackingActive), m_startAllocations(t_allocCount), m_startDeallocations(t_deallocCount),
+      m_startBytes(t_allocBytes), m_startTableClones(QueryTableClones())
 {
 #if defined(_MSC_VER) && defined(_DEBUG)
     if (s_hookRefCount.fetch_add(1, std::memory_order_seq_cst) == 0)

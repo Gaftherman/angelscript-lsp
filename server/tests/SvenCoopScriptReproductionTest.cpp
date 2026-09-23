@@ -62,7 +62,8 @@ struct SvenTestContext
      * @param[in] fileUri Virtual document URI.
      * @return List of generated diagnostics.
      */
-    std::vector<Diagnostic> Analyze(const std::string& scriptCode, const std::string& fileUri = "file:///IsPluginInstalled.as")
+    std::vector<Diagnostic> Analyze(const std::string& scriptCode,
+                                    const std::string& fileUri = "file:///IsPluginInstalled.as")
     {
         collector.CollectSymbols(fileUri, scriptCode, parser, table);
 
@@ -98,8 +99,8 @@ struct SvenTestContext
             scopeIndex.SetScopeTree(fileUri, std::move(rootScope));
         }
         TSTree* tree = parser.Parse(scriptCode);
-        angel_lsp::features::HoverRequest req{fileUri, scriptCode, tree, table, scopeIndex,
-                                              lsp::Position{line, character}};
+        angel_lsp::features::HoverRequest req{fileUri, scriptCode, tree,
+                                              table,   scopeIndex, lsp::Position{line, character}};
         auto res = angel_lsp::features::GetHover(req);
         if (tree)
         {
@@ -116,8 +117,7 @@ struct SvenTestContext
      * @param[in] fileUri Virtual document URI.
      * @return Vector of completion items.
      */
-    std::vector<lsp::CompletionItem> CompleteAt(const std::string& scriptCode, uint32_t line,
-                                                uint32_t character,
+    std::vector<lsp::CompletionItem> CompleteAt(const std::string& scriptCode, uint32_t line, uint32_t character,
                                                 const std::string& fileUri = "file:///IsPluginInstalled.as")
     {
         collector.CollectSymbols(fileUri, scriptCode, parser, table);
@@ -127,8 +127,8 @@ struct SvenTestContext
             scopeIndex.SetScopeTree(fileUri, std::move(rootScope));
         }
         TSTree* tree = parser.Parse(scriptCode);
-        angel_lsp::features::CompletionRequest req{fileUri, scriptCode, tree, table, scopeIndex,
-                                                   lsp::Position{line, character}};
+        angel_lsp::features::CompletionRequest req{fileUri, scriptCode, tree,
+                                                   table,   scopeIndex, lsp::Position{line, character}};
         auto res = angel_lsp::features::GetCompletion(req);
         if (tree)
         {
@@ -211,14 +211,13 @@ void TestInvalidAccess()
 TEST_CASE("SvenCoopScriptReproduction - Hover on global identifier inside namespace")
 {
     SvenTestContext ctx;
-    const std::string script =
-        "namespace Server\n"
-        "{\n"
-        "    void Test()\n"
-        "    {\n"
-        "        auto p = g_PluginManager.GetPluginList();\n"
-        "    }\n"
-        "}\n";
+    const std::string script = "namespace Server\n"
+                               "{\n"
+                               "    void Test()\n"
+                               "    {\n"
+                               "        auto p = g_PluginManager.GetPluginList();\n"
+                               "    }\n"
+                               "}\n";
 
     auto hover = ctx.HoverAt(script, 4, 20);
     REQUIRE(hover.has_value());
@@ -230,12 +229,11 @@ TEST_CASE("SvenCoopScriptReproduction - Hover on global identifier inside namesp
 TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on subscripted array element")
 {
     SvenTestContext ctx;
-    const std::string script =
-        "void Test()\n"
-        "{\n"
-        "    array<string>@ pluginList = g_PluginManager.GetPluginList();\n"
-        "    string s = pluginList[0].ToLowercase();\n"
-        "}\n";
+    const std::string script = "void Test()\n"
+                               "{\n"
+                               "    array<string>@ pluginList = g_PluginManager.GetPluginList();\n"
+                               "    string s = pluginList[0].ToLowercase();\n"
+                               "}\n";
 
     auto hover = ctx.HoverAt(script, 3, 32);
     REQUIRE(hover.has_value());
@@ -243,12 +241,11 @@ TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on subscripted arra
     REQUIRE(content != nullptr);
     CHECK(content->value.find("ToLowercase") != std::string::npos);
 
-    const std::string completionScript =
-        "void Test()\n"
-        "{\n"
-        "    array<string>@ pluginList = g_PluginManager.GetPluginList();\n"
-        "    pluginList[0].\n"
-        "}\n";
+    const std::string completionScript = "void Test()\n"
+                                         "{\n"
+                                         "    array<string>@ pluginList = g_PluginManager.GetPluginList();\n"
+                                         "    pluginList[0].\n"
+                                         "}\n";
 
     auto items = ctx.CompleteAt(completionScript, 3, 18);
     CHECK(!items.empty());
@@ -256,4 +253,3 @@ TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on subscripted arra
                                       [](const lsp::CompletionItem& item) { return item.label == "ToLowercase"; });
     CHECK(hasToLowercase);
 }
-

@@ -449,8 +449,7 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
     LoadPredefinedIncludes(content, filePath, ctx);
 }
 
-void Server::LoadPredefinedIncludes(const std::string& content, const std::string& filePath,
-                                    PredefinedLoadContext& ctx)
+void Server::LoadPredefinedIncludes(const std::string& content, const std::string& filePath, PredefinedLoadContext& ctx)
 {
     std::vector<std::string> searchDirs;
     if (const auto dirs = SearchDirectories())
@@ -468,8 +467,8 @@ void Server::LoadPredefinedIncludes(const std::string& content, const std::strin
 
     for (const auto& inc : angel_lsp::utils::IncludeResolver::ExtractIncludes(content))
     {
-        std::string resolved = angel_lsp::utils::IncludeResolver::ResolveIncludePath(
-            angel_lsp::utils::IncludeResolveRequest{
+        std::string resolved =
+            angel_lsp::utils::IncludeResolver::ResolveIncludePath(angel_lsp::utils::IncludeResolveRequest{
                 .includePath = inc.rawPath,
                 .currentFilePath = filePath,
                 .searchDirectories = searchDirs,

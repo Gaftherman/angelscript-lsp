@@ -36,8 +36,8 @@ inline constexpr std::array<std::string_view, 12> k_numeric = {
 
 /** @brief Every primitive the VM has, `void` included. */
 inline constexpr std::array<std::string_view, 14> k_all = {
-    "int",    "int8",   "int16", "int32",  "int64", "uint", "uint8", "uint16",
-    "uint32", "uint64", "float", "double", "bool",  "void",
+    "int",    "int8",   "int16",  "int32", "int64",  "uint", "uint8",
+    "uint16", "uint32", "uint64", "float", "double", "bool", "void",
 };
 
 [[nodiscard]] constexpr bool IsInteger(std::string_view name) noexcept

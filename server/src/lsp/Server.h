@@ -741,8 +741,7 @@ class Server
      * @param[in] filePath Path of the predefined stub on disk.
      * @param[in,out] ctx Predefined loading context.
      */
-    void LoadPredefinedIncludes(const std::string& content, const std::string& filePath,
-                                PredefinedLoadContext& ctx);
+    void LoadPredefinedIncludes(const std::string& content, const std::string& filePath, PredefinedLoadContext& ctx);
 
     /**
      * @brief Recursively loads and indexes a predefined stub with cycle detection.

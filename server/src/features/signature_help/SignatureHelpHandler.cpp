@@ -590,9 +590,9 @@ void AppendCandidateSignature(std::vector<lsp::SignatureInformation>& signatures
 
     lsp::SignatureInformation sigInfo;
     sigInfo.label = FormatSignatureLabel(*symPtr);
-    const std::vector<analysis::ParameterInformation>* parameters =
-        (symPtr->type == analysis::SymbolType::Function) ? &symPtr->GetFunction().parameters
-                                                         : &symPtr->GetFuncdef().parameters;
+    const std::vector<analysis::ParameterInformation>* parameters = (symPtr->type == analysis::SymbolType::Function)
+                                                                        ? &symPtr->GetFunction().parameters
+                                                                        : &symPtr->GetFuncdef().parameters;
 
     if (parameters && !parameters->empty())
     {
@@ -608,8 +608,7 @@ void AppendCandidateSignature(std::vector<lsp::SignatureInformation>& signatures
  * @param[in] candidateSymbols Candidate function or funcdef symbols.
  * @return List of LSP signature entries.
  */
-template <typename Range>
-std::vector<lsp::SignatureInformation> BuildSignatureList(const Range& candidateSymbols)
+template <typename Range> std::vector<lsp::SignatureInformation> BuildSignatureList(const Range& candidateSymbols)
 {
     std::vector<lsp::SignatureInformation> signatures;
     signatures.reserve(std::size(candidateSymbols));
