@@ -246,12 +246,12 @@ TEST_CASE("SvenCoopRegression - WorkspaceIncludeGraph GetForwardClosure isolated
     std::filesystem::remove_all(tempDir, ec);
 }
 
-TEST_CASE("SvenCoopRegression - Primitive char recognition")
+TEST_CASE("SvenCoopRegression - char is not a built-in primitive")
 {
-    CHECK(parser::primitives::IsInteger("char"));
-    CHECK(parser::primitives::IsNumeric("char"));
-    CHECK(parser::primitives::IsPrimitive("char"));
-    CHECK(parser::primitives::IsNonNullable("char"));
+    CHECK_FALSE(parser::primitives::IsInteger("char"));
+    CHECK_FALSE(parser::primitives::IsNumeric("char"));
+    CHECK_FALSE(parser::primitives::IsPrimitive("char"));
+    CHECK_FALSE(parser::primitives::IsNonNullable("char"));
 }
 
 TEST_CASE("SvenCoopRegression - Empty source code parsing returns valid tree without crashing")

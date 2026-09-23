@@ -23,14 +23,14 @@ using namespace angel_lsp::parser;
 TEST_SUITE("PrimitiveCastAndContextualKeywords")
 {
     /**
-     * @brief Verifies that constructor-style primitive casting like char(uint8) resolves type correctly.
+     * @brief Verifies that constructor-style primitive casting like int(uint8) resolves type correctly.
      */
     TEST_CASE("PrimitiveCast - Resolves constructor-style primitive casts")
     {
         const std::string funcName = test::GenerateRandomSymbolName("CastFunc");
         const std::string code = "void " + funcName + "(uint8 val)\n" +
                                  "{\n" +
-                                 "    char(val);\n" +
+                                 "    int(val);\n" +
                                  "}\n";
 
         AngelScriptParser parser;
@@ -50,7 +50,8 @@ TEST_SUITE("PrimitiveCastAndContextualKeywords")
         TSNode callNode{};
         auto search = [&callNode](TSNode node, auto& self) -> void
         {
-            if (std::string_view(ts_node_type(node)) == "call_expression")
+            const std::string_view nodeType(ts_node_type(node));
+            if (nodeType == "functional_cast_expression" || nodeType == "call_expression")
             {
                 callNode = node;
                 return;
@@ -73,7 +74,7 @@ TEST_SUITE("PrimitiveCastAndContextualKeywords")
         ExpressionTypeContext ctx{scope, table, code, fileUri};
         std::string exprType = ResolveExpressionType(callNode, ctx);
 
-        CHECK(exprType == "char");
+        CHECK(exprType == "int");
 
         ts_tree_delete(tree);
     }

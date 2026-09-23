@@ -22,22 +22,22 @@ namespace angel_lsp::parser::primitives
 {
 /** @brief The integers, signed and unsigned. `int32`/`uint32` are the explicit spellings of
  *         `int`/`uint`; the parser returns whichever the source wrote, so both are listed. */
-inline constexpr std::array<std::string_view, 11> k_integers = {
-    "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "char",
+inline constexpr std::array<std::string_view, 10> k_integers = {
+    "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64",
 };
 
 /** @brief The floating point types. */
 inline constexpr std::array<std::string_view, 2> k_floats = {"float", "double"};
 
 /** @brief Everything that carries a number. */
-inline constexpr std::array<std::string_view, 13> k_numeric = {
-    "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float", "double", "char",
+inline constexpr std::array<std::string_view, 12> k_numeric = {
+    "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float", "double",
 };
 
 /** @brief Every primitive the VM has, `void` included. */
-inline constexpr std::array<std::string_view, 15> k_all = {
+inline constexpr std::array<std::string_view, 14> k_all = {
     "int",    "int8",   "int16", "int32",  "int64", "uint", "uint8", "uint16",
-    "uint32", "uint64", "float", "double", "bool",  "void", "char",
+    "uint32", "uint64", "float", "double", "bool",  "void",
 };
 
 [[nodiscard]] constexpr bool IsInteger(std::string_view name) noexcept
