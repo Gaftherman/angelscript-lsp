@@ -240,8 +240,27 @@ struct MethodLookup
 {
     bool found = false; ///< False means no declaration was visible. Stay silent.
     bool hasConstOverload = false;
+    bool returnsSelfReference =
+        false; ///< True if a declaration returns a reference to its own type (e.g. Type& Method()).
     std::string declaringClass;
 };
+
+/**
+ * @brief Checks whether a method signature returns a reference to its owning type.
+ *
+ * Methods returning `Type&` (e.g., `string& ToLowercase()`) are fluent / chaining operations.
+ * In Sven Co-op stubs and native AngelScript ecosystems, these signatures are registered
+ * returning references and can be invoked on const/read-only parameters for value extraction.
+ *
+ * @param[in] fn Function signature being inspected.
+ * @param[in] owner Name of the owning class.
+ * @return True if the method returns a reference to the owning class.
+ */
+bool IsSelfReferenceReturn(const FunctionSignature& fn, const std::string& owner)
+{
+    const bool isRef = fn.modifiers.isReturnReference || (!fn.returnType.empty() && fn.returnType.back() == '&');
+    return isRef && (CleanBaseType(fn.returnType) == owner || CleanBaseType(fn.returnBaseTypeName) == owner);
+}
 
 /**
  * @brief Looks for a method by name across a type's whole visible hierarchy.
@@ -279,7 +298,9 @@ MethodLookup FindMethod(const std::string& typeName, const std::string& methodNa
                 result.found = true;
                 result.declaringClass = owner;
             }
-            result.hasConstOverload = result.hasConstOverload || sym.GetFunction().modifiers.isConst;
+            const auto& fn = sym.GetFunction();
+            result.hasConstOverload = result.hasConstOverload || fn.modifiers.isConst;
+            result.returnsSelfReference = result.returnsSelfReference || IsSelfReferenceReturn(fn, owner);
         }
     }
     return result;
@@ -423,7 +444,7 @@ void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope*
 
     const std::string methodName = NodeText(memberNode, request.sourceCode);
     const MethodLookup method = FindMethod(objectType, methodName, table);
-    if (!method.found || method.hasConstOverload)
+    if (!method.found || method.hasConstOverload || method.returnsSelfReference)
     {
         return;
     }

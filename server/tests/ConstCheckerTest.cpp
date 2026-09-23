@@ -7,6 +7,7 @@
 #include "analysis/SymbolTable.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
+#include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
@@ -179,6 +180,21 @@ TEST_CASE("ConstChecker - A non-const method through a mutable object is left al
 {
     const std::string code = "class Entity { int v; void Mutate() { v = 1; } }\n"
                              "void Take(Entity &inout e) { e.Mutate(); }\n";
+
+    CHECK(HasNoConstFinding(AnalyzeConstSnippet(code)));
+}
+
+TEST_CASE("ConstChecker - A method returning self-reference is allowed on a const object")
+{
+    // In Sven Co-op and AngelScript bindings, methods returning Type& (like string& ToLowercase())
+    // are fluent/chaining operations. Calling them on const objects/parameters does not emit
+    // as-err-const-method-required.
+    const std::string typeName = angel_lsp::test::GenerateRandomSymbolName("FluentType");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Transform");
+    const std::string code = "class " + typeName + " { " + typeName + "& " + methodName +
+                             "() { return this; } }\n"
+                             "void Take(const " +
+                             typeName + " &in obj) { " + typeName + " res = obj." + methodName + "(); }\n";
 
     CHECK(HasNoConstFinding(AnalyzeConstSnippet(code)));
 }

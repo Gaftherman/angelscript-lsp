@@ -5418,9 +5418,9 @@ class string {
 	//Returns a substring of this string.;
 	string SubString(uint startIndex = 0, uint count = String::INVALID_INDEX) const;
 	//Converts this string to upper case.;
-	string ToUppercase() const;
+	string& ToUppercase();
 	//Converts this string to lower case.;
-	string ToLowercase() const;
+	string& ToLowercase();
 	//Get the next token of the given string.\nReturns String::NO_MORE_TOKENS if none remaining.;
 	string Tokenize(const string& in delimiter) const;
 	//Find the first instance of the given string, searching in reverse.\nReturns String::INVALID_INDEX if not found.;
