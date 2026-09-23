@@ -17,7 +17,9 @@
 #include "utils/Utils.h"
 #include <fstream>
 #include <spdlog/fmt/fmt.h>
+#include <sstream>
 #include <unordered_set>
+#include <vector>
 
 namespace angel_lsp
 {
@@ -1047,9 +1049,10 @@ MixinSymbolLocation ResolveMixinLocation(const angel_lsp::analysis::Symbol* mixi
     if (std::holds_alternative<angel_lsp::analysis::ClassSignature>(mixinSym->signature))
     {
         const auto& clsSig = std::get<angel_lsp::analysis::ClassSignature>(mixinSym->signature);
-        if (!clsSig.bases.empty())
+        const std::vector<std::string> bases = clsSig.bases;
+        if (!bases.empty())
         {
-            loc.resolvedBaseClass = fmt::format(" | Base: {}", fmt::join(clsSig.bases, ", "));
+            loc.resolvedBaseClass = fmt::format(" | Base: {}", fmt::join(bases, ", "));
         }
     }
     return loc;
@@ -1128,7 +1131,9 @@ std::string Server::GenerateVirtualMixinDocument(std::string_view uri)
             std::ifstream file(filePath, std::ios::binary);
             if (file.is_open())
             {
-                sourceText.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                std::ostringstream ss;
+                ss << file.rdbuf();
+                sourceText = ss.str();
             }
         }
     }

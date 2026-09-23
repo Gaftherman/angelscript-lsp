@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <spdlog/fmt/fmt.h>
+#include <sstream>
 
 namespace angel_lsp
 {
@@ -424,8 +425,9 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
         return;
     }
 
-    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    content = angel_lsp::utils::SanitizePredefinedContent(content);
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    std::string content = angel_lsp::utils::SanitizePredefinedContent(ss.str());
 
     if (!ClaimPredefinedFile(uri, forceReload))
     {

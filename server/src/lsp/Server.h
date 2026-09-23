@@ -481,12 +481,6 @@ class Server
 
     void AnalyzeConfiguredModules();
 
-    /**
-     * @brief What is open, readable from any thread.
-     *
-     * m_openDocuments belongs to the message loop and is touched in two dozen places without a
-
-
     /** @brief True when the snapshot holds this document. Safe from any thread. */
     [[nodiscard]] bool IsOpenElsewhere(const std::string& uriStr) const;
 

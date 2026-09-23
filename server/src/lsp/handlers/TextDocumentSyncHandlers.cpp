@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iterator>
 #include <spdlog/fmt/fmt.h>
+#include <sstream>
 #include <tree_sitter/api.h>
 
 namespace angel_lsp
@@ -483,7 +484,9 @@ bool Server::RestoreClosedModuleFile(const std::string& uriStr, const std::strin
     std::ifstream file(path, std::ios::binary);
     if (file.is_open())
     {
-        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        std::ostringstream ss;
+        ss << file.rdbuf();
+        const std::string content = ss.str();
         {
             std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
             m_publishedForModules.insert(uriStr);
