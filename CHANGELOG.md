@@ -4,6 +4,26 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.4] - 2026-09-24
+
+### Architecture Hardening, Concurrency Resilience & Deterministic Testing
+
+- Layer Matrix Architecture & Modular Encapsulation:
+  - Enforced strict Layer Matrix governance via automated checker (`check-layer-includes.py`).
+  - Extracted semantic resolution services (`TargetResolution`, `TypeResolution`, `ScopeLookup`, `OverloadResolver`) to Layer 2 (`analysis/`), eliminating Layer 3 cross-dependencies across `references`, `rename`, `document_highlight`, and `code_action`.
+- Thread Safety & AST Lifetime Protection:
+  - Eliminated unprotected raw AST pointer escapes in `DocumentStore::GetTree()` in favor of ref-counted safe handles (`std::shared_ptr<const document::Document>`) and thread-local copies (`ts_tree_copy()`).
+  - Enforced mandatory safe AST navigation (`!ts_node_is_null(node)`) across all query passes and handlers.
+  - Hardened secondary threads (`AnalysisScheduler`, `WorkspaceScan`) with top-level try/catch handlers logging fatal errors to disk and shutting down gracefully without invoking `std::terminate()`.
+- Deterministic Concurrency & Anti-Flakiness Testing Invariant:
+  - Banned arbitrary sleep calls (`std::this_thread::sleep_for`), thread spinning (`yield`), and timing thresholds in test suites.
+  - Converted multi-threaded synchronization to event-driven C++20 primitives (`std::latch`, `std::promise`/`future`, `std::binary_semaphore`) for instantaneous, non-flaky execution.
+  - Externalized test watchdog timeouts to CMake (`set_tests_properties(angel_lsp_tests PROPERTIES TIMEOUT 60)`).
+- Anti-Monolith & Complexity Decomposition:
+  - Decomposed complex handlers (`CodeActionHandler`, `QueryRegistryTest`) into cohesive single-responsibility sub-units adhering to <= 70 lines, <= 15 CCN, and <= 4 parameters.
+- Frontend Fuzzing & Telemetry:
+  - Added live rapid fuzzer and latency benchmark suite in TypeScript client measuring live reaction times (min, avg, p95) across LSP operations.
+
 ## [0.8.3-exp.3] - 2026-09-23
 
 ### Formal Conversion Rank Lattice, Pairwise Partial Ordering & Scope Cycle Defense
