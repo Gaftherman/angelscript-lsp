@@ -1312,7 +1312,11 @@ export async function activate(context: ExtensionContext) {
     // out/extension.js, so a test importing this module gets its own empty copy of the map.
     // The same object is returned rather than a copy, so `clientStart` - recorded after activate
     // has already returned - appears in it too.
-    return { activationTimings };
+    return {
+        activationTimings,
+        getClient: () => activeClient(),
+        isClientRunning: () => clientIsRunning(),
+    };
 }
 
 /**
