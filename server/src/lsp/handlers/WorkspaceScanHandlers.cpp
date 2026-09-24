@@ -1,5 +1,6 @@
 #include "lsp/Server.h"
 #include "utils/IncludeResolver.h"
+#include "utils/MultiFileLogger.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Timer.h"
 #include "utils/Utils.h"
@@ -317,59 +318,84 @@ bool Server::LoadAndProcessPredefinedStubs(const std::vector<std::string>& disco
     return !stopToken.stop_requested();
 }
 
-void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
+namespace
 {
-    const std::vector<std::string> workspaceRoots = WorkspaceRoots();
+std::vector<std::string> ConvertWorkspaceRootsToPaths(const std::vector<std::string>& workspaceRoots)
+{
     std::vector<std::string> roots;
     roots.reserve(workspaceRoots.size());
     for (const auto& workspaceRoot : workspaceRoots)
     {
         roots.push_back(angel_lsp::utils::UriToPath(workspaceRoot));
     }
+    return roots;
+}
+} // namespace
 
-    angel_lsp::utils::IncludeResolver::ForgetCanonicalDirectories();
-    BeginWorkspaceProgress("AngelScript: indexing workspace");
-    ReportWorkspaceProgress("Building the include graph", 0);
+void Server::RecoverFromScanFailure(const std::string& err)
+{
+    LogError(err);
+    angel_lsp::utils::MultiFileLogger::Instance().LogCrash(err);
+    SetPredefinedReady(true);
+    m_workspaceScanComplete.store(true);
+    EndWorkspaceProgress("Failed");
+}
 
-    const PhaseTimer scanTimer(m_logger.get(), "workspace scan (total)");
-
-    struct ReanalyseOnExit
+void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
+{
+    try
     {
-        Server* server;
-        ~ReanalyseOnExit()
+        const std::vector<std::string> roots = ConvertWorkspaceRootsToPaths(WorkspaceRoots());
+        angel_lsp::utils::IncludeResolver::ForgetCanonicalDirectories();
+        BeginWorkspaceProgress("AngelScript: indexing workspace");
+        ReportWorkspaceProgress("Building the include graph", 0);
+
+        const PhaseTimer scanTimer(m_logger.get(), "workspace scan (total)");
+
+        struct ReanalyseOnExit
         {
-            server->SetPredefinedReady(true);
-            server->m_workspaceScanComplete.store(true);
-            server->ScheduleOpenDocumentsForReanalysis();
-        }
-    } reanalyseOnExit{this};
+            Server* server;
+            ~ReanalyseOnExit()
+            {
+                server->SetPredefinedReady(true);
+                server->m_workspaceScanComplete.store(true);
+                server->ScheduleOpenDocumentsForReanalysis();
+            }
+        } reanalyseOnExit{this};
 
-    WorkspaceFilesWalkResult walkResult;
-    if (!CollectWorkspaceFiles(roots, stopToken, walkResult))
-    {
-        EndWorkspaceProgress("Cancelled");
-        return;
-    }
-
-    angel_lsp::parser::AngelScriptParser backgroundParser(m_logger.get());
-    if (m_config.features.enablePredefinedLoader)
-    {
-        if (!LoadAndProcessPredefinedStubs(walkResult.discoveredStubPaths, stopToken, backgroundParser))
+        WorkspaceFilesWalkResult walkResult;
+        if (!CollectWorkspaceFiles(roots, stopToken, walkResult))
         {
             EndWorkspaceProgress("Cancelled");
             return;
         }
-    }
-    SetPredefinedReady(true);
 
-    BuildIncludeGraphAndModules(walkResult.allScriptFiles, roots, stopToken, backgroundParser);
-    if (stopToken.stop_requested())
+        angel_lsp::parser::AngelScriptParser backgroundParser(m_logger.get());
+        if (m_config.features.enablePredefinedLoader &&
+            !LoadAndProcessPredefinedStubs(walkResult.discoveredStubPaths, stopToken, backgroundParser))
+        {
+            EndWorkspaceProgress("Cancelled");
+            return;
+        }
+        SetPredefinedReady(true);
+
+        BuildIncludeGraphAndModules(walkResult.allScriptFiles, roots, stopToken, backgroundParser);
+        if (stopToken.stop_requested())
+        {
+            EndWorkspaceProgress("Cancelled");
+            return;
+        }
+
+        EndWorkspaceProgress(fmt::format("{} script file(s) indexed", m_includeGraph.FileCount()));
+    }
+    catch (const std::exception& e)
     {
-        EndWorkspaceProgress("Cancelled");
-        return;
+        RecoverFromScanFailure(fmt::format("Fatal error in workspace scan thread: {}", e.what()));
     }
-
-    EndWorkspaceProgress(fmt::format("{} script file(s) indexed", m_includeGraph.FileCount()));
+    catch (...)
+    {
+        RecoverFromScanFailure("Unknown fatal error in workspace scan thread.");
+    }
 }
 
 void Server::StartWorkspaceScan()

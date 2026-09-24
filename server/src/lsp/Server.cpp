@@ -732,8 +732,9 @@ void Server::HandleNotificationsExit()
 
 lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uriStr, const std::string& text)
 {
-    TSTree* tree = m_documentStore.GetTree(uriStr);
-    int currentVersion = m_documentStore.GetVersion(uriStr);
+    const auto docHandle = m_documentStore.GetDocument(uriStr);
+    TSTree* tree = docHandle ? docHandle->tree.get() : nullptr;
+    int currentVersion = docHandle ? docHandle->version : m_documentStore.GetVersion(uriStr);
 
     analysis::NodeIndex localNodeIndex;
     const analysis::NodeIndex* nodeIndexPtr = nullptr;

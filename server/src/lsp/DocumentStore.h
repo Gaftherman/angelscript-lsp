@@ -106,6 +106,7 @@ class DocumentStore
      * @brief Borrows raw pointer to syntax tree. Caller must NOT delete. Thread-safe.
      * @param uri Canonical URI key.
      * @return Raw TSTree pointer or nullptr.
+     * @warning Prefer GetDocument() over GetTree() to safely retain AST lifetime across concurrent edits.
      */
     [[nodiscard]] TSTree* GetTree(const std::string& uri) const;
 

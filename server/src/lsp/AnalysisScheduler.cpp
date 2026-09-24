@@ -1,4 +1,6 @@
 #include "lsp/AnalysisScheduler.h"
+#include "utils/MultiFileLogger.h"
+#include <exception>
 
 namespace angel_lsp
 {
@@ -321,8 +323,21 @@ void AnalysisScheduler::DrainInFlightWork()
         auto& [uri, entry] = *entryOpt;
         if (m_callback && !m_cancelCurrentAnalysis.load())
         {
-            m_callback(AnalyzeRequest{uri, std::move(entry.text), std::move(entry.tree), entry.version,
-                                      entry.generation, entry.configRevision});
+            try
+            {
+                m_callback(AnalyzeRequest{uri, std::move(entry.text), std::move(entry.tree), entry.version,
+                                          entry.generation, entry.configRevision});
+            }
+            catch (const std::exception& e)
+            {
+                angel_lsp::utils::MultiFileLogger::Instance().LogCrash(
+                    std::string("AnalysisScheduler worker caught exception: ") + e.what());
+            }
+            catch (...)
+            {
+                angel_lsp::utils::MultiFileLogger::Instance().LogCrash(
+                    "AnalysisScheduler worker caught unknown fatal exception.");
+            }
         }
 
         FinishActiveAnalysis();
@@ -331,27 +346,40 @@ void AnalysisScheduler::DrainInFlightWork()
 
 void AnalysisScheduler::RunLoop()
 {
-    for (;;)
+    while (!m_stop.load())
     {
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_cv.wait(lock, [this]() { return m_stop.load() || !m_pending.empty(); });
-
-        if (m_stop.load())
+        try
         {
-            return;
+            std::unique_lock<std::mutex> lock(m_mutex);
+            m_cv.wait(lock, [this]() { return m_stop.load() || !m_pending.empty(); });
+
+            if (m_stop.load())
+            {
+                return;
+            }
+
+            WaitForDebounce(lock);
+
+            if (m_stop.load())
+            {
+                return;
+            }
+
+            m_inFlight.swap(m_pending);
+            lock.unlock();
+
+            DrainInFlightWork();
         }
-
-        WaitForDebounce(lock);
-
-        if (m_stop.load())
+        catch (const std::exception& e)
         {
-            return;
+            angel_lsp::utils::MultiFileLogger::Instance().LogCrash(
+                std::string("AnalysisScheduler::RunLoop caught exception: ") + e.what());
         }
-
-        m_inFlight.swap(m_pending);
-        lock.unlock();
-
-        DrainInFlightWork();
+        catch (...)
+        {
+            angel_lsp::utils::MultiFileLogger::Instance().LogCrash(
+                "AnalysisScheduler::RunLoop caught unknown fatal exception.");
+        }
     }
 }
 } // namespace angel_lsp

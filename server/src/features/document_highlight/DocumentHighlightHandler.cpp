@@ -1251,7 +1251,8 @@ TSNode ResolveRefNodeLeaf(TSNode rootNode, const analysis::LocalReference& ref, 
         for (uint32_t c = 0; c < cCount; ++c)
         {
             TSNode ch = ts_node_child(refNode, c);
-            if (std::string_view(ts_node_type(ch)) == "identifier" && GetNodeText(ch, sourceCode) == ref.name)
+            if (!ts_node_is_null(ch) && std::string_view(ts_node_type(ch)) == "identifier" &&
+                GetNodeText(ch, sourceCode) == ref.name)
             {
                 return ch;
             }

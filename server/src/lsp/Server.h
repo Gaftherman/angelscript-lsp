@@ -712,6 +712,7 @@ class Server
     void StartWorkspaceScan();
 
     void ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken);
+    void RecoverFromScanFailure(const std::string& err);
     /**
      * @brief Reads a predefined stub off disk and indexes it.
      * @param forceReload Re-collect even when this server already owns the file, which is what
