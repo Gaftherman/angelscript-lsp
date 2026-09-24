@@ -1,6 +1,6 @@
 {
   "name": "angelscript-lsp",
-  "displayName": "%configuration.title%",
+  "displayName": "AngelLSP - AngelScript Language Server",
   "description": "%extension.description%",
   "version": "0.8.4",
   "publisher": "Gaftherman",
