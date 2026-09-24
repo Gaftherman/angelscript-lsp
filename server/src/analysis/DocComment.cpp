@@ -119,16 +119,6 @@ std::string ExtractTrailingComment(const std::string& line)
     return "";
 }
 
-int FindPrecedingCommentLine(const std::vector<std::string>& lines, int startLine)
-{
-    int line = startLine;
-    while (line >= 0 && Trim(lines[line]).empty())
-    {
-        line--;
-    }
-    return line;
-}
-
 std::vector<std::string> CollectBlockComment(const std::vector<std::string>& lines, int endLine)
 {
     std::vector<std::string> commentLines;
@@ -161,6 +151,16 @@ std::vector<std::string> CollectLineComments(const std::vector<std::string>& lin
     }
     std::reverse(commentLines.begin(), commentLines.end());
     return commentLines;
+}
+
+int FindPrecedingCommentLine(const std::vector<std::string>& lines, int startLine)
+{
+    int line = startLine;
+    while (line >= 0 && Trim(lines[line]).empty())
+    {
+        line--;
+    }
+    return line;
 }
 
 std::vector<std::string> CollectPrecedingDocComments(const std::vector<std::string>& lines, uint32_t declStartLine)

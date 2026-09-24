@@ -61,6 +61,33 @@ std::string ToLower(const std::string& str)
     return out;
 }
 
+/** @brief Returns true if string contains at least one ASCII alphanumeric character. */
+bool HasAlphanumeric(std::string_view text)
+{
+    return std::any_of(text.begin(), text.end(), [](unsigned char c) { return std::isalnum(c); });
+}
+
+/** @brief Strips trailing stray semicolons from stub comments outside verbatim blocks. */
+std::string StripTrailingStubSemicolon(std::string_view line)
+{
+    std::string s(line);
+    size_t last = s.find_last_not_of(" \t\r\n");
+    if (last == std::string::npos)
+    {
+        return "";
+    }
+    if (s[last] == ';')
+    {
+        size_t prev = s.find_last_not_of(" \t\r\n;", last);
+        if (prev != std::string::npos && (s[prev] == '.' || s[prev] == ')' || s[prev] == ']' || s[prev] == '\"' || s[prev] == '\''))
+        {
+            s.erase(last);
+            TrimTrailing(s);
+        }
+    }
+    return s;
+}
+
 /** @brief Splits text into lines, stripping trailing carriage returns. */
 std::vector<std::string> SplitLines(const std::string& str)
 {
@@ -594,7 +621,7 @@ std::vector<std::string> SplitCommentVerbatimAndNewlines(const std::vector<std::
             auto splitLines = SplitCommentLineOnNewlines(cLine);
             for (auto&& s : splitLines)
             {
-                finalContents.push_back(std::move(s));
+                finalContents.push_back(StripTrailingStubSemicolon(s));
             }
         }
     }
@@ -807,6 +834,11 @@ std::string SplitFirstLineAtDot(std::string& firstLine, size_t dotPos)
     {
         remainder.erase(0, 1);
     }
+    while (!remainder.empty() &&
+           (remainder.back() == ';' || std::isspace(static_cast<unsigned char>(remainder.back()))))
+    {
+        remainder.pop_back();
+    }
     bool hasAlnum = std::any_of(remainder.begin(), remainder.end(), [](unsigned char ch) { return std::isalnum(ch); });
     firstLine = hasAlnum ? remainder : "";
     return briefText;
@@ -857,6 +889,15 @@ std::string ExtractImplicitBrief(std::vector<std::string>& lines)
     }
 
     briefText = RewriteAtInlineCommands(briefText);
+    size_t last = briefText.find_last_not_of(" \t\r\n");
+    if (last != std::string::npos && briefText[last] == ';')
+    {
+        size_t prev = briefText.find_last_not_of(" \t\r\n;", last);
+        if (prev != std::string::npos && (briefText[prev] == '.' || briefText[prev] == ')' || briefText[prev] == ']'))
+        {
+            briefText.erase(last);
+        }
+    }
     return CleanDescriptionLines(briefText);
 }
 
@@ -2011,7 +2052,7 @@ void DispatchSegmentChildNode(TSNode child, const std::string& syntheticDoc, std
     else if (std::strcmp(type, "description") == 0)
     {
         std::string body = RenderDescription(child, syntheticDoc);
-        if (!body.empty())
+        if (!body.empty() && HasAlphanumeric(body))
         {
             blocks.push_back(DocBlock::MakeBody(std::move(body)));
         }
@@ -2032,7 +2073,7 @@ void DispatchSegmentChildNode(TSNode child, const std::string& syntheticDoc, std
     {
         std::string line = std::string(parser::DoxygenParser::GetNodeText(child, syntheticDoc));
         line = CleanDescriptionLines(RewriteAtInlineCommands(line));
-        if (!line.empty())
+        if (!line.empty() && HasAlphanumeric(line))
         {
             if (!blocks.empty() && blocks.back().kind == DocBlockKind::Body)
             {
@@ -2084,7 +2125,7 @@ void AssembleBriefAndBody(std::string briefText, const std::vector<DocBlock>& bl
                           std::vector<std::string>& sections)
 {
     size_t firstBriefBlockIdx = std::string::npos;
-    if (!briefText.empty())
+    if (!briefText.empty() && HasAlphanumeric(briefText))
     {
         sections.push_back(std::move(briefText));
     }
@@ -2092,7 +2133,7 @@ void AssembleBriefAndBody(std::string briefText, const std::vector<DocBlock>& bl
     {
         for (size_t i = 0; i < blocks.size(); ++i)
         {
-            if (blocks[i].kind == DocBlockKind::Brief && !blocks[i].text.empty())
+            if (blocks[i].kind == DocBlockKind::Brief && !blocks[i].text.empty() && HasAlphanumeric(blocks[i].text))
             {
                 sections.push_back(blocks[i].text);
                 firstBriefBlockIdx = i;
@@ -2108,7 +2149,8 @@ void AssembleBriefAndBody(std::string briefText, const std::vector<DocBlock>& bl
             continue;
         }
         const auto& b = blocks[i];
-        if ((b.kind == DocBlockKind::Body || b.kind == DocBlockKind::Brief) && !b.text.empty())
+        if ((b.kind == DocBlockKind::Body || b.kind == DocBlockKind::Brief) && !b.text.empty() &&
+            HasAlphanumeric(b.text))
         {
             sections.push_back(b.text);
         }

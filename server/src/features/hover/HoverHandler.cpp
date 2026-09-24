@@ -1040,10 +1040,53 @@ std::vector<analysis::Symbol> CollectReceiverMemberSymbols(const std::string& re
     return memberSymbols;
 }
 
+/** @brief Gathers and deduplicates doc comments for overload sets, prioritizing resolved call overloads. */
+void CollectOverloadDocs(const HoverRequest& request, const std::vector<analysis::Symbol>& symbols,
+                         const std::optional<analysis::Symbol>& best, std::vector<std::string>& docs)
+{
+    if (best)
+    {
+        std::string d = DocCommentForSymbol(request, *best);
+        if (!d.empty())
+        {
+            docs.push_back(std::move(d));
+            return;
+        }
+        for (const auto& sym : symbols)
+        {
+            std::string fallbackDoc = DocCommentForSymbol(request, sym);
+            if (!fallbackDoc.empty())
+            {
+                docs.push_back(std::move(fallbackDoc));
+                return;
+            }
+        }
+        return;
+    }
+
+    for (const auto& sym : symbols)
+    {
+        std::string d = DocCommentForSymbol(request, sym);
+        if (d.empty())
+        {
+            continue;
+        }
+        std::string trimmedD = CollapseWhitespace(d);
+        bool alreadyPresent = std::any_of(docs.begin(), docs.end(), [&](const std::string& existing) {
+            return CollapseWhitespace(existing) == trimmedD;
+        });
+        if (!alreadyPresent)
+        {
+            docs.push_back(std::move(d));
+        }
+    }
+}
+
 std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& memberSymbols,
                                             std::string_view accessorPropertyType, const HoverQueryContext& ctx)
 {
-    if (auto best = ResolveCallOverload(ctx.node, memberSymbols, ctx.request, ctx.scope))
+    auto best = ResolveCallOverload(ctx.node, memberSymbols, ctx.request, ctx.scope);
+    if (best)
     {
         auto it = std::find_if(memberSymbols.begin(), memberSymbols.end(), [&](const analysis::Symbol& s)
                                { return s.name == best->name && analysis::HasSameParameterList(s, *best); });
@@ -1084,14 +1127,7 @@ std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& membe
     oss << "\n```";
 
     std::vector<std::string> docs;
-    for (const auto& sym : memberSymbols)
-    {
-        std::string d = DocCommentForSymbol(ctx.request, sym);
-        if (!d.empty() && std::find(docs.begin(), docs.end(), d) == docs.end())
-        {
-            docs.push_back(std::move(d));
-        }
-    }
+    CollectOverloadDocs(ctx.request, memberSymbols, best, docs);
     for (const auto& d : docs)
     {
         oss << "\n\n" << d;
@@ -1572,7 +1608,8 @@ std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
 lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::string_view accessorPropertyType,
                               const HoverQueryContext& ctx)
 {
-    if (auto best = ResolveCallOverload(ctx.node, symbols, ctx.request, ctx.scope))
+    auto best = ResolveCallOverload(ctx.node, symbols, ctx.request, ctx.scope);
+    if (best)
     {
         auto it = std::find_if(symbols.begin(), symbols.end(), [&](const analysis::Symbol& s)
                                { return s.name == best->name && analysis::HasSameParameterList(s, *best); });
@@ -1614,14 +1651,7 @@ lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::strin
     oss << "\n```";
 
     std::vector<std::string> docs;
-    for (const auto& sym : symbols)
-    {
-        std::string d = DocCommentForSymbol(ctx.request, sym);
-        if (!d.empty() && std::find(docs.begin(), docs.end(), d) == docs.end())
-        {
-            docs.push_back(std::move(d));
-        }
-    }
+    CollectOverloadDocs(ctx.request, symbols, best, docs);
     for (const auto& d : docs)
     {
         oss << "\n\n" << d;
@@ -1630,6 +1660,109 @@ lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::strin
     ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
 }
+
+/**
+ * @brief Finds the enclosing lambda_expression node for a given node within shallow depth.
+ * @param[in] node AST node.
+ * @return Enclosing lambda_expression node, or null node if not within a lambda header.
+ */
+TSNode FindEnclosingLambda(TSNode node)
+{
+    TSNode cur = node;
+    for (int depth = 0; depth < 5 && !ts_node_is_null(cur); ++depth)
+    {
+        if (std::string_view(ts_node_type(cur)) == "lambda_expression")
+        {
+            return cur;
+        }
+        cur = ts_node_parent(cur);
+    }
+    return TSNode{};
+}
+
+/**
+ * @brief Formats an untyped or fallback lambda signature from its parameter list node.
+ * @param[in] lambdaNode Lambda AST node.
+ * @param[in] sourceCode Document source string.
+ * @param[out] oss Output stream.
+ */
+void FormatLambdaParameters(TSNode lambdaNode, std::string_view sourceCode, std::ostringstream& oss)
+{
+    oss << "(anonymous function) function";
+    TSNode paramListNode = ts_node_child_by_field_name(lambdaNode, "parameters", 10);
+    if (ts_node_is_null(paramListNode))
+    {
+        uint32_t count = ts_node_named_child_count(lambdaNode);
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            TSNode child = ts_node_named_child(lambdaNode, i);
+            if (std::string_view(ts_node_type(child)) == "parameter_list")
+            {
+                paramListNode = child;
+                break;
+            }
+        }
+    }
+    if (!ts_node_is_null(paramListNode))
+    {
+        uint32_t sb = ts_node_start_byte(paramListNode);
+        uint32_t eb = ts_node_end_byte(paramListNode);
+        if (sb < eb && eb <= sourceCode.size())
+        {
+            oss << sourceCode.substr(sb, eb - sb);
+            return;
+        }
+    }
+    oss << "()";
+}
+
+/**
+ * @brief Attempts to construct hover information when hovering on an anonymous function / lambda header.
+ * @param[in] ctx Hover query context.
+ * @return Optional hover tooltip if hovering on a lambda keyword or header.
+ */
+std::optional<lsp::Hover> TryHoverLambda(const HoverQueryContext& ctx)
+{
+    if (ctx.nodeText != "function")
+    {
+        return std::nullopt;
+    }
+
+    TSNode lambdaNode = FindEnclosingLambda(ctx.node);
+    if (ts_node_is_null(lambdaNode))
+    {
+        return std::nullopt;
+    }
+
+    utils::HighResTimer fmtTimer;
+    std::ostringstream oss;
+    oss << "```angelscript\n";
+
+    auto targetFuncdef = analysis::FuncdefTargetOfLambda(lambdaNode, ctx.request.symbolTable, ctx.request.sourceCode);
+    if (targetFuncdef)
+    {
+        oss << "(anonymous function) -> " << targetFuncdef->name << "\n";
+        oss << analysis::FormatFunctionDeclaration(*targetFuncdef);
+    }
+    else
+    {
+        FormatLambdaParameters(lambdaNode, ctx.request.sourceCode, oss);
+    }
+    oss << "\n```";
+
+    if (targetFuncdef)
+    {
+        std::string doc = DocCommentForSymbol(ctx.request, *targetFuncdef);
+        if (!doc.empty())
+        {
+            oss << "\n\n" << doc;
+        }
+    }
+
+    ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
+    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
+}
+
 std::optional<lsp::Hover> TryHoverExpressionOrLocal(const HoverQueryContext& ctx)
 {
     bool isMemberChild = IsMemberChildOfExpression(ctx.node, ctx.parent);
@@ -1745,6 +1878,11 @@ std::optional<lsp::Hover> GetHover(const HoverRequest& request)
     if (auto thisHover = TryHoverThis(ctx))
     {
         return thisHover;
+    }
+
+    if (auto lambdaHover = TryHoverLambda(ctx))
+    {
+        return lambdaHover;
     }
 
     if (auto exprHover = TryHoverExpressionOrLocal(ctx))
