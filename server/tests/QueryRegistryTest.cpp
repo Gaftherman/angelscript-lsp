@@ -6,6 +6,7 @@
 
 #include <array>
 #include <atomic>
+#include <latch>
 #include <thread>
 #include <vector>
 
@@ -33,97 +34,7 @@ TEST_CASE("QueryRegistry - Precompiled queries and thread-local cursor invariant
     CHECK(cursor1 != nullptr);
     CHECK(cursor1 == cursor2);
 
-    // Invariant 4: Concurrent threads receive identical static queries and distinct thread-local cursors
-    constexpr int kThreads = 6;
-    std::vector<std::thread> workers;
-    std::vector<const TSQuery*> threadTags(kThreads, nullptr);
-    std::vector<TSQueryCursor*> threadCursors(kThreads, nullptr);
-    std::array<std::atomic<bool>, kThreads> threadMatches{};
-
-    std::atomic<int> readyThreads{0};
-    std::atomic<bool> startWork{false};
-    std::atomic<int> doneWork{0};
-    std::atomic<bool> allowExit{false};
-
-    for (int i = 0; i < kThreads; ++i)
-    {
-        workers.emplace_back(
-            [i, &threadTags, &threadCursors, &threadMatches, &readyThreads, &startWork, &doneWork, &allowExit, tags]()
-            {
-                threadTags[i] = parser::QueryRegistry::GetTagsQuery();
-                threadCursors[i] = parser::QueryRegistry::GetThreadLocalCursor();
-
-                readyThreads.fetch_add(1, std::memory_order_release);
-
-                while (!startWork.load(std::memory_order_acquire))
-                {
-                    std::this_thread::yield();
-                }
-
-                const std::string sym = test::GenerateRandomSymbolName("WorkerFunc");
-                const std::string code = "void " + sym + "(int x) { int y = x * 2; }\n";
-                parser::AngelScriptParser threadParser;
-                TSTree* threadTree = threadParser.Parse(code);
-                if (threadTree)
-                {
-                    TSNode root = ts_tree_root_node(threadTree);
-                    ts_query_cursor_exec(threadCursors[i], tags, root);
-                    TSQueryMatch match;
-                    while (ts_query_cursor_next_match(threadCursors[i], &match))
-                    {
-                        if (match.capture_count > 0)
-                        {
-                            threadMatches[i].store(true, std::memory_order_release);
-                            break;
-                        }
-                    }
-                    ts_tree_delete(threadTree);
-                }
-
-                doneWork.fetch_add(1, std::memory_order_release);
-
-                while (!allowExit.load(std::memory_order_acquire))
-                {
-                    std::this_thread::yield();
-                }
-            });
-    }
-
-    while (readyThreads.load(std::memory_order_acquire) < kThreads)
-    {
-        std::this_thread::yield();
-    }
-
-    for (int i = 0; i < kThreads; ++i)
-    {
-        CHECK(threadTags[i] == tags);
-        REQUIRE(threadCursors[i] != nullptr);
-        for (int j = i + 1; j < kThreads; ++j)
-        {
-            CHECK(threadCursors[i] != threadCursors[j]);
-        }
-    }
-
-    startWork.store(true, std::memory_order_release);
-
-    while (doneWork.load(std::memory_order_acquire) < kThreads)
-    {
-        std::this_thread::yield();
-    }
-
-    allowExit.store(true, std::memory_order_release);
-
-    for (auto& w : workers)
-    {
-        w.join();
-    }
-
-    for (int i = 0; i < kThreads; ++i)
-    {
-        CHECK(threadMatches[i].load(std::memory_order_acquire));
-    }
-
-    // Invariant 5: Cursor execution on AST with randomized symbol
+    // Invariant 4: Cursor execution on AST with randomized symbol
     const std::string sym = test::GenerateRandomSymbolName("QueryFunc");
     const std::string code = "void " + sym + "(int a) { int local_val = 10; }\n";
     parser::AngelScriptParser parser;
@@ -146,4 +57,99 @@ TEST_CASE("QueryRegistry - Precompiled queries and thread-local cursor invariant
     CHECK(foundMatch);
 
     ts_tree_delete(tree);
+}
+
+namespace {
+/**
+ * @brief Environment bundle passed to concurrent query worker threads.
+ */
+struct WorkerEnv
+{
+    const TSQuery* tags;
+    std::vector<const TSQuery*>& threadTags;
+    std::vector<TSQueryCursor*>& threadCursors;
+    std::array<std::atomic<bool>, 6>& matches;
+    std::latch& ready;
+    std::latch& start;
+    std::latch& done;
+    std::latch& exit;
+};
+
+/**
+ * @brief Executes AST query resolution on a dedicated worker thread.
+ * @param[in] i Worker thread index.
+ * @param[in,out] env Shared worker execution environment.
+ */
+void RunWorker(int i, WorkerEnv& env)
+{
+    env.threadTags[i] = parser::QueryRegistry::GetTagsQuery();
+    env.threadCursors[i] = parser::QueryRegistry::GetThreadLocalCursor();
+    env.ready.count_down();
+    env.start.wait();
+
+    const std::string sym = test::GenerateRandomSymbolName("WorkerFunc");
+    parser::AngelScriptParser threadParser;
+    TSTree* threadTree = threadParser.Parse("void " + sym + "(int x) { int y = x * 2; }\n");
+    if (threadTree)
+    {
+        ts_query_cursor_exec(env.threadCursors[i], env.tags, ts_tree_root_node(threadTree));
+        TSQueryMatch match;
+        while (ts_query_cursor_next_match(env.threadCursors[i], &match))
+        {
+            if (match.capture_count > 0)
+            {
+                env.matches[i].store(true, std::memory_order_release);
+                break;
+            }
+        }
+        ts_tree_delete(threadTree);
+    }
+    env.done.count_down();
+    env.exit.wait();
+}
+} // namespace
+
+TEST_CASE("QueryRegistry - Concurrent threads receive distinct thread-local cursors")
+{
+    constexpr int kThreads = 6;
+    const TSQuery* tags = parser::QueryRegistry::GetTagsQuery();
+    std::vector<std::thread> workers;
+    std::vector<const TSQuery*> threadTags(kThreads, nullptr);
+    std::vector<TSQueryCursor*> threadCursors(kThreads, nullptr);
+    std::array<std::atomic<bool>, kThreads> threadMatches{};
+
+    std::latch readyLatch(kThreads);
+    std::latch startLatch(1);
+    std::latch doneLatch(kThreads);
+    std::latch exitLatch(1);
+    WorkerEnv env{tags, threadTags, threadCursors, threadMatches, readyLatch, startLatch, doneLatch, exitLatch};
+
+    for (int i = 0; i < kThreads; ++i)
+    {
+        workers.emplace_back([i, &env]() { RunWorker(i, env); });
+    }
+
+    readyLatch.wait();
+    for (int i = 0; i < kThreads; ++i)
+    {
+        CHECK(threadTags[i] == tags);
+        REQUIRE(threadCursors[i] != nullptr);
+        for (int j = i + 1; j < kThreads; ++j)
+        {
+            CHECK(threadCursors[i] != threadCursors[j]);
+        }
+    }
+
+    startLatch.count_down();
+    doneLatch.wait();
+    exitLatch.count_down();
+
+    for (auto& w : workers)
+    {
+        w.join();
+    }
+    for (int i = 0; i < kThreads; ++i)
+    {
+        CHECK(threadMatches[i].load(std::memory_order_acquire));
+    }
 }

@@ -293,6 +293,7 @@ if(TEST_SOURCES)
         target_compile_options(angel_lsp_tests PRIVATE ${ANGELLSP_WARNING_FLAGS})
     endif()
     add_test(NAME angel_lsp_tests COMMAND angel_lsp_tests)
+    set_tests_properties(angel_lsp_tests PROPERTIES TIMEOUT 60)
 
     add_custom_command(TARGET angel_lsp_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/bin"

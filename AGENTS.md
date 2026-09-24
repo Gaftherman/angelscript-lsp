@@ -75,6 +75,22 @@ Format: `<type>(<scope>): <short imperative description>`
 3. **Transport Security Invariant:** JSON-RPC transport layers must enforce a bounded envelope (`MAX_LSP_PAYLOAD_SIZE = 16 MB`). Payloads outside bounds or with malformed headers must be rejected without allocations or crashes.
 4. **Topological Graph Invariant:** Invalidation traversals over `WorkspaceIncludeGraph` must be tested on randomized DAGs asserting strictly $O(V + E)$ deduplicated visits.
 
+### Deterministic Concurrency & Anti-Flakiness Testing Invariant
+
+1. **Absolute Ban on Arbitrary Sleep and Polling:**
+   - Tests must NEVER use `std::this_thread::sleep_for()`, `std::this_thread::yield()` in loops, or counter-based polling loops (`for (int i = 0; i < N; ++i) { sleep_for(...); }`).
+   - Tests must NEVER rely on elapsed time or timing thresholds to assert that an asynchronous task has started, completed, or failed.
+2. **Event-Driven Synchronization Mandate:**
+   - All multi-threaded and asynchronous assertions must synchronize strictly via deterministic event primitives:
+     - `std::promise<T>` and `std::future<T>::get()` for one-shot task completions and exception assertions.
+     - `std::binary_semaphore` or `std::counting_semaphore` for explicit signal handoffs.
+     - `std::latch` or `std::barrier` for multi-thread rendezvous points.
+   - Execution must be immediate: when the background worker signals completion, the waiting thread unblocks with zero artificial latency.
+3. **Zero In-Test Timeout Logic:**
+   - Never write watchdog timers, sleep loops, or timeout retry loops inside test cases.
+   - Hang and deadlock protection is strictly external and managed by CMake test properties:
+     `set_tests_properties(<target> PROPERTIES TIMEOUT 10)`
+
 ---
 
 ## 8. The 10 Absolute Prohibitions

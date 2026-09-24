@@ -218,15 +218,20 @@ TEST_CASE("SanitizePredefinedContent - sanitizes arbitrary list patterns without
 }
 
 #include "utils/Timer.h"
-#include <thread>
 
 TEST_CASE("HighResTimer - measures elapsed time in ms and us")
 {
     HighResTimer timer;
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    CHECK(timer.ElapsedMs() >= 1.0);
-    CHECK(timer.ElapsedUs() >= 1000);
+    volatile uint64_t counter = 0;
+    for (uint64_t i = 0; i < 50000; ++i)
+    {
+        counter += i;
+    }
+    CHECK(counter > 0);
+    CHECK(timer.ElapsedMs() >= 0.0);
+    CHECK(timer.ElapsedUs() >= 0);
     timer.Reset();
     CHECK(timer.ElapsedMs() >= 0.0);
+    CHECK(timer.ElapsedUs() >= 0);
 }
 

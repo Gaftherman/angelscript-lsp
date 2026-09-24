@@ -64,7 +64,6 @@ void RunWriterWorker(WriterContext ctx)
         std::string code = GenerateRandomCode(rng);
         TSTree* rawTree = parser.Parse(code);
         ctx.store.UpdateDocument(ctx.uri, std::move(code), 1, document::MakeTreePtr(rawTree));
-        std::this_thread::yield();
     }
 }
 
@@ -89,7 +88,6 @@ void RunReaderWorker(const DocumentStore& store, const std::string& uri, std::at
                 successfulReads.fetch_add(1, std::memory_order_relaxed);
             }
         }
-        std::this_thread::yield();
     }
 }
 } // namespace

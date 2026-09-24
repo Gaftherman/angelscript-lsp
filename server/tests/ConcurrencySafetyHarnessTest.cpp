@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <future>
 #include <random>
 #include <string>
 #include <thread>
@@ -69,7 +70,6 @@ void ExecuteWriterStress(WriterStressContext ctx)
         std::string code = GenerateRandomStressCode(rng);
         TSTree* rawTree = parser.Parse(code);
         ctx.store.UpdateDocument(uri, std::move(code), 1, document::MakeTreePtr(rawTree));
-        std::this_thread::yield();
     }
 }
 
@@ -105,7 +105,6 @@ void ExecuteReaderStress(const DocumentStore& store, const std::vector<std::stri
                 }
             }
         }
-        std::this_thread::yield();
     }
 }
 
@@ -210,8 +209,13 @@ TEST_CASE("ConcurrencySafety - Simultaneous Document Mutation and AST Reading In
 
 TEST_CASE("ConcurrencySafety - Secondary Thread Exception Containment Invariant")
 {
-    std::atomic<bool> thrownEncountered{false};
-    std::atomic<bool> recoveredWorkExecuted{false};
+    std::promise<void> thrownPromise;
+    auto thrownFuture = thrownPromise.get_future();
+    std::promise<void> safePromise;
+    auto safeFuture = safePromise.get_future();
+
+    std::atomic<bool> thrownSignaled{false};
+    std::atomic<bool> safeSignaled{false};
 
     const std::string throwUri = "file:///trigger_throw_" + test::GenerateRandomSymbolName() + ".as";
     const std::string safeUri = "file:///safe_doc_" + test::GenerateRandomSymbolName() + ".as";
@@ -221,31 +225,31 @@ TEST_CASE("ConcurrencySafety - Secondary Thread Exception Containment Invariant"
         {
             if (req.uriStr == throwUri)
             {
-                thrownEncountered.store(true);
+                if (!thrownSignaled.exchange(true))
+                {
+                    thrownPromise.set_value();
+                }
                 throw std::runtime_error("Simulated catastrophic analysis failure");
             }
             if (req.uriStr == safeUri)
             {
-                recoveredWorkExecuted.store(true);
+                if (!safeSignaled.exchange(true))
+                {
+                    safePromise.set_value();
+                }
             }
         },
-        std::chrono::milliseconds(10));
+        std::chrono::milliseconds(0));
 
     scheduler.ScheduleImmediate(throwUri, "int a = 1;", true, document::MakeTreePtr(nullptr));
-
-    for (int i = 0; i < 50 && !thrownEncountered.load(); ++i)
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    CHECK(thrownEncountered.load());
+    thrownFuture.get();
+    CHECK(thrownSignaled.load());
 
     scheduler.ScheduleImmediate(safeUri, "int b = 2;", true, document::MakeTreePtr(nullptr));
+    safeFuture.get();
+    CHECK(safeSignaled.load());
 
-    for (int i = 0; i < 50 && !recoveredWorkExecuted.load(); ++i)
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    CHECK(recoveredWorkExecuted.load());
+    scheduler.Stop();
 }
 
 TEST_CASE("ConcurrencySafety - Tree-Sitter Error Node and Null Tolerance Invariant")
