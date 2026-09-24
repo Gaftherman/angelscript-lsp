@@ -792,10 +792,25 @@ std::vector<lsp::Location> ConvertSymbolsToLocations(const std::vector<analysis:
                                                      const DefinitionRequest& request)
 {
     std::vector<lsp::Location> locations;
+    bool hasWorkspaceSymbol = false;
+    for (const auto& sym : symbols)
+    {
+        if (sym.type != analysis::SymbolType::CallReference &&
+            !utils::IsPredefinedFile(sym.fileUri, request.predefinedExtension))
+        {
+            hasWorkspaceSymbol = true;
+            break;
+        }
+    }
+
     for (const auto& sym : symbols)
     {
         if (sym.type != analysis::SymbolType::CallReference)
         {
+            if (hasWorkspaceSymbol && utils::IsPredefinedFile(sym.fileUri, request.predefinedExtension))
+            {
+                continue;
+            }
             auto loc = MakeLocation(sym, request);
             bool duplicate = false;
             for (const auto& existing : locations)
@@ -996,6 +1011,47 @@ std::optional<std::vector<lsp::Location>> TryResolveContextualDefinition(TSNode 
 }
 
 /**
+ * @brief Extracts the preceding scope qualifier for a datatype node, if any.
+ * @param[in] datatypeNode AST datatype node.
+ * @param[in] sourceCode Document source text.
+ * @return Scope prefix string ending in "::", or empty if unqualified.
+ */
+std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode)
+{
+    TSNode typeNode = ts_node_parent(datatypeNode);
+    if (ts_node_is_null(typeNode) || std::string_view(ts_node_type(typeNode)) != parser::nodes::Type)
+    {
+        return {};
+    }
+    TSTreeCursor cursor = ts_tree_cursor_new(typeNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode c = ts_tree_cursor_current_node(&cursor);
+            if (std::string_view(ts_node_type(c)) == parser::nodes::Scope)
+            {
+                const uint32_t sStart = ts_node_start_byte(c);
+                const uint32_t sEnd = ts_node_end_byte(c);
+                ts_tree_cursor_delete(&cursor);
+                if (sStart < sourceCode.size() && sEnd <= sourceCode.size() && sStart < sEnd)
+                {
+                    std::string scopeText(sourceCode.substr(sStart, sEnd - sStart));
+                    if (!scopeText.ends_with("::"))
+                    {
+                        scopeText += "::";
+                    }
+                    return scopeText;
+                }
+                return {};
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+        ts_tree_cursor_delete(&cursor);
+    }
+    return {};
+}
+
+/**
  * @brief Finds symbols in scope or global property accessors for an identifier node.
  * @param[in] node Cursor node.
  * @param[in] nodeText Symbol text.
@@ -1007,14 +1063,27 @@ std::vector<analysis::Symbol> FindSymbolsForNode(TSNode node, const std::string&
 {
     std::vector<analysis::Symbol> symbols;
     TSNode parent = ts_node_parent(node);
-    if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "scoped_identifier")
+    if (!ts_node_is_null(parent))
     {
-        uint32_t pStart = ts_node_start_byte(parent);
-        uint32_t pEnd = ts_node_end_byte(node);
-        if (pStart < request.sourceCode.size() && pEnd <= request.sourceCode.size() && pStart < pEnd)
+        const std::string_view pType(ts_node_type(parent));
+        if (pType == parser::nodes::ScopedIdentifier || pType == parser::nodes::Scope)
         {
-            std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
-            symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);
+            const uint32_t pStart = ts_node_start_byte(parent);
+            const uint32_t pEnd = ts_node_end_byte(node);
+            if (pStart < request.sourceCode.size() && pEnd <= request.sourceCode.size() && pStart < pEnd)
+            {
+                const std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
+                symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);
+            }
+        }
+        else if (pType == parser::nodes::Datatype)
+        {
+            const std::string prefix = ExtractDatatypeScopePrefix(parent, request.sourceCode);
+            if (!prefix.empty())
+            {
+                symbols =
+                    analysis::FindSymbolsInScope(prefix + nodeText, node, request.sourceCode, request.symbolTable);
+            }
         }
     }
     if (symbols.empty())

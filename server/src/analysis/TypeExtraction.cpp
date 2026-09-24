@@ -16,6 +16,7 @@ struct TypeExtractionSymbols
     TSSymbol symTemplateTypeList = 0;
     TSSymbol symIdentifier = 0;
     TSSymbol symType = 0;
+    TSSymbol symScope = 0;
     TSSymbol symNullLiteral = 0;
     TSSymbol symParenthesizedExpression = 0;
 
@@ -30,6 +31,7 @@ struct TypeExtractionSymbols
         symTemplateTypeList = ts_language_symbol_for_name(lang, SYM_NAME("template_type_list"), true);
         symIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("identifier"), true);
         symType = ts_language_symbol_for_name(lang, SYM_NAME("type"), true);
+        symScope = ts_language_symbol_for_name(lang, SYM_NAME("scope"), true);
         symNullLiteral = ts_language_symbol_for_name(lang, SYM_NAME("null_literal"), true);
         symParenthesizedExpression = ts_language_symbol_for_name(lang, SYM_NAME("parenthesized_expression"), true);
 
@@ -239,6 +241,7 @@ TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view so
 
     const auto& symbols = GetTypeExtractionSymbols();
     std::string datatypeText;
+    std::string scopePrefix;
 
     TSTreeCursor cursor = ts_tree_cursor_new(typeNode);
     if (ts_tree_cursor_goto_first_child(&cursor))
@@ -249,9 +252,18 @@ TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view so
             TSNode child = ts_tree_cursor_current_node(&cursor);
             const TSSymbol childSym = ts_node_symbol(child);
 
-            if (childSym == symbols.symDatatype)
+            if (childSym == symbols.symScope)
+            {
+                scopePrefix = GetNodeText(child, sourceCode);
+            }
+            else if (childSym == symbols.symDatatype)
             {
                 ProcessDatatypeChild(child, sourceCode, result, datatypeText);
+                if (!scopePrefix.empty())
+                {
+                    datatypeText = scopePrefix + datatypeText;
+                    result.baseTypeName = scopePrefix + result.baseTypeName;
+                }
             }
             else if (childSym == symbols.symTemplateTypeList)
             {

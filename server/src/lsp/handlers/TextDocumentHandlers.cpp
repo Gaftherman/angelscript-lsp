@@ -96,6 +96,7 @@ Server::HandleRequestsTextDocument_Definition(lsp::requests::TextDocument_Defini
     features::DefinitionRequest dr{doc->uri,     *doc->text,
                                    doc->tree,    m_symbolTable,
                                    m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position)};
+    dr.predefinedExtension = m_config.info.predefinedFileExtension;
     dr.resolveInclude = [this, uriStr = doc->uri](const std::string& rawPath)
     {
         return angel_lsp::utils::IncludeResolver::ResolveIncludePath(angel_lsp::utils::IncludeResolveRequest{
@@ -132,6 +133,7 @@ Server::HandleRequestsTextDocument_Moniker(lsp::requests::TextDocument_Moniker::
     features::DefinitionRequest dr{doc->uri,     *doc->text,
                                    doc->tree,    m_symbolTable,
                                    m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position)};
+    dr.predefinedExtension = m_config.info.predefinedFileExtension;
     dr.resolveInclude = [this, uriStr = doc->uri](const std::string& rawPath)
     {
         return angel_lsp::utils::IncludeResolver::ResolveIncludePath(angel_lsp::utils::IncludeResolveRequest{
@@ -197,6 +199,7 @@ Server::HandleRequestsTextDocument_Declaration(lsp::requests::TextDocument_Decla
     features::DefinitionRequest dr{doc->uri,     *doc->text,
                                    doc->tree,    m_symbolTable,
                                    m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position)};
+    dr.predefinedExtension = m_config.info.predefinedFileExtension;
     auto defs = features::GetDefinition(dr);
     if (defs.has_value() && !defs->empty())
     {
@@ -250,6 +253,7 @@ Server::HandleRequestsTextDocument_TypeDefinition(lsp::requests::TextDocument_Ty
     features::DefinitionRequest dr{doc->uri,     *doc->text,
                                    doc->tree,    m_symbolTable,
                                    m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position)};
+    dr.predefinedExtension = m_config.info.predefinedFileExtension;
     auto defs = features::GetTypeDefinition(dr);
     if (defs.has_value() && !defs->empty())
     {

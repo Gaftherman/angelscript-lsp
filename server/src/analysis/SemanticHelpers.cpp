@@ -378,25 +378,55 @@ NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const
     return NonInstantiableKind::None;
 }
 
+/**
+ * @brief Matches qualified types by short name suffix against the rule index.
+ * @param[in] clean Type name without root qualifier.
+ * @param[in] index Precomputed rule index.
+ * @return True if clean matches a known qualified type or suffix.
+ */
+static bool MatchesQualifiedTypeSuffix(std::string_view clean, const rules::RuleIndex* index)
+{
+    if (!index)
+    {
+        return false;
+    }
+    const std::string shortName = LastScopeSegment(std::string(clean));
+    auto it = index->qualifiedTypesByShortName.find(shortName);
+    if (it == index->qualifiedTypesByShortName.end())
+    {
+        return false;
+    }
+    const std::string suffix = "::" + std::string(clean);
+    for (const auto& qType : it->second)
+    {
+        if (qType == clean || qType.ends_with(suffix))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx)
 {
     if (ctx.logger && ctx.logger->IsTraceEnabled())
     {
         ctx.logger->LogTrace(fmt::format("[SemanticHelpers] IsKnownType: checking '{}'", baseName));
     }
-    if (baseName.empty())
-        return true;
-    if (IsCorePrimitive(baseName))
+    if (baseName.empty() || IsCorePrimitive(baseName))
         return true;
     if (!ctx.request.GetStringTypeName().empty() && baseName == ctx.request.GetStringTypeName())
         return true;
     if (!ctx.request.GetArrayTypeName().empty() && baseName == ctx.request.GetArrayTypeName())
         return true;
-    if (ctx.request.IsRegisteredSymbol(baseName))
+    if (ctx.request.IsRegisteredSymbol(baseName) || ctx.request.symbolTable.HasSymbolAnywhere(baseName))
         return true;
-    if (ctx.request.symbolTable.HasSymbolAnywhere(baseName))
+
+    std::string_view clean = baseName.starts_with("::") ? baseName.substr(2) : std::string_view(baseName);
+    if (ctx.request.symbolTable.HasSymbol(clean))
         return true;
-    return false;
+
+    return MatchesQualifiedTypeSuffix(clean, ctx.request.symbolTable.GetRuleIndex().get());
 }
 
 std::vector<std::string> SplitTemplateArguments(std::string_view inner)

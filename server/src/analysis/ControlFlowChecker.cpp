@@ -252,6 +252,9 @@ bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode)
 {
     bool hasDefault = false;
     bool allReturn = true;
+    bool lastClauseHasStatements = false;
+    uint32_t clauseCount = 0;
+
     const uint32_t count = ts_node_named_child_count(node);
     for (uint32_t i = 0; i < count; ++i)
     {
@@ -260,6 +263,7 @@ bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode)
         {
             continue;
         }
+        ++clauseCount;
         if (IsDefaultClause(clause))
         {
             hasDefault = true;
@@ -267,12 +271,13 @@ bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode)
         // An empty clause falls through to the next one, which is ordinary and says
         // nothing about whether the switch returns.
         const bool hasStatements = ts_node_named_child_count(clause) > FirstStatementIndex(clause);
+        lastClauseHasStatements = hasStatements;
         if (hasStatements && !DefinitelyReturns(clause, sourceCode))
         {
             allReturn = false;
         }
     }
-    return hasDefault && allReturn;
+    return hasDefault && allReturn && (clauseCount > 0) && lastClauseHasStatements;
 }
 
 bool TryDefinitelyReturns(TSNode node, std::string_view sourceCode)

@@ -2094,6 +2094,10 @@ void CheckDeclaratorDirectInit(TSNode declarator, const VarInitContext& vctx)
     const std::vector<Symbol> rawConstructors = LookupRawConstructors(vctx.baseName, vctx.ctx.request.symbolTable);
     if (rawConstructors.empty())
     {
+        if (argTypes.empty())
+        {
+            return;
+        }
         if (IsClassDeclarationVisible(vctx.baseName, vctx.ctx.request.symbolTable,
                                       vctx.ctx.request.predefinedFileExtension))
         {

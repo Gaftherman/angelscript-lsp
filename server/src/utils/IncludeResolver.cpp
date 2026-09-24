@@ -626,6 +626,30 @@ std::vector<IncludeDirective> IncludeResolver::ExtractIncludes(std::string_view 
     return directives;
 }
 
+/**
+ * @brief Computes effective containment roots when allowed roots are empty.
+ * @param[in] request Include resolution request context.
+ * @param[out] fallback Storage buffer for constructed fallback roots.
+ * @return Effective span of root directory paths.
+ */
+static std::span<const std::string> DetermineEffectiveRoots(const IncludeResolveRequest& request,
+                                                            std::vector<std::string>& fallback)
+{
+    if (!request.allowedRoots.empty() || IncludeResolver::IsIsolatedHarnessMode())
+    {
+        return request.allowedRoots;
+    }
+    if (!request.searchDirectories.empty())
+    {
+        fallback.assign(request.searchDirectories.begin(), request.searchDirectories.end());
+    }
+    if (!request.currentFilePath.empty())
+    {
+        fallback.push_back(NormalizePathString(GetParentDirectory(request.currentFilePath)));
+    }
+    return fallback;
+}
+
 std::string IncludeResolver::ResolveIncludePath(const IncludeResolveRequest& request)
 {
     if (request.includePath.empty())
@@ -641,15 +665,7 @@ std::string IncludeResolver::ResolveIncludePath(const IncludeResolveRequest& req
 #endif
 
     std::vector<std::string> fallbackRoots;
-    std::span<const std::string> effectiveRoots = request.allowedRoots;
-    if (effectiveRoots.empty() && !s_isolatedHarnessMode.load())
-    {
-        if (!request.currentFilePath.empty())
-        {
-            fallbackRoots.push_back(NormalizePathString(GetParentDirectory(request.currentFilePath)));
-            effectiveRoots = fallbackRoots;
-        }
-    }
+    const std::span<const std::string> effectiveRoots = DetermineEffectiveRoots(request, fallbackRoots);
 
     const auto permit = [&](std::string resolved) -> std::string
     { return IsWithinRoots(resolved, effectiveRoots) ? resolved : std::string(); };

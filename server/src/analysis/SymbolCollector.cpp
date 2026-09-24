@@ -677,6 +677,70 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     sCtx.symbolTable.AddSymbol(sym);
 }
 
+/**
+ * @brief Checks if a class body declares any explicit constructor.
+ * @param[in] bodyNode Class body AST node.
+ * @param[in] className Name of the class being inspected.
+ * @param[in] sourceCode Document source string.
+ * @param[in] symFuncDeclaration Pre-resolved symbol for func_declaration.
+ * @return True if at least one constructor declaration is present.
+ */
+static bool ClassHasExplicitConstructor(TSNode bodyNode, std::string_view className, std::string_view sourceCode,
+                                        TSSymbol symFuncDeclaration)
+{
+    if (ts_node_is_null(bodyNode) || className.empty())
+    {
+        return false;
+    }
+
+    bool found = false;
+    TSTreeCursor cursor = ts_tree_cursor_new(bodyNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_symbol(child) == symFuncDeclaration)
+            {
+                TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
+                if (GetNodeText(nameNode, sourceCode) == className)
+                {
+                    found = true;
+                    break;
+                }
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+    return found;
+}
+
+/**
+ * @brief Synthesizes an implicit default constructor when a non-abstract class declares none.
+ * @param[in] sym Class symbol.
+ * @param[in,out] table Symbol table to register synthesized constructor into.
+ */
+static void SynthesizeDefaultConstructor(const Symbol& sym, SymbolTable& table)
+{
+    Symbol ctorSym;
+    ctorSym.type = SymbolType::Function;
+    ctorSym.name = sym.name;
+    ctorSym.containerName = sym.qualifiedName;
+    SymbolCollector::appendQualifiedName(ctorSym.qualifiedName, sym.qualifiedName, sym.name);
+    ctorSym.fileUri = sym.fileUri;
+    ctorSym.fullRange = sym.fullRange;
+    ctorSym.selectionRange = sym.selectionRange;
+    ctorSym.isSynthesized = true;
+
+    FunctionSignature ctorSig;
+    ctorSig.returnType = sym.name;
+    ctorSig.returnBaseTypeName = sym.name;
+    ctorSig.returnTypeKind = TypeKind::Object;
+    ctorSig.hasBody = true;
+    ctorSym.signature = std::move(ctorSig);
+    table.AddSymbol(ctorSym);
+}
+
 void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldName(classNode, "name");
@@ -721,10 +785,17 @@ void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx,
         sym.qualifiedName = ctx.containerPath.empty() ? sym.name : ctx.containerPath + "::" + sym.name;
     }
 
-    classSig.hasBraces = !ts_node_is_null(GetChildByFieldName(classNode, "body"));
+    TSNode bodyNode = GetChildByFieldName(classNode, "body");
+    classSig.hasBraces = !ts_node_is_null(bodyNode);
 
     sym.signature = classSig;
     sCtx.symbolTable.AddSymbol(sym);
+
+    if (classSig.hasBraces && !classSig.modifiers.isAbstract &&
+        !ClassHasExplicitConstructor(bodyNode, sym.name, sCtx.request.sourceCode, m_symFuncDeclaration))
+    {
+        SynthesizeDefaultConstructor(sym, sCtx.symbolTable);
+    }
 }
 
 void SymbolCollector::ProcessNamespace(TSNode namespaceNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)

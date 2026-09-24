@@ -24,6 +24,7 @@ struct DefinitionRequest
     const analysis::ScopeIndex& scopeIndex;
     lsp::Position position;
     std::function<std::string(const std::string& rawPath)> resolveInclude = {};
+    std::string predefinedExtension = ".as.predefined";
 };
 
 /**
