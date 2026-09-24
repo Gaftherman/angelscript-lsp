@@ -5871,18 +5871,23 @@ TEST_CASE("Server - Saving an open file in a module does not re-analyze closed f
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
 
-    // Wait for initial module analysis of the closed files
+    // Wait for initial module analysis of all files in the module
     stream.PushAction(
         [&stream]()
         {
-            stream.WaitForCondition([&](const std::string& out)
-                                    { return CountPublishedFor(out, "weapon_closed.as") >= 1; });
+            stream.WaitForCondition(
+                [&](const std::string& out)
+                {
+                    return CountPublishedFor(out, "weapon_closed.as") >= 1 &&
+                           CountPublishedFor(out, "weapon_base.as") >= 1 &&
+                           CountPublishedFor(out, "weapon_open.as") >= 1;
+                });
         });
 
     // Open weapon_open.as
     const std::string openText = "void OpenFunc() { BaseFunc(); }\n";
     stream.Push(DidOpenMessage(fixture.Uri("scripts/weapons/weapon_open.as"), openText));
-    stream.PushAction([&stream]() { WaitForCount(stream, "weapon_open.as", 1); });
+    stream.PushAction([&stream]() { WaitForCount(stream, "weapon_open.as", 2); });
 
     // Save weapon_open.as with modified body (public interface unchanged)
     const std::string savedText = "void OpenFunc() {\n    BaseFunc();\n    int localVal = 42;\n}\n";
@@ -5898,7 +5903,7 @@ TEST_CASE("Server - Saving an open file in a module does not re-analyze closed f
         [&stream, &server]()
         {
             // Wait for save diagnostics on the saved file itself
-            WaitForCount(stream, "weapon_open.as", 2);
+            WaitForCount(stream, "weapon_open.as", 3);
             // Deterministic drain to ensure all pending and running analysis tasks have completed
             server.DrainQueue();
         });
