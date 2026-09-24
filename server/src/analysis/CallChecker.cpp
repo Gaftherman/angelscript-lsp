@@ -1460,6 +1460,11 @@ bool CheckArgIsLValue(TSNode argNode, std::string_view sourceCode, const Scope* 
         }
     }
 
+    if (aType == parser::nodes::ThisExpression || aText == "this")
+    {
+        return true;
+    }
+
     if (aType == "identifier" || aType == "scoped_identifier")
     {
         return IsAssignableLValueSymbol(aText, scope, table);

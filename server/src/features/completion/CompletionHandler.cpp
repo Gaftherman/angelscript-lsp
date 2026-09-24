@@ -980,6 +980,73 @@ void CollectEnumMembersUnderQualifier(const std::string& qualifier, CompletionCo
  * @param[in] qualifier Qualifier container name.
  * @param[in,out] collector Completion collector context.
  */
+/**
+ * @brief Resolves completion item kind and detail for a container member symbol.
+ * @param[in] sym Container member symbol.
+ * @param[out] kind Computed LSP completion item kind.
+ * @param[out] detail Computed detail string.
+ */
+void ResolveContainerMemberItemDetails(const analysis::Symbol& sym, lsp::CompletionItemKind& kind, std::string& detail)
+{
+    kind = lsp::CompletionItemKind::Variable;
+    switch (sym.type)
+    {
+    case analysis::SymbolType::Function:
+        kind = lsp::CompletionItemKind::Function;
+        detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
+        break;
+    case analysis::SymbolType::Variable:
+        kind = lsp::CompletionItemKind::Variable;
+        detail = sym.GetVariable().typeName;
+        break;
+    case analysis::SymbolType::Class:
+        kind = lsp::CompletionItemKind::Class;
+        break;
+    case analysis::SymbolType::Interface:
+        kind = lsp::CompletionItemKind::Interface;
+        break;
+    case analysis::SymbolType::Enum:
+        kind = lsp::CompletionItemKind::Enum;
+        break;
+    case analysis::SymbolType::Namespace:
+        kind = lsp::CompletionItemKind::Module;
+        break;
+    default:
+        break;
+    }
+}
+
+/**
+ * @brief Adds member items of a specific container to the collector.
+ * @param[in] container Container name to query.
+ * @param[in] qualifier Scope qualifier text.
+ * @param[in] ruleIndex Pre-indexed rule information.
+ * @param[in,out] collector Completion collector context.
+ */
+void AddContainerMembers(const std::string& container, const std::string& qualifier,
+                         const analysis::rules::RuleIndex* ruleIndex, CompletionCollector& collector)
+{
+    const auto& cm = ruleIndex->Members(container);
+    for (const auto& key : cm.memberKeys)
+    {
+        const auto symList = collector.request.symbolTable.FindSymbolsPtr(key);
+        if (!symList)
+        {
+            continue;
+        }
+        for (const auto& sym : *symList)
+        {
+            if (sym.containerName == container || sym.containerName == qualifier)
+            {
+                lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
+                std::string detail;
+                ResolveContainerMemberItemDetails(sym, kind, detail);
+                AddItemIfNew(collector, {sym.name, kind, std::move(detail), "", sym.qualifiedName});
+            }
+        }
+    }
+}
+
 void CollectContainerMembersUnderQualifier(const std::string& qualifier, CompletionCollector& collector)
 {
     const auto ruleIndex = collector.request.symbolTable.GetRuleIndex();
@@ -987,47 +1054,8 @@ void CollectContainerMembersUnderQualifier(const std::string& qualifier, Complet
     {
         return;
     }
-    auto addMembersOf = [&](const std::string& container)
-    {
-        const auto& cm = ruleIndex->Members(container);
-        for (const auto& key : cm.memberKeys)
-        {
-            const auto symList = collector.request.symbolTable.FindSymbolsPtr(key);
-            if (!symList)
-            {
-                continue;
-            }
-            for (const auto& sym : *symList)
-            {
-                if (sym.containerName == container || sym.containerName == qualifier)
-                {
-                    lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
-                    std::string detail;
-                    if (sym.type == analysis::SymbolType::Function)
-                    {
-                        kind = lsp::CompletionItemKind::Function;
-                        detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
-                    }
-                    else if (sym.type == analysis::SymbolType::Variable)
-                    {
-                        kind = lsp::CompletionItemKind::Variable;
-                        detail = sym.GetVariable().typeName;
-                    }
-                    else if (sym.type == analysis::SymbolType::Class)
-                    {
-                        kind = lsp::CompletionItemKind::Class;
-                    }
-                    else if (sym.type == analysis::SymbolType::Enum)
-                    {
-                        kind = lsp::CompletionItemKind::Enum;
-                    }
-                    AddItemIfNew(collector, {sym.name, kind, std::move(detail), "", sym.qualifiedName});
-                }
-            }
-        }
-    };
 
-    addMembersOf(qualifier);
+    AddContainerMembers(qualifier, qualifier, ruleIndex.get(), collector);
     if (qualifier.find("::") == std::string::npos)
     {
         auto qit = ruleIndex->qualifiedTypesByShortName.find(qualifier);
@@ -1035,7 +1063,7 @@ void CollectContainerMembersUnderQualifier(const std::string& qualifier, Complet
         {
             for (const auto& q : qit->second)
             {
-                addMembersOf(q);
+                AddContainerMembers(q, qualifier, ruleIndex.get(), collector);
             }
         }
     }
@@ -1049,13 +1077,17 @@ void CollectContainerMembersUnderQualifier(const std::string& qualifier, Complet
  */
 bool TryCompleteScopeResolution(const std::string& prefix, CompletionCollector& collector)
 {
-    static const std::regex scopeResolutionRegex(R"(([a-zA-Z_][a-zA-Z0-9_]*)::([a-zA-Z_][a-zA-Z0-9_]*)?$)");
+    static const std::regex scopeResolutionRegex(R"(((?:[a-zA-Z_][a-zA-Z0-9_]*::)+)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
     std::smatch scopeMatch;
     if (!std::regex_search(prefix, scopeMatch, scopeResolutionRegex))
     {
         return false;
     }
     std::string qualifier = scopeMatch[1].str();
+    if (qualifier.ends_with("::"))
+    {
+        qualifier.resize(qualifier.size() - 2);
+    }
     CollectEnumMembersUnderQualifier(qualifier, collector);
     CollectContainerMembersUnderQualifier(qualifier, collector);
     return true;
