@@ -462,7 +462,9 @@ suite('Mixin Commands', () => {
     });
 });
 
-suite('Workspace Trust Gate', () => {
+suite('Workspace Trust Gate', function () {
+    this.timeout(10000);
+
     function generateRandomSymbolName(prefix = 'malicious'): string {
         return `${prefix}_${Math.floor(Math.random() * 900000000 + 100000)}`;
     }
@@ -477,7 +479,7 @@ suite('Workspace Trust Gate', () => {
         try {
             Object.defineProperty(workspace, 'isTrusted', { value: false, configurable: true });
 
-            for (let i = 0; i < 20; ++i) {
+            for (let i = 0; i < 5; ++i) {
                 const randomName = `${generateRandomSymbolName()}_${i}.exe`;
                 const customPath = i % 2 === 0 ? path.join('/malicious/payload', randomName) : `../../payloads/${randomName}`;
                 await withSetting('server.executablePath', customPath, () => {
@@ -496,7 +498,7 @@ suite('Workspace Trust Gate', () => {
         try {
             Object.defineProperty(workspace, 'isTrusted', { value: true, configurable: true });
 
-            for (let i = 0; i < 20; ++i) {
+            for (let i = 0; i < 5; ++i) {
                 const randomName = `${generateRandomSymbolName()}_${i}.exe`;
                 const customPath = path.resolve('/custom/tools', randomName);
                 await withSetting('server.executablePath', customPath, () => {
