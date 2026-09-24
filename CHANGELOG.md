@@ -4,6 +4,14 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.4.1] - 2026-09-24
+
+### Marketplace Metadata Fix & VSIX Packaging
+
+- Marketplace Publishing Uniqueness:
+  - Updated `displayName` to `"AngelLSP - AngelScript Language Server"` in `package.json` to resolve Microsoft Marketplace naming conflict (`displayName is taken`).
+  - Re-packaged compliant VSIX distribution (`angelscript-lsp-0.8.4.vsix`).
+
 ## [0.8.4] - 2026-09-24
 
 ### Architecture Hardening, Concurrency Resilience & Deterministic Testing
