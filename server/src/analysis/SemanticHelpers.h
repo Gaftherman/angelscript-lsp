@@ -770,4 +770,16 @@ std::optional<Symbol> FindFuncdefSymbol(const std::string& typeName, const Symbo
  * landing on a funcdef parameter. Anything else answers nullopt.
  */
 std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable& table, std::string_view sourceCode);
+
+/**
+ * @brief Attempts to infer the parameter type of an untyped lambda parameter
+ *        by matching with the enclosing funcdef target.
+ * @param[in] nodeInLambda Any AST node inside the lambda expression (e.g. parameter or body reference).
+ * @param[in] paramName Name of the parameter identifier.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in] sourceCode Document source text.
+ * @return Inferred type name, or empty string if not found.
+ */
+std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName, const SymbolTable& symbolTable,
+                                 std::string_view sourceCode);
 } // namespace angel_lsp::analysis

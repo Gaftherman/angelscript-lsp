@@ -74,6 +74,7 @@ class LocalScopeCollector
     TSSymbol m_symVariableDeclarator = 0;
     TSSymbol m_symParameter = 0;
     TSSymbol m_symForeachVariable = 0;
+    TSSymbol m_symLambdaParameterList = 0;
 
     /** @brief What a LOCALS_QUERY capture index means, resolved once in the constructor by capture name. */
     enum class CaptureKind
@@ -174,6 +175,16 @@ class LocalScopeCollector
      * @param[out] def LocalDefinition receiving type info.
      */
     void ReadParameterTypeInfo(TSNode declaratorNode, const std::string& sourceCode, LocalDefinition& def) const;
+ 
+    /**
+     * @brief Reads declared type information for lambda parameters.
+     * @param[in] nameNode AST node of the lambda parameter identifier.
+     * @param[in] declaratorNode AST node of the enclosing lambda_parameter_list.
+     * @param[in] sourceCode Source text of the document.
+     * @param[out] def LocalDefinition receiving extracted type info.
+     */
+    void ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode declaratorNode, const std::string& sourceCode,
+                                     LocalDefinition& def) const;
 
     /**
      * @brief Reads type information and ranges for a foreach loop variable AST node.

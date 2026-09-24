@@ -1207,6 +1207,12 @@ std::string ResolveASTOrScopeBaseType(const AccessSegment& seg0, const Completio
         TSNode rootNode = ts_tree_root_node(request.tree);
         TSPoint pt{request.position.line, request.position.character};
         TSNode curNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+        std::string inferred =
+            analysis::InferLambdaParamType(curNode, seg0.name, request.symbolTable, request.sourceCode);
+        if (!inferred.empty())
+        {
+            return inferred;
+        }
         auto inScopeSyms = analysis::FindSymbolsInScope(seg0.name, curNode, request.sourceCode, request.symbolTable);
         for (const auto& sym : inScopeSyms)
         {

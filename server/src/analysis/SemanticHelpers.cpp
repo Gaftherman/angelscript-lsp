@@ -3592,6 +3592,11 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
         return scopeRes;
     }
 
+    if (auto inferred = InferLambdaParamType(objNode, objText, symbolTable, sourceCode); !inferred.empty())
+    {
+        return inferred;
+    }
+
     if (!effectiveHostClass.empty())
     {
         if (auto res = ResolveMemberInHierarchy(effectiveHostClass, objText, symbolTable); !res.empty())
@@ -4106,5 +4111,108 @@ std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable
     }
 
     return FindCallArgumentFuncdef(table, calleeName, *position);
+}
+
+static uint32_t FindLambdaParamIndex(TSNode paramsNode, std::string_view paramName, std::string_view sourceCode)
+{
+    uint32_t targetIndex = UINT32_MAX;
+    uint32_t currentIndex = 0;
+    TSTreeCursor cursor = ts_tree_cursor_new(paramsNode);
+    if (!ts_tree_cursor_goto_first_child(&cursor))
+    {
+        ts_tree_cursor_delete(&cursor);
+        return targetIndex;
+    }
+
+    do
+    {
+        TSNode child = ts_tree_cursor_current_node(&cursor);
+        std::string_view cType = ts_node_type(child);
+        if (cType == "(")
+        {
+            continue;
+        }
+        if (cType == ",")
+        {
+            currentIndex++;
+            continue;
+        }
+        if (cType == ")")
+        {
+            break;
+        }
+        const char* fieldName = ts_tree_cursor_current_field_name(&cursor);
+        if ((fieldName && std::string_view(fieldName) == "name") || cType == "identifier")
+        {
+            if (GetNodeText(child, sourceCode) == paramName)
+            {
+                targetIndex = currentIndex;
+                break;
+            }
+        }
+    } while (ts_tree_cursor_goto_next_sibling(&cursor));
+
+    ts_tree_cursor_delete(&cursor);
+    return targetIndex;
+}
+
+std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName, const SymbolTable& symbolTable,
+                                 std::string_view sourceCode)
+{
+    if (ts_node_is_null(nodeInLambda) || paramName.empty())
+    {
+        return "";
+    }
+
+    TSNode lambdaNode{};
+    TSNode cur = nodeInLambda;
+    for (int i = 0; i < 24 && !ts_node_is_null(cur); ++i, cur = ts_node_parent(cur))
+    {
+        if (IsLambdaExpression(cur))
+        {
+            lambdaNode = cur;
+            break;
+        }
+    }
+    if (ts_node_is_null(lambdaNode))
+    {
+        return "";
+    }
+
+    TSNode paramsNode = parser::GetChildByField(lambdaNode, parser::fields::Parameters);
+    if (ts_node_is_null(paramsNode))
+    {
+        return "";
+    }
+
+    uint32_t paramIdx = FindLambdaParamIndex(paramsNode, paramName, sourceCode);
+    if (paramIdx == UINT32_MAX)
+    {
+        return "";
+    }
+
+    auto targetFuncdef = FuncdefTargetOfLambda(lambdaNode, symbolTable, sourceCode);
+    if (!targetFuncdef)
+    {
+        return "";
+    }
+
+    if (std::holds_alternative<FuncdefSignature>(targetFuncdef->signature))
+    {
+        const auto& fd = targetFuncdef->GetFuncdef();
+        if (paramIdx < fd.parameters.size())
+        {
+            return MemberOwnerType(fd.parameters[paramIdx].typeName);
+        }
+    }
+    else if (std::holds_alternative<FunctionSignature>(targetFuncdef->signature))
+    {
+        const auto& fn = targetFuncdef->GetFunction();
+        if (paramIdx < fn.parameters.size())
+        {
+            return MemberOwnerType(fn.parameters[paramIdx].typeName);
+        }
+    }
+    return "";
 }
 } // namespace angel_lsp::analysis

@@ -1398,6 +1398,11 @@ std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
     {
         typeName = InferTypeFromAst(ctx.node, ctx.request.sourceCode);
     }
+    if (typeName.empty() && def->kind == analysis::LocalDefinitionKind::Parameter)
+    {
+        typeName =
+            analysis::InferLambdaParamType(ctx.node, def->name, ctx.request.symbolTable, ctx.request.sourceCode);
+    }
 
     if (ctx.profiler.IsActive())
     {
