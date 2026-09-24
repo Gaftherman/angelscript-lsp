@@ -653,54 +653,6 @@ TSNode FindEnclosingCallNode(TSNode node)
     return TSNode{};
 }
 
-TSNode FindArgListNode(TSNode callNode)
-{
-    TSNode argListNode = parser::GetChildByField(callNode, parser::fields::Arguments);
-    if (!ts_node_is_null(argListNode))
-    {
-        return argListNode;
-    }
-    for (uint32_t i = 0; i < ts_node_child_count(callNode); ++i)
-    {
-        TSNode ch = ts_node_child(callNode, i);
-        if (std::string_view(ts_node_type(ch)) == "argument_list")
-        {
-            return ch;
-        }
-    }
-    return TSNode{};
-}
-
-std::vector<std::string> ExtractCallArgTypes(TSNode argListNode, const HoverRequest& request,
-                                             const analysis::Scope* scope)
-{
-    std::vector<std::string> argTypes;
-    if (ts_node_is_null(argListNode))
-    {
-        return argTypes;
-    }
-
-    uint32_t count = ts_node_child_count(argListNode);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode ch = ts_node_child(argListNode, i);
-        std::string_view ct = ts_node_type(ch);
-        if (ct == "(" || ct == ")" || ct == "," || ct == "comment" || ct == ":")
-        {
-            continue;
-        }
-        const char* fieldName = ts_node_field_name_for_child(argListNode, i);
-        if (fieldName && std::string_view(fieldName) == "arg_name")
-        {
-            continue;
-        }
-        std::string aType =
-            analysis::ResolveExpressionType(ch, {scope, request.symbolTable, request.sourceCode, request.uri});
-        argTypes.push_back(std::move(aType));
-    }
-    return argTypes;
-}
-
 int ScoreCandidateFallback(const analysis::FunctionSignature& sig, const std::vector<std::string>& argTypes,
                            const analysis::SymbolTable& symbolTable)
 {
@@ -800,8 +752,8 @@ std::optional<analysis::Symbol> ResolveCallOverload(TSNode node, const std::vect
         return std::nullopt;
     }
 
-    TSNode argListNode = FindArgListNode(callNode);
-    std::vector<std::string> argTypes = ExtractCallArgTypes(argListNode, request, scope);
+    std::vector<std::string> argTypes =
+        analysis::ExtractCallArgumentTypes(callNode, {scope, request.symbolTable, request.sourceCode, request.uri});
 
     auto match = analysis::ResolveBestOverload(candidates, argTypes, request.symbolTable);
     if (match.bestCandidate != nullptr)

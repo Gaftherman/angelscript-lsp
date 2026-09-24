@@ -1,6 +1,7 @@
 #include "features/signature_help/SignatureHelpHandler.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/GrammarNames.h"
+#include "utils/Utils.h"
 #include <algorithm>
 #include <sstream>
 #include <unordered_set>
@@ -10,252 +11,6 @@ namespace angel_lsp::features
 {
 namespace
 {
-
-/**
- * @brief Recursively collects the class and interface inheritance hierarchy for a type.
- * @param[in] symbolTable The symbol table to look up class and interface definitions.
- * @param[in] initialTypeName The starting type name.
- * @return Vector of type names in the hierarchy including initialTypeName and its transitive bases.
- */
-std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& symbolTable,
-                                                   const std::string& initialTypeName)
-{
-    std::vector<std::string> hierarchy;
-    std::unordered_set<std::string> visited;
-    std::vector<std::string> queue;
-
-    std::string rootType = analysis::MemberOwnerType(initialTypeName);
-    if (rootType.empty())
-    {
-        return hierarchy;
-    }
-
-    visited.insert(rootType);
-    queue.push_back(rootType);
-
-    size_t head = 0;
-    while (head < queue.size())
-    {
-        std::string curType = queue[head++];
-        hierarchy.push_back(curType);
-
-        const auto symbols = symbolTable.FindSymbolsPtr(curType);
-        if (!symbols)
-        {
-            continue;
-        }
-        for (const auto& sym : *symbols)
-        {
-            if (sym.type == analysis::SymbolType::Class)
-            {
-                const auto& cls = sym.GetClass();
-                for (const auto& base : cls.bases)
-                {
-                    std::string cleanBase = analysis::MemberOwnerType(base);
-                    if (!cleanBase.empty() && visited.insert(cleanBase).second)
-                    {
-                        queue.push_back(cleanBase);
-                    }
-                }
-            }
-            else if (sym.type == analysis::SymbolType::Interface)
-            {
-                const auto& iface = sym.GetInterface();
-                for (const auto& base : iface.inheritedInterfaces)
-                {
-                    std::string cleanBase = analysis::MemberOwnerType(base);
-                    if (!cleanBase.empty() && visited.insert(cleanBase).second)
-                    {
-                        queue.push_back(cleanBase);
-                    }
-                }
-            }
-        }
-    }
-
-    return hierarchy;
-}
-
-/**
- * @brief State tracker for nesting delimiters and comments during argument parsing.
- */
-struct LexerState
-{
-    int parenDepth = 0;
-    int bracketDepth = 0;
-    int braceDepth = 0;
-    int angleDepth = 0;
-    bool inString = false;
-    char stringChar = '\0';
-    bool inLineComment = false;
-    bool inBlockComment = false;
-
-    [[nodiscard]] bool AtTopLevel() const noexcept
-    {
-        return parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 && angleDepth == 0;
-    }
-};
-
-/**
- * @brief Advances comment state during signature lexing.
- * @param[in] code Full source code string.
- * @param[in,out] i Current character index in source code.
- * @param[in] cursorByte Target cursor byte offset.
- * @param[in,out] state Active lexer state.
- * @return True if character was consumed as part of a comment.
- */
-bool HandleComments(const std::string& code, size_t& i, size_t cursorByte, LexerState& state)
-{
-    if (state.inLineComment)
-    {
-        if (code[i] == '\n')
-        {
-            state.inLineComment = false;
-        }
-        return true;
-    }
-
-    if (state.inBlockComment)
-    {
-        if (code[i] == '*' && i + 1 < cursorByte && code[i + 1] == '/')
-        {
-            state.inBlockComment = false;
-            i++;
-        }
-        return true;
-    }
-
-    if (code[i] == '/' && i + 1 < cursorByte)
-    {
-        if (code[i + 1] == '/')
-        {
-            state.inLineComment = true;
-            i++;
-            return true;
-        }
-        if (code[i + 1] == '*')
-        {
-            state.inBlockComment = true;
-            i++;
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Advances string literal state during signature lexing.
- * @param[in] code Full source code string.
- * @param[in,out] i Current character index in source code.
- * @param[in] cursorByte Target cursor byte offset.
- * @param[in,out] state Active lexer state.
- * @return True if character was consumed as part of a string literal.
- */
-bool HandleString(const std::string& code, size_t& i, size_t cursorByte, LexerState& state)
-{
-    if (state.inString)
-    {
-        if (code[i] == '\\' && i + 1 < cursorByte)
-        {
-            i++;
-        }
-        else if (code[i] == state.stringChar)
-        {
-            state.inString = false;
-        }
-        return true;
-    }
-
-    if (code[i] == '"' || code[i] == '\'')
-    {
-        state.inString = true;
-        state.stringChar = code[i];
-        return true;
-    }
-    return false;
-}
-
-/**
- * @brief Updates nesting depth or increments parameter count on comma at top-level.
- * @param[in] c Current character.
- * @param[in,out] state Active lexer state.
- * @param[in,out] activeParam Current parameter counter.
- */
-void UpdateDepth(char c, LexerState& state, uint32_t& activeParam)
-{
-    switch (c)
-    {
-    case '(':
-        ++state.parenDepth;
-        break;
-    case ')':
-        if (state.parenDepth > 0)
-            --state.parenDepth;
-        break;
-    case '[':
-        ++state.bracketDepth;
-        break;
-    case ']':
-        if (state.bracketDepth > 0)
-            --state.bracketDepth;
-        break;
-    case '{':
-        ++state.braceDepth;
-        break;
-    case '}':
-        if (state.braceDepth > 0)
-            --state.braceDepth;
-        break;
-    case '<':
-        ++state.angleDepth;
-        break;
-    case '>':
-        if (state.angleDepth > 0)
-            --state.angleDepth;
-        break;
-    case ',':
-        if (state.AtTopLevel())
-        {
-            ++activeParam;
-        }
-        break;
-    default:
-        break;
-    }
-}
-
-/**
- * @brief Calculates zero-based active parameter index within argument list based on cursor position.
- * @param[in] sourceCode Document source text.
- * @param[in] argStartByte Byte offset after opening parenthesis.
- * @param[in] cursorByte Byte offset corresponding to request position.
- * @return Zero-based index of the parameter under cursor.
- */
-uint32_t CalculateActiveParameter(const std::string& sourceCode, uint32_t argStartByte, uint32_t cursorByte)
-{
-    if (cursorByte <= argStartByte || cursorByte > sourceCode.size())
-    {
-        return 0;
-    }
-
-    uint32_t activeParam = 0;
-    LexerState state;
-
-    for (size_t i = argStartByte; i < cursorByte; ++i)
-    {
-        if (HandleComments(sourceCode, i, cursorByte, state))
-        {
-            continue;
-        }
-        if (HandleString(sourceCode, i, cursorByte, state))
-        {
-            continue;
-        }
-        UpdateDepth(sourceCode[i], state, activeParam);
-    }
-
-    return activeParam;
-}
 
 /**
  * @brief Appends parameter declarations into comma-separated text in result.
@@ -388,47 +143,9 @@ CallNodes FindCallNodes(TSNode node)
 
     if (!ts_node_is_null(result.callNode) && ts_node_is_null(result.argListNode))
     {
-        result.argListNode = parser::GetChildByField(result.callNode, parser::fields::Arguments);
-        if (ts_node_is_null(result.argListNode))
-        {
-            uint32_t childCount = ts_node_child_count(result.callNode);
-            for (uint32_t i = 0; i < childCount; ++i)
-            {
-                TSNode child = ts_node_child(result.callNode, i);
-                if (std::string_view(ts_node_type(child)) == "argument_list")
-                {
-                    result.argListNode = child;
-                    break;
-                }
-            }
-        }
+        result.argListNode = analysis::ResolveArgumentListNode(result.callNode);
     }
     return result;
-}
-
-/**
- * @brief Converts LSP line and character into a byte offset in source code.
- * @param[in] sourceCode Source text.
- * @param[in] pos Position with line and character.
- * @return Byte offset clamped to source size.
- */
-size_t PositionToByteOffset(const std::string& sourceCode, lsp::Position pos)
-{
-    size_t cursorByte = 0;
-    size_t curLine = 0;
-    for (size_t i = 0; i < sourceCode.size(); ++i)
-    {
-        if (curLine == pos.line)
-        {
-            cursorByte = i + pos.character;
-            break;
-        }
-        if (sourceCode[i] == '\n')
-        {
-            curLine++;
-        }
-    }
-    return std::min(cursorByte, sourceCode.size());
 }
 
 /**
@@ -439,19 +156,9 @@ size_t PositionToByteOffset(const std::string& sourceCode, lsp::Position pos)
  */
 uint32_t DetermineActiveParameter(const SignatureHelpRequest& request, TSNode argListNode)
 {
-    if (ts_node_is_null(argListNode))
-    {
-        return 0;
-    }
-
-    uint32_t argStart = ts_node_start_byte(argListNode);
-    if (argStart < request.sourceCode.size() && request.sourceCode[argStart] == '(')
-    {
-        argStart++;
-    }
-
-    size_t cursorByte = PositionToByteOffset(request.sourceCode, request.position);
-    return CalculateActiveParameter(request.sourceCode, argStart, static_cast<uint32_t>(cursorByte));
+    const size_t cursorByte = utils::PositionToOffset(
+        request.sourceCode, request.position.line, request.position.character, utils::PositionEncoding::Utf16);
+    return analysis::CalculateActiveCallParameter(argListNode, cursorByte, request.sourceCode);
 }
 
 /**
@@ -507,7 +214,7 @@ std::vector<const analysis::Symbol*> ResolveMemberCandidates(const SignatureHelp
         return {};
     }
 
-    auto hierarchy = GetInheritedTypeHierarchy(request.symbolTable, receiverTypeName);
+    auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, request.symbolTable);
     for (const auto& typeName : hierarchy)
     {
         std::string qualifiedName = typeName + "::" + std::string(memText);

@@ -394,21 +394,14 @@ std::optional<lsp::DocumentHighlightKind> CheckAssignmentMutation(TSNode cur, TS
  */
 std::optional<uint32_t> FindArgumentIndex(TSNode argList, TSNode leaf) noexcept
 {
-    uint32_t childCount = ts_node_child_count(argList);
-    uint32_t argIndex = 0;
-    for (uint32_t i = 0; i < childCount; ++i)
+    auto callArgs = analysis::ExtractCallArguments(argList, "");
+    for (const auto& a : callArgs)
     {
-        TSNode argChild = ts_node_child(argList, i);
-        std::string_view childType = ts_node_type(argChild);
-        if (childType == "(" || childType == ")" || childType == ",")
+        if ((!ts_node_is_null(a.exprNode) && IsNodeContained(leaf, a.exprNode)) ||
+            (!ts_node_is_null(a.nameNode) && IsNodeContained(leaf, a.nameNode)))
         {
-            continue;
+            return a.index;
         }
-        if (IsNodeContained(leaf, argChild))
-        {
-            return argIndex;
-        }
-        argIndex++;
     }
     return std::nullopt;
 }

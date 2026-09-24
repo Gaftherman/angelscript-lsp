@@ -637,6 +637,85 @@ struct ExpressionTypeContext
 };
 
 /**
+ * @brief Describes a single argument in a call_expression's argument_list.
+ */
+struct CallArgumentInfo
+{
+    std::string name;       ///< Argument name if named (e.g. "param" in "param: value"), else empty.
+    TSNode exprNode{};      ///< AST node of the argument value expression.
+    TSNode nameNode{};      ///< AST node of the argument name identifier if named, else null.
+    uint32_t index = 0;     ///< Zero-based argument index in the call.
+};
+
+/**
+ * @brief Resolves argument_list node from either argument_list or call_expression.
+ * @param[in] node AST node representing call_expression, construct_call_expression, or argument_list.
+ * @return argument_list node or null node.
+ */
+TSNode ResolveArgumentListNode(TSNode node);
+
+/**
+ * @brief Structurally extracts call arguments from an argument_list AST node.
+ *        Never scans commas or delimiters manually; relies strictly on named child AST structure.
+ * @param[in] argumentList AST node representing argument_list.
+ * @param[in] sourceCode Document source text for extracting argument names.
+ * @return Ordered list of CallArgumentInfo structs.
+ */
+std::vector<CallArgumentInfo> ExtractCallArguments(TSNode argumentList, std::string_view sourceCode);
+
+/**
+ * @brief Returns the number of argument expressions present in an argument_list.
+ * @param[in] argumentList AST node representing argument_list.
+ * @return Count of actual argument expressions.
+ */
+size_t CountCallArguments(TSNode argumentList);
+
+/**
+ * @brief Deduces expression types for all arguments in a call expression.
+ * @param[in] callNode AST node representing the call_expression.
+ * @param[in] ctx Context bundled for expression type resolution.
+ * @return Ordered vector of deduced argument type strings.
+ */
+std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const ExpressionTypeContext& ctx);
+
+/**
+ * @brief Determines the zero-based active parameter index for a call given the cursor offset.
+ *        Correctly balances nesting delimiters (parentheses, brackets, braces, template angles)
+ *        and skips comments and string literals even when AST is corrupted by parser recovery.
+ * @param[in] argListNode AST node representing argument_list or enclosing call_expression.
+ * @param[in] cursorByte Byte offset corresponding to request position.
+ * @param[in] sourceCode Document source text.
+ * @return Zero-based active parameter index.
+ */
+uint32_t CalculateActiveCallParameter(TSNode argListNode, size_t cursorByte, std::string_view sourceCode);
+
+/**
+ * @brief Describes a single parameter in a lambda_parameter_list.
+ */
+struct LambdaParamASTInfo
+{
+    TSNode typeNode{};                          ///< AST node for declared type if present.
+    TSNode nameNode{};                          ///< AST node for parameter identifier if present.
+    TSNode startNode{};                         ///< Leading node for range calculation.
+    std::string name;                           ///< Parameter identifier name.
+    std::string typeName;                       ///< Declared type name string.
+    uint32_t index = 0;                         ///< Zero-based parameter position.
+    bool hasWrittenType = false;                ///< True if parameter has explicit type.
+    bool isConst = false;                       ///< True if parameter has const qualifier.
+    bool isHandle = false;                      ///< True if parameter is a handle (@).
+    bool isReference = false;                   ///< True if parameter is a reference (&).
+    ParameterModifier modifier = ParameterModifier::None; ///< In/Out parameter modifier.
+};
+
+/**
+ * @brief Structurally extracts parameters from a lambda_parameter_list AST node.
+ * @param[in] lambdaParamList AST node representing lambda_parameter_list.
+ * @param[in] sourceCode Document source text.
+ * @return Ordered vector of LambdaParamASTInfo structs.
+ */
+std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode);
+
+/**
  * @brief Context bundled for receiver type resolution.
  */
 struct ReceiverTypeContext

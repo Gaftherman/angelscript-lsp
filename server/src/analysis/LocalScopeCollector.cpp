@@ -294,32 +294,6 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
     current->definitions.push_back(std::move(def));
 }
 
-static uint32_t CountArguments(TSNode argsChild)
-{
-    uint32_t actualArgs = 0;
-    TSTreeCursor argCursor = ts_tree_cursor_new(argsChild);
-    if (ts_tree_cursor_goto_first_child(&argCursor))
-    {
-        do
-        {
-            TSNode ac = ts_tree_cursor_current_node(&argCursor);
-            std::string_view act = ts_node_type(ac);
-            if (act == "(" || act == ")" || act == "," || act == ":" || act == "comment")
-            {
-                continue;
-            }
-            const char* fn = ts_tree_cursor_current_field_name(&argCursor);
-            if (fn && std::string_view(fn) == "arg_name")
-            {
-                continue;
-            }
-            actualArgs++;
-        } while (ts_tree_cursor_goto_next_sibling(&argCursor));
-    }
-    ts_tree_cursor_delete(&argCursor);
-    return actualArgs;
-}
-
 static TSNode FindArgumentList(TSNode callNode)
 {
     TSNode argsChild = parser::GetChildByField(callNode, parser::fields::Arguments);
@@ -371,7 +345,7 @@ void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode pare
                 TSNode argsChild = FindArgumentList(walkParent);
                 if (!ts_node_is_null(argsChild))
                 {
-                    ref.argumentCount = CountArguments(argsChild);
+                    ref.argumentCount = static_cast<uint32_t>(CountCallArguments(argsChild));
                 }
             }
             break;
@@ -650,69 +624,26 @@ void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, con
     }
 }
 
-/**
- * @brief Locates the param_type node corresponding to a lambda parameter name node.
- * @param[in] nameNode AST node of the parameter identifier.
- * @param[in] declaratorNode AST node of the enclosing lambda_parameter_list.
- * @param[out] outStartNode Receives the leading AST node of the parameter.
- * @return AST node for param_type, or null node if untyped.
- */
-static TSNode FindLambdaParamTypeNode(TSNode nameNode, TSNode declaratorNode, TSNode& outStartNode)
-{
-    outStartNode = nameNode;
-    TSNode typeNode{};
-    TSNode segmentStart{};
-    TSTreeCursor cursor = ts_tree_cursor_new(declaratorNode);
-    if (!ts_tree_cursor_goto_first_child(&cursor))
-    {
-        ts_tree_cursor_delete(&cursor);
-        return typeNode;
-    }
-
-    do
-    {
-        TSNode child = ts_tree_cursor_current_node(&cursor);
-        std::string_view cType = ts_node_type(child);
-        if (cType == "(")
-        {
-            continue;
-        }
-        if (cType == ",")
-        {
-            typeNode = TSNode{};
-            segmentStart = TSNode{};
-            continue;
-        }
-        if (cType == ")")
-        {
-            break;
-        }
-        if (ts_node_is_null(segmentStart))
-        {
-            segmentStart = child;
-        }
-        const char* fieldName = ts_tree_cursor_current_field_name(&cursor);
-        if ((fieldName && std::string_view(fieldName) == "param_type") || cType == "type")
-        {
-            typeNode = child;
-        }
-        else if (ts_node_eq(child, nameNode) ||
-                 (ts_node_is_named(child) && ts_node_start_byte(child) == ts_node_start_byte(nameNode)))
-        {
-            outStartNode = !ts_node_is_null(segmentStart) ? segmentStart : nameNode;
-            break;
-        }
-    } while (ts_tree_cursor_goto_next_sibling(&cursor));
-
-    ts_tree_cursor_delete(&cursor);
-    return typeNode;
-}
-
 void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode declaratorNode,
                                                      const std::string& sourceCode, LocalDefinition& def) const
 {
     TSNode startNode = nameNode;
-    TSNode typeNode = FindLambdaParamTypeNode(nameNode, declaratorNode, startNode);
+    TSNode typeNode{};
+
+    auto lambdaParams = ExtractLambdaParameters(declaratorNode, sourceCode);
+    for (const auto& param : lambdaParams)
+    {
+        if (ts_node_eq(param.nameNode, nameNode) ||
+            (!ts_node_is_null(param.nameNode) && ts_node_start_byte(param.nameNode) == ts_node_start_byte(nameNode)))
+        {
+            typeNode = param.typeNode;
+            if (!ts_node_is_null(param.startNode))
+            {
+                startNode = param.startNode;
+            }
+            break;
+        }
+    }
 
     TSPoint pStart = ts_node_start_point(startNode);
     TSPoint pEnd = ts_node_end_point(nameNode);

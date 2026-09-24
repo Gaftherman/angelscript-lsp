@@ -3647,6 +3647,294 @@ bool IsVariableType(std::string_view typeName)
     return cleaned == "?";
 }
 
+/**
+ * @brief Resolves argument_list node from either argument_list or call_expression.
+ * @param[in] node AST node.
+ * @return argument_list node or null node.
+ */
+TSNode ResolveArgumentListNode(TSNode node)
+{
+    if (ts_node_is_null(node))
+    {
+        return TSNode{};
+    }
+    std::string_view nodeType = ts_node_type(node);
+    if (nodeType == "argument_list")
+    {
+        return node;
+    }
+    if (nodeType == "call_expression" || nodeType == "construct_call_expression")
+    {
+        TSNode args = parser::GetChildByField(node, parser::fields::Arguments);
+        if (!ts_node_is_null(args))
+        {
+            return args;
+        }
+        TSTreeCursor cursor = ts_tree_cursor_new(node);
+        if (ts_tree_cursor_goto_first_child(&cursor))
+        {
+            do
+            {
+                TSNode ch = ts_tree_cursor_current_node(&cursor);
+                if (std::string_view(ts_node_type(ch)) == "argument_list")
+                {
+                    ts_tree_cursor_delete(&cursor);
+                    return ch;
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
+            ts_tree_cursor_delete(&cursor);
+        }
+    }
+    return TSNode{};
+}
+
+namespace
+{
+void ProcessCallArgumentChild(TSNode child, const char* field, std::string_view sourceCode,
+                              CallArgumentInfo& current)
+{
+    if (field && std::string_view(field) == "arg_name")
+    {
+        current.nameNode = child;
+        if (!sourceCode.empty())
+        {
+            current.name = GetNodeText(child, sourceCode);
+        }
+        return;
+    }
+
+    current.exprNode = child;
+}
+} // namespace
+
+std::vector<CallArgumentInfo> ExtractCallArguments(TSNode argumentList, std::string_view sourceCode)
+{
+    TSNode targetList = ResolveArgumentListNode(argumentList);
+    if (ts_node_is_null(targetList))
+    {
+        return {};
+    }
+
+    std::vector<CallArgumentInfo> result;
+    TSTreeCursor cursor = ts_tree_cursor_new(targetList);
+    if (!ts_tree_cursor_goto_first_child(&cursor))
+    {
+        ts_tree_cursor_delete(&cursor);
+        return result;
+    }
+
+    CallArgumentInfo current;
+    current.index = 0;
+    bool inArgument = false;
+
+    do
+    {
+        TSNode child = ts_tree_cursor_current_node(&cursor);
+        std::string_view type = ts_node_type(child);
+
+        if (type == "(" || type == "comment" || type == ":")
+        {
+            continue;
+        }
+        if (type == ")")
+        {
+            break;
+        }
+        if (type == ",")
+        {
+            if (inArgument)
+            {
+                result.push_back(std::move(current));
+                current = CallArgumentInfo{};
+                current.index = static_cast<uint32_t>(result.size());
+                inArgument = false;
+            }
+            continue;
+        }
+
+        const char* field = ts_tree_cursor_current_field_name(&cursor);
+        ProcessCallArgumentChild(child, field, sourceCode, current);
+        inArgument = true;
+
+    } while (ts_tree_cursor_goto_next_sibling(&cursor));
+
+    ts_tree_cursor_delete(&cursor);
+
+    if (inArgument)
+    {
+        result.push_back(std::move(current));
+    }
+
+    return result;
+}
+
+size_t CountCallArguments(TSNode argumentList)
+{
+    return ExtractCallArguments(argumentList, "").size();
+}
+
+std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const ExpressionTypeContext& ctx)
+{
+    auto args = ExtractCallArguments(callNode, ctx.sourceCode);
+    std::vector<std::string> types;
+    types.reserve(args.size());
+    for (const auto& arg : args)
+    {
+        if (ts_node_is_null(arg.exprNode))
+        {
+            types.push_back("");
+        }
+        else
+        {
+            types.push_back(ResolveExpressionType(arg.exprNode, ctx));
+        }
+    }
+    return types;
+}
+
+namespace
+{
+struct CallDelimiterState
+{
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    int angleDepth = 0;
+    bool inString = false;
+    char stringChar = '\0';
+    bool inLineComment = false;
+    bool inBlockComment = false;
+
+    [[nodiscard]] bool AtTopLevel() const noexcept
+    {
+        return parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 && angleDepth == 0;
+    }
+};
+
+bool StepCommentState(std::string_view code, size_t& i, size_t cursorByte, CallDelimiterState& state)
+{
+    if (state.inLineComment)
+    {
+        if (code[i] == '\n')
+        {
+            state.inLineComment = false;
+        }
+        return true;
+    }
+
+    if (state.inBlockComment)
+    {
+        if (code[i] == '*' && i + 1 < cursorByte && code[i + 1] == '/')
+        {
+            state.inBlockComment = false;
+            ++i;
+        }
+        return true;
+    }
+
+    if (code[i] == '/' && i + 1 < cursorByte)
+    {
+        if (code[i + 1] == '/')
+        {
+            state.inLineComment = true;
+            ++i;
+            return true;
+        }
+        if (code[i + 1] == '*')
+        {
+            state.inBlockComment = true;
+            ++i;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool StepStringState(std::string_view code, size_t& i, size_t cursorByte, CallDelimiterState& state)
+{
+    if (state.inString)
+    {
+        if (code[i] == '\\' && i + 1 < cursorByte)
+        {
+            ++i;
+        }
+        else if (code[i] == state.stringChar)
+        {
+            state.inString = false;
+        }
+        return true;
+    }
+
+    if (code[i] == '"' || code[i] == '\'')
+    {
+        state.inString = true;
+        state.stringChar = code[i];
+        return true;
+    }
+    return false;
+}
+
+void StepDelimiterDepth(char c, CallDelimiterState& state, uint32_t& activeParam)
+{
+    switch (c)
+    {
+    case '(': ++state.parenDepth; break;
+    case ')': if (state.parenDepth > 0) --state.parenDepth; break;
+    case '[': ++state.bracketDepth; break;
+    case ']': if (state.bracketDepth > 0) --state.bracketDepth; break;
+    case '{': ++state.braceDepth; break;
+    case '}': if (state.braceDepth > 0) --state.braceDepth; break;
+    case '<': ++state.angleDepth; break;
+    case '>': if (state.angleDepth > 0) --state.angleDepth; break;
+    case ',':
+        if (state.AtTopLevel())
+        {
+            ++activeParam;
+        }
+        break;
+    default:
+        break;
+    }
+}
+} // namespace
+
+uint32_t CalculateActiveCallParameter(TSNode argListNode, size_t cursorByte, std::string_view sourceCode)
+{
+    TSNode targetList = ResolveArgumentListNode(argListNode);
+    if (ts_node_is_null(targetList) || sourceCode.empty())
+    {
+        return 0;
+    }
+
+    uint32_t startByte = ts_node_start_byte(targetList);
+    uint32_t endByte = ts_node_end_byte(targetList);
+    if (cursorByte <= startByte)
+    {
+        return 0;
+    }
+
+    if (startByte < sourceCode.size() && sourceCode[startByte] == '(')
+    {
+        ++startByte;
+    }
+
+    const size_t bound = std::min(cursorByte, static_cast<size_t>(endByte));
+    uint32_t activeParam = 0;
+    CallDelimiterState state;
+
+    for (size_t i = startByte; i < bound; ++i)
+    {
+        if (StepCommentState(sourceCode, i, bound, state) ||
+            StepStringState(sourceCode, i, bound, state))
+        {
+            continue;
+        }
+        StepDelimiterDepth(sourceCode[i], state, activeParam);
+    }
+
+    return activeParam;
+}
+
 // --- A lambda against the funcdef it is being handed to -------------------------------
 
 namespace
@@ -3687,10 +3975,58 @@ bool IsLambdaExpression(TSNode node) noexcept
     return type == node_types::LambdaExpression;
 }
 
-static void ParseLambdaParamToken(std::string_view fieldName, const std::string& text, LambdaParameter& current)
+/**
+ * @brief Resolves lambda_parameter_list node from either parameter list or lambda expression.
+ * @param[in] node AST node.
+ * @return lambda_parameter_list node or null node.
+ */
+static TSNode ResolveLambdaParameterListNode(TSNode node)
 {
+    if (ts_node_is_null(node))
+    {
+        return TSNode{};
+    }
+    std::string_view nodeType = ts_node_type(node);
+    if (nodeType == "lambda_parameter_list")
+    {
+        return node;
+    }
+    if (nodeType == "lambda_expression")
+    {
+        TSNode params = parser::GetChildByField(node, parser::fields::Parameters);
+        if (!ts_node_is_null(params))
+        {
+            return params;
+        }
+        TSTreeCursor cursor = ts_tree_cursor_new(node);
+        if (ts_tree_cursor_goto_first_child(&cursor))
+        {
+            do
+            {
+                TSNode ch = ts_tree_cursor_current_node(&cursor);
+                if (std::string_view(ts_node_type(ch)) == "lambda_parameter_list")
+                {
+                    ts_tree_cursor_delete(&cursor);
+                    return ch;
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
+            ts_tree_cursor_delete(&cursor);
+        }
+    }
+    return TSNode{};
+}
+
+namespace
+{
+void ApplyLambdaParamChild(TSNode child, const char* field, std::string_view sourceCode, LambdaParamASTInfo& current)
+{
+    std::string_view fieldName = field ? std::string_view(field) : std::string_view{};
+    std::string text = GetNodeText(child, sourceCode);
+    std::string_view type = ts_node_type(child);
+
     if (fieldName == "param_type")
     {
+        current.typeNode = child;
         current.hasWrittenType = true;
         current.isConst = text.starts_with("const ") || text == "const";
         current.isHandle = text.find('@') != std::string::npos;
@@ -3702,53 +4038,99 @@ static void ParseLambdaParamToken(std::string_view fieldName, const std::string&
     }
     else if (text == "in" || text == "out" || text == "inout")
     {
-        current.modifier = text == "in"    ? ParameterModifier::In
-                           : text == "out" ? ParameterModifier::Out
-                                           : ParameterModifier::InOut;
+        current.modifier = (text == "in")    ? ParameterModifier::In
+                           : (text == "out") ? ParameterModifier::Out
+                                             : ParameterModifier::InOut;
     }
+    else if (fieldName == "name" || type == "identifier")
+    {
+        current.nameNode = child;
+        current.name = std::move(text);
+    }
+}
+} // namespace
+
+std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode)
+{
+    TSNode targetList = ResolveLambdaParameterListNode(lambdaParamList);
+    if (ts_node_is_null(targetList))
+    {
+        return {};
+    }
+
+    std::vector<LambdaParamASTInfo> result;
+    TSTreeCursor cursor = ts_tree_cursor_new(targetList);
+    if (!ts_tree_cursor_goto_first_child(&cursor))
+    {
+        ts_tree_cursor_delete(&cursor);
+        return result;
+    }
+
+    LambdaParamASTInfo current;
+    current.index = 0;
+    bool inParam = false;
+
+    do
+    {
+        TSNode child = ts_tree_cursor_current_node(&cursor);
+        std::string_view type = ts_node_type(child);
+
+        if (type == "(" || type == "comment")
+        {
+            continue;
+        }
+        if (type == ")")
+        {
+            break;
+        }
+        if (type == ",")
+        {
+            if (inParam)
+            {
+                result.push_back(std::move(current));
+                current = LambdaParamASTInfo{};
+                current.index = static_cast<uint32_t>(result.size());
+                inParam = false;
+            }
+            continue;
+        }
+
+        if (ts_node_is_null(current.startNode))
+        {
+            current.startNode = child;
+        }
+        inParam = true;
+
+        const char* field = ts_tree_cursor_current_field_name(&cursor);
+        ApplyLambdaParamChild(child, field, sourceCode, current);
+
+    } while (ts_tree_cursor_goto_next_sibling(&cursor));
+
+    ts_tree_cursor_delete(&cursor);
+
+    if (inParam)
+    {
+        result.push_back(std::move(current));
+    }
+
+    return result;
 }
 
 std::vector<LambdaParameter> ReadLambdaParameters(TSNode listNode, std::string_view sourceCode)
 {
     std::vector<LambdaParameter> parameters;
-    if (ts_node_is_null(listNode))
+    auto astParams = ExtractLambdaParameters(listNode, sourceCode);
+    parameters.reserve(astParams.size());
+    for (const auto& p : astParams)
     {
-        return parameters;
-    }
-
-    LambdaParameter current;
-    bool groupHasContent = false;
-
-    const uint32_t childCount = ts_node_child_count(listNode);
-    for (uint32_t i = 0; i < childCount; ++i)
-    {
-        TSNode child = ts_node_child(listNode, i);
-        const std::string text = GetNodeText(child, sourceCode);
-
-        if (text == "(")
-        {
-            continue;
-        }
-        if (text == ")")
-        {
-            break;
-        }
-        if (text == ",")
-        {
-            parameters.push_back(current);
-            current = LambdaParameter{};
-            groupHasContent = false;
-            continue;
-        }
-
-        const char* field = ts_node_field_name_for_child(listNode, i);
-        ParseLambdaParamToken(field ? std::string_view(field) : std::string_view{}, text, current);
-        groupHasContent = true;
-    }
-
-    if (groupHasContent)
-    {
-        parameters.push_back(current);
+        LambdaParameter lp;
+        lp.typeName = p.typeName;
+        lp.hasWrittenType = p.hasWrittenType;
+        lp.isConst = p.isConst;
+        lp.isHandle = p.isHandle;
+        lp.isReference = p.isReference;
+        lp.modifier = p.modifier;
+        parameters.push_back(std::move(lp));
     }
     return parameters;
 }
@@ -4115,45 +4497,15 @@ std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable
 
 static uint32_t FindLambdaParamIndex(TSNode paramsNode, std::string_view paramName, std::string_view sourceCode)
 {
-    uint32_t targetIndex = UINT32_MAX;
-    uint32_t currentIndex = 0;
-    TSTreeCursor cursor = ts_tree_cursor_new(paramsNode);
-    if (!ts_tree_cursor_goto_first_child(&cursor))
+    auto astParams = ExtractLambdaParameters(paramsNode, sourceCode);
+    for (const auto& p : astParams)
     {
-        ts_tree_cursor_delete(&cursor);
-        return targetIndex;
+        if (p.name == paramName)
+        {
+            return p.index;
+        }
     }
-
-    do
-    {
-        TSNode child = ts_tree_cursor_current_node(&cursor);
-        std::string_view cType = ts_node_type(child);
-        if (cType == "(")
-        {
-            continue;
-        }
-        if (cType == ",")
-        {
-            currentIndex++;
-            continue;
-        }
-        if (cType == ")")
-        {
-            break;
-        }
-        const char* fieldName = ts_tree_cursor_current_field_name(&cursor);
-        if ((fieldName && std::string_view(fieldName) == "name") || cType == "identifier")
-        {
-            if (GetNodeText(child, sourceCode) == paramName)
-            {
-                targetIndex = currentIndex;
-                break;
-            }
-        }
-    } while (ts_tree_cursor_goto_next_sibling(&cursor));
-
-    ts_tree_cursor_delete(&cursor);
-    return targetIndex;
+    return UINT32_MAX;
 }
 
 std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName, const SymbolTable& symbolTable,

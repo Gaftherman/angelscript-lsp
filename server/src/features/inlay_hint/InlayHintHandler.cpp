@@ -290,72 +290,6 @@ std::vector<analysis::Symbol> CollectFreeCalleeCandidates(TSNode funcNode, TSNod
     return candidateSymbols;
 }
 
-/**
- * @brief Locates the argument_list child AST node for a call_expression node.
- * @param[in] callNode AST call_expression node.
- * @return AST argument_list node or null node.
- */
-TSNode FindArgumentListNode(TSNode callNode)
-{
-    TSNode argListNode = parser::GetChildByField(callNode, parser::fields::Arguments);
-    if (ts_node_is_null(argListNode))
-    {
-        uint32_t childCount = ts_node_child_count(callNode);
-        for (uint32_t i = 0; i < childCount; ++i)
-        {
-            TSNode child = ts_node_child(callNode, i);
-            if (std::string_view(ts_node_type(child)) == "argument_list")
-            {
-                return child;
-            }
-        }
-    }
-    return argListNode;
-}
-
-/**
- * @brief Extracts expression type strings for each argument in a call expression.
- * @param[in] callNode AST call_expression node.
- * @param[in] request Inlay hint request context.
- * @return Vector of type strings.
- */
-std::vector<std::string> ExtractCallArgTypes(TSNode callNode, const InlayHintRequest& request)
-{
-    TSNode argListNode = FindArgumentListNode(callNode);
-    if (ts_node_is_null(argListNode))
-    {
-        return {};
-    }
-
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    const analysis::Scope* scope = nullptr;
-    if (rootScope)
-    {
-        TSPoint pt = ts_node_start_point(callNode);
-        scope = FindInnermostScope(rootScope.get(), pt.row, pt.column);
-    }
-
-    std::vector<std::string> argTypes;
-    uint32_t count = ts_node_child_count(argListNode);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode ch = ts_node_child(argListNode, i);
-        std::string_view ct = ts_node_type(ch);
-        if (ct == "(" || ct == ")" || ct == "," || ct == "comment" || ct == ":")
-        {
-            continue;
-        }
-        const char* fieldName = ts_node_field_name_for_child(argListNode, i);
-        if (fieldName && std::string_view(fieldName) == "arg_name")
-        {
-            continue;
-        }
-        std::string aType =
-            analysis::ResolveExpressionType(ch, {scope, request.symbolTable, request.sourceCode, request.uri});
-        argTypes.push_back(std::move(aType));
-    }
-    return argTypes;
-}
 
 /**
  * @brief Selects the candidate matching the given argument count and default parameter bounds.
@@ -451,7 +385,15 @@ std::vector<analysis::ParameterInformation> ResolveCalleeParameters(TSNode callN
     const analysis::Symbol* bestSym = nullptr;
     if (candidateSymbols.size() > 1)
     {
-        auto argTypes = ExtractCallArgTypes(callNode, request);
+        auto rootScope = request.scopeIndex.GetRoot(request.uri);
+        const analysis::Scope* scope = nullptr;
+        if (rootScope)
+        {
+            TSPoint pt = ts_node_start_point(callNode);
+            scope = FindInnermostScope(rootScope.get(), pt.row, pt.column);
+        }
+        auto argTypes = analysis::ExtractCallArgumentTypes(
+            callNode, {scope, request.symbolTable, request.sourceCode, request.uri});
         auto match = analysis::ResolveBestOverload(candidateSymbols, argTypes, request.symbolTable);
         if (match.bestCandidate != nullptr)
         {
@@ -492,51 +434,19 @@ struct ArgInfo
 std::vector<ArgInfo> ParseArguments(TSNode argListNode, std::string_view sourceCode)
 {
     std::vector<ArgInfo> args;
-    uint32_t childCount = ts_node_child_count(argListNode);
-    bool currentIsNamed = false;
-    std::string currentArgName;
-
-    for (uint32_t i = 0; i < childCount; ++i)
+    auto callArgs = analysis::ExtractCallArguments(argListNode, sourceCode);
+    args.reserve(callArgs.size());
+    for (const auto& a : callArgs)
     {
-        TSNode child = ts_node_child(argListNode, i);
-        std::string_view type = ts_node_type(child);
-
-        if (type == "(" || type == ")" || type == "," || type == "comment")
-        {
-            if (type == ",")
-            {
-                currentIsNamed = false;
-                currentArgName.clear();
-            }
-            continue;
-        }
-
-        if (type == ":")
-        {
-            continue;
-        }
-
-        const char* fieldName = ts_node_field_name_for_child(argListNode, i);
-        if (fieldName && std::string_view(fieldName) == "arg_name")
-        {
-            currentIsNamed = true;
-            currentArgName = GetNodeText(child, sourceCode);
-            continue;
-        }
-
         ArgInfo arg;
-        arg.exprNode = child;
-        arg.isNamed = currentIsNamed;
-        arg.argName = currentArgName;
-        TSPoint startPoint = ts_node_start_point(child);
+        arg.exprNode = a.exprNode;
+        arg.isNamed = !a.name.empty();
+        arg.argName = a.name;
+        TSPoint startPoint = ts_node_start_point(a.exprNode);
         arg.hintPosition = lsp::Position{startPoint.row, startPoint.column};
-        arg.text = GetNodeText(child, sourceCode);
+        arg.text = GetNodeText(a.exprNode, sourceCode);
         args.push_back(std::move(arg));
-
-        currentIsNamed = false;
-        currentArgName.clear();
     }
-
     return args;
 }
 

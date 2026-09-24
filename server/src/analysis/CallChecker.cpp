@@ -81,124 +81,24 @@ void TrimString(std::string& s)
  */
 uint32_t CountArguments(TSNode argumentList)
 {
-    if (ts_node_is_null(argumentList))
-    {
-        return 0;
-    }
-
-    uint32_t commas = 0;
-    bool sawArgument = false;
-
-    const uint32_t count = ts_node_child_count(argumentList);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        const std::string_view childType = ts_node_type(ts_node_child(argumentList, i));
-        if (childType == ",")
-        {
-            ++commas;
-        }
-        else if (childType != "(" && childType != ")" && childType != "comment")
-        {
-            sawArgument = true;
-        }
-    }
-
-    return sawArgument ? commas + 1 : 0;
+    return static_cast<uint32_t>(CountCallArguments(argumentList));
 }
 
 /**
  * @brief Extracts argument expression nodes from an argument list AST node.
- *
- * @param[in] argumentList AST node representing the argument list.
- * @return Vector of AST nodes for each argument expression.
- */
-/**
- * @brief Selects the argument expression node from a comma-separated argument group.
- *
- * If the group contains a colon ':' (named argument, e.g. `name: expr`), the expression
- * following the colon is returned. Otherwise, the primary expression node is returned.
- *
- * @param[in] group AST nodes within one argument position.
- * @return TSNode representing the argument value expression.
- */
-TSNode ExtractArgumentExpression(const std::vector<TSNode>& group)
-{
-    if (group.empty())
-    {
-        return TSNode{};
-    }
-    for (size_t i = 0; i < group.size(); ++i)
-    {
-        if (std::string_view(ts_node_type(group[i])) == ":" && i + 1 < group.size())
-        {
-            return group[i + 1];
-        }
-    }
-    return group.front();
-}
-
-/**
- * @brief Extracts argument expression nodes from an argument list AST node.
- *
  * @param[in] argumentList AST node representing the argument list.
  * @return Vector of AST nodes for each argument expression.
  */
 std::vector<TSNode> GetArgumentNodes(TSNode argumentList)
 {
+    auto callArgs = ExtractCallArguments(argumentList, "");
     std::vector<TSNode> argNodes;
-    if (ts_node_is_null(argumentList))
+    argNodes.reserve(callArgs.size());
+    for (const auto& a : callArgs)
     {
-        return argNodes;
-    }
-
-    const uint32_t count = ts_node_child_count(argumentList);
-    std::vector<TSNode> currentGroup;
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_child(argumentList, i);
-        const std::string_view childType = ts_node_type(child);
-        if (childType == "(" || childType == ")" || childType == "comment")
-        {
-            continue;
-        }
-        if (childType == ",")
-        {
-            if (!currentGroup.empty())
-            {
-                argNodes.push_back(ExtractArgumentExpression(currentGroup));
-                currentGroup.clear();
-            }
-        }
-        else
-        {
-            currentGroup.push_back(child);
-        }
-    }
-    if (!currentGroup.empty())
-    {
-        argNodes.push_back(ExtractArgumentExpression(currentGroup));
+        argNodes.push_back(a.exprNode);
     }
     return argNodes;
-}
-
-/**
- * @brief Extracts the parameter name from a named argument token group (e.g. `name: expr`).
- * @param[in] group AST nodes within one argument position.
- * @param[in] sourceCode Document source text.
- * @return Argument identifier name if named argument, otherwise empty string.
- */
-std::string ExtractArgumentName(const std::vector<TSNode>& group, std::string_view sourceCode)
-{
-    for (size_t i = 0; i < group.size(); ++i)
-    {
-        if (std::string_view(ts_node_type(group[i])) == ":" && i > 0)
-        {
-            std::string name = NodeText(group[i - 1], sourceCode);
-            TrimString(name);
-            return name;
-        }
-    }
-    return "";
 }
 
 /**
@@ -209,38 +109,12 @@ std::string ExtractArgumentName(const std::vector<TSNode>& group, std::string_vi
  */
 std::vector<std::string> GetArgumentNames(TSNode argumentList, std::string_view sourceCode)
 {
+    auto callArgs = ExtractCallArguments(argumentList, sourceCode);
     std::vector<std::string> argNames;
-    if (ts_node_is_null(argumentList))
+    argNames.reserve(callArgs.size());
+    for (const auto& a : callArgs)
     {
-        return argNames;
-    }
-
-    const uint32_t count = ts_node_child_count(argumentList);
-    std::vector<TSNode> currentGroup;
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_child(argumentList, i);
-        const std::string_view childType = ts_node_type(child);
-        if (childType == "(" || childType == ")" || childType == "comment")
-        {
-            continue;
-        }
-        if (childType == ",")
-        {
-            if (!currentGroup.empty())
-            {
-                argNames.push_back(ExtractArgumentName(currentGroup, sourceCode));
-                currentGroup.clear();
-            }
-        }
-        else
-        {
-            currentGroup.push_back(child);
-        }
-    }
-    if (!currentGroup.empty())
-    {
-        argNames.push_back(ExtractArgumentName(currentGroup, sourceCode));
+        argNames.push_back(a.name);
     }
     return argNames;
 }
@@ -1104,57 +978,20 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
 bool ValidateArgumentOrdering(TSNode arguments, bool& sawNamedArg, DiagnosticContext& ctx)
 {
     sawNamedArg = false;
-    const uint32_t totalChildren = ts_node_child_count(arguments);
-    std::vector<std::vector<TSNode>> argGroups;
-    std::vector<TSNode> currentGroup;
-    for (uint32_t i = 0; i < totalChildren; ++i)
+    auto callArgs = ExtractCallArguments(arguments, "");
+    for (const auto& arg : callArgs)
     {
-        TSNode child = ts_node_child(arguments, i);
-        const std::string_view ct = ts_node_type(child);
-        if (ct == "(" || ct == ")" || ct == "comment")
-        {
-            continue;
-        }
-        if (ct == ",")
-        {
-            if (!currentGroup.empty())
-            {
-                argGroups.push_back(std::move(currentGroup));
-                currentGroup.clear();
-            }
-        }
-        else
-        {
-            currentGroup.push_back(child);
-        }
-    }
-    if (!currentGroup.empty())
-    {
-        argGroups.push_back(std::move(currentGroup));
-    }
-
-    for (const auto& group : argGroups)
-    {
-        bool isNamed = false;
-        for (const auto& token : group)
-        {
-            if (std::string_view(ts_node_type(token)) == ":")
-            {
-                isNamed = true;
-                break;
-            }
-        }
-
+        bool isNamed = !ts_node_is_null(arg.nameNode);
         if (isNamed)
         {
             sawNamedArg = true;
         }
         else if (sawNamedArg)
         {
-            if (!group.empty())
+            if (!ts_node_is_null(arg.exprNode))
             {
-                const TSPoint aStart = ts_node_start_point(group.front());
-                const TSPoint aEnd = ts_node_end_point(group.back());
+                const TSPoint aStart = ts_node_start_point(arg.exprNode);
+                const TSPoint aEnd = ts_node_end_point(arg.exprNode);
                 ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column},
                                 "as-err-positional-after-named-arg");
             }

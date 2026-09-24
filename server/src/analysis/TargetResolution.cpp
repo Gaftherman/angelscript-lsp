@@ -503,24 +503,7 @@ void ResolveGlobalFallbackTarget(const std::string& nodeText, const ResolveTarge
  */
 size_t CountCallArguments(TSNode argsChild)
 {
-    size_t count = 0;
-    uint32_t argChildCount = ts_node_child_count(argsChild);
-    for (uint32_t ai = 0; ai < argChildCount; ++ai)
-    {
-        TSNode ac = ts_node_child(argsChild, ai);
-        std::string_view act = ts_node_type(ac);
-        if (act == "(" || act == ")" || act == "," || act == ":" || act == "comment")
-        {
-            continue;
-        }
-        const char* fn = ts_node_field_name_for_child(argsChild, ai);
-        if (fn && std::string_view(fn) == "arg_name")
-        {
-            continue;
-        }
-        count++;
-    }
-    return count;
+    return analysis::CountCallArguments(argsChild);
 }
 
 /**

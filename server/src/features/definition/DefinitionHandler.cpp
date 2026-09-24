@@ -140,65 +140,6 @@ TSNode FindEnclosingCallNode(TSNode node)
 }
 
 /**
- * @brief Finds the argument_list node within a call_expression.
- * @param[in] callNode Call expression node.
- * @return argument_list node, or null node.
- */
-TSNode FindCallArgumentListNode(TSNode callNode)
-{
-    TSNode argListNode = parser::GetChildByField(callNode, parser::fields::Arguments);
-    if (!ts_node_is_null(argListNode))
-    {
-        return argListNode;
-    }
-    for (uint32_t i = 0; i < ts_node_child_count(callNode); ++i)
-    {
-        TSNode ch = ts_node_child(callNode, i);
-        if (std::string_view(ts_node_type(ch)) == "argument_list")
-        {
-            return ch;
-        }
-    }
-    return TSNode{};
-}
-
-/**
- * @brief Resolves argument type names for all arguments in a call expression.
- * @param[in] callNode Enclosing call expression node.
- * @param[in] scope Lexical scope for expression resolution.
- * @param[in] request Definition request context.
- * @return Vector of deduced argument type strings.
- */
-std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const analysis::Scope* scope,
-                                                  const DefinitionRequest& request)
-{
-    TSNode argListNode = FindCallArgumentListNode(callNode);
-    if (ts_node_is_null(argListNode))
-    {
-        return {};
-    }
-    std::vector<std::string> argTypes;
-    uint32_t count = ts_node_child_count(argListNode);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode ch = ts_node_child(argListNode, i);
-        std::string_view ct = ts_node_type(ch);
-        if (ct == "(" || ct == ")" || ct == "," || ct == "comment" || ct == ":")
-        {
-            continue;
-        }
-        const char* fieldName = ts_node_field_name_for_child(argListNode, i);
-        if (fieldName && std::string_view(fieldName) == "arg_name")
-        {
-            continue;
-        }
-        argTypes.push_back(
-            analysis::ResolveExpressionType(ch, {scope, request.symbolTable, request.sourceCode, request.uri}));
-    }
-    return argTypes;
-}
-
-/**
  * @brief Checks whether a function signature's parameter bounds accommodate the call arity.
  * @param[in] sig Function signature information.
  * @param[in] argCount Call site argument count.
@@ -416,7 +357,8 @@ std::vector<analysis::Symbol> FilterOverloadsForCall(TSNode node, const std::vec
         return candidates;
     }
 
-    std::vector<std::string> argTypes = ExtractCallArgumentTypes(callNode, scope, request);
+    std::vector<std::string> argTypes =
+        analysis::ExtractCallArgumentTypes(callNode, {scope, request.symbolTable, request.sourceCode, request.uri});
     const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
 
     std::vector<analysis::Symbol> funcCandidates;
