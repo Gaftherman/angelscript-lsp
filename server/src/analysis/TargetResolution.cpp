@@ -1,4 +1,4 @@
-#include "features/symbol_resolution/SymbolResolution.h"
+#include "analysis/TargetResolution.h"
 
 #include "analysis/SemanticHelpers.h"
 #include "parser/GrammarNames.h"
@@ -13,7 +13,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace angel_lsp::features::resolution
+namespace angel_lsp::analysis
 {
 namespace
 {
@@ -34,7 +34,7 @@ bool IsIdentifierOrType(std::string_view nodeType) noexcept
  * @param[in] position Cursor position.
  * @return Preceding identifier node or null node.
  */
-TSNode FindPrecedingIdentifierNode(TSNode rootNode, lsp::Position position)
+TSNode FindPrecedingIdentifierNode(TSNode rootNode, TargetPosition position)
 {
     if (position.character == 0)
     {
@@ -76,7 +76,7 @@ TSNode ResolveIdentifierLeaf(TSNode node, TSPoint point)
  * @param[out] outNode Output TSNode.
  * @return Token text or empty string if not an identifier.
  */
-std::string GetNodeTextAt(const std::string& sourceCode, TSTree* tree, lsp::Position position, TSNode& outNode)
+std::string GetNodeTextAt(const std::string& sourceCode, TSTree* tree, TargetPosition position, TSNode& outNode)
 {
     if (!tree || sourceCode.empty())
     {
@@ -787,7 +787,7 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
 {
     if (request.logger && request.logger->IsDebugEnabled())
     {
-        request.logger->LogDebug(fmt::format("[SymbolResolution] ResolveTargetSymbol at {}:{} in URI: {}",
+        request.logger->LogDebug(fmt::format("[TargetResolution] ResolveTargetSymbol at {}:{} in URI: {}",
                                              request.position.line, request.position.character, request.uri));
     }
 
@@ -830,7 +830,7 @@ namespace
  */
 struct OccurrenceCollector
 {
-    std::vector<lsp::Location> results;
+    std::vector<OccurrenceLocation> results;
     std::set<std::tuple<std::string, uint32_t, uint32_t>> seen;
     std::set<std::tuple<std::string, uint32_t, uint32_t>> declRanges;
 
@@ -839,11 +839,11 @@ struct OccurrenceCollector
      * @param[in] uri File URI.
      * @param[in] range Target range.
      */
-    void Add(const std::string& uri, const lsp::Range& range)
+    void Add(const std::string& uri, const SourceRange& range)
     {
-        if (seen.insert({uri, range.start.line, range.start.character}).second)
+        if (seen.insert({uri, range.startLine, range.startCharacter}).second)
         {
-            results.push_back(lsp::Location{lsp::DocumentUri::parse(uri), range});
+            results.push_back(OccurrenceLocation{uri, range});
         }
     }
 
@@ -854,8 +854,7 @@ struct OccurrenceCollector
      */
     void Add(const std::string& uri, const analysis::LocalReference& ref)
     {
-        Add(uri,
-            lsp::Range{lsp::Position{ref.startLine, ref.startCharacter}, lsp::Position{ref.endLine, ref.endCharacter}});
+        Add(uri, SourceRange{ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter});
     }
 };
 
@@ -936,9 +935,8 @@ void CollectLocalOccurrences(const TargetDescriptor& target, bool includeDeclara
 {
     if (includeDeclaration)
     {
-        collector.Add(target.localUri,
-                      lsp::Range{lsp::Position{target.localDef.startLine, target.localDef.startCharacter},
-                                 lsp::Position{target.localDef.endLine, target.localDef.endCharacter}});
+        collector.Add(target.localUri, SourceRange{target.localDef.startLine, target.localDef.startCharacter,
+                                                   target.localDef.endLine, target.localDef.endCharacter});
     }
     collector.declRanges.insert({target.localUri, target.localDef.startLine, target.localDef.startCharacter});
 
@@ -1219,8 +1217,7 @@ void CollectClassMemberDeclarations(const std::unordered_set<std::string>& relat
             if (request.includeDeclaration &&
                 ShouldIncludeClassDecl(clsName, request.target.declaringClass, request.symbolTable))
             {
-                collector.Add(sym.fileUri,
-                              lsp::Range{lsp::Position{span.sL, span.sC}, lsp::Position{span.eL, span.eC}});
+                collector.Add(sym.fileUri, SourceRange{span.sL, span.sC, span.eL, span.eC});
             }
         }
     }
@@ -1411,7 +1408,7 @@ void CollectDeclarations(const std::string& symQuery, const CollectOccurrencesRe
         collector.declRanges.insert({sym.fileUri, span.sL, span.sC});
         if (request.includeDeclaration)
         {
-            collector.Add(sym.fileUri, lsp::Range{lsp::Position{span.sL, span.sC}, lsp::Position{span.eL, span.eC}});
+            collector.Add(sym.fileUri, SourceRange{span.sL, span.sC, span.eL, span.eC});
         }
     }
 }
@@ -1632,11 +1629,11 @@ void CollectGlobalOccurrences(const CollectOccurrencesRequest& request, Occurren
 
 } // namespace
 
-std::vector<lsp::Location> CollectOccurrences(const CollectOccurrencesRequest& request)
+std::vector<OccurrenceLocation> CollectOccurrences(const CollectOccurrencesRequest& request)
 {
     if (request.logger && request.logger->IsDebugEnabled())
     {
-        request.logger->LogDebug(fmt::format("[SymbolResolution] CollectOccurrences for target '{}' (kind={}) in {}",
+        request.logger->LogDebug(fmt::format("[TargetResolution] CollectOccurrences for target '{}' (kind={}) in {}",
                                              request.target.name, static_cast<int>(request.target.kind),
                                              request.currentUri));
     }
@@ -1662,11 +1659,11 @@ std::vector<lsp::Location> CollectOccurrences(const CollectOccurrencesRequest& r
 
     if (request.logger && request.logger->IsTraceEnabled())
     {
-        request.logger->LogTrace(fmt::format("[SymbolResolution] Found {} occurrences for target '{}'",
+        request.logger->LogTrace(fmt::format("[TargetResolution] Found {} occurrences for target '{}'",
                                              collector.results.size(), request.target.name));
     }
 
     return collector.results;
 }
 
-} // namespace angel_lsp::features::resolution
+} // namespace angel_lsp::analysis

@@ -1,5 +1,6 @@
 #include "features/document_highlight/DocumentHighlightHandler.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/TargetResolution.h"
 #include "parser/GrammarNames.h"
 #include <algorithm>
 #include <set>
@@ -10,6 +11,9 @@
 
 namespace angel_lsp::features
 {
+using analysis::TargetKind;
+using analysis::TargetDescriptor;
+
 namespace
 {
 
@@ -195,33 +199,6 @@ std::string GetNodeTextAt(const std::string& sourceCode, TSTree* tree, lsp::Posi
     outNode = node;
     return sourceCode.substr(startByte, endByte - startByte);
 }
-
-enum class TargetKind
-{
-    Local,
-    ClassMember,
-    NamespaceSymbol,
-    GlobalSymbol
-};
-
-struct TargetDescriptor
-{
-    TargetKind kind = TargetKind::GlobalSymbol;
-    std::string name;
-    std::string qualifiedName;
-
-    // Local variable / parameter
-    const analysis::Scope* definingScope = nullptr;
-    analysis::LocalDefinition localDef;
-    std::string localUri;
-
-    // Class member
-    std::string declaringClass;
-    std::vector<std::string> relatedClasses;
-
-    // Namespace symbol
-    std::string declaringNamespace;
-};
 
 /**
  * @brief Checks if an AST node is contained within another AST node range.

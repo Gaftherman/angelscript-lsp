@@ -1,38 +1,32 @@
 #include "features/references/ReferencesHandler.h"
-#include "features/symbol_resolution/SymbolResolution.h"
+#include "analysis/TargetResolution.h"
 
 #include <algorithm>
 #include <vector>
 
 namespace angel_lsp::features
 {
-// This file used to carry its own copy of the resolution and collection code - the same ~780
-// lines rename had, differing only in whitespace, comments, and `sourceCode` against
-// `request.sourceCode`. They agreed, and they agreed by nobody having edited one without the
-// other. See features/symbol_resolution/SymbolResolution.h.
-using namespace angel_lsp::features::resolution;
-
 std::optional<ReferencesResult> GetReferences(const ReferencesRequest& request)
 {
     TSNode node{};
-    ResolveTargetRequest resolveReq{
+    analysis::ResolveTargetRequest resolveReq{
         .uri = request.uri,
         .sourceCode = request.sourceCode,
         .tree = request.tree,
-        .position = request.position,
+        .position = analysis::TargetPosition{request.position.line, request.position.character},
         .symbolTable = request.symbolTable,
         .scopeIndex = request.scopeIndex,
         .outNode = node,
         .logger = request.logger,
     };
-    const auto target = ResolveTargetSymbol(resolveReq);
+    const auto target = analysis::ResolveTargetSymbol(resolveReq);
 
     if (!target.has_value() || ts_node_is_null(node))
     {
         return std::nullopt;
     }
 
-    CollectOccurrencesRequest occReq{
+    analysis::CollectOccurrencesRequest occReq{
         .target = *target,
         .currentUri = request.uri,
         .sourceCode = request.sourceCode,
@@ -42,11 +36,24 @@ std::optional<ReferencesResult> GetReferences(const ReferencesRequest& request)
         .includeDeclaration = request.includeDeclaration,
         .logger = request.logger,
     };
-    auto results = CollectOccurrences(occReq);
+    const auto occurrences = analysis::CollectOccurrences(occReq);
 
-    if (results.empty())
+    if (occurrences.empty())
     {
         return std::nullopt;
+    }
+
+    std::vector<lsp::Location> results;
+    results.reserve(occurrences.size());
+    for (const auto& occ : occurrences)
+    {
+        results.push_back(lsp::Location{
+            lsp::DocumentUri::parse(occ.fileUri),
+            lsp::Range{
+                lsp::Position{occ.range.startLine, occ.range.startCharacter},
+                lsp::Position{occ.range.endLine, occ.range.endCharacter},
+            },
+        });
     }
 
     // Sorted so the answer is stable across runs: CollectOccurrences walks documents in

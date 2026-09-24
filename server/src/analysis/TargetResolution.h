@@ -3,11 +3,12 @@
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
 
-#include <lsp/messages.h>
 #include <tree_sitter/api.h>
 
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::utils
@@ -15,7 +16,7 @@ namespace angel_lsp::utils
 class LspLogger;
 }
 
-namespace angel_lsp::features::resolution
+namespace angel_lsp::analysis
 {
 /** @brief What kind of thing the cursor is on, which decides where its occurrences can be. */
 enum class TargetKind
@@ -33,13 +34,13 @@ struct TargetDescriptor
     std::string name;
     std::string qualifiedName;
 
-    const analysis::Scope* definingScope = nullptr;
-    analysis::LocalDefinition localDef;
+    const Scope* definingScope = nullptr;
+    LocalDefinition localDef;
     std::string localUri;
 
     std::string declaringClass;
     std::vector<std::string> relatedClasses;
-    analysis::AccessModifier access = analysis::AccessModifier::Public;
+    AccessModifier access = AccessModifier::Public;
 
     std::string declaringNamespace;
 
@@ -49,10 +50,30 @@ struct TargetDescriptor
 };
 
 /**
+ * @brief Cursor position for target resolution in analysis layer.
+ */
+struct TargetPosition
+{
+    uint32_t line = 0;
+    uint32_t character = 0;
+};
+
+/**
+ * @brief Location of a symbol occurrence in source code.
+ */
+struct OccurrenceLocation
+{
+    std::string fileUri;
+    SourceRange range;
+};
+
+/**
  * @brief True for a name that is a legal AngelScript identifier and not reserved.
  *
  * Rename needs it for the *new* name as well, which is why it is exported rather than private
  * to this module.
+ * @param[in] name Identifier name candidate.
+ * @return True if valid non-reserved AngelScript identifier.
  */
 bool IsValidIdentifier(std::string_view name);
 
@@ -64,9 +85,9 @@ struct ResolveTargetRequest
     const std::string& uri;
     const std::string& sourceCode;
     TSTree* tree = nullptr;
-    lsp::Position position;
-    const analysis::SymbolTable& symbolTable;
-    const analysis::ScopeIndex& scopeIndex;
+    TargetPosition position;
+    const SymbolTable& symbolTable;
+    const ScopeIndex& scopeIndex;
     TSNode& outNode;
     angel_lsp::utils::LspLogger* logger = nullptr;
 };
@@ -80,8 +101,8 @@ struct CollectOccurrencesRequest
     const std::string& currentUri;
     const std::string& sourceCode;
     TSTree* tree = nullptr;
-    const analysis::SymbolTable& symbolTable;
-    const analysis::ScopeIndex& scopeIndex;
+    const SymbolTable& symbolTable;
+    const ScopeIndex& scopeIndex;
     bool includeDeclaration = true;
     angel_lsp::utils::LspLogger* logger = nullptr;
 };
@@ -97,19 +118,9 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
 /**
  * @brief Every place the resolved target appears, across every indexed document.
  *
- * This and ResolveTargetSymbol are the whole of what rename and find-references share, and they
- * shared it by having a copy each: ~780 lines whose only non-mechanical difference was the
- * guard on the token under the cursor. Duplication was not the defect - a resolution fix
- * applied to one and not the other was, because rename would then edit a different set of
- * occurrences than find-references had shown, and the user is told what will change while
- * something else changes. No diagnostic covers that and neither file's own tests would have
- * noticed, since each would still pass.
- *
- * Tests verify identifier positions across representative samples and require
- * the two features to return consistent ranges.
- *
  * @param[in] request Immutable occurrences collection request.
  * @return Locations of all occurrences found.
  */
-std::vector<lsp::Location> CollectOccurrences(const CollectOccurrencesRequest& request);
-} // namespace angel_lsp::features::resolution
+std::vector<OccurrenceLocation> CollectOccurrences(const CollectOccurrencesRequest& request);
+
+} // namespace angel_lsp::analysis

@@ -1,6 +1,6 @@
 #include "features/rename/RenameHandler.h"
 #include "analysis/SemanticHelpers.h"
-#include "features/symbol_resolution/SymbolResolution.h"
+#include "analysis/TargetResolution.h"
 #include <algorithm>
 #include <cctype>
 #include <map>
@@ -11,10 +11,7 @@
 
 namespace angel_lsp::features
 {
-// Everything this file used to define beyond these two entry points now lives in
-// features/symbol_resolution: find-references had a second copy of it, and the two
-// agreeing was left to whoever edited one of them remembering the other.
-using namespace angel_lsp::features::resolution;
+using namespace angel_lsp::analysis;
 
 namespace
 {
@@ -102,15 +99,18 @@ bool IsTargetPredefined(const TargetDescriptor& target, const analysis::SymbolTa
  * @param[in] newName New identifier name.
  * @return Populated and ordered WorkspaceEdit.
  */
-lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<lsp::Location>& occurrences, const std::string& newName)
+lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<OccurrenceLocation>& occurrences, const std::string& newName)
 {
     std::map<lsp::DocumentUri, std::vector<lsp::TextEdit>> editsByUri;
     for (const auto& loc : occurrences)
     {
         lsp::TextEdit edit;
-        edit.range = loc.range;
+        edit.range = lsp::Range{
+            lsp::Position{loc.range.startLine, loc.range.startCharacter},
+            lsp::Position{loc.range.endLine, loc.range.endCharacter},
+        };
         edit.newText = newName;
-        editsByUri[loc.uri].push_back(std::move(edit));
+        editsByUri[lsp::DocumentUri::parse(loc.fileUri)].push_back(std::move(edit));
     }
 
     lsp::WorkspaceEdit workspaceEdit;
@@ -144,17 +144,17 @@ std::optional<lsp::PrepareRenameResult> PrepareRename(const PrepareRenameRequest
     }
 
     TSNode node{};
-    resolution::ResolveTargetRequest resolveReq{
+    ResolveTargetRequest resolveReq{
         .uri = request.uri,
         .sourceCode = request.sourceCode,
         .tree = request.tree,
-        .position = request.position,
+        .position = TargetPosition{request.position.line, request.position.character},
         .symbolTable = request.symbolTable,
         .scopeIndex = request.scopeIndex,
         .outNode = node,
         .logger = request.logger,
     };
-    const auto target = resolution::ResolveTargetSymbol(resolveReq);
+    const auto target = ResolveTargetSymbol(resolveReq);
 
     if (!target.has_value() || ts_node_is_null(node))
     {
@@ -184,17 +184,17 @@ std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request)
     }
 
     TSNode node{};
-    resolution::ResolveTargetRequest resolveReq{
+    ResolveTargetRequest resolveReq{
         .uri = request.uri,
         .sourceCode = request.sourceCode,
         .tree = request.tree,
-        .position = request.position,
+        .position = TargetPosition{request.position.line, request.position.character},
         .symbolTable = request.symbolTable,
         .scopeIndex = request.scopeIndex,
         .outNode = node,
         .logger = request.logger,
     };
-    const auto target = resolution::ResolveTargetSymbol(resolveReq);
+    const auto target = ResolveTargetSymbol(resolveReq);
 
     if (!target.has_value() || ts_node_is_null(node))
     {
@@ -206,7 +206,7 @@ std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request)
         return std::nullopt;
     }
 
-    resolution::CollectOccurrencesRequest occReq{
+    CollectOccurrencesRequest occReq{
         .target = *target,
         .currentUri = request.uri,
         .sourceCode = request.sourceCode,
@@ -216,7 +216,7 @@ std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request)
         .includeDeclaration = true,
         .logger = request.logger,
     };
-    const auto occurrences = resolution::CollectOccurrences(occReq);
+    const auto occurrences = CollectOccurrences(occReq);
 
     if (occurrences.empty())
     {
