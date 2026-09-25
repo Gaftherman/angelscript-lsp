@@ -1802,8 +1802,11 @@ class Server
      * AngelScript modules are composed textually, so a file can use declarations from the file
      * that includes it. Opening one member of a module therefore has to index the whole module,
      * upwards as well as downwards - see WorkspaceIncludeGraph::GetModuleClosure.
+     *
+     * @param[in] openUriStr The URI of the open document whose closure is to be indexed.
+     * @return Number of files newly indexed or restored into the module closure.
      */
-    void IndexModuleClosure(const std::string& openUriStr);
+    size_t IndexModuleClosure(const std::string& openUriStr);
 
     /**
      * @brief Drops the closure files an open document pulled in, unless another open document

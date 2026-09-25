@@ -914,3 +914,44 @@ TEST_CASE("ScopeTree - Closure barrier blocks outer local capture while allowing
     CHECK(ResolveInScope(innerScope, "field") != nullptr);
     CHECK(ResolveInScope(innerScope, "g_var") != nullptr);
 }
+
+TEST_CASE("LocalScopeCollector - Invariant: Nested namespace type specifiers mark all qualifiers as isTypeSpecifier")
+{
+    std::mt19937_64 rng(0x98765432);
+    const std::string ns1 = angel_lsp::test::GenerateIdentifier(rng, "OuterNs");
+    const std::string ns2 = angel_lsp::test::GenerateIdentifier(rng, "InnerNs");
+    const std::string typeName = angel_lsp::test::GenerateIdentifier(rng, "CallbackType");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "cb");
+
+    const std::string source = ns1 + "::" + ns2 + "::" + typeName + "@ " + varName + " = null;\n";
+    const auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+
+    bool foundNs1 = false;
+    bool foundNs2 = false;
+    bool foundType = false;
+
+    for (const auto& ref : root->references)
+    {
+        if (ref.name == ns1)
+        {
+            foundNs1 = true;
+            CHECK(ref.isTypeSpecifier);
+        }
+        else if (ref.name == ns2)
+        {
+            foundNs2 = true;
+            CHECK(ref.isTypeSpecifier);
+        }
+        else if (ref.name == typeName)
+        {
+            foundType = true;
+            CHECK(ref.isTypeSpecifier);
+        }
+    }
+
+    CHECK(foundNs1);
+    CHECK(foundNs2);
+    CHECK(foundType);
+}
+

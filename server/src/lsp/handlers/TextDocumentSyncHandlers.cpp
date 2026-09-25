@@ -524,6 +524,7 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
     m_symbolTable.ClearDocumentSymbols(uriStr);
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
+    m_closureDocuments.erase(uriStr);
 
     const std::string path = CanonicalPathFromUri(uriStr);
     const bool isModuleFile = RestoreClosedModuleFile(uriStr, path);
@@ -535,7 +536,14 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
     {
         if (!angel_lsp::utils::IsPredefinedFile(openUri, m_config.info.predefinedFileExtension))
         {
-            IndexModuleClosure(openUri);
+            const size_t newlyIndexed = IndexModuleClosure(openUri);
+            if (newlyIndexed > 0)
+            {
+                if (auto openText = m_documentStore.GetText(openUri))
+                {
+                    ScheduleAnalysis(openUri, *openText);
+                }
+            }
         }
     }
 

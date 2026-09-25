@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "helpers/ScriptedStream.h"
+#include "helpers/TestUtils.h"
 #include "lsp/Server.h"
 
 #include "utils/Utils.h"
@@ -6018,3 +6019,369 @@ TEST_CASE("Server - Default workspace initialization does not create log files o
     const auto lspDir = fixture.dir / ".vscode" / "lsp";
     CHECK_FALSE(std::filesystem::exists(lspDir));
 }
+
+TEST_CASE("Server - Sven Co-op didChange syntax error and revert does not cause false undeclared identifier warnings")
+{
+    const std::string clsServerFramerate = angel_lsp::test::GenerateRandomSymbolName("ServerFramerate");
+    const std::string nsServer = angel_lsp::test::GenerateRandomSymbolName("Server");
+    const std::string nsFramerate = angel_lsp::test::GenerateRandomSymbolName("Framerate");
+    const std::string fnSetCallback = angel_lsp::test::GenerateRandomSymbolName("SetCallback");
+    const std::string fnRemoveCallback = angel_lsp::test::GenerateRandomSymbolName("RemoveCallback");
+    const std::string fdFrameRateCallback = angel_lsp::test::GenerateRandomSymbolName("FrameRateCallback");
+    const std::string varPlayers = angel_lsp::test::GenerateRandomSymbolName("g_Players");
+    const std::string varCb = angel_lsp::test::GenerateRandomSymbolName("cb");
+    const std::string fnTest = angel_lsp::test::GenerateRandomSymbolName("Test");
+    const std::string errWord = angel_lsp::test::GenerateRandomSymbolName("errIdentifier");
+
+    WorkspaceFixture fixture;
+    const std::string framerateSource =
+        "class " + clsServerFramerate + "\n"
+        "{\n"
+        "    int Current;\n"
+        "    int Count;\n"
+        "    int Frames;\n"
+        "    bool LastFrame;\n"
+        "}\n"
+        "namespace " + nsServer + "\n"
+        "{\n"
+        "    namespace " + nsFramerate + "\n"
+        "    {\n"
+        "        funcdef void " + fdFrameRateCallback + "( const " + clsServerFramerate + "@ data );\n"
+        "        " + fdFrameRateCallback + "@ " + fnSetCallback + "( " + fdFrameRateCallback + "@ callback ) { return callback; }\n"
+        "        void " + fnRemoveCallback + "( " + fdFrameRateCallback + "@ callback ) {}\n"
+        "    }\n"
+        "}\n";
+
+    const std::string originalShowSource =
+        "#include \"../mikk155/Server/Framerate\"\n"
+        "\n"
+        "dictionary " + varPlayers + " = {};\n"
+        + nsServer + "::" + nsFramerate + "::" + fdFrameRateCallback + "@ " + varCb + " = null;\n"
+        "\n"
+        "void " + fnTest + "()\n"
+        "{\n"
+        "    @" + varCb + " = " + nsServer + "::" + nsFramerate + "::" + fnSetCallback + "( null );\n"
+        "    " + nsServer + "::" + nsFramerate + "::" + fnRemoveCallback + "( " + varCb + " );\n"
+        "}\n";
+
+    fixture.Write("scripts/mikk155/Server/Framerate.as", framerateSource);
+    fixture.Write("scripts/plugins/ShowFrameRate.as", originalShowSource);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    const std::string showUri = fixture.Uri("scripts/plugins/ShowFrameRate.as");
+    const std::string framerateUri = fixture.Uri("scripts/mikk155/Server/Framerate.as");
+
+    // 1. Open ShowFrameRate.as
+    stream.Push(DidOpenMessage(showUri, originalShowSource));
+    std::string openPublished;
+    stream.PushAction(
+        [&stream, &openPublished]()
+        {
+            WaitForCount(stream, "publishDiagnostics", 1);
+            openPublished = LastPublishedFor(stream.Output(), "ShowFrameRate.as");
+        });
+
+    // 2. User opens Framerate.as tab in VS Code
+    stream.Push(DidOpenMessage(framerateUri, framerateSource));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 2); });
+
+    // 3. User closes Framerate.as tab in VS Code
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":")" +
+                framerateUri + R"("}}})");
+
+    const uint32_t insertCol = static_cast<uint32_t>(15 + varPlayers.size());
+    const uint32_t revertEndCol = static_cast<uint32_t>(insertCol + errWord.size());
+
+    // 4. Introduce edit in ShowFrameRate.as: insert error identifier inside {}
+    std::string insertMsg =
+        R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" + showUri +
+        R"(","version":2},"contentChanges":[{"range":{"start":{"line":2,"character":)" + std::to_string(insertCol) +
+        R"(},"end":{"line":2,"character":)" + std::to_string(insertCol) + R"(}},"text":")" + errWord + R"("}]}})";
+    stream.Push(insertMsg);
+    std::string errPublished;
+    stream.PushAction(
+        [&stream, &errPublished]()
+        {
+            WaitForCount(stream, "publishDiagnostics", 4);
+            errPublished = LastPublishedFor(stream.Output(), "ShowFrameRate.as");
+        });
+
+    // 5. Revert back: delete error identifier
+    std::string revertMsg =
+        R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" + showUri +
+        R"(","version":3},"contentChanges":[{"range":{"start":{"line":2,"character":)" + std::to_string(insertCol) +
+        R"(},"end":{"line":2,"character":)" + std::to_string(revertEndCol) + R"(}},"text":""}]}})";
+    stream.Push(revertMsg);
+    std::string revertPublished;
+    stream.PushAction(
+        [&stream, &revertPublished]()
+        {
+            WaitForCount(stream, "publishDiagnostics", 5);
+            revertPublished = LastPublishedFor(stream.Output(), "ShowFrameRate.as");
+        });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.implicitIncludeExtension = true;
+    RunScript(serverConfig, stream);
+
+    CHECK(openPublished.find("as-warn-undeclared-identifier") == std::string::npos);
+    CHECK(errPublished.find("as-warn-undeclared-identifier") != std::string::npos);
+    CHECK(errPublished.find(errWord) != std::string::npos);
+    CHECK(revertPublished.find("as-warn-undeclared-identifier") == std::string::npos);
+}
+
+TEST_CASE("Server - Realistic Sven Co-op Framerate module closure with sven.as.predefined")
+{
+    WorkspaceFixture fixture;
+
+    const std::filesystem::path stubPath =
+        std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "predefined" / "sven.as.predefined";
+    if (std::filesystem::exists(stubPath))
+    {
+        std::ifstream f(stubPath, std::ios::binary);
+        if (f.is_open())
+        {
+            std::ostringstream ss;
+            ss << f.rdbuf();
+            fixture.Write("as.predefined", ss.str());
+        }
+    }
+
+    const std::string framerateSource =
+        "class ServerFramerate\n"
+        "{\n"
+        "    int Current;\n"
+        "    int Count;\n"
+        "    int Frames;\n"
+        "    bool LastFrame;\n"
+        "}\n"
+        "\n"
+        "namespace Server\n"
+        "{\n"
+        "    namespace Framerate\n"
+        "    {\n"
+        "        funcdef void FrameRateCallback( const ServerFramerate@ data );\n"
+        "\n"
+        "        int CurrentRate()\n"
+        "        {\n"
+        "            if( g_Engine.frametime > 0.0f )\n"
+        "                return int( 1.0f / g_Engine.frametime );\n"
+        "            return 0.0f;\n"
+        "        }\n"
+        "\n"
+        "        class __CThinker__\n"
+        "        {\n"
+        "            private CScheduledFunction@ m_Think = null;\n"
+        "            array<FrameRateCallback@> m_Callbacks;\n"
+        "\n"
+        "            __CThinker__()\n"
+        "            {\n"
+        "                @this.m_Think = g_Scheduler.SetInterval( @this, \"__Think__\", 0.0f, g_Scheduler.REPEAT_INFINITE_TIMES );\n"
+        "                @this.data = ServerFramerate();\n"
+        "            }\n"
+        "\n"
+        "            void Shutdown()\n"
+        "            {\n"
+        "                if( m_Think !is null )\n"
+        "                {\n"
+        "                    g_Scheduler.RemoveTimer( @this.m_Think );\n"
+        "                    @m_Think = null;\n"
+        "                }\n"
+        "                @data = null;\n"
+        "            }\n"
+        "\n"
+        "            ~__CThinker__()\n"
+        "            {\n"
+        "                Shutdown();\n"
+        "            }\n"
+        "\n"
+        "            private int m_FrameCount = 0;\n"
+        "            private int m_ServerFrames = 0;\n"
+        "            private float m_NextFrameUpdate = 0.0f;\n"
+        "            private ServerFramerate@ data;\n"
+        "\n"
+        "            void __Think__()\n"
+        "            {\n"
+        "                this.data.Count = this.m_FrameCount++;\n"
+        "\n"
+        "                if( g_Engine.time >= this.m_NextFrameUpdate )\n"
+        "                {\n"
+        "                    this.data.Frames = this.m_ServerFrames = this.m_FrameCount;\n"
+        "                    this.m_FrameCount = 0;\n"
+        "                    data.LastFrame = true;\n"
+        "                    this.m_NextFrameUpdate = g_Engine.time + 1.0f;\n"
+        "                }\n"
+        "\n"
+        "                data.Current = CurrentRate();\n"
+        "\n"
+        "                uint size = this.m_Callbacks.length();\n"
+        "\n"
+        "                if( size < 0 )\n"
+        "                {\n"
+        "                    Shutdown();\n"
+        "                    return;\n"
+        "                }\n"
+        "\n"
+        "                for( uint ui = 0; ui < size; ui++ )\n"
+        "                {\n"
+        "                    FrameRateCallback@ callback = this.m_Callbacks[ui];\n"
+        "\n"
+        "                    if( callback !is null )\n"
+        "                        callback( @data );\n"
+        "                }\n"
+        "\n"
+        "                data.LastFrame = false;\n"
+        "            }\n"
+        "        }\n"
+        "\n"
+        "        __CThinker__@ __Thinker__;\n"
+        "\n"
+        "        FrameRateCallback@ SetCallback( FrameRateCallback@ callback )\n"
+        "        {\n"
+        "            if( __Thinker__ is null )\n"
+        "                @__Thinker__ = __CThinker__();\n"
+        "\n"
+        "            __Thinker__.m_Callbacks.insertLast( @callback );\n"
+        "\n"
+        "            return @callback;\n"
+        "        }\n"
+        "\n"
+        "        void RemoveCallback( FrameRateCallback@ callback )\n"
+        "        {\n"
+        "            if( __Thinker__ is null )\n"
+        "                return;\n"
+        "\n"
+        "            int m_Id = __Thinker__.m_Callbacks.findByRef( callback );\n"
+        "\n"
+        "            if( m_Id >= 0 )\n"
+        "                __Thinker__.m_Callbacks.removeAt( m_Id );\n"
+        "\n"
+        "            uint size = __Thinker__.m_Callbacks.length();\n"
+        "\n"
+        "            for( uint ui = 0; ui < size; ui++ )\n"
+        "            {\n"
+        "                if( __Thinker__.m_Callbacks[ui] !is null )\n"
+        "                    return;\n"
+        "            }\n"
+        "\n"
+        "            __Thinker__.m_Callbacks.resize(0);\n"
+        "            @__Thinker__ = null;\n"
+        "        }\n"
+        "    }\n"
+        "}\n";
+
+    const std::string pluginSource =
+        "#include \"../mikk155/Server/Framerate\"\n"
+        "\n"
+        "dictionary g_Players = {};\n"
+        "Server::Framerate::FrameRateCallback@ cb = null;\n"
+        "float g_AvgAccumulator = 0.0f;\n"
+        "int g_AvgSamples = 0;\n"
+        "float g_LastAverage = 0.0f;\n"
+        "\n"
+        "void PluginInit()\n"
+        "{\n"
+        "    @cb = Server::Framerate::SetCallback( function( const ServerFramerate@ data )\n"
+        "    {\n"
+        "        if(data !is null)\n"
+        "\n"
+        "        if( data.LastFrame )\n"
+        "        {\n"
+        "            g_AvgAccumulator += data.Frames;\n"
+        "            g_AvgSamples++;\n"
+        "\n"
+        "            if( g_AvgSamples >= 10 )\n"
+        "            {\n"
+        "                g_LastAverage = g_AvgAccumulator / g_AvgSamples;\n"
+        "                g_AvgAccumulator = 0;\n"
+        "                g_AvgSamples = 0;\n"
+        "            }\n"
+        "        }\n"
+        "\n"
+        "        HUDTextParams params;\n"
+        "        params.holdTime = 1.0f;\n"
+        "        params.fadeinTime = 0.0f;\n"
+        "        params.r1 = 255;\n"
+        "        params.g1 = params.b1 = 0;\n"
+        "        params.y = 0.3;\n"
+        "        params.x = 0.0;\n"
+        "\n"
+        "        if( g_Players.getSize() <= 0 )\n"
+        "        {\n"
+        "            return;\n"
+        "        }\n"
+        "    } );\n"
+        "}\n";
+
+    fixture.Write("scripts/mikk155/Server/Framerate.as", framerateSource);
+    fixture.Write("scripts/plugins/ShowFrameRate.as", pluginSource);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    const std::string showUri = fixture.Uri("scripts/plugins/ShowFrameRate.as");
+    const std::string framerateUri = fixture.Uri("scripts/mikk155/Server/Framerate.as");
+
+    stream.Push(DidOpenMessage(showUri, pluginSource));
+    std::string showPublished;
+    stream.PushAction(
+        [&stream, &showPublished]()
+        {
+            WaitForCount(stream, "publishDiagnostics", 1);
+            showPublished = LastPublishedFor(stream.Output(), "ShowFrameRate.as");
+        });
+
+    // 1. Definition of ServerFramerate in ShowFrameRate.as (line 10, col 60: const ServerFramerate@ data)
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":10,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
+        showUri + R"("},"position":{"line":10,"character":60}}})");
+
+    // 2. Definition of SetCallback in ShowFrameRate.as (line 10, col 32: SetCallback)
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":11,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
+        showUri + R"("},"position":{"line":10,"character":32}}})");
+
+    // 3. Definition of HUDTextParams in ShowFrameRate.as (line 27, col 12: HUDTextParams)
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":12,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
+        showUri + R"("},"position":{"line":27,"character":12}}})");
+
+    // 4. Definition of data.LastFrame in ShowFrameRate.as (line 14, col 20: LastFrame)
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":13,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
+        showUri + R"("},"position":{"line":14,"character":20}}})");
+
+    // 5. Hover over data in ShowFrameRate.as (line 14, col 13: data)
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":14,"method":"textDocument/hover","params":{"textDocument":{"uri":")" +
+        showUri + R"("},"position":{"line":14,"character":13}}})");
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.implicitIncludeExtension = true;
+    RunScript(serverConfig, stream);
+
+    const std::string defServerFramerateReply = stream.ResponseFor(10);
+    const std::string defSetCallbackReply = stream.ResponseFor(11);
+    const std::string defHudReply = stream.ResponseFor(12);
+    const std::string defLastFrameReply = stream.ResponseFor(13);
+    const std::string hoverDataReply = stream.ResponseFor(14);
+
+    CHECK(showPublished.find("as-warn-undeclared-identifier") == std::string::npos);
+    CHECK(showPublished.find("as-err-undefined-namespace") == std::string::npos);
+    CHECK(defServerFramerateReply.find("Framerate.as") != std::string::npos);
+    CHECK(defSetCallbackReply.find("Framerate.as") != std::string::npos);
+    CHECK(defHudReply.find("as.predefined") != std::string::npos);
+    CHECK(defLastFrameReply.find("Framerate.as") != std::string::npos);
+    CHECK(hoverDataReply.find("ServerFramerate") != std::string::npos);
+}
+

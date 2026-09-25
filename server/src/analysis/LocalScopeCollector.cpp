@@ -370,23 +370,20 @@ static bool IsTypeSpecifierNodeType(std::string_view nodeType)
 
 static bool IsTypeSpecifierContext(TSNode node)
 {
-    TSNode parent = ts_node_parent(node);
-    if (ts_node_is_null(parent))
+    TSNode cur = ts_node_parent(node);
+    while (!ts_node_is_null(cur))
     {
-        return false;
-    }
-    std::string_view parentType = ts_node_type(parent);
-    if (IsTypeSpecifierNodeType(parentType))
-    {
-        return true;
-    }
-    if (parentType == "scoped_identifier")
-    {
-        TSNode grandParent = ts_node_parent(parent);
-        if (!ts_node_is_null(grandParent) && IsTypeSpecifierNodeType(ts_node_type(grandParent)))
+        const std::string_view t = ts_node_type(cur);
+        if (IsTypeSpecifierNodeType(t))
         {
             return true;
         }
+        if (t == "scoped_identifier" || t == "scope")
+        {
+            cur = ts_node_parent(cur);
+            continue;
+        }
+        break;
     }
     return false;
 }
