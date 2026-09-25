@@ -185,7 +185,7 @@ void CheckNullSafety(const NullSafetyCheckRequest& request, DiagnosticContext& c
         return;
     }
 
-    NullCheckContext checkCtx{request.sourceCode, ctx};
+    NullCheckContext checkCtx{request.sourceCode, ctx, request.scopeRoot};
     if (request.nodeIndex)
     {
         for (TSNode funcNode : request.nodeIndex->Nodes(parser::nodes::FuncDeclaration))

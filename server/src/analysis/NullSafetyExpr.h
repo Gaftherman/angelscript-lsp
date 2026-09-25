@@ -7,10 +7,13 @@
 
 namespace angel_lsp::analysis
 {
+struct Scope;
+
 struct NullCheckContext
 {
     std::string_view sourceCode;
     DiagnosticContext& diagCtx;
+    const Scope* scopeRoot = nullptr;
 };
 
 /**

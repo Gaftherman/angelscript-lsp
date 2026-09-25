@@ -536,5 +536,68 @@ TEST_SUITE_BEGIN("NullSafetyChecker");
             "}\n";
         CHECK_FALSE(HasNullDereferenceWarning(AnalyzeScript(eqNullScript), handleVar));
     }
+
+    TEST_CASE("Lazy Initialization in If Branch with Constructor Assignment")
+    {
+        const std::string typeName = GenerateRandomSymbolName("Thinker");
+        const std::string varName = GenerateRandomSymbolName("g_Thinker");
+        const std::string methodName = GenerateRandomSymbolName("Update");
+        const std::string funcName = GenerateRandomSymbolName("SetCallback");
+
+        const std::string code =
+            "class " + typeName + " { void " + methodName + "() {} }\n" +
+            typeName + "@ " + varName + ";\n" +
+            "void " + funcName + "()\n" +
+            "{\n" +
+            "    if (" + varName + " is null)\n" +
+            "        @" + varName + " = " + typeName + "();\n" +
+            "    " + varName + "." + methodName + "();\n" +
+            "}\n";
+
+        const auto diags = AnalyzeScript(code);
+        CHECK_FALSE(HasNullDereferenceWarning(diags, varName));
+    }
+
+    TEST_CASE("Assignment of Known NonNull Handle to Another Handle Clears Warning")
+    {
+        const std::string typeName = GenerateRandomSymbolName("Worker");
+        const std::string srcVar = GenerateRandomSymbolName("pSource");
+        const std::string dstVar = GenerateRandomSymbolName("pDest");
+        const std::string methodName = GenerateRandomSymbolName("DoWork");
+        const std::string funcName = GenerateRandomSymbolName("Process");
+
+        const std::string code =
+            "class " + typeName + " { void " + methodName + "() {} }\n" +
+            "void " + funcName + "()\n" +
+            "{\n" +
+            "    " + typeName + "@ " + srcVar + " = " + typeName + "();\n" +
+            "    " + typeName + "@ " + dstVar + " = null;\n" +
+            "    @" + dstVar + " = " + srcVar + ";\n" +
+            "    " + dstVar + "." + methodName + "();\n" +
+            "}\n";
+
+        const auto diags = AnalyzeScript(code);
+        CHECK_FALSE(HasNullDereferenceWarning(diags, dstVar));
+    }
+
+    TEST_CASE("Assignment of Null Literal to NonNull Handle Emits Warning on Subsequent Dereference")
+    {
+        const std::string typeName = GenerateRandomSymbolName("Resource");
+        const std::string varName = GenerateRandomSymbolName("pRes");
+        const std::string methodName = GenerateRandomSymbolName("Release");
+        const std::string funcName = GenerateRandomSymbolName("Cleanup");
+
+        const std::string code =
+            "class " + typeName + " { void " + methodName + "() {} }\n" +
+            "void " + funcName + "()\n" +
+            "{\n" +
+            "    " + typeName + "@ " + varName + " = " + typeName + "();\n" +
+            "    @" + varName + " = null;\n" +
+            "    " + varName + "." + methodName + "();\n" +
+            "}\n";
+
+        const auto diags = AnalyzeScript(code);
+        CHECK(HasNullDereferenceWarning(diags, varName));
+    }
 TEST_SUITE_END();
 } // namespace angel_lsp::test

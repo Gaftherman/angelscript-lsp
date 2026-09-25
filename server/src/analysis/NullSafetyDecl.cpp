@@ -1,6 +1,7 @@
 #include "analysis/NullSafetyDecl.h"
 #include "analysis/NullSafetyCondition.h"
 #include "analysis/NullSafetyExpr.h"
+#include "analysis/SymbolTable.h"
 #include "analysis/TypeExtraction.h"
 #include "parser/GrammarNames.h"
 #include <string>
@@ -24,33 +25,122 @@ std::string NodeText(TSNode node, std::string_view sourceCode)
     return std::string(sourceCode.substr(start, end - start));
 }
 
-bool IsKnownNonNullInit(TSNode val, TSNode typeNode, std::string_view sourceCode)
+bool IsTargetVariableTypeMatch(std::string_view targetVarName, std::string_view typeName, NullCheckContext& ctx)
 {
-    if (ts_node_is_null(val))
+    if (targetVarName.empty() || typeName.empty())
     {
         return false;
     }
-    TSNode unwrapped = UnwrapNullExpression(val);
-    if (ts_node_is_null(unwrapped))
+    const auto& table = ctx.diagCtx.request.symbolTable;
+    if (const auto symPtr = table.FindSymbolsPtr(std::string(targetVarName)))
+    {
+        for (const auto& sym : *symPtr)
+        {
+            if (sym.type == SymbolType::Variable)
+            {
+                const auto& varSig = sym.GetVariable();
+                if (varSig.baseTypeName == typeName || varSig.typeName == typeName)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+bool IsConstructorCall(std::string_view fnName, TSNode typeNode, std::string_view targetVarName,
+                       NullCheckContext& ctx)
+{
+    if (fnName.empty())
     {
         return false;
     }
-    std::string_view valType = ts_node_type(unwrapped);
-    if (valType == parser::nodes::ConstructCallExpression || valType == parser::nodes::ThisExpression)
+    const std::string shortName =
+        (fnName.rfind("::") != std::string::npos) ? std::string(fnName.substr(fnName.rfind("::") + 2))
+                                                  : std::string(fnName);
+    if (shortName.empty())
     {
-        return true;
+        return false;
     }
-    if (valType == parser::nodes::CallExpression && !ts_node_is_null(typeNode))
+
+    if (!ts_node_is_null(typeNode))
     {
-        TSNode fn = parser::GetChildByField(unwrapped, parser::fields::Function);
-        std::string fnName = GetIdentifierName(fn, sourceCode);
-        const auto typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
-        if (!fnName.empty() && fnName == typeInfo.baseTypeName)
+        const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode);
+        if (shortName == typeInfo.baseTypeName)
         {
             return true;
         }
     }
-    return false;
+
+    if (IsTargetVariableTypeMatch(targetVarName, shortName, ctx))
+    {
+        return true;
+    }
+
+    const auto typeSyms = ctx.diagCtx.request.symbolTable.FindTypeSymbolsByShortName(shortName);
+    for (const auto& sym : typeSyms)
+    {
+        if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
+        {
+            return true;
+        }
+    }
+
+    return ctx.diagCtx.request.IsRegisteredSymbol(shortName);
+}
+
+struct NullableEvalRequest
+{
+    TSNode val;
+    TSNode typeNode = {0, 0, 0, 0};
+    std::string_view targetVarName = "";
+};
+
+Nullability EvaluateExpressionNullability(const NullableEvalRequest& req, const FlowState& state,
+                                         NullCheckContext& ctx)
+{
+    if (ts_node_is_null(req.val))
+    {
+        return Nullability::DefinitelyNull;
+    }
+    TSNode unwrapped = UnwrapNullExpression(req.val);
+    if (ts_node_is_null(unwrapped) || IsNullInitializer(unwrapped))
+    {
+        return Nullability::DefinitelyNull;
+    }
+
+    std::string_view valType = ts_node_type(unwrapped);
+    if (valType == parser::nodes::ConstructCallExpression || valType == parser::nodes::ThisExpression)
+    {
+        return Nullability::NonNull;
+    }
+
+    const std::string rhsVarName = GetIdentifierName(unwrapped, ctx.sourceCode);
+    if (!rhsVarName.empty())
+    {
+        auto it = state.vars.find(rhsVarName);
+        if (it != state.vars.end())
+        {
+            return it->second;
+        }
+    }
+
+    if (valType == parser::nodes::CallExpression)
+    {
+        TSNode fn = parser::GetChildByField(unwrapped, parser::fields::Function);
+        std::string fnName = GetIdentifierName(fn, ctx.sourceCode);
+        if (fnName.empty() && !ts_node_is_null(fn))
+        {
+            fnName = NodeText(fn, ctx.sourceCode);
+        }
+        if (IsConstructorCall(fnName, req.typeNode, req.targetVarName, ctx))
+        {
+            return Nullability::NonNull;
+        }
+    }
+
+    return Nullability::Nullable;
 }
 } // namespace
 
@@ -82,18 +172,7 @@ void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 
         if (isHandle && !name.empty())
         {
-            if (ts_node_is_null(val) || IsNullInitializer(val))
-            {
-                state.vars[name] = Nullability::DefinitelyNull;
-            }
-            else if (IsKnownNonNullInit(val, typeNode, ctx.sourceCode))
-            {
-                state.vars[name] = Nullability::NonNull;
-            }
-            else
-            {
-                state.vars[name] = Nullability::Nullable;
-            }
+            state.vars[name] = EvaluateExpressionNullability({val, typeNode, name}, state, ctx);
         }
     }
 }
@@ -106,9 +185,14 @@ void CheckAssignmentStmt(TSNode expr, FlowState& state, NullCheckContext& ctx)
 
     TSNode unwrappedLeft = UnwrapNullExpression(left);
     std::string name = GetIdentifierName(unwrappedLeft, ctx.sourceCode);
-    if (!name.empty() && state.vars.contains(name))
+    if (!name.empty())
     {
-        state.vars[name] = IsNullInitializer(right) ? Nullability::DefinitelyNull : Nullability::Nullable;
+        const Nullability assignedNullability =
+            EvaluateExpressionNullability({right, {}, name}, state, ctx);
+        if (assignedNullability != Nullability::Nullable || state.vars.contains(name))
+        {
+            state.vars[name] = assignedNullability;
+        }
     }
     else
     {
