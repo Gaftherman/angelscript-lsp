@@ -29,7 +29,7 @@ if (!tagName || tagName !== expectedTag) {
     tagName = expectedTag;
 }
 
-const outFile = `angelscript-lsp-${tagName}.vsix`;
+const outFile = `angelscript-${tagName}.vsix`;
 console.log(`Packaging VSIX with tag: ${tagName} -> ${outFile}...`);
 
 // Run vsce package

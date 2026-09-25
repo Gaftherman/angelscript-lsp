@@ -97,9 +97,9 @@ suite('Live Rapid Fuzzer & Feature Reaction Benchmarks', () => {
         assert.ok(folders.length > 0, 'Requires open workspace folder');
         fixtureUri = Uri.joinPath(folders[0].uri, 'main.as');
 
-        const extension = extensions.getExtension('Gaftherman.angelscript-lsp')
-            ?? extensions.all.find(c => c.packageJSON?.name === 'angelscript-lsp');
-        assert.ok(extension, 'angelscript-lsp extension must be installed in test host');
+        const extension = extensions.getExtension('Gaftherman.angelscript')
+            ?? extensions.all.find(c => c.packageJSON?.name === 'angelscript');
+        assert.ok(extension, 'angelscript extension must be installed in test host');
 
         await extension.activate();
 

@@ -1,6 +1,6 @@
-# AngelScript Language Server (AngelLSP) - VS Code Extension
+# Angelscript - Language Server for Angelscript (VS Code Extension)
 
-AngelLSP provides rich language intelligence for [AngelScript](https://www.angelcode.com/angelscript/) (`.as`), powered by a native C++20 language server using Tree-Sitter for AST parsing and semantic resolution. The entire workspace is analyzed directly from syntax trees without script concatenation, intermediate disk dumps, or host engine execution.
+Angelscript provides rich language intelligence for [AngelScript](https://www.angelcode.com/angelscript/) (`.as`), powered by a native C++20 language server using Tree-Sitter for AST parsing and semantic resolution. The entire workspace is analyzed directly from syntax trees without script concatenation, intermediate disk dumps, or host engine execution.
 
 ---
 
@@ -10,7 +10,7 @@ AngelLSP provides rich language intelligence for [AngelScript](https://www.angel
 
 Install via the Visual Studio Code Marketplace or from a packaged `.vsix` bundle:
 1. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) and run `Extensions: Install from VSIX...`.
-2. Select the compiled extension package (`angelscript-lsp.vsix` or `angelscript-lsp-0.8.4.vsix`).
+2. Select the compiled extension package (`angelscript.vsix` or `angelscript-0.8.4.vsix`).
 
 ### 2. Workspace Setup
 

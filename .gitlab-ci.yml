@@ -126,7 +126,7 @@ package-extension:
     - cd client
     - npm ci
     - npm run pretest
-    - npx --yes @vscode/vsce package --out angelscript-lsp.vsix
+    - npx --yes @vscode/vsce package --out angelscript.vsix
   artifacts:
     paths:
       - client/*.vsix

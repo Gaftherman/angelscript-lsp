@@ -1,6 +1,6 @@
 {
-  "name": "angelscript-lsp",
-  "displayName": "AngelLSP - AngelScript Language Server",
+  "name": "angelscript",
+  "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
   "version": "0.8.4",
   "publisher": "Gaftherman",
@@ -16,10 +16,13 @@
   ],
   "keywords": [
     "angelscript",
+    "angel script",
     "as",
     "language server",
     "lsp",
-    "sven co-op"
+    "sven co-op",
+    "tree-sitter",
+    "intellisense"
   ],
   "repository": {
     "type": "git",
