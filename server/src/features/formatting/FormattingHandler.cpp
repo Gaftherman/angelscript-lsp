@@ -34,7 +34,6 @@ enum class TokenType
     DoubleColon,  // ::
     Question,     // ?
     Dot,          // .
-    Arrow,        // ->
     At,           // @
     Operator,     // binary/unary operators: =, ==, +, -, etc.
     Increment,    // ++
@@ -518,8 +517,6 @@ TokenType ClassifyTwoCharOperator(std::string_view op2)
         return TokenType::Decrement;
     if (op2 == "::")
         return TokenType::DoubleColon;
-    if (op2 == "->")
-        return TokenType::Arrow;
     for (std::string_view candidate : kTwoCharOperators)
     {
         if (op2 == candidate)
@@ -872,7 +869,6 @@ bool IsClosingOrSeparatorPunctuation(TokenType type)
     case TokenType::CloseBracket:
     case TokenType::Dot:
     case TokenType::DoubleColon:
-    case TokenType::Arrow:
         return true;
     default:
         return false;
@@ -892,7 +888,6 @@ bool IsOpeningOrMemberPunctuation(TokenType type)
     case TokenType::OpenBracket:
     case TokenType::Dot:
     case TokenType::DoubleColon:
-    case TokenType::Arrow:
         return true;
     default:
         return false;

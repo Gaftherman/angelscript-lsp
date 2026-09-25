@@ -262,7 +262,7 @@ void ConsumeParenthesesOrBrackets(std::string_view chain, size_t& i, AccessSegme
 }
 
 /**
- * @brief Consumes a member access delimiter (`.` or `->`).
+ * @brief Consumes a member access delimiter ('.').
  * @param[in] chain Access chain view.
  * @param[in,out] i Cursor index.
  * @return True if delimiter was matched and consumed.
@@ -272,11 +272,6 @@ bool ConsumeDelimiter(std::string_view chain, size_t& i)
     if (i < chain.size() && chain[i] == '.')
     {
         ++i;
-        return true;
-    }
-    if (i + 1 < chain.size() && chain[i] == '-' && chain[i + 1] == '>')
-    {
-        i += 2;
         return true;
     }
     return false;

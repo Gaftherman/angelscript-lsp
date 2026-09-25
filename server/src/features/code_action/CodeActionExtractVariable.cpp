@@ -132,6 +132,141 @@ TSNode FindEnclosingBlockStatement(TSNode node)
     return TSNode{};
 }
 
+std::string ToLowerFirst(std::string_view str)
+{
+    if (str.empty())
+    {
+        return "newVar";
+    }
+    std::string result(str);
+    result[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(result[0])));
+    return result;
+}
+
+std::string SuggestNameFromCall(TSNode targetNode, std::string_view sourceCode)
+{
+    TSNode funcNode = parser::GetChildByField(targetNode, parser::fields::Function);
+    if (ts_node_is_null(funcNode))
+    {
+        return "";
+    }
+    std::string fnNameText;
+    if (std::string_view(ts_node_type(funcNode)) == "member_expression")
+    {
+        TSNode nameNode = parser::GetChildByField(funcNode, parser::fields::Member);
+        fnNameText = GetNodeText(nameNode, sourceCode);
+    }
+    else
+    {
+        fnNameText = GetNodeText(funcNode, sourceCode);
+    }
+    if (fnNameText.starts_with("Get") && fnNameText.size() > 3)
+    {
+        return ToLowerFirst(fnNameText.substr(3));
+    }
+    if (fnNameText.starts_with("get_") && fnNameText.size() > 4)
+    {
+        return ToLowerFirst(fnNameText.substr(4));
+    }
+    if (fnNameText.starts_with("Find") && fnNameText.size() > 4)
+    {
+        return ToLowerFirst(fnNameText.substr(4));
+    }
+    if (fnNameText.starts_with("Create") && fnNameText.size() > 6)
+    {
+        return ToLowerFirst(fnNameText.substr(6));
+    }
+    return "";
+}
+
+std::string SuggestNameFromMemberOrConstruct(TSNode targetNode, std::string_view sourceCode)
+{
+    std::string_view type = ts_node_type(targetNode);
+    if (type == "member_expression")
+    {
+        TSNode nameNode = parser::GetChildByField(targetNode, parser::fields::Member);
+        std::string memText = GetNodeText(nameNode, sourceCode);
+        if (memText.starts_with("m_") && memText.size() > 2)
+        {
+            return ToLowerFirst(memText.substr(2));
+        }
+        if (!memText.empty())
+        {
+            return ToLowerFirst(memText);
+        }
+    }
+    if (type == "construct_call_expression")
+    {
+        TSNode typeNode = parser::GetChildByField(targetNode, parser::fields::Type);
+        std::string tText = GetNodeText(typeNode, sourceCode);
+        if (!tText.empty())
+        {
+            return ToLowerFirst(tText);
+        }
+    }
+    return "";
+}
+
+std::string SuggestCandidateName(TSNode targetNode, std::string_view varType, std::string_view sourceCode)
+{
+    std::string_view type = ts_node_type(targetNode);
+    if (type == "call_expression")
+    {
+        if (std::string callName = SuggestNameFromCall(targetNode, sourceCode); !callName.empty())
+        {
+            return callName;
+        }
+    }
+    if (std::string memName = SuggestNameFromMemberOrConstruct(targetNode, sourceCode); !memName.empty())
+    {
+        return memName;
+    }
+    if (!varType.empty() && varType != "auto" && varType != "null" && varType != "int" &&
+        varType != "uint" && varType != "float" && varType != "double" && varType != "bool")
+    {
+        std::string clean = analysis::CleanBaseType(varType);
+        if (!clean.empty() && clean != "string")
+        {
+            return ToLowerFirst(clean);
+        }
+    }
+    return "newVar";
+}
+
+bool IsNameInScope(const analysis::Scope* scope, std::string_view name)
+{
+    const analysis::Scope* curr = scope;
+    while (curr)
+    {
+        for (const auto& def : curr->definitions)
+        {
+            if (def.name == name)
+            {
+                return true;
+            }
+        }
+        curr = curr->parent;
+    }
+    return false;
+}
+
+std::string SuggestVariableName(TSNode targetNode, std::string_view varType, std::string_view sourceCode,
+                                const analysis::Scope* scope)
+{
+    std::string candidate = SuggestCandidateName(targetNode, varType, sourceCode);
+    if (!scope)
+    {
+        return candidate;
+    }
+    std::string result = candidate;
+    int suffix = 1;
+    while (IsNameInScope(scope, result))
+    {
+        result = candidate + std::to_string(suffix++);
+    }
+    return result;
+}
+
 /**
  * @brief Constructs an Extract Variable refactoring code action.
  * @param[in] request Code action request context.
@@ -154,7 +289,7 @@ std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionReques
         varType = "auto";
     }
 
-    std::string varName = "newVar";
+    std::string varName = SuggestVariableName(targetNode, varType, request.sourceCode, scope);
     std::string exprText = GetNodeText(targetNode, request.sourceCode);
     if (exprText.empty())
     {

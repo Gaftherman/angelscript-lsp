@@ -285,20 +285,43 @@ ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const std::vec
     ankerl::unordered_dense::set<std::string> mutatedVars;
     for (const auto& stmt : stmts)
     {
-        std::vector<TSNode> stack = {stmt};
-        while (!stack.empty())
+        if (ts_node_is_null(stmt))
         {
-            TSNode curr = stack.back();
-            stack.pop_back();
-
+            continue;
+        }
+        TSTreeCursor cursor = ts_tree_cursor_new(stmt);
+        bool visiting = true;
+        while (visiting)
+        {
+            TSNode curr = ts_tree_cursor_current_node(&cursor);
             CheckNodeMutations(curr, sourceCode, mutatedVars);
-
-            uint32_t childCount = ts_node_child_count(curr);
-            for (uint32_t i = 0; i < childCount; ++i)
+            if (ts_tree_cursor_goto_first_child(&cursor))
             {
-                stack.push_back(ts_node_child(curr, i));
+                continue;
+            }
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                continue;
+            }
+            bool backtracked = false;
+            while (ts_tree_cursor_goto_parent(&cursor))
+            {
+                if (ts_tree_cursor_current_node(&cursor).id == stmt.id)
+                {
+                    break;
+                }
+                if (ts_tree_cursor_goto_next_sibling(&cursor))
+                {
+                    backtracked = true;
+                    break;
+                }
+            }
+            if (!backtracked)
+            {
+                visiting = false;
             }
         }
+        ts_tree_cursor_delete(&cursor);
     }
     return mutatedVars;
 }

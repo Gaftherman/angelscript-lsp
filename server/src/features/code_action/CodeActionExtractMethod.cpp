@@ -15,29 +15,39 @@ TSPoint FindClassBodyInsertionPoint(TSNode classNode)
     TSNode classBody = parser::GetChildByField(classNode, parser::fields::Body);
     if (ts_node_is_null(classBody))
     {
-        uint32_t cnt = ts_node_child_count(classNode);
-        for (uint32_t i = 0; i < cnt; ++i)
+        TSTreeCursor cursor = ts_tree_cursor_new(classNode);
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            TSNode ch = ts_node_child(classNode, i);
-            if (std::string_view(ts_node_type(ch)) == "class_body")
+            do
             {
-                classBody = ch;
-                break;
-            }
+                TSNode ch = ts_tree_cursor_current_node(&cursor);
+                if (std::string_view(ts_node_type(ch)) == "class_body")
+                {
+                    classBody = ch;
+                    break;
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
         }
+        ts_tree_cursor_delete(&cursor);
     }
 
     if (!ts_node_is_null(classBody))
     {
-        uint32_t cnt = ts_node_child_count(classBody);
-        for (int i = static_cast<int>(cnt) - 1; i >= 0; --i)
+        TSPoint closingPt{0, 0};
+        TSTreeCursor cursor = ts_tree_cursor_new(classBody);
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            TSNode ch = ts_node_child(classBody, static_cast<uint32_t>(i));
-            if (std::string_view(ts_node_type(ch)) == "}")
+            do
             {
-                return ts_node_start_point(ch);
-            }
+                TSNode ch = ts_tree_cursor_current_node(&cursor);
+                if (std::string_view(ts_node_type(ch)) == "}")
+                {
+                    closingPt = ts_node_start_point(ch);
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
         }
+        ts_tree_cursor_delete(&cursor);
+        return closingPt;
     }
     return TSPoint{0, 0};
 }

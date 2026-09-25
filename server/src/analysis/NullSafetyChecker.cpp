@@ -14,21 +14,6 @@ namespace angel_lsp::analysis
 {
 namespace
 {
-std::string NodeText(TSNode node, std::string_view sourceCode)
-{
-    if (ts_node_is_null(node))
-    {
-        return "";
-    }
-    const uint32_t start = ts_node_start_byte(node);
-    const uint32_t end = ts_node_end_byte(node);
-    if (start >= end || end > sourceCode.size())
-    {
-        return "";
-    }
-    return std::string(sourceCode.substr(start, end - start));
-}
-
 void ApplyAssertions(FlowState& state, const std::vector<NullAssertion>& assertions)
 {
     for (const auto& a : assertions)
