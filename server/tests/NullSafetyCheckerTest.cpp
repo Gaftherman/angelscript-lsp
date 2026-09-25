@@ -67,8 +67,8 @@ bool HasNullDereferenceWarning(const std::vector<Diagnostic>& diagnostics, const
 }
 } // namespace
 
-TEST_SUITE("NullSafetyChecker")
-{
+TEST_SUITE_BEGIN("NullSafetyChecker");
+
     TEST_CASE("Unguarded Handle Parameter Dereference")
     {
         const std::string typeName = GenerateRandomSymbolName("PlayerType");
@@ -349,5 +349,160 @@ TEST_SUITE("NullSafetyChecker")
         const auto unguardedDiags = AnalyzeScript(unguardedCode);
         CHECK(HasNullDereferenceWarning(unguardedDiags, playerParam));
     }
-}
+
+    TEST_CASE("Local Handle Initialized to Null Emits Warning on Dereference")
+    {
+        const std::string typeName = GenerateRandomSymbolName("Entity");
+        const std::string varName = GenerateRandomSymbolName("pEnt");
+        const std::string methodName = GenerateRandomSymbolName("Spawn");
+        const std::string funcName = GenerateRandomSymbolName("InitScene");
+
+        const std::string unguardedCode =
+            "class " + typeName + " { void " + methodName + "() {} }\n" +
+            "void " + funcName + "()\n" +
+            "{\n" +
+            "    " + typeName + "@ " + varName + " = null;\n" +
+            "    " + varName + "." + methodName + "();\n" +
+            "}\n";
+
+        const auto diags = AnalyzeScript(unguardedCode);
+        CHECK(HasNullDereferenceWarning(diags, varName));
+
+        const std::string guardedCode =
+            "class " + typeName + " { void " + methodName + "() {} }\n" +
+            "void " + funcName + "()\n" +
+            "{\n" +
+            "    " + typeName + "@ " + varName + " = null;\n" +
+            "    if (" + varName + " !is null)\n" +
+            "    {\n" +
+            "        " + varName + "." + methodName + "();\n" +
+            "    }\n" +
+            "}\n";
+
+        const auto guardedDiags = AnalyzeScript(guardedCode);
+        CHECK_FALSE(HasNullDereferenceWarning(guardedDiags, varName));
+    }
+
+    TEST_CASE("Reverse Operand Null Checks with null !is handle and null == handle")
+    {
+        const std::string typeName = GenerateRandomSymbolName("Monster");
+        const std::string paramName = GenerateRandomSymbolName("pMonster");
+        const std::string methodName = GenerateRandomSymbolName("Killed");
+        const std::string funcName = GenerateRandomSymbolName("OnTakeDamage");
+
+        const std::string reverseIfNotCode =
+            "class " + typeName + " { void " + methodName + "() {} }\n" +
+            "void " + funcName + "(" + typeName + "@ " + paramName + ")\n" +
+            "{\n" +
+            "    if (null !is " + paramName + ")\n" +
+            "    {\n" +
+            "        " + paramName + "." + methodName + "();\n" +
+            "    }\n" +
+            "}\n";
+
+        const auto reverseIfNotDiags = AnalyzeScript(reverseIfNotCode);
+        CHECK_FALSE(HasNullDereferenceWarning(reverseIfNotDiags, paramName));
+
+        const std::string reverseEarlyReturnCode =
+            "class " + typeName + " { void " + methodName + "() {} }\n" +
+            "void " + funcName + "(" + typeName + "@ " + paramName + ")\n" +
+            "{\n" +
+            "    if (null == " + paramName + ")\n" +
+            "        return;\n" +
+            "    " + paramName + "." + methodName + "();\n" +
+            "}\n";
+
+        const auto reverseEarlyDiags = AnalyzeScript(reverseEarlyReturnCode);
+        CHECK_FALSE(HasNullDereferenceWarning(reverseEarlyDiags, paramName));
+    }
+
+    TEST_CASE("Handle Reassigned to Null Emits Warning on Subsequent Dereference")
+    {
+        const std::string typeName = GenerateRandomSymbolName("Target");
+        const std::string paramName = GenerateRandomSymbolName("pTarget");
+        const std::string methodName = GenerateRandomSymbolName("Execute");
+        const std::string funcName = GenerateRandomSymbolName("RunPass");
+
+        const std::string code =
+            "class " + typeName + " { void " + methodName + "() {} }\n" +
+            "void " + funcName + "(" + typeName + "@ " + paramName + ")\n" +
+            "{\n" +
+            "    if (" + paramName + " !is null)\n" +
+            "    {\n" +
+            "        " + paramName + "." + methodName + "();\n" +
+            "        @" + paramName + " = null;\n" +
+            "        " + paramName + "." + methodName + "();\n" +
+            "    }\n" +
+            "}\n";
+
+        const auto diags = AnalyzeScript(code);
+        CHECK(HasNullDereferenceWarning(diags, paramName));
+    }
+
+    TEST_CASE("Constructed Instance Initialization Is Known NonNull")
+    {
+        const std::string typeName = GenerateRandomSymbolName("Buffer");
+        const std::string varName = GenerateRandomSymbolName("pBuf");
+        const std::string methodName = GenerateRandomSymbolName("Clear");
+        const std::string funcName = GenerateRandomSymbolName("Allocate");
+
+        const std::string code =
+            "class " + typeName + " { void " + methodName + "() {} }\n" +
+            "void " + funcName + "()\n" +
+            "{\n" +
+            "    " + typeName + "@ " + varName + " = " + typeName + "();\n" +
+            "    " + varName + "." + methodName + "();\n" +
+            "}\n";
+
+        const auto diags = AnalyzeScript(code);
+        CHECK_FALSE(HasNullDereferenceWarning(diags, varName));
+    }
+
+    TEST_CASE("Sven Co-op Style Inequality Operator != null Guards Dereference")
+    {
+        const std::string typeName = GenerateRandomSymbolName("CBaseEntity");
+        const std::string paramName = GenerateRandomSymbolName("pActivator");
+        const std::string methodName = GenerateRandomSymbolName("Use");
+        const std::string funcName = GenerateRandomSymbolName("Touch");
+
+        const std::string code =
+            "class " + typeName + " { void " + methodName + "() {} }\n" +
+            "void " + funcName + "(" + typeName + "@ " + paramName + ")\n" +
+            "{\n" +
+            "    if (" + paramName + " != null)\n" +
+            "    {\n" +
+            "        " + paramName + "." + methodName + "();\n" +
+            "    }\n" +
+            "}\n";
+
+        const auto diags = AnalyzeScript(code);
+        CHECK_FALSE(HasNullDereferenceWarning(diags, paramName));
+    }
+
+    TEST_CASE("Call Argument Expression Dereference Warning")
+    {
+        const std::string hostType = GenerateRandomSymbolName("Host");
+        const std::string argType = GenerateRandomSymbolName("Item");
+        const std::string hostVar = GenerateRandomSymbolName("pHost");
+        const std::string argVar = GenerateRandomSymbolName("pItem");
+        const std::string getItemMethod = GenerateRandomSymbolName("GetSubItem");
+        const std::string acceptMethod = GenerateRandomSymbolName("AcceptItem");
+        const std::string funcName = GenerateRandomSymbolName("ProcessItem");
+
+        const std::string code =
+            "class " + argType + " { " + argType + "@ " + getItemMethod + "() { return null; } }\n" +
+            "class " + hostType + " { void " + acceptMethod + "(" + argType + "@ item) {} }\n" +
+            "void " + funcName + "(" + hostType + "@ " + hostVar + ", " + argType + "@ " + argVar + ")\n" +
+            "{\n" +
+            "    if (" + hostVar + " !is null)\n" +
+            "    {\n" +
+            "        " + hostVar + "." + acceptMethod + "(" + argVar + "." + getItemMethod + "());\n" +
+            "    }\n" +
+            "}\n";
+
+        const auto diags = AnalyzeScript(code);
+        CHECK_FALSE(HasNullDereferenceWarning(diags, hostVar));
+        CHECK(HasNullDereferenceWarning(diags, argVar));
+    }
+TEST_SUITE_END();
 } // namespace angel_lsp::test
