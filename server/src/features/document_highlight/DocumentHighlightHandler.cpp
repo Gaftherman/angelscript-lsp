@@ -11,8 +11,8 @@
 
 namespace angel_lsp::features
 {
-using analysis::TargetKind;
 using analysis::TargetDescriptor;
+using analysis::TargetKind;
 
 namespace
 {

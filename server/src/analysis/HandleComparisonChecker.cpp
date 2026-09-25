@@ -70,12 +70,10 @@ struct ComparisonOperandsState
     {
         return true;
     }
-    return !ts_node_is_null(node) &&
-           std::string_view(ts_node_type(node)) == parser::nodes::NullLiteral;
+    return !ts_node_is_null(node) && std::string_view(ts_node_type(node)) == parser::nodes::NullLiteral;
 }
 
-void CheckHandleEquality(TSNode opNode, std::string_view op, std::string_view preferred,
-                         DiagnosticContext& ctx)
+void CheckHandleEquality(TSNode opNode, std::string_view op, std::string_view preferred, DiagnosticContext& ctx)
 {
     if (preferred.empty())
     {
@@ -89,8 +87,7 @@ void CheckHandleEquality(TSNode opNode, std::string_view op, std::string_view pr
     const auto severity = (mode == 2) ? DiagnosticSeverity::Error : DiagnosticSeverity::Warning;
     const TSPoint start = ts_node_start_point(opNode);
     const TSPoint end = ts_node_end_point(opNode);
-    ctx.EmitAtRange({start.row, start.column, end.row, end.column},
-                    diagnostics::codes::HandleComparisonEquality,
+    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::HandleComparisonEquality,
                     {std::string(op), std::string(preferred)}, severity);
 }
 
@@ -101,8 +98,8 @@ void CheckRelationalComparison(TSNode opNode, const RelationalCheckOperands& ops
 
     if (ops.hasNull)
     {
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column},
-                        diagnostics::codes::IllegalOperation, DiagnosticSeverity::Error);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::IllegalOperation,
+                        DiagnosticSeverity::Error);
         return;
     }
 
@@ -114,8 +111,8 @@ void CheckRelationalComparison(TSNode opNode, const RelationalCheckOperands& ops
             const auto opSyms = ctx.request.symbolTable.FindSymbolsPtr(baseClass + "::opCmp");
             if (!opSyms || opSyms->empty())
             {
-                ctx.EmitAtRange({start.row, start.column, end.row, end.column},
-                                diagnostics::codes::IllegalOperation, DiagnosticSeverity::Error);
+                ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::IllegalOperation,
+                                DiagnosticSeverity::Error);
             }
         }
     }
@@ -164,10 +161,10 @@ void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& c
         return;
     }
 
-    const std::string leftType = ResolveExpressionType(
-        left, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri});
-    const std::string rightType = ResolveExpressionType(
-        right, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri});
+    const std::string leftType =
+        ResolveExpressionType(left, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri});
+    const std::string rightType =
+        ResolveExpressionType(right, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri});
 
     const ComparisonOperandsState operandsState{
         .isLeftNull = IsNullOperand(left, leftType),

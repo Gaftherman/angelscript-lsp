@@ -105,3 +105,21 @@ Format: `<type>(<scope>): <short imperative description>`
 8. **PROHIBITION 8: No Functions Exceeding 15 CCN or 70 Lines:** Every function must pass `lizard -C 15 -L 70 -a 4` without warnings.
 9. **PROHIBITION 9: No Dead or Unnamed Parameters (`/we4100`):** Every formal parameter must be named, referenced, or cleanly removed.
 10. **PROHIBITION 10: No Static or Hardcoded Test Fixtures:** Tests must use dynamic randomized generators and sandboxes to verify semantic invariants rather than overfitting to fixed strings.
+
+---
+
+## 9. Code Quality & Static Analysis Standards
+
+When writing or refactoring C++ code in `server/src/`, all contributions MUST adhere to:
+1. **Zero-Duplication Policy (jscpd <= 3%):**
+   - Do not duplicate logic across checkers, rules, or feature handlers.
+   - Abstract shared logic into Layer 1 utilities or Layer 2 analysis helpers.
+2. **Cognitive & Cyclomatic Complexity Ceilings:**
+   - Lizard CCN must not exceed 15 per function; max net lines of code <= 70.
+   - Clang-Tidy `readability-function-cognitive-complexity` must not exceed 15.
+   - Avoid nesting deeper than 3 levels; use early returns and decomposed subroutines.
+3. **Cppcheck Hygiene:**
+   - Zero uninitialized variables, null pointer dereferences, resource leaks, or scope-escape defects.
+4. **Mandatory Execution Gate:**
+   - Always run `python server/scripts/check-quality.py` before committing.
+   - If any gate fails, inspect the report, fix root causes, and re-verify.

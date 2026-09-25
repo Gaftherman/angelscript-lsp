@@ -410,7 +410,6 @@ void PopulateEnglishMessages7(MessageMap& m_messages)
     m_messages["as-err-illegal-operation"] = "Illegal operation on this datatype.";
 }
 
-
 /**
  * @brief Populates all English diagnostic messages.
  * @param[out] m_messages Target message map to populate.
@@ -752,7 +751,6 @@ void PopulateSpanishMessages7(MessageMap& m_messages)
         "La comparación de handle con '{}' provoca una conversión implícita; use '{}' para identidad de referencia.";
     m_messages["as-err-illegal-operation"] = "Operación no válida en este tipo de datos.";
 }
-
 
 /**
  * @brief Populates all Spanish diagnostic messages.

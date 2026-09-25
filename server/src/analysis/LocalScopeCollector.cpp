@@ -625,7 +625,7 @@ void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, con
 }
 
 void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode declaratorNode,
-                                                     const std::string& sourceCode, LocalDefinition& def) const
+                                                      const std::string& sourceCode, LocalDefinition& def) const
 {
     TSNode startNode = nameNode;
     TSNode typeNode{};

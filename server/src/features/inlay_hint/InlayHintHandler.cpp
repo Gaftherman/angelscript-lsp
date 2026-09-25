@@ -290,7 +290,6 @@ std::vector<analysis::Symbol> CollectFreeCalleeCandidates(TSNode funcNode, TSNod
     return candidateSymbols;
 }
 
-
 /**
  * @brief Selects the candidate matching the given argument count and default parameter bounds.
  * @param[in] candidateSymbols Available candidate symbols.
@@ -392,8 +391,8 @@ std::vector<analysis::ParameterInformation> ResolveCalleeParameters(TSNode callN
             TSPoint pt = ts_node_start_point(callNode);
             scope = FindInnermostScope(rootScope.get(), pt.row, pt.column);
         }
-        auto argTypes = analysis::ExtractCallArgumentTypes(
-            callNode, {scope, request.symbolTable, request.sourceCode, request.uri});
+        auto argTypes =
+            analysis::ExtractCallArgumentTypes(callNode, {scope, request.symbolTable, request.sourceCode, request.uri});
         auto match = analysis::ResolveBestOverload(candidateSymbols, argTypes, request.symbolTable);
         if (match.bestCandidate != nullptr)
         {

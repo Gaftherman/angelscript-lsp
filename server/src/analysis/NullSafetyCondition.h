@@ -2,8 +2,8 @@
 
 #include "analysis/NullSafetyTypes.h"
 #include <string_view>
-#include <vector>
 #include <tree_sitter/api.h>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
@@ -29,8 +29,7 @@ std::string GetIdentifierName(TSNode node, std::string_view sourceCode);
  * @param[out] positiveAssertions Assertions that hold if the condition is true.
  * @param[out] negativeAssertions Assertions that hold if the condition is false.
  */
-void ExtractConditionAssertions(TSNode condition,
-                                std::string_view sourceCode,
+void ExtractConditionAssertions(TSNode condition, std::string_view sourceCode,
                                 std::vector<NullAssertion>& positiveAssertions,
                                 std::vector<NullAssertion>& negativeAssertions);
 

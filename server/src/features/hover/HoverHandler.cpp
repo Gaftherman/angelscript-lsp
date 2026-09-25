@@ -1072,9 +1072,8 @@ void CollectOverloadDocs(const HoverRequest& request, const std::vector<analysis
             continue;
         }
         std::string trimmedD = CollapseWhitespace(d);
-        bool alreadyPresent = std::any_of(docs.begin(), docs.end(), [&](const std::string& existing) {
-            return CollapseWhitespace(existing) == trimmedD;
-        });
+        bool alreadyPresent = std::any_of(docs.begin(), docs.end(), [&](const std::string& existing)
+                                          { return CollapseWhitespace(existing) == trimmedD; });
         if (!alreadyPresent)
         {
             docs.push_back(std::move(d));
@@ -1388,8 +1387,7 @@ std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
     }
     if (typeName.empty() && def->kind == analysis::LocalDefinitionKind::Parameter)
     {
-        typeName =
-            analysis::InferLambdaParamType(ctx.node, def->name, ctx.request.symbolTable, ctx.request.sourceCode);
+        typeName = analysis::InferLambdaParamType(ctx.node, def->name, ctx.request.symbolTable, ctx.request.sourceCode);
     }
 
     if (ctx.profiler.IsActive())

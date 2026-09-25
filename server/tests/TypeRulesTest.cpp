@@ -2690,6 +2690,33 @@ TEST_SUITE("AngelScript_SemanticTokens_Template_Disambiguation")
             }
         }
     }
+
+    TEST_CASE("Semantic Tokens: Chained relational comparison does not get confused with templates")
+    {
+        const std::string varMin = GenerateRandomSymbolName("minVal");
+        const std::string varVal = GenerateRandomSymbolName("curVal");
+        const std::string varMax = GenerateRandomSymbolName("maxVal");
+        const std::string script = "void Test(int " + varMin + ", int " + varVal + ", int " + varMax + ") {\n"
+                                   "    if (" + varMin + " < " + varVal + " && " + varVal + " > " + varMax + ") {}\n"
+                                   "}\n";
+
+        auto doc = CreateTestDocument("file:///test_chained_relational.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto tokens = doc->GetSemanticTokens();
+        REQUIRE_FALSE(tokens.empty());
+
+        size_t opCount = 0;
+        for (const auto& token : tokens)
+        {
+            if (token.type == SemanticTokenType::Operator)
+            {
+                ++opCount;
+            }
+        }
+        // Operators expected: '<', '&&', '>'
+        CHECK(opCount >= 3);
+    }
 }
 
 TEST_SUITE("AngelScript_Template_Symbol_Resolution")

@@ -95,10 +95,8 @@ void TryAddExtractMethodAction(const CodeActionRequest& request, TSNode rootNode
     }
 
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    const analysis::Scope* fnScope =
-        FindScopeByLineOrRoot(rootScope.get(), ts_node_start_point(stmts->fnNode).row);
-    const analysis::Scope* stmtScope =
-        FindScopeByLineOrRoot(rootScope.get(), stmts->firstStart.row);
+    const analysis::Scope* fnScope = FindScopeByLineOrRoot(rootScope.get(), ts_node_start_point(stmts->fnNode).row);
+    const analysis::Scope* stmtScope = FindScopeByLineOrRoot(rootScope.get(), stmts->firstStart.row);
 
     ExtractedMethodVariables vars;
     if (fnScope)

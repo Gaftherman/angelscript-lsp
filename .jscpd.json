@@ -1,0 +1,15 @@
+{
+  "threshold": 3,
+  "reporters": ["console"],
+  "ignore": [
+    "**/build/**",
+    "**/tests/**",
+    "**/predefined/**",
+    "**/_deps/**",
+    "**/generated/**"
+  ],
+  "absolute": true,
+  "minTokens": 90,
+  "format": ["cpp"],
+  "languages": ["cpp"]
+}

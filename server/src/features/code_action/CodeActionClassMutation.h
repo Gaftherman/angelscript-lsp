@@ -2,9 +2,9 @@
 
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
-#include <tree_sitter/api.h>
 #include <string>
 #include <string_view>
+#include <tree_sitter/api.h>
 
 namespace angel_lsp::features
 {

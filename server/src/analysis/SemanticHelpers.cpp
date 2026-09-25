@@ -3690,8 +3690,7 @@ TSNode ResolveArgumentListNode(TSNode node)
 
 namespace
 {
-void ProcessCallArgumentChild(TSNode child, const char* field, std::string_view sourceCode,
-                              CallArgumentInfo& current)
+void ProcessCallArgumentChild(TSNode child, const char* field, std::string_view sourceCode, CallArgumentInfo& current)
 {
     if (field && std::string_view(field) == "arg_name")
     {
@@ -3878,14 +3877,34 @@ void StepDelimiterDepth(char c, CallDelimiterState& state, uint32_t& activeParam
 {
     switch (c)
     {
-    case '(': ++state.parenDepth; break;
-    case ')': if (state.parenDepth > 0) --state.parenDepth; break;
-    case '[': ++state.bracketDepth; break;
-    case ']': if (state.bracketDepth > 0) --state.bracketDepth; break;
-    case '{': ++state.braceDepth; break;
-    case '}': if (state.braceDepth > 0) --state.braceDepth; break;
-    case '<': ++state.angleDepth; break;
-    case '>': if (state.angleDepth > 0) --state.angleDepth; break;
+    case '(':
+        ++state.parenDepth;
+        break;
+    case ')':
+        if (state.parenDepth > 0)
+            --state.parenDepth;
+        break;
+    case '[':
+        ++state.bracketDepth;
+        break;
+    case ']':
+        if (state.bracketDepth > 0)
+            --state.bracketDepth;
+        break;
+    case '{':
+        ++state.braceDepth;
+        break;
+    case '}':
+        if (state.braceDepth > 0)
+            --state.braceDepth;
+        break;
+    case '<':
+        ++state.angleDepth;
+        break;
+    case '>':
+        if (state.angleDepth > 0)
+            --state.angleDepth;
+        break;
     case ',':
         if (state.AtTopLevel())
         {
@@ -3924,8 +3943,7 @@ uint32_t CalculateActiveCallParameter(TSNode argListNode, size_t cursorByte, std
 
     for (size_t i = startByte; i < bound; ++i)
     {
-        if (StepCommentState(sourceCode, i, bound, state) ||
-            StepStringState(sourceCode, i, bound, state))
+        if (StepCommentState(sourceCode, i, bound, state) || StepStringState(sourceCode, i, bound, state))
         {
             continue;
         }
