@@ -4,6 +4,22 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.5] - 2026-09-25
+
+### Flow-Sensitive Null Safety Analysis & Logging Hardening
+
+- Flow-Sensitive Null Handle Dereference Diagnostics:
+  - Implemented intraprocedural AST-driven null handle dereference diagnostics (`as-warn-possible-null-dereference`).
+  - Warns on handle member accesses and calls when a handle has not been null-checked, has been assigned null, or where a null check returned null.
+  - Recognizes safe initialization patterns, non-null checks (`handle !is null`, `null !is handle`, `handle != null`), explicit return/break/continue guards, and safe dereference invariants.
+  - Zero token-stream scanning: uses precompiled queries and structured named-child AST traversal conforming strictly to Layer Matrix and Rule 3.1.
+- Logging & File System Protection:
+  - Disk file logging (`.vscode/lsp/logs/`) is now completely disabled by default across all runs.
+  - In Release builds (`NDEBUG`), disk log initialization is elided entirely to minimize I/O overhead.
+  - `MultiFileLogger` uses lazy thread initialization so background workers are only started if logging is explicitly requested (`--enable-file-logging`).
+- Marketplace Identity & Discovery:
+  - Renamed extension identifier to `angelscript` (`gaftherman.angelscript`) with display title `Angelscript - Language Server for Angelscript` for optimal discoverability.
+
 ## [0.8.4.2] - 2026-09-24
 
 ### Overload & Lambda Hover Formatting and Doc Comment Sanitization
