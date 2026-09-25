@@ -162,6 +162,20 @@ suite('buildServerArgs', () => {
                   `unexpected suppress flag in ${args.join(' ')}`);
     });
 
+    test('diagnostics.reportHandleComparisonEquality forwards flag when disabled or error', async () => {
+        const argsDisabled = await withSetting('diagnostics.reportHandleComparisonEquality', 0, buildServerArgs);
+        assert.ok(argsDisabled.includes('--no-report-handle-comparison-equality'),
+                  `expected --no-report-handle-comparison-equality in ${argsDisabled.join(' ')}`);
+
+        const argsDefault = await withSetting('diagnostics.reportHandleComparisonEquality', 1, buildServerArgs);
+        assert.ok(!argsDefault.some(arg => arg.includes('report-handle-comparison-equality')),
+                  `unexpected handle comparison flag for default in ${argsDefault.join(' ')}`);
+
+        const argsError = await withSetting('diagnostics.reportHandleComparisonEquality', 2, buildServerArgs);
+        assert.ok(argsError.includes('--report-handle-comparison-equality=2'),
+                  `expected --report-handle-comparison-equality=2 in ${argsError.join(' ')}`);
+    });
+
     test('the editor language is always forwarded', () => {
         // The server localises its diagnostics and has no other way to learn which language to use.
         const args = buildServerArgs();

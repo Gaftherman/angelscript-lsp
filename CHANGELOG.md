@@ -4,6 +4,19 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.6] - 2026-09-25
+
+### Client Settings Wiring & Deep Nesting Stack Defense
+
+- Client Diagnostics Configuration Wiring:
+  - Wired `angelscript.diagnostics.reportHandleComparisonEquality` into `buildServerArgs()` in `client/src/extension.ts`, properly propagating `--no-report-handle-comparison-equality` when disabled (0) and `--report-handle-comparison-equality=2` for strict error enforcement.
+  - Verified setting synchronisation across package manifest, translations, and extension runtime via `check-settings-wired.mjs`.
+  - Added unit test cases in `client/src/test/extension.test.ts` asserting command-line argument emissions across all modes (disabled, default, error).
+- Extension Manifest SemVer Alignment:
+  - Aligned extension manifest version in `client/package.json` to canonical three-part SemVer (`0.8.6`), resolving VS Code test runner and Marketplace compatibility.
+- Analysis AST Traversal Depth Defense:
+  - Added `k_maxAstDepth` recursion bounds to `NullSafetyChecker::CheckStatement` and `CheckIfStmt`, guaranteeing complete stack-overflow immunity on deeply nested statement blocks.
+
 ## [0.8.5.4] - 2026-09-25
 
 ### Anti-Pattern Remediation & Robust Expression Type Resolution for Handle Comparisons
