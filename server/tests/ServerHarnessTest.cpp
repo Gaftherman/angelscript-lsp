@@ -5989,3 +5989,32 @@ TEST_CASE("Server - Initialize falls back to rootPath when formatted as file URI
     REQUIRE(roots.size() == 1);
     CHECK(roots[0] == utils::IncludeResolver::NormalizePath(fixture.dir.string()));
 }
+
+TEST_CASE("Server - File logging is disabled by default and controlled by CLI flags")
+{
+    const config::ServerConfig defaultConfig;
+    CHECK_FALSE(defaultConfig.info.enableFileLogging);
+
+    const char* enableArgs[] = {"angel_lsp", "--enable-file-logging"};
+    const config::ServerConfig enabledConfig = config::FromArgs(2, const_cast<char**>(enableArgs));
+    CHECK(enabledConfig.info.enableFileLogging);
+
+    const char* disableArgs[] = {"angel_lsp", "--enable-file-logging", "--disable-file-logging"};
+    const config::ServerConfig disabledConfig = config::FromArgs(3, const_cast<char**>(disableArgs));
+    CHECK_FALSE(disabledConfig.info.enableFileLogging);
+}
+
+TEST_CASE("Server - Default workspace initialization does not create log files on disk")
+{
+    WorkspaceFixture fixture;
+    test::ScriptedStream stream;
+    config::ServerConfig config;
+    Server server(config, stream);
+
+    lsp::requests::Initialize::Params params;
+    params.rootUri = lsp::DocumentUri::parse(fixture.RootUri());
+    server.HandleRequestsInitialized(std::move(params));
+
+    const auto lspDir = fixture.dir / ".vscode" / "lsp";
+    CHECK_FALSE(std::filesystem::exists(lspDir));
+}

@@ -865,6 +865,9 @@ export function buildServerArgs(): string[] {
     if (config.get<boolean>('diagnostics.reportIntegerDivision', false) === true) {
         args.push('--report-integer-division');
     }
+    if (config.get<boolean>('diagnostics.reportPossibleNullDereference', true) === false) {
+        args.push('--no-report-possible-null-dereference');
+    }
 
     // asEP_PROPERTY_ACCESSOR_MODE takes a number, not a boolean, so it is not one of
     // ENGINE_PROPERTIES above either. The test against 2 and 3 is a whitelist, not a
