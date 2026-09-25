@@ -4,6 +4,23 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.5.3] - 2026-09-25
+
+### Compiler Parity on Handle Equality and Relational Comparison Diagnostics
+
+- Handle Equality Diagnostic (`as-warn-handle-comparison-equality`):
+  - Detects handle comparisons using value equality/inequality against null (`== null`, `null ==`, `!= null`, `null !=`) and suggests canonical identity operators (`is null`, `!is null`).
+  - Fully configurable via `angelscript.diagnostics.reportHandleComparisonEquality` (and CLI `--report-handle-comparison-equality` / `--no-report-handle-comparison-equality`):
+    - `0`: Disabled (silent).
+    - `1`: Warning (default compiler parity).
+    - `2`: Error (strict enforcement).
+- Relational Comparison Validation (`as-err-illegal-operation`):
+  - Flags illegal relational operations on null operands (`< null`, `<= null`, `> null`, `>= null`, and reverse operand ordering) as compiler errors.
+  - Flags relational comparisons between handle types lacking an `opCmp` method declaration.
+  - Accurately permits relational comparisons when `opCmp` is defined on the underlying class.
+- Flow Analysis Integration:
+  - Preserves short-circuit flow invariants for compound logical expressions (`||`, `&&`, ternary conditions, and loops).
+
 ## [0.8.5.2] - 2026-09-25
 
 ### Compiler Parity Oracle Verification on Handle Null Comparisons

@@ -405,7 +405,11 @@ void PopulateEnglishMessages7(MessageMap& m_messages)
         "is expected or assign it to a funcdef handle.";
     m_messages["as-err-readonly-handle"] = "Cannot reassign read-only handle '{}'.";
     m_messages["as-err-expression-is-data-type"] = "Expression '{}' is a data type.";
+    m_messages["as-warn-handle-comparison-equality"] =
+        "Handle comparison with '{}' causes implicit conversion; use '{}' for reference identity.";
+    m_messages["as-err-illegal-operation"] = "Illegal operation on this datatype.";
 }
+
 
 /**
  * @brief Populates all English diagnostic messages.
@@ -744,7 +748,11 @@ void PopulateSpanishMessages7(MessageMap& m_messages)
         "espere un funcdef o asígnala a un handle de funcdef.";
     m_messages["as-err-readonly-handle"] = "No se puede reasignar el handle de solo lectura '{}'.";
     m_messages["as-err-expression-is-data-type"] = "La expresión '{}' es un tipo de datos.";
+    m_messages["as-warn-handle-comparison-equality"] =
+        "La comparación de handle con '{}' provoca una conversión implícita; use '{}' para identidad de referencia.";
+    m_messages["as-err-illegal-operation"] = "Operación no válida en este tipo de datos.";
 }
+
 
 /**
  * @brief Populates all Spanish diagnostic messages.

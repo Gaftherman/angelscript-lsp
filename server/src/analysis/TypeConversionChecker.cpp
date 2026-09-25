@@ -1,7 +1,9 @@
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
+#include "analysis/HandleComparisonChecker.h"
 #include "analysis/NodeIndex.h"
+
 #include "analysis/SemanticHelpers.h"
 
 #include "parser/GrammarNames.h"
@@ -3074,7 +3076,9 @@ void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, D
 {
     const Scope* scope = ResolveNodeScope(node, request);
     CheckSignedUnsignedComparison(node, scope, ctx);
+    CheckHandleComparison(node, scope, ctx);
 }
+
 
 /**
  * @brief Validates increment and decrement expressions on virtual properties.
