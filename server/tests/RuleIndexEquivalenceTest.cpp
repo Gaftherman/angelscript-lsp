@@ -84,25 +84,25 @@ namespace
             }
         }
 
-        // 3. accessorPropertyNames & accessorPropertyCounts
-        CHECK(actual.accessorPropertyNames.size() == oracle.accessorPropertyNames.size());
-        for (const auto &name : oracle.accessorPropertyNames)
+        // 3. globalAccessorPropertyNames & globalAccessorPropertyCounts
+        CHECK(actual.globalAccessorPropertyNames.size() == oracle.globalAccessorPropertyNames.size());
+        for (const auto &name : oracle.globalAccessorPropertyNames)
         {
-            CHECK(actual.accessorPropertyNames.contains(name));
+            CHECK(actual.globalAccessorPropertyNames.contains(name));
         }
 
-        // 4. keywordAccessorPropertyNames & keywordAccessorPropertyCounts
-        CHECK(actual.keywordAccessorPropertyNames.size() == oracle.keywordAccessorPropertyNames.size());
-        for (const auto &name : oracle.keywordAccessorPropertyNames)
+        // 4. keywordGlobalAccessorPropertyNames & keywordGlobalAccessorPropertyCounts
+        CHECK(actual.keywordGlobalAccessorPropertyNames.size() == oracle.keywordGlobalAccessorPropertyNames.size());
+        for (const auto &name : oracle.keywordGlobalAccessorPropertyNames)
         {
-            CHECK(actual.keywordAccessorPropertyNames.contains(name));
+            CHECK(actual.keywordGlobalAccessorPropertyNames.contains(name));
         }
-        CHECK(actual.keywordAccessorPropertyCounts.size() == oracle.keywordAccessorPropertyCounts.size());
-        for (const auto &[name, count] : oracle.keywordAccessorPropertyCounts)
+        CHECK(actual.keywordGlobalAccessorPropertyCounts.size() == oracle.keywordGlobalAccessorPropertyCounts.size());
+        for (const auto &[name, count] : oracle.keywordGlobalAccessorPropertyCounts)
         {
-            auto it = actual.keywordAccessorPropertyCounts.find(name);
-            CHECK(it != actual.keywordAccessorPropertyCounts.end());
-            if (it != actual.keywordAccessorPropertyCounts.end())
+            auto it = actual.keywordGlobalAccessorPropertyCounts.find(name);
+            CHECK(it != actual.keywordGlobalAccessorPropertyCounts.end());
+            if (it != actual.keywordGlobalAccessorPropertyCounts.end())
             {
                 CHECK(it->second == count);
             }
@@ -211,6 +211,10 @@ namespace
                 CHECK(actCm.finalMethodCounts == oracleCm.finalMethodCounts);
                 CHECK(actCm.allMemberCounts == oracleCm.allMemberCounts);
                 CHECK(actCm.memberKeyCounts == oracleCm.memberKeyCounts);
+                CHECK(actCm.accessorPropertyNames == oracleCm.accessorPropertyNames);
+                CHECK(actCm.keywordAccessorPropertyNames == oracleCm.keywordAccessorPropertyNames);
+                CHECK(actCm.accessorPropertyCounts == oracleCm.accessorPropertyCounts);
+                CHECK(actCm.keywordAccessorPropertyCounts == oracleCm.keywordAccessorPropertyCounts);
             }
         }
     }

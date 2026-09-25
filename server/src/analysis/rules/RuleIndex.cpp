@@ -27,12 +27,13 @@ void RuleIndexPartial::Merge(RuleIndexPartial&& other)
     qualifiedTypes.insert(qualifiedTypes.end(), std::make_move_iterator(other.qualifiedTypes.begin()),
                           std::make_move_iterator(other.qualifiedTypes.end()));
 
-    accessorProperties.insert(accessorProperties.end(), std::make_move_iterator(other.accessorProperties.begin()),
-                              std::make_move_iterator(other.accessorProperties.end()));
+    globalAccessorProperties.insert(globalAccessorProperties.end(),
+                                    std::make_move_iterator(other.globalAccessorProperties.begin()),
+                                    std::make_move_iterator(other.globalAccessorProperties.end()));
 
-    keywordAccessorProperties.insert(keywordAccessorProperties.end(),
-                                     std::make_move_iterator(other.keywordAccessorProperties.begin()),
-                                     std::make_move_iterator(other.keywordAccessorProperties.end()));
+    keywordGlobalAccessorProperties.insert(keywordGlobalAccessorProperties.end(),
+                                           std::make_move_iterator(other.keywordGlobalAccessorProperties.begin()),
+                                           std::make_move_iterator(other.keywordGlobalAccessorProperties.end()));
 
     derivedByBase.insert(derivedByBase.end(), std::make_move_iterator(other.derivedByBase.begin()),
                          std::make_move_iterator(other.derivedByBase.end()));
@@ -53,6 +54,12 @@ void RuleIndexPartial::Merge(RuleIndexPartial&& other)
                                      std::make_move_iterator(contrib.allMemberNames.end()));
         target.memberKeys.insert(target.memberKeys.end(), std::make_move_iterator(contrib.memberKeys.begin()),
                                  std::make_move_iterator(contrib.memberKeys.end()));
+        target.accessorProperties.insert(target.accessorProperties.end(),
+                                         std::make_move_iterator(contrib.accessorProperties.begin()),
+                                         std::make_move_iterator(contrib.accessorProperties.end()));
+        target.keywordAccessorProperties.insert(target.keywordAccessorProperties.end(),
+                                                std::make_move_iterator(contrib.keywordAccessorProperties.begin()),
+                                                std::make_move_iterator(contrib.keywordAccessorProperties.end()));
         target.nestedTypeCount += contrib.nestedTypeCount;
     }
 }
@@ -174,10 +181,24 @@ void RecordAccessorProperty(RuleIndexPartial& partial, const Symbol& sym)
         accessor.remove_prefix(4);
         if (!accessor.empty())
         {
-            partial.accessorProperties.emplace_back(accessor);
-            if (std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isProperty)
+            const bool isProp =
+                std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isProperty;
+            if (sym.containerName.empty())
             {
-                partial.keywordAccessorProperties.emplace_back(accessor);
+                partial.globalAccessorProperties.emplace_back(accessor);
+                if (isProp)
+                {
+                    partial.keywordGlobalAccessorProperties.emplace_back(accessor);
+                }
+            }
+            else
+            {
+                auto& target = partial.byContainer[sym.containerName];
+                target.accessorProperties.emplace_back(accessor);
+                if (isProp)
+                {
+                    target.keywordAccessorProperties.emplace_back(accessor);
+                }
             }
         }
     }
@@ -289,19 +310,19 @@ void ApplyTypesAndAccessors(RuleIndex& index, const RuleIndexPartial& partial)
         }
     }
 
-    for (const auto& p : partial.accessorProperties)
+    for (const auto& p : partial.globalAccessorProperties)
     {
-        if (++index.accessorPropertyCounts[p] == 1)
+        if (++index.globalAccessorPropertyCounts[p] == 1)
         {
-            index.accessorPropertyNames.insert(p);
+            index.globalAccessorPropertyNames.insert(p);
         }
     }
 
-    for (const auto& p : partial.keywordAccessorProperties)
+    for (const auto& p : partial.keywordGlobalAccessorProperties)
     {
-        if (++index.keywordAccessorPropertyCounts[p] == 1)
+        if (++index.keywordGlobalAccessorPropertyCounts[p] == 1)
         {
-            index.keywordAccessorPropertyNames.insert(p);
+            index.keywordGlobalAccessorPropertyNames.insert(p);
         }
     }
 }
@@ -342,6 +363,20 @@ void ApplyContainerContribution(ContainerMembers& cm, const RuleIndexPartial::Co
         if (++cm.allMemberCounts[m] == 1)
         {
             cm.allMemberNames.insert(m);
+        }
+    }
+    for (const auto& p : contrib.accessorProperties)
+    {
+        if (++cm.accessorPropertyCounts[p] == 1)
+        {
+            cm.accessorPropertyNames.insert(p);
+        }
+    }
+    for (const auto& p : contrib.keywordAccessorProperties)
+    {
+        if (++cm.keywordAccessorPropertyCounts[p] == 1)
+        {
+            cm.keywordAccessorPropertyNames.insert(p);
         }
     }
     for (const auto& k : contrib.memberKeys)
@@ -437,13 +472,13 @@ void RemoveTypesAndAccessors(RuleIndex& index, const RuleIndexPartial& partial)
         }
     };
 
-    for (const auto& p : partial.accessorProperties)
+    for (const auto& p : partial.globalAccessorProperties)
     {
-        removeCountedProp(index.accessorPropertyCounts, index.accessorPropertyNames, p);
+        removeCountedProp(index.globalAccessorPropertyCounts, index.globalAccessorPropertyNames, p);
     }
-    for (const auto& p : partial.keywordAccessorProperties)
+    for (const auto& p : partial.keywordGlobalAccessorProperties)
     {
-        removeCountedProp(index.keywordAccessorPropertyCounts, index.keywordAccessorPropertyNames, p);
+        removeCountedProp(index.keywordGlobalAccessorPropertyCounts, index.keywordGlobalAccessorPropertyNames, p);
     }
 }
 
@@ -503,6 +538,14 @@ void RemoveContainerContribution(ContainerMembers& cm, const RuleIndexPartial::C
     for (const auto& m : contrib.allMemberNames)
     {
         removeCountedMember(cm.allMemberCounts, cm.allMemberNames, m);
+    }
+    for (const auto& p : contrib.accessorProperties)
+    {
+        removeCountedMember(cm.accessorPropertyCounts, cm.accessorPropertyNames, p);
+    }
+    for (const auto& p : contrib.keywordAccessorProperties)
+    {
+        removeCountedMember(cm.keywordAccessorPropertyCounts, cm.keywordAccessorPropertyNames, p);
     }
     for (const auto& k : contrib.memberKeys)
     {

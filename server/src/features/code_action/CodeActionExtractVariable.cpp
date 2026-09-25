@@ -79,6 +79,45 @@ bool IsLhsOfAssignment(TSNode node)
 }
 
 /**
+ * @brief Checks if a node is the member field of a member_expression or part of a scoped_identifier.
+ * @param[in] node Candidate node.
+ * @param[in] parent Parent node.
+ * @return True if node is a member component without standalone evaluation semantics.
+ */
+static bool IsMemberField(TSNode node, TSNode parent)
+{
+    if (ts_node_is_null(parent))
+    {
+        return false;
+    }
+    std::string_view pType = ts_node_type(parent);
+    if (pType == "member_expression")
+    {
+        TSNode memberNode = parser::GetChildByField(parent, parser::fields::Member);
+        return ts_node_eq(memberNode, node) ||
+               (!ts_node_is_null(memberNode) && ts_node_start_byte(memberNode) == ts_node_start_byte(node));
+    }
+    return pType == "scoped_identifier";
+}
+
+/**
+ * @brief Checks if a node is the function callee of a call_expression.
+ * @param[in] node Candidate node.
+ * @param[in] parent Parent node.
+ * @return True if node is the callee of a call.
+ */
+static bool IsFunctionFieldOfCall(TSNode node, TSNode parent)
+{
+    if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "call_expression")
+    {
+        return false;
+    }
+    TSNode funcNode = parser::GetChildByField(parent, parser::fields::Function);
+    return ts_node_eq(funcNode, node) ||
+           (!ts_node_is_null(funcNode) && ts_node_start_byte(funcNode) == ts_node_start_byte(node));
+}
+
+/**
  * @brief Locates the target extractable expression within the requested selection range.
  * @param[in] rootNode Root of AST.
  * @param[in] range Selected text range.
@@ -102,6 +141,18 @@ TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
     {
         return TSNode{};
     }
+
+    TSNode parent = ts_node_parent(targetNode);
+    if (IsMemberField(targetNode, parent))
+    {
+        targetNode = parent;
+        parent = ts_node_parent(targetNode);
+    }
+    if (IsFunctionFieldOfCall(targetNode, parent))
+    {
+        targetNode = parent;
+    }
+
     std::string_view nodeType = ts_node_type(targetNode);
     if (nodeType.ends_with("_statement") || nodeType.ends_with("_declaration") || nodeType == "statement_block" ||
         nodeType == "class_body" || nodeType == "parameter" || nodeType == "primitive_type" ||
@@ -284,6 +335,10 @@ std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionReques
 
     std::string varType =
         analysis::ResolveExpressionType(targetNode, {scope, request.symbolTable, request.sourceCode, request.uri});
+    if (analysis::CleanBaseType(varType) == "void")
+    {
+        return std::nullopt;
+    }
     if (varType.empty() || varType == "null")
     {
         varType = "auto";

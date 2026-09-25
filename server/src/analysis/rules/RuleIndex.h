@@ -40,6 +40,10 @@ struct ContainerMembers
     ankerl::unordered_dense::map<std::string, uint32_t> finalMethodCounts;
     ankerl::unordered_dense::map<std::string, uint32_t> allMemberCounts;
     ankerl::unordered_dense::map<std::string, uint32_t> memberKeyCounts;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> accessorPropertyNames;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> keywordAccessorPropertyNames;
+    ankerl::unordered_dense::map<std::string, uint32_t> accessorPropertyCounts;
+    ankerl::unordered_dense::map<std::string, uint32_t> keywordAccessorPropertyCounts;
     uint32_t nestedTypeCount = 0;
 };
 
@@ -56,14 +60,16 @@ struct RuleIndexPartial
         std::vector<std::string> finalMethodNames;
         std::vector<std::string> allMemberNames;
         std::vector<std::string> memberKeys;
+        std::vector<std::string> accessorProperties;
+        std::vector<std::string> keywordAccessorProperties;
         uint32_t nestedTypeCount = 0;
     };
 
     ankerl::unordered_dense::map<std::string, ContainerContribution> byContainer;
     std::vector<std::pair<std::string, Symbol>> enumMembers;
     std::vector<std::pair<std::string, std::string>> qualifiedTypes;
-    std::vector<std::string> accessorProperties;
-    std::vector<std::string> keywordAccessorProperties;
+    std::vector<std::string> globalAccessorProperties;
+    std::vector<std::string> keywordGlobalAccessorProperties;
     std::vector<std::string> allNames;
     std::vector<std::pair<std::string, DerivedType>> derivedByBase;
     std::vector<std::pair<std::string, DerivedType>> hostClassesByMixin;
@@ -95,11 +101,11 @@ struct RuleIndex
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> qualifiedTypesByShortName;
     ankerl::unordered_dense::map<std::string, ankerl::unordered_dense::map<std::string, uint32_t>> qualifiedTypeCounts;
 
-    ankerl::unordered_dense::set<std::string> accessorPropertyNames;
-    ankerl::unordered_dense::map<std::string, uint32_t> accessorPropertyCounts;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> globalAccessorPropertyNames;
+    ankerl::unordered_dense::map<std::string, uint32_t> globalAccessorPropertyCounts;
 
-    ankerl::unordered_dense::set<std::string> keywordAccessorPropertyNames;
-    ankerl::unordered_dense::map<std::string, uint32_t> keywordAccessorPropertyCounts;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> keywordGlobalAccessorPropertyNames;
+    ankerl::unordered_dense::map<std::string, uint32_t> keywordGlobalAccessorPropertyCounts;
 
     /**
      * @brief Every declared name in the workspace, with refcounts for incremental updates.

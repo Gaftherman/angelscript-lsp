@@ -1415,6 +1415,12 @@ void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const
         return;
     }
 
+    if (const auto dataTypeName = IsBareDataType(valueNode, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        EmitAtNode(valueNode, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+        return;
+    }
+
     const ExpressionType source = ResolveValueType(valueNode, scope, ctx);
     if (!source.known || source.baseName.empty())
     {
@@ -2689,6 +2695,13 @@ void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& reque
         EmitAtNode(valueNode, ctx, "as-err-cyclic-auto-dependency", varName);
         return;
     }
+
+    if (const auto dataTypeName = IsBareDataType(valueNode, scope, ctx.request.symbolTable, request.sourceCode))
+    {
+        EmitAtNode(valueNode, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+        return;
+    }
+
     const std::string rhsType =
         ResolveExpressionType(valueNode, {scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri});
 

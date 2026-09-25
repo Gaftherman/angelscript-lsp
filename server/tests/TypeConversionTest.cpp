@@ -2443,4 +2443,30 @@ TEST_CASE("TypeConversion - Invariant: Multi-level inheritance derived-to-base c
                       [](const Diagnostic &d) { return d.code == "as-err-no-implicit-conversion"; }));
 }
 
+TEST_CASE("TypeConversion - Invariant: Bare data type in variable initializer emits as-err-expression-is-data-type")
+{
+    std::mt19937_64 rng(0xCAFEBABE);
+    const std::string funcdefName = angel_lsp::test::GenerateIdentifier(rng, "HookFuncdef");
+    const std::string className = angel_lsp::test::GenerateIdentifier(rng, "MyTargetClass");
 
+    std::string code;
+    code += "funcdef void " + funcdefName + "();\n";
+    code += "class " + className + " {}\n";
+    code += "void main() {\n";
+    code += "    auto a = " + funcdefName + ";\n";
+    code += "    int b = " + funcdefName + ";\n";
+    code += "    auto c = " + className + ";\n";
+    code += "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    size_t count = 0;
+    for (const auto &d : diags)
+    {
+        if (d.code == "as-err-expression-is-data-type")
+        {
+            count++;
+        }
+    }
+    CHECK(count >= 3);
+}

@@ -1007,3 +1007,30 @@ TEST_CASE("HoverHandler - Call overload resolution fallback when argument type m
     size_t posDerived = content.value.find("weapon_ins2l85a2::Deploy");
     CHECK(posBest < posDerived);
 }
+
+TEST_CASE("HoverHandler - Predefined Stub Parameter AST Fallback")
+{
+    std::string code =
+        "class ref\n"
+        "{\n"
+        "    ref(const ref& in other);\n"
+        "    void opAssign(const ref& in other);\n"
+        "}\n";
+
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{ nullptr };
+    SymbolTable symbolTable;
+    ScopeIndex emptyScopeIndex;
+    std::string uri = "file:///sven.as.predefined";
+    TSTree* tree = parser.Parse(code);
+    symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
+
+    // Hover at "other" on line 2, character 23
+    HoverRequest req{ uri, code, tree, symbolTable, emptyScopeIndex, lsp::Position{ 2, 23 } };
+    auto hover = GetHover(req);
+    REQUIRE(hover.has_value());
+    auto content = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(content.value.find("(parameter) const ref& in other") != std::string::npos);
+
+    ts_tree_delete(tree);
+}

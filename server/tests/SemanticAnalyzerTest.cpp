@@ -1906,3 +1906,77 @@ class Player : MovementMixin
     }
 }
 
+TEST_CASE("SemanticAnalyzer - Property Accessor Scope Isolation")
+{
+    angel_lsp::i18n::I18n i18n;
+
+    SUBCASE("Accessing container property from inside container method succeeds without undeclared warning")
+    {
+        const std::string code =
+            "class CModule {\n"
+            "    int get_ScriptInfo() { return 42; }\n"
+            "    void Test() {\n"
+            "        int x = ScriptInfo;\n"
+            "    }\n"
+            "}\n";
+        SymbolTable table;
+        const auto diagnostics = AnalyzeSource(code, table, i18n);
+        CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
+    }
+
+    SUBCASE("Accessing container property from free function emits as-warn-undeclared-identifier")
+    {
+        const std::string code =
+            "class CModule {\n"
+            "    int get_ScriptInfo() { return 42; }\n"
+            "}\n"
+            "void main() {\n"
+            "    auto x = ScriptInfo;\n"
+            "}\n";
+        SymbolTable table;
+        const auto diagnostics = AnalyzeSource(code, table, i18n);
+        CHECK(Emitted(diagnostics, "as-warn-undeclared-identifier"));
+    }
+
+    SUBCASE("Global property accessor is accessible from free function")
+    {
+        const std::string code =
+            "int get_GlobalCount() { return 10; }\n"
+            "void main() {\n"
+            "    int x = GlobalCount;\n"
+            "}\n";
+        SymbolTable table;
+        const auto diagnostics = AnalyzeSource(code, table, i18n);
+        CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
+    }
+}
+
+TEST_CASE("SemanticAnalyzer - Local Variable and Member Shadowing with Type Name")
+{
+    angel_lsp::i18n::I18n i18n;
+
+    SUBCASE("Local variable having same name as its type is valid in local scope")
+    {
+        const std::string code =
+            "class CBasePlayer {}\n"
+            "void Test(CBasePlayer@ player) {\n"
+            "    CBasePlayer@ CBasePlayer = player;\n"
+            "}\n";
+        SymbolTable table;
+        const auto diagnostics = AnalyzeSource(code, table, i18n);
+        CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
+    }
+
+    SUBCASE("Member variable having same name as its type is valid in class scope")
+    {
+        const std::string code =
+            "class CBasePlayer {}\n"
+            "class Container {\n"
+            "    CBasePlayer@ CBasePlayer;\n"
+            "}\n";
+        SymbolTable table;
+        const auto diagnostics = AnalyzeSource(code, table, i18n);
+        CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
+    }
+}
+

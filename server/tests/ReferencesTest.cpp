@@ -636,3 +636,34 @@ TEST_CASE("ReferencesHandler - Invariant: N reference expressions yield exactly 
     CHECK(refsWithoutDecl->size() == N);
 }
 
+TEST_CASE("ReferencesHandler - Invariant: Parameter default argument and variable initializer references are counted")
+{
+    std::mt19937_64 rng(0x5EEDCAFE);
+    const std::string funcName = angel_lsp::test::GenerateIdentifier(rng, "DefaultHelper");
+
+    std::string code;
+    code += "int " + funcName + "() { return 42; }\n";
+    code += "int g_global = " + funcName + "();\n";
+    code += "void Consumer(int p = " + funcName + "()) {}\n";
+    code += "void Runner() {\n";
+    code += "    int local = " + funcName + "();\n";
+    code += "}\n";
+
+    TestEnvironment env(code);
+    auto refsWithDecl = env.RefsAt(0, 5, true);
+    REQUIRE(refsWithDecl.has_value());
+    CHECK(refsWithDecl->size() == 4);
+
+    auto refsWithoutDecl = env.RefsAt(0, 5, false);
+    REQUIRE(refsWithoutDecl.has_value());
+    CHECK(refsWithoutDecl->size() == 3);
+
+    std::vector<uint32_t> lines;
+    for (const auto &r : *refsWithoutDecl)
+    {
+        lines.push_back(r.range.start.line);
+    }
+    std::sort(lines.begin(), lines.end());
+    CHECK(lines == std::vector<uint32_t>{ 1, 2, 4 });
+}
+

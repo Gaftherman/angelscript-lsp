@@ -4,6 +4,23 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.9.0] - 2026-09-25
+
+### Compiler Parity, Accessor Scope Isolation, & Extract Variable Refactoring
+
+- Bare Data Type Initializer Diagnostic (`as-err-expression-is-data-type`):
+  - Validates `IsBareDataType` in `ProcessAutoDeclarator` and `CheckInitializer`, preventing bare `funcdef` or type names from being assigned to variables (e.g. `auto newVar = PlayerPostThinkHook;`).
+- Accessor Property Scope Isolation:
+  - Separated container-scoped property accessors from global property accessors in `RuleIndex` and `ContainerMembers`.
+  - In `SemanticAnalyzer`, container accessors without explicit receiver (`this.`) are strictly allowed only within their declaring class hierarchy, preventing false suppression of `as-warn-undeclared-identifier` in free functions.
+- Extract Variable Refactoring Improvements:
+  - Added member access expression climbing in `FindExtractableExpression` so extracting from chained access (e.g. `ScriptInfo` in `g_Module.ScriptInfo.SetAuthor("Mikk");`) extracts the full member expression `g_Module.ScriptInfo`.
+  - Added type guard in `BuildExtractVariableAction` disallowing extraction of `void`-returning call expressions.
+- Predefined Parameter Hover AST Fallback:
+  - Added `TryHoverParameterAst` in `HoverHandler`, ensuring parameter hover signatures (`(parameter) <decl>`) display reliably in `.as.predefined` stub declarations and files without local scope indexes.
+- Reference Counter & Invariant Coverage:
+  - Added unit test cases verifying reference tracking for function parameter default argument values and variable initializers.
+
 ## [0.8.6] - 2026-09-25
 
 ### Client Settings Wiring & Deep Nesting Stack Defense

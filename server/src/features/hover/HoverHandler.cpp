@@ -1421,6 +1421,46 @@ std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, ctx.range};
 }
 
+/**
+ * @brief Fallback hover resolution for parameter AST nodes without scope tree entries.
+ * @param[in] ctx Hover query context.
+ * @return Parameter hover if node is part of a parameter declaration, std::nullopt otherwise.
+ */
+std::optional<lsp::Hover> TryHoverParameterAst(const HoverQueryContext& ctx)
+{
+    if (ts_node_is_null(ctx.node) || !ctx.request.tree)
+    {
+        return std::nullopt;
+    }
+
+    TSNode current = ctx.node;
+    bool foundParam = false;
+    for (int depth = 0; depth < 4 && !ts_node_is_null(current); ++depth, current = ts_node_parent(current))
+    {
+        if (std::string_view(ts_node_type(current)) == "parameter")
+        {
+            foundParam = true;
+            break;
+        }
+    }
+
+    if (!foundParam)
+    {
+        return std::nullopt;
+    }
+
+    TSNode rootNode = ts_tree_root_node(ctx.request.tree);
+    std::string declText =
+        ExtractDeclarationTextAt(rootNode, ctx.request.sourceCode, ts_node_start_point(ctx.node), "parameter");
+    if (declText.empty())
+    {
+        return std::nullopt;
+    }
+
+    std::string md = "```angelscript\n(parameter) " + declText + "\n```";
+    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, ctx.range};
+}
+
 void AppendEnclosingClassMethods(TSNode node, std::string_view nodeText, const HoverRequest& request,
                                  std::vector<analysis::Symbol>& symbols)
 {
@@ -1775,6 +1815,11 @@ std::optional<lsp::Hover> TryHoverExpressionOrLocal(const HoverQueryContext& ctx
     if (auto localHover = TryHoverLocalDefinition(ctx))
     {
         return localHover;
+    }
+
+    if (auto paramHover = TryHoverParameterAst(ctx))
+    {
+        return paramHover;
     }
 
     if (!isMemberChild)

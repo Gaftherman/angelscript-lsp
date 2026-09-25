@@ -887,15 +887,60 @@ bool CheckEnumScopeDiagnostic(const Scope* scope, const LocalReference& ref, con
     return false;
 }
 
+bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, const DiagnosticContext& ctx)
+{
+    if (ts_node_is_null(node))
+    {
+        return false;
+    }
+    const auto& index = ctx.request.GetRuleIndex();
+    const bool reqKeyword = ctx.request.RequiresAccessorKeyword();
+    auto containers = GetEnclosingContainers(node, ctx.request.sourceCode);
+    for (const auto& container : containers)
+    {
+        if (container.kind != ContainerKind::Class && container.kind != ContainerKind::Interface)
+        {
+            continue;
+        }
+        const auto hierarchy = GetInheritedTypeHierarchy(
+            container.qualifiedName.empty() ? container.name : container.qualifiedName, ctx.request.symbolTable);
+        for (const auto& typeName : hierarchy)
+        {
+            const auto& members = index.Members(typeName);
+            const auto& accSet =
+                reqKeyword ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
+            if (accSet.contains(refName))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticContext& ctx)
 {
-    const auto& index = ctx.request.GetRuleIndex();
-    const auto& accessorNames =
-        ctx.request.RequiresAccessorKeyword() ? index.keywordAccessorPropertyNames : index.accessorPropertyNames;
-    if (accessorNames.contains(ref.name))
+    if (IsReservedKeyword(ref.name))
+    {
         return true;
+    }
 
-    return IsReservedKeyword(ref.name);
+    const auto& index = ctx.request.GetRuleIndex();
+    const auto& globalAccessors = ctx.request.RequiresAccessorKeyword() ? index.keywordGlobalAccessorPropertyNames
+                                                                        : index.globalAccessorPropertyNames;
+    if (globalAccessors.contains(ref.name))
+    {
+        return true;
+    }
+
+    if (ctx.request.tree)
+    {
+        const TSPoint at{ref.startLine, ref.startCharacter};
+        const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(ctx.request.tree), at, at);
+        return IsContainerAccessorProperty(node, ref.name, ctx);
+    }
+
+    return false;
 }
 
 void CheckScopeReferences(

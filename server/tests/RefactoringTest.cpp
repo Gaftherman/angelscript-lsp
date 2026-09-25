@@ -1301,4 +1301,62 @@ TEST_CASE("Refactoring - Extract Method: Rejects Empty Selection On Variable Or 
     }
 }
 
+TEST_CASE("Refactoring - Extract Variable: Member Expression Climbing")
+{
+    std::string code =
+        "class CScriptInfo { void SetAuthor(string a) {} }\n"
+        "class CModule { CScriptInfo@ ScriptInfo; }\n"
+        "CModule g_Module;\n"
+        "void main()\n"
+        "{\n"
+        "    g_Module.ScriptInfo.SetAuthor(\"Mikk\");\n"
+        "}\n";
+
+    RefactorTestEnvironment env(code);
+    // Cursor on "ScriptInfo" (line 5, character 15)
+    lsp::Range cursorRange{ { 5, 15 }, { 5, 15 } };
+    auto actions = env.CodeActions(cursorRange);
+
+    REQUIRE(actions.has_value());
+    bool foundExtract = false;
+    for (const auto &action : *actions)
+    {
+        if (action.title == "Extract Variable")
+        {
+            foundExtract = true;
+            REQUIRE(action.edit.has_value());
+            REQUIRE(action.edit->changes.has_value());
+            auto changes = action.edit->changes.value();
+            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            REQUIRE(edits.size() == 2);
+            // Declarator must extract g_Module.ScriptInfo, NOT lone ScriptInfo!
+            CHECK(edits[0].newText.find("= g_Module.ScriptInfo;\n") != std::string::npos);
+        }
+    }
+    CHECK(foundExtract);
+}
+
+TEST_CASE("Refactoring - Extract Variable: Rejects Void Returning Call Expression")
+{
+    std::string code =
+        "void DoNothing() {}\n"
+        "void main()\n"
+        "{\n"
+        "    DoNothing();\n"
+        "}\n";
+
+    RefactorTestEnvironment env(code);
+    // Selection on DoNothing()
+    lsp::Range range{ { 3, 4 }, { 3, 15 } };
+    auto actions = env.CodeActions(range);
+
+    if (actions.has_value())
+    {
+        for (const auto &action : *actions)
+        {
+            CHECK(action.title != "Extract Variable");
+        }
+    }
+}
+
 
