@@ -4232,6 +4232,20 @@ std::optional<Symbol> FindFuncdefSymbol(const std::string& typeName, const Symbo
     return std::nullopt;
 }
 
+bool IsHandleType(std::string_view typeName, const SymbolTable& symbolTable) noexcept
+{
+    if (typeName.empty())
+    {
+        return false;
+    }
+    if (typeName.find('@') != std::string_view::npos)
+    {
+        return true;
+    }
+    const std::string clean = CleanBaseType(typeName);
+    return !clean.empty() && FindFuncdefSymbol(clean, symbolTable).has_value();
+}
+
 /**
  * @brief The funcdef a lambda is being handed to, read from where it is written.
  *

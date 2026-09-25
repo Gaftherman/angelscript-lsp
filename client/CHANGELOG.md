@@ -4,6 +4,18 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.5.4] - 2026-09-25
+
+### Anti-Pattern Remediation & Robust Expression Type Resolution for Handle Comparisons
+
+- Canonical Handle Type Predicate (`IsHandleType`):
+  - Extracted central semantic handle verification to `SemanticHelpers.h` / `SemanticHelpers.cpp`.
+  - Replaced ad-hoc string comparisons (`ends_with('@')`, `"ref"` matching) and raw text slicing (`GetNodeText`, `LastScopeSegment`) with AST-driven type resolution (`ResolveExpressionType`).
+- Structured Operator Classification (`ClassifyComparisonOperator`):
+  - Replaced inline ternary operator branching (`(op == "==") ? "is" : "!is"`) with typed `ComparisonOperatorInfo` classifying `ValueEquality` vs `Relational` operators and their canonical identity counterparts.
+- Comprehensive Container & Expression Coverage:
+  - Added unit test cases verifying handle equality and relational checks on container elements (`array<Foo@>`, `array<array<Foo@>>`), value classes (`array<Foo>`), primitives (`array<int>`), class members, function returns, and `funcdef` handles.
+
 ## [0.8.5.3] - 2026-09-25
 
 ### Compiler Parity on Handle Equality and Relational Comparison Diagnostics
