@@ -359,7 +359,7 @@ TEST_CASE("Adversarial Completion - Non-existent and Invalid Receivers")
     CHECK(items.empty());
 }
 
-TEST_CASE("Adversarial Completion - Arrow Operator Member Access")
+TEST_CASE("Adversarial Completion - Arrow Operator Is Not Member Access")
 {
     std::string code =
         "class Node {\n"
@@ -373,9 +373,8 @@ TEST_CASE("Adversarial Completion - Arrow Operator Member Access")
 
     AdversarialTestEnv env(code);
     auto items = env.Complete(6, 7);
-    CHECK(env.HasCompletionItem(items, "next"));
-    CHECK(env.HasCompletionItem(items, "value"));
-    CHECK(!env.HasCompletionItem(items, "while"));
+    CHECK(!env.HasCompletionItem(items, "next"));
+    CHECK(!env.HasCompletionItem(items, "value"));
 }
 
 TEST_CASE("Adversarial Completion - Incomplete Code and Syntax Error Recovery")

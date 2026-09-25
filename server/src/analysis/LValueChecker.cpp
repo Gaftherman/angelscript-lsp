@@ -12,31 +12,6 @@ namespace angel_lsp::analysis
 {
 namespace
 {
-/**
- * @brief Node text as an owning string.
- *
- * Kept per translation unit rather than shared with ASTUtils::NodeText, which returns a
- * string_view. The two are not interchangeable: callers here store the result, concatenate
- * it, and use it after the node has gone out of scope, so handing them a view would trade a
- * duplicated three-line function for a lifetime question at several dozen call sites.
- * Deduplicating it was attempted and reverted for exactly that reason.
- */
-std::string NodeText(TSNode node, std::string_view sourceCode)
-{
-    if (ts_node_is_null(node))
-    {
-        return "";
-    }
-
-    const uint32_t start = ts_node_start_byte(node);
-    const uint32_t end = ts_node_end_byte(node);
-    if (start >= end || end > sourceCode.size())
-    {
-        return "";
-    }
-    return std::string(sourceCode.substr(start, end - start));
-}
-
 void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code)
 {
     const TSPoint start = ts_node_start_point(node);

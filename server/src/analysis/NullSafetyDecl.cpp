@@ -1,4 +1,5 @@
 #include "analysis/NullSafetyDecl.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/NullSafetyCondition.h"
 #include "analysis/NullSafetyExpr.h"
 #include "analysis/SymbolTable.h"
@@ -10,21 +11,6 @@ namespace angel_lsp::analysis
 {
 namespace
 {
-std::string NodeText(TSNode node, std::string_view sourceCode)
-{
-    if (ts_node_is_null(node))
-    {
-        return "";
-    }
-    const uint32_t start = ts_node_start_byte(node);
-    const uint32_t end = ts_node_end_byte(node);
-    if (start >= end || end > sourceCode.size())
-    {
-        return "";
-    }
-    return std::string(sourceCode.substr(start, end - start));
-}
-
 bool IsTargetVariableTypeMatch(std::string_view targetVarName, std::string_view typeName, NullCheckContext& ctx)
 {
     if (targetVarName.empty() || typeName.empty())

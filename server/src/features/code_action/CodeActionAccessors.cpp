@@ -50,16 +50,20 @@ bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::st
     classBody = parser::GetChildByField(classNode, parser::fields::Body);
     if (ts_node_is_null(classBody))
     {
-        uint32_t cnt = ts_node_child_count(classNode);
-        for (uint32_t i = 0; i < cnt; ++i)
+        TSTreeCursor cursor = ts_tree_cursor_new(classNode);
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            TSNode ch = ts_node_child(classNode, i);
-            if (std::string_view(ts_node_type(ch)) == "class_body")
+            do
             {
-                classBody = ch;
-                break;
-            }
+                TSNode ch = ts_tree_cursor_current_node(&cursor);
+                if (std::string_view(ts_node_type(ch)) == "class_body")
+                {
+                    classBody = ch;
+                    break;
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
         }
+        ts_tree_cursor_delete(&cursor);
     }
     if (ts_node_is_null(classBody))
     {
@@ -78,6 +82,41 @@ bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::st
  * @param[in] className Name of enclosing class.
  * @return Vector of {fieldName, fieldType} pairs.
  */
+std::vector<std::pair<std::string, std::string>> CollectFieldsFromVarDecl(TSNode varDecl, std::string_view sourceCode)
+{
+    std::vector<std::pair<std::string, std::string>> fields;
+    TSNode typeNode = parser::GetChildByField(varDecl, parser::fields::VarType);
+    if (ts_node_is_null(typeNode))
+    {
+        typeNode = parser::GetChildByField(varDecl, parser::fields::Type);
+    }
+    std::string fieldType = GetNodeText(typeNode, sourceCode);
+    if (fieldType.empty())
+    {
+        fieldType = "int";
+    }
+
+    TSTreeCursor cursor = ts_tree_cursor_new(varDecl);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode ch = ts_tree_cursor_current_node(&cursor);
+            if (std::string_view(ts_node_type(ch)) == "variable_declarator")
+            {
+                TSNode vNameNode = parser::GetChildByField(ch, parser::fields::Name);
+                std::string fName = GetNodeText(vNameNode, sourceCode);
+                if (!fName.empty())
+                {
+                    fields.push_back({fName, fieldType});
+                }
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+    return fields;
+}
+
 std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TSNode leaf, TSNode classBody,
                                                                               const CodeActionRequest& request,
                                                                               const std::string& className)
@@ -89,50 +128,24 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TS
         varDecl = ts_node_parent(varDecl);
     }
 
-    std::vector<std::pair<std::string, std::string>> fields;
     if (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) == "variable_declaration")
     {
-        TSNode typeNode = parser::GetChildByField(varDecl, parser::fields::VarType);
-        if (ts_node_is_null(typeNode))
-        {
-            typeNode = parser::GetChildByField(varDecl, parser::fields::Type);
-        }
-        std::string fieldType = GetNodeText(typeNode, request.sourceCode);
-        if (fieldType.empty())
-        {
-            fieldType = "int";
-        }
+        return CollectFieldsFromVarDecl(varDecl, request.sourceCode);
+    }
 
-        uint32_t dCnt = ts_node_child_count(varDecl);
-        for (uint32_t i = 0; i < dCnt; ++i)
+    std::vector<std::pair<std::string, std::string>> fields;
+    request.symbolTable.ForEachSymbol(
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
         {
-            TSNode ch = ts_node_child(varDecl, i);
-            if (std::string_view(ts_node_type(ch)) == "variable_declarator")
+            for (const auto& sym : symList)
             {
-                TSNode vNameNode = parser::GetChildByField(ch, parser::fields::Name);
-                std::string fName = GetNodeText(vNameNode, request.sourceCode);
-                if (!fName.empty())
+                if (sym.containerName == className &&
+                    (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property))
                 {
-                    fields.push_back({fName, fieldType});
+                    fields.push_back({sym.name, sym.GetVariable().typeName});
                 }
             }
-        }
-    }
-    else
-    {
-        request.symbolTable.ForEachSymbol(
-            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
-            {
-                for (const auto& sym : symList)
-                {
-                    if (sym.containerName == className &&
-                        (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property))
-                    {
-                        fields.push_back({sym.name, sym.GetVariable().typeName});
-                    }
-                }
-            });
-    }
+        });
     return fields;
 }
 
@@ -143,16 +156,21 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TS
  */
 TSPoint FindClassClosingBracePoint(TSNode classBody)
 {
-    uint32_t cnt = ts_node_child_count(classBody);
-    for (int i = static_cast<int>(cnt) - 1; i >= 0; --i)
+    TSPoint closingPt{0, 0};
+    TSTreeCursor cursor = ts_tree_cursor_new(classBody);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode ch = ts_node_child(classBody, static_cast<uint32_t>(i));
-        if (std::string_view(ts_node_type(ch)) == "}")
+        do
         {
-            return ts_node_start_point(ch);
-        }
+            TSNode ch = ts_tree_cursor_current_node(&cursor);
+            if (std::string_view(ts_node_type(ch)) == "}")
+            {
+                closingPt = ts_node_start_point(ch);
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
-    return TSPoint{0, 0};
+    ts_tree_cursor_delete(&cursor);
+    return closingPt;
 }
 
 struct GetterSetterContext

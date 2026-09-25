@@ -1,4 +1,5 @@
 #include "features/call_hierarchy/CallHierarchyHandler.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
 
 #include "parser/GrammarNames.h"
@@ -13,25 +14,10 @@ namespace
 using analysis::CallGraphIndex;
 using analysis::CallSite;
 using analysis::DocumentCalls;
+using analysis::NodeText;
 using analysis::Symbol;
 using analysis::SymbolTable;
 using analysis::SymbolType;
-
-std::string NodeText(TSNode node, std::string_view sourceCode)
-{
-    if (ts_node_is_null(node))
-    {
-        return "";
-    }
-
-    const uint32_t start = ts_node_start_byte(node);
-    const uint32_t end = ts_node_end_byte(node);
-    if (start >= end || end > sourceCode.size())
-    {
-        return "";
-    }
-    return std::string(sourceCode.substr(start, end - start));
-}
 
 lsp::Range ToRange(const analysis::SourceRange& range)
 {
@@ -175,7 +161,8 @@ std::string IdentifierAt(const CallHierarchyPrepareRequest& request, TSNode& out
     }
 
     outNode = node;
-    return std::string_view(ts_node_type(node)) == "identifier" ? NodeText(node, request.sourceCode) : std::string();
+    return std::string_view(ts_node_type(node)) == "identifier" ? std::string(NodeText(node, request.sourceCode))
+                                                                : std::string();
 }
 
 /**

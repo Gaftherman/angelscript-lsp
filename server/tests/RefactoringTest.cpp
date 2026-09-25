@@ -6,6 +6,7 @@
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
 #include "parser/AngelScriptParser.h"
+#include "helpers/TestUtils.h"
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;
@@ -131,8 +132,8 @@ TEST_CASE("Refactoring - Extract Variable: Call Expression")
             auto changes = action.edit->changes.value();
             const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
-            CHECK(edits[0].newText.find("Target@ newVar = GetTarget(player);") != std::string::npos);
-            CHECK(edits[1].newText == "newVar");
+            CHECK(edits[0].newText.find("Target@ target = GetTarget(player);") != std::string::npos);
+            CHECK(edits[1].newText == "target");
         }
     }
     CHECK(foundExtract);
@@ -1232,6 +1233,70 @@ TEST_CASE("Adversarial Refactoring - Add const: Interface Method Without Body")
         for (const auto &act : *actions)
         {
             CHECK(act.title != "Add 'const' qualifier to method");
+        }
+    }
+}
+
+TEST_CASE("Refactoring - Extract Variable: Smart Name From Method Call")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("CPlayer");
+    const std::string varObj = angel_lsp::test::GenerateRandomSymbolName("player");
+    std::string code =
+        "class " + clsName + "\n"
+        "{\n"
+        "    string GetModel() { return \"models/player.mdl\"; }\n"
+        "}\n"
+        "void main()\n"
+        "{\n"
+        "    " + clsName + "@ " + varObj + " = " + clsName + "();\n"
+        "    string m = " + varObj + ".GetModel();\n"
+        "}\n";
+
+    RefactorTestEnvironment env(code);
+    uint32_t lineIdx = 7;
+    uint32_t colStart = 15;
+    uint32_t colEnd = static_cast<uint32_t>(colStart + varObj.size() + 11);
+    lsp::Range range{ { lineIdx, colStart }, { lineIdx, colEnd } };
+    auto actions = env.CodeActions(range);
+
+    REQUIRE(actions.has_value());
+    bool foundExtract = false;
+    for (const auto &action : *actions)
+    {
+        if (action.title == "Extract Variable")
+        {
+            foundExtract = true;
+            REQUIRE(action.edit.has_value());
+            REQUIRE(action.edit->changes.has_value());
+            auto changes = action.edit->changes.value();
+            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            REQUIRE(edits.size() == 2);
+            CHECK(edits[0].newText.find("model = " + varObj + ".GetModel();") != std::string::npos);
+            CHECK(edits[1].newText == "model");
+        }
+    }
+    CHECK(foundExtract);
+}
+
+TEST_CASE("Refactoring - Extract Method: Rejects Empty Selection On Variable Or Inner Expression")
+{
+    std::string code =
+        "void main()\n"
+        "{\n"
+        "    int a = 1;\n"
+        "    int b = 2;\n"
+        "    int c = a + b;\n"
+        "}\n";
+
+    RefactorTestEnvironment env(code);
+    lsp::Range cursorRange{ { 4, 16 }, { 4, 16 } };
+    auto actions = env.CodeActions(cursorRange);
+
+    if (actions.has_value())
+    {
+        for (const auto &action : *actions)
+        {
+            CHECK(action.title != "Extract Method");
         }
     }
 }

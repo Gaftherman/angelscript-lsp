@@ -1,4 +1,5 @@
 #include "analysis/NullSafetyCondition.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/TypeExtraction.h"
 #include "parser/GrammarNames.h"
 #include <string>
@@ -20,21 +21,6 @@ struct BinaryConditionParams
     std::string_view op;
     std::string_view sourceCode;
 };
-
-std::string NodeText(TSNode node, std::string_view sourceCode)
-{
-    if (ts_node_is_null(node))
-    {
-        return "";
-    }
-    const uint32_t start = ts_node_start_byte(node);
-    const uint32_t end = ts_node_end_byte(node);
-    if (start >= end || end > sourceCode.size())
-    {
-        return "";
-    }
-    return std::string(sourceCode.substr(start, end - start));
-}
 
 bool HandleEqualityNullCheck(TSNode left, TSNode right, std::string_view sourceCode, AssertionSink& sink)
 {
@@ -186,7 +172,7 @@ std::string GetIdentifierName(TSNode node, std::string_view sourceCode)
     std::string_view type = ts_node_type(unwrapped);
     if (type == parser::nodes::Identifier)
     {
-        return NodeText(unwrapped, sourceCode);
+        return std::string(NodeText(unwrapped, sourceCode));
     }
     if (type == parser::nodes::ScopedIdentifier)
     {

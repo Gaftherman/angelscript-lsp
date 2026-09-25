@@ -41,15 +41,20 @@ TSNode FindFunctionBodyBlock(TSNode fnNode)
     {
         return bodyNode;
     }
-    uint32_t cnt = ts_node_child_count(fnNode);
-    for (uint32_t i = 0; i < cnt; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(fnNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode ch = ts_node_child(fnNode, i);
-        if (std::string_view(ts_node_type(ch)) == "statement_block")
+        do
         {
-            return ch;
-        }
+            TSNode ch = ts_tree_cursor_current_node(&cursor);
+            if (std::string_view(ts_node_type(ch)) == "statement_block")
+            {
+                bodyNode = ch;
+                break;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
     return bodyNode;
 }
 
@@ -62,26 +67,30 @@ TSNode FindFunctionBodyBlock(TSNode fnNode)
 std::vector<TSNode> CollectStatementsInRange(TSNode bodyNode, const lsp::Range& range)
 {
     std::vector<TSNode> selectedStmts;
-    uint32_t childCount = ts_node_child_count(bodyNode);
-    for (uint32_t i = 0; i < childCount; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(bodyNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode ch = ts_node_child(bodyNode, i);
-        if (!ts_node_is_named(ch))
+        do
         {
-            continue;
-        }
-        std::string_view t = ts_node_type(ch);
-        if (t == "{" || t == "}")
-        {
-            continue;
-        }
-        TSPoint cStart = ts_node_start_point(ch);
-        TSPoint cEnd = ts_node_end_point(ch);
-        if (cStart.row <= range.end.line && cEnd.row >= range.start.line)
-        {
-            selectedStmts.push_back(ch);
-        }
+            TSNode ch = ts_tree_cursor_current_node(&cursor);
+            if (!ts_node_is_named(ch))
+            {
+                continue;
+            }
+            std::string_view t = ts_node_type(ch);
+            if (t == "{" || t == "}")
+            {
+                continue;
+            }
+            TSPoint cStart = ts_node_start_point(ch);
+            TSPoint cEnd = ts_node_end_point(ch);
+            if (cStart.row <= range.end.line && cEnd.row >= range.start.line)
+            {
+                selectedStmts.push_back(ch);
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
     return selectedStmts;
 }
 
@@ -153,16 +162,37 @@ TSNode FindEnclosingClassNode(TSNode fnNode)
     return classNode;
 }
 
+TSNode FindInnermostStatementBlock(TSNode rootNode, const lsp::Range& range, TSNode fnNode)
+{
+    TSPoint startPt = {range.start.line, range.start.character};
+    TSPoint endPt = {range.end.line, range.end.character};
+    TSNode node = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
+    while (!ts_node_is_null(node) && node.id != fnNode.id)
+    {
+        if (std::string_view(ts_node_type(node)) == "statement_block")
+        {
+            return node;
+        }
+        node = ts_node_parent(node);
+    }
+    return FindFunctionBodyBlock(fnNode);
+}
+
 } // namespace
 
 std::optional<ExtractMethodStatements> FindSelectedStatements(TSNode rootNode, const CodeActionRequest& request)
 {
+    if (request.range.start.line == request.range.end.line &&
+        request.range.start.character == request.range.end.character)
+    {
+        return std::nullopt;
+    }
     TSNode fnNode = FindEnclosingFunctionNode(rootNode, request.range);
     if (ts_node_is_null(fnNode))
     {
         return std::nullopt;
     }
-    TSNode bodyNode = FindFunctionBodyBlock(fnNode);
+    TSNode bodyNode = FindInnermostStatementBlock(rootNode, request.range, fnNode);
     if (ts_node_is_null(bodyNode))
     {
         return std::nullopt;
