@@ -6339,6 +6339,15 @@ TEST_CASE("Server - Realistic Sven Co-op Framerate module closure with sven.as.p
             showPublished = LastPublishedFor(stream.Output(), "ShowFrameRate.as");
         });
 
+    stream.Push(DidOpenMessage(framerateUri, framerateSource));
+    std::string frameratePublished;
+    stream.PushAction(
+        [&stream, &frameratePublished]()
+        {
+            WaitForCount(stream, "publishDiagnostics", 2);
+            frameratePublished = LastPublishedFor(stream.Output(), "Framerate.as");
+        });
+
     // 1. Definition of ServerFramerate in ShowFrameRate.as (line 10, col 60: const ServerFramerate@ data)
     stream.Push(
         R"({"jsonrpc":"2.0","id":10,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
@@ -6378,6 +6387,7 @@ TEST_CASE("Server - Realistic Sven Co-op Framerate module closure with sven.as.p
 
     CHECK(showPublished.find("as-warn-undeclared-identifier") == std::string::npos);
     CHECK(showPublished.find("as-err-undefined-namespace") == std::string::npos);
+    CHECK(frameratePublished.find("as-warn-possible-null-dereference") == std::string::npos);
     CHECK(defServerFramerateReply.find("Framerate.as") != std::string::npos);
     CHECK(defSetCallbackReply.find("Framerate.as") != std::string::npos);
     CHECK(defHudReply.find("as.predefined") != std::string::npos);
