@@ -20,6 +20,8 @@ PLANNED-FOLDER-MODULES.md
 PLANNED-WORKSPACE-SCOPE.md
 PROJECT.md
 TEST_INFRA.md
+docs/audits/
+test_coverage_and_semantic_gap_analysis.md
 
 # Temporary Logs & Output Files
 *.log
