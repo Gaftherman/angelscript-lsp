@@ -91,68 +91,51 @@ Create or update `.vscode/settings.json` in your workspace:
 
 ---
 
-## What's New & Architectural Advancements (v0.7.7-exp.* Milestone)
+## Internationalization & Localization (i18n / l10n)
 
-- **Strict Scope Isolation in Reference Resolution & CodeLens**: Dynamic `AccessModifier` tracking and inheritance tree filtering (`GetCompatibleMemberClasses`, `GetDerivedClasses`) ensure private members are strictly isolated to their declaring class scope and protected members to direct descendants. Sibling classes sharing a common base class (such as weapon entities deriving from `ScriptBasePlayerWeaponEntity`) no longer leak references or inflate CodeLens counts.
-- **Scheme-Agnostic Virtual Document URI Extraction**: Modernized `ExtractVirtualHostClass` and `ExtractVirtualMixinName` using robust tokenization, eliminating hardcoded string offsets and supporting arbitrary URI schemes, multiple slashes, and complex namespace hierarchies with zero linear table scans.
-- **High-Performance Symbol Synthesis for Mixins**: Host classes synthesize methods and properties directly from `mixin class` definitions without physical script concatenation. CodeLens deduplicates declarations to present a single aggregated reference count across all host classes, and client-side scaffolding is available for experimental virtual mixin documents (`angelscript-virtual://<host_class>/<mixin>.as`).
-- **ABI-Based Incremental Save Analysis**: Incremental document saves utilize a 64-bit FNV-1a interface fingerprint. When an edit affects only function bodies without modifying public interface ABI hashes, cascading re-analysis across open documents is bypassed.
-- **Cascading Peer Open-Document Debouncing**: Introduces a 250ms coalescing window in `Server.cpp` preventing repetitive re-analysis storms across open peer files (such as `base.as`).
-- **Sub-Millisecond Hover & Reference Latency**: Eradication of linear `symbolTable.ForEachSymbol` scans in favor of keyed spatial bucket indexes and direct symbol resolution lookups.
-- **LSP Call Hierarchy Provider**: Full implementation of `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, and `callHierarchy/outgoingCalls`, seamlessly mapping calls through synthesized mixin members back to their origin definitions.
-- **Overload-Aware Navigation**: Go-to-Definition (`FilterOverloadsForCall`) matches argument types and arity against candidate overloads, jumping accurately to the exact function or mixin declaration rather than defaulting to the first match.
-- **Native Compiler Parity Verification**: Integrated `asharness.exe` test suite continuously validates parser behavior and isolated expression statement semantics (`null;`, literals) against reference AngelScript compiler binaries.
+AngelLSP is engineered with a dual-layer internationalization architecture providing native bilingual support across both English (`en`) and Spanish (`es`):
 
----
+### 1. Server-Side Diagnostic Localization (`--locale`)
+- The C++20 language server includes an internal `angel_lsp::i18n` translation catalog.
+- Compiler errors, semantic warnings, and analyzer notices are emitted directly in the configured language:
+  - English: `en` (default)
+  - Spanish: `es`, `es-ES`, `es_MX` (BCP 47 language subtag matching)
+- Configure via CLI flag:
+  ```bash
+  angel_lsp --locale=es
+  ```
+- Or dynamically forward via the LSP initialization handshake (`initializeParams.locale`).
 
-## What's New & Recent Updates (v0.6.2)
-
-- **Dynamic Module Hot-Reloading**: Changes to `angelscript.modules` in `.vscode/settings.json` now reload dynamically via `workspace/didChangeConfiguration` without requiring a full server process restart or window reload.
-- **Unconfigured Closure File Purging**: Removing a module from configuration immediately purges obsolete closure files, declarations, and symbols from the symbol table, ensuring accurate diagnostics when modules are removed or re-added.
-- **Native `${workspaceFolder}` Path Resolution**: Server-side path resolution directly expands and normalizes `${workspaceFolder}` and `${workspaceRoot}` macros against the workspace roots for module entries and folder targets.
-
----
-
-## What's New & Recent Updates (v0.6.1)
-
-- **Folder-Based Module Support in Client**: VS Code client extension now forwards `--module-folder` to the server when `angelscript.modules` entries specify a `folder`, allowing entire directories of scripts (e.g. Sven Co-op maps or plugins) to be registered automatically.
-- **Closure Cache & Symbol Retention**: The LSP server retains symbol table declarations and closure caches for configured module members across document open/close cycles, eliminating repetitive disk reads and UI freezes when switching between editor tabs.
+### 2. Client-Side VS Code Localization (`@vscode/l10n` & NLS)
+- UI strings, commands, notifications, and status bar elements utilize the `@vscode/l10n` framework (`l10n/bundle.l10n.json` and `l10n/bundle.l10n.es.json`).
+- All 112 configuration settings titles and descriptions declared in `package.json` are localized via `package.nls.json` and `package.nls.es.json`.
+- The extension automatically synchronizes with VS Code's active display language (`vscode.env.language`), requiring zero manual configuration.
+- Complete 100% string and manifest parity is continuously verified by `server/scripts/check-client-l10n.py` and `client/scripts/check-settings-wired.mjs`.
 
 ---
 
-## What's New & Recent Updates (v0.6.0)
+## What's New & Architectural Highlights (v0.8.4.x)
 
-- **Predefined Stubs in Editor & Live Incremental Editing**: Opening `.as.predefined` stub files directly in the editor now parses clean without false-positive errors; inline list-pattern notation (`{repeat T}`) is transparently rewritten on the document analysis path while keeping the client buffer mirror verbatim.
-- **Rich Completion Snippets & Function Call Expansion**:
-  - Dedicated declaration snippets for `enum`, `funcdef`, `switch`, `if`, `else`, `for`, `while`, `do`, `try`, and `#include "$1"`.
-  - Function completion automatically inserts the call with parameter placeholders (`Function(${1:int arg})$0`) matching the symbol table signature.
-- **Compiler Parity Validation (247 Scripts Clean)**:
-  - Diagnostic for duplicate enum member declarations (`as-err-name-conflict`).
-  - Validation of parameter names preventing collisions with non-contextual reserved keywords.
-  - Clean sweep verification across all workspace predefined stubs.
-
----
-
-## What's New & Recent Updates (v0.5.0)
-
-- **Doxygen Documentation Parser (clangd Parity)**: Hover tooltips now feature an AST-based Doxygen docstring parser supporting `@brief`, `@param`, `@tparam`, `@return`, `@note`, `@warning`, `@see`, `@throw`, formatting identically to `clangd`.
-- **Full Operator Overload System**: Complete validation of all 52 AngelScript operator overloads (`opCmp`, `opEquals`, `opAdd`, `opSub`, `opMul`, `opDiv`, `opIndex`, `opPostInc`, `opAssign`, etc.) and dynamic `cast<T>` expressions.
-- **Enhanced Type & Expression Diagnostics**:
-  - Rejection and diagnostic reporting for standalone anonymous functions/lambdas.
-  - Support for ternary conditional expressions (`cond ? a : b`) as assignable l-values.
-  - Fully qualified enum member names (`Enum::Member`) in symbol table and resolution.
-  - Strict validation of parameter names preventing collisions with reserved keywords.
-- **Predefined Stubs & Engine Extensions**:
-  - Native support for standard AngelScript add-on types (`string`, `array<T>`, `dictionary`, `ref`, `datetime`, `file`).
-  - Predefined stubs can specify list factories using manual constructor syntax `{repeat T}`.
-  - Built-in Sven Co-op API stub (`predefined/sven.as.predefined`) and workspace stub selection.
-  - **Format Predefined Stub** editor command: automatically consolidates duplicate namespace declarations from engine dumps while preserving 100% of comments and formatting.
-- **Context-Aware Completion & Semantic Tokens**:
-  - Completion prioritization offers declared class types before the `class` keyword.
-  - Precise token classification for preprocessor directive lines.
-- **Automated Parity & Multi-Platform Testing**:
-  - Parity audit test suite (`server/tests/parity`) continuously measuring analyzer verdicts against the reference AngelScript compiler with over 213 test scripts.
-  - Local Docker test harness (`docker/run_audit.sh`) for rapid parity testing on Linux.
+- **Overload & Lambda Hover Resolution**:
+  - In call expressions, hover tooltips isolate the documentation of the precisely matched overload signature, eliminating wall-of-text repetition across overloads.
+  - Hovering on `function` in anonymous functions (`lambda_expression`) resolves the target `funcdef` contract via Layer 2 analysis (`analysis::FuncdefTargetOfLambda`), displaying `(anonymous function) -> <FuncdefName>` along with full parameter types and doc comments.
+- **Doxygen Comment Sanitizer & Invariant Fuzzer**:
+  - AST-based Doxygen docstring parser strips trailing orphan punctuation and semicolons (`\n\n;`) generated by stub comments ending in `.;`.
+  - Smart trailing delimiter filter protects AngelScript behavior macros (`asBEHAVE_CONSTRUCT;`).
+  - High-throughput randomized fuzzer (`DocCommentFuzzerTest`) continuously validates delimiter mutations and comment patterns.
+- **Structured Named AST Traversal (Rule 3.1)**:
+  - Eradicated token-stream scanning antipatterns (manual comma counting `cType == ","`, parenthesis skipping, and semicolon tracking) across `CallChecker`, `LocalScopeCollector`, `SemanticHelpers`, `DefinitionHandler`, `HoverHandler`, `InlayHintHandler`, and `SignatureHelpHandler`.
+  - Replaced with formal Query-First S-expressions (`BuiltQueries.h`) and structured named AST navigation (`ts_node_named_child`, field-name queries).
+- **Layer Matrix Architecture & Isolation**:
+  - Strict 4-layer isolation enforced by `server/scripts/check-layer-includes.py`: Core/Config (Layer 1), Analysis (Layer 2), Features (Layer 3), and Server/LSP (Layer 4).
+  - Semantic resolution services (`TargetResolution`, `TypeResolution`, `ScopeLookup`, `OverloadResolver`) reside strictly in Layer 2, banning cross-feature dependencies in Layer 3.
+- **Deterministic Concurrency & Safe AST Memory Model**:
+  - Raw AST pointer borrowing (`TSTree*`) is strictly banned; all AST handles are retained through `std::shared_ptr<const document::Document>` or thread-local copies (`ts_tree_copy`).
+  - Secondary worker threads (`AnalysisScheduler`, `WorkspaceScan`) are wrapped in top-level try/catch handlers logging fatal errors without invoking `std::terminate()`.
+  - Test suites eliminate arbitrary sleeps (`sleep_for`) and polling loops in favor of deterministic C++20 event primitives (`std::latch`, `std::promise`/`future`).
+- **Sven Co-op Engine Parity & Implicit Extensions**:
+  - Full support for Sven Co-op `#include "path"` without requiring explicit `.as` extensions when `angelscript.include.implicitExtension` is enabled.
+  - Dedicated predefined stub integration (`sven.as.predefined`) and seamless mixin method synthesis without physical concatenation.
 
 ---
 
@@ -816,4 +799,11 @@ angel_lsp --disable-predefined-loader --enable-signature-help false
 # Show CLI options
 angel_lsp --help
 ```
+
+---
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](https://github.com/Gaftherman/angelscript-lsp/blob/HEAD/LICENSE) file for details.
+
 

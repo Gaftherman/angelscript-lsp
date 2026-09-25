@@ -49,6 +49,80 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Frontend Fuzzing & Telemetry:
   - Added live rapid fuzzer and latency benchmark suite in TypeScript client measuring live reaction times (min, avg, p95) across LSP operations.
 
+## [0.8.3-exp.11] - 2026-09-24
+
+### Deterministic Concurrency & Anti-Flakiness Testing Invariant
+
+- Test Concurrency Invariant:
+  - Codified the Deterministic Concurrency & Anti-Flakiness Testing Invariant in engineering standard (`AGENTS.md`).
+  - Banned arbitrary sleep calls (`std::this_thread::sleep_for`), thread spinning (`yield`), and polling loops in test suites.
+  - Converted all asynchronous test synchronization to event-driven C++20 primitives (`std::promise`, `std::future`, `std::latch`, `std::binary_semaphore`) for zero artificial latency.
+  - Externalized test watchdog timeouts to CMake (`set_tests_properties(angel_lsp_tests PROPERTIES TIMEOUT 60)`).
+
+## [0.8.3-exp.10] - 2026-09-24
+
+### Live Rapid Fuzzer & Latency Benchmarks
+
+- Frontend Testing & Performance Telemetry:
+  - Implemented live rapid fuzzer and latency benchmark suite in TypeScript client (`rapidFuzzer.test.ts`).
+  - Executed 25 live mutation cycles with concurrent LSP feature queries (Hover, Completion, Code Actions, Symbols, Definition).
+  - Benchmarked feature reaction times measuring min, avg, p95, and max latency.
+  - Verified workspace log crash invariant asserting zero crashes (`crash.log` 0 bytes) and healthy logging.
+  - Exported `getClient` and `isClientRunning` client lifecycle helpers.
+
+## [0.8.3-exp.9] - 2026-09-24
+
+### Layer Matrix Architecture Enforcement & CodeActionHandler Decomposition
+
+- Architecture & Concurrency Lockdown:
+  - Enforced strict Layer Matrix governance by relocating symbol resolution services to `analysis/TargetResolution` in Layer 2, eliminating cross-feature dependencies in `references`, `rename`, and `document_highlight`.
+  - Updated `AGENTS.md` and `.agents/AGENTS.md` with strict concurrency invariants, AST lifetime safety rules, and 10 absolute prohibitions.
+  - Introduced `ConcurrencySafetyHarnessTest` validating rapid mutation vs reader safety, secondary thread exception containment in `AnalysisScheduler`, and Tree-sitter error node resilience.
+  - Decomposed monolithic `CodeActionHandler.cpp` (3,674 LOC) into 12 cohesive single-responsibility sub-units strictly <= 300 NLOC each with zero complexity warnings.
+
+## [0.8.3-exp.8] - 2026-09-24
+
+### Background Thread Exception Containment & AST Lifetime Safety
+
+- Concurrency Resilience:
+  - Hardened background secondary threads (`AnalysisScheduler`, `WorkspaceScan`) with top-level try/catch handlers that log fatal errors to disk and shut down gracefully without invoking `std::terminate()`.
+  - Replaced raw `TSTree*` borrowing with owning `std::shared_ptr<const document::Document>` handles, preventing use-after-free and data races across threads.
+
+## [0.8.3-exp.7] - 2026-09-24
+
+### Semantic Oracle & Feature Fidelity Regression Harness
+
+- Sven Co-op Language Idioms:
+  - Implemented `SvenCoopIdiomsHarnessTest` validating language idioms against the upstream compiler oracle.
+  - Validated exhaustive switch CFG with terminal default return statements.
+  - Verified implicit constructor synthesis for derived classes inheriting from classes without explicit constructors.
+  - Validated scoped enum resolution in nested namespaces and output reference handle binding (`?&out`).
+
+## [0.8.3-exp.6] - 2026-09-23
+
+### Linux CI Module Save Test Race Condition Elimination
+
+- Test Stability:
+  - Eliminated race condition in module save test by awaiting initial indexing of open files before dispatching `textDocument/didOpen` and `textDocument/didSave`.
+  - Prevented transient publication count mismatches on Linux CI caused by `didSave` cancelling pending startup analysis.
+
+## [0.8.3-exp.5] - 2026-09-23
+
+### Scoped Enum Member Resolution & Implicit Constructors
+
+- Analysis & Symbol Resolution:
+  - Resolved qualified enum member access in expression type deduction and hover.
+  - Prioritized workspace symbols over stubs during Go-to-Definition navigation.
+  - Synthesized implicit default constructors for derived classes without explicit constructors.
+
+## [0.8.3-exp.4] - 2026-09-23
+
+### GCC 13 Compiler Warning Eradication
+
+- Build Hygiene:
+  - Eliminated compiler warnings under GCC 13 across server sources and headers (signed/unsigned mismatches, narrowing conversions, unused attributes).
+  - Maintained zero-warning compilation under `-DANGELLSP_WERROR=ON`.
+
 ## [0.8.3-exp.3] - 2026-09-23
 
 ### Formal Conversion Rank Lattice, Pairwise Partial Ordering & Scope Cycle Defense
@@ -175,6 +249,15 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
   - Candidate arity filtering with default arguments and variadic parameter matching.
   - Server loop exception isolation to prevent unexpected termination.
 
+## [0.7.9-exp.3] - 2026-09-22
+
+### Semantic Checker Instrumentation & Stub Initialization Race Fix
+
+- Performance & Concurrency:
+  - Instrumented checker execution timings in `SemanticChecker` to identify analysis hot paths.
+  - Optimized AST walks for statement and expression validation, reducing latency on large files.
+  - Resolved race condition in predefined stub initialization during rapid server boot.
+
 ## [0.7.9-exp.2] - 2026-09-21
 
 ### Security Remediation & Performance Hardening
@@ -286,6 +369,15 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Upstream AngelScript Compiler Oracle:
   - Integrated standalone `angelscript_oracle` binary built against upstream AngelScript SDK add-ons, enabling local and CI parity verification without external dependencies.
 
+## [0.7.7-exp.17] - 2026-09-12
+
+### Semantic Token Delta Synchronization & Cross-Platform Normalization
+
+- Semantic Tokens:
+  - Verified semantic tokenization integrity and integer delta synchronization across incremental document edits.
+  - Normalized line endings across platforms in token encoders to eliminate off-by-one delta discrepancies.
+  - Confirmed zero-allocation delta stream generation on multi-thousand line source files.
+
 ## [0.7.7-exp.16] - 2026-09-11
 
 ### Fixed
@@ -366,6 +458,25 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Mixin Go-to-Implementation Navigation Fallback:
   - Enhanced `ImplementationHandler.cpp` to inspect enclosing class `includedMixins` across the full inheritance hierarchy on unqualified member calls.
   - Falls back to the physical declaration site in `sym.fileUri` when no derived class overrides exist.
+
+## [0.7.7-exp.11] - 2026-09-11
+
+### Grammar Field Linters, Delegate References & Branding
+
+- Compiler & Features:
+  - Resolved Tree-Sitter grammar field mismatches in `check-grammar-names.py`.
+  - Added reference resolution and hover support for delegate closures.
+  - Bundled custom vector icon assets and verified client asset paths.
+
+## [0.7.7-exp.10] - 2026-09-11
+
+### Diagnostic Code Parity, Delegate References & Inlay Hints
+
+- Diagnostics & Inlay Hints:
+  - Aligned diagnostic codes with `check-diagnostic-codes.py`.
+  - Supported delegate reference navigation across workspace files.
+  - Fixed parameter inlay hint truncation on deeply nested method calls.
+  - Bundled official AngelScript file icons in client extension.
 
 ## [0.7.7-exp.9] - 2026-09-11
 
@@ -673,3 +784,10 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Initial release of AngelScript Language Server.
 - Native C++20 backend utilizing Tree-Sitter for AST parsing.
 - Core LSP features: diagnostics, hover, definition, completion, semantic tokens, signature help, and document symbols.
+
+---
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](https://github.com/Gaftherman/angelscript-lsp/blob/HEAD/LICENSE) file for details.
+

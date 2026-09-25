@@ -1,21 +1,22 @@
-# AngelScript Language Server
+# AngelScript Language Server (AngelLSP) - VS Code Extension
 
-Language support for [AngelScript](https://www.angelcode.com/angelscript/) (`.as`), backed by a native C++ language server that parses with Tree-sitter and licensed under the [MIT License](LICENSE). The whole workspace is analysed directly from syntax trees without script concatenation or engine callbacks.
+AngelLSP provides rich language intelligence for [AngelScript](https://www.angelcode.com/angelscript/) (`.as`), powered by a native C++20 language server using Tree-Sitter for AST parsing and semantic resolution. The entire workspace is analyzed directly from syntax trees without script concatenation, intermediate disk dumps, or host engine execution.
 
 ---
 
-## Minimalist Quickstart
+## Quickstart
 
-### 1. Install Extension
+### 1. Installation
 
-Install the extension from the VS Code Marketplace or install the packaged `.vsix` directly:
-- Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) and run `Extensions: Install from VSIX...`.
-- Select `angelscript-lsp-v0.7.7-exp.9.vsix`.
+Install via the Visual Studio Code Marketplace or from a packaged `.vsix` bundle:
+1. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) and run `Extensions: Install from VSIX...`.
+2. Select the compiled extension package (`angelscript-lsp.vsix` or `angelscript-lsp-0.8.4.vsix`).
 
-### 2. Workspace Configuration
+### 2. Workspace Setup
 
-Open your workspace containing `.as` scripts. Create or update `.vscode/settings.json`:
+Open your workspace folder in VS Code. Configure your `.vscode/settings.json` according to your project type.
 
+#### Standard AngelScript Project
 ```jsonc
 {
   "angelscript.searchDirectories": [
@@ -27,91 +28,109 @@ Open your workspace containing `.as` scripts. Create or update `.vscode/settings
 }
 ```
 
-If your host engine supports implicit file extensions (such as Sven Co-op's `#include "helper"`), enable:
-
+#### Sven Co-op Script Project
 ```jsonc
 {
-  "angelscript.include.implicitExtension": true
+  // Enable extensionless include resolution: #include "helper" resolves to "helper.as"
+  "angelscript.include.implicitExtension": true,
+
+  // Search paths for shared library includes
+  "angelscript.searchDirectories": [
+    "${workspaceFolder}/scripts",
+    "${workspaceFolder}/scripts/maps"
+  ],
+
+  // Load host engine API stub
+  "angelscript.predefined.active": "${workspaceFolder}/stubs/sven.as.predefined"
+}
+```
+
+#### Multi-Module Project
+```jsonc
+{
+  "angelscript.modules": [
+    {
+      "name": "CoreModule",
+      "folder": "scripts/core"
+    },
+    {
+      "name": "GameModule",
+      "entry": "scripts/game/main.as"
+    }
+  ]
 }
 ```
 
 ---
 
-## Feature Status & Reliability Checklist
+## Internationalization & Localization (i18n / l10n)
 
-| Feature / LSP Method | Status | Reliability Notes | Configuration Flag |
-| :--- | :--- | :--- | :--- |
-| **Diagnostics**<br>`textDocument/publishDiagnostics` | Stable / Production-Ready | Dual-pass (syntax + semantic) validation oracle. Fast AST error detection with debounced background semantic pass. FNV-1a 64-bit ABI fingerprinting prevents cascading save storms when public interfaces are untouched. | `--enable-type-conversion-checks` |
-| **Hover**<br>`textDocument/hover` | Stable / Production-Ready | Sub-millisecond keyed spatial lookup (zero linear table scans). Full Doxygen docstring parser (`@brief`, `@param`, `@return`, `@see`), property accessors, and virtual document host scope fallback. | `--enable-hover` |
-| **Definition & Declaration**<br>`textDocument/definition`<br>`textDocument/declaration`<br>`textDocument/typeDefinition` | Stable / Production-Ready | Precise cross-file symbol lookup. Overload-aware callee argument scoring (`FilterOverloadsForCall`), mixin origin source mapping (jumps to template declaration range), and base/interface traversal. | `--enable-definition` |
-| **Implementation**<br>`textDocument/implementation` | Stable / Production-Ready | Resolves interface implementations and base class virtual method overrides across derived types. Automatically falls back to definition when no derived overrides exist. | `--enable-implementation` |
-| **References**<br>`textDocument/references` | Stable / Production-Ready | Strict scope isolation across inheritance boundaries and method overload arity isolation: private members isolated to declaring class AST; protected restricted to derived classes; public resolved to highest declaring ancestor. Method overloads isolated by arity constraints, eliminating cross-overload reference overcounting. | `--enable-references` |
-| **Rename**<br>`textDocument/prepareRename`<br>`textDocument/rename` | Stable / Production-Ready | Multi-file `WorkspaceEdit` generation. Safe identifier renaming protected against lexical shadowing and keyword collisions; guaranteed occurrence parity with Find References. | `--enable-rename` |
-| **Completion**<br>`textDocument/completion` | Stable / Production-Ready | Scope-aware suggestions for locals, parameters, class members (`.`, `->`), namespace members (`::`), and keywords. Parameter placeholders and auto-expanding snippets for control structures. | `--enable-completion` |
-| **Signature Help**<br>`textDocument/signatureHelp` | Stable / Production-Ready | Active parameter index tracking during call expressions. Overload candidate preview and associated documentation formatting. | `--enable-signature-help` |
-| **Semantic Tokens**<br>`textDocument/semanticTokens/full`<br>`textDocument/semanticTokens/range` | Stable / Production-Ready | Zero-allocation delta integer streams with standard LSP legend. Distinguishes parameters, member properties, locals, and enum constants through symbol table resolution. Supports inactive preprocessor range dimming. | `--enable-semantic-tokens` |
-| **Document Symbols**<br>`textDocument/documentSymbol` | Stable / Production-Ready | Hierarchical symbol tree (classes, methods, fields, enums, namespaces) powering the VS Code Outline view and breadcrumb navigation. | `--enable-document-symbols` |
-| **Workspace Symbols**<br>`workspace/symbol` | Stable / Production-Ready | Multi-tiered fuzzy search, scoring, and ranking across all indexed project scripts and predefined host stubs (`Ctrl+T`). | `--enable-workspace-symbols` |
-| **Inlay Hints**<br>`textDocument/inlayHint` | Stable / Production-Ready | Inline parameter name hints for standard calls, constructor direct-initializations, `BaseClass` methods, and utility objects. Robust type deduction on nested and namespace member calls without argument cutoff. Configurable suppression when argument text matches parameter name. | `--enable-inlay-hints` |
-| **CodeLens**<br>`textDocument/codeLens` | Stable / Production-Ready | Inline actionable reference counts above declarations. Deduplicates identical mixin declaration ranges and aggregates reference counts across synthesized host classes without leakage. | `angelscript.features.codeLens` |
-| **Call Hierarchy**<br>`textDocument/prepareCallHierarchy`<br>`callHierarchy/incomingCalls`<br>`callHierarchy/outgoingCalls` | Stable / Production-Ready | Workspace-wide call indexing for functions, methods, and mixins. Synthesized host class caller methods resolve back to originating mixin bodies to locate inbound and outbound calls accurately. | `--enable-call-hierarchy` |
-| **Type Hierarchy**<br>`textDocument/prepareTypeHierarchy`<br>`typeHierarchy/supertypes`<br>`typeHierarchy/subtypes` | Stable / Production-Ready | Bi-directional class and interface inheritance hierarchy exploration with strict LSP range containment verification. | `--enable-type-hierarchy` |
-| **Formatting**<br>`textDocument/formatting`<br>`textDocument/rangeFormatting` | Stable / Production-Ready | Document and range formatting supporting Allman and K&R brace placement styles. Guaranteed token safety verified against 213 compiler parity test scripts. | `--enable-formatting` |
-| **Virtual Mixin Documents**<br>`angelscript-virtual://<host>/<mixin>.as` | Experimental / Opt-in | Synthetic document provider enabling full AST mixin expansion. Native inline peek inspection (`angelscript.peekMixinInline`) and host-scope fallback for members like `self` and `m_pPlayer`. | `--enable-virtual-mixin-documents` |
-| **Predefined Stubs**<br>Host API Loader (`as.predefined`) | Stable / Production-Ready | High-performance background loader bypassing diagnostic checker overhead (>95% speedup). Native `@listpattern` and `{repeat T}` initializer list support. Integrated stub consolidation formatter. | `--enable-predefined-loader` |
-| **Module System**<br>Multi-Module Compilation | Stable / Production-Ready | Entry-point and folder-based module configurations. Dynamic hot-reloading via configuration changes, unconfigured closure cache purging, and strict validation of `external shared` declarations. | `angelscript.modules` |
+AngelLSP provides seamless, out-of-the-box bilingual localization in both **English** and **Spanish**:
+
+- **Automatic Language Sync**: The extension automatically adapts to your VS Code display language (`Configure Display Language` in the Command Palette).
+- **Extension UI & Settings**: All 112 configuration settings, command titles, status bar items, and notification dialogs are natively localized via `@vscode/l10n` (`bundle.l10n.json` and `bundle.l10n.es.json`) and manifest NLS tables (`package.nls.json` and `package.nls.es.json`).
+- **Server Diagnostics**: The language server forwards diagnostic messages in the active locale, ensuring compiler errors and hover descriptions match your language preference.
+- **Manual Locale Override**: You can explicitly select your language by configuring the server startup argument or passing `--locale=es` / `--locale=en`.
 
 ---
 
-## Settings
+## Key Features
 
-### Path variables
+- **Semantic Diagnostics**: Real-time syntax and semantic validation with debounced background passes and FNV-1a ABI fingerprinting to prevent cascading analysis storms on saved documents.
+- **Precise Hover**: Overload-isolated hover at call sites, Doxygen docstring rendering (`@brief`, `@param`, `@return`), and anonymous lambda resolution displaying target `funcdef` signatures and contracts.
+- **Navigation & Go-to-Definition**: Precise symbol jump across files and stubs with overload argument matching (`FilterOverloadsForCall`), mixin origin mapping, and interface implementation discovery (`Ctrl+F12`).
+- **Intelligent Autocompletion**: Scope-aware member completions (`.`, `->`), namespace lookups (`::`), and control-flow snippet expansions.
+- **Semantic Highlighting**: Zero-allocation delta integer streams with full standard LSP token classification distinguishing parameters, members, locals, types, and inactive preprocessor branches.
+- **Inlay Hints**: Inline parameter name hints with type deduction on nested calls and configurable suppression when argument names match formal parameters.
+- **CodeLens & Call Hierarchy**: Reference counts above declarations and full bi-directional call tree indexing (`textDocument/prepareCallHierarchy`).
+- **Document & Workspace Symbols**: Hierarchical symbol outlines for breadcrumbs and outline views, plus fuzzy workspace-wide symbol search (`Ctrl+T`).
+- **Virtual Mixin Documents**: Synthetic document inspection (`angelscript-virtual://<host>/<mixin>.as`) enabling inline peek and host-scoped member validation.
 
-Every path-valued setting accepts the same `${...}` variables `launch.json` does. VS Code does not
-expand these in ordinary settings, so the extension does it:
+---
 
-| Variable | Becomes |
-| --- | --- |
-| `${workspaceFolder}` | Each workspace folder. In a multi-root workspace an entry using it is resolved once per folder. |
-| `${workspaceFolder:name}` | The folder with that name. |
-| `${userHome}` | Your home directory. |
-| `${env:NAME}` | An environment variable - the usual way a host SDK path is already written down. |
+## Configuration Reference
 
-```jsonc
-{
-  "angelscript.predefined.active": "${workspaceFolder}/stubs/host.as.predefined",
-  "angelscript.searchDirectories": ["${workspaceFolder}/scripts", "${env:SVENCOOP_SDK}/scripts"]
-}
-```
+### Path Variables
 
-Absolute paths are used as-is, so the stub may live outside your workspace. Relative paths resolve
-against each workspace folder.
+Path-valued settings support dynamic variable expansions matching VS Code's `launch.json` standard:
 
-A variable this window cannot answer - a folder name that does not exist, an unset environment
-variable - is left in the path as written and noted in the server log, rather than silently
-dropped.
+| Variable | Expands To |
+| :--- | :--- |
+| `${workspaceFolder}` | The root directory of the active workspace folder. |
+| `${workspaceFolder:name}` | The root directory of the named workspace folder in a multi-root workspace. |
+| `${userHome}` | The current user's home directory. |
+| `${env:NAME}` | Value of the environment variable `NAME` (e.g. `${env:SVENCOOP_DIR}`). |
 
-The stub picker writes `${workspaceFolder}/...` when the stub you choose lives inside a workspace
-folder, so the setting stays portable when it is committed. A stub outside every folder keeps its
-absolute path, and the two can be mixed in one workspace.
+### Settings Catalog
 
-| Setting | Default | What it does |
-| --- | --- | --- |
-| `angelscript.enableVirtualMixinDocuments` | `false` | Enables experimental virtual text documents for mixin classes (`angelscript-virtual://`). When disabled, high-performance symbol synthesis is used. |
-| `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suppress parameter name hints when the argument expression text matches the parameter name exactly. |
-| `angelscript.searchDirectories` | `[]` | Extra directories for resolving `#include "path.as"`. |
-| `angelscript.predefined.active` | `""` | The one stub to load, when the workspace holds several. `"all"` merges them. |
-| `angelscript.statusBar.alignment` | `left` | Which side of the status bar the AngelScript item sits on. |
-| `angelscript.predefinedFiles` | `[]` | Stub files describing the host application's API, loaded by path. |
-| `angelscript.predefinedExtension` | `.as.predefined` | Filename suffix that marks a workspace file as a stub. |
-| `angelscript.include.implicitExtension` | `false` | Let `#include "helper"` find `helper.as`, for hosts that resolve the name themselves (Sven Co-op). |
-| `angelscript.modules` | `[]` | The script modules this workspace builds, as `{ "name", "entry" }` or `{ "name", "folder" }`. Publishes diagnostics for every file in a module, and makes `external shared` checkable. |
-| `angelscript.fileExtension` | `.as` | Filename suffix of script files, used when scanning the workspace. |
-| `angelscript.diagnosticSeverity` | `{}` | Per-diagnostic severity overrides, e.g. `{"as-warn-unused-variable": "hint"}`. |
-| `angelscript.features.*` | `true` | One switch per feature (hover, completion, formatting, …) if you want to turn one off. |
+| Setting | Default | Description |
+| :--- | :--- | :--- |
+| `angelscript.searchDirectories` | `[]` | Extra directories to scan for `#include "path.as"` resolution. |
+| `angelscript.include.implicitExtension` | `false` | Allows `#include "helper"` to resolve to `helper.as` without requiring the extension. |
+| `angelscript.predefinedFiles` | `[]` | List of predefined host API stub files (`.as.predefined`). |
+| `angelscript.predefined.active` | `""` | The active stub to load when multiple are present. Set to `"all"` to merge all stubs. |
+| `angelscript.predefinedExtension` | `.as.predefined` | Suffix identifying workspace stub files. |
+| `angelscript.modules` | `[]` | Script module definitions specified as `{"name", "entry"}` or `{"name", "folder"}`. |
+| `angelscript.fileExtension` | `.as` | Suffix of script files scanned in the workspace. |
+| `angelscript.enableVirtualMixinDocuments` | `false` | Enables virtual document providers for mixin class expansion. |
+| `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suppresses parameter name hints when argument text matches parameter name. |
+| `angelscript.statusBar.alignment` | `"left"` | Alignment of the AngelScript status bar item (`"left"` or `"right"`). |
+| `angelscript.diagnosticSeverity` | `{}` | Per-diagnostic severity overrides (e.g. `{"as-warn-unused-variable": "hint"}`). |
+| `angelscript.features.*` | `true` | Individual toggles for LSP features (hover, completion, formatting, etc.). |
+| `angelscript.format.braceStyle` | `"allman"` | Brace placement style (`"allman"` or `"kr"`). |
 
-Changing any of these restarts the language server; there is no need to reload the window.
+Settings modifications are dynamically applied without requiring a VS Code window reload.
+
+---
+
+## Workspace Trust & Security
+
+AngelLSP implements strict security boundaries under VS Code's Workspace Trust model:
+- In **Untrusted Workspaces**, custom server executable paths configured in workspace settings (`server.executablePath`) are strictly disabled and ignored.
+- Only the bundled language server binary or global user settings may be used, protecting against remote code execution via untrusted repository configuration.
+
+---
 
 ## License
 
-MIT
+This project is licensed under the MIT License. See the [LICENSE](https://github.com/Gaftherman/angelscript-lsp/blob/HEAD/LICENSE) file for details.
