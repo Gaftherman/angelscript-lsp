@@ -1,4 +1,5 @@
 #include "analysis/NullSafetyCondition.h"
+#include "analysis/TypeExtraction.h"
 #include "parser/GrammarNames.h"
 #include <string>
 
@@ -35,24 +36,14 @@ std::string NodeText(TSNode node, std::string_view sourceCode)
     return std::string(sourceCode.substr(start, end - start));
 }
 
-bool IsNullLiteral(TSNode node, std::string_view sourceCode)
-{
-    if (ts_node_is_null(node))
-    {
-        return false;
-    }
-    std::string_view nodeType = ts_node_type(node);
-    return nodeType == parser::nodes::NullLiteral || NodeText(node, sourceCode) == "null";
-}
-
 bool HandleEqualityNullCheck(TSNode left, TSNode right, std::string_view sourceCode, AssertionSink& sink)
 {
     std::string name;
-    if (IsNullLiteral(right, sourceCode))
+    if (IsNullInitializer(right))
     {
         name = GetIdentifierName(left, sourceCode);
     }
-    else if (IsNullLiteral(left, sourceCode))
+    else if (IsNullInitializer(left))
     {
         name = GetIdentifierName(right, sourceCode);
     }
@@ -69,11 +60,11 @@ bool HandleEqualityNullCheck(TSNode left, TSNode right, std::string_view sourceC
 bool HandleInequalityNullCheck(TSNode left, TSNode right, std::string_view sourceCode, AssertionSink& sink)
 {
     std::string name;
-    if (IsNullLiteral(right, sourceCode))
+    if (IsNullInitializer(right))
     {
         name = GetIdentifierName(left, sourceCode);
     }
-    else if (IsNullLiteral(left, sourceCode))
+    else if (IsNullInitializer(left))
     {
         name = GetIdentifierName(right, sourceCode);
     }

@@ -1,6 +1,7 @@
 #include "analysis/NullSafetyDecl.h"
 #include "analysis/NullSafetyCondition.h"
 #include "analysis/NullSafetyExpr.h"
+#include "analysis/TypeExtraction.h"
 #include "parser/GrammarNames.h"
 #include <string>
 
@@ -23,24 +24,6 @@ std::string NodeText(TSNode node, std::string_view sourceCode)
     return std::string(sourceCode.substr(start, end - start));
 }
 
-std::string CleanTypeName(std::string_view typeStr)
-{
-    while (!typeStr.empty() && (typeStr.front() == ' ' || typeStr.front() == '\t'))
-    {
-        typeStr.remove_prefix(1);
-    }
-    if (typeStr.starts_with("const "))
-    {
-        typeStr.remove_prefix(6);
-    }
-    while (!typeStr.empty() &&
-           (typeStr.back() == '@' || typeStr.back() == '&' || typeStr.back() == ' ' || typeStr.back() == '\t'))
-    {
-        typeStr.remove_suffix(1);
-    }
-    return std::string(typeStr);
-}
-
 bool IsKnownNonNullInit(TSNode val, TSNode typeNode, std::string_view sourceCode)
 {
     if (ts_node_is_null(val))
@@ -61,8 +44,8 @@ bool IsKnownNonNullInit(TSNode val, TSNode typeNode, std::string_view sourceCode
     {
         TSNode fn = parser::GetChildByField(unwrapped, parser::fields::Function);
         std::string fnName = GetIdentifierName(fn, sourceCode);
-        std::string cleanType = CleanTypeName(NodeText(typeNode, sourceCode));
-        if (!fnName.empty() && fnName == cleanType)
+        const auto typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
+        if (!fnName.empty() && fnName == typeInfo.baseTypeName)
         {
             return true;
         }
@@ -78,11 +61,8 @@ void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
     {
         typeNode = parser::GetChildByField(stmt, parser::fields::Type);
     }
-    std::string stmtText = NodeText(stmt, ctx.sourceCode);
-    const auto eqPos = stmtText.find('=');
-    std::string declPrefix = (eqPos != std::string::npos) ? stmtText.substr(0, eqPos) : stmtText;
-    bool isHandle = (!ts_node_is_null(typeNode) && NodeText(typeNode, ctx.sourceCode).find('@') != std::string::npos) ||
-                    (declPrefix.find('@') != std::string::npos);
+    const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode);
+    const bool isHandle = typeInfo.isHandle;
 
     const uint32_t childCount = ts_node_named_child_count(stmt);
     for (uint32_t i = 0; i < childCount; ++i)
@@ -102,7 +82,7 @@ void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 
         if (isHandle && !name.empty())
         {
-            if (ts_node_is_null(val) || NodeText(val, ctx.sourceCode) == "null")
+            if (ts_node_is_null(val) || IsNullInitializer(val))
             {
                 state.vars[name] = Nullability::DefinitelyNull;
             }
@@ -128,8 +108,8 @@ void CheckAssignmentStmt(TSNode expr, FlowState& state, NullCheckContext& ctx)
     std::string name = GetIdentifierName(unwrappedLeft, ctx.sourceCode);
     if (!name.empty() && state.vars.contains(name))
     {
-        state.vars[name] = (NodeText(right, ctx.sourceCode) == "null") ? Nullability::DefinitelyNull
-                                                                       : Nullability::Nullable;
+        state.vars[name] = IsNullInitializer(right) ? Nullability::DefinitelyNull
+                                                    : Nullability::Nullable;
     }
     else
     {

@@ -1,5 +1,7 @@
 #include "analysis/NullSafetyParam.h"
 #include "analysis/NullSafetyCondition.h"
+#include "analysis/SemanticHelpers.h"
+#include "analysis/TypeExtraction.h"
 #include "parser/GrammarNames.h"
 #include <string>
 
@@ -38,8 +40,7 @@ void CollectParametersFromScope(TSNode bodyNode, const Scope* scopeRoot, FlowSta
     {
         for (const auto& def : scope->definitions)
         {
-            if (def.kind == LocalDefinitionKind::Parameter &&
-                (def.isHandleType || def.typeName.find('@') != std::string::npos))
+            if (def.kind == LocalDefinitionKind::Parameter && def.isHandleType)
             {
                 state.vars[def.name] = Nullability::Nullable;
             }
@@ -67,22 +68,39 @@ TSNode FindParameterListNode(TSNode funcNode)
     return TSNode{};
 }
 
-void CollectParametersFromAST(TSNode funcNode, std::string_view sourceCode, FlowState& state)
+void CollectRegularParameters(TSNode params, std::string_view sourceCode, FlowState& state)
 {
-    TSNode params = FindParameterListNode(funcNode);
-    if (ts_node_is_null(params))
-    {
-        return;
-    }
-
     const uint32_t count = ts_node_named_child_count(params);
     for (uint32_t i = 0; i < count; ++i)
     {
         TSNode param = ts_node_named_child(params, i);
-        if (NodeText(param, sourceCode).find('@') == std::string::npos)
+        TSNode typeNode = parser::GetChildByField(param, parser::fields::ParamType);
+        if (ts_node_is_null(typeNode))
+        {
+            typeNode = parser::GetChildByField(param, parser::fields::Type);
+        }
+        if (ts_node_is_null(typeNode) && ts_node_named_child_count(param) > 0)
+        {
+            TSNode first = ts_node_named_child(param, 0);
+            std::string_view cType = ts_node_type(first);
+            if (cType == parser::nodes::Type || cType == parser::nodes::PrimitiveType ||
+                cType == parser::nodes::ScopedIdentifier || cType == parser::nodes::Identifier)
+            {
+                typeNode = first;
+            }
+        }
+
+        if (ts_node_is_null(typeNode))
         {
             continue;
         }
+
+        const auto typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
+        if (!typeInfo.isHandle)
+        {
+            continue;
+        }
+
         std::string name = NodeText(parser::GetChildByField(param, parser::fields::Name), sourceCode);
         if (name.empty())
         {
@@ -102,6 +120,31 @@ void CollectParametersFromAST(TSNode funcNode, std::string_view sourceCode, Flow
             state.vars[name] = Nullability::Nullable;
         }
     }
+}
+
+void CollectParametersFromAST(TSNode funcNode, std::string_view sourceCode, FlowState& state)
+{
+    TSNode params = FindParameterListNode(funcNode);
+    if (ts_node_is_null(params))
+    {
+        return;
+    }
+
+    std::string_view listType = ts_node_type(params);
+    if (listType == parser::nodes::LambdaParameterList)
+    {
+        const auto lambdaParams = ExtractLambdaParameters(params, sourceCode);
+        for (const auto& lp : lambdaParams)
+        {
+            if (lp.isHandle && !lp.name.empty())
+            {
+                state.vars[lp.name] = Nullability::Nullable;
+            }
+        }
+        return;
+    }
+
+    CollectRegularParameters(params, sourceCode, state);
 }
 } // namespace
 

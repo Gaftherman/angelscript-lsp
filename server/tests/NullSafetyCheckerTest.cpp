@@ -152,12 +152,14 @@ TEST_SUITE("NullSafetyChecker")
         const std::string paramName = GenerateRandomSymbolName("player");
         const std::string methodName = GenerateRandomSymbolName("ResetOverriddenPlayerModel");
         const std::string regFunc = GenerateRandomSymbolName("RegisterHook");
+        const std::string hookDef = GenerateRandomSymbolName("HookCb");
+        const std::string initFunc = GenerateRandomSymbolName("Init");
 
         const std::string unguardedCode =
             "class " + typeName + " { void " + methodName + "(bool a, bool b) {} }\n" +
-            "funcdef void HookCb(" + typeName + "@);\n" +
-            "void " + regFunc + "(HookCb@ cb) {}\n" +
-            "void Init()\n" +
+            "funcdef void " + hookDef + "(" + typeName + "@);\n" +
+            "void " + regFunc + "(" + hookDef + "@ cb) {}\n" +
+            "void " + initFunc + "()\n" +
             "{\n" +
             "    " + regFunc + "(function(" + typeName + "@ " + paramName + ") {\n" +
             "        " + paramName + "." + methodName + "(true, true);\n" +
@@ -169,9 +171,9 @@ TEST_SUITE("NullSafetyChecker")
 
         const std::string guardedCode =
             "class " + typeName + " { void " + methodName + "(bool a, bool b) {} }\n" +
-            "funcdef void HookCb(" + typeName + "@);\n" +
-            "void " + regFunc + "(HookCb@ cb) {}\n" +
-            "void Init()\n" +
+            "funcdef void " + hookDef + "(" + typeName + "@);\n" +
+            "void " + regFunc + "(" + hookDef + "@ cb) {}\n" +
+            "void " + initFunc + "()\n" +
             "{\n" +
             "    " + regFunc + "(function(" + typeName + "@ " + paramName + ") {\n" +
             "        if (" + paramName + " !is null) {\n" +
@@ -191,11 +193,12 @@ TEST_SUITE("NullSafetyChecker")
         const std::string entityParam = GenerateRandomSymbolName("pEntity");
         const std::string playerVar = GenerateRandomSymbolName("pPlayer");
         const std::string methodName = GenerateRandomSymbolName("Action");
+        const std::string testFunc = GenerateRandomSymbolName("TestFunc");
 
         const std::string unguardedCode =
             "class " + baseType + " {}\n" +
             "class " + derivedType + " : " + baseType + " { void " + methodName + "() {} }\n" +
-            "void Test(" + baseType + "@ " + entityParam + ")\n" +
+            "void " + testFunc + "(" + baseType + "@ " + entityParam + ")\n" +
             "{\n" +
             "    " + derivedType + "@ " + playerVar + " = cast<" + derivedType + "@>(" + entityParam + ");\n" +
             "    " + playerVar + "." + methodName + "();\n" +
@@ -207,7 +210,7 @@ TEST_SUITE("NullSafetyChecker")
         const std::string directCastCode =
             "class " + baseType + " {}\n" +
             "class " + derivedType + " : " + baseType + " { void " + methodName + "() {} }\n" +
-            "void Test(" + baseType + "@ " + entityParam + ")\n" +
+            "void " + testFunc + "(" + baseType + "@ " + entityParam + ")\n" +
             "{\n" +
             "    cast<" + derivedType + "@>(" + entityParam + ")." + methodName + "();\n" +
             "}\n";
@@ -218,7 +221,7 @@ TEST_SUITE("NullSafetyChecker")
         const std::string guardedCode =
             "class " + baseType + " {}\n" +
             "class " + derivedType + " : " + baseType + " { void " + methodName + "() {} }\n" +
-            "void Test(" + baseType + "@ " + entityParam + ")\n" +
+            "void " + testFunc + "(" + baseType + "@ " + entityParam + ")\n" +
             "{\n" +
             "    " + derivedType + "@ " + playerVar + " = cast<" + derivedType + "@>(" + entityParam + ");\n" +
             "    if (" + playerVar + " !is null)\n" +
@@ -237,17 +240,20 @@ TEST_SUITE("NullSafetyChecker")
         const std::string attackerType = GenerateRandomSymbolName("AttackerType");
         const std::string victimParam = GenerateRandomSymbolName("pVictim");
         const std::string attackerParam = GenerateRandomSymbolName("pAttacker");
+        const std::string onKilledMethod = GenerateRandomSymbolName("OnKilled");
+        const std::string takeRewardMethod = GenerateRandomSymbolName("TakeReward");
+        const std::string onEventFunc = GenerateRandomSymbolName("OnEvent");
 
         const std::string code =
-            "class " + victimType + " { void OnKilled() {} }\n" +
-            "class " + attackerType + " { void TakeReward() {} }\n" +
-            "void OnEvent(" + victimType + "@ " + victimParam + ", " + attackerType + "@ " + attackerParam + ")\n" +
+            "class " + victimType + " { void " + onKilledMethod + "() {} }\n" +
+            "class " + attackerType + " { void " + takeRewardMethod + "() {} }\n" +
+            "void " + onEventFunc + "(" + victimType + "@ " + victimParam + ", " + attackerType + "@ " + attackerParam + ")\n" +
             "{\n" +
             "    if (" + victimParam + " !is null)\n" +
             "    {\n" +
-            "        " + victimParam + ".OnKilled();\n" +
+            "        " + victimParam + "." + onKilledMethod + "();\n" +
             "    }\n" +
-            "    " + attackerParam + ".TakeReward();\n" +
+            "    " + attackerParam + "." + takeRewardMethod + "();\n" +
             "}\n";
 
         const auto diags = AnalyzeScript(code);
@@ -257,14 +263,17 @@ TEST_SUITE("NullSafetyChecker")
 
     TEST_CASE("Value Types and Non-Handle Types are Ignored")
     {
+        const std::string valType = GenerateRandomSymbolName("Vector");
+        const std::string valMethod = GenerateRandomSymbolName("Normalize");
+        const std::string procFunc = GenerateRandomSymbolName("Process");
         const std::string valName = GenerateRandomSymbolName("vec");
         const std::string intName = GenerateRandomSymbolName("counter");
 
         const std::string code =
-            std::string("class Vector { void Normalize() {} }\n") +
-            "void Process(Vector " + valName + ", int " + intName + ")\n" +
+            "class " + valType + " { void " + valMethod + "() {} }\n" +
+            "void " + procFunc + "(" + valType + " " + valName + ", int " + intName + ")\n" +
             "{\n" +
-            "    " + valName + ".Normalize();\n" +
+            "    " + valName + "." + valMethod + "();\n" +
             "    int y = " + intName + " + 1;\n" +
             "}\n";
 
@@ -276,12 +285,14 @@ TEST_SUITE("NullSafetyChecker")
     {
         const std::string typeName = GenerateRandomSymbolName("TargetType");
         const std::string paramName = GenerateRandomSymbolName("pTarget");
+        const std::string doActionMethod = GenerateRandomSymbolName("DoAction");
+        const std::string execFunc = GenerateRandomSymbolName("Exec");
 
         const std::string code =
-            "class " + typeName + " { void DoAction() {} }\n" +
-            "void Exec(" + typeName + "@ " + paramName + ")\n" +
+            "class " + typeName + " { void " + doActionMethod + "() {} }\n" +
+            "void " + execFunc + "(" + typeName + "@ " + paramName + ")\n" +
             "{\n" +
-            "    " + paramName + ".DoAction();\n" +
+            "    " + paramName + "." + doActionMethod + "();\n" +
             "}\n";
 
         config::DiagnosticsConfig disabledConfig;
@@ -297,17 +308,20 @@ TEST_SUITE("NullSafetyChecker")
         const std::string playerParam = GenerateRandomSymbolName("player");
         const std::string resetMethod = GenerateRandomSymbolName("ResetOverriddenPlayerModel");
         const std::string edictMethod = GenerateRandomSymbolName("edict");
+        const std::string hookDef = GenerateRandomSymbolName("PlayerPostThinkHook");
+        const std::string regFunc = GenerateRandomSymbolName("RegisterHook");
+        const std::string mapActFunc = GenerateRandomSymbolName("MapActivate");
 
         const std::string guardedCode =
             "class " + playerType + " {\n" +
             "    void " + resetMethod + "(bool a, bool b) {}\n" +
             "    int " + edictMethod + "() { return 0; }\n" +
             "}\n" +
-            "funcdef void PlayerPostThinkHook(" + playerType + "@);\n" +
-            "void RegisterHook(int hook, PlayerPostThinkHook@ cb) {}\n" +
-            "void MapActivate()\n" +
+            "funcdef void " + hookDef + "(" + playerType + "@);\n" +
+            "void " + regFunc + "(int hook, " + hookDef + "@ cb) {}\n" +
+            "void " + mapActFunc + "()\n" +
             "{\n" +
-            "    RegisterHook(1, @PlayerPostThinkHook(function(" + playerType + "@ " + playerParam + ") {\n" +
+            "    " + regFunc + "(1, @" + hookDef + "(function(" + playerType + "@ " + playerParam + ") {\n" +
             "        if (" + playerParam + " !is null) {\n" +
             "            " + playerParam + "." + resetMethod + "(true, true);\n" +
             "            int e = " + playerParam + "." + edictMethod + "();\n" +
@@ -323,11 +337,11 @@ TEST_SUITE("NullSafetyChecker")
             "    void " + resetMethod + "(bool a, bool b) {}\n" +
             "    int " + edictMethod + "() { return 0; }\n" +
             "}\n" +
-            "funcdef void PlayerPostThinkHook(" + playerType + "@);\n" +
-            "void RegisterHook(int hook, PlayerPostThinkHook@ cb) {}\n" +
-            "void MapActivate()\n" +
+            "funcdef void " + hookDef + "(" + playerType + "@);\n" +
+            "void " + regFunc + "(int hook, " + hookDef + "@ cb) {}\n" +
+            "void " + mapActFunc + "()\n" +
             "{\n" +
-            "    RegisterHook(1, @PlayerPostThinkHook(function(" + playerType + "@ " + playerParam + ") {\n" +
+            "    " + regFunc + "(1, @" + hookDef + "(function(" + playerType + "@ " + playerParam + ") {\n" +
             "        " + playerParam + "." + resetMethod + "(true, true);\n" +
             "    }));\n" +
             "}\n";

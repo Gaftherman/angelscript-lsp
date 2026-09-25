@@ -1,6 +1,7 @@
 #include "analysis/NullSafetyExpr.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NullSafetyCondition.h"
+#include "analysis/TypeExtraction.h"
 #include "parser/GrammarNames.h"
 #include <string>
 
@@ -64,9 +65,10 @@ void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContext& ctx)
     if (objType == parser::nodes::CastExpression)
     {
         TSNode typeNode = parser::GetChildByField(obj, parser::fields::Type);
-        std::string typeText = NodeText(typeNode, ctx.sourceCode);
-        if (typeText.find('@') != std::string::npos)
+        const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode);
+        if (typeInfo.isHandle)
         {
+            std::string typeText = NodeText(typeNode, ctx.sourceCode);
             ctx.diagCtx.EmitAtRange(ToSourceRange(obj), diagnostics::codes::PossibleNullDereference, typeText,
                                     DiagnosticSeverity::Warning);
         }
