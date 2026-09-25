@@ -382,10 +382,12 @@ void Server::ExtractInitialWorkspaceRoots(const lsp::requests::Initialize::Param
         }
     }
 
-    if (!m_workspacesRoot.empty())
+#if defined(_DEBUG) || !defined(NDEBUG)
+    if (m_config.info.enableFileLogging && !m_workspacesRoot.empty())
     {
         angel_lsp::utils::MultiFileLogger::Instance().Initialize(m_workspacesRoot.front());
     }
+#endif
 }
 
 void Server::ApplyEngineInitializationOptions(const std::optional<lsp::LSPAny>& initOpts)

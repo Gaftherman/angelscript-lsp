@@ -250,11 +250,11 @@ jobs:
       # dependency and why node_modules does not travel in the .vsix.
       - name: Package Extension
         working-directory: client
-        run: npx --yes @vscode/vsce package --out angelscript-lsp.vsix
+        run: npx --yes @vscode/vsce package --out angelscript.vsix
 
       - name: Upload Extension Package
         uses: actions/upload-artifact@v4
         with:
-          name: angelscript-lsp-vsix
-          path: client/angelscript-lsp.vsix
+          name: angelscript-vsix
+          path: client/angelscript.vsix
           retention-days: 14

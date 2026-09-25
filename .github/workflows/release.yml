@@ -232,7 +232,7 @@ jobs:
 
       - name: Package Extension
         working-directory: client
-        run: npx --yes @vscode/vsce package --out angelscript-lsp.vsix
+        run: npx --yes @vscode/vsce package --out angelscript.vsix
 
       # Each platform's server is attached alongside the .vsix so a host embedding the server
       # directly - without the VS Code extension - has something to download.
@@ -241,7 +241,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          cp client/angelscript-lsp.vsix release/
+          cp client/angelscript.vsix release/
           for dir in client/bin/*/; do
             name="$(basename "$dir")"
             tar -czf "release/angel_lsp-${name}.tar.gz" -C "$dir" .

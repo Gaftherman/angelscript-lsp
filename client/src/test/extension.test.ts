@@ -199,8 +199,8 @@ suite('buildServerArgs', () => {
 
 suite('activation', () => {
     test('the extension activates and registers its commands', async () => {
-        const extension = extensions.getExtension('Gaftherman.angelscript-lsp')
-            ?? extensions.all.find(candidate => candidate.packageJSON?.name === 'angelscript-lsp');
+        const extension = extensions.getExtension('Gaftherman.angelscript')
+            ?? extensions.all.find(candidate => candidate.packageJSON?.name === 'angelscript');
         assert.ok(extension, 'the extension under test was not found');
 
         await extension.activate();
@@ -376,7 +376,7 @@ suite('portableStubPath', () => {
 
 suite('activation timings', () => {
     test('every activation phase is measured', async () => {
-        const extension = extensions.getExtension('Gaftherman.angelscript-lsp');
+        const extension = extensions.getExtension('Gaftherman.angelscript');
         assert.ok(extension, 'the extension under test is not installed in this host');
 
         await extension.activate();
@@ -422,7 +422,7 @@ suite('activation timings', () => {
         //
         // `clientStart` is excluded on purpose: it spawns a process and waits out a protocol
         // handshake, which is legitimately the slow part and depends on the machine.
-        const extension = extensions.getExtension('Gaftherman.angelscript-lsp');
+        const extension = extensions.getExtension('Gaftherman.angelscript');
         assert.ok(extension);
         await extension.activate();
 

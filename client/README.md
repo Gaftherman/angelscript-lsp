@@ -1,6 +1,6 @@
-# AngelScript Language Server (AngelLSP) - VS Code Extension
+# Angelscript - Language Server for Angelscript (VS Code Extension)
 
-AngelLSP provides rich language intelligence for [AngelScript](https://www.angelcode.com/angelscript/) (`.as`), powered by a native C++20 language server using Tree-Sitter for AST parsing and semantic resolution. The entire workspace is analyzed directly from syntax trees without script concatenation, intermediate disk dumps, or host engine execution.
+Angelscript provides rich language intelligence for [AngelScript](https://www.angelcode.com/angelscript/) (`.as`), powered by a native C++20 language server using Tree-Sitter for AST parsing and semantic resolution. The entire workspace is analyzed directly from syntax trees without script concatenation, intermediate disk dumps, or host engine execution.
 
 ---
 
@@ -10,54 +10,26 @@ AngelLSP provides rich language intelligence for [AngelScript](https://www.angel
 
 Install via the Visual Studio Code Marketplace or from a packaged `.vsix` bundle:
 1. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) and run `Extensions: Install from VSIX...`.
-2. Select the compiled extension package (`angelscript-lsp.vsix` or `angelscript-lsp-0.8.4.vsix`).
+2. Select the compiled extension package (`angelscript.vsix` or `angelscript-0.8.5.vsix`).
 
 ### 2. Workspace Setup
 
-Open your workspace folder in VS Code. Configure your `.vscode/settings.json` according to your project type.
+Open your workspace folder in VS Code. Configure your `.vscode/settings.json`:
 
-#### Standard AngelScript Project
 ```jsonc
 {
+  // Search paths for #include resolution
   "angelscript.searchDirectories": [
     "${workspaceFolder}/scripts"
   ],
+
+  // Load host engine API stub definitions
   "angelscript.predefinedFiles": [
-    "${workspaceFolder}/stubs/as.predefined"
-  ]
-}
-```
-
-#### Sven Co-op Script Project
-```jsonc
-{
-  // Enable extensionless include resolution: #include "helper" resolves to "helper.as"
-  "angelscript.include.implicitExtension": true,
-
-  // Search paths for shared library includes
-  "angelscript.searchDirectories": [
-    "${workspaceFolder}/scripts",
-    "${workspaceFolder}/scripts/maps"
+    "${workspaceFolder}/stubs/sven.as.predefined"
   ],
 
-  // Load host engine API stub
-  "angelscript.predefined.active": "${workspaceFolder}/stubs/sven.as.predefined"
-}
-```
-
-#### Multi-Module Project
-```jsonc
-{
-  "angelscript.modules": [
-    {
-      "name": "CoreModule",
-      "folder": "scripts/core"
-    },
-    {
-      "name": "GameModule",
-      "entry": "scripts/game/main.as"
-    }
-  ]
+  // Enable extensionless include resolution (e.g. #include "helper" finds "helper.as")
+  "angelscript.include.implicitExtension": true
 }
 ```
 
@@ -77,6 +49,7 @@ AngelLSP provides seamless, out-of-the-box bilingual localization in both **Engl
 ## Key Features
 
 - **Semantic Diagnostics**: Real-time syntax and semantic validation with debounced background passes and FNV-1a ABI fingerprinting to prevent cascading analysis storms on saved documents.
+- **Flow-Sensitive Null Checks**: Intraprocedural null handle dereference diagnostics (`as-warn-possible-null-dereference`) warning on unchecked handles or handles used after null assignment.
 - **Precise Hover**: Overload-isolated hover at call sites, Doxygen docstring rendering (`@brief`, `@param`, `@return`), and anonymous lambda resolution displaying target `funcdef` signatures and contracts.
 - **Navigation & Go-to-Definition**: Precise symbol jump across files and stubs with overload argument matching (`FilterOverloadsForCall`), mixin origin mapping, and interface implementation discovery (`Ctrl+F12`).
 - **Intelligent Autocompletion**: Scope-aware member completions (`.`, `->`), namespace lookups (`::`), and control-flow snippet expansions.
@@ -84,7 +57,7 @@ AngelLSP provides seamless, out-of-the-box bilingual localization in both **Engl
 - **Inlay Hints**: Inline parameter name hints with type deduction on nested calls and configurable suppression when argument names match formal parameters.
 - **CodeLens & Call Hierarchy**: Reference counts above declarations and full bi-directional call tree indexing (`textDocument/prepareCallHierarchy`).
 - **Document & Workspace Symbols**: Hierarchical symbol outlines for breadcrumbs and outline views, plus fuzzy workspace-wide symbol search (`Ctrl+T`).
-- **Virtual Mixin Documents**: Synthetic document inspection (`angelscript-virtual://<host>/<mixin>.as`) enabling inline peek and host-scoped member validation.
+- **Virtual Mixin Documents**: Synthetic document inspection (`angelscript-virtual://`) enabling inline peek and host-scoped member validation.
 
 ---
 
@@ -128,6 +101,13 @@ Settings modifications are dynamically applied without requiring a VS Code windo
 AngelLSP implements strict security boundaries under VS Code's Workspace Trust model:
 - In **Untrusted Workspaces**, custom server executable paths configured in workspace settings (`server.executablePath`) are strictly disabled and ignored.
 - Only the bundled language server binary or global user settings may be used, protecting against remote code execution via untrusted repository configuration.
+
+---
+
+## Acknowledgements & Credits
+
+- **AngelScript Logo & Brand**: The official AngelScript icon is adapted from the [AngelScript website](https://www.angelcode.com/angelscript/) by Andreas Jönsson.
+- **File Icons (`.as` / `.as.predefined`)**: Sourced from the wonderful [Material Icon Theme](https://github.com/PKief/vscode-material-icon-theme) (specifically the ActionScript icon), temporarily borrowed for testing while custom AngelScript icons are being designed—all credit and thanks to Philipp Kief and the Material Icon Theme contributors :P.
 
 ---
 

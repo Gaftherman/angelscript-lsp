@@ -1,8 +1,8 @@
 {
-  "name": "angelscript-lsp",
-  "displayName": "AngelLSP - AngelScript Language Server",
+  "name": "angelscript",
+  "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -16,10 +16,13 @@
   ],
   "keywords": [
     "angelscript",
+    "angel script",
     "as",
     "language server",
     "lsp",
-    "sven co-op"
+    "sven co-op",
+    "tree-sitter",
+    "intellisense"
   ],
   "repository": {
     "type": "git",
@@ -589,6 +592,11 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "%config.diagnostics.reportIntegerDivision.description%"
+        },
+        "angelscript.diagnostics.reportPossibleNullDereference": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.diagnostics.reportPossibleNullDereference.description%"
         },
         "angelscript.preprocessor.elseSupport": {
           "type": "boolean",

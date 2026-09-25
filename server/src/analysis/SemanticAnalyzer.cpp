@@ -10,6 +10,7 @@
 #include "analysis/LValueChecker.h"
 #include "analysis/NamespaceChecker.h"
 #include "analysis/NodeIndex.h"
+#include "analysis/NullSafetyChecker.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
@@ -104,6 +105,13 @@ void SemanticAnalyzer::RunExpressionRules(const SemanticAnalysisRequest& request
     const DefiniteAssignmentCheckRequest assignRequest{ts_tree_root_node(request.tree), request.sourceCode,
                                                        request.scopeRoot.get(), indexPtr};
     CheckDefiniteAssignment(assignRequest, ctx);
+
+    if (!ctx.request.diagnostics || ctx.request.diagnostics->reportPossibleNullDereference)
+    {
+        const NullSafetyCheckRequest nullSafetyRequest{ts_tree_root_node(request.tree), request.sourceCode,
+                                                       request.scopeRoot.get(), indexPtr};
+        CheckNullSafety(nullSafetyRequest, ctx);
+    }
     if (indexPtr)
     {
         CheckEngineDialectRules(*indexPtr, ctx);

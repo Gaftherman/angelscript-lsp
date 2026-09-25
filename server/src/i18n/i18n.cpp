@@ -286,6 +286,7 @@ void PopulateEnglishMessages5(MessageMap& m_messages)
         "Return type can't be '{}', because the type cannot be instantiated.";
     m_messages["as-err-mixin-not-a-type"] = "Mixin '{}' cannot be used as a data type.";
     m_messages["as-warn-undeclared-identifier"] = "Undeclared identifier '{}'.";
+    m_messages["as-warn-possible-null-dereference"] = "Possible null handle dereference: '{}' may be null.";
     m_messages["as-warn-unused-variable"] = "Local variable '{}' is never used.";
     m_messages["as-warn-signed-unsigned-mismatch"] =
         "Signed/Unsigned mismatch: '{}' is compared with '{}'. Half of one range has no counterpart in the other, so "
@@ -614,6 +615,7 @@ void PopulateSpanishMessages5(MessageMap& m_messages)
         "El tipo de retorno no puede ser '{}', porque ese tipo no se puede instanciar.";
     m_messages["as-err-mixin-not-a-type"] = "El mixin '{}' no puede ser usado como un tipo de dato.";
     m_messages["as-warn-undeclared-identifier"] = "Identificador no declarado '{}'.";
+    m_messages["as-warn-possible-null-dereference"] = "Posible desreferencia de handle nulo: '{}' puede ser nulo.";
     m_messages["as-warn-unused-variable"] = "La variable local '{}' nunca se usa.";
     m_messages["as-warn-signed-unsigned-mismatch"] =
         "Discrepancia con/sin signo: se compara '{}' con '{}'. La mitad de un rango no tiene equivalente en el "
