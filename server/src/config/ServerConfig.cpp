@@ -566,8 +566,39 @@ bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
         config.diagnostics.reportAccessorDisabled = ctx.GetBoolValue(true);
         return true;
     }
+    if (ctx.key == "--report-handle-comparison-equality")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val))
+        {
+            const std::string lower = ToLower(val);
+            if (lower == "error" || lower == "2")
+            {
+                config.diagnostics.reportHandleComparisonEquality = 2;
+            }
+            else if (lower == "false" || lower == "0" || lower == "off")
+            {
+                config.diagnostics.reportHandleComparisonEquality = 0;
+            }
+            else
+            {
+                config.diagnostics.reportHandleComparisonEquality = 1;
+            }
+        }
+        else
+        {
+            config.diagnostics.reportHandleComparisonEquality = 1;
+        }
+        return true;
+    }
+    if (ctx.key == "--no-report-handle-comparison-equality")
+    {
+        config.diagnostics.reportHandleComparisonEquality = 0;
+        return true;
+    }
     return false;
 }
+
 
 bool TryParseModuleOption(ServerConfig& config, ArgParseContext& ctx)
 {

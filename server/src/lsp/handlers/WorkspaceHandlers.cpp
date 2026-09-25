@@ -22,7 +22,7 @@ bool BraceStyleIsKR(std::string_view name)
 }
 
 std::optional<bool> FindSectionBool(const lsp::LSPObject& section, const lsp::LSPObject* engineObj,
-                                    std::string_view name)
+                                    std::string_view name, std::string_view prefix = "engine")
 {
     if (engineObj)
     {
@@ -31,12 +31,12 @@ std::optional<bool> FindSectionBool(const lsp::LSPObject& section, const lsp::LS
             return val->boolean();
         }
     }
-    const std::string dotKey = "engine." + std::string(name);
+    const std::string dotKey = std::string(prefix) + "." + std::string(name);
     if (const auto* val = section.find(dotKey); val && val->isBoolean())
     {
         return val->boolean();
     }
-    const std::string fullKey = "angelscript.engine." + std::string(name);
+    const std::string fullKey = "angelscript." + std::string(prefix) + "." + std::string(name);
     if (const auto* val = section.find(fullKey); val && val->isBoolean())
     {
         return val->boolean();
@@ -44,7 +44,8 @@ std::optional<bool> FindSectionBool(const lsp::LSPObject& section, const lsp::LS
     return std::nullopt;
 }
 
-std::optional<int> FindSectionInt(const lsp::LSPObject& section, const lsp::LSPObject* engineObj, std::string_view name)
+std::optional<int> FindSectionInt(const lsp::LSPObject& section, const lsp::LSPObject* engineObj,
+                                  std::string_view name, std::string_view prefix = "engine")
 {
     if (engineObj)
     {
@@ -53,12 +54,12 @@ std::optional<int> FindSectionInt(const lsp::LSPObject& section, const lsp::LSPO
             return static_cast<int>(val->number());
         }
     }
-    const std::string dotKey = "engine." + std::string(name);
+    const std::string dotKey = std::string(prefix) + "." + std::string(name);
     if (const auto* val = section.find(dotKey); val && val->isNumber())
     {
         return static_cast<int>(val->number());
     }
-    const std::string fullKey = "angelscript.engine." + std::string(name);
+    const std::string fullKey = "angelscript." + std::string(prefix) + "." + std::string(name);
     if (const auto* val = section.find(fullKey); val && val->isNumber())
     {
         return static_cast<int>(val->number());
@@ -290,7 +291,44 @@ bool Server::UpdateEngineConfiguration(const lsp::LSPObject& section)
     return engineChanged;
 }
 
+bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
+{
+    bool diagnosticsChanged = false;
+    const lsp::LSPObject* diagObj = nullptr;
+    if (const auto* d = section.find("diagnostics"); d && d->isObject())
+    {
+        diagObj = &d->object();
+    }
+
+    auto applyBool = [&](std::string_view name, bool& target)
+    {
+        if (auto v = FindSectionBool(section, diagObj, name, "diagnostics"); v && target != *v)
+        {
+            target = *v;
+            diagnosticsChanged = true;
+        }
+    };
+
+    applyBool("reportUnknownTypes", m_config.diagnostics.reportUnknownTypes);
+    applyBool("reportAccessorPortability", m_config.diagnostics.reportAccessorPortability);
+    applyBool("reportAccessorDisabled", m_config.diagnostics.reportAccessorDisabled);
+    applyBool("reportBoolConversion", m_config.diagnostics.reportBoolConversion);
+    applyBool("reportMissingFuncdef", m_config.diagnostics.reportMissingFuncdef);
+    applyBool("reportIntegerDivision", m_config.diagnostics.reportIntegerDivision);
+    applyBool("reportPossibleNullDereference", m_config.diagnostics.reportPossibleNullDereference);
+
+    if (auto v = FindSectionInt(section, diagObj, "reportHandleComparisonEquality", "diagnostics");
+        v && m_config.diagnostics.reportHandleComparisonEquality != *v)
+    {
+        m_config.diagnostics.reportHandleComparisonEquality = *v;
+        diagnosticsChanged = true;
+    }
+
+    return diagnosticsChanged;
+}
+
 void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
+
 {
     if (const auto* featVal = section.find("features"); featVal && featVal->isObject())
     {
@@ -482,11 +520,14 @@ void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
     }
 
     UpdateFormatConfiguration(*section);
-    if (UpdateEngineConfiguration(*section))
+    bool shouldReanalyse = UpdateEngineConfiguration(*section);
+    shouldReanalyse = UpdateDiagnosticsConfiguration(*section) || shouldReanalyse;
+    if (shouldReanalyse)
     {
         ReanalyseOpenDocuments();
     }
     UpdateFeatureConfiguration(*section);
+
 
     bool shouldRescan = false;
     shouldRescan = UpdateModulesConfiguration(*section) || shouldRescan;
