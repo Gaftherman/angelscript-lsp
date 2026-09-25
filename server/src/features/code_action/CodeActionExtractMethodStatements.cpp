@@ -182,8 +182,7 @@ std::optional<ExtractMethodStatements> FindSelectedStatements(TSNode rootNode, c
     result.endByte = ts_node_end_byte(result.selectedStmts.back());
     result.firstStart = ts_node_start_point(result.selectedStmts.front());
     result.lastEnd = ts_node_end_point(result.selectedStmts.back());
-    result.selectedCode =
-        std::string(request.sourceCode.substr(result.startByte, result.endByte - result.startByte));
+    result.selectedCode = std::string(request.sourceCode.substr(result.startByte, result.endByte - result.startByte));
     return result;
 }
 

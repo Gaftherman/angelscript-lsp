@@ -175,7 +175,7 @@ class LocalScopeCollector
      * @param[out] def LocalDefinition receiving type info.
      */
     void ReadParameterTypeInfo(TSNode declaratorNode, const std::string& sourceCode, LocalDefinition& def) const;
- 
+
     /**
      * @brief Reads declared type information for lambda parameters.
      * @param[in] nameNode AST node of the lambda parameter identifier.

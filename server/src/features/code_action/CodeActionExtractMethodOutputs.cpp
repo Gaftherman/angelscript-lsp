@@ -52,8 +52,7 @@ void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
     }
 }
 
-void CheckCallMutation(TSNode curr, std::string_view sourceCode,
-                       ankerl::unordered_dense::set<std::string>& mutatedVars)
+void CheckCallMutation(TSNode curr, std::string_view sourceCode, ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
     TSNode argsNode = parser::GetChildByField(curr, parser::fields::Arguments);
     if (ts_node_is_null(argsNode))
@@ -281,7 +280,7 @@ void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& stmts, c
 } // namespace
 
 ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const std::vector<TSNode>& stmts,
-                                                                 std::string_view sourceCode)
+                                                                  std::string_view sourceCode)
 {
     ankerl::unordered_dense::set<std::string> mutatedVars;
     for (const auto& stmt : stmts)
@@ -305,8 +304,8 @@ ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const std::vec
 }
 
 std::vector<VarInfo> CollectMethodOutputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope,
-                                         const ankerl::unordered_dense::set<std::string>& mutatedVars,
-                                         const analysis::Scope* stmtScope)
+                                          const ankerl::unordered_dense::set<std::string>& mutatedVars,
+                                          const analysis::Scope* stmtScope)
 {
     std::vector<VarInfo> outputVars;
     ankerl::unordered_dense::set<std::string> seenOutputs;

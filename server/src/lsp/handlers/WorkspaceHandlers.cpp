@@ -44,8 +44,8 @@ std::optional<bool> FindSectionBool(const lsp::LSPObject& section, const lsp::LS
     return std::nullopt;
 }
 
-std::optional<int> FindSectionInt(const lsp::LSPObject& section, const lsp::LSPObject* engineObj,
-                                  std::string_view name, std::string_view prefix = "engine")
+std::optional<int> FindSectionInt(const lsp::LSPObject& section, const lsp::LSPObject* engineObj, std::string_view name,
+                                  std::string_view prefix = "engine")
 {
     if (engineObj)
     {
@@ -527,7 +527,6 @@ void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
         ReanalyseOpenDocuments();
     }
     UpdateFeatureConfiguration(*section);
-
 
     bool shouldRescan = false;
     shouldRescan = UpdateModulesConfiguration(*section) || shouldRescan;

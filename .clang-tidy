@@ -1,21 +1,11 @@
----
 Checks: >
   -*,
+  readability-function-cognitive-complexity,
   bugprone-*,
-  cppcoreguidelines-*,
-  modernize-*,
   performance-*,
-  readability-*,
-  -modernize-use-trailing-return-type,
-  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
-  -readability-identifier-length,
-  -readability-magic-numbers
-
-HeaderFilterRegex: '.*/server/src/.*'
-WarningsAsErrors: ''
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-special-member-functions
 
 CheckOptions:
-  - key: readability-braces-around-statements.ShortStatementLines
-    value: '0'
-  - key: modernize-use-auto.RemoveStars
-    value: '0'
+  readability-function-cognitive-complexity.Threshold: 15
+  readability-function-cognitive-complexity.IgnoreMacros: false

@@ -435,7 +435,6 @@ struct DiagnosticsConfig
     int reportHandleComparisonEquality = 1;
 };
 
-
 /**
  * @brief Type configuration for AngelScript analysis.
  */

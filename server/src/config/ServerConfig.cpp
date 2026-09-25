@@ -315,7 +315,8 @@ void PrintOptionsHelp()
         << "  --log-level=<level>                     error|warn|info|debug|trace (default: info).\n"
         << "                                          debug logs every symbol on every analysis and\n"
         << "                                          costs real throughput; it is not free.\n"
-        << "  --enable-file-logging[=true|false]      Enable/disable multi-file debug logging to disk (default: false, debug builds only)\n"
+        << "  --enable-file-logging[=true|false]      Enable/disable multi-file debug logging to disk (default: false, "
+           "debug builds only)\n"
         << "  --disable-file-logging                  Disable multi-file debug logging\n"
         << "  --file-ext=<string>                     Set script file extension (default: .as)\n"
         << "  --predefined-ext=<string>               Set predefined symbols file extension (default: .as.predefined)\n"
@@ -598,7 +599,6 @@ bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
     }
     return false;
 }
-
 
 bool TryParseModuleOption(ServerConfig& config, ArgParseContext& ctx)
 {

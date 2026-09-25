@@ -3079,7 +3079,6 @@ void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, D
     CheckHandleComparison(node, scope, ctx);
 }
 
-
 /**
  * @brief Validates increment and decrement expressions on virtual properties.
  * @param[in] node Unary or postfix expression syntax node.

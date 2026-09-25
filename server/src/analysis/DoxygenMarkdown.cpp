@@ -79,7 +79,8 @@ std::string StripTrailingStubSemicolon(std::string_view line)
     if (s[last] == ';')
     {
         size_t prev = s.find_last_not_of(" \t\r\n;", last);
-        if (prev != std::string::npos && (s[prev] == '.' || s[prev] == ')' || s[prev] == ']' || s[prev] == '\"' || s[prev] == '\''))
+        if (prev != std::string::npos &&
+            (s[prev] == '.' || s[prev] == ')' || s[prev] == ']' || s[prev] == '\"' || s[prev] == '\''))
         {
             s.erase(last);
             TrimTrailing(s);

@@ -44,14 +44,14 @@ std::optional<ExtractMethodStatements> FindSelectedStatements(TSNode rootNode, c
 std::vector<VarInfo> CollectMethodInputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope);
 
 ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const std::vector<TSNode>& stmts,
-                                                                 std::string_view sourceCode);
+                                                                  std::string_view sourceCode);
 
 std::vector<VarInfo> CollectMethodOutputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope,
-                                         const ankerl::unordered_dense::set<std::string>& mutatedVars,
-                                         const analysis::Scope* stmtScope);
+                                          const ankerl::unordered_dense::set<std::string>& mutatedVars,
+                                          const analysis::Scope* stmtScope);
 
 ExtractedMethodPlan DeduceExtractedMethodSignature(const ExtractedMethodVariables& vars,
-                                                  const ExtractMethodStatements& stmts,
-                                                  const CodeActionRequest& request);
+                                                   const ExtractMethodStatements& stmts,
+                                                   const CodeActionRequest& request);
 
 } // namespace angel_lsp::features
