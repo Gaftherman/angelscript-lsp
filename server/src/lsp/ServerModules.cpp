@@ -718,11 +718,11 @@ std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPat
     return closure;
 }
 
-void Server::IndexModuleClosure(const std::string& openUriStr)
+size_t Server::IndexModuleClosure(const std::string& openUriStr)
 {
     const std::string openPath = CanonicalPathFromUri(openUriStr);
     if (openPath.empty())
-        return;
+        return 0;
 
     if (const auto previous = m_indexedUriByPath.find(openPath); previous != m_indexedUriByPath.end())
     {
@@ -767,6 +767,7 @@ void Server::IndexModuleClosure(const std::string& openUriStr)
     }
 
     m_openDocumentClosures[openUriStr] = std::move(indexed);
+    return newlyIndexed;
 }
 
 void Server::ReleaseModuleClosure(const std::string& openUriStr)

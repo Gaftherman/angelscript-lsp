@@ -52,8 +52,8 @@ namespace
         std::string sourceCode;
         TSTree *tree = nullptr;
 
-        TestEnvironment(const std::string &code)
-            : sourceCode(code)
+        TestEnvironment(const std::string &code, const std::string &docUri = "file:///test.as")
+            : uri(docUri), sourceCode(code)
         {
             tree = parser.Parse(sourceCode);
             symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
@@ -61,6 +61,16 @@ namespace
             if (rootScope)
             {
                 scopeIndex.SetScopeTree(uri, std::move(rootScope));
+            }
+        }
+
+        void AddFile(const std::string& otherUri, const std::string& otherCode)
+        {
+            symbolCollector.CollectSymbols(otherUri, otherCode, parser, symbolTable);
+            auto rootScope = scopeCollector.CollectScopes(otherCode, parser);
+            if (rootScope)
+            {
+                scopeIndex.SetScopeTree(otherUri, std::move(rootScope));
             }
         }
 
@@ -298,6 +308,122 @@ TEST_CASE("DefinitionHandler - Go to Definition for Namespace Function")
     REQUIRE(defOutside->size() == 1);
     CHECK((*defOutside)[0].range.start.line == 1);
 }
+
+TEST_CASE("DefinitionHandler - Nested Namespace Call and Anonymous Function Parameter Type")
+{
+    std::mt19937_64 rng(0x1337BEE1);
+    const std::string nsServer = angel_lsp::test::GenerateIdentifier(rng, "Server");
+    const std::string nsFramerate = angel_lsp::test::GenerateIdentifier(rng, "Framerate");
+    const std::string clsServerFramerate = angel_lsp::test::GenerateIdentifier(rng, "ServerFramerate");
+    const std::string fnSetCallback = angel_lsp::test::GenerateIdentifier(rng, "SetCallback");
+    const std::string fnRemoveCallback = angel_lsp::test::GenerateIdentifier(rng, "RemoveCallback");
+    const std::string fdFrameRateCallback = angel_lsp::test::GenerateIdentifier(rng, "FrameRateCallback");
+    const std::string fldLastFrame = angel_lsp::test::GenerateIdentifier(rng, "LastFrame");
+    const std::string varCb = angel_lsp::test::GenerateIdentifier(rng, "cb");
+    const std::string varData = angel_lsp::test::GenerateIdentifier(rng, "data");
+    const std::string fnPluginInit = angel_lsp::test::GenerateIdentifier(rng, "PluginInit");
+
+    std::string framerateCode =
+        "class " + clsServerFramerate + " {\n"
+        "    bool " + fldLastFrame + ";\n"
+        "    int Frames;\n"
+        "}\n"
+        "namespace " + nsServer + " {\n"
+        "    namespace " + nsFramerate + " {\n"
+        "        funcdef void " + fdFrameRateCallback + "(const " + clsServerFramerate + "@);\n"
+        "        void " + fnSetCallback + "(" + fdFrameRateCallback + "@ cb) {}\n"
+        "        void " + fnRemoveCallback + "(" + fdFrameRateCallback + "@ cb) {}\n"
+        "    }\n"
+        "}\n";
+
+    std::string pluginCode =
+        "#include \"../mikk155/Server/Framerate\"\n"
+        "\n"
+        + nsServer + "::" + nsFramerate + "::" + fdFrameRateCallback + "@ " + varCb + " = null;\n"
+        "\n"
+        "void " + fnPluginInit + "() {\n"
+        "    @" + varCb + " = " + nsServer + "::" + nsFramerate + "::" + fnSetCallback + "( function( const " + clsServerFramerate + "@ " + varData + " ) {\n"
+        "        if(" + varData + " !is null)\n"
+        "        if( " + varData + "." + fldLastFrame + " ) {\n"
+        "            " + nsServer + "::" + nsFramerate + "::" + fnRemoveCallback + "( " + varCb + " );\n"
+        "        }\n"
+        "    } );\n"
+        "}\n";
+
+    TestEnvironment env(pluginCode, "file:///scripts/plugins/ShowFrameRate.as");
+    env.AddFile("file:///scripts/mikk155/Server/Framerate.as", framerateCode);
+    env.resolveInclude = [](const std::string& raw) {
+        if (raw == "../mikk155/Server/Framerate") {
+            return "file:///scripts/mikk155/Server/Framerate.as";
+        }
+        return "";
+    };
+
+    // 1. Definition of ServerFramerate inside anonymous function parameter:
+    auto posSF = FindPos(pluginCode, clsServerFramerate + "@ " + varData);
+    auto defSF = env.DefAt(posSF.line, posSF.character);
+    CHECK(defSF.has_value());
+    if (defSF) {
+        CHECK((*defSF)[0].uri.toString() == "file:///scripts/mikk155/Server/Framerate.as");
+        CHECK((*defSF)[0].range.start.line == 0); // class ServerFramerate is line 0
+    }
+
+    // 2. Definition of SetCallback in Server::Framerate::SetCallback
+    auto posSC = FindPos(pluginCode, fnSetCallback + "(");
+    auto defSC = env.DefAt(posSC.line, posSC.character);
+    CHECK(defSC.has_value());
+    if (defSC) {
+        CHECK((*defSC)[0].uri.toString() == "file:///scripts/mikk155/Server/Framerate.as");
+        CHECK((*defSC)[0].range.start.line == 7); // void SetCallback is line 7
+    }
+
+    // 3. Definition of Server in Server::Framerate::SetCallback
+    auto posServer = FindPos(pluginCode, nsServer + "::" + nsFramerate + "::" + fnSetCallback);
+    auto defServer = env.DefAt(posServer.line, posServer.character);
+    CHECK(defServer.has_value());
+    if (defServer) {
+        CHECK((*defServer)[0].uri.toString() == "file:///scripts/mikk155/Server/Framerate.as");
+        CHECK((*defServer)[0].range.start.line == 4); // namespace Server is line 4
+    }
+
+    // 4. Definition of Framerate in Server::Framerate::SetCallback
+    auto posFrame = FindPos(pluginCode, nsFramerate + "::" + fnSetCallback);
+    auto defFrame = env.DefAt(posFrame.line, posFrame.character);
+    CHECK(defFrame.has_value());
+    if (defFrame) {
+        CHECK((*defFrame)[0].uri.toString() == "file:///scripts/mikk155/Server/Framerate.as");
+        CHECK((*defFrame)[0].range.start.line == 5); // namespace Framerate is line 5
+    }
+
+    // 5. Definition of cb
+    auto posCb = FindPos(pluginCode, fnRemoveCallback + "( " + varCb + " )");
+    posCb = FindPos(pluginCode, varCb, posCb.line > 0 ? pluginCode.find(fnRemoveCallback) : 0);
+    auto defCb = env.DefAt(posCb.line, posCb.character);
+    CHECK(defCb.has_value());
+
+    // 6. Definition of data
+    auto posData = FindPos(pluginCode, varData + "." + fldLastFrame);
+    auto defData = env.DefAt(posData.line, posData.character);
+    CHECK(defData.has_value());
+
+    // 7. Type Definition of data -> ServerFramerate in Framerate.as
+    auto typeDefData = env.TypeDefAt(posData.line, posData.character);
+    CHECK(typeDefData.has_value());
+    if (typeDefData) {
+        CHECK((*typeDefData)[0].uri.toString() == "file:///scripts/mikk155/Server/Framerate.as");
+        CHECK((*typeDefData)[0].range.start.line == 0); // class ServerFramerate
+    }
+
+    // 8. Definition of LastFrame member on data
+    auto posLastFrame = FindPos(pluginCode, fldLastFrame);
+    auto defLastFrame = env.DefAt(posLastFrame.line, posLastFrame.character);
+    CHECK(defLastFrame.has_value());
+    if (defLastFrame) {
+        CHECK((*defLastFrame)[0].uri.toString() == "file:///scripts/mikk155/Server/Framerate.as");
+        CHECK((*defLastFrame)[0].range.start.line == 1); // bool LastFrame is line 1
+    }
+}
+
 
 TEST_CASE("DefinitionHandler - Go to Definition for Include Directive")
 {
