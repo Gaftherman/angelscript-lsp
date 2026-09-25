@@ -4,6 +4,17 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.5.2] - 2026-09-25
+
+### Compiler Parity Oracle Verification on Handle Null Comparisons
+
+- Compiler Oracle Validation on Handle Comparisons:
+  - Validated against the official AngelScript reference compiler (`angelscript_oracle`):
+    - `handle is null` / `handle !is null` compiles cleanly with zero warnings.
+    - `null == handle` / `handle == null` / `null != handle` / `handle != null` compiles and is accepted, emitting the compiler warning `The operand is implicitly converted to handle in order to compare them`.
+  - Added parity regression test `cond_23_handle_equality_comparison_with_null.as` in the compiler parity test suite.
+  - Added dedicated unit test case in `NullSafetyCheckerTest.cpp` verifying both identity and equality null comparisons as flow guards.
+
 ## [0.8.5.1] - 2026-09-25
 
 ### Null Safety Invariant Expansion & Documentation Streamlining

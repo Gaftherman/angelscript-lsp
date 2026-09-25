@@ -504,5 +504,37 @@ TEST_SUITE_BEGIN("NullSafetyChecker");
         CHECK_FALSE(HasNullDereferenceWarning(diags, hostVar));
         CHECK(HasNullDereferenceWarning(diags, argVar));
     }
+
+    TEST_CASE("Oracle Parity - Handle Comparison Equality Warning vs Identity Clean")
+    {
+        // Measured against angelscript_oracle:
+        // 1. `handle is null` / `handle !is null` compiles with 0 warnings.
+        // 2. `null == handle` / `handle == null` compiles with WARNING:
+        //    "The operand is implicitly converted to handle in order to compare them"
+        // Both forms act as valid flow-sensitive guards against null dereferences in AngelLSP.
+        const std::string typeName = GenerateRandomSymbolName("Entity");
+        const std::string handleVar = GenerateRandomSymbolName("pEnt");
+        const std::string method = GenerateRandomSymbolName("Init");
+        const std::string fn = GenerateRandomSymbolName("Check");
+
+        const std::string isNullScript =
+            "class " + typeName + " { void " + method + "() {} }\n" +
+            "void " + fn + "(" + typeName + "@ " + handleVar + ")\n" +
+            "{\n" +
+            "    if (" + handleVar + " !is null)\n" +
+            "        " + handleVar + "." + method + "();\n" +
+            "}\n";
+        CHECK_FALSE(HasNullDereferenceWarning(AnalyzeScript(isNullScript), handleVar));
+
+        const std::string eqNullScript =
+            "class " + typeName + " { void " + method + "() {} }\n" +
+            "void " + fn + "(" + typeName + "@ " + handleVar + ")\n" +
+            "{\n" +
+            "    if (null == " + handleVar + ")\n" +
+            "        return;\n" +
+            "    " + handleVar + "." + method + "();\n" +
+            "}\n";
+        CHECK_FALSE(HasNullDereferenceWarning(AnalyzeScript(eqNullScript), handleVar));
+    }
 TEST_SUITE_END();
 } // namespace angel_lsp::test
