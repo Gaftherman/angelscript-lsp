@@ -4,6 +4,21 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.8.5.1] - 2026-09-25
+
+### Null Safety Invariant Expansion & Documentation Streamlining
+
+- Extended Flow-Sensitive Null Safety Test Coverage:
+  - Added randomized invariant test suites for local handles initialized with null dereferences.
+  - Added coverage for reverse operand null checks (`null !is handle`, `null == handle`).
+  - Added coverage for handle reassignment to null emitting warnings on subsequent dereference.
+  - Added coverage for direct constructor instantiations (`Type@ var = Type()`) recognized as non-null.
+  - Added coverage for Sven Co-op inequality operator patterns (`handle != null`).
+  - Added coverage for argument-position dereferences within nested function calls.
+- Documentation Streamlining & Anti-Pattern Cleanup:
+  - Eliminated excessive code block anti-patterns in repository READMEs.
+  - Added official AngelScript logo and Material Icon Theme acknowledgements with attribution.
+
 ## [0.8.5] - 2026-09-25
 
 ### Flow-Sensitive Null Safety Analysis & Logging Hardening
