@@ -100,7 +100,9 @@ jobs:
         with:
           name: angel_lsp-${{ matrix.os }}-${{ matrix.arch }}
           path: |
-            server/build/Release/angel_lsp*
+            server/build/Release/angel_lsp.exe
+            server/build/Release/angel_lsp
+            server/build/angel_lsp.exe
             server/build/angel_lsp
           if-no-files-found: error
 
@@ -225,7 +227,7 @@ jobs:
               exit 1
             fi
             mkdir -p "$dest_dir"
-            find "artifacts/$source_name" -type f \( -name 'angel_lsp*' -o -name 'angel_lsp' \) -exec cp {} "$dest_dir/" \;
+            find "artifacts/$source_name" -type f \( -name 'angel_lsp.exe' -o -name 'angel_lsp' \) -exec cp {} "$dest_dir/" \;
             chmod +x "$dest_dir"/angel_lsp 2>/dev/null || true
           done
           ls -R client/bin
