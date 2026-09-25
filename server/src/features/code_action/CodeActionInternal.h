@@ -1,10 +1,10 @@
 #pragma once
 
-#include "features/code_action/CodeActionHandler.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolTable.h"
+#include "features/code_action/CodeActionHandler.h"
 #include "parser/GrammarNames.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
@@ -95,7 +95,7 @@ void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_de
 
 // Feature Provider Function Declarations
 void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode rootNode,
-                                    std::vector<lsp::CodeAction>& actions);
+                                     std::vector<lsp::CodeAction>& actions);
 
 void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode rootNode,
                                    std::vector<lsp::CodeAction>& actions);
@@ -123,11 +123,9 @@ void TryAddUnresolvedIncludeSuggestions(const CodeActionRequest& request, std::v
 void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode rootNode,
                                       std::vector<lsp::CodeAction>& actions);
 
-void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode,
-                             std::vector<lsp::CodeAction>& actions);
+void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions);
 
-void TryAddGenerateFuncdefFix(const CodeActionRequest& request, TSNode rootNode,
-                              std::vector<lsp::CodeAction>& actions);
+void TryAddGenerateFuncdefFix(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions);
 
 void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 

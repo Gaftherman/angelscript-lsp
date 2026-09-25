@@ -641,10 +641,10 @@ struct ExpressionTypeContext
  */
 struct CallArgumentInfo
 {
-    std::string name;       ///< Argument name if named (e.g. "param" in "param: value"), else empty.
-    TSNode exprNode{};      ///< AST node of the argument value expression.
-    TSNode nameNode{};      ///< AST node of the argument name identifier if named, else null.
-    uint32_t index = 0;     ///< Zero-based argument index in the call.
+    std::string name;   ///< Argument name if named (e.g. "param" in "param: value"), else empty.
+    TSNode exprNode{};  ///< AST node of the argument value expression.
+    TSNode nameNode{};  ///< AST node of the argument name identifier if named, else null.
+    uint32_t index = 0; ///< Zero-based argument index in the call.
 };
 
 /**
@@ -694,16 +694,16 @@ uint32_t CalculateActiveCallParameter(TSNode argListNode, size_t cursorByte, std
  */
 struct LambdaParamASTInfo
 {
-    TSNode typeNode{};                          ///< AST node for declared type if present.
-    TSNode nameNode{};                          ///< AST node for parameter identifier if present.
-    TSNode startNode{};                         ///< Leading node for range calculation.
-    std::string name;                           ///< Parameter identifier name.
-    std::string typeName;                       ///< Declared type name string.
-    uint32_t index = 0;                         ///< Zero-based parameter position.
-    bool hasWrittenType = false;                ///< True if parameter has explicit type.
-    bool isConst = false;                       ///< True if parameter has const qualifier.
-    bool isHandle = false;                      ///< True if parameter is a handle (@).
-    bool isReference = false;                   ///< True if parameter is a reference (&).
+    TSNode typeNode{};                                    ///< AST node for declared type if present.
+    TSNode nameNode{};                                    ///< AST node for parameter identifier if present.
+    TSNode startNode{};                                   ///< Leading node for range calculation.
+    std::string name;                                     ///< Parameter identifier name.
+    std::string typeName;                                 ///< Declared type name string.
+    uint32_t index = 0;                                   ///< Zero-based parameter position.
+    bool hasWrittenType = false;                          ///< True if parameter has explicit type.
+    bool isConst = false;                                 ///< True if parameter has const qualifier.
+    bool isHandle = false;                                ///< True if parameter is a handle (@).
+    bool isReference = false;                             ///< True if parameter is a reference (&).
     ParameterModifier modifier = ParameterModifier::None; ///< In/Out parameter modifier.
 };
 

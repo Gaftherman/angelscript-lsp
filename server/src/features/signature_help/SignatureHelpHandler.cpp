@@ -156,8 +156,8 @@ CallNodes FindCallNodes(TSNode node)
  */
 uint32_t DetermineActiveParameter(const SignatureHelpRequest& request, TSNode argListNode)
 {
-    const size_t cursorByte = utils::PositionToOffset(
-        request.sourceCode, request.position.line, request.position.character, utils::PositionEncoding::Utf16);
+    const size_t cursorByte = utils::PositionToOffset(request.sourceCode, request.position.line,
+                                                      request.position.character, utils::PositionEncoding::Utf16);
     return analysis::CalculateActiveCallParameter(argListNode, cursorByte, request.sourceCode);
 }
 

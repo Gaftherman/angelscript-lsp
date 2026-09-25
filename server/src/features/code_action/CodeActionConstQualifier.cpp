@@ -181,8 +181,7 @@ void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootN
     std::string className = GetNodeText(classNameNode, request.sourceCode);
 
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    const analysis::Scope* scope =
-        FindScopeByLineOrRoot(rootScope.get(), ts_node_start_point(fnNode).row);
+    const analysis::Scope* scope = FindScopeByLineOrRoot(rootScope.get(), ts_node_start_point(fnNode).row);
 
     ClassMutationContext mutCtx{bodyNode, classNode, request.sourceCode, request.symbolTable, className, scope};
     if (!MethodBodyMutatesClassState(mutCtx))

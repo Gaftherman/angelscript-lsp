@@ -108,8 +108,7 @@ void CheckAssignmentStmt(TSNode expr, FlowState& state, NullCheckContext& ctx)
     std::string name = GetIdentifierName(unwrappedLeft, ctx.sourceCode);
     if (!name.empty() && state.vars.contains(name))
     {
-        state.vars[name] = IsNullInitializer(right) ? Nullability::DefinitelyNull
-                                                    : Nullability::Nullable;
+        state.vars[name] = IsNullInitializer(right) ? Nullability::DefinitelyNull : Nullability::Nullable;
     }
     else
     {

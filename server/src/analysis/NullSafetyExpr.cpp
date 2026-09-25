@@ -49,7 +49,8 @@ void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContext& ctx)
     if (!name.empty())
     {
         auto it = state.vars.find(name);
-        if (it != state.vars.end() && (it->second == Nullability::Nullable || it->second == Nullability::DefinitelyNull))
+        if (it != state.vars.end() &&
+            (it->second == Nullability::Nullable || it->second == Nullability::DefinitelyNull))
         {
             if (!state.warnedVars.contains(name))
             {

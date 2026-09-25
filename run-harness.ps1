@@ -73,9 +73,13 @@ if ($CheckFormatting) {
 }
 
 if ($FullAudit) {
+    Set-Location $projectRoot
     Write-Host "`n==========================================" -ForegroundColor Cyan
-    Write-Host " [7/7] Cppcheck Static Analysis Audit     " -ForegroundColor Cyan
+    Write-Host " [7/7] Central Quality Gate & Static Analysis" -ForegroundColor Cyan
     Write-Host "==========================================" -ForegroundColor Cyan
+    python "$projectRoot\server\scripts\check-quality.py"
+    if ($LASTEXITCODE -ne 0) { throw "check-quality.py failed with exit code $LASTEXITCODE" }
+
     if (Get-Command cppcheck -ErrorAction SilentlyContinue) {
         cppcheck --project="$projectRoot\compile_commands.json" `
                  --enable=style,performance,warning,portability `

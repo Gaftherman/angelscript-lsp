@@ -165,8 +165,7 @@ TSNode UnwrapNullExpression(TSNode expr)
         {
             TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
             TSNode operand = parser::GetChildByField(expr, parser::fields::Operand);
-            if (!ts_node_is_null(op) && !ts_node_is_null(operand) &&
-                ts_node_end_byte(op) - ts_node_start_byte(op) == 1)
+            if (!ts_node_is_null(op) && !ts_node_is_null(operand) && ts_node_end_byte(op) - ts_node_start_byte(op) == 1)
             {
                 expr = operand;
                 continue;
