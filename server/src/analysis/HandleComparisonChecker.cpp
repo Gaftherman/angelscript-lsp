@@ -11,6 +11,26 @@ namespace angel_lsp::analysis
 {
 namespace
 {
+enum class ComparisonCategory
+{
+    None,
+    ValueEquality,
+    Relational
+};
+
+struct ComparisonOperatorInfo
+{
+    ComparisonCategory category = ComparisonCategory::None;
+    std::string_view identityEquivalent;
+};
+
+struct ComparisonDispatchContext
+{
+    TSNode opNode;
+    std::string_view op;
+    ComparisonOperatorInfo opInfo;
+};
+
 struct RelationalCheckOperands
 {
     bool hasNull = false;
@@ -27,45 +47,37 @@ struct ComparisonOperandsState
     std::string leftType;
 };
 
-bool IsSupportedComparisonOp(std::string_view op)
+[[nodiscard]] constexpr ComparisonOperatorInfo ClassifyComparisonOperator(std::string_view op) noexcept
 {
-    return op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=";
+    if (op == "==")
+    {
+        return {ComparisonCategory::ValueEquality, "is"};
+    }
+    if (op == "!=")
+    {
+        return {ComparisonCategory::ValueEquality, "!is"};
+    }
+    if (op == "<" || op == "<=" || op == ">" || op == ">=")
+    {
+        return {ComparisonCategory::Relational, {}};
+    }
+    return {};
 }
 
-bool IsHandleTypeNode(TSNode node, const std::string& typeName, const Scope* scope, const DiagnosticContext& ctx)
+[[nodiscard]] bool IsNullOperand(TSNode node, std::string_view typeName) noexcept
 {
-    if (typeName.ends_with('@') || typeName.find('@') != std::string::npos || typeName == "ref")
+    if (typeName == "null" || IsNullInitializer(node))
     {
         return true;
     }
-    if (scope)
-    {
-        const std::string text = GetNodeText(node, ctx.request.sourceCode);
-        if (const auto* def = ResolveInScope(scope, LastScopeSegment(text)))
-        {
-            if (def->isHandleType || def->typeName.ends_with('@'))
-            {
-                return true;
-            }
-        }
-    }
-    return !typeName.empty() && FindFuncdefSymbol(typeName, ctx.request.symbolTable).has_value();
+    return !ts_node_is_null(node) &&
+           std::string_view(ts_node_type(node)) == parser::nodes::NullLiteral;
 }
 
-
-bool IsNullNode(TSNode node, const std::string& typeName)
+void CheckHandleEquality(TSNode opNode, std::string_view op, std::string_view preferred,
+                         DiagnosticContext& ctx)
 {
-    if (IsNullInitializer(node) || typeName == "null")
-    {
-        return true;
-    }
-    const std::string_view nodeType = ts_node_type(node);
-    return nodeType == "null_literal";
-}
-
-void CheckHandleEquality(TSNode opNode, std::string_view op, bool isHandleComparison, DiagnosticContext& ctx)
-{
-    if (!isHandleComparison)
+    if (preferred.empty())
     {
         return;
     }
@@ -75,12 +87,11 @@ void CheckHandleEquality(TSNode opNode, std::string_view op, bool isHandleCompar
         return;
     }
     const auto severity = (mode == 2) ? DiagnosticSeverity::Error : DiagnosticSeverity::Warning;
-    const std::string preferred = (op == "==") ? "is" : "!is";
     const TSPoint start = ts_node_start_point(opNode);
     const TSPoint end = ts_node_end_point(opNode);
     ctx.EmitAtRange({start.row, start.column, end.row, end.column},
                     diagnostics::codes::HandleComparisonEquality,
-                    {std::string(op), preferred}, severity);
+                    {std::string(op), std::string(preferred)}, severity);
 }
 
 void CheckRelationalComparison(TSNode opNode, const RelationalCheckOperands& ops, DiagnosticContext& ctx)
@@ -110,13 +121,16 @@ void CheckRelationalComparison(TSNode opNode, const RelationalCheckOperands& ops
     }
 }
 
-void DispatchComparisonCheck(TSNode opNode, std::string_view op, const ComparisonOperandsState& s,
+void DispatchComparisonCheck(const ComparisonDispatchContext& dispatch, const ComparisonOperandsState& s,
                              DiagnosticContext& ctx)
 {
-    if (op == "==" || op == "!=")
+    if (dispatch.opInfo.category == ComparisonCategory::ValueEquality)
     {
         const bool isHandleComp = (s.isLeftNull && s.isRightHandle) || (s.isRightNull && s.isLeftHandle);
-        CheckHandleEquality(opNode, op, isHandleComp, ctx);
+        if (isHandleComp)
+        {
+            CheckHandleEquality(dispatch.opNode, dispatch.op, dispatch.opInfo.identityEquivalent, ctx);
+        }
         return;
     }
 
@@ -125,7 +139,7 @@ void DispatchComparisonCheck(TSNode opNode, std::string_view op, const Compariso
         .bothHandles = s.isLeftHandle && s.isRightHandle,
         .leftType = s.leftType,
     };
-    CheckRelationalComparison(opNode, ops, ctx);
+    CheckRelationalComparison(dispatch.opNode, ops, ctx);
 }
 } // namespace
 
@@ -137,7 +151,8 @@ void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& c
         return;
     }
     const std::string op = GetNodeText(opNode, ctx.request.sourceCode);
-    if (!IsSupportedComparisonOp(op))
+    const ComparisonOperatorInfo opInfo = ClassifyComparisonOperator(op);
+    if (opInfo.category == ComparisonCategory::None)
     {
         return;
     }
@@ -155,13 +170,18 @@ void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& c
         right, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri});
 
     const ComparisonOperandsState operandsState{
-        .isLeftNull = IsNullNode(left, leftType),
-        .isRightNull = IsNullNode(right, rightType),
-        .isLeftHandle = IsHandleTypeNode(left, leftType, scope, ctx),
-        .isRightHandle = IsHandleTypeNode(right, rightType, scope, ctx),
+        .isLeftNull = IsNullOperand(left, leftType),
+        .isRightNull = IsNullOperand(right, rightType),
+        .isLeftHandle = IsHandleType(leftType, ctx.request.symbolTable),
+        .isRightHandle = IsHandleType(rightType, ctx.request.symbolTable),
         .leftType = leftType,
     };
-    DispatchComparisonCheck(opNode, op, operandsState, ctx);
+    const ComparisonDispatchContext dispatch{
+        .opNode = opNode,
+        .op = op,
+        .opInfo = opInfo,
+    };
+    DispatchComparisonCheck(dispatch, operandsState, ctx);
 }
 
 } // namespace angel_lsp::analysis

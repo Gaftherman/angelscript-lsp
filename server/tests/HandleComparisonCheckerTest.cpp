@@ -278,6 +278,131 @@ TEST_SUITE("HandleComparisonChecker")
         }
         CHECK(equalityWarnings == 3);
     }
+
+    TEST_CASE("Array Indexing With Handle Elements: Equality, Identity, and Relational Operations")
+    {
+        const std::string className = GenerateRandomSymbolName();
+        const std::string funcName = GenerateRandomSymbolName();
+        const std::string arrName1 = GenerateRandomSymbolName();
+        const std::string arrName2 = GenerateRandomSymbolName();
+
+        const std::string script =
+            "class " + className + " {}\n" +
+            "void " + funcName + "(array<" + className + "@> " + arrName1 + ", array<" + className + "@> " + arrName2 + ")\n" +
+            "{\n" +
+            "    if (" + arrName1 + "[0] == null) {}\n" +
+            "    if (null == " + arrName1 + "[0]) {}\n" +
+            "    if (" + arrName1 + "[0] != null) {}\n" +
+            "    if (null != " + arrName1 + "[0]) {}\n" +
+            "    if (" + arrName1 + "[0] is null) {}\n" +
+            "    if (" + arrName1 + "[0] !is null) {}\n" +
+            "    if (" + arrName1 + "[0] <= null) {}\n" +
+            "    if (null <= " + arrName1 + "[0]) {}\n" +
+            "    if (" + arrName1 + "[0] <= " + arrName2 + "[0]) {}\n" +
+            "}\n";
+
+        auto diags = AnalyzeScript(script);
+        size_t equalityWarnings = 0;
+        size_t illegalErrors = 0;
+        for (const auto& d : diags)
+        {
+            if (d.code == diagnostics::codes::HandleComparisonEquality)
+            {
+                ++equalityWarnings;
+            }
+            else if (d.code == diagnostics::codes::IllegalOperation)
+            {
+                ++illegalErrors;
+            }
+        }
+        // Exactly 4 equality comparisons with null on array elements emit warnings
+        CHECK(equalityWarnings == 4);
+        // Exactly 3 relational operations (<= null, null <=, and <= without opCmp) emit illegal operation error
+        CHECK(illegalErrors == 3);
+    }
+
+    TEST_CASE("Multi-Dimensional Array Handles and Complex Expressions")
+    {
+        const std::string className = GenerateRandomSymbolName();
+        const std::string holderName = GenerateRandomSymbolName();
+        const std::string funcName = GenerateRandomSymbolName();
+        const std::string getFuncName = GenerateRandomSymbolName();
+        const std::string matrixName = GenerateRandomSymbolName();
+        const std::string holderVar = GenerateRandomSymbolName();
+
+        const std::string script =
+            "class " + className + " {}\n" +
+            "class " + holderName + "\n" +
+            "{\n" +
+            "    " + className + "@ handleField;\n" +
+            "}\n" +
+            "" + className + "@ " + getFuncName + "() { return null; }\n" +
+            "void " + funcName + "(array<array<" + className + "@>> " + matrixName + ", " + holderName + "@ " + holderVar + ")\n" +
+            "{\n" +
+            "    if (" + matrixName + "[0][0] == null) {}\n" +
+            "    if (" + holderVar + ".handleField == null) {}\n" +
+            "    if (" + getFuncName + "() == null) {}\n" +
+            "    if ((" + holderVar + ".handleField) != null) {}\n" +
+            "}\n";
+
+        auto diags = AnalyzeScript(script);
+        size_t equalityWarnings = 0;
+        for (const auto& d : diags)
+        {
+            if (d.code == diagnostics::codes::HandleComparisonEquality)
+            {
+                ++equalityWarnings;
+            }
+        }
+        CHECK(equalityWarnings == 4);
+    }
+
+    TEST_CASE("Array of Non-Handle Value Classes and Primitives Do Not Emit Handle Warnings")
+    {
+        const std::string className = GenerateRandomSymbolName();
+        const std::string funcName = GenerateRandomSymbolName();
+        const std::string valArr = GenerateRandomSymbolName();
+        const std::string intArr = GenerateRandomSymbolName();
+
+        const std::string script =
+            "class " + className + " {}\n" +
+            "void " + funcName + "(array<" + className + "> " + valArr + ", array<int> " + intArr + ")\n" +
+            "{\n" +
+            "    if (" + intArr + "[0] <= 5) {}\n" +
+            "}\n";
+
+        auto diags = AnalyzeScript(script);
+        CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::HandleComparisonEquality));
+        CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::IllegalOperation));
+    }
+
+    TEST_CASE("Funcdef Function Handles Are Validated Properly")
+    {
+        const std::string funcdefName = GenerateRandomSymbolName();
+        const std::string testFuncName = GenerateRandomSymbolName();
+        const std::string cbVar = GenerateRandomSymbolName();
+
+        const std::string script =
+            "funcdef void " + funcdefName + "();\n" +
+            "void " + testFuncName + "(" + funcdefName + " " + cbVar + ")\n" +
+            "{\n" +
+            "    if (" + cbVar + " == null) {}\n" +
+            "    if (" + cbVar + " != null) {}\n" +
+            "    if (" + cbVar + " is null) {}\n" +
+            "    if (" + cbVar + " !is null) {}\n" +
+            "}\n";
+
+        auto diags = AnalyzeScript(script);
+        size_t equalityWarnings = 0;
+        for (const auto& d : diags)
+        {
+            if (d.code == diagnostics::codes::HandleComparisonEquality)
+            {
+                ++equalityWarnings;
+            }
+        }
+        CHECK(equalityWarnings == 2);
+    }
 }
 
 } // namespace angel_lsp::test

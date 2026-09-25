@@ -840,6 +840,19 @@ bool LambdaContradictsFuncdef(TSNode lambdaNode, const FuncdefSignature& funcdef
 std::optional<Symbol> FindFuncdefSymbol(const std::string& typeName, const SymbolTable& table);
 
 /**
+ * @brief Checks if a resolved type represents an AngelScript handle type.
+ *
+ * An AngelScript type is a handle if:
+ * 1. It contains the handle modifier '@' (e.g., 'Foo@', 'const Bar@', 'array<Foo@>@').
+ * 2. It resolves to a 'funcdef' symbol in the symbol table (funcdefs are implicit function handles).
+ *
+ * @param[in] typeName Resolved type string.
+ * @param[in] symbolTable Symbol table for resolving funcdef declarations.
+ * @return True if the type has handle semantics.
+ */
+[[nodiscard]] bool IsHandleType(std::string_view typeName, const SymbolTable& symbolTable) noexcept;
+
+/**
  * @brief The funcdef a lambda is being handed to, read from where the lambda is written.
  *
  * A lambda has no return type of its own - the grammar gives `lambda_expression` a parameter
