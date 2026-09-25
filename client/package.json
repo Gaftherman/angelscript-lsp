@@ -590,6 +590,11 @@
           "default": false,
           "markdownDescription": "%config.diagnostics.reportIntegerDivision.description%"
         },
+        "angelscript.diagnostics.reportPossibleNullDereference": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "%config.diagnostics.reportPossibleNullDereference.description%"
+        },
         "angelscript.preprocessor.elseSupport": {
           "type": "boolean",
           "default": false,

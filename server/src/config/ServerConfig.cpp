@@ -539,6 +539,8 @@ static constexpr DiagnosticFlagMapping kDiagFlags[] = {
     {"--report-bool-conversion", "--no-report-bool-conversion", &DiagnosticsConfig::reportBoolConversion},
     {"--report-missing-funcdef", "--no-report-missing-funcdef", &DiagnosticsConfig::reportMissingFuncdef},
     {"--report-integer-division", "--no-report-integer-division", &DiagnosticsConfig::reportIntegerDivision},
+    {"--report-possible-null-dereference", "--no-report-possible-null-dereference",
+     &DiagnosticsConfig::reportPossibleNullDereference},
 };
 
 bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)

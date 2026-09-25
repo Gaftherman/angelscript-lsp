@@ -408,6 +408,14 @@ struct DiagnosticsConfig
      * asEP_DISABLE_INTEGER_DIVISION.
      */
     bool reportIntegerDivision = false;
+
+    /**
+     * @brief Warn on potential dereference of a null or unchecked handle (default: on).
+     *
+     * Detects when handle parameters, handle cast expressions, or uninitialized handles
+     * are dereferenced via member access or indexing without preceding null checks.
+     */
+    bool reportPossibleNullDereference = true;
 };
 
 /**

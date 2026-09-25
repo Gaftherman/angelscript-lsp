@@ -217,6 +217,7 @@ inline constexpr std::string_view SyntaxErrorMissing = "as-syntax-error-missing"
 inline constexpr std::string_view GlobalFunctionAttribute = "as-warn-global-function-attribute";
 inline constexpr std::string_view IncludeNotFound = "as-warn-include-not-found";
 inline constexpr std::string_view UndeclaredIdentifier = "as-warn-undeclared-identifier";
+inline constexpr std::string_view PossibleNullDereference = "as-warn-possible-null-dereference";
 inline constexpr std::string_view UnreachableCode = "as-warn-unreachable-code";
 inline constexpr std::string_view UnusedVariable = "as-warn-unused-variable";
 } // namespace angel_lsp::diagnostics::codes
