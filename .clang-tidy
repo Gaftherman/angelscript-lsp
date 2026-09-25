@@ -1,10 +1,13 @@
+---
 Checks: >
   -*,
-  readability-function-cognitive-complexity,
   bugprone-*,
   performance-*,
+  readability-function-cognitive-complexity,
   cppcoreguidelines-init-variables,
   cppcoreguidelines-special-member-functions
+
+HeaderFilterRegex: '.*/server/src/.*'
 
 CheckOptions:
   readability-function-cognitive-complexity.Threshold: 15
