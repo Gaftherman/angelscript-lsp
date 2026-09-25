@@ -67,27 +67,28 @@ std::string_view LevelToString(MultiFileLogLevel level)
 }
 } // namespace
 
-MultiFileLogger::MultiFileLogger() : m_running(true)
+MultiFileLogger::MultiFileLogger() : m_running(false)
 {
-    m_worker = std::thread(&MultiFileLogger::WorkerLoop, this);
 }
 
-MultiFileLogger::MultiFileLogger(const std::filesystem::path& logDirectory) : m_running(true)
+MultiFileLogger::MultiFileLogger(const std::filesystem::path& logDirectory) : m_running(false)
 {
-    m_worker = std::thread(&MultiFileLogger::WorkerLoop, this);
     Initialize(logDirectory);
 }
 
 MultiFileLogger::~MultiFileLogger()
 {
+    if (m_running)
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_running = false;
-    }
-    m_cv.notify_all();
-    if (m_worker.joinable())
-    {
-        m_worker.join();
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_running = false;
+        }
+        m_cv.notify_all();
+        if (m_worker.joinable())
+        {
+            m_worker.join();
+        }
     }
     std::lock_guard<std::mutex> sinkLock(m_sinkMutex);
     CloseSinks();
@@ -175,10 +176,20 @@ void MultiFileLogger::Initialize(const std::filesystem::path& baseDirectory)
     m_logDirectory = targetDir;
     EnsureSinksOpen();
     m_initialized = (m_masterSink.is_open());
+    if (m_initialized && !m_running)
+    {
+        m_running = true;
+        m_worker = std::thread(&MultiFileLogger::WorkerLoop, this);
+    }
 }
 
 void MultiFileLogger::Log(LogChannel channel, MultiFileLogLevel level, std::string_view message, double durationMs)
 {
+    if (!m_initialized)
+    {
+        return;
+    }
+
     LogEntry entry;
     entry.channel = channel;
     entry.level = level;
@@ -231,6 +242,11 @@ void MultiFileLogger::LogCrash(std::string_view message)
 
 void MultiFileLogger::Flush()
 {
+    if (!m_initialized)
+    {
+        return;
+    }
+
     std::vector<LogEntry> batch;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -261,46 +277,53 @@ bool MultiFileLogger::IsInitialized() const
 
 void MultiFileLogger::WorkerLoop()
 {
-    while (m_running)
+    try
     {
-        std::vector<LogEntry> batch;
+        while (m_running)
         {
-            std::unique_lock<std::mutex> lock(m_mutex);
-            m_cv.wait_for(lock, std::chrono::milliseconds(500), [this]() { return !m_running || !m_queue.empty(); });
-
-            while (!m_queue.empty())
+            std::vector<LogEntry> batch;
             {
-                batch.push_back(std::move(m_queue.front()));
-                m_queue.pop();
+                std::unique_lock<std::mutex> lock(m_mutex);
+                m_cv.wait_for(lock, std::chrono::milliseconds(500),
+                              [this]() { return !m_running || !m_queue.empty(); });
+
+                while (!m_queue.empty())
+                {
+                    batch.push_back(std::move(m_queue.front()));
+                    m_queue.pop();
+                }
+            }
+
+            if (!batch.empty())
+            {
+                ProcessBatch(batch);
+            }
+            else
+            {
+                std::lock_guard<std::mutex> sinkLock(m_sinkMutex);
+                FlushAllSinks();
             }
         }
 
-        if (!batch.empty())
+        std::vector<LogEntry> remaining;
         {
-            ProcessBatch(batch);
+            std::lock_guard<std::mutex> lock(m_mutex);
+            while (!m_queue.empty())
+            {
+                remaining.push_back(std::move(m_queue.front()));
+                m_queue.pop();
+            }
         }
-        else
+        if (!remaining.empty())
         {
-            std::lock_guard<std::mutex> sinkLock(m_sinkMutex);
-            FlushAllSinks();
+            ProcessBatch(remaining);
         }
+        std::lock_guard<std::mutex> sinkLock(m_sinkMutex);
+        FlushAllSinks();
     }
-
-    std::vector<LogEntry> remaining;
+    catch (...)
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        while (!m_queue.empty())
-        {
-            remaining.push_back(std::move(m_queue.front()));
-            m_queue.pop();
-        }
     }
-    if (!remaining.empty())
-    {
-        ProcessBatch(remaining);
-    }
-    std::lock_guard<std::mutex> sinkLock(m_sinkMutex);
-    FlushAllSinks();
 }
 
 void MultiFileLogger::ProcessBatch(std::vector<LogEntry>& batch)

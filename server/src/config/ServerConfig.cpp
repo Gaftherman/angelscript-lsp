@@ -315,6 +315,8 @@ void PrintOptionsHelp()
         << "  --log-level=<level>                     error|warn|info|debug|trace (default: info).\n"
         << "                                          debug logs every symbol on every analysis and\n"
         << "                                          costs real throughput; it is not free.\n"
+        << "  --enable-file-logging[=true|false]      Enable/disable multi-file debug logging to disk (default: false, debug builds only)\n"
+        << "  --disable-file-logging                  Disable multi-file debug logging\n"
         << "  --file-ext=<string>                     Set script file extension (default: .as)\n"
         << "  --predefined-ext=<string>               Set predefined symbols file extension (default: .as.predefined)\n"
         << "  --predefined-file=<path>                Load a predefined stub by path, even outside the workspace "
@@ -731,6 +733,16 @@ bool TryParsePathAndLocaleOptions(ServerConfig& config, ArgParseContext& ctx)
         {
             config.info.logLevel = ToLower(val);
         }
+        return true;
+    }
+    if (ctx.key == "--enable-file-logging")
+    {
+        config.info.enableFileLogging = ctx.GetBoolValue(true);
+        return true;
+    }
+    if (ctx.key == "--disable-file-logging")
+    {
+        config.info.enableFileLogging = false;
         return true;
     }
     if (ctx.key == "--file-ext" || ctx.key == "--file-extension")

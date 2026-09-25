@@ -76,6 +76,14 @@ struct Info
      */
     std::string logLevel = "info";
 
+    /**
+     * @brief Multi-sink disk logging (.vscode/lsp/logs/): master.log, hover.log, etc.
+     *
+     * Defaults to false so disk logs are never created by default. In release builds,
+     * this feature is entirely disabled.
+     */
+    bool enableFileLogging = false;
+
     bool showHelp = false;
     bool showVersion = false;
 };
