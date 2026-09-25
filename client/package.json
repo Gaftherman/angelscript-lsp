@@ -2,7 +2,7 @@
   "name": "angelscript",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "0.8.5",
+  "version": "0.8.5.3",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -598,6 +598,18 @@
           "default": true,
           "markdownDescription": "%config.diagnostics.reportPossibleNullDereference.description%"
         },
+        "angelscript.diagnostics.reportHandleComparisonEquality": {
+          "type": "integer",
+          "enum": [0, 1, 2],
+          "enumDescriptions": [
+            "Disabled",
+            "Warning (implicit conversion to handle)",
+            "Error (strict handle identity required)"
+          ],
+          "default": 1,
+          "markdownDescription": "%config.diagnostics.reportHandleComparisonEquality.description%"
+        },
+
         "angelscript.preprocessor.elseSupport": {
           "type": "boolean",
           "default": false,

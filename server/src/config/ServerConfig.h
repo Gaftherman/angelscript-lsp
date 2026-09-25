@@ -424,7 +424,17 @@ struct DiagnosticsConfig
      * are dereferenced via member access or indexing without preceding null checks.
      */
     bool reportPossibleNullDereference = true;
+
+    /**
+     * @brief Warn or error on equality/inequality comparison of handle with null (default: 1).
+     *
+     * 0 = off (suppress)
+     * 1 = warning (compiler parity default)
+     * 2 = error (strict handle checking)
+     */
+    int reportHandleComparisonEquality = 1;
 };
+
 
 /**
  * @brief Type configuration for AngelScript analysis.

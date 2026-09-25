@@ -1519,6 +1519,14 @@ class Server
     bool UpdateEngineConfiguration(const lsp::LSPObject& section);
 
     /**
+     * @brief Updates diagnostics toggle flags from the workspace configuration.
+     * @param[in] section Configuration object.
+     * @return True if any diagnostic setting was changed.
+     */
+    bool UpdateDiagnosticsConfiguration(const lsp::LSPObject& section);
+
+    /**
+
      * @brief Updates feature toggle flags from the workspace configuration.
      * @param[in] section Configuration object.
      */
