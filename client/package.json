@@ -1,5 +1,5 @@
 {
-  "name": "angelscript",
+  "name": "angelscript-gaftherman",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
   "version": "0.8.6",
@@ -18,10 +18,9 @@
     "angelscript",
     "angel script",
     "as",
-    "language server",
     "lsp",
+    "language server",
     "sven co-op",
-    "tree-sitter",
     "intellisense"
   ],
   "repository": {
