@@ -868,6 +868,12 @@ export function buildServerArgs(): string[] {
     if (config.get<boolean>('diagnostics.reportPossibleNullDereference', true) === false) {
         args.push('--no-report-possible-null-dereference');
     }
+    const reportHandleComparison = config.get<number>('diagnostics.reportHandleComparisonEquality', 1);
+    if (reportHandleComparison === 0) {
+        args.push('--no-report-handle-comparison-equality');
+    } else if (reportHandleComparison === 2) {
+        args.push('--report-handle-comparison-equality=2');
+    }
 
     // asEP_PROPERTY_ACCESSOR_MODE takes a number, not a boolean, so it is not one of
     // ENGINE_PROPERTIES above either. The test against 2 and 3 is a whitelist, not a

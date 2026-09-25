@@ -30,7 +30,7 @@ Unlike approaches that rely on running scripts inside an embedded host runtime o
 
 Install via the Visual Studio Code Marketplace (search for `Angelscript`) or from a packaged `.vsix` bundle:
 1. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) and run `Extensions: Install from VSIX...`.
-2. Select the compiled extension package (`angelscript.vsix` or `angelscript-0.8.5.vsix`).
+2. Select the compiled extension package (`angelscript.vsix` or `angelscript-0.8.6.vsix`).
 
 ### 2. Workspace Setup
 

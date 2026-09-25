@@ -1,4 +1,5 @@
 #include "analysis/NullSafetyChecker.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/NullSafetyCondition.h"
@@ -59,9 +60,9 @@ FlowState MergeFlowStates(const FlowState& s1, const FlowState& s2)
     return result;
 }
 
-void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx);
+void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx, int depth);
 
-void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx)
+void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx, int depth)
 {
     TSNode cond = parser::GetChildByField(stmt, parser::fields::Condition);
     if (ts_node_is_null(cond))
@@ -79,21 +80,21 @@ void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx)
         alt = ts_node_named_child(stmt, 2);
     }
 
-    CheckNullExpression(cond, state, ctx, 0);
+    CheckNullExpression(cond, state, ctx, depth + 1);
     std::vector<NullAssertion> posAssertions;
     std::vector<NullAssertion> negAssertions;
     ExtractConditionAssertions(cond, ctx.sourceCode, posAssertions, negAssertions);
 
     FlowState thenState = state;
     ApplyAssertions(thenState, posAssertions);
-    CheckStatement(conseq, thenState, ctx);
+    CheckStatement(conseq, thenState, ctx, depth + 1);
 
     FlowState elseState = state;
     ApplyAssertions(elseState, negAssertions);
 
     if (!ts_node_is_null(alt))
     {
-        CheckStatement(alt, elseState, ctx);
+        CheckStatement(alt, elseState, ctx, depth + 1);
         if (thenState.isTerminated && elseState.isTerminated)
         {
             state.isTerminated = true;
@@ -117,9 +118,9 @@ void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx)
     }
 }
 
-void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx)
+void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx, int depth)
 {
-    if (ts_node_is_null(stmt) || state.isTerminated)
+    if (ts_node_is_null(stmt) || state.isTerminated || depth > k_maxAstDepth)
     {
         return;
     }
@@ -129,7 +130,7 @@ void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx)
         const uint32_t count = ts_node_named_child_count(stmt);
         for (uint32_t i = 0; i < count && !state.isTerminated; ++i)
         {
-            CheckStatement(ts_node_named_child(stmt, i), state, ctx);
+            CheckStatement(ts_node_named_child(stmt, i), state, ctx, depth + 1);
         }
     }
     else if (stmtType == parser::nodes::VariableDeclaration)
@@ -145,16 +146,16 @@ void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx)
         }
         else
         {
-            CheckNullExpression(expr, state, ctx, 0);
+            CheckNullExpression(expr, state, ctx, depth + 1);
         }
     }
     else if (stmtType == parser::nodes::IfStatement)
     {
-        CheckIfStmt(stmt, state, ctx);
+        CheckIfStmt(stmt, state, ctx, depth + 1);
     }
     else if (stmtType == parser::nodes::ReturnStatement)
     {
-        CheckNullExpression(parser::GetChildByField(stmt, parser::fields::Value), state, ctx, 0);
+        CheckNullExpression(parser::GetChildByField(stmt, parser::fields::Value), state, ctx, depth + 1);
         state.isTerminated = true;
     }
 }
@@ -169,7 +170,7 @@ void AnalyzeFunction(TSNode funcNode, const Scope* scopeRoot, NullCheckContext& 
 
     FlowState state;
     CollectParameters(funcNode, scopeRoot, ctx.sourceCode, state);
-    CheckStatement(body, state, ctx);
+    CheckStatement(body, state, ctx, 0);
 }
 } // namespace
 
