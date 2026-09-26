@@ -286,11 +286,13 @@ void LspSemanticHarnessFixture::AssertDiagnosticsCount(const std::string& uri, s
     CHECK(diags.size() == expectedCount);
 }
 
-void LspSemanticHarnessFixture::AssertHoverSignature(const std::string& uri, uint32_t line, uint32_t col,
-                                                     const std::string& expectedSignature)
+std::optional<lsp::Hover> LspSemanticHarnessFixture::RequestHover(const std::string& uri, uint32_t line, uint32_t col)
 {
     auto itTree = m_trees.find(uri);
-    REQUIRE(itTree != m_trees.end());
+    if (itTree == m_trees.end())
+    {
+        return std::nullopt;
+    }
 
     features::HoverRequest req{uri,           m_documents[uri],        itTree->second.get(), *m_symbolTable,
                                *m_scopeIndex, lsp::Position{line, col}};
@@ -301,7 +303,29 @@ void LspSemanticHarnessFixture::AssertHoverSignature(const std::string& uri, uin
     };
     req.config = &m_config;
 
-    auto hover = features::GetHover(req);
+    return features::GetHover(req);
+}
+
+std::vector<lsp::CompletionItem> LspSemanticHarnessFixture::RequestCompletion(const std::string& uri, uint32_t line,
+                                                                             uint32_t col)
+{
+    auto itTree = m_trees.find(uri);
+    if (itTree == m_trees.end())
+    {
+        return {};
+    }
+
+    features::CompletionRequest req{
+        uri,      m_documents[uri], itTree->second.get(), *m_symbolTable, *m_scopeIndex, lsp::Position{line, col},
+        &m_config};
+
+    return features::GetCompletion(req);
+}
+
+void LspSemanticHarnessFixture::AssertHoverSignature(const std::string& uri, uint32_t line, uint32_t col,
+                                                     const std::string& expectedSignature)
+{
+    auto hover = RequestHover(uri, line, col);
     REQUIRE(hover.has_value());
 
     const auto* markup = std::get_if<lsp::MarkupContent>(&hover->contents);
@@ -312,19 +336,7 @@ void LspSemanticHarnessFixture::AssertHoverSignature(const std::string& uri, uin
 void LspSemanticHarnessFixture::AssertHoverContains(const std::string& uri, uint32_t line, uint32_t col,
                                                     const std::string& expectedText)
 {
-    auto itTree = m_trees.find(uri);
-    REQUIRE(itTree != m_trees.end());
-
-    features::HoverRequest req{uri,           m_documents[uri],        itTree->second.get(), *m_symbolTable,
-                               *m_scopeIndex, lsp::Position{line, col}};
-    req.readDocument = [this](const std::string& docUri) -> const std::string*
-    {
-        auto it = m_documents.find(docUri);
-        return it != m_documents.end() ? &it->second : nullptr;
-    };
-    req.config = &m_config;
-
-    auto hover = features::GetHover(req);
+    auto hover = RequestHover(uri, line, col);
     REQUIRE(hover.has_value());
 
     const auto* markup = std::get_if<lsp::MarkupContent>(&hover->contents);
@@ -336,14 +348,7 @@ void LspSemanticHarnessFixture::AssertCompletionContains(const std::string& uri,
                                                          const std::string& expectedLabel,
                                                          lsp::CompletionItemKind expectedKind)
 {
-    auto itTree = m_trees.find(uri);
-    REQUIRE(itTree != m_trees.end());
-
-    features::CompletionRequest req{
-        uri,      m_documents[uri], itTree->second.get(), *m_symbolTable, *m_scopeIndex, lsp::Position{line, col},
-        &m_config};
-
-    auto completion = features::GetCompletion(req);
+    auto completion = RequestCompletion(uri, line, col);
     bool found = false;
     for (const auto& item : completion)
     {
@@ -353,20 +358,25 @@ void LspSemanticHarnessFixture::AssertCompletionContains(const std::string& uri,
             break;
         }
     }
+    std::string list;
+    if (!found)
+    {
+        for (const auto& item : completion)
+        {
+            const int kindInt = item.kind.has_value() ? static_cast<int>(*item.kind) : -1;
+            list += "\n  " + item.label + " (kind: " + std::to_string(kindInt) + ")";
+        }
+    }
+    INFO("Expected completion item [" << expectedLabel << "] kind " << static_cast<int>(expectedKind)
+                                      << " at (" << line << ", " << col << ") not found. Total items: "
+                                      << completion.size() << ". Actual:" << list);
     CHECK(found);
 }
 
 void LspSemanticHarnessFixture::AssertCompletionExcludes(const std::string& uri, uint32_t line, uint32_t col,
                                                          const std::string& unexpectedLabel)
 {
-    auto itTree = m_trees.find(uri);
-    REQUIRE(itTree != m_trees.end());
-
-    features::CompletionRequest req{
-        uri,      m_documents[uri], itTree->second.get(), *m_symbolTable, *m_scopeIndex, lsp::Position{line, col},
-        &m_config};
-
-    auto completion = features::GetCompletion(req);
+    auto completion = RequestCompletion(uri, line, col);
     bool found = false;
     for (const auto& item : completion)
     {
