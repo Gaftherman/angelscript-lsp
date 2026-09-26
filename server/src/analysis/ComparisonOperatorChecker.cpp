@@ -32,19 +32,19 @@ struct OperandTypes
     return op == "<" || op == "<=" || op == ">" || op == ">=";
 }
 
-bool IsHandleAddressOperand(TSNode node, std::string_view sourceCode)
+bool IsHandleAddressOperand(TSNode node)
 {
     if (ts_node_is_null(node) || std::string_view(ts_node_type(node)) != "unary_expression")
     {
         return false;
     }
     TSNode op = parser::GetChildByField(node, parser::fields::Operator);
-    return !ts_node_is_null(op) && GetNodeText(op, sourceCode) == "@";
+    return !ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "@";
 }
 
-bool ShouldSkipAddressComparison(TSNode left, TSNode right, bool isRelational, std::string_view sourceCode)
+bool ShouldSkipAddressComparison(TSNode left, TSNode right, bool isRelational)
 {
-    return !isRelational && (IsHandleAddressOperand(left, sourceCode) || IsHandleAddressOperand(right, sourceCode));
+    return !isRelational && (IsHandleAddressOperand(left) || IsHandleAddressOperand(right));
 }
 
 bool IsParameterCompatible(const ParameterInformation& param, const std::string& argType, const SymbolTable& table)
@@ -67,7 +67,7 @@ bool TypeHasOperator(const std::string& typeName, const std::string& opName, con
 {
     for (const auto& cls : GetInheritedTypeHierarchy(typeName, table))
     {
-        const auto symbols = table.FindSymbolsPtr(cls + "::" + opName);
+        const auto symbols = table.FindMemberSymbolPtr(cls, opName);
         if (!symbols)
         {
             continue;
@@ -248,7 +248,7 @@ bool TypeHasOpImplConvTo(const std::string& typeName, const std::string& targetT
 {
     for (const auto& cls : GetInheritedTypeHierarchy(typeName, table))
     {
-        const auto symbols = table.FindSymbolsPtr(cls + "::opImplConv");
+        const auto symbols = table.FindMemberSymbolPtr(cls, "opImplConv");
         if (!symbols)
         {
             continue;
@@ -274,13 +274,13 @@ void CheckComparisonOperatorCompatibility(TSNode node, const Scope* scope, Diagn
         return;
     }
 
-    const std::string op = GetNodeText(opNode, ctx.request.sourceCode);
+    const std::string_view op = GetNodeTextView(opNode, ctx.request.sourceCode);
     if (!IsComparisonOp(op))
     {
         return;
     }
 
-    if (ShouldSkipAddressComparison(left, right, IsRelationalOp(op), ctx.request.sourceCode))
+    if (ShouldSkipAddressComparison(left, right, IsRelationalOp(op)))
     {
         return;
     }
