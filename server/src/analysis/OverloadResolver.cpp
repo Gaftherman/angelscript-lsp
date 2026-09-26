@@ -470,11 +470,6 @@ bool IsContainerParameter(const ParameterInformation& param)
            param.typeName.find("vector<") != std::string::npos;
 }
 
-bool IsWildcardParameter(const ParameterInformation& param)
-{
-    return param.rawText.find("...") != std::string::npos || IsVariableType(param.typeName) ||
-           IsVariableType(param.rawText);
-}
 
 std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string& argType,
                                                                const ParameterInformation& param)
@@ -780,6 +775,12 @@ ArgumentConversion EvaluateCandidateTypeMatch(const ParameterInformation& param,
     return EvaluateConversionMatch(ctx);
 }
 } // namespace
+
+bool IsWildcardParameter(const ParameterInformation& param)
+{
+    return param.rawText.find("...") != std::string::npos || IsVariableType(param.typeName) ||
+           IsVariableType(param.rawText);
+}
 
 bool HasConstModifier(std::string_view typeName)
 {

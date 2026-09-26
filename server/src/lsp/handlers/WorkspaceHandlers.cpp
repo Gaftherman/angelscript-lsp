@@ -316,6 +316,7 @@ bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
     applyBool("reportMissingFuncdef", m_config.diagnostics.reportMissingFuncdef);
     applyBool("reportIntegerDivision", m_config.diagnostics.reportIntegerDivision);
     applyBool("reportPossibleNullDereference", m_config.diagnostics.reportPossibleNullDereference);
+    applyBool("reportAllNullDereferences", m_config.diagnostics.reportAllNullDereferences);
 
     if (auto v = FindSectionInt(section, diagObj, "reportHandleComparisonEquality", "diagnostics");
         v && m_config.diagnostics.reportHandleComparisonEquality != *v)

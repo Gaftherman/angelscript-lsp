@@ -277,4 +277,11 @@ bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType)
  * @return True if narrowing conversion is valid.
  */
 bool IsPrimitiveNarrowing(const std::string& fromType, const std::string& toType);
+
+/**
+ * @brief Checks whether a parameter accepts wildcard types (? or variable arguments).
+ * @param param Parameter information to check.
+ * @return True if parameter is wildcard.
+ */
+bool IsWildcardParameter(const ParameterInformation& param);
 } // namespace angel_lsp::analysis

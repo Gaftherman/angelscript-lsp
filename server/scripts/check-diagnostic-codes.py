@@ -25,7 +25,6 @@ CODES_HEADER = SERVER / 'src' / 'analysis' / 'DiagnosticCodes.h'
 DELIBERATELY_NEVER_EMITTED = {
     'as-err-base-not-found',
     'as-err-invalid-reference-return',
-    'as-err-no-matching-operator',
     'as-err-readonly-handle',
     'as-err-standalone-reference',
     'as-warn-shadow-global',

@@ -38,13 +38,18 @@ void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContext& ctx)
         if (it != state.vars.end() &&
             (it->second == Nullability::Nullable || it->second == Nullability::DefinitelyNull))
         {
-            if (!state.warnedVars.contains(name))
+            const bool reportAll = ctx.diagCtx.request.diagnostics &&
+                                   ctx.diagCtx.request.diagnostics->reportAllNullDereferences;
+            if (reportAll || !state.warnedVars.contains(name))
             {
                 ctx.diagCtx.EmitAtRange(ToSourceRange(obj), diagnostics::codes::PossibleNullDereference, name,
                                         DiagnosticSeverity::Warning);
                 state.warnedVars.insert(name);
             }
-            it->second = Nullability::NonNull;
+            if (!reportAll)
+            {
+                it->second = Nullability::NonNull;
+            }
         }
         return;
     }
@@ -134,6 +139,16 @@ void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx, i
     else if (exprType == parser::nodes::CastExpression)
     {
         CheckNullExpression(parser::GetChildByField(expr, parser::fields::Value), state, ctx, depth + 1);
+    }
+    else if (exprType == parser::nodes::ParenthesizedExpression)
+    {
+        CheckNullExpression(ts_node_named_child(expr, 0), state, ctx, depth + 1);
+    }
+    else if (exprType == parser::nodes::TernaryExpression)
+    {
+        CheckNullExpression(parser::GetChildByField(expr, parser::fields::Condition), state, ctx, depth + 1);
+        CheckNullExpression(parser::GetChildByField(expr, parser::fields::Consequence), state, ctx, depth + 1);
+        CheckNullExpression(parser::GetChildByField(expr, parser::fields::Alternative), state, ctx, depth + 1);
     }
 }
 

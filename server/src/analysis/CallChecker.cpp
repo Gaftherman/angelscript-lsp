@@ -1066,6 +1066,47 @@ void CheckInitializerListArgs(const std::vector<TSNode>& argNodes, const Functio
 }
 
 /**
+ * @brief Unwraps a parenthesized expression AST node to its inner child.
+ *
+ * @param[in] node Input AST node.
+ * @return Inner node if parenthesized, otherwise the node itself.
+ */
+TSNode UnwrapParenNode(TSNode node)
+{
+    if (std::string_view(ts_node_type(node)) == parser::nodes::ParenthesizedExpression)
+    {
+        TSNode child = ts_node_named_child(node, 0);
+        if (!ts_node_is_null(child))
+        {
+            return child;
+        }
+    }
+    return node;
+}
+
+/**
+ * @brief Identifies the mismatching type in a malformed ternary expression.
+ *
+ * @param[in] t1 Consequence branch resolved type.
+ * @param[in] t2 Alternative branch resolved type.
+ * @param[in] expected Expected parameter type name.
+ * @return Mismatching type string, or first non-empty type.
+ */
+std::string ResolveTernaryMismatchType(const std::string& t1, const std::string& t2,
+                                       const std::string& expected)
+{
+    if (!t1.empty() && t1 != expected)
+    {
+        return t1;
+    }
+    if (!t2.empty() && t2 != expected)
+    {
+        return t2;
+    }
+    return !t1.empty() ? t1 : (!t2.empty() ? t2 : "unknown");
+}
+
+/**
  * @brief Checks malformed ternary expressions used as call arguments.
  *
  * @param[in] argNodes Argument AST nodes.
@@ -1081,32 +1122,29 @@ void CheckMalformedTernaryArgs(const std::vector<TSNode>& argNodes, const std::v
         return;
     }
     const auto& fn = candidates[0]->GetFunction();
+    const size_t limit = std::min({argNodes.size(), argTypes.size(), fn.parameters.size()});
 
-    for (size_t i = 0; i < argNodes.size() && i < argTypes.size() && i < fn.parameters.size(); ++i)
+    for (size_t i = 0; i < limit; ++i)
     {
-        if (std::string_view(ts_node_type(argNodes[i])) != parser::nodes::TernaryExpression || !argTypes[i].empty())
+        TSNode node = UnwrapParenNode(argNodes[i]);
+        if (std::string_view(ts_node_type(node)) != parser::nodes::TernaryExpression || !argTypes[i].empty())
+        {
+            continue;
+        }
+        if (IsWildcardParameter(fn.parameters[i]))
         {
             continue;
         }
 
         const std::string expected = fn.parameters[i].typeName;
-        TSNode consequence = parser::GetChildByField(argNodes[i], parser::fields::Consequence);
-        TSNode alternative = parser::GetChildByField(argNodes[i], parser::fields::Alternative);
+        TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
+        TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
         std::string t1 = ResolveExpressionType(consequence, {valCtx.scope, valCtx.ctx.request.symbolTable,
                                                              valCtx.request.sourceCode, valCtx.ctx.request.fileUri});
         std::string t2 = ResolveExpressionType(alternative, {valCtx.scope, valCtx.ctx.request.symbolTable,
                                                              valCtx.request.sourceCode, valCtx.ctx.request.fileUri});
 
-        std::string badType = (!t1.empty() && t1 != expected) ? t1 : t2;
-        if (badType.empty())
-        {
-            badType = (!t2.empty() ? t2 : t1);
-        }
-        if (badType.empty())
-        {
-            badType = "unknown";
-        }
-
+        std::string badType = ResolveTernaryMismatchType(t1, t2, expected);
         const TSPoint aStart = ts_node_start_point(argNodes[i]);
         const TSPoint aEnd = ts_node_end_point(argNodes[i]);
         valCtx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column}, "as-err-no-implicit-conversion",

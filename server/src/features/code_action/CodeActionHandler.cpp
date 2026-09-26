@@ -33,6 +33,7 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
     TryAddUnresolvedIncludeSuggestions(request, actions);
     TryAddAccessorPropertyKeywordFix(request, rootNode, actions);
     TryAddBoolConversionFix(request, rootNode, actions);
+    TryAddRepeatedConversionFix(request, rootNode, actions);
     TryAddGenerateFuncdefFix(request, rootNode, actions);
     TryAddSortAndCleanIncludesAction(request, actions);
 

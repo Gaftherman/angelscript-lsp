@@ -2321,6 +2321,62 @@ TEST_CASE("TypeConversion - Ternary same complex class deduction emits 0 diagnos
     CHECK(ConversionDiagnostics(code).empty());
 }
 
+TEST_CASE("TypeConversion - Ternary with handle and null emits 0 diagnostics (asharness parity)")
+{
+    const std::string code =
+        "class Node {}\n"
+        "void main()\n"
+        "{\n"
+        "    bool cond = true;\n"
+        "    Node@ n = Node();\n"
+        "    Node@ a = cond ? n : null;\n"
+        "    Node@ b = cond ? null : n;\n"
+        "}\n";
+
+    CHECK(ConversionDiagnostics(code).empty());
+}
+
+TEST_CASE("TypeConversion - Ternary with void branch emits diagnostic (asharness parity)")
+{
+    const std::string code =
+        "void DoNothing() {}\n"
+        "void main()\n"
+        "{\n"
+        "    bool cond = true;\n"
+        "    int x = cond ? DoNothing() : 1;\n"
+        "}\n";
+
+    const auto diagnostics = ConversionDiagnostics(code);
+    REQUIRE(!diagnostics.empty());
+    CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
+                      [](const Diagnostic &d)
+                      {
+                          return d.code == "as-err-no-implicit-conversion";
+                      }));
+}
+
+TEST_CASE("TypeConversion - Ternary with unrelated classes emits diagnostic (asharness parity)")
+{
+    const std::string code =
+        "class Cat {}\n"
+        "class Dog {}\n"
+        "void main()\n"
+        "{\n"
+        "    bool cond = true;\n"
+        "    Cat c;\n"
+        "    Dog d;\n"
+        "    auto x = cond ? c : d;\n"
+        "}\n";
+
+    const auto diagnostics = ConversionDiagnostics(code);
+    REQUIRE(!diagnostics.empty());
+    CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
+                      [](const Diagnostic &d)
+                      {
+                          return d.code == "as-err-no-implicit-conversion";
+                      }));
+}
+
 TEST_CASE("TypeConversion - Integer primitive aliases produce 0 conversion diagnostics")
 {
     const std::string code =

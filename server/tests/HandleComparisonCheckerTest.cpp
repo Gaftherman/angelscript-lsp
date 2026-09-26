@@ -403,6 +403,40 @@ TEST_SUITE("HandleComparisonChecker")
         }
         CHECK(equalityWarnings == 2);
     }
+
+    TEST_CASE("Handle Comparison with this: is null accepted clean, == null emits warning (asharness parity)")
+    {
+        const std::string className = GenerateRandomSymbolName();
+        const std::string methodName = GenerateRandomSymbolName();
+
+        const std::string script =
+            "class " + className + "\n" +
+            "{\n" +
+            "    void " + methodName + "()\n" +
+            "    {\n" +
+            "        if (this is null) {}\n" +
+            "        if (null is this) {}\n" +
+            "        if (this !is null) {}\n" +
+            "        if (null !is this) {}\n" +
+            "        if (this == null) {}\n" +
+            "        if (null == this) {}\n" +
+            "        if (this != null) {}\n" +
+            "        if (null != this) {}\n" +
+            "    }\n" +
+            "}\n";
+
+        auto diags = AnalyzeScript(script);
+        size_t equalityWarnings = 0;
+        for (const auto& d : diags)
+        {
+            if (d.code == diagnostics::codes::HandleComparisonEquality)
+            {
+                ++equalityWarnings;
+            }
+        }
+        CHECK(equalityWarnings == 4);
+        CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::IllegalOperation));
+    }
 }
 
 } // namespace angel_lsp::test
