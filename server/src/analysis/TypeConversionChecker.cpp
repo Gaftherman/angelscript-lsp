@@ -1,7 +1,7 @@
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/ASTUtils.h"
-#include "analysis/DiagnosticCodes.h"
 #include "analysis/ComparisonOperatorChecker.h"
+#include "analysis/DiagnosticCodes.h"
 #include "analysis/HandleComparisonChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/RepeatedConversionChecker.h"
