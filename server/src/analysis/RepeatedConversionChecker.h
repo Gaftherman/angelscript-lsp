@@ -24,6 +24,5 @@ void CheckRepeatedConversions(TSNode rootIfNode, const Scope* scope, DiagnosticC
  * @param[in] sourceCode Source document content.
  * @return Vector of matching AST nodes.
  */
-std::vector<TSNode> FindOccurrencesInIfLadder(TSNode rootIf, std::string_view exprText,
-                                              std::string_view sourceCode);
+std::vector<TSNode> FindOccurrencesInIfLadder(TSNode rootIf, std::string_view exprText, std::string_view sourceCode);
 } // namespace angel_lsp::analysis

@@ -104,7 +104,8 @@ struct RuleIndex
     ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> globalAccessorPropertyNames;
     ankerl::unordered_dense::map<std::string, uint32_t> globalAccessorPropertyCounts;
 
-    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> keywordGlobalAccessorPropertyNames;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>
+        keywordGlobalAccessorPropertyNames;
     ankerl::unordered_dense::map<std::string, uint32_t> keywordGlobalAccessorPropertyCounts;
 
     /**

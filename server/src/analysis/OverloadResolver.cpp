@@ -470,7 +470,6 @@ bool IsContainerParameter(const ParameterInformation& param)
            param.typeName.find("vector<") != std::string::npos;
 }
 
-
 std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string& argType,
                                                                const ParameterInformation& param)
 {

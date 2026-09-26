@@ -907,8 +907,7 @@ bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, co
         for (const auto& typeName : hierarchy)
         {
             const auto& members = index.Members(typeName);
-            const auto& accSet =
-                reqKeyword ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
+            const auto& accSet = reqKeyword ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
             if (accSet.contains(refName))
             {
                 return true;
