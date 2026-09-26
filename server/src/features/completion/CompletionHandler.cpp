@@ -225,6 +225,28 @@ std::string ConsumeIdentifier(std::string_view chain, size_t& i)
 }
 
 /**
+ * @brief Advances cursor past a single- or double-quoted string literal within an access chain.
+ * @param[in] chain Access chain view.
+ * @param[in,out] i Cursor index positioned at opening quote.
+ */
+void SkipStringLiteralInChain(std::string_view chain, size_t& i)
+{
+    const char quote = chain[i++];
+    while (i < chain.size())
+    {
+        if (chain[i] == '\\' && i + 1 < chain.size())
+        {
+            i += 2;
+            continue;
+        }
+        if (chain[i++] == quote)
+        {
+            break;
+        }
+    }
+}
+
+/**
  * @brief Consumes subsequent call arguments `(...)` or indexing brackets `[...]`.
  * @param[in] chain Access chain view.
  * @param[in,out] i Cursor index.
@@ -234,8 +256,8 @@ void ConsumeParenthesesOrBrackets(std::string_view chain, size_t& i, AccessSegme
 {
     while (i < chain.size() && (chain[i] == '(' || chain[i] == '['))
     {
-        char open = chain[i];
-        char close = (open == '(') ? ')' : ']';
+        const char open = chain[i];
+        const char close = (open == '(') ? ')' : ']';
         if (open == '(')
         {
             seg.isCall = true;
@@ -248,11 +270,17 @@ void ConsumeParenthesesOrBrackets(std::string_view chain, size_t& i, AccessSegme
         int depth = 1;
         while (i < chain.size() && depth > 0)
         {
-            if (chain[i] == open)
+            const char c = chain[i];
+            if (c == '"' || c == '\'')
+            {
+                SkipStringLiteralInChain(chain, i);
+                continue;
+            }
+            if (c == open)
             {
                 ++depth;
             }
-            else if (chain[i] == close)
+            else if (c == close)
             {
                 --depth;
             }

@@ -32,9 +32,9 @@ Layer isolation is strict and enforced by `server/scripts/check-layer-includes.p
 ## 3. Function Signature & Parameter Governance
 
 1. **Parameter Ceiling:** Functions must accept at most 4 parameters. If more inputs are needed, bundle them into an immutable struct (e.g., `struct <Feature>Request`).
-2. **Zero Dead Parameters (`/we4100`):** Unreferenced formal parameters are prohibited. If an argument is no longer needed, delete it from the header, implementation, and all call sites immediately.
-3. **No Unnamed or Commented-Out Parameters:** Never bypass warnings using `int /* b */` or unnamed parameters (`int`). Leaving dead parameters in call sites is a severe defect.
-4. **Virtual Method Overrides:** Only virtual method overrides may silence unused parameters using `[[maybe_unused]]` with an explicit Doxygen `@note`.
+2. **Owned Signatures (Zero Dead Parameters):** Free functions, private helpers, and internal classes under our control must have zero dead parameters (`/we4100`). Unreferenced formal parameters must be removed from the header, implementation, and all call sites immediately. Nameless parameters (`Type`) and commented-out names (`Type /*name*/`) remain strictly prohibited.
+3. **Contract-Mandated Signatures:** Where signatures are dictated by external APIs (virtual method `override`, Tree-Sitter C callbacks, generic STL lambda visitors), silence unused parameters explicitly via `[[maybe_unused]] Type name`. Keep parameter names intact for Doxygen and IDE hover introspection without requiring mandatory boilerplate `@note` comments.
+4. **No Unnamed or Commented-Out Parameters:** Never bypass warnings using `int /* b */` or unnamed parameters (`int`). In owned signatures, delete unused parameters; in contract-mandated signatures, use `[[maybe_unused]] Type name`.
 
 ---
 
@@ -103,7 +103,7 @@ Format: `<type>(<scope>): <short imperative description>`
 6. **PROHIBITION 6: No Index-Based `ts_node_child` Traversal Loops:** Structure extraction must use precompiled S-expression queries or flat cursor traversal.
 7. **PROHIBITION 7: No Stack-Recursive AST Traversals:** Sub-tree traversals must be flat with an explicit depth cap (`k_maxAstDepth = 64`) to prevent stack overflow crashes.
 8. **PROHIBITION 8: No Functions Exceeding 15 CCN or 70 Lines:** Every function must pass `lizard -C 15 -L 70 -a 4` without warnings.
-9. **PROHIBITION 9: No Dead or Unnamed Parameters (`/we4100`):** Every formal parameter must be named, referenced, or cleanly removed.
+9. **PROHIBITION 9: No Dead or Unnamed Parameters (`/we4100`):** In owned signatures, every formal parameter must be named and referenced, or cleanly removed. In contract-mandated signatures (virtual overrides, external callbacks), unused parameters must be named and explicitly silenced with `[[maybe_unused]] Type name`. Nameless (`Type`) or commented-out (`Type /*name*/`) parameters are strictly banned.
 10. **PROHIBITION 10: No Static or Hardcoded Test Fixtures:** Tests must use dynamic randomized generators and sandboxes to verify semantic invariants rather than overfitting to fixed strings.
 
 ---

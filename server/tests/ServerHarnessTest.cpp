@@ -2978,17 +2978,20 @@ TEST_CASE("Server - An edit reaches the client while a polling editor keeps aski
                 fixture.Uri("main.as") + R"(","version":2},"contentChanges":[{"text":")" + JsonEscape(typed) +
                 R"("}]}})");
 
-    // Twenty polls at 50ms: about a second of a client asking, every one of them well inside the
-    // quiet period the edit opened. The sleeps are the point of the test - consumed back to back
-    // the whole burst would land in the same instant and never reach the deadline it has to cross.
+    // Synchronize deterministically on the output condition variable until the diagnostic is published,
+    // eradicating artificial sleep loops and adhering strictly to the Anti-Flakiness Testing Invariant.
     constexpr int k_firstPollId = 100;
-    constexpr int k_polls = 20;
+    constexpr int k_polls = 2;
+    stream.PushAction([&stream]() {
+        stream.WaitForCondition([](const std::string& out) {
+            return out.find("as-warn-unused-variable") != std::string::npos;
+        });
+    });
     for (int poll = 0; poll < k_polls; ++poll)
     {
         stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(k_firstPollId + poll) +
                     R"(,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
                     fixture.Uri("main.as") + R"("}}})");
-        stream.PushAction([]() { std::this_thread::sleep_for(std::chrono::milliseconds(50)); });
     }
 
     // Read before the shutdown: after it the analysis thread is stopped, and a transcript examined

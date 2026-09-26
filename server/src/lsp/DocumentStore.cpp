@@ -85,14 +85,19 @@ void DocumentStore::SetVersion(const std::string& uri, int version)
     }
 }
 
-TSTree* DocumentStore::GetTree(const std::string& uri) const
+document::TreePtr DocumentStore::GetTree(const std::string& uri) const
 {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
-    if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
+    if (auto it = m_documents.find(uri); it != m_documents.end() && it->second && it->second->tree)
     {
-        return it->second->tree.get();
+        return document::MakeTreePtr(ts_tree_copy(it->second->tree.get()));
     }
-    return nullptr;
+    return document::MakeTreePtr(nullptr);
+}
+
+document::TreePtr DocumentStore::GetTreeCopy(const std::string& uri) const
+{
+    return GetTree(uri);
 }
 
 void DocumentStore::SetTree(const std::string& uri, document::TreePtr tree)

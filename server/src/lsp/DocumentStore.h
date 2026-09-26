@@ -103,12 +103,18 @@ class DocumentStore
     void SetVersion(const std::string& uri, int version);
 
     /**
-     * @brief Borrows raw pointer to syntax tree. Caller must NOT delete. Thread-safe.
+     * @brief Returns a thread-local copy of the document's syntax tree via ts_tree_copy(). Thread-safe.
      * @param uri Canonical URI key.
-     * @return Raw TSTree pointer or nullptr.
-     * @warning Prefer GetDocument() over GetTree() to safely retain AST lifetime across concurrent edits.
+     * @return Managed TreePtr owning the copied tree, or nullptr.
      */
-    [[nodiscard]] TSTree* GetTree(const std::string& uri) const;
+    [[nodiscard]] document::TreePtr GetTree(const std::string& uri) const;
+
+    /**
+     * @brief Returns a thread-local copy of the document's syntax tree via ts_tree_copy(). Thread-safe.
+     * @param uri Canonical URI key.
+     * @return Managed TreePtr owning the copied tree, or nullptr.
+     */
+    [[nodiscard]] document::TreePtr GetTreeCopy(const std::string& uri) const;
 
     /**
      * @brief Sets or replaces the syntax tree for a document. Thread-safe.
