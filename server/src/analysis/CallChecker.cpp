@@ -1092,8 +1092,7 @@ TSNode UnwrapParenNode(TSNode node)
  * @param[in] expected Expected parameter type name.
  * @return Mismatching type string, or first non-empty type.
  */
-std::string ResolveTernaryMismatchType(const std::string& t1, const std::string& t2,
-                                       const std::string& expected)
+std::string ResolveTernaryMismatchType(const std::string& t1, const std::string& t2, const std::string& expected)
 {
     if (!t1.empty() && t1 != expected)
     {

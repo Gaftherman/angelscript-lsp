@@ -272,8 +272,8 @@ std::string SuggestCandidateName(TSNode targetNode, std::string_view varType, st
     {
         return memName;
     }
-    if (!varType.empty() && varType != "auto" && varType != "null" && varType != "int" &&
-        varType != "uint" && varType != "float" && varType != "double" && varType != "bool")
+    if (!varType.empty() && varType != "auto" && varType != "null" && varType != "int" && varType != "uint" &&
+        varType != "float" && varType != "double" && varType != "bool")
     {
         std::string clean = analysis::CleanBaseType(varType);
         if (!clean.empty() && clean != "string")

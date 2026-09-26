@@ -1,6 +1,6 @@
-#include "features/code_action/CodeActionInternal.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/RepeatedConversionChecker.h"
+#include "features/code_action/CodeActionInternal.h"
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
 

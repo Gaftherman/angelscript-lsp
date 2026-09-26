@@ -84,7 +84,6 @@ bool TypeHasOperator(const std::string& typeName, const std::string& opName, con
     return false;
 }
 
-
 bool IsKnownType(const std::string& type, const SymbolTable& table)
 {
     if (parser::primitives::IsNumeric(type) || type == "bool" || type == "string" || ResolvesToEnum(type, table))
@@ -206,7 +205,7 @@ bool IsNullOperand(TSNode node, const std::string& type)
 }
 
 std::optional<OperandTypes> ResolveCleanOperandTypes(TSNode left, TSNode right, const Scope* scope,
-                                                    const DiagnosticContext& ctx)
+                                                     const DiagnosticContext& ctx)
 {
     const ExpressionTypeContext exprCtx{scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri};
     const std::string rawLeft = ResolveExpressionType(left, exprCtx);

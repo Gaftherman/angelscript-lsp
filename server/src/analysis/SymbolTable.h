@@ -587,8 +587,8 @@ class SymbolTable
      * @param[in] member Member or operator name (e.g. "opCmp").
      * @return Shared pointer to an immutable symbol list, or nullptr if not found.
      */
-    [[nodiscard]] std::shared_ptr<const std::vector<Symbol>>
-    FindMemberSymbolPtr(std::string_view scope, std::string_view member) const;
+    [[nodiscard]] std::shared_ptr<const std::vector<Symbol>> FindMemberSymbolPtr(std::string_view scope,
+                                                                                 std::string_view member) const;
 
     /** @brief Returns a copy of all symbols matching qualifiedName. Safe across mutations. */
     std::vector<Symbol> FindSymbols(std::string_view qualifiedName) const;

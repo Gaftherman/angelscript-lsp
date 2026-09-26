@@ -34,16 +34,22 @@ bool IsExtractableCandidate(TSNode node)
            type == "index_expression" || type == "scoped_identifier";
 }
 
-void TryRecordOccurrence(TSNode operand, const std::string& fromType, const std::string& toType,
-                         const DiagnosticContext& ctx, std::vector<ConversionOccurrence>& out)
+struct ConversionTypePair
+{
+    const std::string& fromType;
+    const std::string& toType;
+};
+
+void TryRecordOccurrence(TSNode operand, const ConversionTypePair& types, const DiagnosticContext& ctx,
+                         std::vector<ConversionOccurrence>& out)
 {
     if (!IsExtractableCandidate(operand))
     {
         return;
     }
-    if (TypeHasOpImplConvTo(fromType, toType, ctx.request.symbolTable))
+    if (TypeHasOpImplConvTo(types.fromType, types.toType, ctx.request.symbolTable))
     {
-        out.push_back({operand, GetNodeText(operand, ctx.request.sourceCode), fromType, toType});
+        out.push_back({operand, GetNodeText(operand, ctx.request.sourceCode), types.fromType, types.toType});
     }
 }
 
@@ -76,8 +82,8 @@ void InspectComparisonNode(TSNode binNode, const Scope* scope, DiagnosticContext
         return;
     }
 
-    TryRecordOccurrence(left, cleanLeft, cleanRight, ctx, out);
-    TryRecordOccurrence(right, cleanRight, cleanLeft, ctx, out);
+    TryRecordOccurrence(left, {cleanLeft, cleanRight}, ctx, out);
+    TryRecordOccurrence(right, {cleanRight, cleanLeft}, ctx, out);
 }
 
 void CollectConditionConversions(TSNode condNode, const Scope* scope, DiagnosticContext& ctx,
@@ -182,8 +188,7 @@ void CheckRepeatedConversions(TSNode rootIfNode, const Scope* scope, DiagnosticC
     EmitRepeatedHints(occurrences, ctx);
 }
 
-std::vector<TSNode> FindOccurrencesInIfLadder(TSNode rootIf, std::string_view exprText,
-                                              std::string_view sourceCode)
+std::vector<TSNode> FindOccurrencesInIfLadder(TSNode rootIf, std::string_view exprText, std::string_view sourceCode)
 {
     std::vector<TSNode> results;
     if (ts_node_is_null(rootIf) || exprText.empty())

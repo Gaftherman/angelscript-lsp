@@ -35,16 +35,15 @@ bool IsTargetVariableTypeMatch(std::string_view targetVarName, std::string_view 
     return false;
 }
 
-bool IsConstructorCall(std::string_view fnName, TSNode typeNode, std::string_view targetVarName,
-                       NullCheckContext& ctx)
+bool IsConstructorCall(std::string_view fnName, TSNode typeNode, std::string_view targetVarName, NullCheckContext& ctx)
 {
     if (fnName.empty())
     {
         return false;
     }
-    const std::string shortName =
-        (fnName.rfind("::") != std::string::npos) ? std::string(fnName.substr(fnName.rfind("::") + 2))
-                                                  : std::string(fnName);
+    const std::string shortName = (fnName.rfind("::") != std::string::npos)
+                                      ? std::string(fnName.substr(fnName.rfind("::") + 2))
+                                      : std::string(fnName);
     if (shortName.empty())
     {
         return false;
@@ -83,8 +82,7 @@ struct NullableEvalRequest
     std::string_view targetVarName = "";
 };
 
-Nullability EvaluateExpressionNullability(const NullableEvalRequest& req, const FlowState& state,
-                                         NullCheckContext& ctx)
+Nullability EvaluateExpressionNullability(const NullableEvalRequest& req, const FlowState& state, NullCheckContext& ctx)
 {
     if (ts_node_is_null(req.val))
     {
@@ -173,8 +171,7 @@ void CheckAssignmentStmt(TSNode expr, FlowState& state, NullCheckContext& ctx)
     std::string name = GetIdentifierName(unwrappedLeft, ctx.sourceCode);
     if (!name.empty())
     {
-        const Nullability assignedNullability =
-            EvaluateExpressionNullability({right, {}, name}, state, ctx);
+        const Nullability assignedNullability = EvaluateExpressionNullability({right, {}, name}, state, ctx);
         if (assignedNullability != Nullability::Nullable || state.vars.contains(name))
         {
             state.vars[name] = assignedNullability;

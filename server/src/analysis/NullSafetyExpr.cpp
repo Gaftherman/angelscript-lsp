@@ -38,8 +38,8 @@ void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContext& ctx)
         if (it != state.vars.end() &&
             (it->second == Nullability::Nullable || it->second == Nullability::DefinitelyNull))
         {
-            const bool reportAll = ctx.diagCtx.request.diagnostics &&
-                                   ctx.diagCtx.request.diagnostics->reportAllNullDereferences;
+            const bool reportAll =
+                ctx.diagCtx.request.diagnostics && ctx.diagCtx.request.diagnostics->reportAllNullDereferences;
             if (reportAll || !state.warnedVars.contains(name))
             {
                 ctx.diagCtx.EmitAtRange(ToSourceRange(obj), diagnostics::codes::PossibleNullDereference, name,

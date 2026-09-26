@@ -2582,8 +2582,8 @@ static std::string ResolveTernaryEnumPromotion(const std::string& c1, const std:
  * @param[in] c2 Cleaned alternative base type.
  * @return Resolved handle type or "null", or empty string if not applicable.
  */
-static std::string ResolveTernaryNullBranch(const std::string& t1, const std::string& t2,
-                                            const std::string& c1, const std::string& c2)
+static std::string ResolveTernaryNullBranch(const std::string& t1, const std::string& t2, const std::string& c1,
+                                            const std::string& c2)
 {
     if (c1 == "null" && t2.ends_with("@"))
     {
