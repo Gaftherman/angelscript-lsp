@@ -4,6 +4,21 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.9.1] - 2026-09-26
+
+### Comparison Operator Parity, Repeated Conversion Optimization, & Ternary Parity
+
+- Binary Comparison Type Validation (`as-err-no-matching-operator`):
+  - Validates relational and equality operators against registered type capabilities and operator overloads (`opEquals`, `opCmp`).
+  - Flags invalid comparisons between mismatched types (such as `string` vs `int`, `string` vs `bool`, or `string` vs `ref@`) that lack valid implicit conversions or equality overloads.
+- Repeated Implicit Conversion Detection & QuickFix (`as-hint-repeated-conversion`):
+  - Added detection of repeated implicit conversions in `if / else if` conditional ladders (e.g. repeated `self.pev.target` conversion from `string_t` to `string`).
+  - Added QuickFix code action to declare and initialize a cached local variable with automatic keyword avoidance (`parser::keywords::IsKeyword`).
+  - Implemented using Tree-Sitter Query-First architecture (`BINARY_EXPRESSION_QUERY`) and Layer 2 service (`FindOccurrencesInIfLadder`).
+- Ternary Expression & Overload Parity:
+  - Hardened ternary expression type checking and parameter matching for functions accepting generic references (`?& in`).
+  - Verified operator precedence and handle identity checks (`this is null`, `null is this`).
+
 ## [0.9.0] - 2026-09-25
 
 ### Compiler Parity, Accessor Scope Isolation, & Extract Variable Refactoring

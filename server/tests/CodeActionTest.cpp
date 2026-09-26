@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "features/code_action/CodeActionHandler.h"
+#include "helpers/TestUtils.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
@@ -1038,3 +1039,79 @@ TEST_CASE("CodeActionHandler - No funcdef is generated without the hint")
 
     CHECK(ActionTitled(actions, "Declare funcdef") == nullptr);
 }
+
+TEST_CASE("CodeActionHandler - Repeated conversion quick fix initializes local variable")
+{
+    const std::string propName = test::GenerateRandomSymbolName("prop");
+    const std::string val1 = test::GenerateRandomSymbolName("valA");
+    const std::string val2 = test::GenerateRandomSymbolName("valB");
+    const std::string code =
+        "void main() {\n"
+        "    if (ent." + propName + " == \"" + val1 + "\") {\n"
+        "    } else if (ent." + propName + " == \"" + val2 + "\") {\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 8}, {1, 8 + static_cast<uint32_t>(propName.size() + 4)} };
+
+    lsp::Diagnostic diag;
+    diag.range = at;
+    diag.code = lsp::String("as-hint-repeated-conversion");
+    diag.message = "Expression 'ent." + propName + "' of type 'string_t' is repeatedly converted to 'string' in conditional ladder; consider caching it in a local variable.";
+
+    lsp::CodeActionContext ctx;
+    ctx.diagnostics.push_back(diag);
+
+    auto actions = env.CodeActions(at, ctx);
+    REQUIRE(actions.has_value());
+    REQUIRE(!actions->empty());
+
+    const auto* fix = ActionTitled(actions, "Initialize local 'string' variable");
+    REQUIRE(fix != nullptr);
+    CHECK(fix->kind.value() == lsp::CodeActionKind::QuickFix);
+    CHECK(fix->isPreferred.value() == true);
+
+    REQUIRE(fix->edit.has_value());
+    REQUIRE(fix->edit->changes.has_value());
+    const auto& edits = fix->edit->changes->begin()->second;
+    REQUIRE(edits.size() == 3);
+    CHECK(edits[0].newText.find("string " + propName + " = ent." + propName + ";") != std::string::npos);
+    CHECK(edits[1].newText == propName);
+    CHECK(edits[2].newText == propName);
+}
+
+TEST_CASE("CodeActionHandler - Repeated conversion with keyword expression falls back to type")
+{
+    const std::string val1 = test::GenerateRandomSymbolName("valA");
+    const std::string val2 = test::GenerateRandomSymbolName("valB");
+    const std::string code =
+        "void main() {\n"
+        "    if (this == \"" + val1 + "\") {\n"
+        "    } else if (this == \"" + val2 + "\") {\n"
+        "    }\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 8}, {1, 12} };
+
+    lsp::Diagnostic diag;
+    diag.range = at;
+    diag.code = lsp::String("as-hint-repeated-conversion");
+    diag.message = "Expression 'this' of type 'MyClass' is repeatedly converted to 'string' in conditional ladder; consider caching it in a local variable.";
+
+    lsp::CodeActionContext ctx;
+    ctx.diagnostics.push_back(diag);
+
+    auto actions = env.CodeActions(at, ctx);
+    REQUIRE(actions.has_value());
+    REQUIRE(!actions->empty());
+
+    const auto* fix = ActionTitled(actions, "Initialize local 'string' variable");
+    REQUIRE(fix != nullptr);
+    const auto& edits = fix->edit->changes->begin()->second;
+    REQUIRE(edits.size() == 3);
+    // Variable name falls back to toType ("string") instead of illegal keyword "this"
+    CHECK(edits[0].newText.find("string string = this;") != std::string::npos);
+}
+

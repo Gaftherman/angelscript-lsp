@@ -414,4 +414,8 @@ namespace angel_lsp::parser::queries
   (mixin_declaration)
 ] @validation.modifiers
 )SCM";
+
+[[maybe_unused]] inline constexpr const char* BINARY_EXPRESSION_QUERY = R"SCM(
+(binary_expression) @binary
+)SCM";
 } // namespace angel_lsp::parser::queries

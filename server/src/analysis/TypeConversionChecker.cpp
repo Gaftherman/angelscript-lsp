@@ -1,8 +1,10 @@
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
+#include "analysis/ComparisonOperatorChecker.h"
 #include "analysis/HandleComparisonChecker.h"
 #include "analysis/NodeIndex.h"
+#include "analysis/RepeatedConversionChecker.h"
 
 #include "analysis/SemanticHelpers.h"
 
@@ -537,7 +539,7 @@ bool CanConvertEnumTarget(const std::string& from, const std::string& to, const 
     }
     // A class may declare an operator producing the enum, and the compiler accepts it:
     // `class W { Color opImplConv() const { … } } … Color c = w;` compiles.
-    if (!fromBuiltIn && DeclaresConversionTo(from, to, table, false))
+    if (!fromBuiltIn && DeclaresConversionTo(from, to, table, true))
     {
         return true;
     }
@@ -629,7 +631,7 @@ bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& 
     {
         return true;
     }
-    if (!fromBuiltIn && DeclaresConversionTo(types.from, types.to, table, false))
+    if (!fromBuiltIn && DeclaresConversionTo(types.from, types.to, table, true))
     {
         return true;
     }
@@ -2335,6 +2337,15 @@ void ProcessConditionNode(TSNode node, const TypeConversionCheckRequest& request
     {
         CheckRefTypeBoolConversion(condition, scope, ctx);
     }
+
+    if (nodeType == "if_statement")
+    {
+        TSNode parent = ts_node_parent(node);
+        if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "if_statement")
+        {
+            CheckRepeatedConversions(node, scope, ctx);
+        }
+    }
 }
 
 /**
@@ -2345,7 +2356,7 @@ void ProcessConditionNode(TSNode node, const TypeConversionCheckRequest& request
  */
 static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
 {
-    return type.empty() || type == "auto" || type == "void";
+    return type.empty() || type == "auto";
 }
 
 static bool AreTernaryBranchesIncompatible(const std::string& clean1, const std::string& clean2, DiagnosticContext& ctx)
@@ -3065,6 +3076,7 @@ void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, D
     const Scope* scope = ResolveNodeScope(node, request);
     CheckSignedUnsignedComparison(node, scope, ctx);
     CheckHandleComparison(node, scope, ctx);
+    CheckComparisonOperatorCompatibility(node, scope, ctx);
 }
 
 /**

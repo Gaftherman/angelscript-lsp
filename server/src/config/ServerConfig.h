@@ -426,6 +426,11 @@ struct DiagnosticsConfig
     bool reportPossibleNullDereference = true;
 
     /**
+     * @brief Warn on all dereferences of unguarded handles, not only the first (default: off).
+     */
+    bool reportAllNullDereferences = false;
+
+    /**
      * @brief Warn or error on equality/inequality comparison of handle with null (default: 1).
      *
      * 0 = off (suppress)

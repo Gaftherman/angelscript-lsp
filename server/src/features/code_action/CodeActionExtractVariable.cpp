@@ -355,8 +355,19 @@ std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionReques
     std::string indent = GetLineIndentation(request.sourceCode, stmtRow);
 
     lsp::TextEdit declEdit;
-    declEdit.range = lsp::Range{{stmtRow, 0}, {stmtRow, 0}};
-    declEdit.newText = indent + varType + " " + varName + " = " + exprText + ";\n";
+    TSNode parentBlock = ts_node_parent(stmtNode);
+    TSPoint stmtStart = ts_node_start_point(stmtNode);
+    if (!ts_node_is_null(parentBlock) && std::string_view(ts_node_type(parentBlock)) == "statement_block" &&
+        ts_node_start_point(parentBlock).row == stmtStart.row)
+    {
+        declEdit.range = lsp::Range{{stmtStart.row, stmtStart.column}, {stmtStart.row, stmtStart.column}};
+        declEdit.newText = varType + " " + varName + " = " + exprText + "; ";
+    }
+    else
+    {
+        declEdit.range = lsp::Range{{stmtRow, 0}, {stmtRow, 0}};
+        declEdit.newText = indent + varType + " " + varName + " = " + exprText + ";\n";
+    }
 
     lsp::TextEdit replEdit;
     replEdit.range = lsp::Range{{exprStart.row, exprStart.column}, {exprEnd.row, exprEnd.column}};

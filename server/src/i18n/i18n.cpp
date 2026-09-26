@@ -53,11 +53,9 @@ std::string PrimaryLanguageSubtag(const std::string& locale)
 //                               is decidable - an *imported* function, whose types must be
 //                               declared. The general case is still out, for the reason above.)
 //
-//   as-err-no-matching-operator `a + b` with no opAdd is a use-site question, and operator
-//                               checking here is declaration-shape only - OperatorRules says
-//                               whether an opAdd is *declared* correctly, never whether one
-//                               exists for a given pair of operands. Wants the expression
-//                               resolver, the same as as-err-invalid-reference-return.
+//   as-err-no-matching-operator Emitted by ComparisonOperatorChecker for binary comparison
+//                               operators (`==`, `!=`, `<`, `<=`, `>`, `>=`) when operand types
+//                               have no compatible operator overloads or implicit conversions.
 //
 //   as-err-readonly-handle      `const T@ const h` is a handle that cannot be reassigned, and
 //                               nothing records that second `const`: VariableSignature keeps
@@ -371,6 +369,8 @@ void PopulateEnglishMessages6(MessageMap& m_messages)
     m_messages["as-err-invalid-foreach-container"] =
         "Type '{}' is not a valid foreach container. Must implement opForBegin, opForEnd, opForNext and opForValue.";
     m_messages["as-err-no-matching-operator"] = "No matching operator '{}' found for types '{}' and '{}'.";
+    m_messages["as-hint-repeated-conversion"] =
+        "Repeated implicit conversion of '{}' ('{}' to '{}'). Consider initializing a local variable.";
 }
 
 /**
@@ -710,6 +710,8 @@ void PopulateSpanishMessages6(MessageMap& m_messages)
                                                      "implementar opForBegin, opForEnd, opForNext y opForValue.";
     m_messages["as-err-no-matching-operator"] =
         "No se encontró un operador '{}' compatible para los tipos '{}' y '{}'.";
+    m_messages["as-hint-repeated-conversion"] =
+        "Conversión implícita repetida de '{}' ('{}' a '{}'). Considera inicializar una variable local.";
 }
 
 /**

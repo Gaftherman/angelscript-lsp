@@ -29,6 +29,12 @@ class QueryRegistry
     [[nodiscard]] static const TSQuery* GetTagsQuery();
 
     /**
+     * @brief Retrieves the precompiled binary expression query.
+     * @return Immutable TSQuery pointer valid for the lifetime of the process.
+     */
+    [[nodiscard]] static const TSQuery* GetBinaryExpressionQuery();
+
+    /**
      * @brief Retrieves a thread-local TSQueryCursor instance.
      * @return Reusable cursor unique to the calling thread.
      * @note Do not delete or share across threads.

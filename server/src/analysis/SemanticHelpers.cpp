@@ -2570,6 +2570,28 @@ static std::string ResolveTernaryEnumPromotion(const std::string& c1, const std:
 }
 
 /**
+ * @brief Resolves ternary expression type when one or both branches are null.
+ * @param[in] t1 Consequence type.
+ * @param[in] t2 Alternative type.
+ * @param[in] c1 Cleaned consequence base type.
+ * @param[in] c2 Cleaned alternative base type.
+ * @return Resolved handle type or "null", or empty string if not applicable.
+ */
+static std::string ResolveTernaryNullBranch(const std::string& t1, const std::string& t2,
+                                            const std::string& c1, const std::string& c2)
+{
+    if (c1 == "null" && t2.ends_with("@"))
+    {
+        return t2;
+    }
+    if (c2 == "null" && t1.ends_with("@"))
+    {
+        return t1;
+    }
+    return (c1 == "null" && c2 == "null") ? "null" : "";
+}
+
+/**
  * @brief Resolves ternary expression type.
  */
 static std::string ResolveTernaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
@@ -2586,12 +2608,18 @@ static std::string ResolveTernaryExpr(TSNode exprNode, const ExpressionTypeConte
         return t2;
     if (t2.empty())
         return t1;
+    if (t1 == "void" || t2 == "void")
+        return "";
 
     std::string c1 = CanonicalizeType(CleanBaseType(t1));
     std::string c2 = CanonicalizeType(CleanBaseType(t2));
     if (!c1.empty() && c1 == c2)
     {
         return (t1.ends_with("@") && t2.ends_with("@")) ? c1 + "@" : c1;
+    }
+    if (auto nullRes = ResolveTernaryNullBranch(t1, t2, c1, c2); !nullRes.empty())
+    {
+        return nullRes;
     }
     if (IsNumericPrimitive(c1) && IsNumericPrimitive(c2))
     {

@@ -18,15 +18,18 @@ TEST_CASE("QueryRegistry - Precompiled queries and thread-local cursor invariant
     const TSQuery* highlights = parser::QueryRegistry::GetHighlightsQuery();
     const TSQuery* locals = parser::QueryRegistry::GetLocalsQuery();
     const TSQuery* tags = parser::QueryRegistry::GetTagsQuery();
+    const TSQuery* binaryExpr = parser::QueryRegistry::GetBinaryExpressionQuery();
 
     CHECK(highlights != nullptr);
     CHECK(locals != nullptr);
     CHECK(tags != nullptr);
+    CHECK(binaryExpr != nullptr);
 
     // Invariant 2: Repeated calls return the exact same static pointer
     CHECK(parser::QueryRegistry::GetHighlightsQuery() == highlights);
     CHECK(parser::QueryRegistry::GetLocalsQuery() == locals);
     CHECK(parser::QueryRegistry::GetTagsQuery() == tags);
+    CHECK(parser::QueryRegistry::GetBinaryExpressionQuery() == binaryExpr);
 
     // Invariant 3: Thread-local cursor is non-null and stable per thread
     TSQueryCursor* cursor1 = parser::QueryRegistry::GetThreadLocalCursor();

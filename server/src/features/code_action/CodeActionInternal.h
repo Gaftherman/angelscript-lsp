@@ -125,6 +125,9 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
 
 void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions);
 
+void TryAddRepeatedConversionFix(const CodeActionRequest& request, TSNode rootNode,
+                                 std::vector<lsp::CodeAction>& actions);
+
 void TryAddGenerateFuncdefFix(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions);
 
 void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);

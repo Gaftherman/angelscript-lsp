@@ -133,6 +133,8 @@ TEST_SUITE("ExpressionTypeDeduction")
         CHECK(DeduceTypeInMain("void main() { true ? 1 : 2; }") == "int");
         CHECK(DeduceTypeInMain("void main() { true ? 1 : 2.5f; }") == "float");
         CHECK(DeduceTypeInMain("void main() { true ? 1.0f : 2.0; }") == "double");
+        CHECK(DeduceTypeInMain("class Foo {}; void main() { Foo@ f; true ? f : null; }") == "Foo@");
+        CHECK(DeduceTypeInMain("class Foo {}; void main() { Foo@ f; true ? null : f; }") == "Foo@");
     }
 
     TEST_CASE("Method and Property Chaining")

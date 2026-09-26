@@ -75,6 +75,12 @@ const TSQuery* QueryRegistry::GetTagsQuery()
     return s_query.get();
 }
 
+const TSQuery* QueryRegistry::GetBinaryExpressionQuery()
+{
+    static const UniqueTSQuery s_query = CompileQuery(queries::BINARY_EXPRESSION_QUERY);
+    return s_query.get();
+}
+
 TSQueryCursor* QueryRegistry::GetThreadLocalCursor()
 {
     thread_local CursorHolder t_holder;

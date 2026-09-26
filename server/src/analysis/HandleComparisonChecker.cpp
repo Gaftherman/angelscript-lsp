@@ -169,8 +169,10 @@ void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& c
     const ComparisonOperandsState operandsState{
         .isLeftNull = IsNullOperand(left, leftType),
         .isRightNull = IsNullOperand(right, rightType),
-        .isLeftHandle = IsHandleType(leftType, ctx.request.symbolTable),
-        .isRightHandle = IsHandleType(rightType, ctx.request.symbolTable),
+        .isLeftHandle = IsHandleType(leftType, ctx.request.symbolTable) ||
+                        std::string_view(ts_node_type(left)) == parser::nodes::ThisExpression,
+        .isRightHandle = IsHandleType(rightType, ctx.request.symbolTable) ||
+                         std::string_view(ts_node_type(right)) == parser::nodes::ThisExpression,
         .leftType = leftType,
     };
     const ComparisonDispatchContext dispatch{
