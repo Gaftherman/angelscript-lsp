@@ -7,6 +7,7 @@
 #include "utils/Utils.h"
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <iterator>
 
@@ -903,6 +904,30 @@ std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindSymbolsPtr(std::stri
     std::string_view search = CleanScope(qualifiedName);
     auto it = m_symbols.find(search);
     return it != m_symbols.end() ? it->second : nullptr;
+}
+
+std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindMemberSymbolPtr(std::string_view scope,
+                                                                            std::string_view member) const
+{
+    if (scope.empty() || member.empty())
+    {
+        return nullptr;
+    }
+    constexpr size_t kStackBufSize = 256;
+    const size_t totalLen = scope.size() + 2 + member.size();
+    if (totalLen < kStackBufSize)
+    {
+        char buf[kStackBufSize];
+        std::memcpy(buf, scope.data(), scope.size());
+        buf[scope.size()] = ':';
+        buf[scope.size() + 1] = ':';
+        std::memcpy(buf + scope.size() + 2, member.data(), member.size());
+        return FindSymbolsPtr(std::string_view(buf, totalLen));
+    }
+    std::string key;
+    key.reserve(totalLen);
+    key.append(scope).append("::").append(member);
+    return FindSymbolsPtr(std::string_view(key));
 }
 
 std::vector<Symbol> SymbolTable::FindSymbols(std::string_view qualifiedName) const

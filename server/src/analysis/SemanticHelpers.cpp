@@ -40,19 +40,24 @@ std::string CleanExpressionType(std::string_view typeName)
     return std::string(typeName);
 }
 
-std::string GetNodeText(TSNode node, std::string_view sourceCode)
+std::string_view GetNodeTextView(TSNode node, std::string_view sourceCode) noexcept
 {
     if (ts_node_is_null(node) || sourceCode.empty())
     {
-        return "";
+        return {};
     }
-    uint32_t start = ts_node_start_byte(node);
-    uint32_t end = ts_node_end_byte(node);
-    if (start < sourceCode.size() && end <= sourceCode.size() && start < end)
+    const uint32_t start = ts_node_start_byte(node);
+    const uint32_t end = ts_node_end_byte(node);
+    if (start < sourceCode.size() && end <= sourceCode.size() && start <= end)
     {
-        return std::string(sourceCode.substr(start, end - start));
+        return sourceCode.substr(start, end - start);
     }
-    return "";
+    return {};
+}
+
+std::string GetNodeText(TSNode node, std::string_view sourceCode)
+{
+    return std::string(GetNodeTextView(node, sourceCode));
 }
 
 bool IsReservedKeyword(const std::string& name)

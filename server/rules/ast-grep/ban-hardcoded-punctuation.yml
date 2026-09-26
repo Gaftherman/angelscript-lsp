@@ -1,0 +1,15 @@
+id: ban-hardcoded-punctuation
+message: "Do not compare GetNodeText against hardcoded punctuation. Use ts_node_type() or grammar constants instead."
+severity: error
+language: cpp
+files:
+  - "server/src/analysis/ComparisonOperatorChecker.cpp"
+rule:
+  any:
+    - pattern: "GetNodeText($$$ARGS) == $STR"
+    - pattern: "$STR == GetNodeText($$$ARGS)"
+    - pattern: "GetNodeTextView($$$ARGS) == $STR"
+    - pattern: "$STR == GetNodeTextView($$$ARGS)"
+constraints:
+  STR:
+    regex: '^"(@|\(|\)|\[|\]|\{|\}|;|:|,|\.|\+|-|\*|/|%|<|>|==|!=|<=|>=|&&|\|\||!|~|\^|&|\||\?|::|->)"$'

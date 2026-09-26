@@ -1,0 +1,12 @@
+id: no-node-text-allocation
+message: "Avoid heap allocation via GetNodeText. Use std::string_view GetNodeTextView instead."
+severity: error
+language: cpp
+files:
+  - "server/src/analysis/ComparisonOperatorChecker.cpp"
+rule:
+  any:
+    - pattern: "const std::string $VAR = GetNodeText($$$ARGS);"
+    - pattern: "std::string $VAR = GetNodeText($$$ARGS);"
+    - pattern: "const std::string $VAR = analysis::GetNodeText($$$ARGS);"
+    - pattern: "std::string $VAR = analysis::GetNodeText($$$ARGS);"

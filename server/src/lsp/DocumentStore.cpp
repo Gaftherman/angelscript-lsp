@@ -95,11 +95,6 @@ document::TreePtr DocumentStore::GetTree(const std::string& uri) const
     return document::MakeTreePtr(nullptr);
 }
 
-document::TreePtr DocumentStore::GetTreeCopy(const std::string& uri) const
-{
-    return GetTree(uri);
-}
-
 void DocumentStore::SetTree(const std::string& uri, document::TreePtr tree)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);

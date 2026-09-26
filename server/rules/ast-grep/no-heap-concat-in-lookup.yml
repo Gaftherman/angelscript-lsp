@@ -1,0 +1,16 @@
+id: no-heap-concat-in-lookup
+message: "Avoid dynamic string concatenation (+) in symbol table lookups. Use FindMemberSymbolPtr or non-allocating lookups."
+severity: error
+language: cpp
+files:
+  - "server/src/analysis/ComparisonOperatorChecker.cpp"
+rule:
+  any:
+    - pattern: "$TABLE.FindSymbolsPtr($A + $B)"
+    - pattern: "$TABLE.FindSymbolsPtr($A + $B + $C)"
+    - pattern: "$TABLE.FindSymbols($A + $B)"
+    - pattern: "$TABLE.FindSymbols($A + $B + $C)"
+    - pattern: "$TABLE.FindFirstSymbol($A + $B)"
+    - pattern: "$TABLE.FindFirstSymbol($A + $B + $C)"
+    - pattern: "$TABLE.HasSymbol($A + $B)"
+    - pattern: "$TABLE.HasSymbol($A + $B + $C)"

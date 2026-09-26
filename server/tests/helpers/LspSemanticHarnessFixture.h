@@ -84,6 +84,24 @@ class LspSemanticHarnessFixture
     void AssertDiagnosticsCount(const std::string& uri, size_t expectedCount);
 
     /**
+     * @brief Requests hover information at (line, col) for a document.
+     * @param[in] uri Virtual document URI key.
+     * @param[in] line 0-indexed line number.
+     * @param[in] col 0-indexed character offset.
+     * @return Hover response if available; std::nullopt otherwise.
+     */
+    std::optional<lsp::Hover> RequestHover(const std::string& uri, uint32_t line, uint32_t col);
+
+    /**
+     * @brief Requests completion candidates at (line, col) for a document.
+     * @param[in] uri Virtual document URI key.
+     * @param[in] line 0-indexed line number.
+     * @param[in] col 0-indexed character offset.
+     * @return Vector of completion items.
+     */
+    std::vector<lsp::CompletionItem> RequestCompletion(const std::string& uri, uint32_t line, uint32_t col);
+
+    /**
      * @brief Asserts that hovering at (line, col) produces a hover tooltip containing the expected signature.
      * @param[in] uri Virtual document URI key.
      * @param[in] line 0-indexed line number.

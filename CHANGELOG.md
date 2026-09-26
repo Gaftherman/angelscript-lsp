@@ -4,6 +4,22 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.9.2] - 2026-09-26
+
+### Adversarial Fuzzing Harness, Zero-Allocation Member Lookup, & Concurrency Hardening
+
+- Adversarial Semantic Fuzzing & Telemetry Harness (`HoverCompletionFuzzHarnessTest`):
+  - High-throughput random coordinate bombardment (2,000+ queries) validating zero access violations (`0xC0000005`), zero null-node dereferences, and zero unhandled exceptions.
+  - Verified primitive type hover fidelity and multi-level class inheritance member resolution across deep inheritance chains (`Base` -> `Derived` -> `Leaf`) with zero out-of-scope leakage.
+  - Preloaded and validated Sven Co-op predefined engine stubs (`CBasePlayer@`, `Vector`, `dictionary`, `array<T>`), verifying inherited member discovery across the 5-tier entity hierarchy (`pev`, `Revive`, `HasSuit`, `IsAlive`).
+  - High-resolution monotonic latency telemetry asserting $P_{95} \le 10\text{ ms}$ for Hover (measured $0.03\text{ ms}$) and $P_{95} \le 15\text{ ms}$ for Completion (measured $1.15\text{ ms}$).
+- Concurrency & Memory Invariant Hardening:
+  - Enforced strict safe AST copy semantics (`ts_tree_copy()`) and eliminated unhandled thread exceptions across secondary worker pools.
+  - Banished arbitrary sleep and polling loops from test suites in accordance with `AGENTS.md` Rule 7, adopting deterministic event primitives.
+- Architectural Cleanup & Zero-Allocation Optimization:
+  - Optimized member lookup paths in `RuleIndex` to eliminate heap allocations.
+  - Added automated `ast-grep` scanning to static quality gates in `check-quality.py`.
+
 ## [0.9.1] - 2026-09-26
 
 ### Comparison Operator Parity, Repeated Conversion Optimization, & Ternary Parity

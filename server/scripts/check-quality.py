@@ -34,7 +34,15 @@ def main():
     # 5. Cyclomatic & Cognitive Complexity (Lizard)
     run_step("Cyclomatic Complexity (Lizard)", "python -m lizard server/src/ -C 15 -L 70 -w")
 
-    # 6. Deep Static Analysis (Cppcheck)
+    # 6. AST Antipattern & Memory Allocation Gate (ast-grep)
+    if shutil.which("ast-grep"):
+        run_step("AST Antipattern Gate (ast-grep)", "ast-grep scan server/src/")
+    elif shutil.which("sg"):
+        run_step("AST Antipattern Gate (sg)", "sg scan server/src/")
+    else:
+        print("\n[SKIPPED] ast-grep/sg not found in PATH.")
+
+    # 7. Deep Static Analysis (Cppcheck)
     if shutil.which("cppcheck"):
         run_step(
             "Static Analysis (Cppcheck)",

@@ -2,7 +2,7 @@
   "name": "angelscript-gaftherman",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
