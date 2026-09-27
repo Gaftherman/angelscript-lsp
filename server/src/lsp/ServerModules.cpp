@@ -3,6 +3,7 @@
 #include "utils/IncludeResolver.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Utils.h"
+#include "utils/WorkspaceScan.h"
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -43,6 +44,21 @@ bool Server::PopulateModuleFolderMembers(const std::string& folder, ModuleView& 
         }
     }
 
+    if (view.memberPaths.empty())
+    {
+        angel_lsp::utils::ForEachWorkspaceFile(
+            {view.folderPath}, m_config.exclude, nullptr,
+            [&](const std::filesystem::directory_entry& entry)
+            {
+                const std::string pathStr = entry.path().string();
+                if (!m_config.info.fileExtension.empty() &&
+                    std::string_view(pathStr).ends_with(m_config.info.fileExtension))
+                {
+                    view.memberPaths.insert(angel_lsp::utils::IncludeResolver::NormalizeWalkedPath(entry.path()));
+                }
+            });
+    }
+
     return true;
 }
 
@@ -62,6 +78,17 @@ bool Server::PopulateModuleEntryClosure(const std::string& entry, ModuleView& vi
     {
         view.closurePaths.insert(member);
         view.memberPaths.insert(member);
+    }
+
+    if (view.closurePaths.empty())
+    {
+        const auto searchDirs = SearchDirectories();
+        for (const auto& member : angel_lsp::utils::IncludeResolver::ResolveAllIncludes(
+                 view.entryPath, *searchDirs, {}, IncludeAllowedRoots()))
+        {
+            view.closurePaths.insert(member);
+            view.memberPaths.insert(member);
+        }
     }
 
     view.closurePaths.insert(view.entryPath);
@@ -125,6 +152,65 @@ Server::ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& de
     return view;
 }
 
+namespace
+{
+void AppendUniqueDirectory(std::vector<std::string>& dirs, const std::string& dir, bool& added)
+{
+    if (dir.empty())
+    {
+        return;
+    }
+    std::error_code ec;
+    if (std::filesystem::is_directory(std::filesystem::path(dir), ec) &&
+        std::find(dirs.begin(), dirs.end(), dir) == dirs.end())
+    {
+        dirs.push_back(dir);
+        added = true;
+    }
+}
+} // namespace
+
+void Server::AugmentSearchDirectoriesFromModules()
+{
+    std::vector<std::string> searchDirs = *SearchDirectories();
+    bool addedSearchDir = false;
+
+    for (const auto& view : m_modules)
+    {
+        if (!view.folderPath.empty())
+        {
+            AppendUniqueDirectory(searchDirs, view.folderPath, addedSearchDir);
+        }
+        if (!view.entryPath.empty())
+        {
+            const std::filesystem::path ep(view.entryPath);
+            if (ep.has_parent_path())
+            {
+                AppendUniqueDirectory(searchDirs, ep.parent_path().string(), addedSearchDir);
+            }
+        }
+    }
+
+    for (const auto& wsRoot : WorkspaceRoots())
+    {
+        const std::string wsPath = angel_lsp::utils::UriToPath(wsRoot);
+        if (!wsPath.empty())
+        {
+            AppendUniqueDirectory(searchDirs, (std::filesystem::path(wsPath) / "maps").string(), addedSearchDir);
+        }
+    }
+
+    if (addedSearchDir)
+    {
+        std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+        m_searchDirectories = std::make_shared<const std::vector<std::string>>(std::move(searchDirs));
+        if (m_workspaceStore)
+        {
+            m_workspaceStore->SetSearchDirectories(*m_searchDirectories);
+        }
+    }
+}
+
 void Server::BuildModuleIndex()
 {
     std::vector<config::ServerConfig::ModuleDefinition> allDefs = m_config.modules;
@@ -155,6 +241,8 @@ void Server::BuildModuleIndex()
     }
 
     m_modules = std::move(resolved);
+
+    AugmentSearchDirectoriesFromModules();
     SyncModuleIndexSymbols();
 }
 
@@ -563,6 +651,51 @@ Server::ModuleContextFor(const std::string& uriStr) const
     return context;
 }
 
+void Server::AppendConfiguredPathAndParent(const std::string& raw, std::vector<std::string>& roots) const
+{
+    if (raw.empty())
+    {
+        return;
+    }
+    const std::string resolved = ResolveConfiguredPath(raw);
+    if (resolved.empty())
+    {
+        return;
+    }
+    roots.push_back(resolved);
+    const std::filesystem::path p(resolved);
+    if (p.has_parent_path())
+    {
+        roots.push_back(p.parent_path().string());
+    }
+}
+
+void Server::CollectConfiguredAllowedRoots(std::vector<std::string>& roots) const
+{
+    for (const auto& predefined : m_config.predefinedFiles)
+    {
+        AppendConfiguredPathAndParent(predefined, roots);
+    }
+
+    if (!m_config.activePredefined.empty() && m_config.activePredefined != "all")
+    {
+        AppendConfiguredPathAndParent(m_config.activePredefined, roots);
+    }
+
+    for (const auto& definition : m_config.modules)
+    {
+        AppendConfiguredPathAndParent(definition.entry, roots);
+        AppendConfiguredPathAndParent(definition.folder, roots);
+    }
+
+    AppendConfiguredPathAndParent(m_config.moduleEntryPoint, roots);
+
+    for (const auto& forceFile : m_config.forceIncludeFiles)
+    {
+        AppendConfiguredPathAndParent(forceFile, roots);
+    }
+}
+
 std::vector<std::string> Server::IncludeAllowedRoots() const
 {
     std::vector<std::string> roots;
@@ -571,25 +704,20 @@ std::vector<std::string> Server::IncludeAllowedRoots() const
     {
         std::string path = angel_lsp::utils::UriToPath(workspaceRoot);
         if (!path.empty())
-            roots.push_back(std::move(path));
+        {
+            roots.push_back(path);
+            const std::string norm = angel_lsp::utils::IncludeResolver::NormalizePath(path);
+            if (!norm.empty() && norm != path)
+            {
+                roots.push_back(norm);
+            }
+        }
     }
 
     const auto searchDirectories = SearchDirectories();
     roots.insert(roots.end(), searchDirectories->begin(), searchDirectories->end());
 
-    for (const auto& predefined : m_config.predefinedFiles)
-    {
-        std::error_code ec;
-        std::filesystem::path configured(predefined);
-        if (configured.has_parent_path())
-            roots.push_back(configured.parent_path().string());
-    }
-
-    for (const auto& definition : m_config.modules)
-    {
-        if (!definition.folder.empty())
-            roots.push_back(definition.folder);
-    }
+    CollectConfiguredAllowedRoots(roots);
 
     if (roots.empty())
     {
@@ -701,6 +829,21 @@ std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPat
     else
     {
         closure = m_includeGraph.GetModuleClosure(openPath);
+    }
+
+    const ModuleClaim claim = ClaimFor(openPath);
+    if (claim.owner != nullptr)
+    {
+        for (const auto& member : claim.owner->closurePaths)
+        {
+            if (!PathsAreSameFile(member, openPath))
+                closure.push_back(member);
+        }
+        for (const auto& member : claim.owner->memberPaths)
+        {
+            if (!PathsAreSameFile(member, openPath))
+                closure.push_back(member);
+        }
     }
 
     for (const auto& forceFile : m_config.forceIncludeFiles)

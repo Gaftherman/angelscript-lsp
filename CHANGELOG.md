@@ -2,6 +2,25 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.12] - 2026-09-27
+
+### Symlink / Junction Workspace Resolution, Module Closures, & Path Variable Expansion
+
+- Directory Symlink & Junction Traversal (`WorkspaceScan`):
+  - Enabled `std::filesystem::directory_options::follow_directory_symlink` in `recursive_directory_iterator` with a 32-level depth guard and canonical visited symlink set to prevent infinite loops.
+  - Transparently indexes symlinked and NTFS junction folders (such as `maps/hcas` or `maps/ins2` pointing to external directories or secondary drives).
+- Configured Path Expansion & Allowed Include Roots:
+  - Resolved `${workspaceFolder}` and path variables across all module definitions (`entry` and `folder`), `activePredefined`, and `forceIncludeFiles`.
+  - Expanded `IncludeAllowedRoots` to authorize configured stubs, external module entry points, parent folders, and workspace roots, allowing include resolution and diagnostics across cross-drive symlink boundaries without requiring manual root overrides.
+- Automatic Module Member & Entry Closure Discovery:
+  - Added direct filesystem scan fallbacks in `PopulateModuleFolderMembers` and `PopulateModuleEntryClosure` to ensure all script members and include chains are indexed even before initial workspace scan events settle.
+  - Automatically incorporates the claiming module's member and entry closure paths in `ComputeModuleClosure`, so opening derived/weapon scripts immediately resolves base classes and utilities without requiring users to open base files manually first.
+  - Automatically augments search directories with module entry directories, module folders, and workspace `maps/`.
+- Client-Side Path Expansion:
+  - Added support for `${workspaceFolder}` expansion in `forceIncludeFiles` within the VS Code client configuration pipeline.
+- Cross-Platform Integration Testing:
+  - Added regression test `Server - Symlinked module entry and active predefined with workspaceFolder` asserting zero undeclared identifier or unresolved type errors when resolving derived weapon classes through symlinked map modules and active predefined stubs.
+
 ## [0.9.11] - 2026-09-27
 
 ### Predefined Stub Lifecycle, Hover Resilience, & Configured String Type

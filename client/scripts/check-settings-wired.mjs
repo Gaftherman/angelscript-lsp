@@ -1,10 +1,8 @@
 // Every setting this extension declares must actually reach the server.
 //
 // The extension passes configuration as command-line arguments, so a setting is only live if
-// buildServerArgs() explicitly emits a flag for it. Nothing enforced that, and three settings drifted
-// out of the wiring while staying in package.json, documented and inert:
-// `features.codeLens`, `features.onTypeFormatting` and `engine.profile` - the last of which is how a
-// user selects the Sven Co-op / Urho3D / OpenXRay dialect.
+// buildServerArgs() explicitly emits a flag for it. Nothing enforced that, and settings can drift
+// out of the wiring while staying in package.json, documented and inert.
 //
 // Declaring a setting the server never hears is worse than not having it: the UI promises a control
 // that does nothing. This runs as part of `npm run pretest`, which CI already invokes.
@@ -44,7 +42,7 @@ for (const key of declared) {
         continue;
     }
 
-    // `engine.X` booleans go through ENGINE_PROPERTIES; `engine.profile` is an enum with its own line.
+    // `engine.X` booleans go through ENGINE_PROPERTIES.
     if (name.startsWith('engine.')) {
         const property = name.slice('engine.'.length);
         if (!extensionSource.includes(`'${property}'`) && !extensionSource.includes(`engine.${property}`)) {

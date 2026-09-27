@@ -952,13 +952,6 @@ export function buildServerArgs(): string[] {
         args.push(`--engine-property=compilerWarnings=${compilerWarnings}`);
     }
 
-    // The host dialect. An enum rather than a boolean, so it is not one of ENGINE_PROPERTIES above
-    // and needs its own line; without it the setting was declared, documented and inert.
-    const engineProfile = config.get<string>('engine.profile', 'none').trim();
-    if (engineProfile.length > 0) {
-        args.push(`--engine-profile=${engineProfile}`);
-    }
-
     // Where a block's opening brace goes. Only "kr" moves it; anything else, a typo included, is
     // the Allman default, so a misspelling reformats nothing unexpectedly. A list or a lambda body
     // keeps its brace on the line under either style - that is not a matter of taste.
@@ -1307,7 +1300,7 @@ export async function activate(context: ExtensionContext) {
             if (unchanged) {
                 // Nothing on the command line moved, so the running server can be told rather than
                 // replaced. This is the path every hot-reloadable setting takes: the active stub,
-                // the engine profile, the search directories, the brace style.
+                // the search directories, the brace style.
                 await pushConfiguration();
                 return;
             }
@@ -1405,6 +1398,7 @@ function expandConfiguredPaths(settings: unknown): unknown {
 
     expandList('searchDirectories');
     expandList('predefinedFiles');
+    expandList('forceIncludeFiles');
 
     const expandOne = (key: string) => {
         const value = copy[key];

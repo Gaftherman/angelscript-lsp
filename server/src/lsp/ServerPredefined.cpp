@@ -26,6 +26,11 @@ Server::ResolveTargetEngineProfile(const angel_lsp::utils::StopFlag& stopToken)
     {
         return std::nullopt;
     }
+
+    LogWarning(fmt::format("Built-in engine profiles are deprecated. Profile '{}' was requested, but predefined stub "
+                           "files (.as.predefined) are recommended.",
+                           profileName));
+
     auto kind = angel_lsp::analysis::ParseEngineProfileKind(profileName);
 
     if (!profileName.empty() && !angel_lsp::analysis::IsKnownEngineProfileName(profileName))

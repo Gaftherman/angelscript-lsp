@@ -63,6 +63,7 @@ class WorkspaceIncludeGraph
         FileReader fileReader = {};
         std::vector<std::string> excludeGlobs = {};
         std::string implicitExtension = {};
+        std::vector<std::string> allowedRoots = {};
     };
 
     /**
@@ -76,6 +77,7 @@ class WorkspaceIncludeGraph
         std::function<bool()> shouldStop = {};
         FileReader fileReader = {};
         std::string implicitExtension = {};
+        std::vector<std::string> allowedRoots = {};
     };
 
     /**
