@@ -176,6 +176,15 @@ Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& s
     BuildDiagnosticSeverityOverrides();
 
     InitHandles();
+    InitDomainServices();
+}
+
+void Server::InitDomainServices()
+{
+    m_workspaceStore = std::make_unique<WorkspaceStateStore>();
+    m_workspaceStore->SetSearchDirectories(m_config.searchDirectories);
+    m_workspaceStore->SetEngineProfile(m_config.engineProfile);
+    m_workspaceStore->SetDefinedWordsFrom(std::string(), m_config.definedWords);
 
     m_analysisScheduler = std::make_unique<angel_lsp::AnalysisScheduler>(
         [this](angel_lsp::AnalyzeRequest req)
@@ -188,12 +197,31 @@ Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& s
                              .generation = req.generation,
                              .configRevision = req.configRevision});
         });
+
+    m_diagnosticsPipeline = std::make_unique<DiagnosticsPipeline>(m_analysisScheduler.get());
+    m_diagnosticsPipeline->SetDiagnosticSeverities(m_diagnosticSeverities);
+
+    m_sessionCoordinator = std::make_unique<LspSessionCoordinator>();
+    m_sessionCoordinator->Start();
+    m_sessionCoordinator->SetFormatBraceStyleKR(BraceStyleIsKR(m_config.format.braceStyle));
+    if (!m_config.features.enablePredefinedLoader)
+    {
+        m_sessionCoordinator->SetPredefinedReady(true);
+    }
 }
 
 Server::~Server()
 {
     m_running = false;
+    if (m_sessionCoordinator)
+    {
+        m_sessionCoordinator->RequestShutdown();
+    }
 
+    if (m_diagnosticsPipeline)
+    {
+        m_diagnosticsPipeline->StopScheduler();
+    }
     if (m_analysisScheduler)
     {
         m_analysisScheduler->Stop();
@@ -205,6 +233,10 @@ Server::~Server()
 
     m_documentStore.Clear();
     m_predefinedManager.Clear();
+    if (m_workspaceStore)
+    {
+        m_workspaceStore->Clear();
+    }
 }
 
 std::vector<std::string> Server::WorkspaceRoots() const
@@ -236,6 +268,11 @@ bool Server::SetDefinedWordsFrom(const std::string& source, std::vector<std::str
     auto merged = std::make_shared<ankerl::unordered_dense::set<std::string>>();
 
     std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+
+    if (m_workspaceStore)
+    {
+        m_workspaceStore->SetDefinedWordsFrom(source, words);
+    }
 
     if (words.empty())
         m_definedWordsBySource.erase(source);
@@ -787,6 +824,11 @@ void Server::BuildDiagnosticSeverityOverrides()
     if (!m_diagnosticSeverities.empty())
     {
         LogInfo(fmt::format("Diagnostic severity overrides active: {}", m_diagnosticSeverities.size()));
+    }
+
+    if (m_diagnosticsPipeline)
+    {
+        m_diagnosticsPipeline->SetDiagnosticSeverities(m_diagnosticSeverities);
     }
 
     // Engine options are reported only when they differ from AngelScript's own defaults. They

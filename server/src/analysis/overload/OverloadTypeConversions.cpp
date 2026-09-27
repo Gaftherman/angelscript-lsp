@@ -1,0 +1,329 @@
+#include "analysis/overload/OverloadTypeConversions.h"
+#include "analysis/SemanticHelpers.h"
+
+#include <algorithm>
+#include <cctype>
+#include <string_view>
+#include <vector>
+
+namespace angel_lsp::analysis
+{
+namespace
+{
+std::string_view TrimWhitespace(std::string_view s)
+{
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r' || s.front() == '\n'))
+    {
+        s.remove_prefix(1);
+    }
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\n'))
+    {
+        s.remove_suffix(1);
+    }
+    return s;
+}
+
+bool StripReferenceSuffix(std::string& s)
+{
+    static constexpr std::string_view kRefSuffixes[] = {"&in", "&out", "&inout", "& in", "& out", "& inout"};
+    for (const auto& suffix : kRefSuffixes)
+    {
+        if (s.ends_with(suffix))
+        {
+            const size_t amp = s.rfind('&');
+            if (amp != std::string::npos)
+            {
+                s.resize(amp);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+} // namespace
+
+std::string StripTypeDecorations(std::string result)
+{
+    bool modified = true;
+    while (modified)
+    {
+        modified = false;
+        while (!result.empty() &&
+               (result.back() == '@' || result.back() == '&' || result.back() == ' ' || result.back() == '\t'))
+        {
+            result.pop_back();
+            modified = true;
+        }
+        if (result.ends_with(" const"))
+        {
+            result.resize(result.size() - 6);
+            modified = true;
+        }
+        if (StripReferenceSuffix(result))
+        {
+            modified = true;
+        }
+    }
+    return result;
+}
+
+std::string DesugarArrayBrackets(std::string result)
+{
+    while (result.ends_with("[]"))
+    {
+        result = "array<" + result.substr(0, result.size() - 2) + ">";
+    }
+    return result;
+}
+
+std::string NormalizeType(std::string_view typeName)
+{
+    typeName = TrimWhitespace(typeName);
+    if (typeName.starts_with("const "))
+    {
+        typeName.remove_prefix(6);
+    }
+    typeName = TrimWhitespace(typeName);
+
+    std::string result = StripTypeDecorations(std::string(typeName));
+    while (!result.empty() && (result.back() == ' ' || result.back() == '\t'))
+    {
+        result.pop_back();
+    }
+
+    result = CanonicalizeType(result);
+    return DesugarArrayBrackets(std::move(result));
+}
+
+bool HasHandleModifier(std::string_view typeName)
+{
+    return typeName.find('@') != std::string_view::npos;
+}
+
+bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
+{
+    const auto toSyms = symbolTable.FindSymbolsPtr(toType + "::" + toType);
+    if (!toSyms)
+    {
+        return false;
+    }
+    for (const auto& sym : *toSyms)
+    {
+        if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
+        {
+            continue;
+        }
+        const auto& sig = sym.GetFunction();
+        if (sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.parameters.empty())
+        {
+            continue;
+        }
+        if (NormalizeType(sig.parameters[0].typeName) != fromType)
+        {
+            continue;
+        }
+        const bool remainingDefault = std::all_of(sig.parameters.begin() + 1, sig.parameters.end(),
+                                                  [](const auto& p) { return !p.defaultValue.empty(); });
+        if (remainingDefault)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool HasConversionMethod(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
+{
+    for (const char* opName : {"opImplConv", "opImplCast"})
+    {
+        const auto opSyms = symbolTable.FindSymbolsPtr(fromType + "::" + opName);
+        if (!opSyms)
+        {
+            continue;
+        }
+        for (const auto& sym : *opSyms)
+        {
+            if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+            {
+                if (NormalizeType(sym.GetFunction().returnType) == toType)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+bool HasUserConversion(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
+{
+    if (fromType.empty() || toType.empty())
+    {
+        return false;
+    }
+    return HasConvertingConstructor(fromType, toType, symbolTable) ||
+           HasConversionMethod(fromType, toType, symbolTable);
+}
+
+constexpr int k_maxTypedefDepth = 8;
+
+std::string UnwrapTypedef(const std::string& typeName, const SymbolTable& symbolTable, int depth)
+{
+    std::string current = NormalizeType(typeName);
+    const auto syms = symbolTable.FindSymbolsPtr(current);
+    if (syms)
+    {
+        for (const auto& s : *syms)
+        {
+            if (s.type == SymbolType::Typedef && std::holds_alternative<TypedefSignature>(s.signature))
+            {
+                return NormalizeType(s.GetTypedef().baseType);
+            }
+        }
+    }
+
+    if (depth >= k_maxTypedefDepth)
+    {
+        return current;
+    }
+
+    const size_t open = current.find('<');
+    if (open == std::string::npos || open == 0 || current.back() != '>')
+    {
+        return current;
+    }
+
+    std::string rebuilt = current.substr(0, open) + "<";
+    const std::string inner = current.substr(open + 1, current.size() - open - 2);
+    bool first = true;
+    for (const auto& argument : SplitTemplateArguments(inner))
+    {
+        if (!first)
+        {
+            rebuilt += ", ";
+        }
+        first = false;
+        rebuilt += UnwrapTypedef(argument, symbolTable, depth + 1);
+    }
+    return rebuilt + ">";
+}
+
+bool IsIntegerType(const std::string& typeName)
+{
+    return IsIntegerPrimitive(NormalizeType(typeName));
+}
+
+bool IsUnsignedInteger(const std::string& typeName)
+{
+    const std::string normalized = NormalizeType(typeName);
+    return normalized == "uint" || normalized == "uint8" || normalized == "uint16" || normalized == "uint32" ||
+           normalized == "uint64";
+}
+
+bool IsFloatingPointType(const std::string& typeName)
+{
+    return IsFloatingPointPrimitive(NormalizeType(typeName));
+}
+
+bool IsInTypeList(std::string_view target, std::initializer_list<std::string_view> validTypes)
+{
+    return std::find(validTypes.begin(), validTypes.end(), target) != validTypes.end();
+}
+
+bool CheckWideningTarget(std::string_view from, std::string_view to)
+{
+    if (from == "int8")
+    {
+        return IsInTypeList(
+            to, {"int16", "int", "int32", "int64", "uint8", "uint16", "uint", "uint32", "uint64", "float", "double"});
+    }
+    if (from == "uint8")
+    {
+        return IsInTypeList(to, {"uint16", "int16", "uint", "int", "uint64", "int64", "float", "double"});
+    }
+    if (from == "int16")
+    {
+        return IsInTypeList(to, {"int", "int32", "int64", "uint16", "uint", "uint32", "uint64", "float", "double"});
+    }
+    if (from == "uint16")
+    {
+        return IsInTypeList(to, {"uint", "int", "uint64", "int64", "float", "double"});
+    }
+    if (from == "int" || from == "int32")
+    {
+        return IsInTypeList(to, {"int32", "int", "int64", "uint", "uint32", "uint64", "float", "double"});
+    }
+    if (from == "uint" || from == "uint32")
+    {
+        return IsInTypeList(to, {"uint32", "uint", "uint64", "int", "int32", "int64", "float", "double"});
+    }
+    if (from == "int64" || from == "uint64")
+    {
+        return IsInTypeList(to, {"int64", "uint64", "double"});
+    }
+    return from == "float" && to == "double";
+}
+
+bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType)
+{
+    const std::string from = NormalizeType(fromType);
+    const std::string to = NormalizeType(toType);
+
+    if (from == to || from == "bool" || to == "bool")
+    {
+        return false;
+    }
+
+    return CheckWideningTarget(from, to);
+}
+
+bool IsPrimitiveNarrowing(const std::string& fromType, const std::string& toType)
+{
+    const std::string from = NormalizeType(fromType);
+    const std::string to = NormalizeType(toType);
+
+    if (from == to)
+    {
+        return false;
+    }
+
+    const auto isNumeric = [](const std::string& t) { return IsNumericPrimitive(t); };
+
+    if (isNumeric(from) && isNumeric(to))
+    {
+        return !IsPrimitiveWidening(from, to);
+    }
+    return false;
+}
+
+bool HasConstModifier(std::string_view typeName)
+{
+    return typeName.starts_with("const ") || typeName.ends_with(" const") ||
+           typeName.find(" const ") != std::string_view::npos;
+}
+
+bool IsWildcardParameter(const ParameterInformation& param)
+{
+    return param.typeName == "?" || param.typeName == "any" || param.rawText.find('?') != std::string::npos;
+}
+
+bool IsOutParameter(const ParameterInformation& param)
+{
+    return param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut ||
+           param.rawText.find("&out") != std::string::npos || param.rawText.find("&inout") != std::string::npos ||
+           param.typeName.find("&out") != std::string::npos || param.typeName.find("&inout") != std::string::npos ||
+           param.typeName.find("& out") != std::string::npos;
+}
+
+bool IsContainerParameter(const ParameterInformation& param)
+{
+    return param.typeName.find("array<") != std::string::npos || param.rawText.find("array<") != std::string::npos ||
+           param.typeName.find("vector<") != std::string::npos;
+}
+
+bool IsSameType(const std::string& a, const std::string& b)
+{
+    return !a.empty() && (a == b || LastScopeSegment(a) == LastScopeSegment(b));
+}
+
+} // namespace angel_lsp::analysis

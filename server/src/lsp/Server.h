@@ -12,9 +12,12 @@
 #include "features/formatting/FormattingHandler.h"
 #include "i18n/i18n.h"
 #include "lsp/AnalysisScheduler.h"
+#include "lsp/DiagnosticsPipeline.h"
 #include "lsp/DocumentStore.h"
+#include "lsp/LspSessionCoordinator.h"
 #include "lsp/ModuleIndex.h"
 #include "lsp/PredefinedStubManager.h"
+#include "lsp/WorkspaceStateStore.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/LspLogger.h"
 #include "utils/PositionEncoding.h"
@@ -281,6 +284,15 @@ class Server
     std::string m_workspaceProgressToken;
     unsigned m_workspaceProgressCounter = 0;
 
+    std::unique_ptr<WorkspaceStateStore> m_workspaceStore;
+    std::unique_ptr<DiagnosticsPipeline> m_diagnosticsPipeline;
+    std::unique_ptr<LspSessionCoordinator> m_sessionCoordinator;
+
+    /**
+     * @brief Initializes decoupled domain services (WorkspaceStateStore, DiagnosticsPipeline, LspSessionCoordinator).
+     */
+    void InitDomainServices();
+
     /**
      * @brief Returns the document text to be parsed and analyzed.
      */
@@ -342,10 +354,74 @@ class Server
      */
     void DrainQueue()
     {
-        if (m_analysisScheduler)
+        if (m_diagnosticsPipeline)
+        {
+            m_diagnosticsPipeline->DrainQueue();
+        }
+        else if (m_analysisScheduler)
         {
             m_analysisScheduler->DrainQueue();
         }
+    }
+
+    /**
+     * @brief Gets reference to the decoupled WorkspaceStateStore domain service.
+     */
+    [[nodiscard]] WorkspaceStateStore& GetWorkspaceStore() noexcept
+    {
+        return *m_workspaceStore;
+    }
+
+    /**
+     * @brief Gets const reference to the decoupled WorkspaceStateStore domain service.
+     */
+    [[nodiscard]] const WorkspaceStateStore& GetWorkspaceStore() const noexcept
+    {
+        return *m_workspaceStore;
+    }
+
+    /**
+     * @brief Gets reference to the decoupled DiagnosticsPipeline domain service.
+     */
+    [[nodiscard]] DiagnosticsPipeline& GetDiagnosticsPipeline() noexcept
+    {
+        return *m_diagnosticsPipeline;
+    }
+
+    /**
+     * @brief Gets const reference to the decoupled DiagnosticsPipeline domain service.
+     */
+    [[nodiscard]] const DiagnosticsPipeline& GetDiagnosticsPipeline() const noexcept
+    {
+        return *m_diagnosticsPipeline;
+    }
+
+    /**
+     * @brief Gets reference to the decoupled LspSessionCoordinator domain service.
+     */
+    [[nodiscard]] LspSessionCoordinator& GetSessionCoordinator() noexcept
+    {
+        return *m_sessionCoordinator;
+    }
+
+    /**
+     * @brief Gets const reference to the decoupled LspSessionCoordinator domain service.
+     */
+    [[nodiscard]] const LspSessionCoordinator& GetSessionCoordinator() const noexcept
+    {
+        return *m_sessionCoordinator;
+    }
+
+    /**
+     * @brief Creates an immutable snapshot of current workspace configuration and preprocessor state.
+     */
+    [[nodiscard]] WorkspaceSnapshot CreateWorkspaceSnapshot() const
+    {
+        if (m_workspaceStore)
+        {
+            return m_workspaceStore->CreateSnapshot();
+        }
+        return WorkspaceSnapshot{m_searchDirectories, WorkspaceRoots(), DefinedWords()};
     }
 
     /**

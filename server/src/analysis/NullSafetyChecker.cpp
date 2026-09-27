@@ -6,6 +6,7 @@
 #include "analysis/NullSafetyDecl.h"
 #include "analysis/NullSafetyExpr.h"
 #include "analysis/NullSafetyParam.h"
+#include "analysis/ast/SemanticNodes.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
 #include <string>
@@ -49,21 +50,10 @@ void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx, int de
 
 void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx, int depth)
 {
-    TSNode cond = parser::GetChildByField(stmt, parser::fields::Condition);
-    if (ts_node_is_null(cond))
-    {
-        cond = ts_node_named_child(stmt, 0);
-    }
-    TSNode conseq = parser::GetChildByField(stmt, parser::fields::Consequence);
-    if (ts_node_is_null(conseq) && ts_node_named_child_count(stmt) > 1)
-    {
-        conseq = ts_node_named_child(stmt, 1);
-    }
-    TSNode alt = parser::GetChildByField(stmt, parser::fields::Alternative);
-    if (ts_node_is_null(alt) && ts_node_named_child_count(stmt) > 2)
-    {
-        alt = ts_node_named_child(stmt, 2);
-    }
+    const ast::IfStatementView ifView(stmt, ctx.sourceCode);
+    const TSNode cond = ifView.Condition();
+    const TSNode conseq = ifView.Consequence();
+    const TSNode alt = ifView.Alternative();
 
     CheckNullExpression(cond, state, ctx, depth + 1);
     std::vector<NullAssertion> posAssertions;
@@ -77,7 +67,7 @@ void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx, int depth
     FlowState elseState = state;
     ApplyAssertions(elseState, negAssertions);
 
-    if (!ts_node_is_null(alt))
+    if (ifView.HasAlternative())
     {
         CheckStatement(alt, elseState, ctx, depth + 1);
         if (thenState.isTerminated && elseState.isTerminated)
@@ -140,7 +130,8 @@ void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx, int de
     }
     else if (stmtType == parser::nodes::ReturnStatement)
     {
-        CheckNullExpression(parser::GetChildByField(stmt, parser::fields::Value), state, ctx, depth + 1);
+        const ast::ReturnStatementView retView(stmt, ctx.sourceCode);
+        CheckNullExpression(retView.Value(), state, ctx, depth + 1);
         state.isTerminated = true;
     }
 }

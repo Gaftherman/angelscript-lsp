@@ -5,6 +5,7 @@
 #include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/ast/SemanticNodes.h"
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
@@ -52,7 +53,8 @@ void TrimString(std::string& s)
  */
 uint32_t CountArguments(TSNode argumentList)
 {
-    return static_cast<uint32_t>(CountCallArguments(argumentList));
+    const ast::CallExpressionView callView(argumentList, "");
+    return callView.ArgumentCount();
 }
 
 /**
@@ -62,14 +64,8 @@ uint32_t CountArguments(TSNode argumentList)
  */
 std::vector<TSNode> GetArgumentNodes(TSNode argumentList)
 {
-    auto callArgs = ExtractCallArguments(argumentList, "");
-    std::vector<TSNode> argNodes;
-    argNodes.reserve(callArgs.size());
-    for (const auto& a : callArgs)
-    {
-        argNodes.push_back(a.exprNode);
-    }
-    return argNodes;
+    const ast::CallExpressionView callView(argumentList, "");
+    return callView.ArgumentNodes();
 }
 
 /**
@@ -80,14 +76,8 @@ std::vector<TSNode> GetArgumentNodes(TSNode argumentList)
  */
 std::vector<std::string> GetArgumentNames(TSNode argumentList, std::string_view sourceCode)
 {
-    auto callArgs = ExtractCallArguments(argumentList, sourceCode);
-    std::vector<std::string> argNames;
-    argNames.reserve(callArgs.size());
-    for (const auto& a : callArgs)
-    {
-        argNames.push_back(a.name);
-    }
-    return argNames;
+    const ast::CallExpressionView callView(argumentList, sourceCode);
+    return callView.ArgumentNames();
 }
 
 /** @brief What one declaration will accept, in argument counts. */
@@ -1554,8 +1544,9 @@ bool CheckArgumentCount(const CalleeResolution& calleeRes, uint32_t argumentCoun
  */
 void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode callee = parser::GetChildByField(node, parser::fields::Function);
-    TSNode arguments = parser::GetChildByField(node, parser::fields::Arguments);
+    const ast::CallExpressionView callView(node, request.sourceCode);
+    const TSNode callee = callView.Callee();
+    const TSNode arguments = callView.ArgumentList();
     if (ts_node_is_null(callee) || ts_node_is_null(arguments))
     {
         return;
