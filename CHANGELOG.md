@@ -2,6 +2,22 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.11] - 2026-09-27
+
+### Predefined Stub Lifecycle, Hover Resilience, & Configured String Type
+
+- Predefined Stub Open Fast-Path & Hover Resilience:
+  - Bypassed heavy Tree-sitter parsing on the main thread when opening pre-indexed `.as.predefined` stubs whose text matches disk content.
+  - Implemented `TextContentMatchesIgnoringLineEndings` to guarantee accurate content equivalence across mixed CRLF/LF environments.
+  - Prevented clearing document symbols from `m_symbolTable` during `didOpen`, ensuring host symbols remain fully active and hover continues functioning without interruption across all `.as` files.
+- Windows URI Normalization & Percent-Decoding:
+  - Integrated `UrlDecode` into `UriToPath` and `CanonicalPathFromUri` to decode `%3A` in Windows drive letters, aligning LSP client URIs with canonical paths generated during background filesystem scans.
+  - Eliminated symbol leaks when stubs are re-claimed under normalized URI representations in `PredefinedStubManager`.
+- Predefined Stub Consolidation:
+  - Consolidated Sven Co-op API definitions into `predefined/sven.as.predefined` (1.26 MB) and removed legacy incomplete stub.
+- Configured String Type in Overload Conversions:
+  - Parameterized `HasConvertingConstructor` and `CheckUserConversion` with `stringTypeName`, respecting user-configured string types (`String` or custom alias) across overload resolution.
+
 ## [0.9.9.1] - 2026-09-27
 
 ### Sven Co-op & Meta API v2 Overload Resolution, Ternary Casts, & Conversions

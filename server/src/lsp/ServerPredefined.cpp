@@ -320,10 +320,7 @@ void Server::ReportPredefinedSelection(const std::vector<std::string>& discovere
 bool Server::UnloadPredefinedUri(std::string uriStr)
 {
     std::string path;
-    if (!m_predefinedManager.UnloadUri(uriStr, &path))
-    {
-        return false;
-    }
+    const bool unloaded = m_predefinedManager.UnloadUri(uriStr, &path);
 
     m_symbolTable.ClearDocumentSymbols(uriStr);
     m_scopeIndex.ClearDocument(uriStr);
@@ -334,7 +331,7 @@ bool Server::UnloadPredefinedUri(std::string uriStr)
         SetDefinedWordsFrom(path, {});
     }
 
-    return true;
+    return unloaded;
 }
 
 bool Server::PredefinedStubContributes(const std::string& uriStr) const

@@ -910,11 +910,11 @@ void Server::LogNonDefaultEngineProperties() const
 
 std::string Server::CanonicalPathFromUri(const std::string& uriStr)
 {
-    const lsp::Uri uri = lsp::Uri::parse(uriStr);
-    if (!uri.isValid() || !uri.isFileUri())
+    const std::string path = angel_lsp::utils::UriToPath(uriStr);
+    if (path.empty())
         return "";
 
-    return angel_lsp::utils::IncludeResolver::NormalizePath(uri.fsPath());
+    return angel_lsp::utils::IncludeResolver::NormalizePath(path);
 }
 
 std::string Server::DocumentKey(const std::string& uriStr)

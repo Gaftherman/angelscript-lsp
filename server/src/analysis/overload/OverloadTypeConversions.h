@@ -56,7 +56,8 @@ struct UserConversionMatch
  * @param[in] symbolTable Symbol table for constructor lookup.
  * @return True if converting constructor is available.
  */
-bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable);
+bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable,
+                              std::string_view stringTypeName = "string");
 
 /**
  * @brief Checks if a type defines an implicit conversion method (`opImplConv` or `opImplCast`).
@@ -82,19 +83,22 @@ bool HasConversionMethod(const std::string& fromType, const std::string& toType,
  * @param[in] fromType Source type.
  * @param[in] toType Destination type.
  * @param[in] symbolTable Symbol table for resolution.
+ * @param[in] stringTypeName Configured string type name.
  * @return Conversion match information.
  */
 UserConversionMatch CheckUserConversion(const std::string& fromType, const std::string& toType,
-                                        const SymbolTable& symbolTable);
+                                        const SymbolTable& symbolTable, std::string_view stringTypeName = "string");
 
 /**
  * @brief Checks if a user-defined conversion exists between two types.
  * @param[in] fromType Source type.
  * @param[in] toType Destination type.
  * @param[in] symbolTable Symbol table for resolution.
+ * @param[in] stringTypeName Configured string type name.
  * @return True if converting constructor or conversion method exists.
  */
-bool HasUserConversion(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable);
+bool HasUserConversion(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable,
+                       std::string_view stringTypeName = "string");
 
 /**
  * @brief Recursively unwraps typedef aliases to their canonical underlying types.

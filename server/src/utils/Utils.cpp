@@ -11,40 +11,6 @@
 
 namespace angel_lsp::utils
 {
-std::string UriToPath(const std::string& uriStr)
-{
-    if (uriStr.rfind("file://", 0) == 0)
-    {
-        const lsp::Uri uri = lsp::Uri::parse(uriStr);
-        if (uri.isValid() && uri.isFileUri())
-        {
-            return uri.fsPath();
-        }
-        std::string s = uriStr.substr(7);
-#if defined(_WIN32)
-        if (!s.empty() && s[0] == '/')
-            s = s.substr(1);
-#endif
-        return s;
-    }
-#if defined(_WIN32)
-    if (!uriStr.empty() && uriStr[0] == '/')
-        return uriStr.substr(1);
-#endif
-    return uriStr;
-}
-
-std::string PathToUri(const std::string& filePath)
-{
-    std::string normalized = filePath;
-    std::replace(normalized.begin(), normalized.end(), '\\', '/');
-    if (normalized.empty())
-        return "file:///";
-    if (normalized[0] == '/')
-        return "file://" + normalized;
-    return "file:///" + normalized;
-}
-
 std::string UrlDecode(std::string_view in)
 {
     std::string out;
@@ -75,6 +41,74 @@ std::string UrlDecode(std::string_view in)
         out.push_back(in[i]);
     }
     return out;
+}
+
+bool TextContentMatchesIgnoringLineEndings(std::string_view a, std::string_view b) noexcept
+{
+    size_t i = 0;
+    size_t j = 0;
+    while (i < a.size() && j < b.size())
+    {
+        if (a[i] == '\r')
+        {
+            ++i;
+            continue;
+        }
+        if (b[j] == '\r')
+        {
+            ++j;
+            continue;
+        }
+        if (a[i] != b[j])
+        {
+            return false;
+        }
+        ++i;
+        ++j;
+    }
+    while (i < a.size() && a[i] == '\r')
+    {
+        ++i;
+    }
+    while (j < b.size() && b[j] == '\r')
+    {
+        ++j;
+    }
+    return i == a.size() && j == b.size();
+}
+
+std::string UriToPath(const std::string& uriStr)
+{
+    if (uriStr.rfind("file://", 0) == 0)
+    {
+        const lsp::Uri uri = lsp::Uri::parse(uriStr);
+        if (uri.isValid() && uri.isFileUri())
+        {
+            return UrlDecode(uri.fsPath());
+        }
+        std::string s = UrlDecode(uriStr.substr(7));
+#if defined(_WIN32)
+        if (!s.empty() && s[0] == '/')
+            s = s.substr(1);
+#endif
+        return s;
+    }
+#if defined(_WIN32)
+    if (!uriStr.empty() && uriStr[0] == '/')
+        return UrlDecode(uriStr.substr(1));
+#endif
+    return UrlDecode(uriStr);
+}
+
+std::string PathToUri(const std::string& filePath)
+{
+    std::string normalized = filePath;
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+    if (normalized.empty())
+        return "file:///";
+    if (normalized[0] == '/')
+        return "file://" + normalized;
+    return "file:///" + normalized;
 }
 
 size_t PositionToOffset(const std::string& text, uint32_t line, uint32_t character, PositionEncoding enc)

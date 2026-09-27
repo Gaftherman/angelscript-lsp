@@ -489,12 +489,12 @@ TEST_CASE("SvenCoop - Namespaced direct-init constructor Logger")
     CHECK(diags.empty());
 }
 
-TEST_CASE("SvenCoop - Benchmark and Profile final.sven.as.predefined pipeline")
+TEST_CASE("SvenCoop - Benchmark and Profile sven.as.predefined pipeline")
 {
-    const std::filesystem::path stubPath = "predefined/final.sven.as.predefined";
+    const std::filesystem::path stubPath = "predefined/sven.as.predefined";
     if (!std::filesystem::exists(stubPath))
     {
-        MESSAGE("Skipping: final.sven.as.predefined not present");
+        MESSAGE("Skipping: sven.as.predefined not present");
         return;
     }
 
@@ -522,7 +522,7 @@ TEST_CASE("SvenCoop - Benchmark and Profile final.sven.as.predefined pipeline")
     analysis::SymbolTable table;
     analysis::SymbolCollector collector(nullptr);
     t0 = std::chrono::high_resolution_clock::now();
-    auto diags = collector.CollectSymbols("file:///final.sven.as.predefined", sanitized, parser, table);
+    auto diags = collector.CollectSymbols("file:///sven.as.predefined", sanitized, parser, table);
     t1 = std::chrono::high_resolution_clock::now();
     double symMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
     MESSAGE("CollectSymbols: " << symMs << " ms");
@@ -540,7 +540,7 @@ TEST_CASE("SvenCoop - Benchmark and Profile final.sven.as.predefined pipeline")
     double callsMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
     MESSAGE("CollectCalls: " << callsMs << " ms, calls found: " << calls.size());
 
-    const std::string uri = "file:///final.sven.as.predefined";
+    const std::string uri = "file:///sven.as.predefined";
     features::DocumentSymbolRequest docSymReq{uri, sanitized, tree, table};
     t0 = std::chrono::high_resolution_clock::now();
     auto docSymbols = features::GetDocumentSymbols(docSymReq);

@@ -291,7 +291,7 @@ std::optional<ArgumentConversion> EvaluatePrimitiveOrEnumConversion(const MatchC
 
 ArgumentConversion EvaluateCustomOrUnresolvedConversion(const MatchContext& ctx)
 {
-    const auto userConv = CheckUserConversion(ctx.cleanArg, ctx.cleanParam, ctx.table);
+    const auto userConv = CheckUserConversion(ctx.cleanArg, ctx.cleanParam, ctx.table, ctx.stringTypeName);
     if (userConv.viable)
     {
         const uint8_t subRank = userConv.isExact ? 0 : 20;
