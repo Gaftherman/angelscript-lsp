@@ -252,25 +252,38 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     const bool contributes = PredefinedStubContributes(req.uriStr);
 
     auto existingText = m_predefinedManager.GetDocumentText(req.uriStr);
-    if (existingText && *existingText == analysisText && contributes)
+    const bool contentUnchanged =
+        existingText && angel_lsp::utils::TextContentMatchesIgnoringLineEndings(*existingText, analysisText);
+
+    if (contentUnchanged && contributes)
     {
+        m_documentStore.OpenDocument(
+            DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version, document::MakeTreePtr(nullptr), req.clientUri});
         PublishDiagnostics(req.uriStr, {}, req.version);
         const double totalMs = req.totalTimer.ElapsedMs();
         LogInfo(
             fmt::format("[Predefined Fast Path] File: {} content unchanged; bypassed re-indexing. Elapsed: {:.2f} ms",
                         req.uriStr, totalMs));
-        LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: "
-                            "{:.2f} ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
-                            req.uriStr, totalMs, req.parseMs, 0.0, 0.0, 0.0));
+        LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: 0.00 ms, Collector: "
+                            "0.00 ms, Scopes: 0.00 ms, Checkers: 0.00 ms)",
+                            req.uriStr, totalMs));
         return;
     }
+
+    utils::HighResTimer parseTimer;
+    document::TreePtr tree = document::MakeTreePtr(m_parser->Parse(analysisText));
+    const double parseMs = parseTimer.ElapsedMs();
+
+    m_documentStore.OpenDocument(
+        DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
+                                           document::MakeTreePtr(tree ? ts_tree_copy(tree.get()) : nullptr), req.clientUri});
 
     utils::HighResTimer colTimer;
     if (contributes)
     {
         ClaimPredefinedFile(req.uriStr, true);
         m_predefinedManager.SetDocumentText(req.uriStr, analysisText);
-        ReplaceSymbolsFromTree(req.uriStr, analysisText, req.tree);
+        ReplaceSymbolsFromTree(req.uriStr, analysisText, tree.get());
     }
     else
     {
@@ -288,7 +301,7 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     const double totalMs = req.totalTimer.ElapsedMs();
     LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, "
                         "Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
-                        req.uriStr, totalMs, req.parseMs, colMs, scopeMs, 0.0));
+                        req.uriStr, totalMs, parseMs, colMs, scopeMs, 0.0));
 
     const bool wordsChanged = RefreshStubDefinedWords(req.uriStr, req.text);
     if (wordsChanged)
@@ -306,6 +319,12 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     const int version = params.textDocument.version;
     std::string text = std::move(params.textDocument.text);
 
+    if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+    {
+        DidOpenPredefinedFile(DidOpenPredefinedRequest{uriStr, text, version, clientUri, totalTimer});
+        return;
+    }
+
     const std::string analysisText = AnalysisTextFor(uriStr, text);
 
     utils::HighResTimer parseTimer;
@@ -313,12 +332,6 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     double parseMs = parseTimer.ElapsedMs();
     m_documentStore.OpenDocument(
         DocumentStore::OpenDocumentRequest{uriStr, text, version, document::MakeTreePtr(tree), clientUri});
-
-    if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
-    {
-        DidOpenPredefinedFile(DidOpenPredefinedRequest{uriStr, text, version, tree, parseMs, totalTimer});
-        return;
-    }
 
     if (m_config.features.enablePredefinedLoader && !IsPredefinedReady())
     {

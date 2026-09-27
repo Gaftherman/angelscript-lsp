@@ -1491,8 +1491,7 @@ class Server
         const std::string& uriStr;
         const std::string& text;
         int version = 0;
-        TSTree* tree = nullptr;
-        double parseMs = 0.0;
+        const std::string& clientUri;
         const utils::HighResTimer& totalTimer;
     };
 

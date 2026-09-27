@@ -175,4 +175,61 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         const auto containerConv = EvaluateArgumentConversion("init_list", containerParam, table);
         CHECK(containerConv.rank == ConversionRank::Exact);
     }
+
+    TEST_CASE("Configured stringTypeName in constructor conversion and overload ranking")
+    {
+        const std::string customStringName = GenerateRandomSymbolName("CustomString");
+        const std::string customClass = GenerateRandomSymbolName("TargetClass");
+
+        SymbolTable table;
+
+        // Custom string type with single-argument constructor
+        Symbol stringSym;
+        stringSym.type = SymbolType::Class;
+        stringSym.name = customStringName;
+        table.AddSymbol(stringSym);
+
+        Symbol stringCtor;
+        stringCtor.type = SymbolType::Function;
+        stringCtor.name = customStringName;
+        stringCtor.containerName = customStringName;
+        stringCtor.qualifiedName = customStringName + "::" + customStringName;
+        FunctionSignature stringCtorSig;
+        ParameterInformation dblParam;
+        dblParam.typeName = "double";
+        stringCtorSig.parameters.push_back(dblParam);
+        stringCtor.signature = stringCtorSig;
+        table.AddSymbol(stringCtor);
+
+        // Custom class with converting constructor from int
+        Symbol customClassSym;
+        customClassSym.type = SymbolType::Class;
+        customClassSym.name = customClass;
+        table.AddSymbol(customClassSym);
+
+        Symbol customClassCtor;
+        customClassCtor.type = SymbolType::Function;
+        customClassCtor.name = customClass;
+        customClassCtor.containerName = customClass;
+        customClassCtor.qualifiedName = customClass + "::" + customClass;
+        FunctionSignature customCtorSig;
+        ParameterInformation intParam;
+        intParam.typeName = "int";
+        customCtorSig.parameters.push_back(intParam);
+        customClassCtor.signature = customCtorSig;
+        table.AddSymbol(customClassCtor);
+
+        // 1. When stringTypeName is configured to customStringName:
+        // HasConvertingConstructor must NOT treat customStringName(double) as an implicit argument conversion
+        CHECK_FALSE(HasConvertingConstructor("double", customStringName, table, customStringName));
+        CHECK_FALSE(CheckUserConversion("double", customStringName, table, customStringName).viable);
+
+        // Standard "string" is also blocked
+        CHECK_FALSE(HasConvertingConstructor("double", "string", table, customStringName));
+
+        // 2. Genuine custom class converting constructor IS viable
+        CHECK(HasConvertingConstructor("int", customClass, table, customStringName));
+        CHECK(CheckUserConversion("int", customClass, table, customStringName).viable);
+    }
 }
+

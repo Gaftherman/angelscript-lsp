@@ -19,6 +19,14 @@ std::string PathToUri(const std::string& filePath);
  * @return Decoded string.
  */
 std::string UrlDecode(std::string_view in);
+
+/**
+ * @brief Compares two text buffers character-by-character ignoring carriage return ('\\r') differences.
+ * @param[in] a First text buffer.
+ * @param[in] b Second text buffer.
+ * @return True if both buffers match identically excluding carriage returns.
+ */
+bool TextContentMatchesIgnoringLineEndings(std::string_view a, std::string_view b) noexcept;
 /**
  * @brief Converts an LSP position into a byte offset into the document text.
  * @param text Full document text (UTF-8).

@@ -102,10 +102,35 @@ bool HasHandleModifier(std::string_view typeName)
     return typeName.find('@') != std::string_view::npos;
 }
 
-bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
+namespace
+{
+bool IsViableConvertingConstructor(const Symbol& sym, const std::string& fromType)
+{
+    if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
+    {
+        return false;
+    }
+    const auto& sig = sym.GetFunction();
+    if (sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.parameters.empty())
+    {
+        return false;
+    }
+    const std::string paramType = NormalizeType(sig.parameters[0].typeName);
+    if (paramType != fromType && !IsPrimitiveWidening(fromType, paramType))
+    {
+        return false;
+    }
+    return std::all_of(sig.parameters.begin() + 1, sig.parameters.end(),
+                       [](const auto& p) { return !p.defaultValue.empty(); });
+}
+} // namespace
+
+bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable,
+                              std::string_view stringTypeName)
 {
     const std::string cleanTo = NormalizeType(toType);
-    if (cleanTo.empty() || cleanTo == "string" || IsCorePrimitive(cleanTo))
+    const std::string_view effectiveStr = stringTypeName.empty() ? "string" : stringTypeName;
+    if (cleanTo.empty() || cleanTo == effectiveStr || cleanTo == "string" || IsCorePrimitive(cleanTo))
     {
         return false;
     }
@@ -116,23 +141,7 @@ bool HasConvertingConstructor(const std::string& fromType, const std::string& to
     }
     for (const auto& sym : *toSyms)
     {
-        if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
-        {
-            continue;
-        }
-        const auto& sig = sym.GetFunction();
-        if (sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.parameters.empty())
-        {
-            continue;
-        }
-        const std::string paramType = NormalizeType(sig.parameters[0].typeName);
-        if (paramType != fromType && !IsPrimitiveWidening(fromType, paramType))
-        {
-            continue;
-        }
-        const bool remainingDefault = std::all_of(sig.parameters.begin() + 1, sig.parameters.end(),
-                                                  [](const auto& p) { return !p.defaultValue.empty(); });
-        if (remainingDefault)
+        if (IsViableConvertingConstructor(sym, fromType))
         {
             return true;
         }
@@ -180,7 +189,7 @@ bool HasConversionMethod(const std::string& fromType, const std::string& toType,
 }
 
 UserConversionMatch CheckUserConversion(const std::string& fromType, const std::string& toType,
-                                        const SymbolTable& symbolTable)
+                                        const SymbolTable& symbolTable, std::string_view stringTypeName)
 {
     if (fromType.empty() || toType.empty())
     {
@@ -191,16 +200,17 @@ UserConversionMatch CheckUserConversion(const std::string& fromType, const std::
     {
         return methodMatch;
     }
-    if (HasConvertingConstructor(fromType, toType, symbolTable))
+    if (HasConvertingConstructor(fromType, toType, symbolTable, stringTypeName))
     {
         return UserConversionMatch{true, false};
     }
     return UserConversionMatch{};
 }
 
-bool HasUserConversion(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
+bool HasUserConversion(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable,
+                       std::string_view stringTypeName)
 {
-    return CheckUserConversion(fromType, toType, symbolTable).viable;
+    return CheckUserConversion(fromType, toType, symbolTable, stringTypeName).viable;
 }
 
 constexpr int k_maxTypedefDepth = 8;
