@@ -418,12 +418,12 @@ struct DiagnosticsConfig
     bool reportIntegerDivision = false;
 
     /**
-     * @brief Warn on potential dereference of a null or unchecked handle (default: on).
+     * @brief Warn on potential dereference of a null or unchecked handle (default: off).
      *
      * Detects when handle parameters, handle cast expressions, or uninitialized handles
      * are dereferenced via member access or indexing without preceding null checks.
      */
-    bool reportPossibleNullDereference = true;
+    bool reportPossibleNullDereference = false;
 
     /**
      * @brief Warn on all dereferences of unguarded handles, not only the first (default: off).

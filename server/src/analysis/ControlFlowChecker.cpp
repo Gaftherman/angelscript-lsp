@@ -248,11 +248,65 @@ bool IfDefinitelyReturns(TSNode node, std::string_view sourceCode)
     return DefinitelyReturns(consequence, sourceCode) && DefinitelyReturns(alternative, sourceCode);
 }
 
+/**
+ * @brief Checks if a switch clause contains an escaping break statement.
+ * @param[in] clause The case_clause AST node.
+ * @return True if a break statement targets this switch statement; false otherwise.
+ */
+bool ClauseHasEscapingBreak(TSNode clause)
+{
+    TSTreeCursor cursor = ts_tree_cursor_new(clause);
+    if (!ts_tree_cursor_goto_first_child(&cursor))
+    {
+        ts_tree_cursor_delete(&cursor);
+        return false;
+    }
+
+    bool hasBreak = false;
+    while (true)
+    {
+        TSNode node = ts_tree_cursor_current_node(&cursor);
+        if (!ts_node_is_null(node))
+        {
+            std::string_view type = NodeType(node);
+            if (type == "break_statement")
+            {
+                hasBreak = true;
+                break;
+            }
+            const bool isInnerEnclosure = type == "while_statement" || type == "do_while_statement" ||
+                                          type == "for_statement" || type == "foreach_statement" ||
+                                          type == "switch_statement";
+            if (!isInnerEnclosure && ts_tree_cursor_goto_first_child(&cursor))
+            {
+                continue;
+            }
+        }
+
+        while (!ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            if (!ts_tree_cursor_goto_parent(&cursor))
+            {
+                goto done;
+            }
+            if (ts_node_eq(ts_tree_cursor_current_node(&cursor), clause))
+            {
+                goto done;
+            }
+        }
+    }
+
+done:
+    ts_tree_cursor_delete(&cursor);
+    return hasBreak;
+}
+
 bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode)
 {
     bool hasDefault = false;
-    bool allReturn = true;
-    bool lastClauseHasStatements = false;
+    bool hasEscapingBreak = false;
+    bool defaultReturns = false;
+    bool allClausesReturnDirectly = true;
     uint32_t clauseCount = 0;
 
     const uint32_t count = ts_node_named_child_count(node);
@@ -264,20 +318,32 @@ bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode)
             continue;
         }
         ++clauseCount;
-        if (IsDefaultClause(clause))
+        const bool isDef = IsDefaultClause(clause);
+        if (isDef)
         {
             hasDefault = true;
+            defaultReturns = DefinitelyReturns(clause, sourceCode);
         }
-        // An empty clause falls through to the next one, which is ordinary and says
-        // nothing about whether the switch returns.
+        if (ClauseHasEscapingBreak(clause))
+        {
+            hasEscapingBreak = true;
+        }
         const bool hasStatements = ts_node_named_child_count(clause) > FirstStatementIndex(clause);
-        lastClauseHasStatements = hasStatements;
         if (hasStatements && !DefinitelyReturns(clause, sourceCode))
         {
-            allReturn = false;
+            allClausesReturnDirectly = false;
         }
     }
-    return hasDefault && allReturn && (clauseCount > 0) && lastClauseHasStatements;
+
+    if (clauseCount == 0 || hasEscapingBreak)
+    {
+        return false;
+    }
+    if (allClausesReturnDirectly && hasDefault)
+    {
+        return true;
+    }
+    return hasDefault && defaultReturns;
 }
 
 bool TryDefinitelyReturns(TSNode node, std::string_view sourceCode)

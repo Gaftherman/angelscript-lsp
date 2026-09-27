@@ -32,6 +32,7 @@ struct ArgumentConversion
     uint8_t inheritanceDistance = 0; ///< Distance in inheritance hierarchy (0 = exact / same class)
     bool isConstAdjustment = false;  ///< Const/reference qualification adjustment
     int legacyScore = 999;           ///< Legacy scalar score for backwards compatibility
+    bool isLossy = false;            ///< Conversion loses precision (narrowing / truncation)
 
     /**
      * @brief Checks if conversion is viable for candidate invocation.
@@ -50,6 +51,10 @@ struct ArgumentConversion
     [[nodiscard]] auto operator<=>(const ArgumentConversion& other) const noexcept
     {
         if (auto cmp = rank <=> other.rank; cmp != 0)
+        {
+            return cmp;
+        }
+        if (auto cmp = isLossy <=> other.isLossy; cmp != 0)
         {
             return cmp;
         }

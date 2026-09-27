@@ -427,16 +427,18 @@ bool DeclaresConversionTo(const std::string& fromType, const std::string& toType
  *        for, so neither is worth a diagnostic here. */
 bool AreHierarchyRelated(const std::string& a, const std::string& b, const SymbolTable& table)
 {
-    for (const auto& base : GetInheritedTypeHierarchy(a, table))
+    const std::string cleanA = CleanBaseType(a);
+    const std::string cleanB = CleanBaseType(b);
+    for (const auto& base : GetInheritedTypeHierarchy(cleanA, table))
     {
-        if (IsSameType(base, b))
+        if (IsSameType(base, cleanB))
         {
             return true;
         }
     }
-    for (const auto& base : GetInheritedTypeHierarchy(b, table))
+    for (const auto& base : GetInheritedTypeHierarchy(cleanB, table))
     {
-        if (IsSameType(base, a))
+        if (IsSameType(base, cleanA))
         {
             return true;
         }
