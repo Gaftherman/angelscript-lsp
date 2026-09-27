@@ -2,6 +2,21 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.13] - 2026-09-27
+
+### Converting Constructor Resolution, String Type Aliasing, & Overload Ranking
+
+- Converting Constructor Resolution for Strings:
+  - Enabled constructor conversions on `string` and configured string types (e.g., `string(double)`, `string(int64)`, `string(char)` declared in engine stubs like `sven.as.predefined`).
+  - Resolved false-positive diagnostic errors (`No se puede convertir implícitamente 'float' / 'int' / 'char' a 'const string'`) when passing scalar or custom `char` arguments to functions expecting `const string &in` or `string` values (such as `SetPair("health", self.pev.health)` or `DispatchKeyValue(...)`).
+- Non-Dominated Overload Candidate Filtering:
+  - Refined `FilterNonDominatedCandidates` in `AmbiguityDetector` to check for lossless standard conversions strictly with `rank < ConversionRank::UserDefined`.
+  - Ensures standard conversions (even lossy narrowing ones) properly dominate user-defined converting constructors without triggering spurious ambiguity errors or mis-selecting string overloads.
+- Configured Path Workspace Root Fallback:
+  - Added workspace root fallback in `ResolveConfiguredPath` when files are configured but not yet present on disk.
+- Invariant & Regression Tests:
+  - Added test cases in `OverloadResolutionSvenCoopTest` (Cases 7, 8, and 9) verifying float and int to string conversions, dispatch keyvalue conversions, and custom `char` class conversions.
+
 ## [0.9.12] - 2026-09-27
 
 ### Symlink / Junction Workspace Resolution, Module Closures, & Path Variable Expansion

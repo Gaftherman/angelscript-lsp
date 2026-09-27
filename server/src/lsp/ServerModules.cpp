@@ -367,6 +367,13 @@ std::string Server::ResolveConfiguredPath(const std::string& configured) const
         }
     }
 
+    if (!WorkspaceRoots().empty())
+    {
+        const std::filesystem::path fallback =
+            std::filesystem::path(angel_lsp::utils::UriToPath(WorkspaceRoots().front())) / asWritten;
+        return angel_lsp::utils::IncludeResolver::NormalizePath(fallback.string());
+    }
+
     return angel_lsp::utils::IncludeResolver::NormalizePath(configured);
 }
 

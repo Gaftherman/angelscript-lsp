@@ -220,12 +220,12 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         table.AddSymbol(customClassCtor);
 
         // 1. When stringTypeName is configured to customStringName:
-        // HasConvertingConstructor must NOT treat customStringName(double) as an implicit argument conversion
-        CHECK_FALSE(HasConvertingConstructor("double", customStringName, table, customStringName));
-        CHECK_FALSE(CheckUserConversion("double", customStringName, table, customStringName).viable);
+        // HasConvertingConstructor respects declared constructors on the configured string type
+        CHECK(HasConvertingConstructor("double", customStringName, table, customStringName));
+        CHECK(CheckUserConversion("double", customStringName, table, customStringName).viable);
 
-        // Standard "string" is also blocked
-        CHECK_FALSE(HasConvertingConstructor("double", "string", table, customStringName));
+        // Standard "string" is resolved to the configured string type via alias fallback
+        CHECK(HasConvertingConstructor("double", "string", table, customStringName));
 
         // 2. Genuine custom class converting constructor IS viable
         CHECK(HasConvertingConstructor("int", customClass, table, customStringName));

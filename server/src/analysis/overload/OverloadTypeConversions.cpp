@@ -129,21 +129,34 @@ bool HasConvertingConstructor(const std::string& fromType, const std::string& to
                               std::string_view stringTypeName)
 {
     const std::string cleanTo = NormalizeType(toType);
-    const std::string_view effectiveStr = stringTypeName.empty() ? "string" : stringTypeName;
-    if (cleanTo.empty() || cleanTo == effectiveStr || cleanTo == "string" || IsCorePrimitive(cleanTo))
+    if (cleanTo.empty() || IsCorePrimitive(cleanTo))
     {
         return false;
     }
     const auto toSyms = symbolTable.FindSymbolsPtr(cleanTo + "::" + cleanTo);
-    if (!toSyms)
+    if (toSyms)
     {
-        return false;
-    }
-    for (const auto& sym : *toSyms)
-    {
-        if (IsViableConvertingConstructor(sym, fromType))
+        for (const auto& sym : *toSyms)
         {
-            return true;
+            if (IsViableConvertingConstructor(sym, fromType))
+            {
+                return true;
+            }
+        }
+    }
+    if (!stringTypeName.empty() && stringTypeName != "string" && (cleanTo == "string" || cleanTo == stringTypeName))
+    {
+        const std::string targetName = (cleanTo == "string") ? std::string(stringTypeName) : "string";
+        const auto aliasSyms = symbolTable.FindSymbolsPtr(targetName + "::" + targetName);
+        if (aliasSyms)
+        {
+            for (const auto& sym : *aliasSyms)
+            {
+                if (IsViableConvertingConstructor(sym, fromType))
+                {
+                    return true;
+                }
+            }
         }
     }
     return false;

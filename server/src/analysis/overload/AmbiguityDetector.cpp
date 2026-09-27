@@ -210,14 +210,16 @@ bool IsStrictlyBetter(const EvaluatedCandidate& a, const EvaluatedCandidate& b)
 
 std::vector<EvaluatedCandidate> FilterNonDominatedCandidates(const std::vector<EvaluatedCandidate>& evaluated)
 {
-    const bool hasLosslessCandidate = std::any_of(evaluated.begin(), evaluated.end(), [](const auto& cand) {
-        return std::none_of(cand.conversions.begin(), cand.conversions.end(), [](const auto& c) { return c.isLossy; });
+    const bool hasLosslessStandardCandidate = std::any_of(evaluated.begin(), evaluated.end(), [](const auto& cand) {
+        return std::none_of(cand.conversions.begin(), cand.conversions.end(), [](const auto& c) {
+            return c.isLossy || c.rank >= ConversionRank::UserDefined;
+        });
     });
 
     std::vector<EvaluatedCandidate> nonDominated;
     for (const auto& cand : evaluated)
     {
-        if (hasLosslessCandidate &&
+        if (hasLosslessStandardCandidate &&
             std::any_of(cand.conversions.begin(), cand.conversions.end(), [](const auto& c) { return c.isLossy; }))
         {
             continue;

@@ -243,6 +243,85 @@ TEST_CASE("Case 6 - Get with uint argument selects int out-param over float with
     CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
 }
 
+TEST_CASE("Case 7 - SetPair converts float and int to const string without error")
+{
+    const std::string fnSetPair = GenerateRandomSymbolName("SetPair");
+    const std::string varHealth = GenerateRandomSymbolName("health");
+    const std::string varFlags = GenerateRandomSymbolName("spawnflags");
+
+    const std::string predefined =
+        "class string {\n"
+        "    string();\n"
+        "    string(const string& in szString);\n"
+        "    string(double flValue);\n"
+        "    string(int64 iValue);\n"
+        "}\n"
+        "void " + fnSetPair + "(const string& in key, const string& in val);\n";
+
+    const std::string script =
+        "void Test(float " + varHealth + ", int " + varFlags + ") {\n"
+        "    " + fnSetPair + "(\"health\", " + varHealth + ");\n"
+        "    " + fnSetPair + "(\"spawnflags\", " + varFlags + ");\n"
+        "}\n";
+
+    const auto diags = AnalyzeSnippetWithStubs(script, predefined);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("Case 8 - DispatchKeyValue with int converts to const string")
+{
+    const std::string edictCls = GenerateRandomSymbolName("edict_t");
+    const std::string fnDispatch = GenerateRandomSymbolName("DispatchKeyValue");
+    const std::string varEdict = GenerateRandomSymbolName("childEdict");
+    const std::string varVal = GenerateRandomSymbolName("val");
+
+    const std::string predefined =
+        "class string {\n"
+        "    string();\n"
+        "    string(int64 iValue);\n"
+        "}\n"
+        "class " + edictCls + " {}\n"
+        "bool " + fnDispatch + "(" + edictCls + "@ entity, const string& in szKeyName, const string& in szValue);\n";
+
+    const std::string script =
+        "void Test(" + edictCls + "@ " + varEdict + ", int " + varVal + ") {\n"
+        "    " + fnDispatch + "(" + varEdict + ", \"$i_use_flashbang\", " + varVal + ");\n"
+        "}\n";
+
+    const auto diags = AnalyzeSnippetWithStubs(script, predefined);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("Case 9 - Function taking const string accepts custom char class argument")
+{
+    const std::string fnError = GenerateRandomSymbolName("ErrorUnexpected");
+    const std::string varChar = GenerateRandomSymbolName("c");
+
+    const std::string predefined =
+        "class char {\n"
+        "    char();\n"
+        "    char(const char& in character);\n"
+        "    uint32 opImplConv() const;\n"
+        "}\n"
+        "class string {\n"
+        "    string();\n"
+        "    string(const string& in szString);\n"
+        "    string(char character);\n"
+        "}\n"
+        "bool " + fnError + "(const string& in expected, const string& in unexpected);\n";
+
+    const std::string script =
+        "void Test(char " + varChar + ") {\n"
+        "    " + fnError + "(\"token\", " + varChar + ");\n"
+        "}\n";
+
+    const auto diags = AnalyzeSnippetWithStubs(script, predefined);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
+}
+
 TEST_SUITE_END();
 
 } // namespace angel_lsp::test
