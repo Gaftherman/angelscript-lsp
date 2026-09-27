@@ -399,6 +399,7 @@ TEST_CASE("InlayHintHandler - BaseClass and inherited unqualified call parameter
 {
     std::string code =
         "class WeaponBase {\n"
+        "    WeaponBase@ BaseClass;\n"
         "    void Holster(int skiplocal = 0) {}\n"
         "    bool Deploy(string v, string p, int draw, string model, int body, float speed) { return true; }\n"
         "}\n"
@@ -545,6 +546,7 @@ TEST_CASE("InlayHintHandler - BaseClass Method Parameter Hints with Mixin in Hie
         "    void MixinMethod() {}\n"
         "}\n"
         "class BasePlayerWeapon {\n"
+        "    BasePlayerWeapon@ BaseClass;\n"
         "    void Holster(int pPlayer) {}\n"
         "}\n"
         "class MyWeapon : BasePlayerWeapon, WeaponMixin {\n"

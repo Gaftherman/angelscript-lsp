@@ -27,7 +27,7 @@ Before introducing any patches to production code:
 | **V6** | Numeric Ambiguity on `Math.max` | **FAIL (FP)** | Ties `float` with `int64`/`uint64` | `ConversionRankingEngine.cpp:215`: Floating-to-floating narrowing ties with floating-to-integer truncation |
 | **V7** | Enum to Arithmetic Type Promotion | **FAIL (FP)** | `as-err-no-implicit-conversion` (enum $\to$ float) | `TypeConversionChecker.cpp:679` and `ConversionRankingEngine.cpp:193` only allow conversion to integer types |
 | **V8** | Ternary Array Evaluation | **FAIL (FP)** | `as-err-no-implicit-conversion` (float to float[]) | `SemanticHelpers.cpp:2619`: `ResolveTernaryExpr` calls `CleanBaseType`, stripping array brackets `[]` |
-| **V9** | Multi-Hop Base Class Resolution | **FAIL (FP)** | `as-warn-undeclared-identifier: BaseClass` | `SemanticAnalyzer.cpp:920`: `IsAccessorPropertyOrKeyword` fails to recognize contextual keyword `BaseClass` |
+| **V9** | Multi-Hop Base Class Resolution | **PASS** | 0 diagnostics emitted | `BaseClass` is an entity member property in `sven.as.predefined:8889` (`ScriptBaseMonsterEntity@ BaseClass;`) |
 | **V10** | L-Value Out-Param on Private Member | **FAIL (FP)** | `as-err-lvalue-required-for-out-param: m_defaults` | `CallChecker.cpp:1247`: `IsAssignableLValueSymbol` excludes `LocalDefinitionKind::Field` |
 | **V11** | Qualified Type & Switch CFG Return | **PASS** | 0 diagnostics emitted | 4-level namespace type and switch CFG exhaustiveness analyze cleanly under standard formatting |
 
@@ -185,16 +185,14 @@ Before introducing any patches to production code:
   }
   ```
   Where `ScriptBaseMonsterEntity` is defined in an `.as.predefined` stub.
-- **Observed Baseline Behavior:** Emits `as-warn-undeclared-identifier: BaseClass`. Method call `RunTask` and field access `@this.m_Schedules` resolve successfully.
+- **Observed Behavior:** In Sven Co-op scripts, `BaseClass.RunTask` compiles cleanly because `ScriptBaseMonsterEntity` defines `ScriptBaseMonsterEntity@ BaseClass;` as a member property (`sven.as.predefined:8889`).
 - **Analysis Forensics:**
-  - `ResolveBaseClassIdentifier` in `SemanticHelpers.cpp:2105` successfully retrieves the base class `bts_rc_base_monster` and walks up to `ScriptBaseMonsterEntity` in the symbol table to resolve `RunTask`.
-  - However, in `SemanticAnalyzer.cpp:950`, `CheckScopeReferences` iterates over all references in scope.
-  - `BaseClass` is parsed by Tree-Sitter as an `identifier` (unlike `this`, which is parsed as a `this_expression`).
-  - `CheckScopeReferences` calls `IsAccessorPropertyOrKeyword(ref, ctx)`.
-  - `IsAccessorPropertyOrKeyword` only checks `IsReservedKeyword(ref.name)`, which queries the 53 strict AngelScript reserved keywords. Because `BaseClass` is a contextual keyword / convention in AngelScript game scripts, it is not in `k_reserved`.
-  - `CheckScopeReferences` therefore emits `as-warn-undeclared-identifier: BaseClass`.
-- **Root Cause & Fix:**
-  In `SemanticAnalyzer.cpp:920` (`IsAccessorPropertyOrKeyword`), recognize `BaseClass` and `super` as valid contextual keyword identifiers.
+  - `BaseClass` is not an AngelScript keyword (AngelScript uses `this` and `super`, and base methods are called via `BaseClassName::Method()`).
+  - In Sven Co-op, entity classes expose a member property `BaseClass` pointing to their base entity handle.
+  - When stub definitions accurately declare `ScriptBaseMonsterEntity@ BaseClass;`, member resolution and type inference walk the inheritance hierarchy and resolve `BaseClass.RunTask(pTask)` with zero diagnostics.
+  - Without such a member declaration, standard AngelScript correctly flags `as-warn-undeclared-identifier: BaseClass`.
+- **Resolution:**
+  Purge hardcoded `BaseClass` keyword checks across `SemanticAnalyzer.cpp`, `SemanticHelpers.cpp`, and `ClassRules.cpp`, letting general member and inheritance resolution handle `BaseClass` as a real declared property.
 
 ---
 
@@ -271,8 +269,9 @@ All remediations will adhere strictly to `AGENTS.md` standards:
    - Rank enum $\to$ float/double with `ConversionRank::StandardConv, subRank = 30`.
 4. **Fix 4 (Vector 8):** In `server/src/analysis/SemanticHelpers.cpp`:
    - In `ResolveTernaryExpr`, preserve matching container and array types via `CleanExpressionType`.
-5. **Fix 5 (Vector 9):** In `server/src/analysis/SemanticAnalyzer.cpp`:
-   - In `IsAccessorPropertyOrKeyword`, recognize `BaseClass` as a valid contextual receiver keyword (while preserving strict base-constructor constraints on `super`).
+5. **Fix 5 (Vector 9):** In `server/src/analysis/SemanticAnalyzer.cpp`, `SemanticHelpers.cpp`, and `ClassRules.cpp`:
+   - Eliminate hardcoded `BaseClass` keyword checks.
+   - Rely on standard member property lookup across inherited class hierarchy (`ScriptBaseMonsterEntity@ BaseClass;`).
 6. **Fix 6 (Vector 10):** In `server/src/analysis/CallChecker.cpp`:
    - In `IsAssignableLValueSymbol`, permit `LocalDefinitionKind::Field`.
 
@@ -292,7 +291,7 @@ All remediations will adhere strictly to `AGENTS.md` standards:
 | **V6** | Numeric Ambiguity on `Math.max` | FAIL (FP) | **PASS** | `Math.max(float, float)` unambiguously wins over integer overloads |
 | **V7** | Enum to Arithmetic Type Promotion | FAIL (FP) | **PASS** | `SOUND_CHANNEL` promotes to `float` with zero diagnostics |
 | **V8** | Ternary Array Evaluation | FAIL (FP) | **PASS** | Ternary preserves `float[]` array bracket type |
-| **V9** | Multi-Hop Base Class Resolution | FAIL (FP) | **PASS** | `BaseClass.RunTask` resolves through script to stub base |
+| **V9** | Multi-Hop Base Class Resolution | PASS | **PASS** | `BaseClass.RunTask` resolves through inherited entity handle property |
 | **V10** | L-Value Out-Param on Private Member | FAIL (FP) | **PASS** | `m_defaults` accepted as assignable L-value field |
 | **V11** | Qualified Type & Switch CFG Return | PASS | **PASS** | Multi-level namespace and exhaustive switch validated |
 

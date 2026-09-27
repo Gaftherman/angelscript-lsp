@@ -296,6 +296,7 @@ TEST_CASE("Vector 9 - Multi-hop base class resolution across predefined stubs")
         "class " + stubMonster + " {\n" +
         "    void RunTask(" + taskClass + "@ pTask) {}\n" +
         "    " + schedClass + "@ m_Schedules;\n" +
+        "    " + stubMonster + "@ BaseClass;\n" +
         "}\n";
 
     const std::string scriptCode =
@@ -311,6 +312,19 @@ TEST_CASE("Vector 9 - Multi-hop base class resolution across predefined stubs")
     DumpDiags("Vector 9", diags);
     CHECK_FALSE(HasDiagCode(diags, "as-warn-undeclared-identifier"));
     CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
+
+    // Invariant: BaseClass is not a language keyword; without an explicit declaration it must be flagged
+    const std::string cleanBase = GenerateRandomSymbolName("PureBase");
+    const std::string cleanDerived = GenerateRandomSymbolName("PureDerived");
+    const std::string cleanCode =
+        "class " + cleanBase + " { void RunTask() {} }\n" +
+        "class " + cleanDerived + " : " + cleanBase + " {\n" +
+        "    void Test() {\n" +
+        "        BaseClass.RunTask();\n" +
+        "    }\n" +
+        "}\n";
+    const auto cleanDiags = AnalyzeSnippetWithPredefined(cleanCode);
+    CHECK(HasDiagCode(cleanDiags, "as-warn-undeclared-identifier"));
 }
 
 TEST_CASE("Vector 10 - L-value output parameter resolves on private class member")
