@@ -1729,7 +1729,12 @@ std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const Sym
         {
             if (sym.type == SymbolType::Class)
             {
-                collectFunctions(sym.name + "::" + shortName);
+                const std::string fullPrefix = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                collectFunctions(fullPrefix + "::" + shortName);
+                if (fullPrefix != sym.name)
+                {
+                    collectFunctions(sym.name + "::" + shortName);
+                }
             }
         }
     }
@@ -1784,6 +1789,17 @@ std::vector<std::string> GetClassTemplateParams(const std::string& baseName, con
     if (auto classSymbols = table.FindSymbolsPtr(baseName))
     {
         for (const auto& cs : *classSymbols)
+        {
+            if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
+            {
+                templateParams = cs.GetClass().templateParams;
+                break;
+            }
+        }
+    }
+    if (templateParams.empty())
+    {
+        for (const auto& cs : table.FindTypeSymbolsByShortName(LastScopeSegment(baseName)))
         {
             if (cs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(cs.signature))
             {

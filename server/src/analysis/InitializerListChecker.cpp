@@ -439,6 +439,23 @@ struct DictTypeState
  * @param[in]     m     Candidate function symbol.
  * @param[in,out] state Dictionary type state sink.
  */
+void UpdateDictValType(const ParameterInformation& param, DictTypeState& state)
+{
+    const std::string& paramVal = param.baseTypeName.empty() ? param.typeName : param.baseTypeName;
+    if (paramVal == "?" || param.typeName.find('?') != std::string::npos)
+    {
+        state.valType = "?";
+    }
+    else if (state.valType.empty())
+    {
+        state.valType = paramVal;
+    }
+    else if (state.valType != paramVal)
+    {
+        state.valType = "?";
+    }
+}
+
 void InspectDictFunctionSignature(const Symbol& m, DictTypeState& state)
 {
     if (m.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(m.signature))
@@ -458,10 +475,9 @@ void InspectDictFunctionSignature(const Symbol& m, DictTypeState& state)
         state.keyType =
             fn.parameters[0].baseTypeName.empty() ? fn.parameters[0].typeName : fn.parameters[0].baseTypeName;
     }
-    if (isSetOrGet && state.valType.empty())
+    if (isSetOrGet)
     {
-        state.valType =
-            fn.parameters[1].baseTypeName.empty() ? fn.parameters[1].typeName : fn.parameters[1].baseTypeName;
+        UpdateDictValType(fn.parameters[1], state);
     }
 }
 

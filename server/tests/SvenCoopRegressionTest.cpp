@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 
-#include "analysis/CallChecker.h"
+#include "analysis/CallGraph.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/OverloadResolver.h"
@@ -8,9 +8,14 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "helpers/TestUtils.h"
+#include "features/document_symbol/DocumentSymbolHandler.h"
+#include "features/folding_range/FoldingRangeHandler.h"
+#include "features/hover/HoverHandler.h"
+#include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/Primitives.h"
 #include "utils/IncludeResolver.h"
+#include "utils/Utils.h"
 #include "utils/WorkspaceIncludeGraph.h"
 
 #include <chrono>
@@ -392,5 +397,173 @@ TEST_CASE("SvenCoopRegression - Named arguments in function call")
     auto diags = AnalyzeSnippet(code);
     CHECK_FALSE(HasDiagCode(diags, diagnostics::codes::CallArgumentCount));
     CHECK_FALSE(HasDiagCode(diags, diagnostics::codes::CallNoMatchingSignature));
+}
+
+TEST_CASE("SvenCoop - Typedef in relational comparison uint < size_t")
+{
+    const std::string code =
+        "typedef uint32 size_t;\n"
+        "const size_t MAX_ITEM_TYPES = 32;\n"
+        "void Test()\n"
+        "{\n"
+        "    for (uint ui = 0; ui < MAX_ITEM_TYPES; ui++) {}\n"
+        "}\n";
+    auto diags = AnalyzeSnippet(code);
+    for (const auto& d : diags)
+    {
+        MESSAGE("Diag: " << d.code << " -> " << d.message);
+    }
+    CHECK(diags.empty());
+}
+
+TEST_CASE("SvenCoop - Enum vs numeric comparison float == DAMAGE")
+{
+    const std::string code =
+        "enum DAMAGE { DAMAGE_NO = 0, DAMAGE_YES = 1 }\n"
+        "class EntPev { float takedamage; }\n"
+        "class Ent { EntPev pev; }\n"
+        "void Test(Ent& pVictim)\n"
+        "{\n"
+        "    if (pVictim.pev.takedamage == DAMAGE_NO) {}\n"
+        "}\n";
+    auto diags = AnalyzeSnippet(code);
+    for (const auto& d : diags)
+    {
+        MESSAGE("Diag: " << d.code << " -> " << d.message);
+    }
+    CHECK(diags.empty());
+}
+
+TEST_CASE("SvenCoop - Nested initializer list for dictionary")
+{
+    const std::string code =
+        "class dictionary {\n"
+        "    dictionary() {}\n"
+        "    void set(const string &in key, const int64 &in value) {}\n"
+        "    void set(const string &in key, const ? &in value) {}\n"
+        "    void set(const string &in key, const double &in value) {}\n"
+        "    bool exists(const string &in key) const { return true; }\n"
+        "}\n"
+        "dictionary@ get_TestKeys()\n"
+        "{\n"
+        "    return { { \"classname\", \"monster_human_grunt_ally\" }, { \"model\", \"models/bts_rc/monsters/rgrunt_opfor.mdl\" }, { \"is_player_ally\", \"1\" } };\n"
+        "}\n";
+    auto diags = AnalyzeSnippet(code);
+    for (const auto& d : diags)
+    {
+        MESSAGE("Diag: " << d.code << " -> " << d.message);
+    }
+    CHECK(diags.empty());
+}
+
+TEST_CASE("SvenCoop - Namespaced direct-init constructor Logger")
+{
+    const std::string code =
+        "namespace meta_api {\n"
+        "    class Logger {\n"
+        "        Logger(const string &in name, bool isStatic = false) {}\n"
+        "    }\n"
+        "    namespace json {\n"
+        "        Logger g_Logger(\"JSON\");\n"
+        "    }\n"
+        "}\n";
+    auto diags = AnalyzeSnippet(code);
+    for (const auto& d : diags)
+    {
+        MESSAGE("Diag: " << d.code << " -> " << d.message);
+    }
+    CHECK(diags.empty());
+}
+
+TEST_CASE("SvenCoop - Benchmark and Profile final.sven.as.predefined pipeline")
+{
+    const std::filesystem::path stubPath = "predefined/final.sven.as.predefined";
+    if (!std::filesystem::exists(stubPath))
+    {
+        MESSAGE("Skipping: final.sven.as.predefined not present");
+        return;
+    }
+
+    std::ifstream file(stubPath, std::ios::binary);
+    REQUIRE(file.is_open());
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+
+    MESSAGE("File size: " << content.size() << " bytes");
+
+    auto t0 = std::chrono::high_resolution_clock::now();
+    std::string sanitized = angel_lsp::utils::SanitizePredefinedContent(content);
+    auto t1 = std::chrono::high_resolution_clock::now();
+    double sanitizeMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    MESSAGE("SanitizePredefinedContent: " << sanitizeMs << " ms");
+
+    parser::AngelScriptParser parser;
+    t0 = std::chrono::high_resolution_clock::now();
+    TSTree* tree = parser.Parse(sanitized);
+    t1 = std::chrono::high_resolution_clock::now();
+    double parseMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    MESSAGE("Parser::Parse: " << parseMs << " ms");
+    REQUIRE(tree != nullptr);
+
+    analysis::SymbolTable table;
+    analysis::SymbolCollector collector(nullptr);
+    t0 = std::chrono::high_resolution_clock::now();
+    auto diags = collector.CollectSymbols("file:///final.sven.as.predefined", sanitized, parser, table);
+    t1 = std::chrono::high_resolution_clock::now();
+    double symMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    MESSAGE("CollectSymbols: " << symMs << " ms");
+
+    analysis::LocalScopeCollector scopeCollector(nullptr);
+    t0 = std::chrono::high_resolution_clock::now();
+    auto scopes = scopeCollector.CollectScopesFromTree(ts_tree_root_node(tree), sanitized);
+    t1 = std::chrono::high_resolution_clock::now();
+    double scopeMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    MESSAGE("CollectScopesFromTree: " << scopeMs << " ms");
+
+    t0 = std::chrono::high_resolution_clock::now();
+    auto calls = analysis::CollectCalls(ts_tree_root_node(tree), sanitized);
+    t1 = std::chrono::high_resolution_clock::now();
+    double callsMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    MESSAGE("CollectCalls: " << callsMs << " ms, calls found: " << calls.size());
+
+    const std::string uri = "file:///final.sven.as.predefined";
+    features::DocumentSymbolRequest docSymReq{uri, sanitized, tree, table};
+    t0 = std::chrono::high_resolution_clock::now();
+    auto docSymbols = features::GetDocumentSymbols(docSymReq);
+    t1 = std::chrono::high_resolution_clock::now();
+    double docSymMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    MESSAGE("GetDocumentSymbols: " << docSymMs << " ms, count: " << (docSymbols ? docSymbols->size() : 0));
+
+    features::FoldingRangeRequest foldReq{uri, sanitized, tree};
+    t0 = std::chrono::high_resolution_clock::now();
+    auto foldingRanges = features::GetFoldingRanges(foldReq);
+    t1 = std::chrono::high_resolution_clock::now();
+    double foldMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    MESSAGE("GetFoldingRanges: " << foldMs << " ms, count: " << (foldingRanges ? foldingRanges->size() : 0));
+
+    features::SemanticTokensRequest semReq{uri, sanitized, tree, table};
+    semReq.scopeRoot = std::move(scopes);
+    t0 = std::chrono::high_resolution_clock::now();
+    auto semTokens = features::GetSemanticTokens(semReq);
+    t1 = std::chrono::high_resolution_clock::now();
+    double semMs2 = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    MESSAGE("GetSemanticTokens: " << semMs2 << " ms, tokens data count: " << semTokens.data.size());
+
+    analysis::ScopeIndex scopeIndex;
+    features::HoverRequest hoverReq{
+        uri, sanitized, tree, table, scopeIndex,
+        lsp::Position{200, 7}, // "class dictionary" line 201, character 7 (0-indexed line 200)
+        [](const std::string&) -> const std::string* { return nullptr; },
+        nullptr,
+        [](const std::string&) -> std::string { return ""; },
+        nullptr
+    };
+    t0 = std::chrono::high_resolution_clock::now();
+    auto hover = features::GetHover(hoverReq);
+    t1 = std::chrono::high_resolution_clock::now();
+    double hoverMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    MESSAGE("GetHover: " << hoverMs << " ms, has value: " << hover.has_value());
+
+    ts_tree_delete(tree);
 }
 } // namespace angel_lsp::test

@@ -250,14 +250,24 @@ std::string SanitizePredefinedContent(std::string_view source)
         return {};
     }
 
+    std::string result(source);
+
+    // Sanitize C++ registration auto-handle annotation '@+' to standard script handle '@ '
+    for (size_t k = 0; k + 1 < result.size(); ++k)
+    {
+        if (result[k] == '@' && result[k + 1] == '+')
+        {
+            result[k + 1] = ' ';
+        }
+    }
+
     // Quick check: inline list patterns require '{', ')', and ';' to be present.
     if (source.find('{') == std::string_view::npos || source.find(')') == std::string_view::npos ||
         source.find(';') == std::string_view::npos)
     {
-        return std::string(source);
+        return result;
     }
 
-    std::string result(source);
     size_t i = 0;
     while (i < result.size())
     {

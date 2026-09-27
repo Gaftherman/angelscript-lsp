@@ -216,6 +216,10 @@ void Server::UnloadUnselectedPredefinedStubs(const std::vector<std::string>& wan
     std::vector<std::string> stale;
     for (const auto& [path, uri] : m_predefinedManager.GetAllUriByPath())
     {
+        if (m_documentStore.IsOpen(uri))
+        {
+            continue;
+        }
         const bool wanted = std::any_of(wantedPaths.begin(), wantedPaths.end(), [&path](const std::string& candidate)
                                         { return PathsAreSameFile(candidate, path); });
         bool isTransitive = false;
@@ -336,6 +340,11 @@ bool Server::UnloadPredefinedUri(std::string uriStr)
 bool Server::PredefinedStubContributes(const std::string& uriStr) const
 {
     if (uriStr.starts_with(angel_lsp::analysis::k_profileUriPrefix))
+    {
+        return true;
+    }
+
+    if (m_config.activePredefined == "all")
     {
         return true;
     }

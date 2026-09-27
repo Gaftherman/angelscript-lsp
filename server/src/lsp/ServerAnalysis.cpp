@@ -356,18 +356,6 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
     }
     double colMs = colTimer.ElapsedMs();
 
-    utils::HighResTimer scopeTimer;
-    std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot;
-    std::vector<analysis::CallSite> calls;
-    if (tree)
-    {
-        const TSNode root = ts_tree_root_node(tree.get());
-        scopeRoot = m_localScopeCollector->CollectScopesFromTree(root, analysisText);
-        calls = analysis::CollectCalls(root, analysisText);
-    }
-    double scopeMs = scopeTimer.ElapsedMs();
-    double checkMs = 0.0;
-
     if (contributes)
     {
         ClaimPredefinedFile(req.uriStr, true);
@@ -377,6 +365,11 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
     {
         m_predefinedManager.RemoveStub(req.uriStr);
     }
+
+    std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot;
+    std::vector<analysis::CallSite> calls;
+    double scopeMs = 0.0;
+    double checkMs = 0.0;
 
     const bool committed = CommitAnalysisResults({
         .uriStr = req.uriStr,

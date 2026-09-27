@@ -96,12 +96,6 @@ void Server::DidSavePredefinedFile(const std::string& uriStr, const std::string&
 
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
-    if (savedTree)
-    {
-        m_scopeIndex.SetScopeTree(
-            uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(savedTree.get()), analysisText));
-        m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(savedTree.get()), analysisText));
-    }
 
     // A save is the point the watcher would have reacted to, had the file not been open.
     const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
@@ -285,16 +279,9 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     }
     const double colMs = colTimer.ElapsedMs();
 
-    utils::HighResTimer scopeTimer;
     m_scopeIndex.ClearDocument(req.uriStr);
     m_callGraph.ClearDocument(req.uriStr);
-    if (req.tree)
-    {
-        m_scopeIndex.SetScopeTree(
-            req.uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(req.tree), analysisText));
-        m_callGraph.SetDocumentCalls(req.uriStr, analysis::CollectCalls(ts_tree_root_node(req.tree), analysisText));
-    }
-    const double scopeMs = scopeTimer.ElapsedMs();
+    const double scopeMs = 0.0;
 
     PublishDiagnostics(req.uriStr, {}, req.version);
 

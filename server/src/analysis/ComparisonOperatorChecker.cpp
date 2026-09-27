@@ -3,6 +3,7 @@
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
+#include "analysis/overload/OverloadTypeConversions.h"
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 
@@ -148,13 +149,16 @@ bool CheckStringCompatibility(bool isRelational, const std::string& other, const
 
 bool IsEnumComparisonCompatible(const std::string& left, const std::string& right, const SymbolTable& table)
 {
-    const bool leftEnum = ResolvesToEnum(left, table);
-    const bool rightEnum = ResolvesToEnum(right, table);
+    const std::string unwrappedLeft = UnwrapTypedef(left, table);
+    const std::string unwrappedRight = UnwrapTypedef(right, table);
+    const bool leftEnum = ResolvesToEnum(unwrappedLeft, table);
+    const bool rightEnum = ResolvesToEnum(unwrappedRight, table);
     if (leftEnum && rightEnum)
     {
         return true;
     }
-    return (leftEnum && parser::primitives::IsInteger(right)) || (rightEnum && parser::primitives::IsInteger(left));
+    return (leftEnum && parser::primitives::IsNumeric(unwrappedRight)) ||
+           (rightEnum && parser::primitives::IsNumeric(unwrappedLeft));
 }
 
 bool CheckIdenticalTypes(std::string_view op, const std::string& type, const SymbolTable& table,
@@ -178,6 +182,24 @@ bool CheckBoolBranch(bool isRelational, const OperandTypes& types, const SymbolT
                                   stringTypeName);
 }
 
+[[nodiscard]] bool IsStringOperand(const std::string& type, std::string_view stringTypeName) noexcept
+{
+    return type == stringTypeName || type == "string";
+}
+
+bool CheckStringBranch(bool isRelational, const OperandTypes& types, const SymbolTable& table,
+                       std::string_view stringTypeName)
+{
+    const bool leftStr = IsStringOperand(types.left, stringTypeName);
+    const bool rightStr = IsStringOperand(types.right, stringTypeName);
+    if (!leftStr && !rightStr)
+    {
+        return false;
+    }
+    const std::string& other = leftStr ? types.right : types.left;
+    return CheckStringCompatibility(isRelational, other, table, stringTypeName);
+}
+
 bool AreComparisonTypesCompatible(std::string_view op, const OperandTypes& types, const SymbolTable& table,
                                   std::string_view stringTypeName = "string")
 {
@@ -185,7 +207,9 @@ bool AreComparisonTypesCompatible(std::string_view op, const OperandTypes& types
     {
         return true;
     }
-    if (parser::primitives::IsNumeric(types.left) && parser::primitives::IsNumeric(types.right))
+    const std::string unwrappedLeft = UnwrapTypedef(types.left, table);
+    const std::string unwrappedRight = UnwrapTypedef(types.right, table);
+    if (parser::primitives::IsNumeric(unwrappedLeft) && parser::primitives::IsNumeric(unwrappedRight))
     {
         return true;
     }
@@ -194,20 +218,17 @@ bool AreComparisonTypesCompatible(std::string_view op, const OperandTypes& types
     {
         return CheckBoolBranch(isRelational, types, table, stringTypeName);
     }
-    if (types.left == types.right)
+    if (types.left == types.right || unwrappedLeft == unwrappedRight)
     {
-        return CheckIdenticalTypes(op, types.left, table, stringTypeName);
+        return CheckIdenticalTypes(op, unwrappedLeft, table, stringTypeName);
     }
     if (IsEnumComparisonCompatible(types.left, types.right, table))
     {
         return true;
     }
-    if (types.left == stringTypeName || types.right == stringTypeName || types.left == "string" ||
-        types.right == "string")
+    if (IsStringOperand(types.left, stringTypeName) || IsStringOperand(types.right, stringTypeName))
     {
-        const std::string& other =
-            (types.left == stringTypeName || types.left == "string") ? types.right : types.left;
-        return CheckStringCompatibility(isRelational, other, table, stringTypeName);
+        return CheckStringBranch(isRelational, types, table, stringTypeName);
     }
     return AreCustomTypesCompatible(op, types.left, types.right, table);
 }
