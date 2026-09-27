@@ -15,7 +15,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
-#include <iostream>
+#include <ostream>
 #include <string>
 #include <vector>
 

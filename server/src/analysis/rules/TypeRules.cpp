@@ -535,6 +535,12 @@ bool AreIdenticalFunctionSignatures(const Symbol& first, const Symbol& other)
     return true;
 }
 
+/**
+ * @brief Locates the enclosing shared interface symbol containing a method declaration.
+ * @param[in] method Method symbol to inspect.
+ * @param[in] ifaces Candidate interface symbols matching the container name.
+ * @return Pointer to enclosing shared interface symbol, or nullptr if none matched.
+ */
 const Symbol* FindEnclosingSharedInterface(const Symbol& method, const std::vector<Symbol>& ifaces)
 {
     for (const auto& sym : ifaces)
@@ -548,6 +554,13 @@ const Symbol* FindEnclosingSharedInterface(const Symbol& method, const std::vect
     return nullptr;
 }
 
+/**
+ * @brief Checks if two duplicate methods belong to distinct declarations of the same shared interface.
+ * @param[in] first First method symbol.
+ * @param[in] other Other method symbol.
+ * @param[in] ctx Diagnostic context holding symbol table and options.
+ * @return True when duplicate is permissible under asEP_IGNORE_DUPLICATE_SHARED_INTF.
+ */
 bool IsSharedInterfaceDuplicateMethod(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
 {
     if (!ctx.request.IgnoresDuplicateSharedInterface() || !first.GetFunction().isInterfaceMethod ||
@@ -575,18 +588,37 @@ bool IsSharedInterfaceDuplicateMethod(const Symbol& first, const Symbol& other, 
            (ifaceFirst->fileUri != ifaceOther->fileUri);
 }
 
+/**
+ * @brief Checks if two duplicate variables represent valid virtual property accessors.
+ * @param[in] first First variable symbol.
+ * @param[in] other Other variable symbol.
+ * @return True if either symbol is a virtual property.
+ */
 bool IsAllowedDuplicateVariable(const Symbol& first, const Symbol& other)
 {
     return first.type == SymbolType::Variable &&
            (first.GetVariable().isVirtualProperty || other.GetVariable().isVirtualProperty);
 }
 
+/**
+ * @brief Checks if two duplicate class declarations are forward declarations without braces.
+ * @param[in] first First class symbol.
+ * @param[in] other Other class symbol.
+ * @return True if either class declaration lacks braces.
+ */
 bool IsAllowedDuplicateClass(const Symbol& first, const Symbol& other)
 {
     return first.type == SymbolType::Class && other.type == SymbolType::Class &&
            (!first.GetClass().hasBraces || !other.GetClass().hasBraces);
 }
 
+/**
+ * @brief Checks if two duplicate interface declarations are permitted shared interfaces.
+ * @param[in] first First interface symbol.
+ * @param[in] other Other interface symbol.
+ * @param[in] ctx Diagnostic context.
+ * @return True if both are shared interfaces and duplicate shared interfaces are ignored.
+ */
 bool IsAllowedDuplicateInterface(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
 {
     return ctx.request.IgnoresDuplicateSharedInterface() && first.type == SymbolType::Interface &&
@@ -594,6 +626,13 @@ bool IsAllowedDuplicateInterface(const Symbol& first, const Symbol& other, const
            other.GetInterface().modifiers.isShared;
 }
 
+/**
+ * @brief Determines whether a duplicate symbol pair is allowed by language rules or configuration.
+ * @param[in] first First symbol.
+ * @param[in] other Other symbol.
+ * @param[in] ctx Diagnostic context.
+ * @return True if duplicate is allowed; false otherwise.
+ */
 bool IsAllowedDuplicate(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
 {
     if (IsAllowedDuplicateVariable(first, other) || IsAllowedDuplicateClass(first, other))

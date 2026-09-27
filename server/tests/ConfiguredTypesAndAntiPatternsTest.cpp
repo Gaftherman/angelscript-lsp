@@ -15,7 +15,7 @@
 #include "helpers/TestUtils.h"
 
 #include <doctest/doctest.h>
-#include <iostream>
+#include <ostream>
 #include <string>
 
 using namespace angel_lsp;
