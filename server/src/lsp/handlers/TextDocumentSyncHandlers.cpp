@@ -255,21 +255,6 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     const bool contentUnchanged =
         existingText && angel_lsp::utils::TextContentMatchesIgnoringLineEndings(*existingText, analysisText);
 
-    if (contentUnchanged && contributes)
-    {
-        m_documentStore.OpenDocument(
-            DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version, document::MakeTreePtr(nullptr), req.clientUri});
-        PublishDiagnostics(req.uriStr, {}, req.version);
-        const double totalMs = req.totalTimer.ElapsedMs();
-        LogInfo(
-            fmt::format("[Predefined Fast Path] File: {} content unchanged; bypassed re-indexing. Elapsed: {:.2f} ms",
-                        req.uriStr, totalMs));
-        LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: 0.00 ms, Collector: "
-                            "0.00 ms, Scopes: 0.00 ms, Checkers: 0.00 ms)",
-                            req.uriStr, totalMs));
-        return;
-    }
-
     utils::HighResTimer parseTimer;
     document::TreePtr tree = document::MakeTreePtr(m_parser->Parse(analysisText));
     const double parseMs = parseTimer.ElapsedMs();
@@ -277,6 +262,19 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     m_documentStore.OpenDocument(
         DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
                                            document::MakeTreePtr(tree ? ts_tree_copy(tree.get()) : nullptr), req.clientUri});
+
+    if (contentUnchanged && contributes)
+    {
+        PublishDiagnostics(req.uriStr, {}, req.version);
+        const double totalMs = req.totalTimer.ElapsedMs();
+        LogInfo(
+            fmt::format("[Predefined Fast Path] File: {} content unchanged; parsed tree in {:.2f} ms and bypassed symbol re-indexing. Total: {:.2f} ms",
+                        req.uriStr, parseMs, totalMs));
+        LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: "
+                            "0.00 ms, Scopes: 0.00 ms, Checkers: 0.00 ms)",
+                            req.uriStr, totalMs, parseMs));
+        return;
+    }
 
     utils::HighResTimer colTimer;
     if (contributes)

@@ -9,6 +9,7 @@
 #include "analysis/SymbolTable.h"
 #include "config/ServerConfig.h"
 #include "helpers/TestUtils.h"
+#include "features/code_lens/CodeLensHandler.h"
 #include "features/document_symbol/DocumentSymbolHandler.h"
 #include "features/folding_range/FoldingRangeHandler.h"
 #include "features/hover/HoverHandler.h"
@@ -707,6 +708,59 @@ TEST_CASE("SvenCoopRegression - Null safety warning disabled by default in serve
         "}\n";
     const auto diags = AnalyzeSnippet(code);
     CHECK_FALSE(HasDiagCode(diags, "as-warn-possible-null-dereference"));
+}
+
+TEST_CASE("SvenCoopRegression - CodeLens returns empty for predefined stub file")
+{
+    const std::string stubName = GenerateRandomSymbolName("sven") + ".as.predefined";
+    const std::string uri = "file:///" + stubName;
+    const std::string stubContent = "class Vector { float x; float y; float z; }\n";
+
+    analysis::SymbolTable table;
+    analysis::ScopeIndex scopeIndex;
+    features::CodeLensRequest clReq{
+        uri, stubContent, nullptr, table, scopeIndex, nullptr
+    };
+    clReq.predefinedExtension = ".as.predefined";
+
+    const auto lenses = features::GetCodeLenses(clReq);
+    CHECK_FALSE(lenses.has_value());
+}
+
+TEST_CASE("SvenCoopRegression - Predefined file tree in DocumentStore resolves Hover")
+{
+    const std::string stubName = GenerateRandomSymbolName("sven") + ".as.predefined";
+    const std::string uri = "file:///" + stubName;
+    const std::string className = GenerateRandomSymbolName("Dictionary");
+    const std::string stubContent = "class " + className + " {\n    void Clear();\n}\n";
+
+    parser::AngelScriptParser parser;
+    TSTree* tree = parser.Parse(stubContent);
+    REQUIRE(tree != nullptr);
+
+    analysis::SymbolTable table;
+    analysis::SymbolCollector collector(nullptr);
+    collector.CollectSymbols(uri, stubContent, parser, table);
+
+    analysis::ScopeIndex scopeIndex;
+    features::HoverRequest hoverReq{
+        uri, stubContent, tree, table, scopeIndex,
+        lsp::Position{0, 7},
+        [](const std::string&) -> const std::string* { return nullptr; },
+        nullptr,
+        [](const std::string&) -> std::string { return ""; },
+        nullptr
+    };
+
+    const auto hover = features::GetHover(hoverReq);
+    CHECK(hover.has_value());
+    if (hover.has_value() && std::holds_alternative<lsp::MarkupContent>(hover->contents))
+    {
+        const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
+        CHECK(markup.value.find(className) != std::string::npos);
+    }
+
+    ts_tree_delete(tree);
 }
 
 } // namespace angel_lsp::test

@@ -1155,6 +1155,26 @@ void ProcessSymbolGroup(const RangeKey& key, const std::vector<analysis::Symbol>
     }
 }
 
+/**
+ * @brief Constructs code lenses for each symbol group in document order.
+ * @param[in] symGroups Collected and grouped symbols.
+ * @param[in] request Active CodeLens request.
+ * @return Populated vector of code lenses.
+ */
+std::vector<lsp::CodeLens> BuildSymbolGroupLenses(const SymbolGroups& symGroups, const CodeLensRequest& request)
+{
+    std::vector<lsp::CodeLens> lenses;
+    for (const auto& key : symGroups.rangeOrder)
+    {
+        auto it = symGroups.groups.find(key);
+        if (it != symGroups.groups.end() && !it->second.empty())
+        {
+            ProcessSymbolGroup(key, it->second, request, lenses);
+        }
+    }
+    return lenses;
+}
+
 } // namespace
 
 std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest& request)
@@ -1169,27 +1189,20 @@ std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest& r
         return virtualLenses;
     }
 
-    if (request.sourceCode.empty())
+    if (request.sourceCode.empty() ||
+        angel_lsp::utils::IsPredefinedFile(request.uri, request.predefinedExtension))
     {
         return std::nullopt;
     }
 
-    auto [rangeOrder, groups] = CollectSymbolGroups(request);
-    if (rangeOrder.empty())
+    auto symGroups = CollectSymbolGroups(request);
+    constexpr size_t k_maxCodeLensSymbols = 500;
+    if (symGroups.rangeOrder.empty() || symGroups.groups.size() > k_maxCodeLensSymbols)
     {
         return std::nullopt;
     }
 
-    std::vector<lsp::CodeLens> lenses;
-    for (const auto& key : rangeOrder)
-    {
-        auto it = groups.find(key);
-        if (it != groups.end() && !it->second.empty())
-        {
-            ProcessSymbolGroup(key, it->second, request, lenses);
-        }
-    }
-
+    auto lenses = BuildSymbolGroupLenses(symGroups, request);
     if (lenses.empty())
     {
         return std::nullopt;
