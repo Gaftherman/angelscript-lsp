@@ -445,18 +445,35 @@ void Server::ApplyEngineInitializationOptions(const std::optional<lsp::LSPAny>& 
         engineObj = &e->object();
     }
 
-    if (auto v = FindSectionBool(initSection, engineObj, "foreachSupport"))
-        m_config.engine.foreachSupport = *v;
-    if (auto v = FindSectionBool(initSection, engineObj, "requireEnumScope"))
-        m_config.engine.requireEnumScope = *v;
-    if (auto v = FindSectionBool(initSection, engineObj, "alwaysImplDefaultConstruct"))
-        m_config.engine.alwaysImplDefaultConstruct = *v;
-    if (auto v = FindSectionBool(initSection, engineObj, "allowUnicodeIdentifiers"))
-        m_config.engine.allowUnicodeIdentifiers = *v;
-    if (auto v = FindSectionBool(initSection, engineObj, "ignoreDuplicateSharedIntf"))
-        m_config.engine.ignoreDuplicateSharedIntf = *v;
-    if (auto v = FindSectionInt(initSection, engineObj, "compilerWarnings"))
-        m_config.engine.compilerWarnings = *v;
+    auto applyBool = [&](std::string_view name, bool& target)
+    {
+        if (auto v = FindSectionBool(initSection, engineObj, name))
+            target = *v;
+    };
+    auto applyInt = [&](std::string_view name, int& target)
+    {
+        if (auto v = FindSectionInt(initSection, engineObj, name))
+            target = *v;
+    };
+
+    applyBool("allowUnsafeReferences", m_config.engine.allowUnsafeReferences);
+    applyBool("privatePropAsProtected", m_config.engine.privatePropAsProtected);
+    applyBool("disallowGlobalVars", m_config.engine.disallowGlobalVars);
+    applyBool("allowMultilineStrings", m_config.engine.allowMultilineStrings);
+    applyBool("disallowValueAssignForRef", m_config.engine.disallowValueAssignForRef);
+    applyBool("disableIntegerDivision", m_config.engine.disableIntegerDivision);
+    applyBool("disallowEmptyListElements", m_config.engine.disallowEmptyListElements);
+    applyBool("foreachSupport", m_config.engine.foreachSupport);
+    applyBool("requireEnumScope", m_config.engine.requireEnumScope);
+    applyBool("alwaysImplDefaultConstruct", m_config.engine.alwaysImplDefaultConstruct);
+    applyBool("allowUnicodeIdentifiers", m_config.engine.allowUnicodeIdentifiers);
+    applyBool("ignoreDuplicateSharedIntf", m_config.engine.ignoreDuplicateSharedIntf);
+
+    applyInt("propertyAccessorMode", m_config.engine.propertyAccessorMode);
+    applyInt("boolConversionMode", m_config.engine.boolConversionMode);
+    applyInt("useCharacterLiterals", m_config.engine.useCharacterLiterals);
+    applyInt("alterSyntaxNamedArgs", m_config.engine.alterSyntaxNamedArgs);
+    applyInt("compilerWarnings", m_config.engine.compilerWarnings);
 }
 
 void Server::NegotiateClientCapabilities(const lsp::ClientCapabilities& capabilities)
@@ -859,19 +876,31 @@ void Server::LogNonDefaultEngineProperties() const
     note(m_config.engine.allowUnsafeReferences, defaults.allowUnsafeReferences, "allowUnsafeReferences");
     note(m_config.engine.privatePropAsProtected, defaults.privatePropAsProtected, "privatePropAsProtected");
     note(m_config.engine.disallowGlobalVars, defaults.disallowGlobalVars, "disallowGlobalVars");
+    note(m_config.engine.allowMultilineStrings, defaults.allowMultilineStrings, "allowMultilineStrings");
+    note(m_config.engine.disallowValueAssignForRef, defaults.disallowValueAssignForRef, "disallowValueAssignForRef");
+    note(m_config.engine.disableIntegerDivision, defaults.disableIntegerDivision, "disableIntegerDivision");
+    note(m_config.engine.disallowEmptyListElements, defaults.disallowEmptyListElements, "disallowEmptyListElements");
     note(m_config.engine.foreachSupport, defaults.foreachSupport, "foreachSupport");
     note(m_config.engine.requireEnumScope, defaults.requireEnumScope, "requireEnumScope");
     note(m_config.engine.alwaysImplDefaultConstruct, defaults.alwaysImplDefaultConstruct, "alwaysImplDefaultConstruct");
     note(m_config.engine.allowUnicodeIdentifiers, defaults.allowUnicodeIdentifiers, "allowUnicodeIdentifiers");
     note(m_config.engine.ignoreDuplicateSharedIntf, defaults.ignoreDuplicateSharedIntf, "ignoreDuplicateSharedIntf");
-    if (m_config.engine.compilerWarnings != defaults.compilerWarnings)
+
+    auto noteInt = [&](int current, int defVal, std::string_view name)
     {
+        if (current == defVal)
+            return;
         if (!changed.empty())
-        {
             changed += ", ";
-        }
-        changed += "compilerWarnings=" + std::to_string(m_config.engine.compilerWarnings);
-    }
+        changed += name;
+        changed += "=" + std::to_string(current);
+    };
+
+    noteInt(m_config.engine.propertyAccessorMode, defaults.propertyAccessorMode, "propertyAccessorMode");
+    noteInt(m_config.engine.boolConversionMode, defaults.boolConversionMode, "boolConversionMode");
+    noteInt(m_config.engine.useCharacterLiterals, defaults.useCharacterLiterals, "useCharacterLiterals");
+    noteInt(m_config.engine.alterSyntaxNamedArgs, defaults.alterSyntaxNamedArgs, "alterSyntaxNamedArgs");
+    noteInt(m_config.engine.compilerWarnings, defaults.compilerWarnings, "compilerWarnings");
 
     if (!changed.empty())
     {

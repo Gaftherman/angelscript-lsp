@@ -852,7 +852,54 @@ bool IsReferenceInMixin(const LocalReference& ref, const MixinRanges& mixinRange
     return false;
 }
 
-bool CheckEnumScopeDiagnostic(const Scope* scope, const LocalReference& ref, const LocalDefinition* resolved,
+/**
+ * @brief Checks if an identifier reference is part of a qualified scoped identifier (e.g. Enum::Member).
+ * @param[in] ref Lexical reference to inspect.
+ * @param[in] ctx Diagnostic context holding AST tree and source code.
+ * @return True when the reference is preceded by a scope resolution operator.
+ */
+bool IsEnumReferenceQualified(const LocalReference& ref, const DiagnosticContext& ctx)
+{
+    if (!ctx.request.tree)
+    {
+        return false;
+    }
+    const TSPoint at{ref.startLine, ref.startCharacter};
+    const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(ctx.request.tree), at, at);
+    if (ts_node_is_null(node))
+    {
+        return false;
+    }
+    TSNode parent = ts_node_parent(node);
+    if (ts_node_is_null(parent))
+    {
+        return false;
+    }
+    const std::string_view pType = ts_node_type(parent);
+    if (pType == "scoped_identifier")
+    {
+        const uint32_t pStart = ts_node_start_byte(parent);
+        const uint32_t pEnd = ts_node_end_byte(parent);
+        if (pStart < ctx.request.sourceCode.size() && pEnd <= ctx.request.sourceCode.size() && pStart < pEnd)
+        {
+            const std::string_view text = ctx.request.sourceCode.substr(pStart, pEnd - pStart);
+            if (text.find("::") != std::string_view::npos)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Validates that enum member access obeys asEP_REQUIRE_ENUM_SCOPE when enabled.
+ * @param[in] ref Lexical reference to an enumerator.
+ * @param[in] resolved Resolved local definition, if any.
+ * @param[in,out] ctx Diagnostic context to emit into.
+ * @return True when a diagnostic was emitted or reference should be skipped.
+ */
+bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefinition* resolved,
                               DiagnosticContext& ctx)
 {
     // asEP_REQUIRE_ENUM_SCOPE, checked before the resolution is acted on, because an
@@ -865,26 +912,16 @@ bool CheckEnumScopeDiagnostic(const Scope* scope, const LocalReference& ref, con
         return false;
     }
 
-    bool insideFunction = false;
-    for (const Scope* current = scope; current != nullptr; current = current->parent)
-    {
-        if (current->isFunctionScope)
-        {
-            insideFunction = true;
-            break;
-        }
-    }
-
     const bool isOwnDeclaration =
         resolved->startLine == ref.startLine && resolved->startCharacter == ref.startCharacter;
-
-    if (insideFunction && !isOwnDeclaration)
+    if (isOwnDeclaration || IsEnumReferenceQualified(ref, ctx))
     {
-        ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
-                        "as-err-enum-scope-required", ref.name);
-        return true;
+        return false;
     }
-    return false;
+
+    ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
+                    "as-err-enum-scope-required", ref.name);
+    return true;
 }
 
 bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, const DiagnosticContext& ctx)
@@ -953,7 +990,7 @@ void CheckScopeReferences(
             continue;
 
         const LocalDefinition* resolved = ResolveInScope(scope, ref.name);
-        if (CheckEnumScopeDiagnostic(scope, ref, resolved, ctx))
+        if (CheckEnumScopeDiagnostic(ref, resolved, ctx))
             continue;
 
         if (resolved != nullptr || knownGlobalNames.contains(ref.name))

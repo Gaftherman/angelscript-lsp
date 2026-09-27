@@ -275,18 +275,33 @@ bool Server::UpdateEngineConfiguration(const lsp::LSPObject& section)
             engineChanged = true;
         }
     };
+    auto applyInt = [&](std::string_view name, int& target)
+    {
+        if (auto v = FindSectionInt(section, engineObj, name); v && target != *v)
+        {
+            target = *v;
+            engineChanged = true;
+        }
+    };
 
+    applyBool("allowUnsafeReferences", m_config.engine.allowUnsafeReferences);
+    applyBool("privatePropAsProtected", m_config.engine.privatePropAsProtected);
+    applyBool("disallowGlobalVars", m_config.engine.disallowGlobalVars);
+    applyBool("allowMultilineStrings", m_config.engine.allowMultilineStrings);
+    applyBool("disallowValueAssignForRef", m_config.engine.disallowValueAssignForRef);
+    applyBool("disableIntegerDivision", m_config.engine.disableIntegerDivision);
+    applyBool("disallowEmptyListElements", m_config.engine.disallowEmptyListElements);
     applyBool("foreachSupport", m_config.engine.foreachSupport);
     applyBool("requireEnumScope", m_config.engine.requireEnumScope);
     applyBool("alwaysImplDefaultConstruct", m_config.engine.alwaysImplDefaultConstruct);
     applyBool("allowUnicodeIdentifiers", m_config.engine.allowUnicodeIdentifiers);
     applyBool("ignoreDuplicateSharedIntf", m_config.engine.ignoreDuplicateSharedIntf);
 
-    if (auto v = FindSectionInt(section, engineObj, "compilerWarnings"); v && m_config.engine.compilerWarnings != *v)
-    {
-        m_config.engine.compilerWarnings = *v;
-        engineChanged = true;
-    }
+    applyInt("propertyAccessorMode", m_config.engine.propertyAccessorMode);
+    applyInt("boolConversionMode", m_config.engine.boolConversionMode);
+    applyInt("useCharacterLiterals", m_config.engine.useCharacterLiterals);
+    applyInt("alterSyntaxNamedArgs", m_config.engine.alterSyntaxNamedArgs);
+    applyInt("compilerWarnings", m_config.engine.compilerWarnings);
 
     return engineChanged;
 }

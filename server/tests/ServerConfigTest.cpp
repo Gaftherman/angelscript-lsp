@@ -1239,7 +1239,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             // AngelScript has forty engine properties and this server reads three. Naming one of
             // the other thirty-seven has to be inert rather than land on a neighbouring field.
             ArgvHelper args{"angel_lsp",
-                            "--engine-property=allowMultilineStrings=true",
+                            "--engine-property=unknownEngineProperty=true",
                             "--engine-property=allowUnsafeReferences=true"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.engine.allowUnsafeReferences == true);

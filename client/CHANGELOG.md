@@ -4,6 +4,85 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.9.9] - 2026-09-27
+
+### Engine Property Parity Audit, Dynamic Configuration Synchronization, & Semantic Hardening
+
+- Engine Properties Zero-Regression Audit (`asEP_*`):
+  - Unified boolean parser in `ServerConfig` accepting `"true"`, `"false"`, `"1"`, `"0"`, `"on"`, `"off"`, `"yes"`, `"no"`.
+  - Added full dynamic synchronization of all 17 AngelScript engine properties across LSP initialization options and `workspace/didChangeConfiguration` notifications.
+  - Plumbed `asEP_REQUIRE_ENUM_SCOPE` into semantic analysis to require `Enum::Member` qualification across local, class, and global scope initializers while allowing clean scoped expressions.
+  - Plumbed `asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT` to honor implicit default constructors when classes only define non-default constructors.
+  - Plumbed `asEP_IGNORE_DUPLICATE_SHARED_INTF` to permit duplicate shared interface declarations and their methods across multi-file script environments without false duplicate symbol errors.
+- Comprehensive Engine Properties Audit Test Suite (`EnginePropertiesAuditTest`):
+  - Validates on/off toggles, integer modes (0, 1, 2, 3), and CLI flags (`--require-enum-scope`, `--always-impl-default-construct`, `--engine-property=...`).
+- 100% i18n & l10n Completeness:
+  - Synchronized English and Spanish diagnostics catalogs across `i18n.cpp`, `package.nls.json`, and `package.nls.es.json` with zero missing keys or format placeholder mismatches.
+
+## [0.9.8] - 2026-09-27
+
+### Sven Co-op & Meta API v2 Semantic Remediations
+
+- Ternary Null-Handle Common Type Resolution:
+  - Correctly infers handle types (`T@`) when ternary expressions mix concrete object handles with literal `null` (e.g. `cond ? pEntity : null`).
+- Inheritance-Aware Implicit Conversion (`opImplConv` & Upcasting):
+  - Supports implicit upcasting for polymorphic handle hierarchies (`CBaseMonster@` to `CBaseEntity@`).
+- Primitive-to-String Constructor & Conversion Disambiguation:
+  - Resolves standard constructor conversions (`string(int)`, `string(float)`) when passing primitives to string parameters.
+- Switch CFG Terminal Defenses:
+  - Enhanced flow analysis to recognize exhaustive switch statements with default returns, eliminating false `as-warn-not-all-paths-return`.
+- Ambiguous Overload Resolution:
+  - Refined template and numeric promotion ranking for builtin utilities like `min` and `max`.
+
+## [0.9.7] - 2026-09-27
+
+### asharness Oracle Test Auto-Discovery & Invariant Parity Verification
+
+- asharness Oracle Auto-Discovery:
+  - Automatically locates and validates against official AngelScript SDK test suites (`asharness.exe`).
+- Randomized Parity Test Fixtures:
+  - Replaced hardcoded test fixtures with dynamic randomized symbol generators across regression suites.
+
+## [0.9.6] - 2026-09-27
+
+### Typedef Comparisons, Enum Numerics, & Dictionary Init Lists
+
+- Typedef Operator & Comparison Normalization:
+  - Resolves underlying types for typedefs (e.g. `typedef uint32 size_t;`) in relational expressions (`<`, `>`, `<=`, `>=`).
+- Enum-to-Numeric Implicit Comparisons:
+  - Seamlessly evaluates comparisons between enum constants and numeric expressions (`flDamage <= 0.0 or pev.takedamage == DAMAGE_NO`).
+- Nested Dictionary Initialization Lists:
+  - Permits nested dictionary key-value list initializers (`{ { "key", "val" } }`) without spurious type mismatch errors.
+
+## [0.9.5] - 2026-09-27
+
+### Pure Grammar Fidelity & BaseClass De-Hardcoding
+
+- Elimination of Hardcoded `BaseClass` Keyword:
+  - Purged hardcoded identifier checks for `BaseClass` from symbol collectors, semantic analyzers, and mixin validators.
+  - Restored pure Tree-Sitter grammar and scoped resolution for base class calls and superclass references.
+
+## [0.9.4] - 2026-09-27
+
+### Dynamic Container Type Resolution & Wildcard Handling
+
+- Dynamic Container Resolution:
+  - Replaced hardcoded `array<` and `vector<` type matching with configurable container abstractions.
+  - Supports user-defined container types (e.g. `Array<T>`, `optional<T>`) declared in `.as.predefined` stubs or engine profiles.
+- Wildcard Parameter Improvements:
+  - Added support for AngelScript `any` addon type alongside `?` wildcard parameters.
+
+## [0.9.3] - 2026-09-27
+
+### Architecture Decoupling & Semantic AST Facade
+
+- Server State Model Decoupling:
+  - Separated LSP transport orchestration from analysis state management.
+- Semantic AST Facade:
+  - Introduced unified AST inspection facade to eliminate duplicate Tree-Sitter traversals.
+- OverloadResolver Modularization:
+  - Decomposed monolithic overload resolution into cohesive scoring and matching sub-units.
+
 ## [0.9.2] - 2026-09-26
 
 ### Adversarial Fuzzing Harness, Zero-Allocation Member Lookup, & Concurrency Hardening

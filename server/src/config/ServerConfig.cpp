@@ -163,64 +163,42 @@ bool ApplyNumericEngineProperty(EngineProperties& engine, std::string_view name,
     return false;
 }
 
-struct ZeroOneBoolProp
+struct BoolEngineProp
 {
     std::string_view name;
     std::string_view alias;
     bool EngineProperties::* member;
 };
 
-static constexpr ZeroOneBoolProp kZeroOneBoolProps[] = {
-    {"allowMultilineStrings", "", &EngineProperties::allowMultilineStrings},
-    {"disallowValueAssignForRef", "", &EngineProperties::disallowValueAssignForRef},
-    {"disableIntegerDivision", "", &EngineProperties::disableIntegerDivision},
-    {"disallowEmptyListElements", "", &EngineProperties::disallowEmptyListElements},
-    {"foreachSupport", "", &EngineProperties::foreachSupport},
+static constexpr BoolEngineProp kBoolEngineProps[] = {
+    {"allowUnsafeReferences", "allow-unsafe-references", &EngineProperties::allowUnsafeReferences},
+    {"privatePropAsProtected", "private-prop-as-protected", &EngineProperties::privatePropAsProtected},
+    {"disallowGlobalVars", "disallow-global-vars", &EngineProperties::disallowGlobalVars},
+    {"allowMultilineStrings", "allow-multiline-strings", &EngineProperties::allowMultilineStrings},
+    {"disallowValueAssignForRef", "disallow-value-assign-for-ref", &EngineProperties::disallowValueAssignForRef},
+    {"disableIntegerDivision", "disable-integer-division", &EngineProperties::disableIntegerDivision},
+    {"disallowEmptyListElements", "disallow-empty-list-elements", &EngineProperties::disallowEmptyListElements},
+    {"foreachSupport", "foreach-support", &EngineProperties::foreachSupport},
     {"requireEnumScope", "require-enum-scope", &EngineProperties::requireEnumScope},
     {"alwaysImplDefaultConstruct", "always-impl-default-construct", &EngineProperties::alwaysImplDefaultConstruct},
     {"allowUnicodeIdentifiers", "allow-unicode-identifiers", &EngineProperties::allowUnicodeIdentifiers},
     {"ignoreDuplicateSharedIntf", "ignore-duplicate-shared-intf", &EngineProperties::ignoreDuplicateSharedIntf},
 };
 
-bool ApplyZeroOneBoolEngineProperty(EngineProperties& engine, std::string_view name, std::string_view raw)
-{
-    for (const auto& prop : kZeroOneBoolProps)
-    {
-        if (name == prop.name || (!prop.alias.empty() && name == prop.alias))
-        {
-            if (raw == "0" || raw == "1")
-            {
-                engine.*(prop.member) = (raw == "1");
-                return true;
-            }
-            return false;
-        }
-    }
-    return false;
-}
-
-bool ApplyBooleanLiteralEngineProperty(EngineProperties& engine, std::string_view name, std::string_view raw)
+bool ApplyBoolEngineProperty(EngineProperties& engine, std::string_view name, std::string_view raw)
 {
     if (!IsBoolLiteral(raw))
     {
         return false;
     }
-    const bool value = ParseBoolValue(raw, true);
-
-    if (name == "allowUnsafeReferences")
+    const bool value = ParseBoolValue(raw, false);
+    for (const auto& prop : kBoolEngineProps)
     {
-        engine.allowUnsafeReferences = value;
-        return true;
-    }
-    if (name == "privatePropAsProtected")
-    {
-        engine.privatePropAsProtected = value;
-        return true;
-    }
-    if (name == "disallowGlobalVars")
-    {
-        engine.disallowGlobalVars = value;
-        return true;
+        if (name == prop.name || (!prop.alias.empty() && name == prop.alias))
+        {
+            engine.*(prop.member) = value;
+            return true;
+        }
     }
     return false;
 }
@@ -238,11 +216,7 @@ bool ApplyEngineProperty(EngineProperties& engine, std::string_view name, std::s
     {
         return true;
     }
-    if (ApplyZeroOneBoolEngineProperty(engine, name, raw))
-    {
-        return true;
-    }
-    return ApplyBooleanLiteralEngineProperty(engine, name, raw);
+    return ApplyBoolEngineProperty(engine, name, raw);
 }
 } // namespace
 
@@ -846,34 +820,38 @@ bool TryParseDiagnosticSeverity(ServerConfig& config, ArgParseContext& ctx)
     return true;
 }
 
+struct EngineBoolFlag
+{
+    std::string_view enableFlag;
+    std::string_view disableFlag;
+    bool EngineProperties::* member;
+};
+
+static constexpr EngineBoolFlag kEngineBoolFlags[] = {
+    {"--require-enum-scope", "--no-require-enum-scope", &EngineProperties::requireEnumScope},
+    {"--always-impl-default-construct", "--no-always-impl-default-construct",
+     &EngineProperties::alwaysImplDefaultConstruct},
+    {"--allow-unicode-identifiers", "--no-allow-unicode-identifiers", &EngineProperties::allowUnicodeIdentifiers},
+    {"--ignore-duplicate-shared-intf", "--no-ignore-duplicate-shared-intf",
+     &EngineProperties::ignoreDuplicateSharedIntf},
+};
+
 bool TryParseEngineFlags(ServerConfig& config, ArgParseContext& ctx)
 {
-    auto apply01 = [&](bool& target)
+    for (const auto& entry : kEngineBoolFlags)
     {
-        std::string_view val;
-        if (ctx.GetStringValue(val) && (val == "0" || val == "1"))
+        if (ctx.key == entry.enableFlag)
         {
-            target = (val == "1");
+            config.engine.*(entry.member) = ctx.GetBoolValue(true);
+            return true;
         }
-        return true;
-    };
+        if (ctx.key == entry.disableFlag)
+        {
+            config.engine.*(entry.member) = false;
+            return true;
+        }
+    }
 
-    if (ctx.key == "--require-enum-scope")
-    {
-        return apply01(config.engine.requireEnumScope);
-    }
-    if (ctx.key == "--always-impl-default-construct")
-    {
-        return apply01(config.engine.alwaysImplDefaultConstruct);
-    }
-    if (ctx.key == "--allow-unicode-identifiers")
-    {
-        return apply01(config.engine.allowUnicodeIdentifiers);
-    }
-    if (ctx.key == "--ignore-duplicate-shared-intf")
-    {
-        return apply01(config.engine.ignoreDuplicateSharedIntf);
-    }
     if (ctx.key == "--compiler-warnings")
     {
         std::string_view val;

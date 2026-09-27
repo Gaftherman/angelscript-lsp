@@ -1669,7 +1669,7 @@ void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName,
     {
         EmitAtNode(targetNode, ctx, "as-err-deleted-method-called", {typeName, typeName});
     }
-    else if (!hasZeroArg)
+    else if (!hasZeroArg && !ctx.request.AlwaysImplementsDefaultConstruct())
     {
         EmitAtNode(targetNode, ctx, "as-err-no-default-constructor", {typeName});
     }

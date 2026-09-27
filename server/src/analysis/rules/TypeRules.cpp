@@ -535,30 +535,79 @@ bool AreIdenticalFunctionSignatures(const Symbol& first, const Symbol& other)
     return true;
 }
 
-bool IsAllowedDuplicate(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
+const Symbol* FindEnclosingSharedInterface(const Symbol& method, const std::vector<Symbol>& ifaces)
 {
-    if (first.type == SymbolType::Variable &&
-        (first.GetVariable().isVirtualProperty || other.GetVariable().isVirtualProperty))
+    for (const auto& sym : ifaces)
     {
-        return true;
-    }
-
-    if (first.type == SymbolType::Class && other.type == SymbolType::Class)
-    {
-        if (!first.GetClass().hasBraces || !other.GetClass().hasBraces)
+        if (sym.type == SymbolType::Interface && sym.GetInterface().modifiers.isShared &&
+            sym.fileUri == method.fileUri && method.startLine >= sym.startLine && method.endLine <= sym.endLine)
         {
-            return true;
+            return &sym;
         }
     }
+    return nullptr;
+}
 
-    if (ctx.request.IgnoresDuplicateSharedInterface() && first.type == SymbolType::Interface &&
-        other.type == SymbolType::Interface && first.GetInterface().modifiers.isShared &&
-        other.GetInterface().modifiers.isShared)
+bool IsSharedInterfaceDuplicateMethod(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
+{
+    if (!ctx.request.IgnoresDuplicateSharedInterface() || !first.GetFunction().isInterfaceMethod ||
+        !other.GetFunction().isInterfaceMethod || first.containerName.empty() ||
+        first.containerName != other.containerName)
+    {
+        return false;
+    }
+
+    const auto ifaceSymbols = ctx.request.symbolTable.FindSymbolsPtr(first.containerName);
+    if (!ifaceSymbols)
+    {
+        return false;
+    }
+
+    const Symbol* ifaceFirst = FindEnclosingSharedInterface(first, *ifaceSymbols);
+    const Symbol* ifaceOther = FindEnclosingSharedInterface(other, *ifaceSymbols);
+    if (!ifaceFirst || !ifaceOther)
+    {
+        return false;
+    }
+
+    return (ifaceFirst != ifaceOther) || (ifaceFirst->startLine != ifaceOther->startLine) ||
+           (ifaceFirst->startCharacter != ifaceOther->startCharacter) ||
+           (ifaceFirst->fileUri != ifaceOther->fileUri);
+}
+
+bool IsAllowedDuplicateVariable(const Symbol& first, const Symbol& other)
+{
+    return first.type == SymbolType::Variable &&
+           (first.GetVariable().isVirtualProperty || other.GetVariable().isVirtualProperty);
+}
+
+bool IsAllowedDuplicateClass(const Symbol& first, const Symbol& other)
+{
+    return first.type == SymbolType::Class && other.type == SymbolType::Class &&
+           (!first.GetClass().hasBraces || !other.GetClass().hasBraces);
+}
+
+bool IsAllowedDuplicateInterface(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
+{
+    return ctx.request.IgnoresDuplicateSharedInterface() && first.type == SymbolType::Interface &&
+           other.type == SymbolType::Interface && first.GetInterface().modifiers.isShared &&
+           other.GetInterface().modifiers.isShared;
+}
+
+bool IsAllowedDuplicate(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
+{
+    if (IsAllowedDuplicateVariable(first, other) || IsAllowedDuplicateClass(first, other))
     {
         return true;
     }
 
-    return false;
+    if (IsAllowedDuplicateInterface(first, other, ctx))
+    {
+        return true;
+    }
+
+    return first.type == SymbolType::Function && other.type == SymbolType::Function &&
+           IsSharedInterfaceDuplicateMethod(first, other, ctx);
 }
 
 bool CheckDuplicatePair(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
@@ -578,6 +627,11 @@ bool CheckDuplicatePair(const Symbol& first, const Symbol& other, const Diagnost
     if (first.type == SymbolType::Function)
     {
         if (!AreIdenticalFunctionSignatures(first, other))
+        {
+            return false;
+        }
+
+        if (IsAllowedDuplicate(first, other, ctx))
         {
             return false;
         }
