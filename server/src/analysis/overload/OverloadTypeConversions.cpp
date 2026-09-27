@@ -67,16 +67,18 @@ std::string StripTypeDecorations(std::string result)
     return result;
 }
 
-std::string DesugarArrayBrackets(std::string result)
+std::string DesugarArrayBrackets(std::string result, std::string_view arrayTypeName)
 {
+    const std::string_view effectiveArrayName = arrayTypeName.empty() ? "array" : arrayTypeName;
     while (result.ends_with("[]"))
     {
-        result = "array<" + result.substr(0, result.size() - 2) + ">";
+        const std::string inner = DesugarArrayBrackets(result.substr(0, result.size() - 2), effectiveArrayName);
+        result = std::string(effectiveArrayName) + "<" + inner + ">";
     }
     return result;
 }
 
-std::string NormalizeType(std::string_view typeName)
+std::string NormalizeType(std::string_view typeName, std::string_view arrayTypeName)
 {
     typeName = TrimWhitespace(typeName);
     if (typeName.starts_with("const "))
@@ -92,7 +94,7 @@ std::string NormalizeType(std::string_view typeName)
     }
 
     result = CanonicalizeType(result);
-    return DesugarArrayBrackets(std::move(result));
+    return DesugarArrayBrackets(std::move(result), arrayTypeName);
 }
 
 bool HasHandleModifier(std::string_view typeName)
@@ -304,7 +306,7 @@ bool HasConstModifier(std::string_view typeName)
 
 bool IsWildcardParameter(const ParameterInformation& param)
 {
-    return param.typeName == "?" || param.typeName == "any" || param.rawText.find('?') != std::string::npos;
+    return param.typeName == "?" || param.rawText.find('?') != std::string::npos;
 }
 
 bool IsOutParameter(const ParameterInformation& param)
@@ -315,10 +317,65 @@ bool IsOutParameter(const ParameterInformation& param)
            param.typeName.find("& out") != std::string::npos;
 }
 
-bool IsContainerParameter(const ParameterInformation& param)
+static std::optional<std::string_view> ExtractTemplateBaseName(std::string_view typeName)
 {
-    return param.typeName.find("array<") != std::string::npos || param.rawText.find("array<") != std::string::npos ||
-           param.typeName.find("vector<") != std::string::npos;
+    const size_t openBracket = typeName.find('<');
+    const size_t closeBracket = typeName.rfind('>');
+    if (openBracket == std::string_view::npos || closeBracket == std::string_view::npos ||
+        closeBracket <= openBracket)
+    {
+        return std::nullopt;
+    }
+    std::string_view base = typeName.substr(0, openBracket);
+    base = TrimWhitespace(base);
+    if (base.starts_with("const "))
+    {
+        base.remove_prefix(6);
+        base = TrimWhitespace(base);
+    }
+    return base;
+}
+
+static bool IsSymbolTableTemplateClass(std::string_view templateName, const SymbolTable& symbolTable)
+{
+    const std::string nameStr(templateName);
+    const auto syms = symbolTable.FindSymbolsPtr(nameStr);
+    const auto typeSymbols = syms ? *syms : symbolTable.FindTypeSymbolsByShortName(nameStr);
+    for (const auto& sym : typeSymbols)
+    {
+        if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+        {
+            const auto& clsSig = std::get<ClassSignature>(sym.signature);
+            if (clsSig.isTemplate || !clsSig.templateParams.empty())
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* symbolTable,
+                          std::string_view arrayTypeName)
+{
+    if (param.typeName.ends_with("[]") || param.rawText.find("[]") != std::string::npos)
+    {
+        return true;
+    }
+
+    const auto templateName = ExtractTemplateBaseName(param.typeName);
+    if (!templateName)
+    {
+        return false;
+    }
+
+    const std::string_view effectiveArrayName = arrayTypeName.empty() ? "array" : arrayTypeName;
+    if (*templateName == effectiveArrayName || *templateName == "array")
+    {
+        return true;
+    }
+
+    return symbolTable ? IsSymbolTableTemplateClass(*templateName, *symbolTable) : true;
 }
 
 bool IsSameType(const std::string& a, const std::string& b)

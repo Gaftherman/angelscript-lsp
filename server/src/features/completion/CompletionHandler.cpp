@@ -495,22 +495,19 @@ std::string CallSnippet(const std::string& name, const std::vector<analysis::Par
  * @brief Static array of primitive type names.
  * @return Constant reference to vector of primitive strings.
  */
-const std::vector<std::string>& GetPrimitiveTypeNames()
+std::vector<std::string> GetPrimitiveTypeNames(std::string_view stringTypeName = "string",
+                                               std::string_view arrayTypeName = "array")
 {
-    static const std::vector<std::string> primitives = []
+    std::vector<std::string> all;
+    all.reserve(parser::primitives::k_all.size() + 3);
+    for (const std::string_view name : parser::primitives::k_all)
     {
-        std::vector<std::string> all;
-        all.reserve(parser::primitives::k_all.size() + 3);
-        for (const std::string_view name : parser::primitives::k_all)
-        {
-            all.emplace_back(name);
-        }
-        all.emplace_back("string");
-        all.emplace_back("array");
-        all.emplace_back("dictionary");
-        return all;
-    }();
-    return primitives;
+        all.emplace_back(name);
+    }
+    all.emplace_back(stringTypeName.empty() ? "string" : stringTypeName);
+    all.emplace_back(arrayTypeName.empty() ? "array" : arrayTypeName);
+    all.emplace_back("dictionary");
+    return all;
 }
 
 /**
@@ -1159,7 +1156,9 @@ bool TryCompleteTemplateArguments(const std::string& prefix, CompletionCollector
             }
         });
 
-    for (const auto& primitive : GetPrimitiveTypeNames())
+    const auto strType = collector.request.config ? collector.request.config->types.stringTypeName : "string";
+    const auto arrType = collector.request.config ? collector.request.config->types.arrayTypeName : "array";
+    for (const auto& primitive : GetPrimitiveTypeNames(strType, arrType))
     {
         AddItemIfNew(collector, {primitive, lsp::CompletionItemKind::Keyword});
     }

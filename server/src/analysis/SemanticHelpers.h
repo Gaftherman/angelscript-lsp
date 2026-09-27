@@ -327,9 +327,10 @@ bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx);
 /**
  * @brief Strips type modifiers (handles '@', references '&', 'const ', array brackets '[]', 'array<T>').
  * @param typeName Raw type name string or view.
+ * @param arrayTypeName Optional workspace-configured array type name.
  * @return Cleaned base type name.
  */
-std::string CleanBaseType(std::string_view typeName);
+std::string CleanBaseType(std::string_view typeName, std::string_view arrayTypeName = "");
 
 /**
  * @brief Rewrites the bracket spelling of an array as its template spelling.
@@ -642,6 +643,8 @@ struct ExpressionTypeContext
     const SymbolTable& symbolTable;
     std::string_view sourceCode;
     std::string_view uri = "";
+    std::string_view stringTypeName = "string";
+    std::string_view arrayTypeName = "array";
 };
 
 /**

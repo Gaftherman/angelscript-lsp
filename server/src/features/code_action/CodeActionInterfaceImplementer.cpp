@@ -15,7 +15,7 @@ namespace
  * @param[in] returnType Return type text.
  * @return Default literal return text ("null", "false", "0", "\"\"").
  */
-std::string GetDefaultReturnValue(std::string_view returnType)
+std::string GetDefaultReturnValue(std::string_view returnType, std::string_view stringTypeName = "string")
 {
     std::string cleanRet = analysis::CleanBaseType(returnType);
     if (returnType.ends_with("@"))
@@ -26,7 +26,8 @@ std::string GetDefaultReturnValue(std::string_view returnType)
     {
         return "false";
     }
-    if (cleanRet == "string")
+    const std::string_view effectiveStr = stringTypeName.empty() ? "string" : stringTypeName;
+    if (cleanRet == effectiveStr || cleanRet == "string")
     {
         return "\"\"";
     }

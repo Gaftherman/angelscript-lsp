@@ -18,18 +18,20 @@ namespace angel_lsp::analysis
 std::string StripTypeDecorations(std::string result);
 
 /**
- * @brief Desugars array square brackets syntax `T[]` into canonical `array<T>`.
+ * @brief Desugars array square brackets syntax `T[]` into canonical container template syntax.
  * @param[in] result Type string to desugar.
+ * @param[in] arrayTypeName Workspace-configured array container type name.
  * @return Desugared type string.
  */
-std::string DesugarArrayBrackets(std::string result);
+std::string DesugarArrayBrackets(std::string result, std::string_view arrayTypeName = "array");
 
 /**
  * @brief Normalizes a type name for canonical semantic comparison.
  * @param[in] typeName Raw type name to normalize.
+ * @param[in] arrayTypeName Workspace-configured array container type name.
  * @return Canonical normalized type name.
  */
-std::string NormalizeType(std::string_view typeName);
+std::string NormalizeType(std::string_view typeName, std::string_view arrayTypeName = "array");
 
 /**
  * @brief Checks whether a type name string carries a handle (@) modifier.
@@ -149,11 +151,14 @@ bool IsWildcardParameter(const ParameterInformation& param);
 bool IsOutParameter(const ParameterInformation& param);
 
 /**
- * @brief Checks if a parameter is a container type (array or vector).
+ * @brief Checks if a parameter represents an array or container type.
  * @param[in] param Parameter information to check.
+ * @param[in] symbolTable Optional symbol table to validate custom template container declarations.
+ * @param[in] arrayTypeName Optional configured array type name.
  * @return True if container parameter.
  */
-bool IsContainerParameter(const ParameterInformation& param);
+bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* symbolTable = nullptr,
+                          std::string_view arrayTypeName = "array");
 
 /**
  * @brief Checks if two type names denote the same type, ignoring scope qualifier prefixes.

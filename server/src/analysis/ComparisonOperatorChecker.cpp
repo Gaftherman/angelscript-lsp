@@ -84,9 +84,10 @@ bool TypeHasOperator(const std::string& typeName, const std::string& opName, con
     return false;
 }
 
-bool IsKnownType(const std::string& type, const SymbolTable& table)
+bool IsKnownType(const std::string& type, const SymbolTable& table, std::string_view stringTypeName = "string")
 {
-    if (parser::primitives::IsNumeric(type) || type == "bool" || type == "string" || ResolvesToEnum(type, table))
+    if (parser::primitives::IsNumeric(type) || type == "bool" || type == stringTypeName || type == "string" ||
+        ResolvesToEnum(type, table))
     {
         return true;
     }
@@ -109,9 +110,11 @@ bool AreCustomTypesCompatible(std::string_view op, const std::string& left, cons
            TypeHasOperator(left, "opCmp", right, table) || TypeHasOperator(right, "opCmp", left, table);
 }
 
-bool CheckBoolCompatibility(bool isRelational, const std::string& other, const SymbolTable& table)
+bool CheckBoolCompatibility(bool isRelational, const std::string& other, const SymbolTable& table,
+                            std::string_view stringTypeName)
 {
-    if (parser::primitives::IsNumeric(other) || other == "string" || ResolvesToEnum(other, table))
+    if (parser::primitives::IsNumeric(other) || other == stringTypeName || other == "string" ||
+        ResolvesToEnum(other, table))
     {
         return false;
     }
@@ -122,21 +125,25 @@ bool CheckBoolCompatibility(bool isRelational, const std::string& other, const S
     return false;
 }
 
-bool CheckStringCompatibility(bool isRelational, const std::string& other, const SymbolTable& table)
+bool CheckStringCompatibility(bool isRelational, const std::string& other, const SymbolTable& table,
+                              std::string_view stringTypeName)
 {
     if (parser::primitives::IsNumeric(other) || other == "bool" || ResolvesToEnum(other, table))
     {
         return false;
     }
-    if (TypeHasOpImplConvTo(other, "string", table))
+    const std::string strTarget(stringTypeName);
+    if (TypeHasOpImplConvTo(other, strTarget, table) ||
+        (strTarget != "string" && TypeHasOpImplConvTo(other, "string", table)))
     {
         return true;
     }
     if (isRelational)
     {
-        return TypeHasOperator("string", "opCmp", other, table) || TypeHasOperator(other, "opCmp", "string", table);
+        return TypeHasOperator(strTarget, "opCmp", other, table) || TypeHasOperator(other, "opCmp", strTarget, table);
     }
-    return TypeHasOperator("string", "opEquals", other, table) || TypeHasOperator(other, "opEquals", "string", table);
+    return TypeHasOperator(strTarget, "opEquals", other, table) ||
+           TypeHasOperator(other, "opEquals", strTarget, table);
 }
 
 bool IsEnumComparisonCompatible(const std::string& left, const std::string& right, const SymbolTable& table)
@@ -150,53 +157,59 @@ bool IsEnumComparisonCompatible(const std::string& left, const std::string& righ
     return (leftEnum && parser::primitives::IsInteger(right)) || (rightEnum && parser::primitives::IsInteger(left));
 }
 
-bool CheckIdenticalTypes(std::string_view op, const std::string& type, const SymbolTable& table)
+bool CheckIdenticalTypes(std::string_view op, const std::string& type, const SymbolTable& table,
+                         std::string_view stringTypeName)
 {
-    if (type == "string" || ResolvesToEnum(type, table))
+    if (type == stringTypeName || type == "string" || ResolvesToEnum(type, table))
     {
         return true;
     }
     return AreCustomTypesCompatible(op, type, type, table);
 }
 
-bool CheckBoolBranch(bool isRelational, const std::string& left, const std::string& right, const SymbolTable& table)
+bool CheckBoolBranch(bool isRelational, const OperandTypes& types, const SymbolTable& table,
+                     std::string_view stringTypeName)
 {
-    if (left == right)
+    if (types.left == types.right)
     {
         return !isRelational;
     }
-    return CheckBoolCompatibility(isRelational, (left == "bool") ? right : left, table);
+    return CheckBoolCompatibility(isRelational, (types.left == "bool") ? types.right : types.left, table,
+                                  stringTypeName);
 }
 
-bool AreComparisonTypesCompatible(std::string_view op, const std::string& left, const std::string& right,
-                                  const SymbolTable& table)
+bool AreComparisonTypesCompatible(std::string_view op, const OperandTypes& types, const SymbolTable& table,
+                                  std::string_view stringTypeName = "string")
 {
-    if (!IsKnownType(left, table) || !IsKnownType(right, table))
+    if (!IsKnownType(types.left, table, stringTypeName) || !IsKnownType(types.right, table, stringTypeName))
     {
         return true;
     }
-    if (parser::primitives::IsNumeric(left) && parser::primitives::IsNumeric(right))
+    if (parser::primitives::IsNumeric(types.left) && parser::primitives::IsNumeric(types.right))
     {
         return true;
     }
     const bool isRelational = IsRelationalOp(op);
-    if (left == "bool" || right == "bool")
+    if (types.left == "bool" || types.right == "bool")
     {
-        return CheckBoolBranch(isRelational, left, right, table);
+        return CheckBoolBranch(isRelational, types, table, stringTypeName);
     }
-    if (left == right)
+    if (types.left == types.right)
     {
-        return CheckIdenticalTypes(op, left, table);
+        return CheckIdenticalTypes(op, types.left, table, stringTypeName);
     }
-    if (IsEnumComparisonCompatible(left, right, table))
+    if (IsEnumComparisonCompatible(types.left, types.right, table))
     {
         return true;
     }
-    if (left == "string" || right == "string")
+    if (types.left == stringTypeName || types.right == stringTypeName || types.left == "string" ||
+        types.right == "string")
     {
-        return CheckStringCompatibility(isRelational, (left == "string") ? right : left, table);
+        const std::string& other =
+            (types.left == stringTypeName || types.left == "string") ? types.right : types.left;
+        return CheckStringCompatibility(isRelational, other, table, stringTypeName);
     }
-    return AreCustomTypesCompatible(op, left, right, table);
+    return AreCustomTypesCompatible(op, types.left, types.right, table);
 }
 
 bool IsNullOperand(TSNode node, const std::string& type)
@@ -207,15 +220,17 @@ bool IsNullOperand(TSNode node, const std::string& type)
 std::optional<OperandTypes> ResolveCleanOperandTypes(TSNode left, TSNode right, const Scope* scope,
                                                      const DiagnosticContext& ctx)
 {
-    const ExpressionTypeContext exprCtx{scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri};
+    const ExpressionTypeContext exprCtx{scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri,
+                                        ctx.request.GetEffectiveStringTypeName(),
+                                        ctx.request.GetEffectiveArrayTypeName()};
     const std::string rawLeft = ResolveExpressionType(left, exprCtx);
     const std::string rawRight = ResolveExpressionType(right, exprCtx);
     if (IsNullOperand(left, rawLeft) || IsNullOperand(right, rawRight))
     {
         return std::nullopt;
     }
-    std::string cleanLeft = CleanBaseType(rawLeft);
-    std::string cleanRight = CleanBaseType(rawRight);
+    std::string cleanLeft = CleanBaseType(rawLeft, ctx.request.GetEffectiveArrayTypeName());
+    std::string cleanRight = CleanBaseType(rawRight, ctx.request.GetEffectiveArrayTypeName());
     if (cleanLeft.empty() || cleanRight.empty())
     {
         return std::nullopt;
@@ -235,7 +250,7 @@ void EmitComparisonDiagnostics(TSNode opNode, std::string_view op, const Operand
         return;
     }
 
-    if (!AreComparisonTypesCompatible(op, types.left, types.right, ctx.request.symbolTable))
+    if (!AreComparisonTypesCompatible(op, types, ctx.request.symbolTable, ctx.request.GetEffectiveStringTypeName()))
     {
         ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::NoMatchingOperator,
                         {std::string(op), types.left, types.right}, DiagnosticSeverity::Error);

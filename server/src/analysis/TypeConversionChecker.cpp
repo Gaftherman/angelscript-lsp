@@ -450,8 +450,7 @@ bool AreHierarchyRelated(const std::string& a, const std::string& b, const Symbo
 /** @brief The workspace's string type, which defaults to `string` when unconfigured. */
 bool IsStringType(const std::string& typeName, const DiagnosticContext& ctx)
 {
-    const auto strType = ctx.request.GetStringTypeName();
-    return typeName == (strType.empty() ? std::string_view("string") : strType);
+    return typeName == ctx.request.GetEffectiveStringTypeName();
 }
 
 bool IsBuiltInValueType(const std::string& typeName, const DiagnosticContext& ctx)
@@ -828,8 +827,7 @@ ExpressionType ResolveLiteralValueType(TSNode node, const DiagnosticContext& ctx
     }
     if (nodeType == node_types::StringLiteral)
     {
-        const auto strType = ctx.request.GetStringTypeName();
-        return ExpressionType{strType.empty() ? "string" : std::string(strType), true, true};
+        return ExpressionType{std::string(ctx.request.GetEffectiveStringTypeName()), true, true};
     }
     if (nodeType == node_types::BooleanLiteral)
     {
@@ -2206,8 +2204,7 @@ TSNode ExtractConditionNode(TSNode node, std::string_view nodeType)
  */
 void ValidateConditionOperand(TSNode operand, const std::string& operandType, DiagnosticContext& ctx)
 {
-    const bool isKnown = parser::primitives::IsNumeric(operandType) || operandType == "string" ||
-                         ctx.request.symbolTable.HasSymbolAnywhere(operandType);
+    const bool isKnown = IsKnownType(operandType, ctx);
 
     if (isKnown && !IsTruthyCondition(operandType, ctx.request.symbolTable))
     {

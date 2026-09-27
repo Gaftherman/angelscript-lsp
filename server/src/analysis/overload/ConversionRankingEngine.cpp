@@ -11,7 +11,8 @@ namespace angel_lsp::analysis
 namespace
 {
 std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string& argType,
-                                                               const ParameterInformation& param)
+                                                               const ParameterInformation& param,
+                                                               const SymbolTable& symbolTable)
 {
     if (IsWildcardParameter(param))
     {
@@ -44,7 +45,7 @@ std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string
     }
     if (argType == "init_list")
     {
-        if (IsContainerParameter(param))
+        if (IsContainerParameter(param, &symbolTable))
         {
             return ArgumentConversion{ConversionRank::Exact, 0, 0, false,
                                       static_cast<int>(OverloadMatchPenalty::Exact)};
@@ -262,11 +263,11 @@ ArgumentConversion EvaluateCustomOrUnresolvedConversion(const MatchContext& ctx)
 
     const auto isNamedAndUnresolved = [&ctx](const std::string& typeName)
     {
-        if (typeName.empty() || IsCorePrimitive(typeName) || typeName == "string")
+        if (typeName.empty() || IsCorePrimitive(typeName) || typeName == ctx.stringTypeName || typeName == "string")
         {
             return false;
         }
-        const std::string owner = MemberOwnerType(typeName);
+        const std::string owner = MemberOwnerType(typeName, ctx.arrayTypeName);
         return !ctx.table.FindSymbolsPtr(typeName) && (owner.empty() || !ctx.table.FindSymbolsPtr(owner));
     };
 
@@ -320,7 +321,7 @@ ArgumentConversion EvaluateCandidateTypeMatch(const ParameterInformation& param,
 ArgumentConversion EvaluateArgumentConversion(const std::string& argType, const ParameterInformation& param,
                                               const SymbolTable& symbolTable, bool argIsLValue)
 {
-    if (auto specialScore = EvaluateSpecialArgumentMatch(argType, param))
+    if (auto specialScore = EvaluateSpecialArgumentMatch(argType, param, symbolTable))
     {
         if (!argIsLValue && IsOutParameter(param))
         {

@@ -223,9 +223,9 @@ struct SemanticAnalysisRequest
     const NodeIndex* nodeIndex = nullptr;
 
     /**
-     * @brief Gets configured name for the string type or 'string' default.
+     * @brief Gets configured name for the string type or empty if not configured.
      */
-    std::string_view GetStringTypeName() const
+    std::string_view GetStringTypeName() const noexcept
     {
         return (typeConfig && !typeConfig->stringTypeName.empty()) ? std::string_view(typeConfig->stringTypeName)
                                                                    : std::string_view("");
@@ -234,10 +234,28 @@ struct SemanticAnalysisRequest
     /**
      * @brief Gets configured name for the array type or empty if not configured.
      */
-    std::string_view GetArrayTypeName() const
+    std::string_view GetArrayTypeName() const noexcept
     {
         return (typeConfig && !typeConfig->arrayTypeName.empty()) ? std::string_view(typeConfig->arrayTypeName)
                                                                   : std::string_view("");
+    }
+
+    /**
+     * @brief Gets effective string type name, defaulting to 'string' if unconfigured.
+     */
+    std::string_view GetEffectiveStringTypeName() const noexcept
+    {
+        const auto configured = GetStringTypeName();
+        return configured.empty() ? std::string_view("string") : configured;
+    }
+
+    /**
+     * @brief Gets effective array type name, defaulting to 'array' if unconfigured.
+     */
+    std::string_view GetEffectiveArrayTypeName() const noexcept
+    {
+        const auto configured = GetArrayTypeName();
+        return configured.empty() ? std::string_view("array") : configured;
     }
 
     /**

@@ -1123,12 +1123,8 @@ void ValidateClass(const Symbol& sym, const DiagnosticContext& ctx)
         return;
     }
 
-    const auto strType = ctx.request.GetStringTypeName();
-    const auto arrType = ctx.request.GetArrayTypeName();
-    const std::string_view effectiveStrType = strType.empty() ? std::string_view("string") : strType;
-    const std::string_view effectiveArrType = arrType.empty() ? std::string_view("array") : arrType;
-    if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) || sym.name == effectiveStrType ||
-        sym.name == effectiveArrType)
+    if (IsReservedKeyword(sym.name) || IsPrimitiveTypeName(sym.name) ||
+        sym.name == ctx.request.GetEffectiveStringTypeName() || sym.name == ctx.request.GetEffectiveArrayTypeName())
     {
         ctx.LogRule("ValidateClass", "as-err-reserved-keyword-name", sym);
         ctx.Emit(sym, "as-err-reserved-keyword-name", sym.name);
