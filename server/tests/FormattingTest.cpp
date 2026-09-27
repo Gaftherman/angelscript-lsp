@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include "features/formatting/FormattingHandler.h"
+#include "helpers/TestUtils.h"
 #include <string>
 #include <vector>
 
@@ -510,6 +511,114 @@ TEST_SUITE("Formatting")
         const std::string formatted = Format4(bom + "void main(){\nint a=1;\n}");
         CHECK(formatted.rfind(bom, 0) == 0);
         CHECK(formatted == bom + "void main()\n{\n    int a = 1;\n}\n");
+    }
+
+    TEST_CASE("FormatRangePreservesLineAlignmentAcrossBraceShifts")
+    {
+        const std::string fnPre1 = angel_lsp::test::GenerateRandomSymbolName("PreFuncA");
+        const std::string fnPre2 = angel_lsp::test::GenerateRandomSymbolName("PreFuncB");
+        const std::string fnTarget = angel_lsp::test::GenerateRandomSymbolName("TargetFunc");
+        const std::string fnPost = angel_lsp::test::GenerateRandomSymbolName("PostFunc");
+        const std::string flagVar = angel_lsp::test::GenerateRandomSymbolName("flag");
+
+        std::string code =
+            "void " + fnPre1 + "() {\n"
+            "    return;\n"
+            "}\n"
+            "void " + fnPre2 + "() {\n"
+            "    return;\n"
+            "}\n"
+            "bool " + fnTarget + "()\n"
+            "{\n"
+            "return false;\n"
+            "}\n"
+            "void " + fnPost + "()\n"
+            "{\n"
+            "    if (" + flagVar + " == 1) return;\n"
+            "}\n";
+
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        RangeFormattingRequest req{ "file:///test.as", code, nullptr, lsp::Range{ {8, 0}, {8, 13} }, options };
+        auto edits = FormatRange(req);
+
+        REQUIRE(edits.has_value());
+        REQUIRE(!edits->empty());
+        CHECK(edits->size() == 1);
+        CHECK((*edits)[0].range.start.line == 8);
+        CHECK((*edits)[0].range.end.line == 8);
+        CHECK((*edits)[0].newText == "    return false;");
+        CHECK((*edits)[0].newText.find(fnPost) == std::string::npos);
+        CHECK((*edits)[0].newText.find(flagVar) == std::string::npos);
+    }
+
+    TEST_CASE("FormatRangeReturnsEmptyWhenAlreadyFormatted")
+    {
+        const std::string fnPre = angel_lsp::test::GenerateRandomSymbolName("FuncKAndR");
+        const std::string fnTarget = angel_lsp::test::GenerateRandomSymbolName("FuncTarget");
+
+        std::string code =
+            "void " + fnPre + "() {\n"
+            "    return;\n"
+            "}\n"
+            "void " + fnTarget + "()\n"
+            "{\n"
+            "    return;\n"
+            "}\n";
+
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        RangeFormattingRequest req{ "file:///test.as", code, nullptr, lsp::Range{ {5, 0}, {5, 11} }, options };
+        auto edits = FormatRange(req);
+
+        REQUIRE(edits.has_value());
+        CHECK(edits->empty());
+    }
+
+    TEST_CASE("FormatOnTypeRejectsNewlineTrigger")
+    {
+        std::string code = "void main()\n{\n    return;\n}\n";
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        OnTypeFormattingRequest req{ "file:///test.as", code, nullptr, lsp::Position{ 2, 11 }, "\n", options };
+        auto edits = FormatOnType(req);
+        CHECK(!edits.has_value());
+    }
+
+    TEST_CASE("FormatOnTypeSemicolonFormatsOnlyTargetStatement")
+    {
+        const std::string fnPre = angel_lsp::test::GenerateRandomSymbolName("FuncKAndR");
+        const std::string fnTarget = angel_lsp::test::GenerateRandomSymbolName("FuncTarget");
+        const std::string varName = angel_lsp::test::GenerateRandomSymbolName("localVar");
+
+        std::string code =
+            "void " + fnPre + "() {\n"
+            "    return;\n"
+            "}\n"
+            "void " + fnTarget + "()\n"
+            "{\n"
+            "int " + varName + "=42;\n"
+            "}\n";
+
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        OnTypeFormattingRequest req{ "file:///test.as", code, nullptr, lsp::Position{ 5, 15 }, ";", options };
+        auto edits = FormatOnType(req);
+
+        REQUIRE(edits.has_value());
+        REQUIRE(!edits->empty());
+        CHECK(edits->size() == 1);
+        CHECK((*edits)[0].range.start.line == 5);
+        CHECK((*edits)[0].range.end.line == 5);
+        CHECK((*edits)[0].newText == "    int " + varName + " = 42;");
     }
 }
 

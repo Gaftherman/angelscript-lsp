@@ -1833,6 +1833,61 @@ std::string JoinLines(const std::vector<std::string>& lines, uint32_t start, uin
     }
     return result;
 }
+
+struct MatchedLineRange
+{
+    size_t firstIdx = 0;
+    size_t lastIdx = 0;
+    uint32_t actualStartLine = 0;
+    uint32_t actualEndLine = 0;
+};
+
+/**
+ * @brief Finds the formatted line indices and source line bounds intersecting a target range.
+ * @param[in] lines Formatted line descriptors.
+ * @param[in] tokens Token stream with original source line numbers.
+ * @param[in] startLine Target starting line index.
+ * @param[in] endLine Target ending line index.
+ * @return Matched range descriptor, or std::nullopt if no tokens intersected the range.
+ */
+std::optional<MatchedLineRange> FindMatchedRange(const std::vector<LineInfo>& lines,
+                                                 const std::vector<Token>& tokens,
+                                                 uint32_t startLine,
+                                                 uint32_t endLine)
+{
+    std::optional<size_t> firstMatchedIdx;
+    std::optional<size_t> lastMatchedIdx;
+    uint32_t actualStartLine = startLine;
+    uint32_t actualEndLine = endLine;
+
+    for (size_t i = 0; i < lines.size(); ++i)
+    {
+        if (lines[i].tokenIndices.empty())
+        {
+            continue;
+        }
+
+        uint32_t minLine = tokens[lines[i].tokenIndices.front()].line;
+        uint32_t maxLine = tokens[lines[i].tokenIndices.back()].line;
+        if (minLine <= endLine && maxLine >= startLine)
+        {
+            if (!firstMatchedIdx)
+            {
+                firstMatchedIdx = i;
+            }
+            lastMatchedIdx = i;
+            actualStartLine = std::min(actualStartLine, minLine);
+            actualEndLine = std::max(actualEndLine, maxLine);
+        }
+    }
+
+    if (!firstMatchedIdx || !lastMatchedIdx)
+    {
+        return std::nullopt;
+    }
+
+    return MatchedLineRange{*firstMatchedIdx, *lastMatchedIdx, actualStartLine, actualEndLine};
+}
 } // namespace
 
 std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions& options, BraceStyle braceStyle)
@@ -1900,8 +1955,8 @@ std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingReque
 
     auto origLines = SplitLines(request.sourceCode, true);
     uint32_t totalLines = static_cast<uint32_t>(origLines.size());
-    uint32_t startLine = std::min(request.range.start.line, totalLines > 0 ? totalLines - 1 : 0);
-    uint32_t endLine = std::min(request.range.end.line, totalLines > 0 ? totalLines - 1 : 0);
+    uint32_t startLine = std::min(request.range.start.line, totalLines > 0 ? totalLines - 1 : 0u);
+    uint32_t endLine = std::min(request.range.end.line, totalLines > 0 ? totalLines - 1 : 0u);
 
     if (startLine == 0 && endLine >= totalLines - 1)
     {
@@ -1909,51 +1964,64 @@ std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingReque
         return FormatDocument(fullReq);
     }
 
-    std::string fullFormatted = FormatSourceCode(request.sourceCode, request.options, request.braceStyle);
-    if (fullFormatted == request.sourceCode)
+    auto tokens = Tokenize(request.sourceCode);
+    if (tokens.empty())
     {
         return std::vector<lsp::TextEdit>{};
     }
 
-    auto formattedLines = SplitLines(fullFormatted, false);
+    auto lines = BuildFormattedLines(tokens, request.braceStyle);
+    auto outputLines = RenderLines(lines, tokens, request.options);
+
+    auto matched = FindMatchedRange(lines, tokens, startLine, endLine);
+    if (!matched)
+    {
+        return std::vector<lsp::TextEdit>{};
+    }
+
+    uint32_t effStartLine = std::min(matched->actualStartLine, totalLines > 0 ? totalLines - 1 : 0u);
+    uint32_t effEndLine = std::min(matched->actualEndLine, totalLines > 0 ? totalLines - 1 : 0u);
+
+    std::vector<std::string> rangeLines;
+    rangeLines.reserve(matched->lastIdx - matched->firstIdx + 1);
+    for (size_t i = matched->firstIdx; i <= matched->lastIdx; ++i)
+    {
+        rangeLines.push_back(outputLines[i]);
+    }
+
+    std::string formattedRangeText =
+        rangeLines.empty() ? "" : JoinLines(rangeLines, 0, static_cast<uint32_t>(rangeLines.size() - 1));
+    std::string origRangeText = JoinLines(origLines, effStartLine, effEndLine);
+
+    if (formattedRangeText == origRangeText)
+    {
+        return std::vector<lsp::TextEdit>{};
+    }
+
     lsp::TextEdit edit;
-    edit.range.start = lsp::Position{startLine, 0};
-    edit.range.end = lsp::Position{endLine, static_cast<uint32_t>(origLines[endLine].size())};
-    edit.newText = JoinLines(formattedLines, startLine, endLine);
+    edit.range.start = lsp::Position{effStartLine, 0};
+    edit.range.end = lsp::Position{effEndLine, static_cast<uint32_t>(origLines[effEndLine].size())};
+    edit.newText = std::move(formattedRangeText);
 
     return std::vector<lsp::TextEdit>{std::move(edit)};
 }
 
 std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingRequest& request)
 {
-    if (request.sourceCode.empty())
+    if (request.sourceCode.empty() || (request.ch != ";" && request.ch != "}"))
     {
         return std::nullopt;
     }
 
     uint32_t targetLine = request.position.line;
-    uint32_t startLine = targetLine;
-
-    if (request.ch == "}")
-    {
-        for (int l = static_cast<int>(targetLine); l >= 0; --l)
-        {
-            startLine = static_cast<uint32_t>(l);
-            if (static_cast<int>(targetLine) - l >= 20)
-            {
-                break;
-            }
-        }
-    }
-    else if (request.ch == "\n" && targetLine > 0)
-    {
-        startLine = targetLine - 1;
-    }
 
     RangeFormattingRequest rangeReq{
-        request.uri,     request.sourceCode,
-        request.tree,    lsp::Range{lsp::Position{startLine, 0}, lsp::Position{targetLine, request.position.character}},
-        request.options, request.braceStyle};
+        request.uri,
+        request.sourceCode,
+        request.tree,
+        lsp::Range{lsp::Position{targetLine, 0}, lsp::Position{targetLine, request.position.character}},
+        request.options,
+        request.braceStyle};
 
     return FormatRange(rangeReq);
 }

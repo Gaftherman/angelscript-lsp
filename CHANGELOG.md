@@ -2,6 +2,20 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.14] - 2026-09-27
+
+### On-Type Formatting Enter-Key Fix & Token-Aligned Range Formatting
+
+- Enter Key (`\n`) Removal from On-Type Formatting:
+  - Removed `\n` from `documentOnTypeFormattingProvider.moreTriggerCharacter` in `Server.cpp`. Language servers for C-family languages only trigger on statement terminators (`;`) and block terminators (`}`). Enter-key newline and smart indentation is handled natively and cleanly by VS Code client rules.
+  - Eliminated the newline formatting branch in `FormatOnType`, preventing accidental invocation on incomplete lines while typing.
+- Token-Aligned Range Formatting (`FormatRange`):
+  - Replaced naive raw line-index slicing (`formattedLines[startLine..endLine]`) with token-based line mapping (`tokens[tokIdx].line`).
+  - Guarantees that documents with preceding K&R braces or blank lines that expand/collapse under Allman formatting never cause line shifts that overwrite statements with shifted code from elsewhere in the file.
+  - Returns empty edits (`no-op`) whenever the formatted range text matches the original source text.
+- Regression Tests:
+  - Added test cases verifying line alignment preservation across preceding K&R brace shifts, no-op return on formatted code, newline rejection in `FormatOnType`, and isolated semicolon statement formatting.
+
 ## [0.9.13] - 2026-09-27
 
 ### Converting Constructor Resolution, Predefined Hover Restoration, & Scalable CodeLens Optimization

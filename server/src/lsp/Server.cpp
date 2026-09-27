@@ -656,7 +656,7 @@ void Server::ConfigureFormattingAndDiagnosticCapabilities(lsp::ServerCapabilitie
     {
         lsp::DocumentOnTypeFormattingOptions onTypeOpts;
         onTypeOpts.firstTriggerCharacter = ";";
-        onTypeOpts.moreTriggerCharacter = lsp::Array<lsp::String>{"}", "\n"};
+        onTypeOpts.moreTriggerCharacter = lsp::Array<lsp::String>{"}"};
         caps.documentOnTypeFormattingProvider = onTypeOpts;
     }
 

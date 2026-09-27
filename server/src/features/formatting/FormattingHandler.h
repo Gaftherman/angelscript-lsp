@@ -84,7 +84,7 @@ std::optional<std::vector<lsp::TextEdit>> FormatDocument(const FormattingRequest
 std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingRequest& request);
 
 /**
- * @brief Formats code triggered on typing specific characters (;, }, \n).
+ * @brief Formats code triggered on typing specific characters (;, }).
  * @param request Immutable on-type formatting context.
  * @return List of TextEdits for the formatted region.
  */
