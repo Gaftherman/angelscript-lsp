@@ -91,7 +91,7 @@ TEST_CASE("Every predefined stub in this checkout parses and analyses clean")
         // comment form the grammar accepts, and every path in the server that loads a stub applies
         // it. Parsing the raw bytes here measured text the server never sees, and reported syntax
         // errors on notation that is correct.
-        const std::string source = ReadWholeFile(stub);
+        const std::string source = angel_lsp::utils::SanitizePredefinedContent(ReadWholeFile(stub));
         const std::string uri = "file:///" + stub.generic_string();
 
         INFO("stub: " << stub.generic_string() << " (" << source.size() << " bytes)");
