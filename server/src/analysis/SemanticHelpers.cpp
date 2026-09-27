@@ -2108,35 +2108,8 @@ static std::string ResolveThisIdentifier(TSNode exprNode, const ExpressionTypeCo
     return "";
 }
 
-static std::string ResolveBaseClassIdentifier(TSNode exprNode, const ExpressionTypeContext& ctx,
-                                              const std::string& hostClass)
-{
-    if (!hostClass.empty())
-    {
-        std::string base = ResolveBaseClass(hostClass, ctx.symbolTable);
-        if (!base.empty())
-        {
-            return CleanExpressionType(base);
-        }
-    }
-    auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode);
-    for (const auto& c : containers)
-    {
-        if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
-        {
-            std::string base = ResolveBaseClass(c.qualifiedName.empty() ? c.name : c.qualifiedName, ctx.symbolTable);
-            if (!base.empty())
-            {
-                return CleanExpressionType(base);
-            }
-            break;
-        }
-    }
-    return "";
-}
-
 /**
- * @brief Resolves special 'this' or 'BaseClass' identifiers.
+ * @brief Resolves special 'this' identifier.
  */
 static std::string ResolveIdentifierSpecial(std::string_view name, TSNode exprNode, const ExpressionTypeContext& ctx)
 {
@@ -2146,10 +2119,6 @@ static std::string ResolveIdentifierSpecial(std::string_view name, TSNode exprNo
     if (name == "this")
     {
         return ResolveThisIdentifier(exprNode, ctx, hostClass);
-    }
-    if (name == "BaseClass")
-    {
-        return ResolveBaseClassIdentifier(exprNode, ctx, hostClass);
     }
     return "";
 }
@@ -3521,24 +3490,21 @@ static std::string ResolveMemberInHierarchy(const std::string& hostClass, const 
 }
 
 /**
- * @brief Resolves special 'this' or 'BaseClass' receiver expressions.
+ * @brief Resolves special 'this' receiver expressions.
  */
-static std::string ResolveSpecialReceiver(TSNode objNode, std::string_view sourceCode,
-                                          std::string_view effectiveHostClass, const SymbolTable& symbolTable)
+static std::string ResolveThisReceiver(TSNode objNode, std::string_view sourceCode,
+                                       std::string_view effectiveHostClass)
 {
-    const std::string objText = GetNodeText(objNode, sourceCode);
-    const bool isThis = (objText == "this");
     if (!effectiveHostClass.empty())
     {
-        return isThis ? std::string(effectiveHostClass) : ResolveBaseClass(effectiveHostClass, symbolTable);
+        return std::string(effectiveHostClass);
     }
     auto containers = GetEnclosingContainers(objNode, sourceCode);
     for (const auto& c : containers)
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
         {
-            std::string target = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-            return isThis ? target : ResolveBaseClass(target, symbolTable);
+            return c.qualifiedName.empty() ? c.name : c.qualifiedName;
         }
     }
     return "";
@@ -3638,9 +3604,9 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
 
     std::string effectiveHostClass = GetEffectiveHostClass(ctx.virtualHostClass, ctx.fileUri);
 
-    if (objText == "this" || objText == "BaseClass")
+    if (objText == "this")
     {
-        return ResolveSpecialReceiver(objNode, sourceCode, effectiveHostClass, symbolTable);
+        return ResolveThisReceiver(objNode, sourceCode, effectiveHostClass);
     }
 
     if (auto scopeRes = ResolveReceiverScope(ctx.scope, objText); !scopeRes.empty())

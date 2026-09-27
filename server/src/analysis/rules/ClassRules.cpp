@@ -428,7 +428,6 @@ struct MixinCheckContext
     const Symbol* mixinSym = nullptr;
     InstantiationRange hostRange;
     const ankerl::unordered_dense::set<std::string>& hostMembers;
-    const ankerl::unordered_dense::set<std::string>& superMembers;
     const ankerl::unordered_dense::set<std::string>& mixinSelfMembers;
     ankerl::unordered_dense::set<std::string>& reported;
 };
@@ -445,7 +444,6 @@ struct MixinHierarchyMembers
 {
     std::string hostClassName;
     ankerl::unordered_dense::set<std::string> hostMembers;
-    ankerl::unordered_dense::set<std::string> superMembers;
 };
 
 /** @brief Collects all mixins included via includedMixins or bases. */
@@ -706,38 +704,7 @@ void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheckContext
     }
 }
 
-/** @brief Checks scoped identifiers of form BaseClass::member. */
-void CheckBaseClassMember(TSNode cur, std::string_view mixinSource, MixinCheckContext& mctx,
-                          const DiagnosticContext& ctx)
-{
-    std::string scPrefix;
-    std::string nmText;
-    const uint32_t namedCount = ts_node_named_child_count(cur);
-    if (namedCount >= 2)
-    {
-        TSNode scopeChild = ts_node_named_child(cur, 0);
-        TSNode nameChild = ts_node_named_child(cur, namedCount - 1);
-        scPrefix = GetNodeText(scopeChild, mixinSource);
-        nmText = GetNodeText(nameChild, mixinSource);
-    }
-    else
-    {
-        std::string scFull = GetNodeText(cur, mixinSource);
-        auto pos = scFull.rfind("::");
-        if (pos != std::string::npos)
-        {
-            scPrefix = scFull.substr(0, pos);
-            nmText = scFull.substr(pos + 2);
-        }
-    }
 
-    if (scPrefix == "BaseClass" && !nmText.empty() && !mctx.superMembers.contains(nmText) &&
-        !mctx.reported.contains(nmText))
-    {
-        mctx.reported.insert(nmText);
-        EmitMixinMemberNotFound(mctx, nmText, cur, ctx);
-    }
-}
 
 /** @brief Checks bare function calls without qualifiers. */
 void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state, const DiagnosticContext& ctx)
@@ -850,10 +817,6 @@ void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, Func
         if (curType == "member_expression")
         {
             CheckThisMember(cur, mixinSource, state.mctx, ctx);
-        }
-        else if (curType == "scoped_identifier")
-        {
-            CheckBaseClassMember(cur, mixinSource, state.mctx, ctx);
         }
         else if (curType == "call_expression")
         {
@@ -1003,7 +966,6 @@ void CheckSingleMixinInstantiation(const std::string& mixinName, const Symbol& s
                                mixinSym,
                                hostRange,
                                baseMembers.hostMembers,
-                               baseMembers.superMembers,
                                mixinSelfMembers,
                                reportedMissingMembers};
         CheckMixinBody(bodyNode, mixinSource, mctx, ctx);
@@ -1028,14 +990,9 @@ void CheckMixinInstantiations(const Symbol& sym, const ClassSignature& sig, cons
 
     const std::string hostClassName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
     const auto hostHierarchy = GetInheritedTypeHierarchy(hostClassName, ctx.request.symbolTable);
-    const std::string directSuperClass = ResolveBaseClass(hostClassName, ctx.request.symbolTable);
-    const std::vector<std::string> superHierarchy =
-        directSuperClass.empty() ? std::vector<std::string>{}
-                                 : GetInheritedTypeHierarchy(directSuperClass, ctx.request.symbolTable);
 
-    MixinHierarchyMembers baseMembers{hostClassName, {}, {}};
+    MixinHierarchyMembers baseMembers{hostClassName, {}};
     CollectHierarchyMembers(hostHierarchy, ctx.request.GetRuleIndex(), baseMembers.hostMembers);
-    CollectHierarchyMembers(superHierarchy, ctx.request.GetRuleIndex(), baseMembers.superMembers);
 
     for (const auto& mixinName : includedMixins)
     {
