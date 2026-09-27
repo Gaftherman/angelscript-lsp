@@ -37,7 +37,9 @@ std::vector<Diagnostic> AnalyzeScript(const std::string& code,
     request.scopeRoot = scopes.CollectScopes(code, parser);
     request.sourceCode = code;
     request.tree = parser.Parse(code);
-    request.diagnostics = diagConfig;
+    config::DiagnosticsConfig enabledConfig;
+    enabledConfig.reportPossibleNullDereference = true;
+    request.diagnostics = diagConfig ? diagConfig : &enabledConfig;
 
     analysis::SemanticAnalyzer analyzer(nullptr);
     auto diagnostics = analyzer.Analyze(request);

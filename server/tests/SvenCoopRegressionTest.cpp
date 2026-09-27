@@ -7,6 +7,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "config/ServerConfig.h"
 #include "helpers/TestUtils.h"
 #include "features/document_symbol/DocumentSymbolHandler.h"
 #include "features/folding_range/FoldingRangeHandler.h"
@@ -579,4 +580,133 @@ TEST_CASE("SvenCoop - Benchmark and Profile final.sven.as.predefined pipeline")
 
     ts_tree_delete(tree);
 }
+
+TEST_CASE("SvenCoopRegression - Handle hierarchy conversion in ternary operator")
+{
+    const std::string baseClass = GenerateRandomSymbolName("CBaseEntity");
+    const std::string derivedClass = GenerateRandomSymbolName("CBaseMonster");
+    const std::string code =
+        "class " + baseClass + " {}\n" +
+        "class " + derivedClass + " : " + baseClass + " {}\n" +
+        "void Test(" + derivedClass + "@ m, " + baseClass + "@ e, bool cond) {\n" +
+        "    " + baseClass + "@ res = cond ? m : e;\n" +
+        "}\n";
+    const auto diags = AnalyzeSnippet(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("SvenCoopRegression - Switch statement fallthrough to returning default is exhaustive")
+{
+    const std::string fnName = GenerateRandomSymbolName("GetVal");
+    const std::string enumName = GenerateRandomSymbolName("TypeKind");
+    const std::string code =
+        "enum " + enumName + " { K1, K2, K3 }\n" +
+        "bool " + fnName + "(" + enumName + " kind, string &out val) {\n" +
+        "    switch (kind) {\n" +
+        "        case K1:\n" +
+        "            val = \"1\";\n" +
+        "            return true;\n" +
+        "        case K2:\n" +
+        "            val = \"2\";\n" +
+        "        case K3:\n" +
+        "            val = \"3\";\n" +
+        "        default:\n" +
+        "            return false;\n" +
+        "    }\n" +
+        "}\n";
+    const auto diags = AnalyzeSnippet(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-not-all-paths-return"));
+}
+
+TEST_CASE("SvenCoopRegression - Converting constructor with primitive widening")
+{
+    const std::string clsName = GenerateRandomSymbolName("CustomStr");
+    const std::string fnName = GenerateRandomSymbolName("LogMsg");
+    const std::string code =
+        "class " + clsName + " {\n" +
+        "    " + clsName + "(int64 val) {}\n" +
+        "    " + clsName + "(double val) {}\n" +
+        "}\n" +
+        "void " + fnName + "(const " + clsName + " &in s) {}\n" +
+        "void Test() {\n" +
+        "    " + fnName + "(42);\n" +
+        "    " + fnName + "(3.14f);\n" +
+        "}\n";
+    const auto diags = AnalyzeSnippet(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("SvenCoopRegression - Math min and max overload resolution with mixed int and float")
+{
+    const std::string minFn = GenerateRandomSymbolName("min");
+    const std::string code =
+        "float " + minFn + "(float a, float b) { return a < b ? a : b; }\n" +
+        "int64 " + minFn + "(int64 a, int64 b) { return a < b ? a : b; }\n" +
+        "uint64 " + minFn + "(uint64 a, uint64 b) { return a < b ? a : b; }\n" +
+        "void Test() {\n" +
+        "    float flDamage = 50.0f;\n" +
+        "    float maxHealth = 100.0f;\n" +
+        "    float result = " + minFn + "(1, flDamage / maxHealth);\n" +
+        "}\n";
+    const auto diags = AnalyzeSnippet(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-ambiguous"));
+}
+
+TEST_CASE("SvenCoopRegression - Overload resolution on mutable reference &out parameters")
+{
+    const std::string clsName = GenerateRandomSymbolName("JsonContainer");
+    const std::string code =
+        "class " + clsName + " {\n" +
+        "    bool Get(const string &in key, string &out val, bool strict = true) const { return true; }\n" +
+        "    bool Get(const string &in key, int64 &out val, bool strict = true) const { return true; }\n" +
+        "    bool Get(const string &in key, double &out val, bool strict = true) const { return true; }\n" +
+        "    bool Get(const string &in key, bool &out val, bool strict = true) const { return true; }\n" +
+        "    void Run() {\n" +
+        "        string s;\n" +
+        "        this.Get(\"key\", s);\n" +
+        "        int64 i;\n" +
+        "        this.Get(\"key\", i, false);\n" +
+        "    }\n" +
+        "}\n";
+    const auto diags = AnalyzeSnippet(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-ambiguous"));
+}
+
+TEST_CASE("SvenCoopRegression - Hierarchical parent namespace fallback for qualified types")
+{
+    const std::string nsRoot = GenerateRandomSymbolName("meta_api");
+    const std::string nsSub = GenerateRandomSymbolName("json");
+    const std::string enumName = GenerateRandomSymbolName("Null");
+    const std::string ifaceName = GenerateRandomSymbolName("IJson");
+    const std::string code =
+        "namespace " + nsRoot + " {\n" +
+        "    namespace " + nsSub + " {\n" +
+        "        enum " + enumName + " { " + enumName + " = 0 };\n" +
+        "        namespace v2 {\n" +
+        "            interface " + ifaceName + " {\n" +
+        "                void Set(const " + nsRoot + "::" + nsSub + "::v2::" + enumName + "& in val);\n" +
+        "            }\n" +
+        "        }\n" +
+        "    }\n" +
+        "}\n";
+    const auto diags = AnalyzeSnippet(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-unresolved-type"));
+}
+
+TEST_CASE("SvenCoopRegression - Null safety warning disabled by default in server configuration")
+{
+    const config::DiagnosticsConfig config;
+    CHECK_FALSE(config.reportPossibleNullDereference);
+
+    const std::string cls = GenerateRandomSymbolName("Player");
+    const std::string code =
+        "class " + cls + " { void Ping() {} }\n" +
+        "void Test(" + cls + "@ p) {\n" +
+        "    p.Ping();\n" +
+        "}\n";
+    const auto diags = AnalyzeSnippet(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-warn-possible-null-dereference"));
+}
+
 } // namespace angel_lsp::test

@@ -120,7 +120,8 @@ bool HasConvertingConstructor(const std::string& fromType, const std::string& to
         {
             continue;
         }
-        if (NormalizeType(sig.parameters[0].typeName) != fromType)
+        const std::string paramType = NormalizeType(sig.parameters[0].typeName);
+        if (paramType != fromType && !IsPrimitiveWidening(fromType, paramType))
         {
             continue;
         }
@@ -147,7 +148,8 @@ bool HasConversionMethod(const std::string& fromType, const std::string& toType,
         {
             if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
             {
-                if (NormalizeType(sym.GetFunction().returnType) == toType)
+                const std::string retType = NormalizeType(sym.GetFunction().returnType);
+                if (retType == toType || IsPrimitiveWidening(retType, toType))
                 {
                     return true;
                 }

@@ -106,7 +106,7 @@ void SemanticAnalyzer::RunExpressionRules(const SemanticAnalysisRequest& request
                                                        request.scopeRoot.get(), indexPtr};
     CheckDefiniteAssignment(assignRequest, ctx);
 
-    if (!ctx.request.diagnostics || ctx.request.diagnostics->reportPossibleNullDereference)
+    if (ctx.request.diagnostics && ctx.request.diagnostics->reportPossibleNullDereference)
     {
         const NullSafetyCheckRequest nullSafetyRequest{ts_tree_root_node(request.tree), request.sourceCode,
                                                        request.scopeRoot.get(), indexPtr};

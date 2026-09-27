@@ -73,13 +73,13 @@ std::optional<ArgumentConversion> EvaluateNumericMutableRef(const MatchContext& 
         if (crossesKind)
         {
             return ArgumentConversion{ConversionRank::StandardConv, 30, 0, false,
-                                      static_cast<int>(OverloadMatchPenalty::WideningAcrossKind)};
+                                      static_cast<int>(OverloadMatchPenalty::WideningAcrossKind), false};
         }
         return ArgumentConversion{ConversionRank::Promotion, 0, 0, false,
-                                  static_cast<int>(OverloadMatchPenalty::Widening)};
+                                  static_cast<int>(OverloadMatchPenalty::Widening), false};
     }
     return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
-                              static_cast<int>(OverloadMatchPenalty::Narrowing)};
+                              static_cast<int>(OverloadMatchPenalty::Narrowing), true};
 }
 
 std::optional<ArgumentConversion> EvaluateMutableRefMatch(const ParameterInformation& param, const MatchContext& ctx)
@@ -214,11 +214,11 @@ std::optional<ArgumentConversion> EvaluateNarrowingConversion(const MatchContext
                              (IsIntegerType(ctx.cleanArg) && IsFloatingPointType(ctx.cleanParam));
     if (crossesKind)
     {
-        const uint8_t subRank = IsUnsignedInteger(ctx.cleanParam) ? 50 : 30;
-        return ArgumentConversion{ConversionRank::StandardConv, subRank, 0, false, static_cast<int>(subRank)};
+        const uint8_t subRank = IsUnsignedInteger(ctx.cleanParam) ? 50 : 40;
+        return ArgumentConversion{ConversionRank::StandardConv, subRank, 0, false, static_cast<int>(subRank), true};
     }
     return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
-                              static_cast<int>(OverloadMatchPenalty::Narrowing)};
+                              static_cast<int>(OverloadMatchPenalty::Narrowing), true};
 }
 
 std::optional<ArgumentConversion> EvaluatePrimitiveOrEnumConversion(const MatchContext& ctx)

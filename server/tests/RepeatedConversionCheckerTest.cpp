@@ -153,9 +153,10 @@ TEST_SUITE("RepeatedConversionChecker")
             "    " + paramName + ".get_ShouldHide();\n" +
             "}\n";
 
-        // Default configuration: warns only on first dereference
+        // Enabled configuration: warns only on first dereference when reportAllNullDereferences is false
         {
             DiagnosticsConfig cfg;
+            cfg.reportPossibleNullDereference = true;
             cfg.reportAllNullDereferences = false;
             const auto diags = AnalyzeScriptWithSvenProfile(script, &cfg);
             size_t nullWarnings = 0;
@@ -172,6 +173,7 @@ TEST_SUITE("RepeatedConversionChecker")
         // Configured to report all null dereferences
         {
             DiagnosticsConfig cfg;
+            cfg.reportPossibleNullDereference = true;
             cfg.reportAllNullDereferences = true;
             const auto diags = AnalyzeScriptWithSvenProfile(script, &cfg);
             size_t nullWarnings = 0;

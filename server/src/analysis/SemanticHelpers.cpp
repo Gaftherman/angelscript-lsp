@@ -412,6 +412,40 @@ static bool MatchesQualifiedTypeSuffix(std::string_view clean, const rules::Rule
     return false;
 }
 
+namespace
+{
+bool MatchesParentNamespaceType(std::string_view clean, const SymbolTable& table, const rules::RuleIndex* ruleIndex)
+{
+    const size_t lastSep = clean.rfind("::");
+    if (lastSep == std::string_view::npos)
+    {
+        return false;
+    }
+
+    const std::string_view member = clean.substr(lastSep + 2);
+    std::string prefix(clean.substr(0, lastSep));
+    while (!prefix.empty())
+    {
+        const size_t parentSep = prefix.rfind("::");
+        if (parentSep == std::string_view::npos)
+        {
+            prefix.clear();
+        }
+        else
+        {
+            prefix.resize(parentSep);
+        }
+        const std::string candidate = prefix.empty() ? std::string(member) : prefix + "::" + std::string(member);
+        if (table.HasSymbol(candidate) || table.HasSymbolAnywhere(candidate) ||
+            MatchesQualifiedTypeSuffix(candidate, ruleIndex))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+} // namespace
+
 bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx)
 {
     if (ctx.logger && ctx.logger->IsTraceEnabled())
@@ -431,7 +465,11 @@ bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx)
     if (ctx.request.symbolTable.HasSymbol(clean))
         return true;
 
-    return MatchesQualifiedTypeSuffix(clean, ctx.request.symbolTable.GetRuleIndex().get());
+    const auto* ruleIndex = ctx.request.symbolTable.GetRuleIndex().get();
+    if (MatchesQualifiedTypeSuffix(clean, ruleIndex))
+        return true;
+
+    return MatchesParentNamespaceType(clean, ctx.request.symbolTable, ruleIndex);
 }
 
 std::vector<std::string> SplitTemplateArguments(std::string_view inner)
