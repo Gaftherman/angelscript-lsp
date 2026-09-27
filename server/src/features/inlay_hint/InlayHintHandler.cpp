@@ -973,37 +973,43 @@ bool IsBooleanBinaryOperator(std::string_view op)
  * @param[in] rightT Right operand type string.
  * @return Wider type string.
  */
-std::string SelectWiderType(std::string_view leftT, std::string_view rightT)
+static bool IsOperandMatch(std::string_view leftT, std::string_view rightT, std::string_view target) noexcept
 {
-    if (leftT == "double" || rightT == "double")
+    return leftT == target || rightT == target;
+}
+
+std::string SelectWiderType(std::string_view leftT, std::string_view rightT,
+                            std::string_view stringTypeName = "string")
+{
+    static constexpr std::array<std::string_view, 2> kFloatingTypes = {"double", "float"};
+    for (const auto type : kFloatingTypes)
     {
-        return "double";
+        if (IsOperandMatch(leftT, rightT, type))
+        {
+            return std::string(type);
+        }
     }
-    if (leftT == "float" || rightT == "float")
+
+    const std::string_view effectiveStr = stringTypeName.empty() ? "string" : stringTypeName;
+    if (IsOperandMatch(leftT, rightT, effectiveStr) || IsOperandMatch(leftT, rightT, "string"))
     {
-        return "float";
+        return std::string(effectiveStr);
     }
-    if (leftT == "string" || rightT == "string")
+
+    static constexpr std::array<std::string_view, 2> kWideIntTypes = {"int64", "uint"};
+    for (const auto type : kWideIntTypes)
     {
-        return "string";
+        if (IsOperandMatch(leftT, rightT, type))
+        {
+            return std::string(type);
+        }
     }
-    if (leftT == "int64" || rightT == "int64")
-    {
-        return "int64";
-    }
-    if (leftT == "uint" || rightT == "uint")
-    {
-        return "uint";
-    }
+
     if (!leftT.empty())
     {
         return std::string(leftT);
     }
-    if (!rightT.empty())
-    {
-        return std::string(rightT);
-    }
-    return "int";
+    return !rightT.empty() ? std::string(rightT) : "int";
 }
 
 /**

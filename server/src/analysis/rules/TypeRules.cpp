@@ -78,12 +78,8 @@ TSNode FindEnumDeclarationNode(TSNode root, const Symbol& sym, std::string_view 
 /** @brief True when the name collides with a keyword or a built-in type name. */
 bool IsUnusableName(const std::string& name, const DiagnosticContext& ctx)
 {
-    const auto strType = ctx.request.GetStringTypeName();
-    const auto arrType = ctx.request.GetArrayTypeName();
-    const std::string_view effectiveStrType = strType.empty() ? std::string_view("string") : strType;
-    const std::string_view effectiveArrType = arrType.empty() ? std::string_view("array") : arrType;
-
-    return IsReservedKeyword(name) || IsPrimitiveTypeName(name) || name == effectiveStrType || name == effectiveArrType;
+    return IsReservedKeyword(name) || IsPrimitiveTypeName(name) ||
+           name == ctx.request.GetEffectiveStringTypeName() || name == ctx.request.GetEffectiveArrayTypeName();
 }
 
 bool IsPrefixedIntegerLiteral(std::string_view text, size_t i)

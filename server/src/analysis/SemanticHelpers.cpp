@@ -528,7 +528,7 @@ void StripTrailingDecorations(std::string& result)
     }
 }
 
-std::string CleanBaseType(std::string_view typeName)
+std::string CleanBaseType(std::string_view typeName, std::string_view arrayTypeName)
 {
     TrimTypeWhitespace(typeName);
     StripLeadingConst(typeName);
@@ -540,7 +540,16 @@ std::string CleanBaseType(std::string_view typeName)
     if (result.starts_with("array<") && result.ends_with(">"))
     {
         const std::string inner = result.substr(6, result.size() - 7);
-        return CleanBaseType(inner);
+        return CleanBaseType(inner, arrayTypeName);
+    }
+    if (!arrayTypeName.empty())
+    {
+        const std::string prefix = std::string(arrayTypeName) + "<";
+        if (result.starts_with(prefix) && result.ends_with(">"))
+        {
+            const std::string inner = result.substr(prefix.size(), result.size() - prefix.size() - 1);
+            return CleanBaseType(inner, arrayTypeName);
+        }
     }
 
     return result;
@@ -560,18 +569,15 @@ std::string CanonicalizeArrayType(std::string_view typeName, std::string_view ar
         s = s.substr(6);
     }
 
-    if (arrayTypeName.empty())
-    {
-        return s;
-    }
+    const std::string_view effectiveArrayName = arrayTypeName.empty() ? "array" : arrayTypeName;
 
     // The element of `int[][]` is `int[]`, so the element is canonicalised before it is
     // wrapped: `array<array<int>>`. Wrapping first would give `array<int[]>`, which is the
     // same type spelled in a way nothing else here recognises.
     while (s.ends_with("[]"))
     {
-        const std::string element = CanonicalizeArrayType(s.substr(0, s.size() - 2), arrayTypeName);
-        s = std::string(arrayTypeName) + "<" + element + ">";
+        const std::string element = CanonicalizeArrayType(s.substr(0, s.size() - 2), effectiveArrayName);
+        s = std::string(effectiveArrayName) + "<" + element + ">";
     }
 
     return s;
@@ -2494,9 +2500,11 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
     {
         return "bool";
     }
-    if (op == "+" && (CleanBaseType(leftType) == "string" || CleanBaseType(rightType) == "string"))
+    const std::string_view effectiveStr = ctx.stringTypeName.empty() ? "string" : ctx.stringTypeName;
+    if (op == "+" && (CleanBaseType(leftType, ctx.arrayTypeName) == effectiveStr ||
+                      CleanBaseType(rightType, ctx.arrayTypeName) == effectiveStr))
     {
-        return "string";
+        return std::string(effectiveStr);
     }
 
     std::string cleanLeft = CleanBaseType(leftType);
@@ -2597,6 +2605,8 @@ static std::string ResolveTernaryNullBranch(const std::string& t1, const std::st
 }
 
 /**
+ * @brief Resolves result type between ternary consequence and alternative branch types.
+ */
 static std::string ResolveTernaryBranchTypes(std::string_view t1, std::string_view t2, const SymbolTable& symbolTable)
 {
     std::string clean1 = CleanExpressionType(t1);

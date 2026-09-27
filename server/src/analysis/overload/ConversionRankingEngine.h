@@ -21,5 +21,7 @@ struct MatchContext
     bool paramIsConst = false;
     bool isMutableRef = false;
     const SymbolTable& table;
+    std::string_view stringTypeName = "string";
+    std::string_view arrayTypeName = "array";
 };
 } // namespace angel_lsp::analysis
