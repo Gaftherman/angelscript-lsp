@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <filesystem>
+#include <span>
 #include <spdlog/fmt/fmt.h>
 #include <string>
 #include <utility>
@@ -385,50 +386,94 @@ bool IsValidAccess(const std::string& fileUri, const analysis::LocalReference& r
 }
 
 /**
- * @brief Evaluates references within a single lexical scope against active collection criteria.
- * @param[in] fileUri Document URI owning scope.
- * @param[in] scope Scope to process.
- * @param[in] criteria Active criteria.
- * @param[in,out] seenRefs Deduplicated set of collected references.
+ * @brief Target item for batched reference counting across workspace scopes.
  */
-void ProcessScopeReferences(const std::string& fileUri, const analysis::Scope* scope,
-                            const ReferenceCollectionCriteria& criteria,
-                            ankerl::unordered_dense::set<std::pair<std::string, uint64_t>>& seenRefs)
+struct SymbolLensTarget
+{
+    RangeKey key;
+    std::string targetName;
+    const std::vector<analysis::Symbol>& group;
+    ankerl::unordered_dense::set<std::string> compatibleClasses;
+    DeclRangeSet allDeclRanges;
+    analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
+    bool isFunction = false;
+    size_t minArgs = 0;
+    size_t maxArgs = 0;
+    ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenRefs;
+};
+
+/**
+ * @brief Context bundle for batched reference counting across scope trees.
+ */
+struct BatchReferenceContext
+{
+    std::span<SymbolLensTarget> targets;
+    const ankerl::unordered_dense::map<std::string, std::vector<size_t>>& targetsByName;
+    const CodeLensRequest& request;
+};
+
+/**
+ * @brief Evaluates scope references against indexed symbol targets.
+ * @param[in] fileUri URI of document owning scope.
+ * @param[in] scope Lexical scope to evaluate.
+ * @param[in,out] ctx Batched reference context.
+ */
+void ProcessScopeReferencesBatch(const std::string& fileUri, const analysis::Scope* scope,
+                                 const BatchReferenceContext& ctx)
 {
     for (const auto& ref : scope->references)
     {
-        if (ref.name != criteria.targetName)
-        {
-            continue;
-        }
-        if (IsDeclarationOrDefinition(fileUri, ref, scope, criteria))
-        {
-            continue;
-        }
-        if (!MatchesCallArguments(ref, criteria))
-        {
-            continue;
-        }
-        if (!IsValidAccess(fileUri, ref, scope, criteria))
+        auto it = ctx.targetsByName.find(ref.name);
+        if (it == ctx.targetsByName.end())
         {
             continue;
         }
 
         const uint64_t pos = (static_cast<uint64_t>(ref.startLine) << 32) | ref.startCharacter;
-        seenRefs.insert({fileUri, pos});
+        for (size_t targetIdx : it->second)
+        {
+            auto& target = ctx.targets[targetIdx];
+            if (target.seenRefs.contains({fileUri, pos}))
+            {
+                continue;
+            }
+            ReferenceCollectionCriteria criteria{
+                .targetName = target.targetName,
+                .group = target.group,
+                .compatibleClasses = target.compatibleClasses,
+                .allDeclRanges = target.allDeclRanges,
+                .targetAccess = target.targetAccess,
+                .isFunction = target.isFunction,
+                .minArgs = target.minArgs,
+                .maxArgs = target.maxArgs,
+                .symbolTable = ctx.request.symbolTable,
+                .request = ctx.request,
+            };
+            if (IsDeclarationOrDefinition(fileUri, ref, scope, criteria))
+            {
+                continue;
+            }
+            if (!MatchesCallArguments(ref, criteria))
+            {
+                continue;
+            }
+            if (!IsValidAccess(fileUri, ref, scope, criteria))
+            {
+                continue;
+            }
+            target.seenRefs.insert({fileUri, pos});
+        }
     }
 }
 
 /**
- * @brief Traverses a scope tree iteratively without recursion to collect matching references.
- * @param[in] fileUri Document URI.
- * @param[in] root Root scope of the document.
- * @param[in] criteria Active search criteria.
- * @param[in,out] seenRefs Deduplicated set of reference locations.
+ * @brief Traverses a scope tree flatly to collect references for batched targets.
+ * @param[in] fileUri URI of document owning scope tree.
+ * @param[in] root Root scope of document.
+ * @param[in,out] ctx Batched reference context.
  */
-void CollectReferencesInScopeTree(const std::string& fileUri, const analysis::Scope* root,
-                                  const ReferenceCollectionCriteria& criteria,
-                                  ankerl::unordered_dense::set<std::pair<std::string, uint64_t>>& seenRefs)
+void CollectReferencesInScopeTreeBatch(const std::string& fileUri, const analysis::Scope* root,
+                                      const BatchReferenceContext& ctx)
 {
     if (!root)
     {
@@ -439,7 +484,7 @@ void CollectReferencesInScopeTree(const std::string& fileUri, const analysis::Sc
     {
         const analysis::Scope* scope = stack.back();
         stack.pop_back();
-        ProcessScopeReferences(fileUri, scope, criteria, seenRefs);
+        ProcessScopeReferencesBatch(fileUri, scope, ctx);
         for (const auto& child : scope->children)
         {
             if (child)
@@ -451,23 +496,25 @@ void CollectReferencesInScopeTree(const std::string& fileUri, const analysis::Sc
 }
 
 /**
- * @brief Counts references across all documents in the scope index.
- * @param[in] criteria Active search criteria.
- * @param[in] scopeIndex Global scope index.
- * @return Total number of unique references found.
+ * @brief Counts references across all documents in a single pass over the scope index.
+ * @param[in,out] targets Vector of reference targets to update.
+ * @param[in] targetsByName Mapping from symbol name to target indices.
+ * @param[in] request Active CodeLens request.
  */
-size_t CountReferencesAcrossScopes(const ReferenceCollectionCriteria& criteria, const analysis::ScopeIndex& scopeIndex)
+void BatchCountReferencesAcrossScopes(
+    std::span<SymbolLensTarget> targets,
+    const ankerl::unordered_dense::map<std::string, std::vector<size_t>>& targetsByName,
+    const CodeLensRequest& request)
 {
-    ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenRefs;
-    scopeIndex.ForEachScopeTree(
+    BatchReferenceContext ctx{targets, targetsByName, request};
+    request.scopeIndex.ForEachScopeTree(
         [&](const std::string& fileUri, const std::shared_ptr<const analysis::Scope>& root)
         {
             if (root)
             {
-                CollectReferencesInScopeTree(fileUri, root.get(), criteria, seenRefs);
+                CollectReferencesInScopeTreeBatch(fileUri, root.get(), ctx);
             }
         });
-    return seenRefs.size();
 }
 
 /**
@@ -756,18 +803,66 @@ size_t CountInterfaceImplementations(const analysis::Symbol& sym, const analysis
     return implCount;
 }
 
+using MixinInclusionMap = ankerl::unordered_dense::map<std::string, std::vector<std::string>>;
+
+/**
+ * @brief Context bundling mixin inclusion map and symbol table for compatible class resolution.
+ */
+struct CompatibleClassContext
+{
+    const MixinInclusionMap& mixinMap;
+    const analysis::SymbolTable& symbolTable;
+};
+
+/**
+ * @brief Precomputes mapping from included mixin names to including classes and their derived classes.
+ * @param[in] symbolTable Global symbol table.
+ * @return Map of mixin name to all compatible host and derived class names.
+ */
+MixinInclusionMap BuildMixinInclusionMap(const analysis::SymbolTable& symbolTable)
+{
+    MixinInclusionMap map;
+    symbolTable.ForEachSymbol(
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
+        {
+            for (const auto& cand : symbols)
+            {
+                if (cand.type == analysis::SymbolType::Class &&
+                    std::holds_alternative<analysis::ClassSignature>(cand.signature))
+                {
+                    const auto& cls = cand.GetClass();
+                    for (const auto& m : cls.includedMixins)
+                    {
+                        auto& list = map[m];
+                        list.push_back(cand.name);
+                        if (!cand.qualifiedName.empty() && cand.qualifiedName != cand.name)
+                        {
+                            list.push_back(cand.qualifiedName);
+                        }
+                        auto candDerived = analysis::GetDerivedClasses(cand.name, symbolTable);
+                        for (const auto& rel : candDerived)
+                        {
+                            list.push_back(rel);
+                        }
+                    }
+                }
+            }
+        });
+    return map;
+}
+
 /**
  * @brief Collects all classes compatible with member symbol access across mixins and hierarchies.
  * @param[in] symGroup Symbol group sharing declaration range.
- * @param[in] symName Member symbol name.
+ * @param[in] sym Primary symbol.
  * @param[in] targetAccess Access modifier of the member.
- * @param[in] symbolTable Global symbol table.
+ * @param[in] ctx Context bundling mixin map and symbol table.
  * @return Set of compatible class names.
  */
 ankerl::unordered_dense::set<std::string> CollectCompatibleClasses(const std::vector<analysis::Symbol>& symGroup,
-                                                                   const std::string& symName,
+                                                                   const analysis::Symbol& sym,
                                                                    analysis::AccessModifier targetAccess,
-                                                                   const analysis::SymbolTable& symbolTable)
+                                                                   const CompatibleClassContext& ctx)
 {
     ankerl::unordered_dense::set<std::string> compatibleClasses;
     for (const auto& s : symGroup)
@@ -780,7 +875,7 @@ ankerl::unordered_dense::set<std::string> CollectCompatibleClasses(const std::ve
             {
                 compatibleClasses.insert(s.containerName.substr(lastColon + 2));
             }
-            auto comp = analysis::GetCompatibleMemberClasses(s.containerName, symName, targetAccess, symbolTable);
+            auto comp = analysis::GetCompatibleMemberClasses(s.containerName, sym.name, targetAccess, ctx.symbolTable);
             for (const auto& c : comp)
             {
                 compatibleClasses.insert(c);
@@ -790,35 +885,18 @@ ankerl::unordered_dense::set<std::string> CollectCompatibleClasses(const std::ve
 
     if (!compatibleClasses.empty() && targetAccess != analysis::AccessModifier::Private)
     {
-        symbolTable.ForEachSymbol(
-            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
+        std::vector<std::string> initial(compatibleClasses.begin(), compatibleClasses.end());
+        for (const auto& c : initial)
+        {
+            auto it = ctx.mixinMap.find(c);
+            if (it != ctx.mixinMap.end())
             {
-                for (const auto& cand : symbols)
+                for (const auto& candClass : it->second)
                 {
-                    if (cand.type == analysis::SymbolType::Class &&
-                        std::holds_alternative<analysis::ClassSignature>(cand.signature))
-                    {
-                        const auto& cls = cand.GetClass();
-                        for (const auto& m : cls.includedMixins)
-                        {
-                            if (compatibleClasses.contains(m))
-                            {
-                                compatibleClasses.insert(cand.name);
-                                if (!cand.qualifiedName.empty())
-                                {
-                                    compatibleClasses.insert(cand.qualifiedName);
-                                }
-                                auto candDerived = analysis::GetDerivedClasses(cand.name, symbolTable);
-                                for (const auto& rel : candDerived)
-                                {
-                                    compatibleClasses.insert(rel);
-                                }
-                                break;
-                            }
-                        }
-                    }
+                    compatibleClasses.insert(candClass);
                 }
-            });
+            }
+        }
     }
     return compatibleClasses;
 }
@@ -1043,16 +1121,16 @@ void AppendMixinExpansionLenses(const analysis::Symbol& sym, const CodeLensReque
 }
 
 /**
- * @brief Processes a function or variable symbol to generate reference count code lenses.
+ * @brief Creates a reference target for a function or variable symbol.
  * @param[in] key Range covering symbol declaration.
  * @param[in] sym Primary symbol.
- * @param[in] symGroup All symbols sharing the declaration span.
- * @param[in] request Active CodeLens request.
- * @return Configured reference count CodeLens.
+ * @param[in] symGroup Symbol group sharing declaration range.
+ * @param[in] ctx Context bundling mixin map and symbol table.
+ * @return Constructed SymbolLensTarget.
  */
-lsp::CodeLens ProcessFunctionOrVariableLens(const RangeKey& key, const analysis::Symbol& sym,
-                                            const std::vector<analysis::Symbol>& symGroup,
-                                            const CodeLensRequest& request)
+SymbolLensTarget CreateFunctionOrVariableTarget(const RangeKey& key, const analysis::Symbol& sym,
+                                                const std::vector<analysis::Symbol>& symGroup,
+                                                const CompatibleClassContext& ctx)
 {
     analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
     bool isFunction = false;
@@ -1077,81 +1155,161 @@ lsp::CodeLens ProcessFunctionOrVariableLens(const RangeKey& key, const analysis:
         targetAccess = sym.GetVariable().modifiers.access;
     }
 
-    auto compatibleClasses = CollectCompatibleClasses(symGroup, sym.name, targetAccess, request.symbolTable);
-    auto allDeclRanges = CollectAllDeclRanges(sym.name, symGroup, compatibleClasses, request.symbolTable);
+    auto compatibleClasses = CollectCompatibleClasses(symGroup, sym, targetAccess, ctx);
+    auto allDeclRanges = CollectAllDeclRanges(sym.name, symGroup, compatibleClasses, ctx.symbolTable);
 
-    ReferenceCollectionCriteria criteria{
+    return SymbolLensTarget{
+        .key = key,
         .targetName = sym.name,
         .group = symGroup,
-        .compatibleClasses = compatibleClasses,
-        .allDeclRanges = allDeclRanges,
+        .compatibleClasses = std::move(compatibleClasses),
+        .allDeclRanges = std::move(allDeclRanges),
         .targetAccess = targetAccess,
         .isFunction = isFunction,
         .minArgs = minArgs,
         .maxArgs = maxArgs,
-        .symbolTable = request.symbolTable,
-        .request = request,
+        .seenRefs = {},
     };
-
-    size_t refCount = CountReferencesAcrossScopes(criteria, request.scopeIndex);
-    std::string title = std::to_string(refCount) + (refCount == 1 ? " reference" : " references");
-    return MakeCommandLens(key, std::move(title));
 }
 
 /**
- * @brief Processes a symbol group to generate appropriate code lenses.
- * @param[in] key Declaration range key.
- * @param[in] symGroup Symbols sharing the range.
- * @param[in] request Active CodeLens request.
- * @param[in,out] lenses Output vector of CodeLens items.
+ * @brief Creates a reference target for a class symbol.
+ * @param[in] key Range covering class declaration.
+ * @param[in] sym Class symbol.
+ * @param[in] symGroup Symbol group sharing declaration range.
+ * @return Constructed SymbolLensTarget.
  */
-void ProcessSymbolGroup(const RangeKey& key, const std::vector<analysis::Symbol>& symGroup,
-                        const CodeLensRequest& request, std::vector<lsp::CodeLens>& lenses)
+SymbolLensTarget CreateClassTarget(const RangeKey& key, const analysis::Symbol& sym,
+                                   const std::vector<analysis::Symbol>& symGroup)
+{
+    DeclRangeSet allDeclRanges;
+    AddSymbolDeclRanges(symGroup, allDeclRanges);
+
+    return SymbolLensTarget{
+        .key = key,
+        .targetName = sym.name,
+        .group = symGroup,
+        .compatibleClasses = {},
+        .allDeclRanges = std::move(allDeclRanges),
+        .targetAccess = analysis::AccessModifier::Public,
+        .isFunction = false,
+        .minArgs = 0,
+        .maxArgs = 0,
+        .seenRefs = {},
+    };
+}
+
+using KeyTargetMap = ankerl::unordered_dense::map<RangeKey, size_t, RangeKeyHash>;
+
+/**
+ * @brief Registers reference targets for symbols that require reference counts.
+ * @param[in] symGroups Symbol groups in the active document.
+ * @param[in] ctx Context bundling mixin map and symbol table.
+ * @param[out] targets List of collected reference targets.
+ * @param[out] keyToTarget Map from RangeKey to target index.
+ */
+void CollectReferenceTargets(const SymbolGroups& symGroups, const CompatibleClassContext& ctx,
+                             std::vector<SymbolLensTarget>& targets, KeyTargetMap& keyToTarget)
+{
+    for (const auto& key : symGroups.rangeOrder)
+    {
+        auto it = symGroups.groups.find(key);
+        if (it == symGroups.groups.end() || it->second.empty())
+        {
+            continue;
+        }
+
+        const auto& symGroup = it->second;
+        const auto& sym = SelectPrimarySymbol(symGroup);
+
+        if (sym.type == analysis::SymbolType::Function)
+        {
+            if (IsInterfaceMethod(sym, ctx.symbolTable))
+            {
+                continue;
+            }
+            keyToTarget[key] = targets.size();
+            targets.push_back(CreateFunctionOrVariableTarget(key, sym, symGroup, ctx));
+        }
+        else if (sym.type == analysis::SymbolType::Variable)
+        {
+            keyToTarget[key] = targets.size();
+            targets.push_back(CreateFunctionOrVariableTarget(key, sym, symGroup, ctx));
+        }
+        else if (sym.type == analysis::SymbolType::Class)
+        {
+            keyToTarget[key] = targets.size();
+            targets.push_back(CreateClassTarget(key, sym, symGroup));
+        }
+    }
+}
+
+/**
+ * @brief Context bundle holding assembled targets and the active request.
+ */
+struct AssembledLensContext
+{
+    const std::vector<SymbolLensTarget>& targets;
+    const KeyTargetMap& keyToTarget;
+    const CodeLensRequest& request;
+};
+
+/**
+ * @brief Appends CodeLens for an individual symbol group.
+ * @param[in] key Declaration range key.
+ * @param[in] symGroup Symbols sharing the declaration range.
+ * @param[in] ctx Assembled CodeLens context.
+ * @param[in,out] lenses Output list of code lenses.
+ */
+void AppendLensesForGroup(const RangeKey& key, const std::vector<analysis::Symbol>& symGroup,
+                          const AssembledLensContext& ctx, std::vector<lsp::CodeLens>& lenses)
 {
     const auto& sym = SelectPrimarySymbol(symGroup);
 
     if (sym.type == analysis::SymbolType::Function)
     {
-        if (IsInterfaceMethod(sym, request.symbolTable))
+        if (IsInterfaceMethod(sym, ctx.request.symbolTable))
         {
-            size_t implCount = CountInterfaceMethodImplementations(sym, request.symbolTable);
+            size_t implCount = CountInterfaceMethodImplementations(sym, ctx.request.symbolTable);
             std::string title = std::to_string(implCount) + (implCount == 1 ? " implementation" : " implementations");
             lenses.push_back(MakeCommandLens(key, std::move(title)));
             return;
         }
 
-        lenses.push_back(ProcessFunctionOrVariableLens(key, sym, symGroup, request));
+        auto it = ctx.keyToTarget.find(key);
+        if (it != ctx.keyToTarget.end())
+        {
+            size_t refCount = ctx.targets[it->second].seenRefs.size();
+            std::string title = std::to_string(refCount) + (refCount == 1 ? " reference" : " references");
+            lenses.push_back(MakeCommandLens(key, std::move(title)));
+        }
     }
     else if (sym.type == analysis::SymbolType::Interface)
     {
-        size_t implCount = CountInterfaceImplementations(sym, request.symbolTable);
+        size_t implCount = CountInterfaceImplementations(sym, ctx.request.symbolTable);
         std::string title = std::to_string(implCount) + (implCount == 1 ? " implementation" : " implementations");
         lenses.push_back(MakeCommandLens(key, std::move(title)));
     }
     else if (sym.type == analysis::SymbolType::Class)
     {
-        DeclRangeSet allDeclRanges;
-        AddSymbolDeclRanges(symGroup, allDeclRanges);
-
-        ankerl::unordered_dense::set<std::string> emptyCompatible;
-        ReferenceCollectionCriteria criteria{
-            .targetName = sym.name,
-            .group = symGroup,
-            .compatibleClasses = emptyCompatible,
-            .allDeclRanges = allDeclRanges,
-            .targetAccess = analysis::AccessModifier::Public,
-            .isFunction = false,
-            .minArgs = 0,
-            .maxArgs = 0,
-            .symbolTable = request.symbolTable,
-            .request = request,
-        };
-
-        size_t refCount = CountReferencesAcrossScopes(criteria, request.scopeIndex);
-        std::string title = std::to_string(refCount) + (refCount == 1 ? " reference" : " references");
-        lenses.push_back(MakeCommandLens(key, std::move(title)));
-
-        AppendMixinExpansionLenses(sym, request, lenses);
+        auto it = ctx.keyToTarget.find(key);
+        if (it != ctx.keyToTarget.end())
+        {
+            size_t refCount = ctx.targets[it->second].seenRefs.size();
+            std::string title = std::to_string(refCount) + (refCount == 1 ? " reference" : " references");
+            lenses.push_back(MakeCommandLens(key, std::move(title)));
+        }
+        AppendMixinExpansionLenses(sym, ctx.request, lenses);
+    }
+    else if (sym.type == analysis::SymbolType::Variable)
+    {
+        auto it = ctx.keyToTarget.find(key);
+        if (it != ctx.keyToTarget.end())
+        {
+            size_t refCount = ctx.targets[it->second].seenRefs.size();
+            std::string title = std::to_string(refCount) + (refCount == 1 ? " reference" : " references");
+            lenses.push_back(MakeCommandLens(key, std::move(title)));
+        }
     }
 }
 
@@ -1163,13 +1321,30 @@ void ProcessSymbolGroup(const RangeKey& key, const std::vector<analysis::Symbol>
  */
 std::vector<lsp::CodeLens> BuildSymbolGroupLenses(const SymbolGroups& symGroups, const CodeLensRequest& request)
 {
+    CompatibleClassContext classCtx{BuildMixinInclusionMap(request.symbolTable), request.symbolTable};
+
+    std::vector<SymbolLensTarget> targets;
+    KeyTargetMap keyToTarget;
+    CollectReferenceTargets(symGroups, classCtx, targets, keyToTarget);
+
+    if (!targets.empty())
+    {
+        ankerl::unordered_dense::map<std::string, std::vector<size_t>> targetsByName;
+        for (size_t i = 0; i < targets.size(); ++i)
+        {
+            targetsByName[targets[i].targetName].push_back(i);
+        }
+        BatchCountReferencesAcrossScopes(targets, targetsByName, request);
+    }
+
     std::vector<lsp::CodeLens> lenses;
+    AssembledLensContext assembledCtx{targets, keyToTarget, request};
     for (const auto& key : symGroups.rangeOrder)
     {
         auto it = symGroups.groups.find(key);
         if (it != symGroups.groups.end() && !it->second.empty())
         {
-            ProcessSymbolGroup(key, it->second, request, lenses);
+            AppendLensesForGroup(key, it->second, assembledCtx, lenses);
         }
     }
     return lenses;
@@ -1196,8 +1371,7 @@ std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest& r
     }
 
     auto symGroups = CollectSymbolGroups(request);
-    constexpr size_t k_maxCodeLensSymbols = 500;
-    if (symGroups.rangeOrder.empty() || symGroups.groups.size() > k_maxCodeLensSymbols)
+    if (symGroups.rangeOrder.empty())
     {
         return std::nullopt;
     }
