@@ -16,6 +16,17 @@ import { dirname, join } from 'node:path';
 const clientDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const manifest = JSON.parse(readFileSync(join(clientDir, 'package.json'), 'utf8'));
+
+// VS Code extensions and @vscode/vsce require strict SemVer 2.0 format (MAJOR.MINOR.PATCH).
+// 4-part versions like 0.9.9.1 cause VS Code test hosts to reject the extension and fail vsce package.
+const SEMVER_REGEX = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+if (!manifest.version || !SEMVER_REGEX.test(manifest.version)) {
+    console.error(`\x1b[31mError: package.json "version" ("${manifest.version}") is not a valid SemVer 2.0 string (MAJOR.MINOR.PATCH).\x1b[0m`);
+    console.error('VS Code extension marketplace and vsce strictly require SemVer format (e.g. 0.9.11 or 0.9.10-rc.1).');
+    console.error('Four-part versions like "0.9.9.1" prevent the extension from loading in VS Code test hosts.');
+    process.exit(1);
+}
+
 const extensionSource = readFileSync(join(clientDir, 'src', 'extension.ts'), 'utf8');
 
 const declared = Object.keys(manifest.contributes?.configuration?.properties ?? {});
