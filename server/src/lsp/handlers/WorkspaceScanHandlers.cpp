@@ -197,7 +197,7 @@ void Server::ProcessDiscoveredPredefinedStubs(const std::vector<std::string>& di
         const std::string activePath =
             (m_config.activePredefined.empty() || mergeAll)
                 ? std::string()
-                : angel_lsp::utils::IncludeResolver::NormalizePath(m_config.activePredefined);
+                : ResolveConfiguredPath(m_config.activePredefined);
 
         std::vector<std::string> discovered;
         std::vector<std::string> wantedPaths = configuredPaths;
@@ -262,13 +262,15 @@ void Server::BuildIncludeGraphAndModules(const std::vector<std::string>& allScri
     std::optional<PhaseTimer> phase;
     phase.emplace(m_logger.get(), "include graph");
 
-    m_includeGraph.BuildFromFiles(
-        utils::WorkspaceIncludeGraph::BuildFromFilesRequest{allScriptFiles,
-                                                            *searchDirectories,
-                                                            roots,
-                                                            [&stopToken]() { return stopToken.stop_requested(); },
-                                                            {},
-                                                            std::string(ImplicitIncludeExtension())});
+    m_includeGraph.BuildFromFiles(utils::WorkspaceIncludeGraph::BuildFromFilesRequest{
+        .scriptFiles = allScriptFiles,
+        .searchDirectories = *searchDirectories,
+        .workspaceRoots = roots,
+        .shouldStop = [&stopToken]() { return stopToken.stop_requested(); },
+        .fileReader = {},
+        .implicitExtension = std::string(ImplicitIncludeExtension()),
+        .allowedRoots = IncludeAllowedRoots(),
+    });
 
     if (stopToken.stop_requested())
     {

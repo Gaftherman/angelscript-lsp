@@ -594,6 +594,11 @@ class Server
     void BuildModuleIndex();
 
     /**
+     * @brief Augments search directories with folders from configured modules and workspace maps.
+     */
+    void AugmentSearchDirectoriesFromModules();
+
+    /**
      * @brief Indexes every file of every configured module.
      *
      * Without this a module is a name over an empty set. The symbol table only ever held the
@@ -686,6 +691,19 @@ class Server
     ModuleContextFor(const std::string& uriStr) const;
 
     std::vector<std::string> IncludeAllowedRoots() const;
+
+    /**
+     * @brief Appends a configured path and its parent directory to the allowed roots list.
+     * @param[in] raw The raw path or variable expression.
+     * @param[in,out] roots The list of allowed include root directories.
+     */
+    void AppendConfiguredPathAndParent(const std::string& raw, std::vector<std::string>& roots) const;
+
+    /**
+     * @brief Collects allowed root directories from configured stubs, modules, and force include files.
+     * @param[in,out] roots The list of allowed include root directories.
+     */
+    void CollectConfiguredAllowedRoots(std::vector<std::string>& roots) const;
 
     /**
      * @brief The suffix an unresolvable include may be retried with, or empty for none.

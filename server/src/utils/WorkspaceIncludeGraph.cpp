@@ -169,8 +169,12 @@ void WorkspaceIncludeGraph::Build(const BuildRequest& request)
     // directories. Those are exactly the two places a script is legitimately allowed to include
     // from, and confining the graph here is what stops a hostile `#include "/etc/passwd"` from
     // pulling an arbitrary file into the index in the first place.
-    std::vector<std::string> allowedRoots = request.workspaceRoots;
-    allowedRoots.insert(allowedRoots.end(), request.searchDirectories.begin(), request.searchDirectories.end());
+    std::vector<std::string> allowedRoots =
+        !request.allowedRoots.empty() ? request.allowedRoots : request.workspaceRoots;
+    if (request.allowedRoots.empty())
+    {
+        allowedRoots.insert(allowedRoots.end(), request.searchDirectories.begin(), request.searchDirectories.end());
+    }
 
     const FileReader read = request.fileReader ? request.fileReader : FileReader(ReadFileFromDisk);
     const IncludeContext includeCtx{request.searchDirectories, allowedRoots, request.implicitExtension};
@@ -218,8 +222,12 @@ void WorkspaceIncludeGraph::Build(const std::vector<std::string>& workspaceRoots
 
 void WorkspaceIncludeGraph::BuildFromFiles(const BuildFromFilesRequest& request)
 {
-    std::vector<std::string> allowedRoots = request.workspaceRoots;
-    allowedRoots.insert(allowedRoots.end(), request.searchDirectories.begin(), request.searchDirectories.end());
+    std::vector<std::string> allowedRoots =
+        !request.allowedRoots.empty() ? request.allowedRoots : request.workspaceRoots;
+    if (request.allowedRoots.empty())
+    {
+        allowedRoots.insert(allowedRoots.end(), request.searchDirectories.begin(), request.searchDirectories.end());
+    }
 
     const FileReader read = request.fileReader ? request.fileReader : FileReader(ReadFileFromDisk);
     const IncludeContext includeCtx{request.searchDirectories, allowedRoots, request.implicitExtension};

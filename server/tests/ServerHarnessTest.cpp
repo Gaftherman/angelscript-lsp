@@ -6398,3 +6398,111 @@ TEST_CASE("Server - Realistic Sven Co-op Framerate module closure with sven.as.p
     CHECK(hoverDataReply.find("ServerFramerate") != std::string::npos);
 }
 
+TEST_CASE("Server - Symlinked module entry and active predefined with workspaceFolder")
+{
+    WorkspaceFixture fixture;
+    const std::string symlinkFolder = test::GenerateRandomSymbolName("ext_ins2_");
+    const std::filesystem::path externalDir = std::filesystem::temp_directory_path() / symlinkFolder;
+    std::filesystem::create_directories(externalDir / "weapons");
+
+    struct Cleanup
+    {
+        std::filesystem::path p;
+        ~Cleanup()
+        {
+            std::error_code ec;
+            std::filesystem::remove_all(p, ec);
+        }
+    } cleanup{externalDir};
+
+    {
+        std::ofstream stubFile(externalDir / "sven.as.predefined");
+        stubFile << "class CBaseEntity {\n"
+                 << "    void SetOrigin(const Vector &in origin) {}\n"
+                 << "}\n"
+                 << "void WpnSetIdleTime(float t) {}\n";
+    }
+
+    {
+        std::ofstream baseFile(externalDir / "base.as");
+        baseFile << "class WeaponBase {\n"
+                 << "    void Shoot() {\n"
+                 << "        WpnSetIdleTime(1.0f);\n"
+                 << "    }\n"
+                 << "}\n";
+    }
+
+    {
+        std::ofstream entryFile(externalDir / "ins2_register.as");
+        entryFile << "#include \"base\"\n"
+                  << "#include \"weapons/weapon_test\"\n"
+                  << "void Register() {}\n";
+    }
+
+    {
+        std::ofstream weaponFile(externalDir / "weapons" / "weapon_test.as");
+        weaponFile << "class weapon_test : WeaponBase {\n"
+                   << "    void PrimaryAttack() {\n"
+                   << "        Shoot();\n"
+                   << "        WpnSetIdleTime(0.5f);\n"
+                   << "    }\n"
+                   << "}\n";
+    }
+
+    std::filesystem::create_directories(fixture.dir / "maps");
+    const std::filesystem::path linkPath = fixture.dir / "maps" / "ins2";
+
+    std::error_code linkError;
+    std::filesystem::create_directory_symlink(externalDir, linkPath, linkError);
+    if (linkError)
+    {
+#if defined(_WIN32)
+        std::string cmd = fmt::format("cmd.exe /C mklink /J \"{}\" \"{}\" >nul 2>&1",
+                                      linkPath.string(), externalDir.string());
+        if (std::system(cmd.c_str()) != 0 || !std::filesystem::exists(linkPath))
+        {
+            MESSAGE("symlinks/junctions are not available to this process; case skipped");
+            return;
+        }
+#else
+        MESSAGE("symlinks are not available to this process; case skipped");
+        return;
+#endif
+    }
+
+    config::ServerConfig serverConfig;
+    serverConfig.implicitIncludeExtension = true;
+    serverConfig.features.enableVirtualMixinDocuments = true;
+    serverConfig.activePredefined = "${workspaceFolder}/maps/ins2/sven.as.predefined";
+    serverConfig.modules = {
+        {.name = "MapInit", .entry = "${workspaceFolder}/maps/ins2/ins2_register.as", .folder = ""}
+    };
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("maps/ins2/weapons/weapon_test.as"),
+                               "class weapon_test : WeaponBase {\n"
+                               "    void PrimaryAttack() {\n"
+                               "        Shoot();\n"
+                               "        WpnSetIdleTime(0.5f);\n"
+                               "    }\n"
+                               "}\n"));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    const std::string weaponPublished = LastPublishedFor(output, "weapon_test.as");
+
+    INFO("weaponPublished: " << weaponPublished);
+    CHECK(weaponPublished.find("as-warn-undeclared-identifier") == std::string::npos);
+    CHECK(weaponPublished.find("as-err-undeclared-identifier") == std::string::npos);
+    CHECK(weaponPublished.find("as-err-unresolved-type") == std::string::npos);
+}
+
+

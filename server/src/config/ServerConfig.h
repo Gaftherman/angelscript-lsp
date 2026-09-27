@@ -700,8 +700,9 @@ struct ServerConfig
     std::string activePredefined;
 
     /**
-     * @brief Built-in predefined engine profile identifier (e.g. standard, svencoop, urho3d, openxray, ootp, none,
-     * auto).
+     * @brief Built-in predefined engine profile identifier (deprecated; defaults to "none").
+     *
+     * Predefined API stubs on disk (.as.predefined) supersede built-in engine profiles.
      */
     std::string engineProfile = "none";
 

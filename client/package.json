@@ -2,7 +2,7 @@
   "name": "angelscript-gaftherman",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "0.9.11",
+  "version": "0.9.12",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -767,20 +767,6 @@
           ],
           "default": 1,
           "markdownDescription": "%config.engine.compilerWarnings.description%"
-        },
-        "angelscript.engine.profile": {
-          "type": "string",
-          "enum": [
-            "standard",
-            "svencoop",
-            "urho3d",
-            "openxray",
-            "ootp",
-            "none",
-            "auto"
-          ],
-          "default": "none",
-          "markdownDescription": "%config.engine.profile.description%"
         },
         "angelscript.statusBar.alignment": {
           "type": "string",
