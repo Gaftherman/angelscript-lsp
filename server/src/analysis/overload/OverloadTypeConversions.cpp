@@ -104,7 +104,12 @@ bool HasHandleModifier(std::string_view typeName)
 
 bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
 {
-    const auto toSyms = symbolTable.FindSymbolsPtr(toType + "::" + toType);
+    const std::string cleanTo = NormalizeType(toType);
+    if (cleanTo.empty() || cleanTo == "string" || IsCorePrimitive(cleanTo))
+    {
+        return false;
+    }
+    const auto toSyms = symbolTable.FindSymbolsPtr(cleanTo + "::" + cleanTo);
     if (!toSyms)
     {
         return false;
@@ -135,11 +140,16 @@ bool HasConvertingConstructor(const std::string& fromType, const std::string& to
     return false;
 }
 
-bool HasConversionMethod(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
+UserConversionMatch CheckConversionMethod(const std::string& fromType, const std::string& toType,
+                                          const SymbolTable& symbolTable)
 {
+    UserConversionMatch bestMatch;
+    const std::string cleanFrom = NormalizeType(fromType);
+    const std::string cleanTo = NormalizeType(toType);
+
     for (const char* opName : {"opImplConv", "opImplCast"})
     {
-        const auto opSyms = symbolTable.FindSymbolsPtr(fromType + "::" + opName);
+        const auto opSyms = symbolTable.FindSymbolsPtr(cleanFrom + "::" + opName);
         if (!opSyms)
         {
             continue;
@@ -149,24 +159,48 @@ bool HasConversionMethod(const std::string& fromType, const std::string& toType,
             if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
             {
                 const std::string retType = NormalizeType(sym.GetFunction().returnType);
-                if (retType == toType || IsPrimitiveWidening(retType, toType))
+                if (retType == cleanTo)
                 {
-                    return true;
+                    return UserConversionMatch{true, true};
+                }
+                if (IsPrimitiveWidening(retType, cleanTo))
+                {
+                    bestMatch.viable = true;
+                    bestMatch.isExact = false;
                 }
             }
         }
     }
-    return false;
+    return bestMatch;
+}
+
+bool HasConversionMethod(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
+{
+    return CheckConversionMethod(fromType, toType, symbolTable).viable;
+}
+
+UserConversionMatch CheckUserConversion(const std::string& fromType, const std::string& toType,
+                                        const SymbolTable& symbolTable)
+{
+    if (fromType.empty() || toType.empty())
+    {
+        return UserConversionMatch{};
+    }
+    auto methodMatch = CheckConversionMethod(fromType, toType, symbolTable);
+    if (methodMatch.viable)
+    {
+        return methodMatch;
+    }
+    if (HasConvertingConstructor(fromType, toType, symbolTable))
+    {
+        return UserConversionMatch{true, false};
+    }
+    return UserConversionMatch{};
 }
 
 bool HasUserConversion(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
 {
-    if (fromType.empty() || toType.empty())
-    {
-        return false;
-    }
-    return HasConvertingConstructor(fromType, toType, symbolTable) ||
-           HasConversionMethod(fromType, toType, symbolTable);
+    return CheckUserConversion(fromType, toType, symbolTable).viable;
 }
 
 constexpr int k_maxTypedefDepth = 8;

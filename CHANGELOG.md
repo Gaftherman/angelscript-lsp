@@ -2,7 +2,25 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
+## [0.9.9.1] - 2026-09-27
+
+### Sven Co-op & Meta API v2 Overload Resolution, Ternary Casts, & Conversions
+
+- Exact vs Widened User-Defined Conversion Disambiguation:
+  - Differentiated exact user-defined conversions (`retType == toType`, `subRank = 0`) from user conversions followed by primitive widening (`subRank = 20`) in `ConversionRankingEngine`.
+  - Disambiguated compound assignment overloads such as `string::opAddAssign(const string &in)` over `string::opAddAssign(int64)` when passed types with dual conversions (e.g. `string_t` with `string opImplConv()` and `int opImplConv()`).
+- Ternary Expression Resolution with `opImplCast` / `opImplConv`:
+  - Extended `ResolveTernaryHierarchy` to query `HasConversionMethod` across branches when syntactic class inheritance clauses are absent, cleanly resolving expressions like `(child is null ? self : child)` to `CBaseEntity@` for types defining `opImplCast`.
+- Argument Conversion Invariant & Floating-Point Constructor Restriction:
+  - Aligned constructor conversion semantics with AngelScript specification by preventing single-argument constructors of built-in/string types from being treated as implicit argument conversions.
+  - Eliminated false lossy ranking drops that discarded valid float/double overloads (e.g. `SetKeyvalue(string, float)` and `ValueOrDefault(string, float)`).
+- Polymorphic Method Override Deduplication:
+  - Deduplicated inherited member methods matching parameter lists (`HasSameParameterList`) during member candidate collection in `CollectMemberMethodCandidates`.
+  - Resolved spurious overload ambiguity between base and derived classes that previously caused expressions like `schema.ValueOrDefault("unevaluatedProperties", true) == false` to regress to base object handles (`json@`).
+- Hierarchical Integer Width & Signedness Disambiguation for `&out` References:
+  - Refined `EvaluateNumericMutableRef` ranking to strictly prefer integer same-width signedness changes (`subRank = 20`) over cross-kind conversions to floating-point (`subRank = 30`), disambiguating calls like `config.Get("capacity", uint)` in favor of integer overloads (`int &out`).
+- Regression Suite (`OverloadResolutionSvenCoopTest`):
+  - Added randomized end-to-end regression tests validating all 6 Sven Co-op and `meta_api::json::v2` overload resolution and conversion scenarios.
 
 ## [0.9.9] - 2026-09-27
 

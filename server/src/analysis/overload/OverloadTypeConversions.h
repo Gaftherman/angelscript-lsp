@@ -41,6 +41,15 @@ std::string NormalizeType(std::string_view typeName, std::string_view arrayTypeN
 bool HasHandleModifier(std::string_view typeName);
 
 /**
+ * @brief Formal user conversion result representation.
+ */
+struct UserConversionMatch
+{
+    bool viable = false;
+    bool isExact = false; ///< True if conversion target matches exactly, false if primitive widening required.
+};
+
+/**
  * @brief Checks if a type defines a single-argument converting constructor from fromType.
  * @param[in] fromType Source argument type.
  * @param[in] toType Destination type.
@@ -54,9 +63,29 @@ bool HasConvertingConstructor(const std::string& fromType, const std::string& to
  * @param[in] fromType Source type.
  * @param[in] toType Target conversion type.
  * @param[in] symbolTable Symbol table for method lookup.
+ * @return Conversion match information.
+ */
+UserConversionMatch CheckConversionMethod(const std::string& fromType, const std::string& toType,
+                                          const SymbolTable& symbolTable);
+
+/**
+ * @brief Checks if a type defines an implicit conversion method (`opImplConv` or `opImplCast`).
+ * @param[in] fromType Source type.
+ * @param[in] toType Target conversion type.
+ * @param[in] symbolTable Symbol table for method lookup.
  * @return True if conversion method is available.
  */
 bool HasConversionMethod(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable);
+
+/**
+ * @brief Checks if a user-defined conversion exists between two types.
+ * @param[in] fromType Source type.
+ * @param[in] toType Destination type.
+ * @param[in] symbolTable Symbol table for resolution.
+ * @return Conversion match information.
+ */
+UserConversionMatch CheckUserConversion(const std::string& fromType, const std::string& toType,
+                                        const SymbolTable& symbolTable);
 
 /**
  * @brief Checks if a user-defined conversion exists between two types.

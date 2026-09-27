@@ -3,6 +3,7 @@
 #include "analysis/DiagnosticContext.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
+#include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/rules/RuleIndex.h"
 #include "parser/Keywords.h"
@@ -2386,10 +2387,6 @@ static bool IsFloatOrIntPrimitive(std::string_view type)
     return type == "float" || type == "double" || type == "int" || type == "uint";
 }
 
-static bool IsUnsignedInteger(std::string_view type)
-{
-    return type == "uint" || type == "uint32" || type == "uint64" || type == "uint16" || type == "uint8";
-}
 
 static std::string ResolveBinaryShiftBitwise(std::string_view op, const std::string& cleanLeft,
                                              const std::string& cleanRight)
@@ -2561,6 +2558,14 @@ static std::string ResolveTernaryHierarchy(const TernaryBranchTypes& types, cons
         {
             return types.t1;
         }
+    }
+    if (HasConversionMethod(types.c1, types.c2, symbolTable))
+    {
+        return types.t2;
+    }
+    if (HasConversionMethod(types.c2, types.c1, symbolTable))
+    {
+        return types.t1;
     }
     return "";
 }
@@ -2896,6 +2901,23 @@ static std::string ResolveCandidateMethodReturn(const std::vector<Symbol>& candi
     }
     return CleanExpressionType(candidates[0].GetFunction().returnType);
 }
+/**
+ * @brief Appends candidate function if not already overridden by signature.
+ * @param[in,out] candidates Accumulating list of candidate symbols.
+ * @param[in] sym Candidate symbol to check and potentially append.
+ */
+static void AppendCandidateIfUnique(std::vector<Symbol>& candidates, const Symbol& sym)
+{
+    if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+    {
+        bool overridden = std::any_of(candidates.begin(), candidates.end(),
+                                      [&](const Symbol& kept) { return HasSameParameterList(kept, sym); });
+        if (!overridden)
+        {
+            candidates.push_back(sym);
+        }
+    }
+}
 
 /**
  * @brief Collects candidate member methods along the type inheritance hierarchy.
@@ -2918,10 +2940,7 @@ static std::vector<Symbol> CollectMemberMethodCandidates(const std::string& owne
         auto found = symbolTable.FindSymbols(typeName + "::" + std::string(memName));
         for (const auto& sym : found)
         {
-            if (sym.type == SymbolType::Function)
-            {
-                candidates.push_back(sym);
-            }
+            AppendCandidateIfUnique(candidates, sym);
         }
     }
     return candidates;
@@ -2966,24 +2985,6 @@ static std::string ResolveMemberCallExpr(TSNode funcNode, const std::vector<std:
 
     auto templateInfo = ParseTemplateType(objType);
     return ResolveContainerMethodFallback(memName, templateInfo, objType);
-}
-
-/**
- * @brief Appends candidate function if not already overridden by signature.
- * @param[in,out] candidates Accumulating list of candidate symbols.
- * @param[in] sym Candidate symbol to check and potentially append.
- */
-static void AppendCandidateIfUnique(std::vector<Symbol>& candidates, const Symbol& sym)
-{
-    if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
-    {
-        bool overridden = std::any_of(candidates.begin(), candidates.end(),
-                                      [&](const Symbol& kept) { return HasSameParameterList(kept, sym); });
-        if (!overridden)
-        {
-            candidates.push_back(sym);
-        }
-    }
 }
 
 /**

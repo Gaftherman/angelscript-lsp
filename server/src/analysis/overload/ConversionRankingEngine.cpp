@@ -56,6 +56,23 @@ std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string
     return std::nullopt;
 }
 
+uint8_t IntegerBitWidth(std::string_view typeName)
+{
+    if (typeName == "int8" || typeName == "uint8")
+    {
+        return 8;
+    }
+    if (typeName == "int16" || typeName == "uint16")
+    {
+        return 16;
+    }
+    if (typeName == "int64" || typeName == "uint64")
+    {
+        return 64;
+    }
+    return 32;
+}
+
 bool IsMutableRefParam(const ParameterInformation& param)
 {
     return param.isReference || param.modifier == ParameterModifier::InOut || param.modifier == ParameterModifier::Out;
@@ -67,18 +84,43 @@ std::optional<ArgumentConversion> EvaluateNumericMutableRef(const MatchContext& 
     {
         return std::nullopt;
     }
-    if (IsPrimitiveWidening(ctx.cleanArg, ctx.cleanParam))
+    if (IsIntegerType(ctx.cleanArg) && IsIntegerType(ctx.cleanParam))
     {
-        const bool crossesKind = IsIntegerType(ctx.cleanArg) && IsFloatingPointType(ctx.cleanParam);
-        if (crossesKind)
+        if (IsUnsignedInteger(ctx.cleanArg) == IsUnsignedInteger(ctx.cleanParam))
         {
-            return ArgumentConversion{ConversionRank::StandardConv, 30, 0, false,
-                                      static_cast<int>(OverloadMatchPenalty::WideningAcrossKind), false};
+            if (IsPrimitiveWidening(ctx.cleanArg, ctx.cleanParam))
+            {
+                return ArgumentConversion{ConversionRank::Promotion, 0, 0, false,
+                                          static_cast<int>(OverloadMatchPenalty::Widening), false};
+            }
+            return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
+                                      static_cast<int>(OverloadMatchPenalty::Narrowing), true};
         }
-        return ArgumentConversion{ConversionRank::Promotion, 0, 0, false,
-                                  static_cast<int>(OverloadMatchPenalty::Widening), false};
+        const uint8_t subRank = (IntegerBitWidth(ctx.cleanArg) == IntegerBitWidth(ctx.cleanParam)) ? 20 : 22;
+        if (IsPrimitiveWidening(ctx.cleanArg, ctx.cleanParam))
+        {
+            return ArgumentConversion{ConversionRank::StandardConv, subRank, 0, false,
+                                      static_cast<int>(OverloadMatchPenalty::SignednessChange), false};
+        }
+        return ArgumentConversion{ConversionRank::StandardConv, 40, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::SignednessChange), true};
     }
-    return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
+    if (IsFloatingPointType(ctx.cleanArg) && IsFloatingPointType(ctx.cleanParam))
+    {
+        if (IsPrimitiveWidening(ctx.cleanArg, ctx.cleanParam))
+        {
+            return ArgumentConversion{ConversionRank::Promotion, 0, 0, false,
+                                      static_cast<int>(OverloadMatchPenalty::Widening), false};
+        }
+        return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::Narrowing), true};
+    }
+    if (IsIntegerType(ctx.cleanArg) && IsFloatingPointType(ctx.cleanParam))
+    {
+        return ArgumentConversion{ConversionRank::StandardConv, 30, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::WideningAcrossKind), false};
+    }
+    return ArgumentConversion{ConversionRank::StandardConv, 45, 0, false,
                               static_cast<int>(OverloadMatchPenalty::Narrowing), true};
 }
 
@@ -249,9 +291,11 @@ std::optional<ArgumentConversion> EvaluatePrimitiveOrEnumConversion(const MatchC
 
 ArgumentConversion EvaluateCustomOrUnresolvedConversion(const MatchContext& ctx)
 {
-    if (HasUserConversion(ctx.cleanArg, ctx.cleanParam, ctx.table))
+    const auto userConv = CheckUserConversion(ctx.cleanArg, ctx.cleanParam, ctx.table);
+    if (userConv.viable)
     {
-        return ArgumentConversion{ConversionRank::UserDefined, 0, 0, false,
+        const uint8_t subRank = userConv.isExact ? 0 : 20;
+        return ArgumentConversion{ConversionRank::UserDefined, subRank, 0, false,
                                   static_cast<int>(OverloadMatchPenalty::UserDefined)};
     }
 
