@@ -919,7 +919,7 @@ bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, co
 
 bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticContext& ctx)
 {
-    if (IsReservedKeyword(ref.name))
+    if (IsReservedKeyword(ref.name) || ref.name == "BaseClass")
     {
         return true;
     }

@@ -1249,7 +1249,9 @@ bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, const S
     if (scope)
     {
         const auto* def = ResolveInScope(scope, name);
-        if (def && (def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter))
+        if (def && (def->kind == LocalDefinitionKind::Variable ||
+                    def->kind == LocalDefinitionKind::Parameter ||
+                    def->kind == LocalDefinitionKind::Field))
         {
             return true;
         }

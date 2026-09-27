@@ -2597,6 +2597,37 @@ static std::string ResolveTernaryNullBranch(const std::string& t1, const std::st
 }
 
 /**
+static std::string ResolveTernaryBranchTypes(std::string_view t1, std::string_view t2, const SymbolTable& symbolTable)
+{
+    std::string clean1 = CleanExpressionType(t1);
+    std::string clean2 = CleanExpressionType(t2);
+    if (!clean1.empty() && clean1 == clean2)
+    {
+        return clean1;
+    }
+
+    std::string c1 = CanonicalizeType(CleanBaseType(t1));
+    std::string c2 = CanonicalizeType(CleanBaseType(t2));
+    if (!c1.empty() && c1 == c2)
+    {
+        return (t1.ends_with("@") && t2.ends_with("@")) ? c1 + "@" : c1;
+    }
+    if (auto nullRes = ResolveTernaryNullBranch(std::string(t1), std::string(t2), c1, c2); !nullRes.empty())
+    {
+        return nullRes;
+    }
+    if (IsNumericPrimitive(c1) && IsNumericPrimitive(c2))
+    {
+        return ResolveTernaryNumericPromotion(c1, c2);
+    }
+    if (auto enumRes = ResolveTernaryEnumPromotion(c1, c2, symbolTable); !enumRes.empty())
+    {
+        return enumRes;
+    }
+    return ResolveTernaryHierarchy(TernaryBranchTypes{std::string(t1), std::string(t2), c1, c2}, symbolTable);
+}
+
+/**
  * @brief Resolves ternary expression type.
  */
 static std::string ResolveTernaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
@@ -2616,25 +2647,7 @@ static std::string ResolveTernaryExpr(TSNode exprNode, const ExpressionTypeConte
     if (t1 == "void" || t2 == "void")
         return "";
 
-    std::string c1 = CanonicalizeType(CleanBaseType(t1));
-    std::string c2 = CanonicalizeType(CleanBaseType(t2));
-    if (!c1.empty() && c1 == c2)
-    {
-        return (t1.ends_with("@") && t2.ends_with("@")) ? c1 + "@" : c1;
-    }
-    if (auto nullRes = ResolveTernaryNullBranch(t1, t2, c1, c2); !nullRes.empty())
-    {
-        return nullRes;
-    }
-    if (IsNumericPrimitive(c1) && IsNumericPrimitive(c2))
-    {
-        return ResolveTernaryNumericPromotion(c1, c2);
-    }
-    if (auto enumRes = ResolveTernaryEnumPromotion(c1, c2, ctx.symbolTable); !enumRes.empty())
-    {
-        return enumRes;
-    }
-    return ResolveTernaryHierarchy(TernaryBranchTypes{t1, t2, c1, c2}, ctx.symbolTable);
+    return ResolveTernaryBranchTypes(t1, t2, ctx.symbolTable);
 }
 
 /**

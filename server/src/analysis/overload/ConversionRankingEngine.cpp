@@ -181,19 +181,50 @@ std::optional<ArgumentConversion> EvaluateSameTypeOrSubtypeMatch(const Parameter
     return EvaluateInheritedSubtypeMatch(ctx, isValueToHandle, isHandleToRef);
 }
 
-std::optional<ArgumentConversion> EvaluatePrimitiveOrEnumConversion(const MatchContext& ctx)
+std::optional<ArgumentConversion> EvaluateEnumArgumentConversion(const MatchContext& ctx)
 {
-    const auto namesAnEnum = [&ctx](const std::string& typeName)
+    const auto symbols = ctx.table.FindSymbolsPtr(ctx.cleanArg);
+    const bool namesAnEnum = symbols && std::any_of(symbols->begin(), symbols->end(),
+                                                   [](const Symbol& sym) { return sym.type == SymbolType::Enum; });
+    if (!namesAnEnum)
     {
-        const auto symbols = ctx.table.FindSymbolsPtr(typeName);
-        return symbols && std::any_of(symbols->begin(), symbols->end(),
-                                      [](const Symbol& sym) { return sym.type == SymbolType::Enum; });
-    };
-
-    if (IsIntegerType(ctx.cleanParam) && namesAnEnum(ctx.cleanArg))
+        return std::nullopt;
+    }
+    if (IsIntegerType(ctx.cleanParam))
     {
         return ArgumentConversion{ConversionRank::Promotion, 0, 0, false,
                                   static_cast<int>(OverloadMatchPenalty::Widening)};
+    }
+    if (IsFloatingPointType(ctx.cleanParam))
+    {
+        return ArgumentConversion{ConversionRank::StandardConv, 30, 0, false,
+                                  static_cast<int>(OverloadMatchPenalty::WideningAcrossKind)};
+    }
+    return std::nullopt;
+}
+
+std::optional<ArgumentConversion> EvaluateNarrowingConversion(const MatchContext& ctx)
+{
+    if (!IsPrimitiveNarrowing(ctx.cleanArg, ctx.cleanParam))
+    {
+        return std::nullopt;
+    }
+    const bool crossesKind = (IsFloatingPointType(ctx.cleanArg) && IsIntegerType(ctx.cleanParam)) ||
+                             (IsIntegerType(ctx.cleanArg) && IsFloatingPointType(ctx.cleanParam));
+    if (crossesKind)
+    {
+        const uint8_t subRank = IsUnsignedInteger(ctx.cleanParam) ? 50 : 30;
+        return ArgumentConversion{ConversionRank::StandardConv, subRank, 0, false, static_cast<int>(subRank)};
+    }
+    return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
+                              static_cast<int>(OverloadMatchPenalty::Narrowing)};
+}
+
+std::optional<ArgumentConversion> EvaluatePrimitiveOrEnumConversion(const MatchContext& ctx)
+{
+    if (auto enumConv = EvaluateEnumArgumentConversion(ctx))
+    {
+        return enumConv;
     }
     if (IsIntegerType(ctx.cleanArg) && IsIntegerType(ctx.cleanParam) &&
         IsUnsignedInteger(ctx.cleanArg) != IsUnsignedInteger(ctx.cleanParam))
@@ -212,12 +243,7 @@ std::optional<ArgumentConversion> EvaluatePrimitiveOrEnumConversion(const MatchC
         return ArgumentConversion{ConversionRank::Promotion, 0, 0, false,
                                   static_cast<int>(OverloadMatchPenalty::Widening)};
     }
-    if (IsPrimitiveNarrowing(ctx.cleanArg, ctx.cleanParam))
-    {
-        return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
-                                  static_cast<int>(OverloadMatchPenalty::Narrowing)};
-    }
-    return std::nullopt;
+    return EvaluateNarrowingConversion(ctx);
 }
 
 ArgumentConversion EvaluateCustomOrUnresolvedConversion(const MatchContext& ctx)

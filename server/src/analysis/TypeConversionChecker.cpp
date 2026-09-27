@@ -675,8 +675,8 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
         return CanConvertBuiltins(from, to, ctx);
     }
 
-    // Implicit widening from enum to integer primitives (int, uint, int64, etc.)
-    if (ResolvesToEnum(from, table) && parser::primitives::IsInteger(CanonicalizeType(to)))
+    // Implicit widening from enum to numeric primitives (int, uint, int64, float, double, etc.)
+    if (ResolvesToEnum(from, table) && parser::primitives::IsNumeric(CanonicalizeType(to)))
     {
         return true;
     }

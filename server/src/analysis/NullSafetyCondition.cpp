@@ -83,6 +83,17 @@ void ProcessLogicalBinary(const BinaryConditionParams& params, AssertionSink& si
     }
     else if (params.op == "||" || params.op == "or")
     {
+        for (const auto& l : posL)
+        {
+            for (const auto& r : posR)
+            {
+                if (l.varName == r.varName && l.state == r.state)
+                {
+                    sink.positive.push_back(l);
+                    break;
+                }
+            }
+        }
         sink.negative.insert(sink.negative.end(), negL.begin(), negL.end());
         sink.negative.insert(sink.negative.end(), negR.begin(), negR.end());
     }
@@ -154,6 +165,15 @@ TSNode UnwrapNullExpression(TSNode expr)
             if (!ts_node_is_null(op) && !ts_node_is_null(operand) && ts_node_end_byte(op) - ts_node_start_byte(op) == 1)
             {
                 expr = operand;
+                continue;
+            }
+        }
+        else if (type == parser::nodes::AssignmentExpression)
+        {
+            TSNode left = parser::GetChildByField(expr, parser::fields::Left);
+            if (!ts_node_is_null(left))
+            {
+                expr = left;
                 continue;
             }
         }
