@@ -4,8 +4,10 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
 #include "parser/AngelScriptParser.h"
+#include "helpers/TestUtils.h"
 
 #include <string>
+#include <vector>
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;
@@ -426,5 +428,49 @@ TEST_CASE("CodeLens - Method Overload Arity Isolation")
     }
     CHECK(foundDeploy0);
     CHECK(foundDeploy6);
+}
+
+TEST_CASE("CodeLens - Batched Reference Resolution Scales Beyond Arbitrary Symbol Limits")
+{
+    std::string code;
+    code.reserve(65536);
+    constexpr size_t kNumFunctions = 600;
+    std::vector<std::string> funcNames;
+    funcNames.reserve(kNumFunctions);
+
+    for (size_t i = 0; i < kNumFunctions; ++i)
+    {
+        std::string fn = angel_lsp::test::GenerateRandomSymbolName("fn") + "_" + std::to_string(i);
+        code += "void " + fn + "() {}\n";
+        funcNames.push_back(std::move(fn));
+    }
+
+    code += "void Caller() {\n";
+    code += "    " + funcNames.front() + "();\n";
+    code += "    " + funcNames.back() + "();\n";
+    code += "}\n";
+
+    CodeLensFixture fixture(std::move(code));
+    const auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+    CHECK(lenses->size() == kNumFunctions + 1);
+
+    bool verifiedFront = false;
+    bool verifiedBack = false;
+    for (const auto &lens : *lenses)
+    {
+        if (lens.range.start.line == 0 && lens.command.has_value())
+        {
+            CHECK(lens.command->title == "1 reference");
+            verifiedFront = true;
+        }
+        else if (lens.range.start.line == kNumFunctions - 1 && lens.command.has_value())
+        {
+            CHECK(lens.command->title == "1 reference");
+            verifiedBack = true;
+        }
+    }
+    CHECK(verifiedFront);
+    CHECK(verifiedBack);
 }
 
