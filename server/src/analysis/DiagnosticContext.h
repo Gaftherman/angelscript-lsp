@@ -38,6 +38,18 @@ struct DiagnosticContext
     std::vector<Diagnostic>& diagnostics;
     utils::LspLogger* logger = nullptr;
 
+    /**
+     * @brief Constructs a DiagnosticContext binding a semantic request and output diagnostics list.
+     * @param[in] req The active semantic analysis request.
+     * @param[in,out] diags The destination container for emitted diagnostics.
+     * @param[in] log Optional LSP logger handle.
+     */
+    DiagnosticContext(const SemanticAnalysisRequest& req, std::vector<Diagnostic>& diags,
+                      utils::LspLogger* log = nullptr)
+        : request(req), diagnostics(diags), logger(log)
+    {
+    }
+
     // --- Diagnostic Emission for Symbol ---
     void Emit(const Symbol& sym, std::string_view code, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
     void Emit(const Symbol& sym, std::string_view code, std::string_view arg1,

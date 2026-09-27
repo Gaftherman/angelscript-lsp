@@ -56,7 +56,7 @@ PipelineResult RunPipeline(const std::string& sourceCode, const EngineProperties
     tcReq.sourceCode = sourceCode;
     tcReq.scopeRoot = req.scopeRoot.get();
 
-    DiagnosticContext tcCtx(req, res.diagnostics);
+    DiagnosticContext tcCtx{req, res.diagnostics};
     CheckTypeConversions(tcReq, tcCtx);
 
     return res;

@@ -78,7 +78,7 @@ bool IsConstructorCall(std::string_view fnName, TSNode typeNode, std::string_vie
 struct NullableEvalRequest
 {
     TSNode val;
-    TSNode typeNode = {0, 0, 0, 0};
+    TSNode typeNode{};
     std::string_view targetVarName = "";
 };
 

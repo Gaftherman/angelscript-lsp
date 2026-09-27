@@ -461,7 +461,8 @@ bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx)
     if (ctx.request.IsRegisteredSymbol(baseName) || ctx.request.symbolTable.HasSymbolAnywhere(baseName))
         return true;
 
-    std::string_view clean = baseName.starts_with("::") ? baseName.substr(2) : std::string_view(baseName);
+    std::string_view baseView = baseName;
+    std::string_view clean = baseView.starts_with("::") ? baseView.substr(2) : baseView;
     if (ctx.request.symbolTable.HasSymbol(clean))
         return true;
 

@@ -506,7 +506,7 @@ void Server::CollectSharedSymbolsElsewhere(const ModuleView& owning,
                                            ankerl::unordered_dense::set<std::string>& outShared) const
 {
     m_symbolTable.ForEachSymbol(
-        [this, &owning, &outShared](const std::string& name, const std::vector<angel_lsp::analysis::Symbol>& symbols)
+        [&owning, &outShared](const std::string& name, const std::vector<angel_lsp::analysis::Symbol>& symbols)
         {
             for (const auto& symbol : symbols)
             {

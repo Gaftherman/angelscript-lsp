@@ -9,11 +9,6 @@
 
 namespace angel_lsp
 {
-namespace
-{
-constexpr std::chrono::milliseconds k_analysisDebounce{200};
-}
-
 void Server::ReanalyseOpenDocuments()
 {
     const auto docs = m_documentStore.GetAllDocuments();
