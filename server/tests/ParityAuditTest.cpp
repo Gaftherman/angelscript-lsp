@@ -163,26 +163,43 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
     using namespace angel_lsp::analysis;
     using namespace angel_lsp::parser;
 
-    const std::string harnessExe = EnvVar("ASHARNESS_EXE");
+    std::string harnessExe = EnvVar("ASHARNESS_EXE");
     if (harnessExe.empty() || !fs::exists(harnessExe))
     {
-        MESSAGE("ASHARNESS_EXE is unset or does not exist - parity audit skipped.");
+        const std::vector<fs::path> candidates = {
+            fs::path(ANGELSCRIPT_REPO_ROOT) / "build" / "Debug" / "angelscript_oracle.exe",
+            fs::path(ANGELSCRIPT_REPO_ROOT) / "build" / "bin" / "angelscript_oracle.exe",
+            fs::path(ANGELSCRIPT_REPO_ROOT) / "build" / "Release" / "angelscript_oracle.exe",
+            fs::path(ANGELSCRIPT_REPO_ROOT) / "build" / "angelscript_oracle",
+            fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "Debug" / "angelscript_oracle.exe",
+            fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "bin" / "angelscript_oracle.exe",
+            fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "Release" / "angelscript_oracle.exe",
+            fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "angelscript_oracle"
+        };
+        for (const auto& candidate : candidates)
+        {
+            if (fs::exists(candidate))
+            {
+                harnessExe = candidate.string();
+                break;
+            }
+        }
+    }
+
+    if (harnessExe.empty() || !fs::exists(harnessExe))
+    {
+        MESSAGE("ASHARNESS_EXE is unset and no built oracle found - parity audit skipped.");
         return;
     }
 
+    const bool isOracle = harnessExe.find("oracle") != std::string::npos;
+
     // Defaults to the sibling checkout layout; override for a different one.
-    //
-    // The root is only ever a *fallback*: for the scripts when PARITY_SCRIPT_DIR is unset, and for
-    // the stub when PARITY_PREDEFINED is unset. Its absence is therefore not on its own a reason to
-    // skip, and treating it as one is how this audit stopped running. It returned here - before
-    // reading either override - so the CI job that sets both and deliberately has no AS-Harness
-    // checkout passed green without auditing a single script, and the CHECK_MESSAGE at the end of
-    // this test, the one gate that says our verdicts match the compiler's, never executed at all.
     std::string harnessRoot = EnvVar("ASHARNESS_ROOT");
     if (harnessRoot.empty())
         harnessRoot = (fs::path(ANGELSCRIPT_CORPUS_DIR) / ".." / ".." / "AS-Harness").string();
 
-    const bool haveHarnessRoot = fs::exists(harnessRoot);
+    const bool haveHarnessRoot = !isOracle && fs::exists(harnessRoot);
 
     // PARITY_SCRIPT_DIR points the audit at any directory of .as files instead of the harness's
     // own. That is what lets the same machinery be run over the snippets extracted from this
@@ -205,10 +222,21 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
                 scripts.push_back(entry.path());
         }
     }
-    else if (!haveHarnessRoot)
+    else if (isOracle || !haveHarnessRoot)
     {
-        MESSAGE("Neither PARITY_SCRIPT_DIR nor an AS-Harness root - parity audit skipped.");
-        return;
+        if (fs::exists(ANGELSCRIPT_PARITY_DIR))
+        {
+            for (const auto& entry : fs::directory_iterator(ANGELSCRIPT_PARITY_DIR))
+            {
+                if (entry.is_regular_file() && entry.path().extension() == ".as")
+                    scripts.push_back(entry.path());
+            }
+        }
+        else
+        {
+            MESSAGE("Neither PARITY_SCRIPT_DIR nor an AS-Harness root - parity audit skipped.");
+            return;
+        }
     }
     else
     {
@@ -245,7 +273,12 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
     // SDK add-ons and nothing else, and tests/fixtures/sdk-addons.as.predefined is generated to
     // describe exactly that set. Pointing one at the other is what makes the comparison honest -
     // an oracle and a stub that disagree produce findings about the disagreement.
-    const std::string explicitStubPath = EnvVar("PARITY_PREDEFINED");
+    std::string explicitStubPath = EnvVar("PARITY_PREDEFINED");
+    if (explicitStubPath.empty() && (isOracle || !haveHarnessRoot) &&
+        fs::exists(fs::path(ANGELSCRIPT_FIXTURE_DIR) / "sdk-addons.as.predefined"))
+    {
+        explicitStubPath = (fs::path(ANGELSCRIPT_FIXTURE_DIR) / "sdk-addons.as.predefined").string();
+    }
     const std::string explicitStub = explicitStubPath.empty() ? std::string() : ReadFile(fs::path(explicitStubPath));
 
     if (!explicitStubPath.empty())

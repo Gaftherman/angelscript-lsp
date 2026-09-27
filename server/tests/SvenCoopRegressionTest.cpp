@@ -401,41 +401,56 @@ TEST_CASE("SvenCoopRegression - Named arguments in function call")
 
 TEST_CASE("SvenCoop - Typedef in relational comparison uint < size_t")
 {
+    const std::string typeAlias = GenerateRandomSymbolName("CustomSize");
+    const std::string constName = GenerateRandomSymbolName("MAX_COUNT");
+    const std::string varName = GenerateRandomSymbolName("idx");
+    const std::string funcName = GenerateRandomSymbolName("LoopTest");
+
     const std::string code =
-        "typedef uint32 size_t;\n"
-        "const size_t MAX_ITEM_TYPES = 32;\n"
-        "void Test()\n"
-        "{\n"
-        "    for (uint ui = 0; ui < MAX_ITEM_TYPES; ui++) {}\n"
+        "typedef uint32 " + typeAlias + ";\n" +
+        "const " + typeAlias + " " + constName + " = 32;\n" +
+        "void " + funcName + "()\n" +
+        "{\n" +
+        "    for (uint " + varName + " = 0; " + varName + " < " + constName + "; " + varName + "++) {}\n" +
         "}\n";
     auto diags = AnalyzeSnippet(code);
-    for (const auto& d : diags)
-    {
-        MESSAGE("Diag: " << d.code << " -> " << d.message);
-    }
     CHECK(diags.empty());
 }
 
 TEST_CASE("SvenCoop - Enum vs numeric comparison float == DAMAGE")
 {
+    const std::string enumName = GenerateRandomSymbolName("DAMAGE");
+    const std::string enumValNo = GenerateRandomSymbolName("DAMAGE_NO");
+    const std::string enumValYes = GenerateRandomSymbolName("DAMAGE_YES");
+    const std::string pevClass = GenerateRandomSymbolName("EntPev");
+    const std::string entClass = GenerateRandomSymbolName("Ent");
+    const std::string fieldName = GenerateRandomSymbolName("takedamage");
+    const std::string subField = GenerateRandomSymbolName("pev");
+    const std::string funcName = GenerateRandomSymbolName("CheckDamage");
+    const std::string paramName = GenerateRandomSymbolName("victim");
+
     const std::string code =
-        "enum DAMAGE { DAMAGE_NO = 0, DAMAGE_YES = 1 }\n"
-        "class EntPev { float takedamage; }\n"
-        "class Ent { EntPev pev; }\n"
-        "void Test(Ent& pVictim)\n"
-        "{\n"
-        "    if (pVictim.pev.takedamage == DAMAGE_NO) {}\n"
+        "enum " + enumName + " { " + enumValNo + " = 0, " + enumValYes + " = 1 }\n" +
+        "class " + pevClass + " { float " + fieldName + "; }\n" +
+        "class " + entClass + " { " + pevClass + " " + subField + "; }\n" +
+        "void " + funcName + "(" + entClass + "& " + paramName + ")\n" +
+        "{\n" +
+        "    if (" + paramName + "." + subField + "." + fieldName + " == " + enumValNo + ") {}\n" +
         "}\n";
     auto diags = AnalyzeSnippet(code);
-    for (const auto& d : diags)
-    {
-        MESSAGE("Diag: " << d.code << " -> " << d.message);
-    }
     CHECK(diags.empty());
 }
 
 TEST_CASE("SvenCoop - Nested initializer list for dictionary")
 {
+    const std::string funcName = GenerateRandomSymbolName("GetDictionaryKeys");
+    const std::string k1 = GenerateRandomSymbolName("k1");
+    const std::string v1 = GenerateRandomSymbolName("v1");
+    const std::string k2 = GenerateRandomSymbolName("k2");
+    const std::string v2 = GenerateRandomSymbolName("v2");
+    const std::string k3 = GenerateRandomSymbolName("k3");
+    const std::string v3 = GenerateRandomSymbolName("v3");
+
     const std::string code =
         "class dictionary {\n"
         "    dictionary() {}\n"
@@ -444,34 +459,32 @@ TEST_CASE("SvenCoop - Nested initializer list for dictionary")
         "    void set(const string &in key, const double &in value) {}\n"
         "    bool exists(const string &in key) const { return true; }\n"
         "}\n"
-        "dictionary@ get_TestKeys()\n"
+        "dictionary@ " + funcName + "()\n"
         "{\n"
-        "    return { { \"classname\", \"monster_human_grunt_ally\" }, { \"model\", \"models/bts_rc/monsters/rgrunt_opfor.mdl\" }, { \"is_player_ally\", \"1\" } };\n"
+        "    return { { \"" + k1 + "\", \"" + v1 + "\" }, { \"" + k2 + "\", \"" + v2 + "\" }, { \"" + k3 + "\", \"" + v3 + "\" } };\n"
         "}\n";
     auto diags = AnalyzeSnippet(code);
-    for (const auto& d : diags)
-    {
-        MESSAGE("Diag: " << d.code << " -> " << d.message);
-    }
     CHECK(diags.empty());
 }
 
 TEST_CASE("SvenCoop - Namespaced direct-init constructor Logger")
 {
+    const std::string outerNs = GenerateRandomSymbolName("OuterNs");
+    const std::string innerNs = GenerateRandomSymbolName("InnerNs");
+    const std::string className = GenerateRandomSymbolName("Logger");
+    const std::string varName = GenerateRandomSymbolName("g_Logger");
+    const std::string logTag = GenerateRandomSymbolName("Tag");
+
     const std::string code =
-        "namespace meta_api {\n"
-        "    class Logger {\n"
-        "        Logger(const string &in name, bool isStatic = false) {}\n"
-        "    }\n"
-        "    namespace json {\n"
-        "        Logger g_Logger(\"JSON\");\n"
-        "    }\n"
+        "namespace " + outerNs + " {\n" +
+        "    class " + className + " {\n" +
+        "        " + className + "(const string &in name, bool isStatic = false) {}\n" +
+        "    }\n" +
+        "    namespace " + innerNs + " {\n" +
+        "        " + className + " " + varName + "(\"" + logTag + "\");\n" +
+        "    }\n" +
         "}\n";
     auto diags = AnalyzeSnippet(code);
-    for (const auto& d : diags)
-    {
-        MESSAGE("Diag: " << d.code << " -> " << d.message);
-    }
     CHECK(diags.empty());
 }
 
