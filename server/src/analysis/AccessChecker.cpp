@@ -436,7 +436,7 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
 
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string objectType = ResolveObjectOwnerType(objectNode, scope, request, ctx);
-    if (objectType.empty())
+    if (objectType.empty() || objectType == "auto")
     {
         return;
     }
@@ -456,7 +456,7 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
         return;
     }
 
-    if (IsCorePrimitive(objectType) || objectType == "void")
+    if ((IsCorePrimitive(objectType) && objectType != "auto") || objectType == "void")
     {
         const TSPoint start = ts_node_start_point(memberNode);
         const TSPoint end = ts_node_end_point(memberNode);

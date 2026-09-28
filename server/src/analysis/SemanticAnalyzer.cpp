@@ -231,13 +231,13 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
             RunStatementAndControlFlowRules(request, indexPtr, ctx);
             stmtMs = stmtTimer.ElapsedMs();
 
-            utils::HighResTimer exprTimer;
-            RunExpressionRules(request, indexPtr, ctx);
-            exprMs = exprTimer.ElapsedMs();
-
             utils::HighResTimer typeTimer;
             RunTypeAndStructureRules(request, indexPtr, ctx);
             typeMs = typeTimer.ElapsedMs();
+
+            utils::HighResTimer exprTimer;
+            RunExpressionRules(request, indexPtr, ctx);
+            exprMs = exprTimer.ElapsedMs();
         }
 
         CheckDirectivesAndModules(request, ctx);

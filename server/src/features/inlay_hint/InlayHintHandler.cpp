@@ -1506,9 +1506,10 @@ void ProcessCallExpression(TSNode node, const InlayHintRequest& request, std::ve
  * @param[in] declarator AST variable_declarator node.
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Hint vector receiving generated type hints.
+ * @param[in] isHandle Whether the auto declaration explicitly carries a handle modifier.
  */
 void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequest& request,
-                                   std::vector<lsp::InlayHint>& hints)
+                                   std::vector<lsp::InlayHint>& hints, bool isHandle)
 {
     TSNode nameNode = parser::GetChildByField(declarator, parser::fields::Name);
     if (ts_node_is_null(nameNode))
@@ -1530,6 +1531,11 @@ void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequest& re
     if (deduced.empty() || deduced == "auto" || deduced == "null" || deduced == "void")
     {
         return;
+    }
+
+    if (isHandle && !deduced.ends_with('@'))
+    {
+        deduced += '@';
     }
 
     TSPoint endPoint = ts_node_end_point(nameNode);
@@ -1628,7 +1634,8 @@ void ProcessVariableDeclaration(TSNode node, const InlayHintRequest& request, st
     }
 
     std::string typeText = GetNodeText(varTypeNode, request.sourceCode);
-    bool isAuto = (typeText == "auto");
+    bool isAuto = (analysis::CleanBaseType(typeText) == "auto");
+    bool isHandle = (typeText.find('@') != std::string::npos);
     uint32_t count = ts_node_child_count(node);
     for (uint32_t i = 0; i < count; ++i)
     {
@@ -1637,7 +1644,7 @@ void ProcessVariableDeclaration(TSNode node, const InlayHintRequest& request, st
         {
             if (isAuto)
             {
-                ProcessAutoVariableDeclarator(child, request, hints);
+                ProcessAutoVariableDeclarator(child, request, hints, isHandle);
             }
             else if (!typeText.empty())
             {

@@ -791,6 +791,77 @@ TEST_CASE("Member access using reserved keyword name emits reserved keyword diag
     CHECK(HasDiagCode(diags, "as-err-reserved-keyword-name"));
 }
 
+TEST_CASE("Member access on auto and auto@ variables resolves correctly without false positives")
+{
+    const std::string clsName = test::GenerateRandomSymbolName("CBasePlayer");
+    const std::string propName = test::GenerateRandomSymbolName("pev");
+    const std::string methodName = test::GenerateRandomSymbolName("IsHEV");
+    const std::string helperName = test::GenerateRandomSymbolName("GetCharacter");
+    const std::string varAuto = test::GenerateRandomSymbolName("charAuto");
+    const std::string varHandle = test::GenerateRandomSymbolName("charHandle");
+
+    const std::string code =
+        "class " + clsName + " {\n"
+        "    int " + propName + ";\n"
+        "    bool " + methodName + "() { return true; }\n"
+        "};\n"
+        "" + clsName + "@ " + helperName + "() { return null; }\n"
+        "void main() {\n"
+        "    auto " + varAuto + " = " + helperName + "();\n"
+        "    auto@ " + varHandle + " = " + helperName + "();\n"
+        "    if (" + varAuto + " !is null && " + varAuto + "." + methodName + "()) {\n"
+        "        int val = " + varAuto + "." + propName + ";\n"
+        "    }\n"
+        "    if (" + varHandle + " !is null && " + varHandle + "." + methodName + "()) {\n"
+        "        int val2 = " + varHandle + "." + propName + ";\n"
+        "    }\n"
+        "}\n";
+
+    auto diags = AnalyzeSnippetWithPredefined(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-member-not-found"));
+}
+
+TEST_CASE("Member access on namespace-scoped auto@ factory call resolves members correctly")
+{
+    const std::string nsName = test::GenerateRandomSymbolName("meta_api");
+    const std::string subNs = test::GenerateRandomSymbolName("json");
+    const std::string clsName = test::GenerateRandomSymbolName("json_builder");
+    const std::string setMethod = test::GenerateRandomSymbolName("Set");
+    const std::string varName = test::GenerateRandomSymbolName("schemaProperty");
+
+    const std::string code =
+        "namespace " + nsName + " {\n"
+        "    namespace " + subNs + " {\n"
+        "        class " + clsName + " {\n"
+        "            void " + setMethod + "(const string& in k, const string& in v) {}\n"
+        "        };\n"
+        "        " + clsName + "@ " + clsName + "_factory() { return null; }\n"
+        "    }\n"
+        "}\n"
+        "void main() {\n"
+        "    auto@ " + varName + " = " + nsName + "::" + subNs + "::" + clsName + "_factory();\n"
+        "    " + varName + "." + setMethod + "(\"type\", \"string\");\n"
+        "}\n";
+
+    auto diags = AnalyzeSnippetWithPredefined(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-member-not-found"));
+}
+
+TEST_CASE("Member access on unresolvable auto variable suppresses false positive member-not-found")
+{
+    const std::string varName = test::GenerateRandomSymbolName("unresolved");
+    const std::string memberName = test::GenerateRandomSymbolName("UnknownMember");
+
+    const std::string code =
+        "void main() {\n"
+        "    auto " + varName + " = MissingCallee();\n"
+        "    " + varName + "." + memberName + "();\n"
+        "}\n";
+
+    auto diags = AnalyzeSnippetWithPredefined(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-member-not-found"));
+}
+
 TEST_SUITE_END();
 
 } // namespace angel_lsp::test

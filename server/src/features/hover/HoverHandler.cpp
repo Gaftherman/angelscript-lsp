@@ -1825,7 +1825,7 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
     return FormatSymbolsHover(symbols, accessorPropertyType, ctx);
 }
 HoverQueryContext BuildHoverQueryContext(const HoverRequest& request, HoverProfiler& profiler,
-                                         HoverTarget target)
+                                         HoverTarget&& target)
 {
     analysis::VirtualMixinContext vctx =
         analysis::ResolveVirtualMixinContext(request.uri, request.symbolTable);

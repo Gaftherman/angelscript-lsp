@@ -3167,10 +3167,20 @@ static std::string ResolveCallOverloadReturn(const std::vector<Symbol>& candidat
     if (chosen && std::holds_alternative<FunctionSignature>(chosen->signature))
     {
         std::string ret = CleanExpressionType(chosen->GetFunction().returnType);
-        return (ret.empty() && chosen->name == chosen->containerName) ? chosen->name : ret;
+        if (ret.empty() && (chosen->name == chosen->containerName ||
+                            LastScopeSegment(chosen->containerName) == chosen->name))
+        {
+            return chosen->containerName;
+        }
+        return ret;
     }
     std::string ret = CleanExpressionType(candidates[0].GetFunction().returnType);
-    return (ret.empty() && candidates[0].name == candidates[0].containerName) ? candidates[0].name : ret;
+    if (ret.empty() && (candidates[0].name == candidates[0].containerName ||
+                        LastScopeSegment(candidates[0].containerName) == candidates[0].name))
+    {
+        return candidates[0].containerName;
+    }
+    return ret;
 }
 
 /**
@@ -3218,6 +3228,14 @@ static std::string FindClassOrInterfaceName(const std::string& funcName, const S
     {
         if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
         {
+            if (!sym.qualifiedName.empty())
+            {
+                return sym.qualifiedName;
+            }
+            if (!sym.containerName.empty())
+            {
+                return sym.containerName + "::" + sym.name;
+            }
             return sym.name;
         }
     }
