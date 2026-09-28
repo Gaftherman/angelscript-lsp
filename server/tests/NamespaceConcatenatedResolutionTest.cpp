@@ -31,11 +31,15 @@ TEST_SUITE("NamespaceConcatenatedResolution")
             "}}\n",
             nsA, nsB, fnFoo, clsOOF, method);
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated unqualified call in compound namespace");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated unqualified call in compound namespace");
+            }
         }
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
@@ -72,11 +76,15 @@ TEST_SUITE("NamespaceConcatenatedResolution")
             "}}\n",
             nsA, nsB, fnFoo, clsOOF);
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated shadowing in compound namespace");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated shadowing in compound namespace");
+            }
         }
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
@@ -116,11 +124,15 @@ TEST_SUITE("NamespaceConcatenatedResolution")
             "}}\n",
             nsA, nsB, nsC, fnInA, fnInB, clsOOF);
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated multi-level compound namespace");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated multi-level compound namespace");
+            }
         }
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
@@ -160,11 +172,15 @@ TEST_SUITE("NamespaceConcatenatedResolution")
             "}}\n",
             nsA, nsB, enumType, enumVal, parentClass);
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated enum and class access in compound namespace");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated enum and class access in compound namespace");
+            }
         }
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));

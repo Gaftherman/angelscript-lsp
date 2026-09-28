@@ -30,11 +30,15 @@ TEST_SUITE("InitializerListParity")
             "}}\n",
             entityType, fnName);
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated anonymous dictionary call argument");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated anonymous dictionary call argument");
+            }
         }
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
@@ -57,11 +61,15 @@ TEST_SUITE("InitializerListParity")
             "}}\n",
             itemType);
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated typed initializer list in index assignment");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated typed initializer list in index assignment");
+            }
         }
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
@@ -87,11 +95,15 @@ TEST_SUITE("InitializerListParity")
             "}}\n",
             itemType);
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated typed initializer list in declaration and return");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated typed initializer list in declaration and return");
+            }
         }
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
@@ -118,11 +130,15 @@ TEST_SUITE("InitializerListParity")
             "    if (@a !is null && @b !is null) {}\n"
             "}\n";
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated typed initializer list in member and chained assignment");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated typed initializer list in member and chained assignment");
+            }
         }
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
@@ -251,12 +267,15 @@ TEST_SUITE("InitializerListParity")
             "}}\n",
             vecType, fnName);
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        CHECK_FALSE(oracleAccepted);
-        if (!oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe correctly rejected initializer list for plain class without list constructor");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK_FALSE(oracleAccepted);
+            if (!oracleAccepted)
+            {
+                MESSAGE("asharness.exe correctly rejected initializer list for plain class without list constructor");
+            }
         }
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
@@ -283,12 +302,15 @@ TEST_SUITE("InitializerListParity")
             "}}\n",
             dictVar);
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        CHECK(oracleAccepted);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated nested typed dictionary inside dictionary initializer");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated nested typed dictionary inside dictionary initializer");
+            }
         }
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
@@ -312,12 +334,15 @@ TEST_SUITE("InitializerListParity")
             "}}\n",
             arrVar);
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        CHECK(oracleAccepted);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated array of dictionaries and insertLast call");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated array of dictionaries and insertLast call");
+            }
         }
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
@@ -340,12 +365,15 @@ TEST_SUITE("InitializerListParity")
             "}}\n",
             dictVar);
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        CHECK_FALSE(oracleAccepted);
-        if (!oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe correctly rejected untyped nested initializer for '?' parameter");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK_FALSE(oracleAccepted);
+            if (!oracleAccepted)
+            {
+                MESSAGE("asharness.exe correctly rejected untyped nested initializer for '?' parameter");
+            }
         }
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));

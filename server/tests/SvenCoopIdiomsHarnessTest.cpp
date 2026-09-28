@@ -23,11 +23,15 @@ TEST_SUITE("SvenCoopIdiomsHarness")
                                    "    }\n"
                                    "}\n";
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated Exhaustive Switch CFG");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated Exhaustive Switch CFG");
+            }
         }
 
         const std::string uri = fixture.SandboxUri("scripts/switch_cfg.as");
@@ -53,11 +57,15 @@ TEST_SUITE("SvenCoopIdiomsHarness")
                                    "    d.Reset();\n"
                                    "}\n";
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated Implicit Constructor Synthesis");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated Implicit Constructor Synthesis");
+            }
         }
 
         const std::string uri = fixture.SandboxUri("scripts/derived_ctor.as");
@@ -93,11 +101,15 @@ TEST_SUITE("SvenCoopIdiomsHarness")
                                    "    }\n"
                                    "}\n";
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated Scoped Enums in Namespaces");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated Scoped Enums in Namespaces");
+            }
         }
 
         const std::string uri = fixture.SandboxUri("scripts/scoped_enum.as");
@@ -120,11 +132,15 @@ TEST_SUITE("SvenCoopIdiomsHarness")
                                    "    }\n"
                                    "}\n";
 
-        std::string oracleError;
-        const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
-        if (oracleAccepted)
+        if (fixture.HasOracleBinary())
         {
-            MESSAGE("asharness.exe validated Output Reference Handle Binding");
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+            if (oracleAccepted)
+            {
+                MESSAGE("asharness.exe validated Output Reference Handle Binding");
+            }
         }
 
         const std::string uri = fixture.SandboxUri("scripts/handle_out_ref.as");

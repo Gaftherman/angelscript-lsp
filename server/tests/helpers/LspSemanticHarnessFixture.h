@@ -153,6 +153,15 @@ class LspSemanticHarnessFixture
                                 const std::string& expectedTargetUri, uint32_t expectedTargetLine);
 
     /**
+     * @brief Returns true if a native oracle binary was discovered and exists on disk.
+     * @return True if oracle binary is available; false otherwise.
+     */
+    bool HasOracleBinary() const
+    {
+        return !m_oracleExe.empty() && std::filesystem::exists(m_oracleExe);
+    }
+
+    /**
      * @brief Compiles a source snippet using the native AngelScript oracle compiler (asharness.exe /
      * angelscript_oracle).
      * @param[in] sourceSnippet AngelScript source code snippet.

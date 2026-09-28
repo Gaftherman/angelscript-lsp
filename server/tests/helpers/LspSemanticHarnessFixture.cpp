@@ -444,8 +444,9 @@ void LspSemanticHarnessFixture::AssertDefinitionTarget(const std::string& uri, u
 
 bool LspSemanticHarnessFixture::VerifyWithNativeOracle(const std::string& sourceSnippet, std::string& outCompilerError)
 {
-    if (m_oracleExe.empty() || !std::filesystem::exists(m_oracleExe))
+    if (!HasOracleBinary())
     {
+        outCompilerError = "Oracle binary not found";
         return false;
     }
 
