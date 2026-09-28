@@ -976,6 +976,10 @@ export function buildServerArgs(): string[] {
         args.push('--enable-virtual-mixin-documents=true');
     }
 
+    if (config.get<boolean>('completion.smartTypeRanking', true) === false) {
+        args.push('--disable-completion-smart-ranking');
+    }
+
     const suppressWhenMatches = config.get<boolean>('inlayHints.suppressWhenArgumentMatchesName', false);
     if (suppressWhenMatches) {
         args.push('--inlay-hints-suppress-when-argument-matches-name');
