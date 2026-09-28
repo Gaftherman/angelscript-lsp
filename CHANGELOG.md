@@ -2,6 +2,28 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.23] - 2026-09-28
+
+### DRY Consolidation, Layer-Avoidance Elimination, & Architectural Anti-Pattern Remediation
+
+- Layer 1 AST Traversal & Text Utilities:
+  - Created `parser/ASTUtils.h` consolidating `NodeType`, `NodeText`, `GetNodeText`, `ForEachDescendantNode`, and `ForEachChildNode` into Layer 1.
+  - Replaced ad-hoc `TSTreeCursor` and index-based `ts_node_child` loops across checkers (`DefiniteAssignmentChecker`, `NullSafetyChecker`, `ClassRules`, `FunctionRules`, `TypeRules`, `IsolationChecker`) with standard cursor utilities.
+  - Eliminated byte-slicing clones across semantic analysis and features (`SemanticHelpers`, `LocalScopeCollector`, `SymbolCollector`, `TypeExtraction`, `CodeActionCommon`, `DocumentHighlightHandler`, `DocumentSymbolHandler`, `InlayHintHandler`).
+- Layer 2 Symbol & Hierarchy Query Elevation:
+  - Added `GetDeclaredBases` to `SymbolTable` to consolidate declared inheritance parsing previously duplicated between `ImplementationHandler` and `TypeHierarchyHandler`.
+  - Added `FindEnclosingClassName` to `SymbolTable` to replace redundant container-scanning closures in `TargetResolution`, `CodeLensHandler`, and `DocumentHighlightHandler`.
+  - Added `QualifyShortTypeName` to `SymbolTable` replacing duplicate receiver type qualification loops in `DefinitionHandler`, `HoverHandler`, and `CompletionHandler`.
+- Overload Selection & Mixin Context Consolidation:
+  - Elevated candidate ranking helpers `MatchesCallArity` and `FindBestFallbackOverload` into `ConversionRankingEngine` in Layer 2, eliminating duplicate scoring implementations in `DefinitionHandler` and `HoverHandler`.
+  - Created `analysis/VirtualMixinContext.h` providing unified `ResolveVirtualMixinContext`, `ResolvePhysicalUri`, and `ResolvePhysicalLine` routines shared across definition and hover features.
+  - Consolidated index cursor merge loops in `InitializerListChecker` and `NamespaceChecker` into `NodeIndex::ForEachNodeOrdered`.
+- Memory Safety & Hardening:
+  - Replaced unmanaged raw `TSTree*` allocations in `LocalScopeCollector`, `SymbolCollector`, and `DoxygenMarkdown` with RAII `document::TreePtr`, eliminating tree leak vulnerabilities on unhandled exceptions.
+  - Hardened AST navigation in `CallChecker` with null checks before node type queries.
+  - Added fatal exception diagnostic logging to `MultiFileLogger::WorkerLoop`.
+  - Deduplicated target resolution logic in `RenameHandler`.
+
 ## [0.9.22] - 2026-09-28
 
 ### Completion Trigger Isolation, Smart Type-Aware Ranking, Indexed Virtual Properties, & Scoped Call Inlay Hints

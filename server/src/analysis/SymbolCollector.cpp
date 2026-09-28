@@ -4,8 +4,9 @@
 #include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
+#include "document/Document.h"
+#include "parser/ASTUtils.h"
 #include "utils/LspLogger.h"
-
 #include <ankerl/unordered_dense.h>
 #include <cctype>
 #include <cstring>
@@ -190,17 +191,16 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbols(const SymbolCollectReque
                                                         SymbolTable& symbolTable)
 {
     std::vector<Diagnostic> diagnostics;
-    TSTree* tree = parser.Parse(request.sourceCode);
+    document::TreePtr tree = document::MakeTreePtr(parser.Parse(request.sourceCode));
 
     if (!tree)
         return diagnostics;
 
-    TSNode rootNode = ts_tree_root_node(tree);
+    TSNode rootNode = ts_tree_root_node(tree.get());
     SymbolCollectContext sCtx{request, symbolTable, diagnostics};
     CollectFromTree(rootNode, sCtx);
     symbolTable.ResolveIncludedMixins();
 
-    ts_tree_delete(tree);
     return diagnostics;
 }
 
@@ -1331,16 +1331,7 @@ std::string SymbolCollector::FormatSyntaxErrorMessage(const std::string& rawErrT
 
 std::string SymbolCollector::GetNodeText(TSNode node, std::string_view sourceCode) const
 {
-    if (ts_node_is_null(node))
-        return "";
-
-    uint32_t start = ts_node_start_byte(node);
-    uint32_t end = ts_node_end_byte(node);
-
-    if (start >= end || end > sourceCode.size())
-        return "";
-
-    return std::string(sourceCode.substr(start, end - start));
+    return parser::GetNodeText(node, sourceCode);
 }
 
 std::string_view SymbolCollector::GetNodeView(TSNode node, std::string_view sourceCode) const

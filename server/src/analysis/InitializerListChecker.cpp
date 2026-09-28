@@ -1161,42 +1161,10 @@ void DispatchInitListNode(TSNode node, const InitializerListContext& initCtx)
  */
 void DispatchIndexedInitializerLists(const InitializerListContext& initCtx)
 {
-    struct Cursor
-    {
-        std::span<const TSNode> nodes;
-        size_t index = 0;
-        uint32_t currentByte() const
-        {
-            return (index < nodes.size()) ? ts_node_start_byte(nodes[index]) : UINT32_MAX;
-        }
-    };
-
-    std::array<Cursor, 4> cursors = {{{initCtx.request.nodeIndex->Nodes(parser::nodes::TypedInitializerList), 0},
-                                      {initCtx.request.nodeIndex->Nodes(parser::nodes::AssignmentExpression), 0},
-                                      {initCtx.request.nodeIndex->Nodes(parser::nodes::ReturnStatement), 0},
-                                      {initCtx.request.nodeIndex->Nodes(parser::nodes::VariableDeclaration), 0}}};
-
-    while (true)
-    {
-        size_t best = 0;
-        uint32_t minByte = cursors[0].currentByte();
-        for (size_t c = 1; c < cursors.size(); ++c)
-        {
-            uint32_t b = cursors[c].currentByte();
-            if (b < minByte)
-            {
-                minByte = b;
-                best = c;
-            }
-        }
-        if (minByte == UINT32_MAX)
-        {
-            break;
-        }
-
-        TSNode node = cursors[best].nodes[cursors[best].index++];
-        DispatchInitListNode(node, initCtx);
-    }
+    initCtx.request.nodeIndex->ForEachNodeOrdered(
+        std::array{parser::nodes::TypedInitializerList, parser::nodes::AssignmentExpression,
+                   parser::nodes::ReturnStatement, parser::nodes::VariableDeclaration},
+        [&](TSNode node) { DispatchInitListNode(node, initCtx); });
 }
 
 /**

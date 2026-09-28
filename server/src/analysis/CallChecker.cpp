@@ -769,7 +769,8 @@ bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
             for (uint32_t i = 0; i < childCount; ++i)
             {
                 TSNode child = ts_node_named_child(curr, i);
-                if (std::string_view(ts_node_type(child)) == parser::nodes::FuncAttributes)
+                if (!ts_node_is_null(child) &&
+                    std::string_view(ts_node_type(child)) == parser::nodes::FuncAttributes)
                 {
                     return NodeText(child, sourceCode).find("const") != std::string::npos;
                 }

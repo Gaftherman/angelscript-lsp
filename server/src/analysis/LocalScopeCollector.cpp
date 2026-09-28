@@ -7,6 +7,8 @@
 #include "utils/Constants.h"
 #include "utils/LspLogger.h"
 
+#include "document/Document.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include <algorithm>
 #include <cstring>
@@ -102,15 +104,12 @@ LocalScopeCollector::~LocalScopeCollector() = default;
 std::unique_ptr<Scope> LocalScopeCollector::CollectScopes(const std::string& sourceCode,
                                                           angel_lsp::parser::AngelScriptParser& parser) const
 {
-    TSTree* tree = parser.Parse(sourceCode);
+    document::TreePtr tree = document::MakeTreePtr(parser.Parse(sourceCode));
     if (!tree)
         return nullptr;
 
-    TSNode rootNode = ts_tree_root_node(tree);
-    std::unique_ptr<Scope> root = CollectScopesFromTree(rootNode, sourceCode);
-
-    ts_tree_delete(tree);
-    return root;
+    TSNode rootNode = ts_tree_root_node(tree.get());
+    return CollectScopesFromTree(rootNode, sourceCode);
 }
 
 std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNode, const std::string& sourceCode) const
@@ -512,16 +511,7 @@ std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCaptur
 
 std::string LocalScopeCollector::GetNodeText(TSNode node, const std::string& sourceCode) const
 {
-    if (ts_node_is_null(node))
-        return "";
-
-    uint32_t start = ts_node_start_byte(node);
-    uint32_t end = ts_node_end_byte(node);
-
-    if (start >= end || end > sourceCode.size())
-        return "";
-
-    return sourceCode.substr(start, end - start);
+    return parser::GetNodeText(node, sourceCode);
 }
 
 void LocalScopeCollector::PopulateTypeRanges(TSNode tNode, const std::string& sourceCode, LocalDefinition& def) const

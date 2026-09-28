@@ -1,6 +1,7 @@
 #include "features/document_highlight/DocumentHighlightHandler.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TargetResolution.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include <algorithm>
 #include <set>
@@ -51,24 +52,7 @@ bool IsDeclaredInFunctionScope(const analysis::Scope* defScope)
 std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, const std::string& uri, uint32_t line,
                                   const std::string& excludeName = "")
 {
-    std::string enclosingClass;
-    symbolTable.ForEachSymbolInFile(
-        uri,
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
-        {
-            for (const auto& sym : symbols)
-            {
-                if ((sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface) &&
-                    sym.fileUri == uri && (excludeName.empty() || sym.name != excludeName))
-                {
-                    if (line >= sym.startLine && line <= sym.endLine)
-                    {
-                        enclosingClass = sym.name;
-                    }
-                }
-            }
-        });
-    return enclosingClass;
+    return symbolTable.FindEnclosingClassName(uri, line, excludeName);
 }
 
 /**
@@ -79,17 +63,7 @@ std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, cons
  */
 std::string GetNodeText(TSNode node, std::string_view sourceCode)
 {
-    if (ts_node_is_null(node) || sourceCode.empty())
-    {
-        return "";
-    }
-    uint32_t start = ts_node_start_byte(node);
-    uint32_t end = ts_node_end_byte(node);
-    if (start < sourceCode.size() && end <= sourceCode.size() && start < end)
-    {
-        return std::string(sourceCode.substr(start, end - start));
-    }
-    return "";
+    return parser::GetNodeText(node, sourceCode);
 }
 
 /**
