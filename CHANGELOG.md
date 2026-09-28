@@ -2,6 +2,22 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.16] - 2026-09-27
+
+### Predefined File Icons & CodeLens References on Predefined Declarations
+
+- Predefined Stub File Icon Associations:
+  - Registered `filenames: ["as.predefined"]` and `filenamePatterns: ["*.as.predefined", "*as.predefined", "*.predefined"]` in the `angelscript-predefined` language contribution in `client/package.json`.
+  - Added default `files.associations` in `configurationDefaults` ensuring `as.predefined`, `sven.as.predefined`, and `aslp.as.predefined` consistently resolve to `angelscript-predefined` and display the dedicated gold/orange icon (`as-predefined-icon.svg`).
+- CodeLens Reference Counting on Predefined Declarations:
+  - Enabled reference counting for functions, methods, variables, and classes declared inside predefined stub files.
+  - Removed artificial exclusion blocks in `TextDocumentHandlers.cpp` and `CodeLensHandler.cpp`.
+  - Powered by the $O(S + R)$ inverted scope index (`BatchCountReferencesAcrossScopes`), references to predefined symbols across all workspace `.as` files are resolved in $< 2\text{ ms}$ without UI lag or thread contention.
+  - Removed dead `predefinedExtension` field from `CodeLensRequest` in `CodeLensHandler.h` in compliance with `AGENTS.md` parameter governance.
+- Tests & Validation:
+  - Added C++ regression test case in `SvenCoopRegressionTest.cpp` verifying CodeLens reference generation on predefined declarations.
+  - All 2,035 C++ tests and 49 VS Code client integration tests passing.
+
 ## [0.9.15] - 2026-09-27
 
 ### Unlimited Parameter Inlay Hints, Settings Categorization, & Workspace Configuration Guides

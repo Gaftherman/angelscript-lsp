@@ -710,21 +710,46 @@ TEST_CASE("SvenCoopRegression - Null safety warning disabled by default in serve
     CHECK_FALSE(HasDiagCode(diags, "as-warn-possible-null-dereference"));
 }
 
-TEST_CASE("SvenCoopRegression - CodeLens returns empty for predefined stub file")
+TEST_CASE("SvenCoopRegression - CodeLens returns references for predefined stub file")
 {
     const std::string stubName = GenerateRandomSymbolName("sven") + ".as.predefined";
     const std::string uri = "file:///" + stubName;
-    const std::string stubContent = "class Vector { float x; float y; float z; }\n";
+    const std::string fnName = GenerateRandomSymbolName("ShootProp");
+    const std::string className = GenerateRandomSymbolName("Vector");
+    const std::string stubContent = "class " + className + " { float x; float y; float z; }\n" +
+                                    "void " + fnName + "() {}\n";
+
+    parser::AngelScriptParser parser;
+    TSTree* tree = parser.Parse(stubContent);
 
     analysis::SymbolTable table;
+    analysis::SymbolCollector collector(nullptr);
+    collector.CollectSymbols(uri, stubContent, parser, table);
+
     analysis::ScopeIndex scopeIndex;
     features::CodeLensRequest clReq{
-        uri, stubContent, nullptr, table, scopeIndex, nullptr
+        uri, stubContent, tree, table, scopeIndex, nullptr
     };
-    clReq.predefinedExtension = ".as.predefined";
 
     const auto lenses = features::GetCodeLenses(clReq);
-    CHECK_FALSE(lenses.has_value());
+    REQUIRE(lenses.has_value());
+    CHECK_FALSE(lenses->empty());
+
+    bool foundFnLens = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.command.has_value() && lens.command->title.find("reference") != std::string::npos)
+        {
+            foundFnLens = true;
+            break;
+        }
+    }
+    CHECK(foundFnLens);
+
+    if (tree)
+    {
+        ts_tree_delete(tree);
+    }
 }
 
 TEST_CASE("SvenCoopRegression - Predefined file tree in DocumentStore resolves Hover")

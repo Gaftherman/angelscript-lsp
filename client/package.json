@@ -2,7 +2,7 @@
   "name": "angelscript-gaftherman",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "0.9.15",
+  "version": "0.9.16",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -60,6 +60,14 @@
         "extensions": [
           ".as.predefined",
           ".predefined"
+        ],
+        "filenames": [
+          "as.predefined"
+        ],
+        "filenamePatterns": [
+          "*.as.predefined",
+          "*as.predefined",
+          "*.predefined"
         ],
         "aliases": [
           "AngelScript Predefined Stubs"
@@ -238,6 +246,11 @@
       }
     ],
     "configurationDefaults": {
+      "files.associations": {
+        "*.as.predefined": "angelscript-predefined",
+        "as.predefined": "angelscript-predefined",
+        "*.predefined": "angelscript-predefined"
+      },
       "[angelscript]": {
         "editor.quickSuggestions": {
           "other": "on",

@@ -650,13 +650,7 @@ Server::HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens
         return lsp::Null{};
     }
 
-    if (angel_lsp::utils::IsPredefinedFile(doc->uri, m_config.info.predefinedFileExtension))
-    {
-        return lsp::Array<lsp::CodeLens>{};
-    }
-
     features::CodeLensRequest clr{doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex, m_logger.get()};
-    clr.predefinedExtension = m_config.info.predefinedFileExtension;
     auto lenses = features::GetCodeLenses(clr);
     if (lenses.has_value())
     {

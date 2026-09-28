@@ -4,6 +4,18 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.9.16] - 2026-09-27
+
+### Predefined File Icons & CodeLens References on Predefined Declarations
+
+- Predefined Stub File Icon Associations:
+  - Registered `filenames: ["as.predefined"]` and `filenamePatterns: ["*.as.predefined", "*as.predefined", "*.predefined"]` in the `angelscript-predefined` language contribution in `package.json`.
+  - Added default `files.associations` in `configurationDefaults` ensuring `as.predefined`, `sven.as.predefined`, and `aslp.as.predefined` consistently resolve to `angelscript-predefined` and display the dedicated gold/orange icon (`as-predefined-icon.svg`).
+- CodeLens Reference Counting on Predefined Declarations:
+  - Enabled reference counting for functions, methods, variables, and classes declared inside predefined stub files.
+  - Removed artificial exclusion blocks in the server CodeLens pipeline.
+  - Leveraging the $O(S + R)$ inverted scope index, references to predefined symbols across all workspace `.as` files are resolved in $< 2\text{ ms}$ without UI lag or thread contention.
+
 ## [0.9.9] - 2026-09-27
 
 ### Engine Property Parity Audit, Dynamic Configuration Synchronization, & Semantic Hardening

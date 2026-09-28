@@ -1364,8 +1364,7 @@ std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest& r
         return virtualLenses;
     }
 
-    if (request.sourceCode.empty() ||
-        angel_lsp::utils::IsPredefinedFile(request.uri, request.predefinedExtension))
+    if (request.sourceCode.empty())
     {
         return std::nullopt;
     }
