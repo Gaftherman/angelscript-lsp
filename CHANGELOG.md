@@ -2,6 +2,21 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.24] - 2026-09-28
+
+### Auto & Auto@ Type Deduction, False-Positive Member Diagnostics Fix, and Inlay Hints Restoration
+
+- Type Deduction & Member Access Resolution for `auto` and `auto@`:
+  - Resolved false-positive `as-err-member-not-found` ("La clase 'auto' no tiene ningún miembro '<member>'.") across user scripts.
+  - Guarded `IsCorePrimitive` check in `AccessChecker` to ensure `auto` is not misclassified as a primitive type without members and suppresses false positives on unresolvable target instances.
+  - Reordered semantic analysis passes in `SemanticAnalyzer` so `RunTypeAndStructureRules` executes before `RunExpressionRules`, guaranteeing that `auto` variables are deduced and written to scope prior to member access verification.
+  - Fixed `CleanBaseType` normalization in `TypeConversionChecker` and preserved `@` handle decoration on deduced variables declared as `auto@` or holding handle types.
+  - Preserved fully-qualified namespace paths (e.g. `meta_api::json::v2::json@`) during symbol lookup and overload return resolution in `SemanticHelpers`.
+- Inlay Hints:
+  - Restored type inlay hints for handle variables declared with `auto@` in `InlayHintHandler`, displaying deduced types with handle decoration (e.g. `: meta_api::json::v2::json@` or `: CBasePlayer@`).
+- Allocation & Performance Optimization:
+  - Optimized `BuildHoverQueryContext` in `HoverHandler` to accept `HoverTarget` by rvalue reference, preserving the allocation churn invariant on warm hover queries.
+
 ## [0.9.23] - 2026-09-28
 
 ### DRY Consolidation, Layer-Avoidance Elimination, & Architectural Anti-Pattern Remediation
