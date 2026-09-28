@@ -38,6 +38,8 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 - Documentation & Client Links:
   - Removed outdated `->` operator references from completion documentation in `README.md`.
   - Updated installation guide to link directly to the official VS Code Marketplace extension `Gaftherman.angelscript-gaftherman`.
+- Cross-Platform CI Parity Test Portability:
+  - Added `HasOracleBinary()` check to dynamically guard native oracle assertions in test suites, preventing spurious failures on CI runners (macOS / Linux) where the native oracle compiler is not built.
 
 ## [0.9.21] - 2026-09-28
 
