@@ -175,39 +175,13 @@ void CheckNullSafety(const NullSafetyCheckRequest& request, DiagnosticContext& c
         return;
     }
 
-    TSTreeCursor cursor = ts_tree_cursor_new(request.root);
-    bool reachedRoot = false;
-    while (!reachedRoot)
-    {
-        TSNode node = ts_tree_cursor_current_node(&cursor);
-        std::string_view type = ts_node_type(node);
+    parser::ForEachDescendantNode(request.root, [&](TSNode node) {
+        std::string_view type = NodeType(node);
         if (type == parser::nodes::FuncDeclaration || type == parser::nodes::LambdaExpression)
         {
             AnalyzeFunction(node, request.scopeRoot, checkCtx);
         }
-
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            continue;
-        }
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            continue;
-        }
-        while (!reachedRoot)
-        {
-            if (!ts_tree_cursor_goto_parent(&cursor))
-            {
-                reachedRoot = true;
-                break;
-            }
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                break;
-            }
-        }
-    }
-    ts_tree_cursor_delete(&cursor);
+    });
 }
 
 } // namespace angel_lsp::analysis

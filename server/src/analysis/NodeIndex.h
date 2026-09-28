@@ -2,6 +2,7 @@
 
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
+#include <initializer_list>
 #include <span>
 #include <string_view>
 #include <tree_sitter/api.h>
@@ -58,6 +59,65 @@ class NodeIndex
      * @return Span of matching nodes. Empty if type name has no occurrences.
      */
     [[nodiscard]] std::span<const TSNode> Nodes(std::string_view typeName) const noexcept;
+
+    /**
+     * @brief Iterates multiple node types in document order (sorted by start byte).
+     * @tparam Callback Visitor callable with signature void(TSNode).
+     * @param[in] types List of Tree-Sitter node type names to merge.
+     * @param[in] callback Visitor invoked for each node in sorted order.
+     */
+    template <typename Callback>
+    void ForEachNodeOrdered(std::span<const std::string_view> types, Callback&& callback) const
+    {
+        struct Cursor
+        {
+            std::span<const TSNode> nodes;
+            size_t index = 0;
+            [[nodiscard]] uint32_t currentByte() const noexcept
+            {
+                return (index < nodes.size()) ? ts_node_start_byte(nodes[index]) : UINT32_MAX;
+            }
+        };
+
+        std::vector<Cursor> cursors;
+        cursors.reserve(types.size());
+        for (std::string_view typeName : types)
+        {
+            cursors.push_back(Cursor{Nodes(typeName), 0});
+        }
+
+        while (true)
+        {
+            size_t best = 0;
+            uint32_t minByte = UINT32_MAX;
+            for (size_t c = 0; c < cursors.size(); ++c)
+            {
+                uint32_t b = cursors[c].currentByte();
+                if (b < minByte)
+                {
+                    minByte = b;
+                    best = c;
+                }
+            }
+            if (minByte == UINT32_MAX)
+            {
+                break;
+            }
+
+            TSNode node = cursors[best].nodes[cursors[best].index++];
+            callback(node);
+        }
+    }
+
+    /**
+     * @brief Iterates over multiple node types in document order (initializer_list overload).
+     */
+    template <typename Callback>
+    void ForEachNodeOrdered(std::initializer_list<std::string_view> types, Callback&& callback) const
+    {
+        ForEachNodeOrdered(std::span<const std::string_view>(types.begin(), types.size()),
+                           std::forward<Callback>(callback));
+    }
 
     /**
      * @brief Resolves a node type name to its TSSymbol id.

@@ -771,47 +771,13 @@ class DefiniteAssignmentVisitor
 
 void TraverseFunctions(TSNode root, DefiniteAssignmentVisitor& visitor)
 {
-    if (ts_node_is_null(root))
-    {
-        return;
-    }
-
-    TSTreeCursor cursor = ts_tree_cursor_new(root);
-    bool reachedRoot = false;
-
-    while (!reachedRoot)
-    {
-        TSNode node = ts_tree_cursor_current_node(&cursor);
-        std::string_view type = ts_node_type(node);
+    parser::ForEachDescendantNode(root, [&](TSNode node) {
+        std::string_view type = NodeType(node);
         if (type == "func_declaration" || type == "lambda_expression")
         {
             visitor.AnalyzeFunction(node);
         }
-
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            continue;
-        }
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            continue;
-        }
-
-        while (!reachedRoot)
-        {
-            if (!ts_tree_cursor_goto_parent(&cursor))
-            {
-                reachedRoot = true;
-                break;
-            }
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                break;
-            }
-        }
-    }
-
-    ts_tree_cursor_delete(&cursor);
+    });
 }
 } // namespace
 

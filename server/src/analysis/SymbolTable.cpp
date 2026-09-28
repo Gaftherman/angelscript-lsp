@@ -1513,4 +1513,45 @@ uint64_t SymbolTable::ComputeDocumentInterfaceHashLocked(const std::string& file
 
     return h;
 }
+
+std::string SymbolTable::FindEnclosingClassName(std::string_view uri, uint32_t line,
+                                                std::string_view excludeName) const
+{
+    std::string enclosingClass;
+    std::string uriStr(uri);
+    ForEachSymbolInFile(
+        uriStr,
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+        {
+            for (const auto& sym : symbols)
+            {
+                if ((sym.type == SymbolType::Class || sym.type == SymbolType::Interface) &&
+                    sym.fileUri == uri && (excludeName.empty() || sym.name != excludeName))
+                {
+                    if (line >= sym.startLine && line <= sym.endLine)
+                    {
+                        enclosingClass = sym.name;
+                    }
+                }
+            }
+        });
+    return enclosingClass;
+}
+
+std::string SymbolTable::QualifyShortTypeName(std::string_view typeName) const
+{
+    if (typeName.find("::") == std::string_view::npos && !HasSymbol(typeName))
+    {
+        auto shortMatches = FindTypeSymbolsByShortName(typeName);
+        for (const auto& sym : shortMatches)
+        {
+            if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
+            {
+                return sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            }
+        }
+    }
+    return std::string(typeName);
+}
+
 } // namespace angel_lsp::analysis

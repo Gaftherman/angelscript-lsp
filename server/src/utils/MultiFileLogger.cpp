@@ -275,6 +275,40 @@ bool MultiFileLogger::IsInitialized() const
     return m_initialized.load();
 }
 
+void MultiFileLogger::FlushRemainingQueue()
+{
+    std::vector<LogEntry> remaining;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        while (!m_queue.empty())
+        {
+            remaining.push_back(std::move(m_queue.front()));
+            m_queue.pop();
+        }
+    }
+    if (!remaining.empty())
+    {
+        ProcessBatch(remaining);
+    }
+    std::lock_guard<std::mutex> sinkLock(m_sinkMutex);
+    FlushAllSinks();
+}
+
+void MultiFileLogger::WriteFatalWorkerError(std::string_view reason)
+{
+    try
+    {
+        std::lock_guard<std::mutex> sinkLock(m_sinkMutex);
+        if (auto* sink = GetChannelSink(LogChannel::Crash))
+        {
+            *sink << "[FATAL] MultiFileLogger::WorkerLoop exception: " << reason << std::endl;
+        }
+    }
+    catch (...)
+    {
+    }
+}
+
 void MultiFileLogger::WorkerLoop()
 {
     try
@@ -305,24 +339,15 @@ void MultiFileLogger::WorkerLoop()
             }
         }
 
-        std::vector<LogEntry> remaining;
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            while (!m_queue.empty())
-            {
-                remaining.push_back(std::move(m_queue.front()));
-                m_queue.pop();
-            }
-        }
-        if (!remaining.empty())
-        {
-            ProcessBatch(remaining);
-        }
-        std::lock_guard<std::mutex> sinkLock(m_sinkMutex);
-        FlushAllSinks();
+        FlushRemainingQueue();
+    }
+    catch (const std::exception& ex)
+    {
+        WriteFatalWorkerError(ex.what());
     }
     catch (...)
     {
+        WriteFatalWorkerError("unknown exception");
     }
 }
 

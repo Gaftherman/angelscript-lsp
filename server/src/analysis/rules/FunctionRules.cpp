@@ -756,17 +756,7 @@ namespace
 {
 void WalkStandaloneLambda(TSNode root, const DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(root))
-    {
-        return;
-    }
-
-    TSTreeCursor cursor = ts_tree_cursor_new(root);
-    bool reachedRoot = false;
-
-    while (!reachedRoot)
-    {
-        TSNode node = ts_tree_cursor_current_node(&cursor);
+    parser::ForEachDescendantNode(root, [&](TSNode node) {
         if (NodeType(node) == parser::nodes::ExpressionStatement && ts_node_named_child_count(node) == 1)
         {
             const TSNode child = ts_node_named_child(node, 0);
@@ -778,31 +768,7 @@ void WalkStandaloneLambda(TSNode root, const DiagnosticContext& ctx)
                                 diagnostics::codes::StandaloneAnonymousFunction, DiagnosticSeverity::Error);
             }
         }
-
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            continue;
-        }
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            continue;
-        }
-
-        while (!reachedRoot)
-        {
-            if (!ts_tree_cursor_goto_parent(&cursor))
-            {
-                reachedRoot = true;
-                break;
-            }
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                break;
-            }
-        }
-    }
-
-    ts_tree_cursor_delete(&cursor);
+    });
 }
 } // namespace
 

@@ -134,9 +134,15 @@ lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<OccurrenceLocation>& occ
     workspaceEdit.changes = std::move(changes);
     return workspaceEdit;
 }
-} // namespace
 
-std::optional<lsp::PrepareRenameResult> PrepareRename(const PrepareRenameRequest& request)
+struct RenameTargetResult
+{
+    analysis::TargetDescriptor target;
+    TSNode node{};
+};
+
+template <typename RequestT>
+std::optional<RenameTargetResult> ResolveValidRenameTarget(const RequestT& request)
 {
     if (request.predefinedUris.contains(request.uri))
     {
@@ -144,17 +150,17 @@ std::optional<lsp::PrepareRenameResult> PrepareRename(const PrepareRenameRequest
     }
 
     TSNode node{};
-    ResolveTargetRequest resolveReq{
+    analysis::ResolveTargetRequest resolveReq{
         .uri = request.uri,
         .sourceCode = request.sourceCode,
         .tree = request.tree,
-        .position = TargetPosition{request.position.line, request.position.character},
+        .position = analysis::TargetPosition{request.position.line, request.position.character},
         .symbolTable = request.symbolTable,
         .scopeIndex = request.scopeIndex,
         .outNode = node,
         .logger = request.logger,
     };
-    const auto target = ResolveTargetSymbol(resolveReq);
+    auto target = analysis::ResolveTargetSymbol(resolveReq);
 
     if (!target.has_value() || ts_node_is_null(node))
     {
@@ -166,48 +172,43 @@ std::optional<lsp::PrepareRenameResult> PrepareRename(const PrepareRenameRequest
         return std::nullopt;
     }
 
-    const TSPoint startPt = ts_node_start_point(node);
-    const TSPoint endPt = ts_node_end_point(node);
+    return RenameTargetResult{std::move(*target), node};
+}
+} // namespace
+
+std::optional<lsp::PrepareRenameResult> PrepareRename(const PrepareRenameRequest& request)
+{
+    auto targetRes = ResolveValidRenameTarget(request);
+    if (!targetRes.has_value())
+    {
+        return std::nullopt;
+    }
+
+    const TSPoint startPt = ts_node_start_point(targetRes->node);
+    const TSPoint endPt = ts_node_end_point(targetRes->node);
 
     lsp::PrepareRenamePlaceholder placeholder;
     placeholder.range = lsp::Range{lsp::Position{startPt.row, startPt.column}, lsp::Position{endPt.row, endPt.column}};
-    placeholder.placeholder = target->name;
+    placeholder.placeholder = targetRes->target.name;
 
     return lsp::PrepareRenameResult(placeholder);
 }
 
 std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request)
 {
-    if (!IsValidIdentifier(request.newName) || request.predefinedUris.contains(request.uri))
+    if (!IsValidIdentifier(request.newName))
     {
         return std::nullopt;
     }
 
-    TSNode node{};
-    ResolveTargetRequest resolveReq{
-        .uri = request.uri,
-        .sourceCode = request.sourceCode,
-        .tree = request.tree,
-        .position = TargetPosition{request.position.line, request.position.character},
-        .symbolTable = request.symbolTable,
-        .scopeIndex = request.scopeIndex,
-        .outNode = node,
-        .logger = request.logger,
-    };
-    const auto target = ResolveTargetSymbol(resolveReq);
-
-    if (!target.has_value() || ts_node_is_null(node))
-    {
-        return std::nullopt;
-    }
-
-    if (IsTargetPredefined(*target, request.symbolTable, request.predefinedUris))
+    auto targetRes = ResolveValidRenameTarget(request);
+    if (!targetRes.has_value())
     {
         return std::nullopt;
     }
 
     CollectOccurrencesRequest occReq{
-        .target = *target,
+        .target = targetRes->target,
         .currentUri = request.uri,
         .sourceCode = request.sourceCode,
         .tree = request.tree,

@@ -198,42 +198,10 @@ void ProcessNamespaceNode(TSNode node, const NamespaceCheckRequest& request, Dia
 
 void CheckFromNodeIndex(const NamespaceCheckRequest& request, DiagnosticContext& ctx)
 {
-    struct Cursor
-    {
-        std::span<const TSNode> nodes;
-        size_t index = 0;
-        uint32_t currentByte() const
-        {
-            return (index < nodes.size()) ? ts_node_start_byte(nodes[index]) : UINT32_MAX;
-        }
-    };
-
-    std::array<Cursor, 4> cursors = {{{request.nodeIndex->Nodes(parser::nodes::ScopedIdentifier), 0},
-                                      {request.nodeIndex->Nodes(parser::nodes::CallExpression), 0},
-                                      {request.nodeIndex->Nodes(parser::nodes::ImportDeclaration), 0},
-                                      {request.nodeIndex->Nodes("ERROR"), 0}}};
-
-    while (true)
-    {
-        size_t best = 0;
-        uint32_t minByte = cursors[0].currentByte();
-        for (size_t c = 1; c < cursors.size(); ++c)
-        {
-            uint32_t b = cursors[c].currentByte();
-            if (b < minByte)
-            {
-                minByte = b;
-                best = c;
-            }
-        }
-        if (minByte == UINT32_MAX)
-        {
-            break;
-        }
-
-        TSNode node = cursors[best].nodes[cursors[best].index++];
-        ProcessNamespaceNode(node, request, ctx);
-    }
+    request.nodeIndex->ForEachNodeOrdered(
+        std::array{parser::nodes::ScopedIdentifier, parser::nodes::CallExpression,
+                   parser::nodes::ImportDeclaration, std::string_view("ERROR")},
+        [&](TSNode node) { ProcessNamespaceNode(node, request, ctx); });
 }
 
 void CheckFromASTTraversal(TSNode root, const NamespaceCheckRequest& request, DiagnosticContext& ctx)

@@ -1,4 +1,5 @@
 #include "features/document_symbol/DocumentSymbolHandler.h"
+#include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"
 
 #include "parser/GrammarNames.h"
@@ -41,17 +42,7 @@ inline lsp::Range ToLspRange(TSNode node)
  */
 inline std::string GetNodeText(TSNode node, std::string_view sourceCode)
 {
-    if (ts_node_is_null(node))
-    {
-        return "";
-    }
-    uint32_t start = ts_node_start_byte(node);
-    uint32_t end = ts_node_end_byte(node);
-    if (start >= sourceCode.size() || end > sourceCode.size() || start >= end)
-    {
-        return "";
-    }
-    return std::string(sourceCode.substr(start, end - start));
+    return parser::GetNodeText(node, sourceCode);
 }
 
 /**
