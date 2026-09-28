@@ -226,33 +226,6 @@ struct ContainerInfo
 };
 
 /**
- * @brief Checks whether a constructor function matches AngelScript's list behavior signature.
- *
- * Conforming to `asBEHAVE_LIST_CONSTRUCT` / `asBEHAVE_LIST_FACTORY`:
- * - Single parameter: integer reference with in modifier (e.g. `const int &in` or `int &in`).
- * - Two parameters: both integer references with in modifier (e.g. `int &in, int &in`).
- */
-bool IsListConstructorSignature(const FunctionSignature& fn)
-{
-    if (fn.parameters.size() == 1)
-    {
-        return fn.parameters[0].modifier == ParameterModifier::In &&
-               (fn.parameters[0].typeName.find("int") != std::string::npos || fn.parameters[0].baseTypeName == "int" ||
-                fn.parameters[0].baseTypeName == "uint");
-    }
-    if (fn.parameters.size() == 2)
-    {
-        return fn.parameters[0].modifier == ParameterModifier::In &&
-               fn.parameters[1].modifier == ParameterModifier::In &&
-               (fn.parameters[0].typeName.find("int") != std::string::npos || fn.parameters[0].baseTypeName == "int" ||
-                fn.parameters[0].baseTypeName == "uint") &&
-               (fn.parameters[1].typeName.find("int") != std::string::npos || fn.parameters[1].baseTypeName == "int" ||
-                fn.parameters[1].baseTypeName == "uint");
-    }
-    return false;
-}
-
-/**
  * @brief Intermediate container member inspection state.
  */
 struct ContainerMemberInspection

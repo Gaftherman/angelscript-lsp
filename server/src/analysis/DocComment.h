@@ -24,4 +24,15 @@ namespace angel_lsp::analysis
  * @return Formatted markdown, or an empty string when the declaration carries no comment.
  */
 std::string ExtractDocComment(const std::string& sourceCode, uint32_t declStartLine);
+
+/**
+ * @brief Checks whether the doc comment preceding a declaration contains a specific tag.
+ *
+ * @param[in] sourceCode    Text of the document the declaration is in.
+ * @param[in] declStartLine Zero-based line the declaration begins on.
+ * @param[in] tag           Tag substring to search for (e.g. "@listpattern").
+ * @return True if preceding comments contain the specified tag, false otherwise.
+ */
+bool HasPrecedingDocTag(std::string_view sourceCode, uint32_t declStartLine, std::string_view tag);
 } // namespace angel_lsp::analysis
+

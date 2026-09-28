@@ -45,7 +45,7 @@ std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string
     }
     if (argType == "init_list")
     {
-        if (IsContainerParameter(param, &symbolTable))
+        if (ParameterAcceptsInitializerList(param, &symbolTable, ""))
         {
             return ArgumentConversion{ConversionRank::Exact, 0, 0, false,
                                       static_cast<int>(OverloadMatchPenalty::Exact)};

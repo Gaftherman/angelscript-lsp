@@ -1,5 +1,6 @@
 #include "features/completion/CompletionHandler.h"
 #include "analysis/DocComment.h"
+#include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SignatureFormatter.h"
 #include "parser/Keywords.h"
@@ -36,9 +37,7 @@ bool IsConstructorOrDestructor(const analysis::Symbol& sym, const std::string& t
         return false;
     }
 
-    const size_t at = typeName.rfind("::");
-    const std::string_view shortName =
-        at == std::string::npos ? std::string_view(typeName) : std::string_view(typeName).substr(at + 2);
+    const std::string_view shortName = analysis::LastScopeSegment(typeName);
 
     if (sym.name == shortName)
     {
@@ -2124,11 +2123,396 @@ void CollectKeywords(CompletionCollector& collector)
     }
 }
 
+/**
+ * @brief Attempts to extract the active call and parameter index before the cursor.
+ * @param[in] prefix Text before cursor on current line.
+ * @param[out] outCallee Extracted callee expression text.
+ * @param[out] outArgIndex Argument index (0-based).
+ * @return True if cursor is inside a call argument list.
+ */
+static size_t FindUnclosedCallParen(std::string_view prefix)
+{
+    int depth = 0;
+    for (size_t i = prefix.size(); i > 0; --i)
+    {
+        char c = prefix[i - 1];
+        if (c == ')')
+        {
+            ++depth;
+        }
+        else if (c == '(')
+        {
+            if (depth == 0)
+            {
+                return i - 1;
+            }
+            --depth;
+        }
+    }
+    return std::string_view::npos;
+}
+
+static size_t CountCallArguments(std::string_view prefix, size_t openParenPos)
+{
+    size_t argIndex = 0;
+    int commaDepth = 0;
+    for (size_t i = openParenPos + 1; i < prefix.size(); ++i)
+    {
+        char c = prefix[i];
+        if (c == '(' || c == '[' || c == '{')
+        {
+            ++commaDepth;
+        }
+        else if (c == ')' || c == ']' || c == '}')
+        {
+            if (commaDepth > 0)
+            {
+                --commaDepth;
+            }
+        }
+        else if (c == ',' && commaDepth == 0)
+        {
+            ++argIndex;
+        }
+    }
+    return argIndex;
+}
+
+static std::string ExtractCalleeName(std::string_view prefix, size_t openParenPos)
+{
+    size_t endCallee = openParenPos;
+    while (endCallee > 0 && isspace(static_cast<unsigned char>(prefix[endCallee - 1])))
+    {
+        --endCallee;
+    }
+    size_t startCallee = endCallee;
+    while (startCallee > 0)
+    {
+        char ch = prefix[startCallee - 1];
+        if (isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == ':' || ch == '.')
+        {
+            --startCallee;
+        }
+        else
+        {
+            break;
+        }
+    }
+    if (startCallee >= endCallee)
+    {
+        return "";
+    }
+    return std::string(prefix.substr(startCallee, endCallee - startCallee));
+}
+
+bool ExtractCallContext(std::string_view prefix, std::string& outCallee, size_t& outArgIndex)
+{
+    if (prefix.empty())
+    {
+        return false;
+    }
+    size_t openParenPos = FindUnclosedCallParen(prefix);
+    if (openParenPos == std::string_view::npos)
+    {
+        return false;
+    }
+
+    outCallee = ExtractCalleeName(prefix, openParenPos);
+    outArgIndex = CountCallArguments(prefix, openParenPos);
+    return !outCallee.empty();
+}
+
+/**
+ * @brief Resolves the expected parameter type for a callee at the given argument index.
+ * @param[in] callee Callee identifier text.
+ * @param[in] argIndex Argument index.
+ * @param[in] request Completion request context.
+ * @param[in] scope Innermost scope at cursor.
+ * @return Resolved parameter type name, or empty string.
+ */
+std::string FindCalleeParameterType(const std::string& callee, size_t argIndex,
+                                    const CompletionRequest& request, const analysis::Scope* scope)
+{
+    std::vector<analysis::Symbol> candidates;
+    if (callee.find('.') != std::string::npos)
+    {
+        size_t dotPos = callee.rfind('.');
+        std::string objText = callee.substr(0, dotPos);
+        std::string memText = callee.substr(dotPos + 1);
+        AccessSegment seg{objText, false, 0};
+        std::string rType = ResolveBaseSegmentType(seg, request, scope);
+        if (!rType.empty())
+        {
+            std::string cleanType = analysis::StripTypeDecorations(rType);
+            auto hier = GetInheritedTypeHierarchy(request.symbolTable, cleanType);
+            for (const auto& cls : hier)
+            {
+                auto syms = request.symbolTable.FindSymbols(cls + "::" + memText);
+                candidates.insert(candidates.end(), syms.begin(), syms.end());
+            }
+        }
+    }
+    else
+    {
+        if (scope && request.tree)
+        {
+            TSNode root = ts_tree_root_node(request.tree);
+            candidates = analysis::FindSymbolsInScope(callee, root, request.sourceCode, request.symbolTable);
+        }
+        if (candidates.empty())
+        {
+            candidates = request.symbolTable.FindSymbols(callee);
+        }
+    }
+
+    for (const auto& sym : candidates)
+    {
+        if (sym.type == analysis::SymbolType::Function &&
+            std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+        {
+            const auto& params = sym.GetFunction().parameters;
+            if (argIndex < params.size())
+            {
+                return params[argIndex].typeName;
+            }
+        }
+    }
+    return "";
+}
+
+static bool IsCompoundOrComparisonEquals(char prev, char next)
+{
+    if (next == '=')
+    {
+        return true;
+    }
+    constexpr std::string_view kOps = "=!<>+-*/%&|^";
+    return kOps.find(prev) != std::string_view::npos;
+}
+
+static bool IsTypeChar(char ch)
+{
+    return isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '@' || ch == '&' || ch == '<' ||
+           ch == '>' || ch == ':';
+}
+
+static std::string_view TrimTrailingWhitespace(std::string_view s)
+{
+    while (!s.empty() && isspace(static_cast<unsigned char>(s.back())))
+    {
+        s.remove_suffix(1);
+    }
+    return s;
+}
+
+static size_t FindIdentifierStart(std::string_view s, size_t end)
+{
+    size_t start = end;
+    while (start > 0)
+    {
+        char ch = s[start - 1];
+        if (!isalnum(static_cast<unsigned char>(ch)) && ch != '_')
+        {
+            break;
+        }
+        --start;
+    }
+    return start;
+}
+
+static size_t FindTypeStart(std::string_view s, size_t end)
+{
+    size_t start = end;
+    while (start > 0 && IsTypeChar(s[start - 1]))
+    {
+        --start;
+    }
+    return start;
+}
+
+/**
+ * @brief Extracts expected target type from declaration assignment before cursor.
+ * @param[in] prefix Text before cursor on current line.
+ * @return Extracted target type name, or empty string.
+ */
+std::string ExtractAssignmentTargetType(std::string_view prefix)
+{
+    size_t eqPos = prefix.rfind('=');
+    if (eqPos == std::string_view::npos || eqPos == 0)
+    {
+        return "";
+    }
+    char prev = prefix[eqPos - 1];
+    char next = (eqPos + 1 < prefix.size()) ? prefix[eqPos + 1] : ' ';
+    if (IsCompoundOrComparisonEquals(prev, next))
+    {
+        return "";
+    }
+
+    std::string_view lhs = TrimTrailingWhitespace(prefix.substr(0, eqPos));
+    size_t idEnd = lhs.size();
+    size_t idStart = FindIdentifierStart(lhs, idEnd);
+    if (idStart == idEnd || idStart == 0)
+    {
+        return "";
+    }
+    std::string_view typePart = TrimTrailingWhitespace(lhs.substr(0, idStart));
+    size_t typeEnd = typePart.size();
+    size_t typeStart = FindTypeStart(typePart, typeEnd);
+    if (typeStart >= typeEnd)
+    {
+        return "";
+    }
+    return std::string(typePart.substr(typeStart, typeEnd - typeStart));
+}
+
+/**
+ * @brief Checks whether a type name represents a numeric primitive.
+ * @param[in] t Type name to inspect.
+ * @return True if type is a numeric primitive.
+ */
+bool IsNumericTypeName(std::string_view t)
+{
+    return t == "int" || t == "int8" || t == "int16" || t == "int32" || t == "int64" ||
+           t == "uint" || t == "uint8" || t == "uint16" || t == "uint32" || t == "uint64" ||
+           t == "float" || t == "double";
+}
+
+/**
+ * @brief Categorization rank for contextual type-aware completion sorting.
+ */
+enum class TypeMatchRank : uint8_t
+{
+    Exact = 0,
+    Convertible = 1,
+    Other = 2
+};
+
+/**
+ * @brief Formats sort text prefix for a given type match rank.
+ * @param[in] rank Computed type match rank.
+ * @param[in] baseSort Base sort key or label.
+ * @return Formatted sortText string with bucket prefix.
+ */
+inline std::string FormatRankedSortText(TypeMatchRank rank, std::string_view baseSort)
+{
+    static constexpr std::array<std::string_view, 3> k_rankPrefixes = {
+        "0000_",
+        "0001_",
+        "0002_"
+    };
+    const size_t idx = static_cast<size_t>(rank);
+    if (idx < k_rankPrefixes.size())
+    {
+        return std::string(k_rankPrefixes[idx]) + std::string(baseSort);
+    }
+    return std::string("9999_") + std::string(baseSort);
+}
+
+/**
+ * @brief Computes type ranking score (Exact match, Convertible, or Other).
+ * @param[in] item Completion item to rank.
+ * @param[in] expectedType Target expected type.
+ * @param[in] symbolTable Global symbol table.
+ * @return TypeMatchRank tier.
+ */
+TypeMatchRank ComputeTypeRank(const lsp::CompletionItem& item, const std::string& expectedType,
+                              const analysis::SymbolTable& symbolTable)
+{
+    std::string cleanExpected = analysis::StripTypeDecorations(expectedType);
+    std::string itemType = item.detail.has_value() ? *item.detail : "";
+    std::string cleanItem = analysis::StripTypeDecorations(itemType);
+
+    if (!cleanExpected.empty())
+    {
+        if (item.kind.has_value() &&
+            static_cast<int>(*item.kind) == static_cast<int>(lsp::CompletionItemKind::Class) &&
+            item.label == cleanExpected)
+        {
+            return TypeMatchRank::Exact;
+        }
+        if (!cleanItem.empty() && cleanItem == cleanExpected)
+        {
+            return TypeMatchRank::Exact;
+        }
+    }
+
+    if (IsNumericTypeName(cleanExpected) && IsNumericTypeName(cleanItem))
+    {
+        return TypeMatchRank::Convertible;
+    }
+    if (!cleanExpected.empty() && !cleanItem.empty())
+    {
+        auto hier = GetInheritedTypeHierarchy(symbolTable, cleanItem);
+        for (const auto& base : hier)
+        {
+            if (base == cleanExpected)
+            {
+                return TypeMatchRank::Convertible;
+            }
+        }
+    }
+
+    return TypeMatchRank::Other;
+}
+
+/**
+ * @brief Applies smart type-aware ranking to completion items based on active context.
+ * @param[in,out] items Completion item list to rank and sort.
+ * @param[in] prefix Text before cursor on current line.
+ * @param[in] scope Innermost scope at cursor.
+ * @param[in] request Completion request context.
+ */
+void ApplySmartTypeRanking(std::vector<lsp::CompletionItem>& items, std::string_view prefix,
+                           const analysis::Scope* scope, const CompletionRequest& request)
+{
+    std::string callee;
+    size_t argIndex = 0;
+    std::string expectedType;
+    if (ExtractCallContext(prefix, callee, argIndex))
+    {
+        expectedType = FindCalleeParameterType(callee, argIndex, request, scope);
+    }
+    if (expectedType.empty())
+    {
+        expectedType = ExtractAssignmentTargetType(prefix);
+    }
+    if (expectedType.empty())
+    {
+        return;
+    }
+
+    for (auto& item : items)
+    {
+        const TypeMatchRank rank = ComputeTypeRank(item, expectedType, request.symbolTable);
+        const std::string_view baseSort = item.sortText.has_value() ? *item.sortText : item.label;
+        item.sortText = FormatRankedSortText(rank, baseSort);
+    }
+
+    std::stable_sort(items.begin(), items.end(),
+                     [](const lsp::CompletionItem& a, const lsp::CompletionItem& b)
+                     {
+                         const std::string& sa = a.sortText.has_value() ? *a.sortText : a.label;
+                         const std::string& sb = b.sortText.has_value() ? *b.sortText : b.label;
+                         return sa < sb;
+                     });
+}
+
 } // namespace
 
 std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
 {
     std::string prefix = GetLinePrefix(request.sourceCode, request.position.line, request.position.character);
+    size_t trailingColons = 0;
+    while (trailingColons < prefix.size() && prefix[prefix.size() - 1 - trailingColons] == ':')
+    {
+        ++trailingColons;
+    }
+    if (trailingColons > 0 && trailingColons != 2)
+    {
+        return {};
+    }
+
     if (auto earlyItems = HandleIncludeOrLexicalSuppression(request, prefix))
     {
         return *earlyItems;
@@ -2167,6 +2551,12 @@ std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
     CollectGlobalSymbols(accessorsAreProperties, accessorKeywordRequired, queryPrefix, collector);
     CollectDeclarationSnippets(collector);
     CollectKeywords(collector);
+
+    const bool enableSmartRanking = !request.config || request.config->features.completionSmartTypeRanking;
+    if (enableSmartRanking)
+    {
+        ApplySmartTypeRanking(items, prefix, innermostScope, request);
+    }
 
     return items;
 }

@@ -366,6 +366,42 @@ bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
     return diagnosticsChanged;
 }
 
+static void UpdateInlayHintFeatureConfig(const lsp::LSPObject& section, config::ServerConfig& cfg)
+{
+    const lsp::LSPObject* ihObj = nullptr;
+    if (const auto* ihVal = section.find("inlayHints"); ihVal && ihVal->isObject())
+    {
+        ihObj = &ihVal->object();
+    }
+    if (auto maxParam = FindSectionInt(section, ihObj, "maxParameters", "inlayHints"); maxParam.has_value())
+    {
+        cfg.features.inlayHintsMaxParameters = static_cast<size_t>(std::max(0, *maxParam));
+    }
+    if (auto maxLen = FindSectionInt(section, ihObj, "maxLength", "inlayHints"); maxLen.has_value())
+    {
+        cfg.features.inlayHintsMaxLength = static_cast<size_t>(std::max(0, *maxLen));
+    }
+    if (auto suppress = FindSectionBool(section, ihObj, "suppressWhenArgumentMatchesName", "inlayHints"); suppress.has_value())
+    {
+        cfg.features.inlayHintsSuppressWhenArgumentMatchesName = *suppress;
+    }
+    if (auto omitted = FindSectionString(section, ihObj, "omittedDefaultArguments", "inlayHints"); omitted.has_value())
+    {
+        if (*omitted == "off" || *omitted == "false")
+        {
+            cfg.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::Off;
+        }
+        else if (*omitted == "declaration")
+        {
+            cfg.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::Declaration;
+        }
+        else
+        {
+            cfg.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::NameAndValue;
+        }
+    }
+}
+
 void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
 {
     const lsp::LSPObject* featObj = nullptr;
@@ -383,38 +419,17 @@ void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
         m_config.features.enableInlayHints = *ih;
     }
 
-    const lsp::LSPObject* ihObj = nullptr;
-    if (const auto* ihVal = section.find("inlayHints"); ihVal && ihVal->isObject())
+    const lsp::LSPObject* compObj = nullptr;
+    if (const auto* compVal = section.find("completion"); compVal && compVal->isObject())
     {
-        ihObj = &ihVal->object();
+        compObj = &compVal->object();
     }
-    if (auto maxParam = FindSectionInt(section, ihObj, "maxParameters", "inlayHints"); maxParam.has_value())
+    if (auto smart = FindSectionBool(section, compObj, "smartTypeRanking", "completion"); smart.has_value())
     {
-        m_config.features.inlayHintsMaxParameters = static_cast<size_t>(std::max(0, *maxParam));
+        m_config.features.completionSmartTypeRanking = *smart;
     }
-    if (auto maxLen = FindSectionInt(section, ihObj, "maxLength", "inlayHints"); maxLen.has_value())
-    {
-        m_config.features.inlayHintsMaxLength = static_cast<size_t>(std::max(0, *maxLen));
-    }
-    if (auto suppress = FindSectionBool(section, ihObj, "suppressWhenArgumentMatchesName", "inlayHints"); suppress.has_value())
-    {
-        m_config.features.inlayHintsSuppressWhenArgumentMatchesName = *suppress;
-    }
-    if (auto omitted = FindSectionString(section, ihObj, "omittedDefaultArguments", "inlayHints"); omitted.has_value())
-    {
-        if (*omitted == "off" || *omitted == "false")
-        {
-            m_config.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::Off;
-        }
-        else if (*omitted == "declaration")
-        {
-            m_config.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::Declaration;
-        }
-        else
-        {
-            m_config.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::NameAndValue;
-        }
-    }
+
+    UpdateInlayHintFeatureConfig(section, m_config);
 }
 
 static std::vector<config::ServerConfig::ModuleDefinition> ParseModuleDefinitions(const lsp::LSPArray& items)

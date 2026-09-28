@@ -2,7 +2,7 @@
   "name": "angelscript-gaftherman",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "0.9.21",
+  "version": "0.9.22",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -557,6 +557,12 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%config.features.completion.description%"
+          },
+          "angelscript.completion.smartTypeRanking": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.completion.smartTypeRanking.description%"
           },
           "angelscript.features.definition": {
             "type": "boolean",

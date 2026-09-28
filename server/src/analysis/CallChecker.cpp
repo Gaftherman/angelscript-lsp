@@ -147,7 +147,7 @@ bool NamesAType(const std::string& name, const SymbolTable& table)
             return true;
         }
     }
-    const std::string shortName = LastScopeSegment(name);
+    const std::string_view shortName = LastScopeSegment(name);
     const auto matches = table.FindTypeSymbolsByShortName(shortName);
     return !matches.empty();
 }
@@ -213,9 +213,7 @@ bool IsConstructorOrDestructorName(const std::string& memberName, const std::str
         return false;
     }
 
-    const size_t at = typeName.rfind("::");
-    const std::string_view shortName =
-        at == std::string::npos ? std::string_view(typeName) : std::string_view(typeName).substr(at + 2);
+    const std::string_view shortName = LastScopeSegment(typeName);
 
     if (memberName == shortName)
     {
@@ -276,6 +274,7 @@ struct FreeLookupContext
     const std::string& predefinedExtension;
     const SymbolTable& table;
     const rules::RuleIndex& index;
+    const ankerl::unordered_dense::set<std::string>& moduleFileUris;
 };
 
 /**
@@ -323,8 +322,10 @@ void CollectScopeCandidates(const std::string& scopeName, const std::string& nam
 
     for (const auto& sym : *found)
     {
-        if (IsFunctionSymbol(sym) &&
-            (sym.fileUri == ctx.fileUri || utils::IsPredefinedFile(sym.fileUri, ctx.predefinedExtension)))
+        const bool isVisible = sym.fileUri == ctx.fileUri ||
+                               (!ctx.moduleFileUris.empty() && ctx.moduleFileUris.contains(sym.fileUri)) ||
+                               utils::IsPredefinedFile(sym.fileUri, ctx.predefinedExtension);
+        if (IsFunctionSymbol(sym) && isVisible)
         {
             candidates.push_back(sym);
         }
@@ -879,7 +880,7 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
         return res;
     }
 
-    const std::string shortName = LastScopeSegment(written);
+    const std::string shortName = std::string(LastScopeSegment(written));
     if (IsShadowedOrTypeName(shortName, valCtx.scope, valCtx.ctx.request.symbolTable))
     {
         res.shouldCheck = false;
@@ -887,7 +888,7 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
     }
 
     res.reportedName = shortName;
-    if (written.find("::") != std::string::npos)
+    if (HasScopeQualifier(written))
     {
         if (const auto found = valCtx.ctx.request.symbolTable.FindSymbolsPtr(written))
         {
@@ -923,7 +924,8 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
                                     valCtx.ctx.request.fileUri,
                                     valCtx.ctx.request.predefinedFileExtension,
                                     valCtx.ctx.request.symbolTable,
-                                    valCtx.ctx.request.GetRuleIndex()};
+                                    valCtx.ctx.request.GetRuleIndex(),
+                                    valCtx.ctx.request.moduleFileUris};
     res.candidates = FindFreeCandidates(written, freeCtx);
     return res;
 }
@@ -1514,6 +1516,10 @@ void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const Call
     else
     {
         ValidateOutArguments(*match.bestCandidate, args.argNodes, valCtx);
+        if (matchingArity.size() > 1)
+        {
+            CheckInitializerListArgs(args, match.bestCandidate->GetFunction(), valCtx);
+        }
     }
 }
 
@@ -1742,7 +1748,7 @@ std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const Sym
         }
     };
 
-    const std::string shortName = LastScopeSegment(baseName);
+    const std::string shortName = std::string(LastScopeSegment(baseName));
     collectFunctions(baseName + "::" + shortName);
     if (shortName != baseName)
     {
@@ -1801,7 +1807,7 @@ bool IsClassDeclarationVisible(const std::string& baseName, const SymbolTable& t
             return true;
         }
     }
-    const std::string shortName = LastScopeSegment(baseName);
+    const std::string_view shortName = LastScopeSegment(baseName);
     return checkBucket(table.FindTypeSymbolsByShortName(shortName));
 }
 

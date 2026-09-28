@@ -63,13 +63,13 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         ParameterInformation bracketParam;
         bracketParam.typeName = elemType + "[]";
         bracketParam.rawText = elemType + "[]";
-        CHECK(IsContainerParameter(bracketParam));
+        CHECK(IsContainerParameter(bracketParam, nullptr, "array"));
 
         // 2. Default array template
         ParameterInformation defaultArrayParam;
         defaultArrayParam.typeName = "array<" + elemType + ">";
         defaultArrayParam.rawText = "array<" + elemType + ">";
-        CHECK(IsContainerParameter(defaultArrayParam));
+        CHECK(IsContainerParameter(defaultArrayParam, nullptr, "array"));
 
         // 3. Configured array container name
         ParameterInformation customArrayParam;
@@ -84,13 +84,14 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         vectorParam.rawText = "vector<" + elemType + ">";
         CHECK_FALSE(IsContainerParameter(vectorParam, &emptyTable, "array"));
 
-        // 5. Dynamic SymbolTable lookup: custom template class (e.g. optional<T> from .as.predefined)
+        // 5. Dynamic SymbolTable lookup: custom template container with @listpattern
         SymbolTable tableWithTemplate;
         Symbol templateSym;
         templateSym.type = SymbolType::Class;
         templateSym.name = customTemplateName;
         ClassSignature clsSig;
         clsSig.isTemplate = true;
+        clsSig.hasListPattern = true;
         clsSig.templateParams.push_back("T");
         templateSym.signature = clsSig;
         tableWithTemplate.AddSymbol(templateSym);
@@ -99,6 +100,23 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         dynamicTemplateParam.typeName = customTemplateName + "<" + elemType + ">";
         dynamicTemplateParam.rawText = customTemplateName + "<" + elemType + ">";
         CHECK(IsContainerParameter(dynamicTemplateParam, &tableWithTemplate, "array"));
+
+        // 6. Template class without list pattern or list constructor (e.g. optional<T>) is rejected
+        const std::string untaggedTemplate = GenerateRandomSymbolName("Optional");
+        Symbol plainTemplateSym;
+        plainTemplateSym.type = SymbolType::Class;
+        plainTemplateSym.name = untaggedTemplate;
+        ClassSignature plainClsSig;
+        plainClsSig.isTemplate = true;
+        plainClsSig.hasListPattern = false;
+        plainClsSig.templateParams.push_back("T");
+        plainTemplateSym.signature = plainClsSig;
+        tableWithTemplate.AddSymbol(plainTemplateSym);
+
+        ParameterInformation plainTemplateParam;
+        plainTemplateParam.typeName = untaggedTemplate + "<" + elemType + ">";
+        plainTemplateParam.rawText = untaggedTemplate + "<" + elemType + ">";
+        CHECK_FALSE(IsContainerParameter(plainTemplateParam, &tableWithTemplate, "array"));
     }
 
     TEST_CASE("Desugar Array Brackets Invariant: respects configured array type name")
@@ -148,7 +166,7 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
     TEST_CASE("Overload Conversion Invariant: 'any' does not act as wildcard and dynamic container matches init_list")
     {
         const std::string elemType = GenerateRandomSymbolName("Item");
-        const std::string templateName = GenerateRandomSymbolName("optional");
+        const std::string templateName = GenerateRandomSymbolName("CustomContainer");
 
         SymbolTable table;
         Symbol templateSym;
@@ -156,6 +174,7 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         templateSym.name = templateName;
         ClassSignature clsSig;
         clsSig.isTemplate = true;
+        clsSig.hasListPattern = true;
         clsSig.templateParams.push_back("T");
         templateSym.signature = clsSig;
         table.AddSymbol(templateSym);
@@ -168,12 +187,30 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         const auto anyConv = EvaluateArgumentConversion("int", anyParam, table);
         CHECK_FALSE(anyConv.rank == ConversionRank::Exact);
 
-        // Passing "init_list" to a dynamically declared template container should match as Exact
+        // Passing "init_list" to a dynamically declared template container with list pattern should match as Exact
         ParameterInformation containerParam;
         containerParam.typeName = templateName + "<" + elemType + ">";
         containerParam.name = "c";
         const auto containerConv = EvaluateArgumentConversion("init_list", containerParam, table);
         CHECK(containerConv.rank == ConversionRank::Exact);
+
+        // Untagged template (like optional<T>) must reject init_list as Incompatible
+        const std::string untaggedName = GenerateRandomSymbolName("Optional");
+        Symbol untaggedSym;
+        untaggedSym.type = SymbolType::Class;
+        untaggedSym.name = untaggedName;
+        ClassSignature untaggedSig;
+        untaggedSig.isTemplate = true;
+        untaggedSig.hasListPattern = false;
+        untaggedSig.templateParams.push_back("T");
+        untaggedSym.signature = untaggedSig;
+        table.AddSymbol(untaggedSym);
+
+        ParameterInformation untaggedParam;
+        untaggedParam.typeName = untaggedName + "<" + elemType + ">";
+        untaggedParam.name = "opt";
+        const auto untaggedConv = EvaluateArgumentConversion("init_list", untaggedParam, table);
+        CHECK(untaggedConv.rank == ConversionRank::Incompatible);
     }
 
     TEST_CASE("Configured stringTypeName in constructor conversion and overload ranking")

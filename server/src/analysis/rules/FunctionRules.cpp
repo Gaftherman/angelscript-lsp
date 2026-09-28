@@ -65,12 +65,7 @@ FunctionContext BuildFunctionContext(const Symbol& sym, const DiagnosticContext&
         fctx.isDestructor = IsDestructorDeclaration(sym, ctx);
         // A constructor is spelled with the class's own name. The container's qualified name
         // is what the collector stores, so compare against its last segment.
-        fctx.ownerName = sym.containerName;
-        const size_t scope = fctx.ownerName.rfind("::");
-        if (scope != std::string::npos)
-        {
-            fctx.ownerName = fctx.ownerName.substr(scope + 2);
-        }
+        fctx.ownerName = std::string(LastScopeSegment(sym.containerName));
         fctx.isConstructor = !fctx.isDestructor && sym.name == fctx.ownerName;
     }
 

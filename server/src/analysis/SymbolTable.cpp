@@ -953,7 +953,7 @@ std::optional<Symbol> SymbolTable::LookupSymbol(std::string_view name) const
     return FindFirstSymbol(name);
 }
 
-std::vector<Symbol> SymbolTable::FindTypeSymbolsByShortName(const std::string& shortName) const
+std::vector<Symbol> SymbolTable::FindTypeSymbolsByShortName(std::string_view shortName) const
 {
     std::vector<Symbol> result;
     const auto index = GetRuleIndex();
@@ -962,7 +962,7 @@ std::vector<Symbol> SymbolTable::FindTypeSymbolsByShortName(const std::string& s
         return result;
     }
 
-    const auto it = index->qualifiedTypesByShortName.find(shortName);
+    const auto it = index->qualifiedTypesByShortName.find(std::string(shortName));
     if (it != index->qualifiedTypesByShortName.end())
     {
         for (const auto& qKey : it->second)
@@ -1369,6 +1369,7 @@ void HashClassSignature(uint64_t& h, const ClassSignature& cls)
     {
         HashString(h, t);
     }
+    h = h * 1099511628211ULL ^ (cls.hasListPattern ? 1ULL : 0ULL);
 }
 
 void HashInterfaceSignature(uint64_t& h, const InterfaceSignature& iface)

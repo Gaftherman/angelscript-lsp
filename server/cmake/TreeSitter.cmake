@@ -12,6 +12,8 @@ else()
 endif()
 
 # ── Tree-Sitter AngelScript Grammar ───────────────────────────────────────
+# e743821 adds typed_initializer_list support (`Type = { ... }`) to assignment_expression RHS,
+# variable_declarator value, and return_statement.
 # 23cb160 adds single quote digit separator support (e.g. 1'000'000).
 # aa14847 adds metadata blocks and omitted initializer elements. `[Property, Category="Weapons"]`
 # before a declaration is stripped by CScriptBuilder before the compiler sees it, and `{ 0, 1, , 4 }`
@@ -42,7 +44,7 @@ if(ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE)
     set(tree_sitter_angelscript_SOURCE_DIR "${ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE}")
     message(STATUS "tree-sitter-angelscript: local checkout at ${tree_sitter_angelscript_SOURCE_DIR}")
 else()
-    FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG 23cb1607d068d74e410c866258e4957aa63082ce)
+    FetchContent_Declare(tree_sitter_angelscript GIT_REPOSITORY https://github.com/Gaftherman/tree-sitter-angelscript.git GIT_TAG b21c90fcc9be80bf9d2b29f5b135e8ffe12a0e03)
     FetchContent_MakeAvailable(tree_sitter_angelscript)
 endif()
 

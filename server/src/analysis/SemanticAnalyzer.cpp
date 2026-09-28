@@ -935,6 +935,17 @@ bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, co
     auto containers = GetEnclosingContainers(node, ctx.request.sourceCode);
     for (const auto& container : containers)
     {
+        if (container.kind == ContainerKind::Namespace)
+        {
+            const std::string nsName = container.qualifiedName.empty() ? container.name : container.qualifiedName;
+            const auto& members = index.Members(nsName);
+            const auto& accSet = reqKeyword ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
+            if (accSet.contains(refName))
+            {
+                return true;
+            }
+            continue;
+        }
         if (container.kind != ContainerKind::Class && container.kind != ContainerKind::Interface)
         {
             continue;
@@ -973,7 +984,15 @@ bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticCont
     {
         const TSPoint at{ref.startLine, ref.startCharacter};
         const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(ctx.request.tree), at, at);
-        return IsContainerAccessorProperty(node, ref.name, ctx);
+        if (IsContainerAccessorProperty(node, ref.name, ctx))
+        {
+            return true;
+        }
+    }
+
+    if (!FindGlobalPropertyAccessors(ref.name, ctx.request.symbolTable, ctx.request.RequiresAccessorKeyword()).empty())
+    {
+        return true;
     }
 
     return false;

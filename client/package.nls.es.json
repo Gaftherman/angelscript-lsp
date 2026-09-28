@@ -29,6 +29,7 @@
   "config.features.hover.description": "Mostrar información de tipos y documentación al pasar el cursor.",
   "config.features.definition.description": "Habilitar Ir a la definición e Ir a la definición de tipo.",
   "config.features.completion.description": "Habilitar sugerencias de autocompletado.",
+  "config.completion.smartTypeRanking.description": "Priorizar sugerencias de autocompletado que coincidan con el tipo de parámetro esperado o el destino de asignación.",
   "config.features.semanticTokens.description": "Habilitar el resaltado semántico de sintaxis.",
   "config.features.signatureHelp.description": "Mostrar sugerencias de parámetros al escribir una llamada.",
   "config.features.predefinedLoader.description": "Cargar archivos de stubs predefinidos que describen la API de la aplicación host.",

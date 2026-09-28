@@ -2,6 +2,7 @@
 #include "analysis/ASTUtils.h"
 #include "analysis/NullSafetyCondition.h"
 #include "analysis/NullSafetyExpr.h"
+#include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/TypeExtraction.h"
 #include "parser/GrammarNames.h"
@@ -41,9 +42,7 @@ bool IsConstructorCall(std::string_view fnName, TSNode typeNode, std::string_vie
     {
         return false;
     }
-    const std::string shortName = (fnName.rfind("::") != std::string::npos)
-                                      ? std::string(fnName.substr(fnName.rfind("::") + 2))
-                                      : std::string(fnName);
+    const std::string shortName = std::string(LastScopeSegment(fnName));
     if (shortName.empty())
     {
         return false;

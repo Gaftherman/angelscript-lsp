@@ -1,4 +1,5 @@
 #include "analysis/SymbolCollector.h"
+#include "analysis/DocComment.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
@@ -787,6 +788,7 @@ void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx,
 
     TSNode bodyNode = GetChildByFieldName(classNode, "body");
     classSig.hasBraces = !ts_node_is_null(bodyNode);
+    classSig.hasListPattern = HasPrecedingDocTag(sCtx.request.sourceCode, sym.startLine, "@listpattern");
 
     sym.signature = classSig;
     sCtx.symbolTable.AddSymbol(sym);
@@ -801,9 +803,34 @@ void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx,
 void SymbolCollector::ProcessNamespace(TSNode namespaceNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldName(namespaceNode, "name");
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
-    Symbol sym = CreateSymbol(SymbolType::Namespace, namespaceNode, nameNode, loc);
-    sCtx.symbolTable.AddSymbol(sym);
+    if (ts_node_is_null(nameNode))
+    {
+        return;
+    }
+
+    if (std::string_view(ts_node_type(nameNode)) == "scoped_identifier")
+    {
+        std::string currentPath = ctx.containerPath;
+        const uint32_t count = ts_node_named_child_count(nameNode);
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            TSNode segNode = ts_node_named_child(nameNode, i);
+            if (std::string_view(ts_node_type(segNode)) != "identifier")
+            {
+                continue;
+            }
+            SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, currentPath};
+            Symbol subSym = CreateSymbol(SymbolType::Namespace, namespaceNode, segNode, loc);
+            sCtx.symbolTable.AddSymbol(subSym);
+            currentPath = subSym.qualifiedName;
+        }
+    }
+    else
+    {
+        SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+        Symbol sym = CreateSymbol(SymbolType::Namespace, namespaceNode, nameNode, loc);
+        sCtx.symbolTable.AddSymbol(sym);
+    }
 }
 
 void SymbolCollector::ProcessTypedef(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)

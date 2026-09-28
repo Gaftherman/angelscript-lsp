@@ -267,6 +267,7 @@ struct ClassSignature
     SymbolModifiers modifiers;
     bool isTemplate = false;
     bool hasBraces = false;
+    bool hasListPattern = false;
 };
 
 struct InterfaceSignature
@@ -622,7 +623,7 @@ class SymbolTable
     }
 
     /** @brief Returns all type symbols (class, interface, enum, typedef, funcdef) whose short name matches. */
-    std::vector<Symbol> FindTypeSymbolsByShortName(const std::string& shortName) const;
+    std::vector<Symbol> FindTypeSymbolsByShortName(std::string_view shortName) const;
 
     /** @brief Returns a copy of all symbols currently present in the table. */
     std::vector<Symbol> GetAllSymbols() const;

@@ -155,10 +155,10 @@ void ProcessInheritanceSymbol(RuleIndexPartial& partial, const Symbol& sym)
             if (!cleanMixin.empty())
             {
                 partial.hostClassesByMixin.emplace_back(cleanMixin, derived);
-                const std::string bareMixin = LastScopeSegment(cleanMixin);
+                const std::string_view bareMixin = LastScopeSegment(cleanMixin);
                 if (bareMixin != cleanMixin)
                 {
-                    partial.hostClassesByMixin.emplace_back(bareMixin, derived);
+                    partial.hostClassesByMixin.emplace_back(std::string(bareMixin), derived);
                 }
             }
         }

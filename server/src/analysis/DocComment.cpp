@@ -230,4 +230,27 @@ std::string ExtractDocComment(const std::string& sourceCode, uint32_t declStartL
 
     return RenderDoxygenMarkdown(rawComment);
 }
+
+bool HasPrecedingDocTag(std::string_view sourceCode, uint32_t declStartLine, std::string_view tag)
+{
+    if (sourceCode.empty() || tag.empty() || sourceCode.find(tag) == std::string_view::npos)
+    {
+        return false;
+    }
+    const auto lines = SplitLines(std::string(sourceCode));
+    if (declStartLine >= lines.size())
+    {
+        return false;
+    }
+    const auto commentLines = CollectPrecedingDocComments(lines, declStartLine);
+    for (const auto& line : commentLines)
+    {
+        if (line.find(tag) != std::string::npos)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 } // namespace angel_lsp::analysis
+

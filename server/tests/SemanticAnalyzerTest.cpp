@@ -2,6 +2,7 @@
 
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
+#include "helpers/TestUtils.h"
 #include "analysis/SemanticAnalyzer.h"
 #include <functional>
 #include "analysis/SemanticAnalysisRequest.h"
@@ -1979,4 +1980,81 @@ TEST_CASE("SemanticAnalyzer - Local Variable and Member Shadowing with Type Name
         CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
     }
 }
+
+TEST_CASE("SemanticAnalyzer - Global and Namespace Indexed Virtual Properties")
+{
+    angel_lsp::i18n::I18n i18n;
+    const std::string playerClass = angel_lsp::test::GenerateRandomSymbolName("CBasePlayer");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("BuyPoints");
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("ShopSystem");
+
+    SUBCASE("Global indexed virtual property assignment does not emit undeclared identifier")
+    {
+        const std::string code =
+            "class " + playerClass + " {}\n"
+            "int get_" + propName + "(" + playerClass + "@ pPlayer) property { return 0; }\n"
+            "void set_" + propName + "(" + playerClass + "@ pPlayer, const int& in iValue) property {}\n"
+            "void GiveInitial(" + playerClass + "@ pPlayer) {\n"
+            "    if (pPlayer is null) return;\n"
+            "    " + propName + "[pPlayer] = 100;\n"
+            "}\n";
+        SymbolTable table;
+        const auto diagnostics = AnalyzeSource(code, table, i18n);
+        CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
+    }
+
+    SUBCASE("Namespace-scoped indexed virtual property assignment does not emit undeclared identifier")
+    {
+        const std::string code =
+            "class " + playerClass + " {}\n"
+            "namespace " + nsName + " {\n"
+            "    int get_" + propName + "(" + playerClass + "@ pPlayer) property { return 0; }\n"
+            "    void set_" + propName + "(" + playerClass + "@ pPlayer, const int& in iValue) property {}\n"
+            "    void GiveInitial(" + playerClass + "@ pPlayer) {\n"
+            "        " + propName + "[pPlayer] = 100;\n"
+            "    }\n"
+            "}\n";
+        SymbolTable table;
+        const auto diagnostics = AnalyzeSource(code, table, i18n);
+        CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
+    }
+}
+
+TEST_CASE("SemanticAnalyzer - Mixin implementing interface and class inheriting mixin pass cleanly")
+{
+    const angel_lsp::i18n::I18n i18n;
+    const std::string ifaceName = angel_lsp::test::GenerateRandomSymbolName("ICombat");
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("MCombatant");
+    const std::string heroClass = angel_lsp::test::GenerateRandomSymbolName("Hero");
+    const std::string attackMethod = angel_lsp::test::GenerateRandomSymbolName("Attack");
+    const std::string powerProp = angel_lsp::test::GenerateRandomSymbolName("Power");
+
+    const std::string code =
+        "interface " + ifaceName + " {\n"
+        "    void " + attackMethod + "(int damage, float range);\n"
+        "    int " + powerProp + " { get; }\n"
+        "}\n"
+        "mixin class " + mixinName + " : " + ifaceName + " {\n"
+        "    void " + attackMethod + "(int damage, float range) {}\n"
+        "    int get_" + powerProp + "() property { return 100; }\n"
+        "}\n"
+        "class " + heroClass + " : " + mixinName + " {}\n"
+        "void ExecuteCombat(" + ifaceName + "@ combatant) {\n"
+        "    combatant." + attackMethod + "(50, 1.5f);\n"
+        "    int p = combatant." + powerProp + ";\n"
+        "    if (p > 0) {}\n"
+        "}\n"
+        "void main() {\n"
+        "    " + heroClass + " hero;\n"
+        "    hero." + attackMethod + "(25, 2.0f);\n"
+        "    int hp = hero." + powerProp + ";\n"
+        "    if (hp > 0) {}\n"
+        "    ExecuteCombat(hero);\n"
+        "}\n";
+
+    SymbolTable table;
+    const auto diagnostics = AnalyzeSource(code, table, i18n);
+    CHECK(diagnostics.empty());
+}
+
 

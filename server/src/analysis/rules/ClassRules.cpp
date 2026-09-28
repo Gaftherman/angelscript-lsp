@@ -471,10 +471,9 @@ void CollectContainerMembers(const std::string& containerName, const RuleIndex& 
     const auto& cm = ruleIndex.Members(containerName);
     outMembers.insert(cm.allMemberNames.begin(), cm.allMemberNames.end());
 
-    auto lastScope = containerName.rfind("::");
-    if (lastScope != std::string::npos)
+    if (HasScopeQualifier(containerName))
     {
-        const auto& cmShort = ruleIndex.Members(containerName.substr(lastScope + 2));
+        const auto& cmShort = ruleIndex.Members(LastScopeSegment(containerName));
         outMembers.insert(cmShort.allMemberNames.begin(), cmShort.allMemberNames.end());
     }
 
@@ -513,12 +512,7 @@ const Symbol* FindMixinSymbol(const std::string& mixinName, const SymbolTable& t
         }
     }
 
-    std::string shortName = mixinName;
-    auto lastScope = shortName.rfind("::");
-    if (lastScope != std::string::npos)
-    {
-        shortName = shortName.substr(lastScope + 2);
-    }
+    const std::string_view shortName = LastScopeSegment(mixinName);
     auto shortCands = table.FindTypeSymbolsByShortName(shortName);
     for (const auto& c : shortCands)
     {

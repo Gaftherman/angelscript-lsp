@@ -163,7 +163,33 @@ bool IsReservedKeyword(const std::string& name);
  */
 [[nodiscard]] std::vector<std::string> SplitTemplateArguments(std::string_view inner);
 
-[[nodiscard]] std::string LastScopeSegment(const std::string& name);
+/**
+ * @brief Returns the last unqualified identifier segment of a scoped name.
+ * @param[in] name Qualified or unqualified identifier.
+ * @return View of the last segment without allocations.
+ */
+[[nodiscard]] std::string_view LastScopeSegment(std::string_view name) noexcept;
+
+/**
+ * @brief Returns the parent scope qualifier of a scoped name (everything preceding the last `::`).
+ * @param[in] name Qualified name.
+ * @return Parent scope view, or empty view if name contains no `::`.
+ */
+[[nodiscard]] std::string_view ParentScope(std::string_view name) noexcept;
+
+/**
+ * @brief Checks if a name contains any scope resolution qualifier (`::`).
+ * @param[in] name Identifier or type name to inspect.
+ * @return True if qualified; false if bare.
+ */
+[[nodiscard]] bool HasScopeQualifier(std::string_view name) noexcept;
+
+/**
+ * @brief Splits a scope-qualified identifier into individual segment names.
+ * @param[in] name Qualified name (e.g. "A::B::C").
+ * @return Ordered list of scope segments (e.g. {"A", "B", "C"}).
+ */
+[[nodiscard]] std::vector<std::string> SplitScopeSegments(std::string_view name);
 
 [[nodiscard]] constexpr bool IsFloatingPointPrimitive(std::string_view typeName) noexcept
 {
@@ -247,6 +273,27 @@ bool IsFromPredefinedStub(const Symbol& sym, const DiagnosticContext& ctx);
  * @return True if the declaration is spelled with a leading '~'.
  */
 bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx);
+
+/**
+ * @brief Checks whether a constructor function matches AngelScript's list behavior signature.
+ *
+ * Conforming to `asBEHAVE_LIST_CONSTRUCT` / `asBEHAVE_LIST_FACTORY`:
+ * - Single parameter: integer reference with in modifier (e.g. `const int &in` or `int &in`).
+ * - Two parameters: both integer references with in modifier (e.g. `int &in, int &in`).
+ *
+ * @param[in] fn Function signature to inspect.
+ * @return True if function signature conforms to a list constructor.
+ */
+bool IsListConstructorSignature(const FunctionSignature& fn);
+
+/**
+ * @brief Checks whether a symbol represents a list constructor.
+ *
+ * @param[in] sym Symbol to inspect.
+ * @return True if symbol is a function conforming to a list constructor.
+ */
+bool IsListConstructor(const Symbol& sym);
+
 
 /**
  * @brief Names the function attribute a declaration carries, or empty when it carries none.

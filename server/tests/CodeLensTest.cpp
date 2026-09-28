@@ -474,3 +474,42 @@ TEST_CASE("CodeLens - Batched Reference Resolution Scales Beyond Arbitrary Symbo
     CHECK(verifiedBack);
 }
 
+TEST_CASE("CodeLens - Property Accessor Reference Counting")
+{
+    const std::string playerClass = angel_lsp::test::GenerateRandomSymbolName("CBasePlayer");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("BuyPoints");
+    const std::string callerFn = angel_lsp::test::GenerateRandomSymbolName("GivePoints");
+
+    std::string code =
+        "class " + playerClass + " {}\n"
+        "int get_" + propName + "(" + playerClass + "@ pPlayer) property { return 0; }\n"
+        "void set_" + propName + "(" + playerClass + "@ pPlayer, const int& in iValue) property {}\n"
+        "void " + callerFn + "(" + playerClass + "@ pPlayer) {\n"
+        "    " + propName + "[pPlayer] = 100;\n"
+        "}\n";
+
+    CodeLensFixture fixture(std::move(code));
+    const auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool foundGetterRef = false;
+    bool foundSetterRef = false;
+
+    for (const auto& lens : *lenses)
+    {
+        if (lens.range.start.line == 1 && lens.command.has_value())
+        {
+            CHECK(lens.command->title == "1 reference");
+            foundGetterRef = true;
+        }
+        else if (lens.range.start.line == 2 && lens.command.has_value())
+        {
+            CHECK(lens.command->title == "1 reference");
+            foundSetterRef = true;
+        }
+    }
+
+    CHECK(foundGetterRef);
+    CHECK(foundSetterRef);
+}
+

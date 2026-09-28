@@ -380,7 +380,7 @@ bool IsValidAccess(const std::string& fileUri, const analysis::LocalReference& r
     {
         return false;
     }
-    const analysis::LocalDefinition* localShadow = analysis::ResolveInScope(scope, criteria.targetName);
+    const analysis::LocalDefinition* localShadow = analysis::ResolveInScope(scope, ref.name);
     return !(localShadow && (localShadow->kind == analysis::LocalDefinitionKind::Parameter ||
                              localShadow->kind == analysis::LocalDefinitionKind::Variable));
 }
@@ -553,7 +553,7 @@ std::optional<analysis::Symbol> FindMixinSymbol(const std::string& mixinName, co
             }
         }
     }
-    std::string shortName = analysis::LastScopeSegment(mixinName);
+    const std::string_view shortName = analysis::LastScopeSegment(mixinName);
     for (const auto& c : symbolTable.FindTypeSymbolsByShortName(shortName))
     {
         if (c.type == analysis::SymbolType::Class && c.GetClass().modifiers.isMixin)
@@ -870,11 +870,7 @@ ankerl::unordered_dense::set<std::string> CollectCompatibleClasses(const std::ve
         if (!s.containerName.empty())
         {
             compatibleClasses.insert(s.containerName);
-            auto lastColon = s.containerName.rfind("::");
-            if (lastColon != std::string::npos)
-            {
-                compatibleClasses.insert(s.containerName.substr(lastColon + 2));
-            }
+            compatibleClasses.insert(std::string(analysis::LastScopeSegment(s.containerName)));
             auto comp = analysis::GetCompatibleMemberClasses(s.containerName, sym.name, targetAccess, ctx.symbolTable);
             for (const auto& c : comp)
             {
@@ -1333,6 +1329,10 @@ std::vector<lsp::CodeLens> BuildSymbolGroupLenses(const SymbolGroups& symGroups,
         for (size_t i = 0; i < targets.size(); ++i)
         {
             targetsByName[targets[i].targetName].push_back(i);
+            if (targets[i].targetName.starts_with("get_") || targets[i].targetName.starts_with("set_"))
+            {
+                targetsByName[targets[i].targetName.substr(4)].push_back(i);
+            }
         }
         BatchCountReferencesAcrossScopes(targets, targetsByName, request);
     }

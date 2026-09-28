@@ -488,7 +488,11 @@ class DefiniteAssignmentVisitor
 
     void AnalyzeIfStatement(TSNode node, FlowState& state, int depth)
     {
-        TSNode cond = ts_node_named_child(node, 0);
+        TSNode cond = parser::GetChildByField(node, parser::fields::Condition);
+        if (ts_node_is_null(cond))
+        {
+            cond = ts_node_named_child(node, 0);
+        }
         TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
         TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
 
@@ -523,7 +527,11 @@ class DefiniteAssignmentVisitor
 
     void AnalyzeWhileStatement(TSNode node, FlowState& state, int depth)
     {
-        TSNode cond = ts_node_named_child(node, 0);
+        TSNode cond = parser::GetChildByField(node, parser::fields::Condition);
+        if (ts_node_is_null(cond))
+        {
+            cond = ts_node_named_child(node, 0);
+        }
         TSNode body = parser::GetChildByField(node, parser::fields::Body);
 
         CheckExpressionReads(cond, state, depth + 1);
@@ -543,7 +551,11 @@ class DefiniteAssignmentVisitor
     void AnalyzeDoWhileStatement(TSNode node, FlowState& state, int depth)
     {
         TSNode body = parser::GetChildByField(node, parser::fields::Body);
-        TSNode cond = ts_node_named_child(node, 1);
+        TSNode cond = parser::GetChildByField(node, parser::fields::Condition);
+        if (ts_node_is_null(cond))
+        {
+            cond = ts_node_named_child(node, 1);
+        }
 
         AnalyzeStatement(body, state, depth + 1);
         CheckExpressionReads(cond, state, depth + 1);
@@ -639,7 +651,11 @@ class DefiniteAssignmentVisitor
 
     void AnalyzeSwitchStatement(TSNode node, FlowState& state, int depth)
     {
-        TSNode cond = ts_node_named_child(node, 0);
+        TSNode cond = parser::GetChildByField(node, parser::fields::Condition);
+        if (ts_node_is_null(cond))
+        {
+            cond = ts_node_named_child(node, 0);
+        }
         CheckExpressionReads(cond, state, depth + 1);
 
         std::vector<FlowState> caseStates;
@@ -681,7 +697,12 @@ class DefiniteAssignmentVisitor
     {
         if (type == "return_statement")
         {
-            if (ts_node_named_child_count(node) > 0)
+            TSNode retVal = parser::GetChildByField(node, parser::fields::Value);
+            if (!ts_node_is_null(retVal))
+            {
+                CheckExpressionReads(retVal, state, depth + 1);
+            }
+            else if (ts_node_named_child_count(node) > 0)
             {
                 CheckExpressionReads(ts_node_named_child(node, 0), state, depth + 1);
             }

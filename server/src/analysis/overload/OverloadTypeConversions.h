@@ -57,7 +57,7 @@ struct UserConversionMatch
  * @return True if converting constructor is available.
  */
 bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable,
-                              std::string_view stringTypeName = "string");
+                              std::string_view stringTypeName);
 
 /**
  * @brief Checks if a type defines an implicit conversion method (`opImplConv` or `opImplCast`).
@@ -184,14 +184,24 @@ bool IsWildcardParameter(const ParameterInformation& param);
 bool IsOutParameter(const ParameterInformation& param);
 
 /**
+ * @brief Checks if a parameter accepts an initializer list argument ({ ... }).
+ * @param[in] param Parameter information to check.
+ * @param[in] symbolTable Optional symbol table to validate custom containers, list factories, or aggregate structs.
+ * @param[in] arrayTypeName Optional configured array type name.
+ * @return True if parameter accepts an initializer list.
+ */
+bool ParameterAcceptsInitializerList(const ParameterInformation& param, const SymbolTable* symbolTable,
+                                     std::string_view arrayTypeName);
+
+/**
  * @brief Checks if a parameter represents an array or container type.
  * @param[in] param Parameter information to check.
  * @param[in] symbolTable Optional symbol table to validate custom template container declarations.
- * @param[in] arrayTypeName Optional configured array type name.
+ * @param[in] arrayTypeName Configured array type name.
  * @return True if container parameter.
  */
-bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* symbolTable = nullptr,
-                          std::string_view arrayTypeName = "array");
+bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* symbolTable,
+                          std::string_view arrayTypeName);
 
 /**
  * @brief Checks if two type names denote the same type, ignoring scope qualifier prefixes.

@@ -428,12 +428,7 @@ lsp::Location MakeLocation(const analysis::Symbol& sym, const DefinitionRequest&
         }
         if (!mSym)
         {
-            std::string shortName = mixinPart;
-            auto lastScope = shortName.rfind("::");
-            if (lastScope != std::string::npos)
-            {
-                shortName = shortName.substr(lastScope + 2);
-            }
+            std::string shortName = std::string(analysis::LastScopeSegment(mixinPart));
             auto sCand = request.symbolTable.FindTypeSymbolsByShortName(shortName);
             for (const auto& c : sCand)
             {
@@ -589,12 +584,7 @@ VirtualMixinContext ResolveVirtualMixinContext(const DefinitionRequest& request)
     }
     if (!vCtx.virtualMixinSym.has_value())
     {
-        std::string shortName = vCtx.virtualMixinName;
-        auto lastScope = shortName.rfind("::");
-        if (lastScope != std::string::npos)
-        {
-            shortName = shortName.substr(lastScope + 2);
-        }
+        std::string shortName = std::string(analysis::LastScopeSegment(vCtx.virtualMixinName));
         auto shortCandidates = request.symbolTable.FindTypeSymbolsByShortName(shortName);
         for (const auto& cand : shortCandidates)
         {

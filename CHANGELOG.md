@@ -2,6 +2,43 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.22] - 2026-09-28
+
+### Completion Trigger Isolation, Smart Type-Aware Ranking, Indexed Virtual Properties, & Scoped Call Inlay Hints
+
+- Namespace Completion Trigger Isolation (`:` vs `::`):
+  - Fixed premature autocompletion popup on typing a single colon (`MyNamespace:`), cleanly suppressing candidate suggestions until the double colon scope resolution operator (`::`) is completed.
+  - Verified multi-level and compound namespace completion (`MyNamespace::A::B::`) correctly triggers scope members without spurious popups.
+- Smart Type-Aware Autocompletion Ranking:
+  - Added contextual type ranking when completing function arguments and variable declaration assignments.
+  - At call sites (e.g. `functi(|` or `functi(val, |`), variables and functions matching the exact expected parameter type are ranked highest (`0000_...`), followed by convertible types (`0001_...`), and other symbols (`0002_...`).
+  - At assignment RHS (e.g. `MyClass@ c = |`), constructors and expressions returning the matching type are prioritized.
+  - Configurable via `angelscript.completion.smartTypeRanking` (default `true`), CLI flags `--enable-completion-smart-ranking` / `--disable-completion-smart-ranking`, and dynamic workspace configuration updates.
+- Global & Namespace Indexed Virtual Property Support:
+  - Resolved false-positive `as-warn-undeclared-identifier` on indexed virtual property assignments (e.g. `BuyPoints[pPlayer] = 100` backed by `int get_BuyPoints(...) property` and `void set_BuyPoints(...) property`).
+  - Extended `IsContainerAccessorProperty` in `SemanticAnalyzer` to inspect namespace-enclosed accessor property declarations.
+  - Added `FindGlobalPropertyAccessors` fallback to ensure workspace-wide global property accessors are always recognized.
+  - Hardened `index_expression` type resolution in `SemanticHelpers` to accurately deduce indexed property return types rather than failing array container indexing.
+- Inlay Hints for Scoped Calls & Scoped Enum Member Arguments:
+  - Fixed missing parameter inlay hints for qualified function and method calls (`HUD::MONEY::Update`, `Persistent::Get`, `Util::PlayerId`).
+  - Added `CollectScopedCalleeCandidates` in `InlayHintHandler` to resolve scoped callees across enclosing namespaces and base class inheritance hierarchies.
+  - Extended `ResolveScopedIdentifierExpr` in `SemanticHelpers` to resolve scoped enum members (`Persistent::MONEY`) to their enum type, allowing call argument type extraction to find the correct overload.
+- CodeLens Reference Counting for Virtual Properties:
+  - Fixed CodeLens showing 0 references above `get_<Property>` and `set_<Property>` accessor declarations.
+  - Mapped property names (stripping `get_`/`set_`) to accessor targets in `targetsByName` and fixed local scope shadow validation to use the reference name.
+- Multi-Colon Trigger Isolation (`:::` & `::::`) & Syntax Error Guard:
+  - Generalized colon trigger suppression by counting trailing consecutive colons; suppresses premature or invalid sequences where colon count is not exactly 2 (single colon `:`, triple colons `:::`, quadruple colons `::::`).
+  - Confirmed Tree-Sitter and AngelScript compiler oracle report `:::` as a syntax error (`as-syntax-error`).
+- Clean Architecture & TypeMatchRank Refactoring:
+  - Refactored `ComputeTypeRank` and `ApplySmartTypeRanking` to use strongly-typed `TypeMatchRank` (`Exact = 0`, `Convertible = 1`, `Other = 2`) and array-indexed bucket prefix formatting, eliminating magic numbers and `if-else` string concatenation.
+- Interface & Mixin Class Parity & Member Autocompletion:
+  - Verified member autocompletion on interface handles (`ICombat@ c; c.|`) and mixin host classes (`Hero h; h.|`), including virtual property accessors.
+  - Added smart type-aware ranking for interface method calls (`c.Attack(|`).
+  - Added official parity test [`doc_p49_mixin_interface_parity.as`](server/tests/parity/doc_p49_mixin_interface_parity.as) validated with exit code 0 by `angelscript_oracle.exe`.
+- Documentation & Client Links:
+  - Removed outdated `->` operator references from completion documentation in `README.md`.
+  - Updated installation guide to link directly to the official VS Code Marketplace extension `Gaftherman.angelscript-gaftherman`.
+
 ## [0.9.21] - 2026-09-28
 
 ### Machine-Specific Path Elimination, Dynamic Fixture Discovery, & CI Multi-Platform Portability

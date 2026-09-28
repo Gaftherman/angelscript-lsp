@@ -856,12 +856,7 @@ VirtualMixinContext ResolveVirtualMixinContext(const HoverRequest& request)
         }
         if (!ctx.mixinSym.has_value())
         {
-            std::string shortName = ctx.mixinName;
-            auto lastScope = shortName.rfind("::");
-            if (lastScope != std::string::npos)
-            {
-                shortName = shortName.substr(lastScope + 2);
-            }
+            std::string shortName = std::string(analysis::LastScopeSegment(ctx.mixinName));
             auto shortCandidates = request.symbolTable.FindTypeSymbolsByShortName(shortName);
             for (const auto& cand : shortCandidates)
             {

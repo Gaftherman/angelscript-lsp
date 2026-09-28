@@ -83,7 +83,7 @@ void ExpandDerivedFromList(const TList& derivedList, const SymbolTable& table, S
 {
     for (const auto& derived : derivedList)
     {
-        const std::string bare = analysis::LastScopeSegment(derived.name);
+        const std::string bare{analysis::LastScopeSegment(derived.name)};
         if (!acc.seen.insert(bare).second)
         {
             continue;
@@ -123,7 +123,7 @@ void ExpandDerivedFromList(const TList& derivedList, const SymbolTable& table, S
 std::vector<Symbol> CollectSubtypesFromRuleIndex(const std::string& rootType, const SymbolTable& table,
                                                  const RuleIndex& ruleIndex)
 {
-    const std::string bareRoot = analysis::LastScopeSegment(rootType);
+    const std::string bareRoot{analysis::LastScopeSegment(rootType)};
     std::vector<std::string> frontier{bareRoot};
     if (bareRoot != rootType && !rootType.empty())
     {
@@ -167,7 +167,7 @@ bool MatchesDeclaredBasesOrMixins(const Symbol& sym, const std::vector<std::stri
 {
     for (const auto& base : DeclaredBases(sym))
     {
-        const std::string baseName = analysis::LastScopeSegment(analysis::CleanBaseType(base));
+        const std::string baseName{analysis::LastScopeSegment(analysis::CleanBaseType(base))};
         if (std::find(frontier.begin(), frontier.end(), baseName) != frontier.end())
         {
             return true;
@@ -177,7 +177,7 @@ bool MatchesDeclaredBasesOrMixins(const Symbol& sym, const std::vector<std::stri
     {
         for (const auto& m : sym.GetClass().includedMixins)
         {
-            const std::string mName = analysis::LastScopeSegment(m);
+            const std::string mName{analysis::LastScopeSegment(m)};
             if (std::find(frontier.begin(), frontier.end(), mName) != frontier.end())
             {
                 return true;
@@ -195,7 +195,7 @@ bool MatchesDeclaredBasesOrMixins(const Symbol& sym, const std::vector<std::stri
  */
 std::vector<Symbol> CollectSubtypesByScan(const std::string& rootType, const SymbolTable& table)
 {
-    std::vector<std::string> frontier{analysis::LastScopeSegment(rootType)};
+    std::vector<std::string> frontier{std::string(analysis::LastScopeSegment(rootType))};
     std::vector<std::string> seen{frontier.front()};
     std::vector<Symbol> subtypes;
 
@@ -213,7 +213,7 @@ std::vector<Symbol> CollectSubtypesByScan(const std::string& rootType, const Sym
                         continue;
                     }
 
-                    const std::string bare = analysis::LastScopeSegment(sym.name);
+                    const std::string bare{analysis::LastScopeSegment(sym.name)};
                     if (std::find(seen.begin(), seen.end(), bare) != seen.end())
                     {
                         continue;
@@ -366,7 +366,7 @@ std::shared_ptr<const std::vector<Symbol>> FindMemberInMixinsAndBases(const Symb
         auto mSyms = table.FindSymbolsPtr(m + "::" + name);
         if (!mSyms || mSyms->empty())
         {
-            mSyms = table.FindSymbolsPtr(analysis::LastScopeSegment(m) + "::" + name);
+            mSyms = table.FindSymbolsPtr(std::string(analysis::LastScopeSegment(m)) + "::" + name);
         }
         if (mSyms && !mSyms->empty())
         {
@@ -380,7 +380,7 @@ std::shared_ptr<const std::vector<Symbol>> FindMemberInMixinsAndBases(const Symb
         auto mSyms = table.FindSymbolsPtr(cleanB + "::" + name);
         if (!mSyms || mSyms->empty())
         {
-            mSyms = table.FindSymbolsPtr(analysis::LastScopeSegment(cleanB) + "::" + name);
+            mSyms = table.FindSymbolsPtr(std::string(analysis::LastScopeSegment(cleanB)) + "::" + name);
         }
         if (mSyms && !mSyms->empty())
         {
@@ -405,7 +405,7 @@ std::shared_ptr<const std::vector<Symbol>> FindMemberInClass(const std::string& 
     {
         return memberSyms;
     }
-    const std::string bareCls = analysis::LastScopeSegment(clsName);
+    const std::string bareCls{analysis::LastScopeSegment(clsName)};
     if (bareCls != clsName)
     {
         memberSyms = table.FindSymbolsPtr(bareCls + "::" + name);
@@ -427,7 +427,7 @@ std::shared_ptr<const std::vector<Symbol>> FindMemberInClass(const std::string& 
 std::shared_ptr<const std::vector<Symbol>>
 FindMemberInOwnerMixinsAndBases(const std::string& clsName, const std::string& name, const SymbolTable& table)
 {
-    const std::string bareCls = analysis::LastScopeSegment(clsName);
+    const std::string bareCls{analysis::LastScopeSegment(clsName)};
     auto ownerSyms = table.FindSymbolsPtr(clsName);
     if (!ownerSyms || ownerSyms->empty())
     {
@@ -467,7 +467,7 @@ std::shared_ptr<const std::vector<Symbol>> FindMemberInHierarchy(const std::stri
     if (hierarchy.empty())
     {
         hierarchy.push_back(owner);
-        const std::string bareOwner = analysis::LastScopeSegment(owner);
+        const std::string bareOwner{analysis::LastScopeSegment(owner)};
         if (bareOwner != owner)
         {
             hierarchy.push_back(bareOwner);
@@ -552,7 +552,7 @@ struct MemberImplementationContext
  */
 void CollectSubtypeOverrides(const Symbol& subtype, MemberImplementationContext& ctx)
 {
-    const auto members = ctx.table.FindSymbolsPtr(analysis::LastScopeSegment(subtype.name) + "::" + ctx.name);
+    const auto members = ctx.table.FindSymbolsPtr(std::string(analysis::LastScopeSegment(subtype.name)) + "::" + ctx.name);
     bool hasExplicitOverride = false;
     if (members && !members->empty())
     {
@@ -587,7 +587,7 @@ ResolveMemberImplementations(const std::string& owner, const std::string& name, 
         return std::nullopt;
     }
 
-    const std::string bareOwner = analysis::LastScopeSegment(owner);
+    const std::string bareOwner{analysis::LastScopeSegment(owner)};
     const bool isMixinOwner = CheckMixinOwner(owner, bareOwner, table);
 
     LocationCollector collector;

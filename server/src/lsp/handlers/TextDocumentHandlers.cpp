@@ -11,6 +11,7 @@
 #include "features/references/ReferencesHandler.h"
 #include "features/rename/RenameHandler.h"
 #include "features/signature_help/SignatureHelpHandler.h"
+#include "analysis/SemanticHelpers.h"
 #include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
 #include "utils/Timer.h"
@@ -1022,11 +1023,7 @@ const angel_lsp::analysis::Symbol* FindMixinClassSymbol(const angel_lsp::analysi
         }
     }
 
-    std::string shortName = mixinName;
-    if (auto lastScope = shortName.rfind("::"); lastScope != std::string::npos)
-    {
-        shortName = shortName.substr(lastScope + 2);
-    }
+    std::string shortName = std::string(angel_lsp::analysis::LastScopeSegment(mixinName));
     auto shortCandidates = symTable.FindTypeSymbolsByShortName(shortName);
     for (const auto& cand : shortCandidates)
     {

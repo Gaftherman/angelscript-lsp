@@ -17,7 +17,7 @@ Unlike approaches that rely on running scripts inside an embedded host runtime o
 
 - **Flow-Sensitive Diagnostics**: Intraprocedural null handle dereference checks (`as-warn-possible-null-dereference`), syntax error recovery, and compiler parity validation against the reference compiler.
 - **Precision Navigation**: Overload-aware Go to Definition, Declaration, Type Definition, Implementation (`Ctrl+F12`), and bi-directional Call & Type Hierarchies.
-- **Intelligent Hover & Completion**: Overload-isolated documentation tooltips at call sites, Doxygen docstring rendering (`@brief`, `@param`, `@return`), lambda contract resolution (`(anonymous function) -> FuncdefName`), and scope-aware member completions (`.`, `->`, `::`).
+- **Intelligent Hover & Completion**: Overload-isolated documentation tooltips at call sites, Doxygen docstring rendering (`@brief`, `@param`, `@return`), lambda contract resolution (`(anonymous function) -> FuncdefName`), and scope-aware member completions (`.`, `::`).
 - **Engine Dialect & Host Integration**: Sven Co-op extensionless `#include` resolution, predefined host stubs (`.as.predefined`), and configurable preprocessor flags (`#if`, `#define`).
 - **High Performance & Low Overhead**: Native C++20, zero disk logging by default in release builds, zero-allocation token streams, and AST memory safety.
 - **Native Bilingual Support**: Built-in dual localization for diagnostics, command titles, and configuration settings in English (`en`) and Spanish (`es`) via `@vscode/l10n`.
@@ -28,9 +28,13 @@ Unlike approaches that rely on running scripts inside an embedded host runtime o
 
 ### 1. Installation
 
-Install via the Visual Studio Code Marketplace (search for `Angelscript`) or from a packaged `.vsix` bundle:
+Install via the [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman) or search for `Angelscript` by Gaftherman in the Extensions view (`Ctrl+Shift+X`):
+1. Open Visual Studio Code.
+2. Press `Ctrl+P`, paste `ext install Gaftherman.angelscript-gaftherman`, and press Enter.
+
+Alternatively, to install from a packaged `.vsix` bundle:
 1. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) and run `Extensions: Install from VSIX...`.
-2. Select the compiled extension package (`angelscript.vsix` or `angelscript-0.8.6.vsix`).
+2. Select the compiled extension package (`angelscript.vsix` or `angelscript-*.vsix`).
 
 ### 2. Workspace Setup
 
@@ -141,6 +145,7 @@ cd client && npm install && npm run compile
 | `angelscript.inlayHints.maxLength` | `0` | Maximum character length for parameter inlay hint labels before truncating with `...` (`0` = unlimited). |
 | `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suppresses parameter name hints when argument text matches parameter name. |
 | `angelscript.format.braceStyle` | `"allman"` | Brace placement style (`"allman"` or `"kr"`). |
+| `angelscript.completion.smartTypeRanking` | `true` | Prioritizes autocompletions matching expected parameter or assignment target type. |
 | `angelscript.diagnosticSeverity` | `{}` | Per-diagnostic severity overrides (e.g. `{"as-warn-unused-variable": "hint"}`). |
 | `angelscript.engine.requireEnumScope` | `false` | When true (`asEP_REQUIRE_ENUM_SCOPE`), enums must be qualified with `Enum::Member`. |
 | `angelscript.engine.alwaysImplDefaultConstruct` | `false` | When true (`asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT`), default constructor is always synthesized. |

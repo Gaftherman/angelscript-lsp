@@ -428,6 +428,8 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
     {"--enable-hover", "", "--disable-hover", "", &FeatureFlags::enableHover},
     {"--enable-definition", "", "--disable-definition", "", &FeatureFlags::enableDefinition},
     {"--enable-completion", "", "--disable-completion", "", &FeatureFlags::enableCompletion},
+    {"--enable-completion-smart-ranking", "--enable-completionsmartranking", "--disable-completion-smart-ranking",
+     "--disable-completionsmartranking", &FeatureFlags::completionSmartTypeRanking},
     {"--enable-semantic-tokens", "--enable-semantictokens", "--disable-semantic-tokens", "--disable-semantictokens",
      &FeatureFlags::enableSemanticTokens},
     {"--enable-signature-help", "--enable-signaturehelp", "--disable-signature-help", "--disable-signaturehelp",

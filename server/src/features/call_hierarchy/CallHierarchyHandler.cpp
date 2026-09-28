@@ -28,7 +28,7 @@ lsp::Range ToRange(const analysis::SourceRange& range)
 lsp::CallHierarchyItem ToItem(const Symbol& sym)
 {
     lsp::CallHierarchyItem item;
-    item.name = analysis::LastScopeSegment(sym.name);
+    item.name = std::string(analysis::LastScopeSegment(sym.name));
     item.kind = sym.containerName.empty() ? lsp::SymbolKind::Function : lsp::SymbolKind::Method;
     item.uri = lsp::DocumentUri::parse(sym.fileUri);
 
@@ -333,7 +333,7 @@ std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const Ca
 
 std::optional<std::vector<lsp::CallHierarchyIncomingCall>> GetIncomingCalls(const CallHierarchyItemRequest& request)
 {
-    const std::string target = analysis::LastScopeSegment(request.item.name);
+    const std::string target{analysis::LastScopeSegment(request.item.name)};
     if (target.empty())
     {
         return std::nullopt;

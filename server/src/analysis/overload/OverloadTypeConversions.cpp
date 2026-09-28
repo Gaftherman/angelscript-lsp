@@ -395,46 +395,104 @@ static std::optional<std::string_view> ExtractTemplateBaseName(std::string_view 
     return base;
 }
 
-static bool IsSymbolTableTemplateClass(std::string_view templateName, const SymbolTable& symbolTable)
+static bool HasListConstructorMember(std::string_view qualifiedName, std::string_view name,
+                                     const SymbolTable& symbolTable)
 {
-    const std::string nameStr(templateName);
-    const auto syms = symbolTable.FindSymbolsPtr(nameStr);
-    const auto typeSymbols = syms ? *syms : symbolTable.FindTypeSymbolsByShortName(nameStr);
-    for (const auto& sym : typeSymbols)
+    const auto ctors = symbolTable.FindMemberSymbolPtr(qualifiedName, name);
+    if (!ctors)
     {
-        if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+        return false;
+    }
+    for (const auto& ctor : *ctors)
+    {
+        if (IsListConstructor(ctor))
         {
-            const auto& clsSig = std::get<ClassSignature>(sym.signature);
-            if (clsSig.isTemplate || !clsSig.templateParams.empty())
-            {
-                return true;
-            }
+            return true;
         }
     }
     return false;
 }
 
-bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* symbolTable,
-                          std::string_view arrayTypeName)
+static bool CheckClassSymbolListSupport(const Symbol& sym, const SymbolTable& symbolTable)
+{
+    if (sym.type != SymbolType::Class)
+    {
+        return false;
+    }
+    if (std::holds_alternative<ClassSignature>(sym.signature))
+    {
+        const auto& clsSig = std::get<ClassSignature>(sym.signature);
+        if (clsSig.hasListPattern)
+        {
+            return true;
+        }
+    }
+    return HasListConstructorMember(sym.qualifiedName, sym.name, symbolTable);
+}
+
+static bool ClassAcceptsInitializerList(const std::string& cleanType, const SymbolTable& symbolTable)
+{
+    const auto toSyms = symbolTable.FindSymbolsPtr(cleanType + "::" + cleanType);
+    if (toSyms)
+    {
+        for (const auto& sym : *toSyms)
+        {
+            if (IsListConstructor(sym))
+            {
+                return true;
+            }
+        }
+    }
+    const auto shortName = LastScopeSegment(cleanType);
+    const auto shortSyms = symbolTable.FindTypeSymbolsByShortName(shortName);
+    for (const auto& sym : shortSyms)
+    {
+        if (CheckClassSymbolListSupport(sym, symbolTable))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ParameterAcceptsInitializerList(const ParameterInformation& param, const SymbolTable* symbolTable,
+                                     std::string_view arrayTypeName)
 {
     if (param.typeName.ends_with("[]") || param.rawText.find("[]") != std::string::npos)
     {
         return true;
     }
 
-    const auto templateName = ExtractTemplateBaseName(param.typeName);
-    if (!templateName)
+    const std::string cleanType = NormalizeType(param.typeName, arrayTypeName);
+    if (cleanType.empty() || IsCorePrimitive(cleanType))
     {
         return false;
     }
 
     const std::string_view effectiveArrayName = arrayTypeName.empty() ? "array" : arrayTypeName;
-    if (*templateName == effectiveArrayName || *templateName == "array")
+    const auto templateName = ExtractTemplateBaseName(cleanType);
+    if (templateName)
+    {
+        if (*templateName == effectiveArrayName)
+        {
+            return true;
+        }
+        return symbolTable ? ClassAcceptsInitializerList(std::string(*templateName), *symbolTable) : false;
+    }
+
+    if (cleanType == effectiveArrayName)
     {
         return true;
     }
 
-    return symbolTable ? IsSymbolTableTemplateClass(*templateName, *symbolTable) : true;
+    return symbolTable ? ClassAcceptsInitializerList(cleanType, *symbolTable) : false;
+}
+
+
+bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* symbolTable,
+                          std::string_view arrayTypeName)
+{
+    return ParameterAcceptsInitializerList(param, symbolTable, arrayTypeName);
 }
 
 bool IsSameType(const std::string& a, const std::string& b)

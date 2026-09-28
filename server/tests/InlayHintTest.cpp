@@ -1031,6 +1031,69 @@ TEST_CASE("InlayHintHandler - Invariant Randomized Omitted Default Arguments")
     }
 }
 
+TEST_CASE("InlayHint - Scoped calls and enum arguments")
+{
+    const std::string nsHud = test::GenerateRandomSymbolName("HUD");
+    const std::string nsMoney = test::GenerateRandomSymbolName("MONEY");
+    const std::string fnUpdate = test::GenerateRandomSymbolName("Update");
+    const std::string nsStore = test::GenerateRandomSymbolName("Store");
+    const std::string enumName = test::GenerateRandomSymbolName("KeyType");
+    const std::string enumMember = test::GenerateRandomSymbolName("KEY_MONEY");
+    const std::string fnGet = test::GenerateRandomSymbolName("Get");
+    const std::string playerClass = test::GenerateRandomSymbolName("CBasePlayer");
+    const std::string paramPlayer = test::GenerateRandomSymbolName("pPlayer");
+    const std::string paramVal = test::GenerateRandomSymbolName("iValue");
+    const std::string paramKey = test::GenerateRandomSymbolName("key");
+
+    std::string code =
+        "class " + playerClass + " {}\n"
+        "enum " + enumName + " { " + enumMember + " }\n"
+        "namespace " + nsStore + " {\n"
+        "    int " + fnGet + "(" + enumName + " " + paramKey + ", " + playerClass + "@ " + paramPlayer + ") { return 0; }\n"
+        "}\n"
+        "namespace " + nsHud + " {\n"
+        "    namespace " + nsMoney + " {\n"
+        "        void " + fnUpdate + "(" + playerClass + "@ " + paramPlayer + ", int " + paramVal + ") {}\n"
+        "    }\n"
+        "}\n"
+        "void main(" + playerClass + "@ target) {\n"
+        "    " + nsHud + "::" + nsMoney + "::" + fnUpdate + "(target, " + nsStore + "::" + fnGet + "(" + enumName + "::" + enumMember + ", target));\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+    REQUIRE(!hints->empty());
+
+    bool foundUpdatePlayer = false;
+    bool foundUpdateVal = false;
+    bool foundGetKey = false;
+
+    for (const auto& hint : *hints)
+    {
+        if (std::holds_alternative<std::string>(hint.label))
+        {
+            std::string label = std::get<std::string>(hint.label);
+            if (label == paramPlayer + ":")
+            {
+                foundUpdatePlayer = true;
+            }
+            else if (label == paramVal + ":")
+            {
+                foundUpdateVal = true;
+            }
+            else if (label == paramKey + ":")
+            {
+                foundGetKey = true;
+            }
+        }
+    }
+
+    CHECK(foundUpdatePlayer);
+    CHECK(foundUpdateVal);
+    CHECK(foundGetKey);
+}
+
 
 
 

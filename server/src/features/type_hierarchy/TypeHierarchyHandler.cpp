@@ -45,7 +45,7 @@ lsp::Range ToRange(const analysis::SourceRange& range)
 lsp::TypeHierarchyItem ToItem(const Symbol& sym)
 {
     lsp::TypeHierarchyItem item;
-    item.name = analysis::LastScopeSegment(sym.name);
+    item.name = std::string(analysis::LastScopeSegment(sym.name));
     item.kind = sym.type == SymbolType::Interface ? lsp::SymbolKind::Interface : lsp::SymbolKind::Class;
     item.uri = lsp::DocumentUri::parse(sym.fileUri);
     std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
@@ -72,7 +72,7 @@ lsp::TypeHierarchyItem ToItem(const Symbol& sym)
 }
 
 /** @brief The type declarations a bare name resolves to, if any. */
-std::vector<Symbol> FindTypeDeclarations(const std::string& name, const SymbolTable& table)
+std::vector<Symbol> FindTypeDeclarations(std::string_view name, const SymbolTable& table)
 {
     std::vector<Symbol> found;
     const auto symbols = table.FindSymbolsPtr(name);
@@ -342,7 +342,7 @@ std::vector<Symbol> ResolveBaseSymbols(const std::string& cleanBase, std::string
     {
         baseSymbols = FindTypeDeclarations(std::string(declPrefix) + "::" + cleanBase, symbolTable);
     }
-    const std::string baseName = analysis::LastScopeSegment(cleanBase);
+    const std::string_view baseName = analysis::LastScopeSegment(cleanBase);
     if (baseSymbols.empty() && !baseName.empty())
     {
         baseSymbols = FindTypeDeclarations(baseName, symbolTable);
@@ -370,12 +370,7 @@ std::vector<Symbol> ResolveBaseSymbols(const std::string& cleanBase, std::string
 void CollectSupertypesForDeclaration(const Symbol& declaration, const SymbolTable& symbolTable,
                                      std::vector<std::string>& seen, std::vector<lsp::TypeHierarchyItem>& items)
 {
-    std::string declPrefix;
-    const auto lastScope = declaration.name.rfind("::");
-    if (lastScope != std::string::npos)
-    {
-        declPrefix = declaration.name.substr(0, lastScope);
-    }
+    const std::string& declPrefix = declaration.containerName;
 
     for (const auto& base : DeclaredBases(declaration))
     {
@@ -543,7 +538,7 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> GetSupertypes(const TypeHiera
 
 std::optional<std::vector<lsp::TypeHierarchyItem>> GetSubtypes(const TypeHierarchyItemRequest& request)
 {
-    const std::string target = analysis::LastScopeSegment(request.item.name);
+    const std::string target{analysis::LastScopeSegment(request.item.name)};
     if (target.empty())
     {
         return std::nullopt;

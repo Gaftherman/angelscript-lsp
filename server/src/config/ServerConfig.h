@@ -28,6 +28,7 @@ struct FeatureFlags
     bool enableHover = true;
     bool enableDefinition = true;
     bool enableCompletion = true;
+    bool completionSmartTypeRanking = true;
     bool enableSemanticTokens = true;
     bool enableSignatureHelp = true;
     bool enablePredefinedLoader = true;

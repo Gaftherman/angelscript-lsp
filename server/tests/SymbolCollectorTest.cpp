@@ -802,3 +802,24 @@ TEST_CASE("SymbolCollector - Invariant: Randomized Nested Declarations Construct
     CHECK(enumScopedMem[0].containerName == nsName + "::" + enumName);
     CHECK(enumScopedMem[0].qualifiedName == nsName + "::" + enumName + "::" + memberName);
 }
+
+TEST_CASE("SymbolCollector - Multi-colon syntax error (::: or ::::) is flagged as as-syntax-error")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("TestNS");
+    const std::string code =
+        "namespace " + nsName + " { void DoWork() {} }\n"
+        "void main() {\n"
+        "    " + nsName + ":::\n"
+        "}\n";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const auto diagnostics = collector.CollectSymbols("file:///test_triple_colon.as", code, parser, table);
+
+    const bool hasSyntaxError = std::any_of(diagnostics.begin(), diagnostics.end(),
+                                            [](const Diagnostic& d) { return d.code == "as-syntax-error"; });
+    CHECK(hasSyntaxError);
+}
+

@@ -61,7 +61,7 @@ bool IsSameType(const std::string& a, const std::string& b)
 
 /** @brief Visits every symbol registered under a qualified name without copying the bucket.
  *  @param visitor Returns true to stop the walk. */
-void ForEachSymbolNamed(const std::string& qualifiedName, const SymbolTable& table,
+void ForEachSymbolNamed(std::string_view qualifiedName, const SymbolTable& table,
                         const std::function<bool(const Symbol&)>& visitor)
 {
     const auto bucket = table.FindSymbolsPtr(qualifiedName);
@@ -107,7 +107,7 @@ TypeDeclarationInfo FindTypeDeclaration(const std::string& typeName, const Symbo
         return info;
     }
 
-    const std::string bare = LastScopeSegment(typeName);
+    const std::string_view bare = LastScopeSegment(typeName);
     const auto matches = table.FindTypeSymbolsByShortName(bare);
     for (const auto& sym : matches)
     {
@@ -127,11 +127,11 @@ TypeDeclarationInfo FindTypeDeclaration(const std::string& typeName, const Symbo
 bool ResolvesToEnum(const std::string& typeName, const SymbolTable& table)
 {
     bool found = false;
-    const std::string bare = LastScopeSegment(typeName);
+    const std::string_view bare = LastScopeSegment(typeName);
 
-    for (const auto& candidate : {std::cref(typeName), std::cref(bare)})
+    for (const auto candidate : {std::string_view(typeName), bare})
     {
-        ForEachSymbolNamed(candidate.get(), table,
+        ForEachSymbolNamed(candidate, table,
                            [&found](const Symbol& sym)
                            {
                                if (sym.type == SymbolType::Enum)
@@ -156,11 +156,11 @@ bool ResolvesToEnum(const std::string& typeName, const SymbolTable& table)
 bool ResolvesToNonClassDeclaration(const std::string& typeName, const SymbolTable& table)
 {
     bool found = false;
-    const std::string bare = LastScopeSegment(typeName);
+    const std::string_view bare = LastScopeSegment(typeName);
 
-    for (const auto& candidate : {std::cref(typeName), std::cref(bare)})
+    for (const auto candidate : {std::string_view(typeName), bare})
     {
-        ForEachSymbolNamed(candidate.get(), table,
+        ForEachSymbolNamed(candidate, table,
                            [&found](const Symbol& sym)
                            {
                                if (sym.type == SymbolType::Enum || sym.type == SymbolType::Typedef ||
@@ -219,7 +219,7 @@ void ForEachConstructor(const std::string& typeName, const SymbolTable& table,
     const size_t open = typeName.find('<');
     const std::string unparameterized = (open == std::string::npos) ? typeName : typeName.substr(0, open);
 
-    const std::string bare = LastScopeSegment(unparameterized);
+    const std::string bare{LastScopeSegment(unparameterized)};
     bool sawAny = false;
     bool stopped = false;
 
@@ -1468,7 +1468,7 @@ std::string ForeachValueType(const std::string& containerType, uint32_t variable
     }
 
     const size_t open = cleaned.find('<');
-    const std::string bare = LastScopeSegment((open == std::string::npos) ? cleaned : cleaned.substr(0, open));
+    const std::string bare{LastScopeSegment((open == std::string::npos) ? cleaned : cleaned.substr(0, open))};
 
     const TemplateBinding binding = BindTemplateArguments(cleaned, ctx.request.symbolTable);
     const std::string method = "opForValue" + std::to_string(variableIndex);
@@ -1692,7 +1692,7 @@ std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& ta
     {
         return result;
     }
-    const std::string bare = LastScopeSegment(name);
+    const std::string_view bare = LastScopeSegment(name);
     const auto matches = table.FindTypeSymbolsByShortName(bare);
     for (const auto& sym : matches)
     {
@@ -1839,7 +1839,7 @@ static std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName
     addCandidates(funcName);
     if (candidates.empty())
     {
-        addCandidates(LastScopeSegment(funcName));
+        addCandidates(std::string(LastScopeSegment(funcName)));
     }
     return candidates;
 }
@@ -2178,20 +2178,12 @@ const Scope* ResolveNodeScope(TSNode node, const TypeConversionCheckRequest& req
  */
 TSNode ExtractConditionNode(TSNode node, std::string_view nodeType)
 {
-    TSNode condition{};
-    if (nodeType == "for_statement" || nodeType == "ternary_expression")
+    TSNode condition = parser::GetChildByField(node, parser::fields::Condition);
+    if (!ts_node_is_null(condition) && std::string_view(ts_node_type(condition)) == "expression_statement")
     {
-        condition = parser::GetChildByField(node, parser::fields::Condition);
-        if (!ts_node_is_null(condition) && std::string_view(ts_node_type(condition)) == "expression_statement")
-        {
-            condition = ts_node_named_child(condition, 0);
-        }
-        if (ts_node_is_null(condition) && nodeType == "ternary_expression")
-        {
-            condition = ts_node_named_child(node, 0);
-        }
+        condition = ts_node_named_child(condition, 0);
     }
-    else
+    if (ts_node_is_null(condition))
     {
         condition = ts_node_named_child(node, nodeType == "do_while_statement" ? 1 : 0);
     }
@@ -3327,12 +3319,15 @@ void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Sco
  */
 void ProcessReturnStatementNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (ts_node_named_child_count(node) == 0)
+    TSNode expr = parser::GetChildByField(node, parser::fields::Value);
+    if (ts_node_is_null(expr))
     {
-        return;
+        if (ts_node_named_child_count(node) == 0)
+        {
+            return;
+        }
+        expr = ts_node_named_child(node, 0);
     }
-
-    TSNode expr = ts_node_named_child(node, 0);
     const Scope* scope = ResolveNodeScope(node, request);
     TSNode parent = ts_node_parent(node);
     while (!ts_node_is_null(parent))

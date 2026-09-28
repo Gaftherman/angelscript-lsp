@@ -262,10 +262,71 @@ void CollectEnclosingClassCallees(const std::string& calleeName, TSNode callNode
  * @param[in] request Inlay hint request context.
  * @return Vector of candidate symbols.
  */
+/**
+ * @brief Resolves scoped callee candidates by walking enclosing namespaces and inherited hierarchies.
+ * @param[in] calleeName Callee identifier string.
+ * @param[in] callNode AST call_expression node.
+ * @param[in] request Inlay hint request context.
+ * @return Vector of resolved candidate symbols.
+ */
+std::vector<analysis::Symbol> CollectScopedCalleeCandidates(const std::string& calleeName, TSNode callNode,
+                                                            const InlayHintRequest& request)
+{
+    std::vector<analysis::Symbol> candidates;
+    if (calleeName.find("::") == std::string::npos)
+    {
+        return candidates;
+    }
+    size_t lastColon = calleeName.rfind("::");
+    std::string targetContainer = calleeName.substr(0, lastColon);
+    std::string methodName = calleeName.substr(lastColon + 2);
+
+    auto hierarchy = analysis::GetInheritedTypeHierarchy(targetContainer, request.symbolTable);
+    for (const auto& typeName : hierarchy)
+    {
+        auto syms = request.symbolTable.FindSymbols(typeName + "::" + methodName);
+        if (!syms.empty())
+        {
+            candidates.insert(candidates.end(), syms.begin(), syms.end());
+            return candidates;
+        }
+    }
+
+    auto containers = analysis::GetEnclosingContainers(callNode, request.sourceCode);
+    for (auto it = containers.rbegin(); it != containers.rend(); ++it)
+    {
+        if (it->kind == analysis::ContainerKind::Namespace)
+        {
+            std::string nsPrefix = it->qualifiedName.empty() ? it->name : it->qualifiedName;
+            auto scopedSyms = request.symbolTable.FindSymbols(nsPrefix + "::" + calleeName);
+            if (!scopedSyms.empty())
+            {
+                return scopedSyms;
+            }
+            auto scopedHier =
+                analysis::GetInheritedTypeHierarchy(nsPrefix + "::" + targetContainer, request.symbolTable);
+            for (const auto& typeName : scopedHier)
+            {
+                auto syms = request.symbolTable.FindSymbols(typeName + "::" + methodName);
+                if (!syms.empty())
+                {
+                    candidates.insert(candidates.end(), syms.begin(), syms.end());
+                    return candidates;
+                }
+            }
+        }
+    }
+    return candidates;
+}
+
 std::vector<analysis::Symbol> CollectFreeCalleeCandidates(TSNode funcNode, TSNode callNode,
                                                           const InlayHintRequest& request)
 {
     std::string calleeName = GetNodeText(funcNode, request.sourceCode);
+    if (calleeName.starts_with("::"))
+    {
+        calleeName = calleeName.substr(2);
+    }
     auto candidateSymbols = analysis::FindSymbolsInScope(calleeName, callNode, request.sourceCode, request.symbolTable);
 
     CollectEnclosingClassCallees(calleeName, callNode, request, candidateSymbols);
@@ -273,6 +334,11 @@ std::vector<analysis::Symbol> CollectFreeCalleeCandidates(TSNode funcNode, TSNod
     if (candidateSymbols.empty())
     {
         candidateSymbols = request.symbolTable.FindSymbols(calleeName);
+    }
+
+    if (candidateSymbols.empty())
+    {
+        candidateSymbols = CollectScopedCalleeCandidates(calleeName, callNode, request);
     }
 
     for (const auto& sym : candidateSymbols)
@@ -460,9 +526,7 @@ std::vector<analysis::Symbol> CollectConstructorCandidates(const std::string& ba
                                                            const InlayHintRequest& request)
 {
     std::vector<analysis::Symbol> candidateSymbols;
-    size_t lastColon = baseName.rfind("::");
-    std::string ctorName = (lastColon != std::string::npos) ? baseName + "::" + baseName.substr(lastColon + 2)
-                                                            : baseName + "::" + baseName;
+    const std::string ctorName = baseName + "::" + std::string(analysis::LastScopeSegment(baseName));
 
     auto ctorSyms = request.symbolTable.FindSymbols(ctorName);
     for (const auto& s : ctorSyms)

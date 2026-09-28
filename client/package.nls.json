@@ -29,6 +29,7 @@
   "config.features.hover.description": "Show type and documentation tooltips on hover.",
   "config.features.definition.description": "Enable Go to Definition and Go to Type Definition.",
   "config.features.completion.description": "Enable auto-completion suggestions.",
+  "config.completion.smartTypeRanking.description": "Prioritize autocompletion items matching expected parameter or assignment target types.",
   "config.features.semanticTokens.description": "Enable semantic syntax highlighting.",
   "config.features.signatureHelp.description": "Show parameter hints while typing a call.",
   "config.features.predefinedLoader.description": "Load predefined stub files describing the host application's API.",
