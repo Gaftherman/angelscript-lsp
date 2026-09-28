@@ -4,6 +4,14 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.9.18] - 2026-09-27
+
+### Multi-Parameter Named Arguments Reordering, Container Initializer Lists, & Oracle Parity Verification
+
+- Supported multi-parameter named arguments passed out-of-order, mixed with optional default arguments and container initializer lists.
+- Enabled parameter-targeted initializer list validation when using named argument syntax.
+- Expanded hover provider tests and verified full parity against the AngelScript compiler oracle.
+
 ## [0.9.17] - 2026-09-27
 
 ### Named Arguments Parameter Label Diagnostics, Optional Parameter Fallbacks, & Hover Resolution

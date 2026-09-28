@@ -2,6 +2,23 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.18] - 2026-09-27
+
+### Multi-Parameter Named Arguments Reordering, Container Initializer Lists, & Oracle Parity Verification
+
+- Multi-Parameter Named Argument Resolution & Reordering:
+  - Validated arbitrary parameter reordering and omission of default parameters against the official AngelScript compiler oracle (`angelscript_oracle.exe`).
+  - Added official parity acceptance test `doc_p128_named_arguments_multi_reordered.as` verifying calls of shape `funct(argS: {"hi", "hellol"}, id: 1, f: false)` and `doc_r96_duplicate_named_argument.as` verifying rejections of duplicate named arguments.
+- Initializer List Validation in Named Arguments:
+  - Updated `CheckInitializerListArgs` in `CallChecker.cpp` to dynamically map arguments to parameters using `args.argNames[i]` and `fn.parameters`.
+  - Initializer lists passed to named arguments (e.g. `argS: {"hi", "hellol"}`) are validated directly against their target parameter type (`array<string>`), enabling element-level diagnostics for genuine mismatches while remaining clean for valid initializers.
+- Hover Multi-Parameter Inspection:
+  - Added end-to-end tests in `FeatureFidelityHarnessTest.cpp` asserting that hovering on each distinct named argument label (`argS:`, `id:`, `f:`) displays the exact parameter type and default expression.
+- Tests & Validation:
+  - 2,040 C++ unit and regression tests passing.
+  - 49 client integration tests passing.
+  - All static quality gates clean (0 Lizard warnings, jscpd 2.14% <= 3%, 105 layer headers conformant).
+
 ## [0.9.17] - 2026-09-27
 
 ### Named Arguments Parameter Label Diagnostics, Optional Parameter Fallbacks, & Hover Resolution

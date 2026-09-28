@@ -210,4 +210,40 @@ TEST_SUITE("FeatureFidelityHarness")
 
         fixture.AssertHoverContains(uri, 8, charCol + 1, "bool " + paramName);
     }
+
+    TEST_CASE("Hover Inspection on multi-parameter named arguments displays each parameter declaration")
+    {
+        LspSemanticHarnessFixture fixture;
+        const std::string fnName = GenerateRandomSymbolName("ProcessData");
+        const std::string idParam = GenerateRandomSymbolName("id");
+        const std::string fParam = GenerateRandomSymbolName("f");
+        const std::string argSParam = GenerateRandomSymbolName("argS");
+
+        const std::string script = "void " + fnName + "(int " + idParam + " = 0, bool " + fParam + " = true, string " + argSParam + " = \"default\") {}\n"
+                                   "\n"
+                                   "void Test()\n"
+                                   "{\n"
+                                   "    " + fnName + "(" + argSParam + ": \"custom\", " + idParam + ": 10, " + fParam + ": false);\n"
+                                   "}\n";
+
+        const std::string uri = fixture.SandboxUri("scripts/hover_multi_named.as");
+        fixture.AddVirtualDocument(uri, script);
+
+        // Hover on argSParam
+        const size_t colArgS = script.find(argSParam + ":");
+        const size_t line4Start = script.rfind('\n', colArgS);
+        const uint32_t charColArgS = static_cast<uint32_t>(colArgS - line4Start - 1);
+        fixture.AssertHoverContains(uri, 4, charColArgS + 1, "string " + argSParam);
+
+        // Hover on idParam
+        const size_t colId = script.find(idParam + ":");
+        const uint32_t charColId = static_cast<uint32_t>(colId - line4Start - 1);
+        fixture.AssertHoverContains(uri, 4, charColId + 1, "int " + idParam);
+
+        // Hover on fParam
+        const size_t colF = script.find(fParam + ":");
+        const uint32_t charColF = static_cast<uint32_t>(colF - line4Start - 1);
+        fixture.AssertHoverContains(uri, 4, charColF + 1, "bool " + fParam);
+    }
 }
+

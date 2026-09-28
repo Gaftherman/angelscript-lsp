@@ -1038,18 +1038,41 @@ namespace
 /**
  * @brief Checks initializer list arguments against parameter target types.
  *
- * @param[in] argNodes Call argument AST nodes.
+ * @param[in] args Resolved call arguments.
  * @param[in] fn Target function signature.
  * @param[in] valCtx Call validation context.
  */
-void CheckInitializerListArgs(const std::vector<TSNode>& argNodes, const FunctionSignature& fn,
+void CheckInitializerListArgs(const CallArgTypes& args, const FunctionSignature& fn,
                               const CallValidationContext& valCtx)
 {
-    for (size_t i = 0; i < argNodes.size() && i < fn.parameters.size(); ++i)
+    for (size_t i = 0; i < args.argNodes.size(); ++i)
     {
-        if (NodeType(argNodes[i]) == "initializer_list")
+        if (NodeType(args.argNodes[i]) != "initializer_list")
         {
-            CheckInitializerListAgainstType(argNodes[i], fn.parameters[i].typeName,
+            continue;
+        }
+
+        const std::string_view argName = (i < args.argNames.size()) ? std::string_view(args.argNames[i]) : std::string_view{};
+        size_t paramIdx = size_t(-1);
+        if (!argName.empty())
+        {
+            for (size_t p = 0; p < fn.parameters.size(); ++p)
+            {
+                if (fn.parameters[p].name == argName)
+                {
+                    paramIdx = p;
+                    break;
+                }
+            }
+        }
+        else if (i < fn.parameters.size())
+        {
+            paramIdx = i;
+        }
+
+        if (paramIdx < fn.parameters.size())
+        {
+            CheckInitializerListAgainstType(args.argNodes[i], fn.parameters[paramIdx].typeName,
                                             {valCtx.request.sourceCode, valCtx.scope}, valCtx.ctx);
         }
     }
@@ -1582,9 +1605,9 @@ void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope,
     const CallArgTypes args = ResolveCallArguments(valCtx);
     const std::vector<const Symbol*> matchingArity = FilterMatchingArityCandidates(calleeRes.candidates, argumentCount);
 
-    if (matchingArity.size() == 1 && !sawNamedArg && matchingArity.front())
+    if (matchingArity.size() == 1 && matchingArity.front())
     {
-        CheckInitializerListArgs(args.argNodes, matchingArity.front()->GetFunction(), valCtx);
+        CheckInitializerListArgs(args, matchingArity.front()->GetFunction(), valCtx);
     }
 
     if (!sawNamedArg)

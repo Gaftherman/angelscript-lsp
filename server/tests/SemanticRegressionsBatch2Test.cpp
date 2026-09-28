@@ -427,6 +427,98 @@ TEST_CASE("Named arguments - Parameter label does not mark local variable as use
     CHECK(HasDiagCode(diags, "as-warn-unused-variable"));
 }
 
+TEST_CASE("Named arguments - Multi-parameter reordered invocation with container initializer list")
+{
+    const std::string fnName = GenerateRandomSymbolName("CustomFunct");
+    const std::string idParam = GenerateRandomSymbolName("id");
+    const std::string fParam = GenerateRandomSymbolName("f");
+    const std::string argSParam = GenerateRandomSymbolName("argS");
+
+    const std::string predefined =
+        "class string {};\n"
+        "template <typename T> class array {};\n"
+        "void " + fnName + "(int " + idParam + " = 0, bool " + fParam + " = true, array<string> " + argSParam + " = array<string>()) {}\n";
+
+    const std::string script =
+        "void Test() {\n"
+        "    " + fnName + "(" + argSParam + ": {\"hi\", \"hellol\"}, " + idParam + ": 1, " + fParam + ": false);\n"
+        "    " + fnName + "(" + argSParam + ": {\"only\"});\n"
+        "    " + fnName + "(10, " + argSParam + ": {\"mixed\"});\n"
+        "    " + fnName + "(" + fParam + ": false, " + idParam + ": 42);\n"
+        "}\n";
+
+    const auto diags = AnalyzeSnippetWithPredefined(script, predefined);
+    DumpDiags("Multi-Param Reordered Named Args", diags);
+    CHECK_FALSE(HasDiagCode(diags, "as-warn-undeclared-identifier"));
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-argument-count"));
+}
+
+TEST_CASE("Named arguments - Rejections for duplicate, conflict, and unknown names")
+{
+    const std::string fnName = GenerateRandomSymbolName("RejectionTestFn");
+    const std::string idParam = GenerateRandomSymbolName("id");
+    const std::string fParam = GenerateRandomSymbolName("f");
+
+    const std::string predefined =
+        "void " + fnName + "(int " + idParam + ", bool " + fParam + ") {}\n";
+
+    // Duplicate named argument
+    const std::string scriptDupe =
+        "void TestDupe() {\n"
+        "    " + fnName + "(" + idParam + ": 1, " + idParam + ": 2);\n"
+        "}\n";
+    const auto diagsDupe = AnalyzeSnippetWithPredefined(scriptDupe, predefined);
+    CHECK(HasDiagCode(diagsDupe, "as-err-call-no-matching-signature"));
+
+    // Positional argument conflicting with named argument
+    const std::string scriptConflict =
+        "void TestConflict() {\n"
+        "    " + fnName + "(1, " + idParam + ": 2);\n"
+        "}\n";
+    const auto diagsConflict = AnalyzeSnippetWithPredefined(scriptConflict, predefined);
+    CHECK(HasDiagCode(diagsConflict, "as-err-call-no-matching-signature"));
+
+    // Positional argument after named argument
+    const std::string scriptPosAfterNamed =
+        "void TestPosAfterNamed() {\n"
+        "    " + fnName + "(" + idParam + ": 1, true);\n"
+        "}\n";
+    const auto diagsPosAfterNamed = AnalyzeSnippetWithPredefined(scriptPosAfterNamed, predefined);
+    CHECK(HasDiagCode(diagsPosAfterNamed, "as-err-positional-after-named-arg"));
+
+    // Unknown named argument
+    const std::string scriptUnknown =
+        "void TestUnknown() {\n"
+        "    " + fnName + "(unknownParam: 1, " + fParam + ": true);\n"
+        "}\n";
+    const auto diagsUnknown = AnalyzeSnippetWithPredefined(scriptUnknown, predefined);
+    CHECK(HasDiagCode(diagsUnknown, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("Named arguments - Incompatible element in named initializer list emits diagnostic")
+{
+    const std::string fnName = GenerateRandomSymbolName("InitListMismatchFn");
+    const std::string argSParam = GenerateRandomSymbolName("argS");
+    const std::string customClass = GenerateRandomSymbolName("MyCustomClass");
+
+    const std::string predefined =
+        "class string {};\n"
+        "template <typename T> class array {};\n"
+        "class " + customClass + " {};\n"
+        "void " + fnName + "(int id = 0, array<string> " + argSParam + " = array<string>()) {}\n";
+
+    const std::string script =
+        "void Test() {\n"
+        "    " + customClass + " customObj;\n"
+        "    " + fnName + "(" + argSParam + ": {customObj});\n"
+        "}\n";
+
+    const auto diags = AnalyzeSnippetWithPredefined(script, predefined);
+    DumpDiags("Named Init List Element Mismatch", diags);
+    CHECK(HasDiagCode(diags, "as-err-no-implicit-conversion"));
+}
+
 TEST_SUITE_END();
 
 } // namespace angel_lsp::test
