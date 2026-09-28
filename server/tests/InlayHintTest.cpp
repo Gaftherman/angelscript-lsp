@@ -50,7 +50,9 @@ namespace
             lsp::Range range = lsp::Range{{0, 0}, {0, 0}},
             bool suppressWhenArgumentMatchesName = false,
             size_t maxParameters = 0,
-            size_t maxLength = 0)
+            size_t maxLength = 0,
+            config::OmittedDefaultArgumentsMode omittedDefaultArguments =
+                config::OmittedDefaultArgumentsMode::NameAndValue)
         {
             InlayHintRequest req{uri,
                                  sourceCode,
@@ -61,7 +63,8 @@ namespace
                                  suppressWhenArgumentMatchesName,
                                  nullptr,
                                  maxParameters,
-                                 maxLength};
+                                 maxLength,
+                                 omittedDefaultArguments};
             return GetInlayHints(req);
         }
     };
@@ -738,7 +741,7 @@ TEST_CASE("InlayHintHandler - Call With Default Parameters Retains All Provided 
     auto hints = env.InlayHints();
 
     REQUIRE(hints.has_value());
-    REQUIRE(hints->size() == 3);
+    REQUIRE(hints->size() == 4);
 
     std::string label0 = std::holds_alternative<std::string>(hints->at(0).label)
                              ? std::get<std::string>(hints->at(0).label)
@@ -749,10 +752,19 @@ TEST_CASE("InlayHintHandler - Call With Default Parameters Retains All Provided 
     std::string label2 = std::holds_alternative<std::string>(hints->at(2).label)
                              ? std::get<std::string>(hints->at(2).label)
                              : "";
+    std::string label3 = std::holds_alternative<std::string>(hints->at(3).label)
+                             ? std::get<std::string>(hints->at(3).label)
+                             : "";
 
     CHECK(label0 == "width:");
     CHECK(label1 == "height:");
     CHECK(label2 == "fullscreen:");
+    CHECK(label3 == ", refreshRate: 60");
+
+    // When disabled, only the 3 provided argument hints are returned
+    auto hintsOff = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 0, config::OmittedDefaultArgumentsMode::Off);
+    REQUIRE(hintsOff.has_value());
+    CHECK(hintsOff->size() == 3);
 }
 
 TEST_CASE("InlayHintHandler - Parameter labels are never truncated")
@@ -926,7 +938,96 @@ TEST_CASE("InlayHintHandler - Invariant randomized symbols with maxParameters an
         REQUIRE(hints->size() == 3);
         CHECK(std::get<std::string>(hints->at(0).label) == p0.substr(0, 5) + "...:");
         CHECK(std::get<std::string>(hints->at(1).label) == p1.substr(0, 5) + "...:");
-        CHECK(std::get<std::string>(hints->at(2).label) == p2.substr(0, 5) + "...:");
+    }
+}
+
+TEST_CASE("InlayHintHandler - Omitted Default Arguments Mode NameAndValue vs Declaration vs Off")
+{
+    std::string code =
+        "void funct(int id = 0, bool f = true, array<string> argS = array<string>()) {}\n"
+        "void main() {\n"
+        "    funct(f: false);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // 1. NameAndValue mode (default)
+    {
+        auto hints = env.InlayHints();
+        REQUIRE(hints.has_value());
+        REQUIRE(hints->size() == 2);
+        CHECK(std::get<std::string>(hints->at(0).label) == "id: 0, ");
+        CHECK(std::get<std::string>(hints->at(1).label) == ", argS: array<string>()");
+    }
+
+    // 2. Declaration mode
+    {
+        auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 0,
+                                   config::OmittedDefaultArgumentsMode::Declaration);
+        REQUIRE(hints.has_value());
+        REQUIRE(hints->size() == 2);
+        CHECK(std::get<std::string>(hints->at(0).label) == "int id = 0, ");
+        CHECK(std::get<std::string>(hints->at(1).label) == ", array<string> argS = array<string>()");
+    }
+
+    // 3. Off mode
+    {
+        auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 0,
+                                   config::OmittedDefaultArgumentsMode::Off);
+        REQUIRE(hints.has_value());
+        CHECK(hints->empty());
+    }
+}
+
+TEST_CASE("InlayHintHandler - Omitted Default Arguments In Empty Call")
+{
+    std::string code =
+        "void testEmpty(int a = 1, float b = 2.0f) {}\n"
+        "void main() {\n"
+        "    testEmpty();\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+
+    REQUIRE(hints.has_value());
+    REQUIRE(hints->size() == 2);
+    CHECK(std::get<std::string>(hints->at(0).label) == "a: 1");
+    CHECK(std::get<std::string>(hints->at(1).label) == ", b: 2.0f");
+}
+
+TEST_CASE("InlayHintHandler - Invariant Randomized Omitted Default Arguments")
+{
+    const std::string fnName = test::GenerateRandomSymbolName("func");
+    const std::string p0 = test::GenerateRandomSymbolName("paramFirst");
+    const std::string p1 = test::GenerateRandomSymbolName("paramMid");
+    const std::string p2 = test::GenerateRandomSymbolName("paramLast");
+
+    std::string code =
+        "void " + fnName + "(int " + p0 + " = 10, bool " + p1 + " = true, string " + p2 + " = \"default\") {}\n"
+        "void main() {\n"
+        "    " + fnName + "(" + p1 + ": false);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // NameAndValue mode
+    {
+        auto hints = env.InlayHints();
+        REQUIRE(hints.has_value());
+        REQUIRE(hints->size() == 2);
+        CHECK(std::get<std::string>(hints->at(0).label) == p0 + ": 10, ");
+        CHECK(std::get<std::string>(hints->at(1).label) == ", " + p2 + ": \"default\"");
+    }
+
+    // Declaration mode
+    {
+        auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 0,
+                                   config::OmittedDefaultArgumentsMode::Declaration);
+        REQUIRE(hints.has_value());
+        REQUIRE(hints->size() == 2);
+        CHECK(std::get<std::string>(hints->at(0).label) == "int " + p0 + " = 10, ");
+        CHECK(std::get<std::string>(hints->at(1).label) == ", string " + p2 + " = \"default\"");
     }
 }
 

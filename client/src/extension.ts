@@ -991,6 +991,11 @@ export function buildServerArgs(): string[] {
         args.push(`--inlay-hints-max-length=${maxLength}`);
     }
 
+    const omittedDefaults = config.get<string>('inlayHints.omittedDefaultArguments', 'nameAndValue');
+    if (omittedDefaults) {
+        args.push(`--inlay-hints-omitted-defaults=${omittedDefaults}`);
+    }
+
     const logLevel = config.get<string>('server.logLevel', 'debug').trim();
     if (logLevel.length > 0) {
         args.push(`--log-level=${logLevel}`);

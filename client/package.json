@@ -2,7 +2,7 @@
   "name": "angelscript-gaftherman",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "0.9.18",
+  "version": "0.9.19",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -491,6 +491,22 @@
             "default": false,
             "scope": "resource",
             "markdownDescription": "%angelscript.inlayHints.suppressWhenArgumentMatchesName.description%"
+          },
+          "angelscript.inlayHints.omittedDefaultArguments": {
+            "type": "string",
+            "scope": "resource",
+            "enum": [
+              "nameAndValue",
+              "declaration",
+              "off"
+            ],
+            "enumDescriptions": [
+              "%config.inlayHints.omittedDefaultArguments.nameAndValue%",
+              "%config.inlayHints.omittedDefaultArguments.declaration%",
+              "%config.inlayHints.omittedDefaultArguments.off%"
+            ],
+            "default": "nameAndValue",
+            "markdownDescription": "%config.inlayHints.omittedDefaultArguments.description%"
           }
         }
       },

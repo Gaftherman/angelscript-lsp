@@ -364,6 +364,14 @@ suite('inlayHints settings in buildServerArgs', () => {
         const args = await withSetting('inlayHints.maxLength', 0, buildServerArgs);
         assert.ok(!args.some(arg => arg.startsWith('--inlay-hints-max-length=')), `unexpected --inlay-hints-max-length in ${JSON.stringify(args)}`);
     });
+
+    test('omittedDefaultArguments emits --inlay-hints-omitted-defaults flag', async () => {
+        const argsDecl = await withSetting('inlayHints.omittedDefaultArguments', 'declaration', buildServerArgs);
+        assert.ok(argsDecl.includes('--inlay-hints-omitted-defaults=declaration'), `expected --inlay-hints-omitted-defaults=declaration, got ${JSON.stringify(argsDecl)}`);
+
+        const argsOff = await withSetting('inlayHints.omittedDefaultArguments', 'off', buildServerArgs);
+        assert.ok(argsOff.includes('--inlay-hints-omitted-defaults=off'), `expected --inlay-hints-omitted-defaults=off, got ${JSON.stringify(argsOff)}`);
+    });
 });
 
 suite('portableStubPath', () => {

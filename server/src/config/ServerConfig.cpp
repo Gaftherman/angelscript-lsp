@@ -255,6 +255,7 @@ void PrintFeatureFlagsHelp()
         << "  --disable-inlay-hints                   Disable inlay hints\n"
         << "  --inlay-hints-suppress-when-argument-matches-name[=true|false] Suppress inlay hints when arg matches "
            "param name (default: false)\n"
+        << "  --inlay-hints-omitted-defaults=<mode>   Display mode for omitted defaults: off|nameAndValue|declaration (default: nameAndValue)\n"
         << "  --enable-code-action[=true|false]       Enable/disable code actions (default: true)\n"
         << "  --disable-code-action                   Disable code actions\n"
         << "  --disable-pull-diagnostics              Disable LSP 3.17 pull diagnostics\n"
@@ -471,8 +472,37 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
      "--disable-virtualmixindocuments", &FeatureFlags::enableVirtualMixinDocuments},
 };
 
+bool TryParseInlayHintOmittedDefaultsFlag(ServerConfig& config, ArgParseContext& ctx)
+{
+    if (ctx.key == "--inlay-hints-omitted-defaults" || ctx.key == "--inlay-hints-omitted-default-arguments")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val))
+        {
+            if (val == "off" || val == "false" || val == "0")
+            {
+                config.features.inlayHintsOmittedDefaultArguments = OmittedDefaultArgumentsMode::Off;
+            }
+            else if (val == "declaration")
+            {
+                config.features.inlayHintsOmittedDefaultArguments = OmittedDefaultArgumentsMode::Declaration;
+            }
+            else
+            {
+                config.features.inlayHintsOmittedDefaultArguments = OmittedDefaultArgumentsMode::NameAndValue;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 bool TryParseInlayHintFlag(ServerConfig& config, ArgParseContext& ctx)
 {
+    if (TryParseInlayHintOmittedDefaultsFlag(config, ctx))
+    {
+        return true;
+    }
     if (ctx.key == "--inlay-hints-suppress-when-argument-matches-name")
     {
         config.features.inlayHintsSuppressWhenArgumentMatchesName = ctx.GetBoolValue(true);

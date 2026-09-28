@@ -15,6 +15,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
+#include <fstream>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -517,6 +518,198 @@ TEST_CASE("Named arguments - Incompatible element in named initializer list emit
     const auto diags = AnalyzeSnippetWithPredefined(script, predefined);
     DumpDiags("Named Init List Element Mismatch", diags);
     CHECK(HasDiagCode(diags, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("SvenCoop v2.as - this.Get overload resolution with mutable ref")
+{
+    const std::string v2Path = "E:/Github/src/bts_rc/scripts/mikk155/meta_api/json/v2.as";
+    std::ifstream f(v2Path);
+    if (!f.is_open())
+    {
+        MESSAGE("v2.as not found, skipping direct file analysis");
+        return;
+    }
+    std::string script((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    f.close();
+
+    std::string predefined;
+    std::ifstream pf("E:/Github/src/bts_rc/as.predefined");
+    if (pf.is_open())
+    {
+        predefined.assign((std::istreambuf_iterator<char>(pf)), std::istreambuf_iterator<char>());
+    }
+
+    parser::AngelScriptParser parser;
+    analysis::SymbolTable table;
+    analysis::SymbolCollector collector(nullptr);
+
+    if (!predefined.empty())
+    {
+        collector.CollectSymbols("file:///E:/Github/src/bts_rc/as.predefined", predefined, parser, table);
+    }
+
+    std::ifstream jf("E:/Github/src/bts_rc/scripts/mikk155/meta_api/json.as");
+    if (jf.is_open())
+    {
+        std::string jsonCode((std::istreambuf_iterator<char>(jf)), std::istreambuf_iterator<char>());
+        collector.CollectSymbols("file:///E:/Github/src/bts_rc/scripts/mikk155/meta_api/json.as", jsonCode, parser, table);
+    }
+
+    auto diags = collector.CollectSymbols("file:///E:/Github/src/bts_rc/scripts/mikk155/meta_api/json/v2.as", script, parser, table);
+
+    analysis::LocalScopeCollector scopeCollector(nullptr);
+    auto scopes = scopeCollector.CollectScopes(script, parser);
+
+    TSTree* tree = parser.Parse(script);
+
+    analysis::SemanticAnalyzer analyzer(nullptr);
+    analysis::SemanticAnalysisRequest request{table, "file:///E:/Github/src/bts_rc/scripts/mikk155/meta_api/json/v2.as", ".as.predefined", nullptr};
+    request.sourceCode = script;
+    request.tree = tree;
+    if (scopes)
+    {
+        request.mutableScopeRoot = scopes.get();
+        request.scopeRoot = std::move(scopes);
+    }
+
+    auto semDiags = analyzer.Analyze(request);
+    diags.insert(diags.end(), semDiags.begin(), semDiags.end());
+    if (tree)
+    {
+        ts_tree_delete(tree);
+    }
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-ambiguous"));
+}
+
+TEST_CASE("Overload resolution - Mutable reference with default bool does not report ambiguity")
+{
+    const std::string cls = test::GenerateRandomSymbolName("CVal");
+    const std::string getFn = test::GenerateRandomSymbolName("Get");
+
+    std::string code =
+        "class " + cls + " {\n"
+        "    bool " + getFn + "(const string& in k, int& out val, bool strict = false) const { return false; }\n"
+        "    bool " + getFn + "(const string& in k, float& out val, bool strict = false) const { return false; }\n"
+        "    bool " + getFn + "(const string& in k, bool& out val, bool strict = false) const { return false; }\n"
+        "    bool " + getFn + "(const string& in k, string& out val, bool strict = false) const { return false; }\n"
+        "    void Test() {\n"
+        "        bool temp = false;\n"
+        "        bool strict = true;\n"
+        "        this." + getFn + "(\"key\", temp, strict);\n"
+        "    }\n"
+        "};\n";
+
+    parser::AngelScriptParser parser;
+    analysis::SymbolTable table;
+    analysis::SymbolCollector collector(nullptr);
+    auto diags = collector.CollectSymbols("file:///test.as", code, parser, table);
+
+    analysis::LocalScopeCollector scopeCollector(nullptr);
+    auto scopes = scopeCollector.CollectScopes(code, parser);
+    TSTree* tree = parser.Parse(code);
+
+    analysis::SemanticAnalyzer analyzer(nullptr);
+    analysis::SemanticAnalysisRequest request{table, "file:///test.as", ".as.predefined", nullptr};
+    request.sourceCode = code;
+    request.tree = tree;
+    if (scopes)
+    {
+        request.mutableScopeRoot = scopes.get();
+        request.scopeRoot = std::move(scopes);
+    }
+
+    auto semDiags = analyzer.Analyze(request);
+    diags.insert(diags.end(), semDiags.begin(), semDiags.end());
+    if (tree)
+    {
+        ts_tree_delete(tree);
+    }
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-ambiguous"));
+}
+
+TEST_CASE("Named arguments - Variable name matches parameter name")
+{
+    const std::string fnName = test::GenerateRandomSymbolName("func");
+    const std::string p0 = test::GenerateRandomSymbolName("id");
+    const std::string p1 = test::GenerateRandomSymbolName("flag");
+    const std::string p2 = test::GenerateRandomSymbolName("argList");
+
+    std::string code =
+        "int " + p0 + " = 1;\n"
+        "bool " + p1 + " = true;\n"
+        "array<string> " + p2 + " = {};\n"
+        "void " + fnName + "(int " + p0 + " = 0, bool " + p1 + " = true, array<string> " + p2 + " = array<string>()) {}\n"
+        "void main() {\n"
+        "    " + fnName + "(" + p2 + ": " + p2 + ", " + p0 + ": " + p0 + ", " + p1 + ": " + p1 + ");\n"
+        "}\n";
+
+    parser::AngelScriptParser parser;
+    analysis::SymbolTable table;
+    analysis::SymbolCollector collector(nullptr);
+    auto diags = collector.CollectSymbols("file:///test.as", code, parser, table);
+
+    analysis::LocalScopeCollector scopeCollector(nullptr);
+    auto scopes = scopeCollector.CollectScopes(code, parser);
+    TSTree* tree = parser.Parse(code);
+
+    analysis::SemanticAnalyzer analyzer(nullptr);
+    analysis::SemanticAnalysisRequest request{table, "file:///test.as", ".as.predefined", nullptr};
+    request.sourceCode = code;
+    request.tree = tree;
+    if (scopes)
+    {
+        request.mutableScopeRoot = scopes.get();
+        request.scopeRoot = std::move(scopes);
+    }
+
+    auto semDiags = analyzer.Analyze(request);
+    diags.insert(diags.end(), semDiags.begin(), semDiags.end());
+    if (tree)
+    {
+        ts_tree_delete(tree);
+    }
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-ambiguous"));
+}
+
+TEST_CASE("Named arguments - Non-existent parameter name emits no matching signature error")
+{
+    const std::string fnName = test::GenerateRandomSymbolName("func");
+    const std::string p0 = test::GenerateRandomSymbolName("realParam");
+    const std::string fakeParam = test::GenerateRandomSymbolName("fakeParam");
+
+    std::string code =
+        "void " + fnName + "(int " + p0 + " = 0) {}\n"
+        "void main() {\n"
+        "    " + fnName + "(" + fakeParam + ": 123);\n"
+        "}\n";
+
+    parser::AngelScriptParser parser;
+    analysis::SymbolTable table;
+    analysis::SymbolCollector collector(nullptr);
+    auto diags = collector.CollectSymbols("file:///test.as", code, parser, table);
+
+    analysis::LocalScopeCollector scopeCollector(nullptr);
+    auto scopes = scopeCollector.CollectScopes(code, parser);
+    TSTree* tree = parser.Parse(code);
+
+    analysis::SemanticAnalyzer analyzer(nullptr);
+    analysis::SemanticAnalysisRequest request{table, "file:///test.as", ".as.predefined", nullptr};
+    request.sourceCode = code;
+    request.tree = tree;
+    if (scopes)
+    {
+        request.mutableScopeRoot = scopes.get();
+        request.scopeRoot = std::move(scopes);
+    }
+
+    auto semDiags = analyzer.Analyze(request);
+    diags.insert(diags.end(), semDiags.begin(), semDiags.end());
+    if (tree)
+    {
+        ts_tree_delete(tree);
+    }
+    CHECK(HasDiagCode(diags, "as-err-call-no-matching-signature"));
 }
 
 TEST_SUITE_END();

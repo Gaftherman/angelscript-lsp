@@ -11,6 +11,16 @@
 namespace angel_lsp::config
 {
 /**
+ * @brief Inlay hint display mode for omitted default arguments in function calls.
+ */
+enum class OmittedDefaultArgumentsMode
+{
+    Off,          ///< Do not show hints for omitted default arguments.
+    NameAndValue, ///< Show parameter name and default value: 'param: defaultValue'.
+    Declaration   ///< Show parameter type, name, and default value: 'type param = defaultValue'.
+};
+
+/**
  * @brief Feature flags for toggling individual LSP capabilities.
  */
 struct FeatureFlags
@@ -31,6 +41,7 @@ struct FeatureFlags
     bool inlayHintsSuppressWhenArgumentMatchesName = false;
     size_t inlayHintsMaxParameters = 0;
     size_t inlayHintsMaxLength = 0;
+    OmittedDefaultArgumentsMode inlayHintsOmittedDefaultArguments = OmittedDefaultArgumentsMode::NameAndValue;
     bool enableCodeAction = true;
     bool enableFormatting = true;
     bool enableDocumentLink = true;

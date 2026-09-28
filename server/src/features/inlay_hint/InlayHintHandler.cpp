@@ -1202,6 +1202,219 @@ void AddParameterHints(const std::vector<analysis::ParameterInformation>& parame
 }
 
 /**
+ * @brief Context bundling immutable request and mutable output hints vector.
+ */
+struct OmittedHintContext
+{
+    const InlayHintRequest& request;
+    std::vector<lsp::InlayHint>& hints;
+};
+
+/**
+ * @brief Position and bound parameter information for a call argument.
+ */
+struct CallArgPosition
+{
+    TSNode startNode;
+    TSNode endNode;
+    int boundParamIndex = -1;
+};
+
+/**
+ * @brief Formats label text for an omitted default argument hint.
+ * @param[in] param Parameter information.
+ * @param[in] mode Inlay hint display mode.
+ * @param[in] maxLength Maximum label length threshold (0 for unlimited).
+ * @return Formatted label string.
+ */
+std::string FormatOmittedDefaultLabel(const analysis::ParameterInformation& param,
+                                     config::OmittedDefaultArgumentsMode mode, size_t maxLength)
+{
+    std::string text = (mode == config::OmittedDefaultArgumentsMode::Declaration)
+                           ? (param.typeName + " " + param.name + " = " + param.defaultValue)
+                           : (param.name + ": " + param.defaultValue);
+    if (maxLength > 0 && text.length() > maxLength)
+    {
+        text = text.substr(0, maxLength) + "...";
+    }
+    return text;
+}
+
+/**
+ * @brief Binds extracted call arguments to parameter indices and collects their AST boundaries.
+ * @param[in] callArgs Extracted call argument list.
+ * @param[in] parameters Function parameter signatures.
+ * @param[out] boundParamIndices Set of parameter indices that have arguments passed.
+ * @return Vector of CallArgPosition elements.
+ */
+std::vector<CallArgPosition> MapArgumentsToParameters(
+    const std::vector<analysis::CallArgumentInfo>& callArgs,
+    const std::vector<analysis::ParameterInformation>& parameters,
+    std::unordered_set<size_t>& boundParamIndices)
+{
+    std::vector<CallArgPosition> positions;
+    positions.reserve(callArgs.size());
+    for (size_t i = 0; i < callArgs.size(); ++i)
+    {
+        const auto& arg = callArgs[i];
+        CallArgPosition pos;
+        pos.startNode = !ts_node_is_null(arg.nameNode) ? arg.nameNode : arg.exprNode;
+        pos.endNode = arg.exprNode;
+        if (!arg.name.empty())
+        {
+            for (size_t p = 0; p < parameters.size(); ++p)
+            {
+                if (parameters[p].name == arg.name)
+                {
+                    pos.boundParamIndex = static_cast<int>(p);
+                    boundParamIndices.insert(p);
+                    break;
+                }
+            }
+        }
+        else if (i < parameters.size())
+        {
+            pos.boundParamIndex = static_cast<int>(i);
+            boundParamIndices.insert(i);
+        }
+        positions.push_back(pos);
+    }
+    return positions;
+}
+
+/**
+ * @brief Constructs an InlayHint item for an omitted default parameter.
+ * @param[in] pos Target document position.
+ * @param[in] label Formatted hint label.
+ * @param[in] tooltip Hover tooltip text.
+ * @return InlayHint object.
+ */
+lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, std::string label, std::string tooltip)
+{
+    lsp::InlayHint hint;
+    hint.position = pos;
+    hint.label = std::move(label);
+    hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
+    hint.paddingLeft = false;
+    hint.paddingRight = false;
+    hint.tooltip = std::move(tooltip);
+    return hint;
+}
+
+/**
+ * @brief Emits an omitted parameter hint into an empty argument list.
+ * @param[in] argListNode AST argument_list node.
+ * @param[in] labelText Formatted parameter label text.
+ * @param[in] tooltip Hover tooltip text.
+ * @param[in,out] ctx Bundled request and hints context.
+ */
+void EmitEmptyListOmittedHint(TSNode argListNode, const std::string& labelText, const std::string& tooltip,
+                              OmittedHintContext& ctx)
+{
+    TSPoint pt = ts_node_start_point(argListNode);
+    if (ts_node_child_count(argListNode) > 0)
+    {
+        pt = ts_node_end_point(ts_node_child(argListNode, 0));
+    }
+    lsp::Position pos{pt.row, pt.column};
+    if (IsPositionInRange(pos, ctx.request.range))
+    {
+        ctx.hints.push_back(MakeOmittedDefaultHint(pos, labelText, tooltip));
+    }
+}
+
+/**
+ * @brief Emits an omitted parameter hint into a non-empty argument list.
+ * @param[in] argPositions Mapped call argument positions.
+ * @param[in] paramIndex Index of the omitted parameter.
+ * @param[in] labelText Formatted parameter label text.
+ * @param[in,out] ctx Bundled request and hints context.
+ */
+void EmitArgListOmittedHint(const std::vector<CallArgPosition>& argPositions, size_t paramIndex,
+                            const std::string& labelText, OmittedHintContext& ctx)
+{
+    const CallArgPosition* nextArg = nullptr;
+    for (const auto& ap : argPositions)
+    {
+        if (ap.boundParamIndex > static_cast<int>(paramIndex))
+        {
+            nextArg = &ap;
+            break;
+        }
+    }
+
+    if (nextArg)
+    {
+        TSPoint pt = ts_node_start_point(nextArg->startNode);
+        lsp::Position pos{pt.row, pt.column};
+        if (IsPositionInRange(pos, ctx.request.range))
+        {
+            ctx.hints.push_back(MakeOmittedDefaultHint(pos, labelText + ", ", ""));
+        }
+    }
+    else
+    {
+        TSPoint pt = ts_node_end_point(argPositions.back().endNode);
+        lsp::Position pos{pt.row, pt.column};
+        if (IsPositionInRange(pos, ctx.request.range))
+        {
+            ctx.hints.push_back(MakeOmittedDefaultHint(pos, ", " + labelText, ""));
+        }
+    }
+}
+
+/**
+ * @brief Adds inlay hints for omitted optional parameters that have default values.
+ * @param[in] parameters Matched callee parameter signatures.
+ * @param[in] argListNode AST argument_list node.
+ * @param[in] request Inlay hint request context.
+ * @param[in,out] hints Hint vector receiving generated inlay hints.
+ */
+void AddOmittedDefaultArgumentHints(const std::vector<analysis::ParameterInformation>& parameters,
+                                    TSNode argListNode, const InlayHintRequest& request,
+                                    std::vector<lsp::InlayHint>& hints)
+{
+    if (request.omittedDefaultArguments == config::OmittedDefaultArgumentsMode::Off || parameters.empty() ||
+        ts_node_is_null(argListNode))
+    {
+        return;
+    }
+
+    auto callArgs = analysis::ExtractCallArguments(argListNode, request.sourceCode);
+    std::unordered_set<size_t> boundParams;
+    auto argPositions = MapArgumentsToParameters(callArgs, parameters, boundParams);
+
+    OmittedHintContext ctx{request, hints};
+    bool isFirstInEmptyList = true;
+    for (size_t p = 0; p < parameters.size(); ++p)
+    {
+        if (boundParams.contains(p))
+        {
+            continue;
+        }
+        const auto& param = parameters[p];
+        if (param.defaultValue.empty() || param.name.empty() || param.name == "...")
+        {
+            continue;
+        }
+
+        std::string labelText = FormatOmittedDefaultLabel(param, request.omittedDefaultArguments, request.maxLength);
+        std::string tooltip = "Default parameter: " + param.typeName + " " + param.name + " = " + param.defaultValue;
+
+        if (argPositions.empty())
+        {
+            std::string fullLabel = isFirstInEmptyList ? labelText : (", " + labelText);
+            EmitEmptyListOmittedHint(argListNode, fullLabel, tooltip, ctx);
+            isFirstInEmptyList = false;
+        }
+        else
+        {
+            EmitArgListOmittedHint(argPositions, p, labelText, ctx);
+        }
+    }
+}
+
+/**
  * @brief Processes a call_expression node to generate parameter inlay hints.
  * @param[in] node AST call_expression node.
  * @param[in] request Inlay hint request context.
@@ -1229,6 +1442,7 @@ void ProcessCallExpression(TSNode node, const InlayHintRequest& request, std::ve
         auto args = ParseArguments(argListNode, request.sourceCode);
         auto parameters = ResolveCalleeParameters(node, request, args.size());
         AddParameterHints(parameters, args, request, hints);
+        AddOmittedDefaultArgumentHints(parameters, argListNode, request, hints);
     }
 }
 
@@ -1317,6 +1531,7 @@ void ProcessConstructorInitDeclarator(const std::string& typeText, TSNode declar
         auto args = ParseArguments(argListNode, request.sourceCode);
         auto parameters = ResolveConstructorParameters(typeText, declarator, request, args);
         AddParameterHints(parameters, args, request, hints);
+        AddOmittedDefaultArgumentHints(parameters, argListNode, request, hints);
     }
 }
 
@@ -1459,15 +1674,15 @@ std::optional<InlayHintResult> GetInlayHints(const InlayHintRequest& request)
     std::vector<lsp::InlayHint> hints;
     CollectInlayHints(rootNode, request, hints);
 
-    std::sort(hints.begin(), hints.end(),
-              [](const lsp::InlayHint& a, const lsp::InlayHint& b)
-              {
-                  if (a.position.line != b.position.line)
-                  {
-                      return a.position.line < b.position.line;
-                  }
-                  return a.position.character < b.position.character;
-              });
+    std::stable_sort(hints.begin(), hints.end(),
+                     [](const lsp::InlayHint& a, const lsp::InlayHint& b)
+                     {
+                         if (a.position.line != b.position.line)
+                         {
+                             return a.position.line < b.position.line;
+                         }
+                         return a.position.character < b.position.character;
+                     });
 
     if (request.logger && request.logger->IsTraceEnabled())
     {

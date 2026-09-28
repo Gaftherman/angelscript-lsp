@@ -66,6 +66,29 @@ std::optional<int> FindSectionInt(const lsp::LSPObject& section, const lsp::LSPO
     }
     return std::nullopt;
 }
+
+std::optional<std::string> FindSectionString(const lsp::LSPObject& section, const lsp::LSPObject* obj,
+                                             std::string_view name, std::string_view prefix = "engine")
+{
+    if (obj)
+    {
+        if (const auto* val = obj->find(std::string(name)); val && val->isString())
+        {
+            return val->string();
+        }
+    }
+    const std::string dotKey = std::string(prefix) + "." + std::string(name);
+    if (const auto* val = section.find(dotKey); val && val->isString())
+    {
+        return val->string();
+    }
+    const std::string fullKey = "angelscript." + std::string(prefix) + "." + std::string(name);
+    if (const auto* val = section.find(fullKey); val && val->isString())
+    {
+        return val->string();
+    }
+    return std::nullopt;
+}
 } // namespace
 
 lsp::requests::Workspace_TextDocumentContent::Result
@@ -376,6 +399,21 @@ void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
     if (auto suppress = FindSectionBool(section, ihObj, "suppressWhenArgumentMatchesName", "inlayHints"); suppress.has_value())
     {
         m_config.features.inlayHintsSuppressWhenArgumentMatchesName = *suppress;
+    }
+    if (auto omitted = FindSectionString(section, ihObj, "omittedDefaultArguments", "inlayHints"); omitted.has_value())
+    {
+        if (*omitted == "off" || *omitted == "false")
+        {
+            m_config.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::Off;
+        }
+        else if (*omitted == "declaration")
+        {
+            m_config.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::Declaration;
+        }
+        else
+        {
+            m_config.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::NameAndValue;
+        }
     }
 }
 

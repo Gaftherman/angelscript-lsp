@@ -2,6 +2,33 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.19] - 2026-09-28
+
+### Omitted Default Arguments Inlay Hints, Named Arguments Variable Identity, & Overload Resolution Regression Verification
+
+- Inlay Hints for Omitted Default Arguments:
+  - Added support for displaying inlay hints for omitted optional parameters in function calls, method calls, and constructor invocations.
+  - Three configurable modes in client settings (`angelscript.inlayHints.omittedDefaultArguments`) and server CLI (`--inlay-hints-omitted-defaults`):
+    - `nameAndValue` (Default): Displays parameter name and default value (`param: defaultValue`).
+    - `declaration`: Displays full type declaration, name, and default value (`typeName param = defaultValue`).
+    - `off`: Disables omitted default argument hints.
+  - Intelligent AST-driven comma and whitespace placement:
+    - Omitted parameters before passed arguments display with trailing `, ` (e.g. `funct(id: 0, f: false)`).
+    - Omitted parameters after passed arguments display with leading `, ` (e.g. `funct(f: false, argS: array<string>())`).
+    - Calls with empty argument lists `()` display all omitted parameters inside the parentheses.
+  - Fully integrated with `maxLength` character limits and stable parameter declaration ordering.
+- Named Arguments & Variable Identity Parity:
+  - Verified with the official AngelScript compiler oracle (`angelscript_oracle.exe`) that passing variables with identical names to parameters (`funct(argS: argS, id: id, f: f)`) is 100% valid AngelScript.
+  - Added parity test `server/tests/parity/doc_p129_named_argument_variable_identity.as` and automated invariant regression tests in `SemanticRegressionsBatch2Test.cpp`.
+  - Verified that non-existent named parameters (`funct(fakeParam: 123)`) emit `as-err-call-no-matching-signature`.
+- Overload Resolution & `this.Get` Forensic Verification:
+  - Verified that `v2.as` calls to `this.Get(keyName, temp, strict)` resolve cleanly without ambiguity in current LSP releases.
+  - Added persistent regression tests ensuring mutable references and default boolean arguments never produce false ambiguity diagnostics.
+- Quality & Verification:
+  - 2,047 C++ unit, regression, fuzz, and parity tests passing with 63,862 assertions.
+  - 50 client integration tests passing.
+  - All static quality gates clean (0 Lizard warnings, jscpd 2.13% <= 3%, 105 layer headers conformant).
+
 ## [0.9.18] - 2026-09-27
 
 ### Multi-Parameter Named Arguments Reordering, Container Initializer Lists, & Oracle Parity Verification
