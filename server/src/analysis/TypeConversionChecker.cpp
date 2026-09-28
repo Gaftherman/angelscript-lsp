@@ -2449,7 +2449,7 @@ void InferForeachVariables(TSNode node, const std::string& containerType, const 
             bodyScope ? bodyScope : FindInnermostScope(request.scopeRoot, namePoint.row, namePoint.column),
             NodeText(nameNode, request.sourceCode));
 
-        if (def && (def->typeName == "auto" || def->typeName == "auto@"))
+        if (def && CleanBaseType(def->typeName) == "auto")
         {
             const_cast<LocalDefinition*>(def)->typeName = valueType;
         }
@@ -2718,9 +2718,14 @@ void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& reque
     else if (!rhsType.empty() && request.mutableScopeRoot && scope)
     {
         const LocalDefinition* def = ResolveInScope(scope, varName);
-        if (def && (def->typeName == "auto" || def->typeName == "auto@"))
+        if (def && CleanBaseType(def->typeName) == "auto")
         {
-            const_cast<LocalDefinition*>(def)->typeName = rhsType;
+            std::string finalType = rhsType;
+            if ((def->isHandleType || def->typeName.find('@') != std::string::npos) && !finalType.ends_with('@'))
+            {
+                finalType += '@';
+            }
+            const_cast<LocalDefinition*>(def)->typeName = finalType;
         }
     }
 }

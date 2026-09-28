@@ -301,6 +301,40 @@ TEST_CASE("InlayHintHandler - Auto Variable Deduction for Function Calls and Cas
     CHECK(foundWeaponType);
 }
 
+TEST_CASE("InlayHintHandler - Auto Handle Variable Deduction with auto@")
+{
+    const std::string clsName = test::GenerateRandomSymbolName("PlayerActor");
+    const std::string funcName = test::GenerateRandomSymbolName("SpawnActor");
+    const std::string varName = test::GenerateRandomSymbolName("pActor");
+
+    const std::string code =
+        "class " + clsName + " {}\n"
+        "" + clsName + "@ " + funcName + "() { return null; }\n"
+        "void main() {\n"
+        "    auto@ " + varName + " = " + funcName + "();\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+
+    REQUIRE(hints.has_value());
+    REQUIRE_FALSE(hints->empty());
+
+    bool foundHandleHint = false;
+    for (const auto &hint : *hints)
+    {
+        std::string l = std::holds_alternative<std::string>(hint.label)
+                            ? std::get<std::string>(hint.label)
+                            : "";
+        if (l == ": " + clsName + "@")
+        {
+            foundHandleHint = true;
+        }
+    }
+
+    CHECK(foundHandleHint);
+}
+
 TEST_CASE("InlayHintHandler - Sub-range Filtering")
 {
     std::string code =
