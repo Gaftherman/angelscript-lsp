@@ -3,6 +3,8 @@
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SignatureFormatter.h"
+#include "analysis/VirtualMixinContext.h"
+#include "analysis/overload/ConversionRankingEngine.h"
 #include "parser/GrammarNames.h"
 #include "utils/LspLogger.h"
 #include "utils/MultiFileLogger.h"
@@ -653,87 +655,6 @@ TSNode FindEnclosingCallNode(TSNode node)
     return TSNode{};
 }
 
-int ScoreCandidateFallback(const analysis::FunctionSignature& sig, const std::vector<std::string>& argTypes,
-                           const analysis::SymbolTable& symbolTable)
-{
-    const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
-    uint32_t requiredParams = 0;
-    uint32_t maxParams = 0;
-    bool isVariadic = false;
-
-    for (const auto& param : sig.parameters)
-    {
-        if (param.rawText.find("...") != std::string::npos)
-        {
-            isVariadic = true;
-            continue;
-        }
-        ++maxParams;
-        if (param.defaultValue.empty())
-        {
-            ++requiredParams;
-        }
-    }
-
-    int score = 0;
-    bool arityMatches = (argCount >= requiredParams) && (isVariadic || argCount <= maxParams);
-    if (arityMatches)
-    {
-        score += 100;
-        if (argCount == sig.parameters.size())
-        {
-            score += 50;
-        }
-    }
-    else
-    {
-        int diff = std::abs(static_cast<int>(argCount) - static_cast<int>(sig.parameters.size()));
-        score -= diff * 20;
-    }
-
-    for (size_t i = 0; i < argTypes.size() && i < sig.parameters.size(); ++i)
-    {
-        if (!argTypes[i].empty())
-        {
-            int pScore = analysis::ScoreArgumentMatch(argTypes[i], sig.parameters[i], symbolTable);
-            if (pScore < 999)
-            {
-                score += 10;
-            }
-            else
-            {
-                score -= 50;
-            }
-        }
-    }
-    return score;
-}
-
-const analysis::Symbol* FindBestFallbackOverload(const std::vector<analysis::Symbol>& candidates,
-                                                 const std::vector<std::string>& argTypes,
-                                                 const analysis::SymbolTable& symbolTable)
-{
-    const analysis::Symbol* bestFallback = nullptr;
-    int bestFallbackScore = -10000;
-
-    for (const auto& sym : candidates)
-    {
-        if (sym.type != analysis::SymbolType::Function ||
-            !std::holds_alternative<analysis::FunctionSignature>(sym.signature))
-        {
-            continue;
-        }
-
-        int score = ScoreCandidateFallback(sym.GetFunction(), argTypes, symbolTable);
-        if (score > bestFallbackScore)
-        {
-            bestFallbackScore = score;
-            bestFallback = &sym;
-        }
-    }
-    return bestFallback;
-}
-
 /**
  * @brief If node represents the callee in a call_expression, extracts argument types
  * and resolves the best matching candidate from the overload set.
@@ -761,7 +682,8 @@ std::optional<analysis::Symbol> ResolveCallOverload(TSNode node, const std::vect
         return *match.bestCandidate;
     }
 
-    const analysis::Symbol* fallback = FindBestFallbackOverload(candidates, argTypes, request.symbolTable);
+    const analysis::Symbol* fallback =
+        analysis::FindBestFallbackOverload(candidates, argTypes, request.symbolTable);
     if (fallback != nullptr)
     {
         return *fallback;
@@ -821,64 +743,6 @@ struct HoverProfiler
     }
 };
 
-struct VirtualMixinContext
-{
-    bool isVirtualDoc = false;
-    std::string hostClass;
-    std::string mixinName;
-    std::optional<analysis::Symbol> mixinSym;
-    std::shared_ptr<const analysis::Scope> rootScope;
-    uint32_t queryLine = 0;
-};
-
-VirtualMixinContext ResolveVirtualMixinContext(const HoverRequest& request)
-{
-    VirtualMixinContext ctx;
-    ctx.isVirtualDoc =
-        request.uri.starts_with("angelscript-virtual:") || request.uri.starts_with("angelscript-virtual://");
-
-    if (ctx.isVirtualDoc)
-    {
-        ctx.hostClass = analysis::SymbolTable::ExtractVirtualHostClass(request.uri);
-        ctx.mixinName = analysis::SymbolTable::ExtractVirtualMixinName(request.uri);
-
-        auto candidates = request.symbolTable.FindSymbolsPtr(ctx.mixinName);
-        if (candidates)
-        {
-            for (const auto& cand : *candidates)
-            {
-                if (cand.type == analysis::SymbolType::Class)
-                {
-                    ctx.mixinSym = cand;
-                    break;
-                }
-            }
-        }
-        if (!ctx.mixinSym.has_value())
-        {
-            std::string shortName = std::string(analysis::LastScopeSegment(ctx.mixinName));
-            auto shortCandidates = request.symbolTable.FindTypeSymbolsByShortName(shortName);
-            for (const auto& cand : shortCandidates)
-            {
-                if (cand.type == analysis::SymbolType::Class)
-                {
-                    ctx.mixinSym = cand;
-                    break;
-                }
-            }
-        }
-    }
-
-    ctx.rootScope = (ctx.isVirtualDoc && ctx.mixinSym.has_value()) ? request.scopeIndex.GetRoot(ctx.mixinSym->fileUri)
-                                                                   : request.scopeIndex.GetRoot(request.uri);
-
-    ctx.queryLine = (ctx.isVirtualDoc && ctx.mixinSym.has_value())
-                        ? analysis::SymbolTable::VirtualToPhysicalLine(request.position.line, ctx.mixinSym->startLine)
-                        : request.position.line;
-
-    return ctx;
-}
-
 struct HoverQueryContext
 {
     const HoverRequest& request;
@@ -886,7 +750,9 @@ struct HoverQueryContext
     TSNode node = {};
     std::string nodeText;
     lsp::Range range{};
-    VirtualMixinContext vctx;
+    analysis::VirtualMixinContext vctx;
+    std::shared_ptr<const analysis::Scope> rootScope;
+    uint32_t queryLine = 0;
     const analysis::Scope* scope = nullptr;
     TSNode parent = {};
 };
@@ -918,7 +784,7 @@ std::optional<lsp::Hover> TryHoverThis(const HoverQueryContext& ctx)
     }
 
     std::string className;
-    if (ctx.vctx.isVirtualDoc && !ctx.vctx.hostClass.empty())
+    if (ctx.vctx.isVirtual && !ctx.vctx.hostClass.empty())
     {
         className = ctx.vctx.hostClass;
     }
@@ -975,18 +841,7 @@ std::string ResolveReceiverTypeName(TSNode objectNode, const HoverQueryContext& 
 
     if (!receiverTypeName.empty())
     {
-        if (receiverTypeName.find("::") == std::string::npos && !ctx.request.symbolTable.HasSymbol(receiverTypeName))
-        {
-            auto shortMatches = ctx.request.symbolTable.FindTypeSymbolsByShortName(receiverTypeName);
-            for (const auto& sym : shortMatches)
-            {
-                if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface)
-                {
-                    receiverTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                    break;
-                }
-            }
-        }
+        receiverTypeName = ctx.request.symbolTable.QualifyShortTypeName(receiverTypeName);
     }
     return receiverTypeName;
 }
@@ -1290,7 +1145,7 @@ const analysis::Scope* FindDefinitionScope(const HoverQueryContext& ctx, const a
             }
         }
     }
-    return analysis::FindScopeDeclaringDefinition(ctx.vctx.rootScope.get(), def);
+    return analysis::FindScopeDeclaringDefinition(ctx.rootScope.get(), def);
 }
 
 void FormatVariableHover(const analysis::LocalDefinition& def, const std::string& typeName,
@@ -1355,13 +1210,13 @@ void FormatVariableHover(const analysis::LocalDefinition& def, const std::string
 
 std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
 {
-    if (!ctx.vctx.rootScope || !ctx.scope)
+    if (!ctx.rootScope || !ctx.scope)
     {
         return std::nullopt;
     }
 
     utils::HighResTimer symTimer;
-    lsp::Position queryPos{ctx.vctx.queryLine, ctx.request.position.character};
+    lsp::Position queryPos{ctx.queryLine, ctx.request.position.character};
     const analysis::LocalDefinition* def = DefinitionAtPosition(ctx.scope, queryPos);
     if (!def)
     {
@@ -1651,7 +1506,7 @@ void MergeHostSymbols(std::vector<analysis::Symbol>& symbols, std::vector<analys
 void AppendVirtualHostSymbols(const HoverQueryContext& ctx, std::vector<analysis::Symbol>& symbols,
                               std::string& accessorPropertyType)
 {
-    if (!ctx.vctx.isVirtualDoc || ctx.vctx.hostClass.empty())
+    if (!ctx.vctx.isVirtual || ctx.vctx.hostClass.empty())
     {
         return;
     }
@@ -1942,7 +1797,7 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
     std::string accessorPropertyType;
     AppendVirtualHostSymbols(ctx, symbols, accessorPropertyType);
 
-    if (symbols.empty() && ctx.vctx.rootScope)
+    if (symbols.empty() && ctx.rootScope)
     {
         if (auto fallbackHover = TryHoverScopeFallback(ctx))
         {
@@ -1968,6 +1823,28 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
     }
 
     return FormatSymbolsHover(symbols, accessorPropertyType, ctx);
+}
+HoverQueryContext BuildHoverQueryContext(const HoverRequest& request, HoverProfiler& profiler,
+                                         HoverTarget target)
+{
+    analysis::VirtualMixinContext vctx =
+        analysis::ResolveVirtualMixinContext(request.uri, request.symbolTable);
+    auto rootScope = request.scopeIndex.GetRoot(analysis::ResolvePhysicalUri(vctx, request.uri));
+    uint32_t queryLine = analysis::ResolvePhysicalLine(vctx, request.position.line);
+    const analysis::Scope* scope =
+        rootScope ? FindInnermostScope(rootScope.get(), queryLine, request.position.character) : nullptr;
+    TSNode parent = ts_node_parent(target.node);
+
+    return HoverQueryContext{request,
+                             profiler,
+                             target.node,
+                             std::move(target.text),
+                             target.range,
+                             std::move(vctx),
+                             std::move(rootScope),
+                             queryLine,
+                             scope,
+                             parent};
 }
 } // namespace
 
@@ -2012,12 +1889,7 @@ std::optional<lsp::Hover> GetHover(const HoverRequest& request)
         return primHover;
     }
 
-    VirtualMixinContext vctx = ResolveVirtualMixinContext(request);
-    const analysis::Scope* scope =
-        vctx.rootScope ? FindInnermostScope(vctx.rootScope.get(), vctx.queryLine, request.position.character) : nullptr;
-
-    HoverQueryContext ctx{request,       profiler,        target->node, std::move(target->text),
-                          target->range, std::move(vctx), scope,        ts_node_parent(target->node)};
+    HoverQueryContext ctx = BuildHoverQueryContext(request, profiler, std::move(*target));
 
     if (auto thisHover = TryHoverThis(ctx))
     {

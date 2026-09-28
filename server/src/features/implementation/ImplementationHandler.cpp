@@ -51,15 +51,7 @@ std::string IdentifierAt(const ImplementationRequest& request, TSNode& outNode)
 /** @brief Every base a declaration lists, whichever kind of declaration it is. */
 std::vector<std::string> DeclaredBases(const Symbol& sym)
 {
-    if (sym.type == SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(sym.signature))
-    {
-        return sym.GetClass().bases;
-    }
-    if (sym.type == SymbolType::Interface && std::holds_alternative<analysis::InterfaceSignature>(sym.signature))
-    {
-        return sym.GetInterface().inheritedInterfaces;
-    }
-    return {};
+    return analysis::GetDeclaredBases(sym);
 }
 
 /**

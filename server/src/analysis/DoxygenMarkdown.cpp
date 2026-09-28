@@ -1,4 +1,5 @@
 #include "analysis/DoxygenMarkdown.h"
+#include "document/Document.h"
 #include "parser/DoxygenParser.h"
 
 #include <algorithm>
@@ -2099,16 +2100,15 @@ void ParseDocSegment(const std::string& syntheticDoc, std::vector<DocBlock>& blo
     }
 
     parser::DoxygenParser parser;
-    TSTree* tree = parser.Parse(syntheticDoc);
+    document::TreePtr tree = document::MakeTreePtr(parser.Parse(syntheticDoc));
     if (!tree)
     {
         return;
     }
 
-    TSNode root = ts_tree_root_node(tree);
+    TSNode root = ts_tree_root_node(tree.get());
     if (ts_node_is_null(root))
     {
-        ts_tree_delete(tree);
         return;
     }
 
@@ -2117,8 +2117,6 @@ void ParseDocSegment(const std::string& syntheticDoc, std::vector<DocBlock>& blo
     {
         DispatchSegmentChildNode(ts_node_child(root, i), syntheticDoc, blocks);
     }
-
-    ts_tree_delete(tree);
 }
 
 /** @brief Assembles brief and general body paragraphs/code blocks into output sections. */

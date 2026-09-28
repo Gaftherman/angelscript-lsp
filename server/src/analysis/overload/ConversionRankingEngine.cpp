@@ -3,6 +3,7 @@
 #include "analysis/overload/OverloadTypeConversions.h"
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <string>
 
@@ -413,6 +414,91 @@ int ScoreArgumentMatch(const std::string& argType, const ParameterInformation& p
                        bool argIsLValue)
 {
     return EvaluateArgumentConversion(argType, param, symbolTable, argIsLValue).legacyScore;
+}
+
+bool MatchesCallArity(const FunctionSignature& sig, uint32_t argCount) noexcept
+{
+    uint32_t requiredParams = 0;
+    uint32_t maxParams = 0;
+    bool isVariadic = false;
+    for (const auto& param : sig.parameters)
+    {
+        if (param.rawText.find("...") != std::string::npos)
+        {
+            isVariadic = true;
+            continue;
+        }
+        ++maxParams;
+        if (param.defaultValue.empty())
+        {
+            ++requiredParams;
+        }
+    }
+    return (argCount >= requiredParams) && (isVariadic || argCount <= maxParams);
+}
+
+namespace
+{
+int ScoreCandidateFallbackInternal(const FunctionSignature& sig,
+                                   const std::vector<std::string>& argTypes,
+                                   const SymbolTable& symbolTable)
+{
+    const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
+    int score = 0;
+    if (MatchesCallArity(sig, argCount))
+    {
+        score += 100;
+        if (argCount == sig.parameters.size())
+        {
+            score += 50;
+        }
+    }
+    else
+    {
+        int diff = std::abs(static_cast<int>(argCount) - static_cast<int>(sig.parameters.size()));
+        score -= diff * 20;
+    }
+
+    for (size_t i = 0; i < argTypes.size() && i < sig.parameters.size(); ++i)
+    {
+        if (!argTypes[i].empty())
+        {
+            int pScore = ScoreArgumentMatch(argTypes[i], sig.parameters[i], symbolTable);
+            if (pScore < 999)
+            {
+                score += 10;
+            }
+            else
+            {
+                score -= 50;
+            }
+        }
+    }
+    return score;
+}
+} // namespace
+
+const Symbol* FindBestFallbackOverload(const std::vector<Symbol>& candidates,
+                                       const std::vector<std::string>& argTypes,
+                                       const SymbolTable& symbolTable)
+{
+    const Symbol* best = nullptr;
+    int bestScore = -10000;
+    for (const auto& sym : candidates)
+    {
+        if (!std::holds_alternative<FunctionSignature>(sym.signature))
+        {
+            continue;
+        }
+        const auto& sig = std::get<FunctionSignature>(sym.signature);
+        int score = ScoreCandidateFallbackInternal(sig, argTypes, symbolTable);
+        if (score > bestScore)
+        {
+            bestScore = score;
+            best = &sym;
+        }
+    }
+    return best;
 }
 
 } // namespace angel_lsp::analysis

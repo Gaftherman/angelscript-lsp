@@ -745,17 +745,7 @@ void CollectLocalNames(TSNode memNode, TSNode funcBody, std::string_view mixinSo
         }
     }
 
-    if (ts_node_is_null(funcBody))
-    {
-        return;
-    }
-
-    TSTreeCursor cursor = ts_tree_cursor_new(funcBody);
-    bool reachedRoot = false;
-
-    while (!reachedRoot)
-    {
-        TSNode cur = ts_tree_cursor_current_node(&cursor);
+    parser::ForEachDescendantNode(funcBody, [&](TSNode cur) {
         if (NodeType(cur) == "variable_declarator")
         {
             TSNode vdName = GetChildByField(cur, "name");
@@ -764,48 +754,14 @@ void CollectLocalNames(TSNode memNode, TSNode funcBody, std::string_view mixinSo
                 localNames.insert(GetNodeText(vdName, mixinSource));
             }
         }
-
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            continue;
-        }
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            continue;
-        }
-
-        while (!reachedRoot)
-        {
-            if (!ts_tree_cursor_goto_parent(&cursor))
-            {
-                reachedRoot = true;
-                break;
-            }
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                break;
-            }
-        }
-    }
-
-    ts_tree_cursor_delete(&cursor);
+    });
 }
 
 /** @brief Walks statements in a mixin function body using flat TSTreeCursor. */
 void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, FunctionCheckState& state,
                              const DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(funcBody))
-    {
-        return;
-    }
-
-    TSTreeCursor cursor = ts_tree_cursor_new(funcBody);
-    bool reachedRoot = false;
-
-    while (!reachedRoot)
-    {
-        TSNode cur = ts_tree_cursor_current_node(&cursor);
+    parser::ForEachDescendantNode(funcBody, [&](TSNode cur) {
         std::string_view curType = NodeType(cur);
 
         if (curType == "member_expression")
@@ -816,31 +772,7 @@ void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, Func
         {
             CheckCallMember(cur, mixinSource, state, ctx);
         }
-
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            continue;
-        }
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            continue;
-        }
-
-        while (!reachedRoot)
-        {
-            if (!ts_tree_cursor_goto_parent(&cursor))
-            {
-                reachedRoot = true;
-                break;
-            }
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                break;
-            }
-        }
-    }
-
-    ts_tree_cursor_delete(&cursor);
+    });
 }
 
 /** @brief Checks member declarations inside a mixin body. */

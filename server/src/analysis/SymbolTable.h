@@ -419,6 +419,24 @@ struct Symbol
     }
 };
 
+/**
+ * @brief Extracts all base classes or inherited interfaces declared on a symbol.
+ * @param[in] sym Symbol representing a class or interface.
+ * @return Vector of declared base/interface name strings.
+ */
+[[nodiscard]] inline std::vector<std::string> GetDeclaredBases(const Symbol& sym)
+{
+    if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+    {
+        return sym.GetClass().bases;
+    }
+    if (sym.type == SymbolType::Interface && std::holds_alternative<InterfaceSignature>(sym.signature))
+    {
+        return sym.GetInterface().inheritedInterfaces;
+    }
+    return {};
+}
+
 struct TransparentStringHash
 {
     using is_transparent = void;
@@ -657,6 +675,23 @@ class SymbolTable
      */
     void ForEachSymbolInFile(const std::string& fileUri,
                              const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const;
+
+    /**
+     * @brief Finds the name of the class or interface enclosing the given document line.
+     * @param[in] uri Document file URI.
+     * @param[in] line 0-based line number.
+     * @param[in] excludeName Optional class name to exclude.
+     * @return Enclosing class name, or empty string if line is not within a class.
+     */
+    [[nodiscard]] std::string FindEnclosingClassName(std::string_view uri, uint32_t line,
+                                                    std::string_view excludeName = "") const;
+
+    /**
+     * @brief Normalizes an unqualified type name to its fully qualified symbol name if unambiguous.
+     * @param[in] typeName Unqualified or partially qualified type name.
+     * @return Fully qualified symbol name if a unique class/interface is found, or input name.
+     */
+    [[nodiscard]] std::string QualifyShortTypeName(std::string_view typeName) const;
 
     /**
      * @brief Computes a 64-bit hash of the document's public declarations (names, types, signatures, modifiers).

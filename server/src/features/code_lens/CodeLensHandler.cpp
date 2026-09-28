@@ -60,24 +60,7 @@ struct RangeKeyHash
  */
 std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, const std::string& uri, uint32_t line)
 {
-    std::string enclosingClass;
-    symbolTable.ForEachSymbolInFile(
-        uri,
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
-        {
-            for (const auto& sym : symbols)
-            {
-                if ((sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface) &&
-                    sym.fileUri == uri)
-                {
-                    if (line >= sym.startLine && line <= sym.endLine)
-                    {
-                        enclosingClass = sym.name;
-                    }
-                }
-            }
-        });
-    return enclosingClass;
+    return symbolTable.FindEnclosingClassName(uri, line);
 }
 
 using DeclRangeSet = ankerl::unordered_dense::set<std::tuple<std::string, uint32_t, uint32_t>>;
