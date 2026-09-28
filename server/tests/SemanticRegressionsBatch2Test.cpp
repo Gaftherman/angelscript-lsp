@@ -712,6 +712,46 @@ TEST_CASE("Named arguments - Non-existent parameter name emits no matching signa
     CHECK(HasDiagCode(diags, "as-err-call-no-matching-signature"));
 }
 
+TEST_CASE("Member access on primitive return type emits member not found")
+{
+    const std::string clsName = test::GenerateRandomSymbolName("JsonContainer");
+    const std::string methodName = test::GenerateRandomSymbolName("GetBool");
+    const std::string propName = test::GenerateRandomSymbolName("HookProp");
+    const std::string varName = test::GenerateRandomSymbolName("inst");
+
+    const std::string code =
+        "class " + clsName + " {\n"
+        "    bool " + methodName + "() { return true; }\n"
+        "    void Test() {\n"
+        "        if (!this." + methodName + "()." + propName + ") {}\n"
+        "    }\n"
+        "};\n"
+        "void main() {\n"
+        "    " + clsName + " " + varName + ";\n"
+        "    bool b = " + varName + "." + methodName + "()." + propName + ";\n"
+        "}\n";
+
+    auto diags = AnalyzeSnippetWithPredefined(code);
+    CHECK(HasDiagCode(diags, "as-err-member-not-found"));
+}
+
+TEST_CASE("Member access using reserved keyword name emits reserved keyword diagnostic")
+{
+    const std::string clsName = test::GenerateRandomSymbolName("JsonContainer");
+    const std::string methodName = test::GenerateRandomSymbolName("GetBool");
+
+    const std::string code =
+        "class " + clsName + " {\n"
+        "    bool " + methodName + "() { return true; }\n"
+        "    void Test() {\n"
+        "        bool b = this." + methodName + "().false;\n"
+        "    }\n"
+        "};\n";
+
+    auto diags = AnalyzeSnippetWithPredefined(code);
+    CHECK(HasDiagCode(diags, "as-err-reserved-keyword-name"));
+}
+
 TEST_SUITE_END();
 
 } // namespace angel_lsp::test

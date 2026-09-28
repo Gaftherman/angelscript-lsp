@@ -1182,7 +1182,7 @@ std::string ResolveThisSegmentType(const CompletionRequest& request)
         {
             if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
             {
-                return c.name;
+                return c.qualifiedName.empty() ? c.name : c.qualifiedName;
             }
         }
     }
@@ -1197,7 +1197,7 @@ std::string ResolveThisSegmentType(const CompletionRequest& request)
                 {
                     if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
                     {
-                        rawTypeName = sym.name;
+                        rawTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
                         return;
                     }
                 }
@@ -1539,7 +1539,192 @@ void PopulateMembersForType(const std::string& typeName, const analysis::Templat
 }
 
 /**
- * @brief Attempts to complete member expression following a `.` or `->`.
+ * @brief Represents an extracted member access chain and trailing member query.
+ */
+struct ExtractedAccessChain
+{
+    bool isMemberContext = false;
+    std::string chain;
+    std::string memberQuery;
+};
+
+/**
+ * @brief Updates bracket and parenthesis balance counters during backwards scanning.
+ * @param[in] c Character being examined.
+ * @param[in,out] balanceParen Parenthesis nesting balance counter.
+ * @param[in,out] balanceBracket Square bracket nesting balance counter.
+ * @return True if character was a bracket and balance remains valid, false if unbalanced.
+ */
+bool UpdateBracketBalance(char c, int& balanceParen, int& balanceBracket)
+{
+    if (c == ')')
+    {
+        ++balanceParen;
+        return true;
+    }
+    if (c == ']')
+    {
+        ++balanceBracket;
+        return true;
+    }
+    if (c == '(')
+    {
+        if (balanceParen > 0)
+        {
+            --balanceParen;
+            return true;
+        }
+        return false;
+    }
+    if (c == '[')
+    {
+        if (balanceBracket > 0)
+        {
+            --balanceBracket;
+            return true;
+        }
+        return false;
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if a character is valid in an identifier within an access chain.
+ * @param[in] c Character to inspect.
+ * @return True if character can be part of an identifier.
+ */
+bool IsChainIdentChar(char c)
+{
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+}
+
+/**
+ * @brief Finds the start index of the access chain preceding a delimiter.
+ * @param[in] prefix Prefix text before cursor.
+ * @param[in] delimStart Index where member delimiter begins.
+ * @return Start index of the access chain, or delimStart if none found.
+ */
+size_t FindAccessChainStart(std::string_view prefix, size_t delimStart)
+{
+    size_t i = delimStart;
+    int balanceParen = 0;
+    int balanceBracket = 0;
+    size_t chainStart = delimStart;
+
+    while (i > 0)
+    {
+        const char c = prefix[i - 1];
+        if (c == ' ' || c == '\t')
+        {
+            --i;
+            continue;
+        }
+
+        if (UpdateBracketBalance(c, balanceParen, balanceBracket))
+        {
+            --i;
+            continue;
+        }
+        if (c == '(' || c == '[')
+        {
+            break;
+        }
+
+        if (balanceParen > 0 || balanceBracket > 0)
+        {
+            --i;
+            continue;
+        }
+
+        if (IsChainIdentChar(c))
+        {
+            --i;
+            chainStart = i;
+            continue;
+        }
+
+        if (c == '.')
+        {
+            --i;
+            continue;
+        }
+
+        break;
+    }
+
+    if (balanceParen > 0 || balanceBracket > 0)
+    {
+        return delimStart;
+    }
+    return chainStart;
+}
+
+/**
+ * @brief Checks if a dot is part of a numeric literal like '3.'.
+ * @param[in] prefix Prefix text before cursor.
+ * @param[in] dotPos Index of the dot character.
+ * @return True if dot is part of a number literal.
+ */
+bool IsNumericLiteralDot(std::string_view prefix, size_t dotPos)
+{
+    if (dotPos == 0 || !std::isdigit(static_cast<unsigned char>(prefix[dotPos - 1])))
+    {
+        return false;
+    }
+    size_t d = dotPos - 1;
+    while (d > 0 && std::isdigit(static_cast<unsigned char>(prefix[d - 1])))
+    {
+        --d;
+    }
+    return d == 0 || (!std::isalpha(static_cast<unsigned char>(prefix[d - 1])) && prefix[d - 1] != '_');
+}
+
+/**
+ * @brief Extracts the access chain and trailing member query from a line prefix.
+ * @param[in] prefix Prefix text before cursor.
+ * @return ExtractedAccessChain structure.
+ */
+ExtractedAccessChain ExtractAccessChain(std::string_view prefix)
+{
+    size_t i = prefix.size();
+    while (i > 0 && (std::isalnum(static_cast<unsigned char>(prefix[i - 1])) || prefix[i - 1] == '_'))
+    {
+        --i;
+    }
+    std::string memberQuery(prefix.substr(i));
+
+    while (i > 0 && (prefix[i - 1] == ' ' || prefix[i - 1] == '\t'))
+    {
+        --i;
+    }
+
+    size_t delimEnd = i;
+    size_t delimStart = i;
+    if (i >= 1 && prefix[i - 1] == '.')
+    {
+        delimStart = i - 1;
+        if (IsNumericLiteralDot(prefix, delimStart))
+        {
+            return ExtractedAccessChain{};
+        }
+    }
+    else
+    {
+        return ExtractedAccessChain{};
+    }
+
+    size_t chainStart = FindAccessChainStart(prefix, delimStart);
+    if (chainStart >= delimStart)
+    {
+        return ExtractedAccessChain{true, "", std::move(memberQuery)};
+    }
+
+    std::string chain(prefix.substr(chainStart, delimEnd - chainStart));
+    return ExtractedAccessChain{true, std::move(chain), std::move(memberQuery)};
+}
+
+/**
+ * @brief Attempts to complete member expression following a `.`.
  * @param[in] prefix Prefix text before cursor.
  * @param[in] innermostScope Lexical scope at cursor.
  * @param[in,out] collector Completion collector context.
@@ -1548,17 +1733,19 @@ void PopulateMembersForType(const std::string& typeName, const analysis::Templat
 bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* innermostScope,
                              CompletionCollector& collector)
 {
-    static const std::regex memberChainRegex(
-        R"(((?:[a-zA-Z_][a-zA-Z0-9_]*(?:\([^\)]*\)|\[[^\]]*\])*\s*(?:\.|\->)\s*)+)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
-    std::smatch memberMatch;
-    if (!std::regex_search(prefix, memberMatch, memberChainRegex))
+    ExtractedAccessChain extracted = ExtractAccessChain(prefix);
+    if (!extracted.isMemberContext)
     {
         return false;
     }
-    auto segments = ParseAccessChain(memberMatch[1].str());
+    if (extracted.chain.empty())
+    {
+        return true;
+    }
+    auto segments = ParseAccessChain(extracted.chain);
     if (segments.empty())
     {
-        return false;
+        return true;
     }
 
     std::string arrayContainer = (collector.request.config && !collector.request.config->types.arrayTypeName.empty())
@@ -1572,7 +1759,7 @@ bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* i
                                                    arrayContainer);
     }
     rawTypeName = ResolveChainedSegments(segments, rawTypeName, collector.request, arrayContainer);
-    if (rawTypeName.empty())
+    if (rawTypeName.empty() || analysis::IsCorePrimitive(rawTypeName) || rawTypeName == "void")
     {
         return true;
     }

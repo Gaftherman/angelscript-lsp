@@ -1228,3 +1228,101 @@ TEST_CASE("Completion - Invariant: Prefix filtering returns 100% matching and 0%
         CHECK_FALSE(HasItem(items, sym));
     }
 }
+
+TEST_CASE("Completion - Dot on primitive method return returns no member items")
+{
+    const std::string clsName = test::GenerateRandomSymbolName("JsonContainer");
+    const std::string fnName = test::GenerateRandomSymbolName("GetBool");
+    const std::string localKey = test::GenerateRandomSymbolName("keyName");
+    const std::string localVal = test::GenerateRandomSymbolName("temp");
+
+    std::string code =
+        "namespace meta_api {\n"
+        "namespace json {\n"
+        "namespace v2 {\n"
+        "class " + clsName + " {\n"
+        "    bool " + fnName + "(string k, float val) { return true; }\n"
+        "    void Test(string " + localKey + ", float " + localVal + ") {\n"
+        "        if (!this." + fnName + "(" + localKey + ", " + localVal + ").\n"
+        "    }\n"
+        "};\n"
+        "}\n"
+        "}\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    size_t targetPos = code.find(").") + 2;
+    uint32_t line = 0;
+    uint32_t col = 0;
+    for (size_t i = 0; i < targetPos; ++i)
+    {
+        if (code[i] == '\n')
+        {
+            line++;
+            col = 0;
+        }
+        else
+        {
+            col++;
+        }
+    }
+
+    auto items = env.CompleteAt(line, col);
+    CHECK(items.empty());
+}
+
+TEST_CASE("Completion - Trailing dot in function declaration returns no member items")
+{
+    const std::string fnName = test::GenerateRandomSymbolName("ValueOrDefault");
+    const std::string paramName = test::GenerateRandomSymbolName("keyName");
+
+    std::string code =
+        "float " + fnName + "(string " + paramName + ").\n";
+
+    TestEnvironment env(code);
+    uint32_t line = 0;
+    uint32_t col = static_cast<uint32_t>(code.find('.')) + 1;
+
+    auto items = env.CompleteAt(line, col);
+    CHECK(items.empty());
+}
+
+TEST_CASE("Completion - Chained method access returning object resolves members")
+{
+    const std::string innerClass = test::GenerateRandomSymbolName("InnerNode");
+    const std::string outerClass = test::GenerateRandomSymbolName("OuterNode");
+    const std::string memberField = test::GenerateRandomSymbolName("childVal");
+    const std::string getMethod = test::GenerateRandomSymbolName("GetChild");
+
+    std::string code =
+        "class " + innerClass + " {\n"
+        "    int " + memberField + ";\n"
+        "};\n"
+        "class " + outerClass + " {\n"
+        "    " + innerClass + "@ " + getMethod + "() { return null; }\n"
+        "    void Run() {\n"
+        "        this." + getMethod + "().\n"
+        "    }\n"
+        "};\n";
+
+    TestEnvironment env(code);
+    size_t targetPos = code.find(").") + 2;
+    uint32_t line = 0;
+    uint32_t col = 0;
+    for (size_t i = 0; i < targetPos; ++i)
+    {
+        if (code[i] == '\n')
+        {
+            line++;
+            col = 0;
+        }
+        else
+        {
+            col++;
+        }
+    }
+
+    auto items = env.CompleteAt(line, col);
+    CHECK(HasItem(items, memberField));
+}
+

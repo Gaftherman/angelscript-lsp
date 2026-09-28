@@ -2,6 +2,25 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.20] - 2026-09-28
+
+### Primitive Member Access Diagnostics, Reserved Keyword Member Validation, & Completion Expression Guard
+
+- Member Access Diagnostics on Primitives:
+  - Fixed issue where member access on expressions returning primitive types (such as `!this.Get(keyName, temp, strict).WeaponTertiaryAttackHook` where `Get` returns `bool`) was not reported.
+  - `AccessChecker` now explicitly validates receiver types against core primitives and `void`, emitting `as-err-member-not-found` (`Class '<type>' has no member '<member>'`).
+- Reserved Keyword Member Diagnostics (Oracle Parity):
+  - Added detection of reserved keywords following dot access (e.g. `this.Get().false`), emitting `as-err-reserved-keyword-name` (`Instead found reserved keyword '<keyword>'`) matching official AngelScript compiler diagnostics.
+- Autocompletion Guard & Expression Parsing Hardening:
+  - Replaced naive forward regex in `CompletionHandler` with backwards delimiter scanning that balances parentheses `(...)` and brackets `[...]`.
+  - Fixed `this` receiver type resolution inside nested namespaces to preserve fully-qualified type names (e.g. `meta_api::json::v2::json`).
+  - Added primitive/void guard in `TryCompleteMemberAccess` to return an empty completion list immediately instead of falling through to dump 160+ keywords, local variables, and enclosing class methods after a dot on a primitive expression.
+  - Guarded trailing dots in function declarations and statements to prevent unwanted completion triggers.
+  - Restricted member access delimiters strictly to `.` matching the AngelScript specification.
+- Verification & Quality:
+  - 2,052 automated test cases passing with 94,616 assertions.
+  - All static quality gates clean (0 Lizard warnings, jscpd 2.12% <= 3%, Clean Function Signatures, Layer Architecture Invariants).
+
 ## [0.9.19] - 2026-09-28
 
 ### Omitted Default Arguments Inlay Hints, Named Arguments Variable Identity, & Overload Resolution Regression Verification

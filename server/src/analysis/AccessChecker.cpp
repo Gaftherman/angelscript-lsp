@@ -6,7 +6,9 @@
 #include "analysis/rules/RuleIndex.h"
 #include "utils/Utils.h"
 
+#include "analysis/DiagnosticCodes.h"
 #include "parser/GrammarNames.h"
+#include "parser/Keywords.h"
 #include <algorithm>
 #include <string>
 #include <string_view>
@@ -403,6 +405,26 @@ bool IsMemberAccessAllowed(const MemberAccess& member, const std::string& access
            DerivesFrom(objectType, accessingClass, ctx.request.symbolTable);
 }
 
+/**
+ * @brief Emits a private or protected access violation diagnostic for a member access.
+ *
+ * @param[in] memberNode AST node of the member being accessed.
+ * @param[in] member Member resolution outcome.
+ * @param[in] memberName Name of the member being accessed.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void EmitPrivacyViolation(TSNode memberNode, const MemberAccess& member, std::string_view memberName,
+                          DiagnosticContext& ctx)
+{
+    const TSPoint start = ts_node_start_point(memberNode);
+    const TSPoint end = ts_node_end_point(memberNode);
+    const bool declaredPrivate = member.access == AccessModifier::Private;
+    ctx.EmitAtRange({start.row, start.column, end.row, end.column},
+                    declaredPrivate ? diagnostics::codes::PrivateMemberAccess
+                                    : diagnostics::codes::ProtectedMemberAccess,
+                    memberName, member.declaringClass);
+}
+
 void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
 {
     TSNode objectNode = parser::GetChildByField(node, parser::fields::Object);
@@ -414,43 +436,61 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
 
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string objectType = ResolveObjectOwnerType(objectNode, scope, request, ctx);
-    if (objectType.empty() || !HierarchyIsFullyVisible(objectType, table))
+    if (objectType.empty())
     {
         return;
     }
 
     const std::string memberName = NodeText(memberNode, request.sourceCode);
+    if (memberName.empty())
+    {
+        return;
+    }
+
+    if (parser::keywords::IsReserved(memberName))
+    {
+        const TSPoint start = ts_node_start_point(memberNode);
+        const TSPoint end = ts_node_end_point(memberNode);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::ReservedKeywordName,
+                        memberName);
+        return;
+    }
+
+    if (IsCorePrimitive(objectType) || objectType == "void")
+    {
+        const TSPoint start = ts_node_start_point(memberNode);
+        const TSPoint end = ts_node_end_point(memberNode);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::MemberNotFound, objectType,
+                        memberName);
+        return;
+    }
+
+    if (!HierarchyIsFullyVisible(objectType, table))
+    {
+        return;
+    }
+
     const MemberAccess member = FindMember(objectType, memberName, table, ctx.request.RequiresAccessorKeyword());
     if (!member.found)
     {
         const TSPoint start = ts_node_start_point(memberNode);
         const TSPoint end = ts_node_end_point(memberNode);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-member-not-found", objectType,
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::MemberNotFound, objectType,
                         memberName);
         return;
     }
 
     MaybeEmitAccessorHint(memberNode, member, objectType, ctx);
 
-    if (!member.decided)
+    if (member.decided)
     {
-        return;
+        bool insideMixin = false;
+        const std::string accessingClass = EnclosingClass(node, request.sourceCode, insideMixin, table);
+        if (!IsMemberAccessAllowed(member, accessingClass, objectType, ctx))
+        {
+            EmitPrivacyViolation(memberNode, member, memberName, ctx);
+        }
     }
-
-    bool insideMixin = false;
-    const std::string accessingClass = EnclosingClass(node, request.sourceCode, insideMixin, table);
-
-    if (IsMemberAccessAllowed(member, accessingClass, objectType, ctx))
-    {
-        return;
-    }
-
-    const TSPoint start = ts_node_start_point(memberNode);
-    const TSPoint end = ts_node_end_point(memberNode);
-    const bool declaredPrivate = member.access == AccessModifier::Private;
-    ctx.EmitAtRange({start.row, start.column, end.row, end.column},
-                    declaredPrivate ? "as-err-private-member-access" : "as-err-protected-member-access", memberName,
-                    member.declaringClass);
 }
 
 /**
