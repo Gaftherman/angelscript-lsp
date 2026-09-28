@@ -2,6 +2,24 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.21] - 2026-09-28
+
+### Machine-Specific Path Elimination, Dynamic Fixture Discovery, & CI Multi-Platform Portability
+
+- Machine-Specific Path Elimination & Portable Test Fixtures:
+  - Eliminated hardcoded developer drive paths (e.g. `E:/Github/src/bts_rc/...` and `E:/Github/src/AS-Harness/...`) across test suites and discovery fixtures.
+  - Implemented dynamic corpus discovery in `SemanticRegressionsBatch2Test` via `BTS_RC_DIR` environment variable and relative sibling repository lookup (`repoRoot / ".." / "bts_rc"`), with clean skip semantics on GitHub Actions CI runners.
+  - Converted file path handling in tests to use URI normalization via `utils::PathToUri`.
+- Portable Oracle Compiler Discovery:
+  - Enhanced `DiscoverOracleBinary` in `LspSemanticHarnessFixture` to discover test oracle binaries via `ASHARNESS_EXE` and `ANGELSCRIPT_ORACLE_EXE` environment variables, sibling repository checkouts (`../AS-Harness`), and in-tree build outputs across Windows (`.exe`) and Linux/macOS.
+- Test Mock & Comment Normalization:
+  - Normalized mock paths in `HoverTest` and `ServerConfigTest` to platform-neutral paths.
+  - Replaced local machine path in `TreeSitter.cmake` comment with generic path placeholder.
+- Verification & Quality:
+  - All 2,052 automated test cases passing with 92,021 assertions.
+  - All static quality gates clean (`check-quality.py`).
+  - Zero hardcoded developer drive paths across the entire codebase.
+
 ## [0.9.20] - 2026-09-28
 
 ### Primitive Member Access Diagnostics, Reserved Keyword Member Validation, & Completion Expression Guard
