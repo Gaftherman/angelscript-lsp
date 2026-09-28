@@ -970,14 +970,14 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         SUBCASE("Search directories arguments")
         {
             ArgvHelper args{"angel_lsp",
-                            "--search-dir=E:/Include/Path1",
-                            "--search-directory=E:/Include/Path2",
-                            "--search-path=E:/Include/Path3"};
+                            "--search-dir=/mock/include/path1",
+                            "--search-directory=/mock/include/path2",
+                            "--search-path=/mock/include/path3"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             REQUIRE(config.searchDirectories.size() == 3);
-            CHECK(config.searchDirectories[0] == "E:/Include/Path1");
-            CHECK(config.searchDirectories[1] == "E:/Include/Path2");
-            CHECK(config.searchDirectories[2] == "E:/Include/Path3");
+            CHECK(config.searchDirectories[0] == "/mock/include/path1");
+            CHECK(config.searchDirectories[1] == "/mock/include/path2");
+            CHECK(config.searchDirectories[2] == "/mock/include/path3");
         }
 
         SUBCASE("Array-like template arguments")

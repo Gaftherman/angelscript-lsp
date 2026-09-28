@@ -665,13 +665,13 @@ TEST_CASE("Hover - An include shows the file it resolves to")
     const std::string source = "#include \"helper.as\"\nvoid main() { }\n";
 
     const auto hover = HoverInclude(source, 0, 12,
-        [](const std::string &raw) { return "E:/work/scripts/" + raw; });
+        [](const std::string &raw) { return "/virtual/workspace/scripts/" + raw; });
 
     const std::string text = HoverText(hover);
     INFO(text);
     REQUIRE_FALSE(text.empty());
     CHECK(text.find("#include \"helper.as\"") != std::string::npos);
-    CHECK(text.find("E:/work/scripts/helper.as") != std::string::npos);
+    CHECK(text.find("/virtual/workspace/scripts/helper.as") != std::string::npos);
 }
 
 TEST_CASE("Hover - An include that resolves to nothing says so")

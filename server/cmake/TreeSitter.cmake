@@ -27,7 +27,7 @@ endif()
 # A grammar change and the analyzer change that depends on it land together, and the pin above
 # cannot name a commit that has not been pushed yet; this is how the two are developed side by side:
 #
-#   cmake -B build -S . -DANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE=E:/Github/src/tree-sitter-angelscript
+#   cmake -B build -S . -DANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE=/path/to/tree-sitter-angelscript
 set(ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE "" CACHE PATH
     "Local tree-sitter-angelscript checkout to build against instead of the pinned commit")
 

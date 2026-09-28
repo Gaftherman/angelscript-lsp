@@ -89,19 +89,38 @@ void LspSemanticHarnessFixture::DiscoverOracleBinary()
         m_oracleExe = envPath;
         return;
     }
+    POP_ENV("ANGELSCRIPT_ORACLE_EXE", envPath);
+    if (!envPath.empty() && std::filesystem::exists(envPath))
+    {
+        m_oracleExe = envPath;
+        return;
+    }
 
-    const std::vector<std::string> candidates = {
-        "E:/Github/src/AS-Harness/build_release/Release/asharness.exe",
-        "E:/Github/src/AS-Harness/build/Debug/asharness.exe",
-        (std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "server/build/bin/angelscript_oracle.exe").generic_string(),
-        (std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "server/build/angelscript_oracle").generic_string(),
+    const std::filesystem::path repo(ANGELSCRIPT_REPO_ROOT);
+    const std::vector<std::filesystem::path> candidates = {
+        // Sibling AS-Harness repository builds
+        repo / ".." / "AS-Harness" / "build_release" / "Release" / "asharness.exe",
+        repo / ".." / "AS-Harness" / "build" / "Release" / "asharness.exe",
+        repo / ".." / "AS-Harness" / "build" / "Debug" / "asharness.exe",
+        repo / ".." / "AS-Harness" / "asharness.exe",
+        // In-tree oracle executable builds (Windows & Linux/macOS)
+        repo / "server" / "build" / "bin" / "angelscript_oracle.exe",
+        repo / "server" / "build" / "Release" / "angelscript_oracle.exe",
+        repo / "server" / "build" / "Debug" / "angelscript_oracle.exe",
+        repo / "server" / "build" / "bin" / "angelscript_oracle",
+        repo / "server" / "build" / "angelscript_oracle",
+        repo / "build" / "bin" / "angelscript_oracle.exe",
+        repo / "build" / "Release" / "angelscript_oracle.exe",
+        repo / "build" / "Debug" / "angelscript_oracle.exe",
+        repo / "build" / "bin" / "angelscript_oracle",
+        repo / "build" / "angelscript_oracle",
     };
 
     for (const auto& path : candidates)
     {
         if (std::filesystem::exists(path))
         {
-            m_oracleExe = path;
+            m_oracleExe = path.generic_string();
             return;
         }
     }

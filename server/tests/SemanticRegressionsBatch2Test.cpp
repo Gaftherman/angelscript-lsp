@@ -15,10 +15,14 @@
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <ostream>
 #include <string>
 #include <vector>
+
+#include "utils/Utils.h"
 
 namespace angel_lsp::test
 {
@@ -522,18 +526,51 @@ TEST_CASE("Named arguments - Incompatible element in named initializer list emit
 
 TEST_CASE("SvenCoop v2.as - this.Get overload resolution with mutable ref")
 {
-    const std::string v2Path = "E:/Github/src/bts_rc/scripts/mikk155/meta_api/json/v2.as";
+    std::filesystem::path btsRcDir;
+#if defined(_WIN32)
+    char* envVal = nullptr;
+    size_t sz = 0;
+    if (_dupenv_s(&envVal, &sz, "BTS_RC_DIR") == 0 && envVal)
+    {
+        btsRcDir = envVal;
+        free(envVal);
+    }
+#else
+    if (const char* envVal = std::getenv("BTS_RC_DIR"); envVal && *envVal)
+    {
+        btsRcDir = envVal;
+    }
+#endif
+
+    if (btsRcDir.empty())
+    {
+        const std::filesystem::path sibling = std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / ".." / "bts_rc";
+        std::error_code ec;
+        if (std::filesystem::is_directory(sibling, ec))
+        {
+            btsRcDir = sibling;
+        }
+    }
+
+    if (btsRcDir.empty())
+    {
+        MESSAGE("bts_rc corpus not present - skipping direct file analysis.");
+        return;
+    }
+
+    const std::filesystem::path v2Path = btsRcDir / "scripts" / "mikk155" / "meta_api" / "json" / "v2.as";
     std::ifstream f(v2Path);
     if (!f.is_open())
     {
-        MESSAGE("v2.as not found, skipping direct file analysis");
+        MESSAGE("v2.as not found at " << v2Path << ", skipping direct file analysis.");
         return;
     }
     std::string script((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     f.close();
 
+    const std::filesystem::path pfPath = btsRcDir / "as.predefined";
     std::string predefined;
-    std::ifstream pf("E:/Github/src/bts_rc/as.predefined");
+    std::ifstream pf(pfPath);
     if (pf.is_open())
     {
         predefined.assign((std::istreambuf_iterator<char>(pf)), std::istreambuf_iterator<char>());
@@ -545,17 +582,19 @@ TEST_CASE("SvenCoop v2.as - this.Get overload resolution with mutable ref")
 
     if (!predefined.empty())
     {
-        collector.CollectSymbols("file:///E:/Github/src/bts_rc/as.predefined", predefined, parser, table);
+        collector.CollectSymbols(utils::PathToUri(pfPath.generic_string()), predefined, parser, table);
     }
 
-    std::ifstream jf("E:/Github/src/bts_rc/scripts/mikk155/meta_api/json.as");
+    const std::filesystem::path jfPath = btsRcDir / "scripts" / "mikk155" / "meta_api" / "json.as";
+    std::ifstream jf(jfPath);
     if (jf.is_open())
     {
         std::string jsonCode((std::istreambuf_iterator<char>(jf)), std::istreambuf_iterator<char>());
-        collector.CollectSymbols("file:///E:/Github/src/bts_rc/scripts/mikk155/meta_api/json.as", jsonCode, parser, table);
+        collector.CollectSymbols(utils::PathToUri(jfPath.generic_string()), jsonCode, parser, table);
     }
 
-    auto diags = collector.CollectSymbols("file:///E:/Github/src/bts_rc/scripts/mikk155/meta_api/json/v2.as", script, parser, table);
+    const std::string v2Uri = utils::PathToUri(v2Path.generic_string());
+    auto diags = collector.CollectSymbols(v2Uri, script, parser, table);
 
     analysis::LocalScopeCollector scopeCollector(nullptr);
     auto scopes = scopeCollector.CollectScopes(script, parser);
@@ -563,7 +602,7 @@ TEST_CASE("SvenCoop v2.as - this.Get overload resolution with mutable ref")
     TSTree* tree = parser.Parse(script);
 
     analysis::SemanticAnalyzer analyzer(nullptr);
-    analysis::SemanticAnalysisRequest request{table, "file:///E:/Github/src/bts_rc/scripts/mikk155/meta_api/json/v2.as", ".as.predefined", nullptr};
+    analysis::SemanticAnalysisRequest request{table, v2Uri, ".as.predefined", nullptr};
     request.sourceCode = script;
     request.tree = tree;
     if (scopes)
