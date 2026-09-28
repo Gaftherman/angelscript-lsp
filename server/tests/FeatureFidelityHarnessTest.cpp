@@ -1,4 +1,5 @@
 #include "helpers/LspSemanticHarnessFixture.h"
+#include "helpers/TestUtils.h"
 #include <doctest/doctest.h>
 
 using namespace angel_lsp::test;
@@ -178,5 +179,35 @@ TEST_SUITE("FeatureFidelityHarness")
 
         // Line 2, col 28: "Type" in "meta_api::json::Type::Object"
         fixture.AssertDefinitionTarget(userUri, 2, 28, "json.as", 4);
+    }
+
+    TEST_CASE("Hover Inspection on named argument displays parameter information")
+    {
+        LspSemanticHarnessFixture fixture;
+        const std::string clsName = GenerateRandomSymbolName("Spawner");
+        const std::string fnName = GenerateRandomSymbolName("CreateItem");
+        const std::string paramName = GenerateRandomSymbolName("fSpawn");
+
+        const std::string script = "class " + clsName + "\n"
+                                   "{\n"
+                                   "    void " + fnName + "(int id, bool " + paramName + " = true) {}\n"
+                                   "}\n"
+                                   "\n"
+                                   "void Test()\n"
+                                   "{\n"
+                                   "    " + clsName + " s;\n"
+                                   "    s." + fnName + "(1, " + paramName + ": false);\n"
+                                   "}\n";
+
+        const std::string uri = fixture.SandboxUri("scripts/hover_named_arg.as");
+        fixture.AddVirtualDocument(uri, script);
+
+        // Find position of paramName in line 8
+        const size_t col = script.find(paramName + ":");
+        // Line 8 starts at "    s."
+        const size_t line8Start = script.rfind('\n', col);
+        const uint32_t charCol = static_cast<uint32_t>(col - line8Start - 1);
+
+        fixture.AssertHoverContains(uri, 8, charCol + 1, "bool " + paramName);
     }
 }

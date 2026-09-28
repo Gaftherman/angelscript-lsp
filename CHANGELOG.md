@@ -2,6 +2,24 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.17] - 2026-09-27
+
+### Named Arguments Parameter Label Diagnostics, Optional Parameter Fallbacks, & Hover Resolution
+
+- Named Arguments Parameter Label Semantic Discrimination:
+  - Added `bool isNamedArgument` flag to `LocalReference` in `ScopeTree.h` to distinguish named argument labels (`arg_name:`) from variable occurrences.
+  - Implemented `IsNamedArgumentNode` in `LocalScopeCollector.cpp` to accurately tag identifiers directly inside `argument_list` followed by `:`.
+  - Updated `SemanticAnalyzer::ShouldIgnoreReference` to suppress false `as-warn-undeclared-identifier` warnings when parameter names are supplied as named arguments (e.g. `g_EntityFuncs.CreateEntity(szAmmoName, fSpawn: false)`).
+  - Updated `SemanticAnalyzer::CollectUsedDefinitions` and `CodeActionUnusedVariables.cpp` to prevent argument labels from falsely marking identically named local variables as used.
+- Optional Parameter Default Value Fallback:
+  - Enhanced `CheckCandidateNamedArgs` in `CallChecker.cpp` to verify both `defaultValue.empty()` and `rawText.find('=') == std::string::npos`, guaranteeing that candidates with omitted optional parameters whose default values are encoded in raw signatures (e.g. `= null`, `= true` in `sven.as.predefined`) match without triggering false `as-err-call-no-matching-signature`.
+  - Decomposed `CheckCandidateNamedArgs` into cohesive subroutines adhering to Lizard cyclomatic complexity ($\le 15$) and length limits ($\le 70$ lines).
+- Hover & Inspection on Named Arguments:
+  - Implemented `TryHoverNamedArgument` in `HoverHandler.cpp`, enabling parameter inspection on named argument labels (e.g. Hovering `fSpawn:` displays `(parameter) bool fSpawn = true` and identifies the parent function `CreateEntity`).
+- Tests & Verification:
+  - Added empirical reproduction and invariant tests in `SemanticRegressionsBatch2Test.cpp` and `FeatureFidelityHarnessTest.cpp` with randomized symbol names (`GenerateRandomSymbolName()`).
+  - All 2,036 C++ tests and 49 VS Code client integration tests passing.
+
 ## [0.9.16] - 2026-09-27
 
 ### Predefined File Icons & CodeLens References on Predefined Declarations

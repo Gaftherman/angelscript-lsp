@@ -1461,6 +1461,107 @@ std::optional<lsp::Hover> TryHoverParameterAst(const HoverQueryContext& ctx)
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, ctx.range};
 }
 
+static bool IsNamedArgumentLabelAtCursor(TSNode node, TSNode parent)
+{
+    if (ts_node_is_null(node) || ts_node_is_null(parent) ||
+        std::string_view(ts_node_type(parent)) != "argument_list")
+    {
+        return false;
+    }
+    TSNode next = ts_node_next_sibling(node);
+    while (!ts_node_is_null(next) && std::string_view(ts_node_type(next)) == "comment")
+    {
+        next = ts_node_next_sibling(next);
+    }
+    return !ts_node_is_null(next) && std::string_view(ts_node_type(next)) == ":";
+}
+
+static std::vector<analysis::Symbol> ResolveNamedArgCalleeCandidates(TSNode callNode, const HoverQueryContext& ctx)
+{
+    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
+    if (ts_node_is_null(funcNode) && ts_node_child_count(callNode) > 0)
+    {
+        funcNode = ts_node_child(callNode, 0);
+    }
+    if (ts_node_is_null(funcNode))
+    {
+        return {};
+    }
+
+    if (std::string_view(ts_node_type(funcNode)) == "member_expression")
+    {
+        TSNode objectNode = parser::GetChildByField(funcNode, parser::fields::Object);
+        TSNode memberNode = parser::GetChildByField(funcNode, parser::fields::Member);
+        if (!ts_node_is_null(objectNode) && !ts_node_is_null(memberNode))
+        {
+            std::string receiverTypeName = ResolveReceiverTypeName(objectNode, ctx);
+            std::string memberName = analysis::GetNodeText(memberNode, ctx.request.sourceCode);
+            return CollectReceiverMemberSymbols(receiverTypeName, memberName, ctx.request.symbolTable);
+        }
+    }
+    else
+    {
+        std::string funcName = analysis::GetNodeText(funcNode, ctx.request.sourceCode);
+        return ctx.request.symbolTable.FindSymbols(funcName);
+    }
+    return {};
+}
+
+static std::optional<lsp::Hover> FormatNamedArgHover(const std::vector<analysis::Symbol>& candidates,
+                                                     const HoverQueryContext& ctx)
+{
+    for (const auto& sym : candidates)
+    {
+        if (sym.type != analysis::SymbolType::Function ||
+            !std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+        {
+            continue;
+        }
+        for (const auto& param : sym.GetFunction().parameters)
+        {
+            if (param.name != ctx.nodeText)
+            {
+                continue;
+            }
+            std::string md = "```angelscript\n(parameter) " + param.typeName + " " + param.name;
+            if (!param.defaultValue.empty())
+            {
+                md += " = " + param.defaultValue;
+            }
+            else if (param.rawText.find('=') != std::string::npos)
+            {
+                md += " " + param.rawText.substr(param.rawText.find('='));
+            }
+            md += "\n```\nParameter of `" + sym.name + "`";
+            return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
+                             ctx.range};
+        }
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief Attempts to provide hover for a named argument parameter label in a call expression.
+ * @param[in] ctx Hover query context.
+ * @return Parameter hover if node is a named argument label, std::nullopt otherwise.
+ */
+std::optional<lsp::Hover> TryHoverNamedArgument(const HoverQueryContext& ctx)
+{
+    if (!IsNamedArgumentLabelAtCursor(ctx.node, ctx.parent))
+    {
+        return std::nullopt;
+    }
+
+    TSNode callNode = ts_node_parent(ctx.parent);
+    if (ts_node_is_null(callNode))
+    {
+        return std::nullopt;
+    }
+
+    auto candidates = ResolveNamedArgCalleeCandidates(callNode, ctx);
+    return FormatNamedArgHover(candidates, ctx);
+}
+
 void AppendEnclosingClassMethods(TSNode node, std::string_view nodeText, const HoverRequest& request,
                                  std::vector<analysis::Symbol>& symbols)
 {
@@ -1820,6 +1921,11 @@ std::optional<lsp::Hover> TryHoverExpressionOrLocal(const HoverQueryContext& ctx
     if (auto paramHover = TryHoverParameterAst(ctx))
     {
         return paramHover;
+    }
+
+    if (auto namedArgHover = TryHoverNamedArgument(ctx))
+    {
+        return namedArgHover;
     }
 
     if (!isMemberChild)

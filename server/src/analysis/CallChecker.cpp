@@ -1354,44 +1354,57 @@ void ValidateOutArguments(const Symbol& candidate, const std::vector<TSNode>& ar
  * @param[in] symbolTable Symbol table for type conversion checking.
  * @return True if candidate matches the named arguments call.
  */
+static size_t ResolveParameterIndexForArgument(const FunctionSignature& sig, size_t argIdx,
+                                               std::string_view argName,
+                                               const std::unordered_set<size_t>& matchedParams)
+{
+    if (!argName.empty())
+    {
+        for (size_t p = 0; p < sig.parameters.size(); ++p)
+        {
+            if (sig.parameters[p].name == argName)
+            {
+                return matchedParams.contains(p) ? size_t(-1) : p;
+            }
+        }
+        return size_t(-1);
+    }
+
+    if (argIdx >= sig.parameters.size())
+    {
+        return ArityOf(sig).variadic ? argIdx : size_t(-1);
+    }
+    return matchedParams.contains(argIdx) ? size_t(-1) : argIdx;
+}
+
+static bool CheckUnmatchedDefaultParameters(const FunctionSignature& sig,
+                                           const std::unordered_set<size_t>& matchedParams)
+{
+    for (size_t p = 0; p < sig.parameters.size(); ++p)
+    {
+        if (!matchedParams.contains(p) && sig.parameters[p].defaultValue.empty() &&
+            sig.parameters[p].rawText.find('=') == std::string::npos)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool CheckCandidateNamedArgs(const FunctionSignature& sig, const std::vector<std::string>& argNames,
                              const std::vector<std::string>& argTypes, const SymbolTable& symbolTable)
 {
     std::unordered_set<size_t> matchedParams;
     for (size_t i = 0; i < argNames.size(); ++i)
     {
-        size_t paramIdx = size_t(-1);
-        if (!argNames[i].empty())
+        size_t paramIdx = ResolveParameterIndexForArgument(sig, i, argNames[i], matchedParams);
+        if (paramIdx == size_t(-1))
         {
-            for (size_t p = 0; p < sig.parameters.size(); ++p)
-            {
-                if (sig.parameters[p].name == argNames[i])
-                {
-                    paramIdx = p;
-                    break;
-                }
-            }
-            if (paramIdx == size_t(-1) || matchedParams.contains(paramIdx))
-            {
-                return false;
-            }
-        }
-        else
-        {
-            paramIdx = i;
-            if (paramIdx >= sig.parameters.size())
-            {
-                const auto arity = ArityOf(sig);
-                if (!arity.variadic)
-                {
-                    return false;
-                }
-            }
+            return false;
         }
         if (paramIdx < sig.parameters.size())
         {
             matchedParams.insert(paramIdx);
-
             if (!argTypes[i].empty())
             {
                 const auto conv = EvaluateArgumentConversion(argTypes[i], sig.parameters[paramIdx], symbolTable, true);
@@ -1403,14 +1416,7 @@ bool CheckCandidateNamedArgs(const FunctionSignature& sig, const std::vector<std
         }
     }
 
-    for (size_t p = 0; p < sig.parameters.size(); ++p)
-    {
-        if (!matchedParams.contains(p) && sig.parameters[p].defaultValue.empty())
-        {
-            return false;
-        }
-    }
-    return true;
+    return CheckUnmatchedDefaultParameters(sig, matchedParams);
 }
 
 /**

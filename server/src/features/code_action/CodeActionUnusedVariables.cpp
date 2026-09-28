@@ -30,7 +30,7 @@ void CollectUsedDefinitions(const analysis::Scope* rootScope,
 
         for (const auto& ref : sc->references)
         {
-            if (ref.isMemberAccess)
+            if (ref.isMemberAccess || ref.isNamedArgument)
             {
                 continue;
             }

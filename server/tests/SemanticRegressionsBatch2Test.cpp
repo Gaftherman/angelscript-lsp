@@ -383,6 +383,50 @@ TEST_CASE("Vector 11 - Multi-segment namespace type and switch CFG exhaustivenes
     CHECK_FALSE(HasDiagCode(diags, "as-err-not-all-paths-return"));
 }
 
+TEST_CASE("Named arguments - Optional parameter skipped and named parameter provided")
+{
+    const std::string predefined =
+        "class string {};\n"
+        "class CBaseEntity {};\n"
+        "class dictionary {};\n"
+        "class CEntityFuncs {\n"
+        "    CBaseEntity@ CreateEntity(const string& in szClassName, dictionary@ pDictionary = null, bool fSpawn = true);\n"
+        "};\n"
+        "CEntityFuncs g_EntityFuncs;\n";
+
+    const std::string script =
+        "void Test() {\n"
+        "    string szAmmoName = \"weapon_9mmclip\";\n"
+        "    CBaseEntity@ pClip = g_EntityFuncs.CreateEntity(szAmmoName, fSpawn: false);\n"
+        "}\n";
+
+    const auto diags = AnalyzeSnippetWithPredefined(script, predefined);
+    DumpDiags("Named Args Test", diags);
+    CHECK_FALSE(HasDiagCode(diags, "as-warn-undeclared-identifier"));
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("Named arguments - Parameter label does not mark local variable as used")
+{
+    const std::string fSpawnVar = GenerateRandomSymbolName("fSpawn");
+    const std::string fnName = GenerateRandomSymbolName("MakeItem");
+
+    const std::string predefined =
+        "class string {};\n"
+        "void " + fnName + "(string name, bool " + fSpawnVar + " = true) {}\n";
+
+    const std::string script =
+        "void Test() {\n"
+        "    bool " + fSpawnVar + " = false;\n" // Local variable with same name as parameter
+        "    " + fnName + "(\"test\", " + fSpawnVar + ": true);\n" // Argument label should NOT count as using the local variable
+        "}\n";
+
+    const auto diags = AnalyzeSnippetWithPredefined(script, predefined);
+    DumpDiags("Named Arg Local Var Shadow", diags);
+    CHECK_FALSE(HasDiagCode(diags, "as-warn-undeclared-identifier"));
+    CHECK(HasDiagCode(diags, "as-warn-unused-variable"));
+}
+
 TEST_SUITE_END();
 
 } // namespace angel_lsp::test

@@ -4,6 +4,15 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.9.17] - 2026-09-27
+
+### Named Arguments Parameter Label Diagnostics, Optional Parameter Fallbacks, & Hover Resolution
+
+- Suppressed false `as-warn-undeclared-identifier` warnings on named argument labels (`arg_name:`) like `fSpawn: false`.
+- Prevented named argument labels from incorrectly marking identically named local variables as used.
+- Enhanced candidate overload resolution when optional parameters with raw default values (e.g. `= null`, `= true`) are omitted.
+- Added parameter hover tooltip support when inspecting named argument labels in function and method calls.
+
 ## [0.9.16] - 2026-09-27
 
 ### Predefined File Icons & CodeLens References on Predefined Declarations

@@ -418,6 +418,20 @@ static bool IsKeywordDeclarationContext(TSNode node)
            parentType == "lambda_expression";
 }
 
+static bool IsNamedArgumentNode(TSNode node, TSNode parent)
+{
+    if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "argument_list")
+    {
+        return false;
+    }
+    TSNode next = ts_node_next_sibling(node);
+    while (!ts_node_is_null(next) && std::string_view(ts_node_type(next)) == "comment")
+    {
+        next = ts_node_next_sibling(next);
+    }
+    return !ts_node_is_null(next) && std::string_view(ts_node_type(next)) == ":";
+}
+
 void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Scope* current,
                                                   const std::string& sourceCode) const
 {
@@ -446,6 +460,7 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
     TSNode parent = ts_node_parent(capture.node);
     if (!ts_node_is_null(parent))
     {
+        ref.isNamedArgument = IsNamedArgumentNode(capture.node, parent);
         ref.isTypeSpecifier = IsTypeSpecifierContext(capture.node);
         ref.isMemberAccess = IsMemberAccessNode(capture.node, parent, m_symMemberExpression);
         DetermineCallReferenceInfo(capture.node, parent, ref);

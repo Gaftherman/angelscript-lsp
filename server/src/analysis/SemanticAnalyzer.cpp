@@ -802,7 +802,7 @@ MixinRanges CollectMixinRanges(const SymbolTable& symbolTable, const std::string
 
 bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticContext& ctx)
 {
-    if (ref.isMemberAccess || ref.isTypeSpecifier)
+    if (ref.isMemberAccess || ref.isTypeSpecifier || ref.isNamedArgument)
         return true;
 
     if (ref.name == "this" || ref.name == "value")
@@ -1052,7 +1052,7 @@ void SemanticAnalyzer::CollectUsedDefinitions(const Scope* scope,
 
     for (const auto& ref : scope->references)
     {
-        if (ref.isMemberAccess)
+        if (ref.isMemberAccess || ref.isNamedArgument)
             continue;
 
         const LocalDefinition* def = ResolveInScope(scope, ref.name);
