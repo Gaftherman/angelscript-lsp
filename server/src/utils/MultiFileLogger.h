@@ -154,6 +154,8 @@ class MultiFileLogger
     };
 
     void WorkerLoop();
+    void FlushRemainingQueue();
+    void WriteFatalWorkerError(std::string_view reason);
     void ProcessBatch(std::vector<LogEntry>& batch);
     void WriteEntry(const LogEntry& entry);
     void FlushAllSinks();

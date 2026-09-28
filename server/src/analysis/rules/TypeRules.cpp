@@ -21,58 +21,28 @@ namespace
  */
 TSNode FindEnumDeclarationNode(TSNode root, const Symbol& sym, std::string_view sourceCode)
 {
-    if (ts_node_is_null(root))
-    {
-        return TSNode{};
-    }
-
-    TSTreeCursor cursor = ts_tree_cursor_new(root);
-    bool reachedRoot = false;
-
-    while (!reachedRoot)
-    {
-        TSNode node = ts_tree_cursor_current_node(&cursor);
+    TSNode found{};
+    parser::ForEachDescendantNode(root, [&](TSNode node) {
+        if (!ts_node_is_null(found))
+        {
+            return;
+        }
         if (NodeType(node) == parser::nodes::EnumDeclaration)
         {
             const TSPoint pt = ts_node_start_point(node);
             if (pt.row == sym.startLine && pt.column == sym.startCharacter)
             {
-                ts_tree_cursor_delete(&cursor);
-                return node;
+                found = node;
+                return;
             }
             const TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
             if (!ts_node_is_null(nameNode) && NodeText(nameNode, sourceCode) == sym.name)
             {
-                ts_tree_cursor_delete(&cursor);
-                return node;
+                found = node;
             }
         }
-
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            continue;
-        }
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            continue;
-        }
-
-        while (!reachedRoot)
-        {
-            if (!ts_tree_cursor_goto_parent(&cursor))
-            {
-                reachedRoot = true;
-                break;
-            }
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                break;
-            }
-        }
-    }
-
-    ts_tree_cursor_delete(&cursor);
-    return TSNode{};
+    });
+    return found;
 }
 
 /** @brief True when the name collides with a keyword or a built-in type name. */

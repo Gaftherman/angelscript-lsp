@@ -2,6 +2,7 @@
 
 #include "analysis/DiagnosticContext.h"
 #include "analysis/SymbolTable.h"
+#include "parser/ASTUtils.h"
 #include "parser/Primitives.h"
 #include <ankerl/unordered_dense.h>
 #include <optional>
@@ -37,13 +38,7 @@ enum class InitializerItemKind
     NestedInitializer
 };
 
-/**
- * @brief Extracts the raw source text corresponding to an AST node.
- * @param node The AST node.
- * @param sourceCode The document source code.
- * @return Extracted string.
- */
-std::string GetNodeText(TSNode node, std::string_view sourceCode);
+using parser::GetNodeText;
 
 /**
  * @brief Extracts a non-allocating string_view corresponding to an AST node's byte range.

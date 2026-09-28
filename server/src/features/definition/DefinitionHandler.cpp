@@ -1,6 +1,8 @@
 #include "features/definition/DefinitionHandler.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/overload/ConversionRankingEngine.h"
+#include "analysis/VirtualMixinContext.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
 #include <algorithm>
@@ -140,33 +142,6 @@ TSNode FindEnclosingCallNode(TSNode node)
 }
 
 /**
- * @brief Checks whether a function signature's parameter bounds accommodate the call arity.
- * @param[in] sig Function signature information.
- * @param[in] argCount Call site argument count.
- * @return True if arity is within min/max bounds.
- */
-bool MatchesCallArity(const analysis::FunctionSignature& sig, uint32_t argCount)
-{
-    uint32_t requiredParams = 0;
-    uint32_t maxParams = 0;
-    bool isVariadic = false;
-    for (const auto& param : sig.parameters)
-    {
-        if (param.rawText.find("...") != std::string::npos)
-        {
-            isVariadic = true;
-            continue;
-        }
-        ++maxParams;
-        if (param.defaultValue.empty())
-        {
-            ++requiredParams;
-        }
-    }
-    return (argCount >= requiredParams) && (isVariadic || argCount <= maxParams);
-}
-
-/**
  * @brief Checks if any candidate function matches the specified call argument count.
  * @param[in] candidates Candidate symbols to inspect.
  * @param[in] argCount Call site argument count.
@@ -178,7 +153,7 @@ bool HasArityMatch(const std::vector<analysis::Symbol>& candidates, uint32_t arg
     {
         if (std::holds_alternative<analysis::FunctionSignature>(sym.signature))
         {
-            if (MatchesCallArity(sym.GetFunction(), argCount))
+            if (analysis::MatchesCallArity(sym.GetFunction(), argCount))
             {
                 return true;
             }
@@ -261,46 +236,6 @@ void CollectClassHierarchyOverloads(TSNode node, const DefinitionRequest& reques
 }
 
 /**
- * @brief Scores a function candidate against call site arguments for fallback matching.
- * @param[in] sig Function signature.
- * @param[in] argTypes Deduced call site argument types.
- * @param[in] symbolTable Symbol table for type scoring.
- * @return Heuristic match score.
- */
-int ScoreCandidateFallback(const analysis::FunctionSignature& sig, const std::vector<std::string>& argTypes,
-                           const analysis::SymbolTable& symbolTable)
-{
-    const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
-    int score = 0;
-    if (MatchesCallArity(sig, argCount))
-    {
-        score += 100;
-        if (argCount == sig.parameters.size())
-        {
-            score += 50;
-        }
-    }
-    else
-    {
-        int diff = std::abs(static_cast<int>(argCount) - static_cast<int>(sig.parameters.size()));
-        score -= diff * 20;
-    }
-
-    for (size_t i = 0; i < argTypes.size() && i < sig.parameters.size(); ++i)
-    {
-        if (!argTypes[i].empty())
-        {
-            int pScore = analysis::ScoreArgumentMatch(argTypes[i], sig.parameters[i], symbolTable);
-            if (pScore < 999)
-            {
-                score += 10;
-            }
-        }
-    }
-    return score;
-}
-
-/**
  * @brief Selects the best fallback function candidate based on arity and argument scores.
  * @param[in] funcCandidates List of function candidates.
  * @param[in] argTypes Call site argument types.
@@ -311,22 +246,7 @@ const analysis::Symbol* FindBestFallbackCandidate(const std::vector<analysis::Sy
                                                   const std::vector<std::string>& argTypes,
                                                   const analysis::SymbolTable& symbolTable)
 {
-    const analysis::Symbol* bestFallback = nullptr;
-    int bestFallbackScore = -10000;
-    for (const auto& sym : funcCandidates)
-    {
-        if (!std::holds_alternative<analysis::FunctionSignature>(sym.signature))
-        {
-            continue;
-        }
-        int score = ScoreCandidateFallback(sym.GetFunction(), argTypes, symbolTable);
-        if (score > bestFallbackScore)
-        {
-            bestFallbackScore = score;
-            bestFallback = &sym;
-        }
-    }
-    return (bestFallback != nullptr && bestFallbackScore > 0) ? bestFallback : nullptr;
+    return analysis::FindBestFallbackOverload(funcCandidates, argTypes, symbolTable);
 }
 
 /**
@@ -543,68 +463,12 @@ std::optional<std::vector<lsp::Location>> TryResolveIncludeDirective(const Defin
 }
 
 /**
- * @brief Context for virtual mixin documents.
- */
-struct VirtualMixinContext
-{
-    bool isVirtual = false;
-    std::string virtualHostClass;
-    std::string virtualMixinName;
-    std::optional<analysis::Symbol> virtualMixinSym;
-};
-
-/**
- * @brief Resolves virtual mixin context metadata from request URI.
- * @param[in] request Definition request context.
- * @return Populated VirtualMixinContext.
- */
-VirtualMixinContext ResolveVirtualMixinContext(const DefinitionRequest& request)
-{
-    VirtualMixinContext vCtx;
-    vCtx.isVirtual =
-        request.uri.starts_with("angelscript-virtual:") || request.uri.starts_with("angelscript-virtual://");
-    if (!vCtx.isVirtual)
-    {
-        return vCtx;
-    }
-    vCtx.virtualHostClass = analysis::SymbolTable::ExtractVirtualHostClass(request.uri);
-    vCtx.virtualMixinName = analysis::SymbolTable::ExtractVirtualMixinName(request.uri);
-
-    auto candidates = request.symbolTable.FindSymbolsPtr(vCtx.virtualMixinName);
-    if (candidates)
-    {
-        for (const auto& cand : *candidates)
-        {
-            if (cand.type == analysis::SymbolType::Class)
-            {
-                vCtx.virtualMixinSym = cand;
-                break;
-            }
-        }
-    }
-    if (!vCtx.virtualMixinSym.has_value())
-    {
-        std::string shortName = std::string(analysis::LastScopeSegment(vCtx.virtualMixinName));
-        auto shortCandidates = request.symbolTable.FindTypeSymbolsByShortName(shortName);
-        for (const auto& cand : shortCandidates)
-        {
-            if (cand.type == analysis::SymbolType::Class)
-            {
-                vCtx.virtualMixinSym = cand;
-                break;
-            }
-        }
-    }
-    return vCtx;
-}
-
-/**
  * @brief Context bundling definition lookup parameters and virtual document state.
  */
 struct DefinitionContext
 {
     const DefinitionRequest& request;
-    VirtualMixinContext vCtx;
+    analysis::VirtualMixinContext vCtx;
     std::shared_ptr<const analysis::Scope> rootScope;
     uint32_t queryLine = 0;
 };
@@ -616,14 +480,9 @@ struct DefinitionContext
  */
 DefinitionContext MakeDefinitionContext(const DefinitionRequest& request)
 {
-    VirtualMixinContext vCtx = ResolveVirtualMixinContext(request);
-    auto rootScope = (vCtx.isVirtual && vCtx.virtualMixinSym.has_value())
-                         ? request.scopeIndex.GetRoot(vCtx.virtualMixinSym->fileUri)
-                         : request.scopeIndex.GetRoot(request.uri);
-    uint32_t queryLine =
-        (vCtx.isVirtual && vCtx.virtualMixinSym.has_value())
-            ? analysis::SymbolTable::VirtualToPhysicalLine(request.position.line, vCtx.virtualMixinSym->startLine)
-            : request.position.line;
+    analysis::VirtualMixinContext vCtx = analysis::ResolveVirtualMixinContext(request.uri, request.symbolTable);
+    auto rootScope = request.scopeIndex.GetRoot(analysis::ResolvePhysicalUri(vCtx, request.uri));
+    uint32_t queryLine = analysis::ResolvePhysicalLine(vCtx, request.position.line);
     return DefinitionContext{request, std::move(vCtx), std::move(rootScope), queryLine};
 }
 
@@ -774,18 +633,7 @@ std::vector<lsp::Location> ConvertSymbolsToLocations(const std::vector<analysis:
  */
 std::string NormalizeReceiverTypeName(std::string receiverTypeName, const analysis::SymbolTable& symbolTable)
 {
-    if (receiverTypeName.find("::") == std::string::npos && !symbolTable.HasSymbol(receiverTypeName))
-    {
-        auto shortMatches = symbolTable.FindTypeSymbolsByShortName(receiverTypeName);
-        for (const auto& sym : shortMatches)
-        {
-            if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface)
-            {
-                return sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-            }
-        }
-    }
-    return receiverTypeName;
+    return symbolTable.QualifyShortTypeName(receiverTypeName);
 }
 
 /**
@@ -815,7 +663,7 @@ std::optional<std::vector<lsp::Location>> TryResolveMemberDefinition(TSNode node
                       : nullptr;
     std::string receiverTypeName =
         analysis::ResolveReceiverType(objectNode, ctx.request.sourceCode, ctx.request.symbolTable,
-                                      {scope, ctx.vCtx.virtualHostClass, ctx.request.uri});
+                                      {scope, ctx.vCtx.hostClass, ctx.request.uri});
 
     if (receiverTypeName.empty())
     {
@@ -847,10 +695,10 @@ lsp::Location MakeLocalDefinitionLocation(const analysis::LocalDefinition& def, 
     uint32_t eLine = (def.fullEndLine > 0 || def.fullEndCharacter > 0) ? def.fullEndLine : def.endLine;
     uint32_t eChar = (def.fullEndLine > 0 || def.fullEndCharacter > 0) ? def.fullEndCharacter : def.endCharacter;
 
-    if (ctx.vCtx.isVirtual && ctx.vCtx.virtualMixinSym.has_value())
+    if (ctx.vCtx.isVirtual && ctx.vCtx.mixinSymbol.has_value())
     {
-        sLine = analysis::SymbolTable::PhysicalToVirtualLine(sLine, ctx.vCtx.virtualMixinSym->startLine);
-        eLine = analysis::SymbolTable::PhysicalToVirtualLine(eLine, ctx.vCtx.virtualMixinSym->startLine);
+        sLine = analysis::SymbolTable::PhysicalToVirtualLine(sLine, ctx.vCtx.mixinSymbol->startLine);
+        eLine = analysis::SymbolTable::PhysicalToVirtualLine(eLine, ctx.vCtx.mixinSymbol->startLine);
     }
 
     return lsp::Location{lsp::DocumentUri::parse(ctx.request.uri),
@@ -1068,11 +916,11 @@ std::vector<analysis::Symbol> FindHostClassSymbols(const std::string& hostClass,
 void AppendHostClassHierarchySymbols(std::vector<analysis::Symbol>& symbols, const std::string& nodeText,
                                      const DefinitionContext& ctx)
 {
-    if (!ctx.vCtx.isVirtual || ctx.vCtx.virtualHostClass.empty())
+    if (!ctx.vCtx.isVirtual || ctx.vCtx.hostClass.empty())
     {
         return;
     }
-    auto hostSymbols = FindHostClassSymbols(ctx.vCtx.virtualHostClass, nodeText, ctx.request.symbolTable);
+    auto hostSymbols = FindHostClassSymbols(ctx.vCtx.hostClass, nodeText, ctx.request.symbolTable);
     if (hostSymbols.empty())
     {
         return;
@@ -1151,9 +999,9 @@ std::optional<std::vector<lsp::Location>> TryResolveLocalDefinitionFallback(cons
 std::optional<std::vector<lsp::Location>> TryResolveThisKeyword(TSNode node, const DefinitionContext& ctx)
 {
     std::string targetClass;
-    if (ctx.vCtx.isVirtual && !ctx.vCtx.virtualHostClass.empty())
+    if (ctx.vCtx.isVirtual && !ctx.vCtx.hostClass.empty())
     {
-        targetClass = ctx.vCtx.virtualHostClass;
+        targetClass = ctx.vCtx.hostClass;
     }
     else
     {
@@ -1238,10 +1086,10 @@ std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(TSNode n
     uint32_t sChar = s.column;
     uint32_t eLine = e.row;
     uint32_t eChar = e.column;
-    if (ctx.vCtx.isVirtual && ctx.vCtx.virtualMixinSym.has_value())
+    if (ctx.vCtx.isVirtual && ctx.vCtx.mixinSymbol.has_value())
     {
-        sLine = analysis::SymbolTable::PhysicalToVirtualLine(sLine, ctx.vCtx.virtualMixinSym->startLine);
-        eLine = analysis::SymbolTable::PhysicalToVirtualLine(eLine, ctx.vCtx.virtualMixinSym->startLine);
+        sLine = analysis::SymbolTable::PhysicalToVirtualLine(sLine, ctx.vCtx.mixinSymbol->startLine);
+        eLine = analysis::SymbolTable::PhysicalToVirtualLine(eLine, ctx.vCtx.mixinSymbol->startLine);
     }
     return std::vector<lsp::Location>{
         lsp::Location{lsp::DocumentUri::parse(ctx.request.uri),

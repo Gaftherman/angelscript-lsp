@@ -1,6 +1,7 @@
 #include "features/inlay_hint/InlayHintHandler.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/LspLogger.h"
 #include <algorithm>
@@ -23,17 +24,7 @@ namespace
  */
 std::string GetNodeText(TSNode node, std::string_view sourceCode)
 {
-    if (ts_node_is_null(node))
-    {
-        return "";
-    }
-    uint32_t startByte = ts_node_start_byte(node);
-    uint32_t endByte = ts_node_end_byte(node);
-    if (startByte >= sourceCode.size() || endByte > sourceCode.size() || startByte >= endByte)
-    {
-        return "";
-    }
-    return std::string(sourceCode.substr(startByte, endByte - startByte));
+    return parser::GetNodeText(node, sourceCode);
 }
 
 /**

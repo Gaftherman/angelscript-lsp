@@ -1409,19 +1409,7 @@ std::string ResolveChainedSegments(const std::vector<AccessSegment>& segments, s
 std::string FindCanonicalBaseContainer(const std::string& canonicalType, const analysis::SymbolTable& symbolTable)
 {
     auto targetTemplate = analysis::ParseTemplateType(canonicalType);
-    std::string baseContainer = targetTemplate.containerName;
-    if (baseContainer.find("::") == std::string::npos && !symbolTable.HasSymbol(baseContainer))
-    {
-        auto shortMatches = symbolTable.FindTypeSymbolsByShortName(baseContainer);
-        for (const auto& sym : shortMatches)
-        {
-            if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface)
-            {
-                return sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-            }
-        }
-    }
-    return baseContainer;
+    return symbolTable.QualifyShortTypeName(targetTemplate.containerName);
 }
 
 /**

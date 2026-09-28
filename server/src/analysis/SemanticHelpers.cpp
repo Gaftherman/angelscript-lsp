@@ -56,11 +56,6 @@ std::string_view GetNodeTextView(TSNode node, std::string_view sourceCode) noexc
     return {};
 }
 
-std::string GetNodeText(TSNode node, std::string_view sourceCode)
-{
-    return std::string(GetNodeTextView(node, sourceCode));
-}
-
 bool IsReservedKeyword(const std::string& name)
 {
     // The list this used to hold was measured against the compiler word by word and came back
