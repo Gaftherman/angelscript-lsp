@@ -27,7 +27,16 @@ if (!manifest.version || !SEMVER_REGEX.test(manifest.version)) {
 
 const extensionSource = readFileSync(join(clientDir, 'src', 'extension.ts'), 'utf8');
 
-const declared = Object.keys(manifest.contributes?.configuration?.properties ?? {});
+const declared = [];
+if (Array.isArray(manifest.contributes?.configuration)) {
+    for (const section of manifest.contributes.configuration) {
+        if (section.properties) {
+            declared.push(...Object.keys(section.properties));
+        }
+    }
+} else if (manifest.contributes?.configuration?.properties) {
+    declared.push(...Object.keys(manifest.contributes.configuration.properties));
+}
 const problems = [];
 
 for (const key of declared) {

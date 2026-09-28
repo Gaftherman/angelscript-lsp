@@ -2,7 +2,7 @@
   "name": "angelscript-gaftherman",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "0.9.14",
+  "version": "0.9.15",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -259,560 +259,615 @@
         "editor.semanticHighlighting.enabled": true
       }
     },
-    "configuration": {
-      "type": "object",
-      "title": "%configuration.title%",
-      "properties": {
-        "angelscript.server.executablePath": {
-          "type": "string",
-          "scope": "machine",
-          "default": "",
-          "markdownDescription": "%config.server.executablePath.description%"
-        },
-        "angelscript.exclude": {
-          "type": "array",
-          "scope": "resource",
-          "items": {
-            "type": "string"
-          },
-          "default": [
-            "**/.git/**",
-            "**/build/**",
-            "**/node_modules/**"
-          ],
-          "markdownDescription": "%config.exclude.description%"
-        },
-        "angelscript.searchDirectories": {
-          "type": "array",
-          "scope": "resource",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "markdownDescription": "%config.searchDirectories.description%"
-        },
-        "angelscript.define": {
-          "type": "array",
-          "scope": "resource",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "markdownDescription": "%config.define.description%"
-        },
-        "angelscript.predefined.active": {
-          "type": "string",
-          "scope": "resource",
-          "default": "",
-          "markdownDescription": "%config.predefined.active.description%"
-        },
-        "angelscript.predefinedFiles": {
-          "type": "array",
-          "scope": "resource",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "markdownDescription": "%config.predefinedFiles.description%"
-        },
-        "angelscript.forceIncludeFiles": {
-          "type": "array",
-          "scope": "resource",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "markdownDescription": "Files to force-include before analyzing any module or script."
-        },
-        "angelscript.moduleEntryPoint": {
-          "type": "string",
-          "scope": "resource",
-          "default": "",
-          "markdownDescription": "Global module entry-point script path. Restricts compilation closure to its forward dependency DAG."
-        },
-        "angelscript.predefinedExtension": {
-          "type": "string",
-          "scope": "resource",
-          "default": ".as.predefined",
-          "markdownDescription": "%config.predefinedExtension.description%"
-        },
-        "angelscript.include.implicitExtension": {
-          "type": "boolean",
-          "scope": "resource",
-          "default": false,
-          "markdownDescription": "%config.include.implicitExtension.description%"
-        },
-        "angelscript.modules": {
-          "type": "array",
-          "scope": "resource",
-          "default": [],
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "folder": {
-                "type": "string"
-              },
-              "entry": {
-                "type": "string"
-              }
-            },
-            "anyOf": [
-              {
-                "required": [
-                  "name",
-                  "folder"
-                ]
-              },
-              {
-                "required": [
-                  "name",
-                  "entry"
-                ]
-              }
-            ],
-            "additionalProperties": false
-          },
-          "markdownDescription": "%config.modules.description%"
-        },
-        "angelscript.fileExtension": {
-          "type": "string",
-          "scope": "resource",
-          "default": ".as",
-          "markdownDescription": "%config.fileExtension.description%"
-        },
-        "angelscript.arrayLikeTypes": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "markdownDescription": "%config.arrayLikeTypes.description%"
-        },
-        "angelscript.diagnosticSeverity": {
-          "type": "object",
-          "scope": "resource",
-          "default": {},
-          "additionalProperties": {
+    "configuration": [
+      {
+        "order": 1,
+        "title": "%config.category.general%",
+        "properties": {
+          "angelscript.server.executablePath": {
             "type": "string",
+            "scope": "machine",
+            "default": "",
+            "markdownDescription": "%config.server.executablePath.description%"
+          },
+          "angelscript.server.logLevel": {
+            "type": "string",
+            "default": "debug",
             "enum": [
               "error",
-              "warning",
-              "information",
-              "hint"
+              "warn",
+              "info",
+              "debug",
+              "trace"
+            ],
+            "markdownDescription": "%config.server.logLevel.description%",
+            "markdownEnumDescriptions": [
+              "%config.server.logLevel.error%",
+              "%config.server.logLevel.warn%",
+              "%config.server.logLevel.info%",
+              "%config.server.logLevel.debug%",
+              "%config.server.logLevel.trace%"
             ]
           },
-          "markdownDescription": "%config.diagnosticSeverity.description%"
-        },
-        "angelscript.enableVirtualMixinDocuments": {
-          "type": "boolean",
-          "default": false,
-          "scope": "resource",
-          "markdownDescription": "%angelscript.enableVirtualMixinDocuments.description%"
-        },
-        "angelscript.server.logLevel": {
-          "type": "string",
-          "default": "debug",
-          "enum": [
-            "error",
-            "warn",
-            "info",
-            "debug",
-            "trace"
-          ],
-          "markdownDescription": "%config.server.logLevel.description%",
-          "markdownEnumDescriptions": [
-            "%config.server.logLevel.error%",
-            "%config.server.logLevel.warn%",
-            "%config.server.logLevel.info%",
-            "%config.server.logLevel.debug%",
-            "%config.server.logLevel.trace%"
-          ]
-        },
-        "angelscript.features.hover": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.hover.description%"
-        },
-        "angelscript.features.definition": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.definition.description%"
-        },
-        "angelscript.features.completion": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.completion.description%"
-        },
-        "angelscript.features.semanticTokens": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.semanticTokens.description%"
-        },
-        "angelscript.features.signatureHelp": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.signatureHelp.description%"
-        },
-        "angelscript.features.predefinedLoader": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.predefinedLoader.description%"
-        },
-        "angelscript.features.documentSymbols": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.documentSymbols.description%"
-        },
-        "angelscript.features.workspaceSymbols": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.workspaceSymbols.description%"
-        },
-        "angelscript.features.references": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.references.description%"
-        },
-        "angelscript.features.rename": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.rename.description%"
-        },
-        "angelscript.features.documentHighlight": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.documentHighlight.description%"
-        },
-        "angelscript.features.foldingRange": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.foldingRange.description%"
-        },
-        "angelscript.features.inlayHints": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.inlayHints.description%"
-        },
-        "angelscript.inlayHints.suppressWhenArgumentMatchesName": {
-          "type": "boolean",
-          "default": false,
-          "scope": "resource",
-          "markdownDescription": "%angelscript.inlayHints.suppressWhenArgumentMatchesName.description%"
-        },
-        "angelscript.features.codeAction": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.codeAction.description%"
-        },
-        "angelscript.features.formatting": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.formatting.description%"
-        },
-        "angelscript.features.documentLink": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.documentLink.description%"
-        },
-        "angelscript.features.implementation": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.implementation.description%"
-        },
-        "angelscript.features.selectionRange": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.selectionRange.description%"
-        },
-        "angelscript.features.callHierarchy": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.callHierarchy.description%"
-        },
-        "angelscript.features.typeHierarchy": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.typeHierarchy.description%"
-        },
-        "angelscript.features.linkedEditing": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.linkedEditing.description%"
-        },
-        "angelscript.features.codeLens": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.codeLens.description%"
-        },
-        "angelscript.features.onTypeFormatting": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.onTypeFormatting.description%"
-        },
-        "angelscript.features.pullDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.pullDiagnostics.description%"
-        },
-        "angelscript.features.typeConversionChecks": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.features.typeConversionChecks.description%"
-        },
-        "angelscript.diagnostics.reportUnknownTypes": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.diagnostics.reportUnknownTypes.description%"
-        },
-        "angelscript.diagnostics.reportAccessorPortability": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.diagnostics.reportAccessorPortability.description%"
-        },
-        "angelscript.diagnostics.reportAccessorDisabled": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.diagnostics.reportAccessorDisabled.description%"
-        },
-        "angelscript.diagnostics.reportBoolConversion": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.diagnostics.reportBoolConversion.description%"
-        },
-        "angelscript.diagnostics.reportMissingFuncdef": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.diagnostics.reportMissingFuncdef.description%"
-        },
-        "angelscript.diagnostics.reportIntegerDivision": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.diagnostics.reportIntegerDivision.description%"
-        },
-        "angelscript.diagnostics.reportPossibleNullDereference": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.diagnostics.reportPossibleNullDereference.description%"
-        },
-        "angelscript.diagnostics.reportHandleComparisonEquality": {
-          "type": "integer",
-          "enum": [0, 1, 2],
-          "enumDescriptions": [
-            "Disabled",
-            "Warning (implicit conversion to handle)",
-            "Error (strict handle identity required)"
-          ],
-          "default": 1,
-          "markdownDescription": "%config.diagnostics.reportHandleComparisonEquality.description%"
-        },
-
-        "angelscript.preprocessor.elseSupport": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.preprocessor.elseSupport.description%"
-        },
-        "angelscript.preprocessor.elifSupport": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.preprocessor.elifSupport.description%"
-        },
-        "angelscript.preprocessor.ifdefSupport": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.preprocessor.ifdefSupport.description%"
-        },
-        "angelscript.preprocessor.defineInScripts": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.preprocessor.defineInScripts.description%"
-        },
-        "angelscript.preprocessor.pragmaMode": {
-          "type": "string",
-          "enum": [
-            "accept",
-            "hint",
-            "error"
-          ],
-          "default": "accept",
-          "markdownDescription": "%config.preprocessor.pragmaMode.description%"
-        },
-        "angelscript.engine.allowUnsafeReferences": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.engine.allowUnsafeReferences.description%"
-        },
-        "angelscript.engine.privatePropAsProtected": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.engine.privatePropAsProtected.description%"
-        },
-        "angelscript.engine.disallowGlobalVars": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.engine.disallowGlobalVars.description%"
-        },
-        "angelscript.engine.propertyAccessorMode": {
-          "type": "number",
-          "enum": [
-            2,
-            3
-          ],
-          "enumDescriptions": [
-            "%config.engine.propertyAccessorMode.enum.0%",
-            "%config.engine.propertyAccessorMode.enum.1%"
-          ],
-          "default": 2,
-          "markdownDescription": "%config.engine.propertyAccessorMode.description%"
-        },
-        "angelscript.engine.allowMultilineStrings": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.engine.allowMultilineStrings.description%"
-        },
-        "angelscript.engine.boolConversionMode": {
-          "type": "number",
-          "enum": [
-            0,
-            1
-          ],
-          "enumDescriptions": [
-            "%config.engine.boolConversionMode.enum.0%",
-            "%config.engine.boolConversionMode.enum.1%"
-          ],
-          "default": 0,
-          "markdownDescription": "%config.engine.boolConversionMode.description%"
-        },
-        "angelscript.engine.useCharacterLiterals": {
-          "type": "number",
-          "enum": [
-            0,
-            1
-          ],
-          "enumDescriptions": [
-            "%config.engine.useCharacterLiterals.enum.0%",
-            "%config.engine.useCharacterLiterals.enum.1%"
-          ],
-          "default": 0,
-          "markdownDescription": "%config.engine.useCharacterLiterals.description%"
-        },
-        "angelscript.engine.disallowValueAssignForRef": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.engine.disallowValueAssignForRef.description%"
-        },
-        "angelscript.engine.alterSyntaxNamedArgs": {
-          "type": "number",
-          "enum": [
-            0,
-            1,
-            2
-          ],
-          "enumDescriptions": [
-            "%config.engine.alterSyntaxNamedArgs.enum.0%",
-            "%config.engine.alterSyntaxNamedArgs.enum.1%",
-            "%config.engine.alterSyntaxNamedArgs.enum.2%"
-          ],
-          "default": 0,
-          "markdownDescription": "%config.engine.alterSyntaxNamedArgs.description%"
-        },
-        "angelscript.engine.disableIntegerDivision": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.engine.disableIntegerDivision.description%"
-        },
-        "angelscript.engine.disallowEmptyListElements": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.engine.disallowEmptyListElements.description%"
-        },
-        "angelscript.engine.foreachSupport": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.engine.foreachSupport.description%"
-        },
-        "angelscript.engine.requireEnumScope": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.engine.requireEnumScope.description%"
-        },
-        "angelscript.engine.alwaysImplDefaultConstruct": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.engine.alwaysImplDefaultConstruct.description%"
-        },
-        "angelscript.engine.allowUnicodeIdentifiers": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.engine.allowUnicodeIdentifiers.description%"
-        },
-        "angelscript.engine.ignoreDuplicateSharedIntf": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.engine.ignoreDuplicateSharedIntf.description%"
-        },
-        "angelscript.engine.compilerWarnings": {
-          "type": "number",
-          "enum": [
-            0,
-            1,
-            2
-          ],
-          "enumDescriptions": [
-            "%config.engine.compilerWarnings.enum.0%",
-            "%config.engine.compilerWarnings.enum.1%",
-            "%config.engine.compilerWarnings.enum.2%"
-          ],
-          "default": 1,
-          "markdownDescription": "%config.engine.compilerWarnings.description%"
-        },
-        "angelscript.statusBar.alignment": {
-          "type": "string",
-          "enum": [
-            "left",
-            "right"
-          ],
-          "enumDescriptions": [
-            "%config.statusBar.alignment.left%",
-            "%config.statusBar.alignment.right%"
-          ],
-          "default": "left",
-          "markdownDescription": "%config.statusBar.alignment.description%"
-        },
-        "angelscript.dimInactiveRegions": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "%config.dimInactiveRegions.description%"
-        },
-        "angelscript.inactiveRegionOpacity": {
-          "type": "number",
-          "default": 0.55,
-          "minimum": 0.1,
-          "maximum": 1,
-          "markdownDescription": "%config.inactiveRegionOpacity.description%"
-        },
-        "angelscript.format.onSave": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "%config.format.onSave.description%"
-        },
-        "angelscript.format.braceStyle": {
-          "type": "string",
-          "enum": [
-            "allman",
-            "kr"
-          ],
-          "enumDescriptions": [
-            "%config.format.braceStyle.enum.0%",
-            "%config.format.braceStyle.enum.1%"
-          ],
-          "default": "allman",
-          "description": "%config.format.braceStyle.description%"
+          "angelscript.statusBar.alignment": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right"
+            ],
+            "enumDescriptions": [
+              "%config.statusBar.alignment.left%",
+              "%config.statusBar.alignment.right%"
+            ],
+            "default": "left",
+            "markdownDescription": "%config.statusBar.alignment.description%"
+          },
+          "angelscript.dimInactiveRegions": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.dimInactiveRegions.description%"
+          },
+          "angelscript.inactiveRegionOpacity": {
+            "type": "number",
+            "default": 0.55,
+            "minimum": 0.1,
+            "maximum": 1,
+            "markdownDescription": "%config.inactiveRegionOpacity.description%"
+          }
+        }
+      },
+      {
+        "order": 2,
+        "title": "%config.category.workspace%",
+        "properties": {
+          "angelscript.modules": {
+            "type": "array",
+            "scope": "resource",
+            "default": [],
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "folder": {
+                  "type": "string"
+                },
+                "entry": {
+                  "type": "string"
+                }
+              },
+              "anyOf": [
+                {
+                  "required": [
+                    "name",
+                    "folder"
+                  ]
+                },
+                {
+                  "required": [
+                    "name",
+                    "entry"
+                  ]
+                }
+              ],
+              "additionalProperties": false
+            },
+            "markdownDescription": "%config.modules.description%"
+          },
+          "angelscript.moduleEntryPoint": {
+            "type": "string",
+            "scope": "resource",
+            "default": "",
+            "markdownDescription": "%config.moduleEntryPoint.description%"
+          },
+          "angelscript.searchDirectories": {
+            "type": "array",
+            "scope": "resource",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%config.searchDirectories.description%"
+          },
+          "angelscript.predefined.active": {
+            "type": "string",
+            "scope": "resource",
+            "default": "",
+            "markdownDescription": "%config.predefined.active.description%"
+          },
+          "angelscript.predefinedFiles": {
+            "type": "array",
+            "scope": "resource",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%config.predefinedFiles.description%"
+          },
+          "angelscript.include.implicitExtension": {
+            "type": "boolean",
+            "scope": "resource",
+            "default": false,
+            "markdownDescription": "%config.include.implicitExtension.description%"
+          },
+          "angelscript.forceIncludeFiles": {
+            "type": "array",
+            "scope": "resource",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%config.forceIncludeFiles.description%"
+          },
+          "angelscript.exclude": {
+            "type": "array",
+            "scope": "resource",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "**/.git/**",
+              "**/build/**",
+              "**/node_modules/**"
+            ],
+            "markdownDescription": "%config.exclude.description%"
+          },
+          "angelscript.fileExtension": {
+            "type": "string",
+            "scope": "resource",
+            "default": ".as",
+            "markdownDescription": "%config.fileExtension.description%"
+          },
+          "angelscript.predefinedExtension": {
+            "type": "string",
+            "scope": "resource",
+            "default": ".as.predefined",
+            "markdownDescription": "%config.predefinedExtension.description%"
+          },
+          "angelscript.define": {
+            "type": "array",
+            "scope": "resource",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%config.define.description%"
+          },
+          "angelscript.arrayLikeTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%config.arrayLikeTypes.description%"
+          },
+          "angelscript.enableVirtualMixinDocuments": {
+            "type": "boolean",
+            "default": false,
+            "scope": "resource",
+            "markdownDescription": "%angelscript.enableVirtualMixinDocuments.description%"
+          }
+        }
+      },
+      {
+        "order": 3,
+        "title": "%config.category.inlayHints%",
+        "properties": {
+          "angelscript.features.inlayHints": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.inlayHints.description%"
+          },
+          "angelscript.inlayHints.maxParameters": {
+            "type": "integer",
+            "scope": "resource",
+            "default": 0,
+            "minimum": 0,
+            "markdownDescription": "%config.inlayHints.maxParameters.description%"
+          },
+          "angelscript.inlayHints.maxLength": {
+            "type": "integer",
+            "scope": "resource",
+            "default": 0,
+            "minimum": 0,
+            "markdownDescription": "%config.inlayHints.maxLength.description%"
+          },
+          "angelscript.inlayHints.suppressWhenArgumentMatchesName": {
+            "type": "boolean",
+            "default": false,
+            "scope": "resource",
+            "markdownDescription": "%angelscript.inlayHints.suppressWhenArgumentMatchesName.description%"
+          }
+        }
+      },
+      {
+        "order": 4,
+        "title": "%config.category.formatting%",
+        "properties": {
+          "angelscript.features.formatting": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.formatting.description%"
+          },
+          "angelscript.features.onTypeFormatting": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.onTypeFormatting.description%"
+          },
+          "angelscript.format.onSave": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.format.onSave.description%"
+          },
+          "angelscript.format.braceStyle": {
+            "type": "string",
+            "enum": [
+              "allman",
+              "kr"
+            ],
+            "enumDescriptions": [
+              "%config.format.braceStyle.enum.0%",
+              "%config.format.braceStyle.enum.1%"
+            ],
+            "default": "allman",
+            "description": "%config.format.braceStyle.description%"
+          }
+        }
+      },
+      {
+        "order": 5,
+        "title": "%config.category.features%",
+        "properties": {
+          "angelscript.features.hover": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.hover.description%"
+          },
+          "angelscript.features.completion": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.completion.description%"
+          },
+          "angelscript.features.definition": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.definition.description%"
+          },
+          "angelscript.features.references": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.references.description%"
+          },
+          "angelscript.features.signatureHelp": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.signatureHelp.description%"
+          },
+          "angelscript.features.semanticTokens": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.semanticTokens.description%"
+          },
+          "angelscript.features.documentSymbols": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.documentSymbols.description%"
+          },
+          "angelscript.features.workspaceSymbols": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.workspaceSymbols.description%"
+          },
+          "angelscript.features.rename": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.rename.description%"
+          },
+          "angelscript.features.documentHighlight": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.documentHighlight.description%"
+          },
+          "angelscript.features.foldingRange": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.foldingRange.description%"
+          },
+          "angelscript.features.codeAction": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.codeAction.description%"
+          },
+          "angelscript.features.documentLink": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.documentLink.description%"
+          },
+          "angelscript.features.implementation": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.implementation.description%"
+          },
+          "angelscript.features.selectionRange": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.selectionRange.description%"
+          },
+          "angelscript.features.callHierarchy": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.callHierarchy.description%"
+          },
+          "angelscript.features.typeHierarchy": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.typeHierarchy.description%"
+          },
+          "angelscript.features.linkedEditing": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.linkedEditing.description%"
+          },
+          "angelscript.features.codeLens": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.codeLens.description%"
+          },
+          "angelscript.features.pullDiagnostics": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.pullDiagnostics.description%"
+          },
+          "angelscript.features.typeConversionChecks": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.typeConversionChecks.description%"
+          },
+          "angelscript.features.predefinedLoader": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.predefinedLoader.description%"
+          }
+        }
+      },
+      {
+        "order": 6,
+        "title": "%config.category.diagnostics%",
+        "properties": {
+          "angelscript.diagnosticSeverity": {
+            "type": "object",
+            "scope": "resource",
+            "default": {},
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warning",
+                "information",
+                "hint"
+              ]
+            },
+            "markdownDescription": "%config.diagnosticSeverity.description%"
+          },
+          "angelscript.diagnostics.reportUnknownTypes": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.diagnostics.reportUnknownTypes.description%"
+          },
+          "angelscript.diagnostics.reportAccessorPortability": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.diagnostics.reportAccessorPortability.description%"
+          },
+          "angelscript.diagnostics.reportAccessorDisabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.diagnostics.reportAccessorDisabled.description%"
+          },
+          "angelscript.diagnostics.reportBoolConversion": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.diagnostics.reportBoolConversion.description%"
+          },
+          "angelscript.diagnostics.reportMissingFuncdef": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.diagnostics.reportMissingFuncdef.description%"
+          },
+          "angelscript.diagnostics.reportIntegerDivision": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.diagnostics.reportIntegerDivision.description%"
+          },
+          "angelscript.diagnostics.reportPossibleNullDereference": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.diagnostics.reportPossibleNullDereference.description%"
+          },
+          "angelscript.diagnostics.reportHandleComparisonEquality": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "enumDescriptions": [
+              "Disabled",
+              "Warning (implicit conversion to handle)",
+              "Error (strict handle identity required)"
+            ],
+            "default": 1,
+            "markdownDescription": "%config.diagnostics.reportHandleComparisonEquality.description%"
+          }
+        }
+      },
+      {
+        "order": 7,
+        "title": "%config.category.engine%",
+        "properties": {
+          "angelscript.engine.allowUnsafeReferences": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.engine.allowUnsafeReferences.description%"
+          },
+          "angelscript.engine.privatePropAsProtected": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.engine.privatePropAsProtected.description%"
+          },
+          "angelscript.engine.disallowGlobalVars": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.engine.disallowGlobalVars.description%"
+          },
+          "angelscript.engine.propertyAccessorMode": {
+            "type": "number",
+            "enum": [
+              2,
+              3
+            ],
+            "enumDescriptions": [
+              "%config.engine.propertyAccessorMode.enum.0%",
+              "%config.engine.propertyAccessorMode.enum.1%"
+            ],
+            "default": 2,
+            "markdownDescription": "%config.engine.propertyAccessorMode.description%"
+          },
+          "angelscript.engine.allowMultilineStrings": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.engine.allowMultilineStrings.description%"
+          },
+          "angelscript.engine.boolConversionMode": {
+            "type": "number",
+            "enum": [
+              0,
+              1
+            ],
+            "enumDescriptions": [
+              "%config.engine.boolConversionMode.enum.0%",
+              "%config.engine.boolConversionMode.enum.1%"
+            ],
+            "default": 0,
+            "markdownDescription": "%config.engine.boolConversionMode.description%"
+          },
+          "angelscript.engine.useCharacterLiterals": {
+            "type": "number",
+            "enum": [
+              0,
+              1
+            ],
+            "enumDescriptions": [
+              "%config.engine.useCharacterLiterals.enum.0%",
+              "%config.engine.useCharacterLiterals.enum.1%"
+            ],
+            "default": 0,
+            "markdownDescription": "%config.engine.useCharacterLiterals.description%"
+          },
+          "angelscript.engine.disallowValueAssignForRef": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.engine.disallowValueAssignForRef.description%"
+          },
+          "angelscript.engine.alterSyntaxNamedArgs": {
+            "type": "number",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "enumDescriptions": [
+              "%config.engine.alterSyntaxNamedArgs.enum.0%",
+              "%config.engine.alterSyntaxNamedArgs.enum.1%",
+              "%config.engine.alterSyntaxNamedArgs.enum.2%"
+            ],
+            "default": 0,
+            "markdownDescription": "%config.engine.alterSyntaxNamedArgs.description%"
+          },
+          "angelscript.engine.disableIntegerDivision": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.engine.disableIntegerDivision.description%"
+          },
+          "angelscript.engine.disallowEmptyListElements": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.engine.disallowEmptyListElements.description%"
+          },
+          "angelscript.engine.foreachSupport": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.engine.foreachSupport.description%"
+          },
+          "angelscript.engine.requireEnumScope": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.engine.requireEnumScope.description%"
+          },
+          "angelscript.engine.alwaysImplDefaultConstruct": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.engine.alwaysImplDefaultConstruct.description%"
+          },
+          "angelscript.engine.allowUnicodeIdentifiers": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.engine.allowUnicodeIdentifiers.description%"
+          },
+          "angelscript.engine.ignoreDuplicateSharedIntf": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.engine.ignoreDuplicateSharedIntf.description%"
+          },
+          "angelscript.engine.compilerWarnings": {
+            "type": "number",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "enumDescriptions": [
+              "%config.engine.compilerWarnings.enum.0%",
+              "%config.engine.compilerWarnings.enum.1%",
+              "%config.engine.compilerWarnings.enum.2%"
+            ],
+            "default": 1,
+            "markdownDescription": "%config.engine.compilerWarnings.description%"
+          },
+          "angelscript.preprocessor.elseSupport": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.preprocessor.elseSupport.description%"
+          },
+          "angelscript.preprocessor.elifSupport": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.preprocessor.elifSupport.description%"
+          },
+          "angelscript.preprocessor.ifdefSupport": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.preprocessor.ifdefSupport.description%"
+          },
+          "angelscript.preprocessor.defineInScripts": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.preprocessor.defineInScripts.description%"
+          },
+          "angelscript.preprocessor.pragmaMode": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "hint",
+              "error"
+            ],
+            "default": "accept",
+            "markdownDescription": "%config.preprocessor.pragmaMode.description%"
+          }
         }
       }
-    }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile && npm run bundle",

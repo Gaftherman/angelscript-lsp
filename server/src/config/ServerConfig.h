@@ -29,6 +29,8 @@ struct FeatureFlags
     bool enableFoldingRange = true;
     bool enableInlayHints = true;
     bool inlayHintsSuppressWhenArgumentMatchesName = false;
+    size_t inlayHintsMaxParameters = 0;
+    size_t inlayHintsMaxLength = 0;
     bool enableCodeAction = true;
     bool enableFormatting = true;
     bool enableDocumentLink = true;

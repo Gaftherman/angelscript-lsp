@@ -471,6 +471,55 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
      "--disable-virtualmixindocuments", &FeatureFlags::enableVirtualMixinDocuments},
 };
 
+bool TryParseInlayHintFlag(ServerConfig& config, ArgParseContext& ctx)
+{
+    if (ctx.key == "--inlay-hints-suppress-when-argument-matches-name")
+    {
+        config.features.inlayHintsSuppressWhenArgumentMatchesName = ctx.GetBoolValue(true);
+        return true;
+    }
+    if (ctx.key == "--no-inlay-hints-suppress-when-argument-matches-name" ||
+        ctx.key == "--disable-inlay-hints-suppress-when-argument-matches-name")
+    {
+        config.features.inlayHintsSuppressWhenArgumentMatchesName =
+            ctx.inlineVal.has_value() ? !ParseBoolValue(*ctx.inlineVal, true) : false;
+        return true;
+    }
+    if (ctx.key == "--inlay-hints-max-parameters")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val))
+        {
+            try
+            {
+                config.features.inlayHintsMaxParameters =
+                    static_cast<size_t>(std::max(0, std::stoi(std::string(val))));
+            }
+            catch (...)
+            {
+            }
+        }
+        return true;
+    }
+    if (ctx.key == "--inlay-hints-max-length")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val))
+        {
+            try
+            {
+                config.features.inlayHintsMaxLength =
+                    static_cast<size_t>(std::max(0, std::stoi(std::string(val))));
+            }
+            catch (...)
+            {
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 bool TryParseFeatureFlag(ServerConfig& config, ArgParseContext& ctx)
 {
     for (const auto& entry : kFeatureFlags)
@@ -486,20 +535,7 @@ bool TryParseFeatureFlag(ServerConfig& config, ArgParseContext& ctx)
             return true;
         }
     }
-
-    if (ctx.key == "--inlay-hints-suppress-when-argument-matches-name")
-    {
-        config.features.inlayHintsSuppressWhenArgumentMatchesName = ctx.GetBoolValue(true);
-        return true;
-    }
-    if (ctx.key == "--no-inlay-hints-suppress-when-argument-matches-name" ||
-        ctx.key == "--disable-inlay-hints-suppress-when-argument-matches-name")
-    {
-        config.features.inlayHintsSuppressWhenArgumentMatchesName =
-            ctx.inlineVal.has_value() ? !ParseBoolValue(*ctx.inlineVal, true) : false;
-        return true;
-    }
-    return false;
+    return TryParseInlayHintFlag(config, ctx);
 }
 
 struct DiagnosticFlagMapping

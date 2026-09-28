@@ -29,6 +29,8 @@ struct InlayHintRequest
     const analysis::ScopeIndex& scopeIndex;
     bool suppressWhenArgumentMatchesName = false;
     angel_lsp::utils::LspLogger* logger = nullptr;
+    size_t maxParameters = 0;
+    size_t maxLength = 0;
 };
 
 /**

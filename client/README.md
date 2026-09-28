@@ -14,22 +14,71 @@ Install via the Visual Studio Code Marketplace or from a packaged `.vsix` bundle
 
 ### 2. Workspace Setup
 
-Open your workspace folder in VS Code. Configure your `.vscode/settings.json`:
+Open your workspace folder in VS Code. Configure `.vscode/settings.json` according to your engine setup:
 
+#### Example A: Sven Co-op (Folder Module)
+Recommended for Sven Co-op map script folders (e.g. `maps/hcas`):
 ```jsonc
 {
-  // Search paths for #include resolution
+  // Allow extensionless includes (e.g. #include "helper" resolves to helper.as)
+  "angelscript.include.implicitExtension": true,
+
+  // Extra search root for relative and angular-bracket #include paths
   "angelscript.searchDirectories": [
-    "${workspaceFolder}/scripts"
+    "${workspaceFolder}/maps"
   ],
 
-  // Load host engine API stub definitions
+  // Folder module ownership (all scripts under maps/hcas belong to module HCAS)
+  "angelscript.modules": [
+    {
+      "name": "HCAS",
+      "folder": "${workspaceFolder}/maps/hcas"
+    }
+  ],
+
+  // Enable virtual mixin document inspection (angelscript-virtual://)
+  "angelscript.enableVirtualMixinDocuments": true,
+
+  // Active predefined host stub
+  "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
+}
+```
+
+#### Example B: Sven Co-op (Entry Script Module)
+Recommended when compiling a script tree starting from a registration entry point:
+```jsonc
+{
+  "angelscript.include.implicitExtension": true,
+  "angelscript.searchDirectories": [
+    "${workspaceFolder}/maps"
+  ],
+  "angelscript.modules": [
+    {
+      "name": "MapInit",
+      "entry": "${workspaceFolder}/maps/ins2/ins2_register.as"
+    }
+  ],
+  "angelscript.enableVirtualMixinDocuments": true,
+  "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
+}
+```
+
+#### Example C: Generic Game Engine / Standalone Workspace
+For standalone AngelScript host integrations using custom include paths and API stubs:
+```jsonc
+{
+  "angelscript.searchDirectories": [
+    "${workspaceFolder}/scripts/include"
+  ],
+  "angelscript.modules": [
+    {
+      "name": "GameCore",
+      "folder": "${workspaceFolder}/scripts/game"
+    }
+  ],
   "angelscript.predefinedFiles": [
-    "${workspaceFolder}/stubs/sven.as.predefined"
-  ],
-
-  // Enable extensionless include resolution (e.g. #include "helper" finds "helper.as")
-  "angelscript.include.implicitExtension": true
+    "${workspaceFolder}/scripts/api/engine.as.predefined"
+  ]
 }
 ```
 
@@ -86,6 +135,8 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.modules` | `[]` | Script module definitions specified as `{"name", "entry"}` or `{"name", "folder"}`. |
 | `angelscript.fileExtension` | `.as` | Suffix of script files scanned in the workspace. |
 | `angelscript.enableVirtualMixinDocuments` | `false` | Enables virtual document providers for mixin class expansion. |
+| `angelscript.inlayHints.maxParameters` | `0` | Maximum number of parameter inlay hints to display per call (`0` = unlimited). |
+| `angelscript.inlayHints.maxLength` | `0` | Maximum character length for parameter inlay hint labels before truncating with `...` (`0` = unlimited). |
 | `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suppresses parameter name hints when argument text matches parameter name. |
 | `angelscript.statusBar.alignment` | `"left"` | Alignment of the AngelScript status bar item (`"left"` or `"right"`). |
 | `angelscript.diagnosticSeverity` | `{}` | Per-diagnostic severity overrides (e.g. `{"as-warn-unused-variable": "hint"}`). |

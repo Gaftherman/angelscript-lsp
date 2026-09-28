@@ -344,6 +344,28 @@ suite('modules in buildServerArgs', () => {
     });
 });
 
+suite('inlayHints settings in buildServerArgs', () => {
+    test('maxParameters > 0 emits --inlay-hints-max-parameters flag', async () => {
+        const args = await withSetting('inlayHints.maxParameters', 5, buildServerArgs);
+        assert.ok(args.includes('--inlay-hints-max-parameters=5'), `expected --inlay-hints-max-parameters=5, got ${JSON.stringify(args)}`);
+    });
+
+    test('maxParameters == 0 does not emit --inlay-hints-max-parameters flag', async () => {
+        const args = await withSetting('inlayHints.maxParameters', 0, buildServerArgs);
+        assert.ok(!args.some(arg => arg.startsWith('--inlay-hints-max-parameters=')), `unexpected --inlay-hints-max-parameters in ${JSON.stringify(args)}`);
+    });
+
+    test('maxLength > 0 emits --inlay-hints-max-length flag', async () => {
+        const args = await withSetting('inlayHints.maxLength', 10, buildServerArgs);
+        assert.ok(args.includes('--inlay-hints-max-length=10'), `expected --inlay-hints-max-length=10, got ${JSON.stringify(args)}`);
+    });
+
+    test('maxLength == 0 does not emit --inlay-hints-max-length flag', async () => {
+        const args = await withSetting('inlayHints.maxLength', 0, buildServerArgs);
+        assert.ok(!args.some(arg => arg.startsWith('--inlay-hints-max-length=')), `unexpected --inlay-hints-max-length in ${JSON.stringify(args)}`);
+    });
+});
+
 suite('portableStubPath', () => {
     test('a stub inside a workspace folder is stored as ${workspaceFolder}/...', () => {
         // The picker used to write the absolute path it had in hand, which pins the setting to one

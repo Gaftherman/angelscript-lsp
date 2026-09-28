@@ -2,6 +2,30 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.15] - 2026-09-27
+
+### Unlimited Parameter Inlay Hints, Settings Categorization, & Workspace Configuration Guides
+
+- Unlimited Parameter Inlay Hints & Custom Limits:
+  - Ensured the language server computes inlay hints for functions with any number of parameters (e.g. 13+ parameters like `ShootProp`) without artificial cutoff or omission.
+  - Added user configuration settings with unlimited defaults (`0`):
+    - `angelscript.inlayHints.maxParameters`: maximum parameter hints displayed per call (default: `0`, unlimited).
+    - `angelscript.inlayHints.maxLength`: maximum character length for parameter hint labels before truncating with `...` (default: `0`, unlimited).
+  - Forwarded via CLI flags (`--inlay-hints-max-parameters=N`, `--inlay-hints-max-length=N`) and enabled dynamic hot-reload via `didChangeConfiguration` without requiring server restarts.
+- VS Code Settings Reorganization & Clean Categorization:
+  - Reorganized `contributes.configuration` in `package.json` into 7 structured categories (`General`, `Workspace & Modules`, `Inlay Hints`, `Formatting`, `Language Features`, `Diagnostics & Linting`, `Engine & Preprocessor Properties`), resolving clutter and providing clear section headers in the VS Code Settings Editor.
+  - Fixed hardcoded English strings in `package.json` (`forceIncludeFiles` and `moduleEntryPoint`), adding dual-language localization in English (`package.nls.json`) and Spanish (`package.nls.es.json`).
+  - Updated configuration verification script (`check-settings-wired.mjs`) to validate array-based configuration schemas.
+- Workspace Setup Guides & Configuration Examples:
+  - Added comprehensive `.vscode/settings.json` examples to `README.md` and `client/README.md`:
+    - Sven Co-op folder module (`HCAS` in `maps/hcas`).
+    - Sven Co-op entry script module (`MapInit` in `maps/ins2/ins2_register.as`).
+    - Generic standalone game engine module (`GameCore` in `scripts/game`).
+  - Added clear catalog descriptions for common settings.
+- Tests & Validation:
+  - Added comprehensive C++ regression and invariant tests in `InlayHintTest.cpp` asserting full parameter generation, custom parameter limits, label truncation, and randomized symbol names.
+  - Added client unit test suite in `extension.test.ts` verifying `--inlay-hints-*` CLI flag generation.
+
 ## [0.9.14] - 2026-09-27
 
 ### On-Type Formatting Enter-Key Fix & Token-Aligned Range Formatting

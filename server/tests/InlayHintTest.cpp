@@ -5,6 +5,7 @@
 #include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -45,9 +46,22 @@ namespace
             }
         }
 
-        std::optional<std::vector<lsp::InlayHint>> InlayHints(lsp::Range range = lsp::Range{ {0, 0}, {0, 0} }, bool suppressWhenArgumentMatchesName = false)
+        std::optional<std::vector<lsp::InlayHint>> InlayHints(
+            lsp::Range range = lsp::Range{{0, 0}, {0, 0}},
+            bool suppressWhenArgumentMatchesName = false,
+            size_t maxParameters = 0,
+            size_t maxLength = 0)
         {
-            InlayHintRequest req{ uri, sourceCode, tree, range, symbolTable, scopeIndex, suppressWhenArgumentMatchesName };
+            InlayHintRequest req{uri,
+                                 sourceCode,
+                                 tree,
+                                 range,
+                                 symbolTable,
+                                 scopeIndex,
+                                 suppressWhenArgumentMatchesName,
+                                 nullptr,
+                                 maxParameters,
+                                 maxLength};
             return GetInlayHints(req);
         }
     };
@@ -765,6 +779,157 @@ TEST_CASE("InlayHintHandler - Parameter labels are never truncated")
     CHECK(label0 == "shouldTrace:");
     CHECK(label1 == "longParameterIdentifier:");
 }
+
+TEST_CASE("InlayHintHandler - ShootProp with 13 parameters returns all parameter hints by default")
+{
+    std::string code =
+        "namespace HCASPROP {\n"
+        "    CHCASProp@ ShootProp( entvars_t@ pevOwner, Vector& in vecOrigin, Vector& in vecVelocity, Vector& in vecDropAngle, Vector& in vecAngVelocity, string szModel, array<string> BounceSounds, float flVelFriction = 0.4f, float flAVelFriction = 0.7f, int iBodygroup = 0, int iSkingroup = 0, float flStartFadeOutTime = 5.0f, string szPropName = \"proj_hcasprop\" ) {}\n"
+        "}\n"
+        "void main() {\n"
+        "    auto pProp = HCASPROP::ShootProp( pev, vecOrigin, vecVelocity,\n"
+        "        Vector( -45, vecAngles.y - 65, 0 ), Vector( 0, 0, 0 ), \"model\", sounds,\n"
+        "        0.4f, 0.7f, TOS_BDYGRP, 0, 5.0f, DROP_NAME );\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+
+    REQUIRE(hints.has_value());
+    // 1 type hint for 'auto' + 13 parameter hints = 14 hints total
+    REQUIRE(hints->size() == 14);
+
+    auto getLabel = [&](size_t idx) -> std::string {
+        return std::holds_alternative<std::string>(hints->at(idx).label)
+                   ? std::get<std::string>(hints->at(idx).label)
+                   : "";
+    };
+
+    CHECK(getLabel(1) == "pevOwner:");
+    CHECK(getLabel(2) == "vecOrigin:");
+    CHECK(getLabel(3) == "vecVelocity:");
+    CHECK(getLabel(4) == "vecDropAngle:");
+    CHECK(getLabel(5) == "vecAngVelocity:");
+    CHECK(getLabel(6) == "szModel:");
+    CHECK(getLabel(7) == "BounceSounds:");
+    CHECK(getLabel(8) == "flVelFriction:");
+    CHECK(getLabel(9) == "flAVelFriction:");
+    CHECK(getLabel(10) == "iBodygroup:");
+    CHECK(getLabel(11) == "iSkingroup:");
+    CHECK(getLabel(12) == "flStartFadeOutTime:");
+    CHECK(getLabel(13) == "szPropName:");
+}
+
+TEST_CASE("InlayHintHandler - maxParameters limits parameter hint count")
+{
+    std::string code =
+        "namespace HCASPROP {\n"
+        "    CHCASProp@ ShootProp( entvars_t@ pevOwner, Vector& in vecOrigin, Vector& in vecVelocity, Vector& in vecDropAngle, Vector& in vecAngVelocity, string szModel, array<string> BounceSounds, float flVelFriction = 0.4f, float flAVelFriction = 0.7f, int iBodygroup = 0, int iSkingroup = 0, float flStartFadeOutTime = 5.0f, string szPropName = \"proj_hcasprop\" ) {}\n"
+        "}\n"
+        "void main() {\n"
+        "    auto pProp = HCASPROP::ShootProp( pev, vecOrigin, vecVelocity,\n"
+        "        Vector( -45, vecAngles.y - 65, 0 ), Vector( 0, 0, 0 ), \"model\", sounds,\n"
+        "        0.4f, 0.7f, TOS_BDYGRP, 0, 5.0f, DROP_NAME );\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    // Request with maxParameters = 5
+    auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 5, 0);
+
+    REQUIRE(hints.has_value());
+    // 1 type hint for 'auto' + 5 parameter hints = 6 hints total
+    REQUIRE(hints->size() == 6);
+
+    auto getLabel = [&](size_t idx) -> std::string {
+        return std::holds_alternative<std::string>(hints->at(idx).label)
+                   ? std::get<std::string>(hints->at(idx).label)
+                   : "";
+    };
+
+    CHECK(getLabel(1) == "pevOwner:");
+    CHECK(getLabel(5) == "vecAngVelocity:");
+}
+
+TEST_CASE("InlayHintHandler - maxLength truncates parameter labels")
+{
+    std::string code =
+        "namespace HCASPROP {\n"
+        "    CHCASProp@ ShootProp( entvars_t@ pevOwner, Vector& in vecOrigin, Vector& in vecVelocity, Vector& in vecDropAngle, Vector& in vecAngVelocity, string szModel, array<string> BounceSounds, float flVelFriction = 0.4f, float flAVelFriction = 0.7f, int iBodygroup = 0, int iSkingroup = 0, float flStartFadeOutTime = 5.0f, string szPropName = \"proj_hcasprop\" ) {}\n"
+        "}\n"
+        "void main() {\n"
+        "    auto pProp = HCASPROP::ShootProp( pev, vecOrigin, vecVelocity,\n"
+        "        Vector( -45, vecAngles.y - 65, 0 ), Vector( 0, 0, 0 ), \"model\", sounds,\n"
+        "        0.4f, 0.7f, TOS_BDYGRP, 0, 5.0f, DROP_NAME );\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    // Request with maxLength = 8
+    auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 8);
+
+    REQUIRE(hints.has_value());
+    REQUIRE(hints->size() == 14);
+
+    auto getLabel = [&](size_t idx) -> std::string {
+        return std::holds_alternative<std::string>(hints->at(idx).label)
+                   ? std::get<std::string>(hints->at(idx).label)
+                   : "";
+    };
+
+    // 'pevOwner' length is 8 -> not truncated: 'pevOwner:'
+    CHECK(getLabel(1) == "pevOwner:");
+    // 'vecDropAngle' length is 12 -> truncated to 8 chars: 'vecDropA...:'
+    CHECK(getLabel(4) == "vecDropA...:");
+    // 'vecAngVelocity' length is 14 -> truncated to 8 chars: 'vecAngVe...:'
+    CHECK(getLabel(5) == "vecAngVe...:");
+    // 'flStartFadeOutTime' length is 18 -> truncated to 8 chars: 'flStartF...:'
+    CHECK(getLabel(12) == "flStartF...:");
+}
+
+TEST_CASE("InlayHintHandler - Invariant randomized symbols with maxParameters and maxLength")
+{
+    const std::string fnName = test::GenerateRandomSymbolName("func");
+    const std::string p0 = test::GenerateRandomSymbolName("paramZero");
+    const std::string p1 = test::GenerateRandomSymbolName("paramOne");
+    const std::string p2 = test::GenerateRandomSymbolName("paramTwo");
+
+    std::string code =
+        "void " + fnName + "(int " + p0 + ", int " + p1 + ", int " + p2 + ") {}\n"
+        "void main() {\n"
+        "    " + fnName + "(1, 2, 3);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // 1. Unlimited by default
+    {
+        auto hints = env.InlayHints();
+        REQUIRE(hints.has_value());
+        REQUIRE(hints->size() == 3);
+        CHECK(std::get<std::string>(hints->at(0).label) == p0 + ":");
+        CHECK(std::get<std::string>(hints->at(1).label) == p1 + ":");
+        CHECK(std::get<std::string>(hints->at(2).label) == p2 + ":");
+    }
+
+    // 2. maxParameters = 2
+    {
+        auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 2, 0);
+        REQUIRE(hints.has_value());
+        REQUIRE(hints->size() == 2);
+        CHECK(std::get<std::string>(hints->at(0).label) == p0 + ":");
+        CHECK(std::get<std::string>(hints->at(1).label) == p1 + ":");
+    }
+
+    // 3. maxLength = 5
+    {
+        auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 5);
+        REQUIRE(hints.has_value());
+        REQUIRE(hints->size() == 3);
+        CHECK(std::get<std::string>(hints->at(0).label) == p0.substr(0, 5) + "...:");
+        CHECK(std::get<std::string>(hints->at(1).label) == p1.substr(0, 5) + "...:");
+        CHECK(std::get<std::string>(hints->at(2).label) == p2.substr(0, 5) + "...:");
+    }
+}
+
 
 
 

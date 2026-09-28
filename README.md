@@ -34,22 +34,71 @@ Install via the Visual Studio Code Marketplace (search for `Angelscript`) or fro
 
 ### 2. Workspace Setup
 
-Create or update `.vscode/settings.json` in your workspace folder:
+Create or update `.vscode/settings.json` in your workspace folder depending on your engine setup:
 
+#### Example A: Sven Co-op (Folder Module)
+Recommended for Sven Co-op multi-script packages (e.g. `maps/hcas`):
 ```jsonc
 {
-  // Extra directories for #include resolution
+  // Allow extensionless includes (e.g. #include "helper" resolves to helper.as)
+  "angelscript.include.implicitExtension": true,
+
+  // Extra search root for relative and angular-bracket #include paths
   "angelscript.searchDirectories": [
-    "${workspaceFolder}/scripts"
+    "${workspaceFolder}/maps"
   ],
 
-  // Load host engine API definitions
+  // Folder module ownership (all scripts under maps/hcas belong to module HCAS)
+  "angelscript.modules": [
+    {
+      "name": "HCAS",
+      "folder": "${workspaceFolder}/maps/hcas"
+    }
+  ],
+
+  // Enable virtual mixin document inspection (angelscript-virtual://)
+  "angelscript.enableVirtualMixinDocuments": true,
+
+  // Active predefined host stub
+  "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
+}
+```
+
+#### Example B: Sven Co-op (Entry Script Module)
+Recommended when a script tree is compiled starting from a specific registration file:
+```jsonc
+{
+  "angelscript.include.implicitExtension": true,
+  "angelscript.searchDirectories": [
+    "${workspaceFolder}/maps"
+  ],
+  "angelscript.modules": [
+    {
+      "name": "MapInit",
+      "entry": "${workspaceFolder}/maps/ins2/ins2_register.as"
+    }
+  ],
+  "angelscript.enableVirtualMixinDocuments": true,
+  "angelscript.predefined.active": "${workspaceFolder}/maps/sven.as.predefined"
+}
+```
+
+#### Example C: Generic Game Engine / Standalone Project
+For standalone AngelScript host integrations using custom include paths and API stubs:
+```jsonc
+{
+  "angelscript.searchDirectories": [
+    "${workspaceFolder}/scripts/include"
+  ],
+  "angelscript.modules": [
+    {
+      "name": "GameCore",
+      "folder": "${workspaceFolder}/scripts/game"
+    }
+  ],
   "angelscript.predefinedFiles": [
-    "${workspaceFolder}/stubs/sven.as.predefined"
-  ],
-
-  // Enable extensionless include resolution (e.g. #include "helper" finds "helper.as")
-  "angelscript.include.implicitExtension": true
+    "${workspaceFolder}/scripts/api/engine.as.predefined"
+  ]
 }
 ```
 
@@ -86,7 +135,11 @@ cd client && npm install && npm run compile
 | `angelscript.include.implicitExtension` | `false` | Resolves `#include "helper"` to `helper.as` without requiring the file extension. |
 | `angelscript.predefinedFiles` | `[]` | List of predefined host API stub files (`.as.predefined`). |
 | `angelscript.predefined.active` | `""` | The active stub to load when multiple are present. Set to `"all"` to merge all stubs. |
-| `angelscript.modules` | `[]` | Script compilation modules specified by entry file or folder. |
+| `angelscript.modules` | `[]` | Script compilation modules specified by entry file (`"entry"`) or directory (`"folder"`). |
+| `angelscript.enableVirtualMixinDocuments` | `false` | Enables virtual document providers (`angelscript-virtual://`) for mixin class inspection. |
+| `angelscript.inlayHints.maxParameters` | `0` | Maximum number of parameter inlay hints to display per call (`0` = unlimited). |
+| `angelscript.inlayHints.maxLength` | `0` | Maximum character length for parameter inlay hint labels before truncating with `...` (`0` = unlimited). |
+| `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suppresses parameter name hints when argument text matches parameter name. |
 | `angelscript.format.braceStyle` | `"allman"` | Brace placement style (`"allman"` or `"kr"`). |
 | `angelscript.diagnosticSeverity` | `{}` | Per-diagnostic severity overrides (e.g. `{"as-warn-unused-variable": "hint"}`). |
 | `angelscript.engine.requireEnumScope` | `false` | When true (`asEP_REQUIRE_ENUM_SCOPE`), enums must be qualified with `Enum::Member`. |

@@ -1163,6 +1163,11 @@ void AddParameterHints(const std::vector<analysis::ParameterInformation>& parame
 {
     for (size_t i = 0; i < args.size() && i < parameters.size(); ++i)
     {
+        if (request.maxParameters > 0 && i >= request.maxParameters)
+        {
+            break;
+        }
+
         const auto& param = parameters[i];
         const auto& arg = args[i];
 
@@ -1180,7 +1185,12 @@ void AddParameterHints(const std::vector<analysis::ParameterInformation>& parame
         {
             lsp::InlayHint hint;
             hint.position = arg.hintPosition;
-            hint.label = param.name + ":";
+            std::string label = param.name;
+            if (request.maxLength > 0 && label.length() > request.maxLength)
+            {
+                label = label.substr(0, request.maxLength) + "...";
+            }
+            hint.label = label + ":";
             hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
             hint.paddingRight = true;
             hint.paddingLeft = false;

@@ -981,6 +981,16 @@ export function buildServerArgs(): string[] {
         args.push('--inlay-hints-suppress-when-argument-matches-name');
     }
 
+    const maxParameters = config.get<number>('inlayHints.maxParameters', 0);
+    if (maxParameters > 0) {
+        args.push(`--inlay-hints-max-parameters=${maxParameters}`);
+    }
+
+    const maxLength = config.get<number>('inlayHints.maxLength', 0);
+    if (maxLength > 0) {
+        args.push(`--inlay-hints-max-length=${maxLength}`);
+    }
+
     const logLevel = config.get<string>('server.logLevel', 'debug').trim();
     if (logLevel.length > 0) {
         args.push(`--log-level=${logLevel}`);
@@ -1274,7 +1284,8 @@ export async function activate(context: ExtensionContext) {
             const withoutHotReloadable = (args: string[]) =>
                 args.filter(arg => !arg.startsWith('--predefined-active=') &&
                                    !arg.startsWith('--module=') &&
-                                   !arg.startsWith('--module-folder='));
+                                   !arg.startsWith('--module-folder=') &&
+                                   !arg.startsWith('--inlay-hints-'));
 
             // The decoration bakes the opacity in, so a change to either setting has to build a
             // new one. Cheap, and it happens only when the user edits the setting.

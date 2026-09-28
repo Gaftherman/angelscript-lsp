@@ -344,20 +344,38 @@ bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
 }
 
 void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
-
 {
+    const lsp::LSPObject* featObj = nullptr;
     if (const auto* featVal = section.find("features"); featVal && featVal->isObject())
     {
-        if (const auto* vmd = featVal->object().find("enableVirtualMixinDocuments"); vmd && vmd->isBoolean())
-        {
-            m_config.features.enableVirtualMixinDocuments = vmd->boolean();
-            m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
-        }
+        featObj = &featVal->object();
     }
-    else if (const auto* vmd = section.find("enableVirtualMixinDocuments"); vmd && vmd->isBoolean())
+    if (auto vmd = FindSectionBool(section, featObj, "enableVirtualMixinDocuments", "features"); vmd.has_value())
     {
-        m_config.features.enableVirtualMixinDocuments = vmd->boolean();
+        m_config.features.enableVirtualMixinDocuments = *vmd;
         m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
+    }
+    if (auto ih = FindSectionBool(section, featObj, "inlayHints", "features"); ih.has_value())
+    {
+        m_config.features.enableInlayHints = *ih;
+    }
+
+    const lsp::LSPObject* ihObj = nullptr;
+    if (const auto* ihVal = section.find("inlayHints"); ihVal && ihVal->isObject())
+    {
+        ihObj = &ihVal->object();
+    }
+    if (auto maxParam = FindSectionInt(section, ihObj, "maxParameters", "inlayHints"); maxParam.has_value())
+    {
+        m_config.features.inlayHintsMaxParameters = static_cast<size_t>(std::max(0, *maxParam));
+    }
+    if (auto maxLen = FindSectionInt(section, ihObj, "maxLength", "inlayHints"); maxLen.has_value())
+    {
+        m_config.features.inlayHintsMaxLength = static_cast<size_t>(std::max(0, *maxLen));
+    }
+    if (auto suppress = FindSectionBool(section, ihObj, "suppressWhenArgumentMatchesName", "inlayHints"); suppress.has_value())
+    {
+        m_config.features.inlayHintsSuppressWhenArgumentMatchesName = *suppress;
     }
 }
 
