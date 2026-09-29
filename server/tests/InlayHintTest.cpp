@@ -1128,6 +1128,92 @@ TEST_CASE("InlayHint - Scoped calls and enum arguments")
     CHECK(foundGetKey);
 }
 
+TEST_CASE("InlayHintHandler - Omitted default parameter in non-empty argument list carries hover tooltip")
+{
+    const std::string loggerClass = test::GenerateRandomSymbolName("ASLogger");
+    const std::string msgParam = test::GenerateRandomSymbolName("message");
+    const std::string argsParam = test::GenerateRandomSymbolName("arguments");
+
+    const std::string code =
+        "class " + loggerClass + " {\n"
+        "    void print(const string &in " + msgParam + ", array<string>@ " + argsParam + " = null) const {}\n"
+        "};\n"
+        "void main() {\n"
+        "    " + loggerClass + " logger;\n"
+        "    logger.print(\"hello\");\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+
+    REQUIRE(hints.has_value());
+    REQUIRE_FALSE(hints->empty());
+
+    bool foundOmittedHintWithTooltip = false;
+    for (const auto& hint : *hints)
+    {
+        std::string label = std::holds_alternative<std::string>(hint.label)
+                                ? std::get<std::string>(hint.label)
+                                : "";
+        if (label.find(argsParam + ": null") != std::string::npos)
+        {
+            REQUIRE(hint.tooltip.has_value());
+            std::string tooltip = std::holds_alternative<std::string>(*hint.tooltip)
+                                      ? std::get<std::string>(*hint.tooltip)
+                                      : "";
+            CHECK(tooltip.find("Default parameter:") != std::string::npos);
+            CHECK(tooltip.find(argsParam) != std::string::npos);
+            CHECK(tooltip.find("null") != std::string::npos);
+            foundOmittedHintWithTooltip = true;
+        }
+    }
+
+    CHECK(foundOmittedHintWithTooltip);
+}
+
+TEST_CASE("InlayHintHandler - Nameless wildcard parameter ?& in generates fallback type inlay hint")
+{
+    const std::string funcName = test::GenerateRandomSymbolName("my_snprintf");
+    const std::string bufParam = test::GenerateRandomSymbolName("szOutBuffer");
+    const std::string fmtParam = test::GenerateRandomSymbolName("szFormat");
+    const std::string keyVar = test::GenerateRandomSymbolName("keyName");
+
+    const std::string code =
+        "bool " + funcName + "(string& out " + bufParam + ", const string& in " + fmtParam + ", ?& in) { return true; }\n"
+        "void main() {\n"
+        "    string outBuf;\n"
+        "    string " + keyVar + " = \"myKey\";\n"
+        "    " + funcName + "(outBuf, \"format %1\", " + keyVar + ");\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+
+    REQUIRE(hints.has_value());
+    REQUIRE_FALSE(hints->empty());
+
+    bool foundWildcardHint = false;
+    for (const auto& hint : *hints)
+    {
+        std::string label = std::holds_alternative<std::string>(hint.label)
+                                ? std::get<std::string>(hint.label)
+                                : "";
+        if (label.find("?:") != std::string::npos || label.find("?& in:") != std::string::npos || label.find("?&in:") != std::string::npos)
+        {
+            foundWildcardHint = true;
+            REQUIRE(hint.tooltip.has_value());
+            std::string tooltip = std::holds_alternative<std::string>(*hint.tooltip)
+                                      ? std::get<std::string>(*hint.tooltip)
+                                      : "";
+            CHECK(tooltip.find("Parameter:") != std::string::npos);
+            CHECK(tooltip.find("?") != std::string::npos);
+        }
+    }
+
+    CHECK(foundWildcardHint);
+}
+
+
 
 
 
