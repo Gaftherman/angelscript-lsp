@@ -300,7 +300,7 @@ std::optional<ArgumentConversion> EvaluatePrimitiveOrEnumConversion(const MatchC
 
 ArgumentConversion EvaluateCustomOrUnresolvedConversion(const MatchContext& ctx)
 {
-    const auto userConv = CheckUserConversion(ctx.cleanArg, ctx.cleanParam, ctx.table, ctx.stringTypeName);
+    const auto userConv = CheckUserConversion(ctx.cleanArg, ctx.cleanParam, ctx.table);
     if (userConv.viable)
     {
         const uint8_t subRank = userConv.isExact ? 0 : 20;
@@ -316,7 +316,7 @@ ArgumentConversion EvaluateCustomOrUnresolvedConversion(const MatchContext& ctx)
 
     const auto isNamedAndUnresolved = [&ctx](const std::string& typeName)
     {
-        if (typeName.empty() || IsCorePrimitive(typeName) || typeName == ctx.stringTypeName || typeName == "string")
+        if (typeName.empty() || IsCorePrimitive(typeName) || typeName == ctx.stringTypeName)
         {
             return false;
         }

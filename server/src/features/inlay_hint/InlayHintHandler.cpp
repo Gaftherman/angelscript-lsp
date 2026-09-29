@@ -688,7 +688,7 @@ std::string DeduceNumericLiteralType(std::string_view nodeTxt)
  * @param[in] sourceCode Source text buffer.
  * @return Type string or empty string.
  */
-std::string DeduceLiteralType(TSNode exprNode, std::string_view sourceCode)
+std::string DeduceLiteralType(TSNode exprNode, std::string_view sourceCode, std::string_view stringTypeName = "string")
 {
     std::string_view type = ts_node_type(exprNode);
     std::string nodeTxt = TrimNodeText(GetNodeText(exprNode, sourceCode));
@@ -698,7 +698,7 @@ std::string DeduceLiteralType(TSNode exprNode, std::string_view sourceCode)
     }
     if (type == "string_literal" || type == "concatenated_string")
     {
-        return "string";
+        return stringTypeName.empty() ? "string" : std::string(stringTypeName);
     }
     if (type == "boolean_literal")
     {
@@ -998,7 +998,7 @@ static bool IsOperandMatch(std::string_view leftT, std::string_view rightT, std:
     return leftT == target || rightT == target;
 }
 
-std::string SelectWiderType(std::string_view leftT, std::string_view rightT, std::string_view stringTypeName = "string")
+std::string SelectWiderType(std::string_view leftT, std::string_view rightT, std::string_view stringTypeName)
 {
     static constexpr std::array<std::string_view, 2> kFloatingTypes = {"double", "float"};
     for (const auto type : kFloatingTypes)
@@ -1009,10 +1009,9 @@ std::string SelectWiderType(std::string_view leftT, std::string_view rightT, std
         }
     }
 
-    const std::string_view effectiveStr = stringTypeName.empty() ? "string" : stringTypeName;
-    if (IsOperandMatch(leftT, rightT, effectiveStr))
+    if (!stringTypeName.empty() && IsOperandMatch(leftT, rightT, stringTypeName))
     {
-        return std::string(effectiveStr);
+        return std::string(stringTypeName);
     }
 
     static constexpr std::array<std::string_view, 2> kWideIntTypes = {"int64", "uint"};
@@ -1051,7 +1050,9 @@ std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRequest& 
     std::string leftT = DeduceExpressionType(left, request);
     std::string rightT = DeduceExpressionType(right, request);
 
-    return SelectWiderType(leftT, rightT);
+    const std::string_view strType =
+        request.config ? std::string_view(request.config->types.stringTypeName) : "string";
+    return SelectWiderType(leftT, rightT, strType);
 }
 
 /**
@@ -1109,50 +1110,24 @@ std::string DeduceParenthesizedType(TSNode exprNode, const InlayHintRequest& req
  * @param[in] request Inlay hint request context.
  * @return Deduced type string or empty string.
  */
-std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& request)
+/**
+ * @brief Deduces compound expression type (call, member, unary, binary, postfix).
+ * @param[in] type AST node type name.
+ * @param[in] exprNode Target expression node.
+ * @param[in] request Inlay hint request context.
+ * @param[in] rootScope Root lexical scope.
+ * @return Deduced type string or empty string.
+ */
+std::string DeduceCompoundExpressionType(std::string_view type, TSNode exprNode, const InlayHintRequest& request,
+                                         const analysis::Scope* rootScope)
 {
-    if (ts_node_is_null(exprNode))
-    {
-        return "";
-    }
-
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    TSPoint point = ts_node_start_point(exprNode);
-    const analysis::Scope* scope = rootScope ? FindInnermostScope(rootScope.get(), point.row, point.column) : nullptr;
-
-    std::string resolved =
-        analysis::ResolveExpressionType(exprNode, {scope, request.symbolTable, request.sourceCode, request.uri});
-    if (!resolved.empty() && resolved != "auto")
-    {
-        return resolved;
-    }
-
-    std::string_view type = ts_node_type(exprNode);
-    if (type == "parenthesized_expression")
-    {
-        return DeduceParenthesizedType(exprNode, request);
-    }
-    std::string lit = DeduceLiteralType(exprNode, request.sourceCode);
-    if (!lit.empty())
-    {
-        return lit;
-    }
-    std::string cast = DeduceCastOrConstructType(exprNode, request.sourceCode);
-    if (!cast.empty())
-    {
-        return cast;
-    }
     if (type == "call_expression")
     {
-        return DeduceCallExpressionType(exprNode, request, rootScope.get());
+        return DeduceCallExpressionType(exprNode, request, rootScope);
     }
     if (type == "member_expression")
     {
-        return DeduceMemberExpressionType(exprNode, request, rootScope.get());
-    }
-    if (type == "identifier" || type == "scoped_identifier")
-    {
-        return DeduceIdentifierType(exprNode, request, scope);
+        return DeduceMemberExpressionType(exprNode, request, rootScope);
     }
     if (type == "binary_expression")
     {
@@ -1168,6 +1143,53 @@ std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& reques
         return DeduceExpressionType(operand, request);
     }
     return "";
+}
+
+std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& request)
+{
+    if (ts_node_is_null(exprNode))
+    {
+        return "";
+    }
+
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    TSPoint point = ts_node_start_point(exprNode);
+    const analysis::Scope* scope = rootScope ? FindInnermostScope(rootScope.get(), point.row, point.column) : nullptr;
+
+    const std::string_view strType = (request.config && !request.config->types.stringTypeName.empty())
+                                         ? std::string_view(request.config->types.stringTypeName)
+                                         : std::string_view("string");
+    const std::string_view arrType = (request.config && !request.config->types.arrayTypeName.empty())
+                                         ? std::string_view(request.config->types.arrayTypeName)
+                                         : std::string_view("array");
+
+    std::string resolved = analysis::ResolveExpressionType(
+        exprNode, {scope, request.symbolTable, request.sourceCode, request.uri, strType, arrType});
+    if (!resolved.empty() && resolved != "auto")
+    {
+        return resolved;
+    }
+
+    std::string_view type = ts_node_type(exprNode);
+    if (type == "parenthesized_expression")
+    {
+        return DeduceParenthesizedType(exprNode, request);
+    }
+    std::string lit = DeduceLiteralType(exprNode, request.sourceCode, strType);
+    if (!lit.empty())
+    {
+        return lit;
+    }
+    std::string cast = DeduceCastOrConstructType(exprNode, request.sourceCode);
+    if (!cast.empty())
+    {
+        return cast;
+    }
+    if (type == "identifier" || type == "scoped_identifier")
+    {
+        return DeduceIdentifierType(exprNode, request, scope);
+    }
+    return DeduceCompoundExpressionType(type, exprNode, request, rootScope.get());
 }
 
 /**

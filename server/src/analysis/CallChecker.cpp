@@ -610,7 +610,7 @@ ObjectTypeInfo ResolveMemberObjectType(TSNode objectNode, const CallValidationCo
     const std::string rawObjType = CanonicalizeArrayType(
         ResolveExpressionType(objectNode, {valCtx.scope, valCtx.ctx.request.symbolTable, valCtx.request.sourceCode,
                                            valCtx.ctx.request.fileUri}),
-        valCtx.ctx.request.GetArrayTypeName().empty() ? "array" : valCtx.ctx.request.GetArrayTypeName());
+        valCtx.ctx.request.GetEffectiveArrayTypeName());
     info.objectType = CleanBaseType(rawObjType);
     info.isConst = rawObjType.starts_with("const ") || rawObjType.ends_with("const") || HasConstModifier(rawObjType) ||
                    IsObjectNodeConst(objectNode, valCtx);

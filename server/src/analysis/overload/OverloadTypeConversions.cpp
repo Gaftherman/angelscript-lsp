@@ -125,8 +125,7 @@ bool IsViableConvertingConstructor(const Symbol& sym, const std::string& fromTyp
 }
 } // namespace
 
-bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable,
-                              std::string_view stringTypeName)
+bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
 {
     const std::string cleanTo = NormalizeType(toType);
     if (cleanTo.empty() || IsCorePrimitive(cleanTo))
@@ -141,21 +140,6 @@ bool HasConvertingConstructor(const std::string& fromType, const std::string& to
             if (IsViableConvertingConstructor(sym, fromType))
             {
                 return true;
-            }
-        }
-    }
-    if (!stringTypeName.empty() && stringTypeName != "string" && (cleanTo == "string" || cleanTo == stringTypeName))
-    {
-        const std::string targetName = (cleanTo == "string") ? std::string(stringTypeName) : "string";
-        const auto aliasSyms = symbolTable.FindSymbolsPtr(targetName + "::" + targetName);
-        if (aliasSyms)
-        {
-            for (const auto& sym : *aliasSyms)
-            {
-                if (IsViableConvertingConstructor(sym, fromType))
-                {
-                    return true;
-                }
             }
         }
     }
@@ -202,7 +186,7 @@ bool HasConversionMethod(const std::string& fromType, const std::string& toType,
 }
 
 UserConversionMatch CheckUserConversion(const std::string& fromType, const std::string& toType,
-                                        const SymbolTable& symbolTable, std::string_view stringTypeName)
+                                        const SymbolTable& symbolTable)
 {
     if (fromType.empty() || toType.empty())
     {
@@ -213,17 +197,16 @@ UserConversionMatch CheckUserConversion(const std::string& fromType, const std::
     {
         return methodMatch;
     }
-    if (HasConvertingConstructor(fromType, toType, symbolTable, stringTypeName))
+    if (HasConvertingConstructor(fromType, toType, symbolTable))
     {
         return UserConversionMatch{true, false};
     }
     return UserConversionMatch{};
 }
 
-bool HasUserConversion(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable,
-                       std::string_view stringTypeName)
+bool HasUserConversion(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
 {
-    return CheckUserConversion(fromType, toType, symbolTable, stringTypeName).viable;
+    return CheckUserConversion(fromType, toType, symbolTable).viable;
 }
 
 constexpr int k_maxTypedefDepth = 8;

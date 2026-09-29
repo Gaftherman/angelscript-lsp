@@ -356,8 +356,7 @@ std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insid
 std::string ResolveObjectOwnerType(TSNode objectNode, const Scope* scope, const AccessCheckRequest& request,
                                    const DiagnosticContext& ctx)
 {
-    const std::string_view arrayContainer =
-        ctx.request.GetArrayTypeName().empty() ? std::string_view("array") : ctx.request.GetArrayTypeName();
+    const std::string_view arrayContainer = ctx.request.GetEffectiveArrayTypeName();
     return MemberOwnerType(
         ResolveExpressionType(objectNode, {scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri}),
         arrayContainer);

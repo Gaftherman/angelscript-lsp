@@ -1869,11 +1869,12 @@ static std::string ResolveNumberLiteral(std::string_view text)
 /**
  * @brief Resolves literal expression type.
  */
-static std::string ResolveLiteralExpr(std::string_view nodeType, TSNode exprNode, std::string_view sourceCode)
+static std::string ResolveLiteralExpr(std::string_view nodeType, TSNode exprNode, std::string_view sourceCode,
+                                      std::string_view stringTypeName = "string")
 {
     if (nodeType == "string_literal")
     {
-        return "string";
+        return stringTypeName.empty() ? "string" : std::string(stringTypeName);
     }
     if (nodeType == "boolean_literal")
     {
@@ -3340,7 +3341,7 @@ static std::optional<std::string> ResolvePrimaryExpr(std::string_view nodeType, 
     {
         return ResolveThisExpr(exprNode, ctx.sourceCode);
     }
-    if (auto lit = ResolveLiteralExpr(nodeType, exprNode, ctx.sourceCode); !lit.empty())
+    if (auto lit = ResolveLiteralExpr(nodeType, exprNode, ctx.sourceCode, ctx.stringTypeName); !lit.empty())
     {
         return lit;
     }

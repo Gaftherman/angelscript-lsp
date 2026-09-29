@@ -258,15 +258,15 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
 
         // 1. When stringTypeName is configured to customStringName:
         // HasConvertingConstructor respects declared constructors on the configured string type
-        CHECK(HasConvertingConstructor("double", customStringName, table, customStringName));
-        CHECK(CheckUserConversion("double", customStringName, table, customStringName).viable);
+        CHECK(HasConvertingConstructor("double", customStringName, table));
+        CHECK(CheckUserConversion("double", customStringName, table).viable);
 
-        // Standard "string" is resolved to the configured string type via alias fallback
-        CHECK(HasConvertingConstructor("double", "string", table, customStringName));
+        // Standard "string" is NOT resolved to customStringName when decoupled
+        CHECK_FALSE(HasConvertingConstructor("double", "string", table));
 
         // 2. Genuine custom class converting constructor IS viable
-        CHECK(HasConvertingConstructor("int", customClass, table, customStringName));
-        CHECK(CheckUserConversion("int", customClass, table, customStringName).viable);
+        CHECK(HasConvertingConstructor("int", customClass, table));
+        CHECK(CheckUserConversion("int", customClass, table).viable);
     }
 }
 

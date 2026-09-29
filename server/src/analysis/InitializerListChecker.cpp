@@ -359,8 +359,8 @@ ContainerInfo InspectContainer(const std::string& type, const TemplateSpelling& 
         return {true, 1, type.substr(0, type.size() - 2)};
     }
 
-    const std::string_view configuredArray = ctx.request.GetArrayTypeName();
-    if (spelling.name == "array" || (!configuredArray.empty() && spelling.name == configuredArray) ||
+    const std::string_view configuredArray = ctx.request.GetEffectiveArrayTypeName();
+    if ((!configuredArray.empty() && spelling.name == configuredArray) ||
         arrayLikeTemplates.contains(spelling.name))
     {
         std::string elem = spelling.arguments.empty() ? "auto" : spelling.arguments[0];

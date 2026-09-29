@@ -252,7 +252,8 @@ Server::HandleRequestsTextDocument_InlayHint(lsp::requests::TextDocument_InlayHi
                                    m_logger.get(),
                                    m_config.features.inlayHintsMaxParameters,
                                    m_config.features.inlayHintsMaxLength,
-                                   m_config.features.inlayHintsOmittedDefaultArguments};
+                                   m_config.features.inlayHintsOmittedDefaultArguments,
+                                   &m_config};
     auto hints = features::GetInlayHints(ihr);
     if (hints.has_value())
     {

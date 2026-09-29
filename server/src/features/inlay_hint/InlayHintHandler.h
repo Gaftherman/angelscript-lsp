@@ -33,6 +33,7 @@ struct InlayHintRequest
     size_t maxParameters = 0;
     size_t maxLength = 0;
     config::OmittedDefaultArgumentsMode omittedDefaultArguments = config::OmittedDefaultArgumentsMode::NameAndValue;
+    const config::ServerConfig* config = nullptr;
 };
 
 /**

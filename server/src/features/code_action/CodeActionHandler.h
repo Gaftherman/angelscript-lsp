@@ -9,6 +9,11 @@
 #include <tree_sitter/api.h>
 #include <vector>
 
+namespace angel_lsp::config
+{
+struct ServerConfig;
+}
+
 namespace angel_lsp::features
 {
 /**
@@ -24,6 +29,7 @@ struct CodeActionRequest
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
     std::vector<std::string> allowedRoots = {};
+    const config::ServerConfig* config = nullptr;
 };
 
 /**

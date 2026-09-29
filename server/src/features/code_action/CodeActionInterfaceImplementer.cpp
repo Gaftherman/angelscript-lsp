@@ -4,6 +4,7 @@
  */
 
 #include "features/code_action/CodeActionInternal.h"
+#include "config/ServerConfig.h"
 
 namespace angel_lsp::features
 {
@@ -15,7 +16,7 @@ namespace
  * @param[in] returnType Return type text.
  * @return Default literal return text ("null", "false", "0", "\"\"").
  */
-std::string GetDefaultReturnValue(std::string_view returnType, std::string_view stringTypeName = "string")
+std::string GetDefaultReturnValue(std::string_view returnType, std::string_view stringTypeName)
 {
     std::string cleanRet = analysis::CleanBaseType(returnType);
     if (returnType.ends_with("@"))
@@ -26,8 +27,7 @@ std::string GetDefaultReturnValue(std::string_view returnType, std::string_view 
     {
         return "false";
     }
-    const std::string_view effectiveStr = stringTypeName.empty() ? "string" : stringTypeName;
-    if (cleanRet == effectiveStr)
+    if (!stringTypeName.empty() && cleanRet == stringTypeName)
     {
         return "\"\"";
     }
@@ -43,9 +43,11 @@ std::string GetDefaultReturnValue(std::string_view returnType, std::string_view 
 /**
  * @brief Formats stub declarations for missing interface methods.
  * @param[in] missingMethods List of missing method symbols.
+ * @param[in] stringTypeName Workspace-configured string type name.
  * @return Formatted stub code string.
  */
-std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis::Symbol>& missingMethods)
+std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis::Symbol>& missingMethods,
+                                             std::string_view stringTypeName)
 {
     std::string stubs;
     for (const auto& m : missingMethods)
@@ -73,7 +75,7 @@ std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis::Symbol
         stubs += ")\n    {\n";
         if (ret != "void")
         {
-            std::string defaultVal = GetDefaultReturnValue(ret);
+            std::string defaultVal = GetDefaultReturnValue(ret, stringTypeName);
             stubs += "        return " + defaultVal + ";\n";
         }
         stubs += "    }\n";
@@ -200,11 +202,37 @@ lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysi
     return insertPos;
 }
 
+/**
+ * @brief Collects diagnostics matching missing interface implementation for a class symbol.
+ * @param[in] contextDiagnostics LSP diagnostics in request context.
+ * @param[in] clsSym Class symbol to filter diagnostics by line range.
+ * @return Vector of matching diagnostics.
+ */
+std::vector<lsp::Diagnostic> CollectMatchingInterfaceDiagnostics(
+    const std::vector<lsp::Diagnostic>& contextDiagnostics, const analysis::Symbol& clsSym)
+{
+    std::vector<lsp::Diagnostic> matching;
+    for (const auto& diag : contextDiagnostics)
+    {
+        if (MatchDiagnosticCode(diag, "as-err-interface-impl-missing") &&
+            diag.range.start.line <= clsSym.endLine && diag.range.end.line >= clsSym.startLine)
+        {
+            matching.push_back(diag);
+        }
+    }
+    return matching;
+}
+
 } // namespace
 
 void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode rootNode,
                                    std::vector<lsp::CodeAction>& actions)
 {
+    const std::string_view strType =
+        (request.config && !request.config->types.stringTypeName.empty())
+            ? std::string_view(request.config->types.stringTypeName)
+            : std::string_view("string");
+
     request.symbolTable.ForEachSymbol(
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
@@ -234,7 +262,7 @@ void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode root
                         continue;
                     }
 
-                    std::string stubs = FormatMissingInterfaceMethodStubs(missingMethods);
+                    std::string stubs = FormatMissingInterfaceMethodStubs(missingMethods, strType);
                     lsp::Position insertPos = FindClassInterfaceInsertionPosition(rootNode, clsSym);
 
                     lsp::TextEdit edit;
@@ -246,15 +274,7 @@ void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode root
                     action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
                     action.isPreferred = true;
 
-                    std::vector<lsp::Diagnostic> matchingDiags;
-                    for (const auto& diag : request.context.diagnostics)
-                    {
-                        if (MatchDiagnosticCode(diag, "as-err-interface-impl-missing") &&
-                            diag.range.start.line <= clsSym.endLine && diag.range.end.line >= clsSym.startLine)
-                        {
-                            matchingDiags.push_back(diag);
-                        }
-                    }
+                    auto matchingDiags = CollectMatchingInterfaceDiagnostics(request.context.diagnostics, clsSym);
                     if (!matchingDiags.empty())
                     {
                         action.diagnostics = std::move(matchingDiags);

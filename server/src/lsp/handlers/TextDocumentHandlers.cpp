@@ -458,7 +458,7 @@ Server::HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAc
 
     features::CodeActionRequest car{
         doc->uri, *doc->text,    doc->tree,    codec::Decode(*doc->text, m_positionEncoding, req.range),
-        context,  m_symbolTable, m_scopeIndex, IncludeAllowedRoots()};
+        context,  m_symbolTable, m_scopeIndex, IncludeAllowedRoots(), &m_config};
     auto actions = features::GetCodeActions(car);
     if (actions.has_value())
     {
