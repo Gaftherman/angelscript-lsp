@@ -473,6 +473,19 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
      "--disable-ontypeformatting", &FeatureFlags::enableOnTypeFormatting},
     {"--enable-virtual-mixin-documents", "--enable-virtualmixindocuments", "--disable-virtual-mixin-documents",
      "--disable-virtualmixindocuments", &FeatureFlags::enableVirtualMixinDocuments},
+    {"--inlay-hints-enable-tooltip", "--enable-inlay-hints-tooltip", "--disable-inlay-hints-tooltip",
+     "--no-inlay-hints-enable-tooltip", &FeatureFlags::inlayHintsEnableTooltip},
+    {"--inlay-hints-enable-location", "--enable-inlay-hints-location", "--disable-inlay-hints-location",
+     "--no-inlay-hints-enable-location", &FeatureFlags::inlayHintsEnableLocation},
+    {"--completion-complete-function-parens", "--enable-completion-function-parens",
+     "--disable-completion-function-parens", "--no-completion-complete-function-parens",
+     &FeatureFlags::completionCompleteFunctionParens},
+    {"--hover-string-literal-length", "--enable-hover-string-literal-length",
+     "--disable-hover-string-literal-length", "--no-hover-string-literal-length",
+     &FeatureFlags::hoverStringLiteralLength},
+    {"--hover-string-literal-path-resolution", "--enable-hover-string-literal-path-resolution",
+     "--disable-hover-string-literal-path-resolution", "--no-hover-string-literal-path-resolution",
+     &FeatureFlags::hoverStringLiteralPathResolution},
 };
 
 bool TryParseInlayHintOmittedDefaultsFlag(ServerConfig& config, ArgParseContext& ctx)
@@ -589,6 +602,25 @@ static constexpr DiagnosticFlagMapping kDiagFlags[] = {
      &DiagnosticsConfig::reportAllNullDereferences},
 };
 
+static int ParseHandleComparisonSeverity(ArgParseContext& ctx)
+{
+    std::string_view val;
+    if (!ctx.GetStringValue(val))
+    {
+        return 1;
+    }
+    const std::string lower = ToLower(val);
+    if (lower == "error" || lower == "2")
+    {
+        return 2;
+    }
+    if (lower == "false" || lower == "0" || lower == "off")
+    {
+        return 0;
+    }
+    return 1;
+}
+
 bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
 {
     for (const auto& entry : kDiagFlags)
@@ -612,32 +644,21 @@ bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
     }
     if (ctx.key == "--report-handle-comparison-equality")
     {
-        std::string_view val;
-        if (ctx.GetStringValue(val))
-        {
-            const std::string lower = ToLower(val);
-            if (lower == "error" || lower == "2")
-            {
-                config.diagnostics.reportHandleComparisonEquality = 2;
-            }
-            else if (lower == "false" || lower == "0" || lower == "off")
-            {
-                config.diagnostics.reportHandleComparisonEquality = 0;
-            }
-            else
-            {
-                config.diagnostics.reportHandleComparisonEquality = 1;
-            }
-        }
-        else
-        {
-            config.diagnostics.reportHandleComparisonEquality = 1;
-        }
+        config.diagnostics.reportHandleComparisonEquality = ParseHandleComparisonSeverity(ctx);
         return true;
     }
     if (ctx.key == "--no-report-handle-comparison-equality")
     {
         config.diagnostics.reportHandleComparisonEquality = 0;
+        return true;
+    }
+    if (ctx.key == "--missing-asset-path-severity")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.diagnostics.missingAssetPathSeverity = ToLower(val);
+        }
         return true;
     }
     return false;
@@ -774,6 +795,15 @@ bool TryParseDirectoryOptions(ServerConfig& config, ArgParseContext& ctx, bool& 
         if (ctx.GetStringValue(val))
         {
             config.searchDirectories.push_back(std::string(val));
+        }
+        return true;
+    }
+    if (ctx.key == "--asset-search-dir" || ctx.key == "--asset-search-path")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val))
+        {
+            config.features.assetSearchPaths.push_back(std::string(val));
         }
         return true;
     }

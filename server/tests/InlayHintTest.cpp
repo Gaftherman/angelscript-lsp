@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "config/ServerConfig.h"
 #include "features/inlay_hint/InlayHintHandler.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
@@ -83,6 +84,25 @@ namespace
                                  maxParameters,
                                  maxLength,
                                  omittedDefaultArguments};
+            return GetInlayHints(req);
+        }
+
+        std::optional<std::vector<lsp::InlayHint>> InlayHintsWithConfig(
+            const config::ServerConfig& config,
+            lsp::Range range = lsp::Range{{0, 0}, {0, 0}})
+        {
+            InlayHintRequest req{uri,
+                                 sourceCode,
+                                 tree,
+                                 range,
+                                 symbolTable,
+                                 scopeIndex,
+                                 false,
+                                 nullptr,
+                                 0,
+                                 0,
+                                 config::OmittedDefaultArgumentsMode::NameAndValue,
+                                 &config};
             return GetInlayHints(req);
         }
     };
@@ -1004,8 +1024,8 @@ TEST_CASE("InlayHintHandler - Omitted Default Arguments Mode NameAndValue vs Dec
         auto hints = env.InlayHints();
         REQUIRE(hints.has_value());
         REQUIRE(hints->size() == 2);
-        CHECK(std::get<std::string>(hints->at(0).label) == "id: 0, ");
-        CHECK(std::get<std::string>(hints->at(1).label) == ", argS: array<string>()");
+        CHECK(GetHintLabel(hints->at(0)) == "id: 0, ");
+        CHECK(GetHintLabel(hints->at(1)) == ", argS: array<string>()");
     }
 
     // 2. Declaration mode
@@ -1014,8 +1034,8 @@ TEST_CASE("InlayHintHandler - Omitted Default Arguments Mode NameAndValue vs Dec
                                    config::OmittedDefaultArgumentsMode::Declaration);
         REQUIRE(hints.has_value());
         REQUIRE(hints->size() == 2);
-        CHECK(std::get<std::string>(hints->at(0).label) == "int id = 0, ");
-        CHECK(std::get<std::string>(hints->at(1).label) == ", array<string> argS = array<string>()");
+        CHECK(GetHintLabel(hints->at(0)) == "int id = 0, ");
+        CHECK(GetHintLabel(hints->at(1)) == ", array<string> argS = array<string>()");
     }
 
     // 3. Off mode
@@ -1040,8 +1060,8 @@ TEST_CASE("InlayHintHandler - Omitted Default Arguments In Empty Call")
 
     REQUIRE(hints.has_value());
     REQUIRE(hints->size() == 2);
-    CHECK(std::get<std::string>(hints->at(0).label) == "a: 1");
-    CHECK(std::get<std::string>(hints->at(1).label) == ", b: 2.0f");
+    CHECK(GetHintLabel(hints->at(0)) == "a: 1");
+    CHECK(GetHintLabel(hints->at(1)) == ", b: 2.0f");
 }
 
 TEST_CASE("InlayHintHandler - Invariant Randomized Omitted Default Arguments")
@@ -1064,8 +1084,8 @@ TEST_CASE("InlayHintHandler - Invariant Randomized Omitted Default Arguments")
         auto hints = env.InlayHints();
         REQUIRE(hints.has_value());
         REQUIRE(hints->size() == 2);
-        CHECK(std::get<std::string>(hints->at(0).label) == p0 + ": 10, ");
-        CHECK(std::get<std::string>(hints->at(1).label) == ", " + p2 + ": \"default\"");
+        CHECK(GetHintLabel(hints->at(0)) == p0 + ": 10, ");
+        CHECK(GetHintLabel(hints->at(1)) == ", " + p2 + ": \"default\"");
     }
 
     // Declaration mode
@@ -1074,8 +1094,8 @@ TEST_CASE("InlayHintHandler - Invariant Randomized Omitted Default Arguments")
                                    config::OmittedDefaultArgumentsMode::Declaration);
         REQUIRE(hints.has_value());
         REQUIRE(hints->size() == 2);
-        CHECK(std::get<std::string>(hints->at(0).label) == "int " + p0 + " = 10, ");
-        CHECK(std::get<std::string>(hints->at(1).label) == ", string " + p2 + " = \"default\"");
+        CHECK(GetHintLabel(hints->at(0)) == "int " + p0 + " = 10, ");
+        CHECK(GetHintLabel(hints->at(1)) == ", string " + p2 + " = \"default\"");
     }
 }
 
@@ -1168,13 +1188,20 @@ TEST_CASE("InlayHintHandler - Omitted default parameter in non-empty argument li
         std::string label = GetHintLabel(hint);
         if (label.find(argsParam + ": null") != std::string::npos)
         {
-            REQUIRE(hint.tooltip.has_value());
-            std::string tooltip = std::holds_alternative<std::string>(*hint.tooltip)
-                                      ? std::get<std::string>(*hint.tooltip)
+            REQUIRE(std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label));
+            const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
+            REQUIRE_FALSE(parts.empty());
+            REQUIRE(parts[0].tooltip.has_value());
+            std::string tooltip = std::holds_alternative<std::string>(*parts[0].tooltip)
+                                      ? std::get<std::string>(*parts[0].tooltip)
                                       : "";
             CHECK(tooltip.find("Default parameter:") != std::string::npos);
             CHECK(tooltip.find(argsParam) != std::string::npos);
             CHECK(tooltip.find("null") != std::string::npos);
+            REQUIRE(parts[0].location.has_value());
+            CHECK(parts[0].location->range.start.line == 1);
+            CHECK(parts[0].location->range.end.line == 1);
+            CHECK_FALSE(hint.tooltip.has_value());
             foundOmittedHintWithTooltip = true;
         }
     }
@@ -1210,19 +1237,23 @@ TEST_CASE("InlayHintHandler - Nameless wildcard parameter ?& in generates fallba
         if (label.find("?:") != std::string::npos || label.find("?& in:") != std::string::npos || label.find("?&in:") != std::string::npos)
         {
             foundWildcardHint = true;
-            REQUIRE(hint.tooltip.has_value());
-            std::string tooltip = std::holds_alternative<std::string>(*hint.tooltip)
-                                      ? std::get<std::string>(*hint.tooltip)
+            REQUIRE(std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label));
+            const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
+            REQUIRE_FALSE(parts.empty());
+            REQUIRE(parts[0].tooltip.has_value());
+            std::string tooltip = std::holds_alternative<std::string>(*parts[0].tooltip)
+                                      ? std::get<std::string>(*parts[0].tooltip)
                                       : "";
             CHECK(tooltip.find("Parameter:") != std::string::npos);
             CHECK(tooltip.find("?") != std::string::npos);
+            CHECK_FALSE(hint.tooltip.has_value());
         }
     }
 
     CHECK(foundWildcardHint);
 }
 
-TEST_CASE("InlayHintHandler - Parameter hint label part location covers full multi-part argument range")
+TEST_CASE("InlayHintHandler - Parameter hint label part location navigates to callee parameter declaration")
 {
     const std::string msgClass = test::GenerateRandomSymbolName("NetworkMsg");
     const std::string nsName = test::GenerateRandomSymbolName("MsgTypes");
@@ -1246,7 +1277,7 @@ TEST_CASE("InlayHintHandler - Parameter hint label part location covers full mul
     auto hints = env.InlayHints();
     REQUIRE(hints.has_value());
 
-    bool foundTypeHintWithFullRange = false;
+    bool foundTypeHintWithDeclLocation = false;
     for (const auto& hint : *hints)
     {
         if (!std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label))
@@ -1260,13 +1291,91 @@ TEST_CASE("InlayHintHandler - Parameter hint label part location covers full mul
             {
                 REQUIRE(part.location.has_value());
                 const auto& range = part.location->range;
-                CHECK(range.start.line == 7);
-                CHECK(range.end.line == 7);
-                CHECK(range.end.character > range.start.character + nsName.length() + 2);
-                foundTypeHintWithFullRange = true;
+                CHECK(range.start.line == 4);
+                CHECK(range.end.line == 4);
+                CHECK(part.tooltip.has_value());
+                CHECK_FALSE(hint.tooltip.has_value());
+                foundTypeHintWithDeclLocation = true;
             }
         }
     }
-    CHECK(foundTypeHintWithFullRange);
+    CHECK(foundTypeHintWithDeclLocation);
+}
+
+TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects config toggles")
+{
+    const std::string funcName = test::GenerateRandomSymbolName("SpawnGrenade");
+    const std::string paramName = test::GenerateRandomSymbolName("startEntity");
+
+    const std::string code =
+        "class CBaseEntity {};\n"
+        "void " + funcName + "(CBaseEntity@ " + paramName + ") {}\n"
+        "void main() {\n"
+        "    CBaseEntity@ ent = null;\n"
+        "    " + funcName + "(ent);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // 1. Default config: tooltip should be wrapped in ```angelscript code block
+    auto defaultHints = env.InlayHints();
+    REQUIRE(defaultHints.has_value());
+    REQUIRE_FALSE(defaultHints->empty());
+
+    bool foundParamHint = false;
+    for (const auto& hint : *defaultHints)
+    {
+        if (!std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+        {
+            continue;
+        }
+        const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
+        for (const auto& part : parts)
+        {
+            if (part.value == paramName + ":")
+            {
+                foundParamHint = true;
+                REQUIRE(part.tooltip.has_value());
+                std::string tooltip = std::holds_alternative<std::string>(*part.tooltip)
+                                          ? std::get<std::string>(*part.tooltip)
+                                          : "";
+                CHECK(tooltip.find("Parameter:\n```angelscript\nCBaseEntity@ " + paramName + "\n```") != std::string::npos);
+                CHECK(part.location.has_value());
+            }
+        }
+    }
+    CHECK(foundParamHint);
+
+    // 2. Disabled tooltip: part.tooltip should be nullopt
+    config::ServerConfig noTooltipConfig;
+    noTooltipConfig.features.inlayHintsEnableTooltip = false;
+    auto noTooltipHints = env.InlayHintsWithConfig(noTooltipConfig);
+    REQUIRE(noTooltipHints.has_value());
+    for (const auto& hint : *noTooltipHints)
+    {
+        if (std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+        {
+            for (const auto& part : std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+            {
+                CHECK_FALSE(part.tooltip.has_value());
+            }
+        }
+    }
+
+    // 3. Disabled location: part.location should be nullopt
+    config::ServerConfig noLocationConfig;
+    noLocationConfig.features.inlayHintsEnableLocation = false;
+    auto noLocationHints = env.InlayHintsWithConfig(noLocationConfig);
+    REQUIRE(noLocationHints.has_value());
+    for (const auto& hint : *noLocationHints)
+    {
+        if (std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+        {
+            for (const auto& part : std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+            {
+                CHECK_FALSE(part.location.has_value());
+            }
+        }
+    }
 }
 

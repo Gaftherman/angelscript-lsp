@@ -1005,8 +1005,7 @@ PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, co
     }
 
     info.propName = NodeText(memNode, ctx.request.sourceCode);
-    info.receiverType =
-        ResolveExpressionType(objNode, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri});
+    info.receiverType = ResolveExpressionType(objNode, ExpressionTypeContext(scope, ctx));
     const std::string cleanObj = CleanBaseType(info.receiverType);
     if (cleanObj.empty())
     {
@@ -1236,10 +1235,8 @@ void CheckSignedUnsignedComparison(TSNode node, const Scope* scope, DiagnosticCo
         return;
     }
 
-    const std::string leftType = CleanBaseType(
-        ResolveExpressionType(left, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri}));
-    const std::string rightType = CleanBaseType(
-        ResolveExpressionType(right, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri}));
+    const std::string leftType = CleanBaseType(ResolveExpressionType(left, ExpressionTypeContext(scope, ctx)));
+    const std::string rightType = CleanBaseType(ResolveExpressionType(right, ExpressionTypeContext(scope, ctx)));
 
     const bool mismatched = (IsUnsignedIntegerPrimitive(leftType) && IsSignedNumericPrimitive(rightType)) ||
                             (IsUnsignedIntegerPrimitive(rightType) && IsSignedNumericPrimitive(leftType));
@@ -2279,8 +2276,7 @@ void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, DiagnosticC
         }
     }
 
-    const std::string condType =
-        ResolveExpressionType(current, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri});
+    const std::string condType = ResolveExpressionType(current, ExpressionTypeContext(scope, ctx));
     if (!isHandle && condType.find('@') == std::string::npos)
     {
         return;
@@ -2374,10 +2370,8 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
     }
 
     const Scope* scope = ResolveNodeScope(node, request);
-    const std::string t1 =
-        ResolveExpressionType(consequence, {scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri});
-    const std::string t2 =
-        ResolveExpressionType(alternative, {scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri});
+    const std::string t1 = ResolveExpressionType(consequence, ExpressionTypeContext(scope, ctx));
+    const std::string t2 = ResolveExpressionType(alternative, ExpressionTypeContext(scope, ctx));
 
     const std::string clean1 = CanonicalizeType(CleanExpressionType(t1));
     const std::string clean2 = CanonicalizeType(CleanExpressionType(t2));
@@ -2471,8 +2465,7 @@ void ProcessForeachNode(TSNode node, const TypeConversionCheckRequest& request, 
     }
 
     const Scope* scope = ResolveNodeScope(node, request);
-    const std::string containerType =
-        ResolveExpressionType(collection, {scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri});
+    const std::string containerType = ResolveExpressionType(collection, ExpressionTypeContext(scope, ctx));
 
     const std::string containerBase = CleanExpressionType(containerType);
     if (IsCorePrimitive(containerBase) && containerBase != "auto" && containerBase != "void")
@@ -2704,8 +2697,7 @@ void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& reque
         return;
     }
 
-    const std::string rhsType =
-        ResolveExpressionType(valueNode, {scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri});
+    const std::string rhsType = ResolveExpressionType(valueNode, ExpressionTypeContext(scope, ctx));
 
     if (rhsType == "void")
     {
@@ -3043,10 +3035,8 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
     const Scope* scope = ResolveNodeScope(node, request);
     CheckAssignmentPropertyAccess(node, scope, ctx);
 
-    const std::string leftType =
-        ResolveExpressionType(left, {scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri});
-    const std::string rightType =
-        ResolveExpressionType(right, {scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri});
+    const std::string leftType = ResolveExpressionType(left, ExpressionTypeContext(scope, ctx));
+    const std::string rightType = ResolveExpressionType(right, ExpressionTypeContext(scope, ctx));
     const ConversionTypes types{CleanBaseType(rightType), CleanBaseType(leftType)};
 
     CheckFloatTruncation(right, types, scope, ctx);
@@ -3194,8 +3184,7 @@ void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* sco
 
     if (!expected.empty())
     {
-        const std::string actual = CleanBaseType(
-            ResolveExpressionType(expr, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri}));
+        const std::string actual = CleanBaseType(ResolveExpressionType(expr, ExpressionTypeContext(scope, ctx)));
         CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
         if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
         {
@@ -3306,8 +3295,7 @@ void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Sco
 
     if (!expected.empty())
     {
-        const std::string actual = CleanBaseType(
-            ResolveExpressionType(expr, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri}));
+        const std::string actual = CleanBaseType(ResolveExpressionType(expr, ExpressionTypeContext(scope, ctx)));
         CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
         if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
         {

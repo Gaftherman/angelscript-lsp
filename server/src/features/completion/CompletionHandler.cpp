@@ -1082,10 +1082,17 @@ void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std::strin
 {
     lsp::CompletionItemKind kind = lsp::CompletionItemKind::Field;
     std::string detail;
+    std::string snippet;
     if (sym.type == analysis::SymbolType::Function)
     {
         kind = lsp::CompletionItemKind::Method;
         detail = FormatMethodDetail(sym, tCtx.binding, tCtx.templateArgs);
+        const bool completeParens =
+            !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
+        if (collector.request.snippetSupport && completeParens)
+        {
+            snippet = sym.GetFunction().parameters.empty() ? (sym.name + "()$0") : (sym.name + "($0)");
+        }
     }
     else if (sym.type == analysis::SymbolType::Variable)
     {
@@ -1097,7 +1104,7 @@ void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std::strin
         kind = lsp::CompletionItemKind::Property;
     }
 
-    AddItemIfNew(collector, {sym.name, kind, detail, "", sym.qualifiedName});
+    AddItemIfNew(collector, {sym.name, kind, detail, "", sym.qualifiedName, std::move(snippet)});
 
     const int accessorMode = collector.request.config ? collector.request.config->engine.propertyAccessorMode : 2;
     if (accessorMode < 2)
@@ -1547,7 +1554,9 @@ void CollectScopeDefinitions(const analysis::Scope* innermostScope, CompletionCo
             {
                 kind = lsp::CompletionItemKind::Function;
                 isCallable = true;
-                if (collector.request.snippetSupport)
+                const bool completeParens = !collector.request.config ||
+                                            collector.request.config->features.completionCompleteFunctionParens;
+                if (collector.request.snippetSupport && completeParens)
                 {
                     snippet = CallSnippetForName(def.name, collector.request.symbolTable);
                 }
@@ -1596,8 +1605,44 @@ void CollectEnclosingClassMembers(CompletionCollector& collector)
                 lsp::CompletionItemKind kind = (sym.type == analysis::SymbolType::Function)
                                                    ? lsp::CompletionItemKind::Method
                                                    : lsp::CompletionItemKind::Field;
-                AddItemIfNew(collector, {sym.name, kind});
+                std::string snippet;
+                std::string detail;
+                if (sym.type == analysis::SymbolType::Function)
+                {
+                    detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
+                    const bool completeParens = !collector.request.config ||
+                                                collector.request.config->features.completionCompleteFunctionParens;
+                    if (collector.request.snippetSupport && completeParens)
+                    {
+                        snippet = sym.GetFunction().parameters.empty() ? (sym.name + "()$0") : (sym.name + "($0)");
+                    }
+                }
+                AddItemIfNew(collector, {sym.name, kind, detail, "", sym.qualifiedName, snippet});
             }
+        }
+    }
+}
+
+static void CollectGlobalFunctionSymbol(const analysis::Symbol& sym, bool accessorsAreProperties,
+                                        bool accessorKeywordRequired, CompletionCollector& collector)
+{
+    std::string detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
+    std::string snippet;
+    const bool completeParens = !collector.request.config ||
+                                collector.request.config->features.completionCompleteFunctionParens;
+    if (collector.request.snippetSupport && completeParens)
+    {
+        snippet = CallSnippet(sym.name, sym.GetFunction().parameters);
+    }
+    AddItemIfNew(collector, {sym.name, lsp::CompletionItemKind::Function, std::move(detail), "", sym.qualifiedName, std::move(snippet)});
+    if (accessorsAreProperties)
+    {
+        const std::string propName = analysis::PropertyNameFromAccessor(sym, accessorKeywordRequired);
+        if (!propName.empty())
+        {
+            std::string propType = analysis::PropertyTypeFromAccessors(analysis::FindGlobalPropertyAccessors(
+                propName, collector.request.symbolTable, accessorKeywordRequired));
+            AddItemIfNew(collector, {propName, lsp::CompletionItemKind::Property, std::move(propType), "", sym.qualifiedName});
         }
     }
 }
@@ -1618,23 +1663,8 @@ void CollectGlobalSymbolItem(const analysis::Symbol& sym, bool accessorsArePrope
     switch (sym.type)
     {
     case analysis::SymbolType::Function:
-        kind = lsp::CompletionItemKind::Function;
-        detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
-        if (collector.request.snippetSupport)
-        {
-            snippet = CallSnippet(sym.name, sym.GetFunction().parameters);
-        }
-        if (accessorsAreProperties)
-        {
-            const std::string propName = analysis::PropertyNameFromAccessor(sym, accessorKeywordRequired);
-            if (!propName.empty())
-            {
-                std::string propType = analysis::PropertyTypeFromAccessors(analysis::FindGlobalPropertyAccessors(
-                    propName, collector.request.symbolTable, accessorKeywordRequired));
-                AddItemIfNew(collector, {propName, lsp::CompletionItemKind::Property, propType, "", sym.qualifiedName});
-            }
-        }
-        break;
+        CollectGlobalFunctionSymbol(sym, accessorsAreProperties, accessorKeywordRequired, collector);
+        return;
     case analysis::SymbolType::Class:
         kind = lsp::CompletionItemKind::Class;
         if (collector.request.snippetSupport)

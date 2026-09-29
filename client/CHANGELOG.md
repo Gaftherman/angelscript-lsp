@@ -6,8 +6,25 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [0.9.26] - 2026-09-29
 
-### Decouple Add-on Classes, Pure Type Configuration, Grammar Node Parity, and Monolith Remediation
+### Operator Parity, Inlay Hint Tooltips, Configurable Asset Hover, Completion Snippets, and Lifecycle Stability
 
+- Operator Parity & Engine Oracle Verification:
+  - Validated equality comparison chaining (`a == b == c == d`) against the official AngelScript engine harness (`asharness.exe`), verifying that left-to-right evaluation producing `bool == float` is strictly invalid in native AngelScript and properly diagnosed with `as-err-no-matching-operator`.
+  - Confirmed handle identity operators `is` and `!is` while rejecting unsupported `===`/`!==` syntax with engine parity.
+  - Eliminated false `as-warn-float-truncation` warnings on integer division assignments (e.g., `pct = ( pct / 5 );`) by respecting `asEP_DISABLE_INTEGER_DIVISION` in `SemanticHelpers` and `TypeConversionChecker`.
+- Inlay Hints Tooltip & Configuration:
+  - Formatted inlay hint parameter tooltips in markdown ` ```angelscript ` code blocks for syntax-highlighted parameter signatures.
+  - Resolved duplicate hover descriptions and accurately targeted full argument expressions in inlay hint navigation.
+  - Added user settings `angelscript.inlayHints.enableTooltip` and `angelscript.inlayHints.enableLocation`.
+- String Literal Hover & Asset Resolution:
+  - Made string literal path resolution and asset checking opt-in via `angelscript.hover.stringLiteralPathResolution` (default: `false`) and configurable asset search directories `angelscript.hover.assetSearchPaths`.
+  - Added toggle `angelscript.hover.stringLiteralLength` (default: `true`) and diagnostic reporting configuration `angelscript.diagnostics.missingAssetPathSeverity` (default: `"off"`).
+- Method Completion Auto-Parentheses:
+  - Added configurable function/method auto-parentheses and cursor placement (`angelscript.completion.completeFunctionParens`, default: `true`), inserting `name()` for 0-arg methods and `name($0)` for $\ge 1$-arg methods.
+- Pull Diagnostics Lifecycle Stability:
+  - Resolved VS Code Problems tab disappearance on file open by checking cached document text hash instead of generation counter in pull diagnostics (`TextDocumentHandlers.cpp` and `ServerDiagnostics.cpp`).
+- Enum Member Cross-Enum Disambiguation:
+  - Filtered out un-scoped and cross-enum false references when searching references for enum values sharing the same member name.
 - Decouple Add-on Classes & Pure Type Configuration:
   - Decoupled add-on types (`string`, `array`, `dictionary`, `ref`, `weakref`) from virtual machine core primitives, classifying them strictly as optional library types driven by user/client configuration (`types.stringTypeName`, `types.arrayTypeName`, `types.dictionaryTypeName`).
   - Purged hardcoded fallback strings (`"string"`, `"array"`, `"dictionary"`) across semantic analysis (`ComparisonOperatorChecker`, `CallChecker`, `AccessChecker`, `InitializerListChecker`), inlay hints (`InlayHintHandler`), code completion (`CompletionHandler`), and refactorings (`CodeActionInterfaceImplementer`).

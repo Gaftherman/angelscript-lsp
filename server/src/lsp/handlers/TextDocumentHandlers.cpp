@@ -791,7 +791,6 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
     const auto current = FindDocumentText(uriStr);
     const size_t currentHash = current ? std::hash<std::string>{}(*current) : 0;
     const int currentVersion = GetDocumentVersion(uriStr);
-    const uint64_t currentGen = m_documentStore.GetGeneration(uriStr);
 
     if (current)
     {
@@ -799,17 +798,13 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
         if (const auto it = m_diagnosticsCache.find(uriStr); it != m_diagnosticsCache.end())
         {
             bool isCurrent = false;
-            if (it->second.generation > 0 && currentGen > 0 && it->second.generation != currentGen)
+            if (it->second.textHash == currentHash)
             {
-                isCurrent = false;
+                isCurrent = true;
             }
             else if (currentVersion >= 0 && it->second.version >= 0)
             {
                 isCurrent = (it->second.version == currentVersion);
-            }
-            else
-            {
-                isCurrent = (it->second.textHash == currentHash);
             }
 
             if (isCurrent)
@@ -829,13 +824,10 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
         }
     }
 
-    // Nothing analysed yet, or nothing analysed for *this* text. Queue it and tell the client to
-    // ask again rather than answering with an empty report - an empty report says "this file is
-    // clean", which is a claim this server is in no position to make about a document it has not
-    // looked at - and rather than answering with the previous one, which says something worse:
-    // that a mistake the user has already corrected is still there.
     if (const auto text = FindDocumentText(uriStr))
+    {
         ScheduleAnalysis(uriStr, *text);
+    }
 
     lsp::json::Object retrigger;
     retrigger["retriggerRequest"] = true;

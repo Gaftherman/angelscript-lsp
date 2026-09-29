@@ -699,4 +699,80 @@ TEST_CASE("ReferencesHandler - Cross-File Namespace Variable References")
     CHECK((*refs)[0].uri.toString() == uri2);
 }
 
+TEST_CASE("ReferencesHandler - Enum Member Cross-Enum Isolation (No False Matches)")
+{
+    MultiFileTestEnv env;
+    const std::string enumA = angel_lsp::test::GenerateRandomSymbolName("WeaponShotgunAnim");
+    const std::string enumB = angel_lsp::test::GenerateRandomSymbolName("WeaponFlareAnim");
+    const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("Idle");
+    const std::string funcA = angel_lsp::test::GenerateRandomSymbolName("PlayShotgun");
+    const std::string funcB = angel_lsp::test::GenerateRandomSymbolName("PlayFlare");
+
+    const std::string uri1 = "file:///shotgun.as";
+    const std::string code1 =
+        "enum " + enumA + "\n"
+        "{\n"
+        "    " + memberName + " = 0,\n"
+        "    Shoot1\n"
+        "};\n"
+        "void " + funcA + "() {\n"
+        "    int a = " + enumA + "::" + memberName + ";\n"
+        "}\n";
+
+    const std::string uri2 = "file:///flare.as";
+    const std::string code2 =
+        "enum " + enumB + "\n"
+        "{\n"
+        "    " + memberName + " = 0,\n"
+        "    Shoot2\n"
+        "};\n"
+        "void " + funcB + "() {\n"
+        "    int b = " + enumB + "::" + memberName + ";\n"
+        "}\n";
+
+    const std::string uri3 = "file:///main.as";
+    const std::string code3 =
+        "void Run() {\n"
+        "    int c = " + enumA + "::" + memberName + ";\n"
+        "    int d = " + enumB + "::" + memberName + ";\n"
+        "}\n";
+
+    env.AddFile(uri1, code1);
+    env.AddFile(uri2, code2);
+    env.AddFile(uri3, code3);
+
+    SUBCASE("References on enumA member declaration only returns enumA occurrences")
+    {
+        auto refs = env.RefsAt(uri1, 2, 5, true);
+        REQUIRE(refs.has_value());
+        CHECK(refs->size() == 3);
+        for (const auto& r : *refs)
+        {
+            CHECK(r.uri.toString() != uri2);
+        }
+    }
+
+    SUBCASE("References on scoped enumA::member returns only enumA occurrences")
+    {
+        auto refs = env.RefsAt(uri3, 1, 15 + static_cast<uint32_t>(enumA.size()), true);
+        REQUIRE(refs.has_value());
+        CHECK(refs->size() == 3);
+        for (const auto& r : *refs)
+        {
+            CHECK(r.uri.toString() != uri2);
+        }
+    }
+
+    SUBCASE("References on enumB member declaration only returns enumB occurrences")
+    {
+        auto refs = env.RefsAt(uri2, 2, 5, true);
+        REQUIRE(refs.has_value());
+        CHECK(refs->size() == 3);
+        for (const auto& r : *refs)
+        {
+            CHECK(r.uri.toString() != uri1);
+        }
+    }
+}
+
 

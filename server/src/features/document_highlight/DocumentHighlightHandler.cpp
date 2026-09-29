@@ -1211,6 +1211,187 @@ void CollectGlobalHighlightRanges(const TargetDescriptor& target, const Document
     }
 }
 
+/**
+ * @brief Collects enum member symbol declarations matching the qualified name.
+ * @param[in] target Target descriptor.
+ * @param[in] request Document highlight request.
+ * @param[in,out] collector Coordinate accumulator.
+ */
+void CollectEnumMemberDeclarations(const TargetDescriptor& target, const DocumentHighlightRequest& request,
+                                   HighlightRangeCollector& collector)
+{
+    auto syms = request.symbolTable.FindSymbols(target.qualifiedName);
+    for (const auto& sym : syms)
+    {
+        if (sym.fileUri == request.uri && sym.type != analysis::SymbolType::CallReference)
+        {
+            bool hasSel = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0);
+            uint32_t sL = hasSel ? sym.selectionRange.startLine : sym.startLine;
+            uint32_t sC = hasSel ? sym.selectionRange.startCharacter : sym.startCharacter;
+            uint32_t eL = hasSel ? sym.selectionRange.endLine : sym.endLine;
+            uint32_t eC = hasSel ? sym.selectionRange.endCharacter : sym.endCharacter;
+            collector.Add(sL, sC, eL, eC);
+        }
+    }
+}
+
+/**
+ * @brief Checks if a scoped reference matches an enum member target for highlighting.
+ * @param[in] ref Local reference.
+ * @param[in] target Target descriptor.
+ * @param[in] request Document highlight request.
+ * @return True if reference matches the qualified enum member.
+ */
+bool IsEnumMemberHighlightMatch(const analysis::LocalReference& ref, const TargetDescriptor& target,
+                                const DocumentHighlightRequest& request)
+{
+    if (!request.tree)
+    {
+        return false;
+    }
+    TSNode rootNode = ts_tree_root_node(request.tree);
+    TSPoint pt = {ref.startLine, ref.startCharacter};
+    TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+    if (ts_node_is_null(refNode))
+    {
+        return false;
+    }
+    TSNode pNode = ts_node_parent(refNode);
+    if (ts_node_is_null(pNode) || std::string_view(ts_node_type(pNode)) != "scoped_identifier")
+    {
+        return false;
+    }
+    uint32_t pStart = ts_node_start_byte(pNode);
+    uint32_t pEnd = ts_node_end_byte(pNode);
+    if (pStart >= request.sourceCode.size() || pEnd > request.sourceCode.size() || pStart >= pEnd)
+    {
+        return false;
+    }
+    std::string scoped = request.sourceCode.substr(pStart, pEnd - pStart);
+    return scoped == target.qualifiedName || scoped == target.declaringEnum + "::" + target.name;
+}
+
+/**
+ * @brief Scans document scopes for enum member references.
+ * @param[in] target Target descriptor.
+ * @param[in] request Document highlight request.
+ * @param[in] rootScope Root scope.
+ * @param[in,out] collector Coordinate accumulator.
+ */
+void CollectEnumMemberScopeReferences(const TargetDescriptor& target, const DocumentHighlightRequest& request,
+                                      const analysis::Scope* rootScope, HighlightRangeCollector& collector)
+{
+    if (!rootScope)
+    {
+        return;
+    }
+    std::vector<const analysis::Scope*> stack{rootScope};
+    while (!stack.empty())
+    {
+        const analysis::Scope* s = stack.back();
+        stack.pop_back();
+
+        for (const auto& ref : s->references)
+        {
+            if (ref.name != target.name)
+            {
+                continue;
+            }
+            if (!ref.isMemberAccess && !IsShadowedByFunctionLocal(s, target.name, rootScope))
+            {
+                collector.Add(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter);
+            }
+            else if (IsEnumMemberHighlightMatch(ref, target, request))
+            {
+                collector.Add(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter);
+            }
+        }
+        for (const auto& child : s->children)
+        {
+            if (child)
+            {
+                stack.push_back(child.get());
+            }
+        }
+    }
+}
+
+/**
+ * @brief Collects all highlight ranges for an enum member in the current document.
+ * @param[in] target Target descriptor.
+ * @param[in] request Highlight request.
+ * @param[in] rootScope Root scope.
+ * @param[in,out] collector Coordinate accumulator.
+ */
+void CollectEnumMemberHighlightRanges(const TargetDescriptor& target, const DocumentHighlightRequest& request,
+                                      const analysis::Scope* rootScope, HighlightRangeCollector& collector)
+{
+    CollectEnumMemberDeclarations(target, request, collector);
+    CollectEnumMemberScopeReferences(target, request, rootScope, collector);
+}
+
+/**
+ * @brief Dispatches range collection based on target kind.
+ * @param[in] target Target descriptor.
+ * @param[in] request Document highlight request.
+ * @param[in] rootScope Root scope.
+ * @param[in,out] collector Coordinate accumulator.
+ */
+void DispatchTargetHighlights(const TargetDescriptor& target, const DocumentHighlightRequest& request,
+                              const analysis::Scope* rootScope, HighlightRangeCollector& collector)
+{
+    if (target.kind == TargetKind::Local)
+    {
+        CollectLocalHighlightRanges(target, collector);
+    }
+    else if (target.kind == TargetKind::ClassMember)
+    {
+        CollectClassMemberHighlightRanges(target, request, rootScope, collector);
+    }
+    else if (target.kind == TargetKind::NamespaceSymbol)
+    {
+        CollectNamespaceHighlightRanges(target, request, rootScope, collector);
+    }
+    else if (target.kind == TargetKind::EnumMember)
+    {
+        CollectEnumMemberHighlightRanges(target, request, rootScope, collector);
+    }
+    else
+    {
+        CollectGlobalHighlightRanges(target, request, rootScope, collector);
+    }
+}
+
+/**
+ * @brief Converts collected ranges to classified, sorted DocumentHighlights.
+ * @param[in] collector Coordinate accumulator.
+ * @param[in] request Document highlight request.
+ * @return Sorted highlight results.
+ */
+DocumentHighlightResult BuildSortedHighlights(const HighlightRangeCollector& collector,
+                                              const DocumentHighlightRequest& request)
+{
+    DocumentHighlightResult results;
+    results.reserve(collector.ranges.size());
+    for (const auto& r : collector.ranges)
+    {
+        results.push_back(lsp::DocumentHighlight{
+            .range = r,
+            .kind = ClassifyOccurrence(request, r),
+        });
+    }
+    std::sort(results.begin(), results.end(),
+              [](const lsp::DocumentHighlight& a, const lsp::DocumentHighlight& b)
+              {
+                  if (a.range.start.line != b.range.start.line)
+                  {
+                      return a.range.start.line < b.range.start.line;
+                  }
+                  return a.range.start.character < b.range.start.character;
+              });
+    return results;
+}
+
 } // namespace
 
 std::optional<DocumentHighlightResult> GetDocumentHighlights(const DocumentHighlightRequest& request)
@@ -1231,54 +1412,14 @@ std::optional<DocumentHighlightResult> GetDocumentHighlights(const DocumentHighl
     {
         return std::nullopt;
     }
-    const TargetDescriptor& target = *targetOpt;
-
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
-
     HighlightRangeCollector collector;
-    if (target.kind == TargetKind::Local)
-    {
-        CollectLocalHighlightRanges(target, collector);
-    }
-    else if (target.kind == TargetKind::ClassMember)
-    {
-        CollectClassMemberHighlightRanges(target, request, rootScope.get(), collector);
-    }
-    else if (target.kind == TargetKind::NamespaceSymbol)
-    {
-        CollectNamespaceHighlightRanges(target, request, rootScope.get(), collector);
-    }
-    else
-    {
-        CollectGlobalHighlightRanges(target, request, rootScope.get(), collector);
-    }
-
+    DispatchTargetHighlights(*targetOpt, request, rootScope.get(), collector);
     if (collector.ranges.empty())
     {
         return std::nullopt;
     }
-
-    DocumentHighlightResult results;
-    results.reserve(collector.ranges.size());
-    for (const auto& r : collector.ranges)
-    {
-        results.push_back(lsp::DocumentHighlight{
-            .range = r,
-            .kind = ClassifyOccurrence(request, r),
-        });
-    }
-
-    std::sort(results.begin(), results.end(),
-              [](const lsp::DocumentHighlight& a, const lsp::DocumentHighlight& b)
-              {
-                  if (a.range.start.line != b.range.start.line)
-                  {
-                      return a.range.start.line < b.range.start.line;
-                  }
-                  return a.range.start.character < b.range.start.character;
-              });
-
-    return results;
+    return BuildSortedHighlights(collector, request);
 }
 
 } // namespace angel_lsp::features

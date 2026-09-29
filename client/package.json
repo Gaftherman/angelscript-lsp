@@ -492,6 +492,18 @@
             "scope": "resource",
             "markdownDescription": "%angelscript.inlayHints.suppressWhenArgumentMatchesName.description%"
           },
+          "angelscript.inlayHints.enableTooltip": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.inlayHints.enableTooltip.description%"
+          },
+          "angelscript.inlayHints.enableLocation": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.inlayHints.enableLocation.description%"
+          },
           "angelscript.inlayHints.omittedDefaultArguments": {
             "type": "string",
             "scope": "resource",
@@ -553,6 +565,27 @@
             "default": true,
             "markdownDescription": "%config.features.hover.description%"
           },
+          "angelscript.hover.stringLiteralLength": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.hover.stringLiteralLength.description%"
+          },
+          "angelscript.hover.stringLiteralPathResolution": {
+            "type": "boolean",
+            "default": false,
+            "scope": "resource",
+            "markdownDescription": "%config.hover.stringLiteralPathResolution.description%"
+          },
+          "angelscript.hover.assetSearchPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "scope": "resource",
+            "markdownDescription": "%config.hover.assetSearchPaths.description%"
+          },
           "angelscript.features.completion": {
             "type": "boolean",
             "default": true,
@@ -563,6 +596,12 @@
             "default": true,
             "scope": "resource",
             "markdownDescription": "%config.completion.smartTypeRanking.description%"
+          },
+          "angelscript.completion.completeFunctionParens": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.completion.completeFunctionParens.description%"
           },
           "angelscript.features.definition": {
             "type": "boolean",
@@ -734,6 +773,23 @@
             ],
             "default": 1,
             "markdownDescription": "%config.diagnostics.reportHandleComparisonEquality.description%"
+          },
+          "angelscript.diagnostics.missingAssetPathSeverity": {
+            "type": "string",
+            "enum": [
+              "off",
+              "hint",
+              "warning",
+              "error"
+            ],
+            "enumDescriptions": [
+              "Disabled",
+              "Information hint",
+              "Warning",
+              "Error"
+            ],
+            "default": "off",
+            "markdownDescription": "%config.diagnostics.missingAssetPathSeverity.description%"
           }
         }
       },

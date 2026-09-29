@@ -47,9 +47,10 @@ namespace
             }
         }
 
-        std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character)
+        std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character, const config::ServerConfig* config = nullptr)
         {
             HoverRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{ line, character } };
+            req.config = config;
             return GetHover(req);
         }
     };
@@ -1084,14 +1085,65 @@ TEST_CASE("HoverHandler - String Literal Hover")
     auto hoverText = env.HoverAt(1, 18);
     REQUIRE(hoverText.has_value());
     auto contentText = std::get<lsp::MarkupContent>(hoverText->contents);
-    CHECK(contentText.value.find("*(string literal)*: `\"" + rawText + "\"`") != std::string::npos);
+    CHECK(contentText.value.find("```angelscript\n\"" + rawText + "\"\n```") != std::string::npos);
     CHECK(contentText.value.find("- **Length**: " + std::to_string(rawText.size()) + " characters") != std::string::npos);
 
-    // Hover over path string literal without resolution on line 2
-    auto hoverPath = env.HoverAt(2, 18);
-    REQUIRE(hoverPath.has_value());
-    auto contentPath = std::get<lsp::MarkupContent>(hoverPath->contents);
-    CHECK(contentPath.value.find("*(string literal)*: `\"path/to/missing_asset.wav\"`") != std::string::npos);
-    CHECK(contentPath.value.find("- **File**: Not found") != std::string::npos);
+    // Hover over path string literal with default config (path resolution false by default)
+    auto hoverPathDefault = env.HoverAt(2, 18);
+    REQUIRE(hoverPathDefault.has_value());
+    auto contentDefault = std::get<lsp::MarkupContent>(hoverPathDefault->contents);
+    CHECK(contentDefault.value.find("```angelscript\n\"path/to/missing_asset.wav\"\n```") != std::string::npos);
+    CHECK(contentDefault.value.find("- **File**: Not found") == std::string::npos);
+
+    // Hover over path string literal with path resolution enabled
+    config::ServerConfig pathConfig;
+    pathConfig.features.hoverStringLiteralPathResolution = true;
+    auto hoverPathEnabled = env.HoverAt(2, 18, &pathConfig);
+    REQUIRE(hoverPathEnabled.has_value());
+    auto contentEnabled = std::get<lsp::MarkupContent>(hoverPathEnabled->contents);
+    CHECK(contentEnabled.value.find("- **File**: Not found") != std::string::npos);
+
+    // Hover over string literal with length display disabled
+    config::ServerConfig noLengthConfig;
+    noLengthConfig.features.hoverStringLiteralLength = false;
+    auto hoverNoLength = env.HoverAt(1, 18, &noLengthConfig);
+    REQUIRE(hoverNoLength.has_value());
+    auto contentNoLength = std::get<lsp::MarkupContent>(hoverNoLength->contents);
+    CHECK(contentNoLength.value.find("- **Length**:") == std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Enum Member Declaration Hover Isolation")
+{
+    const std::string enumA = angel_lsp::test::GenerateRandomSymbolName("WeaponShotgunAnim");
+    const std::string enumB = angel_lsp::test::GenerateRandomSymbolName("WeaponFlareAnim");
+    const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("Idle");
+
+    std::string code =
+        "enum " + enumA + "\n"
+        "{\n"
+        "    " + memberName + " = 0,\n"
+        "    Shoot1\n"
+        "};\n"
+        "enum " + enumB + "\n"
+        "{\n"
+        "    " + memberName + " = 0,\n"
+        "    Shoot2\n"
+        "};\n";
+
+    TestEnvironment env(code);
+
+    // Hover on memberName at enumA declaration (line 2)
+    auto hoverA = env.HoverAt(2, 5);
+    REQUIRE(hoverA.has_value());
+    auto contentA = std::get<lsp::MarkupContent>(hoverA->contents);
+    CHECK(contentA.value.find(enumA) != std::string::npos);
+    CHECK(contentA.value.find(enumB) == std::string::npos);
+
+    // Hover on memberName at enumB declaration (line 7)
+    auto hoverB = env.HoverAt(7, 5);
+    REQUIRE(hoverB.has_value());
+    auto contentB = std::get<lsp::MarkupContent>(hoverB->contents);
+    CHECK(contentB.value.find(enumB) != std::string::npos);
+    CHECK(contentB.value.find(enumA) == std::string::npos);
 }
 

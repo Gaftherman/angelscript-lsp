@@ -2336,14 +2336,40 @@ static std::string ResolveBinary32OrLess(const std::string& cleanLeft, const std
 }
 
 /**
+ * @brief Determines primitive numeric promotion for division operations.
+ * @param[in] cleanLeft Cleaned left operand type.
+ * @param[in] cleanRight Cleaned right operand type.
+ * @param[in] disableIntegerDivision True if asEP_DISABLE_INTEGER_DIVISION is enabled.
+ * @return Promoted division type name.
+ */
+static std::string ResolveBinaryDivisionPromotion(const std::string& cleanLeft, const std::string& cleanRight,
+                                                  bool disableIntegerDivision)
+{
+    if (cleanLeft == "double" || cleanRight == "double")
+    {
+        return "double";
+    }
+    if (IsFloatingPointPrimitive(cleanLeft) || IsFloatingPointPrimitive(cleanRight))
+    {
+        return "float";
+    }
+    if (!disableIntegerDivision && IsIntegerPrimitive(cleanLeft) && IsIntegerPrimitive(cleanRight))
+    {
+        return ResolveBinary32OrLess(cleanLeft, cleanRight);
+    }
+    return "float";
+}
+
+/**
  * @brief Determines primitive numeric promotion result for binary expressions.
  * @param[in] op Binary operator string.
  * @param[in] cleanLeft Cleaned left operand type.
  * @param[in] cleanRight Cleaned right operand type.
+ * @param[in] disableIntegerDivision True if asEP_DISABLE_INTEGER_DIVISION is enabled.
  * @return Promoted type name, or empty string.
  */
 static std::string ResolveBinaryPrimitivePromotion(std::string_view op, const std::string& cleanLeft,
-                                                   const std::string& cleanRight)
+                                                   const std::string& cleanRight, bool disableIntegerDivision = false)
 {
     if (cleanLeft.empty() || cleanRight.empty())
     {
@@ -2351,7 +2377,7 @@ static std::string ResolveBinaryPrimitivePromotion(std::string_view op, const st
     }
     if (op == "/" && IsFloatOrIntPrimitive(cleanLeft) && IsFloatOrIntPrimitive(cleanRight))
     {
-        return "float";
+        return ResolveBinaryDivisionPromotion(cleanLeft, cleanRight, disableIntegerDivision);
     }
     if (auto wide = ResolveBinary64OrFloat(cleanLeft, cleanRight); !wide.empty())
     {
@@ -2411,7 +2437,7 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
     {
         return res;
     }
-    return ResolveBinaryPrimitivePromotion(op, cleanLeft, cleanRight);
+    return ResolveBinaryPrimitivePromotion(op, cleanLeft, cleanRight, ctx.disableIntegerDivision);
 }
 
 namespace

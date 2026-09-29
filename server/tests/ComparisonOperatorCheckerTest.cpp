@@ -322,6 +322,56 @@ TEST_SUITE("ComparisonOperatorChecker")
         const auto diags = AnalyzeScriptWithStandardProfile(script);
         CHECK(diags.empty());
     }
+
+    TEST_CASE("Float comparison in expression statement produces no operator diagnostic")
+    {
+        const std::string funcName = GenerateRandomSymbolName();
+        const std::string varName = GenerateRandomSymbolName("restoreAfter");
+        const std::string script =
+            "void " + funcName + "()\n" +
+            "{\n" +
+            "    float " + varName + " = -1.0f;\n" +
+            "    float engineTime = 5.0f;\n" +
+            "    if (" + varName + " == -1.0f)\n" +
+            "        " + varName + " == engineTime + 1.0f;\n" +
+            "}\n";
+
+        const auto diags = AnalyzeScriptWithStandardProfile(script);
+        CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
+    }
+
+    TEST_CASE("Chained comparison a == b == c fails with NoMatchingOperator (asharness parity)")
+    {
+        const std::string funcName = GenerateRandomSymbolName();
+        const std::string script =
+            "void " + funcName + "()\n" +
+            "{\n" +
+            "    float a = 1.0f;\n" +
+            "    float b = 1.0f;\n" +
+            "    float c = 1.0f;\n" +
+            "    float d = 1.0f;\n" +
+            "    bool res = a == b == c == d;\n" +
+            "}\n";
+
+        const auto diags = AnalyzeScriptWithStandardProfile(script);
+        CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
+    }
+
+    TEST_CASE("Handle identity comparison is and !is are accepted without error")
+    {
+        const std::string clsName = GenerateRandomSymbolName("Entity");
+        const std::string funcName = GenerateRandomSymbolName();
+        const std::string script =
+            "class " + clsName + " {}\n" +
+            "void " + funcName + "(" + clsName + "@ a, " + clsName + "@ b)\n" +
+            "{\n" +
+            "    if (a is b) {}\n" +
+            "    if (a !is null) {}\n" +
+            "}\n";
+
+        const auto diags = AnalyzeScriptWithStandardProfile(script);
+        CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
+    }
 }
 
 } // namespace angel_lsp::test

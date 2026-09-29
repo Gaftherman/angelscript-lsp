@@ -608,6 +608,23 @@ struct ExpressionTypeContext
     std::string_view uri = "";
     std::string_view stringTypeName = "string";
     std::string_view arrayTypeName = "array";
+    bool disableIntegerDivision = false;
+
+    ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "",
+                          std::string_view strType = "string", std::string_view arrType = "array",
+                          bool disableIntDiv = false)
+        : scope(sc), symbolTable(st), sourceCode(src), uri(u), stringTypeName(strType), arrayTypeName(arrType),
+          disableIntegerDivision(disableIntDiv)
+    {
+    }
+
+    ExpressionTypeContext(const Scope* sc, const DiagnosticContext& diagCtx)
+        : scope(sc), symbolTable(diagCtx.request.symbolTable), sourceCode(diagCtx.request.sourceCode),
+          uri(diagCtx.request.fileUri), stringTypeName(diagCtx.request.GetEffectiveStringTypeName()),
+          arrayTypeName(diagCtx.request.GetEffectiveArrayTypeName()),
+          disableIntegerDivision(diagCtx.request.DisablesIntegerDivision())
+    {
+    }
 };
 
 /**

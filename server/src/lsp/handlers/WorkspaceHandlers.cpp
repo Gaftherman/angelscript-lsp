@@ -346,6 +346,13 @@ bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
         diagnosticsChanged = true;
     }
 
+    if (auto v = FindSectionString(section, diagObj, "missingAssetPathSeverity", "diagnostics");
+        v && m_config.diagnostics.missingAssetPathSeverity != *v)
+    {
+        m_config.diagnostics.missingAssetPathSeverity = *v;
+        diagnosticsChanged = true;
+    }
+
     return diagnosticsChanged;
 }
 
@@ -369,6 +376,14 @@ static void UpdateInlayHintFeatureConfig(const lsp::LSPObject& section, config::
     {
         cfg.features.inlayHintsSuppressWhenArgumentMatchesName = *suppress;
     }
+    if (auto tooltip = FindSectionBool(section, ihObj, "enableTooltip", "inlayHints"); tooltip.has_value())
+    {
+        cfg.features.inlayHintsEnableTooltip = *tooltip;
+    }
+    if (auto loc = FindSectionBool(section, ihObj, "enableLocation", "inlayHints"); loc.has_value())
+    {
+        cfg.features.inlayHintsEnableLocation = *loc;
+    }
     if (auto omitted = FindSectionString(section, ihObj, "omittedDefaultArguments", "inlayHints"); omitted.has_value())
     {
         if (*omitted == "off" || *omitted == "false")
@@ -382,6 +397,37 @@ static void UpdateInlayHintFeatureConfig(const lsp::LSPObject& section, config::
         else
         {
             cfg.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::NameAndValue;
+        }
+    }
+}
+
+static void UpdateHoverFeatureConfig(const lsp::LSPObject& section, config::ServerConfig& cfg)
+{
+    const lsp::LSPObject* hoverObj = nullptr;
+    if (const auto* hoverVal = section.find("hover"); hoverVal && hoverVal->isObject())
+    {
+        hoverObj = &hoverVal->object();
+    }
+    if (auto len = FindSectionBool(section, hoverObj, "stringLiteralLength", "hover"); len.has_value())
+    {
+        cfg.features.hoverStringLiteralLength = *len;
+    }
+    if (auto pathRes = FindSectionBool(section, hoverObj, "stringLiteralPathResolution", "hover"); pathRes.has_value())
+    {
+        cfg.features.hoverStringLiteralPathResolution = *pathRes;
+    }
+    if (hoverObj)
+    {
+        if (const auto* paths = hoverObj->find("assetSearchPaths"); paths && paths->isArray())
+        {
+            cfg.features.assetSearchPaths.clear();
+            for (const auto& item : paths->array())
+            {
+                if (item.isString() && !item.string().empty())
+                {
+                    cfg.features.assetSearchPaths.push_back(item.string());
+                }
+            }
         }
     }
 }
@@ -412,8 +458,13 @@ void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
     {
         m_config.features.completionSmartTypeRanking = *smart;
     }
+    if (auto parens = FindSectionBool(section, compObj, "completeFunctionParens", "completion"); parens.has_value())
+    {
+        m_config.features.completionCompleteFunctionParens = *parens;
+    }
 
     UpdateInlayHintFeatureConfig(section, m_config);
+    UpdateHoverFeatureConfig(section, m_config);
 }
 
 static std::vector<config::ServerConfig::ModuleDefinition> ParseModuleDefinitions(const lsp::LSPArray& items)

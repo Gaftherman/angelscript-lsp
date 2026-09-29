@@ -437,6 +437,123 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
 }
 
 /**
+ * @brief Attempts to resolve target from an enum_member AST declaration node.
+ * @param[in] memberNode The enum_member node.
+ * @param[in] nodeText Symbol identifier text.
+ * @param[in] sourceCode Source text.
+ * @param[out] target Target descriptor to populate.
+ * @return True if successfully resolved as an enum member.
+ */
+bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string& nodeText,
+                                     std::string_view sourceCode, TargetDescriptor& target)
+{
+    TSNode enumDecl = ts_node_parent(memberNode);
+    if (ts_node_is_null(enumDecl) || std::string_view(ts_node_type(enumDecl)) != "enum_declaration")
+    {
+        return false;
+    }
+    TSNode nameNode = parser::GetChildByField(enumDecl, parser::fields::Name);
+    if (ts_node_is_null(nameNode))
+    {
+        return false;
+    }
+    std::string enumName = parser::GetNodeText(nameNode, sourceCode);
+    std::string prefix;
+    auto containers = analysis::GetEnclosingContainers(enumDecl, sourceCode);
+    for (const auto& c : containers)
+    {
+        if (c.kind == analysis::ContainerKind::Namespace)
+        {
+            prefix = c.qualifiedName;
+            break;
+        }
+    }
+    std::string fullEnum = prefix.empty() ? enumName : prefix + "::" + enumName;
+    target.kind = TargetKind::EnumMember;
+    target.declaringEnum = fullEnum;
+    target.qualifiedName = fullEnum + "::" + nodeText;
+    return true;
+}
+
+/**
+ * @brief Attempts to resolve target from a scoped_identifier AST access node.
+ * @param[in] scopedNode The scoped_identifier node.
+ * @param[in] nodeText Symbol identifier text.
+ * @param[in] request Resolution request.
+ * @param[out] target Target descriptor to populate.
+ * @return True if successfully resolved as an enum member.
+ */
+bool TryResolveScopedEnumAccess(TSNode scopedNode, const std::string& nodeText,
+                                const ResolveTargetRequest& request, TargetDescriptor& target)
+{
+    uint32_t pStart = ts_node_start_byte(scopedNode);
+    uint32_t pEnd = ts_node_end_byte(scopedNode);
+    if (pStart >= request.sourceCode.size() || pEnd > request.sourceCode.size() || pStart >= pEnd)
+    {
+        return false;
+    }
+    std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
+    if (!scopedText.ends_with("::" + nodeText))
+    {
+        return false;
+    }
+    std::string qualifier = scopedText.substr(0, scopedText.size() - (nodeText.size() + 2));
+    auto syms = request.symbolTable.FindSymbols(scopedText);
+    for (const auto& s : syms)
+    {
+        if (s.type == analysis::SymbolType::Variable &&
+            std::holds_alternative<analysis::VariableSignature>(s.signature) &&
+            s.GetVariable().isEnumConstant)
+        {
+            target.kind = TargetKind::EnumMember;
+            target.declaringEnum = s.containerName.empty() ? qualifier : s.containerName;
+            target.qualifiedName = scopedText;
+            return true;
+        }
+    }
+    auto enumSyms = request.symbolTable.FindSymbols(qualifier);
+    for (const auto& es : enumSyms)
+    {
+        if (es.type == analysis::SymbolType::Enum)
+        {
+            target.kind = TargetKind::EnumMember;
+            target.declaringEnum = qualifier;
+            target.qualifiedName = scopedText;
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Resolves target if node is an enum member declaration or scoped enum member access.
+ * @param[in] outNode AST node.
+ * @param[in] nodeText Symbol identifier text.
+ * @param[in] request Resolution request.
+ * @param[out] target Target descriptor to populate.
+ * @return True if successfully resolved as an enum member.
+ */
+bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const ResolveTargetRequest& request,
+                       TargetDescriptor& target)
+{
+    TSNode parent = ts_node_parent(outNode);
+    if (ts_node_is_null(parent))
+    {
+        return false;
+    }
+    std::string_view pType = ts_node_type(parent);
+    if (pType == "enum_member")
+    {
+        return TryResolveEnumMemberDeclaration(parent, nodeText, request.sourceCode, target);
+    }
+    if (pType == "scoped_identifier")
+    {
+        return TryResolveScopedEnumAccess(parent, nodeText, request, target);
+    }
+    return false;
+}
+
+/**
  * @brief Checks global symbols for class or namespace containers matching the symbol.
  * @param[in] nodeText Symbol identifier text.
  * @param[in] request Resolution request.
@@ -470,6 +587,13 @@ void ResolveGlobalFallbackTarget(const std::string& nodeText, const ResolveTarge
                         {
                             target.kind = TargetKind::NamespaceSymbol;
                             target.declaringNamespace = sym.containerName;
+                            target.qualifiedName = sym.qualifiedName;
+                            return;
+                        }
+                        if (csym.type == analysis::SymbolType::Enum)
+                        {
+                            target.kind = TargetKind::EnumMember;
+                            target.declaringEnum = sym.containerName;
                             target.qualifiedName = sym.qualifiedName;
                             return;
                         }
@@ -767,6 +891,11 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
 
     TargetDescriptor target;
     target.name = nodeText;
+
+    if (ResolveEnumTarget(request.outNode, nodeText, request, target))
+    {
+        return target;
+    }
 
     bool isExplicitMemberAccess = ResolveExplicitMemberAccess(request.outNode, request, rootScope, target);
     if (!isExplicitMemberAccess)
@@ -1596,6 +1725,223 @@ void CollectGlobalOccurrences(const CollectOccurrencesRequest& request, Occurren
     }
 }
 
+/**
+ * @brief Checks if an AST reference node matches the target enum member qualification.
+ * @param[in] ref Local reference.
+ * @param[in] ctx Occurrence scan context.
+ * @return True/false if definitive AST match/mismatch determined, or std::nullopt.
+ */
+std::optional<bool> CheckAstEnumMemberMatch(const analysis::LocalReference& ref,
+                                            const OccurrenceScanContext& ctx)
+{
+    if (ctx.fileUri != ctx.request.currentUri || !ctx.request.tree)
+    {
+        return std::nullopt;
+    }
+    TSNode rootNode = ts_tree_root_node(ctx.request.tree);
+    TSPoint pt = {ref.startLine, ref.startCharacter};
+    TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+    if (ts_node_is_null(refNode))
+    {
+        return std::nullopt;
+    }
+    TSNode pNode = ts_node_parent(refNode);
+    if (ts_node_is_null(pNode))
+    {
+        return std::nullopt;
+    }
+    std::string_view pType = ts_node_type(pNode);
+    if (pType == "scoped_identifier")
+    {
+        uint32_t pStart = ts_node_start_byte(pNode);
+        uint32_t pEnd = ts_node_end_byte(pNode);
+        if (pStart < ctx.request.sourceCode.size() && pEnd <= ctx.request.sourceCode.size() && pStart < pEnd)
+        {
+            std::string scoped = ctx.request.sourceCode.substr(pStart, pEnd - pStart);
+            if (scoped.find("::") != std::string::npos)
+            {
+                return scoped == ctx.request.target.qualifiedName ||
+                       scoped == ctx.request.target.declaringEnum + "::" + ctx.request.target.name;
+            }
+        }
+    }
+    if (pType == "member_expression")
+    {
+        return false;
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief Checks if a member access reference has a preceding qualifier matching declaringEnum.
+ * @param[in] ref Local reference.
+ * @param[in] scope Scope containing candidate references.
+ * @param[in] declaringEnum Declaring enum qualified name.
+ * @return True if qualified by the declaring enum.
+ */
+bool HasPrecedingEnumQualifier(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                               std::string_view declaringEnum)
+{
+    for (const auto& candRef : scope->references)
+    {
+        if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
+        {
+            if (candRef.name == declaringEnum || declaringEnum.ends_with("::" + candRef.name))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if an unscoped reference matches the enum member target without collisions.
+ * @param[in] scope Scope of reference.
+ * @param[in] ctx Occurrence scan context.
+ * @return True if the unscoped reference safely resolves to the target enum member.
+ */
+bool IsUnscopedEnumMemberMatch(const analysis::Scope* scope, const OccurrenceScanContext& ctx)
+{
+    auto docScopeRoot = ctx.request.scopeIndex.GetRoot(ctx.fileUri);
+    if (docScopeRoot && IsShadowedInFunctionScope(scope, ctx.request.target.name, docScopeRoot.get()))
+    {
+        return false;
+    }
+    size_t enumCount = 0;
+    auto syms = ctx.request.symbolTable.FindSymbols(ctx.request.target.name);
+    for (const auto& s : syms)
+    {
+        if (s.type == analysis::SymbolType::Variable &&
+            std::holds_alternative<analysis::VariableSignature>(s.signature) &&
+            s.GetVariable().isEnumConstant)
+        {
+            enumCount++;
+        }
+    }
+    if (enumCount <= 1)
+    {
+        return true;
+    }
+    for (const auto& decl : ctx.declRanges)
+    {
+        if (std::get<0>(decl) == ctx.fileUri)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if a reference matches the target enum member.
+ * @param[in] ref Reference to check.
+ * @param[in] scope Scope containing reference.
+ * @param[in] ctx Occurrence scan context.
+ * @return True if reference belongs to the declaring enum.
+ */
+bool IsEnumMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                const OccurrenceScanContext& ctx)
+{
+    auto astMatch = CheckAstEnumMemberMatch(ref, ctx);
+    if (astMatch.has_value())
+    {
+        return *astMatch;
+    }
+    if (ref.isMemberAccess)
+    {
+        return HasPrecedingEnumQualifier(ref, scope, ctx.request.target.declaringEnum);
+    }
+    return IsUnscopedEnumMemberMatch(scope, ctx);
+}
+
+/**
+ * @brief Scans a document scope tree for enum member occurrences.
+ * @param[in] root Document root scope.
+ * @param[in,out] ctx Occurrence scan context.
+ */
+void ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceScanContext& ctx)
+{
+    if (!root)
+    {
+        return;
+    }
+    std::vector<const analysis::Scope*> stack{root};
+    while (!stack.empty())
+    {
+        const analysis::Scope* s = stack.back();
+        stack.pop_back();
+
+        for (const auto& ref : s->references)
+        {
+            if (ref.name != ctx.request.target.name ||
+                ctx.declRanges.contains({ctx.fileUri, ref.startLine, ref.startCharacter}))
+            {
+                continue;
+            }
+            if (IsEnumMemberReferenceMatch(ref, s, ctx))
+            {
+                ctx.collector.Add(ctx.fileUri, ref);
+            }
+        }
+
+        for (const auto& child : s->children)
+        {
+            if (child)
+            {
+                stack.push_back(child.get());
+            }
+        }
+    }
+}
+
+/**
+ * @brief Collects all occurrences of an enum member across documents.
+ * @param[in] request Occurrences request.
+ * @param[in,out] collector Occurrence accumulator.
+ */
+void CollectEnumMemberOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
+{
+    std::set<std::tuple<std::string, uint32_t, uint32_t>> allDeclRanges;
+    CollectDeclarations(request.target.qualifiedName, request, allDeclRanges, collector);
+
+    if (allDeclRanges.empty())
+    {
+        auto syms = request.symbolTable.FindSymbols(request.target.name);
+        for (const auto& sym : syms)
+        {
+            if (sym.containerName == request.target.declaringEnum ||
+                sym.qualifiedName == request.target.qualifiedName)
+            {
+                SymbolSpan span = GetSymbolSpan(sym);
+                allDeclRanges.insert({sym.fileUri, span.sL, span.sC});
+                collector.declRanges.insert({sym.fileUri, span.sL, span.sC});
+                if (request.includeDeclaration)
+                {
+                    collector.Add(sym.fileUri, SourceRange{span.sL, span.sC, span.eL, span.eC});
+                }
+            }
+        }
+    }
+
+    auto allUris = GetAllIndexedFileUris(request.symbolTable, request.currentUri);
+    for (const auto& fileUri : allUris)
+    {
+        auto docScopeRoot = request.scopeIndex.GetRoot(fileUri);
+        if (!docScopeRoot)
+        {
+            continue;
+        }
+        OccurrenceScanContext ctx{
+            .fileUri = fileUri,
+            .request = request,
+            .declRanges = allDeclRanges,
+            .collector = collector,
+        };
+        ScanDocumentForEnumMember(docScopeRoot.get(), ctx);
+    }
+}
+
 } // namespace
 
 std::vector<OccurrenceLocation> CollectOccurrences(const CollectOccurrencesRequest& request)
@@ -1620,6 +1966,10 @@ std::vector<OccurrenceLocation> CollectOccurrences(const CollectOccurrencesReque
     else if (request.target.kind == TargetKind::NamespaceSymbol)
     {
         CollectNamespaceOccurrences(request, collector);
+    }
+    else if (request.target.kind == TargetKind::EnumMember)
+    {
+        CollectEnumMemberOccurrences(request, collector);
     }
     else
     {
