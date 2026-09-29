@@ -9,8 +9,7 @@ namespace
 {
 constexpr int k_maxScanDepth = 32;
 
-bool ShouldSkipEntry(const std::filesystem::directory_entry& entry,
-                     const std::vector<std::string>& excludeGlobs,
+bool ShouldSkipEntry(const std::filesystem::directory_entry& entry, const std::vector<std::string>& excludeGlobs,
                      ankerl::unordered_dense::set<std::string>& visitedSymlinks,
                      std::filesystem::recursive_directory_iterator& scan)
 {

@@ -529,7 +529,6 @@ std::vector<analysis::Symbol> CollectConstructorCandidates(const std::string& ba
     return analysis::CollectConstructorCandidates(baseName, declaratorNode, request.sourceCode, request.symbolTable);
 }
 
-
 /**
  * @brief Matches the best constructor overload using argument types.
  * @param[in] candidateSymbols Candidate constructor symbols.
@@ -999,8 +998,7 @@ static bool IsOperandMatch(std::string_view leftT, std::string_view rightT, std:
     return leftT == target || rightT == target;
 }
 
-std::string SelectWiderType(std::string_view leftT, std::string_view rightT,
-                            std::string_view stringTypeName = "string")
+std::string SelectWiderType(std::string_view leftT, std::string_view rightT, std::string_view stringTypeName = "string")
 {
     static constexpr std::array<std::string_view, 2> kFloatingTypes = {"double", "float"};
     for (const auto type : kFloatingTypes)
@@ -1305,7 +1303,7 @@ struct OmittedParamHint
  * @return Formatted label string.
  */
 std::string FormatOmittedDefaultLabel(const analysis::ParameterInformation& param,
-                                     config::OmittedDefaultArgumentsMode mode, size_t maxLength)
+                                      config::OmittedDefaultArgumentsMode mode, size_t maxLength)
 {
     std::string text = (mode == config::OmittedDefaultArgumentsMode::Declaration)
                            ? (param.typeName + " " + param.name + " = " + param.defaultValue)
@@ -1324,10 +1322,9 @@ std::string FormatOmittedDefaultLabel(const analysis::ParameterInformation& para
  * @param[out] boundParamIndices Set of parameter indices that have arguments passed.
  * @return Vector of CallArgPosition elements.
  */
-std::vector<CallArgPosition> MapArgumentsToParameters(
-    const std::vector<analysis::CallArgumentInfo>& callArgs,
-    const std::vector<analysis::ParameterInformation>& parameters,
-    std::unordered_set<size_t>& boundParamIndices)
+std::vector<CallArgPosition> MapArgumentsToParameters(const std::vector<analysis::CallArgumentInfo>& callArgs,
+                                                      const std::vector<analysis::ParameterInformation>& parameters,
+                                                      std::unordered_set<size_t>& boundParamIndices)
 {
     std::vector<CallArgPosition> positions;
     positions.reserve(callArgs.size());
@@ -1447,9 +1444,8 @@ void EmitArgListOmittedHint(const std::vector<CallArgPosition>& argPositions, si
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Hint vector receiving generated inlay hints.
  */
-void AddOmittedDefaultArgumentHints(const std::vector<analysis::ParameterInformation>& parameters,
-                                    TSNode argListNode, const InlayHintRequest& request,
-                                    std::vector<lsp::InlayHint>& hints)
+void AddOmittedDefaultArgumentHints(const std::vector<analysis::ParameterInformation>& parameters, TSNode argListNode,
+                                    const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {
     if (request.omittedDefaultArguments == config::OmittedDefaultArgumentsMode::Off || parameters.empty() ||
         ts_node_is_null(argListNode))

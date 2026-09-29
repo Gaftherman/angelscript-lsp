@@ -198,10 +198,9 @@ void ProcessNamespaceNode(TSNode node, const NamespaceCheckRequest& request, Dia
 
 void CheckFromNodeIndex(const NamespaceCheckRequest& request, DiagnosticContext& ctx)
 {
-    request.nodeIndex->ForEachNodeOrdered(
-        std::array{parser::nodes::ScopedIdentifier, parser::nodes::CallExpression,
-                   parser::nodes::ImportDeclaration, std::string_view("ERROR")},
-        [&](TSNode node) { ProcessNamespaceNode(node, request, ctx); });
+    request.nodeIndex->ForEachNodeOrdered(std::array{parser::nodes::ScopedIdentifier, parser::nodes::CallExpression,
+                                                     parser::nodes::ImportDeclaration, std::string_view("ERROR")},
+                                          [&](TSNode node) { ProcessNamespaceNode(node, request, ctx); });
 }
 
 void CheckFromASTTraversal(TSNode root, const NamespaceCheckRequest& request, DiagnosticContext& ctx)

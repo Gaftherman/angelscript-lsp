@@ -137,7 +137,8 @@ struct LocalReference
     bool isTypeSpecifier = false;
 
     /**
-     * @brief True when this identifier is a parameter name label in a named argument (e.g. "param:" in "Call(param: value)").
+     * @brief True when this identifier is a parameter name label in a named argument (e.g. "param:" in "Call(param:
+     * value)").
      */
     bool isNamedArgument = false;
 

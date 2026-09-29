@@ -255,7 +255,8 @@ void PrintFeatureFlagsHelp()
         << "  --disable-inlay-hints                   Disable inlay hints\n"
         << "  --inlay-hints-suppress-when-argument-matches-name[=true|false] Suppress inlay hints when arg matches "
            "param name (default: false)\n"
-        << "  --inlay-hints-omitted-defaults=<mode>   Display mode for omitted defaults: off|nameAndValue|declaration (default: nameAndValue)\n"
+        << "  --inlay-hints-omitted-defaults=<mode>   Display mode for omitted defaults: off|nameAndValue|declaration "
+           "(default: nameAndValue)\n"
         << "  --enable-code-action[=true|false]       Enable/disable code actions (default: true)\n"
         << "  --disable-code-action                   Disable code actions\n"
         << "  --disable-pull-diagnostics              Disable LSP 3.17 pull diagnostics\n"
@@ -524,8 +525,7 @@ bool TryParseInlayHintFlag(ServerConfig& config, ArgParseContext& ctx)
         {
             try
             {
-                config.features.inlayHintsMaxParameters =
-                    static_cast<size_t>(std::max(0, std::stoi(std::string(val))));
+                config.features.inlayHintsMaxParameters = static_cast<size_t>(std::max(0, std::stoi(std::string(val))));
             }
             catch (...)
             {
@@ -540,8 +540,7 @@ bool TryParseInlayHintFlag(ServerConfig& config, ArgParseContext& ctx)
         {
             try
             {
-                config.features.inlayHintsMaxLength =
-                    static_cast<size_t>(std::max(0, std::stoi(std::string(val))));
+                config.features.inlayHintsMaxLength = static_cast<size_t>(std::max(0, std::stoi(std::string(val))));
             }
             catch (...)
             {

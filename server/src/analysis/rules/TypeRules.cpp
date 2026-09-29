@@ -22,34 +22,36 @@ namespace
 TSNode FindEnumDeclarationNode(TSNode root, const Symbol& sym, std::string_view sourceCode)
 {
     TSNode found{};
-    parser::ForEachDescendantNode(root, [&](TSNode node) {
-        if (!ts_node_is_null(found))
-        {
-            return;
-        }
-        if (NodeType(node) == parser::nodes::EnumDeclaration)
-        {
-            const TSPoint pt = ts_node_start_point(node);
-            if (pt.row == sym.startLine && pt.column == sym.startCharacter)
-            {
-                found = node;
-                return;
-            }
-            const TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
-            if (!ts_node_is_null(nameNode) && NodeText(nameNode, sourceCode) == sym.name)
-            {
-                found = node;
-            }
-        }
-    });
+    parser::ForEachDescendantNode(root,
+                                  [&](TSNode node)
+                                  {
+                                      if (!ts_node_is_null(found))
+                                      {
+                                          return;
+                                      }
+                                      if (NodeType(node) == parser::nodes::EnumDeclaration)
+                                      {
+                                          const TSPoint pt = ts_node_start_point(node);
+                                          if (pt.row == sym.startLine && pt.column == sym.startCharacter)
+                                          {
+                                              found = node;
+                                              return;
+                                          }
+                                          const TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
+                                          if (!ts_node_is_null(nameNode) && NodeText(nameNode, sourceCode) == sym.name)
+                                          {
+                                              found = node;
+                                          }
+                                      }
+                                  });
     return found;
 }
 
 /** @brief True when the name collides with a keyword or a built-in type name. */
 bool IsUnusableName(const std::string& name, const DiagnosticContext& ctx)
 {
-    return IsReservedKeyword(name) || IsPrimitiveTypeName(name) ||
-           name == ctx.request.GetEffectiveStringTypeName() || name == ctx.request.GetEffectiveArrayTypeName();
+    return IsReservedKeyword(name) || IsPrimitiveTypeName(name) || name == ctx.request.GetEffectiveStringTypeName() ||
+           name == ctx.request.GetEffectiveArrayTypeName();
 }
 
 bool IsPrefixedIntegerLiteral(std::string_view text, size_t i)
@@ -554,8 +556,7 @@ bool IsSharedInterfaceDuplicateMethod(const Symbol& first, const Symbol& other, 
     }
 
     return (ifaceFirst != ifaceOther) || (ifaceFirst->startLine != ifaceOther->startLine) ||
-           (ifaceFirst->startCharacter != ifaceOther->startCharacter) ||
-           (ifaceFirst->fileUri != ifaceOther->fileUri);
+           (ifaceFirst->startCharacter != ifaceOther->startCharacter) || (ifaceFirst->fileUri != ifaceOther->fileUri);
 }
 
 /**

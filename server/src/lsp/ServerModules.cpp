@@ -83,8 +83,8 @@ bool Server::PopulateModuleEntryClosure(const std::string& entry, ModuleView& vi
     if (view.closurePaths.empty())
     {
         const auto searchDirs = SearchDirectories();
-        for (const auto& member : angel_lsp::utils::IncludeResolver::ResolveAllIncludes(
-                 view.entryPath, *searchDirs, {}, IncludeAllowedRoots()))
+        for (const auto& member : angel_lsp::utils::IncludeResolver::ResolveAllIncludes(view.entryPath, *searchDirs, {},
+                                                                                        IncludeAllowedRoots()))
         {
             view.closurePaths.insert(member);
             view.memberPaths.insert(member);

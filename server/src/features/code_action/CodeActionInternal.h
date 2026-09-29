@@ -93,6 +93,13 @@ std::string FoldCase(std::string_view text);
  */
 void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_dense::set<std::string>& refs);
 
+/**
+ * @brief Finds the insertion point preceding the closing brace of a class body.
+ * @param[in] classBody Class body AST node.
+ * @return AST point preceding class closing brace.
+ */
+TSPoint FindClassClosingBracePoint(TSNode classBody);
+
 // Feature Provider Function Declarations
 void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode rootNode,
                                      std::vector<lsp::CodeAction>& actions);

@@ -363,7 +363,7 @@ void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& rootScope,
         FindLocalDefinitionAtLine(innerScope, nodeText, request.position.line, declScope);
     if (!matchedDef)
     {
-        matchedDef = analysis::ResolveInScope(innerScope, nodeText);
+        matchedDef = analysis::ResolveInScope(innerScope, nodeText, nullptr, false);
         if (matchedDef)
         {
             declScope = analysis::FindScopeDeclaringDefinition(rootScope.get(), *matchedDef);

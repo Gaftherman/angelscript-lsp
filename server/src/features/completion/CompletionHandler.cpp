@@ -1,8 +1,10 @@
 #include "features/completion/CompletionHandler.h"
 #include "analysis/DocComment.h"
-#include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SignatureFormatter.h"
+#include "analysis/overload/OverloadTypeConversions.h"
+#include "parser/AngelScriptParser.h"
+#include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
@@ -178,164 +180,6 @@ std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& 
         }
     }
     return hierarchy;
-}
-
-/**
- * @brief Segment in a parsed member access chain (e.g., `obj.prop[0].method()`).
- */
-struct AccessSegment
-{
-    std::string name;
-    bool isCall = false;
-    size_t indexCount = 0;
-};
-
-/**
- * @brief Advances index past whitespace characters.
- * @param[in] chain Access chain view.
- * @param[in,out] i Cursor index.
- */
-inline void SkipWhitespace(std::string_view chain, size_t& i)
-{
-    while (i < chain.size() && (chain[i] == ' ' || chain[i] == '\t'))
-    {
-        ++i;
-    }
-}
-
-/**
- * @brief Consumes an alphanumeric identifier from the chain.
- * @param[in] chain Access chain view.
- * @param[in,out] i Cursor index.
- * @return Extracted identifier, or empty string.
- */
-std::string ConsumeIdentifier(std::string_view chain, size_t& i)
-{
-    if (i >= chain.size() || (!isalpha(static_cast<unsigned char>(chain[i])) && chain[i] != '_'))
-    {
-        return "";
-    }
-    size_t start = i;
-    while (i < chain.size() && (isalnum(static_cast<unsigned char>(chain[i])) || chain[i] == '_'))
-    {
-        ++i;
-    }
-    return std::string(chain.substr(start, i - start));
-}
-
-/**
- * @brief Advances cursor past a single- or double-quoted string literal within an access chain.
- * @param[in] chain Access chain view.
- * @param[in,out] i Cursor index positioned at opening quote.
- */
-void SkipStringLiteralInChain(std::string_view chain, size_t& i)
-{
-    const char quote = chain[i++];
-    while (i < chain.size())
-    {
-        if (chain[i] == '\\' && i + 1 < chain.size())
-        {
-            i += 2;
-            continue;
-        }
-        if (chain[i++] == quote)
-        {
-            break;
-        }
-    }
-}
-
-/**
- * @brief Consumes subsequent call arguments `(...)` or indexing brackets `[...]`.
- * @param[in] chain Access chain view.
- * @param[in,out] i Cursor index.
- * @param[in,out] seg Current access segment being populated.
- */
-void ConsumeParenthesesOrBrackets(std::string_view chain, size_t& i, AccessSegment& seg)
-{
-    while (i < chain.size() && (chain[i] == '(' || chain[i] == '['))
-    {
-        const char open = chain[i];
-        const char close = (open == '(') ? ')' : ']';
-        if (open == '(')
-        {
-            seg.isCall = true;
-        }
-        else
-        {
-            ++seg.indexCount;
-        }
-        ++i;
-        int depth = 1;
-        while (i < chain.size() && depth > 0)
-        {
-            const char c = chain[i];
-            if (c == '"' || c == '\'')
-            {
-                SkipStringLiteralInChain(chain, i);
-                continue;
-            }
-            if (c == open)
-            {
-                ++depth;
-            }
-            else if (c == close)
-            {
-                --depth;
-            }
-            ++i;
-        }
-    }
-}
-
-/**
- * @brief Consumes a member access delimiter ('.').
- * @param[in] chain Access chain view.
- * @param[in,out] i Cursor index.
- * @return True if delimiter was matched and consumed.
- */
-bool ConsumeDelimiter(std::string_view chain, size_t& i)
-{
-    if (i < chain.size() && chain[i] == '.')
-    {
-        ++i;
-        return true;
-    }
-    return false;
-}
-
-/**
- * @brief Parses a chained member access expression into individual segments.
- * @param[in] chain Access chain string view.
- * @return Vector of parsed access segments.
- */
-std::vector<AccessSegment> ParseAccessChain(std::string_view chain)
-{
-    std::vector<AccessSegment> segments;
-    size_t i = 0;
-    while (i < chain.size())
-    {
-        SkipWhitespace(chain, i);
-        if (i >= chain.size())
-        {
-            break;
-        }
-        std::string name = ConsumeIdentifier(chain, i);
-        if (name.empty())
-        {
-            break;
-        }
-        AccessSegment seg;
-        seg.name = std::move(name);
-        ConsumeParenthesesOrBrackets(chain, i, seg);
-        SkipWhitespace(chain, i);
-        if (!ConsumeDelimiter(chain, i))
-        {
-            break;
-        }
-        segments.push_back(std::move(seg));
-    }
-    return segments;
 }
 
 /**
@@ -1165,242 +1009,6 @@ bool TryCompleteTemplateArguments(const std::string& prefix, CompletionCollector
 }
 
 /**
- * @brief Resolves the type of the `this` keyword at current position.
- * @param[in] request Completion request context.
- * @return Enclosing class or interface name.
- */
-std::string ResolveThisSegmentType(const CompletionRequest& request)
-{
-    if (request.tree)
-    {
-        TSNode rootNode = ts_tree_root_node(request.tree);
-        TSPoint pt{request.position.line, request.position.character};
-        TSNode curNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-        auto containers = analysis::GetEnclosingContainers(curNode, request.sourceCode);
-        for (const auto& c : containers)
-        {
-            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
-            {
-                return c.qualifiedName.empty() ? c.name : c.qualifiedName;
-            }
-        }
-    }
-    std::string rawTypeName;
-    request.symbolTable.ForEachSymbolInFile(
-        request.uri,
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
-        {
-            for (const auto& sym : symbols)
-            {
-                if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
-                {
-                    if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
-                    {
-                        rawTypeName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                        return;
-                    }
-                }
-            }
-        });
-    return rawTypeName;
-}
-
-/**
- * @brief Resolves base type name from local scope or in-scope AST declarations.
- * @param[in] seg0 Initial access segment.
- * @param[in] request Completion request.
- * @param[in] innermostScope Enclosing lexical scope.
- * @return Resolved type name, or empty string.
- */
-std::string ResolveASTOrScopeBaseType(const AccessSegment& seg0, const CompletionRequest& request,
-                                      const analysis::Scope* innermostScope)
-{
-    if (innermostScope)
-    {
-        const analysis::LocalDefinition* def = analysis::ResolveInScope(innermostScope, seg0.name);
-        if (def && !def->typeName.empty())
-        {
-            return def->typeName;
-        }
-    }
-    if (request.tree)
-    {
-        TSNode rootNode = ts_tree_root_node(request.tree);
-        TSPoint pt{request.position.line, request.position.character};
-        TSNode curNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-        std::string inferred =
-            analysis::InferLambdaParamType(curNode, seg0.name, request.symbolTable, request.sourceCode);
-        if (!inferred.empty())
-        {
-            return inferred;
-        }
-        auto inScopeSyms = analysis::FindSymbolsInScope(seg0.name, curNode, request.sourceCode, request.symbolTable);
-        for (const auto& sym : inScopeSyms)
-        {
-            if ((sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property) &&
-                !sym.GetVariable().typeName.empty())
-            {
-                return sym.GetVariable().typeName;
-            }
-            if (sym.type == analysis::SymbolType::Function && seg0.isCall)
-            {
-                return sym.GetFunction().returnType;
-            }
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Resolves base type name from global symbols or property accessors.
- * @param[in] seg0 Initial access segment.
- * @param[in] request Completion request.
- * @return Resolved global type name, or empty string.
- */
-std::string ResolveGlobalBaseType(const AccessSegment& seg0, const CompletionRequest& request)
-{
-    if (auto globSyms = request.symbolTable.FindSymbolsPtr(seg0.name))
-    {
-        for (const auto& sym : *globSyms)
-        {
-            if (sym.type == analysis::SymbolType::Variable && sym.containerName.empty() &&
-                !sym.GetVariable().typeName.empty())
-            {
-                return sym.GetVariable().typeName;
-            }
-        }
-    }
-    const int accessorMode = request.config ? request.config->engine.propertyAccessorMode : 2;
-    if (accessorMode >= 2)
-    {
-        auto globalAccessors = analysis::FindGlobalPropertyAccessors(seg0.name, request.symbolTable, accessorMode == 3);
-        if (!globalAccessors.empty())
-        {
-            return analysis::PropertyTypeFromAccessors(globalAccessors);
-        }
-    }
-    if (seg0.isCall)
-    {
-        if (auto fnSyms = request.symbolTable.FindSymbolsPtr(seg0.name))
-        {
-            for (const auto& sym : *fnSyms)
-            {
-                if (sym.type == analysis::SymbolType::Function && sym.containerName.empty())
-                {
-                    return sym.GetFunction().returnType;
-                }
-            }
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Resolves type name for the base segment in a chained member access expression.
- * @param[in] seg0 Initial access segment.
- * @param[in] request Completion request.
- * @param[in] innermostScope Enclosing lexical scope.
- * @return Resolved raw type name string.
- */
-std::string ResolveBaseSegmentType(const AccessSegment& seg0, const CompletionRequest& request,
-                                   const analysis::Scope* innermostScope)
-{
-    if (seg0.name == "this")
-    {
-        return ResolveThisSegmentType(request);
-    }
-    std::string typeName = ResolveASTOrScopeBaseType(seg0, request, innermostScope);
-    if (!typeName.empty())
-    {
-        return typeName;
-    }
-    return ResolveGlobalBaseType(seg0, request);
-}
-
-/**
- * @brief Resolves return or field type of a member in a chained member expression.
- * @param[in] typeName Container type name.
- * @param[in] seg Current access segment.
- * @param[in] symbolTable Global symbol table.
- * @param[in] accessorMode Engine property accessor mode.
- * @return Next type name string.
- */
-std::string ResolveNextChainedType(const std::string& typeName, const AccessSegment& seg,
-                                   const analysis::SymbolTable& symbolTable, int accessorMode)
-{
-    auto memberSyms = symbolTable.FindSymbolsPtr(typeName + "::" + seg.name);
-    if (memberSyms)
-    {
-        for (const auto& sym : *memberSyms)
-        {
-            if (sym.type == analysis::SymbolType::Variable)
-            {
-                return sym.GetVariable().typeName;
-            }
-            if (sym.type == analysis::SymbolType::Function && seg.isCall)
-            {
-                return sym.GetFunction().returnType;
-            }
-        }
-    }
-    if (accessorMode >= 2)
-    {
-        auto accessors = analysis::FindPropertyAccessors(typeName, seg.name, symbolTable, accessorMode == 3);
-        if (!accessors.empty())
-        {
-            return analysis::PropertyTypeFromAccessors(accessors);
-        }
-    }
-    if (memberSyms)
-    {
-        for (const auto& sym : *memberSyms)
-        {
-            if (sym.type == analysis::SymbolType::Function)
-            {
-                return sym.GetFunction().returnType;
-            }
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Evaluates subsequent segments in an access chain from left to right.
- * @param[in] segments Vector of parsed access segments.
- * @param[in] rawTypeName Initial type name from base segment.
- * @param[in] request Completion request.
- * @param[in] arrayContainer Standard array container identifier.
- * @return Final resolved type name string.
- */
-std::string ResolveChainedSegments(const std::vector<AccessSegment>& segments, std::string rawTypeName,
-                                   const CompletionRequest& request, const std::string& arrayContainer)
-{
-    const int accessorMode = request.config ? request.config->engine.propertyAccessorMode : 2;
-    for (size_t s = 1; s < segments.size() && !rawTypeName.empty(); ++s)
-    {
-        const auto& seg = segments[s];
-        std::string cleanType = analysis::CleanBaseType(rawTypeName);
-        auto hierarchy = GetInheritedTypeHierarchy(request.symbolTable, cleanType);
-        std::string nextTypeName;
-
-        for (const auto& typeName : hierarchy)
-        {
-            nextTypeName = ResolveNextChainedType(typeName, seg, request.symbolTable, accessorMode);
-            if (!nextTypeName.empty())
-            {
-                break;
-            }
-        }
-        if (nextTypeName.empty())
-        {
-            return "";
-        }
-        rawTypeName = analysis::ResolveIndexedType(nextTypeName, seg.indexCount, request.symbolTable, arrayContainer);
-    }
-    return rawTypeName;
-}
-
-/**
  * @brief Resolves base container type name, handling unqualified template class lookups.
  * @param[in] canonicalType Canonical type name.
  * @param[in] symbolTable Global symbol table.
@@ -1526,124 +1134,44 @@ void PopulateMembersForType(const std::string& typeName, const analysis::Templat
 }
 
 /**
- * @brief Represents an extracted member access chain and trailing member query.
+ * @brief Resolves name of the class enclosing cursor position.
+ * @param[in] request Completion request.
+ * @return Enclosing class name, or empty string.
  */
-struct ExtractedAccessChain
+std::string FindEnclosingClassName(const CompletionRequest& request)
 {
-    bool isMemberContext = false;
-    std::string chain;
-    std::string memberQuery;
-};
-
-/**
- * @brief Updates bracket and parenthesis balance counters during backwards scanning.
- * @param[in] c Character being examined.
- * @param[in,out] balanceParen Parenthesis nesting balance counter.
- * @param[in,out] balanceBracket Square bracket nesting balance counter.
- * @return True if character was a bracket and balance remains valid, false if unbalanced.
- */
-bool UpdateBracketBalance(char c, int& balanceParen, int& balanceBracket)
-{
-    if (c == ')')
+    if (request.tree)
     {
-        ++balanceParen;
-        return true;
+        TSNode rootNode = ts_tree_root_node(request.tree);
+        TSPoint pt{request.position.line, request.position.character};
+        TSNode curNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+        auto containers = analysis::GetEnclosingContainers(curNode, request.sourceCode);
+        for (const auto& c : containers)
+        {
+            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+            {
+                return c.name;
+            }
+        }
     }
-    if (c == ']')
-    {
-        ++balanceBracket;
-        return true;
-    }
-    if (c == '(')
-    {
-        if (balanceParen > 0)
+    std::string className;
+    request.symbolTable.ForEachSymbolInFile(
+        request.uri,
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
-            --balanceParen;
-            return true;
-        }
-        return false;
-    }
-    if (c == '[')
-    {
-        if (balanceBracket > 0)
-        {
-            --balanceBracket;
-            return true;
-        }
-        return false;
-    }
-    return false;
-}
-
-/**
- * @brief Checks if a character is valid in an identifier within an access chain.
- * @param[in] c Character to inspect.
- * @return True if character can be part of an identifier.
- */
-bool IsChainIdentChar(char c)
-{
-    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
-}
-
-/**
- * @brief Finds the start index of the access chain preceding a delimiter.
- * @param[in] prefix Prefix text before cursor.
- * @param[in] delimStart Index where member delimiter begins.
- * @return Start index of the access chain, or delimStart if none found.
- */
-size_t FindAccessChainStart(std::string_view prefix, size_t delimStart)
-{
-    size_t i = delimStart;
-    int balanceParen = 0;
-    int balanceBracket = 0;
-    size_t chainStart = delimStart;
-
-    while (i > 0)
-    {
-        const char c = prefix[i - 1];
-        if (c == ' ' || c == '\t')
-        {
-            --i;
-            continue;
-        }
-
-        if (UpdateBracketBalance(c, balanceParen, balanceBracket))
-        {
-            --i;
-            continue;
-        }
-        if (c == '(' || c == '[')
-        {
-            break;
-        }
-
-        if (balanceParen > 0 || balanceBracket > 0)
-        {
-            --i;
-            continue;
-        }
-
-        if (IsChainIdentChar(c))
-        {
-            --i;
-            chainStart = i;
-            continue;
-        }
-
-        if (c == '.')
-        {
-            --i;
-            continue;
-        }
-
-        break;
-    }
-
-    if (balanceParen > 0 || balanceBracket > 0)
-    {
-        return delimStart;
-    }
-    return chainStart;
+            for (const auto& sym : symbols)
+            {
+                if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
+                {
+                    if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
+                    {
+                        className = sym.name;
+                        return;
+                    }
+                }
+            }
+        });
+    return className;
 }
 
 /**
@@ -1667,47 +1195,278 @@ bool IsNumericLiteralDot(std::string_view prefix, size_t dotPos)
 }
 
 /**
- * @brief Extracts the access chain and trailing member query from a line prefix.
- * @param[in] prefix Prefix text before cursor.
- * @return ExtractedAccessChain structure.
+ * @brief Locates the AST node representing the receiver expression preceding a member access dot.
+ * @param[in] rootNode Root AST node of the document.
+ * @param[in] sourceCode Document source text.
+ * @param[in] dotByteOffset Byte offset of the member access delimiter ('.').
+ * @return AST node representing the receiver expression, or a null node if unresolvable.
  */
-ExtractedAccessChain ExtractAccessChain(std::string_view prefix)
+static TSNode FindReceiverFromParentAtDot(TSNode rootNode, size_t dotByteOffset)
+{
+    TSNode dotNode = ts_node_descendant_for_byte_range(rootNode, static_cast<uint32_t>(dotByteOffset),
+                                                       static_cast<uint32_t>(dotByteOffset + 1));
+    if (ts_node_is_null(dotNode))
+    {
+        return TSNode{};
+    }
+    TSNode parent = ts_node_parent(dotNode);
+    if (ts_node_is_null(parent))
+    {
+        return TSNode{};
+    }
+    if (std::string_view(ts_node_type(parent)) == "member_expression")
+    {
+        TSNode obj = parser::GetChildByField(parent, parser::fields::Object);
+        if (!ts_node_is_null(obj))
+        {
+            return obj;
+        }
+    }
+    TSNode prev = ts_node_prev_sibling(dotNode);
+    if (!ts_node_is_null(prev))
+    {
+        return prev;
+    }
+    return TSNode{};
+}
+
+static bool IsExpressionBoundaryType(std::string_view pType)
+{
+    return pType == "translation_unit" || pType == "statement_block" || pType == "compound_statement" ||
+           pType == "expression_statement" || pType == "declaration" || pType == "variable_declaration" ||
+           pType == "assignment_expression" || pType == "return_statement";
+}
+
+static TSNode FindReceiverPrecedingDot(TSNode rootNode, std::string_view sourceCode, size_t dotByteOffset)
+{
+    size_t b = dotByteOffset;
+    while (b > 0 && (sourceCode[b - 1] == ' ' || sourceCode[b - 1] == '\t' || sourceCode[b - 1] == '\r' ||
+                     sourceCode[b - 1] == '\n'))
+    {
+        --b;
+    }
+    if (b == 0)
+    {
+        return TSNode{};
+    }
+    TSNode leaf = ts_node_descendant_for_byte_range(rootNode, static_cast<uint32_t>(b - 1), static_cast<uint32_t>(b));
+    if (ts_node_is_null(leaf))
+    {
+        return TSNode{};
+    }
+    TSNode curr = leaf;
+    while (!ts_node_is_null(ts_node_parent(curr)))
+    {
+        TSNode p = ts_node_parent(curr);
+        std::string_view pType = ts_node_type(p);
+        if (IsExpressionBoundaryType(pType) || ts_node_end_byte(p) > dotByteOffset)
+        {
+            break;
+        }
+        curr = p;
+    }
+    return curr;
+}
+
+/**
+ * @brief Finds the receiver AST node associated with a member access dot ('.').
+ * @param[in] rootNode Root AST node of the document.
+ * @param[in] sourceCode Document source text.
+ * @param[in] dotByteOffset Byte offset of the member access delimiter ('.').
+ * @return AST node representing the receiver expression, or a null node if unresolvable.
+ */
+TSNode FindReceiverNodeAtDot(TSNode rootNode, std::string_view sourceCode, size_t dotByteOffset)
+{
+    if (ts_node_is_null(rootNode) || dotByteOffset == 0)
+    {
+        return TSNode{};
+    }
+    TSNode receiver = FindReceiverFromParentAtDot(rootNode, dotByteOffset);
+    if (!ts_node_is_null(receiver))
+    {
+        return receiver;
+    }
+    return FindReceiverPrecedingDot(rootNode, sourceCode, dotByteOffset);
+}
+
+static std::string ResolveNamedReceiverType(std::string_view nodeText, const CompletionRequest& request,
+                                            const analysis::Scope* innermostScope)
+{
+    if (nodeText.empty())
+    {
+        return "";
+    }
+    if (nodeText == "this")
+    {
+        return FindEnclosingClassName(request);
+    }
+    if (innermostScope)
+    {
+        const analysis::LocalDefinition* def = analysis::ResolveInScope(innermostScope, nodeText);
+        if (def && !def->typeName.empty())
+        {
+            return def->typeName;
+        }
+    }
+    if (auto syms = request.symbolTable.FindSymbolsPtr(std::string(nodeText)))
+    {
+        for (const auto& sym : *syms)
+        {
+            if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().typeName.empty())
+            {
+                return sym.GetVariable().typeName;
+            }
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Resolves the type name of a receiver AST node using Layer 2 semantic services.
+ * @param[in] receiverNode AST node representing the receiver.
+ * @param[in] request Completion request.
+ * @param[in] innermostScope Innermost lexical scope at cursor.
+ * @return Resolved raw type name string, or empty string.
+ */
+std::string ResolveReceiverNodeType(TSNode receiverNode, const CompletionRequest& request,
+                                    const analysis::Scope* innermostScope)
+{
+    if (ts_node_is_null(receiverNode))
+    {
+        return "";
+    }
+    std::string nodeText = analysis::GetNodeText(receiverNode, request.sourceCode);
+    if (std::string named = ResolveNamedReceiverType(nodeText, request, innermostScope); !named.empty())
+    {
+        return named;
+    }
+
+    std::string strType = (request.config && !request.config->types.stringTypeName.empty())
+                              ? request.config->types.stringTypeName
+                              : "string";
+    std::string arrType = (request.config && !request.config->types.arrayTypeName.empty())
+                              ? request.config->types.arrayTypeName
+                              : "array";
+
+    std::string exprType = analysis::ResolveExpressionType(
+        receiverNode, {innermostScope, request.symbolTable, request.sourceCode, request.uri, strType, arrType});
+    if (!exprType.empty() && exprType != "void" && exprType != "unknown")
+    {
+        return exprType;
+    }
+
+    return analysis::ResolveReceiverType(receiverNode, request.sourceCode, request.symbolTable,
+                                         {innermostScope, "", request.uri});
+}
+
+/**
+ * @brief Peels index bracket sequences preceding a dot access.
+ * @param[in] prefix Source prefix preceding cursor.
+ * @param[in,out] s Offset position before bracket sequence.
+ * @return Number of index brackets peeled.
+ */
+static size_t PeelIndexBrackets(const std::string& prefix, size_t& s)
+{
+    size_t count = 0;
+    while (s > 0 && prefix[s - 1] == ']')
+    {
+        --s;
+        int depth = 1;
+        while (s > 0 && depth > 0)
+        {
+            if (prefix[s - 1] == ']')
+            {
+                ++depth;
+            }
+            else if (prefix[s - 1] == '[')
+            {
+                --depth;
+            }
+            --s;
+        }
+        ++count;
+        while (s > 0 && (prefix[s - 1] == ' ' || prefix[s - 1] == '\t'))
+        {
+            --s;
+        }
+    }
+    return count;
+}
+
+/**
+ * @brief Resolves fallback receiver type when AST node resolution is unavailable or incomplete.
+ * @param[in] prefix Prefix text before cursor.
+ * @param[in] dotCol Column offset of access dot.
+ * @param[in] collector Completion collector context.
+ * @param[in] innermostScope Lexical scope at cursor.
+ * @return Resolved raw type name, or empty string.
+ */
+static std::string ResolveFallbackReceiverType(const std::string& prefix, size_t dotCol,
+                                               const CompletionCollector& collector,
+                                               const analysis::Scope* innermostScope)
+{
+    size_t s = dotCol;
+    while (s > 0 && (prefix[s - 1] == ' ' || prefix[s - 1] == '\t'))
+    {
+        --s;
+    }
+    size_t indexCount = PeelIndexBrackets(prefix, s);
+    size_t e = s;
+    while (s > 0 && (std::isalnum(static_cast<unsigned char>(prefix[s - 1])) || prefix[s - 1] == '_'))
+    {
+        --s;
+    }
+    if (e <= s)
+    {
+        return "";
+    }
+    std::string ident(prefix.substr(s, e - s));
+    std::string rawTypeName = ResolveNamedReceiverType(ident, collector.request, innermostScope);
+    if (!rawTypeName.empty() && indexCount > 0)
+    {
+        std::string arrayContainer =
+            (collector.request.config && !collector.request.config->types.arrayTypeName.empty())
+                ? collector.request.config->types.arrayTypeName
+                : "array";
+        rawTypeName =
+            analysis::ResolveIndexedType(rawTypeName, indexCount, collector.request.symbolTable, arrayContainer);
+    }
+    return rawTypeName;
+}
+
+static std::optional<size_t> FindAccessDotCol(const std::string& prefix)
 {
     size_t i = prefix.size();
     while (i > 0 && (std::isalnum(static_cast<unsigned char>(prefix[i - 1])) || prefix[i - 1] == '_'))
     {
         --i;
     }
-    std::string memberQuery(prefix.substr(i));
-
     while (i > 0 && (prefix[i - 1] == ' ' || prefix[i - 1] == '\t'))
     {
         --i;
     }
-
-    size_t delimEnd = i;
-    size_t delimStart = i;
-    if (i >= 1 && prefix[i - 1] == '.')
+    if (i == 0 || prefix[i - 1] != '.' || IsNumericLiteralDot(prefix, i - 1))
     {
-        delimStart = i - 1;
-        if (IsNumericLiteralDot(prefix, delimStart))
-        {
-            return ExtractedAccessChain{};
-        }
+        return std::nullopt;
     }
-    else
-    {
-        return ExtractedAccessChain{};
-    }
+    return i - 1;
+}
 
-    size_t chainStart = FindAccessChainStart(prefix, delimStart);
-    if (chainStart >= delimStart)
-    {
-        return ExtractedAccessChain{true, "", std::move(memberQuery)};
-    }
+static void PopulateHierarchicalMembers(const std::string& rawTypeName, CompletionCollector& collector)
+{
+    std::string arrayContainer = (collector.request.config && !collector.request.config->types.arrayTypeName.empty())
+                                     ? collector.request.config->types.arrayTypeName
+                                     : "array";
+    std::string canonicalType = CanonicalizeArrayType(rawTypeName, arrayContainer);
+    std::string baseContainer = FindCanonicalBaseContainer(canonicalType, collector.request.symbolTable);
+    auto targetTemplate = analysis::ParseTemplateType(canonicalType);
+    const auto binding = analysis::BindTemplateArguments(canonicalType, collector.request.symbolTable);
 
-    std::string chain(prefix.substr(chainStart, delimEnd - chainStart));
-    return ExtractedAccessChain{true, std::move(chain), std::move(memberQuery)};
+    auto hierarchy = GetInheritedTypeHierarchy(collector.request.symbolTable, baseContainer);
+    for (const auto& typeName : hierarchy)
+    {
+        PopulateMembersForType(typeName, binding, targetTemplate.templateArgs, collector);
+    }
 }
 
 /**
@@ -1720,47 +1479,33 @@ ExtractedAccessChain ExtractAccessChain(std::string_view prefix)
 bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* innermostScope,
                              CompletionCollector& collector)
 {
-    ExtractedAccessChain extracted = ExtractAccessChain(prefix);
-    if (!extracted.isMemberContext)
+    auto dotCol = FindAccessDotCol(prefix);
+    if (!dotCol)
     {
         return false;
     }
-    if (extracted.chain.empty())
+
+    std::string rawTypeName;
+    if (collector.request.tree)
     {
-        return true;
-    }
-    auto segments = ParseAccessChain(extracted.chain);
-    if (segments.empty())
-    {
-        return true;
+        size_t lineStart = utils::LineStartOffset(collector.request.sourceCode, collector.request.position.line);
+        size_t dotByteOffset = lineStart + *dotCol;
+        TSNode rootNode = ts_tree_root_node(collector.request.tree);
+        TSNode receiverNode = FindReceiverNodeAtDot(rootNode, collector.request.sourceCode, dotByteOffset);
+        rawTypeName = ResolveReceiverNodeType(receiverNode, collector.request, innermostScope);
     }
 
-    std::string arrayContainer = (collector.request.config && !collector.request.config->types.arrayTypeName.empty())
-                                     ? collector.request.config->types.arrayTypeName
-                                     : "array";
-
-    std::string rawTypeName = ResolveBaseSegmentType(segments[0], collector.request, innermostScope);
-    if (!rawTypeName.empty())
+    if (rawTypeName.empty())
     {
-        rawTypeName = analysis::ResolveIndexedType(rawTypeName, segments[0].indexCount, collector.request.symbolTable,
-                                                   arrayContainer);
+        rawTypeName = ResolveFallbackReceiverType(prefix, *dotCol, collector, innermostScope);
     }
-    rawTypeName = ResolveChainedSegments(segments, rawTypeName, collector.request, arrayContainer);
+
     if (rawTypeName.empty() || analysis::IsCorePrimitive(rawTypeName) || rawTypeName == "void")
     {
         return true;
     }
 
-    std::string canonicalType = CanonicalizeArrayType(rawTypeName, arrayContainer);
-    std::string baseContainer = FindCanonicalBaseContainer(canonicalType, collector.request.symbolTable);
-    auto targetTemplate = analysis::ParseTemplateType(canonicalType);
-    const auto binding = analysis::BindTemplateArguments(canonicalType, collector.request.symbolTable);
-
-    auto hierarchy = GetInheritedTypeHierarchy(collector.request.symbolTable, baseContainer);
-    for (const auto& typeName : hierarchy)
-    {
-        PopulateMembersForType(typeName, binding, targetTemplate.templateArgs, collector);
-    }
+    PopulateHierarchicalMembers(rawTypeName, collector);
     return true;
 }
 
@@ -1807,47 +1552,6 @@ void CollectScopeDefinitions(const analysis::Scope* innermostScope, CompletionCo
             AddItemIfNew(collector, {def.name, kind, def.typeName, "", isCallable ? def.name : std::string{}, snippet});
         }
     }
-}
-
-/**
- * @brief Resolves name of the class enclosing cursor position.
- * @param[in] request Completion request.
- * @return Enclosing class name, or empty string.
- */
-std::string FindEnclosingClassName(const CompletionRequest& request)
-{
-    if (request.tree)
-    {
-        TSNode rootNode = ts_tree_root_node(request.tree);
-        TSPoint pt{request.position.line, request.position.character};
-        TSNode curNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-        auto containers = analysis::GetEnclosingContainers(curNode, request.sourceCode);
-        for (const auto& c : containers)
-        {
-            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
-            {
-                return c.name;
-            }
-        }
-    }
-    std::string className;
-    request.symbolTable.ForEachSymbolInFile(
-        request.uri,
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
-        {
-            for (const auto& sym : symbols)
-            {
-                if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
-                {
-                    if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
-                    {
-                        className = sym.name;
-                        return;
-                    }
-                }
-            }
-        });
-    return className;
 }
 
 /**
@@ -2218,40 +1922,57 @@ bool ExtractCallContext(std::string_view prefix, std::string& outCallee, size_t&
  * @param[in] scope Innermost scope at cursor.
  * @return Resolved parameter type name, or empty string.
  */
-std::string FindCalleeParameterType(const std::string& callee, size_t argIndex,
-                                    const CompletionRequest& request, const analysis::Scope* scope)
+static std::vector<analysis::Symbol>
+ResolveMemberCalleeCandidates(const std::string& callee, const CompletionRequest& request, const analysis::Scope* scope)
 {
     std::vector<analysis::Symbol> candidates;
-    if (callee.find('.') != std::string::npos)
+    size_t dotPos = callee.rfind('.');
+    std::string objText = callee.substr(0, dotPos);
+    std::string memText = callee.substr(dotPos + 1);
+    std::string rType = ResolveNamedReceiverType(objText, request, scope);
+    if (!rType.empty())
     {
-        size_t dotPos = callee.rfind('.');
-        std::string objText = callee.substr(0, dotPos);
-        std::string memText = callee.substr(dotPos + 1);
-        AccessSegment seg{objText, false, 0};
-        std::string rType = ResolveBaseSegmentType(seg, request, scope);
-        if (!rType.empty())
+        std::string cleanType = analysis::StripTypeDecorations(rType);
+        auto hier = GetInheritedTypeHierarchy(request.symbolTable, cleanType);
+        for (const auto& cls : hier)
         {
-            std::string cleanType = analysis::StripTypeDecorations(rType);
-            auto hier = GetInheritedTypeHierarchy(request.symbolTable, cleanType);
-            for (const auto& cls : hier)
-            {
-                auto syms = request.symbolTable.FindSymbols(cls + "::" + memText);
-                candidates.insert(candidates.end(), syms.begin(), syms.end());
-            }
+            auto syms = request.symbolTable.FindSymbols(cls + "::" + memText);
+            candidates.insert(candidates.end(), syms.begin(), syms.end());
         }
     }
-    else
+    return candidates;
+}
+
+static std::vector<analysis::Symbol> ResolveUnqualifiedCalleeCandidates(const std::string& callee,
+                                                                        const CompletionRequest& request,
+                                                                        const analysis::Scope* scope)
+{
+    if (scope && request.tree)
     {
-        if (scope && request.tree)
+        TSNode root = ts_tree_root_node(request.tree);
+        auto candidates = analysis::FindSymbolsInScope(callee, root, request.sourceCode, request.symbolTable);
+        if (!candidates.empty())
         {
-            TSNode root = ts_tree_root_node(request.tree);
-            candidates = analysis::FindSymbolsInScope(callee, root, request.sourceCode, request.symbolTable);
-        }
-        if (candidates.empty())
-        {
-            candidates = request.symbolTable.FindSymbols(callee);
+            return candidates;
         }
     }
+    return request.symbolTable.FindSymbols(callee);
+}
+
+/**
+ * @brief Finds the expected parameter type of a callee function at the given argument index.
+ * @param[in] callee Callee name or member expression string.
+ * @param[in] argIndex Index of the target argument.
+ * @param[in] request Completion request.
+ * @param[in] scope Lexical scope at cursor.
+ * @return Resolved parameter type name, or empty string.
+ */
+std::string FindCalleeParameterType(const std::string& callee, size_t argIndex, const CompletionRequest& request,
+                                    const analysis::Scope* scope)
+{
+    auto candidates = (callee.find('.') != std::string::npos)
+                          ? ResolveMemberCalleeCandidates(callee, request, scope)
+                          : ResolveUnqualifiedCalleeCandidates(callee, request, scope);
 
     for (const auto& sym : candidates)
     {
@@ -2280,8 +2001,8 @@ static bool IsCompoundOrComparisonEquals(char prev, char next)
 
 static bool IsTypeChar(char ch)
 {
-    return isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '@' || ch == '&' || ch == '<' ||
-           ch == '>' || ch == ':';
+    return isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '@' || ch == '&' || ch == '<' || ch == '>' ||
+           ch == ':';
 }
 
 static std::string_view TrimTrailingWhitespace(std::string_view s)
@@ -2361,9 +2082,8 @@ std::string ExtractAssignmentTargetType(std::string_view prefix)
  */
 bool IsNumericTypeName(std::string_view t)
 {
-    return t == "int" || t == "int8" || t == "int16" || t == "int32" || t == "int64" ||
-           t == "uint" || t == "uint8" || t == "uint16" || t == "uint32" || t == "uint64" ||
-           t == "float" || t == "double";
+    return t == "int" || t == "int8" || t == "int16" || t == "int32" || t == "int64" || t == "uint" || t == "uint8" ||
+           t == "uint16" || t == "uint32" || t == "uint64" || t == "float" || t == "double";
 }
 
 /**
@@ -2384,11 +2104,7 @@ enum class TypeMatchRank : uint8_t
  */
 inline std::string FormatRankedSortText(TypeMatchRank rank, std::string_view baseSort)
 {
-    static constexpr std::array<std::string_view, 3> k_rankPrefixes = {
-        "0000_",
-        "0001_",
-        "0002_"
-    };
+    static constexpr std::array<std::string_view, 3> k_rankPrefixes = {"0000_", "0001_", "0002_"};
     const size_t idx = static_cast<size_t>(rank);
     if (idx < k_rankPrefixes.size())
     {
@@ -2413,8 +2129,7 @@ TypeMatchRank ComputeTypeRank(const lsp::CompletionItem& item, const std::string
 
     if (!cleanExpected.empty())
     {
-        if (item.kind.has_value() &&
-            static_cast<int>(*item.kind) == static_cast<int>(lsp::CompletionItemKind::Class) &&
+        if (item.kind.has_value() && static_cast<int>(*item.kind) == static_cast<int>(lsp::CompletionItemKind::Class) &&
             item.label == cleanExpected)
         {
             return TypeMatchRank::Exact;

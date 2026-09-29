@@ -544,7 +544,8 @@ struct MemberImplementationContext
  */
 void CollectSubtypeOverrides(const Symbol& subtype, MemberImplementationContext& ctx)
 {
-    const auto members = ctx.table.FindSymbolsPtr(std::string(analysis::LastScopeSegment(subtype.name)) + "::" + ctx.name);
+    const auto members =
+        ctx.table.FindSymbolsPtr(std::string(analysis::LastScopeSegment(subtype.name)) + "::" + ctx.name);
     bool hasExplicitOverride = false;
     if (members && !members->empty())
     {

@@ -899,8 +899,7 @@ bool IsEnumReferenceQualified(const LocalReference& ref, const DiagnosticContext
  * @param[in,out] ctx Diagnostic context to emit into.
  * @return True when a diagnostic was emitted or reference should be skipped.
  */
-bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefinition* resolved,
-                              DiagnosticContext& ctx)
+bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefinition* resolved, DiagnosticContext& ctx)
 {
     // asEP_REQUIRE_ENUM_SCOPE, checked before the resolution is acted on, because an
     // enumerator DOES resolve from the scope tree - LOCALS_QUERY captures `enum_member` as
@@ -919,8 +918,8 @@ bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefinition* 
         return false;
     }
 
-    ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
-                    "as-err-enum-scope-required", ref.name);
+    ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter}, "as-err-enum-scope-required",
+                    ref.name);
     return true;
 }
 

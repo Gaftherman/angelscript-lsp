@@ -1,21 +1,21 @@
 #pragma once
 
+#include "parser/ASTUtils.h"
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
-#include "parser/ASTUtils.h"
 
 namespace angel_lsp::analysis
 {
-using parser::NodeType;
-using parser::NodeTextResult;
-using parser::NodeText;
-using parser::NodeTextString;
-using parser::GetNodeText;
-using parser::ForEachDescendantNode;
 using parser::ForEachChildNode;
+using parser::ForEachDescendantNode;
+using parser::GetNodeText;
+using parser::NodeText;
+using parser::NodeTextResult;
+using parser::NodeTextString;
+using parser::NodeType;
 
 /**
  * @brief Hard ceiling on how deep any recursive walk over a syntax tree may go.
@@ -75,12 +75,14 @@ inline constexpr int k_maxAstDepth = 64;
         return 0;
     }
     size_t count = 0;
-    parser::ForEachDescendantNode(root, [&](TSNode current) {
-        if (ts_node_is_named(current))
-        {
-            ++count;
-        }
-    });
+    parser::ForEachDescendantNode(root,
+                                  [&](TSNode current)
+                                  {
+                                      if (ts_node_is_named(current))
+                                      {
+                                          ++count;
+                                      }
+                                  });
     return count;
 }
 

@@ -771,13 +771,15 @@ class DefiniteAssignmentVisitor
 
 void TraverseFunctions(TSNode root, DefiniteAssignmentVisitor& visitor)
 {
-    parser::ForEachDescendantNode(root, [&](TSNode node) {
-        std::string_view type = NodeType(node);
-        if (type == "func_declaration" || type == "lambda_expression")
-        {
-            visitor.AnalyzeFunction(node);
-        }
-    });
+    parser::ForEachDescendantNode(root,
+                                  [&](TSNode node)
+                                  {
+                                      std::string_view type = NodeType(node);
+                                      if (type == "func_declaration" || type == "lambda_expression")
+                                      {
+                                          visitor.AnalyzeFunction(node);
+                                      }
+                                  });
 }
 } // namespace
 

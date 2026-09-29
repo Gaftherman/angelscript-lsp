@@ -17,9 +17,7 @@ struct EvaluatedCandidate
 {
     const Symbol* symbol = nullptr;
     std::vector<ArgumentConversion> conversions;
-    std::vector<int> costVector;
     int defaultArgs = 0;
-    int totalCost = 0;
 };
 
 /**

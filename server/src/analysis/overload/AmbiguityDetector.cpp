@@ -107,21 +107,12 @@ bool IsArityCompatible(const ArityInfo& arity, uint32_t argCount)
 
 namespace
 {
-struct CandidateConversions
+std::optional<std::vector<ArgumentConversion>>
+EvaluateCandidateConversions(const FunctionSignature& sig, const std::vector<std::string>& argumentTypes,
+                             const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue)
 {
     std::vector<ArgumentConversion> conversions;
-    std::vector<int> costVector;
-    int totalScore = 0;
-};
-
-std::optional<CandidateConversions> ScoreCandidateArguments(const FunctionSignature& sig,
-                                                            const std::vector<std::string>& argumentTypes,
-                                                            const SymbolTable& symbolTable,
-                                                            const std::vector<bool>& argIsLValue)
-{
-    CandidateConversions scores;
-    scores.conversions.reserve(argumentTypes.size());
-    scores.costVector.reserve(argumentTypes.size());
+    conversions.reserve(argumentTypes.size());
     for (uint32_t i = 0; i < argumentTypes.size(); ++i)
     {
         if (i < sig.parameters.size())
@@ -133,19 +124,15 @@ std::optional<CandidateConversions> ScoreCandidateArguments(const FunctionSignat
             {
                 return std::nullopt;
             }
-            scores.costVector.push_back(conv.legacyScore);
-            scores.totalScore += conv.legacyScore;
-            scores.conversions.push_back(conv);
+            conversions.push_back(conv);
         }
         else
         {
             ArgumentConversion varargConv{ConversionRank::StandardConv, 220, 0, false, 10};
-            scores.costVector.push_back(varargConv.legacyScore);
-            scores.totalScore += varargConv.legacyScore;
-            scores.conversions.push_back(varargConv);
+            conversions.push_back(varargConv);
         }
     }
-    return scores;
+    return conversions;
 }
 } // namespace
 
@@ -166,8 +153,8 @@ std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, const std
         return std::nullopt;
     }
 
-    auto scores = ScoreCandidateArguments(sig, argumentTypes, symbolTable, argIsLValue);
-    if (!scores)
+    auto conversions = EvaluateCandidateConversions(sig, argumentTypes, symbolTable, argIsLValue);
+    if (!conversions)
     {
         return std::nullopt;
     }
@@ -176,11 +163,9 @@ std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, const std
     if (argCount < sig.parameters.size())
     {
         defaultArgs = static_cast<int>(sig.parameters.size() - argCount);
-        scores->totalScore += defaultArgs * 1;
     }
 
-    return EvaluatedCandidate{&sym, std::move(scores->conversions), std::move(scores->costVector), defaultArgs,
-                              scores->totalScore};
+    return EvaluatedCandidate{&sym, std::move(*conversions), defaultArgs};
 }
 
 bool IsStrictlyBetter(const EvaluatedCandidate& a, const EvaluatedCandidate& b)
@@ -210,11 +195,13 @@ bool IsStrictlyBetter(const EvaluatedCandidate& a, const EvaluatedCandidate& b)
 
 std::vector<EvaluatedCandidate> FilterNonDominatedCandidates(const std::vector<EvaluatedCandidate>& evaluated)
 {
-    const bool hasLosslessStandardCandidate = std::any_of(evaluated.begin(), evaluated.end(), [](const auto& cand) {
-        return std::none_of(cand.conversions.begin(), cand.conversions.end(), [](const auto& c) {
-            return c.isLossy || c.rank >= ConversionRank::UserDefined;
-        });
-    });
+    const bool hasLosslessStandardCandidate =
+        std::any_of(evaluated.begin(), evaluated.end(),
+                    [](const auto& cand)
+                    {
+                        return std::none_of(cand.conversions.begin(), cand.conversions.end(), [](const auto& c)
+                                            { return c.isLossy || c.rank >= ConversionRank::UserDefined; });
+                    });
 
     std::vector<EvaluatedCandidate> nonDominated;
     for (const auto& cand : evaluated)

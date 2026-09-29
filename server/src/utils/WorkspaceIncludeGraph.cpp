@@ -1,4 +1,5 @@
 #include "utils/WorkspaceIncludeGraph.h"
+#include "utils/MultiFileLogger.h"
 #include "utils/Utils.h"
 #include "utils/WorkspaceScan.h"
 
@@ -130,8 +131,15 @@ void CollectFileDirectives(const WorkspaceIncludeGraph::BuildFromFilesRequest& r
                     {
                         ProcessDirectivesRange(dctx, start, end, results);
                     }
+                    catch (const std::exception& e)
+                    {
+                        MultiFileLogger::Instance().LogCrash(
+                            std::string("Fatal error in WorkspaceIncludeGraph worker thread: ") + e.what());
+                    }
                     catch (...)
                     {
+                        MultiFileLogger::Instance().LogCrash(
+                            "Unknown fatal error in WorkspaceIncludeGraph worker thread.");
                     }
                 });
         }

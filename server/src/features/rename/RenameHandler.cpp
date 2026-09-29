@@ -141,8 +141,7 @@ struct RenameTargetResult
     TSNode node{};
 };
 
-template <typename RequestT>
-std::optional<RenameTargetResult> ResolveValidRenameTarget(const RequestT& request)
+template <typename RequestT> std::optional<RenameTargetResult> ResolveValidRenameTarget(const RequestT& request)
 {
     if (request.predefinedUris.contains(request.uri))
     {

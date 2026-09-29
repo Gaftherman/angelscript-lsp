@@ -143,8 +143,7 @@ bool CheckStringCompatibility(bool isRelational, const std::string& other, const
     {
         return TypeHasOperator(strTarget, "opCmp", other, table) || TypeHasOperator(other, "opCmp", strTarget, table);
     }
-    return TypeHasOperator(strTarget, "opEquals", other, table) ||
-           TypeHasOperator(other, "opEquals", strTarget, table);
+    return TypeHasOperator(strTarget, "opEquals", other, table) || TypeHasOperator(other, "opEquals", strTarget, table);
 }
 
 bool IsEnumComparisonCompatible(const std::string& left, const std::string& right, const SymbolTable& table)
@@ -241,7 +240,10 @@ bool IsNullOperand(TSNode node, const std::string& type)
 std::optional<OperandTypes> ResolveCleanOperandTypes(TSNode left, TSNode right, const Scope* scope,
                                                      const DiagnosticContext& ctx)
 {
-    const ExpressionTypeContext exprCtx{scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri,
+    const ExpressionTypeContext exprCtx{scope,
+                                        ctx.request.symbolTable,
+                                        ctx.request.sourceCode,
+                                        ctx.request.fileUri,
                                         ctx.request.GetEffectiveStringTypeName(),
                                         ctx.request.GetEffectiveArrayTypeName()};
     const std::string rawLeft = ResolveExpressionType(left, exprCtx);

@@ -253,4 +253,3 @@ bool HasPrecedingDocTag(std::string_view sourceCode, uint32_t declStartLine, std
     return false;
 }
 } // namespace angel_lsp::analysis
-

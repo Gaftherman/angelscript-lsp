@@ -181,8 +181,7 @@ struct NodeTextResult
  * @param[in] root Root AST node to traverse.
  * @param[in] callback Visitor callback invoked for each node.
  */
-template <typename Callback>
-void ForEachDescendantNode(TSNode root, Callback&& callback)
+template <typename Callback> void ForEachDescendantNode(TSNode root, Callback&& callback)
 {
     if (ts_node_is_null(root))
     {
@@ -229,8 +228,7 @@ void ForEachDescendantNode(TSNode root, Callback&& callback)
  * @param[in] parent Parent AST node.
  * @param[in] callback Visitor callback invoked for each direct child node.
  */
-template <typename Callback>
-void ForEachChildNode(TSNode parent, Callback&& callback)
+template <typename Callback> void ForEachChildNode(TSNode parent, Callback&& callback)
 {
     if (ts_node_is_null(parent))
     {

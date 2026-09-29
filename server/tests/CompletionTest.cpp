@@ -1574,3 +1574,41 @@ TEST_CASE("Completion - Smart type-aware ranking for interface method call")
     CHECK(strSort.starts_with("0002_"));
 }
 
+TEST_CASE("Completion - Multi-line and comments in member access chain (AST-first)")
+{
+    const std::string classA = test::GenerateRandomSymbolName("TypeA");
+    const std::string classB = test::GenerateRandomSymbolName("TypeB");
+    const std::string fieldB = test::GenerateRandomSymbolName("childB");
+    const std::string targetField = test::GenerateRandomSymbolName("targetVal");
+    const std::string varName = test::GenerateRandomSymbolName("instA");
+
+    std::string code =
+        "class " + classB + " {\n"
+        "    int " + targetField + ";\n"
+        "}\n"
+        "class " + classA + " {\n"
+        "    " + classB + " " + fieldB + ";\n"
+        "}\n"
+        "void main() {\n"
+        "    " + classA + " " + varName + ";\n"
+        "    " + varName + "\n"
+        "        /* intermediate comment */\n"
+        "        ." + fieldB + "\n"
+        "        .\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    auto items = env.CompleteAt(11, 9);
+    bool foundTarget = false;
+    for (const auto& item : items)
+    {
+        if (item.label == targetField)
+        {
+            foundTarget = true;
+            break;
+        }
+    }
+    CHECK(foundTarget);
+}
+
+

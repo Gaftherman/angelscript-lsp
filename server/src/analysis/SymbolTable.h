@@ -684,7 +684,7 @@ class SymbolTable
      * @return Enclosing class name, or empty string if line is not within a class.
      */
     [[nodiscard]] std::string FindEnclosingClassName(std::string_view uri, uint32_t line,
-                                                    std::string_view excludeName = "") const;
+                                                     std::string_view excludeName = "") const;
 
     /**
      * @brief Normalizes an unqualified type name to its fully qualified symbol name if unambiguous.

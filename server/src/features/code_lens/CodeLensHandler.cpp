@@ -533,7 +533,7 @@ void ProcessScopeReferencesBatch(const std::string& fileUri, const analysis::Sco
  * @param[in,out] ctx Batched reference context.
  */
 void CollectReferencesInScopeTreeBatch(const std::string& fileUri, const analysis::Scope* root,
-                                      const BatchReferenceContext& ctx)
+                                       const BatchReferenceContext& ctx)
 {
     if (!root)
     {
@@ -563,8 +563,7 @@ void CollectReferencesInScopeTreeBatch(const std::string& fileUri, const analysi
  */
 void BatchCountReferencesAcrossScopes(
     std::span<SymbolLensTarget> targets,
-    const ankerl::unordered_dense::map<std::string, std::vector<size_t>>& targetsByName,
-    const CodeLensRequest& request)
+    const ankerl::unordered_dense::map<std::string, std::vector<size_t>>& targetsByName, const CodeLensRequest& request)
 {
     BatchReferenceContext ctx{targets, targetsByName, request};
     request.scopeIndex.ForEachScopeTree(

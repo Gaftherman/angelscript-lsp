@@ -31,25 +31,7 @@ TSPoint FindClassBodyInsertionPoint(TSNode classNode)
         ts_tree_cursor_delete(&cursor);
     }
 
-    if (!ts_node_is_null(classBody))
-    {
-        TSPoint closingPt{0, 0};
-        TSTreeCursor cursor = ts_tree_cursor_new(classBody);
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            do
-            {
-                TSNode ch = ts_tree_cursor_current_node(&cursor);
-                if (std::string_view(ts_node_type(ch)) == "}")
-                {
-                    closingPt = ts_node_start_point(ch);
-                }
-            } while (ts_tree_cursor_goto_next_sibling(&cursor));
-        }
-        ts_tree_cursor_delete(&cursor);
-        return closingPt;
-    }
-    return TSPoint{0, 0};
+    return FindClassClosingBracePoint(classBody);
 }
 
 /**

@@ -765,17 +765,22 @@ bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
     {
         if (std::string_view(ts_node_type(curr)) == parser::nodes::FuncDeclaration)
         {
-            const uint32_t childCount = ts_node_named_child_count(curr);
-            for (uint32_t i = 0; i < childCount; ++i)
+            TSTreeCursor cursor = ts_tree_cursor_new(curr);
+            bool isConst = false;
+            if (ts_tree_cursor_goto_first_child(&cursor))
             {
-                TSNode child = ts_node_named_child(curr, i);
-                if (!ts_node_is_null(child) &&
-                    std::string_view(ts_node_type(child)) == parser::nodes::FuncAttributes)
+                do
                 {
-                    return NodeText(child, sourceCode).find("const") != std::string::npos;
-                }
+                    TSNode child = ts_tree_cursor_current_node(&cursor);
+                    if (std::string_view(ts_node_type(child)) == parser::nodes::FuncAttributes)
+                    {
+                        isConst = (NodeText(child, sourceCode).find("const") != std::string::npos);
+                        break;
+                    }
+                } while (ts_tree_cursor_goto_next_sibling(&cursor));
             }
-            return false;
+            ts_tree_cursor_delete(&cursor);
+            return isConst;
         }
         curr = ts_node_parent(curr);
     }
@@ -1055,7 +1060,8 @@ void CheckInitializerListArgs(const CallArgTypes& args, const FunctionSignature&
             continue;
         }
 
-        const std::string_view argName = (i < args.argNames.size()) ? std::string_view(args.argNames[i]) : std::string_view{};
+        const std::string_view argName =
+            (i < args.argNames.size()) ? std::string_view(args.argNames[i]) : std::string_view{};
         size_t paramIdx = size_t(-1);
         if (!argName.empty())
         {
@@ -1275,8 +1281,7 @@ bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, const S
     if (scope)
     {
         const auto* def = ResolveInScope(scope, name);
-        if (def && (def->kind == LocalDefinitionKind::Variable ||
-                    def->kind == LocalDefinitionKind::Parameter ||
+        if (def && (def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter ||
                     def->kind == LocalDefinitionKind::Field))
         {
             return true;
@@ -1380,8 +1385,7 @@ void ValidateOutArguments(const Symbol& candidate, const std::vector<TSNode>& ar
  * @param[in] symbolTable Symbol table for type conversion checking.
  * @return True if candidate matches the named arguments call.
  */
-static size_t ResolveParameterIndexForArgument(const FunctionSignature& sig, size_t argIdx,
-                                               std::string_view argName,
+static size_t ResolveParameterIndexForArgument(const FunctionSignature& sig, size_t argIdx, std::string_view argName,
                                                const std::unordered_set<size_t>& matchedParams)
 {
     if (!argName.empty())
@@ -1404,7 +1408,7 @@ static size_t ResolveParameterIndexForArgument(const FunctionSignature& sig, siz
 }
 
 static bool CheckUnmatchedDefaultParameters(const FunctionSignature& sig,
-                                           const std::unordered_set<size_t>& matchedParams)
+                                            const std::unordered_set<size_t>& matchedParams)
 {
     for (size_t p = 0; p < sig.parameters.size(); ++p)
     {

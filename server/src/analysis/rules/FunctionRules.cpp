@@ -756,19 +756,22 @@ namespace
 {
 void WalkStandaloneLambda(TSNode root, const DiagnosticContext& ctx)
 {
-    parser::ForEachDescendantNode(root, [&](TSNode node) {
-        if (NodeType(node) == parser::nodes::ExpressionStatement && ts_node_named_child_count(node) == 1)
+    parser::ForEachDescendantNode(
+        root,
+        [&](TSNode node)
         {
-            const TSNode child = ts_node_named_child(node, 0);
-            if (NodeType(child) == parser::nodes::LambdaExpression)
+            if (NodeType(node) == parser::nodes::ExpressionStatement && ts_node_named_child_count(node) == 1)
             {
-                const TSPoint start = ts_node_start_point(child);
-                const TSPoint end = ts_node_end_point(child);
-                ctx.EmitAtRange({start.row, start.column, end.row, end.column},
-                                diagnostics::codes::StandaloneAnonymousFunction, DiagnosticSeverity::Error);
+                const TSNode child = ts_node_named_child(node, 0);
+                if (NodeType(child) == parser::nodes::LambdaExpression)
+                {
+                    const TSPoint start = ts_node_start_point(child);
+                    const TSPoint end = ts_node_end_point(child);
+                    ctx.EmitAtRange({start.row, start.column, end.row, end.column},
+                                    diagnostics::codes::StandaloneAnonymousFunction, DiagnosticSeverity::Error);
+                }
             }
-        }
-    });
+        });
 }
 } // namespace
 

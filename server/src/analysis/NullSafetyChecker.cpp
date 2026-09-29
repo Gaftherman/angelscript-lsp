@@ -175,13 +175,16 @@ void CheckNullSafety(const NullSafetyCheckRequest& request, DiagnosticContext& c
         return;
     }
 
-    parser::ForEachDescendantNode(request.root, [&](TSNode node) {
-        std::string_view type = NodeType(node);
-        if (type == parser::nodes::FuncDeclaration || type == parser::nodes::LambdaExpression)
-        {
-            AnalyzeFunction(node, request.scopeRoot, checkCtx);
-        }
-    });
+    parser::ForEachDescendantNode(request.root,
+                                  [&](TSNode node)
+                                  {
+                                      std::string_view type = NodeType(node);
+                                      if (type == parser::nodes::FuncDeclaration ||
+                                          type == parser::nodes::LambdaExpression)
+                                      {
+                                          AnalyzeFunction(node, request.scopeRoot, checkCtx);
+                                      }
+                                  });
 }
 
 } // namespace angel_lsp::analysis

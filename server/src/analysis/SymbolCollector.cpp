@@ -1,11 +1,11 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/DocComment.h"
 #include "analysis/SemanticHelpers.h"
+#include "document/Document.h"
+#include "parser/ASTUtils.h"
 #include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
-#include "document/Document.h"
-#include "parser/ASTUtils.h"
 #include "utils/LspLogger.h"
 #include <ankerl/unordered_dense.h>
 #include <cctype>

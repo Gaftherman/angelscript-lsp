@@ -147,9 +147,10 @@ void LogOverloadTelemetry(const OverloadLogRequest& req)
                                      [sym](const EvaluatedCandidate& e) { return e.symbol == sym; });
         if (it != req.evaluated.end())
         {
-            utils::MultiFileLogger::Instance().LogOverload(
-                utils::MultiFileLogLevel::Info, "  Candidate " + std::to_string(i + 1) + " '" + candSig +
-                                                    "': ACCEPTED (Score=" + std::to_string(it->totalCost) + ")");
+            utils::MultiFileLogger::Instance().LogOverload(utils::MultiFileLogLevel::Info,
+                                                           "  Candidate " + std::to_string(i + 1) + " '" + candSig +
+                                                               "': ACCEPTED (" +
+                                                               std::to_string(it->conversions.size()) + " args)");
         }
         else
         {
@@ -169,6 +170,20 @@ void LogOverloadTelemetry(const OverloadLogRequest& req)
         utils::MultiFileLogger::Instance().LogOverload(utils::MultiFileLogLevel::Info,
                                                        "Winner: None (no viable overload)");
     }
+}
+
+static void PopulateWinner(OverloadMatchResult& result, EvaluatedCandidate cand)
+{
+    result.bestCandidate = cand.symbol;
+    result.bestScore = 0;
+    result.bestCostVector.clear();
+    result.bestCostVector.reserve(cand.conversions.size());
+    for (const auto& c : cand.conversions)
+    {
+        result.bestCostVector.push_back(c.legacyScore);
+        result.bestScore += c.legacyScore;
+    }
+    result.bestConversions = std::move(cand.conversions);
 }
 } // namespace
 
@@ -201,10 +216,7 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
 
     if (evaluated.size() == 1)
     {
-        result.bestCandidate = evaluated.front().symbol;
-        result.bestScore = evaluated.front().totalCost;
-        result.bestCostVector = std::move(evaluated.front().costVector);
-        result.bestConversions = std::move(evaluated.front().conversions);
+        PopulateWinner(result, std::move(evaluated.front()));
         const OverloadLogRequest logReq{candidates, argumentTypes, result, evaluated};
         LogOverloadTelemetry(logReq);
         return result;
@@ -225,10 +237,7 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
     }
     else
     {
-        result.bestCandidate = nonDominated.front().symbol;
-        result.bestScore = nonDominated.front().totalCost;
-        result.bestCostVector = nonDominated.front().costVector;
-        result.bestConversions = nonDominated.front().conversions;
+        PopulateWinner(result, std::move(nonDominated.front()));
     }
 
     const OverloadLogRequest logReq{candidates, argumentTypes, result, evaluated};

@@ -194,10 +194,9 @@ void Server::ProcessDiscoveredPredefinedStubs(const std::vector<std::string>& di
     try
     {
         const bool mergeAll = (m_config.activePredefined == "all");
-        const std::string activePath =
-            (m_config.activePredefined.empty() || mergeAll)
-                ? std::string()
-                : ResolveConfiguredPath(m_config.activePredefined);
+        const std::string activePath = (m_config.activePredefined.empty() || mergeAll)
+                                           ? std::string()
+                                           : ResolveConfiguredPath(m_config.activePredefined);
 
         std::vector<std::string> discovered;
         std::vector<std::string> wantedPaths = configuredPaths;

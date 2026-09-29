@@ -81,14 +81,6 @@ struct PendingAnalysisEntry
     PendingAnalysisEntry& operator=(const PendingAnalysisEntry&) = delete;
     PendingAnalysisEntry(PendingAnalysisEntry&&) noexcept = default;
     PendingAnalysisEntry& operator=(PendingAnalysisEntry&&) noexcept = default;
-
-    /**
-     * @brief Releases ownership of tree to raw pointer.
-     */
-    TSTree* ReleaseTree() noexcept
-    {
-        return tree.release();
-    }
 };
 
 /**

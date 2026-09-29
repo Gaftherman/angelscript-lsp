@@ -1850,10 +1850,8 @@ struct MatchedLineRange
  * @param[in] endLine Target ending line index.
  * @return Matched range descriptor, or std::nullopt if no tokens intersected the range.
  */
-std::optional<MatchedLineRange> FindMatchedRange(const std::vector<LineInfo>& lines,
-                                                 const std::vector<Token>& tokens,
-                                                 uint32_t startLine,
-                                                 uint32_t endLine)
+std::optional<MatchedLineRange> FindMatchedRange(const std::vector<LineInfo>& lines, const std::vector<Token>& tokens,
+                                                 uint32_t startLine, uint32_t endLine)
 {
     std::optional<size_t> firstMatchedIdx;
     std::optional<size_t> lastMatchedIdx;

@@ -40,9 +40,8 @@ struct MatchContext
  * @param[in] symbolTable Symbol table for type scoring.
  * @return Pointer to best matching symbol, or nullptr if none score positively.
  */
-[[nodiscard]] const Symbol* FindBestFallbackOverload(
-    const std::vector<Symbol>& candidates,
-    const std::vector<std::string>& argTypes,
-    const SymbolTable& symbolTable);
+[[nodiscard]] const Symbol* FindBestFallbackOverload(const std::vector<Symbol>& candidates,
+                                                     const std::vector<std::string>& argTypes,
+                                                     const SymbolTable& symbolTable);
 
 } // namespace angel_lsp::analysis

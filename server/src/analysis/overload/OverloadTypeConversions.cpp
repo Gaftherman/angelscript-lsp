@@ -380,8 +380,7 @@ static std::optional<std::string_view> ExtractTemplateBaseName(std::string_view 
 {
     const size_t openBracket = typeName.find('<');
     const size_t closeBracket = typeName.rfind('>');
-    if (openBracket == std::string_view::npos || closeBracket == std::string_view::npos ||
-        closeBracket <= openBracket)
+    if (openBracket == std::string_view::npos || closeBracket == std::string_view::npos || closeBracket <= openBracket)
     {
         return std::nullopt;
     }
@@ -487,7 +486,6 @@ bool ParameterAcceptsInitializerList(const ParameterInformation& param, const Sy
 
     return symbolTable ? ClassAcceptsInitializerList(cleanType, *symbolTable) : false;
 }
-
 
 bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* symbolTable,
                           std::string_view arrayTypeName)

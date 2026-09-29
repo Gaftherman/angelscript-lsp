@@ -35,4 +35,3 @@ std::string ExtractDocComment(const std::string& sourceCode, uint32_t declStartL
  */
 bool HasPrecedingDocTag(std::string_view sourceCode, uint32_t declStartLine, std::string_view tag);
 } // namespace angel_lsp::analysis
-

@@ -314,9 +314,7 @@ struct IsolationVisitor
         currentClassName = className;
         isCurrentClassShared = classShared;
 
-        ForEachChildNode(node, [&](TSNode child) {
-            Visit(child, classShared, depth + 1);
-        });
+        ForEachChildNode(node, [&](TSNode child) { Visit(child, classShared, depth + 1); });
 
         currentClassName = oldClassName;
         isCurrentClassShared = oldClassShared;
@@ -352,9 +350,7 @@ struct IsolationVisitor
     void VisitFunctionDeclaration(TSNode node, bool inSharedContext, int depth)
     {
         bool funcShared = IsFunctionShared(node, inSharedContext);
-        ForEachChildNode(node, [&](TSNode child) {
-            Visit(child, funcShared, depth + 1);
-        });
+        ForEachChildNode(node, [&](TSNode child) { Visit(child, funcShared, depth + 1); });
     }
 
     void CheckSharedDatatype(TSNode node)
@@ -558,9 +554,7 @@ struct IsolationVisitor
             }
         }
 
-        ForEachChildNode(node, [&](TSNode child) {
-            Visit(child, inSharedContext, depth + 1);
-        });
+        ForEachChildNode(node, [&](TSNode child) { Visit(child, inSharedContext, depth + 1); });
     }
 };
 } // namespace
