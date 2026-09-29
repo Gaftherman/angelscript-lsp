@@ -335,8 +335,32 @@ std::string CallSnippet(const std::string& name, const std::vector<analysis::Par
 }
 
 /**
+ * @brief Retrieves the configured or default string type name.
+ * @param[in] request Auto-completion request context.
+ * @return String type name.
+ */
+static const std::string& ConfiguredStringTypeName(const CompletionRequest& request) noexcept
+{
+    static const std::string kDefaultString = "string";
+    return request.config ? request.config->types.stringTypeName : kDefaultString;
+}
+
+/**
+ * @brief Retrieves the configured or default array container type name.
+ * @param[in] request Auto-completion request context.
+ * @return Array container type name.
+ */
+static const std::string& ConfiguredArrayTypeName(const CompletionRequest& request) noexcept
+{
+    static const std::string kDefaultArray = "array";
+    return request.config ? request.config->types.arrayTypeName : kDefaultArray;
+}
+
+/**
  * @brief Static array of primitive type names.
- * @return Constant reference to vector of primitive strings.
+ * @param[in] stringTypeName Configured string type name.
+ * @param[in] arrayTypeName Configured array container type name.
+ * @return Vector of primitive strings.
  */
 std::vector<std::string> GetPrimitiveTypeNames(std::string_view stringTypeName = "string",
                                                std::string_view arrayTypeName = "array")
@@ -347,8 +371,8 @@ std::vector<std::string> GetPrimitiveTypeNames(std::string_view stringTypeName =
     {
         all.emplace_back(name);
     }
-    all.emplace_back(stringTypeName.empty() ? "string" : stringTypeName);
-    all.emplace_back(arrayTypeName.empty() ? "array" : arrayTypeName);
+    all.emplace_back(stringTypeName);
+    all.emplace_back(arrayTypeName);
     all.emplace_back("dictionary");
     return all;
 }
@@ -999,8 +1023,8 @@ bool TryCompleteTemplateArguments(const std::string& prefix, CompletionCollector
             }
         });
 
-    const auto strType = collector.request.config ? collector.request.config->types.stringTypeName : "string";
-    const auto arrType = collector.request.config ? collector.request.config->types.arrayTypeName : "array";
+    const auto& strType = ConfiguredStringTypeName(collector.request);
+    const auto& arrType = ConfiguredArrayTypeName(collector.request);
     for (const auto& primitive : GetPrimitiveTypeNames(strType, arrType))
     {
         AddItemIfNew(collector, {primitive, lsp::CompletionItemKind::Keyword});
@@ -1230,11 +1254,15 @@ static TSNode FindReceiverFromParentAtDot(TSNode rootNode, size_t dotByteOffset)
     return TSNode{};
 }
 
+/**
+ * @brief Checks if an AST node type acts as an outer expression boundary.
+ * @param[in] pType Node type identifier string.
+ * @return True if the node terminates upward expression traversal.
+ */
 static bool IsExpressionBoundaryType(std::string_view pType)
 {
-    return pType == "translation_unit" || pType == "statement_block" || pType == "compound_statement" ||
-           pType == "expression_statement" || pType == "declaration" || pType == "variable_declaration" ||
-           pType == "assignment_expression" || pType == "return_statement";
+    return pType == "script" || pType == "statement_block" || pType == "expression_statement" ||
+           pType == "variable_declaration" || pType == "assignment_expression" || pType == "return_statement";
 }
 
 static TSNode FindReceiverPrecedingDot(TSNode rootNode, std::string_view sourceCode, size_t dotByteOffset)
@@ -1341,12 +1369,8 @@ std::string ResolveReceiverNodeType(TSNode receiverNode, const CompletionRequest
         return named;
     }
 
-    std::string strType = (request.config && !request.config->types.stringTypeName.empty())
-                              ? request.config->types.stringTypeName
-                              : "string";
-    std::string arrType = (request.config && !request.config->types.arrayTypeName.empty())
-                              ? request.config->types.arrayTypeName
-                              : "array";
+    const auto& strType = ConfiguredStringTypeName(request);
+    const auto& arrType = ConfiguredArrayTypeName(request);
 
     std::string exprType = analysis::ResolveExpressionType(
         receiverNode, {innermostScope, request.symbolTable, request.sourceCode, request.uri, strType, arrType});
@@ -1424,10 +1448,7 @@ static std::string ResolveFallbackReceiverType(const std::string& prefix, size_t
     std::string rawTypeName = ResolveNamedReceiverType(ident, collector.request, innermostScope);
     if (!rawTypeName.empty() && indexCount > 0)
     {
-        std::string arrayContainer =
-            (collector.request.config && !collector.request.config->types.arrayTypeName.empty())
-                ? collector.request.config->types.arrayTypeName
-                : "array";
+        const auto& arrayContainer = ConfiguredArrayTypeName(collector.request);
         rawTypeName =
             analysis::ResolveIndexedType(rawTypeName, indexCount, collector.request.symbolTable, arrayContainer);
     }
@@ -1454,9 +1475,7 @@ static std::optional<size_t> FindAccessDotCol(const std::string& prefix)
 
 static void PopulateHierarchicalMembers(const std::string& rawTypeName, CompletionCollector& collector)
 {
-    std::string arrayContainer = (collector.request.config && !collector.request.config->types.arrayTypeName.empty())
-                                     ? collector.request.config->types.arrayTypeName
-                                     : "array";
+    const auto& arrayContainer = ConfiguredArrayTypeName(collector.request);
     std::string canonicalType = CanonicalizeArrayType(rawTypeName, arrayContainer);
     std::string baseContainer = FindCanonicalBaseContainer(canonicalType, collector.request.symbolTable);
     auto targetTemplate = analysis::ParseTemplateType(canonicalType);
