@@ -4,6 +4,172 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.9.25] - 2026-09-29
+
+### Cross-File Namespace References, Inlay Hint Ranges, Direct-Init Constructor Hover, and Disambiguation
+
+- Cross-File Namespace References & CodeLens:
+  - Fixed CodeLens and Go to References returning 0 references across files in the same namespace by validating namespace containment in `CodeLensHandler` and `TargetResolution`.
+  - Added `IsContainerClass` to avoid classifying namespaces as classes during compatible class collection.
+- Inlay Hints:
+  - Bound `InlayHintLabelPart` location ranges to the complete argument expression AST node (e.g. `NetworkMessages::ShieldRic`), preventing truncation to the leading namespace.
+  - Added hover tooltips for omitted default parameter inlay hints in non-empty argument lists.
+  - Added fallback type inlay hints for nameless wildcard parameters (`?& in`).
+- Hover Resolution:
+  - Elevated `CollectConstructorCandidates` and `ResolveArgumentListNode` to Layer 2 `SemanticHelpers`.
+  - Hovering a direct-initialized variable declaration now displays constructor overload signatures and doc comments while preserving standard local variable hover for downstream member usages.
+  - Added asset and file hover for string literals with file status and size formatting, and character length metrics for non-path literals.
+  - Filtered duplicate `SymbolType::CallReference` entries in hover tooltips.
+  - Implemented container disambiguation between classes and namespaces sharing identical names based on member presence.
+- Semantic Tokens:
+  - Corrected semantic token mapping for bare enum members to `Type_EnumMember`.
+- Method vs Enum Member Disambiguation:
+  - Enhanced `LocalScopeCollector` and `HoverHandler` to treat right-hand side of `scoped_identifier` as member access, preventing enclosing class methods from shadowing enum members with identical names.
+- Architecture & Quality Guardrails:
+  - Refactored `HoverHandler` to use flat cursor traversal (`TSTreeCursor`), strictly satisfying Prohibition 6.
+  - Refactored `TryHoverLocalDefinition` to CCN $\le 12$ and $\le 48$ lines of code, satisfying Prohibition 8.
+  - Preserved $\le 25$ heap allocation ceiling in warm hover queries via zero-copy `std::string_view` parameter forwarding.
+
+## [0.9.24] - 2026-09-28
+
+### Auto & Auto@ Type Deduction, False-Positive Member Diagnostics Fix, and Inlay Hints Restoration
+
+- Type Deduction & Member Access Resolution for `auto` and `auto@`:
+  - Resolved false-positive `as-err-member-not-found` ("La clase 'auto' no tiene ningún miembro '<member>'.") across user scripts.
+  - Guarded `IsCorePrimitive` check in `AccessChecker` to ensure `auto` is not misclassified as a primitive type without members and suppresses false positives on unresolvable target instances.
+  - Reordered semantic analysis passes in `SemanticAnalyzer` so `RunTypeAndStructureRules` executes before `RunExpressionRules`, guaranteeing that `auto` variables are deduced and written to scope prior to member access verification.
+  - Fixed `CleanBaseType` normalization in `TypeConversionChecker` and preserved `@` handle decoration on deduced variables declared as `auto@` or holding handle types.
+  - Preserved fully-qualified namespace paths (e.g. `meta_api::json::v2::json@`) during symbol lookup and overload return resolution in `SemanticHelpers`.
+- Inlay Hints:
+  - Restored type inlay hints for handle variables declared with `auto@` in `InlayHintHandler`, displaying deduced types with handle decoration (e.g. `: meta_api::json::v2::json@` or `: CBasePlayer@`).
+- Allocation & Performance Optimization:
+  - Optimized `BuildHoverQueryContext` in `HoverHandler` to accept `HoverTarget` by rvalue reference, preserving the allocation churn invariant on warm hover queries.
+
+## [0.9.23] - 2026-09-28
+
+### DRY Consolidation, Layer-Avoidance Elimination, & Architectural Anti-Pattern Remediation
+
+- Layer 1 AST Traversal & Text Utilities:
+  - Created `parser/ASTUtils.h` consolidating `NodeType`, `NodeText`, `GetNodeText`, `ForEachDescendantNode`, and `ForEachChildNode` into Layer 1.
+  - Replaced ad-hoc `TSTreeCursor` and index-based `ts_node_child` loops across checkers (`DefiniteAssignmentChecker`, `NullSafetyChecker`, `ClassRules`, `FunctionRules`, `TypeRules`, `IsolationChecker`) with standard cursor utilities.
+  - Eliminated byte-slicing clones across semantic analysis and features (`SemanticHelpers`, `LocalScopeCollector`, `SymbolCollector`, `TypeExtraction`, `CodeActionCommon`, `DocumentHighlightHandler`, `DocumentSymbolHandler`, `InlayHintHandler`).
+- Layer 2 Symbol & Hierarchy Query Elevation:
+  - Added `GetDeclaredBases` to `SymbolTable` to consolidate declared inheritance parsing previously duplicated between `ImplementationHandler` and `TypeHierarchyHandler`.
+  - Added `FindEnclosingClassName` to `SymbolTable` to replace redundant container-scanning closures in `TargetResolution`, `CodeLensHandler`, and `DocumentHighlightHandler`.
+  - Added `QualifyShortTypeName` to `SymbolTable` replacing duplicate receiver type qualification loops in `DefinitionHandler`, `HoverHandler`, and `CompletionHandler`.
+- Overload Selection & Mixin Context Consolidation:
+  - Elevated candidate ranking helpers `MatchesCallArity` and `FindBestFallbackOverload` into `ConversionRankingEngine` in Layer 2, eliminating duplicate scoring implementations in `DefinitionHandler` and `HoverHandler`.
+  - Created `analysis/VirtualMixinContext.h` providing unified `ResolveVirtualMixinContext`, `ResolvePhysicalUri`, and `ResolvePhysicalLine` routines shared across definition and hover features.
+  - Consolidated index cursor merge loops in `InitializerListChecker` and `NamespaceChecker` into `NodeIndex::ForEachNodeOrdered`.
+- Memory Safety & Hardening:
+  - Replaced unmanaged raw `TSTree*` allocations in `LocalScopeCollector`, `SymbolCollector`, and `DoxygenMarkdown` with RAII `document::TreePtr`, eliminating tree leak vulnerabilities on unhandled exceptions.
+  - Hardened AST navigation in `CallChecker` with null checks before node type queries.
+  - Added fatal exception diagnostic logging to `MultiFileLogger::WorkerLoop`.
+  - Deduplicated target resolution logic in `RenameHandler`.
+
+## [0.9.22] - 2026-09-28
+
+### Completion Trigger Isolation, Smart Type-Aware Ranking, Indexed Virtual Properties, & Scoped Call Inlay Hints
+
+- Namespace Completion Trigger Isolation (`:` vs `::`):
+  - Fixed premature autocompletion popup on typing a single colon (`MyNamespace:`), cleanly suppressing candidate suggestions until the double colon scope resolution operator (`::`) is completed.
+  - Verified multi-level and compound namespace completion (`MyNamespace::A::B::`) correctly triggers scope members without spurious popups.
+- Smart Type-Aware Autocompletion Ranking:
+  - Added contextual type ranking when completing function arguments and variable declaration assignments.
+  - At call sites (e.g. `functi(|` or `functi(val, |`), variables and functions matching the exact expected parameter type are ranked highest (`0000_...`), followed by convertible types (`0001_...`), and other symbols (`0002_...`).
+  - At assignment RHS (e.g. `MyClass@ c = |`), constructors and expressions returning the matching type are prioritized.
+  - Configurable via `angelscript.completion.smartTypeRanking` (default `true`), CLI flags `--enable-completion-smart-ranking` / `--disable-completion-smart-ranking`, and dynamic workspace configuration updates.
+- Global & Namespace Indexed Virtual Property Support:
+  - Resolved false-positive `as-warn-undeclared-identifier` on indexed virtual property assignments (e.g. `BuyPoints[pPlayer] = 100` backed by `int get_BuyPoints(...) property` and `void set_BuyPoints(...) property`).
+  - Extended `IsContainerAccessorProperty` in `SemanticAnalyzer` to inspect namespace-enclosed accessor property declarations.
+  - Added `FindGlobalPropertyAccessors` fallback to ensure workspace-wide global property accessors are always recognized.
+  - Hardened `index_expression` type resolution in `SemanticHelpers` to accurately deduce indexed property return types rather than failing array container indexing.
+- Inlay Hints for Scoped Calls & Scoped Enum Member Arguments:
+  - Fixed missing parameter inlay hints for qualified function and method calls (`HUD::MONEY::Update`, `Persistent::Get`, `Util::PlayerId`).
+  - Added `CollectScopedCalleeCandidates` in `InlayHintHandler` to resolve scoped callees across enclosing namespaces and base class inheritance hierarchies.
+  - Extended `ResolveScopedIdentifierExpr` in `SemanticHelpers` to resolve scoped enum members (`Persistent::MONEY`) to their enum type, allowing call argument type extraction to find the correct overload.
+- CodeLens Reference Counting for Virtual Properties:
+  - Fixed CodeLens showing 0 references above `get_<Property>` and `set_<Property>` accessor declarations.
+  - Mapped property names (stripping `get_`/`set_`) to accessor targets in `targetsByName` and fixed local scope shadow validation to use the reference name.
+- Multi-Colon Trigger Isolation (`:::` & `::::`) & Syntax Error Guard:
+  - Generalized colon trigger suppression by counting trailing consecutive colons; suppresses premature or invalid sequences where colon count is not exactly 2 (single colon `:`, triple colons `:::`, quadruple colons `::::`).
+  - Confirmed Tree-Sitter and AngelScript compiler oracle report `:::` as a syntax error (`as-syntax-error`).
+- Clean Architecture & TypeMatchRank Refactoring:
+  - Refactored `ComputeTypeRank` and `ApplySmartTypeRanking` to use strongly-typed `TypeMatchRank` (`Exact = 0`, `Convertible = 1`, `Other = 2`) and array-indexed bucket prefix formatting, eliminating magic numbers and `if-else` string concatenation.
+- Interface & Mixin Class Parity & Member Autocompletion:
+  - Verified member autocompletion on interface handles (`ICombat@ c; c.|`) and mixin host classes (`Hero h; h.|`), including virtual property accessors.
+  - Added smart type-aware ranking for interface method calls (`c.Attack(|`).
+  - Added official parity test `doc_p49_mixin_interface_parity.as` validated with exit code 0 by `angelscript_oracle.exe`.
+- Documentation & Client Links:
+  - Removed outdated `->` operator references from completion documentation in `README.md`.
+  - Updated installation guide to link directly to the official VS Code Marketplace extension `Gaftherman.angelscript-gaftherman`.
+- Cross-Platform CI Parity Test Portability:
+  - Added `HasOracleBinary()` check to dynamically guard native oracle assertions in test suites, preventing spurious failures on CI runners (macOS / Linux) where the native oracle compiler is not built.
+
+## [0.9.21] - 2026-09-28
+
+### Machine-Specific Path Elimination, Dynamic Fixture Discovery, & CI Multi-Platform Portability
+
+- Machine-Specific Path Elimination & Portable Test Fixtures:
+  - Eliminated hardcoded developer drive paths (e.g. `E:/Github/src/bts_rc/...` and `E:/Github/src/AS-Harness/...`) across test suites and discovery fixtures.
+  - Implemented dynamic corpus discovery in `SemanticRegressionsBatch2Test` via `BTS_RC_DIR` environment variable and relative sibling repository lookup (`repoRoot / ".." / "bts_rc"`), with clean skip semantics on GitHub Actions CI runners.
+  - Converted file path handling in tests to use URI normalization via `utils::PathToUri`.
+- Portable Oracle Compiler Discovery:
+  - Enhanced `DiscoverOracleBinary` in `LspSemanticHarnessFixture` to discover test oracle binaries via `ASHARNESS_EXE` and `ANGELSCRIPT_ORACLE_EXE` environment variables, sibling repository checkouts (`../AS-Harness`), and in-tree build outputs across Windows (`.exe`) and Linux/macOS.
+- Test Mock & Comment Normalization:
+  - Normalized mock paths in `HoverTest` and `ServerConfigTest` to platform-neutral paths.
+  - Replaced local machine path in `TreeSitter.cmake` comment with generic path placeholder.
+- Verification & Quality:
+  - All 2,052 automated test cases passing with 92,021 assertions.
+  - All static quality gates clean (`check-quality.py`).
+  - Zero hardcoded developer drive paths across the entire codebase.
+
+## [0.9.20] - 2026-09-28
+
+### Primitive Member Access Diagnostics, Reserved Keyword Member Validation, & Completion Expression Guard
+
+- Member Access Diagnostics on Primitives:
+  - Fixed issue where member access on expressions returning primitive types (such as `!this.Get(keyName, temp, strict).WeaponTertiaryAttackHook` where `Get` returns `bool`) was not reported.
+  - `AccessChecker` now explicitly validates receiver types against core primitives and `void`, emitting `as-err-member-not-found` (`Class '<type>' has no member '<member>'`).
+- Reserved Keyword Member Diagnostics (Oracle Parity):
+  - Added detection of reserved keywords following dot access (e.g. `this.Get().false`), emitting `as-err-reserved-keyword-name` (`Instead found reserved keyword '<keyword>'`) matching official AngelScript compiler diagnostics.
+- Autocompletion Guard & Expression Parsing Hardening:
+  - Replaced naive forward regex in `CompletionHandler` with backwards delimiter scanning that balances parentheses `(...)` and brackets `[...]`.
+  - Fixed `this` receiver type resolution inside nested namespaces to preserve fully-qualified type names (e.g. `meta_api::json::v2::json`).
+  - Added primitive/void guard in `TryCompleteMemberAccess` to return an empty completion list immediately instead of falling through to dump 160+ keywords, local variables, and enclosing class methods after a dot on a primitive expression.
+  - Guarded trailing dots in function declarations and statements to prevent unwanted completion triggers.
+  - Restricted member access delimiters strictly to `.` matching the AngelScript specification.
+- Verification & Quality:
+  - 2,052 automated test cases passing with 94,616 assertions.
+  - All static quality gates clean (0 Lizard warnings, jscpd 2.12% <= 3%, Clean Function Signatures, Layer Architecture Invariants).
+
+## [0.9.19] - 2026-09-28
+
+### Omitted Default Arguments Inlay Hints, Named Arguments Variable Identity, & Overload Resolution Regression Verification
+
+- Inlay Hints for Omitted Default Arguments:
+  - Added support for displaying inlay hints for omitted optional parameters in function calls, method calls, and constructor invocations.
+  - Three configurable modes in client settings (`angelscript.inlayHints.omittedDefaultArguments`) and server CLI (`--inlay-hints-omitted-defaults`):
+    - `nameAndValue` (Default): Displays parameter name and default value (`param: defaultValue`).
+    - `declaration`: Displays full type declaration, name, and default value (`typeName param = defaultValue`).
+    - `off`: Disables omitted default argument hints.
+  - Intelligent AST-driven comma and whitespace placement:
+    - Omitted parameters before passed arguments display with trailing `, ` (e.g. `funct(id: 0, f: false)`).
+    - Omitted parameters after passed arguments display with leading `, ` (e.g. `funct(f: false, argS: array<string>())`).
+    - Calls with empty argument lists `()` display all omitted parameters inside the parentheses.
+  - Fully integrated with `maxLength` character limits and stable parameter declaration ordering.
+- Named Arguments & Variable Identity Parity:
+  - Verified with the official AngelScript compiler oracle (`angelscript_oracle.exe`) that passing variables with identical names to parameters (`funct(argS: argS, id: id, f: f)`) is 100% valid AngelScript.
+  - Added parity test `server/tests/parity/doc_p129_named_argument_variable_identity.as` and automated invariant regression tests in `SemanticRegressionsBatch2Test.cpp`.
+  - Verified that non-existent named parameters (`funct(fakeParam: 123)`) emit `as-err-call-no-matching-signature`.
+- Overload Resolution & `this.Get` Forensic Verification:
+  - Verified that `v2.as` calls to `this.Get(keyName, temp, strict)` resolve cleanly without ambiguity in current LSP releases.
+  - Added persistent regression tests ensuring mutable references and default boolean arguments never produce false ambiguity diagnostics.
+- Quality & Verification:
+  - 2,047 C++ unit, regression, fuzz, and parity tests passing with 63,862 assertions.
+  - 50 client integration tests passing.
+  - All static quality gates clean (0 Lizard warnings, jscpd 2.13% <= 3%, 105 layer headers conformant).
+
 ## [0.9.18] - 2026-09-27
 
 ### Multi-Parameter Named Arguments Reordering, Container Initializer Lists, & Oracle Parity Verification

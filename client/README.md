@@ -8,9 +8,13 @@ Angelscript provides rich language intelligence for [AngelScript](https://www.an
 
 ### 1. Installation
 
-Install via the Visual Studio Code Marketplace or from a packaged `.vsix` bundle:
+Install via the [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman) or search for `Angelscript` by Gaftherman in the Extensions view (`Ctrl+Shift+X`):
+1. Open Visual Studio Code.
+2. Press `Ctrl+P`, paste `ext install Gaftherman.angelscript-gaftherman`, and press Enter.
+
+Alternatively, to install from a packaged `.vsix` bundle:
 1. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) and run `Extensions: Install from VSIX...`.
-2. Select the compiled extension package (`angelscript.vsix` or `angelscript-0.8.6.vsix`).
+2. Select the compiled extension package (`angelscript.vsix` or `angelscript-*.vsix`).
 
 ### 2. Workspace Setup
 
@@ -99,12 +103,12 @@ AngelLSP provides seamless, out-of-the-box bilingual localization in both **Engl
 
 - **Semantic Diagnostics**: Real-time syntax and semantic validation with debounced background passes and FNV-1a ABI fingerprinting to prevent cascading analysis storms on saved documents.
 - **Flow-Sensitive Null Checks**: Intraprocedural null handle dereference diagnostics (`as-warn-possible-null-dereference`) warning on unchecked handles or handles used after null assignment.
-- **Precise Hover**: Overload-isolated hover at call sites, Doxygen docstring rendering (`@brief`, `@param`, `@return`), and anonymous lambda resolution displaying target `funcdef` signatures and contracts.
+- **Precise Hover**: Overload-isolated hover at call sites, Doxygen docstrings (`@brief`, `@param`, `@return`), direct-initialization constructor resolution, string literal asset status and file metrics, and anonymous lambda contracts.
 - **Navigation & Go-to-Definition**: Precise symbol jump across files and stubs with overload argument matching (`FilterOverloadsForCall`), mixin origin mapping, and interface implementation discovery (`Ctrl+F12`).
-- **Intelligent Autocompletion**: Scope-aware member completions (`.`, `->`), namespace lookups (`::`), and control-flow snippet expansions.
-- **Semantic Highlighting**: Zero-allocation delta integer streams with full standard LSP token classification distinguishing parameters, members, locals, types, and inactive preprocessor branches.
-- **Inlay Hints**: Inline parameter name hints with type deduction on nested calls and configurable suppression when argument names match formal parameters.
-- **CodeLens & Call Hierarchy**: Reference counts above declarations and full bi-directional call tree indexing (`textDocument/prepareCallHierarchy`).
+- **Intelligent Autocompletion**: Scope-aware member completions (`.`), namespace lookups (`::`), smart type-aware ranking for call arguments and assignment expressions, and control-flow snippet expansions.
+- **Semantic Highlighting**: Zero-allocation delta integer streams with full standard LSP token classification distinguishing parameters, members, locals, types, bare enum constants, and inactive preprocessor branches.
+- **Inlay Hints**: Inline parameter name hints with full multi-part argument range highlighting, omitted default parameter values, fallback types for wildcard parameters, and configurable suppression.
+- **CodeLens & Call Hierarchy**: Cross-file and cross-namespace reference counts above declarations, virtual property accessor tracking, and full bi-directional call tree indexing (`textDocument/prepareCallHierarchy`).
 - **Document & Workspace Symbols**: Hierarchical symbol outlines for breadcrumbs and outline views, plus fuzzy workspace-wide symbol search (`Ctrl+T`).
 - **Virtual Mixin Documents**: Synthetic document inspection (`angelscript-virtual://`) enabling inline peek and host-scoped member validation.
 
@@ -138,6 +142,8 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.inlayHints.maxParameters` | `0` | Maximum number of parameter inlay hints to display per call (`0` = unlimited). |
 | `angelscript.inlayHints.maxLength` | `0` | Maximum character length for parameter inlay hint labels before truncating with `...` (`0` = unlimited). |
 | `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suppresses parameter name hints when argument text matches parameter name. |
+| `angelscript.inlayHints.omittedDefaultArguments` | `"nameAndValue"` | Inlay hints for omitted default arguments (`"nameAndValue"`, `"declaration"`, `"off"`). |
+| `angelscript.completion.smartTypeRanking` | `true` | Contextual type ranking prioritizing matching parameter and assignment types. |
 | `angelscript.statusBar.alignment` | `"left"` | Alignment of the AngelScript status bar item (`"left"` or `"right"`). |
 | `angelscript.diagnosticSeverity` | `{}` | Per-diagnostic severity overrides (e.g. `{"as-warn-unused-variable": "hint"}`). |
 | `angelscript.engine.requireEnumScope` | `false` | When true (`asEP_REQUIRE_ENUM_SCOPE`), enums must be qualified with `Enum::Member`. |
