@@ -667,3 +667,36 @@ TEST_CASE("ReferencesHandler - Invariant: Parameter default argument and variabl
     CHECK(lines == std::vector<uint32_t>{ 1, 2, 4 });
 }
 
+TEST_CASE("ReferencesHandler - Cross-File Namespace Variable References")
+{
+    MultiFileTestEnv env;
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("btscm");
+    const std::string constName = angel_lsp::test::GenerateRandomSymbolName("HITGROUP_SHIELD");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("someFunction");
+
+    const std::string uri1 = "file:///decl.as";
+    const std::string code1 =
+        "namespace " + nsName + "\n"
+        "{\n"
+        "    const int " + constName + " = 15;\n"
+        "}\n";
+
+    const std::string uri2 = "file:///usage.as";
+    const std::string code2 =
+        "namespace " + nsName + "\n"
+        "{\n"
+        "    void " + funcName + "(int iHitGroup) {\n"
+        "        if (iHitGroup == " + constName + ") {}\n"
+        "    }\n"
+        "}\n";
+
+    env.AddFile(uri1, code1);
+    env.AddFile(uri2, code2);
+
+    auto refs = env.RefsAt(uri1, 2, 15, false);
+    REQUIRE(refs.has_value());
+    CHECK(refs->size() == 1);
+    CHECK((*refs)[0].uri.toString() == uri2);
+}
+
+
