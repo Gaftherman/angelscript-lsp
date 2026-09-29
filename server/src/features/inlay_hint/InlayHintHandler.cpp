@@ -113,6 +113,16 @@ const std::vector<analysis::ParameterInformation>* GetParametersIfCallable(const
 }
 
 /**
+ * @brief Checks if a parameter represents a variadic (varargs) argument.
+ * @param[in] param Parameter information.
+ * @return True if parameter is varargs (...).
+ */
+bool IsVarargParameter(const analysis::ParameterInformation& param)
+{
+    return param.name == "..." || param.typeName == "..." || param.rawText.find("...") != std::string::npos;
+}
+
+/**
  * @brief Counts the minimum number of arguments required by a callable's parameters.
  * @param[in] parameters Vector of parameter information to evaluate.
  * @return Count of non-default, non-vararg parameters.
@@ -122,7 +132,7 @@ size_t CountRequiredParameters(const std::vector<analysis::ParameterInformation>
     size_t minRequired = 0;
     for (const auto& p : parameters)
     {
-        if (p.defaultValue.empty() && p.rawText.find("...") == std::string::npos)
+        if (p.defaultValue.empty() && !IsVarargParameter(p))
         {
             minRequired++;
         }
@@ -516,53 +526,9 @@ std::vector<ArgInfo> ParseArguments(TSNode argListNode, std::string_view sourceC
 std::vector<analysis::Symbol> CollectConstructorCandidates(const std::string& baseName, TSNode declaratorNode,
                                                            const InlayHintRequest& request)
 {
-    std::vector<analysis::Symbol> candidateSymbols;
-    const std::string ctorName = baseName + "::" + std::string(analysis::LastScopeSegment(baseName));
-
-    auto ctorSyms = request.symbolTable.FindSymbols(ctorName);
-    for (const auto& s : ctorSyms)
-    {
-        if (s.type == analysis::SymbolType::Function)
-        {
-            candidateSymbols.push_back(s);
-        }
-    }
-
-    if (candidateSymbols.empty())
-    {
-        auto scopeSyms =
-            analysis::FindSymbolsInScope(baseName, declaratorNode, request.sourceCode, request.symbolTable);
-        for (const auto& s : scopeSyms)
-        {
-            if (s.type == analysis::SymbolType::Class)
-            {
-                std::string qName = s.qualifiedName.empty() ? s.name : s.qualifiedName;
-                auto qCtors = request.symbolTable.FindSymbols(qName + "::" + s.name);
-                for (const auto& cs : qCtors)
-                {
-                    if (cs.type == analysis::SymbolType::Function)
-                    {
-                        candidateSymbols.push_back(cs);
-                    }
-                }
-            }
-        }
-    }
-
-    if (candidateSymbols.empty())
-    {
-        auto fnSyms = request.symbolTable.FindSymbols(baseName);
-        for (const auto& s : fnSyms)
-        {
-            if (s.type == analysis::SymbolType::Function)
-            {
-                candidateSymbols.push_back(s);
-            }
-        }
-    }
-
-    return candidateSymbols;
+    return analysis::CollectConstructorCandidates(baseName, declaratorNode, request.sourceCode, request.symbolTable);
 }
+
 
 /**
  * @brief Matches the best constructor overload using argument types.
@@ -1207,6 +1173,43 @@ std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& reques
 }
 
 /**
+ * @brief Resolves parameter label name, falling back to declared type for nameless parameters.
+ * @param[in] param Parameter information.
+ * @return Resolved parameter label, or empty string if parameter cannot be labeled.
+ */
+std::string ResolveParameterLabel(const analysis::ParameterInformation& param)
+{
+    if (!param.name.empty() && param.name != "...")
+    {
+        return param.name;
+    }
+    if (!param.rawText.empty() && param.rawText.find("...") == std::string::npos)
+    {
+        std::string fallback = TrimNodeText(param.rawText.substr(0, param.rawText.find('=')));
+        if (!fallback.empty() && fallback != "...")
+        {
+            return fallback;
+        }
+    }
+    return (!param.typeName.empty() && param.typeName != "...") ? param.typeName : "";
+}
+
+/**
+ * @brief Formats hover tooltip text for a parameter hint.
+ * @param[in] param Parameter information.
+ * @param[in] label Resolved parameter label.
+ * @return Formatted tooltip string.
+ */
+std::string FormatParameterTooltip(const analysis::ParameterInformation& param, const std::string& label)
+{
+    if (!param.name.empty())
+    {
+        return "Parameter: " + param.typeName + " " + param.name;
+    }
+    return "Parameter: " + (!param.typeName.empty() ? param.typeName : label);
+}
+
+/**
  * @brief Adds parameter inlay hints for matched parameters and arguments.
  * @param[in] parameters Matched callee parameter signatures.
  * @param[in] args Parsed call arguments.
@@ -1226,12 +1229,13 @@ void AddParameterHints(const std::vector<analysis::ParameterInformation>& parame
         const auto& param = parameters[i];
         const auto& arg = args[i];
 
-        if (arg.isNamed || param.name.empty() || param.name == "...")
+        if (arg.isNamed || IsVarargParameter(param))
         {
             continue;
         }
 
-        if (request.suppressWhenArgumentMatchesName && arg.text == param.name)
+        std::string label = ResolveParameterLabel(param);
+        if (label.empty() || (request.suppressWhenArgumentMatchesName && arg.text == label))
         {
             continue;
         }
@@ -1240,17 +1244,26 @@ void AddParameterHints(const std::vector<analysis::ParameterInformation>& parame
         {
             lsp::InlayHint hint;
             hint.position = arg.hintPosition;
-            std::string label = param.name;
             if (request.maxLength > 0 && label.length() > request.maxLength)
             {
                 label = label.substr(0, request.maxLength) + "...";
             }
-            hint.label = label + ":";
+            lsp::InlayHintLabelPart part;
+            part.value = label + ":";
+            part.tooltip = FormatParameterTooltip(param, label);
+            if (!ts_node_is_null(arg.exprNode))
+            {
+                TSPoint startPoint = ts_node_start_point(arg.exprNode);
+                TSPoint endPoint = ts_node_end_point(arg.exprNode);
+                lsp::Range argRange{lsp::Position{startPoint.row, startPoint.column},
+                                    lsp::Position{endPoint.row, endPoint.column}};
+                part.location = lsp::Location{lsp::DocumentUri::parse(request.uri), argRange};
+            }
+            hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
             hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
             hint.paddingRight = true;
             hint.paddingLeft = false;
-            hint.tooltip = param.name.empty() ? ("Parameter: " + param.typeName)
-                                              : ("Parameter: " + param.typeName + " " + param.name);
+            hint.tooltip = FormatParameterTooltip(param, label);
             hints.push_back(std::move(hint));
         }
     }
@@ -1273,6 +1286,15 @@ struct CallArgPosition
     TSNode startNode;
     TSNode endNode;
     int boundParamIndex = -1;
+};
+
+/**
+ * @brief Bundles formatted label text and hover tooltip for an omitted parameter hint.
+ */
+struct OmittedParamHint
+{
+    std::string label;
+    std::string tooltip;
 };
 
 /**
@@ -1382,11 +1404,11 @@ void EmitEmptyListOmittedHint(TSNode argListNode, const std::string& labelText, 
  * @brief Emits an omitted parameter hint into a non-empty argument list.
  * @param[in] argPositions Mapped call argument positions.
  * @param[in] paramIndex Index of the omitted parameter.
- * @param[in] labelText Formatted parameter label text.
+ * @param[in] hintInfo Formatted parameter label text and hover tooltip.
  * @param[in,out] ctx Bundled request and hints context.
  */
 void EmitArgListOmittedHint(const std::vector<CallArgPosition>& argPositions, size_t paramIndex,
-                            const std::string& labelText, OmittedHintContext& ctx)
+                            const OmittedParamHint& hintInfo, OmittedHintContext& ctx)
 {
     const CallArgPosition* nextArg = nullptr;
     for (const auto& ap : argPositions)
@@ -1404,7 +1426,7 @@ void EmitArgListOmittedHint(const std::vector<CallArgPosition>& argPositions, si
         lsp::Position pos{pt.row, pt.column};
         if (IsPositionInRange(pos, ctx.request.range))
         {
-            ctx.hints.push_back(MakeOmittedDefaultHint(pos, labelText + ", ", ""));
+            ctx.hints.push_back(MakeOmittedDefaultHint(pos, hintInfo.label + ", ", hintInfo.tooltip));
         }
     }
     else
@@ -1413,7 +1435,7 @@ void EmitArgListOmittedHint(const std::vector<CallArgPosition>& argPositions, si
         lsp::Position pos{pt.row, pt.column};
         if (IsPositionInRange(pos, ctx.request.range))
         {
-            ctx.hints.push_back(MakeOmittedDefaultHint(pos, ", " + labelText, ""));
+            ctx.hints.push_back(MakeOmittedDefaultHint(pos, ", " + hintInfo.label, hintInfo.tooltip));
         }
     }
 }
@@ -1448,23 +1470,24 @@ void AddOmittedDefaultArgumentHints(const std::vector<analysis::ParameterInforma
             continue;
         }
         const auto& param = parameters[p];
-        if (param.defaultValue.empty() || param.name.empty() || param.name == "...")
+        if (param.defaultValue.empty() || param.name.empty() || IsVarargParameter(param))
         {
             continue;
         }
 
         std::string labelText = FormatOmittedDefaultLabel(param, request.omittedDefaultArguments, request.maxLength);
         std::string tooltip = "Default parameter: " + param.typeName + " " + param.name + " = " + param.defaultValue;
+        OmittedParamHint hintInfo{std::move(labelText), std::move(tooltip)};
 
         if (argPositions.empty())
         {
-            std::string fullLabel = isFirstInEmptyList ? labelText : (", " + labelText);
-            EmitEmptyListOmittedHint(argListNode, fullLabel, tooltip, ctx);
+            std::string fullLabel = isFirstInEmptyList ? hintInfo.label : (", " + hintInfo.label);
+            EmitEmptyListOmittedHint(argListNode, fullLabel, hintInfo.tooltip, ctx);
             isFirstInEmptyList = false;
         }
         else
         {
-            EmitArgListOmittedHint(argPositions, p, labelText, ctx);
+            EmitArgListOmittedHint(argPositions, p, hintInfo, ctx);
         }
     }
 }

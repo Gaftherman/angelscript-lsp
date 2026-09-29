@@ -66,6 +66,50 @@ std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, cons
 using DeclRangeSet = ankerl::unordered_dense::set<std::tuple<std::string, uint32_t, uint32_t>>;
 
 /**
+ * @brief Checks if a container symbol is a class or interface rather than a namespace.
+ * @param[in] container Name of the container.
+ * @param[in] symbolTable Global symbol table.
+ * @return True if container is a class or interface.
+ */
+bool IsContainerClass(std::string_view container, const analysis::SymbolTable& symbolTable)
+{
+    auto syms = symbolTable.FindSymbols(std::string(container));
+    for (const auto& s : syms)
+    {
+        if (s.type == analysis::SymbolType::Class || s.type == analysis::SymbolType::Interface)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Checks whether a reference at given line in fileUri is inside a named namespace.
+ * @param[in] fileUri Document URI.
+ * @param[in] line Reference line.
+ * @param[in] nsName Namespace name.
+ * @param[in] symbolTable Global symbol table.
+ * @return True if inside namespace block.
+ */
+bool IsInsideNamespace(const std::string& fileUri, uint32_t line, const std::string& nsName,
+                       const analysis::SymbolTable& symbolTable)
+{
+    auto syms = symbolTable.FindSymbols(nsName);
+    for (const auto& s : syms)
+    {
+        if (s.type == analysis::SymbolType::Namespace && s.fileUri == fileUri)
+        {
+            if (line >= s.startLine && line <= s.endLine)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
  * @brief Criteria bundle for filtering and collecting symbol references across scopes.
  */
 struct ReferenceCollectionCriteria
@@ -74,6 +118,7 @@ struct ReferenceCollectionCriteria
     const std::vector<analysis::Symbol>& group;
     const ankerl::unordered_dense::set<std::string>& compatibleClasses;
     const DeclRangeSet& allDeclRanges;
+    const std::string& targetNamespace;
     analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
     bool isFunction = false;
     size_t minArgs = 0;
@@ -222,6 +267,10 @@ std::string ResolveObjectTextType(const std::string& oText, const analysis::Scop
  */
 std::string GetMemberObjectText(const CodeLensRequest& request, const analysis::LocalReference& ref)
 {
+    if (!request.tree || request.sourceCode.empty())
+    {
+        return "";
+    }
     TSNode rootNode = ts_tree_root_node(request.tree);
     TSPoint pt = {ref.startLine, ref.startCharacter};
     TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
@@ -230,11 +279,20 @@ std::string GetMemberObjectText(const CodeLensRequest& request, const analysis::
         return "";
     }
     TSNode exprParent = ts_node_parent(refNode);
-    if (ts_node_is_null(exprParent) || std::string_view(ts_node_type(exprParent)) != "member_expression")
+    if (ts_node_is_null(exprParent))
     {
         return "";
     }
-    TSNode objNode = parser::GetChildByField(exprParent, parser::fields::Object);
+    TSNode objNode{};
+    std::string_view parentType = ts_node_type(exprParent);
+    if (parentType == "member_expression")
+    {
+        objNode = parser::GetChildByField(exprParent, parser::fields::Object);
+    }
+    else if (parentType == "scoped_identifier")
+    {
+        objNode = ts_node_named_child(exprParent, 0);
+    }
     if (ts_node_is_null(objNode))
     {
         return "";
@@ -361,8 +419,25 @@ bool IsValidAccess(const std::string& fileUri, const analysis::LocalReference& r
 
     if (ref.isMemberAccess)
     {
+        if (!criteria.targetNamespace.empty())
+        {
+            std::string q = GetMemberObjectText(criteria.request, ref);
+            if (q == criteria.targetNamespace || q.ends_with("::" + criteria.targetNamespace))
+            {
+                return true;
+            }
+        }
         return false;
     }
+
+    if (!criteria.targetNamespace.empty())
+    {
+        if (!IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable))
+        {
+            return false;
+        }
+    }
+
     const analysis::LocalDefinition* localShadow = analysis::ResolveInScope(scope, ref.name);
     return !(localShadow && (localShadow->kind == analysis::LocalDefinitionKind::Parameter ||
                              localShadow->kind == analysis::LocalDefinitionKind::Variable));
@@ -378,6 +453,7 @@ struct SymbolLensTarget
     const std::vector<analysis::Symbol>& group;
     ankerl::unordered_dense::set<std::string> compatibleClasses;
     DeclRangeSet allDeclRanges;
+    std::string targetNamespace;
     analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
     bool isFunction = false;
     size_t minArgs = 0;
@@ -425,6 +501,7 @@ void ProcessScopeReferencesBatch(const std::string& fileUri, const analysis::Sco
                 .group = target.group,
                 .compatibleClasses = target.compatibleClasses,
                 .allDeclRanges = target.allDeclRanges,
+                .targetNamespace = target.targetNamespace,
                 .targetAccess = target.targetAccess,
                 .isFunction = target.isFunction,
                 .minArgs = target.minArgs,
@@ -850,7 +927,7 @@ ankerl::unordered_dense::set<std::string> CollectCompatibleClasses(const std::ve
     ankerl::unordered_dense::set<std::string> compatibleClasses;
     for (const auto& s : symGroup)
     {
-        if (!s.containerName.empty())
+        if (!s.containerName.empty() && IsContainerClass(s.containerName, ctx.symbolTable))
         {
             compatibleClasses.insert(s.containerName);
             compatibleClasses.insert(std::string(analysis::LastScopeSegment(s.containerName)));
@@ -919,6 +996,13 @@ DeclRangeSet CollectAllDeclRanges(const std::string& symName, const std::vector<
     for (const auto& c : compatibleClasses)
     {
         AddSymbolDeclRanges(symbolTable.FindSymbols(c + "::" + symName), allDeclRanges);
+    }
+    for (const auto& s : symGroup)
+    {
+        if (!s.containerName.empty())
+        {
+            AddSymbolDeclRanges(symbolTable.FindSymbols(s.containerName + "::" + symName), allDeclRanges);
+        }
     }
     AddSymbolDeclRanges(symGroup, allDeclRanges);
     return allDeclRanges;
@@ -1137,12 +1221,19 @@ SymbolLensTarget CreateFunctionOrVariableTarget(const RangeKey& key, const analy
     auto compatibleClasses = CollectCompatibleClasses(symGroup, sym, targetAccess, ctx);
     auto allDeclRanges = CollectAllDeclRanges(sym.name, symGroup, compatibleClasses, ctx.symbolTable);
 
+    std::string targetNamespace;
+    if (!sym.containerName.empty() && !IsContainerClass(sym.containerName, ctx.symbolTable))
+    {
+        targetNamespace = sym.containerName;
+    }
+
     return SymbolLensTarget{
         .key = key,
         .targetName = sym.name,
         .group = symGroup,
         .compatibleClasses = std::move(compatibleClasses),
         .allDeclRanges = std::move(allDeclRanges),
+        .targetNamespace = std::move(targetNamespace),
         .targetAccess = targetAccess,
         .isFunction = isFunction,
         .minArgs = minArgs,
@@ -1170,6 +1261,7 @@ SymbolLensTarget CreateClassTarget(const RangeKey& key, const analysis::Symbol& 
         .group = symGroup,
         .compatibleClasses = {},
         .allDeclRanges = std::move(allDeclRanges),
+        .targetNamespace = {},
         .targetAccess = analysis::AccessModifier::Public,
         .isFunction = false,
         .minArgs = 0,

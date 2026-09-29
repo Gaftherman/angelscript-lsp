@@ -3877,7 +3877,8 @@ TSNode ResolveArgumentListNode(TSNode node)
     {
         return node;
     }
-    if (nodeType == "call_expression" || nodeType == "construct_call_expression")
+    if (nodeType == "call_expression" || nodeType == "construct_call_expression" ||
+        nodeType == "variable_declarator")
     {
         TSNode args = parser::GetChildByField(node, parser::fields::Arguments);
         if (!ts_node_is_null(args))
@@ -4003,6 +4004,56 @@ std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const Express
         }
     }
     return types;
+}
+
+std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TSNode contextNode,
+                                                 std::string_view sourceCode, const SymbolTable& symbolTable)
+{
+    std::vector<Symbol> candidateSymbols;
+    const std::string ctorName = baseName + "::" + std::string(LastScopeSegment(baseName));
+
+    auto ctorSyms = symbolTable.FindSymbols(ctorName);
+    for (const auto& s : ctorSyms)
+    {
+        if (s.type == SymbolType::Function)
+        {
+            candidateSymbols.push_back(s);
+        }
+    }
+
+    if (candidateSymbols.empty())
+    {
+        auto scopeSyms = FindSymbolsInScope(baseName, contextNode, sourceCode, symbolTable);
+        for (const auto& s : scopeSyms)
+        {
+            if (s.type == SymbolType::Class)
+            {
+                std::string qName = s.qualifiedName.empty() ? s.name : s.qualifiedName;
+                auto qCtors = symbolTable.FindSymbols(qName + "::" + s.name);
+                for (const auto& cs : qCtors)
+                {
+                    if (cs.type == SymbolType::Function)
+                    {
+                        candidateSymbols.push_back(cs);
+                    }
+                }
+            }
+        }
+    }
+
+    if (candidateSymbols.empty())
+    {
+        auto fnSyms = symbolTable.FindSymbols(baseName);
+        for (const auto& s : fnSyms)
+        {
+            if (s.type == SymbolType::Function)
+            {
+                candidateSymbols.push_back(s);
+            }
+        }
+    }
+
+    return candidateSymbols;
 }
 
 namespace

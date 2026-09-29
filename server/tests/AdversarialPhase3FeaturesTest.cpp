@@ -100,6 +100,15 @@ namespace
         {
             return std::get<std::string>(hint.label);
         }
+        if (std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+        {
+            std::string res;
+            for (const auto& part : std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+            {
+                res += part.value;
+            }
+            return res;
+        }
         return "";
     }
 }

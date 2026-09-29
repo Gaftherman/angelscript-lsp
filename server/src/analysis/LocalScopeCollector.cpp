@@ -23,6 +23,8 @@ LocalScopeCollector::LocalScopeCollector(angel_lsp::utils::LspLogger* logger) : 
 
     m_symMemberExpression = ts_language_symbol_for_name(lang, "member_expression",
                                                         static_cast<uint32_t>(strlen("member_expression")), true);
+    m_symScopedIdentifier = ts_language_symbol_for_name(lang, "scoped_identifier",
+                                                        static_cast<uint32_t>(strlen("scoped_identifier")), true);
     m_symFuncDeclaration =
         ts_language_symbol_for_name(lang, "func_declaration", static_cast<uint32_t>(strlen("func_declaration")), true);
     m_symLambdaExpression = ts_language_symbol_for_name(lang, "lambda_expression",
@@ -387,15 +389,21 @@ static bool IsTypeSpecifierContext(TSNode node)
     return false;
 }
 
-static bool IsMemberAccessNode(TSNode node, TSNode parent, TSSymbol memberExprSym)
+static bool IsMemberAccessNode(TSNode node, TSNode parent, TSSymbol memberExprSym, TSSymbol scopedIdSym)
 {
-    if (ts_node_symbol(parent) != memberExprSym)
+    if (ts_node_symbol(parent) == memberExprSym)
     {
-        return false;
+        TSNode memberField = parser::GetChildByField(parent, parser::fields::Member);
+        return ts_node_eq(memberField, node) ||
+               (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(node));
     }
-    TSNode memberField = parser::GetChildByField(parent, parser::fields::Member);
-    return ts_node_eq(memberField, node) ||
-           (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(node));
+    if (ts_node_symbol(parent) == scopedIdSym)
+    {
+        TSNode firstChild = ts_node_named_child(parent, 0);
+        return !ts_node_is_null(firstChild) && !ts_node_eq(firstChild, node) &&
+               ts_node_start_byte(firstChild) != ts_node_start_byte(node);
+    }
+    return false;
 }
 
 /**
@@ -461,7 +469,7 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
     {
         ref.isNamedArgument = IsNamedArgumentNode(capture.node, parent);
         ref.isTypeSpecifier = IsTypeSpecifierContext(capture.node);
-        ref.isMemberAccess = IsMemberAccessNode(capture.node, parent, m_symMemberExpression);
+        ref.isMemberAccess = IsMemberAccessNode(capture.node, parent, m_symMemberExpression, m_symScopedIdentifier);
         DetermineCallReferenceInfo(capture.node, parent, ref);
     }
 

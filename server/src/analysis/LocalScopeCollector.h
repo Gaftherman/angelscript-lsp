@@ -58,6 +58,7 @@ class LocalScopeCollector
     /** @brief Cached grammar symbol for member_expression, used to flag a reference as a member access (see
      * ScopeTree.h::LocalReference::isMemberAccess). */
     TSSymbol m_symMemberExpression = 0;
+    TSSymbol m_symScopedIdentifier = 0;
 
     /** @brief Cached grammar symbols used to set Scope::kind and Scope::isFunctionScope (see ScopeTree.h). */
     TSSymbol m_symFuncDeclaration = 0;

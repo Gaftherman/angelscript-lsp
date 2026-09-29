@@ -732,6 +732,18 @@ size_t CountCallArguments(TSNode argumentList);
 std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const ExpressionTypeContext& ctx);
 
 /**
+ * @brief Collects candidate constructor symbols for direct-initialization.
+ * @param[in] baseName Clean base type name.
+ * @param[in] contextNode AST variable_declarator or context node.
+ * @param[in] sourceCode Document source text.
+ * @param[in] symbolTable Symbol table for symbol resolution.
+ * @return Vector of candidate constructor symbols.
+ */
+std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TSNode contextNode,
+                                                 std::string_view sourceCode, const SymbolTable& symbolTable);
+
+
+/**
  * @brief Determines the zero-based active parameter index for a call given the cursor offset.
  *        Correctly balances nesting delimiters (parentheses, brackets, braces, template angles)
  *        and skips comments and string literals even when AST is corrupted by parser recovery.

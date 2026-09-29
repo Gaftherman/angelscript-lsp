@@ -2,6 +2,32 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.25] - 2026-09-29
+
+### Cross-File Namespace References, Inlay Hint Ranges, Direct-Init Constructor Hover, and Disambiguation
+
+- Cross-File Namespace References & CodeLens:
+  - Fixed CodeLens and Go to References returning 0 references across files in the same namespace by validating namespace containment in `CodeLensHandler` and `TargetResolution`.
+  - Added `IsContainerClass` to avoid classifying namespaces as classes during compatible class collection.
+- Inlay Hints:
+  - Bound `InlayHintLabelPart` location ranges to the complete argument expression AST node (e.g. `NetworkMessages::ShieldRic`), preventing truncation to the leading namespace.
+  - Added hover tooltips for omitted default parameter inlay hints in non-empty argument lists.
+  - Added fallback type inlay hints for nameless wildcard parameters (`?& in`).
+- Hover Resolution:
+  - Elevated `CollectConstructorCandidates` and `ResolveArgumentListNode` to Layer 2 `SemanticHelpers`.
+  - Hovering a direct-initialized variable declaration now displays constructor overload signatures and doc comments while preserving standard local variable hover for downstream member usages.
+  - Added asset and file hover for string literals with file status and size formatting, and character length metrics for non-path literals.
+  - Filtered duplicate `SymbolType::CallReference` entries in hover tooltips.
+  - Implemented container disambiguation between classes and namespaces sharing identical names based on member presence.
+- Semantic Tokens:
+  - Corrected semantic token mapping for bare enum members to `Type_EnumMember`.
+- Method vs Enum Member Disambiguation:
+  - Enhanced `LocalScopeCollector` and `HoverHandler` to treat right-hand side of `scoped_identifier` as member access, preventing enclosing class methods from shadowing enum members with identical names.
+- Architecture & Quality Guardrails:
+  - Refactored `HoverHandler` to use flat cursor traversal (`TSTreeCursor`), strictly satisfying Prohibition 6.
+  - Refactored `TryHoverLocalDefinition` to CCN $\le 12$ and $\le 48$ lines of code, satisfying Prohibition 8.
+  - Preserved $\le 25$ heap allocation ceiling in warm hover queries via zero-copy `std::string_view` parameter forwarding.
+
 ## [0.9.24] - 2026-09-28
 
 ### Auto & Auto@ Type Deduction, False-Positive Member Diagnostics Fix, and Inlay Hints Restoration
