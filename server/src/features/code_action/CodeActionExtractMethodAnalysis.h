@@ -7,21 +7,27 @@ namespace angel_lsp::features
 
 struct ExtractMethodStatements
 {
-    TSNode fnNode;
-    TSNode classNode;
-    std::vector<TSNode> selectedStmts;
+    TSNode fnNode{};
+    TSNode classNode{};
+    std::vector<TSNode> selectedStmts{};
     uint32_t startByte = 0;
     uint32_t endByte = 0;
-    TSPoint firstStart = {0, 0};
-    TSPoint lastEnd = {0, 0};
-    std::string selectedCode;
+    TSPoint firstStart{};
+    TSPoint lastEnd{};
+    std::string selectedCode{};
 };
 
 struct VarInfo
 {
-    std::string name;
-    std::string typeName;
+    std::string name{};
+    std::string typeName{};
     bool declaredInside = false;
+
+    VarInfo() = default;
+    VarInfo(std::string n, std::string t, bool d = false)
+        : name(std::move(n)), typeName(std::move(t)), declaredInside(d)
+    {
+    }
 };
 
 struct ExtractedMethodVariables

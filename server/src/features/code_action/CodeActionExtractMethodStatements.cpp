@@ -18,8 +18,8 @@ namespace
  */
 TSNode FindEnclosingFunctionNode(TSNode rootNode, const lsp::Range& range)
 {
-    TSPoint startPt = {range.start.line, range.start.character};
-    TSPoint endPt = {range.end.line, range.end.character};
+    TSPoint startPt{static_cast<uint32_t>(range.start.line), static_cast<uint32_t>(range.start.character)};
+    TSPoint endPt{static_cast<uint32_t>(range.end.line), static_cast<uint32_t>(range.end.character)};
     TSNode selNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
     TSNode fnNode = selNode;
     while (!ts_node_is_null(fnNode) && std::string_view(ts_node_type(fnNode)) != "func_declaration")
@@ -164,10 +164,10 @@ TSNode FindEnclosingClassNode(TSNode fnNode)
 
 TSNode FindInnermostStatementBlock(TSNode rootNode, const lsp::Range& range, TSNode fnNode)
 {
-    TSPoint startPt = {range.start.line, range.start.character};
-    TSPoint endPt = {range.end.line, range.end.character};
+    TSPoint startPt{static_cast<uint32_t>(range.start.line), static_cast<uint32_t>(range.start.character)};
+    TSPoint endPt{static_cast<uint32_t>(range.end.line), static_cast<uint32_t>(range.end.character)};
     TSNode node = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
-    while (!ts_node_is_null(node) && node.id != fnNode.id)
+    while (!ts_node_is_null(node) && !ts_node_eq(node, fnNode))
     {
         if (std::string_view(ts_node_type(node)) == "statement_block")
         {
@@ -221,7 +221,12 @@ std::vector<VarInfo> CollectMethodInputs(const ExtractMethodStatements& stmts, c
     std::vector<VarInfo> inputParams;
     ankerl::unordered_dense::set<std::string> seenInputs;
 
-    std::vector<const analysis::Scope*> worklist = {fnScope};
+    if (!fnScope)
+    {
+        return inputParams;
+    }
+    std::vector<const analysis::Scope*> worklist;
+    worklist.push_back(fnScope);
     while (!worklist.empty())
     {
         const analysis::Scope* sc = worklist.back();

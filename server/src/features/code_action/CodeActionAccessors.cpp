@@ -123,7 +123,7 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TS
 {
     TSNode varDecl = leaf;
     while (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) != "variable_declaration" &&
-           varDecl.id != classBody.id)
+           !ts_node_eq(varDecl, classBody))
     {
         varDecl = ts_node_parent(varDecl);
     }

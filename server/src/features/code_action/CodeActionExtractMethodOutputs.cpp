@@ -10,22 +10,28 @@ namespace angel_lsp::features
 namespace
 {
 
-void CheckAssignmentMutation(TSNode curr, std::string_view sourceCode,
-                             ankerl::unordered_dense::set<std::string>& mutatedVars)
+void InsertIfIdentifier(TSNode node, std::string_view sourceCode,
+                        ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
-    TSNode left = parser::GetChildByField(curr, parser::fields::Left);
-    if (ts_node_is_null(left))
+    if (ts_node_is_null(node))
     {
         return;
     }
-    std::string_view lType = ts_node_type(left);
-    if (lType == "identifier" || lType == "scoped_identifier")
+    std::string_view t = ts_node_type(node);
+    if (t == "identifier" || t == "scoped_identifier")
     {
-        if (std::string varName = GetNodeText(left, sourceCode); !varName.empty())
+        if (std::string varName = GetNodeText(node, sourceCode); !varName.empty())
         {
             mutatedVars.insert(std::move(varName));
         }
     }
+}
+
+void CheckAssignmentMutation(TSNode curr, std::string_view sourceCode,
+                             ankerl::unordered_dense::set<std::string>& mutatedVars)
+{
+    TSNode left = parser::GetChildByField(curr, parser::fields::Left);
+    InsertIfIdentifier(left, sourceCode, mutatedVars);
 }
 
 void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
@@ -33,22 +39,10 @@ void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
 {
     TSNode opNode = parser::GetChildByField(curr, parser::fields::Operator);
     std::string op = GetNodeText(opNode, sourceCode);
-    if (op != "++" && op != "--")
+    if (op == "++" || op == "--")
     {
-        return;
-    }
-    TSNode arg = parser::GetChildByField(curr, parser::fields::Operand);
-    if (ts_node_is_null(arg))
-    {
-        return;
-    }
-    std::string_view aType = ts_node_type(arg);
-    if (aType == "identifier" || aType == "scoped_identifier")
-    {
-        if (std::string varName = GetNodeText(arg, sourceCode); !varName.empty())
-        {
-            mutatedVars.insert(std::move(varName));
-        }
+        TSNode arg = parser::GetChildByField(curr, parser::fields::Operand);
+        InsertIfIdentifier(arg, sourceCode, mutatedVars);
     }
 }
 
@@ -63,7 +57,7 @@ void CheckCallMutation(TSNode curr, std::string_view sourceCode, ankerl::unorder
     for (uint32_t i = 0; i < argCnt; ++i)
     {
         TSNode arg = ts_node_named_child(argsNode, i);
-        std::string argText = GetNodeText(arg, sourceCode);
+        std::string_view argText = parser::NodeText(arg, sourceCode);
         if (argText.starts_with("&out ") || argText.starts_with("&inout ") || argText.starts_with("out ") ||
             argText.starts_with("inout "))
         {
@@ -72,13 +66,7 @@ void CheckCallMutation(TSNode curr, std::string_view sourceCode, ankerl::unorder
             {
                 idNode = ts_node_named_child(arg, ts_node_named_child_count(arg) - 1);
             }
-            if (!ts_node_is_null(idNode))
-            {
-                if (std::string varName = GetNodeText(idNode, sourceCode); !varName.empty())
-                {
-                    mutatedVars.insert(std::move(varName));
-                }
-            }
+            InsertIfIdentifier(idNode, sourceCode, mutatedVars);
         }
     }
 }
@@ -101,9 +89,14 @@ void CheckNodeMutations(TSNode curr, std::string_view sourceCode,
     }
 }
 
-bool IsVariableUsedAfter(const analysis::Scope* fnScope, const std::string& name, TSPoint lastEnd)
+bool IsVariableReferencedAfter(const analysis::Scope* fnScope, const std::string& name, uint32_t line, uint32_t col = 0)
 {
-    std::vector<const analysis::Scope*> worklist = {fnScope};
+    if (!fnScope)
+    {
+        return false;
+    }
+    std::vector<const analysis::Scope*> worklist;
+    worklist.push_back(fnScope);
     while (!worklist.empty())
     {
         const analysis::Scope* s = worklist.back();
@@ -116,7 +109,7 @@ bool IsVariableUsedAfter(const analysis::Scope* fnScope, const std::string& name
         {
             if (!r.isMemberAccess && r.name == name)
             {
-                if (r.startLine > lastEnd.row || (r.startLine == lastEnd.row && r.startCharacter >= lastEnd.column))
+                if (r.startLine > line || (r.startLine == line && r.startCharacter >= col))
                 {
                     return true;
                 }
@@ -132,7 +125,12 @@ bool IsVariableUsedAfter(const analysis::Scope* fnScope, const std::string& name
 
 const analysis::LocalDefinition* FindDefinitionInScopeTree(const analysis::Scope* root, const std::string& name)
 {
-    std::vector<const analysis::Scope*> worklist = {root};
+    if (!root)
+    {
+        return nullptr;
+    }
+    std::vector<const analysis::Scope*> worklist;
+    worklist.push_back(root);
     while (!worklist.empty())
     {
         const analysis::Scope* s = worklist.back();
@@ -201,7 +199,7 @@ bool IsValidMutatedOutput(const MethodOutputContext& ctx, const analysis::LocalD
         (def->endLine < ctx.stmts.firstStart.row ||
          (def->endLine == ctx.stmts.firstStart.row && def->endCharacter <= ctx.stmts.firstStart.column) ||
          def->kind == analysis::LocalDefinitionKind::Parameter);
-    return declaredBefore && IsVariableUsedAfter(ctx.fnScope, def->name, ctx.stmts.lastEnd);
+    return declaredBefore && IsVariableReferencedAfter(ctx.fnScope, def->name, ctx.stmts.lastEnd.row, ctx.stmts.lastEnd.column);
 }
 
 void CollectMutatedOutputs(const MethodOutputContext& ctx, const ankerl::unordered_dense::set<std::string>& mutatedVars,
@@ -214,42 +212,21 @@ void CollectMutatedOutputs(const MethodOutputContext& ctx, const ankerl::unorder
         {
             seenOutputs.insert(def->name);
             std::string tName = def->typeName.empty() ? "auto" : def->typeName;
-            outputVars.push_back({def->name, std::move(tName), false});
+            outputVars.emplace_back(def->name, std::move(tName), false);
         }
     }
-}
-
-bool IsVariableUsedAfterLine(const analysis::Scope* fnScope, const std::string& name, uint32_t line)
-{
-    std::vector<const analysis::Scope*> worklist = {fnScope};
-    while (!worklist.empty())
-    {
-        const analysis::Scope* s = worklist.back();
-        worklist.pop_back();
-        if (!s)
-        {
-            continue;
-        }
-        for (const auto& r : s->references)
-        {
-            if (!r.isMemberAccess && r.name == name && r.startLine > line)
-            {
-                return true;
-            }
-        }
-        for (const auto& c : s->children)
-        {
-            worklist.push_back(c.get());
-        }
-    }
-    return false;
 }
 
 void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope,
                                          ankerl::unordered_dense::set<std::string>& seenOutputs,
                                          std::vector<VarInfo>& outputVars)
 {
-    std::vector<const analysis::Scope*> worklist = {fnScope};
+    if (!fnScope)
+    {
+        return;
+    }
+    std::vector<const analysis::Scope*> worklist;
+    worklist.push_back(fnScope);
     while (!worklist.empty())
     {
         const analysis::Scope* sc = worklist.back();
@@ -262,11 +239,11 @@ void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& stmts, c
         {
             if (def.startLine >= stmts.firstStart.row && def.endLine <= stmts.lastEnd.row)
             {
-                if (IsVariableUsedAfterLine(fnScope, def.name, stmts.lastEnd.row) && !seenOutputs.contains(def.name))
+                if (IsVariableReferencedAfter(fnScope, def.name, stmts.lastEnd.row + 1, 0) && !seenOutputs.contains(def.name))
                 {
                     seenOutputs.insert(def.name);
                     std::string tName = def.typeName.empty() ? "auto" : def.typeName;
-                    outputVars.push_back({def.name, std::move(tName), true});
+                    outputVars.emplace_back(def.name, std::move(tName), true);
                 }
             }
         }
@@ -289,39 +266,9 @@ ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const std::vec
         {
             continue;
         }
-        TSTreeCursor cursor = ts_tree_cursor_new(stmt);
-        bool visiting = true;
-        while (visiting)
-        {
-            TSNode curr = ts_tree_cursor_current_node(&cursor);
+        parser::ForEachDescendantNode(stmt, [&](TSNode curr) {
             CheckNodeMutations(curr, sourceCode, mutatedVars);
-            if (ts_tree_cursor_goto_first_child(&cursor))
-            {
-                continue;
-            }
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                continue;
-            }
-            bool backtracked = false;
-            while (ts_tree_cursor_goto_parent(&cursor))
-            {
-                if (ts_tree_cursor_current_node(&cursor).id == stmt.id)
-                {
-                    break;
-                }
-                if (ts_tree_cursor_goto_next_sibling(&cursor))
-                {
-                    backtracked = true;
-                    break;
-                }
-            }
-            if (!backtracked)
-            {
-                visiting = false;
-            }
-        }
-        ts_tree_cursor_delete(&cursor);
+        });
     }
     return mutatedVars;
 }
