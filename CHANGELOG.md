@@ -2,6 +2,21 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.26] - 2026-09-29
+
+### Decouple Add-on Classes, Pure Type Configuration, Grammar Node Parity, and Monolith Remediation
+
+- Decouple Add-ons & Type Configuration:
+  - Decoupled add-on classes (`string`, `array`, `dictionary`, `ref`, `weakref`) from virtual machine core primitives, treating them as library types governed purely by client configuration (`types.stringTypeName`, `types.arrayTypeName`, `types.dictionaryTypeName`).
+  - Purged hardcoded string fallbacks (`"string"`, `"array"`, `"dictionary"`) across semantic analysis, inlay hints, completion, and code actions.
+  - Added support for anonymous template/list initializations, anonymous object construction, and dynamic container inspection without static type assumptions.
+- Tree-Sitter Grammar Parity & Linter Fixes:
+  - Corrected invalid grammar node queries in `CompletionHandler` (`translation_unit`, `compound_statement`, `declaration`) to align strictly with Tree-Sitter AngelScript grammar node types (`script`, `statement_block`, `variable_declaration`).
+- Architectural Quality & Anti-Pattern Remediation:
+  - Remediated monolithic files and complex functions exceeding the 300-line ceiling and 15 CCN limits.
+  - Eliminated thread safety vulnerabilities, raw AST pointer leaks, and ad-hoc lexer anti-patterns across `server/src/`.
+  - Added exhaustive invariant-based test suites validating custom type configurations, container instantiation, and anonymous declarations.
+
 ## [0.9.25] - 2026-09-29
 
 ### Cross-File Namespace References, Inlay Hint Ranges, Direct-Init Constructor Hover, and Disambiguation
