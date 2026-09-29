@@ -1,9 +1,10 @@
 #include "features/definition/DefinitionHandler.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
-#include "analysis/overload/ConversionRankingEngine.h"
 #include "analysis/VirtualMixinContext.h"
+#include "analysis/overload/ConversionRankingEngine.h"
 #include "parser/GrammarNames.h"
+#include "utils/IncludeResolver.h"
 #include "utils/Utils.h"
 #include <algorithm>
 #include <cmath>
@@ -408,23 +409,8 @@ std::string_view ExtractLineAt(const std::string& sourceCode, uint32_t targetLin
  */
 std::string ParseIncludePathFromLine(std::string_view line, size_t character)
 {
-    const size_t hash = line.find_first_not_of(" \t");
-    if (hash == std::string_view::npos || line[hash] != '#' || line.compare(hash + 1, 7, "include") != 0)
-    {
-        return "";
-    }
-    size_t openDelim = line.find_first_of("\"<", hash + 8);
-    if (openDelim == std::string_view::npos)
-    {
-        return "";
-    }
-    char closeChar = line[openDelim] == '<' ? '>' : '"';
-    size_t closeDelim = line.find(closeChar, openDelim + 1);
-    if (closeDelim == std::string_view::npos || character < hash || character > closeDelim)
-    {
-        return "";
-    }
-    return std::string(line.substr(openDelim + 1, closeDelim - openDelim - 1));
+    const auto info = angel_lsp::utils::IncludeResolver::ParseSingleLineInclude(line, character);
+    return info ? info->rawPath : std::string{};
 }
 
 /**
@@ -661,9 +647,8 @@ std::optional<std::vector<lsp::Location>> TryResolveMemberDefinition(TSNode node
     const analysis::Scope* scope =
         ctx.rootScope ? FindInnermostScope(ctx.rootScope.get(), ctx.queryLine, ctx.request.position.character)
                       : nullptr;
-    std::string receiverTypeName =
-        analysis::ResolveReceiverType(objectNode, ctx.request.sourceCode, ctx.request.symbolTable,
-                                      {scope, ctx.vCtx.hostClass, ctx.request.uri});
+    std::string receiverTypeName = analysis::ResolveReceiverType(
+        objectNode, ctx.request.sourceCode, ctx.request.symbolTable, {scope, ctx.vCtx.hostClass, ctx.request.uri});
 
     if (receiverTypeName.empty())
     {

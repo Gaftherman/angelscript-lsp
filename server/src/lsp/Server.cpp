@@ -456,6 +456,12 @@ void Server::ApplyEngineInitializationOptions(const std::optional<lsp::LSPAny>& 
             target = *v;
     };
 
+    BindEngineConfiguration(applyBool, applyInt);
+}
+
+void Server::BindEngineConfiguration(const std::function<void(std::string_view, bool&)>& applyBool,
+                                     const std::function<void(std::string_view, int&)>& applyInt)
+{
     applyBool("allowUnsafeReferences", m_config.engine.allowUnsafeReferences);
     applyBool("privatePropAsProtected", m_config.engine.privatePropAsProtected);
     applyBool("disallowGlobalVars", m_config.engine.disallowGlobalVars);

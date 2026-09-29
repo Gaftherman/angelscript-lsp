@@ -573,6 +573,37 @@ bool IncludeResolver::IsWithinRoots(const std::string& normalizedPath, std::span
     return false;
 }
 
+std::optional<SingleLineIncludeInfo> IncludeResolver::ParseSingleLineInclude(std::string_view line, size_t character)
+{
+    const size_t hash = line.find_first_not_of(" \t");
+    if (hash == std::string_view::npos || line[hash] != '#' || line.compare(hash + 1, 7, "include") != 0)
+    {
+        return std::nullopt;
+    }
+
+    const size_t openDelim = line.find_first_of("\"<", hash + 8);
+    if (openDelim == std::string_view::npos)
+    {
+        return std::nullopt;
+    }
+
+    const char closeChar = (line[openDelim] == '<') ? '>' : '"';
+    const size_t closeDelim = line.find(closeChar, openDelim + 1);
+    if (closeDelim == std::string_view::npos)
+    {
+        return std::nullopt;
+    }
+
+    if (character != std::string_view::npos && (character < hash || character > closeDelim))
+    {
+        return std::nullopt;
+    }
+
+    return SingleLineIncludeInfo{hash, openDelim, closeDelim,
+                                 std::string(line.substr(openDelim + 1, closeDelim - openDelim - 1)),
+                                 line[openDelim] == '<'};
+}
+
 std::vector<IncludeDirective> IncludeResolver::ExtractIncludes(std::string_view sourceCode,
                                                                const std::vector<ExcludedLineRange>& excludedLines)
 {

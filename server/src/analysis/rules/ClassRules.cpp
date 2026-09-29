@@ -2,6 +2,7 @@
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
+#include "document/Document.h"
 #include "parser/AngelScriptParser.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/Utils.h"
@@ -698,8 +699,6 @@ void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheckContext
     }
 }
 
-
-
 /** @brief Checks bare function calls without qualifiers. */
 void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state, const DiagnosticContext& ctx)
 {
@@ -745,34 +744,38 @@ void CollectLocalNames(TSNode memNode, TSNode funcBody, std::string_view mixinSo
         }
     }
 
-    parser::ForEachDescendantNode(funcBody, [&](TSNode cur) {
-        if (NodeType(cur) == "variable_declarator")
-        {
-            TSNode vdName = GetChildByField(cur, "name");
-            if (!ts_node_is_null(vdName))
-            {
-                localNames.insert(GetNodeText(vdName, mixinSource));
-            }
-        }
-    });
+    parser::ForEachDescendantNode(funcBody,
+                                  [&](TSNode cur)
+                                  {
+                                      if (NodeType(cur) == "variable_declarator")
+                                      {
+                                          TSNode vdName = GetChildByField(cur, "name");
+                                          if (!ts_node_is_null(vdName))
+                                          {
+                                              localNames.insert(GetNodeText(vdName, mixinSource));
+                                          }
+                                      }
+                                  });
 }
 
 /** @brief Walks statements in a mixin function body using flat TSTreeCursor. */
 void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, FunctionCheckState& state,
                              const DiagnosticContext& ctx)
 {
-    parser::ForEachDescendantNode(funcBody, [&](TSNode cur) {
-        std::string_view curType = NodeType(cur);
+    parser::ForEachDescendantNode(funcBody,
+                                  [&](TSNode cur)
+                                  {
+                                      std::string_view curType = NodeType(cur);
 
-        if (curType == "member_expression")
-        {
-            CheckThisMember(cur, mixinSource, state.mctx, ctx);
-        }
-        else if (curType == "call_expression")
-        {
-            CheckCallMember(cur, mixinSource, state, ctx);
-        }
-    });
+                                      if (curType == "member_expression")
+                                      {
+                                          CheckThisMember(cur, mixinSource, state.mctx, ctx);
+                                      }
+                                      else if (curType == "call_expression")
+                                      {
+                                          CheckCallMember(cur, mixinSource, state, ctx);
+                                      }
+                                  });
 }
 
 /** @brief Checks member declarations inside a mixin body. */
@@ -805,16 +808,8 @@ void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinCheckCon
 struct MixinAstScope
 {
     const TSTree* tree = nullptr;
-    TSTree* allocatedTree = nullptr;
+    document::TreePtr allocatedTree{nullptr, &ts_tree_delete};
     std::unique_ptr<parser::AngelScriptParser> ownedParser;
-
-    ~MixinAstScope()
-    {
-        if (allocatedTree)
-        {
-            ts_tree_delete(allocatedTree);
-        }
-    }
 
     MixinAstScope() = default;
     MixinAstScope(const MixinAstScope&) = delete;
@@ -845,8 +840,8 @@ MixinAstScope AcquireMixinTree(const Symbol& mixinSym, const std::string& mixinS
     else
     {
         scope.ownedParser = std::make_unique<parser::AngelScriptParser>();
-        scope.allocatedTree = scope.ownedParser->Parse(mixinSource);
-        scope.tree = scope.allocatedTree;
+        scope.allocatedTree = document::MakeTreePtr(scope.ownedParser->Parse(mixinSource));
+        scope.tree = scope.allocatedTree.get();
     }
     return scope;
 }
@@ -888,12 +883,8 @@ void CheckSingleMixinInstantiation(const std::string& mixinName, const Symbol& s
     if (!ts_node_is_null(bodyNode))
     {
         ankerl::unordered_dense::set<std::string> reportedMissingMembers;
-        MixinCheckContext mctx{baseMembers.hostClassName,
-                               mixinSym,
-                               hostRange,
-                               baseMembers.hostMembers,
-                               mixinSelfMembers,
-                               reportedMissingMembers};
+        MixinCheckContext mctx{baseMembers.hostClassName, mixinSym,         hostRange,
+                               baseMembers.hostMembers,   mixinSelfMembers, reportedMissingMembers};
         CheckMixinBody(bodyNode, mixinSource, mctx, ctx);
     }
 }

@@ -2,6 +2,7 @@
 
 #include "analysis/DiagnosticContext.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/Primitives.h"
 #include <ankerl/unordered_dense.h>
@@ -145,20 +146,6 @@ bool IsReservedKeyword(const std::string& name);
  * either qualified or it is not, and that is one question.
  */
 /**
- * @brief Splits a template argument list at the commas that are not inside a nested `<...>`.
- *
- * `int, array<int, float>, string` gives three, not four: the comma inside the inner list
- * belongs to it. Each piece comes back trimmed, and empty pieces are KEPT - `int,,string` gives
- * three, the middle one empty - because the two callers disagree about what to do with one and
- * that disagreement is theirs to keep. ParseTemplateType drops them; BindTemplateArguments
- * counts them, which is how it notices an argument list that does not match its parameters.
- *
- * The depth counter was written twice, here and in TypeConversionChecker, and this is the part
- * they really shared.
- */
-[[nodiscard]] std::vector<std::string> SplitTemplateArguments(std::string_view inner);
-
-/**
  * @brief Returns the last unqualified identifier segment of a scoped name.
  * @param[in] name Qualified or unqualified identifier.
  * @return View of the last segment without allocations.
@@ -171,20 +158,6 @@ bool IsReservedKeyword(const std::string& name);
  * @return Parent scope view, or empty view if name contains no `::`.
  */
 [[nodiscard]] std::string_view ParentScope(std::string_view name) noexcept;
-
-/**
- * @brief Checks if a name contains any scope resolution qualifier (`::`).
- * @param[in] name Identifier or type name to inspect.
- * @return True if qualified; false if bare.
- */
-[[nodiscard]] bool HasScopeQualifier(std::string_view name) noexcept;
-
-/**
- * @brief Splits a scope-qualified identifier into individual segment names.
- * @param[in] name Qualified name (e.g. "A::B::C").
- * @return Ordered list of scope segments (e.g. {"A", "B", "C"}).
- */
-[[nodiscard]] std::vector<std::string> SplitScopeSegments(std::string_view name);
 
 [[nodiscard]] constexpr bool IsFloatingPointPrimitive(std::string_view typeName) noexcept
 {
@@ -289,7 +262,6 @@ bool IsListConstructorSignature(const FunctionSignature& fn);
  */
 bool IsListConstructor(const Symbol& sym);
 
-
 /**
  * @brief Names the function attribute a declaration carries, or empty when it carries none.
  *
@@ -367,63 +339,12 @@ NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const
 bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx);
 
 /**
- * @brief Strips type modifiers (handles '@', references '&', 'const ', array brackets '[]', 'array<T>').
- * @param typeName Raw type name string or view.
- * @param arrayTypeName Optional workspace-configured array type name.
- * @return Cleaned base type name.
- */
-std::string CleanBaseType(std::string_view typeName, std::string_view arrayTypeName = "");
-
-/**
- * @brief Rewrites the bracket spelling of an array as its template spelling.
- *
- * `int[]` -> `array<int>`, `int[][]` -> `array<array<int>>`; anything without brackets comes
- * back unchanged. The two are the same type to the compiler, and `T[]` is the spelling the
- * language settles on its own - but only one of them survives to member resolution.
- * `CleanBaseType` reduces *both* to `int`, which is correct for its own job (the element type)
- * and useless for finding the container's members, so every site that asks "what type owns
- * this member" has to canonicalise first. Left as-is, `int[] a; a.length();` had no hover, no
- * completion and no call checking, while the identical `array<int> a;` had all three.
- *
- * @param typeName The declared type, in either spelling.
- * @param arrayTypeName The workspace's array container, from `TypeConfig::arrayTypeName`.
- *        Defaulted so a caller with no configuration in reach behaves as it did before, which
- *        is what every hardcoded "array" in this file was already assuming.
- */
-std::string CanonicalizeArrayType(std::string_view typeName, std::string_view arrayTypeName = "array");
-
-/**
- * @brief Normalizes primitive type aliases to their canonical spelling (e.g. `int32` -> `int`, `uint32` -> `uint`,
- * `short` -> `int16`, `ushort` -> `uint16`).
- * @param typeName Raw or cleaned type name string.
- * @return Canonicalized type name.
- */
-[[nodiscard]] std::string CanonicalizeType(std::string_view typeName);
-
-/**
  * @brief Checks whether the given type name denotes an enum in the symbol table.
  * @param typeName Name of the type to inspect.
  * @param table Symbol table to query.
  * @return True if the type name resolves to an enum symbol.
  */
 [[nodiscard]] bool ResolvesToEnum(std::string_view typeName, const SymbolTable& table);
-
-/**
- * @brief The type whose members a `.` on a value of this type reaches.
- *
- * `int[]` and `array<int>` both answer `array`, `Foo@` answers `Foo`, `int` answers `int`.
- *
- * Distinct from `CleanBaseType`, which answers the *element* type and reduces every array -
- * both spellings - to `int`. That is right for the question it is asked most often and wrong
- * for this one, and the two were being conflated: `a.length()` looked for `int::length`, found
- * nothing, and produced no hover for either spelling. The declaration `array<int> a;` happened
- * to work anyway through a hardcoded shortcut for `length`/`size`/`isEmpty`, which is why this
- * read as a bracket-only defect until the template spelling was tried on a fourth method.
- *
- * @param typeName The declared type, with any modifiers still attached.
- * @param arrayTypeName The workspace's array container, from `TypeConfig::arrayTypeName`.
- */
-std::string MemberOwnerType(std::string_view typeName, std::string_view arrayTypeName = "array");
 
 /**
  * @brief True when a type is AngelScript's variable type `?` (as in `const ?&in`, `?&out`).
@@ -741,7 +662,6 @@ std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const Express
  */
 std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TSNode contextNode,
                                                  std::string_view sourceCode, const SymbolTable& symbolTable);
-
 
 /**
  * @brief Determines the zero-based active parameter index for a call given the cursor offset.

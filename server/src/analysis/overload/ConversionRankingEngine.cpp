@@ -91,38 +91,46 @@ std::optional<ArgumentConversion> EvaluateNumericMutableRef(const MatchContext& 
         {
             if (IsPrimitiveWidening(ctx.cleanArg, ctx.cleanParam))
             {
-                return ArgumentConversion{ConversionRank::Promotion, 0, 0, false,
-                                          static_cast<int>(OverloadMatchPenalty::Widening), false};
+                return ArgumentConversion{
+                    ConversionRank::Promotion, 0, 0, false, static_cast<int>(OverloadMatchPenalty::Widening), false};
             }
-            return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
-                                      static_cast<int>(OverloadMatchPenalty::Narrowing), true};
+            return ArgumentConversion{
+                ConversionRank::StandardConv, 10, 0, false, static_cast<int>(OverloadMatchPenalty::Narrowing), true};
         }
         const uint8_t subRank = (IntegerBitWidth(ctx.cleanArg) == IntegerBitWidth(ctx.cleanParam)) ? 20 : 22;
         if (IsPrimitiveWidening(ctx.cleanArg, ctx.cleanParam))
         {
-            return ArgumentConversion{ConversionRank::StandardConv, subRank, 0, false,
-                                      static_cast<int>(OverloadMatchPenalty::SignednessChange), false};
+            return ArgumentConversion{ConversionRank::StandardConv,
+                                      subRank,
+                                      0,
+                                      false,
+                                      static_cast<int>(OverloadMatchPenalty::SignednessChange),
+                                      false};
         }
-        return ArgumentConversion{ConversionRank::StandardConv, 40, 0, false,
-                                  static_cast<int>(OverloadMatchPenalty::SignednessChange), true};
+        return ArgumentConversion{
+            ConversionRank::StandardConv, 40, 0, false, static_cast<int>(OverloadMatchPenalty::SignednessChange), true};
     }
     if (IsFloatingPointType(ctx.cleanArg) && IsFloatingPointType(ctx.cleanParam))
     {
         if (IsPrimitiveWidening(ctx.cleanArg, ctx.cleanParam))
         {
-            return ArgumentConversion{ConversionRank::Promotion, 0, 0, false,
-                                      static_cast<int>(OverloadMatchPenalty::Widening), false};
+            return ArgumentConversion{
+                ConversionRank::Promotion, 0, 0, false, static_cast<int>(OverloadMatchPenalty::Widening), false};
         }
-        return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
-                                  static_cast<int>(OverloadMatchPenalty::Narrowing), true};
+        return ArgumentConversion{
+            ConversionRank::StandardConv, 10, 0, false, static_cast<int>(OverloadMatchPenalty::Narrowing), true};
     }
     if (IsIntegerType(ctx.cleanArg) && IsFloatingPointType(ctx.cleanParam))
     {
-        return ArgumentConversion{ConversionRank::StandardConv, 30, 0, false,
-                                  static_cast<int>(OverloadMatchPenalty::WideningAcrossKind), false};
+        return ArgumentConversion{ConversionRank::StandardConv,
+                                  30,
+                                  0,
+                                  false,
+                                  static_cast<int>(OverloadMatchPenalty::WideningAcrossKind),
+                                  false};
     }
-    return ArgumentConversion{ConversionRank::StandardConv, 45, 0, false,
-                              static_cast<int>(OverloadMatchPenalty::Narrowing), true};
+    return ArgumentConversion{
+        ConversionRank::StandardConv, 45, 0, false, static_cast<int>(OverloadMatchPenalty::Narrowing), true};
 }
 
 std::optional<ArgumentConversion> EvaluateMutableRefMatch(const ParameterInformation& param, const MatchContext& ctx)
@@ -229,7 +237,7 @@ std::optional<ArgumentConversion> EvaluateEnumArgumentConversion(const MatchCont
 {
     const auto symbols = ctx.table.FindSymbolsPtr(ctx.cleanArg);
     const bool namesAnEnum = symbols && std::any_of(symbols->begin(), symbols->end(),
-                                                   [](const Symbol& sym) { return sym.type == SymbolType::Enum; });
+                                                    [](const Symbol& sym) { return sym.type == SymbolType::Enum; });
     if (!namesAnEnum)
     {
         return std::nullopt;
@@ -260,8 +268,8 @@ std::optional<ArgumentConversion> EvaluateNarrowingConversion(const MatchContext
         const uint8_t subRank = IsUnsignedInteger(ctx.cleanParam) ? 50 : 40;
         return ArgumentConversion{ConversionRank::StandardConv, subRank, 0, false, static_cast<int>(subRank), true};
     }
-    return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
-                              static_cast<int>(OverloadMatchPenalty::Narrowing), true};
+    return ArgumentConversion{
+        ConversionRank::StandardConv, 10, 0, false, static_cast<int>(OverloadMatchPenalty::Narrowing), true};
 }
 
 std::optional<ArgumentConversion> EvaluatePrimitiveOrEnumConversion(const MatchContext& ctx)
@@ -439,51 +447,70 @@ bool MatchesCallArity(const FunctionSignature& sig, uint32_t argCount) noexcept
 
 namespace
 {
-int ScoreCandidateFallbackInternal(const FunctionSignature& sig,
-                                   const std::vector<std::string>& argTypes,
-                                   const SymbolTable& symbolTable)
+struct FallbackCandidateRank
+{
+    bool arityMatches = false;
+    bool exactParamCount = false;
+    uint32_t arityDiff = 0;
+    uint32_t viableArgs = 0;
+    uint32_t incompatibleArgs = 0;
+
+    auto operator<=>(const FallbackCandidateRank& other) const noexcept
+    {
+        if (auto c = arityMatches <=> other.arityMatches; c != 0)
+        {
+            return c;
+        }
+        if (auto c = exactParamCount <=> other.exactParamCount; c != 0)
+        {
+            return c;
+        }
+        if (auto c = other.arityDiff <=> arityDiff; c != 0)
+        {
+            return c;
+        }
+        if (auto c = viableArgs <=> other.viableArgs; c != 0)
+        {
+            return c;
+        }
+        return other.incompatibleArgs <=> incompatibleArgs;
+    }
+};
+
+FallbackCandidateRank RankCandidateFallback(const FunctionSignature& sig, const std::vector<std::string>& argTypes,
+                                            const SymbolTable& symbolTable)
 {
     const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
-    int score = 0;
-    if (MatchesCallArity(sig, argCount))
-    {
-        score += 100;
-        if (argCount == sig.parameters.size())
-        {
-            score += 50;
-        }
-    }
-    else
-    {
-        int diff = std::abs(static_cast<int>(argCount) - static_cast<int>(sig.parameters.size()));
-        score -= diff * 20;
-    }
+    FallbackCandidateRank rank;
+    rank.arityMatches = MatchesCallArity(sig, argCount);
+    rank.exactParamCount = (argCount == sig.parameters.size());
+    rank.arityDiff =
+        static_cast<uint32_t>(std::abs(static_cast<int>(argCount) - static_cast<int>(sig.parameters.size())));
 
     for (size_t i = 0; i < argTypes.size() && i < sig.parameters.size(); ++i)
     {
         if (!argTypes[i].empty())
         {
-            int pScore = ScoreArgumentMatch(argTypes[i], sig.parameters[i], symbolTable);
-            if (pScore < 999)
+            const auto conv = EvaluateArgumentConversion(argTypes[i], sig.parameters[i], symbolTable);
+            if (conv.IsViable())
             {
-                score += 10;
+                ++rank.viableArgs;
             }
             else
             {
-                score -= 50;
+                ++rank.incompatibleArgs;
             }
         }
     }
-    return score;
+    return rank;
 }
 } // namespace
 
-const Symbol* FindBestFallbackOverload(const std::vector<Symbol>& candidates,
-                                       const std::vector<std::string>& argTypes,
+const Symbol* FindBestFallbackOverload(const std::vector<Symbol>& candidates, const std::vector<std::string>& argTypes,
                                        const SymbolTable& symbolTable)
 {
     const Symbol* best = nullptr;
-    int bestScore = -10000;
+    std::optional<FallbackCandidateRank> bestRank;
     for (const auto& sym : candidates)
     {
         if (!std::holds_alternative<FunctionSignature>(sym.signature))
@@ -491,10 +518,10 @@ const Symbol* FindBestFallbackOverload(const std::vector<Symbol>& candidates,
             continue;
         }
         const auto& sig = std::get<FunctionSignature>(sym.signature);
-        int score = ScoreCandidateFallbackInternal(sig, argTypes, symbolTable);
-        if (score > bestScore)
+        const auto rank = RankCandidateFallback(sig, argTypes, symbolTable);
+        if (!bestRank || rank > *bestRank)
         {
-            bestScore = score;
+            bestRank = rank;
             best = &sym;
         }
     }

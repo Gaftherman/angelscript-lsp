@@ -6,6 +6,7 @@
 #include "analysis/VirtualMixinContext.h"
 #include "analysis/overload/ConversionRankingEngine.h"
 #include "parser/GrammarNames.h"
+#include "utils/IncludeResolver.h"
 #include "utils/LspLogger.h"
 #include "utils/MultiFileLogger.h"
 #include "utils/Timer.h"
@@ -401,8 +402,7 @@ struct HoverTarget
 
 bool IsHoverableIdentifier(std::string_view txt, std::string_view type)
 {
-    if (type == "identifier" || type == "scoped_identifier" || type == "primitive_type" ||
-        type == "string_literal" ||
+    if (type == "identifier" || type == "scoped_identifier" || type == "primitive_type" || type == "string_literal" ||
         analysis::IsPrimitiveTypeName(std::string(txt)) || analysis::IsReservedKeyword(std::string(txt)))
     {
         return true;
@@ -548,34 +548,12 @@ struct IncludeDirectiveInfo
 
 std::optional<IncludeDirectiveInfo> ParseIncludeDirective(std::string_view line, size_t character)
 {
-    const size_t hash = line.find_first_not_of(" \t");
-    if (hash == std::string_view::npos || line[hash] != '#')
+    const auto info = angel_lsp::utils::IncludeResolver::ParseSingleLineInclude(line, character);
+    if (!info)
     {
         return std::nullopt;
     }
-
-    if (line.compare(hash + 1, 7, "include") != 0)
-    {
-        return std::nullopt;
-    }
-
-    const size_t openQuote = line.find('"', hash + 8);
-    if (openQuote == std::string_view::npos)
-    {
-        return std::nullopt;
-    }
-    const size_t closeQuote = line.find('"', openQuote + 1);
-    if (closeQuote == std::string_view::npos)
-    {
-        return std::nullopt;
-    }
-
-    if (character < hash || character > closeQuote)
-    {
-        return std::nullopt;
-    }
-
-    return IncludeDirectiveInfo{hash, closeQuote, std::string(line.substr(openQuote + 1, closeQuote - openQuote - 1))};
+    return IncludeDirectiveInfo{info->hashPos, info->closeDelim, info->rawPath};
 }
 
 /**
@@ -685,8 +663,7 @@ std::optional<analysis::Symbol> ResolveCallOverload(TSNode node, const std::vect
         return *match.bestCandidate;
     }
 
-    const analysis::Symbol* fallback =
-        analysis::FindBestFallbackOverload(candidates, argTypes, request.symbolTable);
+    const analysis::Symbol* fallback = analysis::FindBestFallbackOverload(candidates, argTypes, request.symbolTable);
     if (fallback != nullptr)
     {
         return *fallback;
@@ -1072,8 +1049,8 @@ std::string InferTypeFromAst(TSNode node, const std::string& sourceCode)
     return "";
 }
 
-void FormatParameterHover(const analysis::LocalDefinition& def, std::string_view typeName,
-                          const HoverQueryContext& ctx, std::string& md)
+void FormatParameterHover(const analysis::LocalDefinition& def, std::string_view typeName, const HoverQueryContext& ctx,
+                          std::string& md)
 {
     md += "(parameter) ";
     TSNode rootNode = ts_tree_root_node(ctx.request.tree);
@@ -1167,7 +1144,7 @@ bool IsDirectInitDeclarator(TSNode node)
 }
 
 std::optional<analysis::Symbol> ResolveConstructorForDeclarator(TSNode declarator, std::string_view typeName,
-                                                               const HoverQueryContext& ctx)
+                                                                const HoverQueryContext& ctx)
 {
     TSNode argList = analysis::ResolveArgumentListNode(declarator);
     if (ts_node_is_null(argList))
@@ -1181,8 +1158,8 @@ std::optional<analysis::Symbol> ResolveConstructorForDeclarator(TSNode declarato
         return std::nullopt;
     }
 
-    auto candidates = analysis::CollectConstructorCandidates(baseName, declarator, ctx.request.sourceCode,
-                                                             ctx.request.symbolTable);
+    auto candidates =
+        analysis::CollectConstructorCandidates(baseName, declarator, ctx.request.sourceCode, ctx.request.symbolTable);
     if (candidates.empty())
     {
         return std::nullopt;
@@ -1233,8 +1210,8 @@ void TryAppendConstructorSignature(TSNode node, std::string_view typeName, const
     }
 }
 
-void FormatVariableHover(const analysis::LocalDefinition& def, std::string_view typeName,
-                         const HoverQueryContext& ctx, std::string& md)
+void FormatVariableHover(const analysis::LocalDefinition& def, std::string_view typeName, const HoverQueryContext& ctx,
+                         std::string& md)
 {
     const analysis::Scope* declaringScope = FindDefinitionScope(ctx, def);
 
@@ -1298,11 +1275,8 @@ void FormatVariableHover(const analysis::LocalDefinition& def, std::string_view 
     }
 }
 
-static void AppendLocalDoc(
-    const analysis::LocalDefinition& def,
-    std::string_view typeName,
-    const HoverQueryContext& ctx,
-    std::string& md)
+static void AppendLocalDoc(const analysis::LocalDefinition& def, std::string_view typeName,
+                           const HoverQueryContext& ctx, std::string& md)
 {
     std::string doc = analysis::ExtractDocComment(ctx.request.sourceCode, def.startLine);
     if (doc.empty() && IsDirectInitDeclarator(ctx.node))
@@ -1353,7 +1327,8 @@ std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
         inferredType = InferTypeFromAst(ctx.node, ctx.request.sourceCode);
         if (inferredType.empty() && def->kind == analysis::LocalDefinitionKind::Parameter)
         {
-            inferredType = analysis::InferLambdaParamType(ctx.node, def->name, ctx.request.symbolTable, ctx.request.sourceCode);
+            inferredType =
+                analysis::InferLambdaParamType(ctx.node, def->name, ctx.request.symbolTable, ctx.request.sourceCode);
         }
         typeName = inferredType;
     }
@@ -1426,8 +1401,7 @@ std::optional<lsp::Hover> TryHoverParameterAst(const HoverQueryContext& ctx)
 
 static bool IsNamedArgumentLabelAtCursor(TSNode node, TSNode parent)
 {
-    if (ts_node_is_null(node) || ts_node_is_null(parent) ||
-        std::string_view(ts_node_type(parent)) != "argument_list")
+    if (ts_node_is_null(node) || ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "argument_list")
     {
         return false;
     }
@@ -1497,7 +1471,7 @@ static std::optional<lsp::Hover> FormatNamedArgHover(const std::vector<analysis:
             }
             md += "\n```\nParameter of `" + sym.name + "`";
             return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
-                             ctx.range};
+                              ctx.range};
         }
     }
     return std::nullopt;
@@ -2148,27 +2122,18 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
 
     return FormatSymbolsHover(symbols, accessorPropertyType, ctx);
 }
-HoverQueryContext BuildHoverQueryContext(const HoverRequest& request, HoverProfiler& profiler,
-                                         HoverTarget&& target)
+HoverQueryContext BuildHoverQueryContext(const HoverRequest& request, HoverProfiler& profiler, HoverTarget&& target)
 {
-    analysis::VirtualMixinContext vctx =
-        analysis::ResolveVirtualMixinContext(request.uri, request.symbolTable);
+    analysis::VirtualMixinContext vctx = analysis::ResolveVirtualMixinContext(request.uri, request.symbolTable);
     auto rootScope = request.scopeIndex.GetRoot(analysis::ResolvePhysicalUri(vctx, request.uri));
     uint32_t queryLine = analysis::ResolvePhysicalLine(vctx, request.position.line);
     const analysis::Scope* scope =
         rootScope ? FindInnermostScope(rootScope.get(), queryLine, request.position.character) : nullptr;
     TSNode parent = ts_node_parent(target.node);
 
-    return HoverQueryContext{request,
-                             profiler,
-                             target.node,
-                             std::move(target.text),
-                             target.range,
-                             std::move(vctx),
-                             std::move(rootScope),
-                             queryLine,
-                             scope,
-                             parent};
+    return HoverQueryContext{request,      profiler,        target.node,          std::move(target.text),
+                             target.range, std::move(vctx), std::move(rootScope), queryLine,
+                             scope,        parent};
 }
 bool IsPathLikeString(std::string_view str)
 {
@@ -2253,22 +2218,31 @@ std::optional<lsp::Hover> TryHoverStringLiteral(const HoverTarget& target, const
             std::string normalizedPath = resolved;
             std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
 
-            md = "*(asset)* `" + std::string(unquoted) + "`\n\n"
+            md = "*(asset)* `" + std::string(unquoted) +
+                 "`\n\n"
                  "- **Status**: Exists\n"
-                 "- **Size**: " + sizeStr + "\n"
-                 "- **Path**: `" + normalizedPath + "`";
+                 "- **Size**: " +
+                 sizeStr +
+                 "\n"
+                 "- **Path**: `" +
+                 normalizedPath + "`";
         }
         else
         {
-            md = "*(string literal)*: `" + std::string(txt) + "`\n\n"
-                 "- **Length**: " + std::to_string(unquoted.size()) + " characters\n"
+            md = "*(string literal)*: `" + std::string(txt) +
+                 "`\n\n"
+                 "- **Length**: " +
+                 std::to_string(unquoted.size()) +
+                 " characters\n"
                  "- **File**: Not found";
         }
     }
     else
     {
-        md = "*(string literal)*: `" + std::string(txt) + "`\n\n"
-             "- **Length**: " + std::to_string(unquoted.size()) + " characters";
+        md = "*(string literal)*: `" + std::string(txt) +
+             "`\n\n"
+             "- **Length**: " +
+             std::to_string(unquoted.size()) + " characters";
     }
 
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, target.range};

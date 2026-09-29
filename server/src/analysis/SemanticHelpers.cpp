@@ -3,8 +3,8 @@
 #include "analysis/DiagnosticContext.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
-#include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/rules/RuleIndex.h"
 #include "parser/Keywords.h"
 #include "utils/Utils.h"
@@ -502,40 +502,6 @@ bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx)
     return MatchesParentNamespaceType(clean, ctx.request.symbolTable, ruleIndex);
 }
 
-std::vector<std::string> SplitTemplateArguments(std::string_view inner)
-{
-    std::vector<std::string> arguments;
-    int depth = 0;
-    size_t start = 0;
-
-    const auto push = [&](std::string_view piece)
-    {
-        while (!piece.empty() && (piece.front() == ' ' || piece.front() == '	'))
-            piece.remove_prefix(1);
-        while (!piece.empty() && (piece.back() == ' ' || piece.back() == '	'))
-            piece.remove_suffix(1);
-        arguments.emplace_back(piece);
-    };
-
-    for (size_t i = 0; i < inner.size(); ++i)
-    {
-        if (inner[i] == '<')
-            ++depth;
-        else if (inner[i] == '>')
-            --depth;
-        else if (inner[i] == ',' && depth == 0)
-        {
-            push(inner.substr(start, i - start));
-            start = i + 1;
-        }
-    }
-
-    if (start <= inner.size())
-        push(inner.substr(start));
-
-    return arguments;
-}
-
 std::string_view LastScopeSegment(std::string_view name) noexcept
 {
     const size_t pos = name.rfind("::");
@@ -546,186 +512,6 @@ std::string_view ParentScope(std::string_view name) noexcept
 {
     const size_t pos = name.rfind("::");
     return pos == std::string_view::npos ? std::string_view{} : name.substr(0, pos);
-}
-
-bool HasScopeQualifier(std::string_view name) noexcept
-{
-    return name.find("::") != std::string_view::npos;
-}
-
-std::vector<std::string> SplitScopeSegments(std::string_view name)
-{
-    std::vector<std::string> segments;
-    size_t start = 0;
-    while (start < name.size())
-    {
-        const size_t pos = name.find("::", start);
-        if (pos == std::string_view::npos)
-        {
-            segments.emplace_back(name.substr(start));
-            break;
-        }
-        segments.emplace_back(name.substr(start, pos - start));
-        start = pos + 2;
-    }
-    return segments;
-}
-
-void TrimTypeWhitespace(std::string_view& typeName)
-{
-    while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
-    {
-        typeName.remove_prefix(1);
-    }
-    while (!typeName.empty() && (typeName.back() == ' ' || typeName.back() == '\t'))
-    {
-        typeName.remove_suffix(1);
-    }
-}
-
-void StripLeadingConst(std::string_view& typeName)
-{
-    if (typeName.starts_with("const "))
-    {
-        typeName.remove_prefix(6);
-    }
-}
-
-void StripTrailingDecorations(std::string& result)
-{
-    bool modified = true;
-    while (modified)
-    {
-        modified = false;
-        while (!result.empty() &&
-               (result.back() == '@' || result.back() == '&' || result.back() == ' ' || result.back() == '\t'))
-        {
-            result.pop_back();
-            modified = true;
-        }
-        if (result.ends_with(" const"))
-        {
-            result.resize(result.size() - 6);
-            modified = true;
-        }
-        else if (result.ends_with("[]"))
-        {
-            result.resize(result.size() - 2);
-            modified = true;
-        }
-        else if (!result.empty() && result.back() == ']')
-        {
-            const size_t bracket = result.rfind('[');
-            if (bracket != std::string::npos)
-            {
-                result = result.substr(0, bracket);
-                modified = true;
-            }
-        }
-    }
-}
-
-std::string CleanBaseType(std::string_view typeName, std::string_view arrayTypeName)
-{
-    TrimTypeWhitespace(typeName);
-    StripLeadingConst(typeName);
-    TrimTypeWhitespace(typeName);
-
-    std::string result(typeName);
-    StripTrailingDecorations(result);
-
-    if (result.starts_with("array<") && result.ends_with(">"))
-    {
-        const std::string inner = result.substr(6, result.size() - 7);
-        return CleanBaseType(inner, arrayTypeName);
-    }
-    if (!arrayTypeName.empty())
-    {
-        const std::string prefix = std::string(arrayTypeName) + "<";
-        if (result.starts_with(prefix) && result.ends_with(">"))
-        {
-            const std::string inner = result.substr(prefix.size(), result.size() - prefix.size() - 1);
-            return CleanBaseType(inner, arrayTypeName);
-        }
-    }
-
-    return result;
-}
-
-std::string CanonicalizeArrayType(std::string_view typeName, std::string_view arrayTypeName)
-{
-    std::string s(typeName);
-
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t'))
-        s.erase(s.begin());
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '@' || s.back() == '&'))
-        s.pop_back();
-
-    if (s.starts_with("const "))
-    {
-        s = s.substr(6);
-    }
-
-    const std::string_view effectiveArrayName = arrayTypeName.empty() ? "array" : arrayTypeName;
-
-    // The element of `int[][]` is `int[]`, so the element is canonicalised before it is
-    // wrapped: `array<array<int>>`. Wrapping first would give `array<int[]>`, which is the
-    // same type spelled in a way nothing else here recognises.
-    while (s.ends_with("[]"))
-    {
-        const std::string element = CanonicalizeArrayType(s.substr(0, s.size() - 2), effectiveArrayName);
-        s = std::string(effectiveArrayName) + "<" + element + ">";
-    }
-
-    return s;
-}
-
-std::string MemberOwnerType(std::string_view typeName, std::string_view arrayTypeName)
-{
-    const std::string canonical = CanonicalizeArrayType(typeName, arrayTypeName);
-
-    // A template instantiation's members are declared on the template, so `array<int>` reaches
-    // `array::length`. Split on the *first* `<`, which is also the outermost one.
-    if (canonical.ends_with(">"))
-    {
-        const size_t open = canonical.find('<');
-        if (open != std::string::npos && open > 0)
-        {
-            std::string container = canonical.substr(0, open);
-            while (!container.empty() && (container.back() == ' ' || container.back() == '\t'))
-            {
-                container.pop_back();
-            }
-            if (!container.empty())
-            {
-                return container;
-            }
-        }
-    }
-
-    return CleanBaseType(canonical);
-}
-
-std::string CanonicalizeType(std::string_view typeName)
-{
-    std::string clean = CleanExpressionType(typeName);
-    if (clean == "int32")
-    {
-        return "int";
-    }
-    if (clean == "uint32")
-    {
-        return "uint";
-    }
-    if (clean == "short")
-    {
-        return "int16";
-    }
-    if (clean == "ushort")
-    {
-        return "uint16";
-    }
-    return clean;
 }
 
 bool ResolvesToEnum(std::string_view typeName, const SymbolTable& table)
@@ -2488,7 +2274,6 @@ static bool IsFloatOrIntPrimitive(std::string_view type)
     return type == "float" || type == "double" || type == "int" || type == "uint";
 }
 
-
 static std::string ResolveBinaryShiftBitwise(std::string_view op, const std::string& cleanLeft,
                                              const std::string& cleanRight)
 {
@@ -3167,8 +2952,8 @@ static std::string ResolveCallOverloadReturn(const std::vector<Symbol>& candidat
     if (chosen && std::holds_alternative<FunctionSignature>(chosen->signature))
     {
         std::string ret = CleanExpressionType(chosen->GetFunction().returnType);
-        if (ret.empty() && (chosen->name == chosen->containerName ||
-                            LastScopeSegment(chosen->containerName) == chosen->name))
+        if (ret.empty() &&
+            (chosen->name == chosen->containerName || LastScopeSegment(chosen->containerName) == chosen->name))
         {
             return chosen->containerName;
         }
@@ -3684,8 +3469,7 @@ static std::string ResolveMemberInHierarchy(const std::string& hostClass, const 
 /**
  * @brief Resolves special 'this' receiver expressions.
  */
-static std::string ResolveThisReceiver(TSNode objNode, std::string_view sourceCode,
-                                       std::string_view effectiveHostClass)
+static std::string ResolveThisReceiver(TSNode objNode, std::string_view sourceCode, std::string_view effectiveHostClass)
 {
     if (!effectiveHostClass.empty())
     {
@@ -3877,8 +3661,7 @@ TSNode ResolveArgumentListNode(TSNode node)
     {
         return node;
     }
-    if (nodeType == "call_expression" || nodeType == "construct_call_expression" ||
-        nodeType == "variable_declarator")
+    if (nodeType == "call_expression" || nodeType == "construct_call_expression" || nodeType == "variable_declarator")
     {
         TSNode args = parser::GetChildByField(node, parser::fields::Arguments);
         if (!ts_node_is_null(args))

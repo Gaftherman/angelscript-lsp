@@ -9,6 +9,7 @@
 #include "analysis/SymbolTable.h"
 #include "config/ServerConfig.h"
 #include "document/Document.h"
+#include "features/definition/DefinitionHandler.h"
 #include "features/formatting/FormattingHandler.h"
 #include "i18n/i18n.h"
 #include "lsp/AnalysisScheduler.h"
@@ -1612,6 +1613,14 @@ class Server
     bool UpdateEngineConfiguration(const lsp::LSPObject& section);
 
     /**
+     * @brief Iterates all engine configuration bindings for initialization and updates.
+     * @param[in] applyBool Callback for boolean settings.
+     * @param[in] applyInt Callback for integer settings.
+     */
+    void BindEngineConfiguration(const std::function<void(std::string_view, bool&)>& applyBool,
+                                 const std::function<void(std::string_view, int&)>& applyInt);
+
+    /**
      * @brief Updates diagnostics toggle flags from the workspace configuration.
      * @param[in] section Configuration object.
      * @return True if any diagnostic setting was changed.
@@ -1819,6 +1828,14 @@ class Server
      *         allowed to race a close against a request it already sent.
      */
     std::optional<OpenDocument> LookupOpenDocument(const std::string& uriStr);
+
+    /**
+     * @brief Constructs a DefinitionRequest bound to the lifetime of an open document.
+     * @param[in] doc Open document handle.
+     * @param[in] position LSP cursor position.
+     * @return Prepared DefinitionRequest.
+     */
+    features::DefinitionRequest MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position);
 
     void HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Workspace_DidRenameFiles::Params&& params);
 

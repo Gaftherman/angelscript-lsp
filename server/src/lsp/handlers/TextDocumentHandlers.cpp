@@ -1,3 +1,4 @@
+#include "analysis/SemanticHelpers.h"
 #include "features/code_action/CodeActionHandler.h"
 #include "features/code_lens/CodeLensHandler.h"
 #include "features/completion/CompletionHandler.h"
@@ -11,7 +12,6 @@
 #include "features/references/ReferencesHandler.h"
 #include "features/rename/RenameHandler.h"
 #include "features/signature_help/SignatureHelpHandler.h"
-#include "analysis/SemanticHelpers.h"
 #include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
 #include "utils/Timer.h"
@@ -81,6 +81,24 @@ Server::HandleRequestsTextDocument_Hover(lsp::requests::TextDocument_Hover::Para
     return lsp::Null{};
 }
 
+features::DefinitionRequest Server::MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position)
+{
+    features::DefinitionRequest dr{doc.uri,       *doc.text,    doc.tree,
+                                   m_symbolTable, m_scopeIndex, codec::Decode(*doc.text, m_positionEncoding, position)};
+    dr.predefinedExtension = m_config.info.predefinedFileExtension;
+    dr.resolveInclude = [this, uri = doc.uri](const std::string& rawPath)
+    {
+        return angel_lsp::utils::IncludeResolver::ResolveIncludePath(angel_lsp::utils::IncludeResolveRequest{
+            .includePath = rawPath,
+            .currentFilePath = CanonicalPathFromUri(uri),
+            .searchDirectories = *SearchDirectories(),
+            .allowedRoots = IncludeAllowedRoots(),
+            .implicitExtension = ImplicitIncludeExtension(),
+        });
+    };
+    return dr;
+}
+
 lsp::requests::TextDocument_Definition::Result
 Server::HandleRequestsTextDocument_Definition(lsp::requests::TextDocument_Definition::Params&& req)
 {
@@ -93,21 +111,7 @@ Server::HandleRequestsTextDocument_Definition(lsp::requests::TextDocument_Defini
     {
         return lsp::Null{};
     }
-
-    features::DefinitionRequest dr{doc->uri,     *doc->text,
-                                   doc->tree,    m_symbolTable,
-                                   m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position)};
-    dr.predefinedExtension = m_config.info.predefinedFileExtension;
-    dr.resolveInclude = [this, uriStr = doc->uri](const std::string& rawPath)
-    {
-        return angel_lsp::utils::IncludeResolver::ResolveIncludePath(angel_lsp::utils::IncludeResolveRequest{
-            .includePath = rawPath,
-            .currentFilePath = CanonicalPathFromUri(uriStr),
-            .searchDirectories = *SearchDirectories(),
-            .allowedRoots = IncludeAllowedRoots(),
-            .implicitExtension = ImplicitIncludeExtension(),
-        });
-    };
+    const auto dr = MakeDefinitionRequest(*doc, req.position);
     auto defs = features::GetDefinition(dr);
     if (defs.has_value() && !defs->empty())
     {
@@ -124,28 +128,12 @@ Server::HandleRequestsTextDocument_Moniker(lsp::requests::TextDocument_Moniker::
     {
         return lsp::Null{};
     }
-
     const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
     if (!doc)
     {
         return lsp::Null{};
     }
-
-    features::DefinitionRequest dr{doc->uri,     *doc->text,
-                                   doc->tree,    m_symbolTable,
-                                   m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position)};
-    dr.predefinedExtension = m_config.info.predefinedFileExtension;
-    dr.resolveInclude = [this, uriStr = doc->uri](const std::string& rawPath)
-    {
-        return angel_lsp::utils::IncludeResolver::ResolveIncludePath(angel_lsp::utils::IncludeResolveRequest{
-            .includePath = rawPath,
-            .currentFilePath = CanonicalPathFromUri(uriStr),
-            .searchDirectories = *SearchDirectories(),
-            .allowedRoots = IncludeAllowedRoots(),
-            .implicitExtension = ImplicitIncludeExtension(),
-        });
-    };
-
+    const auto dr = MakeDefinitionRequest(*doc, req.position);
     const auto defs = features::GetDefinition(dr);
     if (!defs.has_value() || defs->empty())
     {
@@ -196,11 +184,7 @@ Server::HandleRequestsTextDocument_Declaration(lsp::requests::TextDocument_Decla
     {
         return lsp::Null{};
     }
-
-    features::DefinitionRequest dr{doc->uri,     *doc->text,
-                                   doc->tree,    m_symbolTable,
-                                   m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position)};
-    dr.predefinedExtension = m_config.info.predefinedFileExtension;
+    const auto dr = MakeDefinitionRequest(*doc, req.position);
     auto defs = features::GetDefinition(dr);
     if (defs.has_value() && !defs->empty())
     {
@@ -250,11 +234,7 @@ Server::HandleRequestsTextDocument_TypeDefinition(lsp::requests::TextDocument_Ty
     {
         return lsp::Null{};
     }
-
-    features::DefinitionRequest dr{doc->uri,     *doc->text,
-                                   doc->tree,    m_symbolTable,
-                                   m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position)};
-    dr.predefinedExtension = m_config.info.predefinedFileExtension;
+    const auto dr = MakeDefinitionRequest(*doc, req.position);
     auto defs = features::GetTypeDefinition(dr);
     if (defs.has_value() && !defs->empty())
     {

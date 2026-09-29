@@ -81,14 +81,20 @@ struct DirectivesWorkerContext
 void ProcessDirectivesRange(const DirectivesWorkerContext& dctx, size_t start, size_t end,
                             std::vector<FileDirectives>& results)
 {
-    for (size_t i = start; i < end; ++i)
+    try
     {
-        if (dctx.shouldStop && dctx.shouldStop())
+        for (size_t i = start; i < end; ++i)
         {
-            return;
+            if (dctx.shouldStop && dctx.shouldStop())
+            {
+                return;
+            }
+            const auto& path = dctx.scriptFiles[i];
+            results[i] = FileDirectives{path, ResolveDirectives(path, dctx.read(path), dctx.includeCtx)};
         }
-        const auto& path = dctx.scriptFiles[i];
-        results[i] = FileDirectives{path, ResolveDirectives(path, dctx.read(path), dctx.includeCtx)};
+    }
+    catch (...)
+    {
     }
 }
 
@@ -117,8 +123,17 @@ void CollectFileDirectives(const WorkspaceIncludeGraph::BuildFromFilesRequest& r
                 break;
             }
 
-            workers.emplace_back([&dctx, start, end, &results]()
-                                 { ProcessDirectivesRange(dctx, start, end, results); });
+            workers.emplace_back(
+                [&dctx, start, end, &results]()
+                {
+                    try
+                    {
+                        ProcessDirectivesRange(dctx, start, end, results);
+                    }
+                    catch (...)
+                    {
+                    }
+                });
         }
 
         for (auto& w : workers)

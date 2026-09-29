@@ -1,4 +1,5 @@
 #include "features/document_symbol/DocumentSymbolHandler.h"
+#include "document/Document.h"
 #include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"
 
@@ -582,15 +583,13 @@ std::optional<DocumentSymbolResult> GetDocumentSymbols(const DocumentSymbolReque
     }
 
     parser::AngelScriptParser parser;
-    TSTree* tempTree = parser.Parse(request.sourceCode);
+    document::TreePtr tempTree = document::MakeTreePtr(parser.Parse(request.sourceCode));
     if (!tempTree)
     {
         return DocumentSymbolResult{};
     }
 
-    TSNode root = ts_tree_root_node(tempTree);
-    auto result = ProcessChildren(root, ctx);
-    ts_tree_delete(tempTree);
-    return result;
+    TSNode root = ts_tree_root_node(tempTree.get());
+    return ProcessChildren(root, ctx);
 }
 } // namespace angel_lsp::features

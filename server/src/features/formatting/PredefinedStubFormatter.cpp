@@ -1,4 +1,5 @@
 #include "features/formatting/PredefinedStubFormatter.h"
+#include "document/Document.h"
 
 #include <algorithm>
 #include <cctype>
@@ -286,21 +287,20 @@ std::string EmitFormattedStub(const FormattingPlan& plan, const std::string& ind
 std::string FormatPredefinedStub(const std::string& source, angel_lsp::parser::AngelScriptParser& parser,
                                  const std::string& indent)
 {
-    TSTree* tree = parser.Parse(source);
+    document::TreePtr tree = document::MakeTreePtr(parser.Parse(source));
     if (tree == nullptr)
     {
         return source;
     }
 
-    const TSNode root = ts_tree_root_node(tree);
+    const TSNode root = ts_tree_root_node(tree.get());
     if (ts_node_has_error(root))
     {
-        ts_tree_delete(tree);
         return source;
     }
 
     FormattingPlan plan = BuildFormattingPlan(root, source);
-    ts_tree_delete(tree);
+    tree.reset();
 
     std::string out = EmitFormattedStub(plan, indent, source.size());
     return out == source ? source : out;

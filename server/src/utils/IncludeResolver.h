@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -13,6 +14,18 @@
 
 namespace angel_lsp::utils
 {
+/**
+ * @brief Information about an include directive located on a single line.
+ */
+struct SingleLineIncludeInfo
+{
+    size_t hashPos{0};
+    size_t openDelim{0};
+    size_t closeDelim{0};
+    std::string rawPath;
+    bool isAngled{false};
+};
+
 /**
  * @brief Represents an extracted #include directive from AngelScript source code.
  */
@@ -42,6 +55,15 @@ struct IncludeResolveRequest
 class IncludeResolver
 {
   public:
+    /**
+     * @brief Parses an #include directive from a single line of text at an optional character position.
+     * @param[in] line Line text to scan.
+     * @param[in] character Cursor column index (0-indexed). If string_view::npos, position bounds check is skipped.
+     * @return Extracted SingleLineIncludeInfo if found and within position, or std::nullopt.
+     */
+    static std::optional<SingleLineIncludeInfo> ParseSingleLineInclude(std::string_view line,
+                                                                       size_t character = std::string_view::npos);
+
     /**
      * @brief Scans source code and extracts all #include directives.
      *        Correctly skips directives appearing in single-line comments (//),
