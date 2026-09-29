@@ -56,6 +56,12 @@ struct FeatureFlags
     bool enableOnTypeFormatting = true;
     bool enablePullDiagnostics = true;
     bool enableVirtualMixinDocuments = false;
+    bool inlayHintsEnableTooltip = true;
+    bool inlayHintsEnableLocation = true;
+    bool completionCompleteFunctionParens = true;
+    bool hoverStringLiteralLength = true;
+    bool hoverStringLiteralPathResolution = false;
+    std::vector<std::string> assetSearchPaths;
 };
 
 /**
@@ -452,6 +458,13 @@ struct DiagnosticsConfig
      * 2 = error (strict handle checking)
      */
     int reportHandleComparisonEquality = 1;
+
+    /**
+     * @brief Severity for missing asset paths referenced in string literals (default: "off").
+     *
+     * Values can be "off", "hint", "warning", or "error".
+     */
+    std::string missingAssetPathSeverity = "off";
 };
 
 /**

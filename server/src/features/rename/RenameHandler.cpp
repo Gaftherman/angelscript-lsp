@@ -90,6 +90,18 @@ bool IsTargetPredefined(const TargetDescriptor& target, const analysis::SymbolTa
     {
         return AreClassMembersPredefined(target, symbolTable, predefinedUris);
     }
+    if (target.kind == TargetKind::EnumMember)
+    {
+        auto syms = symbolTable.FindSymbols(target.qualifiedName);
+        for (const auto& s : syms)
+        {
+            if (predefinedUris.contains(s.fileUri))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
     return AreGlobalSymbolsPredefined(target.name, symbolTable, predefinedUris);
 }
 

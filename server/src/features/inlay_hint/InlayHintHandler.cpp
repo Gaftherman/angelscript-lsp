@@ -413,18 +413,30 @@ const analysis::Symbol* SelectFallbackCandidate(const std::vector<analysis::Symb
 }
 
 /**
- * @brief Extracts parameter information vector from a resolved callable symbol.
- * @param[in] sym Resolved symbol.
- * @return Vector of parameter information items.
+ * @brief Bundles callee document URI and extracted parameter information.
  */
-std::vector<analysis::ParameterInformation> ExtractParametersFromSymbol(const analysis::Symbol* sym)
+struct CalleeResolutionResult
+{
+    std::string fileUri;
+    std::vector<analysis::ParameterInformation> parameters;
+};
+
+/**
+ * @brief Extracts callee result with URI and parameters from a resolved callable symbol.
+ * @param[in] sym Resolved symbol.
+ * @return Callee resolution result.
+ */
+CalleeResolutionResult ExtractCalleeFromSymbol(const analysis::Symbol* sym)
 {
     if (!sym)
     {
         return {};
     }
     const auto* params = GetParametersIfCallable(*sym);
-    return params ? *params : std::vector<analysis::ParameterInformation>{};
+    return {
+        sym->fileUri,
+        params ? *params : std::vector<analysis::ParameterInformation>{}
+    };
 }
 
 /**
@@ -432,10 +444,10 @@ std::vector<analysis::ParameterInformation> ExtractParametersFromSymbol(const an
  * @param[in] callNode AST call_expression node.
  * @param[in] request Inlay hint request context.
  * @param[in] numArgs Number of arguments passed in the call.
- * @return Vector of parameter information items matching the call.
+ * @return Callee resolution result matching the call.
  */
-std::vector<analysis::ParameterInformation> ResolveCalleeParameters(TSNode callNode, const InlayHintRequest& request,
-                                                                    size_t numArgs)
+CalleeResolutionResult ResolveCalleeParameters(TSNode callNode, const InlayHintRequest& request,
+                                              size_t numArgs)
 {
     TSNode funcNode = FindCalleeFunctionNode(callNode);
     if (ts_node_is_null(funcNode))
@@ -476,7 +488,7 @@ std::vector<analysis::ParameterInformation> ResolveCalleeParameters(TSNode callN
         bestSym = SelectFallbackCandidate(candidateSymbols);
     }
 
-    return ExtractParametersFromSymbol(bestSym);
+    return ExtractCalleeFromSymbol(bestSym);
 }
 
 /**
@@ -573,12 +585,12 @@ const analysis::Symbol* MatchConstructorOverload(const std::vector<analysis::Sym
  * @param[in] declaratorNode The variable_declarator AST node.
  * @param[in] request Inlay hint context request.
  * @param[in] args Parsed argument information.
- * @return Vector of constructor parameter information matching the call.
+ * @return Callee resolution result matching the constructor call.
  */
-std::vector<analysis::ParameterInformation> ResolveConstructorParameters(const std::string& declaredTypeName,
-                                                                         TSNode declaratorNode,
-                                                                         const InlayHintRequest& request,
-                                                                         const std::vector<ArgInfo>& args)
+CalleeResolutionResult ResolveConstructorParameters(const std::string& declaredTypeName,
+                                                     TSNode declaratorNode,
+                                                     const InlayHintRequest& request,
+                                                     const std::vector<ArgInfo>& args)
 {
     std::string baseName = analysis::CleanBaseType(declaredTypeName);
     if (baseName.empty())
@@ -613,7 +625,7 @@ std::vector<analysis::ParameterInformation> ResolveConstructorParameters(const s
 
     if (bestSym && bestSym->type == analysis::SymbolType::Function)
     {
-        return bestSym->GetFunction().parameters;
+        return {bestSym->fileUri, bestSym->GetFunction().parameters};
     }
 
     return {};
@@ -1222,23 +1234,88 @@ std::string ResolveParameterLabel(const analysis::ParameterInformation& param)
  */
 std::string FormatParameterTooltip(const analysis::ParameterInformation& param, const std::string& label)
 {
+    std::string sig;
     if (!param.name.empty())
     {
-        return "Parameter: " + param.typeName + " " + param.name;
+        sig = (!param.typeName.empty() ? (param.typeName + " ") : "") + param.name;
     }
-    return "Parameter: " + (!param.typeName.empty() ? param.typeName : label);
+    else
+    {
+        sig = !param.typeName.empty() ? param.typeName : label;
+    }
+    return "Parameter:\n```angelscript\n" + sig + "\n```";
+}
+
+/**
+ * @brief Context bundle for parameter inlay hint construction.
+ */
+struct ParamHintContext
+{
+    const CalleeResolutionResult& callee;
+    const InlayHintRequest& request;
+};
+
+/**
+ * @brief Constructs a single parameter inlay hint.
+ * @param[in] ctx Parameter hint context.
+ * @param[in] param Callee parameter information.
+ * @param[in] arg Argument metadata.
+ * @param[in] label Formatted parameter label.
+ * @return Populated InlayHint.
+ */
+lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx,
+                                 const analysis::ParameterInformation& param,
+                                 const ArgInfo& arg,
+                                 std::string label)
+{
+    lsp::InlayHint hint;
+    hint.position = arg.hintPosition;
+    if (ctx.request.maxLength > 0 && label.length() > ctx.request.maxLength)
+    {
+        label = label.substr(0, ctx.request.maxLength) + "...";
+    }
+    const bool enableTooltip = !ctx.request.config || ctx.request.config->features.inlayHintsEnableTooltip;
+    const bool enableLocation = !ctx.request.config || ctx.request.config->features.inlayHintsEnableLocation;
+
+    lsp::InlayHintLabelPart part;
+    part.value = label + ":";
+    if (enableTooltip)
+    {
+        part.tooltip = FormatParameterTooltip(param, label);
+    }
+    if (enableLocation && !ctx.callee.fileUri.empty() &&
+        (param.startLine != 0 || param.endLine != 0 || param.endCharacter != 0))
+    {
+        lsp::Range paramRange{
+            lsp::Position{param.startLine, param.startCharacter},
+            lsp::Position{param.endLine, param.endCharacter}
+        };
+        part.location = lsp::Location{
+            ctx.callee.fileUri.rfind("file://", 0) == 0 ? lsp::DocumentUri::parse(ctx.callee.fileUri)
+                                                       : lsp::Uri::fileUriFromPath(ctx.callee.fileUri),
+            paramRange
+        };
+    }
+    hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
+    hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
+    hint.paddingRight = true;
+    hint.paddingLeft = false;
+    hint.tooltip = std::nullopt;
+    return hint;
 }
 
 /**
  * @brief Adds parameter inlay hints for matched parameters and arguments.
- * @param[in] parameters Matched callee parameter signatures.
+ * @param[in] callee Callee resolution result.
  * @param[in] args Parsed call arguments.
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Hint vector receiving generated parameter hints.
  */
-void AddParameterHints(const std::vector<analysis::ParameterInformation>& parameters, const std::vector<ArgInfo>& args,
+void AddParameterHints(const CalleeResolutionResult& callee, const std::vector<ArgInfo>& args,
                        const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {
+    const auto& parameters = callee.parameters;
+    const ParamHintContext ctx{callee, request};
     for (size_t i = 0; i < args.size() && i < parameters.size(); ++i)
     {
         if (request.maxParameters > 0 && i >= request.maxParameters)
@@ -1262,29 +1339,7 @@ void AddParameterHints(const std::vector<analysis::ParameterInformation>& parame
 
         if (IsPositionInRange(arg.hintPosition, request.range))
         {
-            lsp::InlayHint hint;
-            hint.position = arg.hintPosition;
-            if (request.maxLength > 0 && label.length() > request.maxLength)
-            {
-                label = label.substr(0, request.maxLength) + "...";
-            }
-            lsp::InlayHintLabelPart part;
-            part.value = label + ":";
-            part.tooltip = FormatParameterTooltip(param, label);
-            if (!ts_node_is_null(arg.exprNode))
-            {
-                TSPoint startPoint = ts_node_start_point(arg.exprNode);
-                TSPoint endPoint = ts_node_end_point(arg.exprNode);
-                lsp::Range argRange{lsp::Position{startPoint.row, startPoint.column},
-                                    lsp::Position{endPoint.row, endPoint.column}};
-                part.location = lsp::Location{lsp::DocumentUri::parse(request.uri), argRange};
-            }
-            hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
-            hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
-            hint.paddingRight = true;
-            hint.paddingLeft = false;
-            hint.tooltip = FormatParameterTooltip(param, label);
-            hints.push_back(std::move(hint));
+            hints.push_back(BuildParameterHint(ctx, param, arg, std::move(label)));
         }
     }
 }
@@ -1315,6 +1370,8 @@ struct OmittedParamHint
 {
     std::string label;
     std::string tooltip;
+    std::string fileUri;
+    const analysis::ParameterInformation* param = nullptr;
 };
 
 /**
@@ -1382,18 +1439,43 @@ std::vector<CallArgPosition> MapArgumentsToParameters(const std::vector<analysis
  * @brief Constructs an InlayHint item for an omitted default parameter.
  * @param[in] pos Target document position.
  * @param[in] label Formatted hint label.
- * @param[in] tooltip Hover tooltip text.
+ * @param[in] hintInfo Omitted parameter metadata including location.
  * @return InlayHint object.
  */
-lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, std::string label, std::string tooltip)
+lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, std::string label,
+                                      const OmittedParamHint& hintInfo,
+                                      const InlayHintRequest& request)
 {
     lsp::InlayHint hint;
     hint.position = pos;
-    hint.label = std::move(label);
     hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
     hint.paddingLeft = false;
     hint.paddingRight = false;
-    hint.tooltip = std::move(tooltip);
+
+    const bool enableTooltip = !request.config || request.config->features.inlayHintsEnableTooltip;
+    const bool enableLocation = !request.config || request.config->features.inlayHintsEnableLocation;
+
+    lsp::InlayHintLabelPart part;
+    part.value = std::move(label);
+    if (enableTooltip)
+    {
+        part.tooltip = hintInfo.tooltip;
+    }
+    if (enableLocation && !hintInfo.fileUri.empty() && hintInfo.param &&
+        (hintInfo.param->startLine != 0 || hintInfo.param->endLine != 0 || hintInfo.param->endCharacter != 0))
+    {
+        lsp::Range paramRange{
+            lsp::Position{hintInfo.param->startLine, hintInfo.param->startCharacter},
+            lsp::Position{hintInfo.param->endLine, hintInfo.param->endCharacter}
+        };
+        part.location = lsp::Location{
+            hintInfo.fileUri.rfind("file://", 0) == 0 ? lsp::DocumentUri::parse(hintInfo.fileUri)
+                                                     : lsp::Uri::fileUriFromPath(hintInfo.fileUri),
+            paramRange
+        };
+    }
+    hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
+    hint.tooltip = std::nullopt;
     return hint;
 }
 
@@ -1401,11 +1483,11 @@ lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, std::string labe
  * @brief Emits an omitted parameter hint into an empty argument list.
  * @param[in] argListNode AST argument_list node.
  * @param[in] labelText Formatted parameter label text.
- * @param[in] tooltip Hover tooltip text.
+ * @param[in] hintInfo Omitted parameter metadata.
  * @param[in,out] ctx Bundled request and hints context.
  */
-void EmitEmptyListOmittedHint(TSNode argListNode, const std::string& labelText, const std::string& tooltip,
-                              OmittedHintContext& ctx)
+void EmitEmptyListOmittedHint(TSNode argListNode, const std::string& labelText,
+                              const OmittedParamHint& hintInfo, OmittedHintContext& ctx)
 {
     TSPoint pt = ts_node_start_point(argListNode);
     if (ts_node_child_count(argListNode) > 0)
@@ -1415,7 +1497,7 @@ void EmitEmptyListOmittedHint(TSNode argListNode, const std::string& labelText, 
     lsp::Position pos{pt.row, pt.column};
     if (IsPositionInRange(pos, ctx.request.range))
     {
-        ctx.hints.push_back(MakeOmittedDefaultHint(pos, labelText, tooltip));
+        ctx.hints.push_back(MakeOmittedDefaultHint(pos, labelText, hintInfo, ctx.request));
     }
 }
 
@@ -1445,7 +1527,7 @@ void EmitArgListOmittedHint(const std::vector<CallArgPosition>& argPositions, si
         lsp::Position pos{pt.row, pt.column};
         if (IsPositionInRange(pos, ctx.request.range))
         {
-            ctx.hints.push_back(MakeOmittedDefaultHint(pos, hintInfo.label + ", ", hintInfo.tooltip));
+            ctx.hints.push_back(MakeOmittedDefaultHint(pos, hintInfo.label + ", ", hintInfo, ctx.request));
         }
     }
     else
@@ -1454,21 +1536,22 @@ void EmitArgListOmittedHint(const std::vector<CallArgPosition>& argPositions, si
         lsp::Position pos{pt.row, pt.column};
         if (IsPositionInRange(pos, ctx.request.range))
         {
-            ctx.hints.push_back(MakeOmittedDefaultHint(pos, ", " + hintInfo.label, hintInfo.tooltip));
+            ctx.hints.push_back(MakeOmittedDefaultHint(pos, ", " + hintInfo.label, hintInfo, ctx.request));
         }
     }
 }
 
 /**
  * @brief Adds inlay hints for omitted optional parameters that have default values.
- * @param[in] parameters Matched callee parameter signatures.
+ * @param[in] callee Callee resolution result.
  * @param[in] argListNode AST argument_list node.
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Hint vector receiving generated inlay hints.
  */
-void AddOmittedDefaultArgumentHints(const std::vector<analysis::ParameterInformation>& parameters, TSNode argListNode,
+void AddOmittedDefaultArgumentHints(const CalleeResolutionResult& callee, TSNode argListNode,
                                     const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {
+    const auto& parameters = callee.parameters;
     if (request.omittedDefaultArguments == config::OmittedDefaultArgumentsMode::Off || parameters.empty() ||
         ts_node_is_null(argListNode))
     {
@@ -1494,13 +1577,14 @@ void AddOmittedDefaultArgumentHints(const std::vector<analysis::ParameterInforma
         }
 
         std::string labelText = FormatOmittedDefaultLabel(param, request.omittedDefaultArguments, request.maxLength);
-        std::string tooltip = "Default parameter: " + param.typeName + " " + param.name + " = " + param.defaultValue;
-        OmittedParamHint hintInfo{std::move(labelText), std::move(tooltip)};
+        std::string tooltip = "Default parameter:\n```angelscript\n" + param.typeName + " " + param.name +
+                              " = " + param.defaultValue + "\n```";
+        OmittedParamHint hintInfo{std::move(labelText), std::move(tooltip), callee.fileUri, &param};
 
         if (argPositions.empty())
         {
             std::string fullLabel = isFirstInEmptyList ? hintInfo.label : (", " + hintInfo.label);
-            EmitEmptyListOmittedHint(argListNode, fullLabel, hintInfo.tooltip, ctx);
+            EmitEmptyListOmittedHint(argListNode, fullLabel, hintInfo, ctx);
             isFirstInEmptyList = false;
         }
         else
@@ -1536,9 +1620,9 @@ void ProcessCallExpression(TSNode node, const InlayHintRequest& request, std::ve
     if (!ts_node_is_null(argListNode))
     {
         auto args = ParseArguments(argListNode, request.sourceCode);
-        auto parameters = ResolveCalleeParameters(node, request, args.size());
-        AddParameterHints(parameters, args, request, hints);
-        AddOmittedDefaultArgumentHints(parameters, argListNode, request, hints);
+        auto callee = ResolveCalleeParameters(node, request, args.size());
+        AddParameterHints(callee, args, request, hints);
+        AddOmittedDefaultArgumentHints(callee, argListNode, request, hints);
     }
 }
 
@@ -1631,9 +1715,9 @@ void ProcessConstructorInitDeclarator(const std::string& typeText, TSNode declar
     if (!ts_node_is_null(argListNode))
     {
         auto args = ParseArguments(argListNode, request.sourceCode);
-        auto parameters = ResolveConstructorParameters(typeText, declarator, request, args);
-        AddParameterHints(parameters, args, request, hints);
-        AddOmittedDefaultArgumentHints(parameters, argListNode, request, hints);
+        auto callee = ResolveConstructorParameters(typeText, declarator, request, args);
+        AddParameterHints(callee, args, request, hints);
+        AddOmittedDefaultArgumentHints(callee, argListNode, request, hints);
     }
 }
 

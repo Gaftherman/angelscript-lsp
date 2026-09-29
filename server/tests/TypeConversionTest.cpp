@@ -2526,3 +2526,43 @@ TEST_CASE("TypeConversion - Invariant: Bare data type in variable initializer em
     }
     CHECK(count >= 3);
 }
+
+TEST_CASE("TypeConversion - Integer division preserves integer type without float truncation warning")
+{
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("pct");
+    std::string code =
+        "void Test() {\n"
+        "    int " + varName + " = 100;\n"
+        "    " + varName + " = ( " + varName + " / 5 );\n"
+        "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    for (const auto &d : diags)
+    {
+        CHECK(d.code != "as-warn-float-truncation");
+        CHECK(d.code != "as-err-no-implicit-conversion");
+    }
+}
+
+TEST_CASE("TypeConversion - Float division emits float truncation warning when assigning to int")
+{
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("pct");
+    std::string code =
+        "void Test() {\n"
+        "    int " + varName + " = 100;\n"
+        "    " + varName + " = ( " + varName + " / 5.0f );\n"
+        "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundTruncation = false;
+    for (const auto &d : diags)
+    {
+        if (d.code == "as-warn-float-truncation")
+        {
+            foundTruncation = true;
+        }
+    }
+    CHECK(foundTruncation);
+}

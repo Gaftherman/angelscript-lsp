@@ -24,7 +24,8 @@ enum class TargetKind
     Local,           ///< A variable or parameter, confined to one function scope.
     ClassMember,     ///< A field or method, reachable through a class hierarchy.
     NamespaceSymbol, ///< Declared inside a namespace and qualified by it.
-    GlobalSymbol     ///< Everything else: a free function, a type, a global variable.
+    GlobalSymbol,    ///< Everything else: a free function, a type, a global variable.
+    EnumMember       ///< An enumerator member of an enum.
 };
 
 /** @brief The symbol under the cursor, resolved far enough to look its occurrences up. */
@@ -43,6 +44,7 @@ struct TargetDescriptor
     AccessModifier access = AccessModifier::Public;
 
     std::string declaringNamespace;
+    std::string declaringEnum;
 
     bool isFunction = false;
     size_t minArgs = 0;

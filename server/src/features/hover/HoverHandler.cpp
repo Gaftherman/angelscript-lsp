@@ -1656,6 +1656,51 @@ std::optional<lsp::Hover> TryHoverScopeFallback(const HoverQueryContext& ctx)
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
 }
 
+/**
+ * @brief Prunes candidate symbols to the enclosing enum when the cursor is in an enum member declaration.
+ * @param[in,out] symbols Candidate symbol list to filter.
+ * @param[in] ctx Hover query context.
+ */
+void FilterEnumMemberSymbols(std::vector<analysis::Symbol>& symbols, const HoverQueryContext& ctx)
+{
+    if (ts_node_is_null(ctx.parent) || std::string_view(ts_node_type(ctx.parent)) != "enum_member")
+    {
+        return;
+    }
+    TSNode enumDecl = ts_node_parent(ctx.parent);
+    if (ts_node_is_null(enumDecl) || std::string_view(ts_node_type(enumDecl)) != "enum_declaration")
+    {
+        return;
+    }
+    TSNode nameNode = parser::GetChildByField(enumDecl, parser::fields::Name);
+    if (ts_node_is_null(nameNode))
+    {
+        return;
+    }
+    std::string enumName = parser::GetNodeText(nameNode, ctx.request.sourceCode);
+    if (enumName.empty())
+    {
+        return;
+    }
+    std::erase_if(symbols,
+                  [&](const analysis::Symbol& s)
+                  {
+                      if (s.containerName == enumName || s.containerName.ends_with("::" + enumName))
+                      {
+                          return false;
+                      }
+                      if (std::holds_alternative<analysis::VariableSignature>(s.signature))
+                      {
+                          const auto& vs = s.GetVariable();
+                          if (vs.isEnumConstant && (vs.typeName == enumName || vs.typeName.ends_with("::" + enumName)))
+                          {
+                              return false;
+                          }
+                      }
+                      return true;
+                  });
+}
+
 std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
 {
     std::vector<analysis::Symbol> symbols;
@@ -1678,6 +1723,7 @@ std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
     {
         symbols = analysis::FindSymbolsInScope(ctx.nodeText, ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
     }
+    FilterEnumMemberSymbols(symbols, ctx);
     std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
     return symbols;
 }
@@ -2190,61 +2236,87 @@ std::string ResolveStringLiteralPath(std::string_view unquoted, const HoverReque
     {
         return candidate.lexically_normal().string();
     }
+
+    if (request.config)
+    {
+        for (const auto& searchDir : request.config->features.assetSearchPaths)
+        {
+            std::filesystem::path assetPath = std::filesystem::path(searchDir) / unquotedStr;
+            if (std::filesystem::exists(assetPath, ec) && !std::filesystem::is_directory(assetPath, ec))
+            {
+                return assetPath.lexically_normal().string();
+            }
+        }
+    }
     return "";
+}
+
+static std::string_view UnquoteStringLiteral(std::string_view txt)
+{
+    if (txt.size() >= 2 && ((txt.front() == '"' && txt.back() == '"') || (txt.front() == '\'' && txt.back() == '\'')))
+    {
+        return txt.substr(1, txt.size() - 2);
+    }
+    if (txt.starts_with("\"\"\"") && txt.ends_with("\"\"\"") && txt.size() >= 6)
+    {
+        return txt.substr(3, txt.size() - 6);
+    }
+    return txt;
+}
+
+static std::string FormatResolvedAssetMarkdown(std::string_view unquoted, const std::string& resolved, bool showLength)
+{
+    std::error_code ec;
+    auto fsize = std::filesystem::file_size(resolved, ec);
+    std::string sizeStr = ec ? "Unknown" : FormatFileSize(fsize);
+    std::string normalizedPath = resolved;
+    std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
+
+    std::string md = "*(asset)* `" + std::string(unquoted) +
+                     "`\n\n"
+                     "- **Status**: Exists\n"
+                     "- **Size**: " +
+                     sizeStr +
+                     "\n"
+                     "- **Path**: `" +
+                     normalizedPath + "`";
+    if (showLength)
+    {
+        md += "\n- **Length**: " + std::to_string(unquoted.size()) + " characters";
+    }
+    return md;
 }
 
 std::optional<lsp::Hover> TryHoverStringLiteral(const HoverTarget& target, const HoverRequest& request)
 {
-    std::string_view txt = target.text;
-    std::string_view unquoted = txt;
-    if (txt.size() >= 2 && ((txt.front() == '"' && txt.back() == '"') || (txt.front() == '\'' && txt.back() == '\'')))
-    {
-        unquoted = txt.substr(1, txt.size() - 2);
-    }
-    else if (txt.starts_with("\"\"\"") && txt.ends_with("\"\"\"") && txt.size() >= 6)
-    {
-        unquoted = txt.substr(3, txt.size() - 6);
-    }
+    const std::string_view txt = target.text;
+    const std::string_view unquoted = UnquoteStringLiteral(txt);
+    const bool showLength = !request.config || request.config->features.hoverStringLiteralLength;
+    const bool enablePathRes = request.config && request.config->features.hoverStringLiteralPathResolution;
 
     std::string md;
-    if (IsPathLikeString(unquoted))
+    if (enablePathRes && IsPathLikeString(unquoted))
     {
-        std::string resolved = ResolveStringLiteralPath(unquoted, request);
+        const std::string resolved = ResolveStringLiteralPath(unquoted, request);
         if (!resolved.empty())
         {
-            std::error_code ec;
-            auto fsize = std::filesystem::file_size(resolved, ec);
-            std::string sizeStr = ec ? "Unknown" : FormatFileSize(fsize);
-            std::string normalizedPath = resolved;
-            std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
-
-            md = "*(asset)* `" + std::string(unquoted) +
-                 "`\n\n"
-                 "- **Status**: Exists\n"
-                 "- **Size**: " +
-                 sizeStr +
-                 "\n"
-                 "- **Path**: `" +
-                 normalizedPath + "`";
+            md = FormatResolvedAssetMarkdown(unquoted, resolved, showLength);
+            return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, target.range};
         }
-        else
+        md = "```angelscript\n" + std::string(txt) + "\n```";
+        if (showLength)
         {
-            md = "*(string literal)*: `" + std::string(txt) +
-                 "`\n\n"
-                 "- **Length**: " +
-                 std::to_string(unquoted.size()) +
-                 " characters\n"
-                 "- **File**: Not found";
+            md += "\n\n- **Length**: " + std::to_string(unquoted.size()) + " characters";
         }
-    }
-    else
-    {
-        md = "*(string literal)*: `" + std::string(txt) +
-             "`\n\n"
-             "- **Length**: " +
-             std::to_string(unquoted.size()) + " characters";
+        md += "\n- **File**: Not found";
+        return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, target.range};
     }
 
+    md = "```angelscript\n" + std::string(txt) + "\n```";
+    if (showLength)
+    {
+        md += "\n\n- **Length**: " + std::to_string(unquoted.size()) + " characters";
+    }
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, target.range};
 }
 } // namespace

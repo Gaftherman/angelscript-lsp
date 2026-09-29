@@ -95,6 +95,15 @@ struct TestEnvironment
                               &config, false};
         return GetCompletion(req);
     }
+
+    std::vector<lsp::CompletionItem> CompleteAtWithConfig(uint32_t line, uint32_t character,
+                                                         const angel_lsp::config::ServerConfig& config,
+                                                         bool snippetSupport = true)
+    {
+        CompletionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character},
+                              &config, snippetSupport};
+        return GetCompletion(req);
+    }
 };
 
 bool HasItem(const std::vector<lsp::CompletionItem>& items, const std::string& label)
@@ -1609,6 +1618,68 @@ TEST_CASE("Completion - Multi-line and comments in member access chain (AST-firs
         }
     }
     CHECK(foundTarget);
+}
+
+TEST_CASE("Completion - Method completion auto-parentheses and cursor placement")
+{
+    const std::string className = test::GenerateRandomSymbolName("CBaseEntity");
+    const std::string noArgMethod = test::GenerateRandomSymbolName("GetClassname");
+    const std::string multiArgMethod = test::GenerateRandomSymbolName("TakeDamage");
+    const std::string varName = test::GenerateRandomSymbolName("ent");
+
+    const std::string code =
+        "class " + className + " {\n"
+        "    string " + noArgMethod + "() { return \"\"; }\n"
+        "    void " + multiArgMethod + "(int amount, int type) {}\n"
+        "}\n"
+        "void main() {\n"
+        "    " + className + " " + varName + ";\n"
+        "    " + varName + ".\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // 1. With snippets and default completeFunctionParens = true
+    config::ServerConfig defaultConfig;
+    auto items = env.CompleteAtWithConfig(6, static_cast<uint32_t>(4 + varName.size() + 1), defaultConfig, true);
+    REQUIRE_FALSE(items.empty());
+
+    bool foundNoArg = false;
+    bool foundMultiArg = false;
+    for (const auto& item : items)
+    {
+        if (item.label == noArgMethod)
+        {
+            foundNoArg = true;
+            REQUIRE(item.insertText.has_value());
+            CHECK(*item.insertText == noArgMethod + "()$0");
+            CHECK(item.insertTextFormat.has_value());
+            CHECK(*item.insertTextFormat == lsp::InsertTextFormat::Snippet);
+        }
+        else if (item.label == multiArgMethod)
+        {
+            foundMultiArg = true;
+            REQUIRE(item.insertText.has_value());
+            CHECK(*item.insertText == multiArgMethod + "($0)");
+            CHECK(item.insertTextFormat.has_value());
+            CHECK(*item.insertTextFormat == lsp::InsertTextFormat::Snippet);
+        }
+    }
+    CHECK(foundNoArg);
+    CHECK(foundMultiArg);
+
+    // 2. With completeFunctionParens disabled
+    config::ServerConfig noParensConfig;
+    noParensConfig.features.completionCompleteFunctionParens = false;
+    auto noParensItems =
+        env.CompleteAtWithConfig(6, static_cast<uint32_t>(4 + varName.size() + 1), noParensConfig, true);
+    for (const auto& item : noParensItems)
+    {
+        if (item.label == noArgMethod || item.label == multiArgMethod)
+        {
+            CHECK_FALSE(item.insertText.has_value());
+        }
+    }
 }
 
 

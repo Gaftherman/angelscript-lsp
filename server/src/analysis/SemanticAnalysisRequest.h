@@ -258,6 +258,7 @@ struct SemanticAnalysisRequest
         return configured.empty() ? std::string_view("array") : configured;
     }
 
+
     /**
      * @brief Templates whose initializer list repeats their element type.
      * @see config::TypeConfig::arrayLikeTemplates for why this is configured and not inferred.

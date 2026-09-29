@@ -418,7 +418,7 @@ void Server::PublishDiagnostics(const std::string& uriStr, const std::string& te
         .text = text,
         .diagnostics = diagnostics,
         .version = version,
-        .generation = 0,
+        .generation = m_documentStore.GetGeneration(uriStr),
     });
 }
 } // namespace angel_lsp
