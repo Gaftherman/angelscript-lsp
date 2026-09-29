@@ -526,53 +526,9 @@ std::vector<ArgInfo> ParseArguments(TSNode argListNode, std::string_view sourceC
 std::vector<analysis::Symbol> CollectConstructorCandidates(const std::string& baseName, TSNode declaratorNode,
                                                            const InlayHintRequest& request)
 {
-    std::vector<analysis::Symbol> candidateSymbols;
-    const std::string ctorName = baseName + "::" + std::string(analysis::LastScopeSegment(baseName));
-
-    auto ctorSyms = request.symbolTable.FindSymbols(ctorName);
-    for (const auto& s : ctorSyms)
-    {
-        if (s.type == analysis::SymbolType::Function)
-        {
-            candidateSymbols.push_back(s);
-        }
-    }
-
-    if (candidateSymbols.empty())
-    {
-        auto scopeSyms =
-            analysis::FindSymbolsInScope(baseName, declaratorNode, request.sourceCode, request.symbolTable);
-        for (const auto& s : scopeSyms)
-        {
-            if (s.type == analysis::SymbolType::Class)
-            {
-                std::string qName = s.qualifiedName.empty() ? s.name : s.qualifiedName;
-                auto qCtors = request.symbolTable.FindSymbols(qName + "::" + s.name);
-                for (const auto& cs : qCtors)
-                {
-                    if (cs.type == analysis::SymbolType::Function)
-                    {
-                        candidateSymbols.push_back(cs);
-                    }
-                }
-            }
-        }
-    }
-
-    if (candidateSymbols.empty())
-    {
-        auto fnSyms = request.symbolTable.FindSymbols(baseName);
-        for (const auto& s : fnSyms)
-        {
-            if (s.type == analysis::SymbolType::Function)
-            {
-                candidateSymbols.push_back(s);
-            }
-        }
-    }
-
-    return candidateSymbols;
+    return analysis::CollectConstructorCandidates(baseName, declaratorNode, request.sourceCode, request.symbolTable);
 }
+
 
 /**
  * @brief Matches the best constructor overload using argument types.
@@ -1292,7 +1248,18 @@ void AddParameterHints(const std::vector<analysis::ParameterInformation>& parame
             {
                 label = label.substr(0, request.maxLength) + "...";
             }
-            hint.label = label + ":";
+            lsp::InlayHintLabelPart part;
+            part.value = label + ":";
+            part.tooltip = FormatParameterTooltip(param, label);
+            if (!ts_node_is_null(arg.exprNode))
+            {
+                TSPoint startPoint = ts_node_start_point(arg.exprNode);
+                TSPoint endPoint = ts_node_end_point(arg.exprNode);
+                lsp::Range argRange{lsp::Position{startPoint.row, startPoint.column},
+                                    lsp::Position{endPoint.row, endPoint.column}};
+                part.location = lsp::Location{lsp::DocumentUri::parse(request.uri), argRange};
+            }
+            hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
             hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
             hint.paddingRight = true;
             hint.paddingLeft = false;

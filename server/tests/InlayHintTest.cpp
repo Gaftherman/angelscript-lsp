@@ -15,6 +15,24 @@ using namespace angel_lsp::parser;
 
 namespace
 {
+    std::string GetHintLabel(const lsp::InlayHint& hint)
+    {
+        if (std::holds_alternative<std::string>(hint.label))
+        {
+            return std::get<std::string>(hint.label);
+        }
+        if (std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+        {
+            std::string res;
+            for (const auto& part : std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+            {
+                res += part.value;
+            }
+            return res;
+        }
+        return "";
+    }
+
     struct TestEnvironment
     {
         AngelScriptParser parser;
@@ -85,18 +103,14 @@ TEST_CASE("InlayHintHandler - Basic Function Call Parameter Hints")
     REQUIRE(hints->size() >= 2);
 
     // First parameter hint: a:
-    std::string label0 = std::holds_alternative<std::string>(hints->at(0).label)
-                             ? std::get<std::string>(hints->at(0).label)
-                             : "";
+    std::string label0 = GetHintLabel(hints->at(0));
     CHECK(label0 == "a:");
     CHECK(hints->at(0).kind.has_value());
     bool isParam0 = (hints->at(0).kind.value() == lsp::InlayHintKind::Parameter);
     CHECK(isParam0);
 
     // Second parameter hint: b:
-    std::string label1 = std::holds_alternative<std::string>(hints->at(1).label)
-                             ? std::get<std::string>(hints->at(1).label)
-                             : "";
+    std::string label1 = GetHintLabel(hints->at(1));
     CHECK(label1 == "b:");
     CHECK(hints->at(1).kind.has_value());
     bool isParam1 = (hints->at(1).kind.value() == lsp::InlayHintKind::Parameter);
@@ -117,9 +131,7 @@ TEST_CASE("InlayHintHandler - Exclusion Rule: Named Arguments")
     REQUIRE(hints.has_value());
     // Only 'y:' should be emitted since 'x' is already explicitly named in syntax
     REQUIRE(hints->size() == 1);
-    std::string label = std::holds_alternative<std::string>(hints->at(0).label)
-                            ? std::get<std::string>(hints->at(0).label)
-                            : "";
+    std::string label = GetHintLabel(hints->at(0));
     CHECK(label == "y:");
 }
 
@@ -144,9 +156,7 @@ TEST_CASE("InlayHintHandler - Exclusion Rule: Same-Name Arguments")
 
         for (const auto &hint : *hints)
         {
-            std::string l = std::holds_alternative<std::string>(hint.label)
-                                ? std::get<std::string>(hint.label)
-                                : "";
+            std::string l = GetHintLabel(hint);
             if (l == "width:")
             {
                 foundWidthHint = true;
@@ -170,9 +180,7 @@ TEST_CASE("InlayHintHandler - Exclusion Rule: Same-Name Arguments")
 
         for (const auto &hint : *hints)
         {
-            std::string l = std::holds_alternative<std::string>(hint.label)
-                                ? std::get<std::string>(hint.label)
-                                : "";
+            std::string l = GetHintLabel(hint);
             if (l == "width:")
             {
                 foundWidthHint = true;
@@ -209,9 +217,7 @@ TEST_CASE("InlayHintHandler - Class Method Call with Inheritance")
 
     for (const auto &hint : *hints)
     {
-        std::string l = std::holds_alternative<std::string>(hint.label)
-                            ? std::get<std::string>(hint.label)
-                            : "";
+        std::string l = GetHintLabel(hint);
         if (l == "damage:")
         {
             foundDamage = true;
@@ -246,9 +252,7 @@ TEST_CASE("InlayHintHandler - Auto Variable Type Deduction for Literals")
     std::vector<std::string> labels;
     for (const auto &hint : *hints)
     {
-        std::string l = std::holds_alternative<std::string>(hint.label)
-                            ? std::get<std::string>(hint.label)
-                            : "";
+        std::string l = GetHintLabel(hint);
         labels.push_back(l);
         CHECK(hint.kind.has_value());
         bool isType = (hint.kind.value() == lsp::InlayHintKind::Type);
@@ -353,9 +357,7 @@ TEST_CASE("InlayHintHandler - Sub-range Filtering")
 
     REQUIRE(hints.has_value());
     REQUIRE(hints->size() == 1);
-    std::string l = std::holds_alternative<std::string>(hints->at(0).label)
-                        ? std::get<std::string>(hints->at(0).label)
-                        : "";
+    std::string l = GetHintLabel(hints->at(0));
     CHECK(l == "x:");
 }
 
@@ -438,9 +440,12 @@ TEST_CASE("InlayHintHandler - ShootGrenade and trailing parameter hints")
     std::vector<std::string> labels;
     for (const auto &h : *hints)
     {
-        if (std::holds_alternative<std::string>(h.label))
         {
-            labels.push_back(std::get<std::string>(h.label));
+
+            std::string l = GetHintLabel(h);
+
+            if (!l.empty()) labels.push_back(l);
+
         }
     }
     CHECK(labels.size() == 7);
@@ -468,9 +473,12 @@ TEST_CASE("InlayHintHandler - BaseClass and inherited unqualified call parameter
     std::vector<std::string> labels;
     for (const auto &h : *hints)
     {
-        if (std::holds_alternative<std::string>(h.label))
         {
-            labels.push_back(std::get<std::string>(h.label));
+
+            std::string l = GetHintLabel(h);
+
+            if (!l.empty()) labels.push_back(l);
+
         }
     }
     CHECK(std::find(labels.begin(), labels.end(), "skiplocal:") != labels.end());
@@ -495,9 +503,12 @@ TEST_CASE("InlayHintHandler - Namespaced class this.Method parameter hints")
     std::vector<std::string> labels;
     for (const auto &h : *hints)
     {
-        if (std::holds_alternative<std::string>(h.label))
         {
-            labels.push_back(std::get<std::string>(h.label));
+
+            std::string l = GetHintLabel(h);
+
+            if (!l.empty()) labels.push_back(l);
+
         }
     }
     CHECK(std::find(labels.begin(), labels.end(), "anim:") != labels.end());
@@ -522,9 +533,12 @@ TEST_CASE("InlayHintHandler - Constructor Direct-Initialization Parameter Hints"
     std::vector<std::string> labels;
     for (const auto &h : *hints)
     {
-        if (std::holds_alternative<std::string>(h.label))
         {
-            labels.push_back(std::get<std::string>(h.label));
+
+            std::string l = GetHintLabel(h);
+
+            if (!l.empty()) labels.push_back(l);
+
         }
     }
 
@@ -553,9 +567,12 @@ TEST_CASE("InlayHintHandler - Mixin Method Parameter Hints")
     std::vector<std::string> labels;
     for (const auto &h : *hints)
     {
-        if (std::holds_alternative<std::string>(h.label))
         {
-            labels.push_back(std::get<std::string>(h.label));
+
+            std::string l = GetHintLabel(h);
+
+            if (!l.empty()) labels.push_back(l);
+
         }
     }
 
@@ -581,9 +598,12 @@ TEST_CASE("InlayHintHandler - Mixin Method Parameter Hints on Instance")
     std::vector<std::string> labels;
     for (const auto &h : *hints)
     {
-        if (std::holds_alternative<std::string>(h.label))
         {
-            labels.push_back(std::get<std::string>(h.label));
+
+            std::string l = GetHintLabel(h);
+
+            if (!l.empty()) labels.push_back(l);
+
         }
     }
 
@@ -613,9 +633,12 @@ TEST_CASE("InlayHintHandler - BaseClass Method Parameter Hints with Mixin in Hie
     std::vector<std::string> labels;
     for (const auto &h : *hints)
     {
-        if (std::holds_alternative<std::string>(h.label))
         {
-            labels.push_back(std::get<std::string>(h.label));
+
+            std::string l = GetHintLabel(h);
+
+            if (!l.empty()) labels.push_back(l);
+
         }
     }
 
@@ -640,9 +663,12 @@ TEST_CASE("InlayHintHandler - Math Utility Object Parameter Hints")
     std::vector<std::string> labels;
     for (const auto &h : *hints)
     {
-        if (std::holds_alternative<std::string>(h.label))
         {
-            labels.push_back(std::get<std::string>(h.label));
+
+            std::string l = GetHintLabel(h);
+
+            if (!l.empty()) labels.push_back(l);
+
         }
     }
 
@@ -667,7 +693,7 @@ TEST_CASE("InlayHintHandler - Relaxed Parameter Name Matching Suppression")
     bool foundSuppressed = false;
     for (const auto &h : *suppressedHints)
     {
-        if (std::holds_alternative<std::string>(h.label) && std::get<std::string>(h.label) == "value:")
+        if (GetHintLabel(h) == "value:")
         {
             foundSuppressed = true;
         }
@@ -680,7 +706,7 @@ TEST_CASE("InlayHintHandler - Relaxed Parameter Name Matching Suppression")
     bool foundRelaxed = false;
     for (const auto &h : *relaxedHints)
     {
-        if (std::holds_alternative<std::string>(h.label) && std::get<std::string>(h.label) == "value:")
+        if (GetHintLabel(h) == "value:")
         {
             foundRelaxed = true;
         }
@@ -693,7 +719,7 @@ TEST_CASE("InlayHintHandler - Relaxed Parameter Name Matching Suppression")
     bool foundDefault = false;
     for (const auto &h : *defaultHints)
     {
-        if (std::holds_alternative<std::string>(h.label) && std::get<std::string>(h.label) == "value:")
+        if (GetHintLabel(h) == "value:")
         {
             foundDefault = true;
         }
@@ -719,9 +745,12 @@ TEST_CASE("InlayHintHandler - Complex Call Involving Namespace Member and Overlo
     std::vector<std::string> labels;
     for (const auto &h : *hints)
     {
-        if (std::holds_alternative<std::string>(h.label))
         {
-            labels.push_back(std::get<std::string>(h.label));
+
+            std::string l = GetHintLabel(h);
+
+            if (!l.empty()) labels.push_back(l);
+
         }
     }
     CHECK(std::find(labels.begin(), labels.end(), "channel:") != labels.end());
@@ -752,9 +781,12 @@ TEST_CASE("InlayHintHandler - Complex Call Involving Dot-Accessed Namespace Meth
     std::vector<std::string> labels;
     for (const auto &h : *hints)
     {
-        if (std::holds_alternative<std::string>(h.label))
         {
-            labels.push_back(std::get<std::string>(h.label));
+
+            std::string l = GetHintLabel(h);
+
+            if (!l.empty()) labels.push_back(l);
+
         }
     }
     CHECK(std::find(labels.begin(), labels.end(), "channel:") != labels.end());
@@ -777,18 +809,10 @@ TEST_CASE("InlayHintHandler - Call With Default Parameters Retains All Provided 
     REQUIRE(hints.has_value());
     REQUIRE(hints->size() == 4);
 
-    std::string label0 = std::holds_alternative<std::string>(hints->at(0).label)
-                             ? std::get<std::string>(hints->at(0).label)
-                             : "";
-    std::string label1 = std::holds_alternative<std::string>(hints->at(1).label)
-                             ? std::get<std::string>(hints->at(1).label)
-                             : "";
-    std::string label2 = std::holds_alternative<std::string>(hints->at(2).label)
-                             ? std::get<std::string>(hints->at(2).label)
-                             : "";
-    std::string label3 = std::holds_alternative<std::string>(hints->at(3).label)
-                             ? std::get<std::string>(hints->at(3).label)
-                             : "";
+    std::string label0 = GetHintLabel(hints->at(0));
+    std::string label1 = GetHintLabel(hints->at(1));
+    std::string label2 = GetHintLabel(hints->at(2));
+    std::string label3 = GetHintLabel(hints->at(3));
 
     CHECK(label0 == "width:");
     CHECK(label1 == "height:");
@@ -815,12 +839,8 @@ TEST_CASE("InlayHintHandler - Parameter labels are never truncated")
     REQUIRE(hints.has_value());
     REQUIRE(hints->size() == 2);
 
-    std::string label0 = std::holds_alternative<std::string>(hints->at(0).label)
-                             ? std::get<std::string>(hints->at(0).label)
-                             : "";
-    std::string label1 = std::holds_alternative<std::string>(hints->at(1).label)
-                             ? std::get<std::string>(hints->at(1).label)
-                             : "";
+    std::string label0 = GetHintLabel(hints->at(0));
+    std::string label1 = GetHintLabel(hints->at(1));
 
     CHECK(label0 == "shouldTrace:");
     CHECK(label1 == "longParameterIdentifier:");
@@ -846,9 +866,7 @@ TEST_CASE("InlayHintHandler - ShootProp with 13 parameters returns all parameter
     REQUIRE(hints->size() == 14);
 
     auto getLabel = [&](size_t idx) -> std::string {
-        return std::holds_alternative<std::string>(hints->at(idx).label)
-                   ? std::get<std::string>(hints->at(idx).label)
-                   : "";
+        return GetHintLabel(hints->at(idx));
     };
 
     CHECK(getLabel(1) == "pevOwner:");
@@ -887,9 +905,7 @@ TEST_CASE("InlayHintHandler - maxParameters limits parameter hint count")
     REQUIRE(hints->size() == 6);
 
     auto getLabel = [&](size_t idx) -> std::string {
-        return std::holds_alternative<std::string>(hints->at(idx).label)
-                   ? std::get<std::string>(hints->at(idx).label)
-                   : "";
+        return GetHintLabel(hints->at(idx));
     };
 
     CHECK(getLabel(1) == "pevOwner:");
@@ -916,9 +932,7 @@ TEST_CASE("InlayHintHandler - maxLength truncates parameter labels")
     REQUIRE(hints->size() == 14);
 
     auto getLabel = [&](size_t idx) -> std::string {
-        return std::holds_alternative<std::string>(hints->at(idx).label)
-                   ? std::get<std::string>(hints->at(idx).label)
-                   : "";
+        return GetHintLabel(hints->at(idx));
     };
 
     // 'pevOwner' length is 8 -> not truncated: 'pevOwner:'
@@ -951,9 +965,9 @@ TEST_CASE("InlayHintHandler - Invariant randomized symbols with maxParameters an
         auto hints = env.InlayHints();
         REQUIRE(hints.has_value());
         REQUIRE(hints->size() == 3);
-        CHECK(std::get<std::string>(hints->at(0).label) == p0 + ":");
-        CHECK(std::get<std::string>(hints->at(1).label) == p1 + ":");
-        CHECK(std::get<std::string>(hints->at(2).label) == p2 + ":");
+        CHECK(GetHintLabel(hints->at(0)) == p0 + ":");
+        CHECK(GetHintLabel(hints->at(1)) == p1 + ":");
+        CHECK(GetHintLabel(hints->at(2)) == p2 + ":");
     }
 
     // 2. maxParameters = 2
@@ -961,8 +975,8 @@ TEST_CASE("InlayHintHandler - Invariant randomized symbols with maxParameters an
         auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 2, 0);
         REQUIRE(hints.has_value());
         REQUIRE(hints->size() == 2);
-        CHECK(std::get<std::string>(hints->at(0).label) == p0 + ":");
-        CHECK(std::get<std::string>(hints->at(1).label) == p1 + ":");
+        CHECK(GetHintLabel(hints->at(0)) == p0 + ":");
+        CHECK(GetHintLabel(hints->at(1)) == p1 + ":");
     }
 
     // 3. maxLength = 5
@@ -970,8 +984,8 @@ TEST_CASE("InlayHintHandler - Invariant randomized symbols with maxParameters an
         auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 5);
         REQUIRE(hints.has_value());
         REQUIRE(hints->size() == 3);
-        CHECK(std::get<std::string>(hints->at(0).label) == p0.substr(0, 5) + "...:");
-        CHECK(std::get<std::string>(hints->at(1).label) == p1.substr(0, 5) + "...:");
+        CHECK(GetHintLabel(hints->at(0)) == p0.substr(0, 5) + "...:");
+        CHECK(GetHintLabel(hints->at(1)) == p1.substr(0, 5) + "...:");
     }
 }
 
@@ -1105,9 +1119,8 @@ TEST_CASE("InlayHint - Scoped calls and enum arguments")
 
     for (const auto& hint : *hints)
     {
-        if (std::holds_alternative<std::string>(hint.label))
         {
-            std::string label = std::get<std::string>(hint.label);
+            std::string label = GetHintLabel(hint);
             if (label == paramPlayer + ":")
             {
                 foundUpdatePlayer = true;
@@ -1152,9 +1165,7 @@ TEST_CASE("InlayHintHandler - Omitted default parameter in non-empty argument li
     bool foundOmittedHintWithTooltip = false;
     for (const auto& hint : *hints)
     {
-        std::string label = std::holds_alternative<std::string>(hint.label)
-                                ? std::get<std::string>(hint.label)
-                                : "";
+        std::string label = GetHintLabel(hint);
         if (label.find(argsParam + ": null") != std::string::npos)
         {
             REQUIRE(hint.tooltip.has_value());
@@ -1195,9 +1206,7 @@ TEST_CASE("InlayHintHandler - Nameless wildcard parameter ?& in generates fallba
     bool foundWildcardHint = false;
     for (const auto& hint : *hints)
     {
-        std::string label = std::holds_alternative<std::string>(hint.label)
-                                ? std::get<std::string>(hint.label)
-                                : "";
+        std::string label = GetHintLabel(hint);
         if (label.find("?:") != std::string::npos || label.find("?& in:") != std::string::npos || label.find("?&in:") != std::string::npos)
         {
             foundWildcardHint = true;
@@ -1213,9 +1222,51 @@ TEST_CASE("InlayHintHandler - Nameless wildcard parameter ?& in generates fallba
     CHECK(foundWildcardHint);
 }
 
+TEST_CASE("InlayHintHandler - Parameter hint label part location covers full multi-part argument range")
+{
+    const std::string msgClass = test::GenerateRandomSymbolName("NetworkMsg");
+    const std::string nsName = test::GenerateRandomSymbolName("MsgTypes");
+    const std::string enumVal = test::GenerateRandomSymbolName("ShieldRic");
+    const std::string destParam = test::GenerateRandomSymbolName("dest");
+    const std::string typeParam = test::GenerateRandomSymbolName("type");
+    const std::string edictParam = test::GenerateRandomSymbolName("pEdict");
 
+    const std::string code =
+        "namespace " + nsName + " {\n"
+        "    enum Type { " + enumVal + " = 1 };\n"
+        "}\n"
+        "class " + msgClass + " {\n"
+        "    " + msgClass + "(int " + destParam + ", " + nsName + "::Type " + typeParam + ", int " + edictParam + " = 0) {}\n"
+        "}\n"
+        "void main() {\n"
+        "    " + msgClass + " m(1, " + nsName + "::" + enumVal + ");\n"
+        "}\n";
 
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
 
-
-
+    bool foundTypeHintWithFullRange = false;
+    for (const auto& hint : *hints)
+    {
+        if (!std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+        {
+            continue;
+        }
+        const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
+        for (const auto& part : parts)
+        {
+            if (part.value == typeParam + ":")
+            {
+                REQUIRE(part.location.has_value());
+                const auto& range = part.location->range;
+                CHECK(range.start.line == 7);
+                CHECK(range.end.line == 7);
+                CHECK(range.end.character > range.start.character + nsName.length() + 2);
+                foundTypeHintWithFullRange = true;
+            }
+        }
+    }
+    CHECK(foundTypeHintWithFullRange);
+}
 

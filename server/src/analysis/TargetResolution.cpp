@@ -1395,7 +1395,10 @@ bool IsRefInsideNamespace(const std::string& fileUri, const analysis::LocalRefer
     {
         if (ref.startLine >= nr.first && ref.startLine <= nr.second)
         {
-            return true;
+            if (!ref.isMemberAccess)
+            {
+                return true;
+            }
         }
     }
 
@@ -1446,7 +1449,7 @@ void ScanDocumentForNamespace(const analysis::Scope* root, const std::vector<std
 
         for (const auto& ref : s->references)
         {
-            if (ref.name != ctx.request.target.name || ref.isMemberAccess ||
+            if (ref.name != ctx.request.target.name ||
                 ctx.declRanges.contains({ctx.fileUri, ref.startLine, ref.startCharacter}))
             {
                 continue;

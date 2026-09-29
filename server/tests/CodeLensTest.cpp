@@ -513,3 +513,74 @@ TEST_CASE("CodeLens - Property Accessor Reference Counting")
     CHECK(foundSetterRef);
 }
 
+TEST_CASE("CodeLens - Cross-File Namespace Variable References")
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{ nullptr };
+    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("btscm");
+    const std::string constName = angel_lsp::test::GenerateRandomSymbolName("HITGROUP_SHIELD");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("someFunction");
+
+    const std::string uri1 = "file:///decl.as";
+    const std::string code1 =
+        "namespace " + nsName + "\n"
+        "{\n"
+        "    const int " + constName + " = 15;\n"
+        "}\n";
+
+    const std::string uri2 = "file:///usage.as";
+    const std::string code2 =
+        "namespace " + nsName + "\n"
+        "{\n"
+        "    void " + funcName + "(int iHitGroup) {\n"
+        "        if (iHitGroup == " + constName + ") {}\n"
+        "    }\n"
+        "}\n";
+
+    TSTree* tree1 = parser.Parse(code1);
+    TSTree* tree2 = parser.Parse(code2);
+
+    symbolCollector.CollectSymbols(uri1, code1, parser, symbolTable);
+    symbolCollector.CollectSymbols(uri2, code2, parser, symbolTable);
+
+    auto scope1 = scopeCollector.CollectScopes(code1, parser);
+    if (scope1)
+    {
+        scopeIndex.SetScopeTree(uri1, std::move(scope1));
+    }
+    auto scope2 = scopeCollector.CollectScopes(code2, parser);
+    if (scope2)
+    {
+        scopeIndex.SetScopeTree(uri2, std::move(scope2));
+    }
+
+    CodeLensRequest req{ uri1, code1, tree1, symbolTable, scopeIndex };
+    auto lenses = GetCodeLenses(req);
+    REQUIRE(lenses.has_value());
+
+    bool verified = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.range.start.line == 2 && lens.command.has_value())
+        {
+            CHECK(lens.command->title == "1 reference");
+            verified = true;
+        }
+    }
+    CHECK(verified);
+
+    if (tree1)
+    {
+        ts_tree_delete(tree1);
+    }
+    if (tree2)
+    {
+        ts_tree_delete(tree2);
+    }
+}
+
+

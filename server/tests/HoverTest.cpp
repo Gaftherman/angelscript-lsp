@@ -1,4 +1,5 @@
 #include <doctest/doctest.h>
+#include "helpers/TestUtils.h"
 
 #include "features/hover/HoverHandler.h"
 #include "analysis/SymbolCollector.h"
@@ -1034,3 +1035,63 @@ TEST_CASE("HoverHandler - Predefined Stub Parameter AST Fallback")
 
     ts_tree_delete(tree);
 }
+
+TEST_CASE("HoverHandler - Variable Direct Initialization shows Constructor Signature")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("NetMsg");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("m");
+
+    std::string code =
+        "class " + className + " {\n"
+        "    " + className + "(int dest, int type) {}\n"
+        "    void WriteCoord(float x) {}\n"
+        "}\n"
+        "void Test() {\n"
+        "    " + className + " " + varName + "(1, 2);\n"
+        "    " + varName + ".WriteCoord(1.0f);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    // Line 5: "    NetMsg m(1, 2);"
+    // Hover over varName on line 5
+    uint32_t charPos = 4 + static_cast<uint32_t>(className.size()) + 1;
+    auto hoverDecl = env.HoverAt(5, charPos);
+    REQUIRE(hoverDecl.has_value());
+    auto contentDecl = std::get<lsp::MarkupContent>(hoverDecl->contents);
+    CHECK(contentDecl.value.find("(local variable) " + className + " " + varName) != std::string::npos);
+    CHECK(contentDecl.value.find(className + "(int dest, int type)") != std::string::npos);
+
+    // Line 6: "    m.WriteCoord(1.0f);"
+    // Hover over varName on line 6: must NOT show constructor signature
+    auto hoverUse = env.HoverAt(6, 4);
+    REQUIRE(hoverUse.has_value());
+    auto contentUse = std::get<lsp::MarkupContent>(hoverUse->contents);
+    CHECK(contentUse.value.find("(local variable) " + className + " " + varName) != std::string::npos);
+    CHECK(contentUse.value.find(className + "(int dest, int type)") == std::string::npos);
+}
+
+TEST_CASE("HoverHandler - String Literal Hover")
+{
+    const std::string rawText = angel_lsp::test::GenerateRandomSymbolName("sample_text");
+    std::string code =
+        "void Test() {\n"
+        "    string s = \"" + rawText + "\";\n"
+        "    string p = \"path/to/missing_asset.wav\";\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    // Hover over non-path string literal on line 1
+    auto hoverText = env.HoverAt(1, 18);
+    REQUIRE(hoverText.has_value());
+    auto contentText = std::get<lsp::MarkupContent>(hoverText->contents);
+    CHECK(contentText.value.find("*(string literal)*: `\"" + rawText + "\"`") != std::string::npos);
+    CHECK(contentText.value.find("- **Length**: " + std::to_string(rawText.size()) + " characters") != std::string::npos);
+
+    // Hover over path string literal without resolution on line 2
+    auto hoverPath = env.HoverAt(2, 18);
+    REQUIRE(hoverPath.has_value());
+    auto contentPath = std::get<lsp::MarkupContent>(hoverPath->contents);
+    CHECK(contentPath.value.find("*(string literal)*: `\"path/to/missing_asset.wav\"`") != std::string::npos);
+    CHECK(contentPath.value.find("- **File**: Not found") != std::string::npos);
+}
+

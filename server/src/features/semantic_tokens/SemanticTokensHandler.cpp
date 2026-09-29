@@ -1123,9 +1123,11 @@ uint32_t RefineEnclosingClassMember(std::string_view tokenText, uint32_t startBy
  * @param[in] agreedType Consensus symbol type.
  * @param[in] tokenType Current coarse token type.
  * @param[in] hasContainer True if symbol belongs to a container.
+ * @param[in] isEnumConstant True if symbol is an enum constant.
  * @return Refined token type.
  */
-uint32_t MatchAgreedSymbolType(analysis::SymbolType agreedType, uint32_t tokenType, bool hasContainer)
+uint32_t MatchAgreedSymbolType(analysis::SymbolType agreedType, uint32_t tokenType, bool hasContainer,
+                               bool isEnumConstant)
 {
     if (tokenType == Type_Type)
     {
@@ -1140,9 +1142,16 @@ uint32_t MatchAgreedSymbolType(analysis::SymbolType agreedType, uint32_t tokenTy
     {
         return Type_Method;
     }
-    if (agreedType == analysis::SymbolType::Variable && tokenType == Type_Variable && hasContainer)
+    if (agreedType == analysis::SymbolType::Variable)
     {
-        return Type_Property;
+        if (isEnumConstant)
+        {
+            return Type_EnumMember;
+        }
+        if (tokenType == Type_Variable && hasContainer)
+        {
+            return Type_Property;
+        }
     }
     return tokenType;
 }
@@ -1169,7 +1178,13 @@ uint32_t RefineSymbolTableMatch(std::string_view tokenText, uint32_t tokenType,
     {
         return tokenType;
     }
-    return MatchAgreedSymbolType(agreedType, tokenType, !symbols->front().containerName.empty());
+    bool isEnumConstant = false;
+    if (agreedType == analysis::SymbolType::Variable &&
+        std::holds_alternative<analysis::VariableSignature>(symbols->front().signature))
+    {
+        isEnumConstant = symbols->front().GetVariable().isEnumConstant;
+    }
+    return MatchAgreedSymbolType(agreedType, tokenType, !symbols->front().containerName.empty(), isEnumConstant);
 }
 
 /**
