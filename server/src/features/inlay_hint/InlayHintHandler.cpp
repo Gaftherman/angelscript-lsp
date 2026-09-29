@@ -1010,7 +1010,7 @@ std::string SelectWiderType(std::string_view leftT, std::string_view rightT, std
     }
 
     const std::string_view effectiveStr = stringTypeName.empty() ? "string" : stringTypeName;
-    if (IsOperandMatch(leftT, rightT, effectiveStr) || IsOperandMatch(leftT, rightT, "string"))
+    if (IsOperandMatch(leftT, rightT, effectiveStr))
     {
         return std::string(effectiveStr);
     }

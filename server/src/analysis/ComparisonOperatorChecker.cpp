@@ -85,9 +85,9 @@ bool TypeHasOperator(const std::string& typeName, const std::string& opName, con
     return false;
 }
 
-bool IsKnownType(const std::string& type, const SymbolTable& table, std::string_view stringTypeName = "string")
+bool IsKnownType(const std::string& type, const SymbolTable& table, std::string_view stringTypeName)
 {
-    if (parser::primitives::IsNumeric(type) || type == "bool" || type == stringTypeName || type == "string" ||
+    if (parser::primitives::IsNumeric(type) || type == "bool" || type == stringTypeName ||
         ResolvesToEnum(type, table))
     {
         return true;
@@ -114,7 +114,7 @@ bool AreCustomTypesCompatible(std::string_view op, const std::string& left, cons
 bool CheckBoolCompatibility(bool isRelational, const std::string& other, const SymbolTable& table,
                             std::string_view stringTypeName)
 {
-    if (parser::primitives::IsNumeric(other) || other == stringTypeName || other == "string" ||
+    if (parser::primitives::IsNumeric(other) || other == stringTypeName ||
         ResolvesToEnum(other, table))
     {
         return false;
@@ -134,8 +134,7 @@ bool CheckStringCompatibility(bool isRelational, const std::string& other, const
         return false;
     }
     const std::string strTarget(stringTypeName);
-    if (TypeHasOpImplConvTo(other, strTarget, table) ||
-        (strTarget != "string" && TypeHasOpImplConvTo(other, "string", table)))
+    if (TypeHasOpImplConvTo(other, strTarget, table))
     {
         return true;
     }
@@ -163,7 +162,7 @@ bool IsEnumComparisonCompatible(const std::string& left, const std::string& righ
 bool CheckIdenticalTypes(std::string_view op, const std::string& type, const SymbolTable& table,
                          std::string_view stringTypeName)
 {
-    if (type == stringTypeName || type == "string" || ResolvesToEnum(type, table))
+    if (type == stringTypeName || ResolvesToEnum(type, table))
     {
         return true;
     }
@@ -183,7 +182,7 @@ bool CheckBoolBranch(bool isRelational, const OperandTypes& types, const SymbolT
 
 [[nodiscard]] bool IsStringOperand(const std::string& type, std::string_view stringTypeName) noexcept
 {
-    return type == stringTypeName || type == "string";
+    return type == stringTypeName;
 }
 
 bool CheckStringBranch(bool isRelational, const OperandTypes& types, const SymbolTable& table,
@@ -200,7 +199,7 @@ bool CheckStringBranch(bool isRelational, const OperandTypes& types, const Symbo
 }
 
 bool AreComparisonTypesCompatible(std::string_view op, const OperandTypes& types, const SymbolTable& table,
-                                  std::string_view stringTypeName = "string")
+                                  std::string_view stringTypeName)
 {
     if (!IsKnownType(types.left, table, stringTypeName) || !IsKnownType(types.right, table, stringTypeName))
     {

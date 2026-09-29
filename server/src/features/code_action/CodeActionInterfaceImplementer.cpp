@@ -27,7 +27,7 @@ std::string GetDefaultReturnValue(std::string_view returnType, std::string_view 
         return "false";
     }
     const std::string_view effectiveStr = stringTypeName.empty() ? "string" : stringTypeName;
-    if (cleanRet == effectiveStr || cleanRet == "string")
+    if (cleanRet == effectiveStr)
     {
         return "\"\"";
     }

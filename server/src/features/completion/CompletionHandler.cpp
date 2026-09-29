@@ -357,23 +357,17 @@ static const std::string& ConfiguredArrayTypeName(const CompletionRequest& reque
 }
 
 /**
- * @brief Static array of primitive type names.
- * @param[in] stringTypeName Configured string type name.
- * @param[in] arrayTypeName Configured array container type name.
+ * @brief Static list of AngelScript VM primitive type names.
  * @return Vector of primitive strings.
  */
-std::vector<std::string> GetPrimitiveTypeNames(std::string_view stringTypeName = "string",
-                                               std::string_view arrayTypeName = "array")
+static std::vector<std::string> GetPrimitiveTypeNames()
 {
     std::vector<std::string> all;
-    all.reserve(parser::primitives::k_all.size() + 3);
+    all.reserve(parser::primitives::k_all.size());
     for (const std::string_view name : parser::primitives::k_all)
     {
         all.emplace_back(name);
     }
-    all.emplace_back(stringTypeName);
-    all.emplace_back(arrayTypeName);
-    all.emplace_back("dictionary");
     return all;
 }
 
@@ -1023,9 +1017,7 @@ bool TryCompleteTemplateArguments(const std::string& prefix, CompletionCollector
             }
         });
 
-    const auto& strType = ConfiguredStringTypeName(collector.request);
-    const auto& arrType = ConfiguredArrayTypeName(collector.request);
-    for (const auto& primitive : GetPrimitiveTypeNames(strType, arrType))
+    for (const auto& primitive : GetPrimitiveTypeNames())
     {
         AddItemIfNew(collector, {primitive, lsp::CompletionItemKind::Keyword});
     }
