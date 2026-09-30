@@ -531,7 +531,8 @@ Server::HandleRequestsTextDocument_Formatting(lsp::requests::TextDocument_Format
         return lsp::Null{};
     }
 
-    features::FormattingRequest fr{doc->uri, *doc->text, doc->tree, req.options, CurrentBraceStyle()};
+    features::FormattingRequest fr{doc->uri, *doc->text, doc->tree, req.options, CurrentBraceStyle(),
+                                   CurrentSpacesInsideParentheses()};
     auto edits = features::FormatDocument(fr);
     if (edits.has_value())
     {
@@ -554,9 +555,13 @@ Server::HandleRequestsTextDocument_RangeFormatting(lsp::requests::TextDocument_R
         return lsp::Null{};
     }
 
-    features::RangeFormattingRequest rfr{doc->uri,    *doc->text,
-                                         doc->tree,   codec::Decode(*doc->text, m_positionEncoding, req.range),
-                                         req.options, CurrentBraceStyle()};
+    features::RangeFormattingRequest rfr{doc->uri,
+                                         *doc->text,
+                                         doc->tree,
+                                         codec::Decode(*doc->text, m_positionEncoding, req.range),
+                                         req.options,
+                                         CurrentBraceStyle(),
+                                         CurrentSpacesInsideParentheses()};
     auto edits = features::FormatRange(rfr);
     if (edits.has_value())
     {
@@ -569,7 +574,7 @@ Server::HandleRequestsTextDocument_RangeFormatting(lsp::requests::TextDocument_R
 lsp::requests::TextDocument_OnTypeFormatting::Result
 Server::HandleRequestsTextDocument_OnTypeFormatting(lsp::requests::TextDocument_OnTypeFormatting::Params&& req)
 {
-    if (!m_config.features.enableOnTypeFormatting)
+    if (!m_config.features.enableFormatting || !m_config.features.enableOnTypeFormatting)
     {
         return lsp::Null{};
     }
@@ -579,9 +584,14 @@ Server::HandleRequestsTextDocument_OnTypeFormatting(lsp::requests::TextDocument_
         return lsp::Null{};
     }
 
-    features::OnTypeFormattingRequest otfr{
-        doc->uri, *doc->text,  doc->tree,          codec::Decode(*doc->text, m_positionEncoding, req.position),
-        req.ch,   req.options, CurrentBraceStyle()};
+    features::OnTypeFormattingRequest otfr{doc->uri,
+                                           *doc->text,
+                                           doc->tree,
+                                           codec::Decode(*doc->text, m_positionEncoding, req.position),
+                                           req.ch,
+                                           req.options,
+                                           CurrentBraceStyle(),
+                                           CurrentSpacesInsideParentheses()};
     auto edits = features::FormatOnType(otfr);
     if (edits.has_value())
     {
@@ -920,7 +930,8 @@ Server::HandleRequestsTextDocument_WillSaveWaitUntil(lsp::requests::TextDocument
     options.tabSize = 4;
     options.insertSpaces = true;
 
-    features::FormattingRequest fr{doc->uri, *doc->text, doc->tree, options, CurrentBraceStyle()};
+    features::FormattingRequest fr{doc->uri, *doc->text, doc->tree, options, CurrentBraceStyle(),
+                                   CurrentSpacesInsideParentheses()};
     auto edits = features::FormatDocument(fr);
     if (edits.has_value())
     {

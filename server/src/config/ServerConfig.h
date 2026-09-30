@@ -533,6 +533,11 @@ struct FormatConfig
      * option.
      */
     bool formatOnSave = false;
+
+    /**
+     * @brief Whether to insert spaces inside parentheses (e.g. 'foo( bar )' vs 'foo(bar)') (default: false).
+     */
+    bool spacesInsideParentheses = false;
 };
 
 /**

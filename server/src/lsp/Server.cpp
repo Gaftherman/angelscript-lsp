@@ -172,6 +172,7 @@ Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& s
     m_definedWords = std::make_shared<const ankerl::unordered_dense::set<std::string>>();
     SetDefinedWordsFrom(std::string(), m_config.definedWords);
     m_formatBraceStyleKR.store(BraceStyleIsKR(m_config.format.braceStyle), std::memory_order_relaxed);
+    m_formatSpacesInsideParentheses.store(m_config.format.spacesInsideParentheses, std::memory_order_relaxed);
 
     BuildDiagnosticSeverityOverrides();
 
@@ -656,14 +657,13 @@ void Server::ConfigureFormattingAndDiagnosticCapabilities(lsp::ServerCapabilitie
         lsp::DocumentRangeFormattingOptions rangeOpts;
         rangeOpts.rangesSupport = true;
         caps.documentRangeFormattingProvider = rangeOpts;
-    }
-
-    if (m_config.features.enableOnTypeFormatting)
-    {
-        lsp::DocumentOnTypeFormattingOptions onTypeOpts;
-        onTypeOpts.firstTriggerCharacter = ";";
-        onTypeOpts.moreTriggerCharacter = lsp::Array<lsp::String>{"}"};
-        caps.documentOnTypeFormattingProvider = onTypeOpts;
+        if (m_config.features.enableOnTypeFormatting)
+        {
+            lsp::DocumentOnTypeFormattingOptions onTypeOpts;
+            onTypeOpts.firstTriggerCharacter = ";";
+            onTypeOpts.moreTriggerCharacter = lsp::Array<lsp::String>{"}"};
+            caps.documentOnTypeFormattingProvider = onTypeOpts;
+        }
     }
 
     if (m_config.features.enableDocumentLink)

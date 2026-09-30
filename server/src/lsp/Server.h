@@ -90,6 +90,7 @@ class Server
      * there too. Nothing frees a buffer under a reader, which is what that mutex is for.
      */
     std::atomic<bool> m_formatBraceStyleKR{false};
+    std::atomic<bool> m_formatSpacesInsideParentheses{false};
     std::atomic<uint64_t> m_configRevision{0};
 
     std::unique_ptr<angel_lsp::i18n::I18n> m_i18n;
@@ -1893,6 +1894,12 @@ class Server
     {
         return m_formatBraceStyleKR.load(std::memory_order_relaxed) ? features::BraceStyle::KAndR
                                                                     : features::BraceStyle::Allman;
+    }
+
+    /** @brief Whether formatting handlers should insert spaces inside parentheses. */
+    bool CurrentSpacesInsideParentheses() const noexcept
+    {
+        return m_formatSpacesInsideParentheses.load(std::memory_order_relaxed);
     }
 
     /**

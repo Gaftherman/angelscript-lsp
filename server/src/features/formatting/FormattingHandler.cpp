@@ -900,11 +900,22 @@ bool IsOpeningOrMemberPunctuation(TokenType type)
  * @param[in] curr Current token.
  * @return Boolean decision if determined by punctuation rules, std::nullopt otherwise.
  */
-std::optional<bool> CheckPunctuationSpacing(const Token& prev, const Token& curr)
+std::optional<bool> CheckPunctuationSpacing(const Token& prev, const Token& curr, bool spacesInsideParentheses = false)
 {
     if (curr.type == TokenType::Comma && (prev.type == TokenType::Comma || prev.type == TokenType::OpenBrace))
     {
         return true;
+    }
+    if (spacesInsideParentheses)
+    {
+        if (prev.type == TokenType::OpenParen)
+        {
+            return curr.type != TokenType::CloseParen;
+        }
+        if (curr.type == TokenType::CloseParen)
+        {
+            return prev.type != TokenType::OpenParen;
+        }
     }
     if (IsClosingOrSeparatorPunctuation(curr.type))
     {
@@ -1137,12 +1148,13 @@ bool CheckWordAndLiteralSpacing(const Token& prev, const Token& curr)
  * @param[in] currIdx Index of right-hand token.
  * @return True if a whitespace separator should be emitted.
  */
-bool NeedsSpaceBetween(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx)
+bool NeedsSpaceBetween(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx,
+                       bool spacesInsideParentheses = false)
 {
     const auto& prev = tokens[prevIdx];
     const auto& curr = tokens[currIdx];
 
-    if (auto res = CheckPunctuationSpacing(prev, curr))
+    if (auto res = CheckPunctuationSpacing(prev, curr, spacesInsideParentheses))
     {
         return *res;
     }
@@ -1688,7 +1700,7 @@ std::string_view ExtractBom(std::string_view& sourceCode)
  * @return Vector of rendered lines.
  */
 std::vector<std::string> RenderLines(const std::vector<LineInfo>& lines, const std::vector<Token>& tokens,
-                                     const lsp::FormattingOptions& options)
+                                     const lsp::FormattingOptions& options, bool spacesInsideParentheses = false)
 {
     std::vector<std::string> outputLines;
     for (const auto& line : lines)
@@ -1706,7 +1718,7 @@ std::vector<std::string> RenderLines(const std::vector<LineInfo>& lines, const s
             if (k > 0)
             {
                 size_t prevTokIdx = line.tokenIndices[k - 1];
-                if (NeedsSpaceBetween(tokens, prevTokIdx, tokIdx))
+                if (NeedsSpaceBetween(tokens, prevTokIdx, tokIdx, spacesInsideParentheses))
                 {
                     lineStr += ' ';
                 }
@@ -1888,7 +1900,8 @@ std::optional<MatchedLineRange> FindMatchedRange(const std::vector<LineInfo>& li
 }
 } // namespace
 
-std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions& options, BraceStyle braceStyle)
+std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions& options,
+                             BraceStyle braceStyle, bool spacesInsideParentheses)
 {
     if (sourceCode.empty())
     {
@@ -1903,7 +1916,7 @@ std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingO
     }
 
     auto lines = BuildFormattedLines(tokens, braceStyle);
-    auto rendered = RenderLines(lines, tokens, options);
+    auto rendered = RenderLines(lines, tokens, options, spacesInsideParentheses);
     CollapseAndTrimLines(rendered, options);
     return AssembleFormattedText(bom, rendered, options);
 }
@@ -1915,7 +1928,8 @@ std::optional<std::vector<lsp::TextEdit>> FormatDocument(const FormattingRequest
         return std::vector<lsp::TextEdit>{};
     }
 
-    std::string formatted = FormatSourceCode(request.sourceCode, request.options, request.braceStyle);
+    std::string formatted = FormatSourceCode(request.sourceCode, request.options, request.braceStyle,
+                                             request.spacesInsideParentheses);
     if (formatted == request.sourceCode)
     {
         return std::vector<lsp::TextEdit>{};
@@ -1958,7 +1972,8 @@ std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingReque
 
     if (startLine == 0 && endLine >= totalLines - 1)
     {
-        FormattingRequest fullReq{request.uri, request.sourceCode, request.tree, request.options, request.braceStyle};
+        FormattingRequest fullReq{request.uri, request.sourceCode, request.tree, request.options,
+                                  request.braceStyle, request.spacesInsideParentheses};
         return FormatDocument(fullReq);
     }
 
@@ -1969,7 +1984,7 @@ std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingReque
     }
 
     auto lines = BuildFormattedLines(tokens, request.braceStyle);
-    auto outputLines = RenderLines(lines, tokens, request.options);
+    auto outputLines = RenderLines(lines, tokens, request.options, request.spacesInsideParentheses);
 
     auto matched = FindMatchedRange(lines, tokens, startLine, endLine);
     if (!matched)
@@ -2019,7 +2034,8 @@ std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingReq
         request.tree,
         lsp::Range{lsp::Position{targetLine, 0}, lsp::Position{targetLine, request.position.character}},
         request.options,
-        request.braceStyle};
+        request.braceStyle,
+        request.spacesInsideParentheses};
 
     return FormatRange(rangeReq);
 }

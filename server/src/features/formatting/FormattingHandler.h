@@ -34,6 +34,7 @@ struct FormattingRequest
     TSTree* tree = nullptr;
     lsp::FormattingOptions options;
     BraceStyle braceStyle = BraceStyle::Allman;
+    bool spacesInsideParentheses = false;
 };
 
 /**
@@ -47,6 +48,7 @@ struct RangeFormattingRequest
     lsp::Range range;
     lsp::FormattingOptions options;
     BraceStyle braceStyle = BraceStyle::Allman;
+    bool spacesInsideParentheses = false;
 };
 
 /**
@@ -61,6 +63,7 @@ struct OnTypeFormattingRequest
     std::string ch;
     lsp::FormattingOptions options;
     BraceStyle braceStyle = BraceStyle::Allman;
+    bool spacesInsideParentheses = false;
 };
 
 using FormattingResult = std::vector<lsp::TextEdit>;
@@ -95,8 +98,10 @@ std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingReq
  * @param sourceCode Source text to format.
  * @param options Formatting configuration options.
  * @param braceStyle Where a block's opening brace goes. Value braces ignore this.
+ * @param spacesInsideParentheses Whether to insert spaces inside parentheses.
  * @return Formatted source code string.
  */
 std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions& options,
-                             BraceStyle braceStyle = BraceStyle::Allman);
+                             BraceStyle braceStyle = BraceStyle::Allman,
+                             bool spacesInsideParentheses = false);
 } // namespace angel_lsp::features

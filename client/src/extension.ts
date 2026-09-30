@@ -825,6 +825,10 @@ export function buildServerArgs(): string[] {
         }
     }
 
+    if (config.get<boolean>('features.formatting', true) === false && !args.includes('--disable-on-type-formatting')) {
+        args.push('--disable-on-type-formatting');
+    }
+
     for (const property of ENGINE_PROPERTIES) {
         if (config.get<boolean>(`engine.${property}`, false) === true) {
             args.push(`--engine-property=${property}=true`);
@@ -962,6 +966,10 @@ export function buildServerArgs(): string[] {
     const braceStyle = config.get<string>('format.braceStyle', '').trim();
     if (braceStyle.length > 0) {
         args.push(`--format-brace-style=${braceStyle}`);
+    }
+
+    if (config.get<boolean>('format.spacesInsideParentheses', false) === true) {
+        args.push('--format-spaces-inside-parentheses');
     }
 
     const severities = config.get<Record<string, string>>('diagnosticSeverity', {});

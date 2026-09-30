@@ -268,16 +268,26 @@ void Server::RegisterWorkspaceHandlers()
 
 void Server::UpdateFormatConfiguration(const lsp::LSPObject& section)
 {
+    const lsp::LSPObject* formatObj = nullptr;
     if (const auto* formatVal = section.find("format"); formatVal && formatVal->isObject())
     {
-        if (const auto* styleVal = formatVal->object().find("braceStyle"); styleVal && styleVal->isString())
+        formatObj = &formatVal->object();
+    }
+    if (auto styleVal = FindSectionString(section, formatObj, "braceStyle", "format"); styleVal.has_value())
+    {
+        const bool wantsKR = BraceStyleIsKR(*styleVal);
+        if (wantsKR != m_formatBraceStyleKR.exchange(wantsKR, std::memory_order_relaxed))
         {
-            const bool wantsKR = BraceStyleIsKR(styleVal->string());
-            if (wantsKR != m_formatBraceStyleKR.exchange(wantsKR, std::memory_order_relaxed))
-            {
-                LogInfo(fmt::format("Format brace style changed to '{}'", styleVal->string()));
-            }
+            LogInfo(fmt::format("Format brace style changed to '{}'", *styleVal));
         }
+    }
+    if (auto spacesVal = FindSectionBool(section, formatObj, "spacesInsideParentheses", "format"); spacesVal.has_value())
+    {
+        m_formatSpacesInsideParentheses.store(*spacesVal, std::memory_order_relaxed);
+    }
+    if (auto fosVal = FindSectionBool(section, formatObj, "onSave", "format"); fosVal.has_value())
+    {
+        m_config.format.formatOnSave = *fosVal;
     }
 }
 
@@ -447,6 +457,14 @@ void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
     if (auto ih = FindSectionBool(section, featObj, "inlayHints", "features"); ih.has_value())
     {
         m_config.features.enableInlayHints = *ih;
+    }
+    if (auto fmt = FindSectionBool(section, featObj, "formatting", "features"); fmt.has_value())
+    {
+        m_config.features.enableFormatting = *fmt;
+    }
+    if (auto otf = FindSectionBool(section, featObj, "onTypeFormatting", "features"); otf.has_value())
+    {
+        m_config.features.enableOnTypeFormatting = *otf;
     }
 
     const lsp::LSPObject* compObj = nullptr;

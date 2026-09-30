@@ -620,6 +620,83 @@ TEST_SUITE("Formatting")
         CHECK((*edits)[0].range.end.line == 5);
         CHECK((*edits)[0].newText == "    int " + varName + " = 42;");
     }
+
+    TEST_CASE("SpacesInsideParentheses - Document formatting formats with inner spaces when enabled")
+    {
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("FuncParen");
+        const std::string arg1 = angel_lsp::test::GenerateRandomSymbolName("paramA");
+        const std::string arg2 = angel_lsp::test::GenerateRandomSymbolName("paramB");
+
+        std::string code = "void " + fnName + "(int " + arg1 + ",float " + arg2 + "){\nif(true){\n" +
+                           fnName + "(1,2);\n}\n}\n";
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        std::string formattedWithSpaces = FormatSourceCode(code, options, BraceStyle::Allman, true);
+        std::string expectedWithSpaces =
+            "void " + fnName + "( int " + arg1 + ", float " + arg2 + " )\n"
+            "{\n"
+            "    if ( true )\n"
+            "    {\n"
+            "        " + fnName + "( 1, 2 );\n"
+            "    }\n"
+            "}\n";
+        CHECK(formattedWithSpaces == expectedWithSpaces);
+
+        // Empty parens should never have space inside: ()
+        const std::string emptyFn = angel_lsp::test::GenerateRandomSymbolName("EmptyCall");
+        std::string emptyCode = "void " + emptyFn + "(){\n" + emptyFn + "();\n}\n";
+        std::string formattedEmpty = FormatSourceCode(emptyCode, options, BraceStyle::Allman, true);
+        std::string expectedEmpty =
+            "void " + emptyFn + "()\n"
+            "{\n"
+            "    " + emptyFn + "();\n"
+            "}\n";
+        CHECK(formattedEmpty == expectedEmpty);
+
+        // Standard formatting (default false) must remain compact without inner spaces
+        std::string formattedDefault = FormatSourceCode(code, options, BraceStyle::Allman, false);
+        std::string expectedDefault =
+            "void " + fnName + "(int " + arg1 + ", float " + arg2 + ")\n"
+            "{\n"
+            "    if (true)\n"
+            "    {\n"
+            "        " + fnName + "(1, 2);\n"
+            "    }\n"
+            "}\n";
+        CHECK(formattedDefault == expectedDefault);
+    }
+
+    TEST_CASE("SpacesInsideParentheses - FormatOnType preserves spaces inside parentheses")
+    {
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Caller");
+        const std::string callee = angel_lsp::test::GenerateRandomSymbolName("TargetCall");
+        const std::string varA = angel_lsp::test::GenerateRandomSymbolName("valA");
+        const std::string varB = angel_lsp::test::GenerateRandomSymbolName("valB");
+
+        std::string code =
+            "void " + fnName + "()\n"
+            "{\n"
+            "    " + callee + "( " + varA + ", " + varB + " );\n"
+            "}\n";
+
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        OnTypeFormattingRequest req{ "file:///test.as", code, nullptr, lsp::Position{ 2, 25 }, ";", options,
+                                     BraceStyle::Allman, true };
+        auto edits = FormatOnType(req);
+
+        // When formatted with spacesInsideParentheses = true, text already matches expected format
+        // so no spurious changes that collapse spaces occur.
+        if (edits.has_value() && !edits->empty())
+        {
+            CHECK((*edits)[0].newText.find("( " + varA) != std::string::npos);
+            CHECK((*edits)[0].newText.find(varB + " )") != std::string::npos);
+        }
+    }
 }
 
 
