@@ -60,6 +60,15 @@ class DocumentStore
     void OpenDocument(const std::string& uri, std::string text, int version, document::TreePtr tree);
 
     /**
+     * @brief Links an existing immutable Document snapshot into the open document store.
+     * @param uri Canonical URI key.
+     * @param document Shared pointer to immutable Document snapshot.
+     * @param clientUri Optional client URI spelling.
+     */
+    void LinkDocument(const std::string& uri, std::shared_ptr<const document::Document> document,
+                      const std::string& clientUri = "");
+
+    /**
      * @brief Updates text, version, and syntax tree of an existing open document.
      * @param uri Canonical URI key.
      * @param text New document source content.

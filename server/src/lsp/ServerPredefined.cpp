@@ -351,6 +351,20 @@ bool Server::PredefinedStubContributes(const std::string& uriStr) const
         return true;
     }
 
+    if (!m_config.activeStubFiles.empty())
+    {
+        const std::string path = CanonicalPathFromUri(uriStr);
+        for (const auto& active : m_config.activeStubFiles)
+        {
+            if ((!path.empty() && PathsAreSameFile(path, angel_lsp::utils::IncludeResolver::NormalizePath(active))) ||
+                path.ends_with(active) || uriStr.ends_with(active))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     std::string effective;
     bool isTransitive = false;
     const std::string path = CanonicalPathFromUri(uriStr);
@@ -404,6 +418,25 @@ void Server::ParserPredefined(const std::string& filePath, angel_lsp::parser::An
     ParserPredefinedInternal(filePath, parser, forceReload, visited);
 }
 
+namespace
+{
+std::optional<std::string> ReadPredefinedFile(const std::string& normPath, const std::string& filePath)
+{
+    std::ifstream file(normPath, std::ios::binary);
+    if (!file.is_open())
+    {
+        file.open(filePath, std::ios::binary);
+    }
+    if (!file.is_open())
+    {
+        return std::nullopt;
+    }
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    return angel_lsp::utils::SanitizePredefinedContent(ss.str());
+}
+} // namespace
+
 void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
                                       bool forceReload, std::unordered_set<std::string>& visited)
 {
@@ -424,21 +457,14 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
     utils::HighResTimer totalTimer;
     std::string uri = UriFromPath(normPath);
 
-    std::ifstream file(normPath, std::ios::binary);
-    if (!file.is_open())
-    {
-        file.open(filePath, std::ios::binary);
-    }
-    if (!file.is_open())
+    auto contentOpt = ReadPredefinedFile(normPath, filePath);
+    if (!contentOpt)
     {
         LogError(fmt::format("Cannot open predefined file: {}", filePath));
         UnloadPredefinedUri(uri);
         return;
     }
-
-    std::ostringstream ss;
-    ss << file.rdbuf();
-    std::string content = angel_lsp::utils::SanitizePredefinedContent(ss.str());
+    std::string content = std::move(*contentOpt);
 
     if (!ClaimPredefinedFile(uri, forceReload))
     {
@@ -458,7 +484,14 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
     utils::HighResTimer scopeTimer;
     m_scopeIndex.ClearDocument(uri);
     m_callGraph.ClearDocument(uri);
-    tree.reset();
+    auto preindexedDoc = std::make_shared<const document::Document>(
+        document::DocumentSnapshot{uri, content, 0, 1},
+        std::move(tree));
+    m_predefinedManager.SetPreindexedDocument(uri, preindexedDoc);
+    if (m_workspaceStore)
+    {
+        m_workspaceStore->SetPreindexedDocument(uri, preindexedDoc);
+    }
     int64_t scopeUs = scopeTimer.ElapsedUs();
 
     if (SetDefinedWordsFrom(normPath, angel_lsp::utils::ScanDefinedWords(content)))

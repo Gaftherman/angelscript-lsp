@@ -334,6 +334,32 @@ bool Server::IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const
     return false;
 }
 
+void Server::StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const std::string& analysisText,
+                                     const document::TreePtr& tree, bool contributes)
+{
+    if (contributes)
+    {
+        ClaimPredefinedFile(req.uriStr, true);
+        m_predefinedManager.SetDocumentText(req.uriStr, analysisText);
+        if (tree)
+        {
+            m_documentStore.SetTree(req.uriStr, document::MakeTreePtr(ts_tree_copy(tree.get())));
+            auto updatedDoc = std::make_shared<const document::Document>(
+                document::DocumentSnapshot{req.uriStr, analysisText, req.version, req.generation},
+                document::MakeTreePtr(ts_tree_copy(tree.get())));
+            m_predefinedManager.SetPreindexedDocument(req.uriStr, updatedDoc);
+            if (m_workspaceStore)
+            {
+                m_workspaceStore->SetPreindexedDocument(req.uriStr, updatedDoc);
+            }
+        }
+    }
+    else
+    {
+        m_predefinedManager.RemoveStub(req.uriStr);
+    }
+}
+
 void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
 {
     const std::string analysisText = AnalysisTextFor(req.uriStr, req.text);
@@ -351,20 +377,17 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
     }
     double colMs = colTimer.ElapsedMs();
 
-    if (contributes)
-    {
-        ClaimPredefinedFile(req.uriStr, true);
-        m_predefinedManager.SetDocumentText(req.uriStr, analysisText);
-    }
-    else
-    {
-        m_predefinedManager.RemoveStub(req.uriStr);
-    }
+    StorePredefinedSnapshot(req, analysisText, tree, contributes);
 
     std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot;
     std::vector<analysis::CallSite> calls;
     double scopeMs = 0.0;
     double checkMs = 0.0;
+
+    const double totalMs = totalTimer.ElapsedMs();
+    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} "
+                        "ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
+                        req.uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
 
     const bool committed = CommitAnalysisResults({
         .uriStr = req.uriStr,
@@ -388,11 +411,6 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
     {
         ReanalyseOpenDocuments();
     }
-
-    double totalMs = totalTimer.ElapsedMs();
-    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} "
-                        "ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
-                        req.uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
 }
 
 void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
@@ -450,6 +468,10 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
     AppendIncludeDiagnostics(req.uriStr, req.text, diagnostics);
 
+    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, "
+                        "Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
+                        req.uriStr, totalTimer.ElapsedMs(), parseMs, colMs, scopeMs, checkMs));
+
     CommitAnalysisResults({.uriStr = req.uriStr,
                            .version = req.version,
                            .generation = req.generation,
@@ -459,10 +481,6 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
                            .calls = std::move(calls),
                            .diagnostics = std::move(diagnostics),
                            .text = req.text});
-
-    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, "
-                        "Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
-                        req.uriStr, totalTimer.ElapsedMs(), parseMs, colMs, scopeMs, checkMs));
 }
 
 void Server::AnalyzeDocument(AnalyzeDocumentRequest req)

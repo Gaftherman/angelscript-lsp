@@ -1,6 +1,8 @@
 #pragma once
 
+#include "document/Document.h"
 #include <ankerl/unordered_dense.h>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -57,6 +59,20 @@ class PredefinedStubManager
      * @param content New stub source text.
      */
     void SetDocumentText(const std::string& uri, std::string content);
+
+    /**
+     * @brief Caches pre-indexed immutable Document snapshot for a predefined stub URI.
+     * @param uri Stub URI.
+     * @param doc Shared pointer to Document snapshot.
+     */
+    void SetPreindexedDocument(const std::string& uri, std::shared_ptr<const document::Document> doc);
+
+    /**
+     * @brief Gets pre-indexed immutable Document snapshot for a predefined stub URI, if available.
+     * @param uri Stub URI.
+     * @return Shared pointer to Document snapshot or nullptr.
+     */
+    [[nodiscard]] std::shared_ptr<const document::Document> GetPreindexedDocument(const std::string& uri) const;
 
     /**
      * @brief Looks up indexed URI for a given filesystem path.
@@ -168,5 +184,6 @@ class PredefinedStubManager
     ankerl::unordered_dense::map<std::string, std::string> m_predefinedUriByPath;
     ankerl::unordered_dense::set<std::string> m_loadedCanonicalPaths;
     ankerl::unordered_dense::map<std::string, std::shared_ptr<std::string>> m_predefinedDocuments;
+    ankerl::unordered_dense::map<std::string, std::shared_ptr<const document::Document>> m_preindexedSnapshots;
 };
 } // namespace angel_lsp

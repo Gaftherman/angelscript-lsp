@@ -2,7 +2,7 @@
   "name": "angelscript-gaftherman",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "0.9.26",
+  "version": "0.9.27",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -98,6 +98,16 @@
       {
         "command": "angelscript.selectPredefined",
         "title": "%command.selectPredefined.title%",
+        "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.selectStubs",
+        "title": "%command.selectStubs.title%",
+        "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.rescanWorkspace",
+        "title": "%command.rescanWorkspace.title%",
         "category": "%command.selectPredefined.category%"
       },
       {
@@ -397,6 +407,15 @@
             },
             "default": [],
             "markdownDescription": "%config.predefinedFiles.description%"
+          },
+          "angelscript.stubs.activeFiles": {
+            "type": "array",
+            "scope": "resource",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%config.stubs.activeFiles.description%"
           },
           "angelscript.include.implicitExtension": {
             "type": "boolean",

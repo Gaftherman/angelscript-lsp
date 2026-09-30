@@ -2024,6 +2024,16 @@ class Server
     [[nodiscard]] bool IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const;
 
     /**
+     * @brief Persists preindexed document snapshots and manager state for a stub.
+     * @param[in] req Analysis request.
+     * @param[in] analysisText Preprocessed stub content.
+     * @param[in] tree Document parse tree.
+     * @param[in] contributes True if stub contributes to symbols.
+     */
+    void StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const std::string& analysisText,
+                                 const document::TreePtr& tree, bool contributes);
+
+    /**
      * @brief Analyzes a predefined stub document and commits its symbols and defined words.
      * @param[in] req Analysis request bundle.
      * @param[in] totalTimer High-resolution timer tracking total analysis time.

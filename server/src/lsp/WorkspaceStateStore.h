@@ -184,6 +184,20 @@ class WorkspaceStateStore
     PermittedIncludeDirectories(const std::vector<std::string>& configuredStubPaths) const;
 
     /**
+     * @brief Caches a pre-indexed immutable Document snapshot for a URI.
+     * @param[in] uri Canonical URI.
+     * @param[in] doc Shared pointer to Document snapshot.
+     */
+    void SetPreindexedDocument(const std::string& uri, std::shared_ptr<const document::Document> doc);
+
+    /**
+     * @brief Retrieves pre-indexed immutable Document snapshot for a URI, if available.
+     * @param[in] uri Canonical URI.
+     * @return Shared pointer to Document snapshot or nullptr.
+     */
+    [[nodiscard]] std::shared_ptr<const document::Document> GetPreindexedDocument(const std::string& uri) const;
+
+    /**
      * @brief Clears all document, include, module, and preprocessor state.
      */
     void Clear();
@@ -200,6 +214,9 @@ class WorkspaceStateStore
 
     std::shared_ptr<const ankerl::unordered_dense::set<std::string>> m_definedWords;
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_definedWordsBySource;
+
+    mutable std::mutex m_preindexedMutex;
+    ankerl::unordered_dense::map<std::string, std::shared_ptr<const document::Document>> m_preindexedDocuments;
 };
 
 } // namespace angel_lsp

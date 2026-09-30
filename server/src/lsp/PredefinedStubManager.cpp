@@ -75,6 +75,23 @@ void PredefinedStubManager::SetDocumentText(const std::string& uri, std::string 
     m_predefinedUris.insert(uri);
 }
 
+void PredefinedStubManager::SetPreindexedDocument(const std::string& uri, std::shared_ptr<const document::Document> doc)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_preindexedSnapshots[uri] = std::move(doc);
+    m_predefinedUris.insert(uri);
+}
+
+std::shared_ptr<const document::Document> PredefinedStubManager::GetPreindexedDocument(const std::string& uri) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (auto it = m_preindexedSnapshots.find(uri); it != m_preindexedSnapshots.end())
+    {
+        return it->second;
+    }
+    return nullptr;
+}
+
 std::optional<std::string> PredefinedStubManager::GetUriByPath(const std::string& path) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -157,6 +174,7 @@ bool PredefinedStubManager::ClaimFile(const std::string& uri, const std::string&
         }
         m_predefinedUris.erase(previous);
         m_predefinedDocuments.erase(previous);
+        m_preindexedSnapshots.erase(previous);
     }
 
     m_predefinedUriByPath[path] = uri;
@@ -179,6 +197,7 @@ bool PredefinedStubManager::UnloadUri(const std::string& uri, std::string* outPa
 
     m_predefinedUris.erase(uri);
     m_predefinedDocuments.erase(uri);
+    m_preindexedSnapshots.erase(uri);
 
     for (auto it = m_predefinedUriByPath.begin(); it != m_predefinedUriByPath.end(); ++it)
     {
@@ -247,6 +266,7 @@ void PredefinedStubManager::Clear()
     m_predefinedUriByPath.clear();
     m_loadedCanonicalPaths.clear();
     m_predefinedDocuments.clear();
+    m_preindexedSnapshots.clear();
 }
 
 std::shared_ptr<const std::string> PredefinedStubManager::GetDocumentTextShared(const std::string& uri) const

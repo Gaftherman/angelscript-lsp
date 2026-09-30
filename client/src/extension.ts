@@ -5,7 +5,8 @@ import {
     ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
     StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri, l10n,
     TextEditorDecorationType, Range, TextEditor, WorkspaceEdit, TextDocumentContentProvider,
-    CancellationToken, Position, Selection, ViewColumn, TextEditorRevealType, Location
+    CancellationToken, Position, Selection, ViewColumn, TextEditorRevealType, Location,
+    languages, LanguageStatusItem, LanguageStatusSeverity
 } from 'vscode';
 // Types only: erased at compile time, so naming them here costs nothing at runtime.
 import type {
@@ -115,6 +116,12 @@ const OPEN_LOGS_FOLDER_COMMAND = 'angelscript.openLogsFolder';
 
 /** @brief Command that prompts the user to select an active predefined API stub or merge all. */
 const SELECT_PREDEFINED_COMMAND = 'angelscript.selectPredefined';
+
+/** @brief Command that prompts the user to select one or more active predefined stubs via checkboxes. */
+const SELECT_STUBS_COMMAND = 'angelscript.selectStubs';
+
+/** @brief Command that triggers an immediate language server workspace rescan. */
+const RESCAN_WORKSPACE_COMMAND = 'angelscript.rescanWorkspace';
 
 /** @brief Command that opens the status bar menu: the log, a restart, and the stub picker. */
 const STATUS_MENU_COMMAND = 'angelscript.statusMenu';
@@ -323,6 +330,49 @@ function setStatus(state: 'starting' | 'running' | 'failed', tooltip: string): v
         ? new ThemeColor('statusBarItem.errorBackground')
         : undefined;
     statusBarItem.show();
+    updateLanguageStatus(state === 'starting');
+}
+
+let languageStatusItem: LanguageStatusItem | undefined;
+
+function createLanguageStatusItem(context: ExtensionContext): void {
+    if (typeof languages.createLanguageStatusItem !== 'function') {
+        return;
+    }
+    languageStatusItem = languages.createLanguageStatusItem('angelscript.status', { language: 'angelscript' });
+    languageStatusItem.name = 'AngelScript IntelliSense';
+    languageStatusItem.command = {
+        command: RESCAN_WORKSPACE_COMMAND,
+        title: 'Rescan Workspace'
+    };
+    context.subscriptions.push(languageStatusItem);
+    updateLanguageStatus();
+}
+
+function updateLanguageStatus(isIndexing = false): void {
+    if (!languageStatusItem) {
+        return;
+    }
+    const config = workspace.getConfiguration('angelscript');
+    const activeStubs = config.get<string[]>('stubs.activeFiles', []);
+    const stubsCount = activeStubs.length > 0 ? activeStubs.length : (activeStubLabel.length > 0 ? 1 : 0);
+
+    if (isIndexing || lastStatus?.state === 'starting') {
+        languageStatusItem.severity = LanguageStatusSeverity.Information;
+        languageStatusItem.text = '$(sync~spin) Indexing Workspace...';
+        languageStatusItem.detail = `IntelliSense: Indexing | Analysis: Automatic | Stubs: ${stubsCount}`;
+        languageStatusItem.busy = true;
+    } else if (lastStatus?.state === 'running' || clientIsRunning()) {
+        languageStatusItem.severity = LanguageStatusSeverity.Information;
+        languageStatusItem.text = '$(check) IntelliSense: Ready';
+        languageStatusItem.detail = `IntelliSense: Ready | Analysis: Automatic | Stubs: ${stubsCount}`;
+        languageStatusItem.busy = false;
+    } else {
+        languageStatusItem.severity = LanguageStatusSeverity.Warning;
+        languageStatusItem.text = '$(alert) IntelliSense: Inactive';
+        languageStatusItem.detail = 'Language server is not running';
+        languageStatusItem.busy = false;
+    }
 }
 
 /**
@@ -752,6 +802,14 @@ export function buildServerArgs(): string[] {
         }
     }
 
+    for (const entry of config.get<string[]>('stubs.activeFiles', [])) {
+        if (entry.trim().length > 0) {
+            for (const resolved of resolveAgainstWorkspace(entry.trim())) {
+                args.push(`--active-stub-file=${resolved}`);
+            }
+        }
+    }
+
     for (const entry of config.get<string[]>('forceIncludeFiles', [])) {
         for (const resolved of resolveAgainstWorkspace(entry)) {
             args.push(`--force-include=${resolved}`);
@@ -879,6 +937,11 @@ export function buildServerArgs(): string[] {
         args.push('--report-handle-comparison-equality=2');
     }
 
+    const missingAssetPathSeverity = config.get<string>('diagnostics.missingAssetPathSeverity', 'off').trim();
+    if (missingAssetPathSeverity.length > 0 && missingAssetPathSeverity !== 'off') {
+        args.push(`--missing-asset-path-severity=${missingAssetPathSeverity}`);
+    }
+
     // asEP_PROPERTY_ACCESSOR_MODE takes a number, not a boolean, so it is not one of
     // ENGINE_PROPERTIES above either. The test against 2 and 3 is a whitelist, not a
     // default-skipping check: those are the only values package.json offers, and a number arriving
@@ -988,6 +1051,18 @@ export function buildServerArgs(): string[] {
         args.push('--disable-completion-smart-ranking');
     }
 
+    if (config.get<boolean>('completion.completeFunctionParens', true) === false) {
+        args.push('--disable-completion-function-parens');
+    }
+
+    if (config.get<boolean>('inlayHints.enableTooltip', true) === false) {
+        args.push('--disable-inlay-hints-tooltip');
+    }
+
+    if (config.get<boolean>('inlayHints.enableLocation', true) === false) {
+        args.push('--disable-inlay-hints-location');
+    }
+
     const suppressWhenMatches = config.get<boolean>('inlayHints.suppressWhenArgumentMatchesName', false);
     if (suppressWhenMatches) {
         args.push('--inlay-hints-suppress-when-argument-matches-name');
@@ -1006,6 +1081,20 @@ export function buildServerArgs(): string[] {
     const omittedDefaults = config.get<string>('inlayHints.omittedDefaultArguments', 'nameAndValue');
     if (omittedDefaults) {
         args.push(`--inlay-hints-omitted-defaults=${omittedDefaults}`);
+    }
+
+    if (config.get<boolean>('hover.stringLiteralLength', true) === false) {
+        args.push('--disable-hover-string-literal-length');
+    }
+
+    if (config.get<boolean>('hover.stringLiteralPathResolution', false) === true) {
+        args.push('--enable-hover-string-literal-path-resolution');
+    }
+
+    for (const entry of config.get<string[]>('hover.assetSearchPaths', [])) {
+        for (const resolved of resolveAgainstWorkspace(entry)) {
+            args.push(`--asset-search-path=${resolved}`);
+        }
     }
 
     const logLevel = config.get<string>('server.logLevel', 'debug').trim();
@@ -1120,7 +1209,24 @@ async function startClient(context: ExtensionContext): Promise<void> {
                               () => workspace.createFileSystemWatcher('**/*.{as,angelscript,predefined}'))
         },
         outputChannel: lspOutputChannel,
-        errorHandler
+        errorHandler,
+        middleware: {
+            executeCommand: async (command, args, next) => {
+                if (command === RESCAN_WORKSPACE_COMMAND) {
+                    updateLanguageStatus(true);
+                    try {
+                        const res = await next(command, args);
+                        void window.showInformationMessage('AngelScript: Workspace rescan initiated.');
+                        return res;
+                    } catch (e) {
+                        void window.showErrorMessage(`Failed to rescan workspace: ${e}`);
+                    } finally {
+                        updateLanguageStatus(false);
+                    }
+                }
+                return next(command, args);
+            }
+        }
     };
 
     client = timed('constructLanguageClient', () => new LanguageClient(
@@ -1228,6 +1334,9 @@ export async function activate(context: ExtensionContext) {
             commands.registerCommand(SELECT_PREDEFINED_COMMAND, () => selectPredefinedStub()));
 
         context.subscriptions.push(
+            commands.registerCommand(SELECT_STUBS_COMMAND, () => selectMultiStubs()));
+
+        context.subscriptions.push(
             commands.registerCommand(STATUS_MENU_COMMAND, () => showStatusMenu(context)));
 
         context.subscriptions.push(
@@ -1266,6 +1375,7 @@ export async function activate(context: ExtensionContext) {
         window.onDidChangeVisibleTextEditors(editors => editors.forEach(applyInactiveRegions)));
 
     timed('statusBarItem', () => createStatusBarItem(context));
+    timed('languageStatusItem', () => createLanguageStatusItem(context));
 
     // Deliberately not awaited. Everything this extension contributes to the UI - the commands,
     // the status bar item, the output channel - is registered above and ready now; what follows is
@@ -1382,6 +1492,16 @@ async function showStatusMenu(context: ExtensionContext): Promise<void> {
             label: '$(library) ' + l10n.t('Select Predefined Stub'),
             description: l10n.t('Chooses which host API description the workspace uses.'),
             run: () => selectPredefinedStub()
+        },
+        {
+            label: '$(check-all) Select Predefined Stubs (Multi-Select)',
+            description: 'Toggles active predefined stubs dynamically using checkboxes.',
+            run: () => selectMultiStubs()
+        },
+        {
+            label: '$(refresh) Rescan Workspace',
+            description: 'Forces an immediate rescan of all search paths and workspace files.',
+            run: () => rescanWorkspace()
         }
     ];
 
@@ -1482,6 +1602,17 @@ function expandConfiguredPaths(settings: unknown): unknown {
             }
         }
         copy['predefined'] = nested;
+    }
+
+    const hover = copy['hover'];
+    if (typeof hover === 'object' && hover !== null) {
+        const nested: Record<string, unknown> = { ...(hover as Record<string, unknown>) };
+        const paths = nested['assetSearchPaths'];
+        if (Array.isArray(paths)) {
+            nested['assetSearchPaths'] = paths.flatMap(entry =>
+                typeof entry === 'string' ? resolveAgainstWorkspace(entry) : [entry]);
+        }
+        copy['hover'] = nested;
     }
 
     return copy;
@@ -1824,6 +1955,87 @@ async function selectPredefinedStub(): Promise<void> {
     // there is nothing to wait on: this reads what the server has now and will be right on the next
     // read if the scan is still running.
     void refreshStubStatus();
+}
+
+/**
+ * @brief Prompts user to toggle one or multiple predefined stubs using a QuickPick checkbox dialog.
+ */
+async function selectMultiStubs(): Promise<void> {
+    if (!client) {
+        void window.showWarningMessage('The AngelScript language server is not running.');
+        return;
+    }
+
+    let result: PredefinedStubsResult;
+    try {
+        result = await client.sendRequest<PredefinedStubsResult>(
+            'workspace/executeCommand',
+            { command: 'angelscript.listPredefinedStubs' }
+        );
+    } catch {
+        void window.showWarningMessage('The AngelScript language server is not running.');
+        return;
+    }
+
+    if (!result || !Array.isArray(result.stubs)) {
+        return;
+    }
+
+    interface MultiStubItem extends QuickPickItem {
+        stubPath: string;
+    }
+
+    const config = workspace.getConfiguration('angelscript');
+    const currentlyActive = config.get<string[]>('stubs.activeFiles', []);
+    const items: MultiStubItem[] = [];
+
+    for (const stubPath of result.stubs) {
+        const fileName = path.basename(stubPath);
+        let description = stubPath;
+        const folder = workspace.getWorkspaceFolder(Uri.file(stubPath));
+        if (folder) {
+            description = path.relative(folder.uri.fsPath, stubPath);
+        }
+
+        const isPicked = currentlyActive.some(active =>
+            active === stubPath || active === fileName || path.basename(active) === fileName
+        );
+
+        items.push({
+            label: fileName,
+            description,
+            stubPath,
+            picked: isPicked
+        });
+    }
+
+    const selected = await window.showQuickPick(items, {
+        canPickMany: true,
+        placeHolder: 'Select one or more predefined stubs to activate'
+    });
+
+    if (!selected) {
+        return;
+    }
+
+    const chosenPaths = selected.map(item => portableStubPath(item.stubPath));
+    await config.update('stubs.activeFiles', chosenPaths, ConfigurationTarget.Workspace);
+    updateLanguageStatus();
+}
+
+/**
+ * @brief Forces an immediate workspace rescan on the language server.
+ */
+async function rescanWorkspace(): Promise<void> {
+    if (!client) {
+        void window.showWarningMessage('The AngelScript language server is not running.');
+        return;
+    }
+    try {
+        await commands.executeCommand(RESCAN_WORKSPACE_COMMAND);
+    } catch (e) {
+        void window.showErrorMessage(`Failed to rescan workspace: ${e}`);
+    }
 }
 
 /** @brief What `angelscript.formatPredefinedStub` answers. */
