@@ -889,7 +889,7 @@ ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const D
     if (nodeType == "member_expression")
     {
         const std::string resolved =
-            ResolveExpressionType(node, scope, ctx.request.symbolTable, ctx.request.sourceCode);
+            ResolveExpressionType(node, ExpressionTypeContext(scope, ctx));
         return resolved.empty() ? ExpressionType{} : ExpressionType{CleanBaseType(resolved), true, false};
     }
 
@@ -2235,7 +2235,7 @@ void CheckBooleanOperands(TSNode condition, const Scope* scope, DiagnosticContex
     for (const TSNode& operand : operands)
     {
         const std::string operandType = CleanBaseType(ResolveExpressionType(
-            operand, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri}));
+            operand, ExpressionTypeContext(scope, ctx)));
 
         if (operandType.empty() || operandType == "auto" || operandType == "void")
         {
@@ -3060,10 +3060,28 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
  */
 void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
+    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    if (ts_node_is_null(opNode))
+    {
+        return;
+    }
+    const std::string_view op = GetNodeTextView(opNode, ctx.request.sourceCode);
     const Scope* scope = ResolveNodeScope(node, request);
-    CheckSignedUnsignedComparison(node, scope, ctx);
-    CheckHandleComparison(node, scope, ctx);
-    CheckComparisonOperatorCompatibility(node, scope, ctx);
+
+    if (op == "is" || op == "!is")
+    {
+        CheckHandleComparison(node, scope, ctx);
+        return;
+    }
+
+    if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=")
+    {
+        CheckSignedUnsignedComparison(node, scope, ctx);
+        CheckHandleComparison(node, scope, ctx);
+        CheckComparisonOperatorCompatibility(node, scope, ctx);
+        return;
+    }
+
     CheckBinaryOperatorCompatibility(node, scope, ctx);
 }
 

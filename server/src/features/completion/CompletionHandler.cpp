@@ -1371,8 +1371,10 @@ std::string ResolveReceiverNodeType(TSNode receiverNode, const CompletionRequest
     const auto& strType = ConfiguredStringTypeName(request);
     const auto& arrType = ConfiguredArrayTypeName(request);
 
-    std::string exprType = analysis::ResolveExpressionType(
-        receiverNode, {innermostScope, request.symbolTable, request.sourceCode, request.uri, strType, arrType});
+    analysis::ExpressionTypeContext exprCtx{innermostScope, request.symbolTable, request.sourceCode, request.uri};
+    exprCtx.stringTypeName = strType;
+    exprCtx.arrayTypeName = arrType;
+    std::string exprType = analysis::ResolveExpressionType(receiverNode, exprCtx);
     if (!exprType.empty() && exprType != "void" && exprType != "unknown")
     {
         return exprType;

@@ -74,7 +74,7 @@ void InspectComparisonNode(TSNode binNode, const Scope* scope, DiagnosticContext
         return;
     }
 
-    const ExpressionTypeContext exprCtx{scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri};
+    const ExpressionTypeContext exprCtx(scope, ctx);
     const std::string cleanLeft = CleanBaseType(ResolveExpressionType(left, exprCtx));
     const std::string cleanRight = CleanBaseType(ResolveExpressionType(right, exprCtx));
     if (cleanLeft.empty() || cleanRight.empty() || cleanLeft == cleanRight)

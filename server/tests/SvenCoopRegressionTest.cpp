@@ -788,4 +788,34 @@ TEST_CASE("SvenCoopRegression - Predefined file tree in DocumentStore resolves H
     ts_tree_delete(tree);
 }
 
+TEST_CASE("SvenCoopRegression - Deep builder pattern and chained calls analyze linearly")
+{
+    const std::string className = GenerateRandomSymbolName("Builder");
+    const std::string methodA = GenerateRandomSymbolName("StepA");
+    const std::string methodB = GenerateRandomSymbolName("StepB");
+    const std::string varName = GenerateRandomSymbolName("instance");
+
+    std::string script = "class " + className + " {\n"
+                         "    " + className + "@ " + methodA + "() { return this; }\n"
+                         "    " + className + "@ " + methodB + "() { return this; }\n"
+                         "    " + className + "@ Clear() {\n"
+                         "        return this\n";
+
+    for (int i = 0; i < 20; ++i)
+    {
+        script += (i % 2 == 0) ? "            ." + methodA + "()\n" : "            ." + methodB + "()\n";
+    }
+    script += "        ;\n"
+              "    }\n"
+              "}\n"
+              "void Run() {\n"
+              "    " + className + " " + varName + ";\n"
+              "    " + varName + ".Clear();\n"
+              "}\n";
+
+    const auto diags = AnalyzeSnippet(script);
+    CHECK(diags.empty());
+}
+
 } // namespace angel_lsp::test
+

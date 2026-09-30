@@ -989,17 +989,32 @@ void EnqueueInterfaceBases(const Symbol& sym, ankerl::unordered_dense::set<std::
     }
 }
 
-std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className, const SymbolTable& symbolTable)
+std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className, const SymbolTable& symbolTable,
+                                                   ExpressionTypeCache* cache)
 {
     std::vector<std::string> hierarchy;
-    ankerl::unordered_dense::set<std::string> visited;
-    std::vector<std::string> queue;
-
     const std::string rootType = CleanBaseType(className);
     if (rootType.empty())
     {
         return hierarchy;
     }
+
+    if (parser::primitives::IsPrimitive(rootType))
+    {
+        return {rootType};
+    }
+
+    if (cache)
+    {
+        auto it = cache->hierarchies.find(rootType);
+        if (it != cache->hierarchies.end())
+        {
+            return it->second;
+        }
+    }
+
+    ankerl::unordered_dense::set<std::string> visited;
+    std::vector<std::string> queue;
 
     visited.insert(rootType);
     queue.push_back(rootType);
@@ -1027,6 +1042,11 @@ std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className,
                 EnqueueInterfaceBases(sym, visited, queue);
             }
         }
+    }
+
+    if (cache)
+    {
+        cache->hierarchies.emplace(rootType, hierarchy);
     }
 
     return hierarchy;
@@ -2242,7 +2262,7 @@ static std::pair<std::string_view, std::string_view> GetBinaryOpMethods(std::str
 static std::string ResolveBinaryOverloadMethod(const std::string& typeName, std::string_view opMethod,
                                                const std::string& argType, const SymbolTable& symbolTable)
 {
-    if (opMethod.empty() || typeName.empty())
+    if (opMethod.empty() || typeName.empty() || parser::primitives::IsPrimitive(typeName))
     {
         return "";
     }
@@ -2427,15 +2447,30 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
 
     std::string cleanLeft = CleanBaseType(leftType);
     std::string cleanRight = CleanBaseType(rightType);
+
+    const bool leftIsPrim = parser::primitives::IsPrimitive(cleanLeft);
+    const bool rightIsPrim = parser::primitives::IsPrimitive(cleanRight);
+
+    if (leftIsPrim && rightIsPrim)
+    {
+        return ResolveBinaryPrimitivePromotion(op, cleanLeft, cleanRight, ctx.disableIntegerDivision);
+    }
+
     auto [opMethod, revOpMethod] = GetBinaryOpMethods(op);
 
-    if (auto res = ResolveBinaryOverloadMethod(cleanLeft, opMethod, rightType, ctx.symbolTable); !res.empty())
+    if (!leftIsPrim)
     {
-        return res;
+        if (auto res = ResolveBinaryOverloadMethod(cleanLeft, opMethod, rightType, ctx.symbolTable); !res.empty())
+        {
+            return res;
+        }
     }
-    if (auto res = ResolveBinaryOverloadMethod(cleanRight, revOpMethod, leftType, ctx.symbolTable); !res.empty())
+    if (!rightIsPrim)
     {
-        return res;
+        if (auto res = ResolveBinaryOverloadMethod(cleanRight, revOpMethod, leftType, ctx.symbolTable); !res.empty())
+        {
+            return res;
+        }
     }
     return ResolveBinaryPrimitivePromotion(op, cleanLeft, cleanRight, ctx.disableIntegerDivision);
 }
@@ -3412,6 +3447,16 @@ static std::string ResolveCompositeExpr(std::string_view nodeType, TSNode exprNo
     return ResolveOtherExpr(nodeType, exprNode, ctx, depth);
 }
 
+static std::string ResolveExpressionTypeUncached(std::string_view nodeType, TSNode exprNode,
+                                                const ExpressionTypeContext& ctx, int depth)
+{
+    if (auto primary = ResolvePrimaryExpr(nodeType, exprNode, ctx, depth))
+    {
+        return *primary;
+    }
+    return ResolveCompositeExpr(nodeType, exprNode, ctx, depth);
+}
+
 std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
     // This resolver recurses on operands and member chains with nothing else bounding it, so a
@@ -3430,12 +3475,24 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
         return "void";
     }
 
-    std::string_view nodeType = ts_node_type(exprNode);
-    if (auto primary = ResolvePrimaryExpr(nodeType, exprNode, ctx, depth))
+    if (ctx.cache)
     {
-        return *primary;
+        const ExpressionCacheKey key{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode),
+                                     ts_node_symbol(exprNode)};
+        auto it = ctx.cache->types.find(key);
+        if (it != ctx.cache->types.end())
+        {
+            return it->second;
+        }
+
+        std::string_view nodeType = ts_node_type(exprNode);
+        std::string resolved = ResolveExpressionTypeUncached(nodeType, exprNode, ctx, depth);
+        ctx.cache->types.emplace(key, resolved);
+        return resolved;
     }
-    return ResolveCompositeExpr(nodeType, exprNode, ctx, depth);
+
+    std::string_view nodeType = ts_node_type(exprNode);
+    return ResolveExpressionTypeUncached(nodeType, exprNode, ctx, depth);
 }
 
 /**

@@ -1177,8 +1177,10 @@ std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& reques
                                          ? std::string_view(request.config->types.arrayTypeName)
                                          : std::string_view("array");
 
-    std::string resolved = analysis::ResolveExpressionType(
-        exprNode, {scope, request.symbolTable, request.sourceCode, request.uri, strType, arrType});
+    analysis::ExpressionTypeContext exprCtx{scope, request.symbolTable, request.sourceCode, request.uri};
+    exprCtx.stringTypeName = strType;
+    exprCtx.arrayTypeName = arrType;
+    std::string resolved = analysis::ResolveExpressionType(exprNode, exprCtx);
     if (!resolved.empty() && resolved != "auto")
     {
         return resolved;

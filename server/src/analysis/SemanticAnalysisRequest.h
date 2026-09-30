@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/Diagnostics.h"
+#include "analysis/ExpressionTypeCache.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/rules/RuleIndex.h"
@@ -123,6 +124,9 @@ struct SemanticAnalysisRequest
 
     /** @brief Optional traversal budget to enforce bounded AST node visits across checkers. */
     TraversalBudget* traversalBudget = nullptr;
+
+    /** @brief Optional memoization cache for resolved expression types across analysis passes. */
+    mutable ExpressionTypeCache* exprCache = nullptr;
 
     /** @brief Kill-switch for the conversion rules (see TypeConversionChecker.h). */
     bool enableTypeConversionChecks = true;

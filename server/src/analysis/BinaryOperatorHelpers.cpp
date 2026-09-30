@@ -31,6 +31,10 @@ bool IsParameterCompatible(const ParameterInformation& param, const std::string&
 bool TypeHasOperator(const std::string& typeName, const std::string& opName, const std::string& argType,
                      const SymbolTable& table)
 {
+    if (typeName.empty() || parser::primitives::IsPrimitive(typeName))
+    {
+        return false;
+    }
     for (const auto& cls : GetInheritedTypeHierarchy(typeName, table))
     {
         const auto symbols = table.FindMemberSymbolPtr(cls, opName);
@@ -52,6 +56,10 @@ bool TypeHasOperator(const std::string& typeName, const std::string& opName, con
 
 bool TypeHasOpImplConvTo(const std::string& typeName, const std::string& targetType, const SymbolTable& table)
 {
+    if (typeName.empty() || parser::primitives::IsPrimitive(typeName))
+    {
+        return false;
+    }
     for (const auto& cls : GetInheritedTypeHierarchy(typeName, table))
     {
         const auto symbols = table.FindMemberSymbolPtr(cls, "opImplConv");
@@ -89,12 +97,7 @@ bool IsNullOperand(TSNode node, const std::string& type)
 std::optional<BinaryOperandTypes> ResolveCleanBinaryOperandTypes(TSNode left, TSNode right, const Scope* scope,
                                                                  const DiagnosticContext& ctx)
 {
-    const ExpressionTypeContext exprCtx{scope,
-                                        ctx.request.symbolTable,
-                                        ctx.request.sourceCode,
-                                        ctx.request.fileUri,
-                                        ctx.request.GetEffectiveStringTypeName(),
-                                        ctx.request.GetEffectiveArrayTypeName()};
+    const ExpressionTypeContext exprCtx(scope, ctx);
     const std::string rawLeft = ResolveExpressionType(left, exprCtx);
     const std::string rawRight = ResolveExpressionType(right, exprCtx);
     if (IsNullOperand(left, rawLeft) || IsNullOperand(right, rawRight))

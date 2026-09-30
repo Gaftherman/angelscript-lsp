@@ -411,7 +411,7 @@ void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope*
     }
 
     const std::string objectType =
-        CleanBaseType(ResolveExpressionType(objectNode, {scope, table, request.sourceCode, ctx.request.fileUri}));
+        CleanBaseType(ResolveExpressionType(objectNode, ExpressionTypeContext(scope, ctx)));
     if (objectType.empty() || !HierarchyIsFullyVisible(objectType, table))
     {
         return;

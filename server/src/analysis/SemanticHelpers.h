@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/DiagnosticContext.h"
+#include "analysis/ExpressionTypeCache.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/TypeSanitization.h"
 #include "parser/ASTUtils.h"
@@ -367,7 +368,8 @@ bool IsVariableType(std::string_view typeName);
  * @param symbolTable The symbol table to look up class and interface definitions.
  * @return Vector of type names in the hierarchy including className and its transitive bases.
  */
-std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className, const SymbolTable& symbolTable);
+std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className, const SymbolTable& symbolTable,
+                                                   ExpressionTypeCache* cache = nullptr);
 
 /**
  * @brief Resolves the direct non-mixin base class of a given class according to its inheritance hierarchy.
@@ -609,12 +611,10 @@ struct ExpressionTypeContext
     std::string_view stringTypeName = "string";
     std::string_view arrayTypeName = "array";
     bool disableIntegerDivision = false;
+    ExpressionTypeCache* cache = nullptr;
 
-    ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "",
-                          std::string_view strType = "string", std::string_view arrType = "array",
-                          bool disableIntDiv = false)
-        : scope(sc), symbolTable(st), sourceCode(src), uri(u), stringTypeName(strType), arrayTypeName(arrType),
-          disableIntegerDivision(disableIntDiv)
+    ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "")
+        : scope(sc), symbolTable(st), sourceCode(src), uri(u)
     {
     }
 
@@ -622,7 +622,8 @@ struct ExpressionTypeContext
         : scope(sc), symbolTable(diagCtx.request.symbolTable), sourceCode(diagCtx.request.sourceCode),
           uri(diagCtx.request.fileUri), stringTypeName(diagCtx.request.GetEffectiveStringTypeName()),
           arrayTypeName(diagCtx.request.GetEffectiveArrayTypeName()),
-          disableIntegerDivision(diagCtx.request.DisablesIntegerDivision())
+          disableIntegerDivision(diagCtx.request.DisablesIntegerDivision()),
+          cache(diagCtx.request.exprCache)
     {
     }
 };

@@ -186,9 +186,8 @@ class DefiniteAssignmentVisitor
                 const Scope* callScope = m_request.scopeRoot
                                              ? FindEnclosingScope(m_request.scopeRoot, objStart.row, objStart.column)
                                              : nullptr;
-                std::string objType = ResolveExpressionType(objNode, {callScope ? callScope : m_request.scopeRoot,
-                                                                      m_ctx.request.symbolTable, m_request.sourceCode,
-                                                                      m_ctx.request.fileUri});
+                std::string objType = ResolveExpressionType(
+                    objNode, ExpressionTypeContext(callScope ? callScope : m_request.scopeRoot, m_ctx));
                 std::string cleanObj = CleanBaseType(objType);
                 std::string memName = NodeText(memNode, m_request.sourceCode);
                 auto hierarchy = GetInheritedTypeHierarchy(cleanObj, m_ctx.request.symbolTable);
@@ -343,7 +342,7 @@ class DefiniteAssignmentVisitor
         for (TSNode arg : argNodes)
         {
             argTypes.push_back(ResolveExpressionType(
-                arg, {m_request.scopeRoot, m_ctx.request.symbolTable, m_request.sourceCode, m_ctx.request.fileUri}));
+                arg, ExpressionTypeContext(m_request.scopeRoot, m_ctx)));
         }
 
         auto best = ResolveBestOverload(candidates, argTypes, m_ctx.request.symbolTable);

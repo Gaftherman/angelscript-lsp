@@ -199,10 +199,48 @@ void SemanticAnalyzer::CheckDirectivesAndModules(const SemanticAnalysisRequest& 
     }
 }
 
+SemanticAnalyzer::TimedAstBreakdown SemanticAnalyzer::RunTimedAstRules(const SemanticAnalysisRequest& request,
+                                                                       const NodeIndex* indexPtr,
+                                                                       DiagnosticContext& ctx) const
+{
+    TimedAstBreakdown breakdown;
+    if (request.tree && !request.sourceCode.empty())
+    {
+        utils::HighResTimer stmtTimer;
+        RunStatementAndControlFlowRules(request, indexPtr, ctx);
+        breakdown.stmtMs = stmtTimer.ElapsedMs();
+
+        utils::HighResTimer typeTimer;
+        RunTypeAndStructureRules(request, indexPtr, ctx);
+        breakdown.typeMs = typeTimer.ElapsedMs();
+
+        utils::HighResTimer exprTimer;
+        RunExpressionRules(request, indexPtr, ctx);
+        breakdown.exprMs = exprTimer.ElapsedMs();
+    }
+    return breakdown;
+}
+
 std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest& request) const
 {
     std::vector<Diagnostic> diagnostics;
     LogSymbolDump(request);
+
+    ExpressionTypeCache localCache;
+    struct CacheGuard
+    {
+        const SemanticAnalysisRequest& req;
+        ExpressionTypeCache* prev;
+        ~CacheGuard()
+        {
+            req.exprCache = prev;
+        }
+    } guard{request, request.exprCache};
+
+    if (!request.exprCache)
+    {
+        request.exprCache = &localCache;
+    }
 
     {
         DiagnosticContext ctx{request, diagnostics, m_logger};
@@ -211,7 +249,7 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
 
         utils::HighResTimer scopeTimer;
         RunScopeRules(request, ctx);
-        double scopeMs = scopeTimer.ElapsedMs();
+        const double scopeMs = scopeTimer.ElapsedMs();
 
         std::unique_ptr<NodeIndex> localNodeIndex;
         const NodeIndex* indexPtr = request.nodeIndex;
@@ -222,31 +260,15 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
             indexPtr = localNodeIndex.get();
         }
 
-        double stmtMs = 0.0;
-        double exprMs = 0.0;
-        double typeMs = 0.0;
-        if (request.tree && !request.sourceCode.empty())
-        {
-            utils::HighResTimer stmtTimer;
-            RunStatementAndControlFlowRules(request, indexPtr, ctx);
-            stmtMs = stmtTimer.ElapsedMs();
-
-            utils::HighResTimer typeTimer;
-            RunTypeAndStructureRules(request, indexPtr, ctx);
-            typeMs = typeTimer.ElapsedMs();
-
-            utils::HighResTimer exprTimer;
-            RunExpressionRules(request, indexPtr, ctx);
-            exprMs = exprTimer.ElapsedMs();
-        }
-
+        const auto breakdown = RunTimedAstRules(request, indexPtr, ctx);
         CheckDirectivesAndModules(request, ctx);
 
         if (m_logger && m_logger->IsEnabled(utils::LogLevel::Info))
         {
             m_logger->LogInfo(fmt::format("[Checkers Breakdown] File: {} | ScopeRules: {:.2f} ms, StmtFlow: {:.2f} ms, "
                                           "ExprRules: {:.2f} ms, TypeRules: {:.2f} ms",
-                                          request.fileUri, scopeMs, stmtMs, exprMs, typeMs));
+                                          request.fileUri, scopeMs, breakdown.stmtMs, breakdown.exprMs,
+                                          breakdown.typeMs));
         }
     }
 

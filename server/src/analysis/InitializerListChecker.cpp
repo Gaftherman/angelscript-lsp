@@ -200,7 +200,7 @@ void CheckElementValue(TSNode element, const std::string& wanted, DiagnosticCont
     }
 
     const std::string actual = ResolveExpressionType(
-        element, {elements.scopeRoot, ctx.request.symbolTable, elements.sourceCode, ctx.request.fileUri});
+        element, ExpressionTypeContext(elements.scopeRoot, ctx));
     if (actual.empty())
     {
         return;
@@ -1049,8 +1049,7 @@ void ProcessAssignmentExpression(TSNode node, const InitializerListContext& init
     {
         const ElementContext elements = ElementsAt(value, initCtx.request);
         const std::string targetType =
-            ResolveExpressionType(target, {elements.scopeRoot, initCtx.ctx.request.symbolTable,
-                                           initCtx.request.sourceCode, initCtx.ctx.request.fileUri});
+            ResolveExpressionType(target, ExpressionTypeContext(elements.scopeRoot, initCtx.ctx));
         if (!targetType.empty())
         {
             const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.arrayLikeTemplates, initCtx.structCache,
