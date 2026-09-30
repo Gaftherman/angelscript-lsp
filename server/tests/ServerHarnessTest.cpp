@@ -6539,18 +6539,84 @@ TEST_CASE("Server - Formatting and OnTypeFormatting capabilities disabled when e
 
     const std::string output = stream.Output();
 
-    // Verify capabilities in initialize response (ID 1):
-    // Neither documentFormattingProvider nor documentOnTypeFormattingProvider should be offered.
-    const auto initRespEnd = output.find(R"("id":1})");
-    const std::string initResp = output.substr(0, initRespEnd != std::string::npos ? initRespEnd : 1000);
-    CHECK(initResp.find("documentOnTypeFormattingProvider") == std::string::npos);
-    CHECK(initResp.find("documentFormattingProvider") == std::string::npos);
+    // Verify responses structurally to be fully independent of JSON key ordering across STL implementations.
+    bool foundInitResp = false;
+    bool foundResp10 = false;
+    bool foundResp11 = false;
 
-    // Verify request 10 (onTypeFormatting) returns null
-    CHECK(output.find(R"("id":10,"result":null)") != std::string::npos);
+    size_t pos = 0;
+    while (pos < output.size())
+    {
+        const size_t headerStart = output.find("Content-Length:", pos);
+        if (headerStart == std::string::npos)
+        {
+            break;
+        }
 
-    // Verify request 11 (formatting) returns null
-    CHECK(output.find(R"("id":11,"result":null)") != std::string::npos);
+        const size_t bodyStart = output.find("\r\n\r\n", headerStart);
+        if (bodyStart == std::string::npos)
+        {
+            break;
+        }
+
+        const size_t contentStart = bodyStart + 4;
+        const size_t nextHeader = output.find("Content-Length:", contentStart);
+        const size_t bodyLength =
+            (nextHeader == std::string::npos) ? (output.size() - contentStart) : (nextHeader - contentStart);
+
+        const std::string body = output.substr(contentStart, bodyLength);
+        pos = contentStart + bodyLength;
+
+        try
+        {
+            auto parsed = lsp::json::parse(body);
+            if (!parsed.isObject())
+            {
+                continue;
+            }
+            const auto& obj = parsed.object();
+            const auto* idVal = obj.find("id");
+            if (!idVal || !idVal->isInteger())
+            {
+                continue;
+            }
+
+            const int64_t id = idVal->integer();
+            if (id == 1)
+            {
+                foundInitResp = true;
+                const auto* resVal = obj.find("result");
+                REQUIRE(resVal != nullptr);
+                REQUIRE(resVal->isObject());
+                const auto* capVal = resVal->object().find("capabilities");
+                REQUIRE(capVal != nullptr);
+                REQUIRE(capVal->isObject());
+                CHECK(capVal->object().find("documentFormattingProvider") == nullptr);
+                CHECK(capVal->object().find("documentOnTypeFormattingProvider") == nullptr);
+            }
+            else if (id == 10)
+            {
+                foundResp10 = true;
+                const auto* resVal = obj.find("result");
+                REQUIRE(resVal != nullptr);
+                CHECK(resVal->isNull());
+            }
+            else if (id == 11)
+            {
+                foundResp11 = true;
+                const auto* resVal = obj.find("result");
+                REQUIRE(resVal != nullptr);
+                CHECK(resVal->isNull());
+            }
+        }
+        catch (...)
+        {
+        }
+    }
+
+    CHECK(foundInitResp);
+    CHECK(foundResp10);
+    CHECK(foundResp11);
 }
 
 
