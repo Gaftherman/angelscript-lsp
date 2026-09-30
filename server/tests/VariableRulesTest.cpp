@@ -92,6 +92,18 @@ TEST_CASE("VariableRules - A funcdef handle is accepted")
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-funcdef-not-handle"));
 }
 
+TEST_CASE("VariableRules - An array of funcdef handles is accepted without error")
+{
+    std::mt19937_64 rng(0x1337BEF8);
+    const std::string cbName = angel_lsp::test::GenerateIdentifier(rng, "PrintCallback");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "m_Callbacks");
+    const std::string code =
+        "funcdef void " + cbName + "();\n" +
+        "array<" + cbName + "@> " + varName + ";\n";
+
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-funcdef-not-handle"));
+}
+
 TEST_CASE("VariableRules - Reports a mixin used as a data type")
 {
     std::mt19937_64 rng(0x1337BEF3);

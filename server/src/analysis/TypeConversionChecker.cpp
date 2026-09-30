@@ -1,5 +1,6 @@
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/BinaryOperatorChecker.h"
 #include "analysis/ComparisonOperatorChecker.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/HandleComparisonChecker.h"
@@ -3063,6 +3064,7 @@ void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, D
     CheckSignedUnsignedComparison(node, scope, ctx);
     CheckHandleComparison(node, scope, ctx);
     CheckComparisonOperatorCompatibility(node, scope, ctx);
+    CheckBinaryOperatorCompatibility(node, scope, ctx);
 }
 
 /**

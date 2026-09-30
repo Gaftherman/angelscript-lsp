@@ -223,7 +223,12 @@ std::string FormatFunctionDeclaration(const Symbol& sym, bool qualified)
     std::ostringstream oss;
     oss << FormatDeclarationPrefix(modifiers);
     AppendFunctionPreamble(oss, sym, isFuncdef);
-    oss << FormatReturnType(returnType, modifiers) << " ";
+    const bool isCtor = !isFuncdef && returnType.empty() && !sym.containerName.empty() &&
+                        (sym.name == sym.containerName || sym.name == ("~" + sym.containerName));
+    if (!isCtor)
+    {
+        oss << FormatReturnType(returnType, modifiers) << " ";
+    }
     AppendFunctionName(oss, sym, qualified);
     oss << "(";
     AppendParameters(oss, parameters);

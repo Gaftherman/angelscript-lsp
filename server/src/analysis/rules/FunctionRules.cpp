@@ -623,7 +623,7 @@ void CheckParamTypeLegality(const Symbol& sym, const ParameterInformation& param
                  param.typeName.empty() ? param.baseTypeName : param.typeName);
     }
 
-    if (!param.isHandle && !param.baseTypeName.empty())
+    if (!param.isHandle && param.templateName.empty() && !param.isArray && !param.baseTypeName.empty())
     {
         const auto typeSymbols = ctx.request.symbolTable.FindSymbolsPtr(param.baseTypeName);
         const bool isFuncdefType =

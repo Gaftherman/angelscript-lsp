@@ -149,7 +149,7 @@ void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const Di
         return;
     }
 
-    if (declaration->type == SymbolType::Funcdef && !sig.modifiers.isHandle)
+    if (!sig.isArray && sig.templateName.empty() && declaration->type == SymbolType::Funcdef && !sig.modifiers.isHandle)
     {
         ctx.LogRule("CheckDeclaredType", "as-err-funcdef-not-handle", sym);
         ctx.Emit(sym, "as-err-funcdef-not-handle", baseType, baseType);

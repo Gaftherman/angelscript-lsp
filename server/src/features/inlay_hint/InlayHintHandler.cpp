@@ -1264,9 +1264,44 @@ struct ParamHintContext
     const InlayHintRequest& request;
 };
 
+
 /**
- * @brief Constructs a single parameter inlay hint.
- * @param[in] ctx Parameter hint context.
+ * @brief Resolves target location for an inlay hint parameter definition.
+ * @param[in] fallbackUri Fallback document URI.
+ * @param[in] calleeUri Declared URI of the callee.
+ * @param[in] param Callee parameter information.
+ * @return Resolved Location if parameter has valid range, std::nullopt otherwise.
+ */
+std::optional<lsp::Location> ResolveParameterLocation(const std::string& fallbackUri,
+                                                     const std::string& calleeUri,
+                                                     const analysis::ParameterInformation& param)
+{
+    const std::string& targetUri = calleeUri.empty() ? fallbackUri : calleeUri;
+    if (targetUri.empty())
+    {
+        return std::nullopt;
+    }
+    const bool hasNameLoc = (param.nameStartLine != param.nameEndLine || param.nameStartCharacter != param.nameEndCharacter);
+    const bool hasValidLoc = hasNameLoc || (param.startLine != param.endLine || param.startCharacter != param.endCharacter);
+    if (!hasValidLoc)
+    {
+        return std::nullopt;
+    }
+    const uint32_t sL = hasNameLoc ? param.nameStartLine : param.startLine;
+    const uint32_t sC = hasNameLoc ? param.nameStartCharacter : param.startCharacter;
+    const uint32_t eL = hasNameLoc ? param.nameEndLine : param.endLine;
+    const uint32_t eC = hasNameLoc ? param.nameEndCharacter : param.endCharacter;
+    lsp::Range paramRange{lsp::Position{sL, sC}, lsp::Position{eL, eC}};
+    return lsp::Location{
+        targetUri.rfind("file://", 0) == 0 ? lsp::DocumentUri::parse(targetUri)
+                                           : lsp::Uri::fileUriFromPath(targetUri),
+        paramRange
+    };
+}
+
+/**
+ * @brief Builds a parameter inlay hint for a single argument.
+ * @param[in] ctx Parameter hint context containing call and config details.
  * @param[in] param Callee parameter information.
  * @param[in] arg Argument metadata.
  * @param[in] label Formatted parameter label.
@@ -1290,21 +1325,14 @@ lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx,
     part.value = label + ":";
     if (enableTooltip)
     {
-        part.tooltip = FormatParameterTooltip(param, label, ctx.callee.calleeName);
+        part.tooltip = lsp::MarkupContent{
+            lsp::MarkupKindEnum(lsp::MarkupKind::Markdown),
+            FormatParameterTooltip(param, label, ctx.callee.calleeName)
+        };
     }
-    std::string targetUri = ctx.callee.fileUri.empty() ? ctx.request.uri : ctx.callee.fileUri;
-    const bool hasValidLocation = (param.startLine != param.endLine || param.startCharacter != param.endCharacter);
-    if (enableLocation && !targetUri.empty() && hasValidLocation)
+    if (enableLocation)
     {
-        lsp::Range paramRange{
-            lsp::Position{param.startLine, param.startCharacter},
-            lsp::Position{param.endLine, param.endCharacter}
-        };
-        part.location = lsp::Location{
-            targetUri.rfind("file://", 0) == 0 ? lsp::DocumentUri::parse(targetUri)
-                                               : lsp::Uri::fileUriFromPath(targetUri),
-            paramRange
-        };
+        part.location = ResolveParameterLocation(ctx.request.uri, ctx.callee.fileUri, param);
     }
     hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
     hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
@@ -1467,9 +1495,12 @@ lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, std::string labe
 
     lsp::InlayHintLabelPart part;
     part.value = std::move(label);
-    if (enableTooltip)
+    if (enableTooltip && !hintInfo.tooltip.empty())
     {
-        part.tooltip = hintInfo.tooltip;
+        part.tooltip = lsp::MarkupContent{
+            lsp::MarkupKindEnum(lsp::MarkupKind::Markdown),
+            hintInfo.tooltip
+        };
     }
     const bool hasValidLocation = hintInfo.param && (hintInfo.param->startLine != hintInfo.param->endLine ||
                                                     hintInfo.param->startCharacter != hintInfo.param->endCharacter);
@@ -1685,7 +1716,13 @@ void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequest& re
         hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Type);
         hint.paddingLeft = true;
         hint.paddingRight = false;
-        hint.tooltip = "Deduced type: " + deduced;
+        if (!request.config || request.config->features.inlayHintsEnableTooltip)
+        {
+            hint.tooltip = lsp::MarkupContent{
+                lsp::MarkupKindEnum(lsp::MarkupKind::Markdown),
+                "Deduced type: " + deduced
+            };
+        }
         hints.push_back(std::move(hint));
     }
 }

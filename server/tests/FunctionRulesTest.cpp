@@ -2,6 +2,7 @@
 
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
+#include "helpers/TestUtils.h"
 #include "analysis/rules/FunctionRules.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SemanticAnalysisRequest.h"
@@ -668,6 +669,17 @@ TEST_CASE("FunctionRules - Reports a funcdef parameter declared without a handle
         "void Register(Callback cb) { }\n";
 
     CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-funcdef-not-handle"));
+}
+
+TEST_CASE("FunctionRules - Parameter of array of funcdef handles is accepted without error")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("Register");
+    const std::string cbName = angel_lsp::test::GenerateRandomSymbolName("Callback");
+    const std::string code =
+        "funcdef void " + cbName + "();\n"
+        "void " + funcName + "(array<" + cbName + "@> &in callbacks) { }\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code), "as-err-funcdef-not-handle"));
 }
 
 TEST_CASE("FunctionRules - Reports an abstract class or an interface passed by value")

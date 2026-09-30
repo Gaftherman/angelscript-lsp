@@ -2180,7 +2180,7 @@ TEST_CASE("Server - Announces the save hooks and its one command")
     INFO(reply);
     CHECK(reply.find("\"willSave\":true") != std::string::npos);
     CHECK(reply.find("\"willSaveWaitUntil\":true") != std::string::npos);
-    CHECK(reply.find("angelscript.rescanWorkspace") != std::string::npos);
+    CHECK(reply.find("angelscript.listPredefinedStubs") != std::string::npos);
 }
 
 TEST_CASE("Server - A manual save formats nothing unless format-on-save was asked for")
@@ -5861,6 +5861,37 @@ TEST_CASE("Telemetry - predefined stub bypasses checkers and publishes empty dia
     CHECK(output.find("[Open/Change Profile]") != std::string::npos);
     CHECK(output.find("engine.as.predefined") != std::string::npos);
     CHECK(output.find("Checkers: 0.00 ms") != std::string::npos);
+}
+
+TEST_CASE("Telemetry - FormatDuration formats milliseconds and converts seconds above threshold")
+{
+    CHECK(angel_lsp::utils::FormatDuration(0.0) == "0.00 ms");
+    CHECK(angel_lsp::utils::FormatDuration(45.2) == "45.20 ms");
+    CHECK(angel_lsp::utils::FormatDuration(999.99) == "999.99 ms");
+    CHECK(angel_lsp::utils::FormatDuration(1000.0) == "1.00 s (1000.00 ms)");
+    CHECK(angel_lsp::utils::FormatDuration(1500.0) == "1.50 s (1500.00 ms)");
+    CHECK(angel_lsp::utils::FormatDuration(25000.0) == "25.00 s (25000.00 ms)");
+}
+
+TEST_CASE("Telemetry - didOpen produces [File Open] and [Open/Change Profile] structured logs")
+{
+    WorkspaceFixture fixture;
+    const std::string symbol = angel_lsp::test::GenerateRandomSymbolName();
+    fixture.Write("test_telemetry.as", "void " + symbol + "() {}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("test_telemetry.as"), "void " + symbol + "() {}\n"));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    const std::string output = RunScript(serverConfig, stream);
+
+    CHECK(output.find("[File Open] Opening document:") != std::string::npos);
+    CHECK(output.find("[File Open] Finished opening document:") != std::string::npos);
+    CHECK(output.find("[Open/Change Profile]") != std::string::npos);
 }
 
 TEST_CASE("Server - Saving an open file in a module does not re-analyze closed files or unchanged peers")

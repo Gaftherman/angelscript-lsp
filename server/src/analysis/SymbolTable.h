@@ -172,6 +172,11 @@ struct ParameterInformation
     uint32_t startCharacter = 0;
     uint32_t endLine = 0;
     uint32_t endCharacter = 0;
+
+    uint32_t nameStartLine = 0;
+    uint32_t nameStartCharacter = 0;
+    uint32_t nameEndLine = 0;
+    uint32_t nameEndCharacter = 0;
 };
 
 struct SourceRange

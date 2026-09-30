@@ -1147,3 +1147,29 @@ TEST_CASE("HoverHandler - Enum Member Declaration Hover Isolation")
     CHECK(contentB.value.find(enumA) == std::string::npos);
 }
 
+TEST_CASE("HoverHandler - Constructor Call Overload Resolution")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("Color");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("MakeColor");
+
+    std::string code =
+        "class " + className + "\n"
+        "{\n"
+        "    " + className + "() {}\n"
+        "    " + className + "(int r, int g, int b, int a) {}\n"
+        "};\n"
+        "void " + fnName + "()\n"
+        "{\n"
+        "    " + className + "(10, 20, 30, 40);\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Hover on className in call at line 7, column 5
+    auto hover = env.HoverAt(7, 5);
+    REQUIRE(hover.has_value());
+    auto content = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(content.value.find(className + "(int r, int g, int b, int a)") != std::string::npos);
+    CHECK(content.value.find("void " + className) == std::string::npos);
+}
+

@@ -45,7 +45,8 @@ class PhaseTimer
 
         const auto elapsed =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_start);
-        m_logger->LogInfo(fmt::format("Startup phase '{}': {} ms", m_phase, elapsed.count()));
+        m_logger->LogInfo(fmt::format("Startup phase '{}': {}", m_phase,
+                                      angel_lsp::utils::FormatDuration(static_cast<double>(elapsed.count()))));
     }
 
     PhaseTimer(const PhaseTimer&) = delete;
@@ -501,6 +502,8 @@ bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined
         return false;
     }
 
+    LogInfo(fmt::format("[File Read] Reading modified watched file: {}", path));
+    utils::HighResTimer readTimer;
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open())
     {
@@ -508,6 +511,8 @@ bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined
     }
 
     const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    LogInfo(fmt::format("[File Read] Finished reading watched file: {} in {} ({} bytes)",
+                        path, utils::FormatDuration(readTimer.ElapsedMs()), content.size()));
     m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
         path, content, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
 

@@ -34,6 +34,23 @@ namespace
         return "";
     }
 
+    std::string GetTooltipText(const lsp::Opt<lsp::OneOf<std::string, lsp::MarkupContent>>& opt)
+    {
+        if (!opt.has_value())
+        {
+            return "";
+        }
+        if (std::holds_alternative<std::string>(*opt))
+        {
+            return std::get<std::string>(*opt);
+        }
+        if (std::holds_alternative<lsp::MarkupContent>(*opt))
+        {
+            return std::get<lsp::MarkupContent>(*opt).value;
+        }
+        return "";
+    }
+
     struct TestEnvironment
     {
         AngelScriptParser parser;
@@ -414,9 +431,7 @@ TEST_CASE("InlayHintHandler - Operator Overload Auto Type Deduction")
             foundMatrix = true;
             if (hint.tooltip.has_value())
             {
-                std::string t = std::holds_alternative<std::string>(*hint.tooltip)
-                                    ? std::get<std::string>(*hint.tooltip)
-                                    : "";
+                std::string t = GetTooltipText(hint.tooltip);
                 CHECK(t == "Deduced type: Matrix");
             }
         }
@@ -425,9 +440,7 @@ TEST_CASE("InlayHintHandler - Operator Overload Auto Type Deduction")
             foundVector = true;
             if (hint.tooltip.has_value())
             {
-                std::string t = std::holds_alternative<std::string>(*hint.tooltip)
-                                    ? std::get<std::string>(*hint.tooltip)
-                                    : "";
+                std::string t = GetTooltipText(hint.tooltip);
                 CHECK(t == "Deduced type: Vector");
             }
         }
@@ -1192,9 +1205,7 @@ TEST_CASE("InlayHintHandler - Omitted default parameter in non-empty argument li
             const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
             REQUIRE_FALSE(parts.empty());
             REQUIRE(parts[0].tooltip.has_value());
-            std::string tooltip = std::holds_alternative<std::string>(*parts[0].tooltip)
-                                      ? std::get<std::string>(*parts[0].tooltip)
-                                      : "";
+            std::string tooltip = GetTooltipText(parts[0].tooltip);
             CHECK(tooltip.find("Default parameter:") != std::string::npos);
             CHECK(tooltip.find(argsParam) != std::string::npos);
             CHECK(tooltip.find("null") != std::string::npos);
@@ -1241,9 +1252,7 @@ TEST_CASE("InlayHintHandler - Nameless wildcard parameter ?& in generates fallba
             const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
             REQUIRE_FALSE(parts.empty());
             REQUIRE(parts[0].tooltip.has_value());
-            std::string tooltip = std::holds_alternative<std::string>(*parts[0].tooltip)
-                                      ? std::get<std::string>(*parts[0].tooltip)
-                                      : "";
+            std::string tooltip = GetTooltipText(parts[0].tooltip);
             CHECK(tooltip.find("Parameter") != std::string::npos);
             CHECK(tooltip.find("?") != std::string::npos);
             CHECK_FALSE(hint.tooltip.has_value());
@@ -1336,9 +1345,7 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
             {
                 foundParamHint = true;
                 REQUIRE(part.tooltip.has_value());
-                std::string tooltip = std::holds_alternative<std::string>(*part.tooltip)
-                                          ? std::get<std::string>(*part.tooltip)
-                                          : "";
+                std::string tooltip = GetTooltipText(part.tooltip);
                 CHECK(tooltip.find("```angelscript\nCBaseEntity@ " + paramName + "\n```") != std::string::npos);
                 CHECK(tooltip.find("*Parameter for `" + funcName + "`*") != std::string::npos);
                 CHECK(part.location.has_value());

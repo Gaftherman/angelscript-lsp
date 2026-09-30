@@ -845,6 +845,15 @@ class Server
                                   bool forceReload, std::unordered_set<std::string>& visited);
 
     /**
+     * @brief Commits parsed AST and scopes of a predefined stub to storage.
+     * @param[in] uri Predefined document URI.
+     * @param[in] content Document text content.
+     * @param[in] tree Parsed AST tree handle.
+     */
+    void CommitPredefinedIndex(const std::string& uri, const std::string& content,
+                               document::TreePtr tree);
+
+    /**
      * @brief Marks whether predefined stubs and engine profiles are ready for document analysis.
      * @param[in] ready True if predefined stubs are loaded and ready.
      */
@@ -1827,7 +1836,21 @@ class Server
      * @return The document, or nullopt when nothing by that URI is open. A request naming a
      *         document nobody opened is answered with null rather than an error: the client is
      *         allowed to race a close against a request it already sent.
+    /**
+     * @brief Synthesizes and opens a virtual mixin document.
+     * @param[in] key Canonical document key.
+     * @param[in] uriStr Original request URI.
+     * @return Opened document handle, or nullptr on failure.
      */
+    std::shared_ptr<const document::Document> ResolveVirtualDocument(const std::string& key, const std::string& uriStr);
+
+    /**
+     * @brief Looks up a preindexed document snapshot from predefined or workspace stores.
+     * @param[in] key Canonical document key.
+     * @return OpenDocument snapshot if preindexed, std::nullopt otherwise.
+     */
+    std::optional<OpenDocument> LookupPreindexedFallback(const std::string& key);
+
     std::optional<OpenDocument> LookupOpenDocument(const std::string& uriStr);
 
     /**
@@ -2039,6 +2062,41 @@ class Server
      * @param[in] totalTimer High-resolution timer tracking total analysis time.
      */
     void AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
+
+    struct ParseAndCollectResult
+    {
+        document::TreePtr tree;
+        std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
+        double parseMs = 0.0;
+        double colMs = 0.0;
+    };
+
+    /**
+     * @brief Parses document text and collects symbols into a staging table.
+     * @param[in,out] req Analysis request bundle containing text and parser.
+     * @param[out] staging SymbolTable receiving collected symbols.
+     * @return Parse and collection result metrics.
+     */
+    ParseAndCollectResult ParseAndCollectSymbols(AnalyzeDocumentRequest& req,
+                                                angel_lsp::analysis::SymbolTable& staging);
+
+    struct AnalysisTimingProfile
+    {
+        double totalMs = 0.0;
+        double parseMs = 0.0;
+        double colMs = 0.0;
+        double scopeMs = 0.0;
+        double checkMs = 0.0;
+    };
+
+    /**
+     * @brief Logs detailed and profile telemetry for document analysis phases.
+     * @param[in] prefix Log category prefix (e.g. "[Analysis]" or "[File Open]").
+     * @param[in] uriStr Document URI being reported.
+     * @param[in] profile Aggregated phase timings.
+     */
+    void LogAnalysisProfile(std::string_view prefix, const std::string& uriStr,
+                            const AnalysisTimingProfile& profile) const;
 
     /**
      * @brief Analyzes a normal AngelScript document and commits its symbols, scopes, and diagnostics.

@@ -603,6 +603,34 @@ std::optional<lsp::Hover> HoverIncludeDirective(const HoverRequest& request)
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(markdown)}, range};
 }
 
+static bool MatchesTargetNode(TSNode candidate, TSNode target)
+{
+    return !ts_node_is_null(candidate) &&
+           (ts_node_eq(candidate, target) || ts_node_start_byte(candidate) == ts_node_start_byte(target));
+}
+
+static TSNode FindCallFromParent(TSNode parent, TSNode node)
+{
+    std::string_view pType = ts_node_type(parent);
+    if (pType == "call_expression")
+    {
+        TSNode fn = parser::GetChildByField(parent, parser::fields::Function);
+        if (MatchesTargetNode(fn, node))
+        {
+            return parent;
+        }
+    }
+    else if (pType == "construct_call_expression")
+    {
+        TSNode typeChild = parser::GetChildByField(parent, parser::fields::Type);
+        if (MatchesTargetNode(typeChild, node))
+        {
+            return parent;
+        }
+    }
+    return TSNode{};
+}
+
 TSNode FindEnclosingCallNode(TSNode node)
 {
     TSNode parent = ts_node_parent(node);
@@ -611,23 +639,19 @@ TSNode FindEnclosingCallNode(TSNode node)
         return TSNode{};
     }
 
-    std::string_view pType = ts_node_type(parent);
-    if (pType == "call_expression")
+    if (TSNode call = FindCallFromParent(parent, node); !ts_node_is_null(call))
     {
-        TSNode fn = parser::GetChildByField(parent, parser::fields::Function);
-        if (!ts_node_is_null(fn) && (ts_node_eq(fn, node) || ts_node_start_byte(fn) == ts_node_start_byte(node)))
-        {
-            return parent;
-        }
+        return call;
     }
-    else if (pType == "member_expression" || pType == "scoped_identifier")
+
+    std::string_view pType = ts_node_type(parent);
+    if (pType == "member_expression" || pType == "scoped_identifier")
     {
         TSNode grandParent = ts_node_parent(parent);
         if (!ts_node_is_null(grandParent) && std::string_view(ts_node_type(grandParent)) == "call_expression")
         {
             TSNode fn = parser::GetChildByField(grandParent, parser::fields::Function);
-            if (!ts_node_is_null(fn) &&
-                (ts_node_eq(fn, parent) || ts_node_start_byte(fn) == ts_node_start_byte(parent)))
+            if (MatchesTargetNode(fn, parent))
             {
                 return grandParent;
             }
@@ -2128,6 +2152,39 @@ static void DisambiguateContainerSymbols(const HoverQueryContext& ctx, std::vect
     }
 }
 
+/**
+ * @brief Resolves constructor symbols when hovering over a class name used as a call target.
+ * @param[in] ctx Hover query context.
+ * @param[in,out] symbols Candidate symbol collection.
+ */
+static void AppendConstructorSymbolsIfCall(const HoverQueryContext& ctx, std::vector<analysis::Symbol>& symbols)
+{
+    TSNode callNode = FindEnclosingCallNode(ctx.node);
+    if (ts_node_is_null(callNode))
+    {
+        return;
+    }
+
+    std::vector<analysis::Symbol> ctorSymbols;
+    for (const auto& sym : symbols)
+    {
+        if (sym.type == analysis::SymbolType::Class)
+        {
+            const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            auto ctors = ctx.request.symbolTable.FindSymbols(qName + "::" + sym.name);
+            if (ctors.empty() && qName != sym.name)
+            {
+                ctors = ctx.request.symbolTable.FindSymbols(sym.name + "::" + sym.name);
+            }
+            ctorSymbols.insert(ctorSymbols.end(), ctors.begin(), ctors.end());
+        }
+    }
+    if (!ctorSymbols.empty())
+    {
+        symbols = std::move(ctorSymbols);
+    }
+}
+
 std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
 {
     utils::HighResTimer symTimer;
@@ -2137,6 +2194,7 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
         AppendEnclosingClassMethods(ctx.node, ctx.nodeText, ctx.request, symbols);
     }
     DisambiguateContainerSymbols(ctx, symbols);
+    AppendConstructorSymbolsIfCall(ctx, symbols);
 
     std::string accessorPropertyType;
     AppendVirtualHostSymbols(ctx, symbols, accessorPropertyType);

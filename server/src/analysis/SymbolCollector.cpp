@@ -1606,6 +1606,16 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std
     paramInfo.endLine = endPt.row;
     paramInfo.endCharacter = endPt.column;
 
+    if (!ts_node_is_null(pNameNode))
+    {
+        TSPoint nameStart = ts_node_start_point(pNameNode);
+        TSPoint nameEnd = ts_node_end_point(pNameNode);
+        paramInfo.nameStartLine = nameStart.row;
+        paramInfo.nameStartCharacter = nameStart.column;
+        paramInfo.nameEndLine = nameEnd.row;
+        paramInfo.nameEndCharacter = nameEnd.column;
+    }
+
     uint32_t refCount = 0;
     ExtractParamTypeRefAndConst(pTypeNode, sourceCode, paramInfo, refCount);
     ExtractParamModifierTokens(paramNode, sourceCode, paramInfo, refCount);

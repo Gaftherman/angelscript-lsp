@@ -243,11 +243,7 @@ jobs:
       # xvfb-run. The harness tests the extension and verifies live LSP feature performance and stability.
       - name: Test Client
         working-directory: client
-        run: |
-          export XDG_RUNTIME_DIR=/tmp/runtime-runner
-          mkdir -p "$XDG_RUNTIME_DIR"
-          chmod 0700 "$XDG_RUNTIME_DIR"
-          xvfb-run -a npm test
+        run: xvfb-run -a npm test
 
       # Packaged, not published: releasing is a deliberate act, and this only proves the extension
       # is in a publishable state on every commit.
