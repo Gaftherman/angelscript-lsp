@@ -1209,7 +1209,24 @@ async function startClient(context: ExtensionContext): Promise<void> {
                               () => workspace.createFileSystemWatcher('**/*.{as,angelscript,predefined}'))
         },
         outputChannel: lspOutputChannel,
-        errorHandler
+        errorHandler,
+        middleware: {
+            executeCommand: async (command, args, next) => {
+                if (command === RESCAN_WORKSPACE_COMMAND) {
+                    updateLanguageStatus(true);
+                    try {
+                        const res = await next(command, args);
+                        void window.showInformationMessage('AngelScript: Workspace rescan initiated.');
+                        return res;
+                    } catch (e) {
+                        void window.showErrorMessage(`Failed to rescan workspace: ${e}`);
+                    } finally {
+                        updateLanguageStatus(false);
+                    }
+                }
+                return next(command, args);
+            }
+        }
     };
 
     client = timed('constructLanguageClient', () => new LanguageClient(
@@ -1318,9 +1335,6 @@ export async function activate(context: ExtensionContext) {
 
         context.subscriptions.push(
             commands.registerCommand(SELECT_STUBS_COMMAND, () => selectMultiStubs()));
-
-        context.subscriptions.push(
-            commands.registerCommand(RESCAN_WORKSPACE_COMMAND, () => rescanWorkspace()));
 
         context.subscriptions.push(
             commands.registerCommand(STATUS_MENU_COMMAND, () => showStatusMenu(context)));
@@ -2018,15 +2032,9 @@ async function rescanWorkspace(): Promise<void> {
         return;
     }
     try {
-        updateLanguageStatus(true);
-        await client.sendRequest('workspace/executeCommand', {
-            command: 'angelscript.rescanWorkspace'
-        });
-        void window.showInformationMessage('AngelScript: Workspace rescan initiated.');
+        await commands.executeCommand(RESCAN_WORKSPACE_COMMAND);
     } catch (e) {
         void window.showErrorMessage(`Failed to rescan workspace: ${e}`);
-    } finally {
-        updateLanguageStatus(false);
     }
 }
 
