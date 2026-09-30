@@ -145,6 +145,7 @@ cd client && npm install && npm run compile
 | `angelscript.inlayHints.maxLength` | `0` | Maximum character length for parameter inlay hint labels before truncating with `...` (`0` = unlimited). |
 | `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suppresses parameter name hints when argument text matches parameter name. |
 | `angelscript.format.braceStyle` | `"allman"` | Brace placement style (`"allman"` or `"kr"`). |
+| `angelscript.format.spacesInsideParentheses` | `false` | Whether to insert spaces inside parentheses (e.g. `foo( bar )` instead of `foo(bar)`). |
 | `angelscript.completion.smartTypeRanking` | `true` | Prioritizes autocompletions matching expected parameter or assignment target type. |
 | `angelscript.diagnosticSeverity` | `{}` | Per-diagnostic severity overrides (e.g. `{"as-warn-unused-variable": "hint"}`). |
 | `angelscript.engine.requireEnumScope` | `false` | When true (`asEP_REQUIRE_ENUM_SCOPE`), enums must be qualified with `Enum::Member`. |

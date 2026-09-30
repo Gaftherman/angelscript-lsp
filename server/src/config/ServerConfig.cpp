@@ -340,6 +340,7 @@ void PrintOptionsHelp()
         << "  --format-brace-style=<allman|kr>        Where a block's opening brace goes. Default allman.\n"
         << "                                          A list or a lambda body keeps its brace on the line\n"
         << "                                          either way - that is correctness, not style.\n"
+        << "  --format-spaces-inside-parentheses      Insert spaces inside parentheses (e.g. 'foo( bar )')\n"
         << "  -h, --help                              Show this help message and exit\n"
         << "  -v, --version                           Show version information and exit\n";
 }
@@ -880,6 +881,11 @@ bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
     if (ctx.key == "--format-on-save")
     {
         config.format.formatOnSave = ctx.GetBoolValue(true);
+        return true;
+    }
+    if (ctx.key == "--format-spaces-inside-parentheses")
+    {
+        config.format.spacesInsideParentheses = ctx.GetBoolValue(true);
         return true;
     }
     if (ctx.key == "--engine-profile" || ctx.key == "--profile")

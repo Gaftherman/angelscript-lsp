@@ -151,6 +151,7 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.engine.ignoreDuplicateSharedIntf` | `false` | When true (`asEP_IGNORE_DUPLICATE_SHARED_INTF`), identical shared interfaces across files are ignored. |
 | `angelscript.features.*` | `true` | Individual toggles for LSP features (hover, completion, formatting, etc.). |
 | `angelscript.format.braceStyle` | `"allman"` | Brace placement style (`"allman"` or `"kr"`). |
+| `angelscript.format.spacesInsideParentheses` | `false` | Whether to insert spaces inside parentheses (e.g. `foo( bar )` instead of `foo(bar)`). |
 
 Settings modifications are dynamically applied without requiring a VS Code window reload.
 

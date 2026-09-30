@@ -553,6 +553,11 @@
             ],
             "default": "allman",
             "description": "%config.format.braceStyle.description%"
+          },
+          "angelscript.format.spacesInsideParentheses": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.format.spacesInsideParentheses.description%"
           }
         }
       },

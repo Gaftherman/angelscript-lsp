@@ -8,6 +8,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ### Operator Parity, Inlay Hint Tooltips, Configurable Asset Hover, Completion Snippets, and Lifecycle Stability
 
+- Formatting & On-Type Formatting Gating & Parenthesis Spacing:
+  - Fixed on-type formatting continuing to format while typing (specifically when typing `;`, e.g. `);`) when `"angelscript.features.formatting": false` is set.
+  - Strictly gated `documentOnTypeFormattingProvider` capability and `textDocument/onTypeFormatting` handler behind `enableFormatting && enableOnTypeFormatting`, ensuring that disabling formatting completely disables all document, range, on-type, and on-save formatting services.
+  - Automatically passed `--disable-on-type-formatting` when `features.formatting` is false in the VS Code client extension.
+  - Added live dynamic configuration updates for `features.formatting` and `features.onTypeFormatting` in `workspace/didChangeConfiguration`.
+  - Added user configuration `angelscript.format.spacesInsideParentheses` (CLI `--format-spaces-inside-parentheses`, default: `false`) to allow inserting spaces inside parentheses (e.g. `foo( bar )` vs `foo(bar)`) while keeping empty parentheses compact `foo()`.
 - Operator Parity & Engine Oracle Verification:
   - Validated equality comparison chaining (`a == b == c == d`) against the official AngelScript engine harness (`asharness.exe`), verifying that left-to-right evaluation producing `bool == float` is strictly invalid in native AngelScript and properly diagnosed with `as-err-no-matching-operator`.
   - Confirmed handle identity operators `is` and `!is` while rejecting unsupported `===`/`!==` syntax with engine parity.

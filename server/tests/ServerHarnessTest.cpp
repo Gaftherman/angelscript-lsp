@@ -6505,4 +6505,53 @@ TEST_CASE("Server - Symlinked module entry and active predefined with workspaceF
     CHECK(weaponPublished.find("as-err-unresolved-type") == std::string::npos);
 }
 
+TEST_CASE("Server - Formatting and OnTypeFormatting capabilities disabled when enableFormatting is false")
+{
+    WorkspaceFixture fixture;
+    const std::string fileName = angel_lsp::test::GenerateRandomSymbolName("fmt_test") + ".as";
+    fixture.Write(fileName, "void main() { int a = 1; }\n");
+
+    config::ServerConfig serverConfig;
+    serverConfig.features.enableFormatting = false;
+    // enableOnTypeFormatting defaults to true, proving enableFormatting = false overrides it.
+    REQUIRE(serverConfig.features.enableOnTypeFormatting == true);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+
+    stream.Push(DidOpenMessage(fixture.Uri(fileName), "void main() { int a = 1; }\n"));
+
+    // Send onTypeFormatting request (ID 10)
+    stream.Push(R"({"jsonrpc":"2.0","id":10,"method":"textDocument/onTypeFormatting","params":{)"
+                R"("textDocument":{"uri":")" + fixture.Uri(fileName) + R"("},)"
+                R"("position":{"line":0,"character":24},"ch":";",)"
+                R"("options":{"tabSize":4,"insertSpaces":true}}})");
+
+    // Send formatting request (ID 11)
+    stream.Push(R"({"jsonrpc":"2.0","id":11,"method":"textDocument/formatting","params":{)"
+                R"("textDocument":{"uri":")" + fixture.Uri(fileName) + R"("},)"
+                R"("options":{"tabSize":4,"insertSpaces":true}}})");
+
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+
+    // Verify capabilities in initialize response (ID 1):
+    // Neither documentFormattingProvider nor documentOnTypeFormattingProvider should be offered.
+    const auto initRespEnd = output.find(R"("id":1})");
+    const std::string initResp = output.substr(0, initRespEnd != std::string::npos ? initRespEnd : 1000);
+    CHECK(initResp.find("documentOnTypeFormattingProvider") == std::string::npos);
+    CHECK(initResp.find("documentFormattingProvider") == std::string::npos);
+
+    // Verify request 10 (onTypeFormatting) returns null
+    CHECK(output.find(R"("id":10,"result":null)") != std::string::npos);
+
+    // Verify request 11 (formatting) returns null
+    CHECK(output.find(R"("id":11,"result":null)") != std::string::npos);
+}
+
+
 
