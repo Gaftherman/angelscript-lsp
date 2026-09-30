@@ -251,6 +251,24 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     const std::string analysisText = AnalysisTextFor(req.uriStr, req.text);
     const bool contributes = PredefinedStubContributes(req.uriStr);
 
+    if (!contributes)
+    {
+        m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{
+            req.uriStr, req.text, req.version, document::MakeTreePtr(nullptr), req.clientUri});
+        m_symbolTable.ClearDocumentSymbols(req.uriStr);
+        m_predefinedManager.RemoveStub(req.uriStr);
+        if (m_workspaceStore)
+        {
+            m_workspaceStore->SetPreindexedDocument(req.uriStr, nullptr);
+        }
+        const double totalMs = req.totalTimer.ElapsedMs();
+        LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: 0.00 ms, Collector: 0.00 ms, "
+                            "Scopes: 0.00 ms, Checkers: 0.00 ms)",
+                            req.uriStr, totalMs));
+        PublishDiagnostics(req.uriStr, {}, req.version);
+        return;
+    }
+
     auto preindexedDoc = m_workspaceStore ? m_workspaceStore->GetPreindexedDocument(req.uriStr)
                                           : m_predefinedManager.GetPreindexedDocument(req.uriStr);
     if (!preindexedDoc)
@@ -261,10 +279,9 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     const bool contentUnchanged =
         preindexedDoc && angel_lsp::utils::TextContentMatchesIgnoringLineEndings(preindexedDoc->text, analysisText);
 
-    if (contentUnchanged && contributes)
+    if (contentUnchanged)
     {
         m_documentStore.LinkDocument(req.uriStr, preindexedDoc, req.clientUri);
-        PublishDiagnostics(req.uriStr, {}, req.version);
         const double totalMs = req.totalTimer.ElapsedMs();
         LogInfo(fmt::format("[Predefined Zero-Copy Fast Path] File: {} content unchanged; linked pre-indexed snapshot "
                             "in {:.2f} ms",
@@ -272,6 +289,7 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
         LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: 0.00 ms, Collector: 0.00 ms, "
                             "Scopes: 0.00 ms, Checkers: 0.00 ms)",
                             req.uriStr, totalMs));
+        PublishDiagnostics(req.uriStr, {}, req.version);
         return;
     }
 

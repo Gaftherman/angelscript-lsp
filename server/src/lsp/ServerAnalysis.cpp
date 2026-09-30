@@ -384,6 +384,11 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
     double scopeMs = 0.0;
     double checkMs = 0.0;
 
+    const double totalMs = totalTimer.ElapsedMs();
+    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} "
+                        "ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
+                        req.uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
+
     const bool committed = CommitAnalysisResults({
         .uriStr = req.uriStr,
         .version = req.version,
@@ -406,11 +411,6 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
     {
         ReanalyseOpenDocuments();
     }
-
-    double totalMs = totalTimer.ElapsedMs();
-    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} "
-                        "ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
-                        req.uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
 }
 
 void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
@@ -468,6 +468,10 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
     AppendIncludeDiagnostics(req.uriStr, req.text, diagnostics);
 
+    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, "
+                        "Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
+                        req.uriStr, totalTimer.ElapsedMs(), parseMs, colMs, scopeMs, checkMs));
+
     CommitAnalysisResults({.uriStr = req.uriStr,
                            .version = req.version,
                            .generation = req.generation,
@@ -477,10 +481,6 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
                            .calls = std::move(calls),
                            .diagnostics = std::move(diagnostics),
                            .text = req.text});
-
-    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, "
-                        "Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
-                        req.uriStr, totalTimer.ElapsedMs(), parseMs, colMs, scopeMs, checkMs));
 }
 
 void Server::AnalyzeDocument(AnalyzeDocumentRequest req)
