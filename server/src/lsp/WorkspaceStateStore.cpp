@@ -151,11 +151,32 @@ WorkspaceStateStore::PermittedIncludeDirectories(const std::vector<std::string>&
     return roots;
 }
 
+void WorkspaceStateStore::SetPreindexedDocument(const std::string& uri, std::shared_ptr<const document::Document> doc)
+{
+    std::lock_guard<std::mutex> lock(m_preindexedMutex);
+    m_preindexedDocuments[uri] = std::move(doc);
+}
+
+std::shared_ptr<const document::Document> WorkspaceStateStore::GetPreindexedDocument(const std::string& uri) const
+{
+    std::lock_guard<std::mutex> lock(m_preindexedMutex);
+    if (auto it = m_preindexedDocuments.find(uri); it != m_preindexedDocuments.end())
+    {
+        return it->second;
+    }
+    return nullptr;
+}
+
 void WorkspaceStateStore::Clear()
 {
     m_documentStore.Clear();
     m_includeGraph.Clear();
     m_moduleIndex.Clear();
+
+    {
+        std::lock_guard<std::mutex> lock(m_preindexedMutex);
+        m_preindexedDocuments.clear();
+    }
 
     std::lock_guard<std::mutex> lock(m_configMutex);
     m_workspaceRoots.clear();

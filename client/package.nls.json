@@ -135,5 +135,8 @@
   "config.hover.stringLiteralLength.description": "Show the character length of string literals in hover tooltips.",
   "config.hover.stringLiteralPathResolution.description": "Probe and resolve string literals that look like file/asset paths against the document directory, workspace roots, and configured asset search paths.",
   "config.hover.assetSearchPaths.description": "Directories to search for asset files referenced in string literals when path resolution is enabled.",
-  "config.diagnostics.missingAssetPathSeverity.description": "Diagnostic severity for string literals referencing missing asset files. Off by default."
+  "config.diagnostics.missingAssetPathSeverity.description": "Diagnostic severity for string literals referencing missing asset files. Off by default.",
+  "config.stubs.activeFiles.description": "List of active predefined stub files loaded into the workspace index. Managed dynamically via the AngelScript: Select Predefined Stubs command.",
+  "command.rescanWorkspace.title": "Rescan Workspace",
+  "command.selectStubs.title": "Select Predefined Stubs"
 }

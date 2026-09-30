@@ -580,6 +580,37 @@ bool Server::UpdateIncludeConfiguration(const lsp::LSPObject& section)
     return changed;
 }
 
+namespace
+{
+bool UpdateActiveStubFiles(angel_lsp::config::ServerConfig& config, const lsp::LSPObject& section)
+{
+    const auto* stubsVal = section.find("stubs");
+    if (!stubsVal || !stubsVal->isObject())
+    {
+        return false;
+    }
+    const auto* activeFilesVal = stubsVal->object().find("activeFiles");
+    if (!activeFilesVal || !activeFilesVal->isArray())
+    {
+        return false;
+    }
+    std::vector<std::string> activeFiles;
+    for (const auto& item : activeFilesVal->array())
+    {
+        if (item.isString() && !item.string().empty())
+        {
+            activeFiles.push_back(item.string());
+        }
+    }
+    if (activeFiles != config.activeStubFiles)
+    {
+        config.activeStubFiles = std::move(activeFiles);
+        return true;
+    }
+    return false;
+}
+} // namespace
+
 bool Server::UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& section)
 {
     bool shouldRescan = false;
@@ -597,6 +628,12 @@ bool Server::UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& secti
                 shouldRescan = true;
             }
         }
+    }
+
+    if (UpdateActiveStubFiles(m_config, section))
+    {
+        LogInfo(fmt::format("Active stub files changed ({} active); rescanning", m_config.activeStubFiles.size()));
+        shouldRescan = true;
     }
 
     if (const auto* profileVal = section.find("engineProfile"); profileVal && profileVal->isString())

@@ -626,6 +626,11 @@ struct ServerConfig
      * decides whether a file found by the scan is a stub at all.
      */
     std::vector<std::string> predefinedFiles;
+    /**
+     * @brief Dynamic list of active predefined stub files selected by the user.
+     * When non-empty, only stubs matching these filenames or paths are contributing stubs.
+     */
+    std::vector<std::string> activeStubFiles;
 
     /**
      * @brief Files to force-include before analyzing any module or script.

@@ -23,6 +23,17 @@ void DocumentStore::OpenDocument(const std::string& uri, std::string text, int v
     OpenDocument(OpenDocumentRequest{uri, std::move(text), version, std::move(tree), ""});
 }
 
+void DocumentStore::LinkDocument(const std::string& uri, std::shared_ptr<const document::Document> document,
+                                 const std::string& clientUri)
+{
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    if (!clientUri.empty())
+    {
+        m_clientUriByKey[uri] = clientUri;
+    }
+    m_documents.insert_or_assign(uri, std::move(document));
+}
+
 void DocumentStore::UpdateDocument(const std::string& uri, std::string text, int version, document::TreePtr tree)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);

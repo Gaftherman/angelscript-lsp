@@ -251,61 +251,44 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     const std::string analysisText = AnalysisTextFor(req.uriStr, req.text);
     const bool contributes = PredefinedStubContributes(req.uriStr);
 
-    auto existingText = m_predefinedManager.GetDocumentText(req.uriStr);
+    auto preindexedDoc = m_workspaceStore ? m_workspaceStore->GetPreindexedDocument(req.uriStr)
+                                          : m_predefinedManager.GetPreindexedDocument(req.uriStr);
+    if (!preindexedDoc)
+    {
+        preindexedDoc = m_predefinedManager.GetPreindexedDocument(req.uriStr);
+    }
+
     const bool contentUnchanged =
-        existingText && angel_lsp::utils::TextContentMatchesIgnoringLineEndings(*existingText, analysisText);
-
-    utils::HighResTimer parseTimer;
-    document::TreePtr tree = document::MakeTreePtr(m_parser->Parse(analysisText));
-    const double parseMs = parseTimer.ElapsedMs();
-
-    m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{
-        req.uriStr, req.text, req.version, document::MakeTreePtr(tree ? ts_tree_copy(tree.get()) : nullptr),
-        req.clientUri});
+        preindexedDoc && angel_lsp::utils::TextContentMatchesIgnoringLineEndings(preindexedDoc->text, analysisText);
 
     if (contentUnchanged && contributes)
     {
+        m_documentStore.LinkDocument(req.uriStr, preindexedDoc, req.clientUri);
         PublishDiagnostics(req.uriStr, {}, req.version);
         const double totalMs = req.totalTimer.ElapsedMs();
-        LogInfo(fmt::format("[Predefined Fast Path] File: {} content unchanged; parsed tree in {:.2f} ms and bypassed "
-                            "symbol re-indexing. Total: {:.2f} ms",
-                            req.uriStr, parseMs, totalMs));
-        LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: "
-                            "0.00 ms, Scopes: 0.00 ms, Checkers: 0.00 ms)",
-                            req.uriStr, totalMs, parseMs));
+        LogInfo(fmt::format("[Predefined Zero-Copy Fast Path] File: {} content unchanged; linked pre-indexed snapshot "
+                            "in {:.2f} ms",
+                            req.uriStr, totalMs));
+        LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: 0.00 ms, Collector: 0.00 ms, "
+                            "Scopes: 0.00 ms, Checkers: 0.00 ms)",
+                            req.uriStr, totalMs));
         return;
     }
 
-    utils::HighResTimer colTimer;
-    if (contributes)
-    {
-        ClaimPredefinedFile(req.uriStr, true);
-        m_predefinedManager.SetDocumentText(req.uriStr, analysisText);
-        ReplaceSymbolsFromTree(req.uriStr, analysisText, tree.get());
-    }
-    else
-    {
-        m_symbolTable.ClearDocumentSymbols(req.uriStr);
-        m_predefinedManager.RemoveStub(req.uriStr);
-    }
-    const double colMs = colTimer.ElapsedMs();
+    m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{
+        req.uriStr, req.text, req.version, document::MakeTreePtr(nullptr), req.clientUri});
 
-    m_scopeIndex.ClearDocument(req.uriStr);
-    m_callGraph.ClearDocument(req.uriStr);
-    const double scopeMs = 0.0;
-
-    PublishDiagnostics(req.uriStr, {}, req.version);
+    ScheduleAnalysisImmediate(ScheduleAnalysisRequest{
+        .uriStr = req.uriStr,
+        .text = req.text,
+        .force = true,
+        .tree = document::MakeTreePtr(nullptr),
+        .version = req.version,
+    });
 
     const double totalMs = req.totalTimer.ElapsedMs();
-    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, "
-                        "Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
-                        req.uriStr, totalMs, parseMs, colMs, scopeMs, 0.0));
-
-    const bool wordsChanged = RefreshStubDefinedWords(req.uriStr, req.text);
-    if (wordsChanged)
-    {
-        ReanalyseOpenDocuments();
-    }
+    LogInfo(fmt::format("[Predefined Offload Fast Path] File: {} reparse offloaded to worker in {:.2f} ms",
+                        req.uriStr, totalMs));
 }
 
 void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params&& params)

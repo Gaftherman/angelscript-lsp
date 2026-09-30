@@ -334,6 +334,32 @@ bool Server::IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const
     return false;
 }
 
+void Server::StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const std::string& analysisText,
+                                     const document::TreePtr& tree, bool contributes)
+{
+    if (contributes)
+    {
+        ClaimPredefinedFile(req.uriStr, true);
+        m_predefinedManager.SetDocumentText(req.uriStr, analysisText);
+        if (tree)
+        {
+            m_documentStore.SetTree(req.uriStr, document::MakeTreePtr(ts_tree_copy(tree.get())));
+            auto updatedDoc = std::make_shared<const document::Document>(
+                document::DocumentSnapshot{req.uriStr, analysisText, req.version, req.generation},
+                document::MakeTreePtr(ts_tree_copy(tree.get())));
+            m_predefinedManager.SetPreindexedDocument(req.uriStr, updatedDoc);
+            if (m_workspaceStore)
+            {
+                m_workspaceStore->SetPreindexedDocument(req.uriStr, updatedDoc);
+            }
+        }
+    }
+    else
+    {
+        m_predefinedManager.RemoveStub(req.uriStr);
+    }
+}
+
 void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
 {
     const std::string analysisText = AnalysisTextFor(req.uriStr, req.text);
@@ -351,15 +377,7 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
     }
     double colMs = colTimer.ElapsedMs();
 
-    if (contributes)
-    {
-        ClaimPredefinedFile(req.uriStr, true);
-        m_predefinedManager.SetDocumentText(req.uriStr, analysisText);
-    }
-    else
-    {
-        m_predefinedManager.RemoveStub(req.uriStr);
-    }
+    StorePredefinedSnapshot(req, analysisText, tree, contributes);
 
     std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot;
     std::vector<analysis::CallSite> calls;

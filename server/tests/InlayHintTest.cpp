@@ -1244,7 +1244,7 @@ TEST_CASE("InlayHintHandler - Nameless wildcard parameter ?& in generates fallba
             std::string tooltip = std::holds_alternative<std::string>(*parts[0].tooltip)
                                       ? std::get<std::string>(*parts[0].tooltip)
                                       : "";
-            CHECK(tooltip.find("Parameter:") != std::string::npos);
+            CHECK(tooltip.find("Parameter") != std::string::npos);
             CHECK(tooltip.find("?") != std::string::npos);
             CHECK_FALSE(hint.tooltip.has_value());
         }
@@ -1339,7 +1339,8 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
                 std::string tooltip = std::holds_alternative<std::string>(*part.tooltip)
                                           ? std::get<std::string>(*part.tooltip)
                                           : "";
-                CHECK(tooltip.find("Parameter:\n```angelscript\nCBaseEntity@ " + paramName + "\n```") != std::string::npos);
+                CHECK(tooltip.find("```angelscript\nCBaseEntity@ " + paramName + "\n```") != std::string::npos);
+                CHECK(tooltip.find("*Parameter for `" + funcName + "`*") != std::string::npos);
                 CHECK(part.location.has_value());
             }
         }

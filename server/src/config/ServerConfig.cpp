@@ -710,6 +710,29 @@ bool TryParseModuleOption(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
+bool TryParseStubOptions(ServerConfig& config, ArgParseContext& ctx)
+{
+    if (ctx.key == "--predefined-active")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.activePredefined = std::string(val);
+        }
+        return true;
+    }
+    if (ctx.key == "--active-stub-file" || ctx.key == "--stub-file")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.activeStubFiles.push_back(std::string(val));
+        }
+        return true;
+    }
+    return false;
+}
+
 bool TryParsePredefinedOptions(ServerConfig& config, ArgParseContext& ctx)
 {
     if (ctx.key == "--predefined-ext" || ctx.key == "--predefined-extension")
@@ -739,16 +762,7 @@ bool TryParsePredefinedOptions(ServerConfig& config, ArgParseContext& ctx)
         }
         return true;
     }
-    if (ctx.key == "--predefined-active")
-    {
-        std::string_view val;
-        if (ctx.GetStringValue(val) && !val.empty())
-        {
-            config.activePredefined = std::string(val);
-        }
-        return true;
-    }
-    return false;
+    return TryParseStubOptions(config, ctx);
 }
 
 bool TryParseModuleIncludeOptions(ServerConfig& config, ArgParseContext& ctx)
