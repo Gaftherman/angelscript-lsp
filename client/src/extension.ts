@@ -879,6 +879,11 @@ export function buildServerArgs(): string[] {
         args.push('--report-handle-comparison-equality=2');
     }
 
+    const missingAssetPathSeverity = config.get<string>('diagnostics.missingAssetPathSeverity', 'off').trim();
+    if (missingAssetPathSeverity.length > 0 && missingAssetPathSeverity !== 'off') {
+        args.push(`--missing-asset-path-severity=${missingAssetPathSeverity}`);
+    }
+
     // asEP_PROPERTY_ACCESSOR_MODE takes a number, not a boolean, so it is not one of
     // ENGINE_PROPERTIES above either. The test against 2 and 3 is a whitelist, not a
     // default-skipping check: those are the only values package.json offers, and a number arriving
@@ -988,6 +993,18 @@ export function buildServerArgs(): string[] {
         args.push('--disable-completion-smart-ranking');
     }
 
+    if (config.get<boolean>('completion.completeFunctionParens', true) === false) {
+        args.push('--disable-completion-function-parens');
+    }
+
+    if (config.get<boolean>('inlayHints.enableTooltip', true) === false) {
+        args.push('--disable-inlay-hints-tooltip');
+    }
+
+    if (config.get<boolean>('inlayHints.enableLocation', true) === false) {
+        args.push('--disable-inlay-hints-location');
+    }
+
     const suppressWhenMatches = config.get<boolean>('inlayHints.suppressWhenArgumentMatchesName', false);
     if (suppressWhenMatches) {
         args.push('--inlay-hints-suppress-when-argument-matches-name');
@@ -1006,6 +1023,20 @@ export function buildServerArgs(): string[] {
     const omittedDefaults = config.get<string>('inlayHints.omittedDefaultArguments', 'nameAndValue');
     if (omittedDefaults) {
         args.push(`--inlay-hints-omitted-defaults=${omittedDefaults}`);
+    }
+
+    if (config.get<boolean>('hover.stringLiteralLength', true) === false) {
+        args.push('--disable-hover-string-literal-length');
+    }
+
+    if (config.get<boolean>('hover.stringLiteralPathResolution', false) === true) {
+        args.push('--enable-hover-string-literal-path-resolution');
+    }
+
+    for (const entry of config.get<string[]>('hover.assetSearchPaths', [])) {
+        for (const resolved of resolveAgainstWorkspace(entry)) {
+            args.push(`--asset-search-path=${resolved}`);
+        }
     }
 
     const logLevel = config.get<string>('server.logLevel', 'debug').trim();
@@ -1482,6 +1513,17 @@ function expandConfiguredPaths(settings: unknown): unknown {
             }
         }
         copy['predefined'] = nested;
+    }
+
+    const hover = copy['hover'];
+    if (typeof hover === 'object' && hover !== null) {
+        const nested: Record<string, unknown> = { ...(hover as Record<string, unknown>) };
+        const paths = nested['assetSearchPaths'];
+        if (Array.isArray(paths)) {
+            nested['assetSearchPaths'] = paths.flatMap(entry =>
+                typeof entry === 'string' ? resolveAgainstWorkspace(entry) : [entry]);
+        }
+        copy['hover'] = nested;
     }
 
     return copy;
