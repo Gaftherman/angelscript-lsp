@@ -128,5 +128,12 @@
   "config.server.logLevel.warn": "Registrar advertencias y errores.",
   "config.server.logLevel.info": "Registrar eventos operacionales informativos, advertencias y errores.",
   "config.server.logLevel.debug": "Registrar informacion de diagnostico y tiempos detallados para depuracion.",
-  "config.server.logLevel.trace": "Registrar trazas detalladas del protocolo de mensajes y analisis."
+  "config.server.logLevel.trace": "Registrar trazas detalladas del protocolo de mensajes y analisis.",
+  "config.inlayHints.enableTooltip.description": "Muestra informacion detallada en formato Markdown con el tipo y la firma del parametro al pasar el cursor sobre las sugerencias incrustadas (inlay hints).",
+  "config.inlayHints.enableLocation.description": "Habilita la navegacion con Ctrl+Clic a la declaracion del parametro desde las sugerencias incrustadas (inlay hints).",
+  "config.completion.completeFunctionParens.description": "Anadir automaticamente parentesis y posicionar el cursor al autocompletar funciones o metodos.",
+  "config.hover.stringLiteralLength.description": "Muestra la longitud en caracteres de las cadenas literales al pasar el cursor.",
+  "config.hover.stringLiteralPathResolution.description": "Inspecciona y resuelve cadenas literales que parecen rutas de archivo o recursos respecto al directorio del documento, raices del espacio de trabajo y rutas de busqueda configuradas.",
+  "config.hover.assetSearchPaths.description": "Directorios donde buscar archivos de recursos referenciados en cadenas literales cuando la resolucion de rutas esta activada.",
+  "config.diagnostics.missingAssetPathSeverity.description": "Severidad del diagnostico para cadenas literales que hacen referencia a archivos de recursos no encontrados. Desactivado por defecto."
 }
