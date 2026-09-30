@@ -2,6 +2,28 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [0.9.27] - 2026-09-30
+
+### Predefined Stubs Fast-Path, Inlay Hint Navigation, Multi-Stub Selector, and Headless CI Stability
+
+- Predefined Stubs Zero-Copy Fast Path & Freeze Remediation:
+  - Eliminated synchronous AST reparsing on the JSON-RPC main thread during `textDocument/didOpen` for predefined stub files.
+  - Linked pre-indexed background snapshots (`std::shared_ptr<const document::Document>`) in $< 0.1\text{ ms}$ on content match without blocking user interactions.
+  - Offloaded reparsing to `AnalysisScheduler` on secondary worker threads when stub content changes.
+  - Synchronously cleared symbol tables and caches when opening unselected stubs to prevent unselected types from leaking into symbol resolution.
+  - Reordered profile telemetry logging before diagnostic publication to prevent race conditions on shutdown.
+- Inlay Hints Precision & Navigation:
+  - Formatted inlay hint parameter tooltips in single markdown blocks to prevent duplicate stacked tooltips.
+  - Populated `InlayHint.location` targeting formal parameter definitions (`Ctrl + Click` jumps directly to parameter token range).
+  - Added user settings `angelscript.inlayHints.enableTooltip` and `angelscript.inlayHints.enableLocation`.
+- VS Code Client UI & Command Dispatch:
+  - Added dedicated `LanguageStatusItem` ("AngelScript IntelliSense") matching the C++ extension status bar experience.
+  - Added multi-select checkbox QuickPick dialog (`angelscript.selectStubs`) to dynamically toggle active stubs.
+  - Resolved command collision on `angelscript.rescanWorkspace` by routing through `vscode-languageclient` middleware.
+  - Configured headless launch arguments (`--disable-gpu`, `--disable-gpu-sandbox`, `--disable-dev-shm-usage`, `--no-sandbox`) in `.vscode-test.mjs` and initialized runtime directory in CI.
+- Massive Workspace Stress Testing:
+  - Added synthetic 400-file stress test (`MassiveWorkspaceStressTest.cpp`) validating 50k LOC stubs and circular include DAGs within latency and memory budgets.
+
 ## [0.9.26] - 2026-09-29
 
 ### Operator Parity, Inlay Hint Tooltips, Configurable Asset Hover, Completion Snippets, and Lifecycle Stability
