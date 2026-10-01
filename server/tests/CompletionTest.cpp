@@ -1844,3 +1844,159 @@ TEST_CASE("CompletionHandler - Invariant: qualifyEnumValues auto-prefixes enum n
         }
     }
 }
+
+TEST_CASE("CompletionHandler - Invariant: Current file symbols rank higher than external file symbols")
+{
+    const std::string curVar = angel_lsp::test::GenerateRandomSymbolName("thisIsMyInt_1");
+    const std::string extVar = angel_lsp::test::GenerateRandomSymbolName("thisIsMyInt");
+    const std::string extUri = "file:///external.as";
+
+    const std::string extCode = "int " + extVar + " = 10;\n";
+    const std::string curCode = "int " + curVar +
+                                " = 20;\n"
+                                "void TestFn() {\n"
+                                "    \n"
+                                "}\n";
+
+    TestEnvironment env(curCode);
+    env.symbolCollector.CollectSymbols(extUri, extCode, env.parser, env.symbolTable);
+
+    auto items = env.CompleteAt(2, 4);
+
+    std::optional<lsp::CompletionItem> curItem;
+    std::optional<lsp::CompletionItem> extItem;
+
+    for (const auto& item : items)
+    {
+        if (item.label == curVar)
+        {
+            curItem = item;
+        }
+        else if (item.label == extVar)
+        {
+            extItem = item;
+        }
+    }
+
+    REQUIRE(curItem.has_value());
+    REQUIRE(extItem.has_value());
+    REQUIRE(curItem->sortText.has_value());
+    REQUIRE(extItem->sortText.has_value());
+
+    // Proximity invariant: CurrentFile tier ("1_...") must sort before ExternalFile tier ("2_...")
+    CHECK(curItem->sortText->starts_with("1_"));
+    CHECK(extItem->sortText->starts_with("2_"));
+    CHECK(*curItem->sortText < *extItem->sortText);
+
+    // Verify ordering in items list: curItem appears before extItem
+    auto itCur = std::find_if(items.begin(), items.end(), [&](const auto& i) { return i.label == curVar; });
+    auto itExt = std::find_if(items.begin(), items.end(), [&](const auto& i) { return i.label == extVar; });
+    REQUIRE(itCur != items.end());
+    REQUIRE(itExt != items.end());
+    CHECK(std::distance(itCur, itExt) > 0);
+}
+
+TEST_CASE("CompletionHandler - Invariant: Local scope variable ranks higher than current file global variable")
+{
+    const std::string localVar = angel_lsp::test::GenerateRandomSymbolName("localVar");
+    const std::string globalVar = angel_lsp::test::GenerateRandomSymbolName("globalVar");
+
+    const std::string code = "int " + globalVar +
+                             " = 1;\n"
+                             "void TestFn() {\n"
+                             "    int " +
+                             localVar +
+                             " = 2;\n"
+                             "    \n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    auto items = env.CompleteAt(3, 4);
+
+    std::optional<lsp::CompletionItem> locItem;
+    std::optional<lsp::CompletionItem> globItem;
+
+    for (const auto& item : items)
+    {
+        if (item.label == localVar)
+        {
+            locItem = item;
+        }
+        else if (item.label == globalVar)
+        {
+            globItem = item;
+        }
+    }
+
+    REQUIRE(locItem.has_value());
+    REQUIRE(globItem.has_value());
+    REQUIRE(locItem->sortText.has_value());
+    REQUIRE(globItem->sortText.has_value());
+
+    // Local tier ("0_...") ranks before CurrentFile tier ("1_...")
+    CHECK(locItem->sortText->starts_with("0_"));
+    CHECK(globItem->sortText->starts_with("1_"));
+    CHECK(*locItem->sortText < *globItem->sortText);
+
+    auto itLoc = std::find_if(items.begin(), items.end(), [&](const auto& i) { return i.label == localVar; });
+    auto itGlob = std::find_if(items.begin(), items.end(), [&](const auto& i) { return i.label == globalVar; });
+    REQUIRE(itLoc != items.end());
+    REQUIRE(itGlob != items.end());
+    CHECK(std::distance(itLoc, itGlob) > 0);
+}
+
+TEST_CASE("CompletionHandler - Invariant: Current file enum constant ranks higher than external file enum constant "
+          "with same name")
+{
+    const std::string enumCur = angel_lsp::test::GenerateRandomSymbolName("CurState");
+    const std::string enumExt = angel_lsp::test::GenerateRandomSymbolName("ExtState");
+    const std::string sharedVal = angel_lsp::test::GenerateRandomSymbolName("IDLE");
+    const std::string extUri = "file:///external_enum.as";
+
+    const std::string extCode = "enum " + enumExt + " { " + sharedVal + " }\n";
+    const std::string curCode = "enum " + enumCur + " { " + sharedVal +
+                                " }\n"
+                                "void TestFn() {\n"
+                                "    \n"
+                                "}\n";
+
+    TestEnvironment env(curCode);
+    env.symbolCollector.CollectSymbols(extUri, extCode, env.parser, env.symbolTable);
+
+    auto items = env.CompleteAt(2, 4);
+
+    std::vector<lsp::CompletionItem> matches;
+    for (const auto& item : items)
+    {
+        if (item.label == sharedVal)
+        {
+            matches.push_back(item);
+        }
+    }
+
+    REQUIRE(matches.size() == 2);
+    auto itCur = std::find_if(matches.begin(), matches.end(), [&](const auto& i)
+                              { return i.detail.has_value() && i.detail->find(enumCur) != std::string::npos; });
+    auto itExt = std::find_if(matches.begin(), matches.end(), [&](const auto& i)
+                              { return i.detail.has_value() && i.detail->find(enumExt) != std::string::npos; });
+
+    REQUIRE(itCur != matches.end());
+    REQUIRE(itExt != matches.end());
+    REQUIRE(itCur->sortText.has_value());
+    REQUIRE(itExt->sortText.has_value());
+
+    // Current file enum constant ("1_...") ranks before external file enum constant ("2_...")
+    CHECK(itCur->sortText->starts_with("1_"));
+    CHECK(itExt->sortText->starts_with("2_"));
+    CHECK(*itCur->sortText < *itExt->sortText);
+
+    auto allItCur = std::find_if(
+        items.begin(), items.end(), [&](const auto& i)
+        { return i.label == sharedVal && i.detail.has_value() && i.detail->find(enumCur) != std::string::npos; });
+    auto allItExt = std::find_if(
+        items.begin(), items.end(), [&](const auto& i)
+        { return i.label == sharedVal && i.detail.has_value() && i.detail->find(enumExt) != std::string::npos; });
+    REQUIRE(allItCur != items.end());
+    REQUIRE(allItExt != items.end());
+    CHECK(std::distance(allItCur, allItExt) > 0);
+}

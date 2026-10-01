@@ -8,6 +8,7 @@
 #include "parser/Keywords.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
+#include "utils/Utils.h"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -223,6 +224,57 @@ std::string GetLinePrefix(const std::string& sourceCode, uint32_t line, uint32_t
 }
 
 /**
+ * @brief Categorization proximity for deterministic scope- and file-aware completion sorting.
+ */
+enum class SymbolProximity : uint8_t
+{
+    Local = 0,
+    CurrentFile = 1,
+    ExternalFile = 2,
+    Predefined = 3,
+    Snippet = 4,
+    Keyword = 5
+};
+
+/**
+ * @brief Formats sort text prefix for a symbol proximity tier.
+ * @param[in] prox Symbol proximity tier.
+ * @param[in] label Symbol display label.
+ * @return Formatted sort text string.
+ */
+inline std::string FormatProximitySortText(SymbolProximity prox, std::string_view label)
+{
+    static constexpr std::array<std::string_view, 6> k_proxPrefixes = {"0_", "1_", "2_", "3_", "4_", "5_"};
+    const size_t idx = static_cast<size_t>(prox);
+    if (idx < k_proxPrefixes.size())
+    {
+        return std::string(k_proxPrefixes[idx]) + std::string(label);
+    }
+    return std::string("9_") + std::string(label);
+}
+
+/**
+ * @brief Determines proximity tier of a symbol relative to current request URI.
+ * @param[in] sym Target symbol.
+ * @param[in] currentUri URI of currently active document.
+ * @param[in] predefinedExt Predefined file extension.
+ * @return Computed SymbolProximity.
+ */
+inline SymbolProximity DetermineSymbolProximity(const analysis::Symbol& sym, const std::string& currentUri,
+                                                std::string_view predefinedExt)
+{
+    if (!currentUri.empty() && sym.fileUri == currentUri)
+    {
+        return SymbolProximity::CurrentFile;
+    }
+    if (angel_lsp::utils::IsPredefinedFile(sym.fileUri, predefinedExt))
+    {
+        return SymbolProximity::Predefined;
+    }
+    return SymbolProximity::ExternalFile;
+}
+
+/**
  * @brief Candidate completion item metadata for deduplication and insertion.
  */
 struct CompletionCandidate
@@ -246,6 +298,17 @@ struct CompletionCollector
     std::unordered_set<std::string>& seenLabels;
     const CompletionRequest& request;
 };
+
+/**
+ * @brief Retrieves configured predefined file extension from completion request.
+ * @param[in] request Completion request.
+ * @return Predefined file extension string view.
+ */
+inline std::string_view GetPredefinedExtension(const CompletionRequest& request)
+{
+    return request.config ? std::string_view(request.config->info.predefinedFileExtension)
+                          : std::string_view(".as.predefined");
+}
 
 /**
  * @brief Adds a completion item to collector if its label has not yet been offered.
@@ -280,6 +343,10 @@ void AddItemIfNew(CompletionCollector& collector, CompletionCandidate candidate)
     if (!candidate.sortText.empty())
     {
         item.sortText = std::move(candidate.sortText);
+    }
+    else
+    {
+        item.sortText = FormatProximitySortText(SymbolProximity::ExternalFile, item.label);
     }
     if (!candidate.detail.empty())
     {
@@ -834,6 +901,7 @@ std::optional<std::vector<lsp::CompletionItem>> HandleIncludeOrLexicalSuppressio
  */
 void CollectEnumMembersUnderQualifier(const std::string& qualifier, CompletionCollector& collector)
 {
+    const std::string_view predefinedExt = GetPredefinedExtension(collector.request);
     auto enumMatches = collector.request.symbolTable.FindSymbolsPtr(qualifier);
     if (enumMatches && !enumMatches->empty())
     {
@@ -841,10 +909,12 @@ void CollectEnumMembersUnderQualifier(const std::string& qualifier, CompletionCo
         {
             if (sym.type == analysis::SymbolType::Enum)
             {
+                SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
                 for (const auto& mem : sym.GetEnum().members)
                 {
-                    AddItemIfNew(collector,
-                                 {mem.name, lsp::CompletionItemKind::EnumMember, qualifier + "::" + mem.name});
+                    std::string sortText = FormatProximitySortText(prox, mem.name);
+                    AddItemIfNew(collector, {mem.name, lsp::CompletionItemKind::EnumMember, qualifier + "::" + mem.name,
+                                             "", "", "", std::move(sortText)});
                 }
             }
         }
@@ -856,10 +926,12 @@ void CollectEnumMembersUnderQualifier(const std::string& qualifier, CompletionCo
         {
             if (sym.type == analysis::SymbolType::Enum)
             {
+                SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
                 for (const auto& mem : sym.GetEnum().members)
                 {
-                    AddItemIfNew(collector,
-                                 {mem.name, lsp::CompletionItemKind::EnumMember, qualifier + "::" + mem.name});
+                    std::string sortText = FormatProximitySortText(prox, mem.name);
+                    AddItemIfNew(collector, {mem.name, lsp::CompletionItemKind::EnumMember, qualifier + "::" + mem.name,
+                                             "", "", "", std::move(sortText)});
                 }
             }
         }
@@ -932,7 +1004,11 @@ void AddContainerMembers(const std::string& container, const std::string& qualif
                 lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
                 std::string detail;
                 ResolveContainerMemberItemDetails(sym, kind, detail);
-                AddItemIfNew(collector, {sym.name, kind, std::move(detail), "", sym.qualifiedName});
+                const std::string_view predefinedExt = GetPredefinedExtension(collector.request);
+                SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
+                std::string sortText = FormatProximitySortText(prox, sym.name);
+                AddItemIfNew(collector,
+                             {sym.name, kind, std::move(detail), "", sym.qualifiedName, "", std::move(sortText)});
             }
         }
     }
@@ -1023,13 +1099,17 @@ bool TryCompleteTemplateArguments(const std::string& prefix, CompletionCollector
                 }
                 const std::string snippet =
                     collector.request.snippetSupport ? TemplateInsertSnippet(sym) : std::string{};
-                AddItemIfNew(collector, {sym.name, kind, "", "", sym.qualifiedName, snippet});
+                const std::string_view predefinedExt = GetPredefinedExtension(collector.request);
+                SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
+                std::string sortText = FormatProximitySortText(prox, sym.name);
+                AddItemIfNew(collector, {sym.name, kind, "", "", sym.qualifiedName, snippet, std::move(sortText)});
             }
         });
 
     for (const auto& primitive : GetPrimitiveTypeNames())
     {
-        AddItemIfNew(collector, {primitive, lsp::CompletionItemKind::Keyword});
+        std::string sortText = FormatProximitySortText(SymbolProximity::Predefined, primitive);
+        AddItemIfNew(collector, {primitive, lsp::CompletionItemKind::Keyword, "", "", "", "", std::move(sortText)});
     }
     return true;
 }
@@ -1114,7 +1194,10 @@ void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std::strin
         kind = lsp::CompletionItemKind::Property;
     }
 
-    AddItemIfNew(collector, {sym.name, kind, detail, "", sym.qualifiedName, std::move(snippet)});
+    const std::string_view predefinedExt = GetPredefinedExtension(collector.request);
+    SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
+    std::string sortText = FormatProximitySortText(prox, sym.name);
+    AddItemIfNew(collector, {sym.name, kind, detail, "", sym.qualifiedName, std::move(snippet), std::move(sortText)});
 
     const int accessorMode = collector.request.config ? collector.request.config->engine.propertyAccessorMode : 2;
     if (accessorMode < 2)
@@ -1128,7 +1211,9 @@ void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std::strin
         std::string propertyType = analysis::PropertyTypeFromAccessors(analysis::FindPropertyAccessors(
             typeName, propertyName, collector.request.symbolTable, accessorKeywordRequired));
         propertyType = SubstituteTypeParameters(propertyType, tCtx.binding, tCtx.templateArgs);
-        AddItemIfNew(collector, {propertyName, lsp::CompletionItemKind::Property, propertyType, "", sym.qualifiedName});
+        std::string propSortText = FormatProximitySortText(prox, propertyName);
+        AddItemIfNew(collector, {propertyName, lsp::CompletionItemKind::Property, propertyType, "", sym.qualifiedName,
+                                 "", std::move(propSortText)});
     }
 }
 
@@ -1551,7 +1636,10 @@ static void AddEnumConstantCandidate(CompletionCollector& collector, const analy
     std::string detail = var.typeName.empty() ? sym.name : var.typeName + "::" + sym.name;
     const bool qualifyEnum =
         !collector.request.config || collector.request.config->features.completionQualifyEnumValues;
-    CompletionCandidate cand{sym.name, kind, detail, "", sym.qualifiedName, "", ""};
+    const std::string_view predefinedExt = GetPredefinedExtension(collector.request);
+    SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
+    std::string sortText = FormatProximitySortText(prox, sym.name);
+    CompletionCandidate cand{sym.name, kind, detail, "", sym.qualifiedName, "", std::move(sortText)};
     if (qualifyEnum && !var.typeName.empty())
     {
         cand.insertText = var.typeName + "::" + sym.name;
@@ -1563,8 +1651,9 @@ static void AddEnumConstantCandidate(CompletionCollector& collector, const analy
  * @brief Processes a single local scope definition and adds completion candidate.
  * @param[in] def Local definition entry.
  * @param[in,out] collector Completion collector context.
+ * @param[in] prox Symbol proximity tier.
  */
-void ProcessScopeDefinition(const analysis::LocalDefinition& def, CompletionCollector& collector)
+void ProcessScopeDefinition(const analysis::LocalDefinition& def, CompletionCollector& collector, SymbolProximity prox)
 {
     if (def.kind == analysis::LocalDefinitionKind::Constant)
     {
@@ -1600,7 +1689,9 @@ void ProcessScopeDefinition(const analysis::LocalDefinition& def, CompletionColl
             snippet = TemplateSnippetForName(def.name, collector.request.symbolTable);
         }
     }
-    AddItemIfNew(collector, {def.name, kind, def.typeName, "", isCallable ? def.name : std::string{}, snippet});
+    std::string sortText = FormatProximitySortText(prox, def.name);
+    AddItemIfNew(collector, {def.name, kind, def.typeName, "", isCallable ? def.name : std::string{}, snippet,
+                             std::move(sortText)});
 }
 
 /**
@@ -1616,11 +1707,45 @@ void CollectScopeDefinitions(const analysis::Scope* innermostScope, CompletionCo
     }
     for (const analysis::Scope* cur = innermostScope; cur != nullptr; cur = cur->parent)
     {
+        const bool isLocal = (cur->kind == analysis::ScopeKind::Block || cur->kind == analysis::ScopeKind::Function ||
+                              cur->kind == analysis::ScopeKind::Closure);
+        const SymbolProximity prox = isLocal ? SymbolProximity::Local : SymbolProximity::CurrentFile;
         for (const auto& def : cur->definitions)
         {
-            ProcessScopeDefinition(def, collector);
+            ProcessScopeDefinition(def, collector, prox);
         }
     }
+}
+
+static void CollectEnclosingMemberCandidate(const analysis::Symbol& sym, const std::string& enclosingClassName,
+                                            CompletionCollector& collector)
+{
+    if (sym.containerName != enclosingClassName)
+    {
+        return;
+    }
+    if (sym.type == analysis::SymbolType::Variable && sym.GetVariable().isEnumConstant)
+    {
+        AddEnumConstantCandidate(collector, sym);
+        return;
+    }
+    lsp::CompletionItemKind kind =
+        (sym.type == analysis::SymbolType::Function) ? lsp::CompletionItemKind::Method : lsp::CompletionItemKind::Field;
+    std::string snippet;
+    std::string detail;
+    if (sym.type == analysis::SymbolType::Function)
+    {
+        detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
+        const bool completeParens =
+            !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
+        if (collector.request.snippetSupport && completeParens)
+        {
+            snippet = sym.GetFunction().parameters.empty() ? (sym.name + "()$0") : (sym.name + "($0)");
+        }
+    }
+    const auto prox = DetermineSymbolProximity(sym, collector.request.uri, GetPredefinedExtension(collector.request));
+    std::string sortText = FormatProximitySortText(prox, sym.name);
+    AddItemIfNew(collector, {sym.name, kind, detail, "", sym.qualifiedName, snippet, std::move(sortText)});
 }
 
 /**
@@ -1649,30 +1774,7 @@ void CollectEnclosingClassMembers(CompletionCollector& collector)
         }
         for (const auto& sym : *symList)
         {
-            if (sym.containerName == enclosingClassName)
-            {
-                if (sym.type == analysis::SymbolType::Variable && sym.GetVariable().isEnumConstant)
-                {
-                    AddEnumConstantCandidate(collector, sym);
-                    continue;
-                }
-                lsp::CompletionItemKind kind = (sym.type == analysis::SymbolType::Function)
-                                                   ? lsp::CompletionItemKind::Method
-                                                   : lsp::CompletionItemKind::Field;
-                std::string snippet;
-                std::string detail;
-                if (sym.type == analysis::SymbolType::Function)
-                {
-                    detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
-                    const bool completeParens = !collector.request.config ||
-                                                collector.request.config->features.completionCompleteFunctionParens;
-                    if (collector.request.snippetSupport && completeParens)
-                    {
-                        snippet = sym.GetFunction().parameters.empty() ? (sym.name + "()$0") : (sym.name + "($0)");
-                    }
-                }
-                AddItemIfNew(collector, {sym.name, kind, detail, "", sym.qualifiedName, snippet});
-            }
+            CollectEnclosingMemberCandidate(sym, enclosingClassName, collector);
         }
     }
 }
@@ -1688,8 +1790,10 @@ static void CollectGlobalFunctionSymbol(const analysis::Symbol& sym, bool access
     {
         snippet = CallSnippet(sym.name, sym.GetFunction().parameters);
     }
+    const auto prox = DetermineSymbolProximity(sym, collector.request.uri, GetPredefinedExtension(collector.request));
+    std::string sortText = FormatProximitySortText(prox, sym.name);
     AddItemIfNew(collector, {sym.name, lsp::CompletionItemKind::Function, std::move(detail), "", sym.qualifiedName,
-                             std::move(snippet)});
+                             std::move(snippet), std::move(sortText)});
     if (accessorsAreProperties)
     {
         const std::string propName = analysis::PropertyNameFromAccessor(sym, accessorKeywordRequired);
@@ -1697,8 +1801,9 @@ static void CollectGlobalFunctionSymbol(const analysis::Symbol& sym, bool access
         {
             std::string propType = analysis::PropertyTypeFromAccessors(analysis::FindGlobalPropertyAccessors(
                 propName, collector.request.symbolTable, accessorKeywordRequired));
-            AddItemIfNew(collector,
-                         {propName, lsp::CompletionItemKind::Property, std::move(propType), "", sym.qualifiedName});
+            std::string propSortText = FormatProximitySortText(prox, propName);
+            AddItemIfNew(collector, {propName, lsp::CompletionItemKind::Property, std::move(propType), "",
+                                     sym.qualifiedName, "", std::move(propSortText)});
         }
     }
 }
@@ -1760,7 +1865,9 @@ void CollectGlobalSymbolItem(const analysis::Symbol& sym, bool accessorsArePrope
     default:
         break;
     }
-    AddItemIfNew(collector, {sym.name, kind, detail, "", sym.qualifiedName, snippet});
+    const auto prox = DetermineSymbolProximity(sym, collector.request.uri, GetPredefinedExtension(collector.request));
+    std::string sortText = FormatProximitySortText(prox, sym.name);
+    AddItemIfNew(collector, {sym.name, kind, detail, "", sym.qualifiedName, snippet, std::move(sortText)});
 }
 
 /**
@@ -1890,7 +1997,7 @@ void CollectDeclarationSnippets(CompletionCollector& collector)
         item.kind = lsp::CompletionItemKindEnum(lsp::CompletionItemKind::Snippet);
         item.insertText = declarationSnippets[i].second;
         item.insertTextFormat = lsp::InsertTextFormatEnum(lsp::InsertTextFormat::Snippet);
-        item.sortText = std::string("0") + declarationSnippets[i].first;
+        item.sortText = FormatProximitySortText(SymbolProximity::Snippet, declarationSnippets[i].first);
         item.detail = snippetDetails[i].second;
         collector.items.push_back(std::move(item));
     }
@@ -1900,7 +2007,7 @@ void CollectDeclarationSnippets(CompletionCollector& collector)
     include.kind = lsp::CompletionItemKindEnum(lsp::CompletionItemKind::Snippet);
     include.insertText = "#include \"$1\"";
     include.insertTextFormat = lsp::InsertTextFormatEnum(lsp::InsertTextFormat::Snippet);
-    include.sortText = "0#include";
+    include.sortText = FormatProximitySortText(SymbolProximity::Snippet, "#include");
     include.detail = "directive, with the path left open";
     collector.items.push_back(std::move(include));
 }
@@ -1913,7 +2020,8 @@ void CollectKeywords(CompletionCollector& collector)
 {
     for (const auto& kw : GetKeywords())
     {
-        AddItemIfNew(collector, {kw, lsp::CompletionItemKind::Keyword, "", "", "", "", "1" + kw});
+        AddItemIfNew(collector, {kw, lsp::CompletionItemKind::Keyword, "", "", "", "",
+                                 FormatProximitySortText(SymbolProximity::Keyword, kw)});
     }
 }
 
@@ -2293,7 +2401,14 @@ void ApplySmartTypeRanking(std::vector<lsp::CompletionItem>& items, std::string_
         const std::string_view baseSort = item.sortText.has_value() ? *item.sortText : item.label;
         item.sortText = FormatRankedSortText(rank, baseSort);
     }
+}
 
+/**
+ * @brief Sorts completion items deterministically according to their sortText and label.
+ * @param[in,out] items Vector of completion items to sort.
+ */
+inline void SortCompletionItemsByProximity(std::vector<lsp::CompletionItem>& items)
+{
     std::stable_sort(items.begin(), items.end(),
                      [](const lsp::CompletionItem& a, const lsp::CompletionItem& b)
                      {
@@ -2329,11 +2444,13 @@ std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
 
     if (TryCompleteScopeResolution(prefix, collector))
     {
+        SortCompletionItemsByProximity(items);
         return items;
     }
 
     if (TryCompleteTemplateArguments(prefix, collector))
     {
+        SortCompletionItemsByProximity(items);
         return items;
     }
 
@@ -2343,6 +2460,7 @@ std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
 
     if (TryCompleteMemberAccess(prefix, innermostScope, collector))
     {
+        SortCompletionItemsByProximity(items);
         return items;
     }
 
@@ -2362,6 +2480,7 @@ std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
     {
         ApplySmartTypeRanking(items, prefix, innermostScope, request);
     }
+    SortCompletionItemsByProximity(items);
 
     return items;
 }
