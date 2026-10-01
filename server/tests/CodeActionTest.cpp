@@ -1115,3 +1115,43 @@ TEST_CASE("CodeActionHandler - Repeated conversion with keyword expression falls
     CHECK(edits[0].newText.find("string string = this;") != std::string::npos);
 }
 
+TEST_CASE("CodeActionHandler - Diagnostic comment suppression quick fixes")
+{
+    const std::string varName = test::GenerateRandomSymbolName("unusedVar");
+    const std::string fnName = test::GenerateRandomSymbolName("func");
+    std::string code =
+        "void " + fnName + "() {\n"
+        "    int " + varName + ";\n"
+        "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{ {1, 4}, {1, 4 + static_cast<uint32_t>(varName.size()) + 4} };
+
+    lsp::Diagnostic diag;
+    diag.range = at;
+    diag.code = lsp::String("as-warn-unused-variable");
+    diag.message = "Variable '" + varName + "' is never used.";
+
+    lsp::CodeActionContext ctx;
+    ctx.diagnostics.push_back(diag);
+
+    auto actions = env.CodeActions(at, ctx);
+    REQUIRE(actions.has_value());
+    REQUIRE(!actions->empty());
+
+    // Should offer line suppression with numeric alias W103
+    const auto* lineFix = ActionTitled(actions, "Disable W103 for this line");
+    REQUIRE(lineFix != nullptr);
+    const auto& lineEdits = lineFix->edit->changes->begin()->second;
+    REQUIRE(!lineEdits.empty());
+    CHECK(lineEdits[0].newText.find("// disable-line W103") != std::string::npos);
+
+    // Should offer range suppression with // disable W103 ... // enable W103
+    const auto* rangeFix = ActionTitled(actions, "Disable W103 with // disable ... // enable");
+    REQUIRE(rangeFix != nullptr);
+    const auto& rangeEdits = rangeFix->edit->changes->begin()->second;
+    REQUIRE(rangeEdits.size() == 2);
+    CHECK(rangeEdits[0].newText.find("// disable W103") != std::string::npos);
+    CHECK(rangeEdits[1].newText.find("// enable W103") != std::string::npos);
+}
+

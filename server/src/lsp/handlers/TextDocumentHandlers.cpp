@@ -531,8 +531,13 @@ Server::HandleRequestsTextDocument_Formatting(lsp::requests::TextDocument_Format
         return lsp::Null{};
     }
 
-    features::FormattingRequest fr{doc->uri, *doc->text, doc->tree, req.options, CurrentBraceStyle(),
-                                   CurrentSpacesInsideParentheses()};
+    features::FormattingRequest fr{doc->uri,
+                                   *doc->text,
+                                   doc->tree,
+                                   req.options,
+                                   CurrentBraceStyle(),
+                                   CurrentSpacesInsideParentheses(),
+                                   CurrentKeepEmptyBlocksOnSingleLine()};
     auto edits = features::FormatDocument(fr);
     if (edits.has_value())
     {
@@ -561,7 +566,8 @@ Server::HandleRequestsTextDocument_RangeFormatting(lsp::requests::TextDocument_R
                                          codec::Decode(*doc->text, m_positionEncoding, req.range),
                                          req.options,
                                          CurrentBraceStyle(),
-                                         CurrentSpacesInsideParentheses()};
+                                         CurrentSpacesInsideParentheses(),
+                                         CurrentKeepEmptyBlocksOnSingleLine()};
     auto edits = features::FormatRange(rfr);
     if (edits.has_value())
     {
@@ -591,7 +597,8 @@ Server::HandleRequestsTextDocument_OnTypeFormatting(lsp::requests::TextDocument_
                                            req.ch,
                                            req.options,
                                            CurrentBraceStyle(),
-                                           CurrentSpacesInsideParentheses()};
+                                           CurrentSpacesInsideParentheses(),
+                                           CurrentKeepEmptyBlocksOnSingleLine()};
     auto edits = features::FormatOnType(otfr);
     if (edits.has_value())
     {
@@ -930,8 +937,13 @@ Server::HandleRequestsTextDocument_WillSaveWaitUntil(lsp::requests::TextDocument
     options.tabSize = 4;
     options.insertSpaces = true;
 
-    features::FormattingRequest fr{doc->uri, *doc->text, doc->tree, options, CurrentBraceStyle(),
-                                   CurrentSpacesInsideParentheses()};
+    features::FormattingRequest fr{doc->uri,
+                                   *doc->text,
+                                   doc->tree,
+                                   options,
+                                   CurrentBraceStyle(),
+                                   CurrentSpacesInsideParentheses(),
+                                   CurrentKeepEmptyBlocksOnSingleLine()};
     auto edits = features::FormatDocument(fr);
     if (edits.has_value())
     {

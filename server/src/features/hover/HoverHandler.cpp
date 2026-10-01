@@ -6,6 +6,7 @@
 #include "analysis/VirtualMixinContext.h"
 #include "analysis/overload/ConversionRankingEngine.h"
 #include "parser/GrammarNames.h"
+#include "parser/Primitives.h"
 #include "utils/IncludeResolver.h"
 #include "utils/LspLogger.h"
 #include "utils/MultiFileLogger.h"
@@ -16,6 +17,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <sstream>
+#include <unordered_set>
 #include <vector>
 
 namespace angel_lsp::features
@@ -776,6 +778,21 @@ std::optional<lsp::Hover> TryHoverPrimitiveType(std::string_view nodeText, const
     }
     utils::HighResTimer fmtTimer;
     std::string md = "```angelscript\n(primitive type) " + std::string(nodeText) + "\n```";
+    if (auto info = parser::primitives::GetPrimitiveDocInfo(nodeText))
+    {
+        md += "\n\n" + std::string(info->description);
+        if (!info->range.empty())
+        {
+            if (nodeText == "bool")
+            {
+                md += "\n\nValues: `" + std::string(info->range) + "`";
+            }
+            else
+            {
+                md += "\n\nRange: `" + std::string(info->range) + "`";
+            }
+        }
+    }
     profiler.fmtMs += fmtTimer.ElapsedMs();
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, range};
 }
@@ -894,6 +911,63 @@ std::vector<analysis::Symbol> CollectReceiverMemberSymbols(const std::string& re
     return memberSymbols;
 }
 
+/**
+ * @brief Appends underlying primitive type description and range for typedef symbols.
+ * @param request Hover request context.
+ * @param sym Candidate symbol.
+ * @param[out] docs Accumulated documentation blocks.
+ */
+void AppendTypedefDoc(const HoverRequest& request, const analysis::Symbol& sym, std::vector<std::string>& docs)
+{
+    if (sym.type != analysis::SymbolType::Typedef)
+    {
+        return;
+    }
+    std::string currentBase = sym.GetTypedef().baseType;
+    std::string primitiveBase;
+    std::unordered_set<std::string> visited;
+    visited.insert(sym.name);
+
+    while (!currentBase.empty() && !visited.contains(currentBase))
+    {
+        visited.insert(currentBase);
+        if (parser::primitives::IsPrimitive(currentBase))
+        {
+            primitiveBase = currentBase;
+            break;
+        }
+        if (auto syms = request.symbolTable.FindSymbolsPtr(currentBase))
+        {
+            if (!syms->empty() && (*syms)[0].type == analysis::SymbolType::Typedef)
+            {
+                currentBase = (*syms)[0].GetTypedef().baseType;
+                continue;
+            }
+        }
+        break;
+    }
+
+    if (!primitiveBase.empty())
+    {
+        if (auto info = parser::primitives::GetPrimitiveDocInfo(primitiveBase))
+        {
+            std::string doc = std::string(info->description) + " (underlying type: `" + primitiveBase + "`)";
+            if (!info->range.empty())
+            {
+                if (primitiveBase == "bool")
+                {
+                    doc += "\n\nValues: `" + std::string(info->range) + "`";
+                }
+                else
+                {
+                    doc += "\n\nRange: `" + std::string(info->range) + "`";
+                }
+            }
+            docs.push_back(std::move(doc));
+        }
+    }
+}
+
 /** @brief Gathers and deduplicates doc comments for overload sets, prioritizing resolved call overloads. */
 void CollectOverloadDocs(const HoverRequest& request, const std::vector<analysis::Symbol>& symbols,
                          const std::optional<analysis::Symbol>& best, std::vector<std::string>& docs)
@@ -904,22 +978,26 @@ void CollectOverloadDocs(const HoverRequest& request, const std::vector<analysis
         if (!d.empty())
         {
             docs.push_back(std::move(d));
-            return;
         }
-        for (const auto& sym : symbols)
+        else
         {
-            std::string fallbackDoc = DocCommentForSymbol(request, sym);
-            if (!fallbackDoc.empty())
+            for (const auto& sym : symbols)
             {
-                docs.push_back(std::move(fallbackDoc));
-                return;
+                std::string fallbackDoc = DocCommentForSymbol(request, sym);
+                if (!fallbackDoc.empty())
+                {
+                    docs.push_back(std::move(fallbackDoc));
+                    break;
+                }
             }
         }
+        AppendTypedefDoc(request, *best, docs);
         return;
     }
 
     for (const auto& sym : symbols)
     {
+        AppendTypedefDoc(request, sym, docs);
         std::string d = DocCommentForSymbol(request, sym);
         if (d.empty())
         {

@@ -1173,3 +1173,63 @@ TEST_CASE("HoverHandler - Constructor Call Overload Resolution")
     CHECK(content.value.find("void " + className) == std::string::npos);
 }
 
+TEST_CASE("HoverHandler - Primitive Types Display Exact Bit-Width and Ranges")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("PrimitiveTester");
+    std::string code =
+        "void " + fnName + "()\n"
+        "{\n"
+        "    int a = 1;\n"
+        "    uint8 b = 2;\n"
+        "    float c = 3.0f;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Hover on 'int' keyword at line 2, column 5
+    auto hoverInt = env.HoverAt(2, 5);
+    REQUIRE(hoverInt.has_value());
+    auto contentInt = std::get<lsp::MarkupContent>(hoverInt->contents);
+    CHECK(contentInt.value.find("32-bit signed integer") != std::string::npos);
+    CHECK(contentInt.value.find("-2,147,483,648 to 2,147,483,647") != std::string::npos);
+
+    // Hover on 'uint8' keyword at line 3, column 5
+    auto hoverUint8 = env.HoverAt(3, 5);
+    REQUIRE(hoverUint8.has_value());
+    auto contentUint8 = std::get<lsp::MarkupContent>(hoverUint8->contents);
+    CHECK(contentUint8.value.find("8-bit unsigned integer") != std::string::npos);
+    CHECK(contentUint8.value.find("0 to 255") != std::string::npos);
+
+    // Hover on 'float' keyword at line 4, column 5
+    auto hoverFloat = env.HoverAt(4, 5);
+    REQUIRE(hoverFloat.has_value());
+    auto contentFloat = std::get<lsp::MarkupContent>(hoverFloat->contents);
+    CHECK(contentFloat.value.find("IEEE 754") != std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Typedef Displays Underlying Primitive Bit-Width and Ranges")
+{
+    const std::string typeName1 = angel_lsp::test::GenerateRandomSymbolName("CustomInt");
+    const std::string typeName2 = angel_lsp::test::GenerateRandomSymbolName("SpecialInt");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("val");
+
+    std::string code =
+        "typedef int " + typeName1 + ";\n"
+        "typedef " + typeName1 + " " + typeName2 + ";\n"
+        "void main()\n"
+        "{\n"
+        "    " + typeName2 + " " + varName + " = 42;\n"
+        "}\n";
+
+    TestEnvironment env(code);
+
+    // Hover on typeName2 at line 4, column 5
+    auto hover = env.HoverAt(4, 5);
+    REQUIRE(hover.has_value());
+    auto content = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(content.value.find(typeName2) != std::string::npos);
+    CHECK(content.value.find("32-bit signed integer") != std::string::npos);
+    CHECK(content.value.find("-2,147,483,648 to 2,147,483,647") != std::string::npos);
+    CHECK(content.value.find("underlying type: `int`") != std::string::npos);
+}
+

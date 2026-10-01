@@ -607,7 +607,8 @@ const FEATURE_FLAGS: ReadonlyArray<readonly [string, string]> = [
     ['typeConversionChecks', '--disable-type-conversion-checks'],
     ['codeLens', '--disable-code-lens'],
     ['onTypeFormatting', '--disable-on-type-formatting'],
-    ['pullDiagnostics', '--disable-pull-diagnostics']
+    ['pullDiagnostics', '--disable-pull-diagnostics'],
+    ['enableCommentSuppressions', '--disable-comment-suppressions']
 ];
 
 /**
@@ -1034,6 +1035,10 @@ export function buildServerArgs(): string[] {
 
     if (config.get<boolean>('format.spacesInsideParentheses', false) === true) {
         args.push('--format-spaces-inside-parentheses');
+    }
+
+    if (config.get<boolean>('format.keepEmptyBlocksOnSingleLine', true) === false) {
+        args.push('--format-keep-empty-blocks-on-single-line=false');
     }
 
     const severities = config.get<Record<string, string>>('diagnosticSeverity', {});

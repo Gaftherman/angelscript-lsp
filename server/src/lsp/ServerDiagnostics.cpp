@@ -1,3 +1,4 @@
+#include "analysis/DiagnosticSuppression.h"
 #include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
 #include "utils/PositionEncoding.h"

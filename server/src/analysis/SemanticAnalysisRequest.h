@@ -131,6 +131,9 @@ struct SemanticAnalysisRequest
     /** @brief Kill-switch for the conversion rules (see TypeConversionChecker.h). */
     bool enableTypeConversionChecks = true;
 
+    /** @brief Whether comment-based suppressions (e.g. // disable W156) are enabled. */
+    bool enableCommentSuppressions = true;
+
     /**
      * @brief Line ranges the preprocessor removes, so no diagnostic is reported inside them.
      *

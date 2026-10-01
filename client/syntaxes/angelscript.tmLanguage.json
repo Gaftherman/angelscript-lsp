@@ -324,6 +324,14 @@
       "patterns": [
         {
           "name": "entity.name.type.class.angelscript",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*_t\\b"
+        },
+        {
+          "name": "entity.name.type.class.angelscript",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*@)"
+        },
+        {
+          "name": "entity.name.type.class.angelscript",
           "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
         }
       ]

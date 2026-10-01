@@ -697,6 +697,33 @@ TEST_SUITE("Formatting")
             CHECK((*edits)[0].newText.find(varB + " )") != std::string::npos);
         }
     }
+
+    TEST_CASE("KeepEmptyBlocksOnSingleLine - FormatSourceCode preserves empty function and constructor blocks")
+    {
+        const std::string className = angel_lsp::test::GenerateRandomSymbolName("Weapon");
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Init");
+
+        std::string code =
+            "class " + className + "\n"
+            "{\n"
+            "    " + className + "() {}\n"
+            "    void " + fnName + "() {}\n"
+            "};\n";
+
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        FormatCodeOptions opts{ options, BraceStyle::Allman, false, true };
+        std::string formatted = FormatSourceCode(code, opts);
+
+        CHECK(formatted.find(className + "() {}") != std::string::npos);
+        CHECK(formatted.find("void " + fnName + "() {}") != std::string::npos);
+
+        FormatCodeOptions legacyOpts{ options, BraceStyle::Allman, false, false };
+        std::string expanded = FormatSourceCode(code, legacyOpts);
+        CHECK(expanded.find(className + "()\n    {\n    }") != std::string::npos);
+    }
 }
 
 

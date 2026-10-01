@@ -1236,6 +1236,8 @@ struct LineBuilderState
     ScopeKind pendingScope = ScopeKind::Generic;
     bool insideCaseBody = false;
     bool inValueContext = false;
+    BraceStyle braceStyle = BraceStyle::Allman;
+    bool keepEmptyBlocksOnSingleLine = false;
 
     ScopeKind CurrentScopeKind() const
     {
@@ -1397,7 +1399,7 @@ bool HandlePreprocessorOrMetadata(LineBuilderState& state, const std::vector<Tok
  * @param[in] i Current token index.
  * @param[in] braceStyle Configured brace placement style.
  */
-void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t i, BraceStyle braceStyle)
+void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t i)
 {
     const int baseParen = state.scopeStack.empty() ? 0 : state.scopeStack.back().parenDepthAtOpen;
     const int baseBracket = state.scopeStack.empty() ? 0 : state.scopeStack.back().bracketDepthAtOpen;
@@ -1415,7 +1417,7 @@ void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t
         return;
     }
 
-    if (braceStyle == BraceStyle::KAndR && !state.currentLine.tokenIndices.empty())
+    if (state.braceStyle == BraceStyle::KAndR && !state.currentLine.tokenIndices.empty())
     {
         state.currentLine.tokenIndices.push_back(i);
         state.FlushCurrentLine();
@@ -1479,17 +1481,16 @@ void HandleCloseBrace(LineBuilderState& state, std::vector<Token>& tokens, size_
  * @param[in,out] state Active line builder state.
  * @param[in] tokens Token stream.
  * @param[in] i Current token index.
- * @param[in] braceStyle Configured brace placement style.
  * @return True if token was `else` and processed.
  */
-bool HandleElseKeyword(LineBuilderState& state, const std::vector<Token>& tokens, size_t i, BraceStyle braceStyle)
+bool HandleElseKeyword(LineBuilderState& state, const std::vector<Token>& tokens, size_t i)
 {
     if (tokens[i].type != TokenType::Keyword || tokens[i].text != "else")
     {
         return false;
     }
     state.FlushCurrentLine();
-    if (braceStyle == BraceStyle::KAndR && !state.lines.empty() && state.lines.back().tokenIndices.size() == 1 &&
+    if (state.braceStyle == BraceStyle::KAndR && !state.lines.empty() && state.lines.back().tokenIndices.size() == 1 &&
         tokens[state.lines.back().tokenIndices.front()].type == TokenType::CloseBrace)
     {
         state.currentLine = std::move(state.lines.back());
@@ -1553,13 +1554,11 @@ bool HandleAccessSpecifier(LineBuilderState& state, const std::vector<Token>& to
  * @param[in,out] state Active line builder state.
  * @param[in] tokens Token stream.
  * @param[in,out] i Current token index.
- * @param[in] braceStyle Configured brace placement style.
  * @return True if a keyword branch or label was processed.
  */
-bool HandleKeywordsAndLabels(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i,
-                             BraceStyle braceStyle)
+bool HandleKeywordsAndLabels(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
 {
-    return HandleElseKeyword(state, tokens, i, braceStyle) || HandleCaseOrDefault(state, tokens[i], i) ||
+    return HandleElseKeyword(state, tokens, i) || HandleCaseOrDefault(state, tokens[i], i) ||
            HandleAccessSpecifier(state, tokens, i);
 }
 
@@ -1631,14 +1630,63 @@ void HandleStatementOrCommentEnd(LineBuilderState& state, const std::vector<Toke
 }
 
 /**
+ * @brief Keeps empty `{}` blocks on a single line when configured and originally single-line.
+ * @param[in,out] state Active line builder state.
+ * @param[in] tokens Token stream.
+ * @param[in,out] i Current token index.
+ * @return True if an empty block was handled inline.
+ */
+bool TryHandleEmptyBlock(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
+{
+    if (!state.keepEmptyBlocksOnSingleLine)
+    {
+        return false;
+    }
+    if (i + 1 >= tokens.size() || tokens[i + 1].type != TokenType::CloseBrace)
+    {
+        return false;
+    }
+    if (tokens[i + 1].newlinesBefore > 0)
+    {
+        return false;
+    }
+
+    if (tokens[i].newlinesBefore > 0)
+    {
+        state.FlushCurrentLine();
+    }
+    state.BeginLineIfEmpty();
+    state.currentLine.tokenIndices.push_back(i);
+    state.currentLine.tokenIndices.push_back(i + 1);
+    i++;
+
+    if (i + 1 < tokens.size() && tokens[i + 1].type == TokenType::Semicolon && tokens[i + 1].newlinesBefore == 0)
+    {
+        i++;
+        state.currentLine.tokenIndices.push_back(i);
+    }
+
+    ConsumeTrailingComment(state, tokens, i);
+    state.FlushCurrentLine();
+    state.pendingScope = ScopeKind::Generic;
+    state.insideCaseBody = false;
+    state.inValueContext = false;
+    return true;
+}
+
+/**
  * @brief Groups tokens into discrete formatted lines with associated indentation levels.
  * @param[in,out] tokens Token stream.
  * @param[in] braceStyle Configured brace placement style.
+ * @param[in] keepEmptyBlocksOnSingleLine Whether empty blocks should stay on a single line.
  * @return Vector of formatted line specifications.
  */
-std::vector<LineInfo> BuildFormattedLines(std::vector<Token>& tokens, BraceStyle braceStyle)
+std::vector<LineInfo> BuildFormattedLines(std::vector<Token>& tokens, BraceStyle braceStyle,
+                                         bool keepEmptyBlocksOnSingleLine = false)
 {
     LineBuilderState state;
+    state.braceStyle = braceStyle;
+    state.keepEmptyBlocksOnSingleLine = keepEmptyBlocksOnSingleLine;
 
     for (size_t i = 0; i < tokens.size(); ++i)
     {
@@ -1653,7 +1701,11 @@ std::vector<LineInfo> BuildFormattedLines(std::vector<Token>& tokens, BraceStyle
         }
         if (tok.type == TokenType::OpenBrace)
         {
-            HandleOpenBrace(state, tokens, i, braceStyle);
+            if (TryHandleEmptyBlock(state, tokens, i))
+            {
+                continue;
+            }
+            HandleOpenBrace(state, tokens, i);
             continue;
         }
         if (tok.type == TokenType::CloseBrace)
@@ -1661,7 +1713,7 @@ std::vector<LineInfo> BuildFormattedLines(std::vector<Token>& tokens, BraceStyle
             HandleCloseBrace(state, tokens, i);
             continue;
         }
-        if (HandleKeywordsAndLabels(state, tokens, i, braceStyle))
+        if (HandleKeywordsAndLabels(state, tokens, i))
         {
             continue;
         }
@@ -1900,8 +1952,7 @@ std::optional<MatchedLineRange> FindMatchedRange(const std::vector<LineInfo>& li
 }
 } // namespace
 
-std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions& options,
-                             BraceStyle braceStyle, bool spacesInsideParentheses)
+std::string FormatSourceCode(std::string_view sourceCode, const FormatCodeOptions& formatOptions)
 {
     if (sourceCode.empty())
     {
@@ -1915,10 +1966,16 @@ std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingO
         return "";
     }
 
-    auto lines = BuildFormattedLines(tokens, braceStyle);
-    auto rendered = RenderLines(lines, tokens, options, spacesInsideParentheses);
-    CollapseAndTrimLines(rendered, options);
-    return AssembleFormattedText(bom, rendered, options);
+    auto lines = BuildFormattedLines(tokens, formatOptions.braceStyle, formatOptions.keepEmptyBlocksOnSingleLine);
+    auto rendered = RenderLines(lines, tokens, formatOptions.options, formatOptions.spacesInsideParentheses);
+    CollapseAndTrimLines(rendered, formatOptions.options);
+    return AssembleFormattedText(bom, rendered, formatOptions.options);
+}
+
+std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions& options,
+                             BraceStyle braceStyle, bool spacesInsideParentheses)
+{
+    return FormatSourceCode(sourceCode, FormatCodeOptions{options, braceStyle, spacesInsideParentheses, false});
 }
 
 std::optional<std::vector<lsp::TextEdit>> FormatDocument(const FormattingRequest& request)
@@ -1928,8 +1985,9 @@ std::optional<std::vector<lsp::TextEdit>> FormatDocument(const FormattingRequest
         return std::vector<lsp::TextEdit>{};
     }
 
-    std::string formatted = FormatSourceCode(request.sourceCode, request.options, request.braceStyle,
-                                             request.spacesInsideParentheses);
+    FormatCodeOptions opts{request.options, request.braceStyle, request.spacesInsideParentheses,
+                           request.keepEmptyBlocksOnSingleLine};
+    std::string formatted = FormatSourceCode(request.sourceCode, opts);
     if (formatted == request.sourceCode)
     {
         return std::vector<lsp::TextEdit>{};
@@ -1972,8 +2030,13 @@ std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingReque
 
     if (startLine == 0 && endLine >= totalLines - 1)
     {
-        FormattingRequest fullReq{request.uri, request.sourceCode, request.tree, request.options,
-                                  request.braceStyle, request.spacesInsideParentheses};
+        FormattingRequest fullReq{request.uri,
+                                  request.sourceCode,
+                                  request.tree,
+                                  request.options,
+                                  request.braceStyle,
+                                  request.spacesInsideParentheses,
+                                  request.keepEmptyBlocksOnSingleLine};
         return FormatDocument(fullReq);
     }
 
@@ -1983,7 +2046,7 @@ std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingReque
         return std::vector<lsp::TextEdit>{};
     }
 
-    auto lines = BuildFormattedLines(tokens, request.braceStyle);
+    auto lines = BuildFormattedLines(tokens, request.braceStyle, request.keepEmptyBlocksOnSingleLine);
     auto outputLines = RenderLines(lines, tokens, request.options, request.spacesInsideParentheses);
 
     auto matched = FindMatchedRange(lines, tokens, startLine, endLine);
@@ -2035,7 +2098,8 @@ std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingReq
         lsp::Range{lsp::Position{targetLine, 0}, lsp::Position{targetLine, request.position.character}},
         request.options,
         request.braceStyle,
-        request.spacesInsideParentheses};
+        request.spacesInsideParentheses,
+        request.keepEmptyBlocksOnSingleLine};
 
     return FormatRange(rangeReq);
 }

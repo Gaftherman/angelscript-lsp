@@ -173,6 +173,7 @@ Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& s
     SetDefinedWordsFrom(std::string(), m_config.definedWords);
     m_formatBraceStyleKR.store(BraceStyleIsKR(m_config.format.braceStyle), std::memory_order_relaxed);
     m_formatSpacesInsideParentheses.store(m_config.format.spacesInsideParentheses, std::memory_order_relaxed);
+    m_formatKeepEmptyBlocksOnSingleLine.store(m_config.format.keepEmptyBlocksOnSingleLine, std::memory_order_relaxed);
 
     BuildDiagnosticSeverityOverrides();
 

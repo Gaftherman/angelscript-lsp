@@ -139,4 +139,6 @@ void TryAddGenerateFuncdefFix(const CodeActionRequest& request, TSNode rootNode,
 
 void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
+void TryAddDiagnosticSuppressionFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+
 } // namespace angel_lsp::features

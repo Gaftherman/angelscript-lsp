@@ -285,6 +285,10 @@ void Server::UpdateFormatConfiguration(const lsp::LSPObject& section)
     {
         m_formatSpacesInsideParentheses.store(*spacesVal, std::memory_order_relaxed);
     }
+    if (auto keepEmpty = FindSectionBool(section, formatObj, "keepEmptyBlocksOnSingleLine", "format"); keepEmpty.has_value())
+    {
+        m_formatKeepEmptyBlocksOnSingleLine.store(*keepEmpty, std::memory_order_relaxed);
+    }
     if (auto fosVal = FindSectionBool(section, formatObj, "onSave", "format"); fosVal.has_value())
     {
         m_config.format.formatOnSave = *fosVal;
@@ -465,6 +469,10 @@ void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
     if (auto otf = FindSectionBool(section, featObj, "onTypeFormatting", "features"); otf.has_value())
     {
         m_config.features.enableOnTypeFormatting = *otf;
+    }
+    if (auto cs = FindSectionBool(section, featObj, "commentSuppressions", "features"); cs.has_value())
+    {
+        m_config.features.enableCommentSuppressions = *cs;
     }
 
     const lsp::LSPObject* compObj = nullptr;

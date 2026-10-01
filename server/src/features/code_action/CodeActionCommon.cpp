@@ -1,4 +1,5 @@
 #include "features/code_action/CodeActionInternal.h"
+#include "analysis/DiagnosticSuppression.h"
 #include "parser/ASTUtils.h"
 
 namespace angel_lsp::features
@@ -75,7 +76,18 @@ bool MatchDiagnosticCode(const lsp::Diagnostic& diag, std::string_view expectedC
     }
     if (std::holds_alternative<lsp::String>(diag.code.value()))
     {
-        return std::get<lsp::String>(diag.code.value()) == expectedCode;
+        const auto& codeStr = std::get<lsp::String>(diag.code.value());
+        if (codeStr == expectedCode)
+        {
+            return true;
+        }
+        std::string_view canonical = analysis::GetCanonicalDiagnosticCode(codeStr);
+        if (!canonical.empty() && canonical == expectedCode)
+        {
+            return true;
+        }
+        std::string_view expectedCanonical = analysis::GetCanonicalDiagnosticCode(expectedCode);
+        return !expectedCanonical.empty() && expectedCanonical == canonical;
     }
     return false;
 }

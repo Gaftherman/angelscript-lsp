@@ -61,6 +61,7 @@ struct FeatureFlags
     bool completionCompleteFunctionParens = true;
     bool hoverStringLiteralLength = true;
     bool hoverStringLiteralPathResolution = false;
+    bool enableCommentSuppressions = true;
     std::vector<std::string> assetSearchPaths;
 };
 
@@ -538,6 +539,11 @@ struct FormatConfig
      * @brief Whether to insert spaces inside parentheses (e.g. 'foo( bar )' vs 'foo(bar)') (default: false).
      */
     bool spacesInsideParentheses = false;
+
+    /**
+     * @brief Whether to keep empty blocks on a single line (e.g. 'ClassName() {}') (default: true).
+     */
+    bool keepEmptyBlocksOnSingleLine = true;
 };
 
 /**

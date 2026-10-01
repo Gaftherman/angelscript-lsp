@@ -12,6 +12,7 @@
 #include "analysis/NodeIndex.h"
 #include "analysis/NullSafetyChecker.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/DiagnosticSuppression.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
 #include "analysis/rules/FunctionRules.h"
@@ -242,6 +243,15 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         request.exprCache = &localCache;
     }
 
+    std::unique_ptr<NodeIndex> localNodeIndex;
+    const NodeIndex* indexPtr = request.nodeIndex;
+    if (!indexPtr && request.tree)
+    {
+        localNodeIndex =
+            std::make_unique<NodeIndex>(ts_tree_root_node(request.tree), nullptr, request.traversalBudget);
+        indexPtr = localNodeIndex.get();
+    }
+
     {
         DiagnosticContext ctx{request, diagnostics, m_logger};
         CheckNullAssignedToNonHandle(request.symbolTable, ctx);
@@ -250,15 +260,6 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         utils::HighResTimer scopeTimer;
         RunScopeRules(request, ctx);
         const double scopeMs = scopeTimer.ElapsedMs();
-
-        std::unique_ptr<NodeIndex> localNodeIndex;
-        const NodeIndex* indexPtr = request.nodeIndex;
-        if (!indexPtr && request.tree)
-        {
-            localNodeIndex =
-                std::make_unique<NodeIndex>(ts_tree_root_node(request.tree), nullptr, request.traversalBudget);
-            indexPtr = localNodeIndex.get();
-        }
 
         const auto breakdown = RunTimedAstRules(request, indexPtr, ctx);
         CheckDirectivesAndModules(request, ctx);
@@ -276,6 +277,16 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
     {
         std::erase_if(diagnostics, [&request](const Diagnostic& d)
                       { return utils::IsLineExcluded(request.excludedLineRanges, d.range.start.line); });
+    }
+
+    if (request.enableCommentSuppressions && !request.sourceCode.empty())
+    {
+        const auto suppressions = ParseDiagnosticSuppressions(request.sourceCode, indexPtr);
+        if (!suppressions.Empty())
+        {
+            std::erase_if(diagnostics, [&](const Diagnostic& d)
+                          { return suppressions.IsSuppressed(d.code, d.range.start.line); });
+        }
     }
 
     return diagnostics;

@@ -487,6 +487,8 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
     {"--hover-string-literal-path-resolution", "--enable-hover-string-literal-path-resolution",
      "--disable-hover-string-literal-path-resolution", "--no-hover-string-literal-path-resolution",
      &FeatureFlags::hoverStringLiteralPathResolution},
+    {"--enable-comment-suppressions", "--enable-commentsuppressions", "--disable-comment-suppressions",
+     "--disable-commentsuppressions", &FeatureFlags::enableCommentSuppressions},
 };
 
 bool TryParseInlayHintOmittedDefaultsFlag(ServerConfig& config, ArgParseContext& ctx)
@@ -900,6 +902,11 @@ bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
     if (ctx.key == "--format-spaces-inside-parentheses")
     {
         config.format.spacesInsideParentheses = ctx.GetBoolValue(true);
+        return true;
+    }
+    if (ctx.key == "--format-keep-empty-blocks-on-single-line")
+    {
+        config.format.keepEmptyBlocksOnSingleLine = ctx.GetBoolValue(true);
         return true;
     }
     if (ctx.key == "--engine-profile" || ctx.key == "--profile")

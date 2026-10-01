@@ -35,6 +35,7 @@ struct FormattingRequest
     lsp::FormattingOptions options;
     BraceStyle braceStyle = BraceStyle::Allman;
     bool spacesInsideParentheses = false;
+    bool keepEmptyBlocksOnSingleLine = false;
 };
 
 /**
@@ -49,6 +50,7 @@ struct RangeFormattingRequest
     lsp::FormattingOptions options;
     BraceStyle braceStyle = BraceStyle::Allman;
     bool spacesInsideParentheses = false;
+    bool keepEmptyBlocksOnSingleLine = false;
 };
 
 /**
@@ -64,6 +66,7 @@ struct OnTypeFormattingRequest
     lsp::FormattingOptions options;
     BraceStyle braceStyle = BraceStyle::Allman;
     bool spacesInsideParentheses = false;
+    bool keepEmptyBlocksOnSingleLine = false;
 };
 
 using FormattingResult = std::vector<lsp::TextEdit>;
@@ -71,6 +74,17 @@ using FormattingResult = std::vector<lsp::TextEdit>;
 // Type aliases for naming compatibility
 using DocumentFormattingRequest = FormattingRequest;
 using DocumentRangeFormattingRequest = RangeFormattingRequest;
+
+/**
+ * @brief Options bundling for direct source code formatting.
+ */
+struct FormatCodeOptions
+{
+    lsp::FormattingOptions options;
+    BraceStyle braceStyle = BraceStyle::Allman;
+    bool spacesInsideParentheses = false;
+    bool keepEmptyBlocksOnSingleLine = false;
+};
 
 /**
  * @brief Formats an entire AngelScript document according to options and Allman style.
@@ -92,6 +106,14 @@ std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingReque
  * @return List of TextEdits for the formatted region.
  */
 std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingRequest& request);
+
+/**
+ * @brief Directly formats an AngelScript source code string with comprehensive options.
+ * @param sourceCode Source text to format.
+ * @param formatOptions Bundled formatting options.
+ * @return Formatted source code string.
+ */
+std::string FormatSourceCode(std::string_view sourceCode, const FormatCodeOptions& formatOptions);
 
 /**
  * @brief Directly formats an AngelScript source code string.

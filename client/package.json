@@ -577,6 +577,11 @@
             "type": "boolean",
             "default": false,
             "markdownDescription": "%config.format.spacesInsideParentheses.description%"
+          },
+          "angelscript.format.keepEmptyBlocksOnSingleLine": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.format.keepEmptyBlocksOnSingleLine.description%"
           }
         }
       },
@@ -726,6 +731,11 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%config.features.predefinedLoader.description%"
+          },
+          "angelscript.features.enableCommentSuppressions": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.enableCommentSuppressions.description%"
           }
         }
       },

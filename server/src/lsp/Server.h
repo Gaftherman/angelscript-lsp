@@ -91,6 +91,7 @@ class Server
      */
     std::atomic<bool> m_formatBraceStyleKR{false};
     std::atomic<bool> m_formatSpacesInsideParentheses{false};
+    std::atomic<bool> m_formatKeepEmptyBlocksOnSingleLine{true};
     std::atomic<uint64_t> m_configRevision{0};
 
     std::unique_ptr<angel_lsp::i18n::I18n> m_i18n;
@@ -1923,6 +1924,12 @@ class Server
     bool CurrentSpacesInsideParentheses() const noexcept
     {
         return m_formatSpacesInsideParentheses.load(std::memory_order_relaxed);
+    }
+
+    /** @brief Whether formatting handlers should keep empty blocks on a single line. */
+    bool CurrentKeepEmptyBlocksOnSingleLine() const noexcept
+    {
+        return m_formatKeepEmptyBlocksOnSingleLine.load(std::memory_order_relaxed);
     }
 
     /**
