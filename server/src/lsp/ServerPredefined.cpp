@@ -225,8 +225,8 @@ void Server::UnloadUnselectedPredefinedStubs(const std::vector<std::string>& wan
         {
             continue;
         }
-        const bool wanted = std::any_of(wantedPaths.begin(), wantedPaths.end(), [&path](const std::string& candidate)
-                                        { return PathsAreSameFile(candidate, path); });
+        auto matchesPath = [&path](const std::string& candidate) { return PathsAreSameFile(candidate, path); };
+        const bool wanted = std::any_of(wantedPaths.begin(), wantedPaths.end(), matchesPath);
         bool isTransitive = false;
         {
             std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
@@ -251,10 +251,9 @@ bool Server::PathsAreSameFile(const std::string& a, const std::string& b)
     }
 
 #if defined(_WIN32)
-    if (a.size() == b.size() &&
-        std::equal(
-            a.begin(), a.end(), b.begin(), [](char x, char y)
-            { return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y)); }))
+    auto charEqualIgnoreCase = [](char x, char y)
+    { return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y)); };
+    if (a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), charEqualIgnoreCase))
     {
         return true;
     }
@@ -282,8 +281,8 @@ void Server::ReportPredefinedSelection(const std::vector<std::string>& discovere
 
     if (!activePath.empty())
     {
-        const bool found = std::any_of(discovered.begin(), discovered.end(), [&activePath](const std::string& path)
-                                       { return PathsAreSameFile(path, activePath); });
+        auto matchesActive = [&activePath](const std::string& path) { return PathsAreSameFile(path, activePath); };
+        const bool found = std::any_of(discovered.begin(), discovered.end(), matchesActive);
 
         if (!found)
         {

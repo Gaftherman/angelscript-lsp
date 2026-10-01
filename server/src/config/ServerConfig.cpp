@@ -165,9 +165,10 @@ bool ApplyNumericEngineProperty(EngineProperties& engine, std::string_view name,
 
 struct BoolEngineProp
 {
+    using PropMember = bool EngineProperties::*;
     std::string_view name;
     std::string_view alias;
-    bool EngineProperties::* member;
+    PropMember member;
 };
 
 static constexpr BoolEngineProp kBoolEngineProps[] = {
@@ -419,11 +420,12 @@ bool TryParseHelpOrVersion(ServerConfig& config, const ArgParseContext& ctx)
 
 struct FeatureFlagMapping
 {
+    using FeatureMember = bool FeatureFlags::*;
     std::string_view enableKey;
     std::string_view enableAlias;
     std::string_view disableKey;
     std::string_view disableAlias;
-    bool FeatureFlags::* member;
+    FeatureMember member;
 };
 
 static constexpr FeatureFlagMapping kFeatureFlags[] = {
@@ -589,9 +591,10 @@ bool TryParseFeatureFlag(ServerConfig& config, ArgParseContext& ctx)
 
 struct DiagnosticFlagMapping
 {
+    using DiagMember = bool DiagnosticsConfig::*;
     std::string_view enableKey;
     std::string_view disableKey;
-    bool DiagnosticsConfig::* member;
+    DiagMember member;
 };
 
 static constexpr DiagnosticFlagMapping kDiagFlags[] = {
@@ -948,9 +951,10 @@ bool TryParseDiagnosticSeverity(ServerConfig& config, ArgParseContext& ctx)
 
 struct EngineBoolFlag
 {
+    using FlagMember = bool EngineProperties::*;
     std::string_view enableFlag;
     std::string_view disableFlag;
-    bool EngineProperties::* member;
+    FlagMember member;
 };
 
 static constexpr EngineBoolFlag kEngineBoolFlags[] = {

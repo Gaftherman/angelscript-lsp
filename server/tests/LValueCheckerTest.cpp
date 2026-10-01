@@ -39,6 +39,21 @@ std::vector<Diagnostic> RunAnalysis(const std::string& code)
 
     return diagnostics;
 }
+
+bool IsAssignVoidOrNotLValue(const Diagnostic& d)
+{
+    return d.code == "as-err-assign-void" || d.code == "as-err-not-lvalue";
+}
+
+bool IsAssignNonRefOrNotLValue(const Diagnostic& d)
+{
+    return d.code == "as-err-assign-non-ref-call" || d.code == "as-err-not-lvalue";
+}
+
+bool IsAnyLValueError(const Diagnostic& d)
+{
+    return d.code == "as-err-assign-void" || d.code == "as-err-assign-non-ref-call" || d.code == "as-err-not-lvalue";
+}
 } // namespace
 
 TEST_CASE("LValueChecker - Local variable cannot be of type void")
@@ -70,8 +85,7 @@ TEST_CASE("LValueChecker - Cannot assign to void-returning method call")
                        "}\n";
 
     auto diags = RunAnalysis(code);
-    bool hasAssignVoidError = std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
-                                          { return d.code == "as-err-assign-void" || d.code == "as-err-not-lvalue"; });
+    bool hasAssignVoidError = std::any_of(diags.begin(), diags.end(), IsAssignVoidOrNotLValue);
     CHECK(hasAssignVoidError);
 }
 
@@ -90,9 +104,7 @@ TEST_CASE("LValueChecker - Cannot assign to value-returning namespace function c
                        "}\n";
 
     auto diags = RunAnalysis(code);
-    bool hasAssignNonRefError =
-        std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
-                    { return d.code == "as-err-assign-non-ref-call" || d.code == "as-err-not-lvalue"; });
+    bool hasAssignNonRefError = std::any_of(diags.begin(), diags.end(), IsAssignNonRefOrNotLValue);
     CHECK(hasAssignNonRefError);
 }
 
@@ -109,13 +121,7 @@ TEST_CASE("LValueChecker - Assigning to reference-returning function is valid")
                        "}\n";
 
     auto diags = RunAnalysis(code);
-    bool hasLValueError = std::any_of(diags.begin(), diags.end(),
-                                      [](const Diagnostic& d)
-                                      {
-                                          return d.code == "as-err-assign-void" ||
-                                                 d.code == "as-err-assign-non-ref-call" ||
-                                                 d.code == "as-err-not-lvalue";
-                                      });
+    bool hasLValueError = std::any_of(diags.begin(), diags.end(), IsAnyLValueError);
     CHECK_FALSE(hasLValueError);
 }
 

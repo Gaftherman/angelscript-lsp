@@ -272,6 +272,17 @@ void AppendOutgoingCallsForCallee(const std::string& callee, const std::vector<l
         }
     }
 }
+
+/**
+ * @brief Check if two symbols share the exact same declaration location.
+ * @param[in] a First symbol.
+ * @param[in] b Second symbol.
+ * @return True if file URI, start line and start character match.
+ */
+bool SameDeclarationLocation(const Symbol& a, const Symbol& b)
+{
+    return a.fileUri == b.fileUri && a.startLine == b.startLine && a.startCharacter == b.startCharacter;
+}
 } // namespace
 
 std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const CallHierarchyPrepareRequest& request)
@@ -306,11 +317,7 @@ std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const Ca
     for (const auto& sym : declarations)
     {
         auto it = std::find_if(uniqueDeclarations.begin(), uniqueDeclarations.end(),
-                               [&sym](const Symbol& u)
-                               {
-                                   return u.fileUri == sym.fileUri && u.startLine == sym.startLine &&
-                                          u.startCharacter == sym.startCharacter;
-                               });
+                               [&sym](const Symbol& u) { return SameDeclarationLocation(u, sym); });
         if (it == uniqueDeclarations.end())
         {
             uniqueDeclarations.push_back(sym);

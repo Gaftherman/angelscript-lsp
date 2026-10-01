@@ -48,18 +48,23 @@ def main() -> int:
         print("[INFO] No C++ files found to format.")
         return 0
 
+    style_flag = f"--style=file:{REPO_ROOT / '.clang-format'}" if (REPO_ROOT / '.clang-format').exists() else "--style=file"
+
     if args.check:
         print(f"[CHECKING] Checking clang-format style on {len(files)} files...")
         unformatted = []
         for file in files:
-            cmd = [clang_format, "--dry-run", "--Werror", str(file)]
+            cmd = [clang_format, style_flag, "--dry-run", "--Werror", str(file)]
             res = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
             if res.returncode != 0:
-                unformatted.append(file)
+                unformatted.append((file, res.stderr.strip()))
         if unformatted:
             print(f"[FAILED] {len(unformatted)} file(s) require formatting:", file=sys.stderr)
-            for f in unformatted:
+            for f, err in unformatted:
                 print(f"  - {f.relative_to(REPO_ROOT)}", file=sys.stderr)
+                if err:
+                    first_err_line = err.splitlines()[0]
+                    print(f"      reason: {first_err_line}", file=sys.stderr)
             print("\nRun 'python server/scripts/format-code.py' to format automatically.", file=sys.stderr)
             return 1
         print(f"[PASSED] All {len(files)} files adhere to .clang-format.")
@@ -69,7 +74,7 @@ def main() -> int:
         batch_size = 50
         for i in range(0, len(files), batch_size):
             batch = [str(f) for f in files[i:i + batch_size]]
-            cmd = [clang_format, "-i"] + batch
+            cmd = [clang_format, style_flag, "-i"] + batch
             res = subprocess.run(cmd, cwd=REPO_ROOT)
             if res.returncode != 0:
                 print(f"[ERROR] clang-format failed with exit code {res.returncode}", file=sys.stderr)

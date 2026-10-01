@@ -5297,8 +5297,8 @@ std::string RunWithFolderModules(FolderModuleFixture& fx,
         stream.PushAction(
             [&stream, waitForFile]()
             {
-                stream.WaitForCondition([&](const std::string& out)
-                                        { return !LastPublishedFor(out, waitForFile).empty(); });
+                auto condition = [&](const std::string& out) { return !LastPublishedFor(out, waitForFile).empty(); };
+                stream.WaitForCondition(condition);
             });
     }
 
