@@ -1,64 +1,65 @@
-#include <doctest/doctest.h>
 #include "features/semantic_tokens/SemanticTokensHandler.h"
+#include <doctest/doctest.h>
 #include <vector>
 
 namespace
 {
-    /**
-     * @brief Helper to create a single 5-tuple token.
-     */
-    std::vector<lsp::uint> MakeToken(lsp::uint deltaLine, lsp::uint deltaChar, lsp::uint length, lsp::uint tokenType, lsp::uint tokenMod)
+/**
+ * @brief Helper to create a single 5-tuple token.
+ */
+std::vector<lsp::uint> MakeToken(lsp::uint deltaLine, lsp::uint deltaChar, lsp::uint length, lsp::uint tokenType,
+                                 lsp::uint tokenMod)
+{
+    return {deltaLine, deltaChar, length, tokenType, tokenMod};
+}
+
+/**
+ * @brief Helper to concatenate multiple token streams into a single flat vector.
+ */
+std::vector<lsp::uint> Concat(const std::vector<std::vector<lsp::uint>>& tokens)
+{
+    std::vector<lsp::uint> out;
+    for (const auto& t : tokens)
     {
-        return { deltaLine, deltaChar, length, tokenType, tokenMod };
+        out.insert(out.end(), t.begin(), t.end());
     }
+    return out;
+}
 
-    /**
-     * @brief Helper to concatenate multiple token streams into a single flat vector.
-     */
-    std::vector<lsp::uint> Concat(const std::vector<std::vector<lsp::uint>> &tokens)
+/**
+ * @brief Reconstructs the target stream by applying LSP SemanticTokensEdit sequence to previous.
+ */
+std::vector<lsp::uint> ApplyEdits(std::vector<lsp::uint> previous, const std::vector<lsp::SemanticTokensEdit>& edits)
+{
+    if (edits.empty())
     {
-        std::vector<lsp::uint> out;
-        for (const auto &t : tokens)
-        {
-            out.insert(out.end(), t.begin(), t.end());
-        }
-        return out;
-    }
-
-    /**
-     * @brief Reconstructs the target stream by applying LSP SemanticTokensEdit sequence to previous.
-     */
-    std::vector<lsp::uint> ApplyEdits(std::vector<lsp::uint> previous, const std::vector<lsp::SemanticTokensEdit> &edits)
-    {
-        if (edits.empty())
-        {
-            return previous;
-        }
-
-        for (const auto &edit : edits)
-        {
-            CHECK(edit.start % 5 == 0);
-            CHECK(edit.deleteCount % 5 == 0);
-            if (edit.data.has_value())
-            {
-                CHECK(edit.data->size() % 5 == 0);
-            }
-
-            const size_t start = static_cast<size_t>(edit.start);
-            const size_t del = static_cast<size_t>(edit.deleteCount);
-            REQUIRE(start <= previous.size());
-            REQUIRE(start + del <= previous.size());
-
-            auto it = previous.begin() + start;
-            it = previous.erase(it, it + del);
-            if (edit.data.has_value() && !edit.data->empty())
-            {
-                previous.insert(it, edit.data->begin(), edit.data->end());
-            }
-        }
         return previous;
     }
+
+    for (const auto& edit : edits)
+    {
+        CHECK(edit.start % 5 == 0);
+        CHECK(edit.deleteCount % 5 == 0);
+        if (edit.data.has_value())
+        {
+            CHECK(edit.data->size() % 5 == 0);
+        }
+
+        const size_t start = static_cast<size_t>(edit.start);
+        const size_t del = static_cast<size_t>(edit.deleteCount);
+        REQUIRE(start <= previous.size());
+        REQUIRE(start + del <= previous.size());
+
+        auto it = previous.begin() + start;
+        it = previous.erase(it, it + del);
+        if (edit.data.has_value() && !edit.data->empty())
+        {
+            previous.insert(it, edit.data->begin(), edit.data->end());
+        }
+    }
+    return previous;
 }
+} // namespace
 
 TEST_CASE("SemanticTokensDelta - Empty streams")
 {
@@ -74,8 +75,8 @@ TEST_CASE("SemanticTokensDelta - Identical streams")
 {
     auto t0 = MakeToken(0, 0, 4, 1, 0);
     auto t1 = MakeToken(0, 5, 3, 2, 1);
-    auto prev = Concat({ t0, t1 });
-    auto curr = Concat({ t0, t1 });
+    auto prev = Concat({t0, t1});
+    auto curr = Concat({t0, t1});
 
     auto edits = angel_lsp::features::ComputeSemanticTokensDelta(prev, curr);
     CHECK(edits.empty());
@@ -88,8 +89,8 @@ TEST_CASE("SemanticTokensDelta - Prepend token at beginning")
     auto t1 = MakeToken(1, 2, 5, 2, 0);
     auto t2 = MakeToken(1, 8, 3, 3, 0);
 
-    auto prev = Concat({ t1, t2 });
-    auto curr = Concat({ t0, t1, t2 });
+    auto prev = Concat({t1, t2});
+    auto curr = Concat({t0, t1, t2});
 
     auto edits = angel_lsp::features::ComputeSemanticTokensDelta(prev, curr);
     REQUIRE_FALSE(edits.empty());
@@ -102,8 +103,8 @@ TEST_CASE("SemanticTokensDelta - Append token at end")
     auto t1 = MakeToken(1, 2, 5, 2, 0);
     auto t2 = MakeToken(1, 8, 3, 3, 0);
 
-    auto prev = Concat({ t0, t1 });
-    auto curr = Concat({ t0, t1, t2 });
+    auto prev = Concat({t0, t1});
+    auto curr = Concat({t0, t1, t2});
 
     auto edits = angel_lsp::features::ComputeSemanticTokensDelta(prev, curr);
     REQUIRE_FALSE(edits.empty());
@@ -116,8 +117,8 @@ TEST_CASE("SemanticTokensDelta - Insert token in middle")
     auto t1 = MakeToken(1, 2, 5, 2, 0);
     auto t2 = MakeToken(1, 8, 3, 3, 0);
 
-    auto prev = Concat({ t0, t2 });
-    auto curr = Concat({ t0, t1, t2 });
+    auto prev = Concat({t0, t2});
+    auto curr = Concat({t0, t1, t2});
 
     auto edits = angel_lsp::features::ComputeSemanticTokensDelta(prev, curr);
     REQUIRE_FALSE(edits.empty());
@@ -130,8 +131,8 @@ TEST_CASE("SemanticTokensDelta - Delete token from middle")
     auto t1 = MakeToken(1, 2, 5, 2, 0);
     auto t2 = MakeToken(1, 8, 3, 3, 0);
 
-    auto prev = Concat({ t0, t1, t2 });
-    auto curr = Concat({ t0, t2 });
+    auto prev = Concat({t0, t1, t2});
+    auto curr = Concat({t0, t2});
 
     auto edits = angel_lsp::features::ComputeSemanticTokensDelta(prev, curr);
     REQUIRE_FALSE(edits.empty());
@@ -145,8 +146,8 @@ TEST_CASE("SemanticTokensDelta - Modify token in middle")
     auto t1_mod = MakeToken(1, 2, 8, 2, 1);
     auto t2 = MakeToken(1, 8, 3, 3, 0);
 
-    auto prev = Concat({ t0, t1, t2 });
-    auto curr = Concat({ t0, t1_mod, t2 });
+    auto prev = Concat({t0, t1, t2});
+    auto curr = Concat({t0, t1_mod, t2});
 
     auto edits = angel_lsp::features::ComputeSemanticTokensDelta(prev, curr);
     REQUIRE_FALSE(edits.empty());
@@ -160,8 +161,8 @@ TEST_CASE("SemanticTokensDelta - Replace all tokens")
     auto t2 = MakeToken(2, 0, 6, 3, 1);
     auto t3 = MakeToken(3, 4, 2, 4, 0);
 
-    auto prev = Concat({ t0, t1 });
-    auto curr = Concat({ t2, t3 });
+    auto prev = Concat({t0, t1});
+    auto curr = Concat({t2, t3});
 
     auto edits = angel_lsp::features::ComputeSemanticTokensDelta(prev, curr);
     REQUIRE_FALSE(edits.empty());
@@ -173,7 +174,7 @@ TEST_CASE("SemanticTokensDelta - Clear all tokens (previous to empty)")
     auto t0 = MakeToken(0, 0, 4, 1, 0);
     auto t1 = MakeToken(1, 2, 5, 2, 0);
 
-    auto prev = Concat({ t0, t1 });
+    auto prev = Concat({t0, t1});
     std::vector<lsp::uint> curr = {};
 
     auto edits = angel_lsp::features::ComputeSemanticTokensDelta(prev, curr);
@@ -186,7 +187,7 @@ TEST_CASE("SemanticTokensDelta - Populate from empty (empty to current)")
     std::vector<lsp::uint> prev = {};
     auto t0 = MakeToken(0, 0, 4, 1, 0);
     auto t1 = MakeToken(1, 2, 5, 2, 0);
-    auto curr = Concat({ t0, t1 });
+    auto curr = Concat({t0, t1});
 
     auto edits = angel_lsp::features::ComputeSemanticTokensDelta(prev, curr);
     REQUIRE_FALSE(edits.empty());
@@ -204,8 +205,8 @@ TEST_CASE("SemanticTokensDelta - Strict 5-integer alignment invariant")
     // t1 only differs in tokenModifier (last element of 5-tuple)
     auto t1_changed_mod = MakeToken(1, 2, 5, 2, 4);
 
-    auto prev = Concat({ t0, t1, t2 });
-    auto curr = Concat({ t0, t1_changed_mod, t2 });
+    auto prev = Concat({t0, t1, t2});
+    auto curr = Concat({t0, t1_changed_mod, t2});
 
     auto edits = angel_lsp::features::ComputeSemanticTokensDelta(prev, curr);
     REQUIRE(edits.size() == 1);

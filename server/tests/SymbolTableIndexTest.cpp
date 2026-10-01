@@ -10,42 +10,42 @@ using namespace angel_lsp::analysis;
 
 namespace
 {
-    Symbol MakeSymbol(SymbolType type, const std::string &name, const std::string &fileUri,
-                      const std::string &containerName = "")
+Symbol MakeSymbol(SymbolType type, const std::string& name, const std::string& fileUri,
+                  const std::string& containerName = "")
+{
+    Symbol sym;
+    sym.type = type;
+    sym.name = name;
+    sym.containerName = containerName;
+    sym.qualifiedName = containerName.empty() ? name : containerName + "::" + name;
+    sym.fileUri = fileUri;
+    if (type == SymbolType::Function)
     {
-        Symbol sym;
-        sym.type = type;
-        sym.name = name;
-        sym.containerName = containerName;
-        sym.qualifiedName = containerName.empty() ? name : containerName + "::" + name;
-        sym.fileUri = fileUri;
-        if (type == SymbolType::Function)
-        {
-            sym.signature = FunctionSignature{};
-        }
-        return sym;
+        sym.signature = FunctionSignature{};
     }
-
-    /** @brief Names the per-file walk visits, in the buckets it visits. */
-    std::vector<std::string> NamesInFile(const SymbolTable &table, const std::string &fileUri)
-    {
-        std::vector<std::string> names;
-        table.ForEachSymbolInFile(fileUri,
-            [&](const std::string &, const std::vector<Symbol> &symbols)
-            {
-                for (const auto &sym : symbols)
-                {
-                    names.push_back(sym.name);
-                }
-            });
-        return names;
-    }
-
-    bool Contains(const std::vector<std::string> &names, const std::string &name)
-    {
-        return std::find(names.begin(), names.end(), name) != names.end();
-    }
+    return sym;
 }
+
+/** @brief Names the per-file walk visits, in the buckets it visits. */
+std::vector<std::string> NamesInFile(const SymbolTable& table, const std::string& fileUri)
+{
+    std::vector<std::string> names;
+    table.ForEachSymbolInFile(fileUri,
+                              [&](const std::string&, const std::vector<Symbol>& symbols)
+                              {
+                                  for (const auto& sym : symbols)
+                                  {
+                                      names.push_back(sym.name);
+                                  }
+                              });
+    return names;
+}
+
+bool Contains(const std::vector<std::string>& names, const std::string& name)
+{
+    return std::find(names.begin(), names.end(), name) != names.end();
+}
+} // namespace
 
 // =====================================================================================
 // Per-file iteration
@@ -187,7 +187,7 @@ TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash reflects public signatures
     Symbol s1 = MakeSymbol(SymbolType::Function, "Shoot", "file:///weapon.as");
     s1.startLine = 10;
     s1.endLine = 20;
-    auto &fn1 = s1.GetFunction();
+    auto& fn1 = s1.GetFunction();
     fn1.returnType = "void";
     fn1.parameters.push_back(ParameterInformation("count", "int"));
     table1.AddSymbol(s1);
@@ -196,7 +196,7 @@ TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash reflects public signatures
     Symbol s2 = MakeSymbol(SymbolType::Function, "Shoot", "file:///weapon.as");
     s2.startLine = 55;
     s2.endLine = 75;
-    auto &fn2 = s2.GetFunction();
+    auto& fn2 = s2.GetFunction();
     fn2.returnType = "void";
     fn2.parameters.push_back(ParameterInformation("count", "int"));
     table2.AddSymbol(s2);
@@ -212,7 +212,7 @@ TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash detects signature changes"
 {
     SymbolTable tableBase;
     Symbol sBase = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
-    auto &fnBase = sBase.GetFunction();
+    auto& fnBase = sBase.GetFunction();
     fnBase.returnType = "bool";
     fnBase.parameters.push_back(ParameterInformation("speed", "float"));
     tableBase.AddSymbol(sBase);
@@ -222,7 +222,7 @@ TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash detects signature changes"
     {
         SymbolTable table;
         Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
-        auto &fn = s.GetFunction();
+        auto& fn = s.GetFunction();
         fn.returnType = "void";
         fn.parameters.push_back(ParameterInformation("speed", "float"));
         table.AddSymbol(s);
@@ -233,7 +233,7 @@ TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash detects signature changes"
     {
         SymbolTable table;
         Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
-        auto &fn = s.GetFunction();
+        auto& fn = s.GetFunction();
         fn.returnType = "bool";
         fn.parameters.push_back(ParameterInformation("speed", "int"));
         table.AddSymbol(s);
@@ -244,7 +244,7 @@ TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash detects signature changes"
     {
         SymbolTable table;
         Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
-        auto &fn = s.GetFunction();
+        auto& fn = s.GetFunction();
         fn.returnType = "bool";
         fn.parameters.push_back(ParameterInformation("speed", "float"));
         fn.parameters.push_back(ParameterInformation("forced", "bool"));
@@ -256,7 +256,7 @@ TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash detects signature changes"
     {
         SymbolTable table;
         Symbol s = MakeSymbol(SymbolType::Function, "Reload", "file:///weapon.as");
-        auto &fn = s.GetFunction();
+        auto& fn = s.GetFunction();
         fn.returnType = "bool";
         fn.parameters.push_back(ParameterInformation("speed", "float"));
         table.AddSymbol(s);

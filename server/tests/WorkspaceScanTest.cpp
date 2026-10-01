@@ -22,47 +22,49 @@ using namespace angel_lsp::utils;
 
 namespace
 {
-    /** @brief A throwaway tree under the system temp directory, removed on destruction. */
-    struct ScanFixture
+/** @brief A throwaway tree under the system temp directory, removed on destruction. */
+struct ScanFixture
+{
+    std::filesystem::path root;
+
+    ScanFixture()
     {
-        std::filesystem::path root;
-
-        ScanFixture()
-        {
-            root = std::filesystem::temp_directory_path() /
-                   ("angel_scan_" + std::to_string(std::filesystem::hash_value(
-                                        std::filesystem::temp_directory_path())) +
-                    std::to_string(reinterpret_cast<uintptr_t>(this)));
-            std::filesystem::create_directories(root);
-        }
-
-        ~ScanFixture()
-        {
-            std::error_code ec;
-            std::filesystem::remove_all(root, ec);
-        }
-
-        void Write(const std::string &relative)
-        {
-            const std::filesystem::path target = root / relative;
-            std::filesystem::create_directories(target.parent_path());
-            std::ofstream out(target);
-            out << "void main() { }\n";
-        }
-
-        std::vector<std::string> Roots() const { return { root.generic_string() }; }
-    };
-
-    std::vector<std::string> NamesOf(const std::vector<std::filesystem::path> &paths)
-    {
-        std::vector<std::string> names;
-        names.reserve(paths.size());
-        for (const auto &path : paths)
-            names.push_back(path.filename().string());
-        std::sort(names.begin(), names.end());
-        return names;
+        root = std::filesystem::temp_directory_path() /
+               ("angel_scan_" + std::to_string(std::filesystem::hash_value(std::filesystem::temp_directory_path())) +
+                std::to_string(reinterpret_cast<uintptr_t>(this)));
+        std::filesystem::create_directories(root);
     }
+
+    ~ScanFixture()
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(root, ec);
+    }
+
+    void Write(const std::string& relative)
+    {
+        const std::filesystem::path target = root / relative;
+        std::filesystem::create_directories(target.parent_path());
+        std::ofstream out(target);
+        out << "void main() { }\n";
+    }
+
+    std::vector<std::string> Roots() const
+    {
+        return {root.generic_string()};
+    }
+};
+
+std::vector<std::string> NamesOf(const std::vector<std::filesystem::path>& paths)
+{
+    std::vector<std::string> names;
+    names.reserve(paths.size());
+    for (const auto& path : paths)
+        names.push_back(path.filename().string());
+    std::sort(names.begin(), names.end());
+    return names;
 }
+} // namespace
 
 TEST_CASE("WorkspaceScan - Every regular file under a root is visited")
 {
@@ -72,12 +74,12 @@ TEST_CASE("WorkspaceScan - Every regular file under a root is visited")
     fixture.Write("nested/deeper/c.as");
 
     std::vector<std::filesystem::path> seen;
-    const bool completed = ForEachWorkspaceFile(
-        fixture.Roots(), {}, {},
-        [&seen](const std::filesystem::directory_entry &entry) { seen.push_back(entry.path()); });
+    const bool completed =
+        ForEachWorkspaceFile(fixture.Roots(), {}, {},
+                             [&seen](const std::filesystem::directory_entry& entry) { seen.push_back(entry.path()); });
 
     CHECK(completed);
-    CHECK(NamesOf(seen) == std::vector<std::string>{ "a.as", "b.as", "c.as" });
+    CHECK(NamesOf(seen) == std::vector<std::string>{"a.as", "b.as", "c.as"});
 }
 
 TEST_CASE("WorkspaceScan - An excluded directory is pruned, not filtered")
@@ -91,12 +93,12 @@ TEST_CASE("WorkspaceScan - An excluded directory is pruned, not filtered")
     fixture.Write("build/deeper/also_generated.as");
 
     std::vector<std::filesystem::path> seen;
-    const bool completed = ForEachWorkspaceFile(
-        fixture.Roots(), { "**/build/**" }, {},
-        [&seen](const std::filesystem::directory_entry &entry) { seen.push_back(entry.path()); });
+    const bool completed =
+        ForEachWorkspaceFile(fixture.Roots(), {"**/build/**"}, {},
+                             [&seen](const std::filesystem::directory_entry& entry) { seen.push_back(entry.path()); });
 
     CHECK(completed);
-    CHECK(NamesOf(seen) == std::vector<std::string>{ "keep.as" });
+    CHECK(NamesOf(seen) == std::vector<std::string>{"keep.as"});
 }
 
 TEST_CASE("WorkspaceScan - A root that does not exist is skipped, not thrown from")
@@ -106,18 +108,17 @@ TEST_CASE("WorkspaceScan - A root that does not exist is skipped, not thrown fro
     ScanFixture fixture;
     fixture.Write("real.as");
 
-    std::vector<std::string> roots = { (fixture.root / "no_such_directory").generic_string() };
-    for (const auto &root : fixture.Roots())
+    std::vector<std::string> roots = {(fixture.root / "no_such_directory").generic_string()};
+    for (const auto& root : fixture.Roots())
         roots.push_back(root);
 
     std::vector<std::filesystem::path> seen;
-    const bool completed = ForEachWorkspaceFile(
-        roots, {}, {},
-        [&seen](const std::filesystem::directory_entry &entry) { seen.push_back(entry.path()); });
+    const bool completed = ForEachWorkspaceFile(roots, {}, {}, [&seen](const std::filesystem::directory_entry& entry)
+                                                { seen.push_back(entry.path()); });
 
     // The bad root cost nothing: the good one after it was still walked.
     CHECK(completed);
-    CHECK(NamesOf(seen) == std::vector<std::string>{ "real.as" });
+    CHECK(NamesOf(seen) == std::vector<std::string>{"real.as"});
 }
 
 TEST_CASE("WorkspaceScan - A stop request ends the walk and is reported as not completed")
@@ -131,9 +132,8 @@ TEST_CASE("WorkspaceScan - A stop request ends the walk and is reported as not c
 
     int visited = 0;
     const bool completed = ForEachWorkspaceFile(
-        fixture.Roots(), {},
-        [&visited]() { return visited >= 3; },
-        [&visited](const std::filesystem::directory_entry &) { ++visited; });
+        fixture.Roots(), {}, [&visited]() { return visited >= 3; },
+        [&visited](const std::filesystem::directory_entry&) { ++visited; });
 
     CHECK_FALSE(completed);
 
@@ -149,9 +149,7 @@ TEST_CASE("WorkspaceScan - A stop that is already true visits nothing")
 
     int visited = 0;
     const bool completed = ForEachWorkspaceFile(
-        fixture.Roots(), {},
-        []() { return true; },
-        [&visited](const std::filesystem::directory_entry &) { ++visited; });
+        fixture.Roots(), {}, []() { return true; }, [&visited](const std::filesystem::directory_entry&) { ++visited; });
 
     CHECK_FALSE(completed);
     CHECK(visited == 0);
@@ -160,8 +158,8 @@ TEST_CASE("WorkspaceScan - A stop that is already true visits nothing")
 TEST_CASE("WorkspaceScan - No roots is a completed walk over nothing")
 {
     int visited = 0;
-    const bool completed = ForEachWorkspaceFile(
-        {}, {}, {}, [&visited](const std::filesystem::directory_entry &) { ++visited; });
+    const bool completed =
+        ForEachWorkspaceFile({}, {}, {}, [&visited](const std::filesystem::directory_entry&) { ++visited; });
 
     CHECK(completed);
     CHECK(visited == 0);

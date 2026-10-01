@@ -23,43 +23,44 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    /** @brief Parses sourceCode with a fresh parser/collector pair into table. SymbolTable holds a
-     *         mutex and is non-copyable, so the caller-owned table is filled in place rather than returned. */
-    void CollectFromSource(const std::string &sourceCode, SymbolTable &table, const std::string &fileUri = "file:///test.as")
-    {
-        AngelScriptParser parser;
-        SymbolCollector collector(nullptr);
-        collector.CollectSymbols(fileUri, sourceCode, parser, table);
-    }
-
-    /**
-     * @brief Whether the angelscript/ corpus is present.
-     *
-     * It is not part of the repository - `.gitignore` excludes `angelscript/`, because it is a
-     * thousand third-party scripts collected for auditing rather than source of this project. So a
-     * fresh clone and every CI runner have no corpus, and a smoke test that REQUIREs one there is
-     * reporting the checkout rather than the code. The corpus audits are opt-in already
-     * (`doctest::skip`); these two smoke tests run by default and have to say so themselves.
-     */
-    bool CorpusIsAvailable()
-    {
-        std::error_code ec;
-        return std::filesystem::is_directory(angel_lsp::test::CorpusDirectory(), ec);
-    }
-
-    /** @brief Reads an entire file from the angelscript/ corpus into memory; empty string if missing. */
-    std::string ReadCorpusFile(const std::string &fileName)
-    {
-        std::string path = angel_lsp::test::CorpusDirectory().string() + "/" + fileName;
-        std::ifstream file(path, std::ios::binary);
-        if (!file)
-            return "";
-
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-        return buffer.str();
-    }
+/** @brief Parses sourceCode with a fresh parser/collector pair into table. SymbolTable holds a
+ *         mutex and is non-copyable, so the caller-owned table is filled in place rather than returned. */
+void CollectFromSource(const std::string& sourceCode, SymbolTable& table,
+                       const std::string& fileUri = "file:///test.as")
+{
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    collector.CollectSymbols(fileUri, sourceCode, parser, table);
 }
+
+/**
+ * @brief Whether the angelscript/ corpus is present.
+ *
+ * It is not part of the repository - `.gitignore` excludes `angelscript/`, because it is a
+ * thousand third-party scripts collected for auditing rather than source of this project. So a
+ * fresh clone and every CI runner have no corpus, and a smoke test that REQUIREs one there is
+ * reporting the checkout rather than the code. The corpus audits are opt-in already
+ * (`doctest::skip`); these two smoke tests run by default and have to say so themselves.
+ */
+bool CorpusIsAvailable()
+{
+    std::error_code ec;
+    return std::filesystem::is_directory(angel_lsp::test::CorpusDirectory(), ec);
+}
+
+/** @brief Reads an entire file from the angelscript/ corpus into memory; empty string if missing. */
+std::string ReadCorpusFile(const std::string& fileName)
+{
+    std::string path = angel_lsp::test::CorpusDirectory().string() + "/" + fileName;
+    std::ifstream file(path, std::ios::binary);
+    if (!file)
+        return "";
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+} // namespace
 
 // =====================================================================================
 // Out-of-body call reference tests
@@ -76,7 +77,7 @@ TEST_CASE("SymbolCollector - Global Function Call In Variable Initializer Is Cap
     CHECK(refs[0].type == SymbolType::CallReference);
     CHECK(refs[0].containerName.empty());
 
-    const auto &callSig = refs[0].GetCallReference();
+    const auto& callSig = refs[0].GetCallReference();
     CHECK(callSig.calleeName == "Foo");
     CHECK(callSig.isMethodCall == false);
 }
@@ -120,7 +121,7 @@ TEST_CASE("SymbolCollector - Method Call Body Location Determines Reference Capt
         REQUIRE(refs.size() == 1);
         CHECK(refs[0].type == SymbolType::CallReference);
 
-        const auto &callSig = refs[0].GetCallReference();
+        const auto& callSig = refs[0].GetCallReference();
         CHECK(callSig.calleeName == "GetValue");
         CHECK(callSig.isMethodCall == true);
         CHECK(callSig.objectExpression == "g_obj");
@@ -249,7 +250,7 @@ TEST_CASE("SymbolCollector - Global Variable Test")
     auto symbols = table.FindSymbols("property");
     REQUIRE(symbols.size() == 1);
 
-    const auto &sym = symbols[0];
+    const auto& sym = symbols[0];
     CHECK(sym.type == SymbolType::Variable);
     CHECK(sym.GetVariable().typeName == "int");
 }
@@ -261,14 +262,13 @@ TEST_CASE("SymbolCollector - Numeric TypeKind Values Do Not Collide")
     // enumerator counter mid-sequence. Guard that int64, uint8, uint64, and float
     // each classify to their own distinct TypeKind.
     SymbolTable table;
-    CollectFromSource(
-        "int64 a;\n"
-        "uint8 b;\n"
-        "uint64 c;\n"
-        "float d;\n",
-        table);
+    CollectFromSource("int64 a;\n"
+                      "uint8 b;\n"
+                      "uint64 c;\n"
+                      "float d;\n",
+                      table);
 
-    auto getKind = [&](const std::string &name)
+    auto getKind = [&](const std::string& name)
     {
         auto symbols = table.FindSymbols(name);
         REQUIRE(symbols.size() == 1);
@@ -347,17 +347,16 @@ TEST_CASE("SymbolCollector - Duplicate Declaration Modifier Warning On Class, Mi
     // which class/mixin use) - the query-driven check handles both node kinds, whereas
     // the previous manual walk only ever checked for declaration_modifier and so never
     // flagged duplicate modifiers on interfaces at all.
-    std::string sourceCode =
-        "final final class Foo {}\n"
-        "shared shared interface Bar {}\n"
-        "mixin external external class Baz {}\n";
+    std::string sourceCode = "final final class Foo {}\n"
+                             "shared shared interface Bar {}\n"
+                             "mixin external external class Baz {}\n";
     SymbolTable table;
     AngelScriptParser parser;
     SymbolCollector collector(nullptr);
     auto diagnostics = collector.CollectSymbols("file:///test.as", sourceCode, parser, table);
 
     REQUIRE(diagnostics.size() == 3);
-    for (const auto &diag : diagnostics)
+    for (const auto& diag : diagnostics)
     {
         CHECK(diag.code == "as-err-attribute-repeated");
         CHECK(diag.severity == DiagnosticSeverity::Warning);
@@ -384,7 +383,7 @@ TEST_CASE("SymbolCollector - Parses Real-World AngelScript Files Without Crashin
         "svencoop_ChatSounds.as",
     };
 
-    for (const auto &fileName : corpusFiles)
+    for (const auto& fileName : corpusFiles)
     {
         std::string sourceCode = ReadCorpusFile(fileName);
         REQUIRE_MESSAGE(!sourceCode.empty(), "Expected corpus file to exist and be non-empty: " << fileName);
@@ -398,11 +397,12 @@ TEST_CASE("SymbolCollector - Parses Real-World AngelScript Files Without Crashin
 
         // A real-world script of non-trivial size should yield at least one collected symbol.
         bool hasAnySymbol = false;
-        table.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &symbols)
-        {
-            if (!symbols.empty())
-                hasAnySymbol = true;
-        });
+        table.ForEachSymbol(
+            [&](const std::string&, const std::vector<Symbol>& symbols)
+            {
+                if (!symbols.empty())
+                    hasAnySymbol = true;
+            });
         CHECK_MESSAGE(hasAnySymbol == true, "Expected at least one symbol collected from: " << fileName);
     }
 }
@@ -423,7 +423,7 @@ TEST_CASE("SymbolCollector - Corpus Audit Across All angelscript Files" * doctes
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -434,7 +434,8 @@ TEST_CASE("SymbolCollector - Corpus Audit Across All angelscript Files" * doctes
     // Cheap, independent heuristics for gross under-collection - not exact (comments/strings
     // can skew a text-based scan), just a smoke signal alongside the zero-symbol check below.
     static const std::regex classRegex(R"(\bclass\s+[A-Za-z_]\w*)");
-    static const std::regex funcRegex(R"(\b(?:void|bool|int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|float|double|string)\s+[A-Za-z_]\w*\s*\()");
+    static const std::regex funcRegex(
+        R"(\b(?:void|bool|int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|float|double|string)\s+[A-Za-z_]\w*\s*\()");
 
     size_t totalFiles = 0;
     size_t totalSymbols = 0;
@@ -447,7 +448,7 @@ TEST_CASE("SymbolCollector - Corpus Audit Across All angelscript Files" * doctes
     std::unordered_map<std::string, size_t> symbolTypeCounts;
     std::vector<std::string> zeroSymbolCleanParseFiles;
 
-    for (const auto &path : files)
+    for (const auto& path : files)
     {
         std::ifstream file(path, std::ios::binary);
         std::ostringstream buffer;
@@ -464,11 +465,12 @@ TEST_CASE("SymbolCollector - Corpus Audit Across All angelscript Files" * doctes
 
         std::vector<Diagnostic> diagnostics;
         auto start = std::chrono::steady_clock::now();
-        CHECK_NOTHROW(diagnostics = collector.CollectSymbols("file:///" + path.filename().string(), sourceCode, parser, table));
+        CHECK_NOTHROW(diagnostics =
+                          collector.CollectSymbols("file:///" + path.filename().string(), sourceCode, parser, table));
         totalSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
         size_t parseErrors = 0;
-        for (const auto &diag : diagnostics)
+        for (const auto& diag : diagnostics)
         {
             if (diag.code == "as-syntax-error")
                 ++parseErrors;
@@ -476,18 +478,19 @@ TEST_CASE("SymbolCollector - Corpus Audit Across All angelscript Files" * doctes
         totalParseErrorDiagnostics += parseErrors;
 
         size_t fileSymbolCount = 0;
-        table.ForEachSymbol([&](const std::string &, const std::vector<Symbol> &symbols)
-        {
-            fileSymbolCount += symbols.size();
-            for (const auto &sym : symbols)
+        table.ForEachSymbol(
+            [&](const std::string&, const std::vector<Symbol>& symbols)
             {
-                ++symbolTypeCounts[SymbolTypeToString(sym.type)];
-                if (sym.type == SymbolType::Class)
-                    ++totalCollectedClasses;
-                else if (sym.type == SymbolType::Function)
-                    ++totalCollectedFunctions;
-            }
-        });
+                fileSymbolCount += symbols.size();
+                for (const auto& sym : symbols)
+                {
+                    ++symbolTypeCounts[SymbolTypeToString(sym.type)];
+                    if (sym.type == SymbolType::Class)
+                        ++totalCollectedClasses;
+                    else if (sym.type == SymbolType::Function)
+                        ++totalCollectedFunctions;
+                }
+            });
         totalSymbols += fileSymbolCount;
 
         if (parseErrors == 0 && fileSymbolCount == 0)
@@ -499,24 +502,22 @@ TEST_CASE("SymbolCollector - Corpus Audit Across All angelscript Files" * doctes
             std::sregex_iterator(sourceCode.begin(), sourceCode.end(), funcRegex), std::sregex_iterator()));
     }
 
-    MESSAGE("Corpus audit: files=" << totalFiles
-            << " totalSymbols=" << totalSymbols
-            << " totalParseErrorDiagnostics=" << totalParseErrorDiagnostics
-            << " totalSeconds=" << totalSeconds
-            << " avgMsPerFile=" << (totalFiles ? (totalSeconds * 1000.0 / static_cast<double>(totalFiles)) : 0.0));
+    MESSAGE("Corpus audit: files=" << totalFiles << " totalSymbols=" << totalSymbols << " totalParseErrorDiagnostics="
+                                   << totalParseErrorDiagnostics << " totalSeconds=" << totalSeconds << " avgMsPerFile="
+                                   << (totalFiles ? (totalSeconds * 1000.0 / static_cast<double>(totalFiles)) : 0.0));
 
-    for (const auto &[typeName, count] : symbolTypeCounts)
+    for (const auto& [typeName, count] : symbolTypeCounts)
         MESSAGE("  " << typeName << ": " << count);
 
-    MESSAGE("Regex sanity check: class keyword occurrences=" << totalRegexClassHits
-            << " vs collected Class symbols=" << totalCollectedClasses
+    MESSAGE("Regex sanity check: class keyword occurrences="
+            << totalRegexClassHits << " vs collected Class symbols=" << totalCollectedClasses
             << " | function-shaped occurrences=" << totalRegexFuncHits
             << " vs collected Function symbols=" << totalCollectedFunctions);
 
     if (!zeroSymbolCleanParseFiles.empty())
     {
         std::string list;
-        for (const auto &fileName : zeroSymbolCleanParseFiles)
+        for (const auto& fileName : zeroSymbolCleanParseFiles)
         {
             list += fileName;
             list += ", ";
@@ -535,14 +536,13 @@ TEST_CASE("SymbolCollector - A comment inside a parameter list is not collected 
     // comments are named nodes - so a trailing '/* ... */' inside the parentheses became an extra,
     // empty parameter. That inflated the declared arity everywhere it is shown or matched (hover,
     // signature help, inlay hints, conversion checks).
-    const std::string source =
-        "class CLogger\n"
-        "{\n"
-        "    CLogger(const string &in name, bool isStatic = false /* cannot be detected */)\n"
-        "    {\n"
-        "    }\n"
-        "}\n"
-        "void Trace(int level /* 0-5 */, const string &in message) {}\n";
+    const std::string source = "class CLogger\n"
+                               "{\n"
+                               "    CLogger(const string &in name, bool isStatic = false /* cannot be detected */)\n"
+                               "    {\n"
+                               "    }\n"
+                               "}\n"
+                               "void Trace(int level /* 0-5 */, const string &in message) {}\n";
 
     SymbolTable table;
     CollectFromSource(source, table);
@@ -576,11 +576,10 @@ TEST_CASE("SymbolCollector - A comment inside a parameter list is not collected 
 
 TEST_CASE("SymbolCollector - A member declaration written as a call is a syntax error")
 {
-    const std::string code =
-        "class Matrix { Matrix() {} }\n"   // 0
-        "void main() {\n"                  // 1
-        "    Matrix m.Matrix();\n"         // 2
-        "}\n";                             // 3
+    const std::string code = "class Matrix { Matrix() {} }\n" // 0
+                             "void main() {\n"                // 1
+                             "    Matrix m.Matrix();\n"       // 2
+                             "}\n";                           // 3
 
     SymbolTable table;
     AngelScriptParser parser;
@@ -588,7 +587,7 @@ TEST_CASE("SymbolCollector - A member declaration written as a call is a syntax 
 
     const auto diagnostics = collector.CollectSymbols("file:///decl.as", code, parser, table);
 
-    const bool reported = std::any_of(diagnostics.begin(), diagnostics.end(), [](const Diagnostic &d)
+    const bool reported = std::any_of(diagnostics.begin(), diagnostics.end(), [](const Diagnostic& d)
                                       { return d.code == "as-syntax-error" && d.range.start.line == 2; });
     CHECK(reported);
 }
@@ -596,13 +595,12 @@ TEST_CASE("SymbolCollector - A member declaration written as a call is a syntax 
 TEST_CASE("SymbolCollector - The valid spellings of the same declaration are silent")
 {
     // The rule above must not have become "a declaration followed by anything is an error".
-    const std::string code =
-        "class Matrix { Matrix() {} Matrix(int rows) {} }\n"
-        "void main() {\n"
-        "    Matrix a;\n"
-        "    Matrix b(4);\n"
-        "    Matrix c = Matrix(4);\n"
-        "}\n";
+    const std::string code = "class Matrix { Matrix() {} Matrix(int rows) {} }\n"
+                             "void main() {\n"
+                             "    Matrix a;\n"
+                             "    Matrix b(4);\n"
+                             "    Matrix c = Matrix(4);\n"
+                             "}\n";
 
     SymbolTable table;
     AngelScriptParser parser;
@@ -610,8 +608,8 @@ TEST_CASE("SymbolCollector - The valid spellings of the same declaration are sil
 
     const auto diagnostics = collector.CollectSymbols("file:///decl_ok.as", code, parser, table);
 
-    CHECK_FALSE(std::any_of(diagnostics.begin(), diagnostics.end(), [](const Diagnostic &d)
-                            { return d.code == "as-syntax-error"; }));
+    CHECK_FALSE(std::any_of(diagnostics.begin(), diagnostics.end(),
+                            [](const Diagnostic& d) { return d.code == "as-syntax-error"; }));
 }
 
 // =====================================================================================
@@ -627,13 +625,12 @@ TEST_CASE("SymbolCollector - The valid spellings of the same declaration are sil
 
 TEST_CASE("SymbolCollector - A name nested in a template or array type is not a syntax error")
 {
-    const std::string code =
-        "class array<T>\n"
-        "{\n"
-        "    void sort(T[]::less &in cmp, uint startAt = 0);\n"
-        "    void sortBy(array<T>::less &in cmp);\n"
-        "    funcdef bool less(const T &in a, const T &in b);\n"
-        "}\n";
+    const std::string code = "class array<T>\n"
+                             "{\n"
+                             "    void sort(T[]::less &in cmp, uint startAt = 0);\n"
+                             "    void sortBy(array<T>::less &in cmp);\n"
+                             "    funcdef bool less(const T &in a, const T &in b);\n"
+                             "}\n";
 
     SymbolTable table;
     AngelScriptParser parser;
@@ -641,8 +638,8 @@ TEST_CASE("SymbolCollector - A name nested in a template or array type is not a 
 
     const auto diagnostics = collector.CollectSymbols("file:///nested.as.predefined", code, parser, table);
 
-    const bool anySyntaxError = std::any_of(diagnostics.begin(), diagnostics.end(), [](const Diagnostic &d)
-                                            { return d.code == "as-syntax-error"; });
+    const bool anySyntaxError = std::any_of(diagnostics.begin(), diagnostics.end(),
+                                            [](const Diagnostic& d) { return d.code == "as-syntax-error"; });
     CHECK_FALSE(anySyntaxError);
 
     // The class is still collected, so the declaration is understood rather than merely tolerated.
@@ -669,15 +666,14 @@ TEST_CASE("Grammar - A metadata block leaves its declaration intact")
     // CScriptBuilder collects `[Property, Category="Weapons"]`, hands it to the host through
     // GetMetadataForType and never passes it to the compiler. Three entry forms, all from the
     // builder's own examples: a bare name, a name with a value, a name with an argument list.
-    const std::string code =
-        "[Property, Category=\"Weapons\"]\n"
-        "int m_Health = 100;\n"
-        "\n"
-        "[Category(\"Armas\")]\n"
-        "enum WeaponType { Pistol, Rifle }\n";
+    const std::string code = "[Property, Category=\"Weapons\"]\n"
+                             "int m_Health = 100;\n"
+                             "\n"
+                             "[Category(\"Armas\")]\n"
+                             "enum WeaponType { Pistol, Rifle }\n";
 
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
     CHECK_FALSE(ts_node_has_error(ts_tree_root_node(tree)));
     ts_tree_delete(tree);
@@ -694,15 +690,14 @@ TEST_CASE("Grammar - An omitted initializer element leaves its declaration intac
 {
     // `{ 0, 1, , 4, 5 }` gives the third element the type's default. Five values, four nodes -
     // which is why anything counting elements has to count the separators instead.
-    const std::string code =
-        "void main()\n"
-        "{\n"
-        "    array<int> x = { 0, 1, , 4, 5 };\n"
-        "    int n = x.length();\n"
-        "}\n";
+    const std::string code = "void main()\n"
+                             "{\n"
+                             "    array<int> x = { 0, 1, , 4, 5 };\n"
+                             "    int n = x.length();\n"
+                             "}\n";
 
     AngelScriptParser parser;
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
     CHECK_FALSE(ts_node_has_error(ts_tree_root_node(tree)));
     ts_tree_delete(tree);
@@ -806,11 +801,13 @@ TEST_CASE("SymbolCollector - Invariant: Randomized Nested Declarations Construct
 TEST_CASE("SymbolCollector - Multi-colon syntax error (::: or ::::) is flagged as as-syntax-error")
 {
     const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("TestNS");
-    const std::string code =
-        "namespace " + nsName + " { void DoWork() {} }\n"
-        "void main() {\n"
-        "    " + nsName + ":::\n"
-        "}\n";
+    const std::string code = "namespace " + nsName +
+                             " { void DoWork() {} }\n"
+                             "void main() {\n"
+                             "    " +
+                             nsName +
+                             ":::\n"
+                             "}\n";
 
     SymbolTable table;
     AngelScriptParser parser;
@@ -822,4 +819,3 @@ TEST_CASE("SymbolCollector - Multi-colon syntax error (::: or ::::) is flagged a
                                             [](const Diagnostic& d) { return d.code == "as-syntax-error"; });
     CHECK(hasSyntaxError);
 }
-

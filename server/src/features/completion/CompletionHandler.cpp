@@ -234,6 +234,7 @@ struct CompletionCandidate
     std::string resolveKey = {};
     std::string snippet = {};
     std::string sortText = {};
+    std::string insertText = {};
 };
 
 /**
@@ -253,16 +254,25 @@ struct CompletionCollector
  */
 void AddItemIfNew(CompletionCollector& collector, CompletionCandidate candidate)
 {
-    if (candidate.label.empty() || collector.seenLabels.contains(candidate.label))
+    std::string dedupeKey = candidate.label;
+    if (candidate.kind == lsp::CompletionItemKind::EnumMember && !candidate.detail.empty())
+    {
+        dedupeKey += "@" + candidate.detail;
+    }
+    if (candidate.label.empty() || collector.seenLabels.contains(dedupeKey))
     {
         return;
     }
-    collector.seenLabels.insert(candidate.label);
+    collector.seenLabels.insert(std::move(dedupeKey));
 
     lsp::CompletionItem item;
     item.label = std::move(candidate.label);
     item.kind = lsp::CompletionItemKindEnum(candidate.kind);
-    if (!candidate.snippet.empty())
+    if (!candidate.insertText.empty())
+    {
+        item.insertText = std::move(candidate.insertText);
+    }
+    else if (!candidate.snippet.empty())
     {
         item.insertText = std::move(candidate.snippet);
         item.insertTextFormat = lsp::InsertTextFormatEnum(lsp::InsertTextFormat::Snippet);
@@ -1530,6 +1540,70 @@ bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* i
 }
 
 /**
+ * @brief Adds an enum constant candidate, qualifying with enum type name when enabled.
+ * @param[in,out] collector Completion collector context.
+ * @param[in] sym Target enum constant symbol.
+ */
+static void AddEnumConstantCandidate(CompletionCollector& collector, const analysis::Symbol& sym)
+{
+    const auto& var = sym.GetVariable();
+    lsp::CompletionItemKind kind = lsp::CompletionItemKind::EnumMember;
+    std::string detail = var.typeName.empty() ? sym.name : var.typeName + "::" + sym.name;
+    const bool qualifyEnum =
+        !collector.request.config || collector.request.config->features.completionQualifyEnumValues;
+    CompletionCandidate cand{sym.name, kind, detail, "", sym.qualifiedName, "", ""};
+    if (qualifyEnum && !var.typeName.empty())
+    {
+        cand.insertText = var.typeName + "::" + sym.name;
+    }
+    AddItemIfNew(collector, std::move(cand));
+}
+
+/**
+ * @brief Processes a single local scope definition and adds completion candidate.
+ * @param[in] def Local definition entry.
+ * @param[in,out] collector Completion collector context.
+ */
+void ProcessScopeDefinition(const analysis::LocalDefinition& def, CompletionCollector& collector)
+{
+    if (def.kind == analysis::LocalDefinitionKind::Constant)
+    {
+        auto syms = collector.request.symbolTable.FindSymbols(def.name);
+        for (const auto& sym : syms)
+        {
+            if (sym.type == analysis::SymbolType::Variable && sym.GetVariable().isEnumConstant)
+            {
+                AddEnumConstantCandidate(collector, sym);
+            }
+        }
+        return;
+    }
+    lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
+    bool isCallable = false;
+    std::string snippet;
+    if (def.kind == analysis::LocalDefinitionKind::Function || def.kind == analysis::LocalDefinitionKind::Method)
+    {
+        kind = lsp::CompletionItemKind::Function;
+        isCallable = true;
+        const bool completeParens =
+            !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
+        if (collector.request.snippetSupport && completeParens)
+        {
+            snippet = CallSnippetForName(def.name, collector.request.symbolTable);
+        }
+    }
+    else if (def.kind == analysis::LocalDefinitionKind::Type)
+    {
+        kind = lsp::CompletionItemKind::Class;
+        if (collector.request.snippetSupport)
+        {
+            snippet = TemplateSnippetForName(def.name, collector.request.symbolTable);
+        }
+    }
+    AddItemIfNew(collector, {def.name, kind, def.typeName, "", isCallable ? def.name : std::string{}, snippet});
+}
+
+/**
  * @brief Collects local variable and parameter definitions from innermost scope outward.
  * @param[in] innermostScope Lexical scope at cursor.
  * @param[in,out] collector Completion collector context.
@@ -1544,34 +1618,7 @@ void CollectScopeDefinitions(const analysis::Scope* innermostScope, CompletionCo
     {
         for (const auto& def : cur->definitions)
         {
-            lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
-            bool isCallable = false;
-            std::string snippet;
-            if (def.kind == analysis::LocalDefinitionKind::Parameter)
-            {
-                kind = lsp::CompletionItemKind::Variable;
-            }
-            else if (def.kind == analysis::LocalDefinitionKind::Function ||
-                     def.kind == analysis::LocalDefinitionKind::Method)
-            {
-                kind = lsp::CompletionItemKind::Function;
-                isCallable = true;
-                const bool completeParens = !collector.request.config ||
-                                            collector.request.config->features.completionCompleteFunctionParens;
-                if (collector.request.snippetSupport && completeParens)
-                {
-                    snippet = CallSnippetForName(def.name, collector.request.symbolTable);
-                }
-            }
-            else if (def.kind == analysis::LocalDefinitionKind::Type)
-            {
-                kind = lsp::CompletionItemKind::Class;
-                if (collector.request.snippetSupport)
-                {
-                    snippet = TemplateSnippetForName(def.name, collector.request.symbolTable);
-                }
-            }
-            AddItemIfNew(collector, {def.name, kind, def.typeName, "", isCallable ? def.name : std::string{}, snippet});
+            ProcessScopeDefinition(def, collector);
         }
     }
 }
@@ -1604,6 +1651,11 @@ void CollectEnclosingClassMembers(CompletionCollector& collector)
         {
             if (sym.containerName == enclosingClassName)
             {
+                if (sym.type == analysis::SymbolType::Variable && sym.GetVariable().isEnumConstant)
+                {
+                    AddEnumConstantCandidate(collector, sym);
+                    continue;
+                }
                 lsp::CompletionItemKind kind = (sym.type == analysis::SymbolType::Function)
                                                    ? lsp::CompletionItemKind::Method
                                                    : lsp::CompletionItemKind::Field;
@@ -1630,13 +1682,14 @@ static void CollectGlobalFunctionSymbol(const analysis::Symbol& sym, bool access
 {
     std::string detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
     std::string snippet;
-    const bool completeParens = !collector.request.config ||
-                                collector.request.config->features.completionCompleteFunctionParens;
+    const bool completeParens =
+        !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
     if (collector.request.snippetSupport && completeParens)
     {
         snippet = CallSnippet(sym.name, sym.GetFunction().parameters);
     }
-    AddItemIfNew(collector, {sym.name, lsp::CompletionItemKind::Function, std::move(detail), "", sym.qualifiedName, std::move(snippet)});
+    AddItemIfNew(collector, {sym.name, lsp::CompletionItemKind::Function, std::move(detail), "", sym.qualifiedName,
+                             std::move(snippet)});
     if (accessorsAreProperties)
     {
         const std::string propName = analysis::PropertyNameFromAccessor(sym, accessorKeywordRequired);
@@ -1644,7 +1697,8 @@ static void CollectGlobalFunctionSymbol(const analysis::Symbol& sym, bool access
         {
             std::string propType = analysis::PropertyTypeFromAccessors(analysis::FindGlobalPropertyAccessors(
                 propName, collector.request.symbolTable, accessorKeywordRequired));
-            AddItemIfNew(collector, {propName, lsp::CompletionItemKind::Property, std::move(propType), "", sym.qualifiedName});
+            AddItemIfNew(collector,
+                         {propName, lsp::CompletionItemKind::Property, std::move(propType), "", sym.qualifiedName});
         }
     }
 }
@@ -1692,6 +1746,11 @@ void CollectGlobalSymbolItem(const analysis::Symbol& sym, bool accessorsArePrope
         kind = lsp::CompletionItemKind::Module;
         break;
     case analysis::SymbolType::Variable:
+        if (sym.GetVariable().isEnumConstant)
+        {
+            AddEnumConstantCandidate(collector, sym);
+            return;
+        }
         kind = lsp::CompletionItemKind::Variable;
         detail = sym.GetVariable().typeName;
         break;

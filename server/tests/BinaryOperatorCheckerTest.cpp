@@ -55,8 +55,7 @@ std::vector<Diagnostic> AnalyzeScriptWithStandardProfile(const std::string& code
 
 bool HasDiagnostic(const std::vector<Diagnostic>& diagnostics, std::string_view code)
 {
-    return std::any_of(diagnostics.begin(), diagnostics.end(),
-                       [&](const Diagnostic& d) { return d.code == code; });
+    return std::any_of(diagnostics.begin(), diagnostics.end(), [&](const Diagnostic& d) { return d.code == code; });
 }
 } // namespace
 
@@ -66,8 +65,11 @@ TEST_SUITE("BinaryOperatorChecker")
     {
         const std::string varName = GenerateRandomSymbolName();
         const std::string fnName = GenerateRandomSymbolName();
-        const std::string code = "void " + fnName + "() {\n"
-                                 "    int " + varName + " = 5 | \"hello\";\n"
+        const std::string code = "void " + fnName +
+                                 "() {\n"
+                                 "    int " +
+                                 varName +
+                                 " = 5 | \"hello\";\n"
                                  "}\n";
         auto diags = AnalyzeScriptWithStandardProfile(code);
         CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
@@ -78,10 +80,17 @@ TEST_SUITE("BinaryOperatorChecker")
         const std::string constName = GenerateRandomSymbolName();
         const std::string fnName = GenerateRandomSymbolName();
         const std::string callerName = GenerateRandomSymbolName();
-        const std::string code = "const int " + constName + " = 1024;\n"
-                                 "void " + fnName + "(int a, int b) {}\n"
-                                 "void " + callerName + "() {\n"
-                                 "    " + fnName + "(1, (" + constName + " | \"true\"));\n"
+        const std::string code = "const int " + constName +
+                                 " = 1024;\n"
+                                 "void " +
+                                 fnName +
+                                 "(int a, int b) {}\n"
+                                 "void " +
+                                 callerName +
+                                 "() {\n"
+                                 "    " +
+                                 fnName + "(1, (" + constName +
+                                 " | \"true\"));\n"
                                  "}\n";
         auto diags = AnalyzeScriptWithStandardProfile(code);
         CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
@@ -92,9 +101,14 @@ TEST_SUITE("BinaryOperatorChecker")
         const std::string v1 = GenerateRandomSymbolName();
         const std::string v2 = GenerateRandomSymbolName();
         const std::string fnName = GenerateRandomSymbolName();
-        const std::string code = "void " + fnName + "() {\n"
-                                 "    int " + v1 + " = 5 | 3;\n"
-                                 "    uint " + v2 + " = (10 & 2) ^ (1 << 4);\n"
+        const std::string code = "void " + fnName +
+                                 "() {\n"
+                                 "    int " +
+                                 v1 +
+                                 " = 5 | 3;\n"
+                                 "    uint " +
+                                 v2 +
+                                 " = (10 & 2) ^ (1 << 4);\n"
                                  "}\n";
         auto diags = AnalyzeScriptWithStandardProfile(code);
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
@@ -104,10 +118,17 @@ TEST_SUITE("BinaryOperatorChecker")
     {
         const std::string enumName = "E" + GenerateRandomSymbolName();
         const std::string fnName = GenerateRandomSymbolName();
-        const std::string code = "enum " + enumName + " { A = 1, B = 2 }\n"
-                                 "void " + fnName + "() {\n"
-                                 "    int flags = " + enumName + "::A | " + enumName + "::B;\n"
-                                 "    int combined = " + enumName + "::A | 4;\n"
+        const std::string code = "enum " + enumName +
+                                 " { A = 1, B = 2 }\n"
+                                 "void " +
+                                 fnName +
+                                 "() {\n"
+                                 "    int flags = " +
+                                 enumName + "::A | " + enumName +
+                                 "::B;\n"
+                                 "    int combined = " +
+                                 enumName +
+                                 "::A | 4;\n"
                                  "}\n";
         auto diags = AnalyzeScriptWithStandardProfile(code);
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
@@ -116,7 +137,8 @@ TEST_SUITE("BinaryOperatorChecker")
     TEST_CASE("Bitwise OR on bool triggers as-err-no-matching-operator")
     {
         const std::string fnName = GenerateRandomSymbolName();
-        const std::string code = "void " + fnName + "() {\n"
+        const std::string code = "void " + fnName +
+                                 "() {\n"
                                  "    bool b = true | false;\n"
                                  "}\n";
         auto diags = AnalyzeScriptWithStandardProfile(code);
@@ -126,7 +148,8 @@ TEST_SUITE("BinaryOperatorChecker")
     TEST_CASE("Modulo with float triggers as-err-no-matching-operator")
     {
         const std::string fnName = GenerateRandomSymbolName();
-        const std::string code = "void " + fnName + "() {\n"
+        const std::string code = "void " + fnName +
+                                 "() {\n"
                                  "    float f = 5.0f % 2.0f;\n"
                                  "}\n";
         auto diags = AnalyzeScriptWithStandardProfile(code);
@@ -136,7 +159,8 @@ TEST_SUITE("BinaryOperatorChecker")
     TEST_CASE("String subtraction triggers as-err-no-matching-operator")
     {
         const std::string fnName = GenerateRandomSymbolName();
-        const std::string code = "void " + fnName + "() {\n"
+        const std::string code = "void " + fnName +
+                                 "() {\n"
                                  "    string s = \"hello\" - 5;\n"
                                  "}\n";
         auto diags = AnalyzeScriptWithStandardProfile(code);
@@ -146,7 +170,8 @@ TEST_SUITE("BinaryOperatorChecker")
     TEST_CASE("String concatenation with int is valid and triggers no operator error")
     {
         const std::string fnName = GenerateRandomSymbolName();
-        const std::string code = "void " + fnName + "() {\n"
+        const std::string code = "void " + fnName +
+                                 "() {\n"
                                  "    string s = \"hello\" + 5;\n"
                                  "}\n";
         auto diags = AnalyzeScriptWithStandardProfile(code);

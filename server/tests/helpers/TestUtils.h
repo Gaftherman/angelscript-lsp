@@ -57,11 +57,9 @@ inline std::string GenerateIdentifier(std::mt19937_64& rng, std::string_view pre
  */
 inline std::string GenerateRandomPrimitiveType(std::mt19937_64& rng)
 {
-    static constexpr std::string_view kPrimitives[] = {
-        "int", "int8", "int16", "int32", "int64",
-        "uint", "uint8", "uint16", "uint32", "uint64",
-        "float", "double", "bool", "string"
-    };
+    static constexpr std::string_view kPrimitives[] = {"int",   "int8",   "int16",  "int32",  "int64",
+                                                       "uint",  "uint8",  "uint16", "uint32", "uint64",
+                                                       "float", "double", "bool",   "string"};
     std::uniform_int_distribution<size_t> dist(0, sizeof(kPrimitives) / sizeof(kPrimitives[0]) - 1);
     return std::string(kPrimitives[dist(rng)]);
 }
@@ -73,7 +71,8 @@ inline std::string GenerateRandomPrimitiveType(std::mt19937_64& rng)
  * @param[in] propertyCount Number of randomized properties to generate.
  * @return Source code snippet containing class declaration.
  */
-inline std::string GenerateRandomClassDeclaration(std::mt19937_64& rng, std::string_view className, size_t propertyCount)
+inline std::string GenerateRandomClassDeclaration(std::mt19937_64& rng, std::string_view className,
+                                                  size_t propertyCount)
 {
     std::string decl = "class " + std::string(className) + "\n{\n";
     for (size_t i = 0; i < propertyCount; ++i)

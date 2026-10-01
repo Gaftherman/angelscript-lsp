@@ -1,11 +1,11 @@
 #include <doctest/doctest.h>
 
-#include "features/document_symbol/DocumentSymbolHandler.h"
-#include "features/workspace_symbol/WorkspaceSymbolHandler.h"
-#include "utils/IncludeResolver.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "features/document_symbol/DocumentSymbolHandler.h"
+#include "features/workspace_symbol/WorkspaceSymbolHandler.h"
 #include "parser/AngelScriptParser.h"
+#include "utils/IncludeResolver.h"
 
 #include <algorithm>
 #include <chrono>
@@ -24,119 +24,119 @@ using namespace angel_lsp::utils;
 
 namespace
 {
-    /**
-     * @brief RAII helper for creating and cleaning temporary directories for disk tests.
-     */
-    struct TempDirGuard
+/**
+ * @brief RAII helper for creating and cleaning temporary directories for disk tests.
+ */
+struct TempDirGuard
+{
+    std::filesystem::path dir;
+
+    explicit TempDirGuard(const std::string& prefix)
     {
-        std::filesystem::path dir;
+        auto base = std::filesystem::temp_directory_path();
+        auto uniqueSuffix = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+        dir = base / (prefix + "_" + uniqueSuffix);
+        std::filesystem::create_directories(dir);
+    }
 
-        explicit TempDirGuard(const std::string &prefix)
+    ~TempDirGuard()
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+    }
+
+    void WriteFile(const std::string& relativePath, const std::string& content)
+    {
+        std::filesystem::path fullPath = dir / relativePath;
+        if (fullPath.has_parent_path())
         {
-            auto base = std::filesystem::temp_directory_path();
-            auto uniqueSuffix = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-            dir = base / (prefix + "_" + uniqueSuffix);
-            std::filesystem::create_directories(dir);
+            std::filesystem::create_directories(fullPath.parent_path());
         }
+        std::ofstream out(fullPath, std::ios::binary);
+        out << content;
+        out.close();
+    }
 
-        ~TempDirGuard()
-        {
-            std::error_code ec;
-            std::filesystem::remove_all(dir, ec);
-        }
-
-        void WriteFile(const std::string &relativePath, const std::string &content)
-        {
-            std::filesystem::path fullPath = dir / relativePath;
-            if (fullPath.has_parent_path())
-            {
-                std::filesystem::create_directories(fullPath.parent_path());
-            }
-            std::ofstream out(fullPath, std::ios::binary);
-            out << content;
-            out.close();
-        }
-
-        std::string PathString(const std::string &relativePath = "") const
-        {
-            std::filesystem::path p = relativePath.empty() ? dir : (dir / relativePath);
-            std::error_code ec;
-            std::filesystem::path canon = std::filesystem::weakly_canonical(p, ec);
-            std::string s = canon.string();
+    std::string PathString(const std::string& relativePath = "") const
+    {
+        std::filesystem::path p = relativePath.empty() ? dir : (dir / relativePath);
+        std::error_code ec;
+        std::filesystem::path canon = std::filesystem::weakly_canonical(p, ec);
+        std::string s = canon.string();
 #if defined(_WIN32)
-            if (s.rfind("\\\\?\\", 0) == 0)
-            {
-                s = s.substr(4);
-            }
+        if (s.rfind("\\\\?\\", 0) == 0)
+        {
+            s = s.substr(4);
+        }
 #endif
-            std::replace(s.begin(), s.end(), '\\', '/');
-            return s;
-        }
-    };
+        std::replace(s.begin(), s.end(), '\\', '/');
+        return s;
+    }
+};
 
-    /**
-     * @brief Helper to validate range containment recursively for DocumentSymbol hierarchy.
-     */
-    void AssertRangeHierarchy(const lsp::DocumentSymbol &sym)
+/**
+ * @brief Helper to validate range containment recursively for DocumentSymbol hierarchy.
+ */
+void AssertRangeHierarchy(const lsp::DocumentSymbol& sym)
+{
+    // 1. Range start <= selectionRange start
+    if (sym.range.start.line == sym.selectionRange.start.line)
     {
-        // 1. Range start <= selectionRange start
-        if (sym.range.start.line == sym.selectionRange.start.line)
-        {
-            CHECK(sym.range.start.character <= sym.selectionRange.start.character);
-        }
-        else
-        {
-            CHECK(sym.range.start.line <= sym.selectionRange.start.line);
-        }
+        CHECK(sym.range.start.character <= sym.selectionRange.start.character);
+    }
+    else
+    {
+        CHECK(sym.range.start.line <= sym.selectionRange.start.line);
+    }
 
-        // 2. SelectionRange end <= Range end
-        if (sym.selectionRange.end.line == sym.range.end.line)
-        {
-            CHECK(sym.selectionRange.end.character <= sym.range.end.character);
-        }
-        else
-        {
-            CHECK(sym.selectionRange.end.line <= sym.range.end.line);
-        }
+    // 2. SelectionRange end <= Range end
+    if (sym.selectionRange.end.line == sym.range.end.line)
+    {
+        CHECK(sym.selectionRange.end.character <= sym.range.end.character);
+    }
+    else
+    {
+        CHECK(sym.selectionRange.end.line <= sym.range.end.line);
+    }
 
-        // 3. SelectionRange start <= SelectionRange end
-        if (sym.selectionRange.start.line == sym.selectionRange.end.line)
-        {
-            CHECK(sym.selectionRange.start.character <= sym.selectionRange.end.character);
-        }
-        else
-        {
-            CHECK(sym.selectionRange.start.line <= sym.selectionRange.end.line);
-        }
+    // 3. SelectionRange start <= SelectionRange end
+    if (sym.selectionRange.start.line == sym.selectionRange.end.line)
+    {
+        CHECK(sym.selectionRange.start.character <= sym.selectionRange.end.character);
+    }
+    else
+    {
+        CHECK(sym.selectionRange.start.line <= sym.selectionRange.end.line);
+    }
 
-        if (sym.children.has_value())
+    if (sym.children.has_value())
+    {
+        for (const auto& child : sym.children.value())
         {
-            for (const auto &child : sym.children.value())
+            // Child range must be within parent range
+            if (sym.range.start.line == child.range.start.line)
             {
-                // Child range must be within parent range
-                if (sym.range.start.line == child.range.start.line)
-                {
-                    CHECK(sym.range.start.character <= child.range.start.character);
-                }
-                else
-                {
-                    CHECK(sym.range.start.line <= child.range.start.line);
-                }
-
-                if (child.range.end.line == sym.range.end.line)
-                {
-                    CHECK(child.range.end.character <= sym.range.end.character);
-                }
-                else
-                {
-                    CHECK(child.range.end.line <= sym.range.end.line);
-                }
-
-                AssertRangeHierarchy(child);
+                CHECK(sym.range.start.character <= child.range.start.character);
             }
+            else
+            {
+                CHECK(sym.range.start.line <= child.range.start.line);
+            }
+
+            if (child.range.end.line == sym.range.end.line)
+            {
+                CHECK(child.range.end.character <= sym.range.end.character);
+            }
+            else
+            {
+                CHECK(child.range.end.line <= sym.range.end.line);
+            }
+
+            AssertRangeHierarchy(child);
         }
     }
 }
+} // namespace
 
 // =====================================================================================
 // SECTION 1: ADVERSARIAL DOCUMENT SYMBOLS TESTS
@@ -144,61 +144,60 @@ namespace
 
 TEST_CASE("Adversarial DocumentSymbols - Deeply Nested Multi-Tier Namespaces")
 {
-    std::string code =
-        "namespace Tier1\n"
-        "{\n"
-        "    namespace Tier2\n"
-        "    {\n"
-        "        namespace Tier3\n"
-        "        {\n"
-        "            namespace Tier4\n"
-        "            {\n"
-        "                class DeepWorker\n"
-        "                {\n"
-        "                    int m_val;\n"
-        "                    DeepWorker() {}\n"
-        "                    ~DeepWorker() {}\n"
-        "                    void Execute(int param1, const string &in param2) {}\n"
-        "                }\n"
-        "            }\n"
-        "        }\n"
-        "    }\n"
-        "}\n";
+    std::string code = "namespace Tier1\n"
+                       "{\n"
+                       "    namespace Tier2\n"
+                       "    {\n"
+                       "        namespace Tier3\n"
+                       "        {\n"
+                       "            namespace Tier4\n"
+                       "            {\n"
+                       "                class DeepWorker\n"
+                       "                {\n"
+                       "                    int m_val;\n"
+                       "                    DeepWorker() {}\n"
+                       "                    ~DeepWorker() {}\n"
+                       "                    void Execute(int param1, const string &in param2) {}\n"
+                       "                }\n"
+                       "            }\n"
+                       "        }\n"
+                       "    }\n"
+                       "}\n";
 
     AngelScriptParser parser;
     SymbolTable table;
     std::string uri = "file:///deep_namespace.as";
-    DocumentSymbolRequest req{ uri, code, nullptr, table };
+    DocumentSymbolRequest req{uri, code, nullptr, table};
     auto result = GetDocumentSymbols(req);
 
     REQUIRE(result.has_value());
     REQUIRE(result->size() == 1);
 
-    const auto &tier1 = (*result)[0];
+    const auto& tier1 = (*result)[0];
     CHECK(tier1.name == "Tier1");
     CHECK(tier1.kind == lsp::SymbolKind::Namespace);
     REQUIRE(tier1.children.has_value());
     REQUIRE(tier1.children->size() == 1);
 
-    const auto &tier2 = (*tier1.children)[0];
+    const auto& tier2 = (*tier1.children)[0];
     CHECK(tier2.name == "Tier2");
     CHECK(tier2.kind == lsp::SymbolKind::Namespace);
     REQUIRE(tier2.children.has_value());
     REQUIRE(tier2.children->size() == 1);
 
-    const auto &tier3 = (*tier2.children)[0];
+    const auto& tier3 = (*tier2.children)[0];
     CHECK(tier3.name == "Tier3");
     CHECK(tier3.kind == lsp::SymbolKind::Namespace);
     REQUIRE(tier3.children.has_value());
     REQUIRE(tier3.children->size() == 1);
 
-    const auto &tier4 = (*tier3.children)[0];
+    const auto& tier4 = (*tier3.children)[0];
     CHECK(tier4.name == "Tier4");
     CHECK(tier4.kind == lsp::SymbolKind::Namespace);
     REQUIRE(tier4.children.has_value());
     REQUIRE(tier4.children->size() == 1);
 
-    const auto &deepWorker = (*tier4.children)[0];
+    const auto& deepWorker = (*tier4.children)[0];
     CHECK(deepWorker.name == "DeepWorker");
     CHECK(deepWorker.kind == lsp::SymbolKind::Class);
     REQUIRE(deepWorker.children.has_value());
@@ -221,28 +220,27 @@ TEST_CASE("Adversarial DocumentSymbols - Deeply Nested Multi-Tier Namespaces")
 
 TEST_CASE("Adversarial DocumentSymbols - Sibling Namespaces and Multi-Class Containers")
 {
-    std::string code =
-        "namespace Alpha\n"
-        "{\n"
-        "    class ClassA {}\n"
-        "    class ClassB {}\n"
-        "}\n"
-        "namespace Beta\n"
-        "{\n"
-        "    class ClassC {}\n"
-        "    interface InterfaceD {}\n"
-        "}\n";
+    std::string code = "namespace Alpha\n"
+                       "{\n"
+                       "    class ClassA {}\n"
+                       "    class ClassB {}\n"
+                       "}\n"
+                       "namespace Beta\n"
+                       "{\n"
+                       "    class ClassC {}\n"
+                       "    interface InterfaceD {}\n"
+                       "}\n";
 
     AngelScriptParser parser;
     SymbolTable table;
     std::string uri = "file:///siblings.as";
-    DocumentSymbolRequest req{ uri, code, nullptr, table };
+    DocumentSymbolRequest req{uri, code, nullptr, table};
     auto result = GetDocumentSymbols(req);
 
     REQUIRE(result.has_value());
     REQUIRE(result->size() == 2);
 
-    const auto &alpha = (*result)[0];
+    const auto& alpha = (*result)[0];
     CHECK(alpha.name == "Alpha");
     CHECK(alpha.kind == lsp::SymbolKind::Namespace);
     REQUIRE(alpha.children.has_value());
@@ -252,7 +250,7 @@ TEST_CASE("Adversarial DocumentSymbols - Sibling Namespaces and Multi-Class Cont
     CHECK((*alpha.children)[1].name == "ClassB");
     CHECK((*alpha.children)[1].kind == lsp::SymbolKind::Class);
 
-    const auto &beta = (*result)[1];
+    const auto& beta = (*result)[1];
     CHECK(beta.name == "Beta");
     CHECK(beta.kind == lsp::SymbolKind::Namespace);
     REQUIRE(beta.children.has_value());
@@ -262,7 +260,7 @@ TEST_CASE("Adversarial DocumentSymbols - Sibling Namespaces and Multi-Class Cont
     CHECK((*beta.children)[1].name == "InterfaceD");
     CHECK((*beta.children)[1].kind == lsp::SymbolKind::Interface);
 
-    for (const auto &sym : *result)
+    for (const auto& sym : *result)
     {
         AssertRangeHierarchy(sym);
     }
@@ -270,23 +268,22 @@ TEST_CASE("Adversarial DocumentSymbols - Sibling Namespaces and Multi-Class Cont
 
 TEST_CASE("Adversarial DocumentSymbols - Mixin Class Support")
 {
-    std::string code =
-        "mixin class SerializableMixin\n"
-        "{\n"
-        "    int version;\n"
-        "    void Serialize() {}\n"
-        "}\n";
+    std::string code = "mixin class SerializableMixin\n"
+                       "{\n"
+                       "    int version;\n"
+                       "    void Serialize() {}\n"
+                       "}\n";
 
     AngelScriptParser parser;
     SymbolTable table;
     std::string uri = "file:///mixin.as";
-    DocumentSymbolRequest req{ uri, code, nullptr, table };
+    DocumentSymbolRequest req{uri, code, nullptr, table};
     auto result = GetDocumentSymbols(req);
 
     REQUIRE(result.has_value());
     REQUIRE(result->size() == 1);
 
-    const auto &mixinSym = (*result)[0];
+    const auto& mixinSym = (*result)[0];
     CHECK(mixinSym.name == "SerializableMixin");
     CHECK(mixinSym.kind == lsp::SymbolKind::Class);
     CHECK(mixinSym.detail.has_value());
@@ -301,27 +298,26 @@ TEST_CASE("Adversarial DocumentSymbols - Mixin Class Support")
 
 TEST_CASE("Adversarial DocumentSymbols - Enums with Explicit Values (Hex, Negatives, Expressions)")
 {
-    std::string code =
-        "enum SpecialFlags\n"
-        "{\n"
-        "    FLAG_NONE = 0,\n"
-        "    FLAG_READ = 0x01,\n"
-        "    FLAG_WRITE = 0x02,\n"
-        "    FLAG_ALL = FLAG_READ | FLAG_WRITE,\n"
-        "    FLAG_INVALID = -1\n"
-        "}\n"
-        "enum EmptyEnum {}\n";
+    std::string code = "enum SpecialFlags\n"
+                       "{\n"
+                       "    FLAG_NONE = 0,\n"
+                       "    FLAG_READ = 0x01,\n"
+                       "    FLAG_WRITE = 0x02,\n"
+                       "    FLAG_ALL = FLAG_READ | FLAG_WRITE,\n"
+                       "    FLAG_INVALID = -1\n"
+                       "}\n"
+                       "enum EmptyEnum {}\n";
 
     AngelScriptParser parser;
     SymbolTable table;
     std::string uri = "file:///enums.as";
-    DocumentSymbolRequest req{ uri, code, nullptr, table };
+    DocumentSymbolRequest req{uri, code, nullptr, table};
     auto result = GetDocumentSymbols(req);
 
     REQUIRE(result.has_value());
     REQUIRE(result->size() == 2);
 
-    const auto &flags = (*result)[0];
+    const auto& flags = (*result)[0];
     CHECK(flags.name == "SpecialFlags");
     CHECK(flags.kind == lsp::SymbolKind::Enum);
     REQUIRE(flags.children.has_value());
@@ -342,7 +338,7 @@ TEST_CASE("Adversarial DocumentSymbols - Enums with Explicit Values (Hex, Negati
     CHECK((*flags.children)[4].name == "FLAG_INVALID");
     CHECK((*flags.children)[4].detail == "= -1");
 
-    const auto &emptyEnum = (*result)[1];
+    const auto& emptyEnum = (*result)[1];
     CHECK(emptyEnum.name == "EmptyEnum");
     CHECK(emptyEnum.kind == lsp::SymbolKind::Enum);
     CHECK((!emptyEnum.children.has_value() || emptyEnum.children->empty()));
@@ -350,15 +346,14 @@ TEST_CASE("Adversarial DocumentSymbols - Enums with Explicit Values (Hex, Negati
 
 TEST_CASE("Adversarial DocumentSymbols - Complex Global Variables and Multi-Declarators")
 {
-    std::string code =
-        "const int g_ConstA = 10, g_ConstB = 20;\n"
-        "array<string>@ g_HandleArray;\n"
-        "dictionary@ g_Dict = null;\n";
+    std::string code = "const int g_ConstA = 10, g_ConstB = 20;\n"
+                       "array<string>@ g_HandleArray;\n"
+                       "dictionary@ g_Dict = null;\n";
 
     AngelScriptParser parser;
     SymbolTable table;
     std::string uri = "file:///globals.as";
-    DocumentSymbolRequest req{ uri, code, nullptr, table };
+    DocumentSymbolRequest req{uri, code, nullptr, table};
     auto result = GetDocumentSymbols(req);
 
     REQUIRE(result.has_value());
@@ -380,7 +375,7 @@ TEST_CASE("Adversarial DocumentSymbols - Complex Global Variables and Multi-Decl
     CHECK((*result)[3].kind == lsp::SymbolKind::Variable);
     CHECK((*result)[3].detail == "dictionary@");
 
-    for (const auto &sym : *result)
+    for (const auto& sym : *result)
     {
         AssertRangeHierarchy(sym);
     }
@@ -394,7 +389,7 @@ TEST_CASE("Adversarial DocumentSymbols - Empty and Whitespace Only Files")
 
     // 1. Completely empty
     {
-        DocumentSymbolRequest req{ uri, "", nullptr, table };
+        DocumentSymbolRequest req{uri, "", nullptr, table};
         auto result = GetDocumentSymbols(req);
         REQUIRE(result.has_value());
         CHECK(result->empty());
@@ -403,7 +398,7 @@ TEST_CASE("Adversarial DocumentSymbols - Empty and Whitespace Only Files")
     // 2. Whitespaces, tabs, carriage returns
     {
         std::string ws = "   \t\t\r\n\r\n   \t\n";
-        DocumentSymbolRequest req{ uri, ws, nullptr, table };
+        DocumentSymbolRequest req{uri, ws, nullptr, table};
         auto result = GetDocumentSymbols(req);
         REQUIRE(result.has_value());
         CHECK(result->empty());
@@ -413,35 +408,36 @@ TEST_CASE("Adversarial DocumentSymbols - Empty and Whitespace Only Files")
 TEST_CASE("Adversarial DocumentSymbols - Malformed and Incomplete Code Recovery")
 {
     // Check that malformed AST does not crash and recovers valid symbols
-    std::string malformedCode =
-        "class ValidClassBefore\n"
-        "{\n"
-        "    int a;\n"
-        "}\n"
-        "class IncompleteClass {\n"
-        "    void (\n"
-        "    int broken = ;\n"
-        "namespace {\n"
-        "void (@@@) {}\n"
-        "class ValidClassAfter\n"
-        "{\n"
-        "    void DoWork() {}\n"
-        "}\n";
+    std::string malformedCode = "class ValidClassBefore\n"
+                                "{\n"
+                                "    int a;\n"
+                                "}\n"
+                                "class IncompleteClass {\n"
+                                "    void (\n"
+                                "    int broken = ;\n"
+                                "namespace {\n"
+                                "void (@@@) {}\n"
+                                "class ValidClassAfter\n"
+                                "{\n"
+                                "    void DoWork() {}\n"
+                                "}\n";
 
     AngelScriptParser parser;
     SymbolTable table;
     std::string uri = "file:///malformed.as";
-    DocumentSymbolRequest req{ uri, malformedCode, nullptr, table };
+    DocumentSymbolRequest req{uri, malformedCode, nullptr, table};
 
     std::optional<std::vector<lsp::DocumentSymbol>> result;
     CHECK_NOTHROW(result = GetDocumentSymbols(req));
     REQUIRE(result.has_value());
     bool foundValidBefore = false;
     bool foundValidAfter = false;
-    for (const auto &sym : *result)
+    for (const auto& sym : *result)
     {
-        if (sym.name == "ValidClassBefore") foundValidBefore = true;
-        if (sym.name == "ValidClassAfter") foundValidAfter = true;
+        if (sym.name == "ValidClassBefore")
+            foundValidBefore = true;
+        if (sym.name == "ValidClassAfter")
+            foundValidAfter = true;
     }
     CHECK(foundValidBefore);
     CHECK(foundValidAfter);
@@ -453,22 +449,21 @@ TEST_CASE("Adversarial DocumentSymbols - Malformed and Incomplete Code Recovery"
 
 TEST_CASE("Adversarial WorkspaceSymbols - Exact, Prefix, Substring, and Fuzzy Score Hierarchy")
 {
-    SymbolCollector collector{ nullptr };
+    SymbolCollector collector{nullptr};
     AngelScriptParser parser;
     SymbolTable table;
 
-    std::string code =
-        "class StateManager {};\n"
-        "class State {};\n"
-        "class GameStateManager {};\n"
-        "class AppStateController {};\n"
-        "void RunState() {}\n";
+    std::string code = "class StateManager {};\n"
+                       "class State {};\n"
+                       "class GameStateManager {};\n"
+                       "class AppStateController {};\n"
+                       "void RunState() {}\n";
 
     collector.CollectSymbols("file:///state_test.as", code, parser, table);
 
     // 1. Exact match query "State" -> "State" should rank #1
     {
-        WorkspaceSymbolRequest exactReq{ "State", table, 100 };
+        WorkspaceSymbolRequest exactReq{"State", table, 100};
         auto res = GetWorkspaceSymbols(exactReq);
         REQUIRE(res.has_value());
         REQUIRE(!res->empty());
@@ -477,7 +472,7 @@ TEST_CASE("Adversarial WorkspaceSymbols - Exact, Prefix, Substring, and Fuzzy Sc
 
     // 2. Case difference: "state" matches "State" (exact score 100) vs "StateManager" (prefix score 80)
     {
-        WorkspaceSymbolRequest caseReq{ "state", table, 100 };
+        WorkspaceSymbolRequest caseReq{"state", table, 100};
         auto res = GetWorkspaceSymbols(caseReq);
         REQUIRE(res.has_value());
         REQUIRE(!res->empty());
@@ -486,7 +481,7 @@ TEST_CASE("Adversarial WorkspaceSymbols - Exact, Prefix, Substring, and Fuzzy Sc
 
     // 3. Subsequence fuzzy match "gsm" -> "GameStateManager"
     {
-        WorkspaceSymbolRequest fuzzyReq{ "gsm", table, 100 };
+        WorkspaceSymbolRequest fuzzyReq{"gsm", table, 100};
         auto res = GetWorkspaceSymbols(fuzzyReq);
         REQUIRE(res.has_value());
         REQUIRE(!res->empty());
@@ -495,7 +490,7 @@ TEST_CASE("Adversarial WorkspaceSymbols - Exact, Prefix, Substring, and Fuzzy Sc
 
     // 4. Subsequence fuzzy match "sm" -> "StateManager", "GameStateManager"
     {
-        WorkspaceSymbolRequest fuzzyReq2{ "sm", table, 100 };
+        WorkspaceSymbolRequest fuzzyReq2{"sm", table, 100};
         auto res = GetWorkspaceSymbols(fuzzyReq2);
         REQUIRE(res.has_value());
         CHECK(res->size() >= 2);
@@ -504,48 +499,49 @@ TEST_CASE("Adversarial WorkspaceSymbols - Exact, Prefix, Substring, and Fuzzy Sc
 
 TEST_CASE("Adversarial WorkspaceSymbols - Qualified Names Matching")
 {
-    SymbolCollector collector{ nullptr };
+    SymbolCollector collector{nullptr};
     AngelScriptParser parser;
     SymbolTable table;
 
-    std::string code =
-        "namespace Physics\n"
-        "{\n"
-        "    namespace RigidBody\n"
-        "    {\n"
-        "        class Collider\n"
-        "        {\n"
-        "            void CheckCollision() {}\n"
-        "        }\n"
-        "    }\n"
-        "}\n";
+    std::string code = "namespace Physics\n"
+                       "{\n"
+                       "    namespace RigidBody\n"
+                       "    {\n"
+                       "        class Collider\n"
+                       "        {\n"
+                       "            void CheckCollision() {}\n"
+                       "        }\n"
+                       "    }\n"
+                       "}\n";
 
     collector.CollectSymbols("file:///physics.as", code, parser, table);
 
     // 1. Full namespace qualifier "Physics::RigidBody::Collider"
     {
-        WorkspaceSymbolRequest req{ "Physics::RigidBody", table, 100 };
+        WorkspaceSymbolRequest req{"Physics::RigidBody", table, 100};
         auto res = GetWorkspaceSymbols(req);
         REQUIRE(res.has_value());
         REQUIRE(!res->empty());
         bool foundCollider = false;
-        for (const auto &sym : *res)
+        for (const auto& sym : *res)
         {
-            if (sym.name == "Collider") foundCollider = true;
+            if (sym.name == "Collider")
+                foundCollider = true;
         }
         CHECK(foundCollider);
     }
 
     // 2. Sub-scope qualifier "RigidBody::Collider"
     {
-        WorkspaceSymbolRequest req{ "RigidBody::Collider", table, 100 };
+        WorkspaceSymbolRequest req{"RigidBody::Collider", table, 100};
         auto res = GetWorkspaceSymbols(req);
         REQUIRE(res.has_value());
         REQUIRE(!res->empty());
         bool foundCollider = false;
-        for (const auto &sym : *res)
+        for (const auto& sym : *res)
         {
-            if (sym.name == "Collider") foundCollider = true;
+            if (sym.name == "Collider")
+                foundCollider = true;
         }
         CHECK(foundCollider);
     }
@@ -553,7 +549,7 @@ TEST_CASE("Adversarial WorkspaceSymbols - Qualified Names Matching")
 
 TEST_CASE("Adversarial WorkspaceSymbols - Large Result Limits and MaxResults Truncation")
 {
-    SymbolCollector collector{ nullptr };
+    SymbolCollector collector{nullptr};
     AngelScriptParser parser;
     SymbolTable table;
 
@@ -567,7 +563,7 @@ TEST_CASE("Adversarial WorkspaceSymbols - Large Result Limits and MaxResults Tru
 
     // 1. maxResults = 0 -> empty result
     {
-        WorkspaceSymbolRequest req{ "symbol_", table, 0 };
+        WorkspaceSymbolRequest req{"symbol_", table, 0};
         auto res = GetWorkspaceSymbols(req);
         REQUIRE(res.has_value());
         CHECK(res->empty());
@@ -575,7 +571,7 @@ TEST_CASE("Adversarial WorkspaceSymbols - Large Result Limits and MaxResults Tru
 
     // 2. maxResults = 1 -> exactly 1 result
     {
-        WorkspaceSymbolRequest req{ "symbol_", table, 1 };
+        WorkspaceSymbolRequest req{"symbol_", table, 1};
         auto res = GetWorkspaceSymbols(req);
         REQUIRE(res.has_value());
         CHECK(res->size() == 1);
@@ -583,7 +579,7 @@ TEST_CASE("Adversarial WorkspaceSymbols - Large Result Limits and MaxResults Tru
 
     // 3. maxResults = 50 -> exactly 50 results
     {
-        WorkspaceSymbolRequest req{ "symbol_", table, 50 };
+        WorkspaceSymbolRequest req{"symbol_", table, 50};
         auto res = GetWorkspaceSymbols(req);
         REQUIRE(res.has_value());
         CHECK(res->size() == 50);
@@ -591,7 +587,7 @@ TEST_CASE("Adversarial WorkspaceSymbols - Large Result Limits and MaxResults Tru
 
     // 4. maxResults = 50000 -> all 200 results returned without crash
     {
-        WorkspaceSymbolRequest req{ "symbol_", table, 50000 };
+        WorkspaceSymbolRequest req{"symbol_", table, 50000};
         auto res = GetWorkspaceSymbols(req);
         REQUIRE(res.has_value());
         CHECK(res->size() == 200);
@@ -599,7 +595,7 @@ TEST_CASE("Adversarial WorkspaceSymbols - Large Result Limits and MaxResults Tru
 
     // 5. Empty query with large maxResults
     {
-        WorkspaceSymbolRequest req{ "", table, 50000 };
+        WorkspaceSymbolRequest req{"", table, 50000};
         auto res = GetWorkspaceSymbols(req);
         REQUIRE(res.has_value());
         CHECK(res->size() == 200);
@@ -608,34 +604,33 @@ TEST_CASE("Adversarial WorkspaceSymbols - Large Result Limits and MaxResults Tru
 
 TEST_CASE("Adversarial WorkspaceSymbols - All SymbolKind and Container Mappings")
 {
-    SymbolCollector collector{ nullptr };
+    SymbolCollector collector{nullptr};
     AngelScriptParser parser;
     SymbolTable table;
 
-    std::string code =
-        "namespace GlobalNS {\n"
-        "    class MyClass {\n"
-        "        int myField;\n"
-        "        void myMethod() {}\n"
-        "    }\n"
-        "    interface MyInterface {\n"
-        "        void myInterfaceMethod();\n"
-        "    }\n"
-        "    enum MyEnum { EnumVal1 }\n"
-        "    typedef uint MyTypedef;\n"
-        "    funcdef void MyFuncdef();\n"
-        "}\n"
-        "int myGlobalVar = 42;\n"
-        "void myGlobalFunc() {}\n";
+    std::string code = "namespace GlobalNS {\n"
+                       "    class MyClass {\n"
+                       "        int myField;\n"
+                       "        void myMethod() {}\n"
+                       "    }\n"
+                       "    interface MyInterface {\n"
+                       "        void myInterfaceMethod();\n"
+                       "    }\n"
+                       "    enum MyEnum { EnumVal1 }\n"
+                       "    typedef uint MyTypedef;\n"
+                       "    funcdef void MyFuncdef();\n"
+                       "}\n"
+                       "int myGlobalVar = 42;\n"
+                       "void myGlobalFunc() {}\n";
 
     collector.CollectSymbols("file:///all_kinds.as", code, parser, table);
 
     // Check mapping of each symbol
-    auto res = GetWorkspaceSymbols(WorkspaceSymbolRequest{ "", table, 100 });
+    auto res = GetWorkspaceSymbols(WorkspaceSymbolRequest{"", table, 100});
     REQUIRE(res.has_value());
 
     std::unordered_map<std::string, lsp::SymbolInformation> symMap;
-    for (const auto &info : *res)
+    for (const auto& info : *res)
     {
         symMap[info.name] = info;
     }
@@ -723,11 +718,10 @@ TEST_CASE("Adversarial IncludeResolver - Complex Multi-Node Cyclic Graph")
 
 TEST_CASE("Adversarial IncludeResolver - Angled vs Quoted Directives with Special Characters")
 {
-    std::string source =
-        "#include <sys/core.h.as>\n"
-        "#include \"user_dir/math-3d_v2.1.as\"\n"
-        "   #   include   <a/b/c/d/e.as>   \n"
-        "#include \"with spaces in name.as\"\n";
+    std::string source = "#include <sys/core.h.as>\n"
+                         "#include \"user_dir/math-3d_v2.1.as\"\n"
+                         "   #   include   <a/b/c/d/e.as>   \n"
+                         "#include \"with spaces in name.as\"\n";
 
     auto includes = IncludeResolver::ExtractIncludes(source);
     REQUIRE(includes.size() == 4);
@@ -768,17 +762,16 @@ TEST_CASE("Adversarial IncludeResolver - Missing Files in Middle of Chain")
 
 TEST_CASE("Adversarial IncludeResolver - False Positives in Comments and String Literals")
 {
-    std::string source =
-        "// Line comment: #include \"fake1.as\"\n"
-        "/* Multi-line comment\n"
-        "   #include \"fake2.as\"\n"
-        "   #include <fake3.as>\n"
-        "*/\n"
-        "string s1 = \"#include \\\"fake4.as\\\"\";\n"
-        "string s2 = @\"#include <fake5.as>\";\n"
-        "string s3 = \"\"\" #include \"fake6.as\" \"\"\";\n"
-        "char c = '#';\n"
-        "#include \"real.as\"\n";
+    std::string source = "// Line comment: #include \"fake1.as\"\n"
+                         "/* Multi-line comment\n"
+                         "   #include \"fake2.as\"\n"
+                         "   #include <fake3.as>\n"
+                         "*/\n"
+                         "string s1 = \"#include \\\"fake4.as\\\"\";\n"
+                         "string s2 = @\"#include <fake5.as>\";\n"
+                         "string s3 = \"\"\" #include \"fake6.as\" \"\"\";\n"
+                         "char c = '#';\n"
+                         "#include \"real.as\"\n";
 
     auto includes = IncludeResolver::ExtractIncludes(source);
     REQUIRE(includes.size() == 1);
@@ -794,7 +787,7 @@ TEST_CASE("Adversarial IncludeResolver - Relative vs Search Path Priority and Ed
     temp.WriteFile("include/config.as", "// global config");
 
     std::string currentFile = temp.PathString("src/entry.as");
-    std::vector<std::string> searchDirs = { temp.PathString("include") };
+    std::vector<std::string> searchDirs = {temp.PathString("include")};
 
     // Local relative file MUST take precedence over searchDirectories
     std::string resolved = IncludeResolver::ResolveIncludePath("config.as", currentFile, searchDirs);
@@ -807,7 +800,7 @@ TEST_CASE("Adversarial IncludeResolver - Relative vs Search Path Priority and Ed
     CHECK(resolvedParent == temp.PathString("src/config.as"));
 
     // Empty search directory in list should be handled safely
-    std::vector<std::string> searchDirsWithEmpty = { "", temp.PathString("include"), "" };
+    std::vector<std::string> searchDirsWithEmpty = {"", temp.PathString("include"), ""};
     std::string resolvedWithEmpty = IncludeResolver::ResolveIncludePath("config.as", currentFile, searchDirsWithEmpty);
     CHECK(resolvedWithEmpty == temp.PathString("src/config.as"));
 }

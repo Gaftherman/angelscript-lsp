@@ -392,12 +392,8 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
                         utils::FormatDuration(colMs)));
     LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {} (Parse: {}, Collector: {}"
                         ", Scopes: {}, Checkers: {})",
-                        req.uriStr,
-                        utils::FormatDuration(totalMs),
-                        utils::FormatDuration(parseMs),
-                        utils::FormatDuration(colMs),
-                        utils::FormatDuration(scopeMs),
-                        utils::FormatDuration(checkMs)));
+                        req.uriStr, utils::FormatDuration(totalMs), utils::FormatDuration(parseMs),
+                        utils::FormatDuration(colMs), utils::FormatDuration(scopeMs), utils::FormatDuration(checkMs)));
 
     const bool committed = CommitAnalysisResults({
         .uriStr = req.uriStr,
@@ -424,11 +420,10 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
 }
 
 Server::ParseAndCollectResult Server::ParseAndCollectSymbols(AnalyzeDocumentRequest& req,
-                                                            angel_lsp::analysis::SymbolTable& staging)
+                                                             angel_lsp::analysis::SymbolTable& staging)
 {
     utils::HighResTimer parseTimer;
-    document::TreePtr tree =
-        req.treeCopy ? std::move(req.treeCopy) : document::MakeTreePtr(req.parser.Parse(req.text));
+    document::TreePtr tree = req.treeCopy ? std::move(req.treeCopy) : document::MakeTreePtr(req.parser.Parse(req.text));
     double parseMs = parseTimer.ElapsedMs();
     if (!tree)
     {
@@ -444,18 +439,18 @@ Server::ParseAndCollectResult Server::ParseAndCollectSymbols(AnalyzeDocumentRequ
 }
 
 void Server::LogAnalysisProfile(std::string_view prefix, const std::string& uriStr,
-                               const AnalysisTimingProfile& profile) const
+                                const AnalysisTimingProfile& profile) const
 {
     LogInfo(fmt::format("{} Finished analysis for file: {} in {} (Parse: {}, Collector: {}, "
                         "Scopes: {}, Checkers: {})",
-                        prefix, uriStr, utils::FormatDuration(profile.totalMs),
-                        utils::FormatDuration(profile.parseMs), utils::FormatDuration(profile.colMs),
-                        utils::FormatDuration(profile.scopeMs), utils::FormatDuration(profile.checkMs)));
+                        prefix, uriStr, utils::FormatDuration(profile.totalMs), utils::FormatDuration(profile.parseMs),
+                        utils::FormatDuration(profile.colMs), utils::FormatDuration(profile.scopeMs),
+                        utils::FormatDuration(profile.checkMs)));
     LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {} (Parse: {}, Collector: {}, "
                         "Scopes: {}, Checkers: {})",
-                        uriStr, utils::FormatDuration(profile.totalMs),
-                        utils::FormatDuration(profile.parseMs), utils::FormatDuration(profile.colMs),
-                        utils::FormatDuration(profile.scopeMs), utils::FormatDuration(profile.checkMs)));
+                        uriStr, utils::FormatDuration(profile.totalMs), utils::FormatDuration(profile.parseMs),
+                        utils::FormatDuration(profile.colMs), utils::FormatDuration(profile.scopeMs),
+                        utils::FormatDuration(profile.checkMs)));
 }
 
 void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
@@ -487,8 +482,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
 
     const TSNode root = ts_tree_root_node(parsed.tree.get());
     analysis::NodeIndex nodeIndex(root);
-    std::unique_ptr<analysis::SymbolTable> analysisSnapshot =
-        m_symbolTable.CreateAnalysisSnapshot(req.uriStr, staging);
+    std::unique_ptr<analysis::SymbolTable> analysisSnapshot = m_symbolTable.CreateAnalysisSnapshot(req.uriStr, staging);
 
     utils::HighResTimer scopeTimer;
     std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot =

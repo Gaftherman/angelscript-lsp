@@ -2982,11 +2982,12 @@ TEST_CASE("Server - An edit reaches the client while a polling editor keeps aski
     // eradicating artificial sleep loops and adhering strictly to the Anti-Flakiness Testing Invariant.
     constexpr int k_firstPollId = 100;
     constexpr int k_polls = 2;
-    stream.PushAction([&stream]() {
-        stream.WaitForCondition([](const std::string& out) {
-            return out.find("as-warn-unused-variable") != std::string::npos;
+    stream.PushAction(
+        [&stream]()
+        {
+            stream.WaitForCondition([](const std::string& out)
+                                    { return out.find("as-warn-unused-variable") != std::string::npos; });
         });
-    });
     for (int poll = 0; poll < k_polls; ++poll)
     {
         stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(k_firstPollId + poll) +
@@ -6068,35 +6069,52 @@ TEST_CASE("Server - Sven Co-op didChange syntax error and revert does not cause 
     const std::string errWord = angel_lsp::test::GenerateRandomSymbolName("errIdentifier");
 
     WorkspaceFixture fixture;
-    const std::string framerateSource =
-        "class " + clsServerFramerate + "\n"
-        "{\n"
-        "    int Current;\n"
-        "    int Count;\n"
-        "    int Frames;\n"
-        "    bool LastFrame;\n"
-        "}\n"
-        "namespace " + nsServer + "\n"
-        "{\n"
-        "    namespace " + nsFramerate + "\n"
-        "    {\n"
-        "        funcdef void " + fdFrameRateCallback + "( const " + clsServerFramerate + "@ data );\n"
-        "        " + fdFrameRateCallback + "@ " + fnSetCallback + "( " + fdFrameRateCallback + "@ callback ) { return callback; }\n"
-        "        void " + fnRemoveCallback + "( " + fdFrameRateCallback + "@ callback ) {}\n"
-        "    }\n"
-        "}\n";
+    const std::string framerateSource = "class " + clsServerFramerate +
+                                        "\n"
+                                        "{\n"
+                                        "    int Current;\n"
+                                        "    int Count;\n"
+                                        "    int Frames;\n"
+                                        "    bool LastFrame;\n"
+                                        "}\n"
+                                        "namespace " +
+                                        nsServer +
+                                        "\n"
+                                        "{\n"
+                                        "    namespace " +
+                                        nsFramerate +
+                                        "\n"
+                                        "    {\n"
+                                        "        funcdef void " +
+                                        fdFrameRateCallback + "( const " + clsServerFramerate +
+                                        "@ data );\n"
+                                        "        " +
+                                        fdFrameRateCallback + "@ " + fnSetCallback + "( " + fdFrameRateCallback +
+                                        "@ callback ) { return callback; }\n"
+                                        "        void " +
+                                        fnRemoveCallback + "( " + fdFrameRateCallback +
+                                        "@ callback ) {}\n"
+                                        "    }\n"
+                                        "}\n";
 
-    const std::string originalShowSource =
-        "#include \"../mikk155/Server/Framerate\"\n"
-        "\n"
-        "dictionary " + varPlayers + " = {};\n"
-        + nsServer + "::" + nsFramerate + "::" + fdFrameRateCallback + "@ " + varCb + " = null;\n"
-        "\n"
-        "void " + fnTest + "()\n"
-        "{\n"
-        "    @" + varCb + " = " + nsServer + "::" + nsFramerate + "::" + fnSetCallback + "( null );\n"
-        "    " + nsServer + "::" + nsFramerate + "::" + fnRemoveCallback + "( " + varCb + " );\n"
-        "}\n";
+    const std::string originalShowSource = "#include \"../mikk155/Server/Framerate\"\n"
+                                           "\n"
+                                           "dictionary " +
+                                           varPlayers + " = {};\n" + nsServer + "::" + nsFramerate +
+                                           "::" + fdFrameRateCallback + "@ " + varCb +
+                                           " = null;\n"
+                                           "\n"
+                                           "void " +
+                                           fnTest +
+                                           "()\n"
+                                           "{\n"
+                                           "    @" +
+                                           varCb + " = " + nsServer + "::" + nsFramerate + "::" + fnSetCallback +
+                                           "( null );\n"
+                                           "    " +
+                                           nsServer + "::" + nsFramerate + "::" + fnRemoveCallback + "( " + varCb +
+                                           " );\n"
+                                           "}\n";
 
     fixture.Write("scripts/mikk155/Server/Framerate.as", framerateSource);
     fixture.Write("scripts/plugins/ShowFrameRate.as", originalShowSource);
@@ -6131,10 +6149,10 @@ TEST_CASE("Server - Sven Co-op didChange syntax error and revert does not cause 
     const uint32_t revertEndCol = static_cast<uint32_t>(insertCol + errWord.size());
 
     // 4. Introduce edit in ShowFrameRate.as: insert error identifier inside {}
-    std::string insertMsg =
-        R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" + showUri +
-        R"(","version":2},"contentChanges":[{"range":{"start":{"line":2,"character":)" + std::to_string(insertCol) +
-        R"(},"end":{"line":2,"character":)" + std::to_string(insertCol) + R"(}},"text":")" + errWord + R"("}]}})";
+    std::string insertMsg = R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                            showUri + R"(","version":2},"contentChanges":[{"range":{"start":{"line":2,"character":)" +
+                            std::to_string(insertCol) + R"(},"end":{"line":2,"character":)" +
+                            std::to_string(insertCol) + R"(}},"text":")" + errWord + R"("}]}})";
     stream.Push(insertMsg);
     std::string errPublished;
     stream.PushAction(
@@ -6145,10 +6163,10 @@ TEST_CASE("Server - Sven Co-op didChange syntax error and revert does not cause 
         });
 
     // 5. Revert back: delete error identifier
-    std::string revertMsg =
-        R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" + showUri +
-        R"(","version":3},"contentChanges":[{"range":{"start":{"line":2,"character":)" + std::to_string(insertCol) +
-        R"(},"end":{"line":2,"character":)" + std::to_string(revertEndCol) + R"(}},"text":""}]}})";
+    std::string revertMsg = R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
+                            showUri + R"(","version":3},"contentChanges":[{"range":{"start":{"line":2,"character":)" +
+                            std::to_string(insertCol) + R"(},"end":{"line":2,"character":)" +
+                            std::to_string(revertEndCol) + R"(}},"text":""}]}})";
     stream.Push(revertMsg);
     std::string revertPublished;
     stream.PushAction(
@@ -6216,7 +6234,8 @@ TEST_CASE("Server - Realistic Sven Co-op Framerate module closure with sven.as.p
         "\n"
         "            __CThinker__()\n"
         "            {\n"
-        "                @this.m_Think = g_Scheduler.SetInterval( @this, \"__Think__\", 0.0f, g_Scheduler.REPEAT_INFINITE_TIMES );\n"
+        "                @this.m_Think = g_Scheduler.SetInterval( @this, \"__Think__\", 0.0f, "
+        "g_Scheduler.REPEAT_INFINITE_TIMES );\n"
         "                @this.data = ServerFramerate();\n"
         "            }\n"
         "\n"
@@ -6383,29 +6402,24 @@ TEST_CASE("Server - Realistic Sven Co-op Framerate module closure with sven.as.p
         });
 
     // 1. Definition of ServerFramerate in ShowFrameRate.as (line 10, col 60: const ServerFramerate@ data)
-    stream.Push(
-        R"({"jsonrpc":"2.0","id":10,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
-        showUri + R"("},"position":{"line":10,"character":60}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":10,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
+                showUri + R"("},"position":{"line":10,"character":60}}})");
 
     // 2. Definition of SetCallback in ShowFrameRate.as (line 10, col 32: SetCallback)
-    stream.Push(
-        R"({"jsonrpc":"2.0","id":11,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
-        showUri + R"("},"position":{"line":10,"character":32}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":11,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
+                showUri + R"("},"position":{"line":10,"character":32}}})");
 
     // 3. Definition of HUDTextParams in ShowFrameRate.as (line 27, col 12: HUDTextParams)
-    stream.Push(
-        R"({"jsonrpc":"2.0","id":12,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
-        showUri + R"("},"position":{"line":27,"character":12}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":12,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
+                showUri + R"("},"position":{"line":27,"character":12}}})");
 
     // 4. Definition of data.LastFrame in ShowFrameRate.as (line 14, col 20: LastFrame)
-    stream.Push(
-        R"({"jsonrpc":"2.0","id":13,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
-        showUri + R"("},"position":{"line":14,"character":20}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":13,"method":"textDocument/definition","params":{"textDocument":{"uri":")" +
+                showUri + R"("},"position":{"line":14,"character":20}}})");
 
     // 5. Hover over data in ShowFrameRate.as (line 14, col 13: data)
-    stream.Push(
-        R"({"jsonrpc":"2.0","id":14,"method":"textDocument/hover","params":{"textDocument":{"uri":")" +
-        showUri + R"("},"position":{"line":14,"character":13}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":14,"method":"textDocument/hover","params":{"textDocument":{"uri":")" +
+                showUri + R"("},"position":{"line":14,"character":13}}})");
 
     stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
 
@@ -6488,8 +6502,8 @@ TEST_CASE("Server - Symlinked module entry and active predefined with workspaceF
     if (linkError)
     {
 #if defined(_WIN32)
-        std::string cmd = fmt::format("cmd.exe /C mklink /J \"{}\" \"{}\" >nul 2>&1",
-                                      linkPath.string(), externalDir.string());
+        std::string cmd =
+            fmt::format("cmd.exe /C mklink /J \"{}\" \"{}\" >nul 2>&1", linkPath.string(), externalDir.string());
         if (std::system(cmd.c_str()) != 0 || !std::filesystem::exists(linkPath))
         {
             MESSAGE("symlinks/junctions are not available to this process; case skipped");
@@ -6506,21 +6520,19 @@ TEST_CASE("Server - Symlinked module entry and active predefined with workspaceF
     serverConfig.features.enableVirtualMixinDocuments = true;
     serverConfig.activePredefined = "${workspaceFolder}/maps/ins2/sven.as.predefined";
     serverConfig.modules = {
-        {.name = "MapInit", .entry = "${workspaceFolder}/maps/ins2/ins2_register.as", .folder = ""}
-    };
+        {.name = "MapInit", .entry = "${workspaceFolder}/maps/ins2/ins2_register.as", .folder = ""}};
 
     test::ScriptedStream stream;
     stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
 
-    stream.Push(DidOpenMessage(fixture.Uri("maps/ins2/weapons/weapon_test.as"),
-                               "class weapon_test : WeaponBase {\n"
-                               "    void PrimaryAttack() {\n"
-                               "        Shoot();\n"
-                               "        WpnSetIdleTime(0.5f);\n"
-                               "    }\n"
-                               "}\n"));
+    stream.Push(DidOpenMessage(fixture.Uri("maps/ins2/weapons/weapon_test.as"), "class weapon_test : WeaponBase {\n"
+                                                                                "    void PrimaryAttack() {\n"
+                                                                                "        Shoot();\n"
+                                                                                "        WpnSetIdleTime(0.5f);\n"
+                                                                                "    }\n"
+                                                                                "}\n"));
     stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
@@ -6555,13 +6567,17 @@ TEST_CASE("Server - Formatting and OnTypeFormatting capabilities disabled when e
 
     // Send onTypeFormatting request (ID 10)
     stream.Push(R"({"jsonrpc":"2.0","id":10,"method":"textDocument/onTypeFormatting","params":{)"
-                R"("textDocument":{"uri":")" + fixture.Uri(fileName) + R"("},)"
+                R"("textDocument":{"uri":")" +
+                fixture.Uri(fileName) +
+                R"("},)"
                 R"("position":{"line":0,"character":24},"ch":";",)"
                 R"("options":{"tabSize":4,"insertSpaces":true}}})");
 
     // Send formatting request (ID 11)
     stream.Push(R"({"jsonrpc":"2.0","id":11,"method":"textDocument/formatting","params":{)"
-                R"("textDocument":{"uri":")" + fixture.Uri(fileName) + R"("},)"
+                R"("textDocument":{"uri":")" +
+                fixture.Uri(fileName) +
+                R"("},)"
                 R"("options":{"tabSize":4,"insertSpaces":true}}})");
 
     stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
@@ -6649,6 +6665,3 @@ TEST_CASE("Server - Formatting and OnTypeFormatting capabilities disabled when e
     CHECK(foundResp10);
     CHECK(foundResp11);
 }
-
-
-

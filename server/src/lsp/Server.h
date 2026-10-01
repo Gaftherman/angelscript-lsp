@@ -851,8 +851,7 @@ class Server
      * @param[in] content Document text content.
      * @param[in] tree Parsed AST tree handle.
      */
-    void CommitPredefinedIndex(const std::string& uri, const std::string& content,
-                               document::TreePtr tree);
+    void CommitPredefinedIndex(const std::string& uri, const std::string& content, document::TreePtr tree);
 
     /**
      * @brief Marks whether predefined stubs and engine profiles are ready for document analysis.
@@ -2085,7 +2084,7 @@ class Server
      * @return Parse and collection result metrics.
      */
     ParseAndCollectResult ParseAndCollectSymbols(AnalyzeDocumentRequest& req,
-                                                angel_lsp::analysis::SymbolTable& staging);
+                                                 angel_lsp::analysis::SymbolTable& staging);
 
     struct AnalysisTimingProfile
     {

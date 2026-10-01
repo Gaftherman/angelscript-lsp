@@ -1,39 +1,38 @@
-#include <doctest/doctest.h>
 #include "config/ServerConfig.h"
-#include <vector>
+#include <doctest/doctest.h>
 #include <string>
+#include <vector>
 
 using namespace angel_lsp::config;
 
 namespace
 {
-    // Helper to create char* array from vector of strings
-    struct ArgvHelper
+// Helper to create char* array from vector of strings
+struct ArgvHelper
+{
+    std::vector<std::string> storage;
+    std::vector<char*> argv;
+
+    ArgvHelper(std::initializer_list<std::string> args) : storage(args)
     {
-        std::vector<std::string> storage;
-        std::vector<char*> argv;
-
-        ArgvHelper(std::initializer_list<std::string> args)
-            : storage(args)
+        argv.reserve(storage.size());
+        for (auto& s : storage)
         {
-            argv.reserve(storage.size());
-            for (auto &s : storage)
-            {
-                argv.push_back(s.data());
-            }
+            argv.push_back(s.data());
         }
+    }
 
-        int argc() const
-        {
-            return static_cast<int>(argv.size());
-        }
+    int argc() const
+    {
+        return static_cast<int>(argv.size());
+    }
 
-        char** data()
-        {
-            return argv.data();
-        }
-    };
-}
+    char** data()
+    {
+        return argv.data();
+    }
+};
+} // namespace
 
 TEST_SUITE("ServerConfig - CLI Argument Parsing")
 {
@@ -530,21 +529,21 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         SUBCASE("Plain disable flags")
         {
             ArgvHelper args{"angel_lsp",
-                             "--disable-hover",
-                             "--disable-definition",
-                             "--disable-completion",
-                             "--disable-semantic-tokens",
-                             "--disable-signature-help",
-                             "--disable-predefined-loader",
-                             "--disable-document-symbols",
-                             "--disable-workspace-symbols",
-                             "--disable-references",
-                             "--disable-rename",
-                             "--disable-document-highlight",
-                             "--disable-folding-range",
-                             "--disable-inlay-hints",
-                             "--disable-code-action",
-                             "--disable-formatting"};
+                            "--disable-hover",
+                            "--disable-definition",
+                            "--disable-completion",
+                            "--disable-semantic-tokens",
+                            "--disable-signature-help",
+                            "--disable-predefined-loader",
+                            "--disable-document-symbols",
+                            "--disable-workspace-symbols",
+                            "--disable-references",
+                            "--disable-rename",
+                            "--disable-document-highlight",
+                            "--disable-folding-range",
+                            "--disable-inlay-hints",
+                            "--disable-code-action",
+                            "--disable-formatting"};
 
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.features.enableHover == false);
@@ -566,7 +565,12 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
 
         SUBCASE("Disable flags with inline values")
         {
-            ArgvHelper args1{"angel_lsp", "--disable-hover=true", "--disable-document-symbols=true", "--disable-workspace-symbols=true", "--disable-inlay-hints=true", "--disable-formatting=true"};
+            ArgvHelper args1{"angel_lsp",
+                             "--disable-hover=true",
+                             "--disable-document-symbols=true",
+                             "--disable-workspace-symbols=true",
+                             "--disable-inlay-hints=true",
+                             "--disable-formatting=true"};
             ServerConfig config1 = FromArgs(args1.argc(), args1.data());
             CHECK(config1.features.enableHover == false);
             CHECK(config1.features.enableDocumentSymbols == false);
@@ -574,7 +578,12 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config1.features.enableInlayHints == false);
             CHECK(config1.features.enableFormatting == false);
 
-            ArgvHelper args2{"angel_lsp", "--disable-hover=false", "--disable-document-symbols=false", "--disable-workspace-symbols=false", "--disable-inlay-hints=false", "--disable-formatting=false"};
+            ArgvHelper args2{"angel_lsp",
+                             "--disable-hover=false",
+                             "--disable-document-symbols=false",
+                             "--disable-workspace-symbols=false",
+                             "--disable-inlay-hints=false",
+                             "--disable-formatting=false"};
             ServerConfig config2 = FromArgs(args2.argc(), args2.data());
             CHECK(config2.features.enableHover == true);
             CHECK(config2.features.enableDocumentSymbols == true);
@@ -582,7 +591,13 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config2.features.enableInlayHints == true);
             CHECK(config2.features.enableFormatting == true);
 
-            ArgvHelper args3{"angel_lsp", "--disable-completion=1", "--disable-references=1", "--disable-rename=1", "--disable-document-highlight=1", "--disable-folding-range=1", "--disable-code-action=1"};
+            ArgvHelper args3{"angel_lsp",
+                             "--disable-completion=1",
+                             "--disable-references=1",
+                             "--disable-rename=1",
+                             "--disable-document-highlight=1",
+                             "--disable-folding-range=1",
+                             "--disable-code-action=1"};
             ServerConfig config3 = FromArgs(args3.argc(), args3.data());
             CHECK(config3.features.enableCompletion == false);
             CHECK(config3.features.enableReferences == false);
@@ -591,7 +606,13 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config3.features.enableFoldingRange == false);
             CHECK(config3.features.enableCodeAction == false);
 
-            ArgvHelper args4{"angel_lsp", "--disable-completion=0", "--disable-references=0", "--disable-rename=0", "--disable-document-highlight=0", "--disable-folding-range=0", "--disable-code-action=0"};
+            ArgvHelper args4{"angel_lsp",
+                             "--disable-completion=0",
+                             "--disable-references=0",
+                             "--disable-rename=0",
+                             "--disable-document-highlight=0",
+                             "--disable-folding-range=0",
+                             "--disable-code-action=0"};
             ServerConfig config4 = FromArgs(args4.argc(), args4.data());
             CHECK(config4.features.enableCompletion == true);
             CHECK(config4.features.enableReferences == true);
@@ -605,28 +626,28 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
     TEST_CASE("Standalone --enable-* flags (without explicit value)")
     {
         ArgvHelper args{"angel_lsp",
-                         "--disable-hover",
-                         "--enable-hover",
-                         "--disable-completion",
-                         "--enable-completion",
-                         "--disable-document-symbols",
-                         "--enable-document-symbols",
-                         "--disable-workspace-symbols",
-                         "--enable-workspace-symbols",
-                         "--disable-references",
-                         "--enable-references",
-                         "--disable-rename",
-                         "--enable-rename",
-                         "--disable-document-highlight",
-                         "--enable-document-highlight",
-                         "--disable-folding-range",
-                         "--enable-folding-range",
-                         "--disable-inlay-hints",
-                         "--enable-inlay-hints",
-                         "--disable-code-action",
-                         "--enable-code-action",
-                         "--disable-formatting",
-                         "--enable-formatting"};
+                        "--disable-hover",
+                        "--enable-hover",
+                        "--disable-completion",
+                        "--enable-completion",
+                        "--disable-document-symbols",
+                        "--enable-document-symbols",
+                        "--disable-workspace-symbols",
+                        "--enable-workspace-symbols",
+                        "--disable-references",
+                        "--enable-references",
+                        "--disable-rename",
+                        "--enable-rename",
+                        "--disable-document-highlight",
+                        "--enable-document-highlight",
+                        "--disable-folding-range",
+                        "--enable-folding-range",
+                        "--disable-inlay-hints",
+                        "--enable-inlay-hints",
+                        "--disable-code-action",
+                        "--enable-code-action",
+                        "--disable-formatting",
+                        "--enable-formatting"};
 
         ServerConfig config = FromArgs(args.argc(), args.data());
         CHECK(config.features.enableHover == true);
@@ -646,10 +667,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
     {
         SUBCASE("Inline '=' syntax")
         {
-            ArgvHelper args{"angel_lsp",
-                             "--locale=es-ES",
-                             "--file-ext=.angel",
-                             "--predefined-ext=.angel.predefined"};
+            ArgvHelper args{"angel_lsp", "--locale=es-ES", "--file-ext=.angel", "--predefined-ext=.angel.predefined"};
 
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.info.locale == "es-ES");
@@ -659,10 +677,8 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
 
         SUBCASE("Space-separated syntax")
         {
-            ArgvHelper args{"angel_lsp",
-                             "--locale", "fr-FR",
-                             "--file-ext", ".as_script",
-                             "--predefined-ext", ".predef"};
+            ArgvHelper args{"angel_lsp",  "--locale",         "fr-FR",  "--file-ext",
+                            ".as_script", "--predefined-ext", ".predef"};
 
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.info.locale == "fr-FR");
@@ -672,9 +688,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
 
         SUBCASE("Alternative alias flags (--file-extension, --predefined-extension)")
         {
-            ArgvHelper args{"angel_lsp",
-                             "--file-extension=.as3",
-                             "--predefined-extension=.as3.predefined"};
+            ArgvHelper args{"angel_lsp", "--file-extension=.as3", "--predefined-extension=.as3.predefined"};
 
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.info.fileExtension == ".as3");
@@ -767,23 +781,26 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
     TEST_CASE("Complex combinations of multiple flags")
     {
         ArgvHelper args{"angel_lsp",
-                         "--disable-hover",
-                         "--enable-definition=true",
-                         "--enable-completion", "false",
-                         "--enable-semantic-tokens=1",
-                         "--enable-signature-help", "0",
-                         "--disable-document-symbols",
-                         "--enable-workspace-symbols=false",
-                         "--enable-references=true",
-                         "--disable-rename=false",
-                         "--enable-document-highlight=false",
-                         "--disable-folding-range",
-                         "--enable-inlay-hints=1",
-                         "--disable-code-action",
-                         "--enable-formatting=true",
-                         "--locale=es-ES",
-                         "--file-ext", ".angelscript",
-                         "--predefined-ext=.custom.predef"};
+                        "--disable-hover",
+                        "--enable-definition=true",
+                        "--enable-completion",
+                        "false",
+                        "--enable-semantic-tokens=1",
+                        "--enable-signature-help",
+                        "0",
+                        "--disable-document-symbols",
+                        "--enable-workspace-symbols=false",
+                        "--enable-references=true",
+                        "--disable-rename=false",
+                        "--enable-document-highlight=false",
+                        "--disable-folding-range",
+                        "--enable-inlay-hints=1",
+                        "--disable-code-action",
+                        "--enable-formatting=true",
+                        "--locale=es-ES",
+                        "--file-ext",
+                        ".angelscript",
+                        "--predefined-ext=.custom.predef"};
 
         ServerConfig config = FromArgs(args.argc(), args.data());
         CHECK(config.features.enableHover == false);
@@ -833,7 +850,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
 
         SUBCASE("Null pointers inside argv")
         {
-            char* rawArgs[] = { (char*)"angel_lsp", nullptr, (char*)"--disable-hover", nullptr, (char*)"--locale=es" };
+            char* rawArgs[] = {(char*)"angel_lsp", nullptr, (char*)"--disable-hover", nullptr, (char*)"--locale=es"};
             ServerConfig config = FromArgs(5, rawArgs);
             CHECK(config.features.enableHover == false);
             CHECK(config.info.locale == "es");
@@ -852,7 +869,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config1.features.enableHover == true);
             CHECK(config1.info.locale == "en");
 
-            char* emptyArgv[] = { nullptr };
+            char* emptyArgv[] = {nullptr};
             ServerConfig config2 = FromArgs(1, emptyArgv);
             CHECK(config2.features.enableHover == true);
         }
@@ -880,15 +897,15 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         SUBCASE("All alternative alias flags")
         {
             ArgvHelper args{"angel_lsp",
-                             "--disable-semantictokens",
-                             "--disable-signaturehelp",
-                             "--disable-predefinedloader",
-                             "--disable-documentsymbols",
-                             "--disable-workspacesymbols",
-                             "--disable-documenthighlight",
-                             "--disable-foldingrange",
-                             "--disable-inlayhints",
-                             "--disable-codeaction"};
+                            "--disable-semantictokens",
+                            "--disable-signaturehelp",
+                            "--disable-predefinedloader",
+                            "--disable-documentsymbols",
+                            "--disable-workspacesymbols",
+                            "--disable-documenthighlight",
+                            "--disable-foldingrange",
+                            "--disable-inlayhints",
+                            "--disable-codeaction"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.features.enableSemanticTokens == false);
             CHECK(config.features.enableSignatureHelp == false);
@@ -901,15 +918,15 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config.features.enableCodeAction == false);
 
             ArgvHelper args2{"angel_lsp",
-                              "--enable-semantictokens=1",
-                              "--enable-signaturehelp=1",
-                              "--enable-predefinedloader=1",
-                              "--enable-documentsymbols=1",
-                              "--enable-workspacesymbols=1",
-                              "--enable-documenthighlight=1",
-                              "--enable-foldingrange=1",
-                              "--enable-inlayhints=1",
-                              "--enable-codeaction=1"};
+                             "--enable-semantictokens=1",
+                             "--enable-signaturehelp=1",
+                             "--enable-predefinedloader=1",
+                             "--enable-documentsymbols=1",
+                             "--enable-workspacesymbols=1",
+                             "--enable-documenthighlight=1",
+                             "--enable-foldingrange=1",
+                             "--enable-inlayhints=1",
+                             "--enable-codeaction=1"};
             ServerConfig config2 = FromArgs(args2.argc(), args2.data());
             CHECK(config2.features.enableSemanticTokens == true);
             CHECK(config2.features.enableSignatureHelp == true);
@@ -924,54 +941,37 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
 
         SUBCASE("Flag override precedence (last argument wins)")
         {
-            ArgvHelper args{"angel_lsp",
-                             "--enable-hover=false",
-                             "--enable-hover=true",
-                             "--disable-hover",
-                             "--enable-hover",
-                             "--disable-hover=false"};
+            ArgvHelper args{"angel_lsp",       "--enable-hover=false", "--enable-hover=true",
+                            "--disable-hover", "--enable-hover",       "--disable-hover=false"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             // --disable-hover=false enables hover
             CHECK(config.features.enableHover == true);
 
-            ArgvHelper args2{"angel_lsp",
-                              "--enable-definition=true",
-                              "--disable-definition"};
+            ArgvHelper args2{"angel_lsp", "--enable-definition=true", "--disable-definition"};
             ServerConfig config2 = FromArgs(args2.argc(), args2.data());
             CHECK(config2.features.enableDefinition == false);
 
-            ArgvHelper args3{"angel_lsp",
-                              "--enable-references=false",
-                              "--enable-references=true",
-                              "--disable-references=true"};
+            ArgvHelper args3{"angel_lsp", "--enable-references=false", "--enable-references=true",
+                             "--disable-references=true"};
             ServerConfig config3 = FromArgs(args3.argc(), args3.data());
             CHECK(config3.features.enableReferences == false);
 
-            ArgvHelper args4{"angel_lsp",
-                              "--disable-rename",
-                              "--enable-rename=true"};
+            ArgvHelper args4{"angel_lsp", "--disable-rename", "--enable-rename=true"};
             ServerConfig config4 = FromArgs(args4.argc(), args4.data());
             CHECK(config4.features.enableRename == true);
 
-            ArgvHelper args5{"angel_lsp",
-                              "--disable-formatting",
-                              "--enable-formatting=true",
-                              "--disable-formatting"};
+            ArgvHelper args5{"angel_lsp", "--disable-formatting", "--enable-formatting=true", "--disable-formatting"};
             ServerConfig config5 = FromArgs(args5.argc(), args5.data());
             CHECK(config5.features.enableFormatting == false);
 
-            ArgvHelper args6{"angel_lsp",
-                              "--disable-inlay-hints",
-                              "--enable-inlay-hints"};
+            ArgvHelper args6{"angel_lsp", "--disable-inlay-hints", "--enable-inlay-hints"};
             ServerConfig config6 = FromArgs(args6.argc(), args6.data());
             CHECK(config6.features.enableInlayHints == true);
         }
 
         SUBCASE("Search directories arguments")
         {
-            ArgvHelper args{"angel_lsp",
-                            "--search-dir=/mock/include/path1",
-                            "--search-directory=/mock/include/path2",
+            ArgvHelper args{"angel_lsp", "--search-dir=/mock/include/path1", "--search-directory=/mock/include/path2",
                             "--search-path=/mock/include/path3"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             REQUIRE(config.searchDirectories.size() == 3);
@@ -985,9 +985,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             // A host that registered its own element-wise list factory. This cannot be read from a
             // predefined stub - the stub format has no notation for a list factory, so `array<T>`
             // and `optional<T>` are declared identically - which is why it is asked for here.
-            ArgvHelper args{"angel_lsp",
-                            "--array-like-type=vector",
-                            "--array-like-template=ring"};
+            ArgvHelper args{"angel_lsp", "--array-like-type=vector", "--array-like-template=ring"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.types.arrayLikeTemplates.contains("vector"));
             CHECK(config.types.arrayLikeTemplates.contains("ring"));
@@ -1118,8 +1116,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
 
         SUBCASE("Repeatable and order-preserving")
         {
-            ArgvHelper args{"angel_lsp",
-                            "--predefined-file=C:/Games/svencoop/as.predefined",
+            ArgvHelper args{"angel_lsp", "--predefined-file=C:/Games/svencoop/as.predefined",
                             "--predefined-path=./stubs/engine.as.predefined"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             REQUIRE(config.predefinedFiles.size() == 2);
@@ -1131,9 +1128,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         {
             // These two used to be conflated: a configured path was passed as the suffix, which
             // matched no file at all and silently disabled stub loading.
-            ArgvHelper args{"angel_lsp",
-                            "--predefined-file=C:/Games/as.predefined",
-                            "--predefined-ext=.stub"};
+            ArgvHelper args{"angel_lsp", "--predefined-file=C:/Games/as.predefined", "--predefined-ext=.stub"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             REQUIRE(config.predefinedFiles.size() == 1);
             CHECK(config.predefinedFiles[0] == "C:/Games/as.predefined");
@@ -1159,8 +1154,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
 
         SUBCASE("Repeatable, one entry per code")
         {
-            ArgvHelper args{"angel_lsp",
-                            "--diagnostic-severity=as-warn-unused-variable=hint",
+            ArgvHelper args{"angel_lsp", "--diagnostic-severity=as-warn-unused-variable=hint",
                             "--diagnostic-severity=as-err-no-implicit-conversion=warning"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             REQUIRE(config.diagnosticSeverities.size() == 2);
@@ -1185,9 +1179,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
 
         SUBCASE("Malformed pairs are ignored without disturbing valid ones")
         {
-            ArgvHelper args{"angel_lsp",
-                            "--diagnostic-severity=no-separator",
-                            "--diagnostic-severity==hint",
+            ArgvHelper args{"angel_lsp", "--diagnostic-severity=no-separator", "--diagnostic-severity==hint",
                             "--diagnostic-severity=as-warn-unused-variable=",
                             "--diagnostic-severity=as-warn-unused-variable=error"};
             ServerConfig config = FromArgs(args.argc(), args.data());
@@ -1208,8 +1200,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
 
         SUBCASE("Each known property is settable")
         {
-            ArgvHelper args{"angel_lsp",
-                            "--engine-property=allowUnsafeReferences=true",
+            ArgvHelper args{"angel_lsp", "--engine-property=allowUnsafeReferences=true",
                             "--engine-property=privatePropAsProtected=true",
                             "--engine-property=disallowGlobalVars=true"};
             ServerConfig config = FromArgs(args.argc(), args.data());
@@ -1227,8 +1218,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
 
         SUBCASE("false is honoured, and so is the --engine-prop spelling")
         {
-            ArgvHelper args{"angel_lsp",
-                            "--engine-property=allowUnsafeReferences=true",
+            ArgvHelper args{"angel_lsp", "--engine-property=allowUnsafeReferences=true",
                             "--engine-prop=allowUnsafeReferences=false"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.engine.allowUnsafeReferences == false);
@@ -1238,8 +1228,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
         {
             // AngelScript has forty engine properties and this server reads three. Naming one of
             // the other thirty-seven has to be inert rather than land on a neighbouring field.
-            ArgvHelper args{"angel_lsp",
-                            "--engine-property=unknownEngineProperty=true",
+            ArgvHelper args{"angel_lsp", "--engine-property=unknownEngineProperty=true",
                             "--engine-property=allowUnsafeReferences=true"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.engine.allowUnsafeReferences == true);
@@ -1299,8 +1288,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             //
             // While they were dropped here, a host running either had no way to state its
             // configuration at all, so the last value it set was silently replaced by another.
-            ArgvHelper args{"angel_lsp",
-                            "--engine-property=propertyAccessorMode=3",
+            ArgvHelper args{"angel_lsp", "--engine-property=propertyAccessorMode=3",
                             "--engine-property=propertyAccessorMode=1"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.engine.propertyAccessorMode == 1);
@@ -1314,10 +1302,10 @@ TEST_CASE("ServerConfig - Every property accessor mode the engine has can be sta
     // means. Measured false: under both, `c.X` backed by a script `get_X` is rejected with the
     // `property` keyword and without it, because the compiler skips script functions entirely. A
     // host running either had no way to say so.
-    for (const char *mode : { "0", "1", "2", "3" })
+    for (const char* mode : {"0", "1", "2", "3"})
     {
         const std::string flag = std::string("--engine-property=propertyAccessorMode=") + mode;
-        ArgvHelper args{ "angel_lsp", flag.c_str() };
+        ArgvHelper args{"angel_lsp", flag.c_str()};
         const ServerConfig config = FromArgs(args.argc(), args.data());
 
         INFO("mode " << mode);
@@ -1329,7 +1317,7 @@ TEST_CASE("ServerConfig - A property accessor mode the engine does not have is d
 {
     // Left at the default rather than guessed at: a typo that silently picked a dialect would be
     // far harder to notice than one that changes nothing.
-    ArgvHelper args{ "angel_lsp", "--engine-property=propertyAccessorMode=7" };
+    ArgvHelper args{"angel_lsp", "--engine-property=propertyAccessorMode=7"};
     const ServerConfig config = FromArgs(args.argc(), args.data());
 
     CHECK(config.engine.propertyAccessorMode == 2);
@@ -1338,7 +1326,7 @@ TEST_CASE("ServerConfig - A property accessor mode the engine does not have is d
 TEST_CASE("ServerConfig - Preprocessor features are off unless asked for")
 {
     {
-        ArgvHelper args{ "angel_lsp" };
+        ArgvHelper args{"angel_lsp"};
         const ServerConfig config = FromArgs(args.argc(), args.data());
 
         CHECK_FALSE(config.preprocessor.elseSupport);
@@ -1349,9 +1337,8 @@ TEST_CASE("ServerConfig - Preprocessor features are off unless asked for")
     }
 
     {
-        ArgvHelper args{ "angel_lsp",
-                         "--preprocessor-feature=elseSupport=true",
-                         "--preprocessor-feature=pragmaMode=error" };
+        ArgvHelper args{"angel_lsp", "--preprocessor-feature=elseSupport=true",
+                        "--preprocessor-feature=pragmaMode=error"};
         const ServerConfig config = FromArgs(args.argc(), args.data());
 
         CHECK(config.preprocessor.elseSupport);
@@ -1362,7 +1349,7 @@ TEST_CASE("ServerConfig - Preprocessor features are off unless asked for")
 
 TEST_CASE("ServerConfig - Defined words arrive from --define")
 {
-    ArgvHelper args{ "angel_lsp", "--define=SERVER", "--define=DEBUG" };
+    ArgvHelper args{"angel_lsp", "--define=SERVER", "--define=DEBUG"};
     const ServerConfig config = FromArgs(args.argc(), args.data());
 
     REQUIRE(config.definedWords.size() == 2);
@@ -1374,7 +1361,7 @@ TEST_CASE("ServerConfig - Defined words arrive from --define")
 // ensuring engine symbols resolve against this exact file rather than an arbitrary stub.
 TEST_CASE("ServerConfig - Active predefined file path is set via --predefined-active")
 {
-    ArgvHelper args{ "angel_lsp", "--predefined-active=C:/hosts/engine.as.predefined" };
+    ArgvHelper args{"angel_lsp", "--predefined-active=C:/hosts/engine.as.predefined"};
     const ServerConfig config = FromArgs(args.argc(), args.data());
 
     CHECK(config.activePredefined == "C:/hosts/engine.as.predefined");
@@ -1384,7 +1371,7 @@ TEST_CASE("ServerConfig - Active predefined file path is set via --predefined-ac
 // would restrict stub loading and break existing workspaces that rely on scanning and merging all stubs.
 TEST_CASE("ServerConfig - Active predefined file is empty by default")
 {
-    ArgvHelper args{ "angel_lsp" };
+    ArgvHelper args{"angel_lsp"};
     const ServerConfig config = FromArgs(args.argc(), args.data());
 
     CHECK(config.activePredefined.empty());
@@ -1394,9 +1381,8 @@ TEST_CASE("ServerConfig - Active predefined file is empty by default")
 // multiple occurrences must overwrite the previous value without accumulating into predefinedFiles.
 TEST_CASE("ServerConfig - Last --predefined-active wins and does not accumulate into predefinedFiles")
 {
-    ArgvHelper args{ "angel_lsp",
-                     "--predefined-active=C:/hosts/first.as.predefined",
-                     "--predefined-active=C:/hosts/second.as.predefined" };
+    ArgvHelper args{"angel_lsp", "--predefined-active=C:/hosts/first.as.predefined",
+                    "--predefined-active=C:/hosts/second.as.predefined"};
     const ServerConfig config = FromArgs(args.argc(), args.data());
 
     CHECK(config.activePredefined == "C:/hosts/second.as.predefined");
@@ -1407,7 +1393,7 @@ TEST_CASE("ServerConfig - Last --predefined-active wins and does not accumulate 
 // preserves default stub scanning behavior instead of registering an invalid path.
 TEST_CASE("ServerConfig - Empty --predefined-active value is ignored")
 {
-    ArgvHelper args{ "angel_lsp", "--predefined-active=" };
+    ArgvHelper args{"angel_lsp", "--predefined-active="};
     const ServerConfig config = FromArgs(args.argc(), args.data());
 
     CHECK(config.activePredefined.empty());

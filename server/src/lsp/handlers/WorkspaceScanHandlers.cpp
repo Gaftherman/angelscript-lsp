@@ -511,8 +511,8 @@ bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined
     }
 
     const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    LogInfo(fmt::format("[File Read] Finished reading watched file: {} in {} ({} bytes)",
-                        path, utils::FormatDuration(readTimer.ElapsedMs()), content.size()));
+    LogInfo(fmt::format("[File Read] Finished reading watched file: {} in {} ({} bytes)", path,
+                        utils::FormatDuration(readTimer.ElapsedMs()), content.size()));
     m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
         path, content, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
 

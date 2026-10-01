@@ -1,5 +1,5 @@
-#include "features/code_action/CodeActionInternal.h"
 #include "analysis/DiagnosticSuppression.h"
+#include "features/code_action/CodeActionInternal.h"
 #include "parser/ASTUtils.h"
 
 namespace angel_lsp::features

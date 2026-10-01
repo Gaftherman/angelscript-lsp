@@ -444,8 +444,8 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
  * @param[out] target Target descriptor to populate.
  * @return True if successfully resolved as an enum member.
  */
-bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string& nodeText,
-                                     std::string_view sourceCode, TargetDescriptor& target)
+bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string& nodeText, std::string_view sourceCode,
+                                     TargetDescriptor& target)
 {
     TSNode enumDecl = ts_node_parent(memberNode);
     if (ts_node_is_null(enumDecl) || std::string_view(ts_node_type(enumDecl)) != "enum_declaration")
@@ -483,8 +483,8 @@ bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string& nodeT
  * @param[out] target Target descriptor to populate.
  * @return True if successfully resolved as an enum member.
  */
-bool TryResolveScopedEnumAccess(TSNode scopedNode, const std::string& nodeText,
-                                const ResolveTargetRequest& request, TargetDescriptor& target)
+bool TryResolveScopedEnumAccess(TSNode scopedNode, const std::string& nodeText, const ResolveTargetRequest& request,
+                                TargetDescriptor& target)
 {
     uint32_t pStart = ts_node_start_byte(scopedNode);
     uint32_t pEnd = ts_node_end_byte(scopedNode);
@@ -502,8 +502,7 @@ bool TryResolveScopedEnumAccess(TSNode scopedNode, const std::string& nodeText,
     for (const auto& s : syms)
     {
         if (s.type == analysis::SymbolType::Variable &&
-            std::holds_alternative<analysis::VariableSignature>(s.signature) &&
-            s.GetVariable().isEnumConstant)
+            std::holds_alternative<analysis::VariableSignature>(s.signature) && s.GetVariable().isEnumConstant)
         {
             target.kind = TargetKind::EnumMember;
             target.declaringEnum = s.containerName.empty() ? qualifier : s.containerName;
@@ -1731,8 +1730,7 @@ void CollectGlobalOccurrences(const CollectOccurrencesRequest& request, Occurren
  * @param[in] ctx Occurrence scan context.
  * @return True/false if definitive AST match/mismatch determined, or std::nullopt.
  */
-std::optional<bool> CheckAstEnumMemberMatch(const analysis::LocalReference& ref,
-                                            const OccurrenceScanContext& ctx)
+std::optional<bool> CheckAstEnumMemberMatch(const analysis::LocalReference& ref, const OccurrenceScanContext& ctx)
 {
     if (ctx.fileUri != ctx.request.currentUri || !ctx.request.tree)
     {
@@ -1813,8 +1811,7 @@ bool IsUnscopedEnumMemberMatch(const analysis::Scope* scope, const OccurrenceSca
     for (const auto& s : syms)
     {
         if (s.type == analysis::SymbolType::Variable &&
-            std::holds_alternative<analysis::VariableSignature>(s.signature) &&
-            s.GetVariable().isEnumConstant)
+            std::holds_alternative<analysis::VariableSignature>(s.signature) && s.GetVariable().isEnumConstant)
         {
             enumCount++;
         }
@@ -1910,8 +1907,7 @@ void CollectEnumMemberOccurrences(const CollectOccurrencesRequest& request, Occu
         auto syms = request.symbolTable.FindSymbols(request.target.name);
         for (const auto& sym : syms)
         {
-            if (sym.containerName == request.target.declaringEnum ||
-                sym.qualifiedName == request.target.qualifiedName)
+            if (sym.containerName == request.target.declaringEnum || sym.qualifiedName == request.target.qualifiedName)
             {
                 SymbolSpan span = GetSymbolSpan(sym);
                 allDeclRanges.insert({sym.fileUri, span.sL, span.sC});

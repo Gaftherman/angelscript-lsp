@@ -26,11 +26,8 @@ TEST_SUITE("FuncdefInvocation")
         const std::string funcdefName = test::GenerateRandomSymbolName("OnAction");
         const std::string varName = test::GenerateRandomSymbolName("actionCallback");
 
-        const std::string code = "funcdef int " + funcdefName + "(float x);\n" +
-                                 "void Execute(" + funcdefName + "@ " + varName + ")\n" +
-                                 "{\n" +
-                                 "    " + varName + "(1.5f);\n" +
-                                 "}\n";
+        const std::string code = "funcdef int " + funcdefName + "(float x);\n" + "void Execute(" + funcdefName + "@ " +
+                                 varName + ")\n" + "{\n" + "    " + varName + "(1.5f);\n" + "}\n";
 
         AngelScriptParser parser;
         SymbolCollector collector(nullptr);
@@ -97,15 +94,9 @@ TEST_SUITE("FuncdefInvocation")
         const std::string className = test::GenerateRandomSymbolName("Processor");
         const std::string memberName = test::GenerateRandomSymbolName("filter");
 
-        const std::string code = "funcdef string " + funcdefName + "(int a, int b);\n" +
-                                 "class " + className + "\n" +
-                                 "{\n" +
-                                 "    " + funcdefName + "@ " + memberName + ";\n" +
-                                 "}\n" +
-                                 "void Run(" + className + "@ p)\n" +
-                                 "{\n" +
-                                 "    p." + memberName + "(10, 20);\n" +
-                                 "}\n";
+        const std::string code = "funcdef string " + funcdefName + "(int a, int b);\n" + "class " + className + "\n" +
+                                 "{\n" + "    " + funcdefName + "@ " + memberName + ";\n" + "}\n" + "void Run(" +
+                                 className + "@ p)\n" + "{\n" + "    p." + memberName + "(10, 20);\n" + "}\n";
 
         AngelScriptParser parser;
         SymbolCollector collector(nullptr);

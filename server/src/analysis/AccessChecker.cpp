@@ -339,8 +339,9 @@ std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insid
                 const auto symbols = table.FindSymbolsPtr(className);
                 if (symbols)
                 {
-                    insideMixin = std::any_of(symbols->begin(), symbols->end(), [](const Symbol& sym)
-                                              { return sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin; });
+                    insideMixin =
+                        std::any_of(symbols->begin(), symbols->end(), [](const Symbol& sym)
+                                    { return sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin; });
                 }
                 return className;
             }
@@ -361,9 +362,7 @@ std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insid
 std::string ResolveObjectOwnerType(TSNode objectNode, const Scope* scope, const DiagnosticContext& ctx)
 {
     const std::string_view arrayContainer = ctx.request.GetEffectiveArrayTypeName();
-    return MemberOwnerType(
-        ResolveExpressionType(objectNode, ExpressionTypeContext(scope, ctx)),
-        arrayContainer);
+    return MemberOwnerType(ResolveExpressionType(objectNode, ExpressionTypeContext(scope, ctx)), arrayContainer);
 }
 
 /**

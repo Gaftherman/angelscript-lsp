@@ -97,10 +97,10 @@ struct TestEnvironment
     }
 
     std::vector<lsp::CompletionItem> CompleteAtWithConfig(uint32_t line, uint32_t character,
-                                                         const angel_lsp::config::ServerConfig& config,
-                                                         bool snippetSupport = true)
+                                                          const angel_lsp::config::ServerConfig& config,
+                                                          bool snippetSupport = true)
     {
-        CompletionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character},
+        CompletionRequest req{uri,     sourceCode,    tree, symbolTable, scopeIndex, lsp::Position{line, character},
                               &config, snippetSupport};
         return GetCompletion(req);
     }
@@ -1245,19 +1245,26 @@ TEST_CASE("Completion - Dot on primitive method return returns no member items")
     const std::string localKey = test::GenerateRandomSymbolName("keyName");
     const std::string localVal = test::GenerateRandomSymbolName("temp");
 
-    std::string code =
-        "namespace meta_api {\n"
-        "namespace json {\n"
-        "namespace v2 {\n"
-        "class " + clsName + " {\n"
-        "    bool " + fnName + "(string k, float val) { return true; }\n"
-        "    void Test(string " + localKey + ", float " + localVal + ") {\n"
-        "        if (!this." + fnName + "(" + localKey + ", " + localVal + ").\n"
-        "    }\n"
-        "};\n"
-        "}\n"
-        "}\n"
-        "}\n";
+    std::string code = "namespace meta_api {\n"
+                       "namespace json {\n"
+                       "namespace v2 {\n"
+                       "class " +
+                       clsName +
+                       " {\n"
+                       "    bool " +
+                       fnName +
+                       "(string k, float val) { return true; }\n"
+                       "    void Test(string " +
+                       localKey + ", float " + localVal +
+                       ") {\n"
+                       "        if (!this." +
+                       fnName + "(" + localKey + ", " + localVal +
+                       ").\n"
+                       "    }\n"
+                       "};\n"
+                       "}\n"
+                       "}\n"
+                       "}\n";
 
     TestEnvironment env(code);
     size_t targetPos = code.find(").") + 2;
@@ -1285,8 +1292,7 @@ TEST_CASE("Completion - Trailing dot in function declaration returns no member i
     const std::string fnName = test::GenerateRandomSymbolName("ValueOrDefault");
     const std::string paramName = test::GenerateRandomSymbolName("keyName");
 
-    std::string code =
-        "float " + fnName + "(string " + paramName + ").\n";
+    std::string code = "float " + fnName + "(string " + paramName + ").\n";
 
     TestEnvironment env(code);
     uint32_t line = 0;
@@ -1303,16 +1309,24 @@ TEST_CASE("Completion - Chained method access returning object resolves members"
     const std::string memberField = test::GenerateRandomSymbolName("childVal");
     const std::string getMethod = test::GenerateRandomSymbolName("GetChild");
 
-    std::string code =
-        "class " + innerClass + " {\n"
-        "    int " + memberField + ";\n"
-        "};\n"
-        "class " + outerClass + " {\n"
-        "    " + innerClass + "@ " + getMethod + "() { return null; }\n"
-        "    void Run() {\n"
-        "        this." + getMethod + "().\n"
-        "    }\n"
-        "};\n";
+    std::string code = "class " + innerClass +
+                       " {\n"
+                       "    int " +
+                       memberField +
+                       ";\n"
+                       "};\n"
+                       "class " +
+                       outerClass +
+                       " {\n"
+                       "    " +
+                       innerClass + "@ " + getMethod +
+                       "() { return null; }\n"
+                       "    void Run() {\n"
+                       "        this." +
+                       getMethod +
+                       "().\n"
+                       "    }\n"
+                       "};\n";
 
     TestEnvironment env(code);
     size_t targetPos = code.find(").") + 2;
@@ -1340,13 +1354,17 @@ TEST_CASE("Completion - Single colon suppression vs double colon trigger")
     const std::string nsName = test::GenerateRandomSymbolName("MyNamespace");
     const std::string fnName = test::GenerateRandomSymbolName("testFunc");
 
-    std::string code =
-        "namespace " + nsName + " {\n"
-        "    void " + fnName + "() {}\n"
-        "}\n"
-        "void main() {\n"
-        "    " + nsName + ":\n"
-        "}\n";
+    std::string code = "namespace " + nsName +
+                       " {\n"
+                       "    void " +
+                       fnName +
+                       "() {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    " +
+                       nsName +
+                       ":\n"
+                       "}\n";
 
     TestEnvironment env(code);
     // Complete right after single colon "MyNamespace:"
@@ -1354,13 +1372,17 @@ TEST_CASE("Completion - Single colon suppression vs double colon trigger")
     CHECK(singleItems.empty());
 
     // Now test with double colon "MyNamespace::"
-    std::string doubleCode =
-        "namespace " + nsName + " {\n"
-        "    void " + fnName + "() {}\n"
-        "}\n"
-        "void main() {\n"
-        "    " + nsName + "::\n"
-        "}\n";
+    std::string doubleCode = "namespace " + nsName +
+                             " {\n"
+                             "    void " +
+                             fnName +
+                             "() {}\n"
+                             "}\n"
+                             "void main() {\n"
+                             "    " +
+                             nsName +
+                             "::\n"
+                             "}\n";
 
     TestEnvironment envDouble(doubleCode);
     auto doubleItems = envDouble.CompleteAt(4, static_cast<uint32_t>(4 + nsName.size() + 2));
@@ -1374,13 +1396,17 @@ TEST_CASE("Completion - Compound namespace scope trigger")
     const std::string nsB = test::GenerateRandomSymbolName("SubNS");
     const std::string fnName = test::GenerateRandomSymbolName("nestedFunc");
 
-    std::string code =
-        "namespace " + nsA + "::" + nsB + " {\n"
-        "    void " + fnName + "() {}\n"
-        "}\n"
-        "void main() {\n"
-        "    " + nsA + "::" + nsB + "::\n"
-        "}\n";
+    std::string code = "namespace " + nsA + "::" + nsB +
+                       " {\n"
+                       "    void " +
+                       fnName +
+                       "() {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    " +
+                       nsA + "::" + nsB +
+                       "::\n"
+                       "}\n";
 
     TestEnvironment env(code);
     uint32_t col = static_cast<uint32_t>(4 + nsA.size() + 2 + nsB.size() + 2);
@@ -1395,14 +1421,22 @@ TEST_CASE("Completion - Smart type-aware ranking for function arguments")
     const std::string floatVar = test::GenerateRandomSymbolName("g_targetFloat");
     const std::string boolVar = test::GenerateRandomSymbolName("g_targetBool");
 
-    std::string code =
-        "int " + intVar + ";\n"
-        "float " + floatVar + ";\n"
-        "bool " + boolVar + ";\n"
-        "void " + targetFn + "(int id, float speed) {}\n"
-        "void main() {\n"
-        "    " + targetFn + "(\n"
-        "}\n";
+    std::string code = "int " + intVar +
+                       ";\n"
+                       "float " +
+                       floatVar +
+                       ";\n"
+                       "bool " +
+                       boolVar +
+                       ";\n"
+                       "void " +
+                       targetFn +
+                       "(int id, float speed) {}\n"
+                       "void main() {\n"
+                       "    " +
+                       targetFn +
+                       "(\n"
+                       "}\n";
 
     TestEnvironment env(code);
     // Cursor right after '('
@@ -1438,25 +1472,33 @@ TEST_CASE("Completion - Multi-colon syntax error guard (3 or 4 colons are suppre
     const std::string nsName = test::GenerateRandomSymbolName("GuardNS");
     const std::string fnName = test::GenerateRandomSymbolName("guardFn");
 
-    std::string code =
-        "namespace " + nsName + " {\n"
-        "    void " + fnName + "() {}\n"
-        "}\n"
-        "void main() {\n"
-        "    " + nsName + ":::\n"
-        "}\n";
+    std::string code = "namespace " + nsName +
+                       " {\n"
+                       "    void " +
+                       fnName +
+                       "() {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    " +
+                       nsName +
+                       ":::\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto tripleItems = env.CompleteAt(4, static_cast<uint32_t>(4 + nsName.size() + 3));
     CHECK(tripleItems.empty());
 
-    std::string quadCode =
-        "namespace " + nsName + " {\n"
-        "    void " + fnName + "() {}\n"
-        "}\n"
-        "void main() {\n"
-        "    " + nsName + "::::\n"
-        "}\n";
+    std::string quadCode = "namespace " + nsName +
+                           " {\n"
+                           "    void " +
+                           fnName +
+                           "() {}\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    " +
+                           nsName +
+                           "::::\n"
+                           "}\n";
     TestEnvironment quadEnv(quadCode);
     auto quadItems = quadEnv.CompleteAt(4, static_cast<uint32_t>(4 + nsName.size() + 4));
     CHECK(quadItems.empty());
@@ -1467,23 +1509,31 @@ TEST_CASE("Completion - Colon suppression on interface and mixin qualifiers")
     const std::string ifaceName = test::GenerateRandomSymbolName("ICombat");
     const std::string mixinName = test::GenerateRandomSymbolName("MCombatant");
 
-    std::string code =
-        "interface " + ifaceName + " { void DoAction(); }\n"
-        "mixin class " + mixinName + " { void DoAction() {} }\n"
-        "void main() {\n"
-        "    " + ifaceName + ":\n"
-        "}\n";
+    std::string code = "interface " + ifaceName +
+                       " { void DoAction(); }\n"
+                       "mixin class " +
+                       mixinName +
+                       " { void DoAction() {} }\n"
+                       "void main() {\n"
+                       "    " +
+                       ifaceName +
+                       ":\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto ifaceSingle = env.CompleteAt(3, static_cast<uint32_t>(4 + ifaceName.size() + 1));
     CHECK(ifaceSingle.empty());
 
-    std::string mixinTripleCode =
-        "interface " + ifaceName + " { void DoAction(); }\n"
-        "mixin class " + mixinName + " { void DoAction() {} }\n"
-        "void main() {\n"
-        "    " + mixinName + ":::\n"
-        "}\n";
+    std::string mixinTripleCode = "interface " + ifaceName +
+                                  " { void DoAction(); }\n"
+                                  "mixin class " +
+                                  mixinName +
+                                  " { void DoAction() {} }\n"
+                                  "void main() {\n"
+                                  "    " +
+                                  mixinName +
+                                  ":::\n"
+                                  "}\n";
     TestEnvironment mixinEnv(mixinTripleCode);
     auto mixinTriple = mixinEnv.CompleteAt(3, static_cast<uint32_t>(4 + mixinName.size() + 3));
     CHECK(mixinTriple.empty());
@@ -1496,14 +1546,22 @@ TEST_CASE("Completion - Interface handle member completion and virtual propertie
     const std::string powerProp = test::GenerateRandomSymbolName("PowerLevel");
     const std::string handleVar = test::GenerateRandomSymbolName("pCombatant");
 
-    std::string code =
-        "interface " + ifaceName + " {\n"
-        "    void " + attackMethod + "(int damage, float range);\n"
-        "    int " + powerProp + " { get; }\n"
-        "}\n"
-        "void Test(" + ifaceName + "@ " + handleVar + ") {\n"
-        "    " + handleVar + ".\n"
-        "}\n";
+    std::string code = "interface " + ifaceName +
+                       " {\n"
+                       "    void " +
+                       attackMethod +
+                       "(int damage, float range);\n"
+                       "    int " +
+                       powerProp +
+                       " { get; }\n"
+                       "}\n"
+                       "void Test(" +
+                       ifaceName + "@ " + handleVar +
+                       ") {\n"
+                       "    " +
+                       handleVar +
+                       ".\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto items = env.CompleteAt(5, static_cast<uint32_t>(4 + handleVar.size() + 1));
@@ -1520,15 +1578,25 @@ TEST_CASE("Completion - Mixin class host member completion and virtual propertie
     const std::string taskProp = test::GenerateRandomSymbolName("TaskCount");
     const std::string objVar = test::GenerateRandomSymbolName("worker");
 
-    std::string code =
-        "mixin class " + mixinName + " {\n"
-        "    void " + workMethod + "(int priority) {}\n"
-        "    int get_" + taskProp + "() property { return 5; }\n"
-        "}\n"
-        "class " + hostName + " : " + mixinName + " {}\n"
-        "void Test(" + hostName + "@ " + objVar + ") {\n"
-        "    " + objVar + ".\n"
-        "}\n";
+    std::string code = "mixin class " + mixinName +
+                       " {\n"
+                       "    void " +
+                       workMethod +
+                       "(int priority) {}\n"
+                       "    int get_" +
+                       taskProp +
+                       "() property { return 5; }\n"
+                       "}\n"
+                       "class " +
+                       hostName + " : " + mixinName +
+                       " {}\n"
+                       "void Test(" +
+                       hostName + "@ " + objVar +
+                       ") {\n"
+                       "    " +
+                       objVar +
+                       ".\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto items = env.CompleteAt(6, static_cast<uint32_t>(4 + objVar.size() + 1));
@@ -1545,16 +1613,28 @@ TEST_CASE("Completion - Smart type-aware ranking for interface method call")
     const std::string floatVar = test::GenerateRandomSymbolName("g_targetFloat");
     const std::string stringVar = test::GenerateRandomSymbolName("g_targetString");
 
-    std::string code =
-        "int " + intVar + ";\n"
-        "float " + floatVar + ";\n"
-        "string " + stringVar + ";\n"
-        "interface " + ifaceName + " {\n"
-        "    void " + execMethod + "(int code, float duration);\n"
-        "}\n"
-        "void Test(" + ifaceName + "@ service) {\n"
-        "    service." + execMethod + "(\n"
-        "}\n";
+    std::string code = "int " + intVar +
+                       ";\n"
+                       "float " +
+                       floatVar +
+                       ";\n"
+                       "string " +
+                       stringVar +
+                       ";\n"
+                       "interface " +
+                       ifaceName +
+                       " {\n"
+                       "    void " +
+                       execMethod +
+                       "(int code, float duration);\n"
+                       "}\n"
+                       "void Test(" +
+                       ifaceName +
+                       "@ service) {\n"
+                       "    service." +
+                       execMethod +
+                       "(\n"
+                       "}\n";
 
     TestEnvironment env(code);
     uint32_t col = static_cast<uint32_t>(4 + std::string("service.").size() + execMethod.size() + 1);
@@ -1591,20 +1671,32 @@ TEST_CASE("Completion - Multi-line and comments in member access chain (AST-firs
     const std::string targetField = test::GenerateRandomSymbolName("targetVal");
     const std::string varName = test::GenerateRandomSymbolName("instA");
 
-    std::string code =
-        "class " + classB + " {\n"
-        "    int " + targetField + ";\n"
-        "}\n"
-        "class " + classA + " {\n"
-        "    " + classB + " " + fieldB + ";\n"
-        "}\n"
-        "void main() {\n"
-        "    " + classA + " " + varName + ";\n"
-        "    " + varName + "\n"
-        "        /* intermediate comment */\n"
-        "        ." + fieldB + "\n"
-        "        .\n"
-        "}\n";
+    std::string code = "class " + classB +
+                       " {\n"
+                       "    int " +
+                       targetField +
+                       ";\n"
+                       "}\n"
+                       "class " +
+                       classA +
+                       " {\n"
+                       "    " +
+                       classB + " " + fieldB +
+                       ";\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    " +
+                       classA + " " + varName +
+                       ";\n"
+                       "    " +
+                       varName +
+                       "\n"
+                       "        /* intermediate comment */\n"
+                       "        ." +
+                       fieldB +
+                       "\n"
+                       "        .\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto items = env.CompleteAt(11, 9);
@@ -1627,15 +1719,23 @@ TEST_CASE("Completion - Method completion auto-parentheses and cursor placement"
     const std::string multiArgMethod = test::GenerateRandomSymbolName("TakeDamage");
     const std::string varName = test::GenerateRandomSymbolName("ent");
 
-    const std::string code =
-        "class " + className + " {\n"
-        "    string " + noArgMethod + "() { return \"\"; }\n"
-        "    void " + multiArgMethod + "(int amount, int type) {}\n"
-        "}\n"
-        "void main() {\n"
-        "    " + className + " " + varName + ";\n"
-        "    " + varName + ".\n"
-        "}\n";
+    const std::string code = "class " + className +
+                             " {\n"
+                             "    string " +
+                             noArgMethod +
+                             "() { return \"\"; }\n"
+                             "    void " +
+                             multiArgMethod +
+                             "(int amount, int type) {}\n"
+                             "}\n"
+                             "void main() {\n"
+                             "    " +
+                             className + " " + varName +
+                             ";\n"
+                             "    " +
+                             varName +
+                             ".\n"
+                             "}\n";
 
     TestEnvironment env(code);
 
@@ -1682,4 +1782,65 @@ TEST_CASE("Completion - Method completion auto-parentheses and cursor placement"
     }
 }
 
+TEST_CASE("CompletionHandler - Invariant: qualifyEnumValues auto-prefixes enum name and resolves ambiguity")
+{
+    const std::string enumA = angel_lsp::test::GenerateRandomSymbolName("ColorEnum");
+    const std::string enumB = angel_lsp::test::GenerateRandomSymbolName("FruitEnum");
+    const std::string sharedVal = angel_lsp::test::GenerateRandomSymbolName("RedVal");
+    const std::string uniqueVal = angel_lsp::test::GenerateRandomSymbolName("BlueVal");
 
+    const std::string code = "enum " + enumA + " { " + sharedVal + ", " + uniqueVal +
+                             " }\n"
+                             "enum " +
+                             enumB + " { " + sharedVal +
+                             " }\n"
+                             "void main() {\n"
+                             "    \n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // 1. By default (qualifyEnumValues = true):
+    auto items = env.CompleteAt(3, 4);
+
+    std::vector<lsp::CompletionItem> sharedItems;
+    std::optional<lsp::CompletionItem> uniqueItem;
+
+    for (const auto& item : items)
+    {
+        if (item.label == sharedVal)
+        {
+            sharedItems.push_back(item);
+        }
+        else if (item.label == uniqueVal)
+        {
+            uniqueItem = item;
+        }
+    }
+
+    CHECK(sharedItems.size() == 2);
+    for (const auto& item : sharedItems)
+    {
+        REQUIRE(item.insertText.has_value());
+        CHECK(item.kind == lsp::CompletionItemKind::EnumMember);
+        bool matchesA = (*item.insertText == enumA + "::" + sharedVal);
+        bool matchesB = (*item.insertText == enumB + "::" + sharedVal);
+        CHECK((matchesA || matchesB));
+    }
+
+    REQUIRE(uniqueItem.has_value());
+    REQUIRE(uniqueItem->insertText.has_value());
+    CHECK(*uniqueItem->insertText == enumA + "::" + uniqueVal);
+
+    // 2. With qualifyEnumValues = false:
+    config::ServerConfig noQualifyConfig;
+    noQualifyConfig.features.completionQualifyEnumValues = false;
+    auto noQualifyItems = env.CompleteAtWithConfig(3, 4, noQualifyConfig, true);
+    for (const auto& item : noQualifyItems)
+    {
+        if (item.label == uniqueVal)
+        {
+            CHECK_FALSE(item.insertText.has_value());
+        }
+    }
+}

@@ -124,6 +124,5 @@ std::string FormatSourceCode(std::string_view sourceCode, const FormatCodeOption
  * @return Formatted source code string.
  */
 std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions& options,
-                             BraceStyle braceStyle = BraceStyle::Allman,
-                             bool spacesInsideParentheses = false);
+                             BraceStyle braceStyle = BraceStyle::Allman, bool spacesInsideParentheses = false);
 } // namespace angel_lsp::features

@@ -85,7 +85,8 @@ inline constexpr std::array<PrimitiveDocInfo, 14> k_primitiveDocTable = {{
     {"int64", "64-bit signed integer", "-9,223,372,036,854,775,808 to 9,223,372,036,854,775,807"},
     {"uint64", "64-bit unsigned integer", "0 to 18,446,744,073,709,551,615 (0x0 to 0xFFFFFFFFFFFFFFFF)"},
     {"float", "32-bit single-precision floating-point (IEEE 754)", "\u00B11.17549435e-38 to \u00B13.40282347e+38"},
-    {"double", "64-bit double-precision floating-point (IEEE 754)", "\u00B12.2250738585072014e-308 to \u00B11.7976931348623157e+308"},
+    {"double", "64-bit double-precision floating-point (IEEE 754)",
+     "\u00B12.2250738585072014e-308 to \u00B11.7976931348623157e+308"},
     {"bool", "Boolean type", "true or false"},
     {"void", "Absence of type / value", ""},
 }};

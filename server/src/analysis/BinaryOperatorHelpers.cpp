@@ -80,8 +80,7 @@ bool TypeHasOpImplConvTo(const std::string& typeName, const std::string& targetT
 
 bool IsKnownType(const std::string& type, const SymbolTable& table, std::string_view stringTypeName)
 {
-    if (parser::primitives::IsNumeric(type) || type == "bool" || type == stringTypeName ||
-        ResolvesToEnum(type, table))
+    if (parser::primitives::IsNumeric(type) || type == "bool" || type == stringTypeName || ResolvesToEnum(type, table))
     {
         return true;
     }

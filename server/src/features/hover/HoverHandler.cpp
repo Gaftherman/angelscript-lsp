@@ -2437,7 +2437,8 @@ std::optional<lsp::Hover> TryHoverStringLiteral(const HoverTarget& target, const
         if (!resolved.empty())
         {
             md = FormatResolvedAssetMarkdown(unquoted, resolved, showLength);
-            return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, target.range};
+            return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
+                              target.range};
         }
         md = "```angelscript\n" + std::string(txt) + "\n```";
         if (showLength)
@@ -2445,7 +2446,8 @@ std::optional<lsp::Hover> TryHoverStringLiteral(const HoverTarget& target, const
             md += "\n\n- **Length**: " + std::to_string(unquoted.size()) + " characters";
         }
         md += "\n- **File**: Not found";
-        return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, target.range};
+        return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
+                          target.range};
     }
 
     md = "```angelscript\n" + std::string(txt) + "\n```";

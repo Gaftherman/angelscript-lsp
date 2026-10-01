@@ -19,71 +19,67 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct Fixture
+struct Fixture
+{
+    AngelScriptParser parser;
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    explicit Fixture(std::string code) : sourceCode(std::move(code))
     {
-        AngelScriptParser parser;
-        std::string sourceCode;
-        TSTree *tree = nullptr;
-
-        explicit Fixture(std::string code)
-            : sourceCode(std::move(code))
-        {
-            tree = parser.Parse(sourceCode);
-        }
-
-        ~Fixture()
-        {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
-        }
-
-        std::vector<lsp::SelectionRange> At(std::vector<lsp::Position> positions)
-        {
-            const SelectionRangeRequest request{ sourceCode, tree, positions };
-            return GetSelectionRanges(request);
-        }
-    };
-
-    /** @brief Flattens one chain into its ranges, innermost first. */
-    std::vector<lsp::Range> Chain(const lsp::SelectionRange &head)
-    {
-        std::vector<lsp::Range> ranges;
-        for (const lsp::SelectionRange *link = &head; link != nullptr; link = link->parent.get())
-        {
-            ranges.push_back(link->range);
-        }
-        return ranges;
+        tree = parser.Parse(sourceCode);
     }
 
-    /** @brief True when the outer range fully contains the inner one. */
-    bool Contains(const lsp::Range &outer, const lsp::Range &inner)
+    ~Fixture()
     {
-        const bool startsBefore = outer.start.line < inner.start.line ||
-                                  (outer.start.line == inner.start.line &&
-                                   outer.start.character <= inner.start.character);
-        const bool endsAfter = outer.end.line > inner.end.line ||
-                               (outer.end.line == inner.end.line &&
-                                outer.end.character >= inner.end.character);
-        return startsBefore && endsAfter;
+        if (tree)
+        {
+            ts_tree_delete(tree);
+        }
     }
+
+    std::vector<lsp::SelectionRange> At(std::vector<lsp::Position> positions)
+    {
+        const SelectionRangeRequest request{sourceCode, tree, positions};
+        return GetSelectionRanges(request);
+    }
+};
+
+/** @brief Flattens one chain into its ranges, innermost first. */
+std::vector<lsp::Range> Chain(const lsp::SelectionRange& head)
+{
+    std::vector<lsp::Range> ranges;
+    for (const lsp::SelectionRange* link = &head; link != nullptr; link = link->parent.get())
+    {
+        ranges.push_back(link->range);
+    }
+    return ranges;
 }
+
+/** @brief True when the outer range fully contains the inner one. */
+bool Contains(const lsp::Range& outer, const lsp::Range& inner)
+{
+    const bool startsBefore = outer.start.line < inner.start.line ||
+                              (outer.start.line == inner.start.line && outer.start.character <= inner.start.character);
+    const bool endsAfter = outer.end.line > inner.end.line ||
+                           (outer.end.line == inner.end.line && outer.end.character >= inner.end.character);
+    return startsBefore && endsAfter;
+}
+} // namespace
 
 TEST_CASE("SelectionRange - Each link contains the one before it")
 {
     // The protocol's only hard requirement, and the one a client will misbehave on: parent.range
     // must contain this.range.
-    Fixture fixture(
-        "class Entity\n"
-        "{\n"
-        "    void Think()\n"
-        "    {\n"
-        "        int ticks = 0;\n"
-        "    }\n"
-        "}\n");
+    Fixture fixture("class Entity\n"
+                    "{\n"
+                    "    void Think()\n"
+                    "    {\n"
+                    "        int ticks = 0;\n"
+                    "    }\n"
+                    "}\n");
 
-    const auto results = fixture.At({ lsp::Position{ 4, 12 } });
+    const auto results = fixture.At({lsp::Position{4, 12}});
     REQUIRE(results.size() == 1);
 
     const auto ranges = Chain(results[0]);
@@ -99,7 +95,7 @@ TEST_CASE("SelectionRange - The innermost link is the token under the cursor")
 {
     Fixture fixture("void Think() { int ticks = 0; }\n");
 
-    const auto results = fixture.At({ lsp::Position{ 0, 20 } });
+    const auto results = fixture.At({lsp::Position{0, 20}});
     REQUIRE(results.size() == 1);
 
     const auto ranges = Chain(results[0]);
@@ -113,7 +109,7 @@ TEST_CASE("SelectionRange - The chain reaches the whole document")
 {
     Fixture fixture("void Think() { int ticks = 0; }\n");
 
-    const auto results = fixture.At({ lsp::Position{ 0, 20 } });
+    const auto results = fixture.At({lsp::Position{0, 20}});
     REQUIRE(results.size() == 1);
 
     const auto ranges = Chain(results[0]);
@@ -126,13 +122,12 @@ TEST_CASE("SelectionRange - No two consecutive links offer the same range")
 {
     // A chain that repeats a range makes the expand keystroke look broken: the user presses it and
     // the selection does not move.
-    Fixture fixture(
-        "class Entity\n"
-        "{\n"
-        "    int health;\n"
-        "}\n");
+    Fixture fixture("class Entity\n"
+                    "{\n"
+                    "    int health;\n"
+                    "}\n");
 
-    const auto results = fixture.At({ lsp::Position{ 2, 9 } });
+    const auto results = fixture.At({lsp::Position{2, 9}});
     REQUIRE(results.size() == 1);
 
     const auto ranges = Chain(results[0]);
@@ -153,11 +148,7 @@ TEST_CASE("SelectionRange - Every requested position is answered, in order")
     // than a useless one.
     Fixture fixture("void Think() { int ticks = 0; }\n");
 
-    const auto results = fixture.At({
-        lsp::Position{ 0, 5 },
-        lsp::Position{ 0, 20 },
-        lsp::Position{ 0, 26 }
-    });
+    const auto results = fixture.At({lsp::Position{0, 5}, lsp::Position{0, 20}, lsp::Position{0, 26}});
 
     REQUIRE(results.size() == 3);
     CHECK(Chain(results[0]).front().start.character == 5);
@@ -168,7 +159,7 @@ TEST_CASE("SelectionRange - A position past the end still gets an answer")
 {
     Fixture fixture("void Think() { }\n");
 
-    const auto results = fixture.At({ lsp::Position{ 99, 99 } });
+    const auto results = fixture.At({lsp::Position{99, 99}});
     REQUIRE(results.size() == 1);
     CHECK_FALSE(Chain(results[0]).empty());
 }
@@ -176,8 +167,8 @@ TEST_CASE("SelectionRange - A position past the end still gets an answer")
 TEST_CASE("SelectionRange - A document with no tree yields nothing")
 {
     const std::string source = "void Think() { }\n";
-    const std::vector<lsp::Position> positions{ lsp::Position{ 0, 5 } };
-    const SelectionRangeRequest request{ source, nullptr, positions };
+    const std::vector<lsp::Position> positions{lsp::Position{0, 5}};
+    const SelectionRangeRequest request{source, nullptr, positions};
 
     CHECK(GetSelectionRanges(request).empty());
 }

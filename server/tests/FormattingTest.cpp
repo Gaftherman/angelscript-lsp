@@ -1,6 +1,6 @@
-#include <doctest/doctest.h>
 #include "features/formatting/FormattingHandler.h"
 #include "helpers/TestUtils.h"
+#include <doctest/doctest.h>
 #include <string>
 #include <vector>
 
@@ -53,14 +53,13 @@ TEST_SUITE("Formatting")
         options.insertSpaces = true;
 
         std::string formatted = FormatSourceCode(code, options);
-        std::string expected = 
-            "void test()\n"
-            "{\n"
-            "    if (true)\n"
-            "    {\n"
-            "        doWork();\n"
-            "    }\n"
-            "}\n";
+        std::string expected = "void test()\n"
+                               "{\n"
+                               "    if (true)\n"
+                               "    {\n"
+                               "        doWork();\n"
+                               "    }\n"
+                               "}\n";
         CHECK(formatted == expected);
     }
 
@@ -72,46 +71,45 @@ TEST_SUITE("Formatting")
         options.insertSpaces = true;
 
         std::string formatted = FormatSourceCode(code, options);
-        std::string expected =
-            "if (x > 0)\n"
-            "{\n"
-            "    a();\n"
-            "}\n"
-            "else if (x < 0)\n"
-            "{\n"
-            "    b();\n"
-            "}\n"
-            "else\n"
-            "{\n"
-            "    c();\n"
-            "}\n";
+        std::string expected = "if (x > 0)\n"
+                               "{\n"
+                               "    a();\n"
+                               "}\n"
+                               "else if (x < 0)\n"
+                               "{\n"
+                               "    b();\n"
+                               "}\n"
+                               "else\n"
+                               "{\n"
+                               "    c();\n"
+                               "}\n";
         CHECK(formatted == expected);
     }
 
     TEST_CASE("AllmanBraceAlignmentForClassAndMethods")
     {
-        std::string code = "class Bar:IFoo,IBar{int m_val;void DoAction(float dt){if(dt>0.0f){m_val+=1;}else{m_val=0;}}}";
+        std::string code =
+            "class Bar:IFoo,IBar{int m_val;void DoAction(float dt){if(dt>0.0f){m_val+=1;}else{m_val=0;}}}";
         lsp::FormattingOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
         std::string formatted = FormatSourceCode(code, options);
-        std::string expected =
-            "class Bar : IFoo, IBar\n"
-            "{\n"
-            "    int m_val;\n"
-            "    void DoAction(float dt)\n"
-            "    {\n"
-            "        if (dt > 0.0f)\n"
-            "        {\n"
-            "            m_val += 1;\n"
-            "        }\n"
-            "        else\n"
-            "        {\n"
-            "            m_val = 0;\n"
-            "        }\n"
-            "    }\n"
-            "}\n";
+        std::string expected = "class Bar : IFoo, IBar\n"
+                               "{\n"
+                               "    int m_val;\n"
+                               "    void DoAction(float dt)\n"
+                               "    {\n"
+                               "        if (dt > 0.0f)\n"
+                               "        {\n"
+                               "            m_val += 1;\n"
+                               "        }\n"
+                               "        else\n"
+                               "        {\n"
+                               "            m_val = 0;\n"
+                               "        }\n"
+                               "    }\n"
+                               "}\n";
         CHECK(formatted == expected);
     }
 
@@ -123,16 +121,15 @@ TEST_SUITE("Formatting")
         options.insertSpaces = true;
 
         std::string formatted = FormatSourceCode(code, options);
-        std::string expected =
-            "namespace Game\n"
-            "{\n"
-            "    enum State\n"
-            "    {\n"
-            "        Idle,\n"
-            "        Running = 1,\n"
-            "        Paused\n"
-            "    };\n"
-            "}\n";
+        std::string expected = "namespace Game\n"
+                               "{\n"
+                               "    enum State\n"
+                               "    {\n"
+                               "        Idle,\n"
+                               "        Running = 1,\n"
+                               "        Paused\n"
+                               "    };\n"
+                               "}\n";
         CHECK(formatted == expected);
     }
 
@@ -144,12 +141,11 @@ TEST_SUITE("Formatting")
         options.insertSpaces = true;
 
         std::string formatted = FormatSourceCode(code, options);
-        std::string expected =
-            "int x = 5 + 3 * 2;\n"
-            "if (x > 0)\n"
-            "{\n"
-            "    foo(1, 2, 3);\n"
-            "}\n";
+        std::string expected = "int x = 5 + 3 * 2;\n"
+                               "if (x > 0)\n"
+                               "{\n"
+                               "    foo(1, 2, 3);\n"
+                               "}\n";
         CHECK(formatted == expected);
     }
 
@@ -161,11 +157,10 @@ TEST_SUITE("Formatting")
         options.insertSpaces = true;
 
         std::string formatted = FormatSourceCode(code, options);
-        std::string expected =
-            "for (int i = 0; i < 10; ++i)\n"
-            "{\n"
-            "    sum += i;\n"
-            "}\n";
+        std::string expected = "for (int i = 0; i < 10; ++i)\n"
+                               "{\n"
+                               "    sum += i;\n"
+                               "}\n";
         CHECK(formatted == expected);
     }
 
@@ -177,11 +172,10 @@ TEST_SUITE("Formatting")
         options.insertSpaces = true;
 
         std::string formatted = FormatSourceCode(code, options);
-        std::string expected =
-            "int a = -5;\n"
-            "int b = +10;\n"
-            "bool c = !flag;\n"
-            "int res = c ? a : b;\n";
+        std::string expected = "int a = -5;\n"
+                               "int b = +10;\n"
+                               "bool c = !flag;\n"
+                               "int res = c ? a : b;\n";
         CHECK(formatted == expected);
     }
 
@@ -193,9 +187,8 @@ TEST_SUITE("Formatting")
         options.insertSpaces = true;
 
         std::string formatted = FormatSourceCode(code, options);
-        std::string expected =
-            "array<int>@ arr = null;\n"
-            "dictionary<string, int> dict;\n";
+        std::string expected = "array<int>@ arr = null;\n"
+                               "dictionary<string, int> dict;\n";
         CHECK(formatted == expected);
     }
 
@@ -207,31 +200,29 @@ TEST_SUITE("Formatting")
         options.insertSpaces = true;
 
         std::string formatted = FormatSourceCode(code, options);
-        std::string expected =
-            "switch (state)\n"
-            "{\n"
-            "    case 0:\n"
-            "        return;\n"
-            "    case 1:\n"
-            "    {\n"
-            "        int x = 1;\n"
-            "        break;\n"
-            "    }\n"
-            "    default:\n"
-            "        break;\n"
-            "}\n";
+        std::string expected = "switch (state)\n"
+                               "{\n"
+                               "    case 0:\n"
+                               "        return;\n"
+                               "    case 1:\n"
+                               "    {\n"
+                               "        int x = 1;\n"
+                               "        break;\n"
+                               "    }\n"
+                               "    default:\n"
+                               "        break;\n"
+                               "}\n";
         CHECK(formatted == expected);
     }
 
     TEST_CASE("CommentsAndStringsPreservation")
     {
-        std::string code = 
-            "// Header comment\n"
-            "void foo() // inline comment   \n"
-            "{\n"
-            "    string s = \"int x = 1 + 2; { not a block }\";\n"
-            "    int a = 1;   \n"
-            "}\n";
+        std::string code = "// Header comment\n"
+                           "void foo() // inline comment   \n"
+                           "{\n"
+                           "    string s = \"int x = 1 + 2; { not a block }\";\n"
+                           "    int a = 1;   \n"
+                           "}\n";
 
         lsp::FormattingOptions options;
         options.tabSize = 4;
@@ -239,13 +230,12 @@ TEST_SUITE("Formatting")
         options.trimTrailingWhitespace = true;
 
         std::string formatted = FormatSourceCode(code, options);
-        std::string expected =
-            "// Header comment\n"
-            "void foo() // inline comment\n"
-            "{\n"
-            "    string s = \"int x = 1 + 2; { not a block }\";\n"
-            "    int a = 1;\n"
-            "}\n";
+        std::string expected = "// Header comment\n"
+                               "void foo() // inline comment\n"
+                               "{\n"
+                               "    string s = \"int x = 1 + 2; { not a block }\";\n"
+                               "    int a = 1;\n"
+                               "}\n";
         CHECK(formatted == expected);
     }
 
@@ -257,12 +247,11 @@ TEST_SUITE("Formatting")
         options.insertSpaces = true;
 
         std::string formatted = FormatSourceCode(code, options);
-        std::string expected =
-            "#include \"header.as\"\n"
-            "#define MAX 100\n"
-            "void main()\n"
-            "{\n"
-            "}\n";
+        std::string expected = "#include \"header.as\"\n"
+                               "#define MAX 100\n"
+                               "void main()\n"
+                               "{\n"
+                               "}\n";
         CHECK(formatted == expected);
     }
 
@@ -277,11 +266,10 @@ TEST_SUITE("Formatting")
         options.trimFinalNewlines = true;
 
         std::string formatted = FormatSourceCode(code, options);
-        std::string expected =
-            "void test()\n"
-            "{\n"
-            "    int x = 10;\n"
-            "}\n";
+        std::string expected = "void test()\n"
+                               "{\n"
+                               "    int x = 10;\n"
+                               "}\n";
         CHECK(formatted == expected);
     }
 
@@ -293,14 +281,14 @@ TEST_SUITE("Formatting")
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        FormattingRequest docReq{ uri, code, nullptr, options };
+        FormattingRequest docReq{uri, code, nullptr, options};
         auto docEdits = FormatDocument(docReq);
         REQUIRE(docEdits.has_value());
         REQUIRE(!docEdits->empty());
         CHECK(docEdits->size() == 1);
         CHECK((*docEdits)[0].newText == "void test()\n{\n    int x = 1;\n}\nvoid other()\n{\n    int y = 2;\n}\n");
 
-        RangeFormattingRequest rangeReq{ uri, code, nullptr, lsp::Range{ { 0, 0 }, { 0, 10 } }, options };
+        RangeFormattingRequest rangeReq{uri, code, nullptr, lsp::Range{{0, 0}, {0, 10}}, options};
         auto rangeEdits = FormatRange(rangeReq);
         REQUIRE(rangeEdits.has_value());
     }
@@ -313,7 +301,7 @@ TEST_SUITE("Formatting")
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        OnTypeFormattingRequest req{ uri, code, nullptr, lsp::Position{ 2, 14 }, ";", options };
+        OnTypeFormattingRequest req{uri, code, nullptr, lsp::Position{2, 14}, ";", options};
         auto edits = FormatOnType(req);
         REQUIRE(edits.has_value());
     }
@@ -326,7 +314,7 @@ TEST_SUITE("Formatting")
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        OnTypeFormattingRequest req{ uri, code, nullptr, lsp::Position{ 2, 1 }, "}", options };
+        OnTypeFormattingRequest req{uri, code, nullptr, lsp::Position{2, 1}, "}", options};
         auto edits = FormatOnType(req);
         REQUIRE(edits.has_value());
     }
@@ -337,12 +325,12 @@ TEST_SUITE("Formatting")
         std::string code = "";
         lsp::FormattingOptions options;
 
-        FormattingRequest docReq{ uri, code, nullptr, options };
+        FormattingRequest docReq{uri, code, nullptr, options};
         auto docEdits = FormatDocument(docReq);
         REQUIRE(docEdits.has_value());
         CHECK(docEdits->empty());
 
-        OnTypeFormattingRequest onTypeReq{ uri, code, nullptr, lsp::Position{ 0, 0 }, ";", options };
+        OnTypeFormattingRequest onTypeReq{uri, code, nullptr, lsp::Position{0, 0}, ";", options};
         auto onTypeEdits = FormatOnType(onTypeReq);
         CHECK(!onTypeEdits.has_value());
     }
@@ -358,14 +346,14 @@ TEST_SUITE("Formatting")
 
     namespace
     {
-        std::string Format4(const std::string &code, BraceStyle style = BraceStyle::Allman)
-        {
-            lsp::FormattingOptions options;
-            options.tabSize = 4;
-            options.insertSpaces = true;
-            return FormatSourceCode(code, options, style);
-        }
+    std::string Format4(const std::string& code, BraceStyle style = BraceStyle::Allman)
+    {
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+        return FormatSourceCode(code, options, style);
     }
+    } // namespace
 
     TEST_CASE("A list initializer stays on the declaration line")
     {
@@ -375,14 +363,12 @@ TEST_SUITE("Formatting")
 
     TEST_CASE("A list passed as an argument stays inside the call")
     {
-        CHECK(Format4("void main(){\nTake({1,2});\n}") ==
-              "void main()\n{\n    Take({1, 2});\n}\n");
+        CHECK(Format4("void main(){\nTake({1,2});\n}") == "void main()\n{\n    Take({1, 2});\n}\n");
     }
 
     TEST_CASE("A returned list stays on the return line")
     {
-        CHECK(Format4("array<int> Make(){\nreturn {1,2};\n}") ==
-              "array<int> Make()\n{\n    return {1, 2};\n}\n");
+        CHECK(Format4("array<int> Make(){\nreturn {1,2};\n}") == "array<int> Make()\n{\n    return {1, 2};\n}\n");
     }
 
     TEST_CASE("A nested list keeps both levels inline")
@@ -443,8 +429,7 @@ TEST_SUITE("Formatting")
 
     TEST_CASE("An index expression is not mistaken for metadata")
     {
-        CHECK(Format4("void main(){\narr[0] = 1;\n}") ==
-              "void main()\n{\n    arr[0] = 1;\n}\n");
+        CHECK(Format4("void main(){\narr[0] = 1;\n}") == "void main()\n{\n    arr[0] = 1;\n}\n");
     }
 
     // ---------------------------------------------------------------------------------------
@@ -454,8 +439,7 @@ TEST_SUITE("Formatting")
 
     TEST_CASE("K&R puts a function's block brace on the signature line")
     {
-        CHECK(Format4("void main()\n{\nint a=1;\n}", BraceStyle::KAndR) ==
-              "void main() {\n    int a = 1;\n}\n");
+        CHECK(Format4("void main()\n{\nint a=1;\n}", BraceStyle::KAndR) == "void main() {\n    int a = 1;\n}\n");
     }
 
     TEST_CASE("K&R puts else beside the brace that closed the if")
@@ -521,27 +505,35 @@ TEST_SUITE("Formatting")
         const std::string fnPost = angel_lsp::test::GenerateRandomSymbolName("PostFunc");
         const std::string flagVar = angel_lsp::test::GenerateRandomSymbolName("flag");
 
-        std::string code =
-            "void " + fnPre1 + "() {\n"
-            "    return;\n"
-            "}\n"
-            "void " + fnPre2 + "() {\n"
-            "    return;\n"
-            "}\n"
-            "bool " + fnTarget + "()\n"
-            "{\n"
-            "return false;\n"
-            "}\n"
-            "void " + fnPost + "()\n"
-            "{\n"
-            "    if (" + flagVar + " == 1) return;\n"
-            "}\n";
+        std::string code = "void " + fnPre1 +
+                           "() {\n"
+                           "    return;\n"
+                           "}\n"
+                           "void " +
+                           fnPre2 +
+                           "() {\n"
+                           "    return;\n"
+                           "}\n"
+                           "bool " +
+                           fnTarget +
+                           "()\n"
+                           "{\n"
+                           "return false;\n"
+                           "}\n"
+                           "void " +
+                           fnPost +
+                           "()\n"
+                           "{\n"
+                           "    if (" +
+                           flagVar +
+                           " == 1) return;\n"
+                           "}\n";
 
         lsp::FormattingOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        RangeFormattingRequest req{ "file:///test.as", code, nullptr, lsp::Range{ {8, 0}, {8, 13} }, options };
+        RangeFormattingRequest req{"file:///test.as", code, nullptr, lsp::Range{{8, 0}, {8, 13}}, options};
         auto edits = FormatRange(req);
 
         REQUIRE(edits.has_value());
@@ -559,20 +551,22 @@ TEST_SUITE("Formatting")
         const std::string fnPre = angel_lsp::test::GenerateRandomSymbolName("FuncKAndR");
         const std::string fnTarget = angel_lsp::test::GenerateRandomSymbolName("FuncTarget");
 
-        std::string code =
-            "void " + fnPre + "() {\n"
-            "    return;\n"
-            "}\n"
-            "void " + fnTarget + "()\n"
-            "{\n"
-            "    return;\n"
-            "}\n";
+        std::string code = "void " + fnPre +
+                           "() {\n"
+                           "    return;\n"
+                           "}\n"
+                           "void " +
+                           fnTarget +
+                           "()\n"
+                           "{\n"
+                           "    return;\n"
+                           "}\n";
 
         lsp::FormattingOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        RangeFormattingRequest req{ "file:///test.as", code, nullptr, lsp::Range{ {5, 0}, {5, 11} }, options };
+        RangeFormattingRequest req{"file:///test.as", code, nullptr, lsp::Range{{5, 0}, {5, 11}}, options};
         auto edits = FormatRange(req);
 
         REQUIRE(edits.has_value());
@@ -586,7 +580,7 @@ TEST_SUITE("Formatting")
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        OnTypeFormattingRequest req{ "file:///test.as", code, nullptr, lsp::Position{ 2, 11 }, "\n", options };
+        OnTypeFormattingRequest req{"file:///test.as", code, nullptr, lsp::Position{2, 11}, "\n", options};
         auto edits = FormatOnType(req);
         CHECK(!edits.has_value());
     }
@@ -597,20 +591,24 @@ TEST_SUITE("Formatting")
         const std::string fnTarget = angel_lsp::test::GenerateRandomSymbolName("FuncTarget");
         const std::string varName = angel_lsp::test::GenerateRandomSymbolName("localVar");
 
-        std::string code =
-            "void " + fnPre + "() {\n"
-            "    return;\n"
-            "}\n"
-            "void " + fnTarget + "()\n"
-            "{\n"
-            "int " + varName + "=42;\n"
-            "}\n";
+        std::string code = "void " + fnPre +
+                           "() {\n"
+                           "    return;\n"
+                           "}\n"
+                           "void " +
+                           fnTarget +
+                           "()\n"
+                           "{\n"
+                           "int " +
+                           varName +
+                           "=42;\n"
+                           "}\n";
 
         lsp::FormattingOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        OnTypeFormattingRequest req{ "file:///test.as", code, nullptr, lsp::Position{ 5, 15 }, ";", options };
+        OnTypeFormattingRequest req{"file:///test.as", code, nullptr, lsp::Position{5, 15}, ";", options};
         auto edits = FormatOnType(req);
 
         REQUIRE(edits.has_value());
@@ -627,44 +625,50 @@ TEST_SUITE("Formatting")
         const std::string arg1 = angel_lsp::test::GenerateRandomSymbolName("paramA");
         const std::string arg2 = angel_lsp::test::GenerateRandomSymbolName("paramB");
 
-        std::string code = "void " + fnName + "(int " + arg1 + ",float " + arg2 + "){\nif(true){\n" +
-                           fnName + "(1,2);\n}\n}\n";
+        std::string code =
+            "void " + fnName + "(int " + arg1 + ",float " + arg2 + "){\nif(true){\n" + fnName + "(1,2);\n}\n}\n";
         lsp::FormattingOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
         std::string formattedWithSpaces = FormatSourceCode(code, options, BraceStyle::Allman, true);
-        std::string expectedWithSpaces =
-            "void " + fnName + "( int " + arg1 + ", float " + arg2 + " )\n"
-            "{\n"
-            "    if ( true )\n"
-            "    {\n"
-            "        " + fnName + "( 1, 2 );\n"
-            "    }\n"
-            "}\n";
+        std::string expectedWithSpaces = "void " + fnName + "( int " + arg1 + ", float " + arg2 +
+                                         " )\n"
+                                         "{\n"
+                                         "    if ( true )\n"
+                                         "    {\n"
+                                         "        " +
+                                         fnName +
+                                         "( 1, 2 );\n"
+                                         "    }\n"
+                                         "}\n";
         CHECK(formattedWithSpaces == expectedWithSpaces);
 
         // Empty parens should never have space inside: ()
         const std::string emptyFn = angel_lsp::test::GenerateRandomSymbolName("EmptyCall");
         std::string emptyCode = "void " + emptyFn + "(){\n" + emptyFn + "();\n}\n";
         std::string formattedEmpty = FormatSourceCode(emptyCode, options, BraceStyle::Allman, true);
-        std::string expectedEmpty =
-            "void " + emptyFn + "()\n"
-            "{\n"
-            "    " + emptyFn + "();\n"
-            "}\n";
+        std::string expectedEmpty = "void " + emptyFn +
+                                    "()\n"
+                                    "{\n"
+                                    "    " +
+                                    emptyFn +
+                                    "();\n"
+                                    "}\n";
         CHECK(formattedEmpty == expectedEmpty);
 
         // Standard formatting (default false) must remain compact without inner spaces
         std::string formattedDefault = FormatSourceCode(code, options, BraceStyle::Allman, false);
-        std::string expectedDefault =
-            "void " + fnName + "(int " + arg1 + ", float " + arg2 + ")\n"
-            "{\n"
-            "    if (true)\n"
-            "    {\n"
-            "        " + fnName + "(1, 2);\n"
-            "    }\n"
-            "}\n";
+        std::string expectedDefault = "void " + fnName + "(int " + arg1 + ", float " + arg2 +
+                                      ")\n"
+                                      "{\n"
+                                      "    if (true)\n"
+                                      "    {\n"
+                                      "        " +
+                                      fnName +
+                                      "(1, 2);\n"
+                                      "    }\n"
+                                      "}\n";
         CHECK(formattedDefault == expectedDefault);
     }
 
@@ -675,18 +679,20 @@ TEST_SUITE("Formatting")
         const std::string varA = angel_lsp::test::GenerateRandomSymbolName("valA");
         const std::string varB = angel_lsp::test::GenerateRandomSymbolName("valB");
 
-        std::string code =
-            "void " + fnName + "()\n"
-            "{\n"
-            "    " + callee + "( " + varA + ", " + varB + " );\n"
-            "}\n";
+        std::string code = "void " + fnName +
+                           "()\n"
+                           "{\n"
+                           "    " +
+                           callee + "( " + varA + ", " + varB +
+                           " );\n"
+                           "}\n";
 
         lsp::FormattingOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        OnTypeFormattingRequest req{ "file:///test.as", code, nullptr, lsp::Position{ 2, 25 }, ";", options,
-                                     BraceStyle::Allman, true };
+        OnTypeFormattingRequest req{"file:///test.as",  code, nullptr, lsp::Position{2, 25}, ";", options,
+                                    BraceStyle::Allman, true};
         auto edits = FormatOnType(req);
 
         // When formatted with spacesInsideParentheses = true, text already matches expected format
@@ -703,27 +709,29 @@ TEST_SUITE("Formatting")
         const std::string className = angel_lsp::test::GenerateRandomSymbolName("Weapon");
         const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Init");
 
-        std::string code =
-            "class " + className + "\n"
-            "{\n"
-            "    " + className + "() {}\n"
-            "    void " + fnName + "() {}\n"
-            "};\n";
+        std::string code = "class " + className +
+                           "\n"
+                           "{\n"
+                           "    " +
+                           className +
+                           "() {}\n"
+                           "    void " +
+                           fnName +
+                           "() {}\n"
+                           "};\n";
 
         lsp::FormattingOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        FormatCodeOptions opts{ options, BraceStyle::Allman, false, true };
+        FormatCodeOptions opts{options, BraceStyle::Allman, false, true};
         std::string formatted = FormatSourceCode(code, opts);
 
         CHECK(formatted.find(className + "() {}") != std::string::npos);
         CHECK(formatted.find("void " + fnName + "() {}") != std::string::npos);
 
-        FormatCodeOptions legacyOpts{ options, BraceStyle::Allman, false, false };
+        FormatCodeOptions legacyOpts{options, BraceStyle::Allman, false, false};
         std::string expanded = FormatSourceCode(code, legacyOpts);
         CHECK(expanded.find(className + "()\n    {\n    }") != std::string::npos);
     }
 }
-
-

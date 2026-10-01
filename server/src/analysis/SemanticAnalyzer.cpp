@@ -5,6 +5,7 @@
 #include "analysis/ConstChecker.h"
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/DefiniteAssignmentChecker.h"
+#include "analysis/DiagnosticSuppression.h"
 #include "analysis/InitializerListChecker.h"
 #include "analysis/IsolationChecker.h"
 #include "analysis/LValueChecker.h"
@@ -12,7 +13,6 @@
 #include "analysis/NodeIndex.h"
 #include "analysis/NullSafetyChecker.h"
 #include "analysis/SemanticHelpers.h"
-#include "analysis/DiagnosticSuppression.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
 #include "analysis/rules/FunctionRules.h"
@@ -247,8 +247,7 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
     const NodeIndex* indexPtr = request.nodeIndex;
     if (!indexPtr && request.tree)
     {
-        localNodeIndex =
-            std::make_unique<NodeIndex>(ts_tree_root_node(request.tree), nullptr, request.traversalBudget);
+        localNodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(request.tree), nullptr, request.traversalBudget);
         indexPtr = localNodeIndex.get();
     }
 
@@ -284,8 +283,8 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         const auto suppressions = ParseDiagnosticSuppressions(request.sourceCode, indexPtr);
         if (!suppressions.Empty())
         {
-            std::erase_if(diagnostics, [&](const Diagnostic& d)
-                          { return suppressions.IsSuppressed(d.code, d.range.start.line); });
+            std::erase_if(diagnostics,
+                          [&](const Diagnostic& d) { return suppressions.IsSuppressed(d.code, d.range.start.line); });
         }
     }
 

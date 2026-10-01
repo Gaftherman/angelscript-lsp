@@ -53,6 +53,12 @@ def main():
     else:
         print("\n[SKIPPED] cppcheck not found in PATH.")
 
+    # 8. Clang-Format Code Style Verification
+    if shutil.which("clang-format"):
+        run_step("Clang-Format Style Check", "python server/scripts/format-code.py --check")
+    else:
+        print("\n[SKIPPED] clang-format not found in PATH.")
+
     print("\n[SUCCESS] All static quality gates passed successfully.")
 
 if __name__ == "__main__":

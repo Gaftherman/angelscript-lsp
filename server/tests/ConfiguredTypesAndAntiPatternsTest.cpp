@@ -269,4 +269,3 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         CHECK(CheckUserConversion("int", customClass, table).viable);
     }
 }
-

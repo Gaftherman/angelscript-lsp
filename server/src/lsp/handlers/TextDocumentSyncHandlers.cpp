@@ -219,8 +219,8 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
 
     PublishDiagnostics(uriStr, analysisText, diagnostics, version);
 
-    LogInfo(fmt::format("[File Save] Finished save analysis for: {} in {}",
-                        uriStr, utils::FormatDuration(totalTimer.ElapsedMs())));
+    LogInfo(fmt::format("[File Save] Finished save analysis for: {} in {}", uriStr,
+                        utils::FormatDuration(totalTimer.ElapsedMs())));
 
     HandleSavedInterfaceChange(uriStr, interfaceChanged);
 }
@@ -258,8 +258,8 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
 
     if (!contributes)
     {
-        m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{
-            req.uriStr, req.text, req.version, document::MakeTreePtr(nullptr), req.clientUri});
+        m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
+                                                                        document::MakeTreePtr(nullptr), req.clientUri});
         m_symbolTable.ClearDocumentSymbols(req.uriStr);
         m_predefinedManager.RemoveStub(req.uriStr);
         if (m_workspaceStore)
@@ -267,8 +267,8 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
             m_workspaceStore->SetPreindexedDocument(req.uriStr, nullptr);
         }
         const double totalMs = req.totalTimer.ElapsedMs();
-        LogInfo(fmt::format("[File Open] Predefined file opened (non-contributing): {} in {}",
-                            req.uriStr, utils::FormatDuration(totalMs)));
+        LogInfo(fmt::format("[File Open] Predefined file opened (non-contributing): {} in {}", req.uriStr,
+                            utils::FormatDuration(totalMs)));
         LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {} (Parse: 0.00 ms, Collector: 0.00 ms, "
                             "Scopes: 0.00 ms, Checkers: 0.00 ms)",
                             req.uriStr, utils::FormatDuration(totalMs)));
@@ -290,8 +290,8 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     {
         m_documentStore.LinkDocument(req.uriStr, preindexedDoc, req.clientUri);
         const double totalMs = req.totalTimer.ElapsedMs();
-        LogInfo(fmt::format("[File Open] Finished opening predefined file (zero-copy link): {} in {}",
-                            req.uriStr, utils::FormatDuration(totalMs)));
+        LogInfo(fmt::format("[File Open] Finished opening predefined file (zero-copy link): {} in {}", req.uriStr,
+                            utils::FormatDuration(totalMs)));
         LogInfo(fmt::format("[Predefined Zero-Copy Fast Path] File: {} content unchanged; linked pre-indexed snapshot "
                             "in {}",
                             req.uriStr, utils::FormatDuration(totalMs)));
@@ -302,8 +302,8 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
         return;
     }
 
-    m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{
-        req.uriStr, req.text, req.version, document::MakeTreePtr(nullptr), req.clientUri});
+    m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
+                                                                    document::MakeTreePtr(nullptr), req.clientUri});
 
     ScheduleAnalysisImmediate(ScheduleAnalysisRequest{
         .uriStr = req.uriStr,
@@ -314,10 +314,10 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     });
 
     const double totalMs = req.totalTimer.ElapsedMs();
-    LogInfo(fmt::format("[File Open] Predefined file offloaded to analysis worker: {} in {}",
-                        req.uriStr, utils::FormatDuration(totalMs)));
-    LogInfo(fmt::format("[Predefined Offload Fast Path] File: {} reparse offloaded to worker in {}",
-                        req.uriStr, utils::FormatDuration(totalMs)));
+    LogInfo(fmt::format("[File Open] Predefined file offloaded to analysis worker: {} in {}", req.uriStr,
+                        utils::FormatDuration(totalMs)));
+    LogInfo(fmt::format("[Predefined Offload Fast Path] File: {} reparse offloaded to worker in {}", req.uriStr,
+                        utils::FormatDuration(totalMs)));
 }
 
 void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params&& params)
@@ -383,8 +383,7 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     }
 
     const double totalMs = totalTimer.ElapsedMs();
-    LogInfo(fmt::format("[File Open] Finished opening document: {} in {}",
-                        uriStr, utils::FormatDuration(totalMs)));
+    LogInfo(fmt::format("[File Open] Finished opening document: {} in {}", uriStr, utils::FormatDuration(totalMs)));
     LogAnalysisProfile("[File Open]", uriStr, {totalMs, parseMs, colMs, scopeMs, checkMs});
 }
 
@@ -500,8 +499,8 @@ bool Server::RestoreClosedModuleFile(const std::string& uriStr, const std::strin
         std::ostringstream ss;
         ss << file.rdbuf();
         const std::string content = ss.str();
-        LogInfo(fmt::format("[File Read] Finished reading file: {} in {} ({} bytes)",
-                            path, utils::FormatDuration(readTimer.ElapsedMs()), content.size()));
+        LogInfo(fmt::format("[File Read] Finished reading file: {} in {} ({} bytes)", path,
+                            utils::FormatDuration(readTimer.ElapsedMs()), content.size()));
         {
             std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
             m_publishedForModules.insert(uriStr);

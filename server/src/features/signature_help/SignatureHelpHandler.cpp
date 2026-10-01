@@ -77,20 +77,26 @@ std::string FormatSignatureLabel(const analysis::Symbol& sym)
         parameters = &sig.parameters;
     }
 
-    if (returnType.empty())
-    {
-        result += "void ";
-    }
-    else
-    {
-        result += returnType;
-        result += " ";
-    }
+    const bool isConstructor = (sym.type == analysis::SymbolType::Function && !sym.containerName.empty() &&
+                                sym.name == analysis::LastScopeSegment(sym.containerName));
 
-    if (!sym.containerName.empty())
+    if (!isConstructor)
     {
-        result += sym.containerName;
-        result += "::";
+        if (returnType.empty())
+        {
+            result += "void ";
+        }
+        else
+        {
+            result += returnType;
+            result += " ";
+        }
+
+        if (!sym.containerName.empty())
+        {
+            result += sym.containerName;
+            result += "::";
+        }
     }
     result += sym.name;
     result += "(";
@@ -128,13 +134,18 @@ CallNodes FindCallNodes(TSNode node)
         {
             result.argListNode = cur;
             TSNode parent = ts_node_parent(cur);
-            if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "call_expression")
+            if (!ts_node_is_null(parent))
             {
-                result.callNode = parent;
-                break;
+                std::string_view pType = ts_node_type(parent);
+                if (pType == "call_expression" || pType == "construct_call_expression" ||
+                    pType == "variable_declarator")
+                {
+                    result.callNode = parent;
+                    break;
+                }
             }
         }
-        else if (type == "call_expression")
+        else if (type == "call_expression" || type == "construct_call_expression" || type == "variable_declarator")
         {
             result.callNode = cur;
             break;
@@ -162,22 +173,43 @@ uint32_t DetermineActiveParameter(const SignatureHelpRequest& request, TSNode ar
 }
 
 /**
- * @brief Extracts the function/callee AST node from a call_expression node.
- * @param[in] callNode Call expression AST node.
+ * @brief Extracts the function/callee AST node from a call or declarator node.
+ * @param[in] callNode Call expression or variable declarator AST node.
  * @return Function AST node or null node if not found.
  */
 TSNode ExtractFunctionNode(TSNode callNode)
 {
     TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
-    if (ts_node_is_null(funcNode))
+    if (!ts_node_is_null(funcNode))
     {
-        uint32_t childCount = ts_node_child_count(callNode);
-        if (childCount > 0)
+        return funcNode;
+    }
+    if (std::string_view(ts_node_type(callNode)) == "variable_declarator")
+    {
+        TSNode declNode = ts_node_parent(callNode);
+        if (!ts_node_is_null(declNode))
         {
-            funcNode = ts_node_child(callNode, 0);
+            TSNode typeNode = parser::GetChildByField(declNode, parser::fields::VarType);
+            if (!ts_node_is_null(typeNode))
+            {
+                return typeNode;
+            }
+            uint32_t dCount = ts_node_child_count(declNode);
+            for (uint32_t i = 0; i < dCount; ++i)
+            {
+                TSNode child = ts_node_child(declNode, i);
+                if (std::string_view(ts_node_type(child)) == "type")
+                {
+                    return child;
+                }
+            }
         }
     }
-    return funcNode;
+    if (ts_node_child_count(callNode) > 0)
+    {
+        return ts_node_child(callNode, 0);
+    }
+    return TSNode{};
 }
 
 /**
@@ -345,6 +377,39 @@ uint32_t SelectActiveSignature(const std::vector<lsp::SignatureInformation>& sig
     return 0;
 }
 
+/**
+ * @brief Resolves signature information for direct (non-member) callee expressions.
+ * @param[in] request Signature help request context.
+ * @param[in] funcNode AST node for the callee expression.
+ * @return Resolved list of signatures.
+ */
+std::vector<lsp::SignatureInformation> ResolveDirectSignatures(const SignatureHelpRequest& request, TSNode funcNode)
+{
+    uint32_t fStart = ts_node_start_byte(funcNode);
+    uint32_t fEnd = ts_node_end_byte(funcNode);
+    if (fStart >= request.sourceCode.size() || fEnd > request.sourceCode.size() || fStart >= fEnd)
+    {
+        return {};
+    }
+    std::string_view calleeName = std::string_view(request.sourceCode).substr(fStart, fEnd - fStart);
+    auto found = request.symbolTable.FindSymbolsPtr(calleeName);
+    std::vector<lsp::SignatureInformation> signatures;
+    if (found && !found->empty())
+    {
+        signatures = BuildSignatureList(*found);
+    }
+    if (signatures.empty())
+    {
+        auto ctorCandidates = analysis::CollectConstructorCandidates(std::string(calleeName), funcNode,
+                                                                     request.sourceCode, request.symbolTable);
+        if (!ctorCandidates.empty())
+        {
+            signatures = BuildSignatureList(ctorCandidates);
+        }
+    }
+    return signatures;
+}
+
 } // namespace
 
 std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& request)
@@ -357,7 +422,6 @@ std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& r
     TSNode rootNode = ts_tree_root_node(request.tree);
     TSPoint point = {request.position.line, request.position.character};
     TSNode node = ts_node_descendant_for_point_range(rootNode, point, point);
-
     if (ts_node_is_null(node))
     {
         return std::nullopt;
@@ -369,8 +433,6 @@ std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& r
         return std::nullopt;
     }
 
-    uint32_t activeParameter = DetermineActiveParameter(request, callNodes.argListNode);
-
     TSNode funcNode = ExtractFunctionNode(callNodes.callNode);
     if (ts_node_is_null(funcNode))
     {
@@ -378,25 +440,13 @@ std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& r
     }
 
     std::vector<lsp::SignatureInformation> signatures;
-    std::string_view funcType = ts_node_type(funcNode);
-    if (funcType == "member_expression")
+    if (std::string_view(ts_node_type(funcNode)) == "member_expression")
     {
-        auto candidateSymbols = ResolveMemberCandidates(request, funcNode);
-        signatures = BuildSignatureList(candidateSymbols);
+        signatures = BuildSignatureList(ResolveMemberCandidates(request, funcNode));
     }
     else
     {
-        uint32_t fStart = ts_node_start_byte(funcNode);
-        uint32_t fEnd = ts_node_end_byte(funcNode);
-        if (fStart < request.sourceCode.size() && fEnd <= request.sourceCode.size() && fStart < fEnd)
-        {
-            std::string_view calleeName = std::string_view(request.sourceCode).substr(fStart, fEnd - fStart);
-            auto found = request.symbolTable.FindSymbolsPtr(calleeName);
-            if (found && !found->empty())
-            {
-                signatures = BuildSignatureList(*found);
-            }
-        }
+        signatures = ResolveDirectSignatures(request, funcNode);
     }
 
     if (signatures.empty())
@@ -404,6 +454,7 @@ std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& r
         return std::nullopt;
     }
 
+    uint32_t activeParameter = DetermineActiveParameter(request, callNodes.argListNode);
     uint32_t activeSignature = SelectActiveSignature(signatures, activeParameter);
 
     lsp::SignatureHelp result;

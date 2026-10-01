@@ -249,8 +249,9 @@ void PushOpenDocuments(angel_lsp::test::ScriptedStream& stream, const TempStress
         const std::string rStr = std::to_string(i);
         const std::string fileUri = ws.Uri("root_" + rStr + ".as");
         const std::string text = "#include \"chain_" + rStr + "_1.as\"\nvoid RootEntry_" + rStr + "() {}\n";
-        stream.Push("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"" +
-                    fileUri + "\",\"languageId\":\"angelscript\",\"version\":1,\"text\":\"" + text + "\"}}}");
+        stream.Push(
+            "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"" +
+            fileUri + "\",\"languageId\":\"angelscript\",\"version\":1,\"text\":\"" + text + "\"}}}");
     }
 
     const std::string massiveUri = ws.Uri("massive.as.predefined");
@@ -265,8 +266,8 @@ void PushOpenDocuments(angel_lsp::test::ScriptedStream& stream, const TempStress
  * @param[out] queryIds Output vector of query request IDs.
  * @param[in,out] nextReqId Counter tracking JSON-RPC request identifiers.
  */
-void PushQueryBatch(angel_lsp::test::ScriptedStream& stream, const TempStressWorkspace& ws,
-                    std::vector<int>& queryIds, int& nextReqId)
+void PushQueryBatch(angel_lsp::test::ScriptedStream& stream, const TempStressWorkspace& ws, std::vector<int>& queryIds,
+                    int& nextReqId)
 {
     for (int i = 0; i < 200; ++i)
     {
@@ -308,8 +309,7 @@ void PushQueryBatch(angel_lsp::test::ScriptedStream& stream, const TempStressWor
  * @param[in] queryIds Request IDs of pushed queries.
  * @param[in] avgQueryLatencyMs Average query latency in milliseconds.
  */
-void VerifyQueryResponses(const angel_lsp::test::ScriptedStream& stream,
-                          const std::vector<int>& queryIds,
+void VerifyQueryResponses(const angel_lsp::test::ScriptedStream& stream, const std::vector<int>& queryIds,
                           double avgQueryLatencyMs)
 {
     int validResponses = 0;

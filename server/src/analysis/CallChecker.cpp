@@ -607,9 +607,9 @@ bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& valCtx)
 ObjectTypeInfo ResolveMemberObjectType(TSNode objectNode, const CallValidationContext& valCtx)
 {
     ObjectTypeInfo info;
-    const std::string rawObjType = CanonicalizeArrayType(
-        ResolveExpressionType(objectNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx)),
-        valCtx.ctx.request.GetEffectiveArrayTypeName());
+    const std::string rawObjType =
+        CanonicalizeArrayType(ResolveExpressionType(objectNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx)),
+                              valCtx.ctx.request.GetEffectiveArrayTypeName());
     info.objectType = CleanBaseType(rawObjType);
     info.isConst = rawObjType.starts_with("const ") || rawObjType.ends_with("const") || HasConstModifier(rawObjType) ||
                    IsObjectNodeConst(objectNode, valCtx);
@@ -1010,8 +1010,7 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
             continue;
         }
 
-        std::string argType =
-            ResolveExpressionType(argNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
+        std::string argType = ResolveExpressionType(argNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
         if (argType.empty())
         {
             result.allArgsResolved = false;
@@ -1159,10 +1158,8 @@ void CheckMalformedTernaryArgs(const std::vector<TSNode>& argNodes, const std::v
         const std::string expected = fn.parameters[i].typeName;
         TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
         TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
-        std::string t1 =
-            ResolveExpressionType(consequence, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
-        std::string t2 =
-            ResolveExpressionType(alternative, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
+        std::string t1 = ResolveExpressionType(consequence, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
+        std::string t2 = ResolveExpressionType(alternative, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
 
         std::string badType = ResolveTernaryMismatchType(t1, t2, expected);
         const TSPoint aStart = ts_node_start_point(argNodes[i]);

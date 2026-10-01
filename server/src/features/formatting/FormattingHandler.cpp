@@ -1682,7 +1682,7 @@ bool TryHandleEmptyBlock(LineBuilderState& state, const std::vector<Token>& toke
  * @return Vector of formatted line specifications.
  */
 std::vector<LineInfo> BuildFormattedLines(std::vector<Token>& tokens, BraceStyle braceStyle,
-                                         bool keepEmptyBlocksOnSingleLine = false)
+                                          bool keepEmptyBlocksOnSingleLine = false)
 {
     LineBuilderState state;
     state.braceStyle = braceStyle;
@@ -1972,8 +1972,8 @@ std::string FormatSourceCode(std::string_view sourceCode, const FormatCodeOption
     return AssembleFormattedText(bom, rendered, formatOptions.options);
 }
 
-std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions& options,
-                             BraceStyle braceStyle, bool spacesInsideParentheses)
+std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions& options, BraceStyle braceStyle,
+                             bool spacesInsideParentheses)
 {
     return FormatSourceCode(sourceCode, FormatCodeOptions{options, braceStyle, spacesInsideParentheses, false});
 }

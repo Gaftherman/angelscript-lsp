@@ -47,9 +47,14 @@ std::string GenerateRandomStressCode(std::mt19937_64& rng)
     const std::string var = test::GenerateRandomSymbolName("v");
     std::uniform_int_distribution<int> valDist(1, 100000);
 
-    return "class " + cls + " {\n"
-           "    int " + var + " = " + std::to_string(valDist(rng)) + ";\n"
-           "    void " + fn + "() { " + var + " += 1; }\n"
+    return "class " + cls +
+           " {\n"
+           "    int " +
+           var + " = " + std::to_string(valDist(rng)) +
+           ";\n"
+           "    void " +
+           fn + "() { " + var +
+           " += 1; }\n"
            "};\n";
 }
 
@@ -80,8 +85,8 @@ void ExecuteWriterStress(WriterStressContext ctx)
  * @param[in] stopFlag Termination atomic flag.
  * @param[in,out] successReads Counter for valid inspected ASTs.
  */
-void ExecuteReaderStress(const DocumentStore& store, const std::vector<std::string>& uris,
-                         std::atomic<bool>& stopFlag, std::atomic<uint32_t>& successReads)
+void ExecuteReaderStress(const DocumentStore& store, const std::vector<std::string>& uris, std::atomic<bool>& stopFlag,
+                         std::atomic<uint32_t>& successReads)
 {
     std::mt19937_64 rng(std::random_device{}());
     std::uniform_int_distribution<size_t> uriDist(0, uris.size() - 1);

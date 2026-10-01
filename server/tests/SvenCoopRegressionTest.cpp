@@ -8,12 +8,12 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "config/ServerConfig.h"
-#include "helpers/TestUtils.h"
 #include "features/code_lens/CodeLensHandler.h"
 #include "features/document_symbol/DocumentSymbolHandler.h"
 #include "features/folding_range/FoldingRangeHandler.h"
 #include "features/hover/HoverHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/Primitives.h"
 #include "utils/IncludeResolver.h"
@@ -408,13 +408,9 @@ TEST_CASE("SvenCoop - Typedef in relational comparison uint < size_t")
     const std::string varName = GenerateRandomSymbolName("idx");
     const std::string funcName = GenerateRandomSymbolName("LoopTest");
 
-    const std::string code =
-        "typedef uint32 " + typeAlias + ";\n" +
-        "const " + typeAlias + " " + constName + " = 32;\n" +
-        "void " + funcName + "()\n" +
-        "{\n" +
-        "    for (uint " + varName + " = 0; " + varName + " < " + constName + "; " + varName + "++) {}\n" +
-        "}\n";
+    const std::string code = "typedef uint32 " + typeAlias + ";\n" + "const " + typeAlias + " " + constName +
+                             " = 32;\n" + "void " + funcName + "()\n" + "{\n" + "    for (uint " + varName + " = 0; " +
+                             varName + " < " + constName + "; " + varName + "++) {}\n" + "}\n";
     auto diags = AnalyzeSnippet(code);
     CHECK(diags.empty());
 }
@@ -431,14 +427,11 @@ TEST_CASE("SvenCoop - Enum vs numeric comparison float == DAMAGE")
     const std::string funcName = GenerateRandomSymbolName("CheckDamage");
     const std::string paramName = GenerateRandomSymbolName("victim");
 
-    const std::string code =
-        "enum " + enumName + " { " + enumValNo + " = 0, " + enumValYes + " = 1 }\n" +
-        "class " + pevClass + " { float " + fieldName + "; }\n" +
-        "class " + entClass + " { " + pevClass + " " + subField + "; }\n" +
-        "void " + funcName + "(" + entClass + "& " + paramName + ")\n" +
-        "{\n" +
-        "    if (" + paramName + "." + subField + "." + fieldName + " == " + enumValNo + ") {}\n" +
-        "}\n";
+    const std::string code = "enum " + enumName + " { " + enumValNo + " = 0, " + enumValYes + " = 1 }\n" + "class " +
+                             pevClass + " { float " + fieldName + "; }\n" + "class " + entClass + " { " + pevClass +
+                             " " + subField + "; }\n" + "void " + funcName + "(" + entClass + "& " + paramName + ")\n" +
+                             "{\n" + "    if (" + paramName + "." + subField + "." + fieldName + " == " + enumValNo +
+                             ") {}\n" + "}\n";
     auto diags = AnalyzeSnippet(code);
     CHECK(diags.empty());
 }
@@ -453,18 +446,22 @@ TEST_CASE("SvenCoop - Nested initializer list for dictionary")
     const std::string k3 = GenerateRandomSymbolName("k3");
     const std::string v3 = GenerateRandomSymbolName("v3");
 
-    const std::string code =
-        "class dictionary {\n"
-        "    dictionary() {}\n"
-        "    void set(const string &in key, const int64 &in value) {}\n"
-        "    void set(const string &in key, const ? &in value) {}\n"
-        "    void set(const string &in key, const double &in value) {}\n"
-        "    bool exists(const string &in key) const { return true; }\n"
-        "}\n"
-        "dictionary@ " + funcName + "()\n"
-        "{\n"
-        "    return { { \"" + k1 + "\", \"" + v1 + "\" }, { \"" + k2 + "\", \"" + v2 + "\" }, { \"" + k3 + "\", \"" + v3 + "\" } };\n"
-        "}\n";
+    const std::string code = "class dictionary {\n"
+                             "    dictionary() {}\n"
+                             "    void set(const string &in key, const int64 &in value) {}\n"
+                             "    void set(const string &in key, const ? &in value) {}\n"
+                             "    void set(const string &in key, const double &in value) {}\n"
+                             "    bool exists(const string &in key) const { return true; }\n"
+                             "}\n"
+                             "dictionary@ " +
+                             funcName +
+                             "()\n"
+                             "{\n"
+                             "    return { { \"" +
+                             k1 + "\", \"" + v1 + "\" }, { \"" + k2 + "\", \"" + v2 + "\" }, { \"" + k3 + "\", \"" +
+                             v3 +
+                             "\" } };\n"
+                             "}\n";
     auto diags = AnalyzeSnippet(code);
     CHECK(diags.empty());
 }
@@ -477,15 +474,10 @@ TEST_CASE("SvenCoop - Namespaced direct-init constructor Logger")
     const std::string varName = GenerateRandomSymbolName("g_Logger");
     const std::string logTag = GenerateRandomSymbolName("Tag");
 
-    const std::string code =
-        "namespace " + outerNs + " {\n" +
-        "    class " + className + " {\n" +
-        "        " + className + "(const string &in name, bool isStatic = false) {}\n" +
-        "    }\n" +
-        "    namespace " + innerNs + " {\n" +
-        "        " + className + " " + varName + "(\"" + logTag + "\");\n" +
-        "    }\n" +
-        "}\n";
+    const std::string code = "namespace " + outerNs + " {\n" + "    class " + className + " {\n" + "        " +
+                             className + "(const string &in name, bool isStatic = false) {}\n" + "    }\n" +
+                             "    namespace " + innerNs + " {\n" + "        " + className + " " + varName + "(\"" +
+                             logTag + "\");\n" + "    }\n" + "}\n";
     auto diags = AnalyzeSnippet(code);
     CHECK(diags.empty());
 }
@@ -566,13 +558,16 @@ TEST_CASE("SvenCoop - Benchmark and Profile sven.as.predefined pipeline")
 
     analysis::ScopeIndex scopeIndex;
     features::HoverRequest hoverReq{
-        uri, sanitized, tree, table, scopeIndex,
+        uri,
+        sanitized,
+        tree,
+        table,
+        scopeIndex,
         lsp::Position{200, 7}, // "class dictionary" line 201, character 7 (0-indexed line 200)
         [](const std::string&) -> const std::string* { return nullptr; },
         nullptr,
         [](const std::string&) -> std::string { return ""; },
-        nullptr
-    };
+        nullptr};
     t0 = std::chrono::high_resolution_clock::now();
     auto hover = features::GetHover(hoverReq);
     t1 = std::chrono::high_resolution_clock::now();
@@ -586,12 +581,9 @@ TEST_CASE("SvenCoopRegression - Handle hierarchy conversion in ternary operator"
 {
     const std::string baseClass = GenerateRandomSymbolName("CBaseEntity");
     const std::string derivedClass = GenerateRandomSymbolName("CBaseMonster");
-    const std::string code =
-        "class " + baseClass + " {}\n" +
-        "class " + derivedClass + " : " + baseClass + " {}\n" +
-        "void Test(" + derivedClass + "@ m, " + baseClass + "@ e, bool cond) {\n" +
-        "    " + baseClass + "@ res = cond ? m : e;\n" +
-        "}\n";
+    const std::string code = "class " + baseClass + " {}\n" + "class " + derivedClass + " : " + baseClass + " {}\n" +
+                             "void Test(" + derivedClass + "@ m, " + baseClass + "@ e, bool cond) {\n" + "    " +
+                             baseClass + "@ res = cond ? m : e;\n" + "}\n";
     const auto diags = AnalyzeSnippet(code);
     CHECK_FALSE(HasDiagCode(diags, "as-err-no-implicit-conversion"));
 }
@@ -600,21 +592,11 @@ TEST_CASE("SvenCoopRegression - Switch statement fallthrough to returning defaul
 {
     const std::string fnName = GenerateRandomSymbolName("GetVal");
     const std::string enumName = GenerateRandomSymbolName("TypeKind");
-    const std::string code =
-        "enum " + enumName + " { K1, K2, K3 }\n" +
-        "bool " + fnName + "(" + enumName + " kind, string &out val) {\n" +
-        "    switch (kind) {\n" +
-        "        case K1:\n" +
-        "            val = \"1\";\n" +
-        "            return true;\n" +
-        "        case K2:\n" +
-        "            val = \"2\";\n" +
-        "        case K3:\n" +
-        "            val = \"3\";\n" +
-        "        default:\n" +
-        "            return false;\n" +
-        "    }\n" +
-        "}\n";
+    const std::string code = "enum " + enumName + " { K1, K2, K3 }\n" + "bool " + fnName + "(" + enumName +
+                             " kind, string &out val) {\n" + "    switch (kind) {\n" + "        case K1:\n" +
+                             "            val = \"1\";\n" + "            return true;\n" + "        case K2:\n" +
+                             "            val = \"2\";\n" + "        case K3:\n" + "            val = \"3\";\n" +
+                             "        default:\n" + "            return false;\n" + "    }\n" + "}\n";
     const auto diags = AnalyzeSnippet(code);
     CHECK_FALSE(HasDiagCode(diags, "as-err-not-all-paths-return"));
 }
@@ -623,16 +605,9 @@ TEST_CASE("SvenCoopRegression - Converting constructor with primitive widening")
 {
     const std::string clsName = GenerateRandomSymbolName("CustomStr");
     const std::string fnName = GenerateRandomSymbolName("LogMsg");
-    const std::string code =
-        "class " + clsName + " {\n" +
-        "    " + clsName + "(int64 val) {}\n" +
-        "    " + clsName + "(double val) {}\n" +
-        "}\n" +
-        "void " + fnName + "(const " + clsName + " &in s) {}\n" +
-        "void Test() {\n" +
-        "    " + fnName + "(42);\n" +
-        "    " + fnName + "(3.14f);\n" +
-        "}\n";
+    const std::string code = "class " + clsName + " {\n" + "    " + clsName + "(int64 val) {}\n" + "    " + clsName +
+                             "(double val) {}\n" + "}\n" + "void " + fnName + "(const " + clsName + " &in s) {}\n" +
+                             "void Test() {\n" + "    " + fnName + "(42);\n" + "    " + fnName + "(3.14f);\n" + "}\n";
     const auto diags = AnalyzeSnippet(code);
     CHECK_FALSE(HasDiagCode(diags, "as-err-no-implicit-conversion"));
     CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
@@ -641,15 +616,11 @@ TEST_CASE("SvenCoopRegression - Converting constructor with primitive widening")
 TEST_CASE("SvenCoopRegression - Math min and max overload resolution with mixed int and float")
 {
     const std::string minFn = GenerateRandomSymbolName("min");
-    const std::string code =
-        "float " + minFn + "(float a, float b) { return a < b ? a : b; }\n" +
-        "int64 " + minFn + "(int64 a, int64 b) { return a < b ? a : b; }\n" +
-        "uint64 " + minFn + "(uint64 a, uint64 b) { return a < b ? a : b; }\n" +
-        "void Test() {\n" +
-        "    float flDamage = 50.0f;\n" +
-        "    float maxHealth = 100.0f;\n" +
-        "    float result = " + minFn + "(1, flDamage / maxHealth);\n" +
-        "}\n";
+    const std::string code = "float " + minFn + "(float a, float b) { return a < b ? a : b; }\n" + "int64 " + minFn +
+                             "(int64 a, int64 b) { return a < b ? a : b; }\n" + "uint64 " + minFn +
+                             "(uint64 a, uint64 b) { return a < b ? a : b; }\n" + "void Test() {\n" +
+                             "    float flDamage = 50.0f;\n" + "    float maxHealth = 100.0f;\n" +
+                             "    float result = " + minFn + "(1, flDamage / maxHealth);\n" + "}\n";
     const auto diags = AnalyzeSnippet(code);
     CHECK_FALSE(HasDiagCode(diags, "as-err-call-ambiguous"));
 }
@@ -663,13 +634,8 @@ TEST_CASE("SvenCoopRegression - Overload resolution on mutable reference &out pa
         "    bool Get(const string &in key, int64 &out val, bool strict = true) const { return true; }\n" +
         "    bool Get(const string &in key, double &out val, bool strict = true) const { return true; }\n" +
         "    bool Get(const string &in key, bool &out val, bool strict = true) const { return true; }\n" +
-        "    void Run() {\n" +
-        "        string s;\n" +
-        "        this.Get(\"key\", s);\n" +
-        "        int64 i;\n" +
-        "        this.Get(\"key\", i, false);\n" +
-        "    }\n" +
-        "}\n";
+        "    void Run() {\n" + "        string s;\n" + "        this.Get(\"key\", s);\n" + "        int64 i;\n" +
+        "        this.Get(\"key\", i, false);\n" + "    }\n" + "}\n";
     const auto diags = AnalyzeSnippet(code);
     CHECK_FALSE(HasDiagCode(diags, "as-err-call-ambiguous"));
 }
@@ -680,17 +646,11 @@ TEST_CASE("SvenCoopRegression - Hierarchical parent namespace fallback for quali
     const std::string nsSub = GenerateRandomSymbolName("json");
     const std::string enumName = GenerateRandomSymbolName("Null");
     const std::string ifaceName = GenerateRandomSymbolName("IJson");
-    const std::string code =
-        "namespace " + nsRoot + " {\n" +
-        "    namespace " + nsSub + " {\n" +
-        "        enum " + enumName + " { " + enumName + " = 0 };\n" +
-        "        namespace v2 {\n" +
-        "            interface " + ifaceName + " {\n" +
-        "                void Set(const " + nsRoot + "::" + nsSub + "::v2::" + enumName + "& in val);\n" +
-        "            }\n" +
-        "        }\n" +
-        "    }\n" +
-        "}\n";
+    const std::string code = "namespace " + nsRoot + " {\n" + "    namespace " + nsSub + " {\n" + "        enum " +
+                             enumName + " { " + enumName + " = 0 };\n" + "        namespace v2 {\n" +
+                             "            interface " + ifaceName + " {\n" + "                void Set(const " +
+                             nsRoot + "::" + nsSub + "::v2::" + enumName + "& in val);\n" + "            }\n" +
+                             "        }\n" + "    }\n" + "}\n";
     const auto diags = AnalyzeSnippet(code);
     CHECK_FALSE(HasDiagCode(diags, "as-err-unresolved-type"));
 }
@@ -702,10 +662,7 @@ TEST_CASE("SvenCoopRegression - Null safety warning disabled by default in serve
 
     const std::string cls = GenerateRandomSymbolName("Player");
     const std::string code =
-        "class " + cls + " { void Ping() {} }\n" +
-        "void Test(" + cls + "@ p) {\n" +
-        "    p.Ping();\n" +
-        "}\n";
+        "class " + cls + " { void Ping() {} }\n" + "void Test(" + cls + "@ p) {\n" + "    p.Ping();\n" + "}\n";
     const auto diags = AnalyzeSnippet(code);
     CHECK_FALSE(HasDiagCode(diags, "as-warn-possible-null-dereference"));
 }
@@ -716,8 +673,8 @@ TEST_CASE("SvenCoopRegression - CodeLens returns references for predefined stub 
     const std::string uri = "file:///" + stubName;
     const std::string fnName = GenerateRandomSymbolName("ShootProp");
     const std::string className = GenerateRandomSymbolName("Vector");
-    const std::string stubContent = "class " + className + " { float x; float y; float z; }\n" +
-                                    "void " + fnName + "() {}\n";
+    const std::string stubContent =
+        "class " + className + " { float x; float y; float z; }\n" + "void " + fnName + "() {}\n";
 
     parser::AngelScriptParser parser;
     TSTree* tree = parser.Parse(stubContent);
@@ -727,9 +684,7 @@ TEST_CASE("SvenCoopRegression - CodeLens returns references for predefined stub 
     collector.CollectSymbols(uri, stubContent, parser, table);
 
     analysis::ScopeIndex scopeIndex;
-    features::CodeLensRequest clReq{
-        uri, stubContent, tree, table, scopeIndex, nullptr
-    };
+    features::CodeLensRequest clReq{uri, stubContent, tree, table, scopeIndex, nullptr};
 
     const auto lenses = features::GetCodeLenses(clReq);
     REQUIRE(lenses.has_value());
@@ -768,14 +723,16 @@ TEST_CASE("SvenCoopRegression - Predefined file tree in DocumentStore resolves H
     collector.CollectSymbols(uri, stubContent, parser, table);
 
     analysis::ScopeIndex scopeIndex;
-    features::HoverRequest hoverReq{
-        uri, stubContent, tree, table, scopeIndex,
-        lsp::Position{0, 7},
-        [](const std::string&) -> const std::string* { return nullptr; },
-        nullptr,
-        [](const std::string&) -> std::string { return ""; },
-        nullptr
-    };
+    features::HoverRequest hoverReq{uri,
+                                    stubContent,
+                                    tree,
+                                    table,
+                                    scopeIndex,
+                                    lsp::Position{0, 7},
+                                    [](const std::string&) -> const std::string* { return nullptr; },
+                                    nullptr,
+                                    [](const std::string&) -> std::string { return ""; },
+                                    nullptr};
 
     const auto hover = features::GetHover(hoverReq);
     CHECK(hover.has_value());
@@ -795,10 +752,17 @@ TEST_CASE("SvenCoopRegression - Deep builder pattern and chained calls analyze l
     const std::string methodB = GenerateRandomSymbolName("StepB");
     const std::string varName = GenerateRandomSymbolName("instance");
 
-    std::string script = "class " + className + " {\n"
-                         "    " + className + "@ " + methodA + "() { return this; }\n"
-                         "    " + className + "@ " + methodB + "() { return this; }\n"
-                         "    " + className + "@ Clear() {\n"
+    std::string script = "class " + className +
+                         " {\n"
+                         "    " +
+                         className + "@ " + methodA +
+                         "() { return this; }\n"
+                         "    " +
+                         className + "@ " + methodB +
+                         "() { return this; }\n"
+                         "    " +
+                         className +
+                         "@ Clear() {\n"
                          "        return this\n";
 
     for (int i = 0; i < 20; ++i)
@@ -809,8 +773,12 @@ TEST_CASE("SvenCoopRegression - Deep builder pattern and chained calls analyze l
               "    }\n"
               "}\n"
               "void Run() {\n"
-              "    " + className + " " + varName + ";\n"
-              "    " + varName + ".Clear();\n"
+              "    " +
+              className + " " + varName +
+              ";\n"
+              "    " +
+              varName +
+              ".Clear();\n"
               "}\n";
 
     const auto diags = AnalyzeSnippet(script);
@@ -818,4 +786,3 @@ TEST_CASE("SvenCoopRegression - Deep builder pattern and chained calls analyze l
 }
 
 } // namespace angel_lsp::test
-

@@ -281,11 +281,13 @@ void Server::UpdateFormatConfiguration(const lsp::LSPObject& section)
             LogInfo(fmt::format("Format brace style changed to '{}'", *styleVal));
         }
     }
-    if (auto spacesVal = FindSectionBool(section, formatObj, "spacesInsideParentheses", "format"); spacesVal.has_value())
+    if (auto spacesVal = FindSectionBool(section, formatObj, "spacesInsideParentheses", "format");
+        spacesVal.has_value())
     {
         m_formatSpacesInsideParentheses.store(*spacesVal, std::memory_order_relaxed);
     }
-    if (auto keepEmpty = FindSectionBool(section, formatObj, "keepEmptyBlocksOnSingleLine", "format"); keepEmpty.has_value())
+    if (auto keepEmpty = FindSectionBool(section, formatObj, "keepEmptyBlocksOnSingleLine", "format");
+        keepEmpty.has_value())
     {
         m_formatKeepEmptyBlocksOnSingleLine.store(*keepEmpty, std::memory_order_relaxed);
     }
@@ -487,6 +489,10 @@ void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
     if (auto parens = FindSectionBool(section, compObj, "completeFunctionParens", "completion"); parens.has_value())
     {
         m_config.features.completionCompleteFunctionParens = *parens;
+    }
+    if (auto qualify = FindSectionBool(section, compObj, "qualifyEnumValues", "completion"); qualify.has_value())
+    {
+        m_config.features.completionQualifyEnumValues = *qualify;
     }
 
     UpdateInlayHintFeatureConfig(section, m_config);

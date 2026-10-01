@@ -1,12 +1,12 @@
-#include <doctest/doctest.h>
-#include "analysis/SemanticAnalyzer.h"
-#include "analysis/SemanticAnalysisRequest.h"
-#include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
+#include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 #include <algorithm>
+#include <doctest/doctest.h>
 
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
@@ -16,87 +16,83 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    std::vector<Diagnostic> AnalyzeCode(const std::string &code, const std::string &fileUri = "file:///definite_assign.as")
+std::vector<Diagnostic> AnalyzeCode(const std::string& code, const std::string& fileUri = "file:///definite_assign.as")
+{
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    LocalScopeCollector scopes(nullptr);
+    SymbolTable table;
+    static angel_lsp::i18n::I18n i18n;
+
+    collector.CollectSymbols(fileUri, code, parser, table);
+
+    SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
+    request.scopeRoot = scopes.CollectScopes(code, parser);
+    request.sourceCode = code;
+    request.tree = parser.Parse(code);
+
+    SemanticAnalyzer analyzer(nullptr);
+    auto diagnostics = analyzer.Analyze(request);
+
+    if (request.tree)
     {
-        AngelScriptParser parser;
-        SymbolCollector collector(nullptr);
-        LocalScopeCollector scopes(nullptr);
-        SymbolTable table;
-        static angel_lsp::i18n::I18n i18n;
-
-        collector.CollectSymbols(fileUri, code, parser, table);
-
-        SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
-        request.scopeRoot = scopes.CollectScopes(code, parser);
-        request.sourceCode = code;
-        request.tree = parser.Parse(code);
-
-        SemanticAnalyzer analyzer(nullptr);
-        auto diagnostics = analyzer.Analyze(request);
-
-        if (request.tree)
-        {
-            ts_tree_delete(const_cast<TSTree *>(request.tree));
-        }
-        return diagnostics;
+        ts_tree_delete(const_cast<TSTree*>(request.tree));
     }
-
-    bool HasUninitializedRead(const std::vector<Diagnostic> &diagnostics)
-    {
-        return std::any_of(diagnostics.begin(), diagnostics.end(),
-                           [](const Diagnostic &d) { return d.code == "as-warn-uninitialized-variable-read"; });
-    }
+    return diagnostics;
 }
+
+bool HasUninitializedRead(const std::vector<Diagnostic>& diagnostics)
+{
+    return std::any_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic& d) { return d.code == "as-warn-uninitialized-variable-read"; });
+}
+} // namespace
 
 TEST_SUITE("DefiniteAssignment")
 {
     TEST_CASE("Direct Uninitialized Read")
     {
-        std::string badCode =
-            "void Print(int v) { }\n"
-            "void main()\n"
-            "{\n"
-            "    int x;\n"
-            "    Print(x);\n"
-            "}\n";
+        std::string badCode = "void Print(int v) { }\n"
+                              "void main()\n"
+                              "{\n"
+                              "    int x;\n"
+                              "    Print(x);\n"
+                              "}\n";
         CHECK(HasUninitializedRead(AnalyzeCode(badCode)));
 
-        std::string goodCode =
-            "void Print(int v) { }\n"
-            "void main()\n"
-            "{\n"
-            "    int x = 42;\n"
-            "    Print(x);\n"
-            "}\n";
+        std::string goodCode = "void Print(int v) { }\n"
+                               "void main()\n"
+                               "{\n"
+                               "    int x = 42;\n"
+                               "    Print(x);\n"
+                               "}\n";
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(goodCode)));
     }
 
     TEST_CASE("Branching If Else")
     {
-        std::string assignedBoth =
-            "void Print(int v) { }\n"
-            "void main()\n"
-            "{\n"
-            "    int x;\n"
-            "    bool cond = true;\n"
-            "    if (cond)\n"
-            "        x = 1;\n"
-            "    else\n"
-            "        x = 2;\n"
-            "    Print(x);\n"
-            "}\n";
+        std::string assignedBoth = "void Print(int v) { }\n"
+                                   "void main()\n"
+                                   "{\n"
+                                   "    int x;\n"
+                                   "    bool cond = true;\n"
+                                   "    if (cond)\n"
+                                   "        x = 1;\n"
+                                   "    else\n"
+                                   "        x = 2;\n"
+                                   "    Print(x);\n"
+                                   "}\n";
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(assignedBoth)));
 
-        std::string assignedOne =
-            "void Print(int v) { }\n"
-            "void main()\n"
-            "{\n"
-            "    int x;\n"
-            "    bool cond = true;\n"
-            "    if (cond)\n"
-            "        x = 1;\n"
-            "    Print(x);\n"
-            "}\n";
+        std::string assignedOne = "void Print(int v) { }\n"
+                                  "void main()\n"
+                                  "{\n"
+                                  "    int x;\n"
+                                  "    bool cond = true;\n"
+                                  "    if (cond)\n"
+                                  "        x = 1;\n"
+                                  "    Print(x);\n"
+                                  "}\n";
         // Clean, and this test asserted the opposite. AngelScript's rule is not C#'s: it warns only
         // when NO assignment precedes the read, conditional or not. Measured on this exact snippet
         // - `angelscript_oracle` accepts it without a warning - and on `if (false) { x = 5; }
@@ -104,72 +100,67 @@ TEST_SUITE("DefiniteAssignment")
         // "'x' is not initialized."
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(assignedOne)));
 
-        std::string readBeforeAnyAssignment =
-            "void Print(int v) { }\n"
-            "void main()\n"
-            "{\n"
-            "    int x;\n"
-            "    Print(x);\n"
-            "    x = 1;\n"
-            "}\n";
+        std::string readBeforeAnyAssignment = "void Print(int v) { }\n"
+                                              "void main()\n"
+                                              "{\n"
+                                              "    int x;\n"
+                                              "    Print(x);\n"
+                                              "    x = 1;\n"
+                                              "}\n";
         CHECK(HasUninitializedRead(AnalyzeCode(readBeforeAnyAssignment)));
     }
 
     TEST_CASE("Early Return Path")
     {
-        std::string earlyReturn =
-            "void Print(int v) { }\n"
-            "void main()\n"
-            "{\n"
-            "    int x;\n"
-            "    bool cond = false;\n"
-            "    if (!cond)\n"
-            "        return;\n"
-            "    x = 100;\n"
-            "    Print(x);\n"
-            "}\n";
+        std::string earlyReturn = "void Print(int v) { }\n"
+                                  "void main()\n"
+                                  "{\n"
+                                  "    int x;\n"
+                                  "    bool cond = false;\n"
+                                  "    if (!cond)\n"
+                                  "        return;\n"
+                                  "    x = 100;\n"
+                                  "    Print(x);\n"
+                                  "}\n";
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(earlyReturn)));
     }
 
     TEST_CASE("Out Parameter Assignment")
     {
-        std::string outParam =
-            "void Init(int &out val) { val = 10; }\n"
-            "void Print(int v) { }\n"
-            "void main()\n"
-            "{\n"
-            "    int x;\n"
-            "    Init(x);\n"
-            "    Print(x);\n"
-            "}\n";
+        std::string outParam = "void Init(int &out val) { val = 10; }\n"
+                               "void Print(int v) { }\n"
+                               "void main()\n"
+                               "{\n"
+                               "    int x;\n"
+                               "    Init(x);\n"
+                               "    Print(x);\n"
+                               "}\n";
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(outParam)));
     }
 
     TEST_CASE("Loops Dataflow")
     {
-        std::string doWhileCode =
-            "void Print(int v) { }\n"
-            "void main()\n"
-            "{\n"
-            "    int x;\n"
-            "    do {\n"
-            "        x = 10;\n"
-            "    } while (false);\n"
-            "    Print(x);\n"
-            "}\n";
+        std::string doWhileCode = "void Print(int v) { }\n"
+                                  "void main()\n"
+                                  "{\n"
+                                  "    int x;\n"
+                                  "    do {\n"
+                                  "        x = 10;\n"
+                                  "    } while (false);\n"
+                                  "    Print(x);\n"
+                                  "}\n";
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(doWhileCode)));
 
-        std::string whileCode =
-            "void Print(int v) { }\n"
-            "void main()\n"
-            "{\n"
-            "    int x;\n"
-            "    bool cond = true;\n"
-            "    while (cond) {\n"
-            "        x = 10;\n"
-            "    }\n"
-            "    Print(x);\n"
-            "}\n";
+        std::string whileCode = "void Print(int v) { }\n"
+                                "void main()\n"
+                                "{\n"
+                                "    int x;\n"
+                                "    bool cond = true;\n"
+                                "    while (cond) {\n"
+                                "        x = 10;\n"
+                                "    }\n"
+                                "    Print(x);\n"
+                                "}\n";
         // Clean. `while (cond) { x = 10; } Print(x);` is accepted by the compiler even though
         // the loop may not run - measured.
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(whileCode)));
@@ -177,37 +168,35 @@ TEST_SUITE("DefiniteAssignment")
 
     TEST_CASE("Switch Statement Dataflow")
     {
-        std::string switchAll =
-            "void Print(int v) { }\n"
-            "void main()\n"
-            "{\n"
-            "    int x;\n"
-            "    int mode = 1;\n"
-            "    switch (mode) {\n"
-            "    case 1:\n"
-            "        x = 10;\n"
-            "        break;\n"
-            "    default:\n"
-            "        x = 20;\n"
-            "        break;\n"
-            "    }\n"
-            "    Print(x);\n"
-            "}\n";
+        std::string switchAll = "void Print(int v) { }\n"
+                                "void main()\n"
+                                "{\n"
+                                "    int x;\n"
+                                "    int mode = 1;\n"
+                                "    switch (mode) {\n"
+                                "    case 1:\n"
+                                "        x = 10;\n"
+                                "        break;\n"
+                                "    default:\n"
+                                "        x = 20;\n"
+                                "        break;\n"
+                                "    }\n"
+                                "    Print(x);\n"
+                                "}\n";
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(switchAll)));
 
-        std::string switchNoDefault =
-            "void Print(int v) { }\n"
-            "void main()\n"
-            "{\n"
-            "    int x;\n"
-            "    int mode = 1;\n"
-            "    switch (mode) {\n"
-            "    case 1:\n"
-            "        x = 10;\n"
-            "        break;\n"
-            "    }\n"
-            "    Print(x);\n"
-            "}\n";
+        std::string switchNoDefault = "void Print(int v) { }\n"
+                                      "void main()\n"
+                                      "{\n"
+                                      "    int x;\n"
+                                      "    int mode = 1;\n"
+                                      "    switch (mode) {\n"
+                                      "    case 1:\n"
+                                      "        x = 10;\n"
+                                      "        break;\n"
+                                      "    }\n"
+                                      "    Print(x);\n"
+                                      "}\n";
         // Clean. A missing `default:` decides "assigned on every path", which is C#'s rule;
         // AngelScript asks only that some assignment precede the read. Measured.
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(switchNoDefault)));
@@ -237,16 +226,13 @@ TEST_CASE("DefiniteAssignment - Definite Assignment Corpus Audit" * doctest::ski
         return;
     }
 
-    const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)
-    {
-        return code == "as-warn-uninitialized-variable-read";
-    });
+    const auto result = angel_lsp::test::RunCorpusAudit([](const std::string& code)
+                                                        { return code == "as-warn-uninitialized-variable-read"; });
 
-    MESSAGE("Definite-assignment corpus audit: files=" << result.filesAnalysed
-            << " totalFlagged=" << result.Total()
-            << " seconds=" << result.seconds);
+    MESSAGE("Definite-assignment corpus audit: files=" << result.filesAnalysed << " totalFlagged=" << result.Total()
+                                                       << " seconds=" << result.seconds);
 
-    for (const auto &hit : result.hits)
+    for (const auto& hit : result.hits)
     {
         MESSAGE("  " << hit.fileName << ":" << hit.line << " [" << hit.code << "] " << hit.message);
     }
@@ -294,17 +280,13 @@ TEST_SUITE("DefiniteAssignmentConditions")
 
     TEST_CASE("A read inside a condition is checked")
     {
-        CHECK(HasUninitializedRead(AnalyzeCode(
-            "void main() { int x; if (x > 0) { } }\n")));
+        CHECK(HasUninitializedRead(AnalyzeCode("void main() { int x; if (x > 0) { } }\n")));
 
-        CHECK(HasUninitializedRead(AnalyzeCode(
-            "void main() { int x; while (x > 0) { break; } }\n")));
+        CHECK(HasUninitializedRead(AnalyzeCode("void main() { int x; while (x > 0) { break; } }\n")));
 
-        CHECK(HasUninitializedRead(AnalyzeCode(
-            "void main() { int x; switch (x) { case 1: break; } }\n")));
+        CHECK(HasUninitializedRead(AnalyzeCode("void main() { int x; switch (x) { case 1: break; } }\n")));
 
-        CHECK(HasUninitializedRead(AnalyzeCode(
-            "void main() { int x; do { break; } while (x > 0); }\n")));
+        CHECK(HasUninitializedRead(AnalyzeCode("void main() { int x; do { break; } while (x > 0); }\n")));
     }
 
     TEST_CASE("An out-argument written in a condition counts for the body after it")
@@ -312,26 +294,23 @@ TEST_SUITE("DefiniteAssignmentConditions")
         // The corpus shape: `if (dict.get(key, value) && value != 0) { use(value); }`. The callee
         // is invisible, so whether that parameter is `&out` cannot be established - and `&out` is
         // what it usually is, so the variable is treated as possibly written rather than read.
-        CHECK_FALSE(HasUninitializedRead(AnalyzeCode(
-            "void Use(int v) { }\n"
-            "void main() { UnknownDict d; int v; if (d.get('k', v) && v != 0) { Use(v); } }\n")));
+        CHECK_FALSE(HasUninitializedRead(
+            AnalyzeCode("void Use(int v) { }\n"
+                        "void main() { UnknownDict d; int v; if (d.get('k', v) && v != 0) { Use(v); } }\n")));
 
-        CHECK_FALSE(HasUninitializedRead(AnalyzeCode(
-            "void Use(int v) { }\n"
-            "void main() { int v; if (HostGet('k', v)) { Use(v); } }\n")));
+        CHECK_FALSE(HasUninitializedRead(AnalyzeCode("void Use(int v) { }\n"
+                                                     "void main() { int v; if (HostGet('k', v)) { Use(v); } }\n")));
     }
 
     TEST_CASE("A for loop header initialises its own counter")
     {
         // `for (i = 0; ...)` assigns a variable declared earlier. The header is where `i` becomes
         // initialised, and it was being reported as reading it uninitialised.
-        CHECK_FALSE(HasUninitializedRead(AnalyzeCode(
-            "void Use(int v) { }\n"
-            "void main() { int i; for (i = 0; i < 3; i++) { Use(i); } }\n")));
+        CHECK_FALSE(HasUninitializedRead(AnalyzeCode("void Use(int v) { }\n"
+                                                     "void main() { int i; for (i = 0; i < 3; i++) { Use(i); } }\n")));
 
-        CHECK_FALSE(HasUninitializedRead(AnalyzeCode(
-            "void Use(int v) { }\n"
-            "void main() { for (int i = 0; i < 3; i++) { Use(i); } }\n")));
+        CHECK_FALSE(HasUninitializedRead(AnalyzeCode("void Use(int v) { }\n"
+                                                     "void main() { for (int i = 0; i < 3; i++) { Use(i); } }\n")));
     }
 }
 
@@ -343,16 +322,15 @@ TEST_SUITE("DefiniteAssignmentOverloads")
         // the candidates disagree, and a wrong guess reports the line that INITIALISES the
         // variable. Asking "could this be an out-parameter" instead of "is the chosen one" is the
         // same silence-over-guessing the unknown-callee case uses.
-        CHECK_FALSE(HasUninitializedRead(AnalyzeCode(
-            "void Use(int v) { }\n"
-            "class B { bool Get(int &out v) { v = 1; return true; } }\n"
-            "class D : B { bool Get(int &out v) override { v = 2; return true; } }\n"
-            "void main() { D d; int n; d.Get(n); Use(n); }\n")));
+        CHECK_FALSE(
+            HasUninitializedRead(AnalyzeCode("void Use(int v) { }\n"
+                                             "class B { bool Get(int &out v) { v = 1; return true; } }\n"
+                                             "class D : B { bool Get(int &out v) override { v = 2; return true; } }\n"
+                                             "void main() { D d; int n; d.Get(n); Use(n); }\n")));
 
         // Still reported where NO candidate declares an out-parameter at that position.
-        CHECK(HasUninitializedRead(AnalyzeCode(
-            "void Use(int v) { }\n"
-            "class B { bool Get(int v) { return true; } }\n"
-            "void main() { B b; int n; b.Get(n); }\n")));
+        CHECK(HasUninitializedRead(AnalyzeCode("void Use(int v) { }\n"
+                                               "class B { bool Get(int v) { return true; } }\n"
+                                               "void main() { B b; int n; b.Get(n); }\n")));
     }
 }

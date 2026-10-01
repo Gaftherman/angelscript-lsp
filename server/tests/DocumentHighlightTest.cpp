@@ -1,12 +1,12 @@
+#include <doctest/doctest.h>
 #include <iostream>
 #include <string>
-#include <doctest/doctest.h>
 
-#include "features/document_highlight/DocumentHighlightHandler.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "features/document_highlight/DocumentHighlightHandler.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -16,62 +16,53 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct TestEnvironment
+struct TestEnvironment
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    std::string uri = "file:///test.as";
+    std::string source;
+    TSTree* tree = nullptr;
+
+    TestEnvironment(const std::string& code) : source(code)
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        std::string uri = "file:///test.as";
-        std::string source;
-        TSTree *tree = nullptr;
-
-        TestEnvironment(const std::string &code)
-            : source(code)
+        tree = parser.Parse(source);
+        symbolCollector.CollectSymbols(uri, source, parser, symbolTable);
+        auto rootScope = scopeCollector.CollectScopes(source, parser);
+        if (rootScope)
         {
-            tree = parser.Parse(source);
-            symbolCollector.CollectSymbols(uri, source, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(source, parser);
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(uri, std::move(rootScope));
-            }
+            scopeIndex.SetScopeTree(uri, std::move(rootScope));
         }
+    }
 
-        ~TestEnvironment()
+    ~TestEnvironment()
+    {
+        if (tree)
         {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
+            ts_tree_delete(tree);
         }
+    }
 
-        std::optional<DocumentHighlightResult> HighlightsAt(uint32_t line, uint32_t character)
-        {
-            DocumentHighlightRequest req{
-                uri,
-                source,
-                tree,
-                lsp::Position{ line, character },
-                symbolTable,
-                scopeIndex
-            };
-            return GetDocumentHighlights(req);
-        }
-    };
-}
+    std::optional<DocumentHighlightResult> HighlightsAt(uint32_t line, uint32_t character)
+    {
+        DocumentHighlightRequest req{uri, source, tree, lsp::Position{line, character}, symbolTable, scopeIndex};
+        return GetDocumentHighlights(req);
+    }
+};
+} // namespace
 
 TEST_CASE("DocumentHighlight - Local Variables and Parameter Read/Write Classification")
 {
-    std::string code =
-        "void Calculate(int baseValue) {\n"
-        "    int multiplier = 2;\n"
-        "    int result = baseValue * multiplier;\n"
-        "    multiplier = result + multiplier;\n"
-        "    multiplier += 1;\n"
-        "    multiplier++;\n"
-        "}\n";
+    std::string code = "void Calculate(int baseValue) {\n"
+                       "    int multiplier = 2;\n"
+                       "    int result = baseValue * multiplier;\n"
+                       "    multiplier = result + multiplier;\n"
+                       "    multiplier += 1;\n"
+                       "    multiplier++;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -91,7 +82,8 @@ TEST_CASE("DocumentHighlight - Local Variables and Parameter Read/Write Classifi
         CHECK((*hls)[1].kind.value_or(lsp::DocumentHighlightKind::Text) == lsp::DocumentHighlightKind::Read);
     }
 
-    SUBCASE("Local variable multiplier highlights: declaration Write, read, assignment LHS Write, compound LHS Write, postfix Write")
+    SUBCASE("Local variable multiplier highlights: declaration Write, read, assignment LHS Write, compound LHS Write, "
+            "postfix Write")
     {
         // Cursor on 'multiplier' declaration at line 1, col 10
         auto hls = env.HighlightsAt(1, 10);
@@ -128,19 +120,18 @@ TEST_CASE("DocumentHighlight - Local Variables and Parameter Read/Write Classifi
 
 TEST_CASE("DocumentHighlight - Member Access Read vs Write")
 {
-    std::string code =
-        "class Entity {\n"
-        "    int hp;\n"
-        "    void SetHp(int val) {\n"
-        "        hp = val;\n"
-        "        this.hp = val + 1;\n"
-        "    }\n"
-        "}\n"
-        "void main() {\n"
-        "    Entity e;\n"
-        "    e.hp = 100;\n"
-        "    int current = e.hp;\n"
-        "}\n";
+    std::string code = "class Entity {\n"
+                       "    int hp;\n"
+                       "    void SetHp(int val) {\n"
+                       "        hp = val;\n"
+                       "        this.hp = val + 1;\n"
+                       "    }\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Entity e;\n"
+                       "    e.hp = 100;\n"
+                       "    int current = e.hp;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -195,14 +186,13 @@ TEST_CASE("DocumentHighlight - Member Access Read vs Write")
 
 TEST_CASE("DocumentHighlight - Function & Class Declaration Text Classification")
 {
-    std::string code =
-        "class Player {\n"
-        "    void Jump() {}\n"
-        "}\n"
-        "void main() {\n"
-        "    Player p;\n"
-        "    p.Jump();\n"
-        "}\n";
+    std::string code = "class Player {\n"
+                       "    void Jump() {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Player p;\n"
+                       "    p.Jump();\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -241,15 +231,14 @@ TEST_CASE("DocumentHighlight - Function & Class Declaration Text Classification"
 
 TEST_CASE("DocumentHighlight - Lexical Scoping and Shadowing Isolation")
 {
-    std::string code =
-        "void TestShadow() {\n"
-        "    int value = 10;\n"
-        "    if (true) {\n"
-        "        int value = 20;\n"
-        "        value += 5;\n"
-        "    }\n"
-        "    value = value + 1;\n"
-        "}\n";
+    std::string code = "void TestShadow() {\n"
+                       "    int value = 10;\n"
+                       "    if (true) {\n"
+                       "        int value = 20;\n"
+                       "        value += 5;\n"
+                       "    }\n"
+                       "    value = value + 1;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -294,17 +283,16 @@ TEST_CASE("DocumentHighlight - Lexical Scoping and Shadowing Isolation")
 
 TEST_CASE("DocumentHighlight - Out and InOut Parameter Write Classification")
 {
-    std::string code =
-        "void ModifyValues(int &out outVal, int &inout inoutVal, int normalVal) {\n"
-        "    outVal = 100;\n"
-        "    inoutVal += 50;\n"
-        "}\n"
-        "void main() {\n"
-        "    int a = 0;\n"
-        "    int b = 1;\n"
-        "    int c = 2;\n"
-        "    ModifyValues(a, b, c);\n"
-        "}\n";
+    std::string code = "void ModifyValues(int &out outVal, int &inout inoutVal, int normalVal) {\n"
+                       "    outVal = 100;\n"
+                       "    inoutVal += 50;\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    int a = 0;\n"
+                       "    int b = 1;\n"
+                       "    int c = 2;\n"
+                       "    ModifyValues(a, b, c);\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -356,11 +344,10 @@ TEST_CASE("DocumentHighlight - Out and InOut Parameter Write Classification")
 
 TEST_CASE("DocumentHighlight - Non-Identifier & Edge Cases")
 {
-    std::string code =
-        "// Comment here\n"
-        "void main() {\n"
-        "    int x = 10;\n"
-        "}\n";
+    std::string code = "// Comment here\n"
+                       "void main() {\n"
+                       "    int x = 10;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -390,16 +377,15 @@ TEST_CASE("DocumentHighlight - Non-Identifier & Edge Cases")
 
 TEST_CASE("DocumentHighlight - a class field is highlighted from its declaration through its uses")
 {
-    std::string code =
-        "class Weapon\n"
-        "{\n"
-        "    int ammo;\n"
-        "\n"
-        "    void Fire()\n"
-        "    {\n"
-        "        ammo = ammo - 1;\n"
-        "    }\n"
-        "}\n";
+    std::string code = "class Weapon\n"
+                       "{\n"
+                       "    int ammo;\n"
+                       "\n"
+                       "    void Fire()\n"
+                       "    {\n"
+                       "        ammo = ammo - 1;\n"
+                       "    }\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -416,17 +402,16 @@ TEST_CASE("DocumentHighlight - a class field is highlighted from its declaration
 
 TEST_CASE("DocumentHighlight - a local shadowing a field highlights only the local")
 {
-    std::string code =
-        "class Weapon\n"
-        "{\n"
-        "    int ammo;\n"
-        "\n"
-        "    void Reload()\n"
-        "    {\n"
-        "        int ammo = 30;\n"
-        "        ammo = ammo + 1;\n"
-        "    }\n"
-        "}\n";
+    std::string code = "class Weapon\n"
+                       "{\n"
+                       "    int ammo;\n"
+                       "\n"
+                       "    void Reload()\n"
+                       "    {\n"
+                       "        int ammo = 30;\n"
+                       "        ammo = ammo + 1;\n"
+                       "    }\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -435,7 +420,7 @@ TEST_CASE("DocumentHighlight - a local shadowing a field highlights only the loc
     REQUIRE(highlights.has_value());
     CHECK(highlights->size() == 3);
 
-    for (const auto &highlight : *highlights)
+    for (const auto& highlight : *highlights)
     {
         INFO("highlight on line ", highlight.range.start.line);
         CHECK(highlight.range.start.line >= 6);
@@ -487,7 +472,7 @@ void run()
     // The declaration on line 12 and the write on line 16: two, and only those. Picking up
     // Holder::field on line 3 would mean the walk climbed out of the lambda and read the reference
     // as a member of `h`.
-    for (const auto &highlight : *highlights)
+    for (const auto& highlight : *highlights)
     {
         INFO("highlight at line " << highlight.range.start.line);
         CHECK(highlight.range.start.line != 3);

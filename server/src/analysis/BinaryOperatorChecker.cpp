@@ -27,18 +27,30 @@ namespace
 
 std::pair<std::string_view, std::string_view> GetOpMethods(std::string_view op)
 {
-    if (op == "|") return {"opOr", "opOr_r"};
-    if (op == "&") return {"opAnd", "opAnd_r"};
-    if (op == "^") return {"opXor", "opXor_r"};
-    if (op == "<<") return {"opShl", "opShl_r"};
-    if (op == ">>") return {"opShr", "opShr_r"};
-    if (op == ">>>") return {"opUShr", "opUShr_r"};
-    if (op == "+") return {"opAdd", "opAdd_r"};
-    if (op == "-") return {"opSub", "opSub_r"};
-    if (op == "*") return {"opMul", "opMul_r"};
-    if (op == "/") return {"opDiv", "opDiv_r"};
-    if (op == "%") return {"opMod", "opMod_r"};
-    if (op == "**") return {"opPow", "opPow_r"};
+    if (op == "|")
+        return {"opOr", "opOr_r"};
+    if (op == "&")
+        return {"opAnd", "opAnd_r"};
+    if (op == "^")
+        return {"opXor", "opXor_r"};
+    if (op == "<<")
+        return {"opShl", "opShl_r"};
+    if (op == ">>")
+        return {"opShr", "opShr_r"};
+    if (op == ">>>")
+        return {"opUShr", "opUShr_r"};
+    if (op == "+")
+        return {"opAdd", "opAdd_r"};
+    if (op == "-")
+        return {"opSub", "opSub_r"};
+    if (op == "*")
+        return {"opMul", "opMul_r"};
+    if (op == "/")
+        return {"opDiv", "opDiv_r"};
+    if (op == "%")
+        return {"opMod", "opMod_r"};
+    if (op == "**")
+        return {"opPow", "opPow_r"};
     return {"", ""};
 }
 

@@ -421,7 +421,7 @@ void Server::ParserPredefined(const std::string& filePath, angel_lsp::parser::An
 namespace
 {
 std::optional<std::string> ReadPredefinedFile(const std::string& normPath, const std::string& filePath,
-                                             angel_lsp::utils::LspLogger* logger)
+                                              angel_lsp::utils::LspLogger* logger)
 {
     if (logger)
     {
@@ -446,22 +446,19 @@ std::optional<std::string> ReadPredefinedFile(const std::string& normPath, const
     std::string sanitized = angel_lsp::utils::SanitizePredefinedContent(ss.str());
     if (logger)
     {
-        logger->LogInfo(fmt::format("[File Read] Finished reading predefined file: {} in {} ({} bytes)",
-                                    filePath, angel_lsp::utils::FormatDuration(readTimer.ElapsedMs()),
-                                    sanitized.size()));
+        logger->LogInfo(fmt::format("[File Read] Finished reading predefined file: {} in {} ({} bytes)", filePath,
+                                    angel_lsp::utils::FormatDuration(readTimer.ElapsedMs()), sanitized.size()));
     }
     return sanitized;
 }
 } // namespace
 
-void Server::CommitPredefinedIndex(const std::string& uri, const std::string& content,
-                                  document::TreePtr tree)
+void Server::CommitPredefinedIndex(const std::string& uri, const std::string& content, document::TreePtr tree)
 {
     m_scopeIndex.ClearDocument(uri);
     m_callGraph.ClearDocument(uri);
-    auto preindexedDoc = std::make_shared<const document::Document>(
-        document::DocumentSnapshot{uri, content, 0, 1},
-        std::move(tree));
+    auto preindexedDoc =
+        std::make_shared<const document::Document>(document::DocumentSnapshot{uri, content, 0, 1}, std::move(tree));
     m_predefinedManager.SetPreindexedDocument(uri, preindexedDoc);
     if (m_workspaceStore)
     {
@@ -523,11 +520,8 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
     const double totalMs = totalTimer.ElapsedMs();
     LogInfo(fmt::format("[Predefined Index] Finished index for predefined stub: {} in {} "
                         "(Parse: {}, Symbols: {}, Scopes: {})",
-                        filePath,
-                        utils::FormatDuration(totalMs),
-                        utils::FormatDuration(parseMs),
-                        utils::FormatDuration(symMs),
-                        utils::FormatDuration(scopeMs)));
+                        filePath, utils::FormatDuration(totalMs), utils::FormatDuration(parseMs),
+                        utils::FormatDuration(symMs), utils::FormatDuration(scopeMs)));
     LogInfo(fmt::format("Loaded predefined file: {}", filePath));
 
     PredefinedLoadContext ctx{parser, forceReload, visited};

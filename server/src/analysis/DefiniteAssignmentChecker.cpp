@@ -341,8 +341,7 @@ class DefiniteAssignmentVisitor
         argTypes.reserve(argNodes.size());
         for (TSNode arg : argNodes)
         {
-            argTypes.push_back(ResolveExpressionType(
-                arg, ExpressionTypeContext(m_request.scopeRoot, m_ctx)));
+            argTypes.push_back(ResolveExpressionType(arg, ExpressionTypeContext(m_request.scopeRoot, m_ctx)));
         }
 
         auto best = ResolveBestOverload(candidates, argTypes, m_ctx.request.symbolTable);

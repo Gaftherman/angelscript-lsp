@@ -134,6 +134,7 @@
   "config.inlayHints.enableTooltip.description": "Show rich markdown tooltips with type and parameter signatures when hovering over inlay hints.",
   "config.inlayHints.enableLocation.description": "Enable Ctrl+Click navigation to parameter declarations from inlay hints.",
   "config.completion.completeFunctionParens.description": "Automatically append parentheses and position cursor when completing functions or methods.",
+  "config.completion.qualifyEnumValues.description": "Automatically prefix enum name when completing enum values (e.g. inserting 'EnumName::EnumValue') to eliminate ambiguity.",
   "config.hover.stringLiteralLength.description": "Show the character length of string literals in hover tooltips.",
   "config.hover.stringLiteralPathResolution.description": "Probe and resolve string literals that look like file/asset paths against the document directory, workspace roots, and configured asset search paths.",
   "config.hover.assetSearchPaths.description": "Directories to search for asset files referenced in string literals when path resolution is enabled.",

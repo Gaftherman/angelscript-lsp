@@ -59,6 +59,8 @@ struct FeatureFlags
     bool inlayHintsEnableTooltip = true;
     bool inlayHintsEnableLocation = true;
     bool completionCompleteFunctionParens = true;
+    /** @brief Automatically prefix enum name when completing enum values (e.g. 'Enum::Value'). */
+    bool completionQualifyEnumValues = true;
     bool hoverStringLiteralLength = true;
     bool hoverStringLiteralPathResolution = false;
     bool enableCommentSuppressions = true;

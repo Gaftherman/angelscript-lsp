@@ -1,6 +1,6 @@
-#include <doctest/doctest.h>
-#include "helpers/CorpusDirectory.h"
 #include "features/formatting/FormattingHandler.h"
+#include "helpers/CorpusDirectory.h"
+#include <doctest/doctest.h>
 
 #include <cctype>
 #include <filesystem>
@@ -36,112 +36,114 @@ namespace fs = std::filesystem;
  */
 namespace
 {
-    std::string ReadWholeFile(const fs::path &path)
-    {
-        std::ifstream in(path, std::ios::binary);
-        std::ostringstream ss;
-        ss << in.rdbuf();
-        return ss.str();
-    }
-
-    /**
-     * @brief The file's non-whitespace tokens, as coarsely as it takes to notice a lost character.
-     *
-     * Deliberately not the formatter's own tokenizer: a bug shared by the formatter and the checker
-     * would cancel out and the check would pass on a corrupted file. This one only has to agree on
-     * where a token ends, and it keeps comments and string literals whole so a brace or a semicolon
-     * inside one is never mistaken for code.
-     */
-    std::vector<std::string> CoarseTokens(const std::string &text)
-    {
-        std::vector<std::string> tokens;
-        size_t i = 0;
-
-        auto isWordChar = [](char c)
-        {
-            return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
-        };
-
-        while (i < text.size())
-        {
-            const char c = text[i];
-
-            if (std::isspace(static_cast<unsigned char>(c)))
-            {
-                ++i;
-                continue;
-            }
-
-            const size_t start = i;
-
-            if (c == '/' && i + 1 < text.size() && text[i + 1] == '/')
-            {
-                while (i < text.size() && text[i] != '\n' && text[i] != '\r') ++i;
-            }
-            else if (c == '/' && i + 1 < text.size() && text[i + 1] == '*')
-            {
-                i += 2;
-                while (i + 1 < text.size() && !(text[i] == '*' && text[i + 1] == '/')) ++i;
-                i = std::min(text.size(), i + 2);
-            }
-            else if (c == '"' && i + 2 < text.size() && text[i + 1] == '"' && text[i + 2] == '"')
-            {
-                i += 3;
-                while (i + 2 < text.size() &&
-                       !(text[i] == '"' && text[i + 1] == '"' && text[i + 2] == '"')) ++i;
-                i = std::min(text.size(), i + 3);
-            }
-            else if (c == '"' || c == '\'')
-            {
-                const char quote = c;
-                ++i;
-                while (i < text.size() && text[i] != quote && text[i] != '\n')
-                {
-                    if (text[i] == '\\' && i + 1 < text.size()) ++i;
-                    ++i;
-                }
-                if (i < text.size() && text[i] == quote) ++i;
-            }
-            else if (c == '#')
-            {
-                while (i < text.size() && text[i] != '\n' && text[i] != '\r') ++i;
-            }
-            else if (isWordChar(c))
-            {
-                while (i < text.size() && isWordChar(text[i])) ++i;
-            }
-            else
-            {
-                ++i;
-            }
-
-            tokens.push_back(text.substr(start, i - start));
-        }
-
-        return tokens;
-    }
-
-    /** @brief A line comment's text is whitespace-trimmed at the end, which is not a lost token. */
-    std::string NormalizeToken(std::string token)
-    {
-        while (!token.empty() &&
-               std::isspace(static_cast<unsigned char>(token.back())) != 0)
-        {
-            token.pop_back();
-        }
-        return token;
-    }
+std::string ReadWholeFile(const fs::path& path)
+{
+    std::ifstream in(path, std::ios::binary);
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
 }
+
+/**
+ * @brief The file's non-whitespace tokens, as coarsely as it takes to notice a lost character.
+ *
+ * Deliberately not the formatter's own tokenizer: a bug shared by the formatter and the checker
+ * would cancel out and the check would pass on a corrupted file. This one only has to agree on
+ * where a token ends, and it keeps comments and string literals whole so a brace or a semicolon
+ * inside one is never mistaken for code.
+ */
+std::vector<std::string> CoarseTokens(const std::string& text)
+{
+    std::vector<std::string> tokens;
+    size_t i = 0;
+
+    auto isWordChar = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_'; };
+
+    while (i < text.size())
+    {
+        const char c = text[i];
+
+        if (std::isspace(static_cast<unsigned char>(c)))
+        {
+            ++i;
+            continue;
+        }
+
+        const size_t start = i;
+
+        if (c == '/' && i + 1 < text.size() && text[i + 1] == '/')
+        {
+            while (i < text.size() && text[i] != '\n' && text[i] != '\r')
+                ++i;
+        }
+        else if (c == '/' && i + 1 < text.size() && text[i + 1] == '*')
+        {
+            i += 2;
+            while (i + 1 < text.size() && !(text[i] == '*' && text[i + 1] == '/'))
+                ++i;
+            i = std::min(text.size(), i + 2);
+        }
+        else if (c == '"' && i + 2 < text.size() && text[i + 1] == '"' && text[i + 2] == '"')
+        {
+            i += 3;
+            while (i + 2 < text.size() && !(text[i] == '"' && text[i + 1] == '"' && text[i + 2] == '"'))
+                ++i;
+            i = std::min(text.size(), i + 3);
+        }
+        else if (c == '"' || c == '\'')
+        {
+            const char quote = c;
+            ++i;
+            while (i < text.size() && text[i] != quote && text[i] != '\n')
+            {
+                if (text[i] == '\\' && i + 1 < text.size())
+                    ++i;
+                ++i;
+            }
+            if (i < text.size() && text[i] == quote)
+                ++i;
+        }
+        else if (c == '#')
+        {
+            while (i < text.size() && text[i] != '\n' && text[i] != '\r')
+                ++i;
+        }
+        else if (isWordChar(c))
+        {
+            while (i < text.size() && isWordChar(text[i]))
+                ++i;
+        }
+        else
+        {
+            ++i;
+        }
+
+        tokens.push_back(text.substr(start, i - start));
+    }
+
+    return tokens;
+}
+
+/** @brief A line comment's text is whitespace-trimmed at the end, which is not a lost token. */
+std::string NormalizeToken(std::string token)
+{
+    while (!token.empty() && std::isspace(static_cast<unsigned char>(token.back())) != 0)
+    {
+        token.pop_back();
+    }
+    return token;
+}
+} // namespace
 
 TEST_SUITE("Formatting")
 {
     TEST_CASE("The formatter corpus keeps every token and settles in one pass")
     {
-        const fs::path parityDir{ ANGELSCRIPT_PARITY_DIR };
+        const fs::path parityDir{ANGELSCRIPT_PARITY_DIR};
         REQUIRE_MESSAGE(fs::exists(parityDir), "parity corpus directory is missing");
 
         std::vector<fs::path> scripts;
-        for (const auto &entry : fs::directory_iterator(parityDir))
+        for (const auto& entry : fs::directory_iterator(parityDir))
         {
             if (entry.is_regular_file() && entry.path().extension() == ".as")
             {
@@ -151,7 +153,7 @@ TEST_SUITE("Formatting")
         REQUIRE_MESSAGE(!scripts.empty(), "parity corpus is empty");
 
         fs::path dumpDir;
-        if (const char *dump = std::getenv("ANGELLSP_FORMAT_DUMP_DIR"); dump && *dump)
+        if (const char* dump = std::getenv("ANGELLSP_FORMAT_DUMP_DIR"); dump && *dump)
         {
             dumpDir = fs::path(dump);
             std::error_code ec;
@@ -163,7 +165,7 @@ TEST_SUITE("Formatting")
         options.insertSpaces = true;
 
         size_t checked = 0;
-        for (const auto &script : scripts)
+        for (const auto& script : scripts)
         {
             const std::string original = ReadWholeFile(script);
             if (original.empty())
@@ -171,14 +173,16 @@ TEST_SUITE("Formatting")
                 continue;
             }
 
-            for (const BraceStyle style : { BraceStyle::Allman, BraceStyle::KAndR })
+            for (const BraceStyle style : {BraceStyle::Allman, BraceStyle::KAndR})
             {
                 const std::string formatted = FormatSourceCode(original, options, style);
 
                 std::vector<std::string> before = CoarseTokens(original);
                 std::vector<std::string> after = CoarseTokens(formatted);
-                for (auto &t : before) t = NormalizeToken(std::move(t));
-                for (auto &t : after) t = NormalizeToken(std::move(t));
+                for (auto& t : before)
+                    t = NormalizeToken(std::move(t));
+                for (auto& t : after)
+                    t = NormalizeToken(std::move(t));
 
                 INFO("script: " << script.filename().string()
                                 << " style: " << (style == BraceStyle::Allman ? "allman" : "kr"));
@@ -218,7 +222,7 @@ TEST_SUITE("Formatting")
         const fs::path corpusDir = angel_lsp::test::CorpusDirectory();
 
         fs::path dumpDir;
-        if (const char *dump = std::getenv("ANGELLSP_FORMAT_DUMP_DIR"); dump && *dump)
+        if (const char* dump = std::getenv("ANGELLSP_FORMAT_DUMP_DIR"); dump && *dump)
         {
             dumpDir = fs::path(dump);
             std::error_code mkEc;
@@ -252,18 +256,21 @@ TEST_SUITE("Formatting")
 
             std::vector<std::string> before = CoarseTokens(original);
             std::vector<std::string> after = CoarseTokens(formatted);
-            for (auto &t : before) t = NormalizeToken(std::move(t));
-            for (auto &t : after) t = NormalizeToken(std::move(t));
+            for (auto& t : before)
+                t = NormalizeToken(std::move(t));
+            for (auto& t : after)
+                t = NormalizeToken(std::move(t));
 
             if (before != after)
             {
                 ++tokenMismatches;
                 size_t d = 0;
-                while (d < before.size() && d < after.size() && before[d] == after[d]) ++d;
-                MESSAGE("token stream changed: " << it->path().filename().string()
-                        << " at #" << d
-                        << " before=[" << (d < before.size() ? before[d] : std::string("<end>"))
-                        << "] after=[" << (d < after.size() ? after[d] : std::string("<end>")) << "]");
+                while (d < before.size() && d < after.size() && before[d] == after[d])
+                    ++d;
+                MESSAGE("token stream changed: " << it->path().filename().string() << " at #" << d << " before=["
+                                                 << (d < before.size() ? before[d] : std::string("<end>"))
+                                                 << "] after=[" << (d < after.size() ? after[d] : std::string("<end>"))
+                                                 << "]");
 
                 if (!dumpDir.empty())
                 {
@@ -280,8 +287,8 @@ TEST_SUITE("Formatting")
             ++checked;
         }
 
-        MESSAGE("full corpus: " << checked << " scripts, " << tokenMismatches
-                                << " token mismatches, " << unstable << " unstable");
+        MESSAGE("full corpus: " << checked << " scripts, " << tokenMismatches << " token mismatches, " << unstable
+                                << " unstable");
         CHECK(tokenMismatches == 0);
         CHECK(unstable == 0);
     }

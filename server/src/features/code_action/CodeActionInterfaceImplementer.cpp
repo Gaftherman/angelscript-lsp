@@ -3,8 +3,8 @@
  * @brief Quick-fix provider for generating missing interface method implementations in classes.
  */
 
-#include "features/code_action/CodeActionInternal.h"
 #include "config/ServerConfig.h"
+#include "features/code_action/CodeActionInternal.h"
 
 namespace angel_lsp::features
 {
@@ -47,7 +47,7 @@ std::string GetDefaultReturnValue(std::string_view returnType, std::string_view 
  * @return Formatted stub code string.
  */
 std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis::Symbol>& missingMethods,
-                                             std::string_view stringTypeName)
+                                              std::string_view stringTypeName)
 {
     std::string stubs;
     for (const auto& m : missingMethods)
@@ -208,14 +208,14 @@ lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysi
  * @param[in] clsSym Class symbol to filter diagnostics by line range.
  * @return Vector of matching diagnostics.
  */
-std::vector<lsp::Diagnostic> CollectMatchingInterfaceDiagnostics(
-    const std::vector<lsp::Diagnostic>& contextDiagnostics, const analysis::Symbol& clsSym)
+std::vector<lsp::Diagnostic> CollectMatchingInterfaceDiagnostics(const std::vector<lsp::Diagnostic>& contextDiagnostics,
+                                                                 const analysis::Symbol& clsSym)
 {
     std::vector<lsp::Diagnostic> matching;
     for (const auto& diag : contextDiagnostics)
     {
-        if (MatchDiagnosticCode(diag, "as-err-interface-impl-missing") &&
-            diag.range.start.line <= clsSym.endLine && diag.range.end.line >= clsSym.startLine)
+        if (MatchDiagnosticCode(diag, "as-err-interface-impl-missing") && diag.range.start.line <= clsSym.endLine &&
+            diag.range.end.line >= clsSym.startLine)
         {
             matching.push_back(diag);
         }
@@ -228,10 +228,9 @@ std::vector<lsp::Diagnostic> CollectMatchingInterfaceDiagnostics(
 void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode rootNode,
                                    std::vector<lsp::CodeAction>& actions)
 {
-    const std::string_view strType =
-        (request.config && !request.config->types.stringTypeName.empty())
-            ? std::string_view(request.config->types.stringTypeName)
-            : std::string_view("string");
+    const std::string_view strType = (request.config && !request.config->types.stringTypeName.empty())
+                                         ? std::string_view(request.config->types.stringTypeName)
+                                         : std::string_view("string");
 
     request.symbolTable.ForEachSymbol(
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)

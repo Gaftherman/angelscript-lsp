@@ -46,7 +46,7 @@ struct DiagnosticSuppression
  */
 class DiagnosticSuppressionMap
 {
-public:
+  public:
     void AddSuppression(std::string_view code, uint32_t startLine, uint32_t endLine);
     [[nodiscard]] bool IsSuppressed(std::string_view code, uint32_t line) const;
     [[nodiscard]] bool Empty() const noexcept
@@ -54,7 +54,7 @@ public:
         return m_suppressions.empty();
     }
 
-private:
+  private:
     std::vector<DiagnosticSuppression> m_suppressions;
 };
 
@@ -64,7 +64,6 @@ private:
  * @param nodeIndex Optional pre-indexed Tree-Sitter AST node index for fast comment lookup.
  * @return DiagnosticSuppressionMap populated with active line ranges.
  */
-DiagnosticSuppressionMap ParseDiagnosticSuppressions(std::string_view sourceCode,
-                                                     const NodeIndex* nodeIndex = nullptr);
+DiagnosticSuppressionMap ParseDiagnosticSuppressions(std::string_view sourceCode, const NodeIndex* nodeIndex = nullptr);
 
 } // namespace angel_lsp::analysis

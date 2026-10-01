@@ -1061,6 +1061,10 @@ export function buildServerArgs(): string[] {
         args.push('--disable-completion-function-parens');
     }
 
+    if (config.get<boolean>('completion.qualifyEnumValues', true) === false) {
+        args.push('--disable-completion-qualify-enum-values');
+    }
+
     if (config.get<boolean>('inlayHints.enableTooltip', true) === false) {
         args.push('--disable-inlay-hints-tooltip');
     }

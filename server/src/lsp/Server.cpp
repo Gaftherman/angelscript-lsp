@@ -971,8 +971,7 @@ std::shared_ptr<const document::Document> Server::ResolveVirtualDocument(const s
     {
         return nullptr;
     }
-    document::TreePtr tree =
-        m_parser ? document::MakeTreePtr(m_parser->Parse(text)) : document::MakeTreePtr(nullptr);
+    document::TreePtr tree = m_parser ? document::MakeTreePtr(m_parser->Parse(text)) : document::MakeTreePtr(nullptr);
     m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{key, text, 0, std::move(tree), key});
     return m_documentStore.GetDocument(key);
 }

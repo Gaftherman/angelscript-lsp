@@ -224,4 +224,9 @@ inline constexpr std::string_view HandleComparisonEquality = "as-warn-handle-com
 inline constexpr std::string_view IllegalOperation = "as-err-illegal-operation";
 inline constexpr std::string_view UnreachableCode = "as-warn-unreachable-code";
 inline constexpr std::string_view UnusedVariable = "as-warn-unused-variable";
+inline constexpr std::string_view ShadowGlobal = "as-warn-shadow-global";
+inline constexpr std::string_view BaseNotFound = "as-err-base-not-found";
+inline constexpr std::string_view InvalidReferenceReturn = "as-err-invalid-reference-return";
+inline constexpr std::string_view ReadonlyHandle = "as-err-readonly-handle";
+inline constexpr std::string_view StandaloneReference = "as-err-standalone-reference";
 } // namespace angel_lsp::diagnostics::codes

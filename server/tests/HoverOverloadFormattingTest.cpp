@@ -1,11 +1,11 @@
 #include <doctest/doctest.h>
 
-#include "features/hover/HoverHandler.h"
-#include "helpers/TestUtils.h"
-#include "parser/AngelScriptParser.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "features/hover/HoverHandler.h"
+#include "helpers/TestUtils.h"
+#include "parser/AngelScriptParser.h"
 
 #include <string>
 
@@ -60,18 +60,26 @@ TEST_CASE("HoverOverload - Call-site hover prioritizes matched overload and only
     const std::string className = test::GenerateRandomSymbolName("CScheduler");
     const std::string fnName = test::GenerateRandomSymbolName("SetInterval");
 
-    const std::string code =
-        "class " + className + " {\n"
-        "    /// Schedules a function string repeatedly.\n"
-        "    void " + fnName + "(const string &in szFunc, float flRepeat);\n"
-        "    /// Schedules a method call on a target object.\n"
-        "    void " + fnName + "(? &in obj, const string &in szFunc, float flRepeat);\n"
-        "};\n"
-        "void main()\n"
-        "{\n"
-        "    " + className + " scheduler;\n"
-        "    scheduler." + fnName + "(\"tick\", 1.0f);\n"
-        "}\n";
+    const std::string code = "class " + className +
+                             " {\n"
+                             "    /// Schedules a function string repeatedly.\n"
+                             "    void " +
+                             fnName +
+                             "(const string &in szFunc, float flRepeat);\n"
+                             "    /// Schedules a method call on a target object.\n"
+                             "    void " +
+                             fnName +
+                             "(? &in obj, const string &in szFunc, float flRepeat);\n"
+                             "};\n"
+                             "void main()\n"
+                             "{\n"
+                             "    " +
+                             className +
+                             " scheduler;\n"
+                             "    scheduler." +
+                             fnName +
+                             "(\"tick\", 1.0f);\n"
+                             "}\n";
 
     size_t callPos = code.find("scheduler." + fnName);
     REQUIRE(callPos != std::string::npos);
@@ -91,7 +99,8 @@ TEST_CASE("HoverOverload - Call-site hover prioritizes matched overload and only
     REQUIRE(hover.has_value());
     const auto& content = std::get<lsp::MarkupContent>(hover->contents);
 
-    CHECK(content.value.find("void " + className + "::" + fnName + "(const string &in szFunc, float flRepeat)") != std::string::npos);
+    CHECK(content.value.find("void " + className + "::" + fnName + "(const string &in szFunc, float flRepeat)") !=
+          std::string::npos);
     CHECK(content.value.find("Schedules a function string repeatedly.") != std::string::npos);
     CHECK(content.value.find("Schedules a method call on a target object.") == std::string::npos);
 }
@@ -102,16 +111,21 @@ TEST_CASE("HoverOverload - Anonymous function lambda hover shows target funcdef 
     const std::string hookDefName = test::GenerateRandomSymbolName("PlayerPostThinkHook");
     const std::string registerFn = test::GenerateRandomSymbolName("RegisterHook");
 
-    const std::string code =
-        "/// Called on every player think tick.;\n"
-        "funcdef void " + hookDefName + "(int player);\n"
-        "void " + registerFn + "(int hookId, " + hookDefName + "@ callback);\n"
-        "void MapActivate()\n"
-        "{\n"
-        "    " + registerFn + "(1, function(int player) {\n"
-        "        return;\n"
-        "    });\n"
-        "}\n";
+    const std::string code = "/// Called on every player think tick.;\n"
+                             "funcdef void " +
+                             hookDefName +
+                             "(int player);\n"
+                             "void " +
+                             registerFn + "(int hookId, " + hookDefName +
+                             "@ callback);\n"
+                             "void MapActivate()\n"
+                             "{\n"
+                             "    " +
+                             registerFn +
+                             "(1, function(int player) {\n"
+                             "        return;\n"
+                             "    });\n"
+                             "}\n";
 
     size_t funcKwPos = code.find("function(int player)");
     REQUIRE(funcKwPos != std::string::npos);
@@ -133,13 +147,12 @@ TEST_CASE("HoverOverload - Anonymous function lambda hover shows target funcdef 
 TEST_CASE("HoverOverload - Standalone lambda hover displays parameter signature cleanly")
 {
     HoverTestEnvironment env;
-    const std::string code =
-        "void main()\n"
-        "{\n"
-        "    auto f = function(int x, float y) {\n"
-        "        return x + int(y);\n"
-        "    };\n"
-        "}\n";
+    const std::string code = "void main()\n"
+                             "{\n"
+                             "    auto f = function(int x, float y) {\n"
+                             "        return x + int(y);\n"
+                             "    };\n"
+                             "}\n";
 
     size_t funcKwPos = code.find("function(int x, float y)");
     REQUIRE(funcKwPos != std::string::npos);

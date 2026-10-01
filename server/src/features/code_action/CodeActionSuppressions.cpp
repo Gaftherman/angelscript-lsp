@@ -3,8 +3,8 @@
  * @brief Quick-fix code actions to suppress diagnostics via comments.
  */
 
-#include "features/code_action/CodeActionInternal.h"
 #include "analysis/DiagnosticSuppression.h"
+#include "features/code_action/CodeActionInternal.h"
 #include <unordered_set>
 
 namespace angel_lsp::features
@@ -12,8 +12,8 @@ namespace angel_lsp::features
 namespace
 {
 
-void AddLineSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag,
-                           std::string_view aliasOrCode, std::vector<lsp::CodeAction>& actions)
+void AddLineSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag, std::string_view aliasOrCode,
+                           std::vector<lsp::CodeAction>& actions)
 {
     uint32_t line = diag.range.start.line;
     std::string_view lineStr = utils::GetLine(request.sourceCode, line);
@@ -37,8 +37,8 @@ void AddLineSuppressionFix(const CodeActionRequest& request, const lsp::Diagnost
     actions.push_back(std::move(action));
 }
 
-void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag,
-                            std::string_view aliasOrCode, std::vector<lsp::CodeAction>& actions)
+void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag, std::string_view aliasOrCode,
+                            std::vector<lsp::CodeAction>& actions)
 {
     uint32_t startLine = diag.range.start.line;
     uint32_t endLine = diag.range.end.line;
@@ -64,6 +64,28 @@ void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::Diagnos
     lsp::WorkspaceEdit wsEdit;
     lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
     changes[lsp::DocumentUri::parse(request.uri)] = {std::move(startEdit), std::move(endEdit)};
+    wsEdit.changes = std::move(changes);
+    action.edit = std::move(wsEdit);
+
+    actions.push_back(std::move(action));
+}
+
+void AddFileSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag, std::string_view aliasOrCode,
+                           std::vector<lsp::CodeAction>& actions)
+{
+    lsp::TextEdit edit;
+    edit.range.start = lsp::Position{0, 0};
+    edit.range.end = lsp::Position{0, 0};
+    edit.newText = "// disable " + std::string(aliasOrCode) + "\n";
+
+    lsp::CodeAction action;
+    action.title = "Disable " + std::string(aliasOrCode) + " for entire file";
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    action.diagnostics = std::vector<lsp::Diagnostic>{diag};
+
+    lsp::WorkspaceEdit wsEdit;
+    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+    changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
     wsEdit.changes = std::move(changes);
     action.edit = std::move(wsEdit);
 
@@ -99,6 +121,7 @@ void TryAddDiagnosticSuppressionFixes(const CodeActionRequest& request, std::vec
 
         AddLineSuppressionFix(request, diag, displayCode, actions);
         AddRangeSuppressionFix(request, diag, displayCode, actions);
+        AddFileSuppressionFix(request, diag, displayCode, actions);
     }
 }
 

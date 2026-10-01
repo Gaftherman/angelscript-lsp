@@ -1,7 +1,7 @@
-#include <doctest/doctest.h>
-#include "helpers/TestUtils.h"
 #include "analysis/NodeIndex.h"
+#include "helpers/TestUtils.h"
 #include "parser/GrammarNames.h"
+#include <doctest/doctest.h>
 
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;

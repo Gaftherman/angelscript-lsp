@@ -57,8 +57,7 @@ bool AreCustomTypesCompatible(std::string_view op, const std::string& left, cons
 bool CheckBoolCompatibility(bool isRelational, const std::string& other, const SymbolTable& table,
                             std::string_view stringTypeName)
 {
-    if (parser::primitives::IsNumeric(other) || other == stringTypeName ||
-        ResolvesToEnum(other, table))
+    if (parser::primitives::IsNumeric(other) || other == stringTypeName || ResolvesToEnum(other, table))
     {
         return false;
     }
@@ -174,7 +173,8 @@ bool AreComparisonTypesCompatible(std::string_view op, const BinaryOperandTypes&
     return AreCustomTypesCompatible(op, types.left, types.right, table);
 }
 
-void EmitComparisonDiagnostics(TSNode opNode, std::string_view op, const BinaryOperandTypes& types, DiagnosticContext& ctx)
+void EmitComparisonDiagnostics(TSNode opNode, std::string_view op, const BinaryOperandTypes& types,
+                               DiagnosticContext& ctx)
 {
     const TSPoint start = ts_node_start_point(opNode);
     const TSPoint end = ts_node_end_point(opNode);

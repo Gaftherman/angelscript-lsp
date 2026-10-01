@@ -182,7 +182,7 @@ class SemanticAnalyzer
      * @return TimedAstBreakdown containing execution times in milliseconds.
      */
     TimedAstBreakdown RunTimedAstRules(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
-                                      DiagnosticContext& ctx) const;
+                                       DiagnosticContext& ctx) const;
 
     /**
      * @brief Executes type and structural rules (enums, interfaces, classes).

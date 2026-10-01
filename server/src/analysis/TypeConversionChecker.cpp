@@ -888,8 +888,7 @@ ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const D
 
     if (nodeType == "member_expression")
     {
-        const std::string resolved =
-            ResolveExpressionType(node, ExpressionTypeContext(scope, ctx));
+        const std::string resolved = ResolveExpressionType(node, ExpressionTypeContext(scope, ctx));
         return resolved.empty() ? ExpressionType{} : ExpressionType{CleanBaseType(resolved), true, false};
     }
 
@@ -2234,8 +2233,8 @@ void CheckBooleanOperands(TSNode condition, const Scope* scope, DiagnosticContex
 
     for (const TSNode& operand : operands)
     {
-        const std::string operandType = CleanBaseType(ResolveExpressionType(
-            operand, ExpressionTypeContext(scope, ctx)));
+        const std::string operandType =
+            CleanBaseType(ResolveExpressionType(operand, ExpressionTypeContext(scope, ctx)));
 
         if (operandType.empty() || operandType == "auto" || operandType == "void")
         {

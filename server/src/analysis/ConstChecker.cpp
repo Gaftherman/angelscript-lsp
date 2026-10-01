@@ -410,8 +410,7 @@ void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope*
         return;
     }
 
-    const std::string objectType =
-        CleanBaseType(ResolveExpressionType(objectNode, ExpressionTypeContext(scope, ctx)));
+    const std::string objectType = CleanBaseType(ResolveExpressionType(objectNode, ExpressionTypeContext(scope, ctx)));
     if (objectType.empty() || !HierarchyIsFullyVisible(objectType, table))
     {
         return;

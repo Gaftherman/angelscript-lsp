@@ -632,6 +632,12 @@
             "scope": "resource",
             "markdownDescription": "%config.completion.completeFunctionParens.description%"
           },
+          "angelscript.completion.qualifyEnumValues": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.completion.qualifyEnumValues.description%"
+          },
           "angelscript.features.definition": {
             "type": "boolean",
             "default": true,

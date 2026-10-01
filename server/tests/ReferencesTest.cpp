@@ -1,13 +1,13 @@
-#include <string>
-#include <random>
-#include <doctest/doctest.h>
 #include "helpers/TestUtils.h"
+#include <doctest/doctest.h>
+#include <random>
+#include <string>
 
-#include "features/references/ReferencesHandler.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "features/references/ReferencesHandler.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -17,80 +17,73 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct MultiFileTestEnv
-    {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        std::unordered_map<std::string, std::string> sources;
-        std::unordered_map<std::string, TSTree *> trees;
+struct MultiFileTestEnv
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    std::unordered_map<std::string, std::string> sources;
+    std::unordered_map<std::string, TSTree*> trees;
 
-        void AddFile(const std::string &uri, const std::string &code)
+    void AddFile(const std::string& uri, const std::string& code)
+    {
+        sources[uri] = code;
+        TSTree* tree = parser.Parse(code);
+        trees[uri] = tree;
+        symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
+        auto rootScope = scopeCollector.CollectScopes(code, parser);
+        if (rootScope)
         {
-            sources[uri] = code;
-            TSTree *tree = parser.Parse(code);
-            trees[uri] = tree;
-            symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(code, parser);
-            if (rootScope)
+            scopeIndex.SetScopeTree(uri, std::move(rootScope));
+        }
+    }
+
+    ~MultiFileTestEnv()
+    {
+        for (auto& [uri, tree] : trees)
+        {
+            if (tree)
             {
-                scopeIndex.SetScopeTree(uri, std::move(rootScope));
+                ts_tree_delete(tree);
             }
         }
+    }
 
-        ~MultiFileTestEnv()
-        {
-            for (auto &[uri, tree] : trees)
-            {
-                if (tree)
-                {
-                    ts_tree_delete(tree);
-                }
-            }
-        }
-
-        std::optional<ReferencesResult> RefsAt(const std::string &uri, uint32_t line, uint32_t character, bool includeDecl = true)
-        {
-            ReferencesRequest req{
-                uri,
-                sources[uri],
-                trees[uri],
-                lsp::Position{ line, character },
-                includeDecl,
-                symbolTable,
-                scopeIndex
-            };
-            return GetReferences(req);
-        }
-    };
-
-    struct TestEnvironment
+    std::optional<ReferencesResult> RefsAt(const std::string& uri, uint32_t line, uint32_t character,
+                                           bool includeDecl = true)
     {
-        MultiFileTestEnv multiEnv;
-        std::string uri = "file:///test.as";
+        ReferencesRequest req{uri,         sources[uri], trees[uri], lsp::Position{line, character},
+                              includeDecl, symbolTable,  scopeIndex};
+        return GetReferences(req);
+    }
+};
 
-        TestEnvironment(const std::string &code)
-        {
-            multiEnv.AddFile(uri, code);
-        }
+struct TestEnvironment
+{
+    MultiFileTestEnv multiEnv;
+    std::string uri = "file:///test.as";
 
-        std::optional<ReferencesResult> RefsAt(uint32_t line, uint32_t character, bool includeDecl = true)
-        {
-            return multiEnv.RefsAt(uri, line, character, includeDecl);
-        }
-    };
-}
+    TestEnvironment(const std::string& code)
+    {
+        multiEnv.AddFile(uri, code);
+    }
+
+    std::optional<ReferencesResult> RefsAt(uint32_t line, uint32_t character, bool includeDecl = true)
+    {
+        return multiEnv.RefsAt(uri, line, character, includeDecl);
+    }
+};
+} // namespace
 
 TEST_CASE("ReferencesHandler - Local Variable and Parameter References")
 {
-    std::string code =
-        "void Calculate(int baseValue) {\n"
-        "    int multiplier = 2;\n"
-        "    int result = baseValue * multiplier;\n"
-        "    multiplier = result + multiplier;\n"
-        "}\n";
+    std::string code = "void Calculate(int baseValue) {\n"
+                       "    int multiplier = 2;\n"
+                       "    int result = baseValue * multiplier;\n"
+                       "    multiplier = result + multiplier;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -130,7 +123,7 @@ TEST_CASE("ReferencesHandler - Local Variable and Parameter References")
         auto refs = env.RefsAt(2, 30, false);
         REQUIRE(refs.has_value());
         CHECK(refs->size() == 3);
-        for (const auto &loc : *refs)
+        for (const auto& loc : *refs)
         {
             CHECK(loc.range.start.line > 1);
         }
@@ -139,15 +132,14 @@ TEST_CASE("ReferencesHandler - Local Variable and Parameter References")
 
 TEST_CASE("ReferencesHandler - Lexical Scope Shadowing Isolation")
 {
-    std::string code =
-        "void TestScope() {\n"
-        "    int value = 10;\n"
-        "    if (true) {\n"
-        "        int value = 20;\n"
-        "        value += 5;\n"
-        "    }\n"
-        "    value += 1;\n"
-        "}\n";
+    std::string code = "void TestScope() {\n"
+                       "    int value = 10;\n"
+                       "    if (true) {\n"
+                       "        int value = 20;\n"
+                       "        value += 5;\n"
+                       "    }\n"
+                       "    value += 1;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -174,24 +166,23 @@ TEST_CASE("ReferencesHandler - Lexical Scope Shadowing Isolation")
 
 TEST_CASE("ReferencesHandler - Class Field and Method References")
 {
-    std::string code =
-        "class Hero {\n"
-        "    int health = 100;\n"
-        "    void Heal(int amount) {\n"
-        "        health += amount;\n"
-        "        this.health += 1;\n"
-        "    }\n"
-        "}\n"
-        "class Villain {\n"
-        "    int health = 50;\n"
-        "}\n"
-        "void main() {\n"
-        "    Hero h;\n"
-        "    h.health = 200;\n"
-        "    h.Heal(50);\n"
-        "    Villain v;\n"
-        "    v.health = 0;\n"
-        "}\n";
+    std::string code = "class Hero {\n"
+                       "    int health = 100;\n"
+                       "    void Heal(int amount) {\n"
+                       "        health += amount;\n"
+                       "        this.health += 1;\n"
+                       "    }\n"
+                       "}\n"
+                       "class Villain {\n"
+                       "    int health = 50;\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Hero h;\n"
+                       "    h.health = 200;\n"
+                       "    h.Heal(50);\n"
+                       "    Villain v;\n"
+                       "    v.health = 0;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -200,7 +191,8 @@ TEST_CASE("ReferencesHandler - Class Field and Method References")
         // Cursor on Hero::health declaration at line 1, col 9
         auto refs = env.RefsAt(1, 9, true);
         REQUIRE(refs.has_value());
-        // Hero::health decl (line 1), unqualified in Heal (line 3), this.health in Heal (line 4), h.health in main (line 12)
+        // Hero::health decl (line 1), unqualified in Heal (line 3), this.health in Heal (line 4), h.health in main
+        // (line 12)
         REQUIRE(refs->size() == 4);
         CHECK((*refs)[0].range.start.line == 1);
         CHECK((*refs)[1].range.start.line == 3);
@@ -231,18 +223,17 @@ TEST_CASE("ReferencesHandler - Class Field and Method References")
 
 TEST_CASE("ReferencesHandler - Class Inheritance Hierarchy References")
 {
-    std::string code =
-        "class Entity {\n"
-        "    int id = 0;\n"
-        "    void Reset() { id = 0; }\n"
-        "}\n"
-        "class Actor : Entity {\n"
-        "    void Act() { Reset(); }\n"
-        "}\n"
-        "void main() {\n"
-        "    Actor a;\n"
-        "    a.Reset();\n"
-        "}\n";
+    std::string code = "class Entity {\n"
+                       "    int id = 0;\n"
+                       "    void Reset() { id = 0; }\n"
+                       "}\n"
+                       "class Actor : Entity {\n"
+                       "    void Act() { Reset(); }\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Actor a;\n"
+                       "    a.Reset();\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -260,22 +251,20 @@ TEST_CASE("ReferencesHandler - Global Symbols and Cross-File References")
 {
     MultiFileTestEnv env;
     std::string fileA = "file:///a_math.as";
-    std::string codeA =
-        "int GlobalCounter = 0;\n"
-        "void IncrementCounter() {\n"
-        "    GlobalCounter += 1;\n"
-        "}\n";
+    std::string codeA = "int GlobalCounter = 0;\n"
+                        "void IncrementCounter() {\n"
+                        "    GlobalCounter += 1;\n"
+                        "}\n";
 
     std::string fileB = "file:///b_main.as";
-    std::string codeB =
-        "void main() {\n"
-        "    IncrementCounter();\n"
-        "    GlobalCounter += 10;\n"
-        "}\n"
-        "void ShadowTest() {\n"
-        "    int GlobalCounter = 99;\n"
-        "    GlobalCounter += 1;\n"
-        "}\n";
+    std::string codeB = "void main() {\n"
+                        "    IncrementCounter();\n"
+                        "    GlobalCounter += 10;\n"
+                        "}\n"
+                        "void ShadowTest() {\n"
+                        "    int GlobalCounter = 99;\n"
+                        "    GlobalCounter += 1;\n"
+                        "}\n";
 
     env.AddFile(fileA, codeA);
     env.AddFile(fileB, codeB);
@@ -310,15 +299,14 @@ TEST_CASE("ReferencesHandler - Global Symbols and Cross-File References")
 
 TEST_CASE("ReferencesHandler - Enum and Enum Member References")
 {
-    std::string code =
-        "enum GameState {\n"
-        "    State_Idle,\n"
-        "    State_Running\n"
-        "}\n"
-        "void main() {\n"
-        "    GameState state = State_Idle;\n"
-        "    if (state == State_Idle) {}\n"
-        "}\n";
+    std::string code = "enum GameState {\n"
+                       "    State_Idle,\n"
+                       "    State_Running\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    GameState state = State_Idle;\n"
+                       "    if (state == State_Idle) {}\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -346,11 +334,10 @@ TEST_CASE("ReferencesHandler - Enum and Enum Member References")
 
 TEST_CASE("ReferencesHandler - Edge Cases & Non-Identifiers")
 {
-    std::string code =
-        "// Some comment\n"
-        "void main() {\n"
-        "    int x = 10;\n"
-        "}\n";
+    std::string code = "// Some comment\n"
+                       "void main() {\n"
+                       "    int x = 10;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -369,19 +356,18 @@ TEST_CASE("ReferencesHandler - Edge Cases & Non-Identifiers")
 
 TEST_CASE("ReferencesHandler - Class Method References Across Inheritance")
 {
-    std::string code =
-        "class Entity {\n"
-        "    void TakeDamage(int dmg) {}\n" // line 1
-        "}\n"
-        "class Player : Entity {\n"
-        "    void Attack() {\n"
-        "        TakeDamage(5);\n"           // line 5
-        "    }\n"
-        "}\n"
-        "void main() {\n"
-        "    Player p;\n"
-        "    p.TakeDamage(10);\n"            // line 10
-        "}\n";
+    std::string code = "class Entity {\n"
+                       "    void TakeDamage(int dmg) {}\n" // line 1
+                       "}\n"
+                       "class Player : Entity {\n"
+                       "    void Attack() {\n"
+                       "        TakeDamage(5);\n" // line 5
+                       "    }\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Player p;\n"
+                       "    p.TakeDamage(10);\n" // line 10
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -396,16 +382,15 @@ TEST_CASE("ReferencesHandler - Class Method References Across Inheritance")
 
 TEST_CASE("ReferencesHandler - Namespace Function References")
 {
-    std::string code =
-        "namespace Game {\n"
-        "    void Spawn() {}\n" // line 1
-        "    void Init() {\n"
-        "        Spawn();\n"    // line 3
-        "    }\n"
-        "}\n"
-        "void main() {\n"
-        "    Game::Spawn();\n"  // line 7
-        "}\n";
+    std::string code = "namespace Game {\n"
+                       "    void Spawn() {}\n" // line 1
+                       "    void Init() {\n"
+                       "        Spawn();\n" // line 3
+                       "    }\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Game::Spawn();\n" // line 7
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -422,27 +407,24 @@ TEST_CASE("ReferencesHandler - Strict Scope Isolation for Sibling Classes with P
 {
     MultiFileTestEnv env;
 
-    std::string baseCode =
-        "class ScriptBasePlayerWeaponEntity {\n"
-        "    void Spawn() {}\n"
-        "}\n";
+    std::string baseCode = "class ScriptBasePlayerWeaponEntity {\n"
+                           "    void Spawn() {}\n"
+                           "}\n";
 
-    std::string weaponACode =
-        "class weapon_ins2m40a1 : ScriptBasePlayerWeaponEntity {\n"
-        "    private int GetBodygroup() { return 1; }\n" // line 1
-        "    void PrimaryAttack() {\n"
-        "        GetBodygroup();\n"                      // line 3
-        "        this.GetBodygroup();\n"                 // line 4
-        "    }\n"
-        "}\n";
+    std::string weaponACode = "class weapon_ins2m40a1 : ScriptBasePlayerWeaponEntity {\n"
+                              "    private int GetBodygroup() { return 1; }\n" // line 1
+                              "    void PrimaryAttack() {\n"
+                              "        GetBodygroup();\n"      // line 3
+                              "        this.GetBodygroup();\n" // line 4
+                              "    }\n"
+                              "}\n";
 
-    std::string weaponBCode =
-        "class weapon_ins2ak47 : ScriptBasePlayerWeaponEntity {\n"
-        "    private int GetBodygroup() { return 2; }\n" // line 1
-        "    void PrimaryAttack() {\n"
-        "        GetBodygroup();\n"                      // line 3
-        "    }\n"
-        "}\n";
+    std::string weaponBCode = "class weapon_ins2ak47 : ScriptBasePlayerWeaponEntity {\n"
+                              "    private int GetBodygroup() { return 2; }\n" // line 1
+                              "    void PrimaryAttack() {\n"
+                              "        GetBodygroup();\n" // line 3
+                              "    }\n"
+                              "}\n";
 
     env.AddFile("file:///base.as", baseCode);
     env.AddFile("file:///weapon_a.as", weaponACode);
@@ -452,7 +434,7 @@ TEST_CASE("ReferencesHandler - Strict Scope Isolation for Sibling Classes with P
     auto refsA = env.RefsAt("file:///weapon_a.as", 1, 16, true);
     REQUIRE(refsA.has_value());
     REQUIRE(refsA->size() == 3);
-    for (const auto &ref : *refsA)
+    for (const auto& ref : *refsA)
     {
         CHECK(ref.uri.toString() == "file:///weapon_a.as");
     }
@@ -464,7 +446,7 @@ TEST_CASE("ReferencesHandler - Strict Scope Isolation for Sibling Classes with P
     auto refsB = env.RefsAt("file:///weapon_b.as", 1, 16, true);
     REQUIRE(refsB.has_value());
     REQUIRE(refsB->size() == 2);
-    for (const auto &ref : *refsB)
+    for (const auto& ref : *refsB)
     {
         CHECK(ref.uri.toString() == "file:///weapon_b.as");
     }
@@ -476,26 +458,23 @@ TEST_CASE("ReferencesHandler - Sibling Classes with Coincidental Public Methods 
 {
     MultiFileTestEnv env;
 
-    std::string baseCode =
-        "class BaseWeapon {\n"
-        "    void Fire() {}\n"
-        "}\n";
+    std::string baseCode = "class BaseWeapon {\n"
+                           "    void Fire() {}\n"
+                           "}\n";
 
-    std::string weaponACode =
-        "class WeaponA : BaseWeapon {\n"
-        "    void CustomZoom() {}\n" // line 1
-        "    void Fire() {\n"
-        "        CustomZoom();\n"    // line 3
-        "    }\n"
-        "}\n";
+    std::string weaponACode = "class WeaponA : BaseWeapon {\n"
+                              "    void CustomZoom() {}\n" // line 1
+                              "    void Fire() {\n"
+                              "        CustomZoom();\n" // line 3
+                              "    }\n"
+                              "}\n";
 
-    std::string weaponBCode =
-        "class WeaponB : BaseWeapon {\n"
-        "    void CustomZoom() {}\n" // line 1
-        "    void Fire() {\n"
-        "        CustomZoom();\n"    // line 3
-        "    }\n"
-        "}\n";
+    std::string weaponBCode = "class WeaponB : BaseWeapon {\n"
+                              "    void CustomZoom() {}\n" // line 1
+                              "    void Fire() {\n"
+                              "        CustomZoom();\n" // line 3
+                              "    }\n"
+                              "}\n";
 
     env.AddFile("file:///base.as", baseCode);
     env.AddFile("file:///weapon_a.as", weaponACode);
@@ -504,7 +483,7 @@ TEST_CASE("ReferencesHandler - Sibling Classes with Coincidental Public Methods 
     auto refsA = env.RefsAt("file:///weapon_a.as", 1, 9, true);
     REQUIRE(refsA.has_value());
     REQUIRE(refsA->size() == 2);
-    for (const auto &ref : *refsA)
+    for (const auto& ref : *refsA)
     {
         CHECK(ref.uri.toString() == "file:///weapon_a.as");
     }
@@ -516,15 +495,14 @@ TEST_CASE("ReferencesHandler - Function and Method Overload Arity Isolation")
 {
     MultiFileTestEnv env;
 
-    std::string code =
-        "class Knuckles {\n"
-        "    bool Deploy() { return true; }\n"
-        "    bool Deploy(string a, string b, int c, string d, float e, bool f) { return false; }\n"
-        "    void Test() {\n"
-        "        Deploy();\n"
-        "        Deploy(\"a\", \"b\", 1, \"d\", 2.0f, true);\n"
-        "    }\n"
-        "}\n";
+    std::string code = "class Knuckles {\n"
+                       "    bool Deploy() { return true; }\n"
+                       "    bool Deploy(string a, string b, int c, string d, float e, bool f) { return false; }\n"
+                       "    void Test() {\n"
+                       "        Deploy();\n"
+                       "        Deploy(\"a\", \"b\", 1, \"d\", 2.0f, true);\n"
+                       "    }\n"
+                       "}\n";
 
     env.AddFile("file:///knuckles.as", code);
 
@@ -547,17 +525,16 @@ TEST_CASE("ReferencesHandler - Function Delegate References")
 {
     MultiFileTestEnv env;
 
-    std::string code =
-        "funcdef void ThinkFunc();\n"
-        "class Monster {\n"
-        "    void DoHeavyAttack() {}\n"
-        "    void Setup() {\n"
-        "        SetThink(this.DoHeavyAttack);\n"
-        "        SetThink(DoHeavyAttack);\n"
-        "        DoHeavyAttack();\n"
-        "    }\n"
-        "    void SetThink(ThinkFunc@ fn) {}\n"
-        "}\n";
+    std::string code = "funcdef void ThinkFunc();\n"
+                       "class Monster {\n"
+                       "    void DoHeavyAttack() {}\n"
+                       "    void Setup() {\n"
+                       "        SetThink(this.DoHeavyAttack);\n"
+                       "        SetThink(DoHeavyAttack);\n"
+                       "        DoHeavyAttack();\n"
+                       "    }\n"
+                       "    void SetThink(ThinkFunc@ fn) {}\n"
+                       "}\n";
 
     env.AddFile("file:///monster.as", code);
 
@@ -575,26 +552,23 @@ TEST_CASE("ReferencesHandler - Sibling Method Isolation on Overridden Virtual Ho
 {
     MultiFileTestEnv env;
 
-    std::string baseCode =
-        "class BaseWeapon {\n"
-        "    void PrimaryAttack() {}\n"
-        "}\n";
+    std::string baseCode = "class BaseWeapon {\n"
+                           "    void PrimaryAttack() {}\n"
+                           "}\n";
 
-    std::string weaponACode =
-        "class WeaponA : BaseWeapon {\n"
-        "    void PrimaryAttack() override {}\n"
-        "    void Attack() {\n"
-        "        PrimaryAttack();\n"
-        "    }\n"
-        "}\n";
+    std::string weaponACode = "class WeaponA : BaseWeapon {\n"
+                              "    void PrimaryAttack() override {}\n"
+                              "    void Attack() {\n"
+                              "        PrimaryAttack();\n"
+                              "    }\n"
+                              "}\n";
 
-    std::string weaponBCode =
-        "class WeaponB : BaseWeapon {\n"
-        "    void PrimaryAttack() override {}\n"
-        "    void Attack() {\n"
-        "        PrimaryAttack();\n"
-        "    }\n"
-        "}\n";
+    std::string weaponBCode = "class WeaponB : BaseWeapon {\n"
+                              "    void PrimaryAttack() override {}\n"
+                              "    void Attack() {\n"
+                              "        PrimaryAttack();\n"
+                              "    }\n"
+                              "}\n";
 
     env.AddFile("file:///base.as", baseCode);
     env.AddFile("file:///weapon_a.as", weaponACode);
@@ -604,7 +578,7 @@ TEST_CASE("ReferencesHandler - Sibling Method Isolation on Overridden Virtual Ho
     auto refsA = env.RefsAt("file:///weapon_a.as", 1, 9, true);
     REQUIRE(refsA.has_value());
     REQUIRE(refsA->size() == 2);
-    for (const auto &ref : *refsA)
+    for (const auto& ref : *refsA)
     {
         CHECK(ref.uri.toString() == "file:///weapon_a.as");
     }
@@ -659,12 +633,12 @@ TEST_CASE("ReferencesHandler - Invariant: Parameter default argument and variabl
     CHECK(refsWithoutDecl->size() == 3);
 
     std::vector<uint32_t> lines;
-    for (const auto &r : *refsWithoutDecl)
+    for (const auto& r : *refsWithoutDecl)
     {
         lines.push_back(r.range.start.line);
     }
     std::sort(lines.begin(), lines.end());
-    CHECK(lines == std::vector<uint32_t>{ 1, 2, 4 });
+    CHECK(lines == std::vector<uint32_t>{1, 2, 4});
 }
 
 TEST_CASE("ReferencesHandler - Cross-File Namespace Variable References")
@@ -675,20 +649,26 @@ TEST_CASE("ReferencesHandler - Cross-File Namespace Variable References")
     const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("someFunction");
 
     const std::string uri1 = "file:///decl.as";
-    const std::string code1 =
-        "namespace " + nsName + "\n"
-        "{\n"
-        "    const int " + constName + " = 15;\n"
-        "}\n";
+    const std::string code1 = "namespace " + nsName +
+                              "\n"
+                              "{\n"
+                              "    const int " +
+                              constName +
+                              " = 15;\n"
+                              "}\n";
 
     const std::string uri2 = "file:///usage.as";
-    const std::string code2 =
-        "namespace " + nsName + "\n"
-        "{\n"
-        "    void " + funcName + "(int iHitGroup) {\n"
-        "        if (iHitGroup == " + constName + ") {}\n"
-        "    }\n"
-        "}\n";
+    const std::string code2 = "namespace " + nsName +
+                              "\n"
+                              "{\n"
+                              "    void " +
+                              funcName +
+                              "(int iHitGroup) {\n"
+                              "        if (iHitGroup == " +
+                              constName +
+                              ") {}\n"
+                              "    }\n"
+                              "}\n";
 
     env.AddFile(uri1, code1);
     env.AddFile(uri2, code2);
@@ -709,33 +689,48 @@ TEST_CASE("ReferencesHandler - Enum Member Cross-Enum Isolation (No False Matche
     const std::string funcB = angel_lsp::test::GenerateRandomSymbolName("PlayFlare");
 
     const std::string uri1 = "file:///shotgun.as";
-    const std::string code1 =
-        "enum " + enumA + "\n"
-        "{\n"
-        "    " + memberName + " = 0,\n"
-        "    Shoot1\n"
-        "};\n"
-        "void " + funcA + "() {\n"
-        "    int a = " + enumA + "::" + memberName + ";\n"
-        "}\n";
+    const std::string code1 = "enum " + enumA +
+                              "\n"
+                              "{\n"
+                              "    " +
+                              memberName +
+                              " = 0,\n"
+                              "    Shoot1\n"
+                              "};\n"
+                              "void " +
+                              funcA +
+                              "() {\n"
+                              "    int a = " +
+                              enumA + "::" + memberName +
+                              ";\n"
+                              "}\n";
 
     const std::string uri2 = "file:///flare.as";
-    const std::string code2 =
-        "enum " + enumB + "\n"
-        "{\n"
-        "    " + memberName + " = 0,\n"
-        "    Shoot2\n"
-        "};\n"
-        "void " + funcB + "() {\n"
-        "    int b = " + enumB + "::" + memberName + ";\n"
-        "}\n";
+    const std::string code2 = "enum " + enumB +
+                              "\n"
+                              "{\n"
+                              "    " +
+                              memberName +
+                              " = 0,\n"
+                              "    Shoot2\n"
+                              "};\n"
+                              "void " +
+                              funcB +
+                              "() {\n"
+                              "    int b = " +
+                              enumB + "::" + memberName +
+                              ";\n"
+                              "}\n";
 
     const std::string uri3 = "file:///main.as";
-    const std::string code3 =
-        "void Run() {\n"
-        "    int c = " + enumA + "::" + memberName + ";\n"
-        "    int d = " + enumB + "::" + memberName + ";\n"
-        "}\n";
+    const std::string code3 = "void Run() {\n"
+                              "    int c = " +
+                              enumA + "::" + memberName +
+                              ";\n"
+                              "    int d = " +
+                              enumB + "::" + memberName +
+                              ";\n"
+                              "}\n";
 
     env.AddFile(uri1, code1);
     env.AddFile(uri2, code2);
@@ -774,5 +769,3 @@ TEST_CASE("ReferencesHandler - Enum Member Cross-Enum Isolation (No False Matche
         }
     }
 }
-
-

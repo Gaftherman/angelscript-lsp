@@ -622,8 +622,7 @@ struct ExpressionTypeContext
         : scope(sc), symbolTable(diagCtx.request.symbolTable), sourceCode(diagCtx.request.sourceCode),
           uri(diagCtx.request.fileUri), stringTypeName(diagCtx.request.GetEffectiveStringTypeName()),
           arrayTypeName(diagCtx.request.GetEffectiveArrayTypeName()),
-          disableIntegerDivision(diagCtx.request.DisablesIntegerDivision()),
-          cache(diagCtx.request.exprCache)
+          disableIntegerDivision(diagCtx.request.DisablesIntegerDivision()), cache(diagCtx.request.exprCache)
     {
     }
 };

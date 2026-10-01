@@ -326,7 +326,7 @@ std::optional<lsp::Hover> LspSemanticHarnessFixture::RequestHover(const std::str
 }
 
 std::vector<lsp::CompletionItem> LspSemanticHarnessFixture::RequestCompletion(const std::string& uri, uint32_t line,
-                                                                             uint32_t col)
+                                                                              uint32_t col)
 {
     auto itTree = m_trees.find(uri);
     if (itTree == m_trees.end())
@@ -386,9 +386,9 @@ void LspSemanticHarnessFixture::AssertCompletionContains(const std::string& uri,
             list += "\n  " + item.label + " (kind: " + std::to_string(kindInt) + ")";
         }
     }
-    INFO("Expected completion item [" << expectedLabel << "] kind " << static_cast<int>(expectedKind)
-                                      << " at (" << line << ", " << col << ") not found. Total items: "
-                                      << completion.size() << ". Actual:" << list);
+    INFO("Expected completion item [" << expectedLabel << "] kind " << static_cast<int>(expectedKind) << " at (" << line
+                                      << ", " << col << ") not found. Total items: " << completion.size()
+                                      << ". Actual:" << list);
     CHECK(found);
 }
 

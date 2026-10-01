@@ -1,13 +1,13 @@
-#include <doctest/doctest.h>
-#include "helpers/TestUtils.h"
-#include "analysis/SemanticAnalyzer.h"
-#include "analysis/SemanticAnalysisRequest.h"
-#include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
+#include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "config/ServerConfig.h"
+#include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
+#include <doctest/doctest.h>
 
 #include <algorithm>
 #include <string>
@@ -49,118 +49,115 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    constexpr const char *k_code = "as-err-initializer-list-not-supported";
-    constexpr const char *k_expectedCode = "as-err-initializer-list-expected";
+constexpr const char* k_code = "as-err-initializer-list-not-supported";
+constexpr const char* k_expectedCode = "as-err-initializer-list-expected";
 
-    /** @brief The array template, declared the way a predefined stub would declare it. */
-    const std::string k_arrayStub =
-        "class array<T>\n"
-        "{\n"
-        "    array();\n"
-        "    array(uint length);\n"
-        "    uint length() const;\n"
-        "}\n";
+/** @brief The array template, declared the way a predefined stub would declare it. */
+const std::string k_arrayStub = "class array<T>\n"
+                                "{\n"
+                                "    array();\n"
+                                "    array(uint length);\n"
+                                "    uint length() const;\n"
+                                "}\n";
 
-    /**
-     * @brief Runs the analyzer over `k_arrayStub + body`.
-     * @param arrayLike Templates to configure as element-wise, beyond the default `array`. Pass
-     *                  something else to model a host that registered its own list factory.
-     * @param arrayTypeName The engine's default array type; "" models one that names none.
-     */
-    std::vector<Diagnostic> Diagnose(const std::string &body,
-                                     const std::unordered_set<std::string> &arrayLike = {},
-                                     const std::string &arrayTypeName = "array")
+/**
+ * @brief Runs the analyzer over `k_arrayStub + body`.
+ * @param arrayLike Templates to configure as element-wise, beyond the default `array`. Pass
+ *                  something else to model a host that registered its own list factory.
+ * @param arrayTypeName The engine's default array type; "" models one that names none.
+ */
+std::vector<Diagnostic> Diagnose(const std::string& body, const std::unordered_set<std::string>& arrayLike = {},
+                                 const std::string& arrayTypeName = "array")
+{
+    const std::string code = k_arrayStub + body;
+
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector(nullptr);
+    LocalScopeCollector scopeCollector(nullptr);
+    SymbolTable symbolTable;
+    angel_lsp::i18n::I18n i18n;
+    const std::string uri = "file:///initializer.as";
+
+    angel_lsp::config::TypeConfig types;
+    types.arrayTypeName = arrayTypeName;
+    types.arrayLikeTemplates = arrayLike;
+
+    TSTree* tree = parser.Parse(code);
+    symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
+
+    SemanticAnalysisRequest request{symbolTable, uri, "", &i18n};
+    request.typeConfig = &types;
+    request.scopeRoot = scopeCollector.CollectScopes(code, parser);
+    request.sourceCode = code;
+    request.tree = tree;
+
+    SemanticAnalyzer analyzer(nullptr);
+    std::vector<Diagnostic> result;
+    for (auto& diagnostic : analyzer.Analyze(request))
     {
-        const std::string code = k_arrayStub + body;
-
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector(nullptr);
-        LocalScopeCollector scopeCollector(nullptr);
-        SymbolTable symbolTable;
-        angel_lsp::i18n::I18n i18n;
-        const std::string uri = "file:///initializer.as";
-
-        angel_lsp::config::TypeConfig types;
-        types.arrayTypeName = arrayTypeName;
-        types.arrayLikeTemplates = arrayLike;
-
-        TSTree *tree = parser.Parse(code);
-        symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
-
-        SemanticAnalysisRequest request{ symbolTable, uri, "", &i18n };
-        request.typeConfig = &types;
-        request.scopeRoot = scopeCollector.CollectScopes(code, parser);
-        request.sourceCode = code;
-        request.tree = tree;
-
-        SemanticAnalyzer analyzer(nullptr);
-        std::vector<Diagnostic> result;
-        for (auto &diagnostic : analyzer.Analyze(request))
+        if (diagnostic.code == k_code || diagnostic.code == k_expectedCode)
         {
-            if (diagnostic.code == k_code || diagnostic.code == k_expectedCode)
-            {
-                result.push_back(std::move(diagnostic));
-            }
+            result.push_back(std::move(diagnostic));
         }
-
-        if (tree)
-        {
-            ts_tree_delete(tree);
-        }
-        return result;
     }
 
-    /**
-     * @brief Diagnose without the two-code filter, for rules that emit something else.
-     *
-     * The element-type check reports as-err-no-implicit-conversion, which belongs to the conversion
-     * pass whose judgement it borrows - so it does not pass through the filter above.
-     */
-    std::vector<Diagnostic> DiagnoseAll(const std::string &body)
+    if (tree)
     {
-        const std::string code = k_arrayStub + body;
-
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector(nullptr);
-        LocalScopeCollector scopeCollector(nullptr);
-        SymbolTable symbolTable;
-        angel_lsp::i18n::I18n i18n;
-        const std::string uri = "file:///initializer.as";
-
-        angel_lsp::config::TypeConfig types;
-
-        TSTree *tree = parser.Parse(code);
-        symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
-
-        SemanticAnalysisRequest request{ symbolTable, uri, "", &i18n };
-        request.typeConfig = &types;
-        request.scopeRoot = scopeCollector.CollectScopes(code, parser);
-        request.sourceCode = code;
-        request.tree = tree;
-
-        SemanticAnalyzer analyzer(nullptr);
-        auto result = analyzer.Analyze(request);
-
-        if (tree)
-        {
-            ts_tree_delete(tree);
-        }
-        return result;
+        ts_tree_delete(tree);
     }
-
-    bool HasAnyCode(const std::vector<Diagnostic> &diagnostics, const std::string &code)
-    {
-        return std::any_of(diagnostics.begin(), diagnostics.end(),
-                           [&](const Diagnostic &d) { return d.code == code; });
-    }
-
-    bool Names(const std::vector<Diagnostic> &diagnostics, const std::string &typeName)
-    {
-        const std::string quoted = "'" + typeName + "'";
-        return std::any_of(diagnostics.begin(), diagnostics.end(), [&](const Diagnostic &d)
-                           { return d.message.find(quoted) != std::string::npos; });
-    }
+    return result;
 }
+
+/**
+ * @brief Diagnose without the two-code filter, for rules that emit something else.
+ *
+ * The element-type check reports as-err-no-implicit-conversion, which belongs to the conversion
+ * pass whose judgement it borrows - so it does not pass through the filter above.
+ */
+std::vector<Diagnostic> DiagnoseAll(const std::string& body)
+{
+    const std::string code = k_arrayStub + body;
+
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector(nullptr);
+    LocalScopeCollector scopeCollector(nullptr);
+    SymbolTable symbolTable;
+    angel_lsp::i18n::I18n i18n;
+    const std::string uri = "file:///initializer.as";
+
+    angel_lsp::config::TypeConfig types;
+
+    TSTree* tree = parser.Parse(code);
+    symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
+
+    SemanticAnalysisRequest request{symbolTable, uri, "", &i18n};
+    request.typeConfig = &types;
+    request.scopeRoot = scopeCollector.CollectScopes(code, parser);
+    request.sourceCode = code;
+    request.tree = tree;
+
+    SemanticAnalyzer analyzer(nullptr);
+    auto result = analyzer.Analyze(request);
+
+    if (tree)
+    {
+        ts_tree_delete(tree);
+    }
+    return result;
+}
+
+bool HasAnyCode(const std::vector<Diagnostic>& diagnostics, const std::string& code)
+{
+    return std::any_of(diagnostics.begin(), diagnostics.end(), [&](const Diagnostic& d) { return d.code == code; });
+}
+
+bool Names(const std::vector<Diagnostic>& diagnostics, const std::string& typeName)
+{
+    const std::string quoted = "'" + typeName + "'";
+    return std::any_of(diagnostics.begin(), diagnostics.end(),
+                       [&](const Diagnostic& d) { return d.message.find(quoted) != std::string::npos; });
+}
+} // namespace
 
 TEST_CASE("InitializerList - A primitive cannot be built from a list")
 {
@@ -230,16 +227,15 @@ TEST_CASE("InitializerList - Nothing is said about a type whose list pattern is 
 
 TEST_CASE("InitializerList - A host's own element-wise template is honoured once configured")
 {
-    const std::string body =
-        "class vector<T> { uint size() const; }\n"
-        "void main() { vector<int> v = {1, {2}, 3}; }\n";
+    const std::string body = "class vector<T> { uint size() const; }\n"
+                             "void main() { vector<int> v = {1, {2}, 3}; }\n";
 
     // Undeclared, the rule cannot know whether `vector<T>` takes a list at all - `optional<T>` is
     // declared identically and takes none - so it stays silent.
     CHECK(Diagnose(body).empty());
 
     // Named by `--array-like-type=vector`, it reads exactly as `array<T>` does.
-    const auto diagnostics = Diagnose(body, { "vector" });
+    const auto diagnostics = Diagnose(body, {"vector"});
     REQUIRE(diagnostics.size() == 1);
     CHECK(Names(diagnostics, "int"));
 }
@@ -261,10 +257,9 @@ TEST_CASE("InitializerList - A renamed array type is followed and the default is
 TEST_CASE("InitializerList - A multi-argument template is not element-wise")
 {
     // `map<K, V>` has no single element type, so it is not one of these however it was configured.
-    const std::string body =
-        "class map<K, V> {}\n"
-        "void main() { map<string, int> m = {{'a', {1}}}; }\n";
-    CHECK(Diagnose(body, { "map" }).empty());
+    const std::string body = "class map<K, V> {}\n"
+                             "void main() { map<string, int> m = {{'a', {1}}}; }\n";
+    CHECK(Diagnose(body, {"map"}).empty());
 }
 
 // =====================================================================================
@@ -303,9 +298,8 @@ TEST_CASE("InitializerList - An untagged template of the same shape stays silent
     // `optional<T>` is declared exactly like `array<T>` and registers no list factory; the compiler
     // answers `optional<int> o = {1};` with "Initialization lists cannot be used with 'optional<int>'".
     // Without configuration this server cannot tell the two apart, and says nothing rather than guessing.
-    const std::string code =
-        "class optional<T> { bool has_value() const; }\n"
-        "void main() { optional<int> o = {1, {2}}; }\n";
+    const std::string code = "class optional<T> { bool has_value() const; }\n"
+                             "void main() { optional<int> o = {1, {2}}; }\n";
 
     CHECK(Diagnose(code, {}, /*arrayTypeName=*/"").empty());
 }
@@ -396,9 +390,8 @@ TEST_CASE("InitializerList - an element of unknown type is passed over")
 
 TEST_CASE("InitializerList - a declared type with no list pattern is hinted, not reported")
 {
-    const auto diagnostics = DiagnoseAll(
-        "class Config { }" + std::string(1, char(10)) +
-        "void main() { Config c = {1, 2}; }" + std::string(1, char(10)));
+    const auto diagnostics = DiagnoseAll("class Config { }" + std::string(1, char(10)) +
+                                         "void main() { Config c = {1, 2}; }" + std::string(1, char(10)));
 
     CHECK(HasAnyCode(diagnostics, "as-hint-list-pattern-unknown"));
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
@@ -452,18 +445,16 @@ TEST_CASE("InitializerList - a primitive is reported, not hinted")
 
 TEST_CASE("InitializerList - a list argument is judged against the parameter")
 {
-    const auto diagnostics = DiagnoseAll(
-        "void Take(array<int> values) {}\n"
-        "void main() { Take({\"x\"}); }\n");
+    const auto diagnostics = DiagnoseAll("void Take(array<int> values) {}\n"
+                                         "void main() { Take({\"x\"}); }\n");
 
     CHECK(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
 }
 
 TEST_CASE("InitializerList - a nested list in an argument is judged too")
 {
-    const auto diagnostics = DiagnoseAll(
-        "void Take(array<int> values) {}\n"
-        "void main() { Take({1, {2}}); }\n");
+    const auto diagnostics = DiagnoseAll("void Take(array<int> values) {}\n"
+                                         "void main() { Take({1, {2}}); }\n");
 
     CHECK(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
     CHECK(Names(diagnostics, "int"));
@@ -471,9 +462,8 @@ TEST_CASE("InitializerList - a nested list in an argument is judged too")
 
 TEST_CASE("InitializerList - a correct list argument stays silent")
 {
-    const auto diagnostics = DiagnoseAll(
-        "void Take(array<int> values) {}\n"
-        "void main() { Take({1, 2}); }\n");
+    const auto diagnostics = DiagnoseAll("void Take(array<int> values) {}\n"
+                                         "void main() { Take({1, 2}); }\n");
 
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
@@ -484,10 +474,9 @@ TEST_CASE("InitializerList - an overloaded call leaves its list alone")
     // Which parameter the list is built against is the overload's answer, and with two candidates
     // the compiler does not give one either: `Multiple matching signatures to 'Take({...})'`. A
     // verdict about the list's contents here would be a guess about which overload was meant.
-    const auto diagnostics = DiagnoseAll(
-        "void Take(array<int> values) {}\n"
-        "void Take(array<string> values) {}\n"
-        "void main() { Take({\"x\"}); }\n");
+    const auto diagnostics = DiagnoseAll("void Take(array<int> values) {}\n"
+                                         "void Take(array<string> values) {}\n"
+                                         "void main() { Take({\"x\"}); }\n");
 
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
@@ -495,16 +484,14 @@ TEST_CASE("InitializerList - an overloaded call leaves its list alone")
 
 TEST_CASE("InitializerList - a list assigned to a variable is judged against it")
 {
-    const auto diagnostics = DiagnoseAll(
-        "void main() { array<int> a; a = {\"x\"}; }\n");
+    const auto diagnostics = DiagnoseAll("void main() { array<int> a; a = {\"x\"}; }\n");
 
     CHECK(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
 }
 
 TEST_CASE("InitializerList - a correct assignment stays silent")
 {
-    const auto diagnostics = DiagnoseAll(
-        "void main() { array<int> a; a = {1, 2}; }\n");
+    const auto diagnostics = DiagnoseAll("void main() { array<int> a; a = {1, 2}; }\n");
 
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
@@ -514,8 +501,7 @@ TEST_CASE("InitializerList - a compound assignment says nothing about its list")
 {
     // `a += {1};` is rejected as "Illegal operation on 'int[]&'" - a verdict about the operator,
     // not about the list's shape. Blaming the list would name the wrong thing.
-    const auto diagnostics = DiagnoseAll(
-        "void main() { array<int> a; a += {1}; }\n");
+    const auto diagnostics = DiagnoseAll("void main() { array<int> a; a += {1}; }\n");
 
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
@@ -523,16 +509,14 @@ TEST_CASE("InitializerList - a compound assignment says nothing about its list")
 
 TEST_CASE("InitializerList - a returned list is judged against the declared return type")
 {
-    const auto diagnostics = DiagnoseAll(
-        "array<int> Make() { return {1, \"x\"}; }\n");
+    const auto diagnostics = DiagnoseAll("array<int> Make() { return {1, \"x\"}; }\n");
 
     CHECK(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
 }
 
 TEST_CASE("InitializerList - a correct returned list stays silent")
 {
-    const auto diagnostics = DiagnoseAll(
-        "array<int> Make() { return {1, 2}; }\n");
+    const auto diagnostics = DiagnoseAll("array<int> Make() { return {1, 2}; }\n");
 
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
@@ -542,9 +526,8 @@ TEST_CASE("InitializerList - a list returned from a lambda stays silent")
 {
     // A lambda returns into whichever funcdef it is being assigned to, which is not written at the
     // list. The enclosing function's return type is the wrong answer, so the walk stops.
-    const auto diagnostics = DiagnoseAll(
-        "funcdef array<int>@ Factory();\n"
-        "void main() { Factory@ f = function() { return {1, \"x\"}; }; }\n");
+    const auto diagnostics = DiagnoseAll("funcdef array<int>@ Factory();\n"
+                                         "void main() { Factory@ f = function() { return {1, \"x\"}; }; }\n");
 
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-no-implicit-conversion"));
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
@@ -553,9 +536,8 @@ TEST_CASE("InitializerList - a list returned from a lambda stays silent")
 TEST_CASE("InitializerList - an anonymous object carries its own target type")
 {
     // `array<int> = {...}` writes the type at the list, so nothing has to be inferred to check it.
-    const auto diagnostics = DiagnoseAll(
-        "void Take(array<int> values) {}\n"
-        "void main() { Take(array<int> = {1, {2}}); }\n");
+    const auto diagnostics = DiagnoseAll("void Take(array<int> values) {}\n"
+                                         "void main() { Take(array<int> = {1, {2}}); }\n");
 
     CHECK(HasAnyCode(diagnostics, "as-err-initializer-list-not-supported"));
     CHECK(Names(diagnostics, "int"));
@@ -579,14 +561,13 @@ TEST_CASE("InitializerList - an anonymous object carries its own target type")
 
 namespace
 {
-    /** @brief The dictionary declaration. */
-    const std::string k_dictStub =
-        "class dict\n"
-        "{\n"
-        "    void set(const string &in, const ? &in);\n"
-        "    bool exists(const string &in) const;\n"
-        "};\n";
-}
+/** @brief The dictionary declaration. */
+const std::string k_dictStub = "class dict\n"
+                               "{\n"
+                               "    void set(const string &in, const ? &in);\n"
+                               "    bool exists(const string &in) const;\n"
+                               "};\n";
+} // namespace
 
 TEST_CASE("InitializerList - a fixed dictionary pair wants exactly its own number of values")
 {
@@ -603,8 +584,7 @@ TEST_CASE("InitializerList - a fixed dictionary pair wants exactly its own numbe
 
 TEST_CASE("InitializerList - an array repeat has no count to check")
 {
-    const auto diagnostics = DiagnoseAll(
-        "void main() { array<int> none = {}; array<int> many = {1, 2, 3, 4, 5}; }\n");
+    const auto diagnostics = DiagnoseAll("void main() { array<int> none = {}; array<int> many = {1, 2, 3, 4, 5}; }\n");
 
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-too-few"));
     CHECK_FALSE(HasAnyCode(diagnostics, "as-err-initializer-list-too-many"));
@@ -612,20 +592,18 @@ TEST_CASE("InitializerList - an array repeat has no count to check")
 
 TEST_CASE("InitializerList - a fixed aggregate struct at the top level is counted too")
 {
-    const std::string stub =
-        "class complex\n"
-        "{\n"
-        "    complex(const int &in);\n"
-        "    float r;\n"
-        "    float i;\n"
-        "};\n";
+    const std::string stub = "class complex\n"
+                             "{\n"
+                             "    complex(const int &in);\n"
+                             "    float r;\n"
+                             "    float i;\n"
+                             "};\n";
 
-    CHECK(HasAnyCode(DiagnoseAll(stub + "void main() { complex c = {1, 2, 3}; }\n"),
-                     "as-err-initializer-list-too-many"));
-    CHECK(HasAnyCode(DiagnoseAll(stub + "void main() { complex c = {1}; }\n"),
-                     "as-err-initializer-list-too-few"));
-    CHECK_FALSE(HasAnyCode(DiagnoseAll(stub + "void main() { complex c = {1, 2}; }\n"),
-                           "as-err-initializer-list-too-many"));
+    CHECK(
+        HasAnyCode(DiagnoseAll(stub + "void main() { complex c = {1, 2, 3}; }\n"), "as-err-initializer-list-too-many"));
+    CHECK(HasAnyCode(DiagnoseAll(stub + "void main() { complex c = {1}; }\n"), "as-err-initializer-list-too-few"));
+    CHECK_FALSE(
+        HasAnyCode(DiagnoseAll(stub + "void main() { complex c = {1, 2}; }\n"), "as-err-initializer-list-too-many"));
 }
 
 TEST_CASE("ListPattern - an omitted element counts as a value")
@@ -689,12 +667,11 @@ TEST_CASE("InitializerList - generic user-defined aggregate struct initializatio
 
 TEST_CASE("InitializerList - generic multi-dimensional container resolution via opIndex")
 {
-    const std::string matrixStub =
-        "class Matrix<T>\n"
-        "{\n"
-        "    T& opIndex(uint row, uint col);\n"
-        "    const T& opIndex(uint row, uint col) const;\n"
-        "};\n";
+    const std::string matrixStub = "class Matrix<T>\n"
+                                   "{\n"
+                                   "    T& opIndex(uint row, uint col);\n"
+                                   "    const T& opIndex(uint row, uint col) const;\n"
+                                   "};\n";
 
     // 2D rows of elements
     CHECK(Diagnose(matrixStub + "void main() { Matrix<int> m = {{1, 2}, {3, 4}}; }\n").empty());
@@ -710,23 +687,22 @@ TEST_CASE("InitializerList - generic multi-dimensional container resolution via 
 
 TEST_CASE("InitializerList - distinct types with identical names across namespaces do not collide in layout cache")
 {
-    const std::string code =
-        "namespace Alpha {\n"
-        "    class Config {\n"
-        "        Config(const int &in);\n"
-        "        int id;\n"
-        "    };\n"
-        "}\n"
-        "namespace Beta {\n"
-        "    class Config {\n"
-        "        Config(const int &in);\n"
-        "        int r; int g; int b;\n"
-        "    };\n"
-        "}\n"
-        "void main() {\n"
-        "    Alpha::Config a = { 10 };\n"
-        "    Beta::Config b = { 1, 2, 3 };\n"
-        "}\n";
+    const std::string code = "namespace Alpha {\n"
+                             "    class Config {\n"
+                             "        Config(const int &in);\n"
+                             "        int id;\n"
+                             "    };\n"
+                             "}\n"
+                             "namespace Beta {\n"
+                             "    class Config {\n"
+                             "        Config(const int &in);\n"
+                             "        int r; int g; int b;\n"
+                             "    };\n"
+                             "}\n"
+                             "void main() {\n"
+                             "    Alpha::Config a = { 10 };\n"
+                             "    Beta::Config b = { 1, 2, 3 };\n"
+                             "}\n";
 
     const auto diags = DiagnoseAll(code);
     CHECK_FALSE(HasAnyCode(diags, "as-err-initializer-list-too-many"));
@@ -749,3 +725,68 @@ TEST_CASE("InitializerList - Invariant: Primitives reject initializer lists acro
     }
 }
 
+TEST_CASE("InitializerList - dictionary indexing rejects untyped initializer lists and accepts typed ones")
+{
+    const std::string dictVar = angel_lsp::test::GenerateRandomSymbolName("myDict");
+    const std::string keyStr = angel_lsp::test::GenerateRandomSymbolName("key");
+    const std::string code = "class dictionaryValue {};\n"
+                             "class dictionary {\n"
+                             "    dictionaryValue& opIndex(const string &in key);\n"
+                             "};\n"
+                             "void main() {\n"
+                             "    dictionary " +
+                             dictVar +
+                             ";\n"
+                             "    " +
+                             dictVar + "[\"" + keyStr +
+                             "\"] = {\"hello\"};\n"
+                             "}\n";
+    const auto diags = DiagnoseAll(code);
+    CHECK(HasAnyCode(diags, "as-err-initializer-list-not-supported"));
+    CHECK_FALSE(HasAnyCode(diags, "as-hint-list-pattern-unknown"));
+    CHECK(Names(diags, "dictionaryValue"));
+
+    const std::string typedCode = "class dictionaryValue {};\n"
+                                  "class dictionary {\n"
+                                  "    dictionaryValue& opIndex(const string &in key);\n"
+                                  "};\n"
+                                  "void main() {\n"
+                                  "    dictionary " +
+                                  dictVar +
+                                  ";\n"
+                                  "    " +
+                                  dictVar + "[\"" + keyStr +
+                                  "\"] = array<string> = {\"hello\"};\n"
+                                  "}\n";
+    const auto typedDiags = DiagnoseAll(typedCode);
+    CHECK_FALSE(HasAnyCode(typedDiags, "as-err-initializer-list-not-supported"));
+    CHECK_FALSE(HasAnyCode(typedDiags, "as-hint-list-pattern-unknown"));
+}
+
+TEST_CASE("InitializerList - nested array element assignment supports initializer lists")
+{
+    const std::string arrVar = angel_lsp::test::GenerateRandomSymbolName("matrix");
+    const std::string code = "void main() {\n"
+                             "    array<array<int>> " +
+                             arrVar +
+                             ";\n"
+                             "    " +
+                             arrVar +
+                             "[0] = {1, 2};\n"
+                             "}\n";
+    const auto diags = DiagnoseAll(code);
+    CHECK_FALSE(HasAnyCode(diags, "as-err-initializer-list-not-supported"));
+}
+
+TEST_CASE("InitializerList - nested typed dictionary anonymous object in initializer list")
+{
+    const std::string dictVar = angel_lsp::test::GenerateRandomSymbolName("d");
+    const std::string code = "class dictionary {};\n"
+                             "void main() {\n"
+                             "    dictionary " +
+                             dictVar +
+                             " = {{'a', dictionary = {{'b', 1}}}};\n"
+                             "}\n";
+    const auto diags = DiagnoseAll(code);
+    CHECK_FALSE(HasAnyCode(diags, "as-err-initializer-list-not-supported"));
+}

@@ -53,13 +53,12 @@ TEST_SUITE("InitializerListParity")
 
         const std::string itemType = GenerateRandomSymbolName("SpawnPoint");
 
-        const std::string script = fmt::format(
-            "class {0} {{}}\n"
-            "dictionary SpawnList;\n"
-            "void test({0}@ pNew) {{\n"
-            "    @SpawnList[\"key\"] = array<{0}@>@ = {{ @pNew }};\n"
-            "}}\n",
-            itemType);
+        const std::string script = fmt::format("class {0} {{}}\n"
+                                               "dictionary SpawnList;\n"
+                                               "void test({0}@ pNew) {{\n"
+                                               "    @SpawnList[\"key\"] = array<{0}@>@ = {{ @pNew }};\n"
+                                               "}}\n",
+                                               itemType);
 
         if (fixture.HasOracleBinary())
         {
@@ -84,16 +83,15 @@ TEST_SUITE("InitializerListParity")
 
         const std::string itemType = GenerateRandomSymbolName("Item");
 
-        const std::string script = fmt::format(
-            "class {0} {{}}\n"
-            "array<{0}@>@ CreateItems({0}@ pItem) {{\n"
-            "    array<{0}@>@ arr = array<{0}@>@ = {{ @pItem }};\n"
-            "    if (@arr !is null) {{\n"
-            "        return arr;\n"
-            "    }}\n"
-            "    return array<{0}@>@ = {{ @pItem }};\n"
-            "}}\n",
-            itemType);
+        const std::string script = fmt::format("class {0} {{}}\n"
+                                               "array<{0}@>@ CreateItems({0}@ pItem) {{\n"
+                                               "    array<{0}@>@ arr = array<{0}@>@ = {{ @pItem }};\n"
+                                               "    if (@arr !is null) {{\n"
+                                               "        return arr;\n"
+                                               "    }}\n"
+                                               "    return array<{0}@>@ = {{ @pItem }};\n"
+                                               "}}\n",
+                                               itemType);
 
         if (fixture.HasOracleBinary())
         {
@@ -116,19 +114,18 @@ TEST_SUITE("InitializerListParity")
         LspSemanticHarnessFixture fixture;
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
 
-        const std::string script =
-            "class MyContainer {\n"
-            "    array<int>@ m_arr;\n"
-            "    void init() {\n"
-            "        @m_arr = array<int>@ = { 1, 2, 3 };\n"
-            "    }\n"
-            "}\n"
-            "void chained() {\n"
-            "    array<int>@ a;\n"
-            "    array<int>@ b;\n"
-            "    @a = @b = array<int>@ = { 1, 2, 3 };\n"
-            "    if (@a !is null && @b !is null) {}\n"
-            "}\n";
+        const std::string script = "class MyContainer {\n"
+                                   "    array<int>@ m_arr;\n"
+                                   "    void init() {\n"
+                                   "        @m_arr = array<int>@ = { 1, 2, 3 };\n"
+                                   "    }\n"
+                                   "}\n"
+                                   "void chained() {\n"
+                                   "    array<int>@ a;\n"
+                                   "    array<int>@ b;\n"
+                                   "    @a = @b = array<int>@ = { 1, 2, 3 };\n"
+                                   "    if (@a !is null && @b !is null) {}\n"
+                                   "}\n";
 
         if (fixture.HasOracleBinary())
         {
@@ -152,15 +149,14 @@ TEST_SUITE("InitializerListParity")
         const std::string clsName = GenerateRandomSymbolName("NotAContainer");
         const std::string fnName = GenerateRandomSymbolName("takeObject");
 
-        const std::string script = fmt::format(
-            "class {0} {{\n"
-            "    void DoSomething() {{}}\n"
-            "}}\n"
-            "void {1}({0}@ obj) {{}}\n"
-            "void main() {{\n"
-            "    {1}({{ 1, 2 }});\n"
-            "}}\n",
-            clsName, fnName);
+        const std::string script = fmt::format("class {0} {{\n"
+                                               "    void DoSomething() {{}}\n"
+                                               "}}\n"
+                                               "void {1}({0}@ obj) {{}}\n"
+                                               "void main() {{\n"
+                                               "    {1}({{ 1, 2 }});\n"
+                                               "}}\n",
+                                               clsName, fnName);
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
         fixture.AddVirtualDocument(docUri, script);
@@ -173,23 +169,21 @@ TEST_SUITE("InitializerListParity")
         const std::string templateType = GenerateRandomSymbolName("Optional");
         const std::string fnName = GenerateRandomSymbolName("takeOptional");
 
-        const std::string stubContent = fmt::format(
-            "class {0}<T> {{\n"
-            "    {0}();\n"
-            "    {0}(const T &in val);\n"
-            "    bool has_value() const;\n"
-            "}}\n",
-            templateType);
+        const std::string stubContent = fmt::format("class {0}<T> {{\n"
+                                                    "    {0}();\n"
+                                                    "    {0}(const T &in val);\n"
+                                                    "    bool has_value() const;\n"
+                                                    "}}\n",
+                                                    templateType);
 
         const std::string stubUri = fixture.SandboxUri("custom.as.predefined");
         fixture.AddVirtualDocument(stubUri, stubContent);
 
-        const std::string script = fmt::format(
-            "void {0}({1}<int> opt) {{}}\n"
-            "void main() {{\n"
-            "    {0}({{ 42 }});\n"
-            "}}\n",
-            fnName, templateType);
+        const std::string script = fmt::format("void {0}({1}<int> opt) {{}}\n"
+                                               "void main() {{\n"
+                                               "    {0}({{ 42 }});\n"
+                                               "}}\n",
+                                               fnName, templateType);
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
         fixture.AddVirtualDocument(docUri, script);
@@ -202,23 +196,21 @@ TEST_SUITE("InitializerListParity")
         const std::string templateType = GenerateRandomSymbolName("MyList");
         const std::string fnName = GenerateRandomSymbolName("processItems");
 
-        const std::string stubContent = fmt::format(
-            "/// @listpattern {{repeat T}}\n"
-            "class {0}<T> {{\n"
-            "    {0}();\n"
-            "    uint length() const;\n"
-            "}}\n",
-            templateType);
+        const std::string stubContent = fmt::format("/// @listpattern {{repeat T}}\n"
+                                                    "class {0}<T> {{\n"
+                                                    "    {0}();\n"
+                                                    "    uint length() const;\n"
+                                                    "}}\n",
+                                                    templateType);
 
         const std::string stubUri = fixture.SandboxUri("custom.as.predefined");
         fixture.AddVirtualDocument(stubUri, stubContent);
 
-        const std::string script = fmt::format(
-            "void {0}({1}<int> list) {{}}\n"
-            "void main() {{\n"
-            "    {0}({{ 10, 20, 30 }});\n"
-            "}}\n",
-            fnName, templateType);
+        const std::string script = fmt::format("void {0}({1}<int> list) {{}}\n"
+                                               "void main() {{\n"
+                                               "    {0}({{ 10, 20, 30 }});\n"
+                                               "}}\n",
+                                               fnName, templateType);
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
         fixture.AddVirtualDocument(docUri, script);
@@ -231,18 +223,17 @@ TEST_SUITE("InitializerListParity")
         const std::string vecType = GenerateRandomSymbolName("Vector3");
         const std::string fnName = GenerateRandomSymbolName("renderVertex");
 
-        const std::string script = fmt::format(
-            "class {0} {{\n"
-            "    {0}(const int &in list) {{}}\n"
-            "    float x;\n"
-            "    float y;\n"
-            "    float z;\n"
-            "}}\n"
-            "void {1}({0} v) {{}}\n"
-            "void main() {{\n"
-            "    {1}({{ 1.0f, 2.0f, 3.0f }});\n"
-            "}}\n",
-            vecType, fnName);
+        const std::string script = fmt::format("class {0} {{\n"
+                                               "    {0}(const int &in list) {{}}\n"
+                                               "    float x;\n"
+                                               "    float y;\n"
+                                               "    float z;\n"
+                                               "}}\n"
+                                               "void {1}({0} v) {{}}\n"
+                                               "void main() {{\n"
+                                               "    {1}({{ 1.0f, 2.0f, 3.0f }});\n"
+                                               "}}\n",
+                                               vecType, fnName);
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
         fixture.AddVirtualDocument(docUri, script);
@@ -255,17 +246,16 @@ TEST_SUITE("InitializerListParity")
         const std::string vecType = GenerateRandomSymbolName("PlainVec3");
         const std::string fnName = GenerateRandomSymbolName("renderVertex");
 
-        const std::string script = fmt::format(
-            "class {0} {{\n"
-            "    float x;\n"
-            "    float y;\n"
-            "    float z;\n"
-            "}}\n"
-            "void {1}({0} v) {{}}\n"
-            "void main() {{\n"
-            "    {1}({{ 1.0f, 2.0f, 3.0f }});\n"
-            "}}\n",
-            vecType, fnName);
+        const std::string script = fmt::format("class {0} {{\n"
+                                               "    float x;\n"
+                                               "    float y;\n"
+                                               "    float z;\n"
+                                               "}}\n"
+                                               "void {1}({0} v) {{}}\n"
+                                               "void main() {{\n"
+                                               "    {1}({{ 1.0f, 2.0f, 3.0f }});\n"
+                                               "}}\n",
+                                               vecType, fnName);
 
         if (fixture.HasOracleBinary())
         {
@@ -289,18 +279,17 @@ TEST_SUITE("InitializerListParity")
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
 
         const std::string dictVar = GenerateRandomSymbolName("rootConfig");
-        const std::string script = fmt::format(
-            "void main() {{\n"
-            "    dictionary {0} = {{\n"
-            "        {{ \"version\", 1 }},\n"
-            "        {{ \"settings\", dictionary = {{\n"
-            "            {{ \"retries\", 3 }},\n"
-            "            {{ \"timeout\", 100 }}\n"
-            "        }} }}\n"
-            "    }};\n"
-            "    if ({0}.isEmpty()) {{}}\n"
-            "}}\n",
-            dictVar);
+        const std::string script = fmt::format("void main() {{\n"
+                                               "    dictionary {0} = {{\n"
+                                               "        {{ \"version\", 1 }},\n"
+                                               "        {{ \"settings\", dictionary = {{\n"
+                                               "            {{ \"retries\", 3 }},\n"
+                                               "            {{ \"timeout\", 100 }}\n"
+                                               "        }} }}\n"
+                                               "    }};\n"
+                                               "    if ({0}.isEmpty()) {{}}\n"
+                                               "}}\n",
+                                               dictVar);
 
         if (fixture.HasOracleBinary())
         {
@@ -324,15 +313,15 @@ TEST_SUITE("InitializerListParity")
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
 
         const std::string arrVar = GenerateRandomSymbolName("entList");
-        const std::string script = fmt::format(
-            "void main() {{\n"
-            "    array<dictionary> {0} = {{\n"
-            "        {{ {{ \"origin\", \"0 0 0\" }}, {{ \"angles\", \"0 0 0\" }} }},\n"
-            "        {{ {{ \"spawnflags\", \"1\" }} }}\n"
-            "    }};\n"
-            "    {0}.insertLast({{ {{ \"classname\", \"monster_barney\" }} }});\n"
-            "}}\n",
-            arrVar);
+        const std::string script =
+            fmt::format("void main() {{\n"
+                        "    array<dictionary> {0} = {{\n"
+                        "        {{ {{ \"origin\", \"0 0 0\" }}, {{ \"angles\", \"0 0 0\" }} }},\n"
+                        "        {{ {{ \"spawnflags\", \"1\" }} }}\n"
+                        "    }};\n"
+                        "    {0}.insertLast({{ {{ \"classname\", \"monster_barney\" }} }});\n"
+                        "}}\n",
+                        arrVar);
 
         if (fixture.HasOracleBinary())
         {
@@ -356,14 +345,13 @@ TEST_SUITE("InitializerListParity")
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
 
         const std::string dictVar = GenerateRandomSymbolName("invalidDict");
-        const std::string script = fmt::format(
-            "void main() {{\n"
-            "    dictionary {0} = {{\n"
-            "        {{ \"sub\", {{ {{ \"k\", 1 }} }} }}\n"
-            "    }};\n"
-            "    if ({0}.isEmpty()) {{}}\n"
-            "}}\n",
-            dictVar);
+        const std::string script = fmt::format("void main() {{\n"
+                                               "    dictionary {0} = {{\n"
+                                               "        {{ \"sub\", {{ {{ \"k\", 1 }} }} }}\n"
+                                               "    }};\n"
+                                               "    if ({0}.isEmpty()) {{}}\n"
+                                               "}}\n",
+                                               dictVar);
 
         if (fixture.HasOracleBinary())
         {
@@ -389,30 +377,27 @@ TEST_SUITE("InitializerListParity")
         const std::string containerType = GenerateRandomSymbolName("CustomList");
         const std::string varName = GenerateRandomSymbolName("customListVar");
 
-        const std::string predefContent = fmt::format(
-            "/// @listpattern {{repeat T}}\n"
-            "class {0}<T> {{\n"
-            "    void insertLast(const T&in val);\n"
-            "    uint length() const;\n"
-            "}}\n",
-            containerType);
+        const std::string predefContent = fmt::format("/// @listpattern {{repeat T}}\n"
+                                                      "class {0}<T> {{\n"
+                                                      "    void insertLast(const T&in val);\n"
+                                                      "    uint length() const;\n"
+                                                      "}}\n",
+                                                      containerType);
         const std::string predefUri =
             fixture.SandboxUri(fmt::format("predef/{0}.as.predefined", GenerateRandomSymbolName("defs")));
         fixture.AddVirtualDocument(predefUri, predefContent);
 
-        const std::string script = fmt::format(
-            "void main() {{\n"
-            "    {0}<dictionary> {1} = {{\n"
-            "        {{ {{ \"key1\", 10 }} }},\n"
-            "        {{ {{ \"key2\", 20 }} }}\n"
-            "    }};\n"
-            "    {1}.insertLast({{ {{ \"key3\", 30 }} }});\n"
-            "}}\n",
-            containerType, varName);
+        const std::string script = fmt::format("void main() {{\n"
+                                               "    {0}<dictionary> {1} = {{\n"
+                                               "        {{ {{ \"key1\", 10 }} }},\n"
+                                               "        {{ {{ \"key2\", 20 }} }}\n"
+                                               "    }};\n"
+                                               "    {1}.insertLast({{ {{ \"key3\", 30 }} }});\n"
+                                               "}}\n",
+                                               containerType, varName);
 
         const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
         fixture.AddVirtualDocument(docUri, script);
         fixture.AssertNoDiagnostics(docUri);
     }
 }
-

@@ -33,8 +33,7 @@ struct StressTestEnvironment
     std::string sourceCode;
     TSTree* tree = nullptr;
 
-    explicit StressTestEnvironment(const std::string& code)
-        : sourceCode(code)
+    explicit StressTestEnvironment(const std::string& code) : sourceCode(code)
     {
         tree = parser.Parse(sourceCode);
         symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
@@ -149,23 +148,41 @@ TEST_CASE("Stress Harness - Hook hover with anonymous function callback")
     const std::string localParam = GenerateRandomSymbolName("mapName");
     const std::string innerVar = GenerateRandomSymbolName("innerCounter");
 
-    std::string code =
-        "funcdef void " + cbType + "(string " + localParam + ");\n"
-        "class HookRegistry {\n"
-        "    void " + regFunc + "(int id, " + cbType + "@ cb) {}\n"
-        "}\n"
-        "namespace " + nsHooks + " {\n"
-        "    namespace " + nsGame + " {\n"
-        "        const int " + constHook + " = 101;\n"
-        "    }\n"
-        "}\n"
-        "HookRegistry " + hookInst + ";\n"
-        "void " + setupFunc + "() {\n"
-        "    " + hookInst + "." + regFunc + "(" + nsHooks + "::" + nsGame + "::" + constHook + ",\n"
-        "        @" + cbType + "(function(string " + localParam + ") {\n"
-        "            int " + innerVar + " = 42;\n"
-        "        }));\n"
-        "}\n";
+    std::string code = "funcdef void " + cbType + "(string " + localParam +
+                       ");\n"
+                       "class HookRegistry {\n"
+                       "    void " +
+                       regFunc + "(int id, " + cbType +
+                       "@ cb) {}\n"
+                       "}\n"
+                       "namespace " +
+                       nsHooks +
+                       " {\n"
+                       "    namespace " +
+                       nsGame +
+                       " {\n"
+                       "        const int " +
+                       constHook +
+                       " = 101;\n"
+                       "    }\n"
+                       "}\n"
+                       "HookRegistry " +
+                       hookInst +
+                       ";\n"
+                       "void " +
+                       setupFunc +
+                       "() {\n"
+                       "    " +
+                       hookInst + "." + regFunc + "(" + nsHooks + "::" + nsGame + "::" + constHook +
+                       ",\n"
+                       "        @" +
+                       cbType + "(function(string " + localParam +
+                       ") {\n"
+                       "            int " +
+                       innerVar +
+                       " = 42;\n"
+                       "        }));\n"
+                       "}\n";
 
     StressTestEnvironment env(code);
 

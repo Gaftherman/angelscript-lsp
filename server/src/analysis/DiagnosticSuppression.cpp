@@ -22,6 +22,7 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"W101", diagnostics::codes::UninitializedVariableRead},
     {"W102", diagnostics::codes::UnreachableCode},
     {"W103", diagnostics::codes::UnusedVariable},
+    {"W104", diagnostics::codes::ShadowGlobal},
     {"W105", diagnostics::codes::SignedUnsignedMismatch},
     {"W106", diagnostics::codes::FloatTruncation},
     {"W107", diagnostics::codes::UnsupportedDirective},
@@ -186,6 +187,10 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"E241", diagnostics::codes::VoidReturnValue},
     {"E242", diagnostics::codes::WriteOnlyProperty},
     {"E243", diagnostics::codes::IllegalOperation},
+    {"E244", diagnostics::codes::BaseNotFound},
+    {"E245", diagnostics::codes::InvalidReferenceReturn},
+    {"E246", diagnostics::codes::ReadonlyHandle},
+    {"E247", diagnostics::codes::StandaloneReference},
 };
 
 bool EqualsCaseInsensitive(std::string_view a, std::string_view b) noexcept
@@ -223,12 +228,14 @@ std::vector<std::string_view> TokenizeDirective(std::string_view text)
     size_t i = 0;
     while (i < text.size())
     {
-        while (i < text.size() && (std::isspace(static_cast<unsigned char>(text[i])) || text[i] == ',' || text[i] == ';'))
+        while (i < text.size() &&
+               (std::isspace(static_cast<unsigned char>(text[i])) || text[i] == ',' || text[i] == ';'))
             ++i;
         if (i >= text.size())
             break;
         size_t start = i;
-        while (i < text.size() && !std::isspace(static_cast<unsigned char>(text[i])) && text[i] != ',' && text[i] != ';')
+        while (i < text.size() && !std::isspace(static_cast<unsigned char>(text[i])) && text[i] != ',' &&
+               text[i] != ';')
             ++i;
         tokens.push_back(text.substr(start, i - start));
     }
@@ -302,9 +309,8 @@ void ProcessCommentDirective(std::string_view rawText, uint32_t line, Diagnostic
 
     for (size_t k = 1; k < tokens.size(); ++k)
     {
-        std::string codeKey = EqualsCaseInsensitive(tokens[k], "all")
-                                  ? "all"
-                                  : std::string(GetCanonicalDiagnosticCode(tokens[k]));
+        std::string codeKey =
+            EqualsCaseInsensitive(tokens[k], "all") ? "all" : std::string(GetCanonicalDiagnosticCode(tokens[k]));
         if (isDisableLine)
         {
             map.AddSuppression(codeKey, line, line);

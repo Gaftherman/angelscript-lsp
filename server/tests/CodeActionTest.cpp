@@ -1,11 +1,11 @@
 #include <doctest/doctest.h>
 
-#include "features/code_action/CodeActionHandler.h"
-#include "helpers/TestUtils.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "features/code_action/CodeActionHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -15,65 +15,62 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct TestEnvironment
+struct TestEnvironment
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    std::string uri = "file:///test.as";
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    TestEnvironment(const std::string& code) : sourceCode(code)
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        std::string uri = "file:///test.as";
-        std::string sourceCode;
-        TSTree *tree = nullptr;
-
-        TestEnvironment(const std::string &code)
-            : sourceCode(code)
+        tree = parser.Parse(sourceCode);
+        symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
+        auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
+        if (rootScope)
         {
-            tree = parser.Parse(sourceCode);
-            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(uri, std::move(rootScope));
-            }
+            scopeIndex.SetScopeTree(uri, std::move(rootScope));
         }
+    }
 
-        ~TestEnvironment()
+    ~TestEnvironment()
+    {
+        if (tree)
         {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
+            ts_tree_delete(tree);
         }
+    }
 
-        std::optional<std::vector<lsp::CodeAction>> CodeActions(
-            lsp::Range range = lsp::Range{ {0, 0}, {0, 0} },
-            lsp::CodeActionContext context = lsp::CodeActionContext{})
-        {
-            CodeActionRequest req{ uri, sourceCode, tree, range, context, symbolTable, scopeIndex };
-            return GetCodeActions(req);
-        }
-    };
-}
+    std::optional<std::vector<lsp::CodeAction>> CodeActions(lsp::Range range = lsp::Range{{0, 0}, {0, 0}},
+                                                            lsp::CodeActionContext context = lsp::CodeActionContext{})
+    {
+        CodeActionRequest req{uri, sourceCode, tree, range, context, symbolTable, scopeIndex};
+        return GetCodeActions(req);
+    }
+};
+} // namespace
 
 TEST_CASE("CodeActionHandler - Remove Unused Local Variable (Single Declaration)")
 {
-    std::string code =
-        "void main() {\n"
-        "    int unusedVar = 42;\n"
-        "    float active = 1.0f;\n"
-        "    active += 2.0f;\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    int unusedVar = 42;\n"
+                       "    float active = 1.0f;\n"
+                       "    active += 2.0f;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    lsp::Range r{ {1, 4}, {1, 18} };
+    lsp::Range r{{1, 4}, {1, 18}};
     auto actions = env.CodeActions(r);
 
     REQUIRE(actions.has_value());
     REQUIRE(!actions->empty());
 
     bool foundAction = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Remove unused variable 'unusedVar'")
         {
@@ -87,7 +84,7 @@ TEST_CASE("CodeActionHandler - Remove Unused Local Variable (Single Declaration)
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
             REQUIRE(changes.contains(lsp::DocumentUri::parse(env.uri)));
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].range.start.line == 1);
             CHECK(edits[0].range.start.character == 0);
@@ -102,19 +99,18 @@ TEST_CASE("CodeActionHandler - Remove Unused Local Variable (Single Declaration)
 
 TEST_CASE("CodeActionHandler - Remove Unused Local Variable (Multi Declarator)")
 {
-    std::string code =
-        "void main() {\n"
-        "    int a = 1, unused = 2, b = 3;\n"
-        "    a += b;\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    int a = 1, unused = 2, b = 3;\n"
+                       "    a += b;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    lsp::Range r{ {1, 15}, {1, 25} };
+    lsp::Range r{{1, 15}, {1, 25}};
     auto actions = env.CodeActions(r);
 
     REQUIRE(actions.has_value());
     bool foundAction = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Remove unused variable 'unused'")
         {
@@ -122,7 +118,7 @@ TEST_CASE("CodeActionHandler - Remove Unused Local Variable (Multi Declarator)")
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].newText.empty());
         }
@@ -133,21 +129,20 @@ TEST_CASE("CodeActionHandler - Remove Unused Local Variable (Multi Declarator)")
 
 TEST_CASE("CodeActionHandler - Implement Missing Interface Methods")
 {
-    std::string code =
-        "interface IWeapon {\n"
-        "    void Fire();\n"
-        "    int GetAmmo();\n"
-        "}\n"
-        "class Gun : IWeapon {\n"
-        "}\n";
+    std::string code = "interface IWeapon {\n"
+                       "    void Fire();\n"
+                       "    int GetAmmo();\n"
+                       "}\n"
+                       "class Gun : IWeapon {\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    lsp::Range r{ {4, 0}, {5, 1} };
+    lsp::Range r{{4, 0}, {5, 1}};
     auto actions = env.CodeActions(r);
 
     REQUIRE(actions.has_value());
     bool foundAction = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Implement missing interface methods for 'IWeapon'")
         {
@@ -160,7 +155,7 @@ TEST_CASE("CodeActionHandler - Implement Missing Interface Methods")
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].newText.find("void Fire()") != std::string::npos);
             CHECK(edits[0].newText.find("int GetAmmo()") != std::string::npos);
@@ -173,22 +168,21 @@ TEST_CASE("CodeActionHandler - Implement Missing Interface Methods")
 
 TEST_CASE("CodeActionHandler - Partially Implemented Interface")
 {
-    std::string code =
-        "interface IWeapon {\n"
-        "    void Fire();\n"
-        "    int GetAmmo();\n"
-        "}\n"
-        "class Gun : IWeapon {\n"
-        "    void Fire() {}\n"
-        "}\n";
+    std::string code = "interface IWeapon {\n"
+                       "    void Fire();\n"
+                       "    int GetAmmo();\n"
+                       "}\n"
+                       "class Gun : IWeapon {\n"
+                       "    void Fire() {}\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    lsp::Range r{ {4, 0}, {6, 1} };
+    lsp::Range r{{4, 0}, {6, 1}};
     auto actions = env.CodeActions(r);
 
     REQUIRE(actions.has_value());
     bool foundAction = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Implement missing interface methods for 'IWeapon'")
         {
@@ -196,7 +190,7 @@ TEST_CASE("CodeActionHandler - Partially Implemented Interface")
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].newText.find("int GetAmmo()") != std::string::npos);
             CHECK(edits[0].newText.find("void Fire()") == std::string::npos);
@@ -208,23 +202,22 @@ TEST_CASE("CodeActionHandler - Partially Implemented Interface")
 
 TEST_CASE("CodeActionHandler - Fully Implemented Interface Returns No Interface Action")
 {
-    std::string code =
-        "interface IWeapon {\n"
-        "    void Fire();\n"
-        "    int GetAmmo();\n"
-        "}\n"
-        "class Gun : IWeapon {\n"
-        "    void Fire() {}\n"
-        "    int GetAmmo() { return 10; }\n"
-        "}\n";
+    std::string code = "interface IWeapon {\n"
+                       "    void Fire();\n"
+                       "    int GetAmmo();\n"
+                       "}\n"
+                       "class Gun : IWeapon {\n"
+                       "    void Fire() {}\n"
+                       "    int GetAmmo() { return 10; }\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    lsp::Range r{ {4, 0}, {7, 1} };
+    lsp::Range r{{4, 0}, {7, 1}};
     auto actions = env.CodeActions(r);
 
     if (actions.has_value())
     {
-        for (const auto &action : *actions)
+        for (const auto& action : *actions)
         {
             CHECK(action.title != "Implement missing interface methods for 'IWeapon'");
         }
@@ -233,23 +226,22 @@ TEST_CASE("CodeActionHandler - Fully Implemented Interface Returns No Interface 
 
 TEST_CASE("CodeActionHandler - Inherited Interfaces Method Generation")
 {
-    std::string code =
-        "interface IBase {\n"
-        "    void BaseMethod();\n"
-        "}\n"
-        "interface IDerived : IBase {\n"
-        "    void DerivedMethod();\n"
-        "}\n"
-        "class MyClass : IDerived {\n"
-        "}\n";
+    std::string code = "interface IBase {\n"
+                       "    void BaseMethod();\n"
+                       "}\n"
+                       "interface IDerived : IBase {\n"
+                       "    void DerivedMethod();\n"
+                       "}\n"
+                       "class MyClass : IDerived {\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    lsp::Range r{ {6, 0}, {7, 1} };
+    lsp::Range r{{6, 0}, {7, 1}};
     auto actions = env.CodeActions(r);
 
     REQUIRE(actions.has_value());
     bool foundAction = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Implement missing interface methods for 'IDerived'")
         {
@@ -257,7 +249,7 @@ TEST_CASE("CodeActionHandler - Inherited Interfaces Method Generation")
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].newText.find("void BaseMethod()") != std::string::npos);
             CHECK(edits[0].newText.find("void DerivedMethod()") != std::string::npos);
@@ -269,7 +261,8 @@ TEST_CASE("CodeActionHandler - Inherited Interfaces Method Generation")
 
 TEST_CASE("CodeActionHandler - Robustness on Null Tree / Empty Range")
 {
-    CodeActionRequest req{ "file:///empty.as", "", nullptr, lsp::Range{}, lsp::CodeActionContext{}, SymbolTable{}, ScopeIndex{} };
+    CodeActionRequest req{"file:///empty.as", "",          nullptr, lsp::Range{}, lsp::CodeActionContext{},
+                          SymbolTable{},      ScopeIndex{}};
     auto actions = GetCodeActions(req);
     CHECK(!actions.has_value());
 }
@@ -280,12 +273,11 @@ TEST_CASE("CodeActionHandler - ResolveCodeAction returns resolved code action")
     action.title = "Test Action";
     action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
 
-    CodeActionResolveRequest req{ action, SymbolTable{}, ScopeIndex{} };
+    CodeActionResolveRequest req{action, SymbolTable{}, ScopeIndex{}};
     auto resolved = ResolveCodeAction(req);
     REQUIRE(resolved.has_value());
     CHECK(resolved->title == "Test Action");
 }
-
 
 // =====================================================================================
 // "Did you mean 'X'?" for an undefined identifier.
@@ -301,48 +293,47 @@ TEST_CASE("CodeActionHandler - ResolveCodeAction returns resolved code action")
 
 namespace
 {
-    /** @brief A CodeActionContext carrying one undefined-identifier diagnostic over a range. */
-    lsp::CodeActionContext UndefinedIdentifierAt(lsp::Range range)
-    {
-        lsp::Diagnostic diag;
-        diag.range = range;
-        diag.code = lsp::String("as-err-undefined-identifier");
-        diag.message = "Undefined identifier";
+/** @brief A CodeActionContext carrying one undefined-identifier diagnostic over a range. */
+lsp::CodeActionContext UndefinedIdentifierAt(lsp::Range range)
+{
+    lsp::Diagnostic diag;
+    diag.range = range;
+    diag.code = lsp::String("as-err-undefined-identifier");
+    diag.message = "Undefined identifier";
 
-        lsp::CodeActionContext context;
-        context.diagnostics.push_back(diag);
-        return context;
-    }
+    lsp::CodeActionContext context;
+    context.diagnostics.push_back(diag);
+    return context;
+}
 
-    /** @brief Titles of every "Did you mean" action, in the order they were offered. */
-    std::vector<std::string> SuggestionTitles(const std::optional<std::vector<lsp::CodeAction>> &actions)
+/** @brief Titles of every "Did you mean" action, in the order they were offered. */
+std::vector<std::string> SuggestionTitles(const std::optional<std::vector<lsp::CodeAction>>& actions)
+{
+    std::vector<std::string> titles;
+    if (!actions.has_value())
     {
-        std::vector<std::string> titles;
-        if (!actions.has_value())
-        {
-            return titles;
-        }
-        for (const auto &action : *actions)
-        {
-            if (action.title.rfind("Did you mean", 0) == 0)
-            {
-                titles.push_back(action.title);
-            }
-        }
         return titles;
     }
+    for (const auto& action : *actions)
+    {
+        if (action.title.rfind("Did you mean", 0) == 0)
+        {
+            titles.push_back(action.title);
+        }
+    }
+    return titles;
 }
+} // namespace
 
 TEST_CASE("CodeActionHandler - Suggests the local whose name was mistyped")
 {
-    std::string code =
-        "void main() {\n"
-        "    int counter = 0;\n"
-        "    countor = 1;\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    int counter = 0;\n"
+                       "    countor = 1;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range typo{ {2, 4}, {2, 11} };
+    const lsp::Range typo{{2, 4}, {2, 11}};
     auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
 
     const auto titles = SuggestionTitles(actions);
@@ -354,19 +345,18 @@ TEST_CASE("CodeActionHandler - The suggestion replaces exactly the identifier")
 {
     // The edit is built from the AST node, not from the diagnostic's range, so it stays right even
     // when the diagnostic covers more or less than the name.
-    std::string code =
-        "void main() {\n"
-        "    int counter = 0;\n"
-        "    countor = 1;\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    int counter = 0;\n"
+                       "    countor = 1;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range typo{ {2, 4}, {2, 11} };
+    const lsp::Range typo{{2, 4}, {2, 11}};
     auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
 
     REQUIRE(actions.has_value());
-    const lsp::CodeAction *suggestion = nullptr;
-    for (const auto &action : *actions)
+    const lsp::CodeAction* suggestion = nullptr;
+    for (const auto& action : *actions)
     {
         if (action.title == "Did you mean 'counter'?")
         {
@@ -378,7 +368,7 @@ TEST_CASE("CodeActionHandler - The suggestion replaces exactly the identifier")
     REQUIRE(suggestion->edit.has_value());
     REQUIRE(suggestion->edit->changes.has_value());
 
-    const auto &edits = suggestion->edit->changes->begin()->second;
+    const auto& edits = suggestion->edit->changes->begin()->second;
     REQUIRE(edits.size() == 1);
     CHECK(edits[0].newText == "counter");
     CHECK(edits[0].range.start.line == 2);
@@ -389,14 +379,13 @@ TEST_CASE("CodeActionHandler - The suggestion replaces exactly the identifier")
 TEST_CASE("CodeActionHandler - A case-only difference is suggested")
 {
     // The most common miss of all, and the reason the comparison is case-folded rather than exact.
-    std::string code =
-        "void main() {\n"
-        "    int myVariable = 0;\n"
-        "    myvariable = 1;\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    int myVariable = 0;\n"
+                       "    myvariable = 1;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range typo{ {2, 4}, {2, 14} };
+    const lsp::Range typo{{2, 4}, {2, 14}};
     auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
 
     const auto titles = SuggestionTitles(actions);
@@ -406,14 +395,13 @@ TEST_CASE("CodeActionHandler - A case-only difference is suggested")
 
 TEST_CASE("CodeActionHandler - A global function is suggested as readily as a local")
 {
-    std::string code =
-        "void CalculateDamage() { }\n"
-        "void main() {\n"
-        "    CalculateDamag();\n"
-        "}\n";
+    std::string code = "void CalculateDamage() { }\n"
+                       "void main() {\n"
+                       "    CalculateDamag();\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range typo{ {2, 4}, {2, 19} };
+    const lsp::Range typo{{2, 4}, {2, 19}};
     auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
 
     const auto titles = SuggestionTitles(actions);
@@ -425,14 +413,13 @@ TEST_CASE("CodeActionHandler - Nothing is suggested when nothing is close")
 {
     // The case that matters most. A name that resembles nothing gets silence, not the nearest
     // string in the workspace.
-    std::string code =
-        "void main() {\n"
-        "    int counter = 0;\n"
-        "    zzzzqqqqwwww = 1;\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    int counter = 0;\n"
+                       "    zzzzqqqqwwww = 1;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range typo{ {2, 4}, {2, 16} };
+    const lsp::Range typo{{2, 4}, {2, 16}};
     auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
 
     CHECK(SuggestionTitles(actions).empty());
@@ -442,14 +429,13 @@ TEST_CASE("CodeActionHandler - A short name is not matched loosely")
 {
     // `ab` and `xy` are two edits apart, which is the whole of a two-letter name. At that length a
     // difference is not a typo, it is a different name.
-    std::string code =
-        "void main() {\n"
-        "    int ab = 0;\n"
-        "    xy = 1;\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    int ab = 0;\n"
+                       "    xy = 1;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range typo{ {2, 4}, {2, 6} };
+    const lsp::Range typo{{2, 4}, {2, 6}};
     auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
 
     CHECK(SuggestionTitles(actions).empty());
@@ -459,14 +445,13 @@ TEST_CASE("CodeActionHandler - No suggestion without an undefined-identifier dia
 {
     // The quick fix is bound to the diagnostic, not to the cursor. Without one, the same position
     // offers nothing - otherwise every identifier in the file would sprout a menu of near-misses.
-    std::string code =
-        "void main() {\n"
-        "    int counter = 0;\n"
-        "    countor = 1;\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    int counter = 0;\n"
+                       "    countor = 1;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range typo{ {2, 4}, {2, 11} };
+    const lsp::Range typo{{2, 4}, {2, 11}};
     auto actions = env.CodeActions(typo, lsp::CodeActionContext{});
 
     CHECK(SuggestionTitles(actions).empty());
@@ -476,19 +461,18 @@ TEST_CASE("CodeActionHandler - A tie offers no preferred fix")
 {
     // Two candidates one edit away. Marking a preferred action is what lets an editor apply it
     // without asking, so a tie must not have one.
-    std::string code =
-        "void main() {\n"
-        "    int cat = 0;\n"
-        "    int cut = 0;\n"
-        "    cot = 1;\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    int cat = 0;\n"
+                       "    int cut = 0;\n"
+                       "    cot = 1;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range typo{ {3, 4}, {3, 7} };
+    const lsp::Range typo{{3, 4}, {3, 7}};
     auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
 
     REQUIRE(actions.has_value());
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title.rfind("Did you mean", 0) == 0)
         {
@@ -501,18 +485,17 @@ TEST_CASE("CodeActionHandler - At most three suggestions are offered")
 {
     // Five names within the threshold, so the cap is what limits the list rather than the
     // threshold doing it incidentally.
-    std::string code =
-        "void main() {\n"
-        "    int value = 0;\n"
-        "    int valus = 0;\n"
-        "    int valui = 0;\n"
-        "    int valuz = 0;\n"
-        "    int valve = 0;\n"
-        "    valuu = 1;\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    int value = 0;\n"
+                       "    int valus = 0;\n"
+                       "    int valui = 0;\n"
+                       "    int valuz = 0;\n"
+                       "    int valve = 0;\n"
+                       "    valuu = 1;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range typo{ {6, 4}, {6, 9} };
+    const lsp::Range typo{{6, 4}, {6, 9}};
     auto actions = env.CodeActions(typo, UndefinedIdentifierAt(typo));
 
     CHECK(SuggestionTitles(actions).size() == 3);
@@ -528,51 +511,50 @@ TEST_CASE("CodeActionHandler - At most three suggestions are offered")
 
 namespace
 {
-    /** @brief A CodeActionContext carrying one diagnostic of the given code over a range. */
-    lsp::CodeActionContext DiagnosticAt(lsp::Range range, const std::string &code)
-    {
-        lsp::Diagnostic diag;
-        diag.range = range;
-        diag.code = lsp::String(code);
-        diag.message = code;
+/** @brief A CodeActionContext carrying one diagnostic of the given code over a range. */
+lsp::CodeActionContext DiagnosticAt(lsp::Range range, const std::string& code)
+{
+    lsp::Diagnostic diag;
+    diag.range = range;
+    diag.code = lsp::String(code);
+    diag.message = code;
 
-        lsp::CodeActionContext context;
-        context.diagnostics.push_back(diag);
-        return context;
-    }
+    lsp::CodeActionContext context;
+    context.diagnostics.push_back(diag);
+    return context;
+}
 
-    /** @brief The first action whose title starts with the given prefix, or nullptr. */
-    const lsp::CodeAction *ActionTitled(const std::optional<std::vector<lsp::CodeAction>> &actions,
-                                        const std::string &prefix)
+/** @brief The first action whose title starts with the given prefix, or nullptr. */
+const lsp::CodeAction* ActionTitled(const std::optional<std::vector<lsp::CodeAction>>& actions,
+                                    const std::string& prefix)
+{
+    if (!actions.has_value())
     {
-        if (!actions.has_value())
-        {
-            return nullptr;
-        }
-        for (const auto &action : *actions)
-        {
-            if (action.title.rfind(prefix, 0) == 0)
-            {
-                return &action;
-            }
-        }
         return nullptr;
     }
+    for (const auto& action : *actions)
+    {
+        if (action.title.rfind(prefix, 0) == 0)
+        {
+            return &action;
+        }
+    }
+    return nullptr;
 }
+} // namespace
 
 TEST_CASE("CodeActionHandler - Suggests the type whose name was mistyped")
 {
-    std::string code =
-        "class PlayerController { }\n"
-        "void main() {\n"
-        "    PlayerControler pc;\n"
-        "}\n";
+    std::string code = "class PlayerController { }\n"
+                       "void main() {\n"
+                       "    PlayerControler pc;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range typo{ {2, 4}, {2, 19} };
+    const lsp::Range typo{{2, 4}, {2, 19}};
     auto actions = env.CodeActions(typo, DiagnosticAt(typo, "as-err-unresolved-type"));
 
-    const auto *suggestion = ActionTitled(actions, "Did you mean");
+    const auto* suggestion = ActionTitled(actions, "Did you mean");
     REQUIRE(suggestion != nullptr);
     CHECK(suggestion->title == "Did you mean 'PlayerController'?");
 }
@@ -582,14 +564,13 @@ TEST_CASE("CodeActionHandler - A function name is not offered where a type was w
     // The candidate set is what separates the two cases. `Calculat` is one edit from the function
     // `Calculate`, but a function cannot stand where a type name goes, so suggesting it would be
     // offering something that cannot compile.
-    std::string code =
-        "void Calculate() { }\n"
-        "void main() {\n"
-        "    Calculat value;\n"
-        "}\n";
+    std::string code = "void Calculate() { }\n"
+                       "void main() {\n"
+                       "    Calculat value;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range typo{ {2, 4}, {2, 12} };
+    const lsp::Range typo{{2, 4}, {2, 12}};
     auto actions = env.CodeActions(typo, DiagnosticAt(typo, "as-err-unresolved-type"));
 
     CHECK(ActionTitled(actions, "Did you mean") == nullptr);
@@ -598,17 +579,16 @@ TEST_CASE("CodeActionHandler - A function name is not offered where a type was w
 TEST_CASE("CodeActionHandler - A function name IS offered for a plain undefined identifier")
 {
     // The same workspace, the other diagnostic. Here a function is exactly what the user meant.
-    std::string code =
-        "void Calculate() { }\n"
-        "void main() {\n"
-        "    Calculat();\n"
-        "}\n";
+    std::string code = "void Calculate() { }\n"
+                       "void main() {\n"
+                       "    Calculat();\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range typo{ {2, 4}, {2, 12} };
+    const lsp::Range typo{{2, 4}, {2, 12}};
     auto actions = env.CodeActions(typo, DiagnosticAt(typo, "as-err-undefined-identifier"));
 
-    const auto *suggestion = ActionTitled(actions, "Did you mean");
+    const auto* suggestion = ActionTitled(actions, "Did you mean");
     REQUIRE(suggestion != nullptr);
     CHECK(suggestion->title == "Did you mean 'Calculate'?");
 }
@@ -617,21 +597,20 @@ TEST_CASE("CodeActionHandler - Removes the '@' from a handle on a primitive")
 {
     // There is no handle to a primitive in AngelScript, so there is exactly one thing the user can
     // have meant and the fix is to delete one character.
-    std::string code =
-        "void main() {\n"
-        "    int@ h = null;\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    int@ h = null;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 4}, {1, 8} };
+    const lsp::Range at{{1, 4}, {1, 8}};
     auto actions = env.CodeActions(at, DiagnosticAt(at, "as-err-handle-on-primitive"));
 
-    const auto *fix = ActionTitled(actions, "Remove '@'");
+    const auto* fix = ActionTitled(actions, "Remove '@'");
     REQUIRE(fix != nullptr);
     REQUIRE(fix->edit.has_value());
     REQUIRE(fix->edit->changes.has_value());
 
-    const auto &edits = fix->edit->changes->begin()->second;
+    const auto& edits = fix->edit->changes->begin()->second;
     REQUIRE(edits.size() == 1);
 
     // Exactly the '@', nothing around it.
@@ -643,19 +622,18 @@ TEST_CASE("CodeActionHandler - Removes the '@' from a handle on a primitive")
 
 TEST_CASE("CodeActionHandler - Finds the '@' when it is spaced away from the type")
 {
-    std::string code =
-        "void main() {\n"
-        "    int @h = null;\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    int @h = null;\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 4}, {1, 9} };
+    const lsp::Range at{{1, 4}, {1, 9}};
     auto actions = env.CodeActions(at, DiagnosticAt(at, "as-err-handle-on-primitive"));
 
-    const auto *fix = ActionTitled(actions, "Remove '@'");
+    const auto* fix = ActionTitled(actions, "Remove '@'");
     REQUIRE(fix != nullptr);
 
-    const auto &edits = fix->edit->changes->begin()->second;
+    const auto& edits = fix->edit->changes->begin()->second;
     REQUIRE(edits.size() == 1);
     CHECK(edits[0].range.start.character == 8);
     CHECK(edits[0].range.end.character == 9);
@@ -665,23 +643,22 @@ TEST_CASE("CodeActionHandler - The interface fix names the diagnostic it fixes")
 {
     // It was already offered when the cursor sat in the class. What it never did was say which
     // problem it solves, so an editor asking for the fixes for that problem found none.
-    std::string code =
-        "interface IThinker {\n"
-        "    void Think();\n"
-        "}\n"
-        "class Robot : IThinker {\n"
-        "}\n";
+    std::string code = "interface IThinker {\n"
+                       "    void Think();\n"
+                       "}\n"
+                       "class Robot : IThinker {\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range atClass{ {3, 0}, {3, 22} };
+    const lsp::Range atClass{{3, 0}, {3, 22}};
     auto actions = env.CodeActions(atClass, DiagnosticAt(atClass, "as-err-interface-impl-missing"));
 
-    const auto *fix = ActionTitled(actions, "Implement missing interface methods");
+    const auto* fix = ActionTitled(actions, "Implement missing interface methods");
     REQUIRE(fix != nullptr);
     REQUIRE(fix->diagnostics.has_value());
     REQUIRE(fix->diagnostics->size() == 1);
 
-    const auto &named = (*fix->diagnostics)[0];
+    const auto& named = (*fix->diagnostics)[0];
     REQUIRE(named.code.has_value());
     CHECK(std::get<lsp::String>(named.code.value()) == "as-err-interface-impl-missing");
 }
@@ -696,78 +673,76 @@ TEST_CASE("CodeActionHandler - The interface fix names the diagnostic it fixes")
 
 namespace
 {
-    /**
-     * @brief A workspace of several files, so an include can be pointed at one of the others.
-     *
-     * TestEnvironment above indexes exactly one document, which is enough for every rule that reads
-     * a single file. An include suggestion is about the relationship between two.
-     */
-    struct MultiFileEnvironment
+/**
+ * @brief A workspace of several files, so an include can be pointed at one of the others.
+ *
+ * TestEnvironment above indexes exactly one document, which is enough for every rule that reads
+ * a single file. An include suggestion is about the relationship between two.
+ */
+struct MultiFileEnvironment
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    std::string uri;
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    MultiFileEnvironment(const std::string& mainUri, const std::string& mainCode) : uri(mainUri), sourceCode(mainCode)
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        std::string uri;
-        std::string sourceCode;
-        TSTree *tree = nullptr;
-
-        MultiFileEnvironment(const std::string &mainUri, const std::string &mainCode)
-            : uri(mainUri), sourceCode(mainCode)
+        tree = parser.Parse(sourceCode);
+        symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
+        auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
+        if (rootScope)
         {
-            tree = parser.Parse(sourceCode);
-            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(uri, std::move(rootScope));
-            }
+            scopeIndex.SetScopeTree(uri, std::move(rootScope));
         }
+    }
 
-        ~MultiFileEnvironment()
+    ~MultiFileEnvironment()
+    {
+        if (tree)
         {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
+            ts_tree_delete(tree);
         }
+    }
 
-        /** @brief Indexes another file, the way the server's include-closure walk would. */
-        void AddFile(const std::string &otherUri, const std::string &code)
-        {
-            symbolCollector.CollectSymbols(otherUri, code, parser, symbolTable);
-        }
+    /** @brief Indexes another file, the way the server's include-closure walk would. */
+    void AddFile(const std::string& otherUri, const std::string& code)
+    {
+        symbolCollector.CollectSymbols(otherUri, code, parser, symbolTable);
+    }
 
-        std::optional<std::vector<lsp::CodeAction>> CodeActions(lsp::Range range, lsp::CodeActionContext context)
-        {
-            CodeActionRequest req{ uri, sourceCode, tree, range, context, symbolTable, scopeIndex };
-            return GetCodeActions(req);
-        }
-    };
-}
+    std::optional<std::vector<lsp::CodeAction>> CodeActions(lsp::Range range, lsp::CodeActionContext context)
+    {
+        CodeActionRequest req{uri, sourceCode, tree, range, context, symbolTable, scopeIndex};
+        return GetCodeActions(req);
+    }
+};
+} // namespace
 
 TEST_CASE("CodeActionHandler - Points a broken #include at the file that moved")
 {
     // The name is unchanged and only the directory moved, which is the case that actually happens
     // and the one that lands at distance zero.
-    const std::string mainCode =
-        "#include \"helper.as\"\n"
-        "void main() { }\n";
+    const std::string mainCode = "#include \"helper.as\"\n"
+                                 "void main() { }\n";
 
     MultiFileEnvironment env("file:///project/main.as", mainCode);
     env.AddFile("file:///project/lib/helper.as", "void Helped() { }\n");
 
-    const lsp::Range includeLine{ {0, 0}, {0, 20} };
+    const lsp::Range includeLine{{0, 0}, {0, 20}};
     auto actions = env.CodeActions(includeLine, DiagnosticAt(includeLine, "as-warn-include-not-found"));
 
-    const auto *fix = ActionTitled(actions, "Did you mean");
+    const auto* fix = ActionTitled(actions, "Did you mean");
     REQUIRE(fix != nullptr);
     CHECK(fix->title == "Did you mean 'lib/helper.as'?");
 
     REQUIRE(fix->edit.has_value());
     REQUIRE(fix->edit->changes.has_value());
-    const auto &edits = fix->edit->changes->begin()->second;
+    const auto& edits = fix->edit->changes->begin()->second;
     REQUIRE(edits.size() == 1);
     CHECK(edits[0].newText == "lib/helper.as");
 
@@ -779,31 +754,29 @@ TEST_CASE("CodeActionHandler - Points a broken #include at the file that moved")
 
 TEST_CASE("CodeActionHandler - Points a broken #include at a near-miss filename")
 {
-    const std::string mainCode =
-        "#include \"helpers.as\"\n"
-        "void main() { }\n";
+    const std::string mainCode = "#include \"helpers.as\"\n"
+                                 "void main() { }\n";
 
     MultiFileEnvironment env("file:///project/main.as", mainCode);
     env.AddFile("file:///project/helper.as", "void Helped() { }\n");
 
-    const lsp::Range includeLine{ {0, 0}, {0, 21} };
+    const lsp::Range includeLine{{0, 0}, {0, 21}};
     auto actions = env.CodeActions(includeLine, DiagnosticAt(includeLine, "as-warn-include-not-found"));
 
-    const auto *fix = ActionTitled(actions, "Did you mean");
+    const auto* fix = ActionTitled(actions, "Did you mean");
     REQUIRE(fix != nullptr);
     CHECK(fix->title == "Did you mean 'helper.as'?");
 }
 
 TEST_CASE("CodeActionHandler - A broken #include resembling nothing indexed gets no suggestion")
 {
-    const std::string mainCode =
-        "#include \"zzzzqqqqwwww.as\"\n"
-        "void main() { }\n";
+    const std::string mainCode = "#include \"zzzzqqqqwwww.as\"\n"
+                                 "void main() { }\n";
 
     MultiFileEnvironment env("file:///project/main.as", mainCode);
     env.AddFile("file:///project/helper.as", "void Helped() { }\n");
 
-    const lsp::Range includeLine{ {0, 0}, {0, 26} };
+    const lsp::Range includeLine{{0, 0}, {0, 26}};
     auto actions = env.CodeActions(includeLine, DiagnosticAt(includeLine, "as-warn-include-not-found"));
 
     CHECK(ActionTitled(actions, "Did you mean") == nullptr);
@@ -812,14 +785,13 @@ TEST_CASE("CodeActionHandler - A broken #include resembling nothing indexed gets
 TEST_CASE("CodeActionHandler - No include suggestion without the include diagnostic")
 {
     // Bound to the diagnostic, not to the cursor sitting on an #include line.
-    const std::string mainCode =
-        "#include \"helper.as\"\n"
-        "void main() { }\n";
+    const std::string mainCode = "#include \"helper.as\"\n"
+                                 "void main() { }\n";
 
     MultiFileEnvironment env("file:///project/main.as", mainCode);
     env.AddFile("file:///project/lib/helper.as", "void Helped() { }\n");
 
-    const lsp::Range includeLine{ {0, 0}, {0, 20} };
+    const lsp::Range includeLine{{0, 0}, {0, 20}};
     auto actions = env.CodeActions(includeLine, lsp::CodeActionContext{});
 
     CHECK(ActionTitled(actions, "Did you mean") == nullptr);
@@ -837,30 +809,29 @@ TEST_CASE("CodeActionHandler - No include suggestion without the include diagnos
 
 namespace
 {
-    /** @brief A context carrying the portability hint over a range. */
-    lsp::CodeActionContext AccessorHintAt(lsp::Range range)
-    {
-        return DiagnosticAt(range, "as-hint-accessor-portability");
-    }
+/** @brief A context carrying the portability hint over a range. */
+lsp::CodeActionContext AccessorHintAt(lsp::Range range)
+{
+    return DiagnosticAt(range, "as-hint-accessor-portability");
 }
+} // namespace
 
 TEST_CASE("CodeActionHandler - Adds the 'property' keyword to a bare accessor")
 {
-    std::string code =
-        "class C {\n"
-        "    int get_X() { return 1; }\n"
-        "}\n";
+    std::string code = "class C {\n"
+                       "    int get_X() { return 1; }\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 4}, {1, 14} };
+    const lsp::Range at{{1, 4}, {1, 14}};
     auto actions = env.CodeActions(at, AccessorHintAt(at));
 
-    const auto *fix = ActionTitled(actions, "Add the 'property' keyword");
+    const auto* fix = ActionTitled(actions, "Add the 'property' keyword");
     REQUIRE(fix != nullptr);
     REQUIRE(fix->edit.has_value());
     REQUIRE(fix->edit->changes.has_value());
 
-    const auto &edits = fix->edit->changes->begin()->second;
+    const auto& edits = fix->edit->changes->begin()->second;
     REQUIRE(edits.size() == 1);
 
     // An insertion, not a replacement: nothing existing is touched.
@@ -878,18 +849,17 @@ TEST_CASE("CodeActionHandler - The accessor fix produces text the compiler accep
 {
     // Applying the edit by hand and reading the result back, so the assertion is about the code the
     // user ends up with rather than about an offset.
-    std::string code =
-        "class C {\n"
-        "    int get_X() { return 1; }\n"
-        "}\n";
+    std::string code = "class C {\n"
+                       "    int get_X() { return 1; }\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 4}, {1, 14} };
+    const lsp::Range at{{1, 4}, {1, 14}};
     auto actions = env.CodeActions(at, AccessorHintAt(at));
 
-    const auto *fix = ActionTitled(actions, "Add the 'property' keyword");
+    const auto* fix = ActionTitled(actions, "Add the 'property' keyword");
     REQUIRE(fix != nullptr);
-    const auto &edit = fix->edit->changes->begin()->second[0];
+    const auto& edit = fix->edit->changes->begin()->second[0];
 
     // Rebuild the edited line.
     std::string line = "    int get_X() { return 1; }";
@@ -904,13 +874,12 @@ TEST_CASE("CodeActionHandler - An interface accessor is offered no keyword to ad
     // "Expected ';'" - so a fix here would hand the user code that does not compile. The mode-3
     // rejection an interface like this causes lands on the IMPLEMENTING class's accessor, and that
     // is where both the hint and the fix belong.
-    std::string code =
-        "interface I {\n"
-        "    int get_X();\n"
-        "}\n";
+    std::string code = "interface I {\n"
+                       "    int get_X();\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 4}, {1, 14} };
+    const lsp::Range at{{1, 4}, {1, 14}};
     auto actions = env.CodeActions(at, AccessorHintAt(at));
 
     CHECK(ActionTitled(actions, "Add the 'property' keyword") == nullptr);
@@ -920,18 +889,16 @@ TEST_CASE("CodeActionHandler - No accessor fix without the hint")
 {
     // Bound to the diagnostic. The hint is opt-in, and with it switched off no accessor in the file
     // should sprout an offer to rewrite it.
-    std::string code =
-        "class C {\n"
-        "    int get_X() { return 1; }\n"
-        "}\n";
+    std::string code = "class C {\n"
+                       "    int get_X() { return 1; }\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 4}, {1, 14} };
+    const lsp::Range at{{1, 4}, {1, 14}};
     auto actions = env.CodeActions(at, lsp::CodeActionContext{});
 
     CHECK(ActionTitled(actions, "Add the 'property' keyword") == nullptr);
 }
-
 
 // =====================================================================================
 // Generating the funcdef a function handle needs.
@@ -942,21 +909,20 @@ TEST_CASE("CodeActionHandler - No accessor fix without the hint")
 
 TEST_CASE("CodeActionHandler - Declares a funcdef from the function's own signature")
 {
-    std::string code =
-        "void Foo(int a) { }\n"
-        "void main() { Foo@ h = @Foo; }\n";
+    std::string code = "void Foo(int a) { }\n"
+                       "void main() { Foo@ h = @Foo; }\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 14}, {1, 17} };
+    const lsp::Range at{{1, 14}, {1, 17}};
     auto actions = env.CodeActions(at, DiagnosticAt(at, "as-hint-funcdef-missing"));
 
-    const auto *fix = ActionTitled(actions, "Declare funcdef");
+    const auto* fix = ActionTitled(actions, "Declare funcdef");
     REQUIRE(fix != nullptr);
     CHECK(fix->title == "Declare funcdef 'FooFunc' for 'Foo'");
 
     REQUIRE(fix->edit.has_value());
     REQUIRE(fix->edit->changes.has_value());
-    const auto &edits = fix->edit->changes->begin()->second;
+    const auto& edits = fix->edit->changes->begin()->second;
     REQUIRE(edits.size() == 2);
 
     // The declaration, at the top of the file. Parameters exactly as the function wrote them -
@@ -974,18 +940,17 @@ TEST_CASE("CodeActionHandler - Declares a funcdef from the function's own signat
 
 TEST_CASE("CodeActionHandler - The generated funcdef carries the return type and every parameter")
 {
-    std::string code =
-        "int Compute(float f, const string &in s) { return 0; }\n"
-        "void main() { Compute@ h = @Compute; }\n";
+    std::string code = "int Compute(float f, const string &in s) { return 0; }\n"
+                       "void main() { Compute@ h = @Compute; }\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 14}, {1, 21} };
+    const lsp::Range at{{1, 14}, {1, 21}};
     auto actions = env.CodeActions(at, DiagnosticAt(at, "as-hint-funcdef-missing"));
 
-    const auto *fix = ActionTitled(actions, "Declare funcdef");
+    const auto* fix = ActionTitled(actions, "Declare funcdef");
     REQUIRE(fix != nullptr);
 
-    const auto &edits = fix->edit->changes->begin()->second;
+    const auto& edits = fix->edit->changes->begin()->second;
     REQUIRE(edits.size() == 2);
 
     // The parameters as written, names and all. Dropping the `&in` was the first version's bug and
@@ -996,18 +961,17 @@ TEST_CASE("CodeActionHandler - The generated funcdef carries the return type and
 
 TEST_CASE("CodeActionHandler - A no-parameter function yields an empty parameter list")
 {
-    std::string code =
-        "void Nothing() { }\n"
-        "void main() { Nothing@ h = @Nothing; }\n";
+    std::string code = "void Nothing() { }\n"
+                       "void main() { Nothing@ h = @Nothing; }\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 14}, {1, 21} };
+    const lsp::Range at{{1, 14}, {1, 21}};
     auto actions = env.CodeActions(at, DiagnosticAt(at, "as-hint-funcdef-missing"));
 
-    const auto *fix = ActionTitled(actions, "Declare funcdef");
+    const auto* fix = ActionTitled(actions, "Declare funcdef");
     REQUIRE(fix != nullptr);
 
-    const auto &edits = fix->edit->changes->begin()->second;
+    const auto& edits = fix->edit->changes->begin()->second;
     CHECK(edits[0].newText == "funcdef void NothingFunc();\n");
 }
 
@@ -1015,13 +979,12 @@ TEST_CASE("CodeActionHandler - An overloaded function gets no generated funcdef"
 {
     // Two overloads have no single signature to derive one from, and offering one of them would be
     // a guess dressed as an answer.
-    std::string code =
-        "void Foo(int a) { }\n"
-        "void Foo(float f) { }\n"
-        "void main() { Foo@ h = @Foo; }\n";
+    std::string code = "void Foo(int a) { }\n"
+                       "void Foo(float f) { }\n"
+                       "void main() { Foo@ h = @Foo; }\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {2, 14}, {2, 17} };
+    const lsp::Range at{{2, 14}, {2, 17}};
     auto actions = env.CodeActions(at, DiagnosticAt(at, "as-hint-funcdef-missing"));
 
     CHECK(ActionTitled(actions, "Declare funcdef") == nullptr);
@@ -1029,12 +992,11 @@ TEST_CASE("CodeActionHandler - An overloaded function gets no generated funcdef"
 
 TEST_CASE("CodeActionHandler - No funcdef is generated without the hint")
 {
-    std::string code =
-        "void Foo(int a) { }\n"
-        "void main() { Foo@ h = @Foo; }\n";
+    std::string code = "void Foo(int a) { }\n"
+                       "void main() { Foo@ h = @Foo; }\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 14}, {1, 17} };
+    const lsp::Range at{{1, 14}, {1, 17}};
     auto actions = env.CodeActions(at, lsp::CodeActionContext{});
 
     CHECK(ActionTitled(actions, "Declare funcdef") == nullptr);
@@ -1045,20 +1007,25 @@ TEST_CASE("CodeActionHandler - Repeated conversion quick fix initializes local v
     const std::string propName = test::GenerateRandomSymbolName("prop");
     const std::string val1 = test::GenerateRandomSymbolName("valA");
     const std::string val2 = test::GenerateRandomSymbolName("valB");
-    const std::string code =
-        "void main() {\n"
-        "    if (ent." + propName + " == \"" + val1 + "\") {\n"
-        "    } else if (ent." + propName + " == \"" + val2 + "\") {\n"
-        "    }\n"
-        "}\n";
+    const std::string code = "void main() {\n"
+                             "    if (ent." +
+                             propName + " == \"" + val1 +
+                             "\") {\n"
+                             "    } else if (ent." +
+                             propName + " == \"" + val2 +
+                             "\") {\n"
+                             "    }\n"
+                             "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 8}, {1, 8 + static_cast<uint32_t>(propName.size() + 4)} };
+    const lsp::Range at{{1, 8}, {1, 8 + static_cast<uint32_t>(propName.size() + 4)}};
 
     lsp::Diagnostic diag;
     diag.range = at;
     diag.code = lsp::String("as-hint-repeated-conversion");
-    diag.message = "Expression 'ent." + propName + "' of type 'string_t' is repeatedly converted to 'string' in conditional ladder; consider caching it in a local variable.";
+    diag.message = "Expression 'ent." + propName +
+                   "' of type 'string_t' is repeatedly converted to 'string' in conditional ladder; consider caching "
+                   "it in a local variable.";
 
     lsp::CodeActionContext ctx;
     ctx.diagnostics.push_back(diag);
@@ -1085,20 +1052,24 @@ TEST_CASE("CodeActionHandler - Repeated conversion with keyword expression falls
 {
     const std::string val1 = test::GenerateRandomSymbolName("valA");
     const std::string val2 = test::GenerateRandomSymbolName("valB");
-    const std::string code =
-        "void main() {\n"
-        "    if (this == \"" + val1 + "\") {\n"
-        "    } else if (this == \"" + val2 + "\") {\n"
-        "    }\n"
-        "}\n";
+    const std::string code = "void main() {\n"
+                             "    if (this == \"" +
+                             val1 +
+                             "\") {\n"
+                             "    } else if (this == \"" +
+                             val2 +
+                             "\") {\n"
+                             "    }\n"
+                             "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 8}, {1, 12} };
+    const lsp::Range at{{1, 8}, {1, 12}};
 
     lsp::Diagnostic diag;
     diag.range = at;
     diag.code = lsp::String("as-hint-repeated-conversion");
-    diag.message = "Expression 'this' of type 'MyClass' is repeatedly converted to 'string' in conditional ladder; consider caching it in a local variable.";
+    diag.message = "Expression 'this' of type 'MyClass' is repeatedly converted to 'string' in conditional ladder; "
+                   "consider caching it in a local variable.";
 
     lsp::CodeActionContext ctx;
     ctx.diagnostics.push_back(diag);
@@ -1119,13 +1090,15 @@ TEST_CASE("CodeActionHandler - Diagnostic comment suppression quick fixes")
 {
     const std::string varName = test::GenerateRandomSymbolName("unusedVar");
     const std::string fnName = test::GenerateRandomSymbolName("func");
-    std::string code =
-        "void " + fnName + "() {\n"
-        "    int " + varName + ";\n"
-        "}\n";
+    std::string code = "void " + fnName +
+                       "() {\n"
+                       "    int " +
+                       varName +
+                       ";\n"
+                       "}\n";
 
     TestEnvironment env(code);
-    const lsp::Range at{ {1, 4}, {1, 4 + static_cast<uint32_t>(varName.size()) + 4} };
+    const lsp::Range at{{1, 4}, {1, 4 + static_cast<uint32_t>(varName.size()) + 4}};
 
     lsp::Diagnostic diag;
     diag.range = at;
@@ -1153,5 +1126,13 @@ TEST_CASE("CodeActionHandler - Diagnostic comment suppression quick fixes")
     REQUIRE(rangeEdits.size() == 2);
     CHECK(rangeEdits[0].newText.find("// disable W103") != std::string::npos);
     CHECK(rangeEdits[1].newText.find("// enable W103") != std::string::npos);
-}
 
+    // Should offer whole-file suppression with // disable W103 at line 0
+    const auto* fileFix = ActionTitled(actions, "Disable W103 for entire file");
+    REQUIRE(fileFix != nullptr);
+    const auto& fileEdits = fileFix->edit->changes->begin()->second;
+    REQUIRE(fileEdits.size() == 1);
+    CHECK(fileEdits[0].range.start.line == 0);
+    CHECK(fileEdits[0].range.start.character == 0);
+    CHECK(fileEdits[0].newText == "// disable W103\n");
+}

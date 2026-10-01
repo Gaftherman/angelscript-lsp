@@ -199,8 +199,7 @@ void CheckElementValue(TSNode element, const std::string& wanted, DiagnosticCont
         return;
     }
 
-    const std::string actual = ResolveExpressionType(
-        element, ExpressionTypeContext(elements.scopeRoot, ctx));
+    const std::string actual = ResolveExpressionType(element, ExpressionTypeContext(elements.scopeRoot, ctx));
     if (actual.empty())
     {
         return;
@@ -360,8 +359,7 @@ ContainerInfo InspectContainer(const std::string& type, const TemplateSpelling& 
     }
 
     const std::string_view configuredArray = ctx.request.GetEffectiveArrayTypeName();
-    if ((!configuredArray.empty() && spelling.name == configuredArray) ||
-        arrayLikeTemplates.contains(spelling.name))
+    if ((!configuredArray.empty() && spelling.name == configuredArray) || arrayLikeTemplates.contains(spelling.name))
     {
         std::string elem = spelling.arguments.empty() ? "auto" : spelling.arguments[0];
         return {true, 1, std::move(elem)};
@@ -943,7 +941,7 @@ void ValidateList(TSNode listNode, const std::string& targetType, const ListVali
         return;
     }
 
-    if (IsCorePrimitive(type) || type == "?")
+    if (IsCorePrimitive(type) || type == "?" || type == "dictionaryValue")
     {
         EmitAtNode(listNode, valCtx.ctx, "as-err-initializer-list-not-supported", type);
         return;

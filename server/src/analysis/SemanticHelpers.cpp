@@ -3448,7 +3448,7 @@ static std::string ResolveCompositeExpr(std::string_view nodeType, TSNode exprNo
 }
 
 static std::string ResolveExpressionTypeUncached(std::string_view nodeType, TSNode exprNode,
-                                                const ExpressionTypeContext& ctx, int depth)
+                                                 const ExpressionTypeContext& ctx, int depth)
 {
     if (auto primary = ResolvePrimaryExpr(nodeType, exprNode, ctx, depth))
     {

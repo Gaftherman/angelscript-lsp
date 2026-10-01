@@ -161,10 +161,8 @@ void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& c
         return;
     }
 
-    const std::string leftType =
-        ResolveExpressionType(left, ExpressionTypeContext(scope, ctx));
-    const std::string rightType =
-        ResolveExpressionType(right, ExpressionTypeContext(scope, ctx));
+    const std::string leftType = ResolveExpressionType(left, ExpressionTypeContext(scope, ctx));
+    const std::string rightType = ResolveExpressionType(right, ExpressionTypeContext(scope, ctx));
 
     const ComparisonOperandsState operandsState{
         .isLeftNull = IsNullOperand(left, leftType),

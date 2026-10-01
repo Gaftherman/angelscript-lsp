@@ -23,22 +23,21 @@ using namespace angel_lsp::test;
 
 namespace
 {
-    std::string Repeat(const std::string &unit, size_t times)
-    {
-        std::string out;
-        out.reserve(unit.size() * times);
-        for (size_t i = 0; i < times; ++i)
-            out += unit;
-        return out;
-    }
+std::string Repeat(const std::string& unit, size_t times)
+{
+    std::string out;
+    out.reserve(unit.size() * times);
+    for (size_t i = 0; i < times; ++i)
+        out += unit;
+    return out;
 }
+} // namespace
 
 TEST_CASE("Deep nesting - Thousands of nested parentheses do not overflow the stack")
 {
     // Depth well past k_maxAstDepth (512), in a document of only a few kilobytes.
     const size_t depth = 4000;
-    const std::string script =
-        "void Main() {\n    int x = " + Repeat("(", depth) + "1" + Repeat(")", depth) + ";\n}\n";
+    const std::string script = "void Main() {\n    int x = " + Repeat("(", depth) + "1" + Repeat(")", depth) + ";\n}\n";
 
     auto doc = CreateTestDocument("file:///deep_parens.as", script);
     REQUIRE(static_cast<bool>(doc));
@@ -51,8 +50,7 @@ TEST_CASE("Deep nesting - Thousands of nested parentheses do not overflow the st
 TEST_CASE("Deep nesting - Deeply nested blocks do not overflow the stack")
 {
     const size_t depth = 3000;
-    const std::string script =
-        "void Main() {\n" + Repeat("{\n", depth) + "int y = 1;\n" + Repeat("}\n", depth) + "}\n";
+    const std::string script = "void Main() {\n" + Repeat("{\n", depth) + "int y = 1;\n" + Repeat("}\n", depth) + "}\n";
 
     auto doc = CreateTestDocument("file:///deep_blocks.as", script);
     REQUIRE(static_cast<bool>(doc));
@@ -65,8 +63,7 @@ TEST_CASE("Deep nesting - A long binary expression chain does not overflow the s
 {
     // Left-associative chaining nests the tree once per operator, so this is depth, not width.
     const size_t terms = 4000;
-    const std::string script =
-        "void Main() {\n    int z = 1" + Repeat(" + 1", terms) + ";\n}\n";
+    const std::string script = "void Main() {\n    int z = 1" + Repeat(" + 1", terms) + ";\n}\n";
 
     auto doc = CreateTestDocument("file:///deep_binary.as", script);
     REQUIRE(static_cast<bool>(doc));

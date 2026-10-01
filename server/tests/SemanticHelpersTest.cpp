@@ -26,12 +26,11 @@ TEST_CASE("SemanticHelpers - NamesAFunctionNotAType needs both halves")
     SymbolCollector collector(nullptr);
     SymbolTable table;
 
-    const std::string code =
-        "void Foo(int a) {}\n"
-        "class Bar {}\n"
-        "funcdef void Baz(int);\n"
-        "void Baz(int a) {}\n"
-        "class Container { void Method() {} }\n";
+    const std::string code = "void Foo(int a) {}\n"
+                             "class Bar {}\n"
+                             "funcdef void Baz(int);\n"
+                             "void Baz(int a) {}\n"
+                             "class Container { void Method() {} }\n";
 
     collector.CollectSymbols("file:///t.as", code, parser, table);
 

@@ -1,9 +1,9 @@
-#include <doctest/doctest.h>
-#include "helpers/TestUtils.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+#include <doctest/doctest.h>
 #include <random>
 
 using namespace angel_lsp::analysis;
@@ -11,43 +11,41 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    std::vector<Symbol> CollectFunctionCandidates(const std::string &code, const std::string &funcName, SymbolTable &table)
-    {
-        AngelScriptParser parser;
-        SymbolCollector collector(nullptr);
-        const std::string fileUri = "file:///overload_test.as";
-        collector.CollectSymbols(fileUri, code, parser, table);
+std::vector<Symbol> CollectFunctionCandidates(const std::string& code, const std::string& funcName, SymbolTable& table)
+{
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    const std::string fileUri = "file:///overload_test.as";
+    collector.CollectSymbols(fileUri, code, parser, table);
 
-        auto found = table.FindSymbols(funcName);
-        std::vector<Symbol> candidates;
-        for (const auto &sym : found)
+    auto found = table.FindSymbols(funcName);
+    std::vector<Symbol> candidates;
+    for (const auto& sym : found)
+    {
+        if (sym.type == SymbolType::Function)
         {
-            if (sym.type == SymbolType::Function)
-            {
-                candidates.push_back(sym);
-            }
+            candidates.push_back(sym);
         }
-        return candidates;
     }
+    return candidates;
 }
+} // namespace
 
 TEST_CASE("OverloadResolution - Prefers Exact Match Over Widening")
 {
     std::mt19937_64 rng(0x1337BEEF);
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Process");
-    std::string code =
-        "void " + fnName + "(int x) { }\n" +
-        "void " + fnName + "(double x) { }\n";
+    std::string code = "void " + fnName + "(int x) { }\n" + "void " + fnName + "(double x) { }\n";
 
     SymbolTable table;
     auto candidates = CollectFunctionCandidates(code, fnName, table);
     REQUIRE(candidates.size() == 2);
 
-    auto matchInt = ResolveBestOverload(candidates, { "int" }, table);
+    auto matchInt = ResolveBestOverload(candidates, {"int"}, table);
     REQUIRE(matchInt.bestCandidate != nullptr);
     CHECK(matchInt.bestCandidate->GetFunction().parameters[0].typeName == "int");
 
-    auto matchDouble = ResolveBestOverload(candidates, { "double" }, table);
+    auto matchDouble = ResolveBestOverload(candidates, {"double"}, table);
     REQUIRE(matchDouble.bestCandidate != nullptr);
     CHECK(matchDouble.bestCandidate->GetFunction().parameters[0].typeName == "double");
 }
@@ -59,21 +57,18 @@ TEST_CASE("OverloadResolution - Inheritance Derived Over Base Match")
     const std::string derivedCls = angel_lsp::test::GenerateIdentifier(rng, "DerivedCls");
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Feed");
 
-    std::string code =
-        "class " + baseCls + " { }\n" +
-        "class " + derivedCls + " : " + baseCls + " { }\n" +
-        "void " + fnName + "(" + baseCls + "@ a) { }\n" +
-        "void " + fnName + "(" + derivedCls + "@ d) { }\n";
+    std::string code = "class " + baseCls + " { }\n" + "class " + derivedCls + " : " + baseCls + " { }\n" + "void " +
+                       fnName + "(" + baseCls + "@ a) { }\n" + "void " + fnName + "(" + derivedCls + "@ d) { }\n";
 
     SymbolTable table;
     auto candidates = CollectFunctionCandidates(code, fnName, table);
     REQUIRE(candidates.size() == 2);
 
-    auto matchDerived = ResolveBestOverload(candidates, { derivedCls + "@" }, table);
+    auto matchDerived = ResolveBestOverload(candidates, {derivedCls + "@"}, table);
     REQUIRE(matchDerived.bestCandidate != nullptr);
     CHECK(matchDerived.bestCandidate->GetFunction().parameters[0].typeName == (derivedCls + "@"));
 
-    auto matchBase = ResolveBestOverload(candidates, { baseCls + "@" }, table);
+    auto matchBase = ResolveBestOverload(candidates, {baseCls + "@"}, table);
     REQUIRE(matchBase.bestCandidate != nullptr);
     CHECK(matchBase.bestCandidate->GetFunction().parameters[0].typeName == (baseCls + "@"));
 }
@@ -83,15 +78,13 @@ TEST_CASE("OverloadResolution - Const Reference Qualification")
     std::mt19937_64 rng(0x1337BEF1);
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Log");
 
-    std::string code =
-        "void " + fnName + "(string s) { }\n" +
-        "void " + fnName + "(const string &in s) { }\n";
+    std::string code = "void " + fnName + "(string s) { }\n" + "void " + fnName + "(const string &in s) { }\n";
 
     SymbolTable table;
     auto candidates = CollectFunctionCandidates(code, fnName, table);
     REQUIRE(candidates.size() == 2);
 
-    auto matchConst = ResolveBestOverload(candidates, { "const string" }, table);
+    auto matchConst = ResolveBestOverload(candidates, {"const string"}, table);
     REQUIRE(matchConst.bestCandidate != nullptr);
     CHECK(matchConst.bestCandidate->GetFunction().parameters[0].isConst);
     CHECK(matchConst.bestCandidate->GetFunction().parameters[0].modifier == ParameterModifier::In);
@@ -102,15 +95,13 @@ TEST_CASE("OverloadResolution - Prefers Exact Arity Over Default Arguments")
     std::mt19937_64 rng(0x1337BEF2);
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Compute");
 
-    std::string code =
-        "void " + fnName + "(int a) { }\n" +
-        "void " + fnName + "(int a, int b = 0) { }\n";
+    std::string code = "void " + fnName + "(int a) { }\n" + "void " + fnName + "(int a, int b = 0) { }\n";
 
     SymbolTable table;
     auto candidates = CollectFunctionCandidates(code, fnName, table);
     REQUIRE(candidates.size() == 2);
 
-    auto match = ResolveBestOverload(candidates, { "int" }, table);
+    auto match = ResolveBestOverload(candidates, {"int"}, table);
     REQUIRE(match.bestCandidate != nullptr);
     CHECK(match.bestCandidate->GetFunction().parameters.size() == 1);
 }
@@ -120,16 +111,14 @@ TEST_CASE("OverloadResolution - Detects Ambiguous Overloads")
     std::mt19937_64 rng(0x1337BEF3);
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Action");
 
-    std::string code =
-        "void " + fnName + "(int a, double b) { }\n" +
-        "void " + fnName + "(double a, int b) { }\n";
+    std::string code = "void " + fnName + "(int a, double b) { }\n" + "void " + fnName + "(double a, int b) { }\n";
 
     SymbolTable table;
     auto candidates = CollectFunctionCandidates(code, fnName, table);
     REQUIRE(candidates.size() == 2);
 
     // Passing two ints -> both require one widening conversion -> equal score
-    auto match = ResolveBestOverload(candidates, { "int", "int" }, table);
+    auto match = ResolveBestOverload(candidates, {"int", "int"}, table);
     CHECK(match.isAmbiguous);
 }
 
@@ -138,16 +127,14 @@ TEST_CASE("OverloadResolution - Multi-argument Pareto dominance chooses candidat
     std::mt19937_64 rng(0x1337BEF4);
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Process");
 
-    std::string code =
-        "void " + fnName + "(int a, int b) { }\n" +
-        "void " + fnName + "(int a, double b) { }\n" +
-        "void " + fnName + "(double a, double b) { }\n";
+    std::string code = "void " + fnName + "(int a, int b) { }\n" + "void " + fnName + "(int a, double b) { }\n" +
+                       "void " + fnName + "(double a, double b) { }\n";
 
     SymbolTable table;
     auto candidates = CollectFunctionCandidates(code, fnName, table);
     REQUIRE(candidates.size() == 3);
 
-    auto match = ResolveBestOverload(candidates, { "int", "int" }, table);
+    auto match = ResolveBestOverload(candidates, {"int", "int"}, table);
     REQUIRE(match.bestCandidate != nullptr);
     CHECK_FALSE(match.isAmbiguous);
     CHECK(match.bestCandidate->GetFunction().parameters[0].typeName == "int");
@@ -162,15 +149,13 @@ TEST_CASE("OverloadResolution - Multi-argument cost vector identical tie broken 
     std::mt19937_64 rng(0x1337BEF5);
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Calc");
 
-    std::string code =
-        "void " + fnName + "(int a, int b) { }\n" +
-        "void " + fnName + "(int a, int b, int c = 0) { }\n";
+    std::string code = "void " + fnName + "(int a, int b) { }\n" + "void " + fnName + "(int a, int b, int c = 0) { }\n";
 
     SymbolTable table;
     auto candidates = CollectFunctionCandidates(code, fnName, table);
     REQUIRE(candidates.size() == 2);
 
-    auto match = ResolveBestOverload(candidates, { "int", "int" }, table);
+    auto match = ResolveBestOverload(candidates, {"int", "int"}, table);
     REQUIRE(match.bestCandidate != nullptr);
     CHECK_FALSE(match.isAmbiguous);
     CHECK(match.bestCandidate->GetFunction().parameters.size() == 2);
@@ -186,16 +171,14 @@ TEST_CASE("OverloadResolution - Handle to Reference Binding Exact Match")
     const std::string fnProcess = angel_lsp::test::GenerateIdentifier(rng, "Process");
     const std::string fnInspect = angel_lsp::test::GenerateIdentifier(rng, "Inspect");
 
-    std::string code =
-        "class " + clsName + " { }\n" +
-        "void " + fnProcess + "(" + clsName + "& inout e) { }\n" +
-        "void " + fnInspect + "(const " + clsName + "& in e) { }\n";
+    std::string code = "class " + clsName + " { }\n" + "void " + fnProcess + "(" + clsName + "& inout e) { }\n" +
+                       "void " + fnInspect + "(const " + clsName + "& in e) { }\n";
 
     SymbolTable table;
     auto candidates = CollectFunctionCandidates(code, fnProcess, table);
     REQUIRE(candidates.size() == 1);
 
-    auto match = ResolveBestOverload(candidates, { clsName + "@" }, table);
+    auto match = ResolveBestOverload(candidates, {clsName + "@"}, table);
     REQUIRE(match.bestCandidate != nullptr);
     CHECK_FALSE(match.isAmbiguous);
     REQUIRE(match.bestCostVector.size() == 1);
@@ -204,7 +187,7 @@ TEST_CASE("OverloadResolution - Handle to Reference Binding Exact Match")
     SymbolTable inspectTable;
     auto inspectCandidates = CollectFunctionCandidates(code, fnInspect, inspectTable);
     REQUIRE(inspectCandidates.size() == 1);
-    auto matchInspect = ResolveBestOverload(inspectCandidates, { clsName + "@" }, inspectTable);
+    auto matchInspect = ResolveBestOverload(inspectCandidates, {clsName + "@"}, inspectTable);
     REQUIRE(matchInspect.bestCandidate != nullptr);
     CHECK_FALSE(matchInspect.isAmbiguous);
     REQUIRE(matchInspect.bestCostVector.size() == 1);
@@ -217,15 +200,13 @@ TEST_CASE("OverloadResolution - Const Handle to Mutable Reference is Incompatibl
     const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "Entity");
     const std::string fnProcess = angel_lsp::test::GenerateIdentifier(rng, "Process");
 
-    std::string code =
-        "class " + clsName + " { }\n" +
-        "void " + fnProcess + "(" + clsName + "& inout e) { }\n";
+    std::string code = "class " + clsName + " { }\n" + "void " + fnProcess + "(" + clsName + "& inout e) { }\n";
 
     SymbolTable table;
     auto candidates = CollectFunctionCandidates(code, fnProcess, table);
     REQUIRE(candidates.size() == 1);
 
-    auto match = ResolveBestOverload(candidates, { "const " + clsName + "@" }, table);
+    auto match = ResolveBestOverload(candidates, {"const " + clsName + "@"}, table);
     CHECK(match.bestCandidate == nullptr);
 }
 
@@ -235,19 +216,17 @@ TEST_CASE("OverloadResolution - Competing Handle vs Reference Overload is Ambigu
     const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "Foo");
     const std::string fnProcess = angel_lsp::test::GenerateIdentifier(rng, "Process");
 
-    std::string code =
-        "class " + clsName + " { }\n" +
-        "void " + fnProcess + "(" + clsName + "@ h) { }\n" +
-        "void " + fnProcess + "(" + clsName + "& inout r) { }\n";
+    std::string code = "class " + clsName + " { }\n" + "void " + fnProcess + "(" + clsName + "@ h) { }\n" + "void " +
+                       fnProcess + "(" + clsName + "& inout r) { }\n";
 
     SymbolTable table;
     auto candidates = CollectFunctionCandidates(code, fnProcess, table);
     REQUIRE(candidates.size() == 2);
 
-    auto matchHandle = ResolveBestOverload(candidates, { clsName + "@" }, table);
+    auto matchHandle = ResolveBestOverload(candidates, {clsName + "@"}, table);
     CHECK(matchHandle.isAmbiguous);
 
-    auto matchRef = ResolveBestOverload(candidates, { clsName }, table);
+    auto matchRef = ResolveBestOverload(candidates, {clsName}, table);
     CHECK(matchRef.isAmbiguous);
 }
 
@@ -288,7 +267,7 @@ TEST_CASE("OverloadResolution - Invariant: Dynamic arity scaling from 0 to 8 arg
 
 TEST_CASE("Overload resolution - Explicit int32/uint32 spellings rank like int/uint")
 {
-    const char *script = R"(
+    const char* script = R"(
         void Take(float v) {}
         void Take(int64 v) {}
 
@@ -306,7 +285,7 @@ TEST_CASE("Overload resolution - Explicit int32/uint32 spellings rank like int/u
     REQUIRE(static_cast<bool>(doc));
 
     const auto diagnostics = doc->GetDiagnostics();
-    for (const auto &d : diagnostics)
+    for (const auto& d : diagnostics)
     {
         CAPTURE(d.code);
         CAPTURE(d.message);

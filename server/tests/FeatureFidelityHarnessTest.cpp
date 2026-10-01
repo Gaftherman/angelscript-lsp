@@ -188,15 +188,22 @@ TEST_SUITE("FeatureFidelityHarness")
         const std::string fnName = GenerateRandomSymbolName("CreateItem");
         const std::string paramName = GenerateRandomSymbolName("fSpawn");
 
-        const std::string script = "class " + clsName + "\n"
+        const std::string script = "class " + clsName +
+                                   "\n"
                                    "{\n"
-                                   "    void " + fnName + "(int id, bool " + paramName + " = true) {}\n"
+                                   "    void " +
+                                   fnName + "(int id, bool " + paramName +
+                                   " = true) {}\n"
                                    "}\n"
                                    "\n"
                                    "void Test()\n"
                                    "{\n"
-                                   "    " + clsName + " s;\n"
-                                   "    s." + fnName + "(1, " + paramName + ": false);\n"
+                                   "    " +
+                                   clsName +
+                                   " s;\n"
+                                   "    s." +
+                                   fnName + "(1, " + paramName +
+                                   ": false);\n"
                                    "}\n";
 
         const std::string uri = fixture.SandboxUri("scripts/hover_named_arg.as");
@@ -219,11 +226,15 @@ TEST_SUITE("FeatureFidelityHarness")
         const std::string fParam = GenerateRandomSymbolName("f");
         const std::string argSParam = GenerateRandomSymbolName("argS");
 
-        const std::string script = "void " + fnName + "(int " + idParam + " = 0, bool " + fParam + " = true, string " + argSParam + " = \"default\") {}\n"
+        const std::string script = "void " + fnName + "(int " + idParam + " = 0, bool " + fParam + " = true, string " +
+                                   argSParam +
+                                   " = \"default\") {}\n"
                                    "\n"
                                    "void Test()\n"
                                    "{\n"
-                                   "    " + fnName + "(" + argSParam + ": \"custom\", " + idParam + ": 10, " + fParam + ": false);\n"
+                                   "    " +
+                                   fnName + "(" + argSParam + ": \"custom\", " + idParam + ": 10, " + fParam +
+                                   ": false);\n"
                                    "}\n";
 
         const std::string uri = fixture.SandboxUri("scripts/hover_multi_named.as");
@@ -246,4 +257,3 @@ TEST_SUITE("FeatureFidelityHarness")
         fixture.AssertHoverContains(uri, 4, charColF + 1, "bool " + fParam);
     }
 }
-

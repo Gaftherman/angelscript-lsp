@@ -1,11 +1,11 @@
 #include <doctest/doctest.h>
 
-#include "features/definition/DefinitionHandler.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticAnalyzer.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "features/definition/DefinitionHandler.h"
 #include "parser/AngelScriptParser.h"
 
 #include "helpers/TestUtils.h"
@@ -18,86 +18,87 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct SourcePos
-    {
-        uint32_t line = 0;
-        uint32_t character = 0;
-    };
+struct SourcePos
+{
+    uint32_t line = 0;
+    uint32_t character = 0;
+};
 
-    SourcePos FindPos(const std::string& source, const std::string& needle, size_t startAt = 0)
+SourcePos FindPos(const std::string& source, const std::string& needle, size_t startAt = 0)
+{
+    size_t pos = source.find(needle, startAt);
+    if (pos == std::string::npos)
+        return {0, 0};
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < pos; ++i)
     {
-        size_t pos = source.find(needle, startAt);
-        if (pos == std::string::npos) return {0, 0};
-        uint32_t line = 0;
-        size_t lineStart = 0;
-        for (size_t i = 0; i < pos; ++i)
+        if (source[i] == '\n')
         {
-            if (source[i] == '\n')
-            {
-                ++line;
-                lineStart = i + 1;
-            }
+            ++line;
+            lineStart = i + 1;
         }
-        return {line, static_cast<uint32_t>(pos - lineStart)};
+    }
+    return {line, static_cast<uint32_t>(pos - lineStart)};
+}
+
+struct TestEnvironment
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    std::string uri = "file:///test.as";
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    TestEnvironment(const std::string& code, const std::string& docUri = "file:///test.as")
+        : uri(docUri), sourceCode(code)
+    {
+        tree = parser.Parse(sourceCode);
+        symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
+        auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
+        if (rootScope)
+        {
+            scopeIndex.SetScopeTree(uri, std::move(rootScope));
+        }
     }
 
-    struct TestEnvironment
+    void AddFile(const std::string& otherUri, const std::string& otherCode)
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        std::string uri = "file:///test.as";
-        std::string sourceCode;
-        TSTree *tree = nullptr;
-
-        TestEnvironment(const std::string &code, const std::string &docUri = "file:///test.as")
-            : uri(docUri), sourceCode(code)
+        symbolCollector.CollectSymbols(otherUri, otherCode, parser, symbolTable);
+        auto rootScope = scopeCollector.CollectScopes(otherCode, parser);
+        if (rootScope)
         {
-            tree = parser.Parse(sourceCode);
-            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(uri, std::move(rootScope));
-            }
+            scopeIndex.SetScopeTree(otherUri, std::move(rootScope));
         }
+    }
 
-        void AddFile(const std::string& otherUri, const std::string& otherCode)
+    ~TestEnvironment()
+    {
+        if (tree)
         {
-            symbolCollector.CollectSymbols(otherUri, otherCode, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(otherCode, parser);
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(otherUri, std::move(rootScope));
-            }
+            ts_tree_delete(tree);
         }
+    }
 
-        ~TestEnvironment()
-        {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
-        }
+    std::function<std::string(const std::string&)> resolveInclude = {};
 
-        std::function<std::string(const std::string &)> resolveInclude = {};
+    std::optional<std::vector<lsp::Location>> DefAt(uint32_t line, uint32_t character)
+    {
+        DefinitionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
+        req.resolveInclude = resolveInclude;
+        return GetDefinition(req);
+    }
 
-        std::optional<std::vector<lsp::Location>> DefAt(uint32_t line, uint32_t character)
-        {
-            DefinitionRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{ line, character } };
-            req.resolveInclude = resolveInclude;
-            return GetDefinition(req);
-        }
-
-        std::optional<std::vector<lsp::Location>> TypeDefAt(uint32_t line, uint32_t character)
-        {
-            DefinitionRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{ line, character } };
-            return GetTypeDefinition(req);
-        }
-    };
-}
+    std::optional<std::vector<lsp::Location>> TypeDefAt(uint32_t line, uint32_t character)
+    {
+        DefinitionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
+        return GetTypeDefinition(req);
+    }
+};
+} // namespace
 
 TEST_CASE("DefinitionHandler - Go to Definition for Local Variable and Parameter")
 {
@@ -106,11 +107,15 @@ TEST_CASE("DefinitionHandler - Go to Definition for Local Variable and Parameter
     const std::string paramName = angel_lsp::test::GenerateIdentifier(rng, "paramA");
     const std::string localVar = angel_lsp::test::GenerateIdentifier(rng, "localB");
 
-    std::string code = 
-        "void " + fnName + "(int " + paramName + ") {\n"
-        "    int " + localVar + " = 100;\n"
-        "    int x = " + paramName + " + " + localVar + ";\n"
-        "}\n";
+    std::string code = "void " + fnName + "(int " + paramName +
+                       ") {\n"
+                       "    int " +
+                       localVar +
+                       " = 100;\n"
+                       "    int x = " +
+                       paramName + " + " + localVar +
+                       ";\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -139,13 +144,19 @@ TEST_CASE("DefinitionHandler - Go to Definition for Global Functions and Classes
     const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "TargetClass");
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "TargetFunc");
 
-    std::string code = 
-        "class " + clsName + " {}\n"
-        "void " + fnName + "() {}\n"
-        "void main() {\n"
-        "    " + clsName + " tc;\n"
-        "    " + fnName + "();\n"
-        "}\n";
+    std::string code = "class " + clsName +
+                       " {}\n"
+                       "void " +
+                       fnName +
+                       "() {}\n"
+                       "void main() {\n"
+                       "    " +
+                       clsName +
+                       " tc;\n"
+                       "    " +
+                       fnName +
+                       "();\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -177,13 +188,8 @@ TEST_CASE("DefinitionHandler - Invariant: Definition coordinates resilient to ra
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Func");
     const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "var");
 
-    std::string code =
-        pad1 +
-        "class " + clsName + " {}\n" +
-        pad2 +
-        "void " + fnName + "() {\n" +
-        "    " + clsName + " " + varName + ";\n" +
-        "}\n";
+    std::string code = pad1 + "class " + clsName + " {}\n" + pad2 + "void " + fnName + "() {\n" + "    " + clsName +
+                       " " + varName + ";\n" + "}\n";
 
     TestEnvironment env(code);
 
@@ -200,16 +206,15 @@ TEST_CASE("DefinitionHandler - Invariant: Definition coordinates resilient to ra
 
 TEST_CASE("DefinitionHandler - Go to Definition for Class Member Access")
 {
-    std::string code = 
-        "class Player {\n"
-        "    int score;\n"
-        "    void Reset() { score = 0; }\n"
-        "}\n"
-        "void main() {\n"
-        "    Player p;\n"
-        "    p.score = 10;\n"
-        "    p.Reset();\n"
-        "}\n";
+    std::string code = "class Player {\n"
+                       "    int score;\n"
+                       "    void Reset() { score = 0; }\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Player p;\n"
+                       "    p.score = 10;\n"
+                       "    p.Reset();\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -228,11 +233,10 @@ TEST_CASE("DefinitionHandler - Go to Definition for Class Member Access")
 
 TEST_CASE("DefinitionHandler - Go to Type Definition")
 {
-    std::string code = 
-        "class Monster {}\n"
-        "void main() {\n"
-        "    Monster@ m = null;\n"
-        "}\n";
+    std::string code = "class Monster {}\n"
+                       "void main() {\n"
+                       "    Monster@ m = null;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -252,19 +256,18 @@ TEST_CASE("DefinitionHandler - Invalid Position Returns Nullopt")
 
 TEST_CASE("DefinitionHandler - Go to Definition for Class Method and Inherited Method")
 {
-    std::string code =
-        "class Entity {\n"
-        "    void TakeDamage(int dmg) {}\n" // line 1
-        "}\n"
-        "class Player : Entity {\n"
-        "    void Attack() {\n"             // line 4
-        "        TakeDamage(10);\n"          // line 5, col 9
-        "    }\n"
-        "}\n"
-        "void main() {\n"
-        "    Player p;\n"
-        "    p.Attack();\n"                  // line 10, col 7
-        "}\n";
+    std::string code = "class Entity {\n"
+                       "    void TakeDamage(int dmg) {}\n" // line 1
+                       "}\n"
+                       "class Player : Entity {\n"
+                       "    void Attack() {\n"     // line 4
+                       "        TakeDamage(10);\n" // line 5, col 9
+                       "    }\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Player p;\n"
+                       "    p.Attack();\n" // line 10, col 7
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -283,16 +286,15 @@ TEST_CASE("DefinitionHandler - Go to Definition for Class Method and Inherited M
 
 TEST_CASE("DefinitionHandler - Go to Definition for Namespace Function")
 {
-    std::string code =
-        "namespace Game {\n"
-        "    void Spawn() {}\n" // line 1
-        "    void Init() {\n"
-        "        Spawn();\n"    // line 3, col 9
-        "    }\n"
-        "}\n"
-        "void main() {\n"
-        "    Game::Spawn();\n"  // line 7, col 11
-        "}\n";
+    std::string code = "namespace Game {\n"
+                       "    void Spawn() {}\n" // line 1
+                       "    void Init() {\n"
+                       "        Spawn();\n" // line 3, col 9
+                       "    }\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Game::Spawn();\n" // line 7, col 11
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -323,37 +325,62 @@ TEST_CASE("DefinitionHandler - Nested Namespace Call and Anonymous Function Para
     const std::string varData = angel_lsp::test::GenerateIdentifier(rng, "data");
     const std::string fnPluginInit = angel_lsp::test::GenerateIdentifier(rng, "PluginInit");
 
-    std::string framerateCode =
-        "class " + clsServerFramerate + " {\n"
-        "    bool " + fldLastFrame + ";\n"
-        "    int Frames;\n"
-        "}\n"
-        "namespace " + nsServer + " {\n"
-        "    namespace " + nsFramerate + " {\n"
-        "        funcdef void " + fdFrameRateCallback + "(const " + clsServerFramerate + "@);\n"
-        "        void " + fnSetCallback + "(" + fdFrameRateCallback + "@ cb) {}\n"
-        "        void " + fnRemoveCallback + "(" + fdFrameRateCallback + "@ cb) {}\n"
-        "    }\n"
-        "}\n";
+    std::string framerateCode = "class " + clsServerFramerate +
+                                " {\n"
+                                "    bool " +
+                                fldLastFrame +
+                                ";\n"
+                                "    int Frames;\n"
+                                "}\n"
+                                "namespace " +
+                                nsServer +
+                                " {\n"
+                                "    namespace " +
+                                nsFramerate +
+                                " {\n"
+                                "        funcdef void " +
+                                fdFrameRateCallback + "(const " + clsServerFramerate +
+                                "@);\n"
+                                "        void " +
+                                fnSetCallback + "(" + fdFrameRateCallback +
+                                "@ cb) {}\n"
+                                "        void " +
+                                fnRemoveCallback + "(" + fdFrameRateCallback +
+                                "@ cb) {}\n"
+                                "    }\n"
+                                "}\n";
 
-    std::string pluginCode =
-        "#include \"../mikk155/Server/Framerate\"\n"
-        "\n"
-        + nsServer + "::" + nsFramerate + "::" + fdFrameRateCallback + "@ " + varCb + " = null;\n"
-        "\n"
-        "void " + fnPluginInit + "() {\n"
-        "    @" + varCb + " = " + nsServer + "::" + nsFramerate + "::" + fnSetCallback + "( function( const " + clsServerFramerate + "@ " + varData + " ) {\n"
-        "        if(" + varData + " !is null)\n"
-        "        if( " + varData + "." + fldLastFrame + " ) {\n"
-        "            " + nsServer + "::" + nsFramerate + "::" + fnRemoveCallback + "( " + varCb + " );\n"
-        "        }\n"
-        "    } );\n"
-        "}\n";
+    std::string pluginCode = "#include \"../mikk155/Server/Framerate\"\n"
+                             "\n" +
+                             nsServer + "::" + nsFramerate + "::" + fdFrameRateCallback + "@ " + varCb +
+                             " = null;\n"
+                             "\n"
+                             "void " +
+                             fnPluginInit +
+                             "() {\n"
+                             "    @" +
+                             varCb + " = " + nsServer + "::" + nsFramerate + "::" + fnSetCallback +
+                             "( function( const " + clsServerFramerate + "@ " + varData +
+                             " ) {\n"
+                             "        if(" +
+                             varData +
+                             " !is null)\n"
+                             "        if( " +
+                             varData + "." + fldLastFrame +
+                             " ) {\n"
+                             "            " +
+                             nsServer + "::" + nsFramerate + "::" + fnRemoveCallback + "( " + varCb +
+                             " );\n"
+                             "        }\n"
+                             "    } );\n"
+                             "}\n";
 
     TestEnvironment env(pluginCode, "file:///scripts/plugins/ShowFrameRate.as");
     env.AddFile("file:///scripts/mikk155/Server/Framerate.as", framerateCode);
-    env.resolveInclude = [](const std::string& raw) {
-        if (raw == "../mikk155/Server/Framerate") {
+    env.resolveInclude = [](const std::string& raw)
+    {
+        if (raw == "../mikk155/Server/Framerate")
+        {
             return "file:///scripts/mikk155/Server/Framerate.as";
         }
         return "";
@@ -363,7 +390,8 @@ TEST_CASE("DefinitionHandler - Nested Namespace Call and Anonymous Function Para
     auto posSF = FindPos(pluginCode, clsServerFramerate + "@ " + varData);
     auto defSF = env.DefAt(posSF.line, posSF.character);
     CHECK(defSF.has_value());
-    if (defSF) {
+    if (defSF)
+    {
         CHECK((*defSF)[0].uri.toString() == "file:///scripts/mikk155/Server/Framerate.as");
         CHECK((*defSF)[0].range.start.line == 0); // class ServerFramerate is line 0
     }
@@ -372,7 +400,8 @@ TEST_CASE("DefinitionHandler - Nested Namespace Call and Anonymous Function Para
     auto posSC = FindPos(pluginCode, fnSetCallback + "(");
     auto defSC = env.DefAt(posSC.line, posSC.character);
     CHECK(defSC.has_value());
-    if (defSC) {
+    if (defSC)
+    {
         CHECK((*defSC)[0].uri.toString() == "file:///scripts/mikk155/Server/Framerate.as");
         CHECK((*defSC)[0].range.start.line == 7); // void SetCallback is line 7
     }
@@ -381,7 +410,8 @@ TEST_CASE("DefinitionHandler - Nested Namespace Call and Anonymous Function Para
     auto posServer = FindPos(pluginCode, nsServer + "::" + nsFramerate + "::" + fnSetCallback);
     auto defServer = env.DefAt(posServer.line, posServer.character);
     CHECK(defServer.has_value());
-    if (defServer) {
+    if (defServer)
+    {
         CHECK((*defServer)[0].uri.toString() == "file:///scripts/mikk155/Server/Framerate.as");
         CHECK((*defServer)[0].range.start.line == 4); // namespace Server is line 4
     }
@@ -390,7 +420,8 @@ TEST_CASE("DefinitionHandler - Nested Namespace Call and Anonymous Function Para
     auto posFrame = FindPos(pluginCode, nsFramerate + "::" + fnSetCallback);
     auto defFrame = env.DefAt(posFrame.line, posFrame.character);
     CHECK(defFrame.has_value());
-    if (defFrame) {
+    if (defFrame)
+    {
         CHECK((*defFrame)[0].uri.toString() == "file:///scripts/mikk155/Server/Framerate.as");
         CHECK((*defFrame)[0].range.start.line == 5); // namespace Framerate is line 5
     }
@@ -409,7 +440,8 @@ TEST_CASE("DefinitionHandler - Nested Namespace Call and Anonymous Function Para
     // 7. Type Definition of data -> ServerFramerate in Framerate.as
     auto typeDefData = env.TypeDefAt(posData.line, posData.character);
     CHECK(typeDefData.has_value());
-    if (typeDefData) {
+    if (typeDefData)
+    {
         CHECK((*typeDefData)[0].uri.toString() == "file:///scripts/mikk155/Server/Framerate.as");
         CHECK((*typeDefData)[0].range.start.line == 0); // class ServerFramerate
     }
@@ -418,18 +450,19 @@ TEST_CASE("DefinitionHandler - Nested Namespace Call and Anonymous Function Para
     auto posLastFrame = FindPos(pluginCode, fldLastFrame);
     auto defLastFrame = env.DefAt(posLastFrame.line, posLastFrame.character);
     CHECK(defLastFrame.has_value());
-    if (defLastFrame) {
+    if (defLastFrame)
+    {
         CHECK((*defLastFrame)[0].uri.toString() == "file:///scripts/mikk155/Server/Framerate.as");
         CHECK((*defLastFrame)[0].range.start.line == 1); // bool LastFrame is line 1
     }
 }
 
-
 TEST_CASE("DefinitionHandler - Go to Definition for Include Directive")
 {
     std::string code = "#include \"BuyMenu\"\nvoid main() {}\n";
     TestEnvironment env(code);
-    env.resolveInclude = [](const std::string &raw) {
+    env.resolveInclude = [](const std::string& raw)
+    {
         if (raw == "BuyMenu")
         {
             return "file:///scripts/BuyMenu.as";
@@ -445,12 +478,11 @@ TEST_CASE("DefinitionHandler - Go to Definition for Include Directive")
 
 TEST_CASE("DefinitionHandler - Go to Definition for Global Property Accessor")
 {
-    std::string code =
-        "class CModule {}\n"
-        "CModule@ get_g_Module();\n"
-        "void main() {\n"
-        "    g_Module;\n"
-        "}\n";
+    std::string code = "class CModule {}\n"
+                       "CModule@ get_g_Module();\n"
+                       "void main() {\n"
+                       "    g_Module;\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto defs = env.DefAt(3, 6);
@@ -461,23 +493,22 @@ TEST_CASE("DefinitionHandler - Go to Definition for Global Property Accessor")
 
 TEST_CASE("DefinitionHandler - Go to Definition on subsequent lines after inline list pattern")
 {
-    const std::string stub =
-        "class array<T>\n"
-        "{\n"
-        "    array(); // asBEHAVE_LIST_FACTORY\n"
-        "    T& opIndex(uint index);\n"
-        "}\n";
+    const std::string stub = "class array<T>\n"
+                             "{\n"
+                             "    array(); // asBEHAVE_LIST_FACTORY\n"
+                             "    T& opIndex(uint index);\n"
+                             "}\n";
 
-    const std::string &rewritten = stub;
+    const std::string& rewritten = stub;
 
     AngelScriptParser parser;
-    SymbolCollector symbolCollector{ nullptr };
-    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
     SymbolTable symbolTable;
     ScopeIndex scopeIndex;
 
     const std::string stubUri = "file:///as.predefined";
-    TSTree *tree = parser.Parse(rewritten);
+    TSTree* tree = parser.Parse(rewritten);
     symbolCollector.CollectSymbols(stubUri, rewritten, parser, symbolTable);
     auto rootScope = scopeCollector.CollectScopes(rewritten, parser);
     if (rootScope)
@@ -486,10 +517,7 @@ TEST_CASE("DefinitionHandler - Go to Definition on subsequent lines after inline
     }
 
     // Line 3: "    T& opIndex(uint index);" -> column 7 is on "opIndex"
-    DefinitionRequest req{
-        stubUri, rewritten, tree, symbolTable, scopeIndex,
-        lsp::Position{ 3, 7 }
-    };
+    DefinitionRequest req{stubUri, rewritten, tree, symbolTable, scopeIndex, lsp::Position{3, 7}};
 
     auto defs = GetDefinition(req);
     REQUIRE(defs.has_value());
@@ -501,15 +529,14 @@ TEST_CASE("DefinitionHandler - Go to Definition on subsequent lines after inline
 
 TEST_CASE("DefinitionHandler - Local and namespace variables return full declaration range")
 {
-    const std::string code =
-        "namespace INS2_L85A2 {\n"
-        "    string SPR_CAT = \"ins2/arf/\";\n"
-        "}\n"
-        "void main() {\n"
-        "    int count = 10;\n"
-        "    count++;\n"
-        "    INS2_L85A2::SPR_CAT;\n"
-        "}\n";
+    const std::string code = "namespace INS2_L85A2 {\n"
+                             "    string SPR_CAT = \"ins2/arf/\";\n"
+                             "}\n"
+                             "void main() {\n"
+                             "    int count = 10;\n"
+                             "    count++;\n"
+                             "    INS2_L85A2::SPR_CAT;\n"
+                             "}\n";
 
     TestEnvironment env(code);
 
@@ -532,16 +559,15 @@ TEST_CASE("DefinitionHandler - Local and namespace variables return full declara
 
 TEST_CASE("DefinitionHandler - Member access on unqualified namespaced class resolves to member definition")
 {
-    const std::string code =
-        "namespace INS2PROP {\n"
-        "    class CIns2Prop {\n"
-        "        int health;\n"
-        "    };\n"
-        "}\n"
-        "void main() {\n"
-        "    CIns2Prop@ n;\n"
-        "    n.health;\n"
-        "}\n";
+    const std::string code = "namespace INS2PROP {\n"
+                             "    class CIns2Prop {\n"
+                             "        int health;\n"
+                             "    };\n"
+                             "}\n"
+                             "void main() {\n"
+                             "    CIns2Prop@ n;\n"
+                             "    n.health;\n"
+                             "}\n";
 
     TestEnvironment env(code);
 
@@ -554,18 +580,17 @@ TEST_CASE("DefinitionHandler - Member access on unqualified namespaced class res
 
 TEST_CASE("DefinitionHandler - Member access on class member variable of unqualified namespaced class")
 {
-    const std::string code =
-        "namespace INS2PROP {\n"
-        "    class CIns2Prop {\n"
-        "        int health;\n"
-        "    };\n"
-        "}\n"
-        "class Weapon {\n"
-        "    CIns2Prop@ n;\n"
-        "    void Attack() {\n"
-        "        n.health;\n"
-        "    }\n"
-        "}\n";
+    const std::string code = "namespace INS2PROP {\n"
+                             "    class CIns2Prop {\n"
+                             "        int health;\n"
+                             "    };\n"
+                             "}\n"
+                             "class Weapon {\n"
+                             "    CIns2Prop@ n;\n"
+                             "    void Attack() {\n"
+                             "        n.health;\n"
+                             "    }\n"
+                             "}\n";
 
     TestEnvironment env(code);
 
@@ -579,35 +604,34 @@ TEST_CASE("DefinitionHandler - Member access on class member variable of unquali
 TEST_CASE("DefinitionHandler - Overload-aware definition jumps to mixin origin file and line")
 {
     AngelScriptParser parser;
-    SymbolCollector symbolCollector{ nullptr };
-    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
     SymbolTable symbolTable;
     ScopeIndex scopeIndex;
 
     const std::string mixinUri = "file:///mixin.as";
-    const std::string mixinCode =
-        "mixin class WeaponBase {\n"
-        "    void Deploy(string vModel, string pModel, int iAnim, string pAnim, int iBodygroup, float flDeployTime) {}\n"
-        "}\n";
+    const std::string mixinCode = "mixin class WeaponBase {\n"
+                                  "    void Deploy(string vModel, string pModel, int iAnim, string pAnim, int "
+                                  "iBodygroup, float flDeployTime) {}\n"
+                                  "}\n";
 
     const std::string weaponUri = "file:///weapon.as";
-    const std::string weaponCode =
-        "class weapon_ak47 : WeaponBase {\n"
-        "    bool Deploy() {\n"
-        "        return Deploy(\"v\", \"p\", 1, \"m16\", 0, 1.0f);\n"
-        "    }\n"
-        "}\n"
-        "void main() {\n"
-        "    weapon_ak47 w;\n"
-        "    w.Deploy();\n"
-        "}\n";
+    const std::string weaponCode = "class weapon_ak47 : WeaponBase {\n"
+                                   "    bool Deploy() {\n"
+                                   "        return Deploy(\"v\", \"p\", 1, \"m16\", 0, 1.0f);\n"
+                                   "    }\n"
+                                   "}\n"
+                                   "void main() {\n"
+                                   "    weapon_ak47 w;\n"
+                                   "    w.Deploy();\n"
+                                   "}\n";
 
     // 1. Collect mixin symbols in its file
-    TSTree *mixinTree = parser.Parse(mixinCode);
+    TSTree* mixinTree = parser.Parse(mixinCode);
     symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
 
     // 2. Collect host class symbols in its file
-    TSTree *weaponTree = parser.Parse(weaponCode);
+    TSTree* weaponTree = parser.Parse(weaponCode);
     symbolCollector.CollectSymbols(weaponUri, weaponCode, parser, symbolTable);
     auto rootScope = scopeCollector.CollectScopes(weaponCode, parser);
     if (rootScope)
@@ -616,7 +640,7 @@ TEST_CASE("DefinitionHandler - Overload-aware definition jumps to mixin origin f
     }
 
     // Line 2: "        return Deploy(\"v\", \"p\", 1, \"m16\", 0, 1.0f);" -> col 17 is on "Deploy"
-    DefinitionRequest reqMixinCall{ weaponUri, weaponCode, weaponTree, symbolTable, scopeIndex, lsp::Position{ 2, 17 } };
+    DefinitionRequest reqMixinCall{weaponUri, weaponCode, weaponTree, symbolTable, scopeIndex, lsp::Position{2, 17}};
     auto defsMixin = GetDefinition(reqMixinCall);
     REQUIRE(defsMixin.has_value());
     REQUIRE(!defsMixin->empty());
@@ -625,7 +649,7 @@ TEST_CASE("DefinitionHandler - Overload-aware definition jumps to mixin origin f
     CHECK((*defsMixin)[0].range.start.line == 1);
 
     // Line 7: "    w.Deploy();" -> col 7 is on "Deploy"
-    DefinitionRequest reqZeroArgCall{ weaponUri, weaponCode, weaponTree, symbolTable, scopeIndex, lsp::Position{ 7, 7 } };
+    DefinitionRequest reqZeroArgCall{weaponUri, weaponCode, weaponTree, symbolTable, scopeIndex, lsp::Position{7, 7}};
     auto defsZeroArg = GetDefinition(reqZeroArgCall);
     REQUIRE(defsZeroArg.has_value());
     REQUIRE(!defsZeroArg->empty());
@@ -639,11 +663,10 @@ TEST_CASE("DefinitionHandler - Overload-aware definition jumps to mixin origin f
 
 TEST_CASE("Definition - F12 on declaration node returns its own definition range")
 {
-    TestEnvironment env(
-        "mixin class WeaponMixin\n"
-        "{\n"
-        "    void CommonAddToPlayer() { }\n"
-        "}\n");
+    TestEnvironment env("mixin class WeaponMixin\n"
+                        "{\n"
+                        "    void CommonAddToPlayer() { }\n"
+                        "}\n");
 
     // Line 2: "    void CommonAddToPlayer() { }" -> col 12 is on "CommonAddToPlayer"
     auto defs = env.DefAt(2, 12);
@@ -654,12 +677,11 @@ TEST_CASE("Definition - F12 on declaration node returns its own definition range
 
 TEST_CASE("DefinitionHandler - Go to Type Definition for Global Property Accessor")
 {
-    std::string code =
-        "class ModuleInfo {}\n"
-        "ModuleInfo@ get_g_Module() { return null; }\n"
-        "void main() {\n"
-        "    g_Module;\n"
-        "}\n";
+    std::string code = "class ModuleInfo {}\n"
+                       "ModuleInfo@ get_g_Module() { return null; }\n"
+                       "void main() {\n"
+                       "    g_Module;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -672,12 +694,11 @@ TEST_CASE("DefinitionHandler - Go to Type Definition for Global Property Accesso
 
 TEST_CASE("DefinitionHandler - Go to Type Definition for Setter-Only Global Property Accessor")
 {
-    std::string code =
-        "class ConfigData {}\n"
-        "void set_g_Config(ConfigData@ c) {}\n"
-        "void main() {\n"
-        "    g_Config = null;\n"
-        "}\n";
+    std::string code = "class ConfigData {}\n"
+                       "void set_g_Config(ConfigData@ c) {}\n"
+                       "void main() {\n"
+                       "    g_Config = null;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -688,19 +709,19 @@ TEST_CASE("DefinitionHandler - Go to Type Definition for Setter-Only Global Prop
     CHECK((*typeDef)[0].range.start.line == 0);
 }
 
-TEST_CASE("DefinitionHandler - Go to Type Definition for Property Accessor Resolves Scoped Type Over Disjoint Namespace")
+TEST_CASE(
+    "DefinitionHandler - Go to Type Definition for Property Accessor Resolves Scoped Type Over Disjoint Namespace")
 {
-    std::string code =
-        "namespace Library {\n"
-        "    class Config {}\n"
-        "}\n"
-        "namespace App {\n"
-        "    class Config {}\n"
-        "    Config@ get_g_Config() { return null; }\n"
-        "    void main() {\n"
-        "        g_Config;\n"
-        "    }\n"
-        "}\n";
+    std::string code = "namespace Library {\n"
+                       "    class Config {}\n"
+                       "}\n"
+                       "namespace App {\n"
+                       "    class Config {}\n"
+                       "    Config@ get_g_Config() { return null; }\n"
+                       "    void main() {\n"
+                       "        g_Config;\n"
+                       "    }\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -714,14 +735,13 @@ TEST_CASE("DefinitionHandler - Go to Type Definition for Property Accessor Resol
 
 TEST_CASE("DefinitionHandler - Go to Type Definition for Namespace-Scoped Variable")
 {
-    std::string code =
-        "namespace Game {\n"
-        "    class Player {}\n"
-        "    Player g_player;\n"
-        "    void main() {\n"
-        "        g_player;\n"
-        "    }\n"
-        "}\n";
+    std::string code = "namespace Game {\n"
+                       "    class Player {}\n"
+                       "    Player g_player;\n"
+                       "    void main() {\n"
+                       "        g_player;\n"
+                       "    }\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -731,5 +751,3 @@ TEST_CASE("DefinitionHandler - Go to Type Definition for Namespace-Scoped Variab
     REQUIRE(typeDef->size() == 1);
     CHECK((*typeDef)[0].range.start.line == 1);
 }
-
-

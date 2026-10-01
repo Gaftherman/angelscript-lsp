@@ -1,9 +1,9 @@
 #include <doctest/doctest.h>
 
-#include "analysis/SymbolTable.h"
-#include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
 #include "features/definition/DefinitionHandler.h"
 #include "features/hover/HoverHandler.h"
 #include "parser/AngelScriptParser.h"
@@ -38,12 +38,16 @@ TEST_CASE("VirtualMixinDocument - URI Building and Formatting")
         CHECK(SymbolTable::ExtractVirtualMixinName("angelscript-virtual:HostClass/Mixin.as") == "Mixin");
 
         // Namespaced host classes
-        CHECK(SymbolTable::ExtractVirtualHostClass("angelscript-virtual://Game::Weapons::Rifle/WeaponMixin.as") == "Game::Weapons::Rifle");
-        CHECK(SymbolTable::ExtractVirtualMixinName("angelscript-virtual://Game::Weapons::Rifle/WeaponMixin.as") == "WeaponMixin");
+        CHECK(SymbolTable::ExtractVirtualHostClass("angelscript-virtual://Game::Weapons::Rifle/WeaponMixin.as") ==
+              "Game::Weapons::Rifle");
+        CHECK(SymbolTable::ExtractVirtualMixinName("angelscript-virtual://Game::Weapons::Rifle/WeaponMixin.as") ==
+              "WeaponMixin");
 
         // URL-encoded namespaces
-        CHECK(SymbolTable::ExtractVirtualHostClass("angelscript-virtual://Game%3A%3AWeapons%3A%3ARifle/WeaponMixin.as") == "Game::Weapons::Rifle");
-        CHECK(SymbolTable::ExtractVirtualMixinName("angelscript-virtual://Game%3A%3AWeapons%3A%3ARifle/WeaponMixin.as") == "WeaponMixin");
+        CHECK(SymbolTable::ExtractVirtualHostClass(
+                  "angelscript-virtual://Game%3A%3AWeapons%3A%3ARifle/WeaponMixin.as") == "Game::Weapons::Rifle");
+        CHECK(SymbolTable::ExtractVirtualMixinName(
+                  "angelscript-virtual://Game%3A%3AWeapons%3A%3ARifle/WeaponMixin.as") == "WeaponMixin");
 
         // Invalid schemes return empty
         CHECK(SymbolTable::ExtractVirtualHostClass("file:///test.as").empty());
@@ -54,18 +58,16 @@ TEST_CASE("VirtualMixinDocument - URI Building and Formatting")
 TEST_CASE("VirtualMixinDocument - Toggle Feature Flag and Synthetic URIs")
 {
     AngelScriptParser parser;
-    SymbolCollector collector{ nullptr };
+    SymbolCollector collector{nullptr};
 
     std::string mixinUri = "file:///mixin.as";
-    std::string mixinCode =
-        "mixin class WeaponMixin {\n"
-        "    void Deploy(int speed) {}\n"
-        "}\n";
+    std::string mixinCode = "mixin class WeaponMixin {\n"
+                            "    void Deploy(int speed) {}\n"
+                            "}\n";
 
     std::string hostUri = "file:///host.as";
-    std::string hostCode =
-        "class Rifle : WeaponMixin {\n"
-        "}\n";
+    std::string hostCode = "class Rifle : WeaponMixin {\n"
+                           "}\n";
 
     SUBCASE("Disabled by default: virtualFileUri is empty")
     {
@@ -104,22 +106,20 @@ TEST_CASE("VirtualMixinDocument - Toggle Feature Flag and Synthetic URIs")
 TEST_CASE("VirtualMixinDocument - Definition Routing Physical vs Virtual")
 {
     AngelScriptParser parser;
-    SymbolCollector collector{ nullptr };
-    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolCollector collector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
 
     std::string mixinUri = "file:///mixin.as";
-    std::string mixinCode =
-        "mixin class WeaponMixin {\n"
-        "    void Deploy(int speed) {}\n"
-        "}\n";
+    std::string mixinCode = "mixin class WeaponMixin {\n"
+                            "    void Deploy(int speed) {}\n"
+                            "}\n";
 
     std::string callerUri = "file:///caller.as";
-    std::string callerCode =
-        "class Rifle : WeaponMixin {}\n"
-        "void Main() {\n"
-        "    Rifle r;\n"
-        "    r.Deploy(42);\n"
-        "}\n";
+    std::string callerCode = "class Rifle : WeaponMixin {}\n"
+                             "void Main() {\n"
+                             "    Rifle r;\n"
+                             "    r.Deploy(42);\n"
+                             "}\n";
 
     SUBCASE("Feature flag disabled: Go-to-Definition returns physical mixin URI and line")
     {
@@ -137,11 +137,11 @@ TEST_CASE("VirtualMixinDocument - Definition Routing Physical vs Virtual")
             scopeIndex.SetScopeTree(callerUri, std::move(rootScope));
         }
 
-        TSTree *tree = parser.Parse(callerCode);
+        TSTree* tree = parser.Parse(callerCode);
         REQUIRE(tree != nullptr);
 
         // Cursor on "Deploy" at line 3, character 6
-        features::DefinitionRequest req{ callerUri, callerCode, tree, table, scopeIndex, lsp::Position{ 3, 6 } };
+        features::DefinitionRequest req{callerUri, callerCode, tree, table, scopeIndex, lsp::Position{3, 6}};
         auto defs = features::GetDefinition(req);
         REQUIRE(defs.has_value());
         REQUIRE(!defs->empty());
@@ -168,11 +168,11 @@ TEST_CASE("VirtualMixinDocument - Definition Routing Physical vs Virtual")
             scopeIndex.SetScopeTree(callerUri, std::move(rootScope));
         }
 
-        TSTree *tree = parser.Parse(callerCode);
+        TSTree* tree = parser.Parse(callerCode);
         REQUIRE(tree != nullptr);
 
         // Cursor on "Deploy" at line 3, character 6
-        features::DefinitionRequest req{ callerUri, callerCode, tree, table, scopeIndex, lsp::Position{ 3, 6 } };
+        features::DefinitionRequest req{callerUri, callerCode, tree, table, scopeIndex, lsp::Position{3, 6}};
         auto defs = features::GetDefinition(req);
         REQUIRE(defs.has_value());
         REQUIRE(!defs->empty());
@@ -187,27 +187,25 @@ TEST_CASE("VirtualMixinDocument - Definition Routing Physical vs Virtual")
 TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
 {
     AngelScriptParser parser;
-    SymbolCollector collector{ nullptr };
-    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolCollector collector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
 
     std::string mixinUri = "file:///mixin.as";
-    std::string mixinCode =
-        "mixin class WeaponMixin {\n"
-        "    void Attack() {\n"
-        "        self.FireWeapon();\n"
-        "        m_flNextAttack = 1.0f;\n"
-        "    }\n"
-        "}\n";
+    std::string mixinCode = "mixin class WeaponMixin {\n"
+                            "    void Attack() {\n"
+                            "        self.FireWeapon();\n"
+                            "        m_flNextAttack = 1.0f;\n"
+                            "    }\n"
+                            "}\n";
 
     std::string hostUri = "file:///host.as";
-    std::string hostCode =
-        "class CBasePlayerWeapon {\n"
-        "    float m_flNextAttack;\n"
-        "    void FireWeapon() {}\n"
-        "}\n"
-        "class MyRifle : CBasePlayerWeapon, WeaponMixin {\n"
-        "    CBasePlayerWeapon@ self;\n"
-        "}\n";
+    std::string hostCode = "class CBasePlayerWeapon {\n"
+                           "    float m_flNextAttack;\n"
+                           "    void FireWeapon() {}\n"
+                           "}\n"
+                           "class MyRifle : CBasePlayerWeapon, WeaponMixin {\n"
+                           "    CBasePlayerWeapon@ self;\n"
+                           "}\n";
 
     SymbolTable table;
     ScopeIndex scopeIndex;
@@ -218,7 +216,7 @@ TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
     table.ResolveIncludedMixins();
 
     std::string virtualUri = "angelscript-virtual://MyRifle/WeaponMixin.as";
-    TSTree *tree = parser.Parse(mixinCode);
+    TSTree* tree = parser.Parse(mixinCode);
     REQUIRE(tree != nullptr);
 
     auto rootScope = scopeCollector.CollectScopes(mixinCode, parser);
@@ -230,10 +228,10 @@ TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
     SUBCASE("Hover on 'self' in virtual document resolves host property signature")
     {
         // Cursor on "self" at line 2, character 9
-        features::HoverRequest req{ virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{ 2, 9 } };
+        features::HoverRequest req{virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{2, 9}};
         auto hover = features::GetHover(req);
         REQUIRE(hover.has_value());
-        const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+        const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
         CHECK(markup.value.find("self") != std::string::npos);
         CHECK(markup.value.find("CBasePlayerWeapon") != std::string::npos);
     }
@@ -241,20 +239,20 @@ TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
     SUBCASE("Hover on host member 'FireWeapon' in virtual document resolves host method signature")
     {
         // Cursor on "FireWeapon" at line 2, character 15
-        features::HoverRequest req{ virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{ 2, 15 } };
+        features::HoverRequest req{virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{2, 15}};
         auto hover = features::GetHover(req);
         REQUIRE(hover.has_value());
-        const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+        const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
         CHECK(markup.value.find("FireWeapon") != std::string::npos);
     }
 
     SUBCASE("Hover on host inherited property 'm_flNextAttack' resolves float type")
     {
         // Cursor on "m_flNextAttack" at line 3, character 10
-        features::HoverRequest req{ virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{ 3, 10 } };
+        features::HoverRequest req{virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{3, 10}};
         auto hover = features::GetHover(req);
         REQUIRE(hover.has_value());
-        const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+        const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
         CHECK(markup.value.find("m_flNextAttack") != std::string::npos);
         CHECK(markup.value.find("float") != std::string::npos);
     }
@@ -262,7 +260,7 @@ TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
     SUBCASE("Go-to-Definition on 'self' in virtual document navigates to host declaration")
     {
         // Cursor on "self" at line 2, character 9
-        features::DefinitionRequest req{ virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{ 2, 9 } };
+        features::DefinitionRequest req{virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{2, 9}};
         auto defs = features::GetDefinition(req);
         REQUIRE(defs.has_value());
         REQUIRE(!defs->empty());
@@ -273,7 +271,7 @@ TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
     SUBCASE("Go-to-Definition on host member 'FireWeapon' in virtual document navigates to host declaration")
     {
         // Cursor on "FireWeapon" at line 2, character 15
-        features::DefinitionRequest req{ virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{ 2, 15 } };
+        features::DefinitionRequest req{virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{2, 15}};
         auto defs = features::GetDefinition(req);
         REQUIRE(defs.has_value());
         REQUIRE(!defs->empty());
@@ -283,5 +281,3 @@ TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
 
     ts_tree_delete(tree);
 }
-
-

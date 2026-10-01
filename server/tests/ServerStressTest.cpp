@@ -453,7 +453,12 @@ TEST_CASE("Server - Barrier: Immediate reopen updates generation and receives fr
         });
 
     // Allow generation 2 background analysis to settle
-    stream.PushAction([&serverPtr]() { if (serverPtr) serverPtr->DrainQueue(); });
+    stream.PushAction(
+        [&serverPtr]()
+        {
+            if (serverPtr)
+                serverPtr->DrainQueue();
+        });
 
     // 7. Shutdown and exit
     const int shutdownId = nextReqId++;
