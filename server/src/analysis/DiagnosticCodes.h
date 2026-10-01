@@ -216,7 +216,7 @@ inline constexpr std::string_view RepeatedConversion = "as-hint-repeated-convers
 inline constexpr std::string_view SyntaxError = "as-syntax-error";
 inline constexpr std::string_view SyntaxErrorGeneric = "as-syntax-error-generic";
 inline constexpr std::string_view SyntaxErrorMissing = "as-syntax-error-missing";
-inline constexpr std::string_view GlobalFunctionAttribute = "as-warn-global-function-attribute";
+inline constexpr std::string_view GlobalFunctionAttribute = "as-err-global-function-attribute";
 inline constexpr std::string_view IncludeNotFound = "as-warn-include-not-found";
 inline constexpr std::string_view UndeclaredIdentifier = "as-warn-undeclared-identifier";
 inline constexpr std::string_view PossibleNullDereference = "as-warn-possible-null-dereference";
@@ -229,4 +229,5 @@ inline constexpr std::string_view BaseNotFound = "as-err-base-not-found";
 inline constexpr std::string_view InvalidReferenceReturn = "as-err-invalid-reference-return";
 inline constexpr std::string_view ReadonlyHandle = "as-err-readonly-handle";
 inline constexpr std::string_view StandaloneReference = "as-err-standalone-reference";
+inline constexpr std::string_view ReadonlyReference = "as-err-readonly-reference";
 } // namespace angel_lsp::diagnostics::codes

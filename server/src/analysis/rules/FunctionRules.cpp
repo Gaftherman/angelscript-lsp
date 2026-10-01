@@ -264,20 +264,17 @@ void CheckModifiers(const Symbol& sym, const FunctionSignature& sig, const Funct
         ctx.Emit(sym, "as-err-global-function-qualifiers", sym.name);
     }
 
-    // `override` and `final` are not. The engine accepts both on a global function and
-    // silently ignores them, so calling it an error would be this analyzer inventing a rule
-    // AngelScript does not have. Saying nothing would be worse - a global marked `override`
-    // is almost always a method that lost its class - so it is a warning, which is what a
-    // qualifier with no effect is worth.
+    // In AngelScript, `override` and `final` on a global function are compile errors:
+    // "Unexpected token 'final' / 'override'".
     if (sig.modifiers.isOverride)
     {
-        ctx.LogRule("CheckModifiers", "as-warn-global-function-attribute", sym);
-        ctx.Emit(sym, "as-warn-global-function-attribute", {"override", sym.name}, DiagnosticSeverity::Warning);
+        ctx.LogRule("CheckModifiers", diagnostics::codes::GlobalFunctionAttribute, sym);
+        ctx.Emit(sym, diagnostics::codes::GlobalFunctionAttribute, {"override", sym.name}, DiagnosticSeverity::Error);
     }
     if (sig.modifiers.isFinal)
     {
-        ctx.LogRule("CheckModifiers", "as-warn-global-function-attribute", sym);
-        ctx.Emit(sym, "as-warn-global-function-attribute", {"final", sym.name}, DiagnosticSeverity::Warning);
+        ctx.LogRule("CheckModifiers", diagnostics::codes::GlobalFunctionAttribute, sym);
+        ctx.Emit(sym, diagnostics::codes::GlobalFunctionAttribute, {"final", sym.name}, DiagnosticSeverity::Error);
     }
 }
 

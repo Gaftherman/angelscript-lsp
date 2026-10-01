@@ -63,7 +63,8 @@ bool HasCode(const std::vector<Diagnostic>& diagnostics, const std::string& code
 
 bool HasNoConstFinding(const std::vector<Diagnostic>& diagnostics)
 {
-    return !HasCode(diagnostics, "as-err-const-assignment") && !HasCode(diagnostics, "as-err-const-method-required");
+    return !HasCode(diagnostics, "as-err-const-assignment") && !HasCode(diagnostics, "as-err-const-method-required") &&
+           !HasCode(diagnostics, "as-err-readonly-reference");
 }
 } // namespace
 
@@ -382,6 +383,161 @@ TEST_SUITE("AngelScript_ObjectHandles_Verification")
     }
 }
 
+TEST_CASE("ConstChecker - Assigning to a member variable inside a const method emits as-err-readonly-reference")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("Entity");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("value");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Read");
+
+    // Unqualified assignment `v = 1;`
+    {
+        const std::string code = "class " + className +
+                                 " {\n"
+                                 "    int " +
+                                 varName +
+                                 ";\n"
+                                 "    void " +
+                                 methodName + "() const { " + varName +
+                                 " = 1; }\n"
+                                 "}\n";
+        CHECK(HasCode(AnalyzeConstSnippet(code), "as-err-readonly-reference"));
+    }
+
+    // Qualified assignment `this.v = 1;`
+    {
+        const std::string code = "class " + className +
+                                 " {\n"
+                                 "    int " +
+                                 varName +
+                                 ";\n"
+                                 "    void " +
+                                 methodName + "() const { this." + varName +
+                                 " = 1; }\n"
+                                 "}\n";
+        CHECK(HasCode(AnalyzeConstSnippet(code), "as-err-readonly-reference"));
+    }
+
+    // Compound assignment `v += 1;`
+    {
+        const std::string code = "class " + className +
+                                 " {\n"
+                                 "    int " +
+                                 varName +
+                                 ";\n"
+                                 "    void " +
+                                 methodName + "() const { " + varName +
+                                 " += 1; }\n"
+                                 "}\n";
+        CHECK(HasCode(AnalyzeConstSnippet(code), "as-err-readonly-reference"));
+    }
+}
+
+TEST_CASE("ConstChecker - Assigning to a member handle inside a const method emits as-err-readonly-reference")
+{
+    const std::string barClass = angel_lsp::test::GenerateRandomSymbolName("Bar");
+    const std::string entityClass = angel_lsp::test::GenerateRandomSymbolName("Entity");
+    const std::string handleName = angel_lsp::test::GenerateRandomSymbolName("m_bar");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Read");
+
+    const std::string code = "class " + barClass +
+                             " {}\n"
+                             "class " +
+                             entityClass +
+                             " {\n"
+                             "    " +
+                             barClass + "@ " + handleName +
+                             ";\n"
+                             "    void " +
+                             methodName + "() const { @" + handleName +
+                             " = null; }\n"
+                             "}\n";
+
+    CHECK(HasCode(AnalyzeConstSnippet(code), "as-err-readonly-reference"));
+}
+
+TEST_CASE("ConstChecker - Calling a non-const method on this inside a const method emits as-err-const-method-required")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("Entity");
+    const std::string mutateMethod = angel_lsp::test::GenerateRandomSymbolName("Mutate");
+    const std::string readMethod = angel_lsp::test::GenerateRandomSymbolName("Read");
+
+    const std::string code = "class " + className +
+                             " {\n"
+                             "    int v;\n"
+                             "    void " +
+                             mutateMethod +
+                             "() { v = 1; }\n"
+                             "    void " +
+                             readMethod + "() const { this." + mutateMethod +
+                             "(); }\n"
+                             "}\n";
+
+    CHECK(HasCode(AnalyzeConstSnippet(code), "as-err-const-method-required"));
+}
+
+TEST_CASE("ConstChecker - Mutating a parameter declared const emits as-err-const-assignment")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("Process");
+    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("val");
+
+    // Global function with const parameter
+    {
+        const std::string code = "void " + funcName + "(const int " + paramName +
+                                 ") {\n"
+                                 "    " +
+                                 paramName +
+                                 " = 5;\n"
+                                 "}\n";
+        CHECK(HasCode(AnalyzeConstSnippet(code), "as-err-const-assignment"));
+    }
+
+    // Member function with const parameter
+    {
+        const std::string className = angel_lsp::test::GenerateRandomSymbolName("Worker");
+        const std::string code = "class " + className +
+                                 " {\n"
+                                 "    void " +
+                                 funcName + "(const int " + paramName +
+                                 ") const {\n"
+                                 "        " +
+                                 paramName +
+                                 " = 5;\n"
+                                 "    }\n"
+                                 "}\n";
+        CHECK(HasCode(AnalyzeConstSnippet(code), "as-err-const-assignment"));
+    }
+}
+
+TEST_CASE("ConstChecker - Mutating local variables in const methods is allowed")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("Entity");
+    const std::string globalName = angel_lsp::test::GenerateRandomSymbolName("g_count");
+    const std::string localName = angel_lsp::test::GenerateRandomSymbolName("counter");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Inspect");
+
+    const std::string code = "int " + globalName +
+                             " = 0;\n"
+                             "class " +
+                             className +
+                             " {\n"
+                             "    void " +
+                             methodName +
+                             "() const {\n"
+                             "        int " +
+                             localName +
+                             " = 0;\n"
+                             "        " +
+                             localName +
+                             " = 1;\n"
+                             "        " +
+                             globalName +
+                             " = 42;\n"
+                             "    }\n"
+                             "}\n";
+
+    CHECK(HasNoConstFinding(AnalyzeConstSnippet(code)));
+}
+
 // =====================================================================================
 // Corpus audit (opt-in - run via
 // `angel_lsp_tests.exe --no-skip --test-case="*Const Corpus Audit*"`)
@@ -397,7 +553,10 @@ TEST_CASE("ConstChecker - Const Corpus Audit" * doctest::skip(true))
 
     const auto result = angel_lsp::test::RunCorpusAudit(
         [](const std::string& code)
-        { return code == "as-err-const-assignment" || code == "as-err-const-method-required"; });
+        {
+            return code == "as-err-const-assignment" || code == "as-err-const-method-required" ||
+                   code == "as-err-readonly-reference";
+        });
 
     MESSAGE("Const corpus audit: files=" << result.filesAnalysed << " totalFlagged=" << result.Total()
                                          << " seconds=" << result.seconds);

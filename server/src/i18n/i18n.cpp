@@ -212,9 +212,9 @@ void PopulateEnglishMessages3(MessageMap& m_messages)
     m_messages["as-err-explicit-not-member"] = "'explicit' is only allowed on a class method, and '{}' is not one.";
     m_messages["as-err-interface-method-attribute"] = "An interface method cannot carry the '{}' attribute ('{}').";
     m_messages["as-err-funcdef-attribute"] = "A funcdef cannot carry the '{}' attribute ('{}').";
-    m_messages["as-warn-global-function-attribute"] =
-        "'{}' describes a method's relationship to a class, so it means nothing on global function '{}'. AngelScript "
-        "accepts it and ignores it.";
+    m_messages["as-err-global-function-attribute"] = "Unexpected token '{}' on global function '{}'.";
+    m_messages["as-err-readonly-reference"] =
+        "Reference is read-only: member '{}' cannot be modified in a const method.";
     m_messages["as-err-private-member-access"] = "Illegal access to private member '{}', declared in class '{}'.";
     m_messages["as-err-protected-member-access"] =
         "Illegal access to protected member '{}', declared in class '{}'. A protected member is reachable from a "
@@ -540,9 +540,9 @@ void PopulateSpanishMessages3(MessageMap& m_messages)
     m_messages["as-err-explicit-not-member"] = "'explicit' solo se permite en un método de clase, y '{}' no lo es.";
     m_messages["as-err-interface-method-attribute"] = "Un método de interfaz no puede llevar el atributo '{}' ('{}').";
     m_messages["as-err-funcdef-attribute"] = "Un funcdef no puede llevar el atributo '{}' ('{}').";
-    m_messages["as-warn-global-function-attribute"] =
-        "'{}' describe la relación de un método con su clase, así que no significa nada en la función global '{}'. "
-        "AngelScript lo acepta y lo ignora.";
+    m_messages["as-err-global-function-attribute"] = "Token inesperado '{}' en la función global '{}'.";
+    m_messages["as-err-readonly-reference"] =
+        "La referencia es de solo lectura: el miembro '{}' no puede modificarse en un método const.";
     m_messages["as-err-private-member-access"] = "Acceso ilegal al miembro privado '{}', declarado en la clase '{}'.";
     m_messages["as-err-protected-member-access"] =
         "Acceso ilegal al miembro protegido '{}', declarado en la clase '{}'. Un miembro protegido es accesible "

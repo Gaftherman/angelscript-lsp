@@ -29,7 +29,6 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"W108", diagnostics::codes::UndeclaredIdentifier},
     {"W109", diagnostics::codes::PossibleNullDereference},
     {"W110", diagnostics::codes::HandleComparisonEquality},
-    {"W111", diagnostics::codes::GlobalFunctionAttribute},
     {"W112", diagnostics::codes::IncludeNotFound},
     // Hints
     {"W151", diagnostics::codes::AccessorDisabled},
@@ -191,6 +190,8 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"E245", diagnostics::codes::InvalidReferenceReturn},
     {"E246", diagnostics::codes::ReadonlyHandle},
     {"E247", diagnostics::codes::StandaloneReference},
+    {"E248", diagnostics::codes::ReadonlyReference},
+    {"E249", diagnostics::codes::GlobalFunctionAttribute},
 };
 
 bool EqualsCaseInsensitive(std::string_view a, std::string_view b) noexcept

@@ -378,21 +378,19 @@ TEST_CASE("FunctionRules - Reports const on a global function as an error")
     CHECK(HasCode(AnalyzeFunctionSnippet("void Think() const { }\n"), "as-err-global-function-qualifiers"));
 }
 
-TEST_CASE("FunctionRules - Reports override and final on a global function as a warning")
+TEST_CASE("FunctionRules - Reports override and final on a global function as an error")
 {
-    // Not an error: the engine accepts both on a global function and silently ignores them, so
-    // reporting them as errors would be this analyzer inventing a rule AngelScript does not have.
-    // Still worth saying, because a global marked `override` is usually a method that lost its
-    // class - which is what a warning is for.
-    for (const std::string source : {"void Think() override { }\n", "void Think() final { }\n"})
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("Think");
+    for (const std::string modifier : {"override", "final"})
     {
+        const std::string source = "void " + funcName + "() " + modifier + " { }\n";
         const auto diagnostics = AnalyzeFunctionSnippet(source);
         CHECK_FALSE(HasCode(diagnostics, "as-err-global-function-qualifiers"));
 
         const auto found = std::find_if(diagnostics.begin(), diagnostics.end(), [](const Diagnostic& diag)
-                                        { return diag.code == "as-warn-global-function-attribute"; });
+                                        { return diag.code == "as-err-global-function-attribute"; });
         REQUIRE(found != diagnostics.end());
-        CHECK(found->severity == DiagnosticSeverity::Warning);
+        CHECK(found->severity == DiagnosticSeverity::Error);
     }
 }
 
@@ -762,7 +760,7 @@ TEST_CASE("FunctionRules - Function Rules Corpus Audit" * doctest::skip(true))
                                                      "as-err-explicit-not-member",
                                                      "as-err-virtual-property-signature",
                                                      "as-err-interface-method-attribute",
-                                                     "as-warn-global-function-attribute"};
+                                                     "as-err-global-function-attribute"};
 
     const auto result = angel_lsp::test::RunCorpusAudit(
         [](const std::string& code) { return std::find(k_codes.begin(), k_codes.end(), code) != k_codes.end(); });
