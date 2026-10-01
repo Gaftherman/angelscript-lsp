@@ -201,7 +201,7 @@ EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode
 {
     EnclosingMethodInfo info;
     TSNode curr = node;
-    TSNode funcNode = {0, 0, 0, 0};
+    TSNode funcNode{};
 
     while (!ts_node_is_null(curr))
     {
@@ -277,6 +277,9 @@ const VariableSignature* FindClassMemberVariable(const std::string& className, c
     }
     return nullptr;
 }
+
+bool IsMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
+                    std::string& outMemberName);
 
 /**
  * @brief Checks if an identifier or scoped identifier represents a member of 'this'.
