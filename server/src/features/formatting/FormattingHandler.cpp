@@ -2089,6 +2089,11 @@ std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingReq
         return std::nullopt;
     }
 
+    if (request.tree && ts_node_has_error(ts_tree_root_node(request.tree)))
+    {
+        return std::nullopt;
+    }
+
     uint32_t targetLine = request.position.line;
 
     RangeFormattingRequest rangeReq{

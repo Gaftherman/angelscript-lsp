@@ -257,13 +257,6 @@ void CollectEnclosingClassCallees(const std::string& calleeName, TSNode callNode
 }
 
 /**
- * @brief Collects candidate function symbols for a free or unqualified call expression.
- * @param[in] funcNode AST callee function node.
- * @param[in] callNode AST call_expression node.
- * @param[in] request Inlay hint request context.
- * @return Vector of candidate symbols.
- */
-/**
  * @brief Resolves scoped callee candidates by walking enclosing namespaces and inherited hierarchies.
  * @param[in] calleeName Callee identifier string.
  * @param[in] callNode AST call_expression node.
@@ -320,6 +313,39 @@ std::vector<analysis::Symbol> CollectScopedCalleeCandidates(const std::string& c
     return candidates;
 }
 
+/**
+ * @brief Collects constructor candidates for class symbols using fully qualified names with fallback.
+ * @param[in] candidateSymbols Symbols found in scope or table.
+ * @param[in] symbolTable Symbol table for resolution.
+ * @return Vector of constructor function symbols.
+ */
+std::vector<analysis::Symbol> CollectClassConstructorCandidates(const std::vector<analysis::Symbol>& candidateSymbols,
+                                                                const analysis::SymbolTable& symbolTable)
+{
+    std::vector<analysis::Symbol> ctorSymbols;
+    for (const auto& sym : candidateSymbols)
+    {
+        if (sym.type == analysis::SymbolType::Class)
+        {
+            const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            auto ctors = symbolTable.FindSymbols(qName + "::" + sym.name);
+            if (ctors.empty() && qName != sym.name)
+            {
+                ctors = symbolTable.FindSymbols(sym.name + "::" + sym.name);
+            }
+            ctorSymbols.insert(ctorSymbols.end(), ctors.begin(), ctors.end());
+        }
+    }
+    return ctorSymbols;
+}
+
+/**
+ * @brief Collects candidate function symbols for a free or unqualified call expression.
+ * @param[in] funcNode AST callee function node.
+ * @param[in] callNode AST call_expression node.
+ * @param[in] request Inlay hint request context.
+ * @return Vector of candidate symbols.
+ */
 std::vector<analysis::Symbol> CollectFreeCalleeCandidates(TSNode funcNode, TSNode callNode,
                                                           const InlayHintRequest& request)
 {
@@ -342,18 +368,22 @@ std::vector<analysis::Symbol> CollectFreeCalleeCandidates(TSNode funcNode, TSNod
         candidateSymbols = CollectScopedCalleeCandidates(calleeName, callNode, request);
     }
 
-    for (const auto& sym : candidateSymbols)
+    auto ctorSymbols = CollectClassConstructorCandidates(candidateSymbols, request.symbolTable);
+    if (!ctorSymbols.empty())
     {
-        if (sym.type == analysis::SymbolType::Class)
+        return ctorSymbols;
+    }
+
+    if (candidateSymbols.empty())
+    {
+        auto fallbackCtors =
+            analysis::CollectConstructorCandidates(calleeName, callNode, request.sourceCode, request.symbolTable);
+        if (!fallbackCtors.empty())
         {
-            std::string ctorName = sym.name + "::" + sym.name;
-            auto ctorSyms = request.symbolTable.FindSymbols(ctorName);
-            if (!ctorSyms.empty())
-            {
-                return ctorSyms;
-            }
+            return fallbackCtors;
         }
     }
+
     return candidateSymbols;
 }
 

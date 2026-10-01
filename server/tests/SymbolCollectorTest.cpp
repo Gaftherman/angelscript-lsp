@@ -819,3 +819,30 @@ TEST_CASE("SymbolCollector - Multi-colon syntax error (::: or ::::) is flagged a
                                             [](const Diagnostic& d) { return d.code == "as-syntax-error"; });
     CHECK(hasSyntaxError);
 }
+
+TEST_CASE("SymbolCollector - Argument List Missing Comma Syntax Error")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("CallerFunc");
+    const std::string idName = angel_lsp::test::GenerateRandomSymbolName("USE_FLAG");
+    const std::string code = "void " + funcName +
+                             "() {\n"
+                             "    this.Use(null, null " +
+                             idName +
+                             ", 0.0f);\n"
+                             "}\n";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const auto diagnostics = collector.CollectSymbols("file:///test_arg_missing_comma.as", code, parser, table);
+
+    const auto it =
+        std::find_if(diagnostics.begin(), diagnostics.end(),
+                     [&idName](const Diagnostic& d)
+                     {
+                         return d.code == "as-syntax-error" &&
+                                d.message.find("Expected ',' or ')' before '" + idName + "'") != std::string::npos;
+                     });
+    CHECK(it != diagnostics.end());
+}

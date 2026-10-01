@@ -6556,7 +6556,8 @@ TEST_CASE("Server - Formatting and OnTypeFormatting capabilities disabled when e
 
     config::ServerConfig serverConfig;
     serverConfig.features.enableFormatting = false;
-    // enableOnTypeFormatting defaults to true, proving enableFormatting = false overrides it.
+    serverConfig.features.enableOnTypeFormatting = true;
+    // enableFormatting = false overrides enableOnTypeFormatting even when explicitly enabled.
     REQUIRE(serverConfig.features.enableOnTypeFormatting == true);
 
     test::ScriptedStream stream;

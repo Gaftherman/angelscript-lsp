@@ -53,7 +53,7 @@ struct FeatureFlags
     bool enableTypeHierarchy = true;
     bool enableLinkedEditing = true;
     bool enableCodeLens = true;
-    bool enableOnTypeFormatting = true;
+    bool enableOnTypeFormatting = false;
     bool enablePullDiagnostics = true;
     bool enableVirtualMixinDocuments = false;
     bool inlayHintsEnableTooltip = true;

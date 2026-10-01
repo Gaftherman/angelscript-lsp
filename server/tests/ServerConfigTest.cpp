@@ -56,6 +56,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config1.features.enableInlayHints == true);
             CHECK(config1.features.enableCodeAction == true);
             CHECK(config1.features.enableFormatting == true);
+            CHECK(config1.features.enableOnTypeFormatting == false);
             CHECK(config1.info.name == "AngelScript Language Server");
             // Against the macro, not a literal: the version comes from client/package.json now,
             // and a test hardcoding it would be the third place to forget when it changes.
@@ -90,6 +91,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(config.features.enableInlayHints == true);
             CHECK(config.features.enableCodeAction == true);
             CHECK(config.features.enableFormatting == true);
+            CHECK(config.features.enableOnTypeFormatting == false);
             CHECK(config.info.showHelp == false);
             CHECK(config.info.showVersion == false);
             CHECK(config.info.locale == "en");

@@ -3833,6 +3833,13 @@ std::vector<CallArgumentInfo> ExtractCallArguments(TSNode argumentList, std::str
             continue;
         }
 
+        if (inArgument && !ts_node_is_null(current.exprNode))
+        {
+            result.push_back(std::move(current));
+            current = CallArgumentInfo{};
+            current.index = static_cast<uint32_t>(result.size());
+        }
+
         const char* field = ts_tree_cursor_current_field_name(&cursor);
         ProcessCallArgumentChild(child, field, sourceCode, current);
         inArgument = true;

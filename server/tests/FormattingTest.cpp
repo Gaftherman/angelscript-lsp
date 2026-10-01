@@ -1,5 +1,6 @@
 #include "features/formatting/FormattingHandler.h"
 #include "helpers/TestUtils.h"
+#include "parser/AngelScriptParser.h"
 #include <doctest/doctest.h>
 #include <string>
 #include <vector>
@@ -733,5 +734,30 @@ TEST_SUITE("Formatting")
         FormatCodeOptions legacyOpts{options, BraceStyle::Allman, false, false};
         std::string expanded = FormatSourceCode(code, legacyOpts);
         CHECK(expanded.find(className + "()\n    {\n    }") != std::string::npos);
+    }
+
+    TEST_CASE("FormatOnType - Rejects Tree With Syntax Error")
+    {
+        parser::AngelScriptParser parser;
+        const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("BadSyntax");
+        const std::string code = "void " + fnName +
+                                 "() {\n"
+                                 "    this.Use(null, null USE_TOGGLE, 0.0f);:\n"
+                                 "}\n";
+
+        TSTree* tree = parser.Parse(code);
+        REQUIRE(tree != nullptr);
+        CHECK(ts_node_has_error(ts_tree_root_node(tree)));
+
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        OnTypeFormattingRequest req{"file:///test.as",  code, tree, lsp::Position{1, 43}, ";", options,
+                                    BraceStyle::Allman, false};
+        auto edits = FormatOnType(req);
+        CHECK_FALSE(edits.has_value());
+
+        ts_tree_delete(tree);
     }
 }

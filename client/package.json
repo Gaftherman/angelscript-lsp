@@ -552,7 +552,7 @@
           },
           "angelscript.features.onTypeFormatting": {
             "type": "boolean",
-            "default": true,
+            "default": false,
             "markdownDescription": "%config.features.onTypeFormatting.description%"
           },
           "angelscript.format.onSave": {

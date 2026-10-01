@@ -1481,3 +1481,59 @@ TEST_CASE("InlayHintHandler - Omitted default arguments disabled by default")
     CHECK(std::find_if(labels.begin(), labels.end(),
                        [&](const std::string& l) { return l.find(param2) != std::string::npos; }) == labels.end());
 }
+
+TEST_CASE("InlayHintHandler - Nested Namespace Constructor Call Parameter Hints with This")
+{
+    const std::string nsOuter = angel_lsp::test::GenerateRandomSymbolName("TextMenu");
+    const std::string nsInner = angel_lsp::test::GenerateRandomSymbolName("v1");
+    const std::string classOption = angel_lsp::test::GenerateRandomSymbolName("MenuOption");
+    const std::string classMenu = angel_lsp::test::GenerateRandomSymbolName("Menu");
+    const std::string paramOwner = angel_lsp::test::GenerateRandomSymbolName("owner");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("AddOption");
+
+    std::string code = "namespace " + nsOuter +
+                       " {\n"
+                       "    namespace " +
+                       nsInner +
+                       " {\n"
+                       "        class " +
+                       classOption +
+                       " {\n"
+                       "            " +
+                       classOption +
+                       "() {}\n"
+                       "            " +
+                       classOption + "(" + classMenu + "@ " + paramOwner +
+                       ") {}\n"
+                       "        }\n"
+                       "        class " +
+                       classMenu +
+                       " {\n"
+                       "            " +
+                       classOption + "@ " + methodName +
+                       "() {\n"
+                       "                " +
+                       classOption + "@ option = " + classOption +
+                       "( this );\n"
+                       "                return option;\n"
+                       "            }\n"
+                       "        }\n"
+                       "    }\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto& h : *hints)
+    {
+        std::string l = GetHintLabel(h);
+        if (!l.empty())
+        {
+            labels.push_back(l);
+        }
+    }
+
+    CHECK(std::find(labels.begin(), labels.end(), paramOwner + ":") != labels.end());
+}
