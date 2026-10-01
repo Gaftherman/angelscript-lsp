@@ -1,7 +1,23 @@
 """Generate GrammarNames.h from the grammar's own node-types.json."""
-import json, io, re
+import json
+import sys
+from pathlib import Path
 
-nt = json.load(io.open('build/_deps/tree_sitter_angelscript-src/src/node-types.json', encoding='utf-8'))
+SERVER = Path(__file__).resolve().parent.parent
+REPO_ROOT = SERVER.parent
+
+# Locate the fetched grammar's node-types.json across server/build* or root build*
+candidates = sorted(SERVER.glob('build*/_deps/tree_sitter_angelscript-src/src/node-types.json'))
+if not candidates:
+    candidates = sorted(REPO_ROOT.glob('build*/_deps/tree_sitter_angelscript-src/src/node-types.json'))
+
+if not candidates:
+    print('gen-grammar-names: no node-types.json found under server/build*/ or build*/', file=sys.stderr)
+    print('  Configure CMake first so FetchContent downloads the grammar.', file=sys.stderr)
+    sys.exit(1)
+
+node_types_path = candidates[0]
+nt = json.loads(node_types_path.read_text(encoding='utf-8'))
 
 nodes = sorted({n['type'] for n in nt if n.get('named')})
 fields = set()
@@ -108,5 +124,6 @@ out.append('''    };
 }
 ''')
 
-io.open('src/parser/GrammarNames.h', 'w', encoding='utf-8', newline='').write('\n'.join(out))
-print('generated src/parser/GrammarNames.h: %d node types, %d fields' % (len(nodes), len(fields)))
+out_path = SERVER / 'src' / 'parser' / 'GrammarNames.h'
+out_path.write_text('\n'.join(out) + '\n', encoding='utf-8', newline='\n')
+print(f'generated {out_path.relative_to(REPO_ROOT)}: {len(nodes)} node types, {len(fields)} fields')

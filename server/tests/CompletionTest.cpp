@@ -2000,3 +2000,53 @@ TEST_CASE("CompletionHandler - Invariant: Current file enum constant ranks highe
     REQUIRE(allItExt != items.end());
     CHECK(std::distance(allItCur, allItExt) > 0);
 }
+
+TEST_CASE("Completion - Scoped enum completion does not duplicate member as variable")
+{
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("AttackType");
+    const std::string mem1 = angel_lsp::test::GenerateRandomSymbolName("Primary");
+    const std::string mem2 = angel_lsp::test::GenerateRandomSymbolName("Secondary");
+    const std::string mem3 = angel_lsp::test::GenerateRandomSymbolName("Tertiary");
+
+    std::string code = "enum " + enumName +
+                       " {\n"
+                       "    " +
+                       mem1 +
+                       ",\n"
+                       "    " +
+                       mem2 +
+                       ",\n"
+                       "    " +
+                       mem3 +
+                       "\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    " +
+                       enumName +
+                       "::\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    auto items = env.CompleteAt(5, static_cast<uint32_t>(enumName.size() + 6));
+
+    std::vector<lsp::CompletionItem> tertMatches;
+    for (const auto& item : items)
+    {
+        if (item.label == mem3)
+        {
+            tertMatches.push_back(item);
+        }
+    }
+
+    CHECK(tertMatches.size() == 1);
+    if (!tertMatches.empty())
+    {
+        CHECK(tertMatches[0].kind.has_value());
+        if (tertMatches[0].kind.has_value())
+        {
+            CHECK(*tertMatches[0].kind == lsp::CompletionItemKind::EnumMember);
+        }
+        CHECK(tertMatches[0].detail.has_value());
+        CHECK(tertMatches[0].detail->find(enumName + "::" + mem3) != std::string::npos);
+    }
+}

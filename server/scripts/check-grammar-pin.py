@@ -15,15 +15,18 @@ stale build tree, a hand-edited checkout, and a pin bumped without a reconfigure
 A local checkout via ANGELLSP_TREE_SITTER_ANGELSCRIPT_SOURCE is the documented way to work on the
 grammar (README.md), and by definition is not at the pin. That case reports and passes.
 
-Run from server/:  python scripts/check-grammar-pin.py
+Run from server/:  python scripts/check-grammar-pin.py [--strict]
 """
 
+import argparse
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 SERVER = Path(__file__).resolve().parent.parent
+REPO_ROOT = SERVER.parent
 CMAKE = SERVER / 'cmake' / 'TreeSitter.cmake'
 
 
@@ -37,8 +40,10 @@ def pinned_commit():
 
 
 def checkouts():
-    """Every fetched grammar checkout under a build tree - there may be more than one."""
-    return sorted(SERVER.glob('build*/_deps/tree_sitter_angelscript-src'))
+    """Every fetched grammar checkout under a build tree - checking server/ and repo root."""
+    found = set(SERVER.glob('build*/_deps/tree_sitter_angelscript-src'))
+    found.update(REPO_ROOT.glob('build*/_deps/tree_sitter_angelscript-src'))
+    return sorted(found)
 
 
 def head_of(path):
@@ -51,6 +56,11 @@ def head_of(path):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Audit Tree-Sitter grammar pin against TreeSitter.cmake.")
+    parser.add_argument("--strict", action="store_true", help="Fail if no build checkout is found (mandatory in CI).")
+    args = parser.parse_args()
+    strict = args.strict or os.environ.get('CI') == 'true'
+
     pinned = pinned_commit()
     if pinned is None:
         print('check-grammar-pin: no GIT_TAG found for tree_sitter_angelscript in '
@@ -59,12 +69,20 @@ def main():
 
     found = checkouts()
     if not found:
-        print('check-grammar-pin: no grammar checkout under server/build*/ - configure CMake first.')
+        msg = 'check-grammar-pin: no grammar checkout under server/build*/ or build*/ - configure CMake first.'
+        if strict:
+            print(f'ERROR: {msg}', file=sys.stderr)
+            return 1
+        print(msg)
         return 0
 
     problems = []
     for path in found:
-        where = path.relative_to(SERVER).as_posix()
+        try:
+            where = path.relative_to(SERVER).as_posix()
+        except ValueError:
+            where = path.relative_to(REPO_ROOT).as_posix()
+
         head = head_of(path)
 
         if head is None:

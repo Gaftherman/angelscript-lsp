@@ -42,7 +42,7 @@ struct FeatureFlags
     bool inlayHintsSuppressWhenArgumentMatchesName = false;
     size_t inlayHintsMaxParameters = 0;
     size_t inlayHintsMaxLength = 0;
-    OmittedDefaultArgumentsMode inlayHintsOmittedDefaultArguments = OmittedDefaultArgumentsMode::NameAndValue;
+    OmittedDefaultArgumentsMode inlayHintsOmittedDefaultArguments = OmittedDefaultArgumentsMode::Off;
     bool enableCodeAction = true;
     bool enableFormatting = true;
     bool enableDocumentLink = true;
@@ -62,7 +62,7 @@ struct FeatureFlags
     /** @brief Automatically prefix enum name when completing enum values (e.g. 'Enum::Value'). */
     bool completionQualifyEnumValues = true;
     bool hoverStringLiteralLength = true;
-    bool hoverStringLiteralPathResolution = false;
+    bool hoverStringLiteralPathResolution = true;
     bool enableCommentSuppressions = true;
     std::vector<std::string> assetSearchPaths;
 };

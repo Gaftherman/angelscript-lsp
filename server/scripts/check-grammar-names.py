@@ -37,12 +37,15 @@ it, for the hidden rules: `_text_line` is absent from node-types.json and is sti
 Run from server/:  python scripts/check-grammar-names.py
 """
 
+import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
 SERVER = Path(__file__).resolve().parent.parent
+REPO_ROOT = SERVER.parent
 SRC = SERVER / 'src'
 
 # Deciding whether a string is in "node type position" cannot be done by naming the variables that
@@ -142,6 +145,8 @@ DOXYGEN_MARKERS = ('parser/DoxygenParser.h', 'tree_sitter_doxygen')
 def find_node_types_json(checkout):
     """The grammar checkout lives wherever the build tree is; find it rather than assume one."""
     candidates = sorted(SERVER.glob('build*/_deps/%s/src/node-types.json' % checkout))
+    if not candidates:
+        candidates = sorted(REPO_ROOT.glob('build*/_deps/%s/src/node-types.json' % checkout))
     return candidates[0] if candidates else None
 
 
@@ -183,6 +188,11 @@ def grammar_for(text):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Audit C++ source code for invalid Tree-Sitter grammar names.")
+    parser.add_argument("--strict", action="store_true", help="Fail if grammar definitions are not found (mandatory in CI).")
+    args = parser.parse_args()
+    strict = args.strict or os.environ.get('CI') == 'true'
+
     # Two different sets per grammar, and the difference matters. Every entry is a legitimate thing
     # to compare a node type against - `ts_node_type(x) == ";"` is how you spot an empty statement,
     # and ";" is an anonymous token. But only the NAMED ones may calibrate a line, because the
@@ -195,9 +205,9 @@ def main():
             loaded[name] = load_grammar(found)
 
     if 'angelscript' not in loaded:
-        print('check-grammar-names: no node-types.json found under server/build*/', file=sys.stderr)
+        print('check-grammar-names: no node-types.json found under server/build*/ or build*/', file=sys.stderr)
         print('  Configure CMake first - this guard reads the grammar CMake fetches.', file=sys.stderr)
-        return 0  # Not a failure: there is nothing to check against yet.
+        return 1 if strict else 0
 
     bad_nodes = []
     bad_fields = []

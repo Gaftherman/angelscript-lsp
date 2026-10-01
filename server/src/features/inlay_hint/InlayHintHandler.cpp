@@ -1644,6 +1644,44 @@ void ProcessCallExpression(TSNode node, const InlayHintRequest& request, std::ve
 }
 
 /**
+ * @brief Processes a construct_call_expression AST node to generate constructor parameter inlay hints.
+ * @param[in] node AST construct_call_expression node.
+ * @param[in] request Inlay hint request context.
+ * @param[in,out] hints Hint vector receiving generated parameter hints.
+ */
+void ProcessConstructorCallExpression(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
+{
+    std::string typeText = DeduceCastOrConstructType(node, request.sourceCode);
+    if (typeText.empty())
+    {
+        return;
+    }
+
+    TSNode argListNode = parser::GetChildByField(node, parser::fields::Arguments);
+    if (ts_node_is_null(argListNode))
+    {
+        uint32_t childCount = ts_node_child_count(node);
+        for (uint32_t i = 0; i < childCount; ++i)
+        {
+            TSNode child = ts_node_child(node, i);
+            if (std::string_view(ts_node_type(child)) == "argument_list")
+            {
+                argListNode = child;
+                break;
+            }
+        }
+    }
+
+    if (!ts_node_is_null(argListNode))
+    {
+        auto args = ParseArguments(argListNode, request.sourceCode);
+        auto callee = ResolveConstructorParameters(typeText, node, request, args);
+        AddParameterHints(callee, args, request, hints);
+        AddOmittedDefaultArgumentHints(callee, argListNode, request, hints);
+    }
+}
+
+/**
  * @brief Generates type deduction hint for an auto variable declarator node.
  * @param[in] declarator AST variable_declarator node.
  * @param[in] request Inlay hint request context.
@@ -1827,6 +1865,10 @@ void CollectInlayHints(TSNode rootNode, const InlayHintRequest& request, std::ve
             if (nodeType == "call_expression")
             {
                 ProcessCallExpression(currentNode, request, hints);
+            }
+            else if (nodeType == "construct_call_expression")
+            {
+                ProcessConstructorCallExpression(currentNode, request, hints);
             }
             else if (nodeType == "variable_declaration")
             {

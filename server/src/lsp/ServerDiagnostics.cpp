@@ -25,6 +25,40 @@ lsp::DiagnosticSeverity ToProtocolSeverity(angel_lsp::analysis::DiagnosticSeveri
     }
     return lsp::DiagnosticSeverity::Error;
 }
+
+/**
+ * @brief Formats an LSP diagnostic message with an explicit severity and code prefix.
+ * @param[in] severity AngelScript analysis severity.
+ * @param[in] displayCode Formatted display code alias.
+ * @param[in] rawMessage Original diagnostic message.
+ * @return Prefixed message string.
+ */
+std::string FormatPrefixedDiagnosticMessage(angel_lsp::analysis::DiagnosticSeverity severity,
+                                            std::string_view displayCode, std::string_view rawMessage)
+{
+    if (displayCode.empty() || rawMessage.starts_with("["))
+    {
+        return std::string(rawMessage);
+    }
+
+    std::string prefix;
+    switch (severity)
+    {
+    case angel_lsp::analysis::DiagnosticSeverity::Error:
+        prefix = fmt::format("[ERROR: {}] ", displayCode);
+        break;
+    case angel_lsp::analysis::DiagnosticSeverity::Warning:
+        prefix = fmt::format("[WARN: {}] ", displayCode);
+        break;
+    case angel_lsp::analysis::DiagnosticSeverity::Hint:
+        prefix = fmt::format("[HINT: {}] ", displayCode);
+        break;
+    default:
+        prefix = fmt::format("[INFO: {}] ", displayCode);
+        break;
+    }
+    return prefix + std::string(rawMessage);
+}
 } // namespace
 
 void Server::EncodeIn(std::string_view text, lsp::Range& range) const
@@ -271,10 +305,12 @@ Server::ToProtocolDiagnostics(const std::string& text,
         lspDiag.range.start.character = diag.range.start.character;
         lspDiag.range.end.line = diag.range.end.line;
         lspDiag.range.end.character = diag.range.end.character;
-        lspDiag.message = diag.message;
         lspDiag.severity = ToProtocolSeverity(diag.severity);
         lspDiag.source = diag.source;
+        std::string displayCode = angel_lsp::analysis::FormatDiagnosticDisplayCode(diag.code);
         lspDiag.code = diag.code;
+        lspDiag.message =
+            FormatPrefixedDiagnosticMessage(diag.severity, displayCode.empty() ? diag.code : displayCode, diag.message);
 
         if (!diag.relatedInformation.empty())
         {

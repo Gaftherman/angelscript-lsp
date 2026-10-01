@@ -23,9 +23,9 @@
  *
  *   - tests/GrammarNamesTest.cpp asks the LOADED language whether each constant below still
  *     resolves. That is what turns a grammar pin bump into a failing test with a name in it,
- *     instead of a rule that quietly stops matching. Semantic analysis cannot catch
- *     this directly: an unparseable construct costs a symbol rather than producing a diagnostic,
- *     so a grammar gap would otherwise go undetected.
+ *     instead of a rule that quietly stops matching. The parity audit structurally cannot catch
+ *     this: an unparseable construct costs a symbol rather than producing a diagnostic, so a
+ *     grammar gap reaches it as silence. See PARITY-BACKLOG.md.
  *
  *   - scripts/check-grammar-names.py asks the SOURCE whether anyone wrote a raw string literal in
  *     a node-type or field position that the grammar does not define. That is what catches a new
@@ -130,6 +130,7 @@ inline constexpr std::string_view Condition = "condition";
 inline constexpr std::string_view Consequence = "consequence";
 inline constexpr std::string_view DefaultValue = "default_value";
 inline constexpr std::string_view Function = "function";
+inline constexpr std::string_view Handler = "handler";
 inline constexpr std::string_view Index = "index";
 inline constexpr std::string_view IndexName = "index_name";
 inline constexpr std::string_view Init = "init";
@@ -254,12 +255,13 @@ inline constexpr std::string_view k_allNodeTypes[] = {
 
 /** @brief Every constant in fields::, same purpose. */
 inline constexpr std::string_view k_allFieldNames[] = {
-    fields::Alternative, fields::ArgName,        fields::Arguments, fields::Base,        fields::BaseType,
-    fields::Body,        fields::Collection,     fields::Condition, fields::Consequence, fields::DefaultValue,
-    fields::Function,    fields::Index,          fields::IndexName, fields::Init,        fields::Kind,
-    fields::Left,        fields::Member,         fields::Modifier,  fields::Name,        fields::Object,
-    fields::Operand,     fields::Operator,       fields::Param,     fields::ParamType,   fields::Parameters,
-    fields::PropType,    fields::ReturnType,     fields::Right,     fields::Source,      fields::TemplateParams,
-    fields::Type,        fields::UnderlyingType, fields::Update,    fields::Value,       fields::VarType,
+    fields::Alternative,    fields::ArgName,    fields::Arguments,      fields::Base,        fields::BaseType,
+    fields::Body,           fields::Collection, fields::Condition,      fields::Consequence, fields::DefaultValue,
+    fields::Function,       fields::Handler,    fields::Index,          fields::IndexName,   fields::Init,
+    fields::Kind,           fields::Left,       fields::Member,         fields::Modifier,    fields::Name,
+    fields::Object,         fields::Operand,    fields::Operator,       fields::Param,       fields::ParamType,
+    fields::Parameters,     fields::PropType,   fields::ReturnType,     fields::Right,       fields::Source,
+    fields::TemplateParams, fields::Type,       fields::UnderlyingType, fields::Update,      fields::Value,
+    fields::VarType,
 };
 } // namespace angel_lsp::parser

@@ -980,6 +980,39 @@ void ResolveContainerMemberItemDetails(const analysis::Symbol& sym, lsp::Complet
 }
 
 /**
+ * @brief Checks if a qualifier corresponds to an enum type.
+ * @param[in] qualifier Scope qualifier text.
+ * @param[in] symbolTable Symbol table to query.
+ * @return True if qualifier matches an enum symbol.
+ */
+bool IsEnumQualifier(const std::string& qualifier, const analysis::SymbolTable& symbolTable)
+{
+    const auto symList = symbolTable.FindSymbolsPtr(qualifier);
+    if (symList)
+    {
+        for (const auto& sym : *symList)
+        {
+            if (sym.type == analysis::SymbolType::Enum)
+            {
+                return true;
+            }
+        }
+    }
+    if (qualifier.find("::") == std::string::npos)
+    {
+        const auto shortMatches = symbolTable.FindTypeSymbolsByShortName(qualifier);
+        for (const auto& sym : shortMatches)
+        {
+            if (sym.type == analysis::SymbolType::Enum)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
  * @brief Adds member items of a specific container to the collector.
  * @param[in] container Container name to query.
  * @param[in] qualifier Scope qualifier text.
@@ -999,6 +1032,10 @@ void AddContainerMembers(const std::string& container, const std::string& qualif
         }
         for (const auto& sym : *symList)
         {
+            if (sym.type == analysis::SymbolType::Variable && sym.GetVariable().isEnumConstant)
+            {
+                continue;
+            }
             if (sym.containerName == container || sym.containerName == qualifier)
             {
                 lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
@@ -1056,6 +1093,10 @@ bool TryCompleteScopeResolution(const std::string& prefix, CompletionCollector& 
         qualifier.resize(qualifier.size() - 2);
     }
     CollectEnumMembersUnderQualifier(qualifier, collector);
+    if (IsEnumQualifier(qualifier, collector.request.symbolTable))
+    {
+        return true;
+    }
     CollectContainerMembersUnderQualifier(qualifier, collector);
     return true;
 }

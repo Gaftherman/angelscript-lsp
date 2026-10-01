@@ -1,5 +1,6 @@
 #include "helpers/TestUtils.h"
 #include <doctest/doctest.h>
+#include <fstream>
 
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
@@ -1064,20 +1065,20 @@ TEST_CASE("HoverHandler - String Literal Hover")
     CHECK(contentText.value.find("- **Length**: " + std::to_string(rawText.size()) + " characters") !=
           std::string::npos);
 
-    // Hover over path string literal with default config (path resolution false by default)
+    // Hover over path string literal with default config (path resolution is true by default)
     auto hoverPathDefault = env.HoverAt(2, 18);
     REQUIRE(hoverPathDefault.has_value());
     auto contentDefault = std::get<lsp::MarkupContent>(hoverPathDefault->contents);
     CHECK(contentDefault.value.find("```angelscript\n\"path/to/missing_asset.wav\"\n```") != std::string::npos);
-    CHECK(contentDefault.value.find("- **File**: Not found") == std::string::npos);
+    CHECK(contentDefault.value.find("- **File**: Not found") != std::string::npos);
 
-    // Hover over path string literal with path resolution enabled
-    config::ServerConfig pathConfig;
-    pathConfig.features.hoverStringLiteralPathResolution = true;
-    auto hoverPathEnabled = env.HoverAt(2, 18, &pathConfig);
-    REQUIRE(hoverPathEnabled.has_value());
-    auto contentEnabled = std::get<lsp::MarkupContent>(hoverPathEnabled->contents);
-    CHECK(contentEnabled.value.find("- **File**: Not found") != std::string::npos);
+    // Hover over path string literal with path resolution explicitly disabled
+    config::ServerConfig pathDisabledConfig;
+    pathDisabledConfig.features.hoverStringLiteralPathResolution = false;
+    auto hoverPathDisabled = env.HoverAt(2, 18, &pathDisabledConfig);
+    REQUIRE(hoverPathDisabled.has_value());
+    auto contentDisabled = std::get<lsp::MarkupContent>(hoverPathDisabled->contents);
+    CHECK(contentDisabled.value.find("- **File**: Not found") == std::string::npos);
 
     // Hover over string literal with length display disabled
     config::ServerConfig noLengthConfig;
@@ -1225,4 +1226,52 @@ TEST_CASE("HoverHandler - Typedef Displays Underlying Primitive Bit-Width and Ra
     CHECK(content.value.find("32-bit signed integer") != std::string::npos);
     CHECK(content.value.find("-2,147,483,648 to 2,147,483,647") != std::string::npos);
     CHECK(content.value.find("underlying type: `int`") != std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Constant string concatenation resolves asset path")
+{
+    const std::string folderVar = angel_lsp::test::GenerateRandomSymbolName("hardcoded_folder");
+    const std::string extVar = angel_lsp::test::GenerateRandomSymbolName("hardcoded_ext");
+    const std::string resultVar = angel_lsp::test::GenerateRandomSymbolName("s1");
+    const std::string assetBase = angel_lsp::test::GenerateRandomSymbolName("model");
+
+    std::error_code ec;
+    auto tempRoot =
+        std::filesystem::temp_directory_path() / angel_lsp::test::GenerateRandomSymbolName("lsp_asset_test");
+    auto subDir = tempRoot / "models";
+    std::filesystem::create_directories(subDir, ec);
+
+    auto assetFile = subDir / (assetBase + ".mdl");
+    {
+        std::ofstream ofs(assetFile);
+        ofs << "dummy model data 123456789";
+    }
+
+    config::ServerConfig cfg;
+    cfg.features.hoverStringLiteralPathResolution = true;
+    cfg.features.assetSearchPaths.push_back(tempRoot.string());
+    cfg.features.assetSearchPaths.push_back(subDir.string());
+
+    std::string code = "const string " + folderVar +
+                       " = \"models/\";\n"
+                       "const string " +
+                       extVar +
+                       " = \".mdl\";\n"
+                       "void main() {\n"
+                       "    string " +
+                       resultVar + " = \"" + assetBase + "\" + " + extVar +
+                       ";\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    std::string line3Prefix = "    string " + resultVar + " = \"";
+    uint32_t hoverCol = static_cast<uint32_t>(line3Prefix.size() + 1);
+    auto hover = env.HoverAt(3, hoverCol, &cfg);
+    REQUIRE(hover.has_value());
+    auto content = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(content.value.find("*(asset)*") != std::string::npos);
+    CHECK(content.value.find("Status**: Exists") != std::string::npos);
+    CHECK(content.value.find(assetBase + ".mdl") != std::string::npos);
+
+    std::filesystem::remove_all(tempRoot, ec);
 }

@@ -113,7 +113,7 @@ struct TestEnvironment
                              nullptr,
                              0,
                              0,
-                             config::OmittedDefaultArgumentsMode::NameAndValue,
+                             config.features.inlayHintsOmittedDefaultArguments,
                              &config};
         return GetInlayHints(req);
     }
@@ -1405,4 +1405,79 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
         }
     }
     CHECK(foundNoLocParamHint);
+}
+
+TEST_CASE("InlayHintHandler - Constructor call expression parameter hints")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("MenuOption");
+    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("owner");
+    const std::string typeName = angel_lsp::test::GenerateRandomSymbolName("Menu");
+
+    std::string code = "class " + typeName +
+                       " {}\n"
+                       "class " +
+                       className +
+                       " {\n"
+                       "    " +
+                       className + "(" + typeName + "@ " + paramName +
+                       ") {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    " +
+                       typeName +
+                       "@ m;\n"
+                       "    " +
+                       className + "@ opt = " + className +
+                       "(m);\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto& h : *hints)
+    {
+        std::string l = GetHintLabel(h);
+        if (!l.empty())
+        {
+            labels.push_back(l);
+        }
+    }
+
+    CHECK(std::find(labels.begin(), labels.end(), paramName + ":") != labels.end());
+}
+
+TEST_CASE("InlayHintHandler - Omitted default arguments disabled by default")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("PlayAnim");
+    const std::string param1 = angel_lsp::test::GenerateRandomSymbolName("anim");
+    const std::string param2 = angel_lsp::test::GenerateRandomSymbolName("player_anim");
+
+    std::string code = "void " + funcName + "(int " + param1 + ", int " + param2 +
+                       " = 42) {}\n"
+                       "void main() {\n"
+                       "    " +
+                       funcName +
+                       "(10);\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    config::ServerConfig defaultConfig;
+    auto hints = env.InlayHintsWithConfig(defaultConfig);
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto& h : *hints)
+    {
+        std::string l = GetHintLabel(h);
+        if (!l.empty())
+        {
+            labels.push_back(l);
+        }
+    }
+
+    CHECK(std::find(labels.begin(), labels.end(), param1 + ":") != labels.end());
+    CHECK(std::find_if(labels.begin(), labels.end(),
+                       [&](const std::string& l) { return l.find(param2) != std::string::npos; }) == labels.end());
 }
