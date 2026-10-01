@@ -845,6 +845,29 @@ TEST_CASE("CodeActionHandler - Adds the 'property' keyword to a bare accessor")
     CHECK(edits[0].range.start.character == 15);
 }
 
+TEST_CASE("CodeActionHandler - Offers to disable the accessor portability hint")
+{
+    const std::string className = test::GenerateRandomSymbolName("Cls");
+    const std::string methodName = test::GenerateRandomSymbolName("get_Prop");
+    std::string code = "class " + className +
+                       " {\n"
+                       "    int " +
+                       methodName +
+                       "() { return 1; }\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{{1, 4}, {1, 14}};
+    auto actions = env.CodeActions(at, AccessorHintAt(at));
+
+    const auto* disableAction = ActionTitled(actions, "Disable in workspace settings");
+    REQUIRE(disableAction != nullptr);
+    CHECK(disableAction->command.has_value());
+    CHECK(disableAction->command->command == "angelscript.disableDiagnostic");
+    REQUIRE(disableAction->command->arguments.has_value());
+    CHECK(!disableAction->command->arguments->empty());
+}
+
 TEST_CASE("CodeActionHandler - The accessor fix produces text the compiler accepts")
 {
     // Applying the edit by hand and reading the result back, so the assertion is about the code the
@@ -1135,4 +1158,38 @@ TEST_CASE("CodeActionHandler - Diagnostic comment suppression quick fixes")
     CHECK(fileEdits[0].range.start.line == 0);
     CHECK(fileEdits[0].range.start.character == 0);
     CHECK(fileEdits[0].newText == "// disable W103\n");
+}
+
+TEST_CASE("CodeActionHandler - Offers explicit call and disable setting for bool conversion hint")
+{
+    const std::string varName = test::GenerateRandomSymbolName("cond");
+    std::string code = "void test() {\n"
+                       "    if (" +
+                       varName +
+                       ") {}\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{{1, 8}, {1, 8 + static_cast<lsp::uint>(varName.size())}};
+
+    lsp::Diagnostic diag;
+    diag.range = at;
+    diag.code = lsp::String("as-hint-bool-conversion");
+    diag.message = "Type 'MyBool' has conversion operator 'opImplConv' to bool";
+
+    lsp::CodeActionContext ctx;
+    ctx.diagnostics.push_back(diag);
+
+    auto actions = env.CodeActions(at, ctx);
+    REQUIRE(actions.has_value());
+    REQUIRE(!actions->empty());
+
+    const auto* explicitCallFix = ActionTitled(actions, "Call opImplConv() explicitly");
+    REQUIRE(explicitCallFix != nullptr);
+    CHECK(explicitCallFix->kind.value() == lsp::CodeActionKind::QuickFix);
+
+    const auto* disableAction = ActionTitled(actions, "Disable in workspace settings");
+    REQUIRE(disableAction != nullptr);
+    CHECK(disableAction->command.has_value());
+    CHECK(disableAction->command->command == "angelscript.disableDiagnostic");
 }

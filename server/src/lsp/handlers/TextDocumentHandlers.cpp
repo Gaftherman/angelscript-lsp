@@ -509,13 +509,18 @@ Server::HandleRequestsTextDocument_DocumentSymbol(lsp::requests::TextDocument_Do
         return lsp::Null{};
     }
 
+    utils::HighResTimer timer;
     features::DocumentSymbolRequest dr{doc->uri, *doc->text, doc->tree, m_symbolTable};
     auto symbols = features::GetDocumentSymbols(dr);
+    const double elapsedMs = timer.ElapsedMs();
     if (symbols.has_value())
     {
+        LogInfo(fmt::format("[Document Symbols] Finished in {:.2f} ms for {} ({} symbols)", elapsedMs, doc->uri,
+                            symbols->size()));
         EncodeIn(*doc->text, symbols.value());
         return symbols.value();
     }
+    LogInfo(fmt::format("[Document Symbols] Finished in {:.2f} ms for {} (0 symbols)", elapsedMs, doc->uri));
     return lsp::Null{};
 }
 

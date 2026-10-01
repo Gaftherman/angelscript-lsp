@@ -261,6 +261,10 @@ void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, 
         action.edit = std::move(wsEdit);
 
         actions.push_back(std::move(action));
+
+        actions.push_back(MakeDisableDiagnosticAction(
+            diag, "Disable in workspace settings (angelscript.diagnostics.reportBoolConversion)",
+            "diagnostics.reportBoolConversion", "as-hint-bool-conversion"));
     }
 }
 

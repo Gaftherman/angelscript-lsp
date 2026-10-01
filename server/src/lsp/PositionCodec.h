@@ -45,6 +45,17 @@ void Encode(std::string_view text, utils::PositionEncoding enc, lsp::Position& p
 void Encode(std::string_view text, utils::PositionEncoding enc, lsp::Range& range);
 
 /**
+ * @brief Converts an outbound byte-column position into the client's encoding using a precomputed LineIndex.
+ */
+void Encode(const utils::LineIndex& lineIndex, std::string_view text, utils::PositionEncoding enc,
+            lsp::Position& position);
+
+/**
+ * @brief Converts an outbound byte-column range into the client's encoding using a precomputed LineIndex.
+ */
+void Encode(const utils::LineIndex& lineIndex, std::string_view text, utils::PositionEncoding enc, lsp::Range& range);
+
+/**
  * @brief Re-encodes a semantic tokens payload in place.
  *
  * The payload is a flat run of 5-tuples (deltaLine, deltaStart, length, type, modifiers) where

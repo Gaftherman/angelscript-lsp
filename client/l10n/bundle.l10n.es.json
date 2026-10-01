@@ -43,5 +43,6 @@
   "Enter mixin name": "Nombre del mixin",
   "Open Logs Folder": "Abrir carpeta de registros",
   "No workspace folder is currently open.": "No hay ninguna carpeta de espacio de trabajo abierta actualmente.",
-  "Opens the directory containing server disk logs.": "Abre la carpeta que contiene los registros del servidor en disco."
+  "Opens the directory containing server disk logs.": "Abre la carpeta que contiene los registros del servidor en disco.",
+  "Disabled diagnostic \"{0}\" in workspace settings.": "Diagnóstico \"{0}\" deshabilitado en la configuración del espacio de trabajo."
 }

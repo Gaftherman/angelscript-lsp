@@ -202,4 +202,28 @@ TSPoint FindClassClosingBracePoint(TSNode classBody)
     return closingPt;
 }
 
+lsp::CodeAction MakeDisableDiagnosticAction(const lsp::Diagnostic& diag, std::string title, std::string settingKey,
+                                            std::string code)
+{
+    lsp::CodeAction action;
+    action.title = std::move(title);
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    action.diagnostics = std::vector<lsp::Diagnostic>{diag};
+
+    lsp::Command cmd;
+    cmd.title = "Disable in settings";
+    cmd.command = "angelscript.disableDiagnostic";
+    lsp::json::Array cmdArgs;
+    lsp::json::Object argObj;
+    argObj["settingKey"] = lsp::json::Value("angelscript." + settingKey);
+    argObj["setting"] = lsp::json::Value(std::move(settingKey));
+    argObj["value"] = lsp::json::Value(false);
+    argObj["code"] = lsp::json::Value(std::move(code));
+    cmdArgs.push_back(std::move(argObj));
+    cmd.arguments = std::move(cmdArgs);
+
+    action.command = std::move(cmd);
+    return action;
+}
+
 } // namespace angel_lsp::features

@@ -335,6 +335,10 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
         action.edit = std::move(wsEdit);
 
         actions.push_back(std::move(action));
+
+        actions.push_back(MakeDisableDiagnosticAction(
+            diag, "Disable in workspace settings (angelscript.diagnostics.reportAccessorPortability)",
+            "diagnostics.reportAccessorPortability", "as-hint-accessor-portability"));
     }
 }
 

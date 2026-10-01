@@ -43,5 +43,6 @@
   "Enter mixin name": "Enter mixin name",
   "Open Logs Folder": "Open Logs Folder",
   "No workspace folder is currently open.": "No workspace folder is currently open.",
-  "Opens the directory containing server disk logs.": "Opens the directory containing server disk logs."
+  "Opens the directory containing server disk logs.": "Opens the directory containing server disk logs.",
+  "Disabled diagnostic \"{0}\" in workspace settings.": "Disabled diagnostic \"{0}\" in workspace settings."
 }

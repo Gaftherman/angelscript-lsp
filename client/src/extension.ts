@@ -144,6 +144,9 @@ const PEEK_MIXIN_INLINE_COMMAND = 'angelscript.peekMixinInline';
 /** @brief Command that jumps from a synthesized virtual mixin document to the physical source. */
 const OPEN_PHYSICAL_SOURCE_COMMAND = 'angelscript.openPhysicalSource';
 
+/** @brief Command that disables a configurable diagnostic rule in workspace settings. */
+const DISABLE_DIAGNOSTIC_COMMAND = 'angelscript.disableDiagnostic';
+
 /**
  * @brief Wording of the button on every failure notification.
  *
@@ -313,14 +316,25 @@ function setStatus(state: 'starting' | 'running' | 'failed', tooltip: string): v
         return;
     }
 
-    const label = { starting: '$(sync~spin) AngelScript', running: '$(check) AngelScript', failed: '$(error) AngelScript' };
+    const config = workspace.getConfiguration('angelscript');
+    const enabled = config.get<boolean>('statusBar.enabled', true);
+    if (!enabled) {
+        statusBarItem.hide();
+        updateLanguageStatus(state === 'starting');
+        return;
+    }
 
-    // The stub only rides along on the healthy state: on a failure the bar has something more
-    // urgent to say, and while starting there is no answer yet.
-    statusBarItem.text = state === 'running' && activeStubLabel.length > 0
+    const label = {
+        starting: '$(sync~spin) AngelScript',
+        running: '$(symbol-namespace) AngelScript',
+        failed: '$(error) AngelScript'
+    };
+
+    const showStub = config.get<boolean>('statusBar.showStub', false);
+    statusBarItem.text = state === 'running' && showStub && activeStubLabel.length > 0
         ? `${label[state]}: ${activeStubLabel}`
         : label[state];
-    // The bar has room for a couple of path segments; the tooltip has room for the answer.
+
     const stubLine = state === 'running' && activeStubPath.length > 0
         ? `\n${l10n.t('Stub: {0}', activeStubPath)}`
         : '';
@@ -334,6 +348,7 @@ function setStatus(state: 'starting' | 'running' | 'failed', tooltip: string): v
 }
 
 let languageStatusItem: LanguageStatusItem | undefined;
+let stubsStatusItem: LanguageStatusItem | undefined;
 
 function createLanguageStatusItem(context: ExtensionContext): void {
     if (typeof languages.createLanguageStatusItem !== 'function') {
@@ -346,32 +361,55 @@ function createLanguageStatusItem(context: ExtensionContext): void {
         title: 'Rescan Workspace'
     };
     context.subscriptions.push(languageStatusItem);
+
+    stubsStatusItem = languages.createLanguageStatusItem('angelscript.stubs', { language: 'angelscript' });
+    stubsStatusItem.name = 'AngelScript Predefined Stubs';
+    stubsStatusItem.command = {
+        command: SELECT_STUBS_COMMAND,
+        title: 'Select Stubs'
+    };
+    context.subscriptions.push(stubsStatusItem);
+
     updateLanguageStatus();
 }
 
 function updateLanguageStatus(isIndexing = false): void {
-    if (!languageStatusItem) {
-        return;
-    }
     const config = workspace.getConfiguration('angelscript');
     const activeStubs = config.get<string[]>('stubs.activeFiles', []);
     const stubsCount = activeStubs.length > 0 ? activeStubs.length : (activeStubLabel.length > 0 ? 1 : 0);
 
-    if (isIndexing || lastStatus?.state === 'starting') {
-        languageStatusItem.severity = LanguageStatusSeverity.Information;
-        languageStatusItem.text = '$(sync~spin) Indexing Workspace...';
-        languageStatusItem.detail = `IntelliSense: Indexing | Analysis: Automatic | Stubs: ${stubsCount}`;
-        languageStatusItem.busy = true;
-    } else if (lastStatus?.state === 'running' || clientIsRunning()) {
-        languageStatusItem.severity = LanguageStatusSeverity.Information;
-        languageStatusItem.text = '$(check) IntelliSense: Ready';
-        languageStatusItem.detail = `IntelliSense: Ready | Analysis: Automatic | Stubs: ${stubsCount}`;
-        languageStatusItem.busy = false;
-    } else {
-        languageStatusItem.severity = LanguageStatusSeverity.Warning;
-        languageStatusItem.text = '$(alert) IntelliSense: Inactive';
-        languageStatusItem.detail = 'Language server is not running';
-        languageStatusItem.busy = false;
+    if (languageStatusItem) {
+        if (isIndexing || lastStatus?.state === 'starting') {
+            languageStatusItem.severity = LanguageStatusSeverity.Information;
+            languageStatusItem.text = '$(sync~spin) Indexing Workspace...';
+            languageStatusItem.detail = 'IntelliSense: Indexing | Analysis: Automatic';
+            languageStatusItem.busy = true;
+        } else if (lastStatus?.state === 'running' || clientIsRunning()) {
+            languageStatusItem.severity = LanguageStatusSeverity.Information;
+            languageStatusItem.text = '$(check) IntelliSense: Ready';
+            languageStatusItem.detail = 'IntelliSense: Ready | Analysis: Automatic';
+            languageStatusItem.busy = false;
+        } else {
+            languageStatusItem.severity = LanguageStatusSeverity.Warning;
+            languageStatusItem.text = '$(alert) IntelliSense: Inactive';
+            languageStatusItem.detail = 'Language server is not running';
+            languageStatusItem.busy = false;
+        }
+    }
+
+    if (stubsStatusItem) {
+        stubsStatusItem.severity = LanguageStatusSeverity.Information;
+        stubsStatusItem.busy = isIndexing;
+        if (stubsCount > 1) {
+            stubsStatusItem.text = `$(file-code) ${activeStubLabel || `${stubsCount} Stubs`}`;
+            stubsStatusItem.detail = `${stubsCount} active stubs | Click to manage`;
+        } else if (activeStubLabel.length > 0) {
+            stubsStatusItem.text = `$(file-code) ${activeStubLabel}`;
+            stubsStatusItem.detail = activeStubPath.length > 0 ? activeStubPath : 'Click to select predefined stubs';
+        } else {
+            stubsStatusItem.text = '$(file-code) No active stubs';
+            stubsStatusItem.detail = 'Click to configure predefined stubs';
+        }
     }
 }
 
@@ -1352,6 +1390,18 @@ export async function activate(context: ExtensionContext) {
 
         context.subscriptions.push(
             commands.registerCommand(OPEN_PHYSICAL_SOURCE_COMMAND, (args?: { fileUri?: string; line?: number; character?: number }) => openPhysicalSource(args)));
+
+        context.subscriptions.push(
+            commands.registerCommand(DISABLE_DIAGNOSTIC_COMMAND, async (args?: { settingKey?: string }) => {
+                if (!args?.settingKey) {
+                    return;
+                }
+                const settingKey = args.settingKey.startsWith('angelscript.')
+                    ? args.settingKey.substring('angelscript.'.length)
+                    : args.settingKey;
+                await workspace.getConfiguration('angelscript').update(settingKey, false, ConfigurationTarget.Workspace);
+                void window.showInformationMessage(l10n.t('Disabled diagnostic "{0}" in workspace settings.', args.settingKey));
+            }));
     });
 
     const virtualMixinProvider = new VirtualMixinContentProvider();
@@ -1423,6 +1473,16 @@ export async function activate(context: ExtensionContext) {
             // leave the item where it was.
             if (event.affectsConfiguration('angelscript.statusBar.alignment')) {
                 createStatusBarItem(context);
+            }
+            if (event.affectsConfiguration('angelscript.statusBar.enabled') ||
+                event.affectsConfiguration('angelscript.statusBar.showStub')) {
+                if (lastStatus) {
+                    setStatus(lastStatus.state, lastStatus.tooltip);
+                }
+            }
+            if (event.affectsConfiguration('angelscript.stubs') ||
+                event.affectsConfiguration('angelscript.predefined')) {
+                updateLanguageStatus();
             }
 
             const next = buildServerArgs();

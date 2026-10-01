@@ -100,6 +100,17 @@ void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_de
  */
 TSPoint FindClassClosingBracePoint(TSNode classBody);
 
+/**
+ * @brief Constructs a QuickFix action that disables a configurable diagnostic in workspace settings.
+ * @param[in] diag Diagnostic to link.
+ * @param[in] title Human-readable action title.
+ * @param[in] settingKey Client setting path under 'angelscript.'.
+ * @param[in] code Diagnostic code identifier.
+ * @return Constructed CodeAction with command payload.
+ */
+lsp::CodeAction MakeDisableDiagnosticAction(const lsp::Diagnostic& diag, std::string title, std::string settingKey,
+                                            std::string code);
+
 // Feature Provider Function Declarations
 void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode rootNode,
                                      std::vector<lsp::CodeAction>& actions);

@@ -325,6 +325,16 @@
             "default": "left",
             "markdownDescription": "%config.statusBar.alignment.description%"
           },
+          "angelscript.statusBar.enabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.statusBar.enabled.description%"
+          },
+          "angelscript.statusBar.showStub": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.statusBar.showStub.description%"
+          },
           "angelscript.dimInactiveRegions": {
             "type": "boolean",
             "default": true,
