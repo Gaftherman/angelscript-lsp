@@ -141,8 +141,8 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.enableVirtualMixinDocuments` | `false` | Enables virtual document providers for mixin class expansion. |
 | `angelscript.inlayHints.maxParameters` | `0` | Maximum number of parameter inlay hints to display per call (`0` = unlimited). |
 | `angelscript.inlayHints.maxLength` | `0` | Maximum character length for parameter inlay hint labels before truncating with `...` (`0` = unlimited). |
-| `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suppresses parameter name hints when argument text matches parameter name. |
-| `angelscript.inlayHints.omittedDefaultArguments` | `"nameAndValue"` | Inlay hints for omitted default arguments (`"nameAndValue"`, `"declaration"`, `"off"`). |
+| `angelscript.inlayHints.omittedDefaultArguments` | `"off"` | Inlay hints for omitted default arguments (`"nameAndValue"`, `"declaration"`, `"off"`). |
+| `angelscript.hover.stringLiteralPathResolution` | `true` | Probe and resolve string literals that look like file/asset paths. |
 | `angelscript.completion.smartTypeRanking` | `true` | Contextual type ranking prioritizing matching parameter and assignment types. |
 | `angelscript.statusBar.alignment` | `"left"` | Alignment of the AngelScript status bar item (`"left"` or `"right"`). |
 | `angelscript.diagnosticSeverity` | `{}` | Per-diagnostic severity overrides (e.g. `{"as-warn-unused-variable": "hint"}`). |

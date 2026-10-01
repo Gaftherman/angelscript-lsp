@@ -31,7 +31,7 @@ SRC = SERVER / 'src'
 
 # Protocol isolation rules
 GUARDED_DIRS = ('analysis', 'parser')
-FORBIDDEN_ANGLED = re.compile(r'#\s*include\s*<\s*lsp/')
+FORBIDDEN_ANGLED = re.compile(r'^[ \t]*#[ \t]*include[ \t]*<[ \t]*lsp/', re.MULTILINE)
 FORBIDDEN_QUOTED = {'utils/LspLogger.h'}
 
 # Layer classification
@@ -52,14 +52,19 @@ DECOUPLED_LSP_MODULES = {
     'lsp/ModuleIndex.h',
 }
 
-QUOTED_INCLUDE = re.compile(r'#\s*include\s*"([^"]+)"')
+QUOTED_INCLUDE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*"([^"\r\n]+)"', re.MULTILINE)
 
 
 def resolve(include: str, origin: Path) -> Path | None:
     """A quoted include is written either from src/ or beside the including file."""
-    for candidate in (SRC / include, origin.parent / include):
-        if candidate.is_file():
-            return candidate.resolve()
+    if '\n' in include or '\r' in include or len(include) > 255:
+        return None
+    try:
+        for candidate in (SRC / include, origin.parent / include):
+            if candidate.is_file():
+                return candidate.resolve()
+    except OSError:
+        return None
     return None
 
 

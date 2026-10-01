@@ -1088,7 +1088,7 @@ export function buildServerArgs(): string[] {
         args.push(`--inlay-hints-max-length=${maxLength}`);
     }
 
-    const omittedDefaults = config.get<string>('inlayHints.omittedDefaultArguments', 'nameAndValue');
+    const omittedDefaults = config.get<string>('inlayHints.omittedDefaultArguments', 'off');
     if (omittedDefaults) {
         args.push(`--inlay-hints-omitted-defaults=${omittedDefaults}`);
     }
@@ -1097,8 +1097,8 @@ export function buildServerArgs(): string[] {
         args.push('--disable-hover-string-literal-length');
     }
 
-    if (config.get<boolean>('hover.stringLiteralPathResolution', false) === true) {
-        args.push('--enable-hover-string-literal-path-resolution');
+    if (config.get<boolean>('hover.stringLiteralPathResolution', true) === false) {
+        args.push('--disable-hover-string-literal-path-resolution');
     }
 
     for (const entry of config.get<string[]>('hover.assetSearchPaths', [])) {
