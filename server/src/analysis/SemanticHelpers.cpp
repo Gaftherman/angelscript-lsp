@@ -3,6 +3,7 @@
 #include "analysis/DiagnosticContext.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
+#include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/rules/RuleIndex.h"
@@ -4738,4 +4739,109 @@ std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName
     }
     return "";
 }
+
+Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callName)
+{
+    Symbol sym;
+    sym.type = SymbolType::Function;
+    sym.name = std::string(callName);
+    sym.containerName = funcdefSym.containerName;
+    sym.qualifiedName = funcdefSym.qualifiedName;
+    sym.fileUri = funcdefSym.fileUri;
+    sym.startLine = funcdefSym.startLine;
+    sym.startCharacter = funcdefSym.startCharacter;
+    sym.endLine = funcdefSym.endLine;
+    sym.endCharacter = funcdefSym.endCharacter;
+
+    if (std::holds_alternative<FuncdefSignature>(funcdefSym.signature))
+    {
+        const auto& fd = funcdefSym.GetFuncdef();
+        FunctionSignature fnSig;
+        fnSig.returnType = fd.returnType;
+        fnSig.returnBaseTypeName = fd.returnBaseTypeName;
+        fnSig.returnTemplateName = fd.returnTemplateName;
+        fnSig.returnTypeKind = fd.returnTypeKind;
+        fnSig.returnIsArray = fd.returnIsArray;
+        fnSig.returnIsConst = fd.returnIsConst;
+        fnSig.returnHasPrimitiveHandle = fd.returnHasPrimitiveHandle;
+        fnSig.returnArrayDepth = fd.returnArrayDepth;
+        fnSig.modifiers = fd.modifiers;
+        fnSig.parameters = fd.parameters;
+        sym.signature = std::move(fnSig);
+    }
+    return sym;
+}
+
+std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const Scope* scope, const SymbolTable& table)
+{
+    if (!scope || name.empty())
+    {
+        return std::nullopt;
+    }
+    const LocalDefinition* def = ResolveInScope(scope, name);
+    if (!def || (def->kind != LocalDefinitionKind::Variable && def->kind != LocalDefinitionKind::Parameter))
+    {
+        return std::nullopt;
+    }
+    const std::string clean = CleanBaseType(def->typeName);
+    if (clean.empty())
+    {
+        return std::nullopt;
+    }
+    auto funcdefSym = FindFuncdefSymbol(clean, table);
+    if (!funcdefSym)
+    {
+        return std::nullopt;
+    }
+    return FuncdefToFunctionSymbol(*funcdefSym, name);
+}
+
+namespace
+{
+bool IsValidNumberLiteral(std::string_view s) noexcept
+{
+    const size_t start = (s.front() == '+' || s.front() == '-') ? 1 : 0;
+    if (start >= s.size() || !std::isdigit(static_cast<unsigned char>(s[start])))
+    {
+        return false;
+    }
+    constexpr std::string_view k_allowed = "0123456789abcdefABCDEF.xXfFuUlL";
+    return s.substr(start).find_first_not_of(k_allowed) == std::string_view::npos;
+}
+
+bool IsQuotedLiteral(std::string_view s) noexcept
+{
+    if (s.size() < 2)
+    {
+        return false;
+    }
+    return (s.front() == '"' && s.back() == '"') || (s.front() == '\'' && s.back() == '\'');
+}
+} // namespace
+
+bool IsSimpleLiteralExpression(std::string_view expr)
+{
+    while (!expr.empty() && (expr.front() == ' ' || expr.front() == '\t'))
+    {
+        expr.remove_prefix(1);
+    }
+    while (!expr.empty() && (expr.back() == ' ' || expr.back() == '\t'))
+    {
+        expr.remove_suffix(1);
+    }
+    if (expr.empty())
+    {
+        return false;
+    }
+    if (expr == "true" || expr == "false" || expr == "null")
+    {
+        return true;
+    }
+    if (IsQuotedLiteral(expr))
+    {
+        return true;
+    }
+    return IsValidNumberLiteral(expr);
+}
+
 } // namespace angel_lsp::analysis

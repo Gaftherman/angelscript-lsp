@@ -384,6 +384,21 @@ std::vector<analysis::Symbol> CollectFreeCalleeCandidates(TSNode funcNode, TSNod
         }
     }
 
+    if (candidateSymbols.empty())
+    {
+        if (auto rootScope = request.scopeIndex.GetRoot(request.uri))
+        {
+            TSPoint pt = ts_node_start_point(callNode);
+            if (const auto* scope = analysis::FindInnermostScope(rootScope.get(), pt.row, pt.column))
+            {
+                if (auto callableSym = analysis::TryResolveCallableFuncdef(calleeName, scope, request.symbolTable))
+                {
+                    candidateSymbols.push_back(std::move(*callableSym));
+                }
+            }
+        }
+    }
+
     return candidateSymbols;
 }
 

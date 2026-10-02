@@ -1151,6 +1151,26 @@ std::string InferTypeFromAst(TSNode node, const std::string& sourceCode)
     return "";
 }
 
+/**
+ * @brief Appends funcdef signature declaration to markdown hover text if typeName is a funcdef.
+ * @param[in] typeName Base or qualified type name.
+ * @param[in] table Symbol table.
+ * @param[in,out] md Destination markdown string.
+ */
+void TryAppendFuncdefSignature(std::string_view typeName, const analysis::SymbolTable& table, std::string& md)
+{
+    const std::string cleanType = analysis::CleanBaseType(typeName);
+    if (auto funcdefSym = analysis::FindFuncdefSymbol(cleanType, table))
+    {
+        std::string funcdefDecl = analysis::FormatFunctionDeclaration(*funcdefSym, true);
+        if (!funcdefDecl.empty())
+        {
+            md += "\n";
+            md += funcdefDecl;
+        }
+    }
+}
+
 void FormatParameterHover(const analysis::LocalDefinition& def, std::string_view typeName, const HoverQueryContext& ctx,
                           std::string& md)
 {
@@ -1176,6 +1196,8 @@ void FormatParameterHover(const analysis::LocalDefinition& def, std::string_view
             md += def.defaultValue;
         }
     }
+
+    TryAppendFuncdefSignature(typeName, ctx.request.symbolTable, md);
 }
 
 std::optional<analysis::Symbol> FindMatchingGlobalSymbol(const analysis::LocalDefinition& def,
@@ -1312,6 +1334,29 @@ void TryAppendConstructorSignature(TSNode node, std::string_view typeName, const
     }
 }
 
+void FormatGlobalVariableHover(const analysis::LocalDefinition& def, std::string_view typeName,
+                               const HoverQueryContext& ctx, std::string& md)
+{
+    auto globalSym = FindMatchingGlobalSymbol(def, ctx);
+    if (globalSym.has_value())
+    {
+        md += FormatVariableSignature(*globalSym, "(global variable) ");
+        return;
+    }
+    md += "(global variable) ";
+    if (!typeName.empty())
+    {
+        md += typeName;
+        md += " ";
+    }
+    md += def.name;
+    if (!def.defaultValue.empty())
+    {
+        md += " = ";
+        md += def.defaultValue;
+    }
+}
+
 void FormatVariableHover(const analysis::LocalDefinition& def, std::string_view typeName, const HoverQueryContext& ctx,
                          std::string& md)
 {
@@ -1334,26 +1379,7 @@ void FormatVariableHover(const analysis::LocalDefinition& def, std::string_view 
 
     if (!isInsideFunction)
     {
-        auto globalSym = FindMatchingGlobalSymbol(def, ctx);
-        if (globalSym.has_value())
-        {
-            md += FormatVariableSignature(*globalSym, "(global variable) ");
-        }
-        else
-        {
-            md += "(global variable) ";
-            if (!typeName.empty())
-            {
-                md += typeName;
-                md += " ";
-            }
-            md += def.name;
-            if (!def.defaultValue.empty())
-            {
-                md += " = ";
-                md += def.defaultValue;
-            }
-        }
+        FormatGlobalVariableHover(def, typeName, ctx, md);
     }
     else
     {
@@ -1364,14 +1390,16 @@ void FormatVariableHover(const analysis::LocalDefinition& def, std::string_view 
             md += " ";
         }
         md += def.name;
-        if (!def.defaultValue.empty())
+        if (analysis::IsSimpleLiteralExpression(def.defaultValue))
         {
             md += " = ";
             md += def.defaultValue;
         }
     }
 
-    if (IsDirectInitDeclarator(ctx.node))
+    const size_t prevLen = md.size();
+    TryAppendFuncdefSignature(typeName, ctx.request.symbolTable, md);
+    if (md.size() == prevLen && IsDirectInitDeclarator(ctx.node))
     {
         TryAppendConstructorSignature(ctx.node, typeName, ctx, md);
     }
@@ -1391,6 +1419,14 @@ static void AppendLocalDoc(const analysis::LocalDefinition& def, std::string_vie
         if (auto ctorSym = ResolveConstructorForDeclarator(declarator, typeName, ctx))
         {
             doc = DocCommentForSymbol(ctx.request, *ctorSym);
+        }
+    }
+    if (doc.empty())
+    {
+        const std::string cleanType = analysis::CleanBaseType(typeName);
+        if (auto funcdefSym = analysis::FindFuncdefSymbol(cleanType, ctx.request.symbolTable))
+        {
+            doc = DocCommentForSymbol(ctx.request, *funcdefSym);
         }
     }
     if (!doc.empty())

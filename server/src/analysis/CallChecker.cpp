@@ -787,6 +787,42 @@ bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
 }
 
 /**
+ * @brief Attempts to resolve a callable funcdef member property or variable.
+ *
+ * @param[in] objectType Receiver object type.
+ * @param[in] memberName Member name being called.
+ * @param[in] table Symbol table.
+ * @return Optional synthesized function symbol.
+ */
+std::optional<Symbol> TryResolveMemberCallableFuncdef(const std::string& objectType, const std::string& memberName,
+                                                      const SymbolTable& table)
+{
+    const auto hierarchy = GetInheritedTypeHierarchy(objectType, table);
+    for (const auto& typeName : hierarchy)
+    {
+        if (const auto found = table.FindMemberSymbolPtr(typeName, memberName))
+        {
+            for (const auto& sym : *found)
+            {
+                if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                    std::holds_alternative<VariableSignature>(sym.signature))
+                {
+                    std::string clean = CleanBaseType(sym.GetVariable().typeName);
+                    if (!clean.empty())
+                    {
+                        if (auto funcdefSym = FindFuncdefSymbol(clean, table))
+                        {
+                            return FuncdefToFunctionSymbol(*funcdefSym, memberName);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+/**
  * @brief Resolves candidates and reports invalid constructors for member calls.
  *
  * @param[in] valCtx Call validation context.
@@ -826,6 +862,14 @@ CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
     FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
     ApplyTemplateSubstitutions(res.candidates, objInfo.objectType, objInfo.templateArgs,
                                valCtx.ctx.request.symbolTable);
+    if (res.candidates.empty())
+    {
+        if (auto callableSym =
+                TryResolveMemberCallableFuncdef(objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable))
+        {
+            res.candidates.push_back(std::move(*callableSym));
+        }
+    }
     return res;
 }
 
@@ -886,6 +930,15 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
     }
 
     const std::string shortName = std::string(LastScopeSegment(written));
+    if (auto callableSym = TryResolveCallableFuncdef(shortName, valCtx.scope, valCtx.ctx.request.symbolTable))
+    {
+        res.reportedName = shortName;
+        res.candidates = {std::move(*callableSym)};
+        res.candidatesAreFreeFunctions = true;
+        res.shouldCheck = true;
+        return res;
+    }
+
     if (IsShadowedOrTypeName(shortName, valCtx.scope, valCtx.ctx.request.symbolTable))
     {
         res.shouldCheck = false;

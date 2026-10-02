@@ -1537,3 +1537,36 @@ TEST_CASE("InlayHintHandler - Nested Namespace Constructor Call Parameter Hints 
 
     CHECK(std::find(labels.begin(), labels.end(), paramOwner + ":") != labels.end());
 }
+
+TEST_CASE("InlayHintHandler - Invariant: Local funcdef variable call provides argument inlay hints")
+{
+    const std::string funcdefName = angel_lsp::test::GenerateRandomSymbolName("CallbackType");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("cb");
+    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("targetPlayer");
+
+    std::string code = "funcdef void " + funcdefName + "(int " + paramName +
+                       ");\n"
+                       "void test(" +
+                       funcdefName + "@ " + varName +
+                       ") {\n"
+                       "    " +
+                       varName +
+                       "(42);\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto& h : *hints)
+    {
+        std::string l = GetHintLabel(h);
+        if (!l.empty())
+        {
+            labels.push_back(l);
+        }
+    }
+
+    CHECK(std::find(labels.begin(), labels.end(), paramName + ":") != labels.end());
+}

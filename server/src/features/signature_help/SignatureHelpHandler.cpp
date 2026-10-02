@@ -213,12 +213,38 @@ TSNode ExtractFunctionNode(TSNode callNode)
 }
 
 /**
+ * @brief Appends candidate symbols or underlying funcdefs for member calls.
+ * @param[in] symbols Symbols found under qualified name.
+ * @param[in] table Symbol table.
+ * @param[in,out] outCandidates Destination vector for candidate symbols.
+ */
+void AppendMemberSymbolCandidates(const std::vector<analysis::Symbol>& symbols, const analysis::SymbolTable& table,
+                                  std::vector<analysis::Symbol>& outCandidates)
+{
+    for (const auto& sym : symbols)
+    {
+        if (sym.type == analysis::SymbolType::Function || sym.type == analysis::SymbolType::Funcdef)
+        {
+            outCandidates.push_back(sym);
+        }
+        else if (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property)
+        {
+            std::string clean = analysis::CleanBaseType(sym.GetVariable().typeName);
+            if (auto fd = analysis::FindFuncdefSymbol(clean, table))
+            {
+                outCandidates.push_back(std::move(*fd));
+            }
+        }
+    }
+}
+
+/**
  * @brief Resolves candidate method symbols for a member expression callee.
  * @param[in] request Signature help request.
  * @param[in] funcNode Member expression AST node.
  * @return Matching symbol candidates from the receiver hierarchy.
  */
-std::vector<const analysis::Symbol*> ResolveMemberCandidates(const SignatureHelpRequest& request, TSNode funcNode)
+std::vector<analysis::Symbol> ResolveMemberCandidates(const SignatureHelpRequest& request, TSNode funcNode)
 {
     TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
     TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
@@ -253,13 +279,13 @@ std::vector<const analysis::Symbol*> ResolveMemberCandidates(const SignatureHelp
         auto found = request.symbolTable.FindSymbolsPtr(qualifiedName);
         if (found && !found->empty())
         {
-            std::vector<const analysis::Symbol*> ptrs;
-            ptrs.reserve(found->size());
-            for (const auto& sym : *found)
+            std::vector<analysis::Symbol> candidates;
+            candidates.reserve(found->size());
+            AppendMemberSymbolCandidates(*found, request.symbolTable, candidates);
+            if (!candidates.empty())
             {
-                ptrs.push_back(&sym);
+                return candidates;
             }
-            return ptrs;
         }
     }
     return {};
@@ -392,6 +418,15 @@ std::vector<lsp::SignatureInformation> ResolveDirectSignatures(const SignatureHe
         return {};
     }
     std::string_view calleeName = std::string_view(request.sourceCode).substr(fStart, fEnd - fStart);
+
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    const analysis::Scope* scope =
+        rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character) : nullptr;
+    if (auto callableSym = analysis::TryResolveCallableFuncdef(std::string(calleeName), scope, request.symbolTable))
+    {
+        return BuildSignatureList(std::vector<analysis::Symbol>{*callableSym});
+    }
+
     auto found = request.symbolTable.FindSymbolsPtr(calleeName);
     std::vector<lsp::SignatureInformation> signatures;
     if (found && !found->empty())

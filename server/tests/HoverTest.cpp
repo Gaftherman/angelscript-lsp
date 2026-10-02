@@ -1275,3 +1275,35 @@ TEST_CASE("HoverHandler - Constant string concatenation resolves asset path")
 
     std::filesystem::remove_all(tempRoot, ec);
 }
+
+TEST_CASE("HoverHandler - Invariant: Local variable of funcdef type displays funcdef signature and doc comment without "
+          "arbitrary initializer")
+{
+    const std::string funcdefName = angel_lsp::test::GenerateRandomSymbolName("CallbackFunc");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("cb");
+    const std::string docText = "Callback for when an action occurs.";
+
+    std::string code = "/** " + docText +
+                       " */\n"
+                       "funcdef void " +
+                       funcdefName +
+                       "(int player, float option);\n"
+                       "void main() {\n"
+                       "    " +
+                       funcdefName + "@ " + varName +
+                       " = GetSomeDynamicValue();\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    std::string line3 = "    " + funcdefName + "@ " + varName;
+    uint32_t charPos = static_cast<uint32_t>(line3.size() - 2);
+
+    auto hover = env.HoverAt(3, charPos);
+    REQUIRE(hover.has_value());
+    auto content = std::get<lsp::MarkupContent>(hover->contents);
+
+    CHECK(content.value.find("(local variable) " + funcdefName + "@ " + varName) != std::string::npos);
+    CHECK(content.value.find("GetSomeDynamicValue") == std::string::npos);
+    CHECK(content.value.find("funcdef void " + funcdefName + "(int player, float option)") != std::string::npos);
+    CHECK(content.value.find(docText) != std::string::npos);
+}

@@ -288,3 +288,29 @@ TEST_CASE("SignatureHelpHandler - Constructor signature help for direct call and
         CHECK(foundStrCtor);
     }
 }
+
+TEST_CASE("SignatureHelpHandler - Invariant: Local funcdef variable provides signature help")
+{
+    std::mt19937_64 rng(0x1337BEF4);
+    const std::string funcdefName = angel_lsp::test::GenerateIdentifier(rng, "CallbackType");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "callback");
+    const std::string code = "funcdef void " + funcdefName +
+                             "(int player, float option);\n"
+                             "void test(" +
+                             funcdefName + "@ " + varName +
+                             ") {\n"
+                             "    " +
+                             varName +
+                             "(10, 20.0f);\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const size_t callPos = code.find(varName + "(10");
+    auto posArg0 = FindPos(code, "10", callPos);
+    auto help0 = env.SigHelpAt(posArg0.line, posArg0.character);
+    REQUIRE(help0.has_value());
+    REQUIRE_FALSE(help0->signatures.empty());
+    CHECK(help0->signatures[0].label.find("void " + varName + "(int player, float option)") != std::string::npos);
+    REQUIRE(help0->signatures[0].parameters.has_value());
+    CHECK(help0->signatures[0].parameters->size() == 2);
+}

@@ -876,4 +876,31 @@ std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable
  */
 std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName, const SymbolTable& symbolTable,
                                  std::string_view sourceCode);
+
+struct Scope;
+
+/**
+ * @brief Converts a Funcdef symbol into a synthetic Function symbol for call evaluation.
+ * @param[in] funcdefSym Source symbol of type SymbolType::Funcdef.
+ * @param[in] callName Target function name to assign to the synthesized symbol.
+ * @return Synthesized Symbol of type SymbolType::Function with equivalent signature.
+ */
+Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callName);
+
+/**
+ * @brief Checks if an identifier resolves to a callable local or parameter funcdef in scope.
+ * @param[in] name Identifier name.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in] table Symbol table.
+ * @return Synthesized function Symbol if callee is a funcdef variable, nullopt otherwise.
+ */
+std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const Scope* scope, const SymbolTable& table);
+
+/**
+ * @brief Checks whether a text expression represents a simple literal constant value.
+ * @param[in] expr Expression text as written in source code.
+ * @return True if expression is a number, boolean, or string literal.
+ */
+bool IsSimpleLiteralExpression(std::string_view expr);
+
 } // namespace angel_lsp::analysis

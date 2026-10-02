@@ -1418,3 +1418,69 @@ TEST_CASE("CallChecker - Invariant: Const receiver selects const method candidat
     CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
     CHECK_FALSE(HasCode(diags, "as-err-call-ambiguous"));
 }
+
+TEST_CASE("CallChecker - Invariant: Local funcdef variable call checks argument count and reports mismatch")
+{
+    std::mt19937_64 rng(0x1337BEF1);
+    const std::string funcdefName = angel_lsp::test::GenerateIdentifier(rng, "CallbackType");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "callback");
+    const std::string code = "funcdef void " + funcdefName +
+                             "(int a, int b);\n"
+                             "void test(" +
+                             funcdefName + "@ " + varName +
+                             ") {\n"
+                             "    " +
+                             varName +
+                             "(1, 2, 3);\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-call-argument-count"));
+}
+
+TEST_CASE("CallChecker - Invariant: Local funcdef variable call accepts matching arguments")
+{
+    std::mt19937_64 rng(0x1337BEF2);
+    const std::string funcdefName = angel_lsp::test::GenerateIdentifier(rng, "CallbackType");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "callback");
+    const std::string code = "funcdef void " + funcdefName +
+                             "(int a, int b);\n"
+                             "void test(" +
+                             funcdefName + "@ " + varName +
+                             ") {\n"
+                             "    " +
+                             varName +
+                             "(1, 2);\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-call-argument-count"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("CallChecker - Invariant: Member funcdef variable call checks argument count")
+{
+    std::mt19937_64 rng(0x1337BEF3);
+    const std::string funcdefName = angel_lsp::test::GenerateIdentifier(rng, "ActionType");
+    const std::string className = angel_lsp::test::GenerateIdentifier(rng, "Handler");
+    const std::string memberName = angel_lsp::test::GenerateIdentifier(rng, "onAction");
+    const std::string code = "funcdef void " + funcdefName +
+                             "(int x);\n"
+                             "class " +
+                             className +
+                             " {\n"
+                             "    " +
+                             funcdefName + "@ " + memberName +
+                             ";\n"
+                             "}\n"
+                             "void test(" +
+                             className +
+                             "@ h) {\n"
+                             "    h." +
+                             memberName +
+                             "(1, 2);\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-call-argument-count"));
+}
