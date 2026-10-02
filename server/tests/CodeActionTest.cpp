@@ -6,6 +6,7 @@
 #include "analysis/SymbolTable.h"
 #include "features/code_action/CodeActionHandler.h"
 #include "helpers/TestUtils.h"
+#include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -1192,4 +1193,48 @@ TEST_CASE("CodeActionHandler - Offers explicit call and disable setting for bool
     REQUIRE(disableAction != nullptr);
     CHECK(disableAction->command.has_value());
     CHECK(disableAction->command->command == "angelscript.disableDiagnostic");
+}
+
+TEST_CASE("CodeActionHandler - QuickFix localization in Spanish")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("BoolType");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("flag");
+    const std::string code = "class " + className +
+                             " { bool opImplConv() { return true; } }\n"
+                             "void main() {\n"
+                             "    " +
+                             className + " " + varName +
+                             ";\n"
+                             "    if (" +
+                             varName +
+                             ") {}\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{{2, 8}, {2, 8 + static_cast<lsp::uint>(varName.size())}};
+
+    lsp::Diagnostic diag;
+    diag.range = at;
+    diag.code = lsp::String("as-hint-bool-conversion");
+    diag.message = "Type 'BoolType' has conversion operator 'opImplConv' to bool";
+
+    lsp::CodeActionContext ctx;
+    ctx.diagnostics.push_back(diag);
+
+    angel_lsp::i18n::I18n spanishI18n("es");
+    CodeActionRequest req{env.uri,         env.sourceCode, env.tree, at,      ctx,
+                          env.symbolTable, env.scopeIndex, {},       nullptr, &spanishI18n};
+    auto actions = GetCodeActions(req);
+    REQUIRE(actions.has_value());
+    REQUIRE(!actions->empty());
+
+    const auto* explicitCallFix = ActionTitled(actions, "Llamar a opImplConv() explícitamente");
+    REQUIRE(explicitCallFix != nullptr);
+    CHECK(explicitCallFix->kind.value() == lsp::CodeActionKind::QuickFix);
+
+    const auto* disableAction = ActionTitled(actions, "Deshabilitar en la configuración");
+    REQUIRE(disableAction != nullptr);
+    CHECK(disableAction->command.has_value());
+    CHECK(disableAction->command->command == "angelscript.disableDiagnostic");
+    CHECK(disableAction->command->title == "Deshabilitar en la configuración");
 }

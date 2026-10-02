@@ -14,6 +14,11 @@ namespace angel_lsp::config
 struct ServerConfig;
 }
 
+namespace angel_lsp::i18n
+{
+class I18n;
+}
+
 namespace angel_lsp::features
 {
 /**
@@ -30,6 +35,7 @@ struct CodeActionRequest
     const analysis::ScopeIndex& scopeIndex;
     std::vector<std::string> allowedRoots = {};
     const config::ServerConfig* config = nullptr;
+    const i18n::I18n* i18n = nullptr;
 };
 
 /**

@@ -1,4 +1,5 @@
 #include "features/code_action/CodeActionInternal.h"
+#include "i18n/i18n.h"
 
 namespace angel_lsp::features
 {
@@ -322,8 +323,9 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
         edit.range.end.character = insertAt.column;
         edit.newText = " property";
 
+        const bool isSpanish = request.i18n && request.i18n->IsSpanish();
         lsp::CodeAction action;
-        action.title = "Add the 'property' keyword";
+        action.title = isSpanish ? "Añadir la palabra clave 'property'" : "Add the 'property' keyword";
         action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
         action.isPreferred = true;
         action.diagnostics = std::vector<lsp::Diagnostic>{diag};
@@ -337,8 +339,7 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
         actions.push_back(std::move(action));
 
         actions.push_back(MakeDisableDiagnosticAction(
-            diag, "Disable in workspace settings (angelscript.diagnostics.reportAccessorPortability)",
-            "diagnostics.reportAccessorPortability", "as-hint-accessor-portability"));
+            {diag, "diagnostics.reportAccessorPortability", "as-hint-accessor-portability", request.i18n}));
     }
 }
 

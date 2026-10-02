@@ -1,5 +1,6 @@
 #include "analysis/DiagnosticSuppression.h"
 #include "features/code_action/CodeActionInternal.h"
+#include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
 
 namespace angel_lsp::features
@@ -200,6 +201,35 @@ TSPoint FindClassClosingBracePoint(TSNode classBody)
     }
     ts_tree_cursor_delete(&cursor);
     return closingPt;
+}
+
+lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions& options)
+{
+    const bool isSpanish = options.i18n && options.i18n->IsSpanish();
+    std::string title =
+        isSpanish ? ("Deshabilitar en la configuración del espacio de trabajo (angelscript." + options.settingKey + ")")
+                  : ("Disable in workspace settings (angelscript." + options.settingKey + ")");
+    std::string cmdTitle = isSpanish ? "Deshabilitar en la configuración" : "Disable in settings";
+
+    lsp::CodeAction action;
+    action.title = std::move(title);
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    action.diagnostics = std::vector<lsp::Diagnostic>{options.diag};
+
+    lsp::Command cmd;
+    cmd.title = std::move(cmdTitle);
+    cmd.command = "angelscript.disableDiagnostic";
+    lsp::json::Array cmdArgs;
+    lsp::json::Object argObj;
+    argObj["settingKey"] = lsp::json::Value("angelscript." + options.settingKey);
+    argObj["setting"] = lsp::json::Value(std::string(options.settingKey));
+    argObj["value"] = lsp::json::Value(false);
+    argObj["code"] = lsp::json::Value(std::string(options.code));
+    cmdArgs.push_back(std::move(argObj));
+    cmd.arguments = std::move(cmdArgs);
+
+    action.command = std::move(cmd);
+    return action;
 }
 
 lsp::CodeAction MakeDisableDiagnosticAction(const lsp::Diagnostic& diag, std::string title, std::string settingKey,

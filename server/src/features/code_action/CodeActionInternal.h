@@ -101,6 +101,24 @@ void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_de
 TSPoint FindClassClosingBracePoint(TSNode classBody);
 
 /**
+ * @brief Options bundle for creating a diagnostic disabling quick-fix action.
+ */
+struct DisableDiagnosticActionOptions
+{
+    const lsp::Diagnostic& diag;
+    std::string settingKey;
+    std::string code;
+    const i18n::I18n* i18n = nullptr;
+};
+
+/**
+ * @brief Constructs a QuickFix action that disables a configurable diagnostic in workspace settings.
+ * @param[in] options Options bundle containing diagnostic, settingKey, code, and optional i18n.
+ * @return Constructed CodeAction with command payload.
+ */
+lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions& options);
+
+/**
  * @brief Constructs a QuickFix action that disables a configurable diagnostic in workspace settings.
  * @param[in] diag Diagnostic to link.
  * @param[in] title Human-readable action title.

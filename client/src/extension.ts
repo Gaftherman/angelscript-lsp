@@ -355,18 +355,18 @@ function createLanguageStatusItem(context: ExtensionContext): void {
         return;
     }
     languageStatusItem = languages.createLanguageStatusItem('angelscript.status', { language: 'angelscript' });
-    languageStatusItem.name = 'AngelScript IntelliSense';
+    languageStatusItem.name = l10n.t('AngelScript IntelliSense');
     languageStatusItem.command = {
         command: RESCAN_WORKSPACE_COMMAND,
-        title: 'Rescan Workspace'
+        title: l10n.t('Rescan Workspace')
     };
     context.subscriptions.push(languageStatusItem);
 
     stubsStatusItem = languages.createLanguageStatusItem('angelscript.stubs', { language: 'angelscript' });
-    stubsStatusItem.name = 'AngelScript Predefined Stubs';
+    stubsStatusItem.name = l10n.t('AngelScript Predefined Stubs');
     stubsStatusItem.command = {
         command: SELECT_STUBS_COMMAND,
-        title: 'Select Stubs'
+        title: l10n.t('Select Stubs')
     };
     context.subscriptions.push(stubsStatusItem);
 
@@ -381,18 +381,18 @@ function updateLanguageStatus(isIndexing = false): void {
     if (languageStatusItem) {
         if (isIndexing || lastStatus?.state === 'starting') {
             languageStatusItem.severity = LanguageStatusSeverity.Information;
-            languageStatusItem.text = '$(sync~spin) Indexing Workspace...';
-            languageStatusItem.detail = 'IntelliSense: Indexing | Analysis: Automatic';
+            languageStatusItem.text = `$(sync~spin) ${l10n.t('Indexing Workspace...')}`;
+            languageStatusItem.detail = `${l10n.t('IntelliSense: Indexing')} | ${l10n.t('Analysis: Automatic')}`;
             languageStatusItem.busy = true;
         } else if (lastStatus?.state === 'running' || clientIsRunning()) {
             languageStatusItem.severity = LanguageStatusSeverity.Information;
-            languageStatusItem.text = '$(check) IntelliSense: Ready';
-            languageStatusItem.detail = 'IntelliSense: Ready | Analysis: Automatic';
+            languageStatusItem.text = `$(check) ${l10n.t('IntelliSense: Ready')}`;
+            languageStatusItem.detail = `${l10n.t('IntelliSense: Ready')} | ${l10n.t('Analysis: Automatic')}`;
             languageStatusItem.busy = false;
         } else {
             languageStatusItem.severity = LanguageStatusSeverity.Warning;
-            languageStatusItem.text = '$(alert) IntelliSense: Inactive';
-            languageStatusItem.detail = 'Language server is not running';
+            languageStatusItem.text = `$(alert) ${l10n.t('IntelliSense: Inactive')}`;
+            languageStatusItem.detail = l10n.t('Language server is not running');
             languageStatusItem.busy = false;
         }
     }
@@ -401,14 +401,14 @@ function updateLanguageStatus(isIndexing = false): void {
         stubsStatusItem.severity = LanguageStatusSeverity.Information;
         stubsStatusItem.busy = isIndexing;
         if (stubsCount > 1) {
-            stubsStatusItem.text = `$(file-code) ${activeStubLabel || `${stubsCount} Stubs`}`;
-            stubsStatusItem.detail = `${stubsCount} active stubs | Click to manage`;
+            stubsStatusItem.text = `$(file-code) ${activeStubLabel || l10n.t('{0} Stubs', stubsCount)}`;
+            stubsStatusItem.detail = l10n.t('{0} active stubs | Click to manage', stubsCount);
         } else if (activeStubLabel.length > 0) {
             stubsStatusItem.text = `$(file-code) ${activeStubLabel}`;
-            stubsStatusItem.detail = activeStubPath.length > 0 ? activeStubPath : 'Click to select predefined stubs';
+            stubsStatusItem.detail = activeStubPath.length > 0 ? activeStubPath : l10n.t('Click to select predefined stubs');
         } else {
-            stubsStatusItem.text = '$(file-code) No active stubs';
-            stubsStatusItem.detail = 'Click to configure predefined stubs';
+            stubsStatusItem.text = `$(file-code) ${l10n.t('No active stubs')}`;
+            stubsStatusItem.detail = l10n.t('Click to configure predefined stubs');
         }
     }
 }
@@ -1550,13 +1550,13 @@ async function showStatusMenu(context: ExtensionContext): Promise<void> {
             run: () => selectPredefinedStub()
         },
         {
-            label: '$(check-all) Select Predefined Stubs (Multi-Select)',
-            description: 'Toggles active predefined stubs dynamically using checkboxes.',
+            label: '$(check-all) ' + l10n.t('Select Predefined Stubs (Multi-Select)'),
+            description: l10n.t('Toggles active predefined stubs dynamically using checkboxes.'),
             run: () => selectMultiStubs()
         },
         {
-            label: '$(refresh) Rescan Workspace',
-            description: 'Forces an immediate rescan of all search paths and workspace files.',
+            label: '$(refresh) ' + l10n.t('Rescan Workspace'),
+            description: l10n.t('Forces an immediate rescan of all search paths and workspace files.'),
             run: () => rescanWorkspace()
         }
     ];
@@ -2018,7 +2018,7 @@ async function selectPredefinedStub(): Promise<void> {
  */
 async function selectMultiStubs(): Promise<void> {
     if (!client) {
-        void window.showWarningMessage('The AngelScript language server is not running.');
+        void window.showWarningMessage(l10n.t('The AngelScript language server is not running.'));
         return;
     }
 
@@ -2029,7 +2029,7 @@ async function selectMultiStubs(): Promise<void> {
             { command: 'angelscript.listPredefinedStubs' }
         );
     } catch {
-        void window.showWarningMessage('The AngelScript language server is not running.');
+        void window.showWarningMessage(l10n.t('The AngelScript language server is not running.'));
         return;
     }
 
@@ -2067,7 +2067,7 @@ async function selectMultiStubs(): Promise<void> {
 
     const selected = await window.showQuickPick(items, {
         canPickMany: true,
-        placeHolder: 'Select one or more predefined stubs to activate'
+        placeHolder: l10n.t('Select one or more predefined stubs to activate')
     });
 
     if (!selected) {
@@ -2084,7 +2084,7 @@ async function selectMultiStubs(): Promise<void> {
  */
 async function rescanWorkspace(): Promise<void> {
     if (!client) {
-        void window.showWarningMessage('The AngelScript language server is not running.');
+        void window.showWarningMessage(l10n.t('The AngelScript language server is not running.'));
         return;
     }
     try {
@@ -2092,9 +2092,9 @@ async function rescanWorkspace(): Promise<void> {
         await client.sendRequest('workspace/executeCommand', {
             command: 'angelscript.rescanWorkspace'
         });
-        void window.showInformationMessage('AngelScript: Workspace rescan initiated.');
+        void window.showInformationMessage(l10n.t('AngelScript: Workspace rescan initiated.'));
     } catch (e) {
-        void window.showErrorMessage(`Failed to rescan workspace: ${e}`);
+        void window.showErrorMessage(l10n.t('Failed to rescan workspace: {0}', e instanceof Error ? e.message : String(e)));
     } finally {
         updateLanguageStatus(false);
     }
@@ -2327,14 +2327,14 @@ export async function viewMixinExpansion(args?: {
     if (!hostClass || !mixinName) {
         hostClass = await window.showInputBox({
             prompt: l10n.t('Enter host class name'),
-            placeHolder: 'e.g. MyPlayer'
+            placeHolder: l10n.t('e.g. MyPlayer')
         });
         if (!hostClass) {
             return;
         }
         mixinName = await window.showInputBox({
             prompt: l10n.t('Enter mixin name'),
-            placeHolder: 'e.g. HealthMixin'
+            placeHolder: l10n.t('e.g. HealthMixin')
         });
         if (!mixinName) {
             return;

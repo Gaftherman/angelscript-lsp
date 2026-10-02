@@ -18,6 +18,24 @@ class I18n
 
     std::string GetMessage(const std::string& key) const;
 
+    /**
+     * @brief Returns the primary language subtag (e.g. "en", "es").
+     * @return Lowercased language subtag string.
+     */
+    [[nodiscard]] const std::string& GetLocale() const noexcept
+    {
+        return m_locale;
+    }
+
+    /**
+     * @brief Checks if current locale is Spanish ("es").
+     * @return True if Spanish language is active.
+     */
+    [[nodiscard]] bool IsSpanish() const noexcept
+    {
+        return m_locale == "es";
+    }
+
   private:
     std::string m_locale;
     ankerl::unordered_dense::map<std::string, std::string> m_messages;

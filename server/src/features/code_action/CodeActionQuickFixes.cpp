@@ -4,6 +4,7 @@
  */
 
 #include "features/code_action/CodeActionInternal.h"
+#include "i18n/i18n.h"
 
 namespace angel_lsp::features
 {
@@ -148,8 +149,10 @@ void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNod
         edit.range.end.character = static_cast<uint32_t>(at + 1);
         edit.newText = "";
 
+        const bool isSpanish = request.i18n && request.i18n->IsSpanish();
         lsp::CodeAction action;
-        action.title = "Remove '@' - a primitive has no handle type";
+        action.title = isSpanish ? "Eliminar '@' - un tipo primitivo no admite manejador"
+                                 : "Remove '@' - a primitive has no handle type";
         action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
         action.isPreferred = true;
         action.diagnostics = std::vector<lsp::Diagnostic>{diag};
@@ -248,8 +251,9 @@ void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, 
         edit.range.end = diag.range.end;
         edit.newText = "." + oper + "()";
 
+        const bool isSpanish = request.i18n && request.i18n->IsSpanish();
         lsp::CodeAction action;
-        action.title = "Call " + oper + "() explicitly";
+        action.title = isSpanish ? ("Llamar a " + oper + "() explícitamente") : ("Call " + oper + "() explicitly");
         action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
         action.isPreferred = true;
         action.diagnostics = std::vector<lsp::Diagnostic>{diag};
@@ -263,8 +267,7 @@ void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, 
         actions.push_back(std::move(action));
 
         actions.push_back(MakeDisableDiagnosticAction(
-            diag, "Disable in workspace settings (angelscript.diagnostics.reportBoolConversion)",
-            "diagnostics.reportBoolConversion", "as-hint-bool-conversion"));
+            {diag, "diagnostics.reportBoolConversion", "as-hint-bool-conversion", request.i18n}));
     }
 }
 
