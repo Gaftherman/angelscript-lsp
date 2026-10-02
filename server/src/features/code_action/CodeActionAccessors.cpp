@@ -323,9 +323,8 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
         edit.range.end.character = insertAt.column;
         edit.newText = " property";
 
-        const bool isSpanish = request.i18n && request.i18n->IsSpanish();
         lsp::CodeAction action;
-        action.title = isSpanish ? "Añadir la palabra clave 'property'" : "Add the 'property' keyword";
+        action.title = i18n::FormatMessage(request.i18n, "action-add-property-keyword", "Add the 'property' keyword");
         action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
         action.isPreferred = true;
         action.diagnostics = std::vector<lsp::Diagnostic>{diag};

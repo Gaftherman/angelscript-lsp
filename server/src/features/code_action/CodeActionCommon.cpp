@@ -205,11 +205,9 @@ TSPoint FindClassClosingBracePoint(TSNode classBody)
 
 lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions& options)
 {
-    const bool isSpanish = options.i18n && options.i18n->IsSpanish();
-    std::string title =
-        isSpanish ? ("Deshabilitar en la configuración del espacio de trabajo (angelscript." + options.settingKey + ")")
-                  : ("Disable in workspace settings (angelscript." + options.settingKey + ")");
-    std::string cmdTitle = isSpanish ? "Deshabilitar en la configuración" : "Disable in settings";
+    std::string title = i18n::FormatMessage(options.i18n, "action-disable-in-workspace-settings",
+                                            "Disable in workspace settings (angelscript.{})", options.settingKey);
+    std::string cmdTitle = i18n::FormatMessage(options.i18n, "action-disable-in-settings", "Disable in settings");
 
     lsp::CodeAction action;
     action.title = std::move(title);

@@ -149,10 +149,9 @@ void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNod
         edit.range.end.character = static_cast<uint32_t>(at + 1);
         edit.newText = "";
 
-        const bool isSpanish = request.i18n && request.i18n->IsSpanish();
         lsp::CodeAction action;
-        action.title = isSpanish ? "Eliminar '@' - un tipo primitivo no admite manejador"
-                                 : "Remove '@' - a primitive has no handle type";
+        action.title = i18n::FormatMessage(request.i18n, "action-remove-primitive-handle",
+                                           "Remove '@' - a primitive has no handle type");
         action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
         action.isPreferred = true;
         action.diagnostics = std::vector<lsp::Diagnostic>{diag};
@@ -251,9 +250,8 @@ void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, 
         edit.range.end = diag.range.end;
         edit.newText = "." + oper + "()";
 
-        const bool isSpanish = request.i18n && request.i18n->IsSpanish();
         lsp::CodeAction action;
-        action.title = isSpanish ? ("Llamar a " + oper + "() explícitamente") : ("Call " + oper + "() explicitly");
+        action.title = i18n::FormatMessage(request.i18n, "action-call-explicitly", "Call {}() explicitly", oper);
         action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
         action.isPreferred = true;
         action.diagnostics = std::vector<lsp::Diagnostic>{diag};

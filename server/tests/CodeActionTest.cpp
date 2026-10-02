@@ -1237,4 +1237,12 @@ TEST_CASE("CodeActionHandler - QuickFix localization in Spanish")
     CHECK(disableAction->command.has_value());
     CHECK(disableAction->command->command == "angelscript.disableDiagnostic");
     CHECK(disableAction->command->title == "Deshabilitar en la configuración");
+
+    // English fallback verification when i18n is null
+    CodeActionRequest reqEn{env.uri,         env.sourceCode, env.tree, at,      ctx,
+                            env.symbolTable, env.scopeIndex, {},       nullptr, nullptr};
+    auto actionsEn = GetCodeActions(reqEn);
+    REQUIRE(actionsEn.has_value());
+    const auto* explicitCallFixEn = ActionTitled(actionsEn, "Call opImplConv() explicitly");
+    REQUIRE(explicitCallFixEn != nullptr);
 }

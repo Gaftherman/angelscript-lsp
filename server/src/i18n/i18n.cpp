@@ -411,6 +411,31 @@ void PopulateEnglishMessages7(MessageMap& m_messages)
 }
 
 /**
+ * @brief Populates English code action and quick-fix messages.
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateEnglishActionMessages(MessageMap& m_messages)
+{
+    m_messages["action-disable-in-workspace-settings"] = "Disable in workspace settings (angelscript.{})";
+    m_messages["action-disable-in-settings"] = "Disable in settings";
+    m_messages["action-add-property-keyword"] = "Add the 'property' keyword";
+    m_messages["action-remove-primitive-handle"] = "Remove '@' - primitive type cannot have a handle";
+    m_messages["action-call-explicitly"] = "Call {}() explicitly";
+    m_messages["action-add-const-qualifier"] = "Add 'const' qualifier to method";
+    m_messages["action-extract-method"] = "Extract Method";
+    m_messages["action-extract-variable"] = "Extract Variable";
+    m_messages["action-did-you-mean"] = "Did you mean '{}'?";
+    m_messages["action-sort-and-clean-includes"] = "Sort and Clean #include Directives";
+    m_messages["action-implement-interface"] = "Implement missing interface methods for '{}'";
+    m_messages["action-declare-funcdef"] = "Declare funcdef '{}' for '{}'";
+    m_messages["action-init-local-variable"] = "Initialize local '{}' variable for '{}'";
+    m_messages["action-suppress-line"] = "Disable {} for this line";
+    m_messages["action-suppress-range"] = "Disable {} with // disable ... // enable";
+    m_messages["action-suppress-file"] = "Disable {} for entire file";
+    m_messages["action-remove-unused-variable"] = "Remove unused variable '{}'";
+}
+
+/**
  * @brief Populates all English diagnostic messages.
  * @param[out] m_messages Target message map to populate.
  */
@@ -423,6 +448,7 @@ void PopulateEnglishMessages(MessageMap& m_messages)
     PopulateEnglishMessages5(m_messages);
     PopulateEnglishMessages6(m_messages);
     PopulateEnglishMessages7(m_messages);
+    PopulateEnglishActionMessages(m_messages);
 }
 
 /**
@@ -755,6 +781,32 @@ void PopulateSpanishMessages7(MessageMap& m_messages)
 }
 
 /**
+ * @brief Populates Spanish code action and quick-fix messages.
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateSpanishActionMessages(MessageMap& m_messages)
+{
+    m_messages["action-disable-in-workspace-settings"] =
+        "Deshabilitar en la configuración del espacio de trabajo (angelscript.{})";
+    m_messages["action-disable-in-settings"] = "Deshabilitar en la configuración";
+    m_messages["action-add-property-keyword"] = "Añadir la palabra clave 'property'";
+    m_messages["action-remove-primitive-handle"] = "Eliminar '@' - un tipo primitivo no admite manejador";
+    m_messages["action-call-explicitly"] = "Llamar a {}() explícitamente";
+    m_messages["action-add-const-qualifier"] = "Añadir calificador 'const' al método";
+    m_messages["action-extract-method"] = "Extraer método";
+    m_messages["action-extract-variable"] = "Extraer variable";
+    m_messages["action-did-you-mean"] = "¿Quiso decir '{}'?";
+    m_messages["action-sort-and-clean-includes"] = "Ordenar y limpiar directivas #include";
+    m_messages["action-implement-interface"] = "Implementar métodos de interfaz faltantes para '{}'";
+    m_messages["action-declare-funcdef"] = "Declarar funcdef '{}' para '{}'";
+    m_messages["action-init-local-variable"] = "Inicializar variable local '{}' para '{}'";
+    m_messages["action-suppress-line"] = "Deshabilitar {} para esta línea";
+    m_messages["action-suppress-range"] = "Deshabilitar {} con // disable ... // enable";
+    m_messages["action-suppress-file"] = "Deshabilitar {} para todo el archivo";
+    m_messages["action-remove-unused-variable"] = "Eliminar variable no utilizada '{}'";
+}
+
+/**
  * @brief Populates all Spanish diagnostic messages.
  * @param[out] m_messages Target message map to populate.
  */
@@ -767,6 +819,7 @@ void PopulateSpanishMessages(MessageMap& m_messages)
     PopulateSpanishMessages5(m_messages);
     PopulateSpanishMessages6(m_messages);
     PopulateSpanishMessages7(m_messages);
+    PopulateSpanishActionMessages(m_messages);
 }
 } // namespace
 
@@ -787,5 +840,15 @@ std::string I18n::GetMessage(const std::string& key) const
         return it->second;
     }
     return "";
+}
+
+std::string I18n::GetMessageOrDefault(const std::string& key, const std::string& defaultMessage) const
+{
+    auto it = m_messages.find(key);
+    if (it != m_messages.end() && !it->second.empty())
+    {
+        return it->second;
+    }
+    return defaultMessage;
 }
 } // namespace angel_lsp::i18n
