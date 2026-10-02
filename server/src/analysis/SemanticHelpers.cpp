@@ -2584,7 +2584,7 @@ static std::string ResolveTernaryBranchTypes(std::string_view t1, std::string_vi
     {
         return (t1.ends_with("@") && t2.ends_with("@")) ? c1 + "@" : c1;
     }
-    if (auto nullRes = ResolveTernaryNullBranch(std::string(t1), std::string(t2), c1, c2); !nullRes.empty())
+    if (auto nullRes = ResolveTernaryNullBranch(clean1, clean2, c1, c2); !nullRes.empty())
     {
         return nullRes;
     }
@@ -3211,6 +3211,11 @@ static bool IsFunctionHandleTarget(TSNode target, TSNode exprNode, const Express
  */
 static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
+    TSNode operandNode = parser::GetChildByField(exprNode, parser::fields::Operand);
+    if (ts_node_is_null(operandNode))
+    {
+        return {};
+    }
     TSNode operatorNode = parser::GetChildByField(exprNode, parser::fields::Operator);
     if (!ts_node_is_null(operatorNode))
     {
@@ -3221,15 +3226,20 @@ static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext
         }
         if (op == "@")
         {
-            TSNode target = parser::GetChildByField(exprNode, parser::fields::Operand);
-            if (IsFunctionHandleTarget(target, exprNode, ctx))
+            if (IsFunctionHandleTarget(operandNode, exprNode, ctx))
             {
                 return {};
             }
+            std::string operandType = ResolveExpressionType(operandNode, ctx, depth + 1);
+            if (operandType.empty())
+            {
+                return {};
+            }
+            std::string clean = CleanExpressionType(operandType);
+            return clean.ends_with("@") ? clean : clean + "@";
         }
     }
-    TSNode operandNode = parser::GetChildByField(exprNode, parser::fields::Operand);
-    return ts_node_is_null(operandNode) ? std::string() : ResolveExpressionType(operandNode, ctx, depth + 1);
+    return ResolveExpressionType(operandNode, ctx, depth + 1);
 }
 
 /**

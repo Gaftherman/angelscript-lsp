@@ -6,6 +6,7 @@
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/ast/SemanticNodes.h"
+#include "analysis/overload/OverloadTypeConversions.h"
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
@@ -1158,6 +1159,30 @@ TSNode UnwrapParenNode(TSNode node)
 }
 
 /**
+ * @brief Checks if a ternary branch type is compatible with expected parameter type.
+ *
+ * @param[in] branchType Resolved branch type.
+ * @param[in] expected Expected parameter type name.
+ * @return True if compatible.
+ */
+static bool IsTernaryBranchCompatible(const std::string& branchType, const std::string& expected)
+{
+    if (branchType.empty())
+    {
+        return true;
+    }
+    if (branchType == expected || IsSameType(branchType, expected))
+    {
+        return true;
+    }
+    if (branchType == "null" && expected.ends_with("@"))
+    {
+        return true;
+    }
+    return false;
+}
+
+/**
  * @brief Identifies the mismatching type in a malformed ternary expression.
  *
  * @param[in] t1 Consequence branch resolved type.
@@ -1167,11 +1192,11 @@ TSNode UnwrapParenNode(TSNode node)
  */
 std::string ResolveTernaryMismatchType(const std::string& t1, const std::string& t2, const std::string& expected)
 {
-    if (!t1.empty() && t1 != expected)
+    if (!t1.empty() && !IsTernaryBranchCompatible(t1, expected))
     {
         return t1;
     }
-    if (!t2.empty() && t2 != expected)
+    if (!t2.empty() && !IsTernaryBranchCompatible(t2, expected))
     {
         return t2;
     }
@@ -1213,6 +1238,11 @@ void CheckMalformedTernaryArgs(const std::vector<TSNode>& argNodes, const std::v
         TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
         std::string t1 = ResolveExpressionType(consequence, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
         std::string t2 = ResolveExpressionType(alternative, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
+
+        if (IsTernaryBranchCompatible(t1, expected) && IsTernaryBranchCompatible(t2, expected))
+        {
+            continue;
+        }
 
         std::string badType = ResolveTernaryMismatchType(t1, t2, expected);
         const TSPoint aStart = ts_node_start_point(argNodes[i]);

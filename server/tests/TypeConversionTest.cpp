@@ -2242,6 +2242,29 @@ TEST_CASE("TypeConversion - Ternary with handle and null emits 0 diagnostics (as
     CHECK(ConversionDiagnostics(code).empty());
 }
 
+TEST_CASE("TypeConversion - Invariant: Ternary with unary handle on value object and null emits 0 diagnostics")
+{
+    const std::string cls = angel_lsp::test::GenerateRandomSymbolName("CustomItem");
+    const std::string var = angel_lsp::test::GenerateRandomSymbolName("item");
+    const std::string code = "class " + cls +
+                             " {}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    bool cond = true;\n"
+                             "    " +
+                             cls + " " + var +
+                             ";\n"
+                             "    " +
+                             cls + "@ a = cond ? @" + var +
+                             " : null;\n"
+                             "    " +
+                             cls + "@ b = cond ? null : @" + var +
+                             ";\n"
+                             "}\n";
+
+    CHECK(ConversionDiagnostics(code).empty());
+}
+
 TEST_CASE("TypeConversion - Ternary with void branch emits diagnostic (asharness parity)")
 {
     const std::string code = "void DoNothing() {}\n"

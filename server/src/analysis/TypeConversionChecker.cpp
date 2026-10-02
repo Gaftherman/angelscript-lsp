@@ -475,6 +475,11 @@ bool CanTriviallyConvert(const std::string& from, const std::string& to, const D
         return true;
     }
 
+    if ((from == "null" || CanonicalizeType(from) == "null") && to.ends_with("@"))
+    {
+        return true;
+    }
+
     // `?` is AngelScript's variable type, not a type name: a parameter declared `const ?&in`
     // or `?&out` takes a value of any type at all. dictionary::set/get, ref, Dispose and the
     // format/scan helpers are all declared that way, so without this the analyzer reported
@@ -2348,6 +2353,10 @@ static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
 
 static bool AreTernaryBranchesIncompatible(const std::string& clean1, const std::string& clean2, DiagnosticContext& ctx)
 {
+    if ((clean1 == "null" && clean2.ends_with("@")) || (clean2 == "null" && clean1.ends_with("@")))
+    {
+        return false;
+    }
     if (IsStringType(clean1, ctx) != IsStringType(clean2, ctx))
     {
         return true;

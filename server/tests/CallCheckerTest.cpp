@@ -1375,6 +1375,35 @@ TEST_CASE("CallChecker - Calling function with same-type ternary Vector argument
     CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
 }
 
+TEST_CASE("CallChecker - Invariant: Calling function taking handle with ternary handle and null is accepted")
+{
+    const std::string cls = angel_lsp::test::GenerateRandomSymbolName("CustomNode");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("ProcessNode");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("nodeVar");
+
+    const std::string code = "class " + cls +
+                             " {}\n"
+                             "void " +
+                             fnName + "(" + cls +
+                             "@ node) {}\n"
+                             "void main() {\n"
+                             "    " +
+                             cls + " " + varName +
+                             ";\n"
+                             "    bool cond = true;\n"
+                             "    " +
+                             fnName + "(cond ? @" + varName +
+                             " : null);\n"
+                             "    " +
+                             fnName + "(cond ? null : @" + varName +
+                             ");\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
 TEST_CASE("CallChecker - Invariant: R-value is disqualified from binding to &out parameter")
 {
     std::mt19937_64 rng(0x1337BEEF);
