@@ -176,136 +176,139 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 
 ### Catálogo de configuraciones
 
+<!-- SETTINGS_CATALOG_START -->
+
 #### 1. Configuración general y del servidor
 
 | Configuración | Valor por defecto | Descripción |
 | :--- | :--- | :--- |
-| `angelscript.server.executablePath` | `""` | Ruta personalizada al binario `angel_lsp`. Deshabilitada en espacios no confiables. |
-| `angelscript.server.logLevel` | `"debug"` | Nivel de detalle del log: `"error"`, `"warn"`, `"info"`, `"debug"` o `"trace"`. |
-| `angelscript.statusBar.enabled` | `true` | Controla si el elemento de AngelScript en la barra de estado es visible. |
-| `angelscript.statusBar.alignment` | `"left"` | Alineación del elemento en la barra de estado (`"left"` o `"right"`). |
-| `angelscript.statusBar.showStub` | `false` | Muestra el nombre del stub activo directamente en la etiqueta de la barra de estado. |
-| `angelscript.dimInactiveRegions` | `true` | Atenúa visualmente los bloques de código excluidos por el preprocesador (`#if / #else / #endif`). |
-| `angelscript.inactiveRegionOpacity` | `0.55` | Opacidad de las regiones inactivas atenuadas (entre `0.1` y `1.0`). |
+| `angelscript.server.executablePath` | `""` | Ruta al archivo ejecutable del servidor de lenguaje AngelScript. |
+| `angelscript.server.logLevel` | `"debug"` | Especifica el nivel de detalle para los registros de salida del servidor de lenguaje. |
+| `angelscript.statusBar.alignment` | `"left"` | De qué lado de la barra de estado se coloca el elemento de AngelScript. Es la vía para llegar al registro del servidor, al reinicio y al selector de stub, así que la izquierda es el valor por defecto: ahí están los contadores de problemas, y ahí es donde ya está la vista cuando un diagnóstico te manda a mirar. |
+| `angelscript.statusBar.enabled` | `true` | Indica si se debe mostrar el elemento de AngelScript en la barra de estado del editor. |
+| `angelscript.statusBar.showStub` | `false` | Indica si se debe mostrar el nombre del stub predefinido activo en el elemento de la barra de estado en lugar de solo el nombre del lenguaje. |
+| `angelscript.dimInactiveRegions` | `true` | Atenúa el código dentro de un bloque `#if` que el preprocesador descarta, igual que la extensión de C++ atenúa sus regiones inactivas. Es una decoración, no un color: atenúa lo que haya producido el resaltado de sintaxis, corchetes incluidos, algo que un token semántico no puede hacer - el editor pinta `(`, `{` y `[` con su propia función de emparejado de corchetes. |
+| `angelscript.inactiveRegionOpacity` | `0.55` | Cuánto se sigue viendo el código atenuado dentro de un bloque `#if` descartado. 1 es sin atenuar. Va con `#angelscript.dimInactiveRegions#`, que tiene que estar activo para que esto haga algo. |
 
 #### 2. Configuración del espacio de trabajo y módulos
 
 | Configuración | Valor por defecto | Descripción |
 | :--- | :--- | :--- |
-| `angelscript.modules` | `[]` | Módulos de scripts definidos como `{"name", "entry"}` o `{"name", "folder"}`. |
-| `angelscript.moduleEntryPoint` | `""` | Punto de entrada único para el espacio de trabajo si no se usa configuración multi-módulo. |
-| `angelscript.searchDirectories` | `[]` | Directorios adicionales para la resolución de `#include "ruta.as"`. |
-| `angelscript.include.implicitExtension` | `false` | Permite que `#include "helper"` resuelva a `helper.as` sin requerir la extensión. |
-| `angelscript.predefined.active` | `""` | El stub activo a cargar cuando hay varios presentes. Usa `"all"` para fusionar todos. |
-| `angelscript.predefinedFiles` | `[]` | Lista explícita de archivos de stubs de API del host (`.as.predefined`). |
-| `angelscript.stubs.activeFiles` | `[]` | Lista de rutas de archivos de stubs activos seleccionados en el espacio de trabajo. |
-| `angelscript.forceIncludeFiles` | `[]` | Archivos de encabezado incluidos automáticamente en todos los scripts del espacio. |
-| `angelscript.exclude` | `["**/.git/**", "**/build/**", "**/node_modules/**"]` | Patrones glob excluidos del escaneo e indexación de archivos. |
-| `angelscript.fileExtension` | `".as"` | Extensión que identifica archivos de script de AngelScript en el espacio de trabajo. |
-| `angelscript.predefinedExtension` | `".as.predefined"` | Extensión que identifica archivos de stubs de API del host. |
-| `angelscript.define` | `[]` | Símbolos globales predefinidos para el preprocesador (ej. `["DEBUG", "CLIENT"]`). |
-| `angelscript.arrayLikeTypes` | `[]` | Tipos personalizados tratados como contenedores similares a arrays para inspección. |
-| `angelscript.enableVirtualMixinDocuments` | `false` | Habilita proveedores de documentos virtuales (`angelscript-virtual://`) para mixins. |
+| `angelscript.modules` | `[]` | Los módulos de script que construye este espacio de trabajo, como entradas `{ "name": "...", "entry": "..." }`. Un módulo es la unidad de compilación propia de AngelScript, y `entry` es el `.as` a partir del cual lo construye el host: todo lo que ese archivo alcanza mediante `#include` le pertenece.  Vacío por defecto, y vacío no cambia nada. Existe porque `external shared class Foo;` solo compila cuando *otro* módulo declara `shared class Foo` - medido, y con la definición en el mismo módulo el compilador lo rechaza igual. Sin conocer los módulos el servidor no puede distinguir una declaración correcta de una rota, así que se calla; conociéndolos, sí puede.  `entry` acepta las mismas variables `${...}` que el resto de ajustes de ruta. Una entrada puede nombrar un `folder` en lugar de, o además de, un `entry` - un módulo de carpeta es dueño de cada script bajo ella, y la carpeta más profunda gana cuando se anidan. |
+| `angelscript.moduleEntryPoint` | `""` | Ruta del script punto de entrada del módulo global. Restringe el cierre de compilación a su grafo acíclico dirigido (DAG) de dependencias hacia adelante. |
+| `angelscript.searchDirectories` | `[]` | Rutas de búsqueda de directorios personalizadas para resolver archivos de script incluidos (`#include "path.as"`).  Acepta las variables `${...}` que usa `launch.json`: `${workspaceFolder}`, `${workspaceFolder:nombre}`, `${userHome}` y `${env:NOMBRE}`. VS Code no las expande en los ajustes normales, así que lo hace la extensión - una variable que esta ventana no puede responder se deja en la ruta tal como está escrita y se anota en el registro del servidor. |
+| `angelscript.predefined.active` | `""` | Selecciona el único stub predefinido cargado por el barrido del espacio de trabajo.  Cuando está vacío (por defecto), el barrido carga el primer stub que encuentra en orden de ruta e ignora el resto, e indica cuál eligió. Establézcalo en `all` para cargar todos los stubs descubiertos juntos, que es lo que un espacio de trabajo con dos stubs solía hacer por defecto - las declaraciones compartidas se resuelven entonces más de una vez.  No afecta a `#angelscript.predefinedFiles`, que continúa cargándose siempre.  El comando "AngelScript: Seleccionar stub predefinido" completa esta configuración por usted.  Acepta las variables `${...}` que usa `launch.json`: `${workspaceFolder}`, `${workspaceFolder:nombre}`, `${userHome}` y `${env:NOMBRE}`. VS Code no las expande en los ajustes normales, así que lo hace la extensión - una variable que esta ventana no puede responder se deja en la ruta tal como está escrita y se anota en el registro del servidor. |
+| `angelscript.predefinedFiles` | `[]` | Archivos de stubs predefinidos que declaran la API de la aplicación host, cargados por ruta. Las rutas absolutas se usan tal cual, por lo que el stub puede residir fuera del espacio de trabajo (p. ej. `C:/Games/svencoop/as.predefined`); las rutas relativas se resuelven con respecto a cada carpeta del espacio de trabajo. Los archivos dentro del espacio de trabajo cuyo nombre termina con `#angelscript.predefinedExtension` se detectan automáticamente y no necesitan una entrada aquí.  Acepta las variables `${...}` que usa `launch.json`: `${workspaceFolder}`, `${workspaceFolder:nombre}`, `${userHome}` y `${env:NOMBRE}`. VS Code no las expande en los ajustes normales, así que lo hace la extensión - una variable que esta ventana no puede responder se deja en la ruta tal como está escrita y se anota en el registro del servidor. |
+| `angelscript.stubs.activeFiles` | `[]` | Lista de archivos de stubs predefinidos activos cargados en el índice del espacio de trabajo. Administrado dinámicamente mediante el comando AngelScript: Seleccionar stubs predefinidos. |
+| `angelscript.include.implicitExtension` | `false` | Hace que `#include "helper"` encuentre `helper.as`. Desactivado por defecto, que es el comportamiento del propio AngelScript: CScriptBuilder abre exactamente el texto entre comillas y no añade nada, así que `#include "helper"` busca un archivo llamado literalmente `helper`. Actívalo para un host que resuelve el nombre por su cuenta y exige que se omita la extensión - Sven Co-op funciona así, y ahí la forma corta es la grafía correcta. El sufijo que se añade es `angelscript.fileExtension`. |
+| `angelscript.forceIncludeFiles` | `[]` | Archivos a incluir forzosamente antes de analizar cualquier módulo o script. |
+| `angelscript.exclude` | `["**/.git/**", "**/build/**", "**/node_modules/**"]` | Patrones glob de directorios en los que no descienden los barridos del espacio de trabajo. Admite `?`, `*` dentro de un segmento de ruta y `**` entre segmentos. Definir esto reemplaza los valores predeterminados en lugar de añadirse a ellos. |
+| `angelscript.fileExtension` | `".as"` | Sufijo de nombre de archivo de los archivos fuente de AngelScript, utilizado al realizar el barrido del espacio de trabajo para construir el grafo de `#include`. |
+| `angelscript.predefinedExtension` | `".as.predefined"` | Sufijo de nombre de archivo que marca un archivo encontrado en el espacio de trabajo como un stub predefinido. Esto es un sufijo, no una ruta - use `#angelscript.predefinedFiles` para cargar un archivo específico. |
+| `angelscript.define` | `[]` | Palabras que `#if` considera definidas, coincidentes con las palabras que la aplicación host pasa a `CScriptBuilder::DefineWord`. Un `#if WORD` cuya palabra no esté listada aquí se excluye de la compilación, exactamente como lo hace el preprocesador real, y no se reportan diagnósticos en su interior. Un stub predefinido puede declarar las mismas palabras con `#define WORD`, que usualmente es el mejor lugar para ellas: el stub ya describe la configuración del motor del host y viaja con él. |
+| `angelscript.arrayLikeTypes` | `[]` | Nombres de tipos de plantilla cuya lista de inicializadores es una simple repetición de su tipo de elemento, tal como ocurre con `array<T>`. El tipo array predeterminado del motor siempre está incluido.  Esto es una forma abreviada. El mecanismo general es una etiqueta `/// @listpattern {repeat T}` en la clase dentro de su stub `.as.predefined`, copiada del propio registro `asBEHAVE_LIST_FACTORY` del tipo — eso también expresa patrones que esta configuración no puede, como `{repeat {string, ?}}` de `dictionary`. Use esta configuración cuando no pueda editar el stub.  De cualquier manera, tiene que indicarse en lugar de detectarse: `array<T>` y `optional<T>` se declaran de forma idéntica en un stub, y el compilador acepta `array<int> a = {1};` mientras rechaza `optional<int> o = {1};`. |
+| `angelscript.enableVirtualMixinDocuments` | `false` | Habilita documentos de texto virtuales experimentales para clases mixin (angelscript-virtual://). Cuando está desactivado, se utiliza la síntesis de símbolos de alto rendimiento. |
 
 #### 3. Configuración de Inlay Hints
 
 | Configuración | Valor por defecto | Descripción |
 | :--- | :--- | :--- |
-| `angelscript.features.inlayHints` | `true` | Conmutador principal para soporte de pistas en línea (inlay hints). |
-| `angelscript.inlayHints.maxParameters` | `0` | Límite máximo de pistas de parámetros mostradas por llamada (`0` = sin límite). |
-| `angelscript.inlayHints.maxLength` | `0` | Longitud máxima de caracteres en etiquetas de pistas antes de truncar (`0` = sin límite). |
-| `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Oculta la pista de nombre si el argumento coincide exactamente con el parámetro. |
-| `angelscript.inlayHints.enableTooltip` | `true` | Muestra tooltips con documentación detallada al pasar el cursor sobre las pistas. |
-| `angelscript.inlayHints.enableLocation` | `true` | Habilita navegación con `Ctrl+Click` a la definición del parámetro desde la pista. |
-| `angelscript.inlayHints.omittedDefaultArguments` | `"off"` | Pistas para argumentos por defecto omitidos: `"nameAndValue"`, `"declaration"` u `"off"`. |
+| `angelscript.features.inlayHints` | `true` | Mostrar sugerencias en línea de nombres de parámetros y tipos deducidos. |
+| `angelscript.inlayHints.maxParameters` | `0` | Número máximo de sugerencias en línea de parámetros a mostrar para una llamada. 0 significa ilimitado (muestra todos los parámetros). |
+| `angelscript.inlayHints.maxLength` | `0` | Longitud máxima de caracteres para las etiquetas de sugerencias en línea de parámetros antes de truncar con '...'. 0 significa ilimitado (nunca truncar). |
+| `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suprime las sugerencias de nombres de parámetros cuando el texto del argumento coincide exactamente con el nombre del parámetro. El valor predeterminado es false. |
+| `angelscript.inlayHints.enableTooltip` | `true` | Muestra informacion detallada en formato Markdown con el tipo y la firma del parametro al pasar el cursor sobre las sugerencias incrustadas (inlay hints). |
+| `angelscript.inlayHints.enableLocation` | `true` | Habilita la navegacion con Ctrl+Clic a la declaracion del parametro desde las sugerencias incrustadas (inlay hints). |
+| `angelscript.inlayHints.omittedDefaultArguments` | `"off"` | Muestra pistas de inserción (inlay hints) para argumentos opcionales omitidos con valores por defecto en llamadas a funciones. |
 
 #### 4. Configuración de formato de código
 
 | Configuración | Valor por defecto | Descripción |
 | :--- | :--- | :--- |
-| `angelscript.features.formatting` | `true` | Habilita el formateo de documentos mediante el servidor de lenguaje. |
-| `angelscript.features.onTypeFormatting` | `false` | Habilita el formateo mientras se escribe (caracteres de activación: `;`, `}`). |
-| `angelscript.format.onSave` | `false` | Formatea automáticamente los documentos de AngelScript al guardar. |
-| `angelscript.format.braceStyle` | `"allman"` | Estilo de llaves: `"allman"` (en nueva línea) o `"kr"` (en la misma línea). |
-| `angelscript.format.spacesInsideParentheses` | `false` | Inserta espacios dentro de los paréntesis (ej. `foo( bar )` en lugar de `foo(bar)`). |
-| `angelscript.format.keepEmptyBlocksOnSingleLine` | `true` | Mantiene bloques vacíos en una sola línea (ej. `{}`) en lugar de expandirlos. |
+| `angelscript.features.formatting` | `true` | Habilitar los servicios de formateo (formateo de documentos, rangos, al escribir y al guardar). Al desactivarse, no ocurrirá ningún formateo de código. |
+| `angelscript.features.onTypeFormatting` | `false` | Formatear automáticamente el código al escribir caracteres activadores específicos (punto y coma, llave de cierre, salto de línea). |
+| `angelscript.format.onSave` | `false` | Formatear todo el documento cuando lo guarde manualmente.  Desactivado por defecto: su editor ya tiene `editor.formatOnSave`, y un servidor de lenguaje que reformatee en cada guardado independientemente sobrescribiría esa elección de forma silenciosa. Los guardados por autoguardado o cambio de foco nunca formatean, independientemente de cómo esté configurado esto - reescribir un archivo mientras todavía está escribiendo en él no es una opción. |
+| `angelscript.format.braceStyle` | `"allman"` | Dónde se coloca la llave de apertura de un bloque. Una lista de inicializadores y el cuerpo de una lambda mantienen su llave en la misma línea bajo cualquier estilo. |
+| `angelscript.format.spacesInsideParentheses` | `false` | Determina si se deben insertar espacios dentro de los paréntesis (por ejemplo, 'foo( bar )' en lugar de 'foo(bar)'). |
+| `angelscript.format.keepEmptyBlocksOnSingleLine` | `true` | Mantener los bloques vacíos en una sola línea (ej. 'ClassName() {}') en lugar de expandirlos en varias líneas. |
 
 #### 5. Configuración de características LSP y autocompletado
 
 | Configuración | Valor por defecto | Descripción |
 | :--- | :--- | :--- |
-| `angelscript.features.hover` | `true` | Habilita tooltips de documentación en hover. |
-| `angelscript.hover.stringLiteralLength` | `true` | Muestra la longitud de caracteres y conteo de bytes en hovers sobre literales de cadena. |
-| `angelscript.hover.stringLiteralPathResolution` | `true` | Resuelve literales de cadena que parecen rutas de archivos/activos comprobando su existencia. |
-| `angelscript.hover.assetSearchPaths` | `[]` | Directorios adicionales para buscar y resolver activos referenciados en cadenas. |
-| `angelscript.features.completion` | `true` | Habilita autocompletado inteligente de código. |
-| `angelscript.completion.smartTypeRanking` | `true` | Prioriza sugerencias que coinciden con el tipo esperado del parámetro o asignación. |
-| `angelscript.completion.completeFunctionParens` | `true` | Inserta automáticamente paréntesis y marcadores de posición al completar funciones. |
-| `angelscript.completion.qualifyEnumValues` | `true` | Sugiere valores enum calificados (`Enum::Valor`) cuando el ámbito enum es obligatorio. |
-| `angelscript.features.definition` | `true` | Habilita Ir a definición (`F12`). |
-| `angelscript.features.references` | `true` | Habilita Buscar todas las referencias (`Shift+F12`). |
-| `angelscript.features.signatureHelp` | `true` | Muestra información de firmas mientras se escriben argumentos de función. |
-| `angelscript.features.semanticTokens` | `true` | Habilita resaltado sintáctico y semántico avanzado de tokens. |
-| `angelscript.features.documentSymbols` | `true` | Habilita símbolos de vista de esquema y migas de pan (breadcrumbs). |
-| `angelscript.features.workspaceSymbols` | `true` | Habilita búsqueda difusa de símbolos en todo el proyecto (`Ctrl+T`). |
-| `angelscript.features.rename` | `true` | Habilita renombrado de símbolos en todo el espacio de trabajo (`F2`). |
-| `angelscript.features.documentHighlight` | `true` | Resalta apariciones del símbolo bajo el cursor. |
-| `angelscript.features.foldingRange` | `true` | Habilita plegado de código para bloques, clases, funciones y comentarios. |
-| `angelscript.features.codeAction` | `true` | Habilita correcciones rápidas (Quick Fixes). |
-| `angelscript.features.documentLink` | `true` | Detecta enlaces navegables en comentarios y rutas de activos. |
-| `angelscript.features.implementation` | `true` | Habilita Ir a implementación para interfaces (`Ctrl+F12`). |
-| `angelscript.features.selectionRange` | `true` | Habilita expansión inteligente de rangos de selección (`Shift+Alt+Right`). |
-| `angelscript.features.callHierarchy` | `true` | Habilita jerarquía bidireccional de llamadas (entrantes y salientes). |
-| `angelscript.features.typeHierarchy` | `true` | Habilita navegación de jerarquía de supertipos y subtipos. |
-| `angelscript.features.linkedEditing` | `true` | Sincroniza ediciones en identificadores coincidentes. |
-| `angelscript.features.codeLens` | `true` | Muestra contadores de referencias y enlaces de accesores sobre declaraciones. |
-| `angelscript.features.pullDiagnostics` | `true` | Soporta el modelo pull de diagnósticos de LSP. |
-| `angelscript.features.typeConversionChecks` | `true` | Valida conversiones de tipos, casts implícitos y argumentos de constructores. |
-| `angelscript.features.predefinedLoader` | `true` | Habilita carga e indexación de stubs de host predefinidos. |
-| `angelscript.features.enableCommentSuppressions` | `true` | Reconoce comentarios en línea `// @as-suppress`. |
+| `angelscript.features.hover` | `true` | Mostrar información de tipos y documentación al pasar el cursor. |
+| `angelscript.hover.stringLiteralLength` | `true` | Muestra la longitud en caracteres de las cadenas literales al pasar el cursor. |
+| `angelscript.hover.stringLiteralPathResolution` | `true` | Inspecciona y resuelve cadenas literales que parecen rutas de archivo o recursos respecto al directorio del documento, raices del espacio de trabajo y rutas de busqueda configuradas. |
+| `angelscript.hover.assetSearchPaths` | `[]` | Directorios donde buscar archivos de recursos referenciados en cadenas literales cuando la resolucion de rutas esta activada. |
+| `angelscript.features.completion` | `true` | Habilitar sugerencias de autocompletado. |
+| `angelscript.completion.smartTypeRanking` | `true` | Priorizar sugerencias de autocompletado que coincidan con el tipo de parámetro esperado o el destino de asignación. |
+| `angelscript.completion.completeFunctionParens` | `true` | Anadir automaticamente parentesis y posicionar el cursor al autocompletar funciones o metodos. |
+| `angelscript.completion.qualifyEnumValues` | `true` | Prefijar automáticamente el nombre del enum al autocompletar valores de enumeración (p. ej. insertando 'EnumName::EnumValue') para evitar ambigüedades. |
+| `angelscript.features.definition` | `true` | Habilitar Ir a la definición e Ir a la definición de tipo. |
+| `angelscript.features.references` | `true` | Habilitar Buscar todas las referencias. |
+| `angelscript.features.signatureHelp` | `true` | Mostrar sugerencias de parámetros al escribir una llamada. |
+| `angelscript.features.semanticTokens` | `true` | Habilitar el resaltado semántico de sintaxis. |
+| `angelscript.features.documentSymbols` | `true` | Poblar la vista Esquema y las rutas de navegación. |
+| `angelscript.features.workspaceSymbols` | `true` | Habilitar la búsqueda de símbolos en todo el espacio de trabajo (Ctrl+T). |
+| `angelscript.features.rename` | `true` | Habilitar el cambio de nombre de símbolos. |
+| `angelscript.features.documentHighlight` | `true` | Resaltar otras apariciones del símbolo bajo el cursor. |
+| `angelscript.features.foldingRange` | `true` | Proporcionar regiones de plegado de código. |
+| `angelscript.features.codeAction` | `true` | Ofrecer correcciones rápidas y refactorizaciones. |
+| `angelscript.features.documentLink` | `true` | Convertir directivas `#include` en enlaces cliqueables. |
+| `angelscript.features.implementation` | `true` | Ir a implementación: desde una interfaz o clase base hacia los tipos que responden a ella, y desde un método hacia los que lo implementan o sobrescriben. |
+| `angelscript.features.selectionRange` | `true` | Expandir selección: ampliar la selección un paso sintáctico a la vez. |
+| `angelscript.features.callHierarchy` | `true` | Jerarquía de llamadas: quién llama a esta función y a qué llama esta a su vez. |
+| `angelscript.features.typeHierarchy` | `true` | Jerarquía de tipos: las bases que declara una clase o interfaz, y los tipos que la declaran como suya. |
+| `angelscript.features.linkedEditing` | `true` | Edición vinculada: reescribir una variable local o un parámetro y sus usos juntos, en vivo. Se ofrece solo para nombres que un ámbito léxico mantiene dentro de un solo archivo - cualquier elemento en el ámbito de archivo pasa por Cambiar nombre en su lugar, que busca a través de documentos. |
+| `angelscript.features.codeLens` | `true` | Mostrar lentes de código interactivos (referencias, implementaciones) en línea sobre las declaraciones. |
+| `angelscript.features.pullDiagnostics` | `true` | Responder a `textDocument/diagnostic` y `workspace/diagnostic` (LSP 3.17). El editor solicita diagnósticos en lugar de esperar a que se le notifiquen. Las notificaciones push se envían de cualquier forma, por lo que desactivar esto no hace perder nada que un cliente que no solicite diagnósticos estuviera utilizando. |
+| `angelscript.features.typeConversionChecks` | `true` | Reportar conversiones que no cuenten con un constructor, `opConv`/`opImplConv` o `opCast`/`opImplCast` que las respalde. |
+| `angelscript.features.predefinedLoader` | `true` | Cargar archivos de stubs predefinidos que describen la API de la aplicación host. |
+| `angelscript.features.enableCommentSuppressions` | `true` | Habilitar la supresión de diagnósticos mediante comentarios usando '// disable <CÓDIGO>' y '// enable <CÓDIGO>' (ej. '// disable W156'). |
 
 #### 6. Configuración de diagnósticos semánticos y análisis
 
 | Configuración | Valor por defecto | Descripción |
 | :--- | :--- | :--- |
-| `angelscript.diagnosticSeverity` | `{}` | Anulación de severidad por código (ej. `{"as-warn-unused-variable": "hint"}`). |
-| `angelscript.diagnostics.reportUnknownTypes` | `true` | Emite errores cuando se encuentran tipos no resueltos. |
-| `angelscript.diagnostics.reportAccessorPortability` | `true` | Advierte sobre patrones de accesores que pueden no ser portables entre motores. |
-| `angelscript.diagnostics.reportAccessorDisabled` | `true` | Advierte cuando se usan accesores (`get_`/`set_`) con accesores deshabilitados. |
-| `angelscript.diagnostics.reportBoolConversion` | `true` | Advierte sobre conversiones implícitas inseguras a booleanos. |
-| `angelscript.diagnostics.reportMissingFuncdef` | `false` | Advierte sobre firmas `funcdef` faltantes o incompatibles. |
-| `angelscript.diagnostics.reportIntegerDivision` | `false` | Advierte sobre divisiones enteras que pueden truncar decimales silenciosamente. |
-| `angelscript.diagnostics.reportPossibleNullDereference` | `true` | Advierte sobre posibles desreferencias de handles nulos (`as-warn-possible-null-dereference`). |
-| `angelscript.diagnostics.reportHandleComparisonEquality` | `1` | Rigor en comparación de handles: `0` (Deshabilitado), `1` (Advertencia), `2` (Error). |
-| `angelscript.diagnostics.missingAssetPathSeverity` | `"off"` | Severidad para rutas de activos inexistentes: `"off"`, `"hint"`, `"warning"` o `"error"`. |
+| `angelscript.diagnosticSeverity` | `{}` | Sobrescribe la gravedad de diagnósticos individuales, indexados por código de diagnóstico. Ejemplo: `{ "as-warn-unused-variable": "hint" }`. |
+| `angelscript.diagnostics.reportUnknownTypes` | `true` | Reportar un tipo de parámetro o de retorno que no resuelva a ninguna declaración.  `void f(TypoTypeName x)` es un error de compilación — el motor responde "Identifier 'TypoTypeName' is not a data type in namespace 'TEST' or parent" — y si se deja sin reportar, se manifiesta en cambio como silencio en cada punto de llamada, porque una llamada cuyos tipos de parámetros son desconocidos tampoco se puede verificar.  También es, desde el lado del servidor, indistinguible de un tipo legítimo registrado por el motor. Desactívelo si su host registra tipos en C++ y no declara ninguno de ellos — o mejor aún, configure un archivo stub predefinido mediante `#angelscript.predefinedFiles`. |
+| `angelscript.diagnostics.reportAccessorPortability` | `true` | Mostrar sugerencia sobre un accesor `get_`/`set_` escrito sin la palabra clave `property`. Dicho accesor es una propiedad bajo `asEP_PROPERTY_ACCESSOR_MODE` 2, el valor predeterminado de este servidor, pero no bajo el modo 3, que es el del propio motor. Agregar la palabra clave se acepta en ambos, por lo que la corrección rápida no puede romper una compilación funcional - razón por la cual esta opción está activada por defecto. |
+| `angelscript.diagnostics.reportAccessorDisabled` | `true` | Mostrar sugerencia donde un accesor de propiedad de script se usa como una propiedad pero el host los deshabilitó (`angelscript.engine.propertyAccessorMode` 0 o 1).  Bajo cualquiera de los dos modos, el compilador omite por completo los accesores definidos por script, por lo que `c.X` respaldado por un `get_X`/`set_X` de script es rechazado — con la palabra clave `property` y sin ella. Es una sugerencia en lugar de un error, y está desactivada por defecto, porque se le está indicando al analizador lo que hace el host: de lo contrario, un host configurado incorrectamente vería errores en código que compila bien para él. No dice nada bajo los modos 2 y 3. |
+| `angelscript.diagnostics.reportBoolConversion` | `true` | Mostrar sugerencia cuando se usa una clase donde se espera un `bool`, tal como `if (h)`. Bajo `asEP_BOOL_CONVERSION_MODE` 0, el valor predeterminado del motor, esto es un error de compilación incluso cuando la clase declara `opImplConv`. Una corrección rápida llama al operador de conversión explícitamente, lo cual compila bajo ambos modos. Desactivado por defecto, y completamente silencioso cuando `angelscript.engine.boolConversionMode` es 1. |
+| `angelscript.diagnostics.reportMissingFuncdef` | `false` | Mostrar sugerencia cuando una posición de tipo nombra una función en lugar de un tipo, tal como `Foo@ h` donde `Foo` es una función. Un handle de función necesita un `funcdef` para nombrar su firma, y una corrección rápida declara uno a partir de los propios parámetros y tipo de retorno de la función. Desactivado por defecto, ya que el nombre podría pertenecer a un tipo del host que este analizador no puede ver. |
+| `angelscript.diagnostics.reportIntegerDivision` | `false` | Mostrar sugerencia sobre `1 / 2`, que se trunca a 0 bajo el valor predeterminado del motor. Desactivado por defecto porque una base de código que busca división entera escribe exactamente esto. |
+| `angelscript.diagnostics.reportPossibleNullDereference` | `true` | Advertir cuando se desreferencia un parámetro de handle, un resultado de cast de handle o un handle no inicializado sin una comprobación previa de nulo (`!is null`, retorno temprano de guarda, etc.). Activado por defecto. |
+| `angelscript.diagnostics.reportHandleComparisonEquality` | `1` | Configurar la severidad para comparaciones de igualdad de handle con null (`== null`, `!= null`) en lugar de identidad de handle (`is null`, `!is null`). 0: desactivado, 1: advertencia (por defecto del compilador), 2: error. |
+| `angelscript.diagnostics.missingAssetPathSeverity` | `"off"` | Severidad del diagnostico para cadenas literales que hacen referencia a archivos de recursos no encontrados. Desactivado por defecto. |
 
-#### 7. Configuración del dialecto del motor y preprocesador (`asEP_*`)
+#### 7. Configuración del dialecto del motor y preprocesador (asEP_*)
 
 | Configuración | Valor por defecto | Descripción |
 | :--- | :--- | :--- |
-| `angelscript.engine.allowUnsafeReferences` | `false` | Cuando está activo (`asEP_ALLOW_UNSAFE_REFERENCES`), permite referencias inseguras en firmas. |
-| `angelscript.engine.privatePropAsProtected` | `false` | Trata propiedades privadas de clase como protegidas (`asEP_PRIVATE_PROP_AS_PROTECTED`). |
-| `angelscript.engine.disallowGlobalVars` | `false` | Prohíbe declaraciones de variables globales (`asEP_DISALLOW_GLOBAL_VARS`). |
-| `angelscript.engine.propertyAccessorMode` | `2` | Modo de accesores: `2` (get/set estándar), `3` (exige prefijo de accesor). |
-| `angelscript.engine.allowMultilineStrings` | `false` | Permite literales de cadena multilínea sin escape (`asEP_ALLOW_MULTILINE_STRINGS`). |
-| `angelscript.engine.boolConversionMode` | `0` | Modo de conversión booleana: `0` (estricto), `1` (permite números/handles). |
-| `angelscript.engine.useCharacterLiterals` | `0` | Interpretación de caracteres: `0` (código carácter), `1` (cadena de un carácter). |
-| `angelscript.engine.disallowValueAssignForRef` | `false` | Prohíbe asignación de valor para tipos de referencia (`asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE`). |
-| `angelscript.engine.alterSyntaxNamedArgs` | `0` | Sintaxis de argumentos nombrados: `0` (deshabilitado), `1` (`arg: val`), `2` (`arg = val`). |
-| `angelscript.engine.disableIntegerDivision` | `false` | Deshabilita el operador de división entera (`asEP_DISABLE_INTEGER_DIVISION`). |
-| `angelscript.engine.disallowEmptyListElements` | `false` | Prohíbe elementos vacíos en listas de inicialización (`asEP_DISALLOW_EMPTY_LIST_ELEMENTS`). |
-| `angelscript.engine.foreachSupport` | `true` | Habilita soporte para bucles `foreach`. |
-| `angelscript.engine.requireEnumScope` | `false` | Cuando está activo (`asEP_REQUIRE_ENUM_SCOPE`), los enums deben calificarse con `Enum::Miembro`. |
-| `angelscript.engine.alwaysImplDefaultConstruct` | `false` | Cuando está activo (`asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT`), sintetiza constructor por defecto. |
-| `angelscript.engine.allowUnicodeIdentifiers` | `false` | Permite caracteres unicode en identificadores (`asEP_ALLOW_UNICODE_IDENTIFIERS`). |
-| `angelscript.engine.ignoreDuplicateSharedIntf` | `false` | Cuando está activo (`asEP_IGNORE_DUPLICATE_SHARED_INTF`), unifica interfaces idénticas. |
-| `angelscript.engine.compilerWarnings` | `1` | Severidad de advertencias: `0` (silencioso), `1` (advertencias), `2` (tratar como errores). |
-| `angelscript.preprocessor.elseSupport` | `false` | Habilita soporte para la directiva `#else` en scripts. |
-| `angelscript.preprocessor.elifSupport` | `false` | Habilita soporte para la directiva `#elif` en scripts. |
-| `angelscript.preprocessor.ifdefSupport` | `false` | Habilita soporte para directivas `#ifdef` / `#ifndef` en scripts. |
-| `angelscript.preprocessor.defineInScripts` | `false` | Permite a los scripts definir símbolos del preprocesador mediante `#define`. |
-| `angelscript.preprocessor.pragmaMode` | `"accept"` | Manejo de directivas `#pragma`: `"accept"`, `"hint"` o `"error"`. |
+| `angelscript.engine.allowUnsafeReferences` | `false` | Active esto si el host llama a `SetEngineProperty(asEP_ALLOW_UNSAFE_REFERENCES, true)`.  Con esto desactivado — el valor predeterminado del motor —, `&` en un parámetro significa `&inout` y solo un tipo de objeto que admita handles puede usarlo, por lo que `void f(int &x)` es un error. Con esto activado, los primitivos pueden pasarse por referencia y el diagnóstico no se reporta. |
+| `angelscript.engine.privatePropAsProtected` | `false` | Active esto si el host llama a `SetEngineProperty(asEP_PRIVATE_PROP_AS_PROTECTED, true)`.  Un miembro `private` sigue entonces la regla de `protected`, por lo que una clase derivada puede acceder a él y el acceso ya no se reporta. |
+| `angelscript.engine.disallowGlobalVars` | `false` | Active esto si el host llama a `SetEngineProperty(asEP_DISALLOW_GLOBAL_VARS, true)`.  Cada declaración de variable global es entonces un error de compilación — el motor responde "Global variables have been disabled by the application" — y se reporta como tal. |
+| `angelscript.engine.propertyAccessorMode` | `2` | Cómo `get_X()` / `set_X(v)` se convierten en la propiedad virtual `X`, coincidiendo con `SetEngineProperty(asEP_PROPERTY_ACCESSOR_MODE, ...)` del host.  `2` — cualquier accesor cuenta. `3` — solo uno que lleve la palabra clave `property` cuenta, y `c.X` sin ella es un error que el motor reporta como "'X' is not a member of 'C'".  El valor predeterminado del propio motor es `3`; el de este servidor es `2`, porque ser indulgente aquí pasa por alto un error, mientras que ser estricto inventa uno para cada host que define `2`. Establézcalo en `3` si el suyo no lo hace. |
+| `angelscript.engine.allowMultilineStrings` | `false` | Indica si una cadena simple `"..."` puede abarcar varias líneas, coincidiendo con `SetEngineProperty(asEP_ALLOW_MULTILINE_STRINGS, ...)` del host.  Desactivado en el motor y desactivado aquí: dicha cadena es rechazada con "Multiline strings are not allowed in this application". Un `"""heredoc"""` abarca varias líneas bajo cualquiera de las dos configuraciones. Active esto solo si su host lo hace, o el servidor reportará código que su motor acepta. |
+| `angelscript.engine.boolConversionMode` | `0` | Cómo se puede usar una clase donde se espera un `bool`, coincidiendo con `SetEngineProperty(asEP_BOOL_CONVERSION_MODE, ...)` del host.  `0` — nunca; `if (h)` en una clase es un error de compilación incluso cuando la clase declara `opImplConv`. `1` — una clase que declara `opImplConv` u `opConv` se puede usar como condición.  `0` es el valor predeterminado del propio motor y de este servidor. Establézcalo en `1` si su host lo define, o la sugerencia adjunta describirá una restricción que usted no tiene. |
+| `angelscript.engine.useCharacterLiterals` | `0` | Cómo se lee `'x'`, coincidiendo con asEP_USE_CHARACTER_LITERALS. `0` — una cadena de un solo carácter, el valor predeterminado del motor, por lo que `int c = 'x'` es un error de compilación. `1` — un código de carácter entero, por lo que la misma línea compila. |
+| `angelscript.engine.disallowValueAssignForRef` | `false` | asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE. Cuando el host lo define, `a = b` en un tipo de referencia es un error y se requiere `@a = @b`. |
+| `angelscript.engine.alterSyntaxNamedArgs` | `0` | asEP_ALTER_SYNTAX_NAMED_ARGS. `0` — solo `name: value`, el valor predeterminado del motor, y `name = value` es un error. `1` — `name = value` se acepta con una advertencia. `2` — se acepta silenciosamente. |
+| `angelscript.engine.disableIntegerDivision` | `false` | asEP_DISABLE_INTEGER_DIVISION. Cuando el host lo define, `/` en dos enteros produce un float, por lo que `1 / 2` es 0.5 en lugar de 0. |
+| `angelscript.engine.disallowEmptyListElements` | `false` | asEP_DISALLOW_EMPTY_LIST_ELEMENTS. Cuando el host lo define, un hueco en una lista de inicializadores como `{1, , 3}` es un error. |
+| `angelscript.engine.foreachSupport` | `true` | asEP_FOREACH_SUPPORT. ACTIVADO por el propio valor predeterminado del motor; desactívelo solo si su host deshabilita `foreach`, de lo contrario, cada bucle `foreach` se reporta. |
+| `angelscript.engine.requireEnumScope` | `false` | asEP_REQUIRE_ENUM_SCOPE. Cuando se activa, un enumerador sin calificar deja de resolverse y debe calificarse con el nombre de su tipo enum; de lo contrario, se reporta 'No matching symbol'. |
+| `angelscript.engine.alwaysImplDefaultConstruct` | `false` | asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT. ACTIVADO por el propio valor predeterminado del motor; si se desactiva, una clase que solo declare constructores no predeterminados ya no se podrá construir por defecto. |
+| `angelscript.engine.allowUnicodeIdentifiers` | `false` | asEP_ALLOW_UNICODE_IDENTIFIERS. Cuando se activa, se aceptan caracteres Unicode no ASCII en identificadores en lugar de generar errores sintácticos. |
+| `angelscript.engine.ignoreDuplicateSharedIntf` | `false` | asEP_IGNORE_DUPLICATE_SHARED_INTF. Cuando se activa, declarar la misma interfaz compartida más de una vez compila correctamente en lugar de reportar un conflicto de nombres. |
+| `angelscript.engine.compilerWarnings` | `1` | asEP_COMPILER_WARNINGS. Controla la gravedad de las advertencias del compilador: 0 las suprime por completo, 1 las emite como advertencias (predeterminado del motor) y 2 las convierte en errores de compilación. |
+| `angelscript.preprocessor.elseSupport` | `false` | Active esto si el host aplicó un parche a su copia de `scriptbuilder.cpp` para comprender `#else`.  El complemento incluido con el SDK no lo hace. Medido frente al compilador real: en `#if FOO / a / #else / b / #endif` con `FOO` sin definir, la rama `#else` **no** se convierte en la tomada — se borra junto con el resto del bloque, porque `#else` no es una directiva y la exclusión se extiende hasta `#endif` de todos modos. Con esto desactivado, eso es exactamente lo que este servidor asume. |
+| `angelscript.preprocessor.elifSupport` | `false` | Active esto si el host aplicó un parche a su copia de `scriptbuilder.cpp` para comprender `#elif`.  No está presente en el complemento de serie. Con esto activado, la primera rama cuya palabra esté definida es la activa y todas las demás ramas quedan excluidas. |
+| `angelscript.preprocessor.ifdefSupport` | `false` | Active esto si el host aplicó un parche a su copia de `scriptbuilder.cpp` para comprender `#ifdef` y `#ifndef`.  No está presente en el complemento de serie, donde cualquiera de los dos se deja en el código fuente y el compilador reporta `Unexpected token`. |
+| `angelscript.preprocessor.defineInScripts` | `false` | Active esto si el host aplicó un parche a su copia de `scriptbuilder.cpp` para que `#define WORD` en un script defina una palabra.  No está presente en el complemento de serie, donde `DefineWord` es una llamada de C++ que realiza el host y un `#define` escrito en un script es un error de sintaxis. Para declarar las palabras que el propio host define, use `#angelscript.define` o una línea `#define` en un stub predefinido, que no se ven afectados por esta configuración. |
+| `angelscript.preprocessor.pragmaMode` | `"accept"` | Qué reportar para un `#pragma`.  El complemento de serie los rechaza todos: al no haber ningún callback de pragma registrado, sustituye la respuesta del callback por un fallo, escribe `Invalid #pragma directive` y hace fallar toda la sección. Sin embargo, el valor predeterminado aquí es `accept`, porque un host que registra un callback es el caso habitual y reportar un error por defecto pondría un subrayado ondulado en un pragma que compila bien. Elija `error` para un host que realmente no haya registrado nada, o `hint` si no está seguro. |
 
+<!-- SETTINGS_CATALOG_END -->
 ---
 
 ## Tipos de archivo y gramáticas TextMate soportadas

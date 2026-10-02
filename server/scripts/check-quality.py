@@ -35,6 +35,7 @@ def main():
 
     # 4. Client Localization Completeness (English & Spanish)
     run_step("Client Localization Integrity", "python server/scripts/check-client-l10n.py")
+    run_step("README Settings Catalog Sync", "python server/scripts/sync-readme-settings.py --check")
 
     # 5. Tree-Sitter Grammar Names & Pin Audit
     run_step("Tree-Sitter Grammar Names", "python server/scripts/check-grammar-names.py")
