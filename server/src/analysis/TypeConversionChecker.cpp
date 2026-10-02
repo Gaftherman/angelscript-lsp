@@ -12,6 +12,7 @@
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 #include "utils/LspLogger.h"
+#include "utils/Utils.h"
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <functional>
@@ -1615,8 +1616,46 @@ void CheckConstruction(TSNode argumentListNode, const std::string& targetType, c
     }
 }
 
+struct ZeroArgConstructorStatus
+{
+    bool hasZeroArg = false;
+    bool isDeleted = false;
+};
+
+/**
+ * @brief Inspects constructors to determine whether a zero-argument default constructor exists.
+ * @param[in] constructors List of candidate constructor symbols.
+ * @return ZeroArgConstructorStatus indicating existence and deleted status.
+ */
+ZeroArgConstructorStatus InspectZeroArgConstructor(const std::vector<Symbol>& constructors)
+{
+    ZeroArgConstructorStatus status;
+    for (const auto& ctor : constructors)
+    {
+        const auto& sig = ctor.GetFunction();
+        bool canTakeZero = sig.parameters.empty();
+        if (!canTakeZero)
+        {
+            canTakeZero = std::all_of(sig.parameters.begin(), sig.parameters.end(),
+                                      [](const ParameterInformation& p) { return !p.defaultValue.empty(); });
+        }
+        if (canTakeZero)
+        {
+            status.hasZeroArg = true;
+            status.isDeleted = sig.modifiers.isDelete;
+            break;
+        }
+    }
+    return status;
+}
+
 void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName, DiagnosticContext& ctx)
 {
+    if (utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
+    {
+        return;
+    }
+
     if (typeName.empty() || IsBuiltInValueType(typeName, ctx))
     {
         return;
@@ -1642,32 +1681,12 @@ void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName,
         return;
     }
 
-    bool hasZeroArg = false;
-    bool zeroArgDeleted = false;
-    for (const auto& ctor : constructors)
-    {
-        const auto& sig = ctor.GetFunction();
-        bool canTakeZero = sig.parameters.empty();
-        if (!canTakeZero)
-        {
-            canTakeZero = std::all_of(sig.parameters.begin(), sig.parameters.end(),
-                                      [](const ParameterInformation& p) { return !p.defaultValue.empty(); });
-        }
-        if (canTakeZero)
-        {
-            hasZeroArg = true;
-            if (sig.modifiers.isDelete)
-            {
-                zeroArgDeleted = true;
-            }
-            break;
-        }
-    }
+    const auto [hasZeroArg, isDeleted] = InspectZeroArgConstructor(constructors);
 
     TSNode nameNode = parser::GetChildByField(declaratorNode, parser::fields::Name);
     TSNode targetNode = ts_node_is_null(nameNode) ? declaratorNode : nameNode;
 
-    if (zeroArgDeleted)
+    if (isDeleted)
     {
         EmitAtNode(targetNode, ctx, "as-err-deleted-method-called", {typeName, typeName});
     }

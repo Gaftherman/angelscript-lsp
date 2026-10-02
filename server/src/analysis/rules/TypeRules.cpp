@@ -664,6 +664,11 @@ bool CheckDuplicatePair(const Symbol& first, const Symbol& other, const Diagnost
 
 void ValidateDuplicates(const std::vector<Symbol>& symbols, const DiagnosticContext& ctx)
 {
+    if (utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
+    {
+        return;
+    }
+
     if (symbols.size() < 2)
     {
         return;

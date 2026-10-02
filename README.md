@@ -1,5 +1,7 @@
 # AngelScript Language Server (AngelLSP)
 
+**[English](README.md)** | **[Español](README.es.md)**
+
 AngelLSP is a high-performance, thread-safe Language Server Protocol (LSP) server for the [AngelScript](https://www.angelcode.com/angelscript/) programming language (`.as`), built in native C++20 and powered by Tree-Sitter for concrete syntax tree parsing and semantic resolution.
 
 Unlike approaches that rely on running scripts inside an embedded host runtime or crude source-text concatenation, AngelLSP analyzes source files, module entry points, and predefined host stubs directly from abstract syntax trees. It is specifically tailored for real-world AngelScript ecosystems (such as Sven Co-op, game engine script hosts, and custom `CScriptBuilder` integrations), delivering sub-millisecond hover lookups, flow-sensitive null checks, type inference, and semantic navigation across the entire workspace.
@@ -105,6 +107,22 @@ For standalone AngelScript host integrations using custom include paths and API 
   ]
 }
 ```
+
+### 3. Predefined Host Stubs (`.as.predefined`)
+
+In AngelScript, host applications register their C++ APIs (classes, global functions, properties, and constants) into the scripting engine at runtime. To provide accurate IntelliSense, autocompletion, type validation, and navigation for these host APIs, AngelLSP loads `.as.predefined` header stubs.
+
+The following community and tested host stubs are available:
+
+| Host Environment | Source & Link | Status & Recommendation |
+| :--- | :--- | :--- |
+| **Sven Co-op** | [Sven Co-op - Gaftherman](https://github.com/Gaftherman/angelscript-lsp/blob/main/predefined/sven.as.predefined) | **Recommended (Recomendado)** — Fully maintained and updated for modern Sven Co-op 5.26+ API bindings, const-correctness, ref qualifiers, and complete math/engine structs. We strongly recommend this stub for all Sven Co-op scripting. |
+| **Sven Co-op** | [Sven Co-op - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Sven%20Co-op/as.predefined) | **Legacy (Heredado)** — Retained for backwards compatibility with older projects and configurations; outdated compared to modern engine releases. |
+| **Trackmania Nations Forever** | [Trackmania Nations Forever - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Trackmania%20Nations%20Forever/as.predefined) | Compatible — Host API bindings for Trackmania Nations Forever scripting (`CGameCtnApp`, `MwFastBuffer`, etc.). |
+| **OpenSiv3D** | [OpenSiv3D - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/OpenSiv3D/as.predefined) | Compatible — Host API bindings for the OpenSiv3D C++ game framework (`Vec2`, `ColorF`, `Circle`, etc.). |
+
+> [!TIP]
+> To configure an active stub in your workspace, set `"angelscript.predefined.active": "${workspaceFolder}/path/to/stub.as.predefined"` or set `"all"` to merge multiple stubs. All stubs are benchmarked and verified for fast, error-free parsing.
 
 ---
 
