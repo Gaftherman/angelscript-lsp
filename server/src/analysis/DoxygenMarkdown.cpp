@@ -130,15 +130,71 @@ std::string StripLineLeadingStar(const std::string& line)
     return line.substr(i);
 }
 
-/** @brief Checks if a cleaned line represents a Markdown bullet or numbered list item. */
+/** @brief Checks if a line defines a key-value or option assignment item. */
+bool IsOptionOrAssignmentLine(std::string_view line)
+{
+    if (!line.empty() && (line.front() == '\'' || line.front() == '"' || line.front() == '`' || line.front() == '['))
+    {
+        return line.find(" = ") != std::string_view::npos || line.find(": ") != std::string_view::npos ||
+               line.find(" - ") != std::string_view::npos;
+    }
+    size_t eqPos = line.find(" = ");
+    return eqPos != std::string_view::npos && eqPos > 0 && eqPos <= 32;
+}
+
+/** @brief Checks if a line starts with a parenthesized list prefix like (1) or (a). */
+bool IsParenthesizedListPrefix(std::string_view line)
+{
+    if (line.size() < 4 || !line.starts_with('('))
+    {
+        return false;
+    }
+    size_t closeParen = line.find(')');
+    if (closeParen == std::string_view::npos || closeParen > 4 || closeParen + 1 >= line.size())
+    {
+        return false;
+    }
+    return line[closeParen + 1] == ' ';
+}
+
+/** @brief Checks if a line starts with a digit-prefixed item like 1. or 1). */
+bool IsDigitsListPrefix(std::string_view line)
+{
+    if (line.size() < 3 || !std::isdigit(static_cast<unsigned char>(line[0])))
+    {
+        return false;
+    }
+    size_t pos = 1;
+    while (pos < line.size() && std::isdigit(static_cast<unsigned char>(line[pos])))
+    {
+        ++pos;
+    }
+    if (pos >= line.size() || (line[pos] != '.' && line[pos] != ')'))
+    {
+        return false;
+    }
+    if (pos + 1 >= line.size())
+    {
+        return false;
+    }
+    return line[pos + 1] == ' ' || line[pos + 1] == '\t';
+}
+
+/** @brief Checks if a line starts with a numbered list prefix. */
+bool IsNumberedListLine(std::string_view line)
+{
+    return IsDigitsListPrefix(line) || IsParenthesizedListPrefix(line);
+}
+
+/** @brief Checks if a cleaned line represents a Markdown bullet, numbered item, or option definition. */
 bool IsMarkdownListLine(std::string_view line)
 {
-    if (line.starts_with("* ") || line.starts_with("- "))
+    if (line.starts_with("* ") || line.starts_with("- ") || line.starts_with("+ ") || line.starts_with("> ") ||
+        line.starts_with("\xe2\x80\xa2 "))
     {
         return true;
     }
-    return line.size() >= 3 && std::isdigit(static_cast<unsigned char>(line[0])) &&
-           line.find(". ") != std::string_view::npos;
+    return IsNumberedListLine(line) || IsOptionOrAssignmentLine(line);
 }
 
 /** @brief Transforms `-# ` Doxygen numbered list items into numbered Markdown list items. */
@@ -154,9 +210,28 @@ void ProcessNumberedListItem(std::string& line, int& listNum)
     }
 }
 
+/** @brief Determines whether a newline should be preserved between two consecutive description lines. */
+bool ShouldKeepDescriptionNewline(std::string_view prev, std::string_view curr)
+{
+    if (IsMarkdownListLine(curr) || IsMarkdownListLine(prev))
+    {
+        return true;
+    }
+    if (prev.ends_with(':'))
+    {
+        return true;
+    }
+    bool prevEndsWithSentencePunct =
+        prev.ends_with('.') || prev.ends_with('!') || prev.ends_with('?') || prev.ends_with(';');
+    bool curStartsSentence = !curr.empty() && (std::isupper(static_cast<unsigned char>(curr[0])) ||
+                                               std::isdigit(static_cast<unsigned char>(curr[0])) || curr[0] == '\'' ||
+                                               curr[0] == '"' || curr[0] == '`' || curr[0] == '[');
+    return prevEndsWithSentencePunct && curStartsSentence;
+}
+
 /**
  * @brief Cleans description lines by stripping line decorations, converting `-#` list items,
- * and joining lines with single spaces or linebreaks (for lists).
+ * and joining lines with single spaces or linebreaks (for lists and punctuated clauses).
  */
 std::string CleanDescriptionLines(const std::string& raw)
 {
@@ -188,9 +263,7 @@ std::string CleanDescriptionLines(const std::string& raw)
     {
         if (i > 0)
         {
-            bool isListLine = IsMarkdownListLine(cleaned[i]);
-            bool prevIsListLine = IsMarkdownListLine(cleaned[i - 1]);
-            result += (isListLine || prevIsListLine) ? "\n" : " ";
+            result += ShouldKeepDescriptionNewline(cleaned[i - 1], cleaned[i]) ? "\n" : " ";
         }
         result += cleaned[i];
     }
@@ -621,9 +694,13 @@ std::vector<std::string> SplitCommentVerbatimAndNewlines(const std::vector<std::
         else
         {
             auto splitLines = SplitCommentLineOnNewlines(cLine);
-            for (auto&& s : splitLines)
+            for (size_t k = 0; k < splitLines.size(); ++k)
             {
-                finalContents.push_back(StripTrailingStubSemicolon(s));
+                if (k > 0)
+                {
+                    finalContents.push_back("");
+                }
+                finalContents.push_back(StripTrailingStubSemicolon(splitLines[k]));
             }
         }
     }
@@ -846,24 +923,71 @@ std::string SplitFirstLineAtDot(std::string& firstLine, size_t dotPos)
     return briefText;
 }
 
-/** @brief Extracts an implicit brief from the first content line. */
-std::string ExtractImplicitBrief(std::vector<std::string>& lines)
+/** @brief Finds the index of the first non-empty line in a comment lines collection. */
+size_t FindFirstNonEmptyLine(const std::vector<std::string>& lines)
 {
-    size_t firstContentIdx = std::string::npos;
     for (size_t i = 0; i < lines.size(); ++i)
     {
         if (!Trim(lines[i]).empty())
         {
-            firstContentIdx = i;
-            break;
+            return i;
+        }
+    }
+    return std::string::npos;
+}
+
+/**
+ * @brief Determines if the first content line should be extracted as an implicit brief.
+ *
+ * An implicit brief is only separated from the body if:
+ * 1. The first line contains multiple sentences on that line (brief + remainder), OR
+ * 2. The first line is followed by an empty line (explicit paragraph break), OR
+ * 3. The first line is followed by a Doxygen block tag (e.g. @param, @return).
+ */
+bool ShouldExtractImplicitBrief(const std::vector<std::string>& lines, size_t firstContentIdx)
+{
+    if (firstContentIdx >= lines.size())
+    {
+        return false;
+    }
+    std::string_view firstLine = lines[firstContentIdx];
+    size_t dotPos = FindSentenceEndingDot(firstLine);
+    if (dotPos != std::string::npos)
+    {
+        size_t nextPos = dotPos + 1;
+        while (nextPos < firstLine.size() && (IsClosingQuoteOrBracket(firstLine[nextPos]) || firstLine[nextPos] == ';'))
+        {
+            ++nextPos;
+        }
+        std::string_view remainder = firstLine.substr(nextPos);
+        bool hasAlnum = std::any_of(remainder.begin(), remainder.end(),
+                                    [](unsigned char ch) { return std::isalnum(static_cast<unsigned char>(ch)); });
+        if (hasAlnum)
+        {
+            return true;
         }
     }
 
-    if (firstContentIdx == std::string::npos)
+    if (firstContentIdx + 1 < lines.size())
     {
-        return "";
+        std::string_view nextLine = lines[firstContentIdx + 1];
+        if (Trim(std::string(nextLine)).empty())
+        {
+            return true;
+        }
+        size_t cmdEnd = 0;
+        if (IsBlockCommand(TrimLeading(std::string(nextLine)), cmdEnd))
+        {
+            return true;
+        }
     }
 
+    return false;
+}
+
+/** @brief Extracts an implicit brief from the first content line. */
+std::string ExtractImplicitBrief(std::vector<std::string>& lines, size_t firstContentIdx)
+{
     std::string firstLine = TrimLeading(lines[firstContentIdx]);
     if (IsIneligibleImplicitBriefLine(firstLine))
     {
@@ -913,7 +1037,14 @@ std::string ExtractBrief(std::vector<std::string>& lines)
     {
         return brief;
     }
-    return ExtractImplicitBrief(lines);
+
+    size_t firstContentIdx = FindFirstNonEmptyLine(lines);
+    if (firstContentIdx == std::string::npos || !ShouldExtractImplicitBrief(lines, firstContentIdx))
+    {
+        return "";
+    }
+
+    return ExtractImplicitBrief(lines, firstContentIdx);
 }
 
 /** @brief State for comment line segmentation. */
@@ -2033,9 +2164,64 @@ void DispatchSegmentTagNode(TSNode child, const std::string& syntheticDoc, std::
             blocks.push_back(DocBlock::MakeBody(std::move(desc)));
         }
     }
+    else if (lowerTag == "link")
+    {
+        std::string desc = Trim(ExtractAdmonitionDescription(child, syntheticDoc));
+        if (desc.ends_with("@endlink"))
+        {
+            desc = Trim(desc.substr(0, desc.size() - 8));
+        }
+        else if (desc.ends_with("\\endlink"))
+        {
+            desc = Trim(desc.substr(0, desc.size() - 8));
+        }
+        blocks.push_back(DocBlock::MakeBody(desc.empty() ? "@link" : "@link " + desc));
+    }
+    else if (lowerTag == "endlink")
+    {
+        return;
+    }
     else if (!rawTagName.empty())
     {
         blocks.push_back(ProcessAdmonitionTag(rawTagName, child, syntheticDoc));
+    }
+}
+
+/** @brief Appends or merges rendered description AST node into doc blocks. */
+void DispatchDescriptionChildNode(TSNode child, const std::string& syntheticDoc, std::vector<DocBlock>& blocks)
+{
+    std::string body = RenderDescription(child, syntheticDoc);
+    if (body.empty() || !HasAlphanumeric(body))
+    {
+        return;
+    }
+    if (!blocks.empty() && blocks.back().kind == DocBlockKind::Body)
+    {
+        bool keepNewline = ShouldKeepDescriptionNewline(blocks.back().text, body);
+        blocks.back().text += (keepNewline ? "\n" : " ") + body;
+    }
+    else
+    {
+        blocks.push_back(DocBlock::MakeBody(std::move(body)));
+    }
+}
+
+/** @brief Appends raw text line child node into doc blocks. */
+void DispatchTextLineChildNode(TSNode child, const std::string& syntheticDoc, std::vector<DocBlock>& blocks)
+{
+    std::string line = std::string(parser::DoxygenParser::GetNodeText(child, syntheticDoc));
+    line = CleanDescriptionLines(RewriteAtInlineCommands(line));
+    if (line.empty() || !HasAlphanumeric(line))
+    {
+        return;
+    }
+    if (!blocks.empty() && blocks.back().kind == DocBlockKind::Body)
+    {
+        AppendToBlockText(blocks.back().text, line);
+    }
+    else
+    {
+        blocks.push_back(DocBlock::MakeBody(std::move(line)));
     }
 }
 
@@ -2053,11 +2239,7 @@ void DispatchSegmentChildNode(TSNode child, const std::string& syntheticDoc, std
     }
     else if (std::strcmp(type, "description") == 0)
     {
-        std::string body = RenderDescription(child, syntheticDoc);
-        if (!body.empty() && HasAlphanumeric(body))
-        {
-            blocks.push_back(DocBlock::MakeBody(std::move(body)));
-        }
+        DispatchDescriptionChildNode(child, syntheticDoc, blocks);
     }
     else if (std::strcmp(type, "code_block") == 0)
     {
@@ -2073,19 +2255,7 @@ void DispatchSegmentChildNode(TSNode child, const std::string& syntheticDoc, std
     }
     else if (std::strcmp(type, "_text_line") == 0)
     {
-        std::string line = std::string(parser::DoxygenParser::GetNodeText(child, syntheticDoc));
-        line = CleanDescriptionLines(RewriteAtInlineCommands(line));
-        if (!line.empty() && HasAlphanumeric(line))
-        {
-            if (!blocks.empty() && blocks.back().kind == DocBlockKind::Body)
-            {
-                AppendToBlockText(blocks.back().text, line);
-            }
-            else
-            {
-                blocks.push_back(DocBlock::MakeBody(std::move(line)));
-            }
-        }
+        DispatchTextLineChildNode(child, syntheticDoc, blocks);
     }
 }
 

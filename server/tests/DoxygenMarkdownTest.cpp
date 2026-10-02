@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "analysis/DoxygenMarkdown.h"
+#include "helpers/TestUtils.h"
 
 #include <string>
 
@@ -369,5 +370,66 @@ TEST_CASE("DoxygenMarkdown - Literal CRLF newlines split cleanly without underfl
     const std::string input = "/// Line 1.\\r\\n\\r\\nLine 2.";
     const std::string expected = "Line 1.\n\n"
                                  "Line 2.";
+    CHECK(RenderDoxygenMarkdown(input) == expected);
+}
+
+TEST_CASE("DoxygenMarkdown - Option and definition lists preserve line breaks and link tags format cleanly")
+{
+    const std::string input = "// Formats a double into a string.\n"
+                              "// The options string is a combination of the following characters:\n"
+                              "// 'l' = left justify\n"
+                              "// '0' = pad with zeroes\n"
+                              "// '+' = always include the sign, even if positive\n"
+                              "// ' ' = add a space in case of positive number\n"
+                              "// 'e' = exponent character with small e\n"
+                              "// 'E' = exponent character with capital E\n"
+                              "//\n"
+                              "// @link https://r4to0.github.io/asautodocs/docs/Functions.htm";
+
+    const std::string expected = "Formats a double into a string.\n"
+                                 "The options string is a combination of the following characters:\n"
+                                 "'l' = left justify\n"
+                                 "'0' = pad with zeroes\n"
+                                 "'+' = always include the sign, even if positive\n"
+                                 "' ' = add a space in case of positive number\n"
+                                 "'e' = exponent character with small e\n"
+                                 "'E' = exponent character with capital E\n\n"
+                                 "@link https://r4to0.github.io/asautodocs/docs/Functions.htm";
+
+    CHECK(RenderDoxygenMarkdown(input) == expected);
+}
+
+TEST_CASE("DoxygenMarkdown - Randomized option keys preserve line breaks")
+{
+    const std::string opt1 = angel_lsp::test::GenerateRandomSymbolName("opt_a");
+    const std::string opt2 = angel_lsp::test::GenerateRandomSymbolName("opt_b");
+    const std::string desc1 = angel_lsp::test::GenerateRandomSymbolName("desc_first");
+    const std::string desc2 = angel_lsp::test::GenerateRandomSymbolName("desc_second");
+
+    const std::string input = "// Available configuration keys:\n"
+                              "// '" +
+                              opt1 + "' = " + desc1 +
+                              "\n"
+                              "// '" +
+                              opt2 + "' = " + desc2 + "\n";
+
+    const std::string expected = "Available configuration keys:\n"
+                                 "'" +
+                                 opt1 + "' = " + desc1 +
+                                 "\n"
+                                 "'" +
+                                 opt2 + "' = " + desc2;
+
+    CHECK(RenderDoxygenMarkdown(input) == expected);
+}
+
+TEST_CASE("DoxygenMarkdown - Prose wrapped across lines without punctuation joins with space")
+{
+    const std::string input = "// A multi-line prose explanation that begins on one line\n"
+                              "// and continues smoothly onto the next line without punctuation.";
+
+    const std::string expected = "A multi-line prose explanation that begins on one line and continues smoothly onto "
+                                 "the next line without punctuation.";
+
     CHECK(RenderDoxygenMarkdown(input) == expected);
 }
