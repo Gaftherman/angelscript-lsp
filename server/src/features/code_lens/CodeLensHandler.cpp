@@ -73,8 +73,12 @@ using DeclRangeSet = ankerl::unordered_dense::set<std::tuple<std::string, uint32
  */
 bool IsContainerClass(std::string_view container, const analysis::SymbolTable& symbolTable)
 {
-    auto syms = symbolTable.FindSymbols(std::string(container));
-    for (const auto& s : syms)
+    auto syms = symbolTable.FindSymbolsPtr(container);
+    if (!syms)
+    {
+        return false;
+    }
+    for (const auto& s : *syms)
     {
         if (s.type == analysis::SymbolType::Class || s.type == analysis::SymbolType::Interface)
         {

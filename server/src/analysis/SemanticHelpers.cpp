@@ -219,7 +219,7 @@ bool NamesAFunctionNotAType(std::string_view name, const SymbolTable& table)
         return false;
     }
 
-    const auto symsPtr = table.FindSymbolsPtr(std::string(name));
+    const auto symsPtr = table.FindSymbolsPtr(name);
     if (!symsPtr)
     {
         // Resolves to nothing. That is an unresolved type, assumed engine-registered, and not
@@ -386,7 +386,7 @@ NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const
         return NonInstantiableKind::None;
     }
 
-    auto symsPtr = table.FindSymbolsPtr(std::string(baseTypeName));
+    auto symsPtr = table.FindSymbolsPtr(baseTypeName);
     if (!symsPtr)
     {
         return NonInstantiableKind::None;
@@ -476,7 +476,7 @@ bool MatchesParentNamespaceType(std::string_view clean, const SymbolTable& table
 }
 } // namespace
 
-bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx)
+bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx)
 {
     if (ctx.logger && ctx.logger->IsTraceEnabled())
     {
@@ -491,8 +491,7 @@ bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx)
     if (ctx.request.IsRegisteredSymbol(baseName) || ctx.request.symbolTable.HasSymbolAnywhere(baseName))
         return true;
 
-    std::string_view baseView = baseName;
-    std::string_view clean = baseView.starts_with("::") ? baseView.substr(2) : baseView;
+    std::string_view clean = baseName.starts_with("::") ? baseName.substr(2) : baseName;
     if (ctx.request.symbolTable.HasSymbol(clean))
         return true;
 
@@ -576,11 +575,9 @@ std::string SubstituteTypeParam(std::string_view typeStr, std::string_view param
 TemplateBinding BindTemplateArguments(const std::string& writtenType, const SymbolTable& table)
 {
     TemplateBinding binding;
+    const auto decomp = DecomposeTemplateType(writtenType);
 
-    const size_t open = writtenType.find('<');
-    const std::string name = (open == std::string::npos) ? writtenType : writtenType.substr(0, open);
-
-    const auto declarations = table.FindSymbolsPtr(LastScopeSegment(name));
+    const auto declarations = table.FindSymbolsPtr(LastScopeSegment(decomp.containerName));
     if (!declarations)
     {
         return binding;
@@ -603,13 +600,12 @@ TemplateBinding BindTemplateArguments(const std::string& writtenType, const Symb
         break;
     }
 
-    if (!binding.isTemplate || open == std::string::npos || !writtenType.ends_with('>'))
+    if (!binding.isTemplate || !decomp.isTemplate)
     {
         return binding;
     }
 
-    const std::string inner = writtenType.substr(open + 1, writtenType.size() - open - 2);
-    binding.arguments = SplitTemplateArguments(inner);
+    binding.arguments = SplitTemplateArguments(decomp.innerArguments);
 
     if (!binding.arguments.empty() && binding.arguments.back().empty())
     {
@@ -4360,9 +4356,9 @@ bool LambdaContradictsFuncdef(TSNode lambdaNode, const FuncdefSignature& funcdef
     return LambdaContradictsFuncdef(ReadLambdaParameters(listNode, sourceCode), funcdefSig, table);
 }
 
-std::optional<Symbol> FindFuncdefSymbol(const std::string& typeName, const SymbolTable& table)
+std::optional<Symbol> FindFuncdefSymbol(std::string_view typeName, const SymbolTable& table)
 {
-    if (typeName.empty())
+    if (typeName.empty() || parser::primitives::IsPrimitive(typeName))
     {
         return std::nullopt;
     }
@@ -4378,7 +4374,7 @@ std::optional<Symbol> FindFuncdefSymbol(const std::string& typeName, const Symbo
         }
     }
 
-    const std::string bare = LastSegmentOf(typeName);
+    const std::string_view bare = LastScopeSegment(typeName);
     const auto matches = table.FindTypeSymbolsByShortName(bare);
     for (const auto& sym : matches)
     {

@@ -22,12 +22,6 @@ bool IsTypeSymbol(const Symbol& sym)
     return sym.type == SymbolType::Class || sym.type == SymbolType::Interface;
 }
 
-/** @brief Every base a declaration lists, whichever kind of declaration it is. */
-std::vector<std::string> DeclaredBases(const Symbol& sym)
-{
-    return analysis::GetDeclaredBases(sym);
-}
-
 lsp::Range ToRange(const analysis::SourceRange& range)
 {
     return lsp::Range{lsp::Position{range.startLine, range.startCharacter},
@@ -364,7 +358,7 @@ void CollectSupertypesForDeclaration(const Symbol& declaration, const SymbolTabl
 {
     const std::string& declPrefix = declaration.containerName;
 
-    for (const auto& base : DeclaredBases(declaration))
+    for (const auto& base : analysis::GetDeclaredBases(declaration))
     {
         const std::string cleanBase = analysis::CleanBaseType(base);
         if (cleanBase.empty())
@@ -462,7 +456,7 @@ void CollectSubtypesByScan(const SubtypeQueryContext& ctx, std::vector<lsp::Type
                     continue;
                 }
 
-                for (const auto& base : DeclaredBases(sym))
+                for (const auto& base : analysis::GetDeclaredBases(sym))
                 {
                     const std::string cleanBase = analysis::CleanBaseType(base);
                     if ((!ctx.qualifiedTarget.empty() && cleanBase == ctx.qualifiedTarget) ||

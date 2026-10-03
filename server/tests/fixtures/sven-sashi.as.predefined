@@ -12173,8 +12173,6 @@ class Arguments {
 	Arguments@ Arguments(?& in, ?& in);
 	//Constructs a Arguments instance with the given arguments.;
 	Arguments@ Arguments(?& in);
-	//Constructs a Arguments instance with the given arguments.;
-	Arguments@ Arguments();
 	//Copy constructor;
 	Arguments@ Arguments(const Arguments& in other);
 	//Default constructor;

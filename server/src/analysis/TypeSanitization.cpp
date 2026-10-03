@@ -25,7 +25,7 @@ void StripLeadingConst(std::string_view& typeName)
     }
 }
 
-void StripTrailingDecorations(std::string& result)
+void StripTrailingDecorationsView(std::string_view& result) noexcept
 {
     bool modified = true;
     while (modified)
@@ -34,23 +34,23 @@ void StripTrailingDecorations(std::string& result)
         while (!result.empty() &&
                (result.back() == '@' || result.back() == '&' || result.back() == ' ' || result.back() == '\t'))
         {
-            result.pop_back();
+            result.remove_suffix(1);
             modified = true;
         }
         if (result.ends_with(" const"))
         {
-            result.resize(result.size() - 6);
+            result.remove_suffix(6);
             modified = true;
         }
         else if (result.ends_with("[]"))
         {
-            result.resize(result.size() - 2);
+            result.remove_suffix(2);
             modified = true;
         }
         else if (!result.empty() && result.back() == ']')
         {
             const size_t bracket = result.rfind('[');
-            if (bracket != std::string::npos)
+            if (bracket != std::string_view::npos)
             {
                 result = result.substr(0, bracket);
                 modified = true;
@@ -59,31 +59,43 @@ void StripTrailingDecorations(std::string& result)
     }
 }
 
-std::string CleanBaseType(std::string_view typeName, std::string_view arrayTypeName)
+void StripTrailingDecorations(std::string& result)
+{
+    std::string_view view = result;
+    StripTrailingDecorationsView(view);
+    result.resize(view.size());
+}
+
+std::string_view CleanBaseTypeView(std::string_view typeName, std::string_view arrayTypeName) noexcept
 {
     TrimTypeWhitespace(typeName);
     StripLeadingConst(typeName);
     TrimTypeWhitespace(typeName);
 
-    std::string result(typeName);
-    StripTrailingDecorations(result);
+    StripTrailingDecorationsView(typeName);
 
-    if (result.starts_with("array<") && result.ends_with(">"))
+    if (typeName.starts_with("array<") && typeName.ends_with('>'))
     {
-        const std::string inner = result.substr(6, result.size() - 7);
-        return CleanBaseType(inner, arrayTypeName);
+        const std::string_view inner = typeName.substr(6, typeName.size() - 7);
+        return CleanBaseTypeView(inner, arrayTypeName);
     }
     if (!arrayTypeName.empty())
     {
-        const std::string prefix = std::string(arrayTypeName) + "<";
-        if (result.starts_with(prefix) && result.ends_with(">"))
+        if (typeName.starts_with(arrayTypeName) && typeName.size() > arrayTypeName.size() + 1 &&
+            typeName[arrayTypeName.size()] == '<' && typeName.ends_with('>'))
         {
-            const std::string inner = result.substr(prefix.size(), result.size() - prefix.size() - 1);
-            return CleanBaseType(inner, arrayTypeName);
+            const size_t prefixLen = arrayTypeName.size() + 1;
+            const std::string_view inner = typeName.substr(prefixLen, typeName.size() - prefixLen - 1);
+            return CleanBaseTypeView(inner, arrayTypeName);
         }
     }
 
-    return result;
+    return typeName;
+}
+
+std::string CleanBaseType(std::string_view typeName, std::string_view arrayTypeName)
+{
+    return std::string(CleanBaseTypeView(typeName, arrayTypeName));
 }
 
 std::string CanonicalizeArrayType(std::string_view typeName, std::string_view arrayTypeName)
@@ -114,21 +126,14 @@ std::string CanonicalizeArrayType(std::string_view typeName, std::string_view ar
 std::string MemberOwnerType(std::string_view typeName, std::string_view arrayTypeName)
 {
     const std::string canonical = CanonicalizeArrayType(typeName, arrayTypeName);
-
-    if (canonical.ends_with(">"))
+    const auto decomp = DecomposeTemplateType(canonical);
+    if (decomp.isTemplate)
     {
-        const size_t open = canonical.find('<');
-        if (open != std::string::npos && open > 0)
+        std::string_view container = decomp.containerName;
+        TrimTypeWhitespace(container);
+        if (!container.empty())
         {
-            std::string container = canonical.substr(0, open);
-            while (!container.empty() && (container.back() == ' ' || container.back() == '\t'))
-            {
-                container.pop_back();
-            }
-            if (!container.empty())
-            {
-                return container;
-            }
+            return std::string(container);
         }
     }
 

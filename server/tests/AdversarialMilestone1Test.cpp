@@ -10,6 +10,7 @@
 #include "parser/AngelScriptParser.h"
 #include <algorithm>
 #include <doctest/doctest.h>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -239,6 +240,14 @@ TEST_SUITE("Adversarial_ExpressionTypeResolver")
         CHECK(CleanBaseType("array<const string@>") == "string");
         CHECK(CleanBaseType("array<array<int>>") == "int");
         CHECK(CleanBaseType("int[][][]") == "int");
+
+        CHECK(CleanBaseTypeView("") == "");
+        CHECK(CleanBaseTypeView("   ") == "");
+        CHECK(CleanBaseTypeView("const int@&") == "int");
+        CHECK(CleanBaseTypeView("array<const string@>") == "string");
+        CHECK(CleanBaseTypeView("array<array<int>>") == "int");
+        CHECK(CleanBaseTypeView("int[][][]") == "int");
+        CHECK(CleanBaseTypeView("CustomArray<int>", "CustomArray") == "int");
     }
 
     TEST_CASE("Lexical Shadowing In Nested Blocks")

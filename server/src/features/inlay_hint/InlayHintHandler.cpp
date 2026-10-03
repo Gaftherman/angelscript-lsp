@@ -156,6 +156,40 @@ TSNode FindCalleeFunctionNode(TSNode callNode)
 }
 
 /**
+ * @brief Collects member symbols across an inheritance hierarchy into candidateSymbols.
+ * @param[in] hierarchy Type hierarchy list.
+ * @param[in] memberName Member identifier text.
+ * @param[in] symbolTable Symbol table to look up in.
+ * @param[in,out] candidateSymbols Output symbol vector.
+ */
+void CollectHierarchyMembers(const std::vector<std::string>& hierarchy, const std::string& memberName,
+                             const analysis::SymbolTable& symbolTable, std::vector<analysis::Symbol>& candidateSymbols)
+{
+    for (const auto& typeName : hierarchy)
+    {
+        std::string qualifiedName = typeName + "::" + memberName;
+        auto found = symbolTable.FindSymbols(qualifiedName);
+        for (const auto& sym : found)
+        {
+            if (sym.type == analysis::SymbolType::Function)
+            {
+                bool overriddenLower =
+                    std::any_of(candidateSymbols.begin(), candidateSymbols.end(), [&](const analysis::Symbol& kept)
+                                { return analysis::HasSameParameterList(kept, sym); });
+                if (!overriddenLower)
+                {
+                    candidateSymbols.push_back(sym);
+                }
+            }
+            else
+            {
+                candidateSymbols.push_back(sym);
+            }
+        }
+    }
+}
+
+/**
  * @brief Collects candidate method symbols for a member call expression across type hierarchy.
  * @param[in] funcNode AST member_expression node.
  * @param[in] request Inlay hint request context.
@@ -191,28 +225,7 @@ std::vector<analysis::Symbol> CollectMemberCalleeCandidates(TSNode funcNode, con
     }
 
     auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, request.symbolTable);
-    for (const auto& typeName : hierarchy)
-    {
-        std::string qualifiedName = typeName + "::" + memText;
-        auto found = request.symbolTable.FindSymbols(qualifiedName);
-        for (const auto& sym : found)
-        {
-            if (sym.type == analysis::SymbolType::Function)
-            {
-                bool overriddenLower =
-                    std::any_of(candidateSymbols.begin(), candidateSymbols.end(), [&](const analysis::Symbol& kept)
-                                { return analysis::HasSameParameterList(kept, sym); });
-                if (!overriddenLower)
-                {
-                    candidateSymbols.push_back(sym);
-                }
-            }
-            else
-            {
-                candidateSymbols.push_back(sym);
-            }
-        }
-    }
+    CollectHierarchyMembers(hierarchy, memText, request.symbolTable, candidateSymbols);
     return candidateSymbols;
 }
 
@@ -233,24 +246,7 @@ void CollectEnclosingClassCallees(const std::string& calleeName, TSNode callNode
         {
             auto hierarchy = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName,
                                                                  request.symbolTable);
-            for (const auto& typeName : hierarchy)
-            {
-                std::string qualifiedName = typeName + "::" + calleeName;
-                auto found = request.symbolTable.FindSymbols(qualifiedName);
-                for (const auto& sym : found)
-                {
-                    if (sym.type == analysis::SymbolType::Function)
-                    {
-                        bool overriddenLower = std::any_of(candidateSymbols.begin(), candidateSymbols.end(),
-                                                           [&](const analysis::Symbol& kept)
-                                                           { return analysis::HasSameParameterList(kept, sym); });
-                        if (!overriddenLower)
-                        {
-                            candidateSymbols.push_back(sym);
-                        }
-                    }
-                }
-            }
+            CollectHierarchyMembers(hierarchy, calleeName, request.symbolTable, candidateSymbols);
             break;
         }
     }
@@ -1664,21 +1660,7 @@ void AddOmittedDefaultArgumentHints(const CalleeResolutionResult& callee, TSNode
  */
 void ProcessCallExpression(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {
-    TSNode argListNode = parser::GetChildByField(node, parser::fields::Arguments);
-    if (ts_node_is_null(argListNode))
-    {
-        uint32_t childCount = ts_node_child_count(node);
-        for (uint32_t i = 0; i < childCount; ++i)
-        {
-            TSNode child = ts_node_child(node, i);
-            if (std::string_view(ts_node_type(child)) == "argument_list")
-            {
-                argListNode = child;
-                break;
-            }
-        }
-    }
-
+    TSNode argListNode = analysis::ResolveArgumentListNode(node);
     if (!ts_node_is_null(argListNode))
     {
         auto args = ParseArguments(argListNode, request.sourceCode);
@@ -1702,21 +1684,7 @@ void ProcessConstructorCallExpression(TSNode node, const InlayHintRequest& reque
         return;
     }
 
-    TSNode argListNode = parser::GetChildByField(node, parser::fields::Arguments);
-    if (ts_node_is_null(argListNode))
-    {
-        uint32_t childCount = ts_node_child_count(node);
-        for (uint32_t i = 0; i < childCount; ++i)
-        {
-            TSNode child = ts_node_child(node, i);
-            if (std::string_view(ts_node_type(child)) == "argument_list")
-            {
-                argListNode = child;
-                break;
-            }
-        }
-    }
-
+    TSNode argListNode = analysis::ResolveArgumentListNode(node);
     if (!ts_node_is_null(argListNode))
     {
         auto args = ParseArguments(argListNode, request.sourceCode);

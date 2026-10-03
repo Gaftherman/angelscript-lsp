@@ -15,36 +15,26 @@ namespace
 void AddLineSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag, std::string_view aliasOrCode,
                            std::vector<lsp::CodeAction>& actions)
 {
-    uint32_t line = diag.range.start.line;
-    std::string_view lineStr = utils::GetLine(request.sourceCode, line);
+    const uint32_t line = diag.range.start.line;
+    const std::string_view lineStr = utils::GetLine(request.sourceCode, line);
 
     lsp::TextEdit edit;
     edit.range.start = lsp::Position{line, static_cast<uint32_t>(lineStr.size())};
     edit.range.end = lsp::Position{line, static_cast<uint32_t>(lineStr.size())};
     edit.newText = " // disable-line " + std::string(aliasOrCode);
 
-    lsp::CodeAction action;
-    action.title = "Disable " + std::string(aliasOrCode) + " for this line";
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-    action.diagnostics = std::vector<lsp::Diagnostic>{diag};
-
-    lsp::WorkspaceEdit wsEdit;
-    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-    changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-    wsEdit.changes = std::move(changes);
-    action.edit = std::move(wsEdit);
-
-    actions.push_back(std::move(action));
+    actions.push_back(MakeQuickFixAction("Disable " + std::string(aliasOrCode) + " for this line", diag, request.uri,
+                                         {std::move(edit)}));
 }
 
 void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag, std::string_view aliasOrCode,
                             std::vector<lsp::CodeAction>& actions)
 {
-    uint32_t startLine = diag.range.start.line;
-    uint32_t endLine = diag.range.end.line;
-    std::string startIndent = GetLineIndentation(request.sourceCode, startLine);
-    std::string endIndent = GetLineIndentation(request.sourceCode, endLine);
-    std::string_view endLineStr = utils::GetLine(request.sourceCode, endLine);
+    const uint32_t startLine = diag.range.start.line;
+    const uint32_t endLine = diag.range.end.line;
+    const std::string startIndent = GetLineIndentation(request.sourceCode, startLine);
+    const std::string endIndent = GetLineIndentation(request.sourceCode, endLine);
+    const std::string_view endLineStr = utils::GetLine(request.sourceCode, endLine);
 
     lsp::TextEdit startEdit;
     startEdit.range.start = lsp::Position{startLine, 0};
@@ -56,18 +46,8 @@ void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::Diagnos
     endEdit.range.end = lsp::Position{endLine, static_cast<uint32_t>(endLineStr.size())};
     endEdit.newText = "\n" + endIndent + "// enable " + std::string(aliasOrCode);
 
-    lsp::CodeAction action;
-    action.title = "Disable " + std::string(aliasOrCode) + " with // disable ... // enable";
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-    action.diagnostics = std::vector<lsp::Diagnostic>{diag};
-
-    lsp::WorkspaceEdit wsEdit;
-    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-    changes[lsp::DocumentUri::parse(request.uri)] = {std::move(startEdit), std::move(endEdit)};
-    wsEdit.changes = std::move(changes);
-    action.edit = std::move(wsEdit);
-
-    actions.push_back(std::move(action));
+    actions.push_back(MakeQuickFixAction("Disable " + std::string(aliasOrCode) + " with // disable ... // enable", diag,
+                                         request.uri, {std::move(startEdit), std::move(endEdit)}));
 }
 
 void AddFileSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag, std::string_view aliasOrCode,
@@ -78,18 +58,8 @@ void AddFileSuppressionFix(const CodeActionRequest& request, const lsp::Diagnost
     edit.range.end = lsp::Position{0, 0};
     edit.newText = "// disable " + std::string(aliasOrCode) + "\n";
 
-    lsp::CodeAction action;
-    action.title = "Disable " + std::string(aliasOrCode) + " for entire file";
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-    action.diagnostics = std::vector<lsp::Diagnostic>{diag};
-
-    lsp::WorkspaceEdit wsEdit;
-    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-    changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-    wsEdit.changes = std::move(changes);
-    action.edit = std::move(wsEdit);
-
-    actions.push_back(std::move(action));
+    actions.push_back(MakeQuickFixAction("Disable " + std::string(aliasOrCode) + " for entire file", diag, request.uri,
+                                         {std::move(edit)}));
 }
 
 } // namespace

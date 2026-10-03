@@ -103,19 +103,13 @@ void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::Diagnost
     rename.newText = item.funcdefName;
     edits.push_back(std::move(rename));
 
-    lsp::CodeAction action;
-    action.title = "Declare funcdef '" + item.funcdefName + "' for '" + item.functionName + "'";
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-    action.isPreferred = true;
-    action.diagnostics = std::vector<lsp::Diagnostic>{diag};
-
-    lsp::WorkspaceEdit wsEdit;
-    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-    changes[lsp::DocumentUri::parse(request.uri)] = std::move(edits);
-    wsEdit.changes = std::move(changes);
-    action.edit = std::move(wsEdit);
-
-    actions.push_back(std::move(action));
+    actions.push_back(MakeQuickFixAction(QuickFixOptions{
+        .title = "Declare funcdef '" + item.funcdefName + "' for '" + item.functionName + "'",
+        .diag = diag,
+        .uri = request.uri,
+        .edits = std::move(edits),
+        .isPreferred = true,
+    }));
 }
 
 } // namespace
@@ -149,20 +143,14 @@ void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNod
         edit.range.end.character = static_cast<uint32_t>(at + 1);
         edit.newText = "";
 
-        lsp::CodeAction action;
-        action.title = i18n::FormatMessage(request.i18n, "action-remove-primitive-handle",
-                                           "Remove '@' - a primitive has no handle type");
-        action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-        action.isPreferred = true;
-        action.diagnostics = std::vector<lsp::Diagnostic>{diag};
-
-        lsp::WorkspaceEdit wsEdit;
-        lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-        changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-        wsEdit.changes = std::move(changes);
-        action.edit = std::move(wsEdit);
-
-        actions.push_back(std::move(action));
+        actions.push_back(MakeQuickFixAction(QuickFixOptions{
+            .title = i18n::FormatMessage(request.i18n, "action-remove-primitive-handle",
+                                         "Remove '@' - a primitive has no handle type"),
+            .diag = diag,
+            .uri = request.uri,
+            .edits = {std::move(edit)},
+            .isPreferred = true,
+        }));
     }
 }
 
@@ -250,19 +238,13 @@ void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, 
         edit.range.end = diag.range.end;
         edit.newText = "." + oper + "()";
 
-        lsp::CodeAction action;
-        action.title = i18n::FormatMessage(request.i18n, "action-call-explicitly", "Call {}() explicitly", oper);
-        action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-        action.isPreferred = true;
-        action.diagnostics = std::vector<lsp::Diagnostic>{diag};
-
-        lsp::WorkspaceEdit wsEdit;
-        lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-        changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-        wsEdit.changes = std::move(changes);
-        action.edit = std::move(wsEdit);
-
-        actions.push_back(std::move(action));
+        actions.push_back(MakeQuickFixAction(QuickFixOptions{
+            .title = i18n::FormatMessage(request.i18n, "action-call-explicitly", "Call {}() explicitly", oper),
+            .diag = diag,
+            .uri = request.uri,
+            .edits = {std::move(edit)},
+            .isPreferred = true,
+        }));
 
         actions.push_back(MakeDisableDiagnosticAction(
             {diag, "diagnostics.reportBoolConversion", "as-hint-bool-conversion", request.i18n}));

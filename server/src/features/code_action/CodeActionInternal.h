@@ -129,6 +129,36 @@ lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions
 lsp::CodeAction MakeDisableDiagnosticAction(const lsp::Diagnostic& diag, std::string title, std::string settingKey,
                                             std::string code);
 
+/**
+ * @brief Options bundle for creating a text edit quick-fix code action.
+ */
+struct QuickFixOptions
+{
+    std::string title;
+    const lsp::Diagnostic& diag;
+    std::string_view uri;
+    std::vector<lsp::TextEdit> edits;
+    bool isPreferred = false;
+};
+
+/**
+ * @brief Constructs a QuickFix action with the provided workspace edits.
+ * @param[in] options Quick fix configuration bundle.
+ * @return Constructed CodeAction.
+ */
+lsp::CodeAction MakeQuickFixAction(QuickFixOptions options);
+
+/**
+ * @brief Constructs a QuickFix action with the provided text edits.
+ * @param[in] title Human-readable action title.
+ * @param[in] diag Triggering diagnostic.
+ * @param[in] uri Target document URI.
+ * @param[in] edits Vector of text edits to apply.
+ * @return Constructed CodeAction.
+ */
+lsp::CodeAction MakeQuickFixAction(std::string title, const lsp::Diagnostic& diag, std::string_view uri,
+                                   std::vector<lsp::TextEdit> edits);
+
 // Feature Provider Function Declarations
 void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode rootNode,
                                      std::vector<lsp::CodeAction>& actions);

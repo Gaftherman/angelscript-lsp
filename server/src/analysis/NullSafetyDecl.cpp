@@ -19,7 +19,7 @@ bool IsTargetVariableTypeMatch(std::string_view targetVarName, std::string_view 
         return false;
     }
     const auto& table = ctx.diagCtx.request.symbolTable;
-    if (const auto symPtr = table.FindSymbolsPtr(std::string(targetVarName)))
+    if (const auto symPtr = table.FindSymbolsPtr(targetVarName))
     {
         for (const auto& sym : *symPtr)
         {

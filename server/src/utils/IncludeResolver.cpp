@@ -1,4 +1,5 @@
 #include "utils/IncludeResolver.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <atomic>
@@ -203,19 +204,30 @@ void SkipBlockComment(std::string_view sourceCode, IncludeScanState& state)
 
 bool TrySkipComment(std::string_view sourceCode, IncludeScanState& state)
 {
-    if (sourceCode[state.index] != '/' || state.index + 1 >= sourceCode.size())
+    return TrySkipCommentDispatch(sourceCode, state, SkipLineComment, SkipBlockComment);
+}
+
+/**
+ * @brief Advances scan state past a CRLF or LF line break, incrementing currentLine.
+ * @param[in] sourceCode Document text buffer.
+ * @param[in,out] state Include scan state.
+ * @return True if a line break was consumed.
+ */
+inline bool TryAdvanceLineBreak(std::string_view sourceCode, IncludeScanState& state) noexcept
+{
+    const size_t n = sourceCode.size();
+    if (sourceCode[state.index] == '\r')
     {
-        return false;
-    }
-    const char next = sourceCode[state.index + 1];
-    if (next == '/')
-    {
-        SkipLineComment(sourceCode, state);
+        if (state.index + 1 < n && sourceCode[state.index + 1] == '\n')
+        {
+            ++state.index;
+        }
+        ++state.currentLine;
         return true;
     }
-    if (next == '*')
+    if (sourceCode[state.index] == '\n')
     {
-        SkipBlockComment(sourceCode, state);
+        ++state.currentLine;
         return true;
     }
     return false;
@@ -228,17 +240,9 @@ void SkipVerbatimString(std::string_view sourceCode, IncludeScanState& state)
     const size_t n = sourceCode.size();
     while (state.index < n)
     {
-        if (sourceCode[state.index] == '\r')
+        if (TryAdvanceLineBreak(sourceCode, state))
         {
-            if (state.index + 1 < n && sourceCode[state.index + 1] == '\n')
-            {
-                ++state.index;
-            }
-            ++state.currentLine;
-        }
-        else if (sourceCode[state.index] == '\n')
-        {
-            ++state.currentLine;
+            // Line break consumed
         }
         else if (sourceCode[state.index] == '"')
         {
@@ -260,17 +264,9 @@ void SkipMultilineString(std::string_view sourceCode, IncludeScanState& state)
     const size_t n = sourceCode.size();
     while (state.index < n)
     {
-        if (sourceCode[state.index] == '\r')
+        if (TryAdvanceLineBreak(sourceCode, state))
         {
-            if (state.index + 1 < n && sourceCode[state.index + 1] == '\n')
-            {
-                ++state.index;
-            }
-            ++state.currentLine;
-        }
-        else if (sourceCode[state.index] == '\n')
-        {
-            ++state.currentLine;
+            // Line break consumed
         }
         else if (sourceCode[state.index] == '"' && state.index + 2 < n && sourceCode[state.index + 1] == '"' &&
                  sourceCode[state.index + 2] == '"')
@@ -284,26 +280,7 @@ void SkipMultilineString(std::string_view sourceCode, IncludeScanState& state)
 
 void SkipEscapedString(std::string_view sourceCode, IncludeScanState& state, char quote)
 {
-    ++state.index;
-    const size_t n = sourceCode.size();
-    while (state.index < n)
-    {
-        if (sourceCode[state.index] == '\\')
-        {
-            state.index += 2;
-            continue;
-        }
-        if (sourceCode[state.index] == quote)
-        {
-            ++state.index;
-            break;
-        }
-        if (sourceCode[state.index] == '\n' || sourceCode[state.index] == '\r')
-        {
-            break;
-        }
-        ++state.index;
-    }
+    SkipEscapedStringLiteral(sourceCode, state.index, quote);
 }
 
 bool TrySkipString(std::string_view sourceCode, IncludeScanState& state)
@@ -441,7 +418,8 @@ std::filesystem::path FirstExisting(const std::filesystem::path& directory, cons
         return {};
     }
 
-    std::filesystem::path extended = directory / (name.string() + std::string(implicitExtension));
+    std::filesystem::path extended = exact;
+    extended += implicitExtension;
     if (std::filesystem::exists(extended, inner) && !std::filesystem::is_directory(extended, inner))
     {
         return extended;

@@ -123,4 +123,45 @@ bool IsPrimitiveType(const std::string& typeName);
  * @return True if target is contained within root, false otherwise.
  */
 bool IsWithinDirectory(const std::filesystem::path& root, const std::filesystem::path& target);
+
+/**
+ * @brief Advances index past an escaped string or character literal up to the matching quote or line break.
+ * @param[in] sourceCode Document text buffer.
+ * @param[in,out] index Scanner index positioned at the opening quote; advanced past closing quote or to line break.
+ * @param[in] quote Quote delimiter ('"' or '\'').
+ */
+void SkipEscapedStringLiteral(std::string_view sourceCode, size_t& index, char quote) noexcept;
+
+/**
+ * @brief Dispatches comment skipping to line or block comment handlers based on the next character.
+ * @tparam State Scanner state struct containing an `index` field.
+ * @tparam LineCommentFn Functor or function pointer accepting (std::string_view, State&).
+ * @tparam BlockCommentFn Functor or function pointer accepting (std::string_view, State&).
+ * @param[in] sourceCode Document text buffer.
+ * @param[in,out] state Scanner state.
+ * @param[in] skipLine Line comment skipping handler.
+ * @param[in] skipBlock Block comment skipping handler.
+ * @return True if a comment was detected and consumed, false otherwise.
+ */
+template <typename State, typename LineCommentFn, typename BlockCommentFn>
+inline bool TrySkipCommentDispatch(std::string_view sourceCode, State& state, LineCommentFn&& skipLine,
+                                   BlockCommentFn&& skipBlock) noexcept
+{
+    if (state.index >= sourceCode.size() || sourceCode[state.index] != '/' || state.index + 1 >= sourceCode.size())
+    {
+        return false;
+    }
+    const char next = sourceCode[state.index + 1];
+    if (next == '/')
+    {
+        skipLine(sourceCode, state);
+        return true;
+    }
+    if (next == '*')
+    {
+        skipBlock(sourceCode, state);
+        return true;
+    }
+    return false;
+}
 } // namespace angel_lsp::utils

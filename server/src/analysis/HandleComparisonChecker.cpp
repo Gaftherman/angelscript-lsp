@@ -1,5 +1,6 @@
 #include "analysis/HandleComparisonChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/BinaryOperatorHelpers.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
@@ -57,20 +58,11 @@ struct ComparisonOperandsState
     {
         return {ComparisonCategory::ValueEquality, "!is"};
     }
-    if (op == "<" || op == "<=" || op == ">" || op == ">=")
+    if (IsRelationalOp(op))
     {
         return {ComparisonCategory::Relational, {}};
     }
     return {};
-}
-
-[[nodiscard]] bool IsNullOperand(TSNode node, std::string_view typeName) noexcept
-{
-    if (typeName == "null" || IsNullInitializer(node))
-    {
-        return true;
-    }
-    return !ts_node_is_null(node) && std::string_view(ts_node_type(node)) == parser::nodes::NullLiteral;
 }
 
 void CheckHandleEquality(TSNode opNode, std::string_view op, std::string_view preferred, DiagnosticContext& ctx)

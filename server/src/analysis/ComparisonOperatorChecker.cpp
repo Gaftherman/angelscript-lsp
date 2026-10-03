@@ -1,5 +1,6 @@
 #include "analysis/ComparisonOperatorChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/BinaryOperatorHelpers.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/overload/OverloadTypeConversions.h"
@@ -14,15 +15,6 @@ namespace angel_lsp::analysis
 {
 namespace
 {
-[[nodiscard]] constexpr bool IsComparisonOp(std::string_view op) noexcept
-{
-    return op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=";
-}
-
-[[nodiscard]] constexpr bool IsRelationalOp(std::string_view op) noexcept
-{
-    return op == "<" || op == "<=" || op == ">" || op == ">=";
-}
 
 bool IsHandleAddressOperand(TSNode node)
 {

@@ -2,7 +2,7 @@
 #include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
-#include "analysis/overload/OverloadTypeConversions.h"
+#include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 
 #include <algorithm>
@@ -78,7 +78,7 @@ bool TypeHasOpImplConvTo(const std::string& typeName, const std::string& targetT
     return false;
 }
 
-bool IsKnownType(const std::string& type, const SymbolTable& table, std::string_view stringTypeName)
+bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_view stringTypeName)
 {
     if (parser::primitives::IsNumeric(type) || type == "bool" || type == stringTypeName || ResolvesToEnum(type, table))
     {
@@ -88,9 +88,13 @@ bool IsKnownType(const std::string& type, const SymbolTable& table, std::string_
     return symbols && !symbols->empty();
 }
 
-bool IsNullOperand(TSNode node, const std::string& type)
+bool IsNullOperand(TSNode node, std::string_view type)
 {
-    return type.empty() || type == "null" || IsNullInitializer(node);
+    if (type == "null" || IsNullInitializer(node))
+    {
+        return true;
+    }
+    return !ts_node_is_null(node) && std::string_view(ts_node_type(node)) == parser::nodes::NullLiteral;
 }
 
 std::optional<BinaryOperandTypes> ResolveCleanBinaryOperandTypes(TSNode left, TSNode right, const Scope* scope,
@@ -99,7 +103,7 @@ std::optional<BinaryOperandTypes> ResolveCleanBinaryOperandTypes(TSNode left, TS
     const ExpressionTypeContext exprCtx(scope, ctx);
     const std::string rawLeft = ResolveExpressionType(left, exprCtx);
     const std::string rawRight = ResolveExpressionType(right, exprCtx);
-    if (IsNullOperand(left, rawLeft) || IsNullOperand(right, rawRight))
+    if (rawLeft.empty() || rawRight.empty() || IsNullOperand(left, rawLeft) || IsNullOperand(right, rawRight))
     {
         return std::nullopt;
     }

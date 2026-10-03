@@ -1113,38 +1113,30 @@ bool TryCompleteTemplateArguments(const std::string& prefix, CompletionCollector
     {
         return false;
     }
-    collector.request.symbolTable.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
+    collector.request.symbolTable.ForEachGlobalTypeSymbol(
+        [&](const analysis::Symbol& sym)
         {
-            for (const auto& sym : symList)
+            lsp::CompletionItemKind kind = lsp::CompletionItemKind::Class;
+            switch (sym.type)
             {
-                if (!sym.containerName.empty() || !IsTypeSymbol(sym))
-                {
-                    continue;
-                }
-                lsp::CompletionItemKind kind = lsp::CompletionItemKind::Class;
-                switch (sym.type)
-                {
-                case analysis::SymbolType::Interface:
-                    kind = lsp::CompletionItemKind::Interface;
-                    break;
-                case analysis::SymbolType::Enum:
-                    kind = lsp::CompletionItemKind::Enum;
-                    break;
-                case analysis::SymbolType::Typedef:
-                case analysis::SymbolType::Funcdef:
-                    kind = lsp::CompletionItemKind::TypeParameter;
-                    break;
-                default:
-                    break;
-                }
-                const std::string snippet =
-                    collector.request.snippetSupport ? TemplateInsertSnippet(sym) : std::string{};
-                const std::string_view predefinedExt = GetPredefinedExtension(collector.request);
-                SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
-                std::string sortText = FormatProximitySortText(prox, sym.name);
-                AddItemIfNew(collector, {sym.name, kind, "", "", sym.qualifiedName, snippet, std::move(sortText)});
+            case analysis::SymbolType::Interface:
+                kind = lsp::CompletionItemKind::Interface;
+                break;
+            case analysis::SymbolType::Enum:
+                kind = lsp::CompletionItemKind::Enum;
+                break;
+            case analysis::SymbolType::Typedef:
+            case analysis::SymbolType::Funcdef:
+                kind = lsp::CompletionItemKind::TypeParameter;
+                break;
+            default:
+                break;
             }
+            const std::string snippet = collector.request.snippetSupport ? TemplateInsertSnippet(sym) : std::string{};
+            const std::string_view predefinedExt = GetPredefinedExtension(collector.request);
+            SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
+            std::string sortText = FormatProximitySortText(prox, sym.name);
+            AddItemIfNew(collector, {sym.name, kind, "", "", sym.qualifiedName, snippet, std::move(sortText)});
         });
 
     for (const auto& primitive : GetPrimitiveTypeNames())
@@ -1471,7 +1463,7 @@ static std::string ResolveNamedReceiverType(std::string_view nodeText, const Com
             return def->typeName;
         }
     }
-    if (auto syms = request.symbolTable.FindSymbolsPtr(std::string(nodeText)))
+    if (auto syms = request.symbolTable.FindSymbolsPtr(nodeText))
     {
         for (const auto& sym : *syms)
         {

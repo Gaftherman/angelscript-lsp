@@ -99,26 +99,34 @@ features::DefinitionRequest Server::MakeDefinitionRequest(const OpenDocument& do
     return dr;
 }
 
+template <typename FeatureFn>
 lsp::requests::TextDocument_Definition::Result
-Server::HandleRequestsTextDocument_Definition(lsp::requests::TextDocument_Definition::Params&& req)
+Server::DispatchDefinitionQuery(const std::string& uriStr, const lsp::Position& position, FeatureFn&& fn)
 {
     if (!m_config.features.enableDefinition)
     {
         return lsp::Null{};
     }
-    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    const auto doc = LookupOpenDocument(uriStr);
     if (!doc)
     {
         return lsp::Null{};
     }
-    const auto dr = MakeDefinitionRequest(*doc, req.position);
-    auto defs = features::GetDefinition(dr);
+    const auto dr = MakeDefinitionRequest(*doc, position);
+    auto defs = fn(dr);
     if (defs.has_value() && !defs->empty())
     {
         EncodeAcrossDocuments(defs.value());
         return defs.value();
     }
     return lsp::Null{};
+}
+
+lsp::requests::TextDocument_Definition::Result
+Server::HandleRequestsTextDocument_Definition(lsp::requests::TextDocument_Definition::Params&& req)
+{
+    return DispatchDefinitionQuery(req.textDocument.uri.toString(), req.position,
+                                   [](const features::DefinitionRequest& dr) { return features::GetDefinition(dr); });
 }
 
 lsp::requests::TextDocument_Moniker::Result
@@ -175,23 +183,8 @@ Server::HandleRequestsTextDocument_Moniker(lsp::requests::TextDocument_Moniker::
 lsp::requests::TextDocument_Declaration::Result
 Server::HandleRequestsTextDocument_Declaration(lsp::requests::TextDocument_Declaration::Params&& req)
 {
-    if (!m_config.features.enableDefinition)
-    {
-        return lsp::Null{};
-    }
-    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
-    if (!doc)
-    {
-        return lsp::Null{};
-    }
-    const auto dr = MakeDefinitionRequest(*doc, req.position);
-    auto defs = features::GetDefinition(dr);
-    if (defs.has_value() && !defs->empty())
-    {
-        EncodeAcrossDocuments(defs.value());
-        return defs.value();
-    }
-    return lsp::Null{};
+    return DispatchDefinitionQuery(req.textDocument.uri.toString(), req.position,
+                                   [](const features::DefinitionRequest& dr) { return features::GetDefinition(dr); });
 }
 
 lsp::requests::TextDocument_Implementation::Result
@@ -225,23 +218,9 @@ Server::HandleRequestsTextDocument_Implementation(lsp::requests::TextDocument_Im
 lsp::requests::TextDocument_TypeDefinition::Result
 Server::HandleRequestsTextDocument_TypeDefinition(lsp::requests::TextDocument_TypeDefinition::Params&& req)
 {
-    if (!m_config.features.enableDefinition)
-    {
-        return lsp::Null{};
-    }
-    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
-    if (!doc)
-    {
-        return lsp::Null{};
-    }
-    const auto dr = MakeDefinitionRequest(*doc, req.position);
-    auto defs = features::GetTypeDefinition(dr);
-    if (defs.has_value() && !defs->empty())
-    {
-        EncodeAcrossDocuments(defs.value());
-        return defs.value();
-    }
-    return lsp::Null{};
+    return DispatchDefinitionQuery(req.textDocument.uri.toString(), req.position,
+                                   [](const features::DefinitionRequest& dr)
+                                   { return features::GetTypeDefinition(dr); });
 }
 
 lsp::requests::TextDocument_References::Result
@@ -380,29 +359,38 @@ Server::HandleRequestsTextDocument_SignatureHelp(lsp::requests::TextDocument_Sig
     return lsp::Null{};
 }
 
-lsp::requests::TextDocument_PrepareRename::Result
-Server::HandleRequestsTextDocument_PrepareRename(lsp::requests::TextDocument_PrepareRename::Params&& req)
+std::optional<Server::RenameContext> Server::SetupRenameContext(const std::string& uriStr, const lsp::Position& rawPos)
 {
     if (!m_config.features.enableRename)
     {
-        return lsp::Null{};
+        return std::nullopt;
     }
-    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    const auto doc = LookupOpenDocument(uriStr);
     if (!doc)
     {
-        return lsp::Null{};
+        return std::nullopt;
     }
 
     const auto loadedUris = m_predefinedManager.GetLoadedUris();
-    std::unordered_set<std::string> predefinedUris(loadedUris.begin(), loadedUris.end());
+    return RenameContext{*doc, std::unordered_set<std::string>(loadedUris.begin(), loadedUris.end()),
+                         codec::Decode(*doc->text, m_positionEncoding, rawPos)};
+}
 
-    features::PrepareRenameRequest pr{
-        doc->uri,      *doc->text,   doc->tree,      codec::Decode(*doc->text, m_positionEncoding, req.position),
-        m_symbolTable, m_scopeIndex, predefinedUris, m_logger.get()};
+lsp::requests::TextDocument_PrepareRename::Result
+Server::HandleRequestsTextDocument_PrepareRename(lsp::requests::TextDocument_PrepareRename::Params&& req)
+{
+    const auto ctx = SetupRenameContext(req.textDocument.uri.toString(), req.position);
+    if (!ctx)
+    {
+        return lsp::Null{};
+    }
+
+    features::PrepareRenameRequest pr{ctx->doc.uri,  *ctx->doc.text, ctx->doc.tree,       ctx->decodedPosition,
+                                      m_symbolTable, m_scopeIndex,   ctx->predefinedUris, m_logger.get()};
     auto prep = features::PrepareRename(pr);
     if (prep.has_value())
     {
-        EncodeIn(*doc->text, prep.value());
+        EncodeIn(*ctx->doc.text, prep.value());
         return prep.value();
     }
     return lsp::Null{};
@@ -411,23 +399,14 @@ Server::HandleRequestsTextDocument_PrepareRename(lsp::requests::TextDocument_Pre
 lsp::requests::TextDocument_Rename::Result
 Server::HandleRequestsTextDocument_Rename(lsp::requests::TextDocument_Rename::Params&& req)
 {
-    if (!m_config.features.enableRename)
-    {
-        return lsp::Null{};
-    }
-    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
-    if (!doc)
+    const auto ctx = SetupRenameContext(req.textDocument.uri.toString(), req.position);
+    if (!ctx)
     {
         return lsp::Null{};
     }
 
-    const auto loadedUris = m_predefinedManager.GetLoadedUris();
-    std::unordered_set<std::string> predefinedUris(loadedUris.begin(), loadedUris.end());
-
-    features::RenameRequest rr{
-        doc->uri,      *doc->text,    doc->tree,    codec::Decode(*doc->text, m_positionEncoding, req.position),
-        req.newName,   m_symbolTable, m_scopeIndex, predefinedUris,
-        m_logger.get()};
+    features::RenameRequest rr{ctx->doc.uri,  *ctx->doc.text, ctx->doc.tree,       ctx->decodedPosition, req.newName,
+                               m_symbolTable, m_scopeIndex,   ctx->predefinedUris, m_logger.get()};
     auto edit = features::Rename(rr);
     if (edit.has_value())
     {

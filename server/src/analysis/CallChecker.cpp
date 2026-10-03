@@ -1045,6 +1045,9 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
 {
     CallArgTypes result;
     result.argNodes = GetArgumentNodes(valCtx.arguments);
+    const size_t argCount = result.argNodes.size();
+    result.argTypes.reserve(argCount);
+    result.argIsLValue.reserve(argCount);
     result.argNames = GetArgumentNames(valCtx.arguments, valCtx.request.sourceCode);
 
     for (const auto& argNode : result.argNodes)
@@ -1366,7 +1369,7 @@ bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, const S
             return true;
         }
     }
-    auto syms = table.FindSymbolsPtr(std::string(name));
+    auto syms = table.FindSymbolsPtr(name);
     if (syms)
     {
         for (const auto& s : *syms)

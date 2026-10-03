@@ -271,7 +271,7 @@ bool IsContainerProperty(std::string_view containerName, const analysis::SymbolT
     {
         return !containerName.empty();
     }
-    auto containerSyms = symbolTable->FindSymbolsPtr(std::string(containerName));
+    auto containerSyms = symbolTable->FindSymbolsPtr(containerName);
     if (!containerSyms)
     {
         return false;
@@ -293,7 +293,7 @@ bool IsEnumType(std::string_view typeName, const analysis::SymbolTable* symbolTa
     {
         return false;
     }
-    auto typeSyms = symbolTable->FindSymbolsPtr(std::string(typeName));
+    auto typeSyms = symbolTable->FindSymbolsPtr(typeName);
     if (!typeSyms)
     {
         return false;
@@ -1159,7 +1159,11 @@ std::string InferTypeFromAst(TSNode node, const std::string& sourceCode)
  */
 void TryAppendFuncdefSignature(std::string_view typeName, const analysis::SymbolTable& table, std::string& md)
 {
-    const std::string cleanType = analysis::CleanBaseType(typeName);
+    const std::string_view cleanType = analysis::CleanBaseTypeView(typeName);
+    if (cleanType.empty() || parser::primitives::IsPrimitive(cleanType))
+    {
+        return;
+    }
     if (auto funcdefSym = analysis::FindFuncdefSymbol(cleanType, table))
     {
         std::string funcdefDecl = analysis::FormatFunctionDeclaration(*funcdefSym, true);
@@ -1276,14 +1280,14 @@ std::optional<analysis::Symbol> ResolveConstructorForDeclarator(TSNode declarato
         return std::nullopt;
     }
 
-    std::string baseName = analysis::CleanBaseType(typeName);
-    if (baseName.empty())
+    std::string_view baseName = analysis::CleanBaseTypeView(typeName);
+    if (baseName.empty() || parser::primitives::IsPrimitive(baseName))
     {
         return std::nullopt;
     }
 
-    auto candidates =
-        analysis::CollectConstructorCandidates(baseName, declarator, ctx.request.sourceCode, ctx.request.symbolTable);
+    auto candidates = analysis::CollectConstructorCandidates(std::string(baseName), declarator, ctx.request.sourceCode,
+                                                             ctx.request.symbolTable);
     if (candidates.empty())
     {
         return std::nullopt;
@@ -1423,10 +1427,13 @@ static void AppendLocalDoc(const analysis::LocalDefinition& def, std::string_vie
     }
     if (doc.empty())
     {
-        const std::string cleanType = analysis::CleanBaseType(typeName);
-        if (auto funcdefSym = analysis::FindFuncdefSymbol(cleanType, ctx.request.symbolTable))
+        const std::string_view cleanType = analysis::CleanBaseTypeView(typeName);
+        if (!cleanType.empty() && !parser::primitives::IsPrimitive(cleanType))
         {
-            doc = DocCommentForSymbol(ctx.request, *funcdefSym);
+            if (auto funcdefSym = analysis::FindFuncdefSymbol(cleanType, ctx.request.symbolTable))
+            {
+                doc = DocCommentForSymbol(ctx.request, *funcdefSym);
+            }
         }
     }
     if (!doc.empty())
@@ -2485,14 +2492,6 @@ TSNode FindTopmostBinaryPlus(TSNode node, std::string_view sourceCode)
     return current;
 }
 
-/**
- * @brief Looks up the default value of a string variable symbol or local definition.
- * @param[in] name Identifier name.
- * @param[in] node Identifier AST node.
- * @param[in] request Hover request context.
- * @param[in] scope Enclosing lexical scope, or nullptr.
- * @return Resolved default string value if found.
- */
 /**
  * @brief Looks up the default value of a string variable symbol or local definition.
  * @param[in] name Identifier name.

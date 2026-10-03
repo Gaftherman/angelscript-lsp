@@ -492,9 +492,9 @@ struct SemanticAnalysisRequest
         return diagnostics && diagnostics->reportUnknownTypes;
     }
 
-    bool IsRegisteredSymbol(const std::string& name) const
+    bool IsRegisteredSymbol(std::string_view name) const
     {
-        return typeConfig && typeConfig->registeredSymbols.contains(name);
+        return typeConfig && typeConfig->registeredSymbols.contains(std::string(name));
     }
 
     /** @brief Cache behind GetRuleIndex(). Never set by a caller; see that accessor. */

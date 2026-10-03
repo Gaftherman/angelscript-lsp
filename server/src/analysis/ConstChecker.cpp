@@ -166,7 +166,7 @@ Constness ResolveNameConstness(std::string_view name, TSNode node, const ConstCo
         }
     }
 
-    const auto symbols = ctx.table.FindSymbolsPtr(std::string(name));
+    const auto symbols = ctx.table.FindSymbolsPtr(name);
     if (!symbols)
     {
         return Constness::Unknown;

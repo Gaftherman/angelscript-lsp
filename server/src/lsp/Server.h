@@ -1861,6 +1861,36 @@ class Server
      */
     features::DefinitionRequest MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position);
 
+    /**
+     * @brief Dispatches a document definition query with boilerplate deduplicated.
+     * @tparam FeatureFn Invocable returning std::optional<std::vector<lsp::Location>>.
+     * @param[in] uriStr Document URI string.
+     * @param[in] position LSP cursor position.
+     * @param[in] fn Feature query invocable.
+     * @return Result locations or lsp::Null.
+     */
+    template <typename FeatureFn>
+    lsp::requests::TextDocument_Definition::Result
+    DispatchDefinitionQuery(const std::string& uriStr, const lsp::Position& position, FeatureFn&& fn);
+
+    /**
+     * @brief Context bundle for prepare-rename and rename operations.
+     */
+    struct RenameContext
+    {
+        OpenDocument doc;
+        std::unordered_set<std::string> predefinedUris;
+        lsp::Position decodedPosition;
+    };
+
+    /**
+     * @brief Prepares common context for rename operations.
+     * @param[in] uriStr Document URI string.
+     * @param[in] rawPos LSP cursor position before decoding.
+     * @return Prepared RenameContext if valid and enabled, std::nullopt otherwise.
+     */
+    std::optional<RenameContext> SetupRenameContext(const std::string& uriStr, const lsp::Position& rawPos);
+
     void HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Workspace_DidRenameFiles::Params&& params);
 
     /**

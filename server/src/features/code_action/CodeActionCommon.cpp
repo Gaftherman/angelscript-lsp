@@ -254,4 +254,32 @@ lsp::CodeAction MakeDisableDiagnosticAction(const lsp::Diagnostic& diag, std::st
     return action;
 }
 
+lsp::CodeAction MakeQuickFixAction(QuickFixOptions options)
+{
+    lsp::CodeAction action;
+    action.title = std::move(options.title);
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    action.isPreferred = options.isPreferred;
+    action.diagnostics = std::vector<lsp::Diagnostic>{options.diag};
+
+    lsp::WorkspaceEdit wsEdit;
+    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+    changes[lsp::DocumentUri::parse(std::string(options.uri))] = std::move(options.edits);
+    wsEdit.changes = std::move(changes);
+    action.edit = std::move(wsEdit);
+    return action;
+}
+
+lsp::CodeAction MakeQuickFixAction(std::string title, const lsp::Diagnostic& diag, std::string_view uri,
+                                   std::vector<lsp::TextEdit> edits)
+{
+    return MakeQuickFixAction(QuickFixOptions{
+        .title = std::move(title),
+        .diag = diag,
+        .uri = uri,
+        .edits = std::move(edits),
+        .isPreferred = false,
+    });
+}
+
 } // namespace angel_lsp::features

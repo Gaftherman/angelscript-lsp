@@ -20,6 +20,26 @@ struct BinaryOperandTypes
 };
 
 /**
+ * @brief Checks if an operator string represents a comparison operator (==, !=, <, <=, >, >=).
+ * @param[in] op Operator token text.
+ * @return True if operator is a comparison operator.
+ */
+[[nodiscard]] constexpr bool IsComparisonOp(std::string_view op) noexcept
+{
+    return op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=";
+}
+
+/**
+ * @brief Checks if an operator string represents a relational comparison operator (<, <=, >, >=).
+ * @param[in] op Operator token text.
+ * @return True if operator is a relational operator.
+ */
+[[nodiscard]] constexpr bool IsRelationalOp(std::string_view op) noexcept
+{
+    return op == "<" || op == "<=" || op == ">" || op == ">=";
+}
+
+/**
  * @brief Checks if a parameter definition is compatible with an argument type.
  * @param[in] param Formal parameter information.
  * @param[in] argType Actual argument type name.
@@ -55,7 +75,7 @@ bool TypeHasOpImplConvTo(const std::string& typeName, const std::string& targetT
  * @param[in] stringTypeName Effective string type name.
  * @return True if type is recognized.
  */
-bool IsKnownType(const std::string& type, const SymbolTable& table, std::string_view stringTypeName);
+bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_view stringTypeName);
 
 /**
  * @brief Checks if a node or its type represents null.
@@ -63,7 +83,7 @@ bool IsKnownType(const std::string& type, const SymbolTable& table, std::string_
  * @param[in] type Resolved expression type name.
  * @return True if operand represents null.
  */
-bool IsNullOperand(TSNode node, const std::string& type);
+bool IsNullOperand(TSNode node, std::string_view type);
 
 /**
  * @brief Resolves cleaned left and right operand types for a binary expression.

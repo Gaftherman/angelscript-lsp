@@ -1003,32 +1003,94 @@ bool SymbolTable::HasSymbolAnywhere(std::string_view name) const
     return index && (index->allNames.contains(searchName) || index->allNames.contains(name));
 }
 
+void SymbolTable::EnsureSortedKeysLocked() const
+{
+    std::lock_guard<std::mutex> sortLock(m_sortedKeysMutex);
+    if (m_sortedKeysVersion == m_version)
+    {
+        return;
+    }
+    m_sortedKeys.clear();
+    m_sortedKeys.reserve(m_symbols.size());
+    for (const auto& [key, _] : m_symbols)
+    {
+        m_sortedKeys.push_back(key);
+    }
+    std::sort(m_sortedKeys.begin(), m_sortedKeys.end());
+    m_sortedKeysVersion = m_version;
+}
+
+void SymbolTable::EnsureGlobalTypesLocked() const
+{
+    std::lock_guard<std::mutex> typeLock(m_globalTypesMutex);
+    if (m_globalTypesVersion == m_version)
+    {
+        return;
+    }
+    m_globalTypeSymbols.clear();
+    for (const auto& [_, bucket] : m_symbols)
+    {
+        for (const auto& sym : *bucket)
+        {
+            if (sym.containerName.empty() &&
+                (sym.type == SymbolType::Class || sym.type == SymbolType::Interface || sym.type == SymbolType::Enum ||
+                 sym.type == SymbolType::Typedef || sym.type == SymbolType::Funcdef))
+            {
+                m_globalTypeSymbols.push_back(sym);
+            }
+        }
+    }
+    m_globalTypesVersion = m_version;
+}
+
+void SymbolTable::ForEachGlobalTypeSymbol(const std::function<void(const Symbol&)>& visitor) const
+{
+    std::vector<Symbol> snapshot;
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        EnsureGlobalTypesLocked();
+        snapshot = m_globalTypeSymbols;
+    }
+    for (const auto& sym : snapshot)
+    {
+        visitor(sym);
+    }
+}
+
 void SymbolTable::ForEachSymbolWithPrefix(
     std::string_view prefix, const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const
 {
+    if (prefix.empty())
+    {
+        ForEachSymbol(visitor);
+        return;
+    }
+
     std::vector<std::pair<const std::string*, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        if (prefix.empty())
+        EnsureSortedKeysLocked();
+
+        auto collectMatching = [&](std::string_view p)
         {
-            snapshot.reserve(m_symbols.size());
-            for (const auto& [key, symbols] : m_symbols)
+            if (p.empty())
             {
-                snapshot.emplace_back(&key, symbols);
+                return;
             }
-        }
-        else
-        {
-            for (const auto& [key, symbols] : m_symbols)
+            auto it = std::lower_bound(m_sortedKeys.begin(), m_sortedKeys.end(), p);
+            for (; it != m_sortedKeys.end() && it->starts_with(p); ++it)
             {
-                if (key.starts_with(prefix) ||
-                    (key.starts_with("get_") && std::string_view(key).substr(4).starts_with(prefix)) ||
-                    (key.starts_with("set_") && std::string_view(key).substr(4).starts_with(prefix)))
+                auto mapIt = m_symbols.find(*it);
+                if (mapIt != m_symbols.end())
                 {
-                    snapshot.emplace_back(&key, symbols);
+                    snapshot.emplace_back(&mapIt->first, mapIt->second);
                 }
             }
-        }
+        };
+
+        collectMatching(prefix);
+        collectMatching("get_" + std::string(prefix));
+        collectMatching("set_" + std::string(prefix));
     }
 
     for (const auto& [key, symbols] : snapshot)
@@ -1040,7 +1102,20 @@ void SymbolTable::ForEachSymbolWithPrefix(
 void SymbolTable::ForEachSymbol(
     const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const
 {
-    ForEachSymbolWithPrefix({}, visitor);
+    std::vector<std::pair<const std::string*, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        snapshot.reserve(m_symbols.size());
+        for (const auto& [key, symbols] : m_symbols)
+        {
+            snapshot.emplace_back(&key, symbols);
+        }
+    }
+
+    for (const auto& [key, symbols] : snapshot)
+    {
+        visitor(*key, *symbols);
+    }
 }
 
 std::vector<Symbol> SymbolTable::GetAllSymbols() const

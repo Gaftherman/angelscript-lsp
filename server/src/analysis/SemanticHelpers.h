@@ -337,7 +337,7 @@ NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const
  * @param ctx DiagnosticContext containing request and SymbolTable.
  * @return True if baseName is a known valid type.
  */
-bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx);
+bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx);
 
 /**
  * @brief Checks whether the given type name denotes an enum in the symbol table.
@@ -839,7 +839,7 @@ bool LambdaContradictsFuncdef(TSNode lambdaNode, const FuncdefSignature& funcdef
  * Falls back to a last-`::`-segment scan when the qualified name resolves to nothing, the way
  * a bare name inside a namespace has to.
  */
-std::optional<Symbol> FindFuncdefSymbol(const std::string& typeName, const SymbolTable& table);
+std::optional<Symbol> FindFuncdefSymbol(std::string_view typeName, const SymbolTable& table);
 
 /**
  * @brief Checks if a resolved type represents an AngelScript handle type.

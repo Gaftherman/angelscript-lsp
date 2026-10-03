@@ -247,19 +247,11 @@ void MultiFileLogger::Flush()
         return;
     }
 
-    std::vector<LogEntry> batch;
+    std::scoped_lock lock(m_mutex, m_sinkMutex);
+    while (!m_queue.empty())
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        while (!m_queue.empty())
-        {
-            batch.push_back(std::move(m_queue.front()));
-            m_queue.pop();
-        }
-    }
-    std::lock_guard<std::mutex> sinkLock(m_sinkMutex);
-    for (const auto& entry : batch)
-    {
-        WriteEntry(entry);
+        WriteEntry(m_queue.front());
+        m_queue.pop();
     }
     FlushAllSinks();
 }
@@ -277,20 +269,12 @@ bool MultiFileLogger::IsInitialized() const
 
 void MultiFileLogger::FlushRemainingQueue()
 {
-    std::vector<LogEntry> remaining;
+    std::scoped_lock lock(m_mutex, m_sinkMutex);
+    while (!m_queue.empty())
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        while (!m_queue.empty())
-        {
-            remaining.push_back(std::move(m_queue.front()));
-            m_queue.pop();
-        }
+        WriteEntry(m_queue.front());
+        m_queue.pop();
     }
-    if (!remaining.empty())
-    {
-        ProcessBatch(remaining);
-    }
-    std::lock_guard<std::mutex> sinkLock(m_sinkMutex);
     FlushAllSinks();
 }
 
@@ -315,26 +299,17 @@ void MultiFileLogger::WorkerLoop()
     {
         while (m_running)
         {
-            std::vector<LogEntry> batch;
             {
                 std::unique_lock<std::mutex> lock(m_mutex);
                 m_cv.wait_for(lock, std::chrono::milliseconds(500),
                               [this]() { return !m_running || !m_queue.empty(); });
 
+                std::lock_guard<std::mutex> sinkLock(m_sinkMutex);
                 while (!m_queue.empty())
                 {
-                    batch.push_back(std::move(m_queue.front()));
+                    WriteEntry(m_queue.front());
                     m_queue.pop();
                 }
-            }
-
-            if (!batch.empty())
-            {
-                ProcessBatch(batch);
-            }
-            else
-            {
-                std::lock_guard<std::mutex> sinkLock(m_sinkMutex);
                 FlushAllSinks();
             }
         }

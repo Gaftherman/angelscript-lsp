@@ -473,4 +473,28 @@ bool IsWithinDirectory(const std::filesystem::path& root, const std::filesystem:
 
     return rootMismatch == canonicalRoot.end();
 }
+
+void SkipEscapedStringLiteral(std::string_view sourceCode, size_t& index, char quote) noexcept
+{
+    ++index;
+    const size_t n = sourceCode.size();
+    while (index < n)
+    {
+        if (sourceCode[index] == '\\')
+        {
+            index += 2;
+            continue;
+        }
+        if (sourceCode[index] == quote)
+        {
+            ++index;
+            break;
+        }
+        if (sourceCode[index] == '\n' || sourceCode[index] == '\r')
+        {
+            break;
+        }
+        ++index;
+    }
+}
 } // namespace angel_lsp::utils
