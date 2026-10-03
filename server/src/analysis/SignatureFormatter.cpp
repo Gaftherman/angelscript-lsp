@@ -208,11 +208,28 @@ void AppendFunctionName(std::ostringstream& oss, const Symbol& sym, bool qualifi
     oss << sym.name;
 }
 
+bool HasCachedDisplaySignature(const Symbol& sym, bool qualified) noexcept
+{
+    return qualified && sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature) &&
+           !sym.GetFunction().displaySignature.empty();
+}
+
+bool IsConstructorOrDestructorSymbol(const Symbol& sym, bool isFuncdef, const std::string& returnType)
+{
+    return !isFuncdef && returnType.empty() && !sym.containerName.empty() &&
+           (sym.name == sym.containerName || sym.name == ("~" + sym.containerName));
+}
+
 std::string FormatFunctionDeclaration(const Symbol& sym, bool qualified)
 {
     if (sym.type != SymbolType::Function && sym.type != SymbolType::Funcdef)
     {
         return "";
+    }
+
+    if (HasCachedDisplaySignature(sym, qualified))
+    {
+        return sym.GetFunction().displaySignature;
     }
 
     const bool isFuncdef = sym.type == SymbolType::Funcdef;
@@ -223,9 +240,7 @@ std::string FormatFunctionDeclaration(const Symbol& sym, bool qualified)
     std::ostringstream oss;
     oss << FormatDeclarationPrefix(modifiers);
     AppendFunctionPreamble(oss, sym, isFuncdef);
-    const bool isCtor = !isFuncdef && returnType.empty() && !sym.containerName.empty() &&
-                        (sym.name == sym.containerName || sym.name == ("~" + sym.containerName));
-    if (!isCtor)
+    if (!IsConstructorOrDestructorSymbol(sym, isFuncdef, returnType))
     {
         oss << FormatReturnType(returnType, modifiers) << " ";
     }

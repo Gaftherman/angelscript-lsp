@@ -315,6 +315,10 @@ std::vector<analysis::Symbol> FilterOverloadsForCall(TSNode node, const std::vec
     {
         return {*match.bestCandidate};
     }
+    if (match.priorityCandidate != nullptr)
+    {
+        return {*match.priorityCandidate};
+    }
 
     if (const analysis::Symbol* fallback = FindBestFallbackCandidate(funcCandidates, argTypes, request.symbolTable))
     {

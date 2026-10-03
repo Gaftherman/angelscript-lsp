@@ -482,7 +482,12 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
 
     const TSNode root = ts_tree_root_node(parsed.tree.get());
     analysis::NodeIndex nodeIndex(root);
-    std::unique_ptr<analysis::SymbolTable> analysisSnapshot = m_symbolTable.CreateAnalysisSnapshot(req.uriStr, staging);
+    const bool unchangedClosedFile =
+        req.generation == 0 && !m_documentStore.IsOpen(req.uriStr) && m_closureDocuments.contains(req.uriStr) &&
+        m_symbolTable.ComputeDocumentInterfaceHash(req.uriStr) == staging.ComputeDocumentInterfaceHash(req.uriStr);
+    std::unique_ptr<analysis::SymbolTable> analysisSnapshot =
+        unchangedClosedFile ? nullptr : m_symbolTable.CreateAnalysisSnapshot(req.uriStr, staging);
+    const analysis::SymbolTable* activeTable = unchangedClosedFile ? &m_symbolTable : analysisSnapshot.get();
 
     utils::HighResTimer scopeTimer;
     std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot =
@@ -491,7 +496,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     double scopeMs = scopeTimer.ElapsedMs();
 
     utils::HighResTimer checkTimer;
-    auto request = BuildAnalysisRequest(req.uriStr, req.text, parsed.tree.get(), analysisSnapshot.get());
+    auto request = BuildAnalysisRequest(req.uriStr, req.text, parsed.tree.get(), activeTable);
     request.scopeRoot = scopeRoot;
     request.mutableScopeRoot = scopeRoot.get();
     request.nodeIndex = &nodeIndex;
@@ -509,7 +514,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
                            .version = req.version,
                            .generation = req.generation,
                            .configRevision = req.configRevision,
-                           .staging = &staging,
+                           .staging = unchangedClosedFile ? nullptr : &staging,
                            .scopeRoot = std::move(scopeRoot),
                            .calls = std::move(calls),
                            .diagnostics = std::move(parsed.diagnostics),

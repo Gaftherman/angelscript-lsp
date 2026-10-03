@@ -124,8 +124,8 @@ The following community and tested host stubs are available:
 
 | Host Environment | Source & Link | Status & Recommendation |
 | :--- | :--- | :--- |
-| **Sven Co-op** | [Sven Co-op - Gaftherman](https://github.com/Gaftherman/angelscript-lsp/blob/main/predefined/sven.as.predefined) | **Recommended (Recomendado)** — Actively maintained and updated for modern Sven Co-op 5.26+ engine API bindings, complete const-correctness, ref qualifiers, and math/engine structs. We strongly recommend this stub for all Sven Co-op scripting. |
-| **Sven Co-op** | [Sven Co-op - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Sven%20Co-op/as.predefined) | **Legacy (Heredado)** — Retained for backwards compatibility with older projects and configurations; outdated compared to modern engine releases. |
+| **Sven Co-op** | [Sven Co-op - Gaftherman](https://github.com/Gaftherman/angelscript-lsp/blob/main/predefined/sven.as.predefined) | **Recommended** — Actively maintained and updated for modern Sven Co-op 5.26+ engine API bindings, complete const-correctness, ref qualifiers, and math/engine structs. We strongly recommend this stub for all Sven Co-op scripting. |
+| **Sven Co-op** | [Sven Co-op - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Sven%20Co-op/as.predefined) | **Legacy** — Retained for backwards compatibility with older projects and configurations; outdated compared to modern engine releases. |
 | **Trackmania Nations Forever** | [Trackmania Nations Forever - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Trackmania%20Nations%20Forever/as.predefined) | Compatible — Host API bindings for Trackmania Nations Forever scripting (`CGameCtnApp`, `MwFastBuffer`, etc.). |
 | **OpenSiv3D** | [OpenSiv3D - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/OpenSiv3D/as.predefined) | Compatible — Host API bindings for the OpenSiv3D C++ game framework (`Vec2`, `ColorF`, `Circle`, etc.). |
 

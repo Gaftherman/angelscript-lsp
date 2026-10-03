@@ -57,6 +57,10 @@ void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::strin
         bool first = true;
         for (const auto& a : argStrs)
         {
+            if (a.empty())
+            {
+                continue;
+            }
             fallback += (first ? " " : ", ");
             fallback += a;
             first = false;

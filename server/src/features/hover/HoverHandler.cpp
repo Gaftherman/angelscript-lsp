@@ -688,6 +688,10 @@ std::optional<analysis::Symbol> ResolveCallOverload(TSNode node, const std::vect
     {
         return *match.bestCandidate;
     }
+    if (match.priorityCandidate != nullptr)
+    {
+        return *match.priorityCandidate;
+    }
 
     const analysis::Symbol* fallback = analysis::FindBestFallbackOverload(candidates, argTypes, request.symbolTable);
     if (fallback != nullptr)
@@ -1304,6 +1308,10 @@ std::optional<analysis::Symbol> ResolveConstructorForDeclarator(TSNode declarato
     if (match.bestCandidate != nullptr)
     {
         return *match.bestCandidate;
+    }
+    if (match.priorityCandidate != nullptr)
+    {
+        return *match.priorityCandidate;
     }
 
     const analysis::Symbol* fallback =

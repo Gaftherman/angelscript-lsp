@@ -182,6 +182,14 @@ class AnalysisScheduler
      */
     void DrainQueue();
 
+    /**
+     * @brief Returns true if additional queued tasks remain beyond any currently executing callback.
+     */
+    [[nodiscard]] bool HasQueuedWork() const noexcept
+    {
+        return m_activeTasks.load(std::memory_order_relaxed) > 1;
+    }
+
   private:
     void RunLoop();
     bool IsRedundantWithActiveOrInFlightLocked(const ScheduleRequest& request) const;

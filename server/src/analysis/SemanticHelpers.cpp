@@ -3868,6 +3868,42 @@ size_t CountCallArguments(TSNode argumentList)
     return ExtractCallArguments(argumentList, "").size();
 }
 
+static bool IsConstArgumentNode(TSNode exprNode, const ExpressionTypeContext& ctx)
+{
+    if (ts_node_is_null(exprNode))
+    {
+        return false;
+    }
+    const std::string_view nodeType = ts_node_type(exprNode);
+    if (nodeType != "identifier" && nodeType != "scoped_identifier")
+    {
+        return false;
+    }
+    const std::string name = GetTrimmedNodeText(exprNode, ctx.sourceCode);
+    if (ctx.scope)
+    {
+        if (const auto* def = ResolveInScope(ctx.scope, name))
+        {
+            if (!def->typeName.empty() && HasConstModifier(def->typeName))
+            {
+                return true;
+            }
+        }
+    }
+    if (const auto syms = ctx.symbolTable.FindSymbolsPtr(name))
+    {
+        for (const auto& sym : *syms)
+        {
+            if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                sym.GetVariable().modifiers.isConst)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const ExpressionTypeContext& ctx)
 {
     auto args = ExtractCallArguments(callNode, ctx.sourceCode);
@@ -3881,7 +3917,12 @@ std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const Express
         }
         else
         {
-            types.push_back(ResolveExpressionType(arg.exprNode, ctx));
+            std::string argType = ResolveExpressionType(arg.exprNode, ctx);
+            if (!argType.empty() && !HasConstModifier(argType) && IsConstArgumentNode(arg.exprNode, ctx))
+            {
+                argType.insert(0, "const ");
+            }
+            types.push_back(std::move(argType));
         }
     }
     return types;

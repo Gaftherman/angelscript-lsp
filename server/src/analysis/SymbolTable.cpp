@@ -1,6 +1,7 @@
 #include "SymbolTable.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/SignatureFormatter.h"
 #include "analysis/rules/RuleIndex.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
@@ -349,7 +350,14 @@ void SymbolTable::AddSymbol(const Symbol& symbol)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     const std::string& key = symbol.qualifiedName.empty() ? symbol.name : symbol.qualifiedName;
-    MutableBucket(m_symbols[key]).push_back(symbol);
+    auto& bucket = MutableBucket(m_symbols[key]);
+    bucket.push_back(symbol);
+    Symbol& stored = bucket.back();
+    if (stored.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(stored.signature) &&
+        stored.GetFunction().displaySignature.empty())
+    {
+        stored.GetFunction().displaySignature = FormatFunctionDeclaration(stored, true);
+    }
     IndexKeyForFileLocked(symbol.fileUri, key);
 
     const bool isClass = (symbol.type == SymbolType::Class && std::holds_alternative<ClassSignature>(symbol.signature));
@@ -483,6 +491,12 @@ void SymbolTable::PublishDocumentSymbols(const std::string& fileUri, std::vector
                 addedMixin = true;
             }
             freshClassKeys.push_back(key);
+        }
+
+        if (symbol.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(symbol.signature) &&
+            symbol.GetFunction().displaySignature.empty())
+        {
+            symbol.GetFunction().displaySignature = FormatFunctionDeclaration(symbol, true);
         }
 
         // Indexed before the move, not after: the index is keyed by the symbol's own file, not
@@ -697,6 +711,11 @@ void SymbolTable::SynthesizeSingleMixinMemberLocked(const std::string& hostQName
     if (m_virtualMixinDocumentsEnabled)
     {
         synth.virtualFileUri = BuildVirtualMixinUri(hostQName, mixinName);
+    }
+    if (synth.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(synth.signature))
+    {
+        synth.GetFunction().displaySignature.clear();
+        synth.GetFunction().displaySignature = FormatFunctionDeclaration(synth, true);
     }
 
     MutableBucket(m_symbols[synthKey]).push_back(std::move(synth));

@@ -289,6 +289,7 @@ std::optional<std::pair<std::string, PendingAnalysisEntry>> AnalysisScheduler::P
         m_currentlyAnalyzingVersion = currentEntry.version;
         m_currentlyAnalyzingGeneration = currentEntry.generation;
         m_cancelCurrentAnalysis = false;
+        UpdateActiveTasksLocked();
         return std::make_pair(std::move(currentUri), std::move(currentEntry));
     }
     return std::nullopt;

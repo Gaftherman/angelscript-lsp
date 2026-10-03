@@ -422,7 +422,9 @@ void Server::NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDia
 {
     if (m_clientPullsDiagnostics)
     {
-        if (m_clientSupportsDiagnosticRefresh)
+        const bool isBatchQueued = m_analysisScheduler && m_analysisScheduler->HasQueuedWork() &&
+                                   !m_documentStore.IsOpen(DocumentKey(params.uri.toString()));
+        if (m_clientSupportsDiagnosticRefresh && !isBatchQueued)
         {
             std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
             if (m_messageHandler)
@@ -460,7 +462,10 @@ void Server::PublishDiagnostics(const PublishDiagnosticsRequest& request)
 
     params.diagnostics = ToProtocolDiagnostics(request.text, request.diagnostics);
 
-    PublishInactiveRegions(request.uriStr, request.text);
+    if (m_documentStore.IsOpen(request.uriStr))
+    {
+        PublishInactiveRegions(request.uriStr, request.text);
+    }
 
     CacheDiagnosticsSnapshot(request, params.diagnostics);
 

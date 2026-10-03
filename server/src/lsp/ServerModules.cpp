@@ -154,6 +154,30 @@ Server::ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& de
 
 namespace
 {
+bool NormalizedPathsEqual(std::string_view a, std::string_view b)
+{
+    if (a == b)
+    {
+        return true;
+    }
+#if defined(_WIN32)
+    if (a.size() != b.size())
+    {
+        return false;
+    }
+    for (size_t i = 0; i < a.size(); ++i)
+    {
+        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
+        {
+            return false;
+        }
+    }
+    return true;
+#else
+    return false;
+#endif
+}
+
 void AppendUniqueDirectory(std::vector<std::string>& dirs, const std::string& dir, bool& added)
 {
     if (dir.empty())
@@ -248,17 +272,14 @@ void Server::BuildModuleIndex()
 
 bool Server::PathIsInside(const std::string& normalizedPath, const std::string& normalizedDirectory)
 {
-    if (normalizedDirectory.empty() || normalizedPath.size() <= normalizedDirectory.size())
+    if (normalizedDirectory.empty() || normalizedPath.size() <= normalizedDirectory.size() ||
+        normalizedPath[normalizedDirectory.size()] != '/')
     {
         return false;
     }
 
-    if (!PathsAreSameFile(normalizedPath.substr(0, normalizedDirectory.size()), normalizedDirectory))
-    {
-        return false;
-    }
-
-    return normalizedPath[normalizedDirectory.size()] == '/';
+    return NormalizedPathsEqual(std::string_view(normalizedPath).substr(0, normalizedDirectory.size()),
+                                normalizedDirectory);
 }
 
 Server::ModuleClaim Server::ClaimFor(const std::string& normalizedPath) const
@@ -401,13 +422,20 @@ void Server::AnalyzeConfiguredModules()
                 continue;
             }
 
-            std::ifstream file(path, std::ios::binary);
-            if (!file.is_open())
+            std::string content;
+            if (const auto cached = m_closureDocuments.find(uriStr); cached != m_closureDocuments.end())
             {
-                continue;
+                content = cached->second;
             }
-
-            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            else
+            {
+                std::ifstream file(path, std::ios::binary);
+                if (!file.is_open())
+                {
+                    continue;
+                }
+                content.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            }
 
             {
                 std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
@@ -824,7 +852,7 @@ std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPat
         const std::string entryPath = ResolveConfiguredPath(m_config.moduleEntryPoint);
         auto fwd = m_includeGraph.GetForwardClosure(entryPath);
         if (std::any_of(fwd.begin(), fwd.end(),
-                        [&openPath](const std::string& p) { return PathsAreSameFile(p, openPath); }))
+                        [&openPath](const std::string& p) { return NormalizedPathsEqual(p, openPath); }))
         {
             closure = std::move(fwd);
         }
@@ -843,12 +871,12 @@ std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPat
     {
         for (const auto& member : claim.owner->closurePaths)
         {
-            if (!PathsAreSameFile(member, openPath))
+            if (!NormalizedPathsEqual(member, openPath))
                 closure.push_back(member);
         }
         for (const auto& member : claim.owner->memberPaths)
         {
-            if (!PathsAreSameFile(member, openPath))
+            if (!NormalizedPathsEqual(member, openPath))
                 closure.push_back(member);
         }
     }
@@ -888,19 +916,14 @@ size_t Server::IndexModuleClosure(const std::string& openUriStr)
 
     for (const auto& path : closure)
     {
-        if (path == openPath)
+        if (NormalizedPathsEqual(path, openPath))
             continue;
 
-        const std::string uriStr = UriFromPath(path);
+        const auto already = m_indexedUriByPath.find(path);
+        const std::string uriStr = (already != m_indexedUriByPath.end()) ? already->second : UriFromPath(path);
 
         if (m_documentStore.IsOpen(uriStr))
             continue;
-
-        if (const auto already = m_indexedUriByPath.find(path);
-            already != m_indexedUriByPath.end() && m_documentStore.IsOpen(already->second))
-        {
-            continue;
-        }
 
         if (!m_closureDocuments.contains(uriStr))
         {
@@ -916,7 +939,10 @@ size_t Server::IndexModuleClosure(const std::string& openUriStr)
         LogInfo(fmt::format("Indexed {} file(s) from the #include module of {}", newlyIndexed, openUriStr));
     }
 
-    m_openDocumentClosures[openUriStr] = std::move(indexed);
+    if (m_documentStore.IsOpen(openUriStr) || !m_closureDocuments.contains(openUriStr))
+    {
+        m_openDocumentClosures[openUriStr] = std::move(indexed);
+    }
     return newlyIndexed;
 }
 

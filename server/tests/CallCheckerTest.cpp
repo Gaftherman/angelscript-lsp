@@ -1513,3 +1513,91 @@ TEST_CASE("CallChecker - Invariant: Member funcdef variable call checks argument
     auto diags = AnalyzeCallSnippet(code);
     CHECK(HasCode(diags, "as-err-call-argument-count"));
 }
+
+TEST_CASE("CallChecker - Invariant: Const &in argument disqualifies &out overload and prefers exact over user-defined")
+{
+    std::mt19937_64 rng(0x1337BEF4);
+    const std::string className = angel_lsp::test::GenerateIdentifier(rng, "JsonNode");
+    const std::string getterName = angel_lsp::test::GenerateIdentifier(rng, "Get");
+    const std::string helperName = angel_lsp::test::GenerateIdentifier(rng, "ValueOrDefault");
+    const std::string keyParam = angel_lsp::test::GenerateIdentifier(rng, "keyName");
+
+    const std::string code =
+        "class string { string() {} string(bool b) {} }\n"
+        "class " +
+        className +
+        " {\n"
+        "    bool " +
+        getterName +
+        "(const string &in k, bool &out v, bool strict = true) const { v = true; return true; }\n"
+        "    bool " +
+        getterName + "(const string &in k, " + className +
+        "@ &out v) const { @v = null; return true; }\n"
+        "    bool " +
+        getterName +
+        "(bool &out v, bool strict = true) const { v = true; return true; }\n"
+        "    bool " +
+        getterName +
+        "(int &out v, bool strict = true) const { v = 0; return true; }\n"
+        "    bool " +
+        getterName +
+        "(const string &in k, int &out v, bool strict = true) const { v = 0; return true; }\n"
+        "    bool " +
+        getterName +
+        "(float &out v, bool strict = true) const { v = 0; return true; }\n"
+        "    bool " +
+        getterName +
+        "(const string &in k, float &out v, bool strict = true) const { v = 0; return true; }\n"
+        "    bool " +
+        getterName +
+        "(string &out v, bool strict = true, const string &in dummy = string()) const { return true; }\n"
+        "    bool " +
+        getterName +
+        "(const string &in k, string &out v, bool strict = true) const { return true; }\n"
+        "    bool " +
+        helperName + "(const string &in " + keyParam +
+        ", bool value, bool store = false, bool strict = true) {\n"
+        "        bool temp = value;\n"
+        "        if (!this." +
+        getterName + "(" + keyParam +
+        ", temp, strict)) {\n"
+        "            return value;\n"
+        "        }\n"
+        "        return temp;\n"
+        "    }\n"
+        "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-call-ambiguous"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("CallChecker - Invariant: Tied overloads emit Warning severity and report priority signature")
+{
+    std::mt19937_64 rng(0x1337BEF5);
+    const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Compute");
+
+    const std::string code = "void " + fnName +
+                             "(int a, float b) {}\n"
+                             "void " +
+                             fnName +
+                             "(float a, int b) {}\n"
+                             "void main() {\n"
+                             "    " +
+                             fnName +
+                             "(1, 1);\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    bool foundAmbiguousWarning = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-call-ambiguous")
+        {
+            foundAmbiguousWarning = true;
+            CHECK(d.severity == DiagnosticSeverity::Warning);
+            CHECK(d.message.find(fnName + "(int a, float b)") != std::string::npos);
+        }
+    }
+    CHECK(foundAmbiguousWarning);
+}

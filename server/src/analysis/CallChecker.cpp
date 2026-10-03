@@ -465,11 +465,12 @@ LambdaCandidateStatus EvaluateCandidateLambdaShape(const Symbol& candidate, cons
  * @brief Emits diagnostics for lambda shape matching results.
  *
  * @param[in] acceptedShapes Matrix of accepted funcdef shapes per viable candidate.
+ * @param[in] priorityCandidate First accepted overload candidate.
  * @param[in] lctx Lambda verification context.
  * @param[in,out] ctx Diagnostic context.
  */
 void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>& acceptedShapes,
-                             const LambdaCheckContext& lctx, DiagnosticContext& ctx)
+                             const Symbol* priorityCandidate, const LambdaCheckContext& lctx, DiagnosticContext& ctx)
 {
     const TSPoint start = ts_node_start_point(lctx.callee);
     const TSPoint end = ts_node_end_point(lctx.arguments);
@@ -486,7 +487,10 @@ void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>& accept
                     [&](const std::vector<std::string>& shape) { return shape == acceptedShapes.front(); });
     if (acceptedShapes.size() > 1 && !everyShapeIdentical)
     {
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-ambiguous", lctx.reportedName);
+        const std::string_view prioritySig =
+            priorityCandidate != nullptr ? priorityCandidate->GetDisplaySignature() : std::string_view{};
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-ambiguous",
+                        {std::string_view(lctx.reportedName), prioritySig});
     }
 }
 
@@ -506,6 +510,7 @@ void CheckLambdaArguments(std::span<const Symbol* const> candidates, const Lambd
     }
 
     std::vector<std::vector<std::string>> acceptedShapes;
+    const Symbol* firstAccepted = nullptr;
     for (const auto* candidate : candidates)
     {
         if (!candidate)
@@ -520,11 +525,15 @@ void CheckLambdaArguments(std::span<const Symbol* const> candidates, const Lambd
         }
         if (status == LambdaCandidateStatus::Accepted)
         {
+            if (!firstAccepted)
+            {
+                firstAccepted = candidate;
+            }
             acceptedShapes.push_back(std::move(shape));
         }
     }
 
-    ReportLambdaDiagnostics(acceptedShapes, lctx, ctx);
+    ReportLambdaDiagnostics(acceptedShapes, firstAccepted, lctx, ctx);
 }
 
 /** @brief Context bundled for overall call validation. */
@@ -1072,6 +1081,10 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
         {
             result.allArgsResolved = false;
         }
+        else if (!HasConstModifier(argType) && IsObjectNodeConst(argNode, valCtx))
+        {
+            argType.insert(0, "const ");
+        }
         result.argTypes.push_back(std::move(argType));
     }
     return result;
@@ -1366,7 +1379,7 @@ bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, const S
         if (def && (def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter ||
                     def->kind == LocalDefinitionKind::Field))
         {
-            return true;
+            return !HasConstModifier(def->typeName);
         }
     }
     auto syms = table.FindSymbolsPtr(name);
@@ -1593,8 +1606,12 @@ void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const Call
     {
         const TSPoint start = ts_node_start_point(valCtx.callee);
         const TSPoint end = ts_node_end_point(valCtx.arguments);
+        const std::string_view prioritySig =
+            match.priorityCandidate != nullptr ? match.priorityCandidate->GetDisplaySignature() : std::string_view{};
         valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-ambiguous",
-                               calleeRes.reportedName);
+                               {std::string_view(calleeRes.reportedName), prioritySig},
+                               match.priorityCandidate != nullptr ? DiagnosticSeverity::Warning
+                                                                  : DiagnosticSeverity::Error);
     }
     else if (match.viableCandidates.empty() || match.bestCandidate == nullptr)
     {

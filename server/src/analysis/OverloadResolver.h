@@ -146,6 +146,7 @@ enum class OverloadMatchPenalty : int
 struct OverloadMatchResult
 {
     const Symbol* bestCandidate = nullptr;           ///< Best matching function candidate, or nullptr if none
+    const Symbol* priorityCandidate = nullptr;       ///< Priority candidate when ambiguous or best match
     int bestScore = 999999;                          ///< Cumulative penalty score of best candidate (legacy)
     std::vector<int> bestCostVector;                 ///< Argument conversion penalty vector of best candidate (legacy)
     std::vector<ArgumentConversion> bestConversions; ///< Argument conversion ranks of best candidate

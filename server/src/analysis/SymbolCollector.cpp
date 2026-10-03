@@ -1,6 +1,7 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/DocComment.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/SignatureFormatter.h"
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
 #include "parser/QueryRegistry.h"
@@ -674,7 +675,8 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
         funcSig.originModule = ExtractOriginModule(funcNode, sCtx.request.sourceCode);
     }
 
-    sym.signature = funcSig;
+    sym.signature = std::move(funcSig);
+    sym.GetFunction().displaySignature = FormatFunctionDeclaration(sym, true);
     sCtx.symbolTable.AddSymbol(sym);
 }
 
@@ -739,6 +741,7 @@ static void SynthesizeDefaultConstructor(const Symbol& sym, SymbolTable& table)
     ctorSig.returnTypeKind = TypeKind::Object;
     ctorSig.hasBody = true;
     ctorSym.signature = std::move(ctorSig);
+    ctorSym.GetFunction().displaySignature = FormatFunctionDeclaration(ctorSym, true);
     table.AddSymbol(ctorSym);
 }
 

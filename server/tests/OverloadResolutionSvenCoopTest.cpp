@@ -12,6 +12,7 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "helpers/TestUtils.h"
+#include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
@@ -26,10 +27,12 @@ namespace
  * @brief Analyzes a script snippet with optional predefined stubs and returns all diagnostics.
  * @param[in] code AngelScript source text.
  * @param[in] predefinedCode Optional predefined stub source text.
+ * @param[in] locale Optional locale tag for i18n formatting.
  * @return Vector of emitted diagnostics.
  */
 std::vector<analysis::Diagnostic> AnalyzeSnippetWithStubs(const std::string& code,
-                                                          const std::string& predefinedCode = "")
+                                                          const std::string& predefinedCode = "",
+                                                          const std::string& locale = "en")
 {
     parser::AngelScriptParser parser;
     analysis::SymbolTable table;
@@ -47,8 +50,9 @@ std::vector<analysis::Diagnostic> AnalyzeSnippetWithStubs(const std::string& cod
 
     TSTree* tree = parser.Parse(code);
 
+    i18n::I18n translator(locale);
     analysis::SemanticAnalyzer analyzer(nullptr);
-    analysis::SemanticAnalysisRequest request{table, "file:///test.as", ".as.predefined", nullptr};
+    analysis::SemanticAnalysisRequest request{table, "file:///test.as", ".as.predefined", &translator};
     request.sourceCode = code;
     request.tree = tree;
     if (scopes)
@@ -367,6 +371,116 @@ TEST_CASE("Case 9 - Function taking const string accepts custom char class argum
     const auto diags = AnalyzeSnippetWithStubs(script, predefined);
     CHECK_FALSE(HasDiagCode(diags, "as-err-no-implicit-conversion"));
     CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("Case 10 - json::Get with const string&in keyName and bool&out temp resolves unambiguously")
+{
+    const std::string jsonCls = GenerateRandomSymbolName("json");
+    const std::string keyParam = GenerateRandomSymbolName("keyName");
+    const std::string valParam = GenerateRandomSymbolName("value");
+    const std::string tempVar = GenerateRandomSymbolName("temp");
+
+    const std::string predefined = "class string {\n"
+                                   "    string();\n"
+                                   "    string(const string& in s);\n"
+                                   "    string(bool b);\n"
+                                   "}\n";
+
+    const std::string script =
+        "class " + jsonCls +
+        " {\n"
+        "    bool Get(const string &in keyName, bool &out value, bool strict = true) const { value = false; return "
+        "true; }\n"
+        "    bool Get(const string &in keyName, " +
+        jsonCls +
+        "@ &out value) const { @value = null; return true; }\n"
+        "    bool Get(bool &out value, bool strict = true) const { value = false; return true; }\n"
+        "    bool Get(int &out value, bool strict = true) const { value = 0; return true; }\n"
+        "    bool Get(const string &in keyName, int &out value, bool strict = true) const { value = 0; return true; }\n"
+        "    bool Get(float &out value, bool strict = true) const { value = 0.0f; return true; }\n"
+        "    bool Get(const string &in keyName, float &out value, bool strict = true) const { value = 0.0f; return "
+        "true; }\n"
+        "    bool Get(string &out value, bool strict = true, const string &in dummy = \"\") const { value = \"\"; "
+        "return true; }\n"
+        "    bool Get(const string &in keyName, string &out value, bool strict = true) const { value = \"\"; return "
+        "true; }\n"
+        "    bool ValueOrDefault(const string& in " +
+        keyParam + ", bool " + valParam +
+        ", bool store = false, bool strict = true) const {\n"
+        "        bool " +
+        tempVar + " = " + valParam +
+        ";\n"
+        "        if (!this.Get(" +
+        keyParam + ", " + tempVar +
+        ", strict)) {\n"
+        "            return " +
+        valParam +
+        ";\n"
+        "        }\n"
+        "        return " +
+        tempVar +
+        ";\n"
+        "    }\n"
+        "}\n";
+
+    const auto diags = AnalyzeSnippetWithStubs(script, predefined);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-ambiguous"));
+    CHECK_FALSE(HasDiagCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("Case 11 - Ambiguous call emits Warning with root pre-formatted GetDisplaySignature in EN and ES via i18n")
+{
+    const std::string nsName = GenerateRandomSymbolName("ns");
+    const std::string clsName = GenerateRandomSymbolName("Dispatcher");
+    const std::string fnName = GenerateRandomSymbolName("Compute");
+
+    const std::string script = "namespace " + nsName +
+                               " {\n"
+                               "    class " +
+                               clsName +
+                               " {\n"
+                               "        bool " +
+                               fnName +
+                               "(int a, double b) const { return a > b; }\n"
+                               "        bool " +
+                               fnName +
+                               "(double a, int b) const { return a > b; }\n"
+                               "        void Test() const {\n"
+                               "            this." +
+                               fnName +
+                               "(1, 2);\n"
+                               "        }\n"
+                               "    }\n"
+                               "}\n";
+
+    const std::string expectedPrioritySig =
+        "bool " + nsName + "::" + clsName + "::" + fnName + "(int a, double b) const";
+
+    const auto diagsEn = AnalyzeSnippetWithStubs(script, "", "en");
+    bool foundEn = false;
+    for (const auto& d : diagsEn)
+    {
+        if (d.code == "as-err-call-ambiguous")
+        {
+            foundEn = true;
+            CHECK(d.severity == analysis::DiagnosticSeverity::Warning);
+            CHECK(d.message.find("(Priority: '" + expectedPrioritySig + "')") != std::string::npos);
+        }
+    }
+    CHECK(foundEn);
+
+    const auto diagsEs = AnalyzeSnippetWithStubs(script, "", "es");
+    bool foundEs = false;
+    for (const auto& d : diagsEs)
+    {
+        if (d.code == "as-err-call-ambiguous")
+        {
+            foundEs = true;
+            CHECK(d.severity == analysis::DiagnosticSeverity::Warning);
+            CHECK(d.message.find("(Prioridad: '" + expectedPrioritySig + "')") != std::string::npos);
+        }
+    }
+    CHECK(foundEs);
 }
 
 TEST_SUITE_END();

@@ -350,7 +350,7 @@ void PopulateEnglishMessages6(MessageMap& m_messages)
     m_messages["as-err-initializer-list-too-few"] = "Not enough values to match pattern.";
     m_messages["as-err-initializer-list-too-many"] = "Too many values to match pattern.";
     m_messages["as-err-no-matching-constructor"] = "No matching signatures to '{}'.";
-    m_messages["as-err-call-ambiguous"] = "Call to '{}' is ambiguous.";
+    m_messages["as-err-call-ambiguous"] = "Call to '{}' is ambiguous (Priority: '{}').";
     m_messages["as-err-undefined-namespace"] = "Undefined namespace '{}'.";
     m_messages["as-err-import-has-body"] = "Imported function '{}' cannot have a body.";
     m_messages["as-hint-import-unknown-module"] =
@@ -714,7 +714,7 @@ void PopulateSpanishMessages6(MessageMap& m_messages)
     m_messages["as-err-initializer-list-too-few"] = "No hay suficientes valores para coincidir con el patrón.";
     m_messages["as-err-initializer-list-too-many"] = "Demasiados valores para coincidir con el patrón.";
     m_messages["as-err-no-matching-constructor"] = "No coinciden las firmas con '{}'.";
-    m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua.";
+    m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua (Prioridad: '{}').";
     m_messages["as-err-undefined-namespace"] = "Namespace no definido '{}'.";
     m_messages["as-err-import-has-body"] = "La función importada '{}' no puede tener un cuerpo.";
     m_messages["as-hint-import-unknown-module"] =

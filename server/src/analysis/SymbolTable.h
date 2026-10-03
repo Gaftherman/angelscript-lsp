@@ -218,6 +218,7 @@ struct FunctionSignature
     bool isImported = false;
     std::string originModule;
     std::string defaultValue;
+    std::string displaySignature; ///< Canonical pre-formatted declaration for zero-copy std::string_view diagnostics.
 };
 
 struct VariableSignature
@@ -421,6 +422,23 @@ struct Symbol
     const CallReferenceSignature& GetCallReference() const
     {
         return std::get<CallReferenceSignature>(signature);
+    }
+
+    /**
+     * @brief Returns a zero-copy string_view of the canonical pre-formatted function declaration.
+     * @return Pre-formatted signature string_view if populated, or symbol name as fallback.
+     */
+    [[nodiscard]] std::string_view GetDisplaySignature() const noexcept
+    {
+        if (type == SymbolType::Function && std::holds_alternative<FunctionSignature>(signature))
+        {
+            const auto& sig = std::get<FunctionSignature>(signature);
+            if (!sig.displaySignature.empty())
+            {
+                return sig.displaySignature;
+            }
+        }
+        return qualifiedName.empty() ? std::string_view(name) : std::string_view(qualifiedName);
     }
 };
 
