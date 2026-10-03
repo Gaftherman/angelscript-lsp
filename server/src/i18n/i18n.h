@@ -8,6 +8,17 @@
 
 namespace angel_lsp::i18n
 {
+struct I18nStringHash
+{
+    using is_transparent = void;
+    using is_avalanching = void;
+
+    [[nodiscard]] uint64_t operator()(std::string_view sv) const noexcept
+    {
+        return ankerl::unordered_dense::hash<std::string_view>{}(sv);
+    }
+};
+
 class I18n
 {
   public:
@@ -20,11 +31,18 @@ class I18n
     ~I18n() = default;
 
     /**
+     * @brief Retrieves a zero-copy view of a message by key from the message dictionary.
+     * @param[in] key Unique message key view.
+     * @return The translated message view, or empty string_view if not found.
+     */
+    [[nodiscard]] std::string_view GetMessageView(std::string_view key) const noexcept;
+
+    /**
      * @brief Retrieves a message by key from the message dictionary.
      * @param[in] key Unique message key.
      * @return The translated message, or empty string if not found.
      */
-    [[nodiscard]] std::string GetMessage(const std::string& key) const;
+    [[nodiscard]] std::string GetMessage(std::string_view key) const;
 
     /**
      * @brief Retrieves a message by key, falling back to a default message if not found.
@@ -32,7 +50,7 @@ class I18n
      * @param[in] defaultMessage Fallback message string.
      * @return The translated message, or defaultMessage if not found or empty.
      */
-    [[nodiscard]] std::string GetMessageOrDefault(const std::string& key, const std::string& defaultMessage) const;
+    [[nodiscard]] std::string GetMessageOrDefault(std::string_view key, const std::string& defaultMessage) const;
 
     /**
      * @brief Returns the primary language subtag (e.g. "en", "es").
@@ -45,7 +63,7 @@ class I18n
 
   private:
     std::string m_locale;
-    ankerl::unordered_dense::map<std::string, std::string> m_messages;
+    ankerl::unordered_dense::map<std::string, std::string, I18nStringHash, std::equal_to<>> m_messages;
 };
 
 /**
@@ -59,21 +77,17 @@ class I18n
  * @return Formatted localized string.
  */
 template <typename... Args>
-inline std::string FormatMessage(const I18n* i18n, const std::string& key, std::string_view fallbackPattern,
+inline std::string FormatMessage(const I18n* i18n, std::string_view key, std::string_view fallbackPattern,
                                  Args&&... args)
 {
-    std::string pattern;
-    if (i18n != nullptr)
-    {
-        pattern = i18n->GetMessage(key);
-    }
+    std::string_view pattern = (i18n != nullptr) ? i18n->GetMessageView(key) : std::string_view{};
     if (pattern.empty())
     {
-        pattern = std::string(fallbackPattern);
+        pattern = fallbackPattern;
     }
     if constexpr (sizeof...(Args) == 0)
     {
-        return pattern;
+        return std::string(pattern);
     }
     else
     {

@@ -16,6 +16,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -456,7 +457,7 @@ TEST_CASE("Case 11 - Ambiguous call emits Warning with root pre-formatted GetDis
     const std::string expectedPrioritySig =
         "bool " + nsName + "::" + clsName + "::" + fnName + "(int a, double b) const";
 
-    const auto diagsEn = AnalyzeSnippetWithStubs(script, "", "en");
+    const auto diagsEn = AnalyzeSnippetWithStubs(script, "", "en-US");
     bool foundEn = false;
     for (const auto& d : diagsEn)
     {
@@ -464,12 +465,12 @@ TEST_CASE("Case 11 - Ambiguous call emits Warning with root pre-formatted GetDis
         {
             foundEn = true;
             CHECK(d.severity == analysis::DiagnosticSeverity::Warning);
-            CHECK(d.message.find("(Priority: '" + expectedPrioritySig + "')") != std::string::npos);
+            CHECK(d.message == "Call to '" + fnName + "' is ambiguous (Priority: '" + expectedPrioritySig + "').");
         }
     }
     CHECK(foundEn);
 
-    const auto diagsEs = AnalyzeSnippetWithStubs(script, "", "es");
+    const auto diagsEs = AnalyzeSnippetWithStubs(script, "", "es-ES");
     bool foundEs = false;
     for (const auto& d : diagsEs)
     {
@@ -477,10 +478,18 @@ TEST_CASE("Case 11 - Ambiguous call emits Warning with root pre-formatted GetDis
         {
             foundEs = true;
             CHECK(d.severity == analysis::DiagnosticSeverity::Warning);
-            CHECK(d.message.find("(Prioridad: '" + expectedPrioritySig + "')") != std::string::npos);
+            CHECK(d.message == "La llamada a '" + fnName + "' es ambigua (Prioridad: '" + expectedPrioritySig + "').");
         }
     }
     CHECK(foundEs);
+
+    // Also verify base as-err-call-ambiguous when priority signature is empty
+    const i18n::I18n i18nEn("en-US");
+    const i18n::I18n i18nEs("es-MX");
+    CHECK(i18nEn.GetMessageView("as-err-call-ambiguous") == "Call to '{}' is ambiguous.");
+    CHECK(i18nEs.GetMessageView("as-err-call-ambiguous") == "La llamada a '{}' es ambigua.");
+    CHECK(i18nEn.GetMessageView("note-call-ambiguous-priority") == "Call to '{}' is ambiguous (Priority: '{}').");
+    CHECK(i18nEs.GetMessageView("note-call-ambiguous-priority") == "La llamada a '{}' es ambigua (Prioridad: '{}').");
 }
 
 TEST_SUITE_END();

@@ -1,5 +1,6 @@
 #include "i18n.h"
 
+#include <array>
 #include <cctype>
 
 namespace angel_lsp::i18n
@@ -100,7 +101,7 @@ std::string PrimaryLanguageSubtag(const std::string& locale)
 // ---------------------------------------------------------------------------------
 namespace
 {
-using MessageMap = ankerl::unordered_dense::map<std::string, std::string>;
+using MessageMap = ankerl::unordered_dense::map<std::string, std::string, I18nStringHash, std::equal_to<>>;
 
 /**
  * @brief Populates English diagnostic messages (batch 1).
@@ -350,7 +351,7 @@ void PopulateEnglishMessages6(MessageMap& m_messages)
     m_messages["as-err-initializer-list-too-few"] = "Not enough values to match pattern.";
     m_messages["as-err-initializer-list-too-many"] = "Too many values to match pattern.";
     m_messages["as-err-no-matching-constructor"] = "No matching signatures to '{}'.";
-    m_messages["as-err-call-ambiguous"] = "Call to '{}' is ambiguous (Priority: '{}').";
+    m_messages["as-err-call-ambiguous"] = "Call to '{}' is ambiguous.";
     m_messages["as-err-undefined-namespace"] = "Undefined namespace '{}'.";
     m_messages["as-err-import-has-body"] = "Imported function '{}' cannot have a body.";
     m_messages["as-hint-import-unknown-module"] =
@@ -433,6 +434,7 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
     m_messages["action-suppress-range"] = "Disable {} with // disable ... // enable";
     m_messages["action-suppress-file"] = "Disable {} for entire file";
     m_messages["action-remove-unused-variable"] = "Remove unused variable '{}'";
+    m_messages["note-call-ambiguous-priority"] = "Call to '{}' is ambiguous (Priority: '{}').";
 }
 
 /**
@@ -714,7 +716,7 @@ void PopulateSpanishMessages6(MessageMap& m_messages)
     m_messages["as-err-initializer-list-too-few"] = "No hay suficientes valores para coincidir con el patrón.";
     m_messages["as-err-initializer-list-too-many"] = "Demasiados valores para coincidir con el patrón.";
     m_messages["as-err-no-matching-constructor"] = "No coinciden las firmas con '{}'.";
-    m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua (Prioridad: '{}').";
+    m_messages["as-err-call-ambiguous"] = "La llamada a '{}' es ambigua.";
     m_messages["as-err-undefined-namespace"] = "Namespace no definido '{}'.";
     m_messages["as-err-import-has-body"] = "La función importada '{}' no puede tener un cuerpo.";
     m_messages["as-hint-import-unknown-module"] =
@@ -804,6 +806,7 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["action-suppress-range"] = "Deshabilitar {} con // disable ... // enable";
     m_messages["action-suppress-file"] = "Deshabilitar {} para todo el archivo";
     m_messages["action-remove-unused-variable"] = "Eliminar variable no utilizada '{}'";
+    m_messages["note-call-ambiguous-priority"] = "La llamada a '{}' es ambigua (Prioridad: '{}').";
 }
 
 /**
@@ -821,33 +824,55 @@ void PopulateSpanishMessages(MessageMap& m_messages)
     PopulateSpanishMessages7(m_messages);
     PopulateSpanishActionMessages(m_messages);
 }
+
+/**
+ * @brief Entry mapping a primary language subtag to its localization overlay populator.
+ */
+struct LocaleOverlayEntry
+{
+    std::string_view languageSubtag;
+    void (*populate)(MessageMap&);
+};
+
+constexpr std::array<LocaleOverlayEntry, 1> kLocaleOverlays = {{
+    {"es", &PopulateSpanishMessages},
+}};
 } // namespace
 
 I18n::I18n(const std::string& localeTag) : m_locale(PrimaryLanguageSubtag(localeTag))
 {
     PopulateEnglishMessages(m_messages);
-    if (m_locale == "es")
+    for (const auto& entry : kLocaleOverlays)
     {
-        PopulateSpanishMessages(m_messages);
+        if (m_locale == entry.languageSubtag)
+        {
+            entry.populate(m_messages);
+            break;
+        }
     }
 }
 
-std::string I18n::GetMessage(const std::string& key) const
+std::string_view I18n::GetMessageView(std::string_view key) const noexcept
 {
     auto it = m_messages.find(key);
     if (it != m_messages.end())
     {
         return it->second;
     }
-    return "";
+    return {};
 }
 
-std::string I18n::GetMessageOrDefault(const std::string& key, const std::string& defaultMessage) const
+std::string I18n::GetMessage(std::string_view key) const
 {
-    auto it = m_messages.find(key);
-    if (it != m_messages.end() && !it->second.empty())
+    return std::string(GetMessageView(key));
+}
+
+std::string I18n::GetMessageOrDefault(std::string_view key, const std::string& defaultMessage) const
+{
+    const std::string_view view = GetMessageView(key);
+    if (!view.empty())
     {
-        return it->second;
+        return std::string(view);
     }
     return defaultMessage;
 }

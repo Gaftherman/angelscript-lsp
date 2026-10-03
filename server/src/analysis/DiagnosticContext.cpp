@@ -9,6 +9,45 @@ namespace angel_lsp::analysis
 {
 namespace
 {
+std::string_view ResolveDiagnosticTemplate(const i18n::I18n* i18n, std::string_view code,
+                                           std::span<const std::string_view> args) noexcept
+{
+    if (!i18n)
+    {
+        return {};
+    }
+
+    if (code == "as-err-call-ambiguous" && args.size() >= 2 && !args[1].empty())
+    {
+        const std::string_view priorityPattern = i18n->GetMessageView("note-call-ambiguous-priority");
+        if (!priorityPattern.empty())
+        {
+            return priorityPattern;
+        }
+    }
+
+    return i18n->GetMessageView(code);
+}
+
+std::string FormatFallbackMessage(std::string_view code, std::span<const std::string_view> args)
+{
+    std::string fallback = "[";
+    fallback.append(code);
+    fallback.push_back(']');
+    bool first = true;
+    for (const auto a : args)
+    {
+        if (a.empty())
+        {
+            continue;
+        }
+        fallback += (first ? " " : ", ");
+        fallback.append(a);
+        first = false;
+    }
+    return fallback;
+}
+
 void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::string_view code,
                             std::span<const std::string_view> args)
 {
@@ -17,55 +56,30 @@ void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::strin
         return;
     }
 
-    const std::string codeStr(code);
-    std::string pattern;
-    if (i18n)
-    {
-        pattern = i18n->GetMessage(codeStr);
-    }
-
-    std::vector<std::string> argStrs;
-    argStrs.reserve(args.size());
-    for (const auto a : args)
-    {
-        argStrs.emplace_back(a);
-    }
-
+    const std::string_view pattern = ResolveDiagnosticTemplate(i18n, code, args);
     if (!pattern.empty())
     {
-        if (argStrs.size() == 1)
+        if (args.size() == 1 || (args.size() == 2 && args[1].empty() && code == "as-err-call-ambiguous"))
         {
-            diag.message = fmt::format(fmt::runtime(pattern), argStrs[0]);
+            diag.message = fmt::format(fmt::runtime(pattern), args[0]);
         }
-        else if (argStrs.size() == 2)
+        else if (args.size() == 2)
         {
-            diag.message = fmt::format(fmt::runtime(pattern), argStrs[0], argStrs[1]);
+            diag.message = fmt::format(fmt::runtime(pattern), args[0], args[1]);
         }
-        else if (argStrs.size() == 3)
+        else if (args.size() == 3)
         {
-            diag.message = fmt::format(fmt::runtime(pattern), argStrs[0], argStrs[1], argStrs[2]);
+            diag.message = fmt::format(fmt::runtime(pattern), args[0], args[1], args[2]);
         }
-        else if (argStrs.size() >= 4)
+        else if (args.size() >= 4)
         {
-            diag.message = fmt::format(fmt::runtime(pattern), argStrs[0], argStrs[1], argStrs[2], argStrs[3]);
+            diag.message = fmt::format(fmt::runtime(pattern), args[0], args[1], args[2], args[3]);
         }
     }
 
     if (diag.message.empty() || diag.message.starts_with("["))
     {
-        std::string fallback = "[" + codeStr + "]";
-        bool first = true;
-        for (const auto& a : argStrs)
-        {
-            if (a.empty())
-            {
-                continue;
-            }
-            fallback += (first ? " " : ", ");
-            fallback += a;
-            first = false;
-        }
-        diag.message = fallback;
+        diag.message = FormatFallbackMessage(code, args);
     }
 }
 
@@ -173,17 +187,17 @@ Diagnostic DiagnosticContext::CreateDiagnostic(SourceRange range, std::string_vi
             diag.severity = it->second;
         }
     }
-    diag.code = codeStr;
+    diag.code = std::move(codeStr);
     diag.source = "AngelScript";
     diag.fileUri = std::string(fileUri);
 
     if (request.i18n)
     {
-        diag.message = request.i18n->GetMessage(codeStr);
+        diag.message = std::string(request.i18n->GetMessageView(code));
     }
     if (diag.message.empty())
     {
-        diag.message = "[" + codeStr + "] Diagnostic code: " + codeStr;
+        diag.message = "[" + diag.code + "] Diagnostic code: " + diag.code;
     }
 
     return diag;
