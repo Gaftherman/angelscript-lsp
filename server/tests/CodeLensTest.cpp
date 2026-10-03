@@ -6,6 +6,7 @@
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
+#include "spdlog/fmt/fmt.h"
 #include <string>
 #include <vector>
 
@@ -578,4 +579,85 @@ TEST_CASE("CodeLens - Cross-File Namespace Variable References")
     {
         ts_tree_delete(tree2);
     }
+}
+
+TEST_CASE("CodeLens - Computes reference count for class methods inside same-named namespace and namespace functions")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("monster_zombie");
+    const std::string baseName = angel_lsp::test::GenerateRandomSymbolName("base_monster");
+    const std::string methodTarget = angel_lsp::test::GenerateRandomSymbolName("CheckTraceHullAttack");
+    const std::string funcTarget = angel_lsp::test::GenerateRandomSymbolName("Register");
+
+    std::string code =
+        fmt::format("class {} {{\n"
+                    "    void {}(int a, int b, int c) {{}}\n"
+                    "}}\n"
+                    "namespace {} {{\n"
+                    "    final class {} : {} {{\n"
+                    "        void Attack() {{\n"
+                    "            {}(70, 25, 0);\n"
+                    "        }}\n"
+                    "    }}\n"
+                    "    void {}() {{}}\n"
+                    "}}\n"
+                    "void CallSite() {{\n"
+                    "    {}::{}();\n"
+                    "}}\n",
+                    baseName, methodTarget, nsName, nsName, baseName, methodTarget, funcTarget, nsName, funcTarget);
+
+    CodeLensFixture fixture(std::move(code));
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool methodChecked = false;
+    bool funcChecked = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.command.has_value())
+        {
+            if (lens.range.start.line == 1)
+            {
+                CHECK(lens.command->title == "1 reference");
+                methodChecked = true;
+            }
+            else if (lens.range.start.line == 9)
+            {
+                CHECK(lens.command->title == "1 reference");
+                funcChecked = true;
+            }
+        }
+    }
+    CHECK(methodChecked);
+    CHECK(funcChecked);
+}
+
+TEST_CASE("CodeLens - Computes reference count for class member within same class in same-named namespace")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("zombie_grenadier");
+    const std::string methodTarget = angel_lsp::test::GenerateRandomSymbolName("CheckTraceHullAttack");
+
+    std::string code = fmt::format("namespace {} {{\n"
+                                   "    final class {} {{\n"
+                                   "        void {}(int dist, int dmg, int type) {{}}\n"
+                                   "        void Attack() {{\n"
+                                   "            {}(70, 25, 0);\n"
+                                   "        }}\n"
+                                   "    }}\n"
+                                   "}}\n",
+                                   nsName, nsName, methodTarget, methodTarget);
+
+    CodeLensFixture fixture(std::move(code));
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool methodChecked = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.command.has_value() && lens.range.start.line == 2)
+        {
+            CHECK(lens.command->title == "1 reference");
+            methodChecked = true;
+        }
+    }
+    CHECK(methodChecked);
 }

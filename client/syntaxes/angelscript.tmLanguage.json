@@ -369,6 +369,9 @@
                   "include": "#types"
                 },
                 {
+                  "include": "#modifiers"
+                },
+                {
                   "include": "#storage"
                 }
               ]

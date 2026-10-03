@@ -182,6 +182,8 @@ struct GrammarSymbols
     TSSymbol symMemberExpression = 0;
     TSSymbol symIdentifier = 0;
     TSSymbol symLambdaParameterList = 0;
+    TSSymbol symType = 0;
+    TSSymbol symDatatype = 0;
 };
 
 /**
@@ -218,6 +220,8 @@ const GrammarSymbols& GetGrammarSymbols()
         gs.symMemberExpression = symFor(parser::nodes::MemberExpression);
         gs.symIdentifier = symFor(parser::nodes::Identifier);
         gs.symLambdaParameterList = symFor(parser::nodes::LambdaParameterList);
+        gs.symType = symFor(parser::nodes::Type);
+        gs.symDatatype = symFor(parser::nodes::Datatype);
         return gs;
     }();
     return s_symbols;
@@ -310,6 +314,66 @@ const GrammarSymbols& GetGrammarSymbols()
         "!", "^^", "=", "+=", "-=", "*=",  "/=", "%=", "&=", "|=",  "^=", "<<=", ">>=", ">>>=", "&",
         "|", "^",  "~", "<<", ">>", ">>>", "?",  ":",  "@=", "and", "or", "xor", "not", "is",   "!is"};
     return s_operators.contains(text);
+}
+
+/**
+ * @brief Checks if a node is an '&' used as a type or parameter reference modifier.
+ * @param[in] node AST node for '&'.
+ * @param[in] syms Cached grammar symbols.
+ * @return True if node is enclosed in a type or parameter modifier construct.
+ */
+[[nodiscard]] inline bool IsReferenceModifierNode(TSNode node, const GrammarSymbols& syms) noexcept
+{
+    TSNode parent = ts_node_parent(node);
+    if (ts_node_is_null(parent))
+    {
+        return false;
+    }
+    const TSSymbol parentSym = ts_node_symbol(parent);
+    if (parentSym == syms.symParameter || parentSym == syms.symType || parentSym == syms.symDatatype ||
+        parentSym == syms.symTemplateTypeList || parentSym == syms.symCastExpression)
+    {
+        return true;
+    }
+    TSNode grandParent = ts_node_parent(parent);
+    if (!ts_node_is_null(grandParent))
+    {
+        const TSSymbol gpSym = ts_node_symbol(grandParent);
+        return gpSym == syms.symParameter || gpSym == syms.symType || gpSym == syms.symDatatype;
+    }
+    return false;
+}
+
+/**
+ * @brief Classifies an operator or punctuation capture node into token type and priority.
+ * @param[in] node AST capture node.
+ * @param[in] sourceCode Document source text.
+ * @param[in] syms Cached grammar symbols.
+ * @return Optional pair of (tokenType, priority), or nullopt if ignored.
+ */
+[[nodiscard]] inline std::optional<std::pair<uint32_t, int>>
+ClassifyOperatorOrPunctuation(TSNode node, std::string_view sourceCode, const GrammarSymbols& syms) noexcept
+{
+    const uint32_t sb = ts_node_start_byte(node);
+    const uint32_t eb = ts_node_end_byte(node);
+    if (sb >= eb || eb > sourceCode.size())
+    {
+        return std::nullopt;
+    }
+    std::string_view text(sourceCode.data() + sb, eb - sb);
+    if (text == "@")
+    {
+        return std::make_pair(Type_Modifier, 8);
+    }
+    if (text == "&" && IsReferenceModifierNode(node, syms))
+    {
+        return std::make_pair(Type_Modifier, 8);
+    }
+    if (IsPunctuationOrBracket(text) || !IsGenuineOperator(text))
+    {
+        return std::nullopt;
+    }
+    return std::make_pair(Type_Operator, 4);
 }
 
 /**
@@ -1360,6 +1424,7 @@ void CollectHighlightsTokens(const HighlightsQueryData& highlights, const TokenR
     TSQueryCursor* cursor = parser::QueryRegistry::GetThreadLocalCursor();
     ts_query_cursor_exec(cursor, highlights.query, ts_tree_root_node(ctx.request.tree));
 
+    const auto& syms = GetGrammarSymbols();
     TSQueryMatch match;
     uint32_t captureIndex = 0;
 
@@ -1384,22 +1449,13 @@ void CollectHighlightsTokens(const HighlightsQueryData& highlights, const TokenR
 
         if (rule.isOperatorOrPunctuation)
         {
-            const uint32_t sb = ts_node_start_byte(node);
-            const uint32_t eb = ts_node_end_byte(node);
-            if (sb < eb && eb <= ctx.request.sourceCode.size())
-            {
-                std::string_view text(ctx.request.sourceCode.data() + sb, eb - sb);
-                if (IsPunctuationOrBracket(text) || !IsGenuineOperator(text))
-                {
-                    continue;
-                }
-                tokenType = Type_Operator;
-                priority = 4;
-            }
-            else
+            auto opRes = ClassifyOperatorOrPunctuation(node, ctx.request.sourceCode, syms);
+            if (!opRes.has_value())
             {
                 continue;
             }
+            tokenType = opRes->first;
+            priority = opRes->second;
         }
 
         tokenType = RefineCapturedTokenType(node, tokenType, ctx);

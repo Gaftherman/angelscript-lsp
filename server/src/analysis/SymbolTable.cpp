@@ -1627,6 +1627,7 @@ std::string SymbolTable::FindEnclosingClassName(std::string_view uri, uint32_t l
 {
     std::string enclosingClass;
     std::string uriStr(uri);
+    uint32_t bestSpan = UINT32_MAX;
     ForEachSymbolInFile(uriStr,
                         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
                         {
@@ -1637,7 +1638,12 @@ std::string SymbolTable::FindEnclosingClassName(std::string_view uri, uint32_t l
                                 {
                                     if (line >= sym.startLine && line <= sym.endLine)
                                     {
-                                        enclosingClass = sym.name;
+                                        uint32_t span = sym.endLine - sym.startLine;
+                                        if (span <= bestSpan)
+                                        {
+                                            bestSpan = span;
+                                            enclosingClass = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                                        }
                                     }
                                 }
                             }

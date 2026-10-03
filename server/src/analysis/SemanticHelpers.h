@@ -160,6 +160,23 @@ bool IsReservedKeyword(const std::string& name);
  */
 [[nodiscard]] std::string_view ParentScope(std::string_view name) noexcept;
 
+/**
+ * @brief Checks if two type or class names match directly or by short scope segment.
+ * @param[in] a First type name.
+ * @param[in] b Second type name.
+ * @return True if names match directly or by unqualified segment.
+ */
+[[nodiscard]] inline bool MatchesDeclOrScope(std::string_view a, std::string_view b) noexcept
+{
+    if (a == b)
+    {
+        return true;
+    }
+    auto segA = LastScopeSegment(a);
+    auto segB = LastScopeSegment(b);
+    return a == segB || segA == b || segA == segB;
+}
+
 [[nodiscard]] constexpr bool IsFloatingPointPrimitive(std::string_view typeName) noexcept
 {
     return parser::primitives::IsFloatingPoint(typeName);

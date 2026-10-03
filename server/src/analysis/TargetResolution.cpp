@@ -1199,7 +1199,8 @@ bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const analys
                                const std::unordered_set<std::string>& relatedSet, const OccurrenceScanContext& ctx)
 {
     std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
-    if (encClass.empty() || !relatedSet.contains(encClass))
+    if (encClass.empty() ||
+        (!relatedSet.contains(encClass) && !relatedSet.contains(std::string(analysis::LastScopeSegment(encClass)))))
     {
         return false;
     }
@@ -1207,7 +1208,7 @@ bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const analys
     bool inTargetHierarchy = false;
     std::string cleanEnc = analysis::CleanBaseType(encClass);
     std::string cleanDecl = analysis::CleanBaseType(ctx.request.target.declaringClass);
-    if (cleanEnc == cleanDecl || cleanDecl.empty())
+    if (cleanDecl.empty() || analysis::MatchesDeclOrScope(cleanEnc, cleanDecl))
     {
         inTargetHierarchy = true;
     }
@@ -1216,7 +1217,7 @@ bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const analys
         auto hierarchy = analysis::GetInheritedTypeHierarchy(cleanEnc, ctx.request.symbolTable);
         for (const auto& ancestor : hierarchy)
         {
-            if (analysis::CleanBaseType(ancestor) == cleanDecl)
+            if (analysis::MatchesDeclOrScope(analysis::CleanBaseType(ancestor), cleanDecl))
             {
                 inTargetHierarchy = true;
                 break;
@@ -1337,7 +1338,8 @@ bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const anal
         if (ctx.fileUri != ctx.request.currentUri)
         {
             std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
-            return encClass.empty() || relatedSet.contains(encClass);
+            return encClass.empty() || relatedSet.contains(encClass) ||
+                   relatedSet.contains(std::string(analysis::LastScopeSegment(encClass)));
         }
         return false;
     }
@@ -1378,7 +1380,8 @@ void ScanDocumentForClassMember(const analysis::Scope* root, const std::unordere
                 ctx.request.target.access == analysis::AccessModifier::Protected)
             {
                 std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
-                if (encClass.empty() || !relatedSet.contains(encClass))
+                if (encClass.empty() || (!relatedSet.contains(encClass) &&
+                                         !relatedSet.contains(std::string(analysis::LastScopeSegment(encClass)))))
                 {
                     continue;
                 }

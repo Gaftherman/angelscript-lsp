@@ -7,6 +7,8 @@
 #include "parser/AngelScriptParser.h"
 #include "parser/Keywords.h"
 
+#include "helpers/TestUtils.h"
+#include "spdlog/fmt/fmt.h"
 #include <algorithm>
 #include <array>
 #include <filesystem>
@@ -1406,6 +1408,57 @@ TEST_CASE("SemanticTokensHandler - Golden Test: Bit-for-bit identity across Node
     // Test delta computation stability: unchanged token sequence gives empty delta
     auto deltaEdits = ComputeSemanticTokensDelta(tokensFallback.data, tokensWithIndex.data);
     CHECK(deltaEdits.empty());
+
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("SemanticTokensHandler - Handle '@' and parameter reference '&out' classified as modifiers")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("PlayerEntity");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("HitTarget");
+    const std::string trName = angel_lsp::test::GenerateRandomSymbolName("TraceResult");
+
+    std::string code = fmt::format("class {} {{}}\n"
+                                   "class {} {{}}\n"
+                                   "void {}({}@ player, {}&out tr)\n"
+                                   "{{\n"
+                                   "    {}@ p = cast<{}@>(player);\n"
+                                   "}}\n",
+                                   clsName, trName, fnName, clsName, trName, clsName, clsName);
+
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{nullptr};
+    SymbolTable table;
+    collector.CollectSymbols("file:///test_modifiers.as", code, parser, table);
+
+    LocalScopeCollector scopeCollector{nullptr};
+    std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(code, parser);
+
+    SemanticTokensRequest request{"file:///test_modifiers.as", code, tree, table};
+    request.scopeRoot = scopeRoot;
+    const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
+
+    bool foundAtInCast = false;
+    bool foundAmpInParam = false;
+    for (const auto& tok : tokens)
+    {
+        std::string tokText = TextAt(code, tok.line, tok.character, tok.length);
+        if (tokText == "@")
+        {
+            CHECK(tok.type == "modifier");
+            foundAtInCast = true;
+        }
+        else if (tokText == "&")
+        {
+            CHECK(tok.type == "modifier");
+            foundAmpInParam = true;
+        }
+    }
+    CHECK(foundAtInCast);
+    CHECK(foundAmpInParam);
 
     ts_tree_delete(tree);
 }

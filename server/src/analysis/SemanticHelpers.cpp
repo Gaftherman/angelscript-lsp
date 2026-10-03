@@ -935,7 +935,12 @@ std::vector<Symbol> FindHierarchyTypeSymbols(const std::string& curType, const S
     const auto symbols = symbolTable.FindSymbolsPtr(curType);
     if (symbols && !symbols->empty())
     {
-        return *symbols;
+        const bool hasType = std::any_of(symbols->begin(), symbols->end(), [](const Symbol& s)
+                                         { return s.type == SymbolType::Class || s.type == SymbolType::Interface; });
+        if (hasType)
+        {
+            return *symbols;
+        }
     }
     if (curType.find("::") == std::string::npos)
     {

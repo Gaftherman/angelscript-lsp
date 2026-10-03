@@ -165,6 +165,8 @@ bool IsDeclarationOrDefinition(const std::string& fileUri, const analysis::Local
     return false;
 }
 
+using analysis::MatchesDeclOrScope;
+
 /**
  * @brief Checks whether an enclosing class resides within the target symbol's inheritance hierarchy.
  * @param[in] encClass Enclosing class name.
@@ -183,14 +185,14 @@ bool IsInTargetHierarchy(const std::string& encClass, const std::vector<analysis
             continue;
         }
         std::string cleanDecl = analysis::CleanBaseType(s.containerName);
-        if (cleanEnc == cleanDecl)
+        if (MatchesDeclOrScope(cleanEnc, cleanDecl))
         {
             return true;
         }
         auto hierarchy = analysis::GetInheritedTypeHierarchy(cleanEnc, symbolTable);
         for (const auto& ancestor : hierarchy)
         {
-            if (analysis::CleanBaseType(ancestor) == cleanDecl)
+            if (MatchesDeclOrScope(analysis::CleanBaseType(ancestor), cleanDecl))
             {
                 return true;
             }
@@ -211,7 +213,8 @@ bool IsCompatibleNonMemberAccess(const std::string& fileUri, const analysis::Loc
                                  const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
 {
     std::string encClass = GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine);
-    if (encClass.empty() || !criteria.compatibleClasses.contains(encClass))
+    if (encClass.empty() || (!criteria.compatibleClasses.contains(encClass) &&
+                             !criteria.compatibleClasses.contains(std::string(analysis::LastScopeSegment(encClass)))))
     {
         return false;
     }
@@ -396,6 +399,45 @@ bool MatchesCallArguments(const analysis::LocalReference& ref, const ReferenceCo
 }
 
 /**
+ * @brief Checks if a qualified member reference matches a target namespace.
+ * @param[in] fileUri Document URI.
+ * @param[in] ref Reference to check.
+ * @param[in] scope Lexical scope.
+ * @param[in] criteria Active search criteria.
+ * @return True if reference is qualified by the target namespace.
+ */
+bool MatchesTargetNamespaceQualifier(const std::string& fileUri, const analysis::LocalReference& ref,
+                                     const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
+{
+    if (criteria.targetNamespace.empty())
+    {
+        return false;
+    }
+    if (fileUri == criteria.request.uri)
+    {
+        std::string q = GetMemberObjectText(criteria.request, ref);
+        if (q == criteria.targetNamespace || q.ends_with("::" + criteria.targetNamespace))
+        {
+            return true;
+        }
+    }
+    if (scope)
+    {
+        for (const auto& candRef : scope->references)
+        {
+            if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
+            {
+                if (candRef.name == criteria.targetNamespace || candRef.name.ends_with("::" + criteria.targetNamespace))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/**
  * @brief Checks whether a reference has valid accessibility and scope visibility.
  * @param[in] fileUri Document URI.
  * @param[in] ref Reference under test.
@@ -412,7 +454,9 @@ bool IsValidAccess(const std::string& fileUri, const analysis::LocalReference& r
             criteria.targetAccess == analysis::AccessModifier::Protected)
         {
             std::string encClass = GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine);
-            if (encClass.empty() || !criteria.compatibleClasses.contains(encClass))
+            if (encClass.empty() ||
+                (!criteria.compatibleClasses.contains(encClass) &&
+                 !criteria.compatibleClasses.contains(std::string(analysis::LastScopeSegment(encClass)))))
             {
                 return false;
             }
@@ -423,15 +467,7 @@ bool IsValidAccess(const std::string& fileUri, const analysis::LocalReference& r
 
     if (ref.isMemberAccess)
     {
-        if (!criteria.targetNamespace.empty())
-        {
-            std::string q = GetMemberObjectText(criteria.request, ref);
-            if (q == criteria.targetNamespace || q.ends_with("::" + criteria.targetNamespace))
-            {
-                return true;
-            }
-        }
-        return false;
+        return MatchesTargetNamespaceQualifier(fileUri, ref, scope, criteria);
     }
 
     if (!criteria.targetNamespace.empty())
