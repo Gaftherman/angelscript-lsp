@@ -173,6 +173,7 @@ Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& s
     SetDefinedWordsFrom(std::string(), m_config.definedWords);
     m_formatBraceStyleKR.store(BraceStyleIsKR(m_config.format.braceStyle), std::memory_order_relaxed);
     m_formatSpacesInsideParentheses.store(m_config.format.spacesInsideParentheses, std::memory_order_relaxed);
+    m_formatKeepEmptyBlocksOnSingleLine.store(m_config.format.keepEmptyBlocksOnSingleLine, std::memory_order_relaxed);
 
     BuildDiagnosticSeverityOverrides();
 
@@ -720,7 +721,7 @@ void Server::ConfigureWorkspaceCapabilities(lsp::ServerCapabilities& caps) const
     caps.workspace = workspaceOpts;
 
     lsp::ExecuteCommandOptions cmdOpts;
-    cmdOpts.commands = lsp::Array<lsp::String>{"angelscript.rescanWorkspace", "angelscript.listPredefinedStubs"};
+    cmdOpts.commands = lsp::Array<lsp::String>{"angelscript.listPredefinedStubs"};
     caps.executeCommandProvider = cmdOpts;
 }
 
@@ -961,6 +962,45 @@ std::shared_ptr<const std::string> Server::FindDocumentText(const std::string& u
     return nullptr;
 }
 
+std::shared_ptr<const document::Document> Server::ResolveVirtualDocument(const std::string& key,
+                                                                         const std::string& uriStr)
+{
+    const std::string& targetUri = key.starts_with("angelscript-virtual:") ? key : uriStr;
+    std::string text = GenerateVirtualMixinDocument(targetUri);
+    if (text.empty())
+    {
+        return nullptr;
+    }
+    document::TreePtr tree = m_parser ? document::MakeTreePtr(m_parser->Parse(text)) : document::MakeTreePtr(nullptr);
+    m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{key, text, 0, std::move(tree), key});
+    return m_documentStore.GetDocument(key);
+}
+
+std::optional<Server::OpenDocument> Server::LookupPreindexedFallback(const std::string& key)
+{
+    if (angel_lsp::utils::IsPredefinedFile(key, m_config.info.predefinedFileExtension))
+    {
+        auto preindexed = m_predefinedManager.GetPreindexedDocument(key);
+        if (!preindexed && m_workspaceStore)
+        {
+            preindexed = m_workspaceStore->GetPreindexedDocument(key);
+        }
+        if (preindexed)
+        {
+            return OpenDocument{key, &preindexed->text, preindexed->tree.get(), preindexed, nullptr};
+        }
+        return std::nullopt;
+    }
+    if (m_workspaceStore)
+    {
+        if (auto wsDoc = m_workspaceStore->GetPreindexedDocument(key))
+        {
+            return OpenDocument{key, &wsDoc->text, wsDoc->tree.get(), wsDoc, nullptr};
+        }
+    }
+    return std::nullopt;
+}
+
 std::optional<Server::OpenDocument> Server::LookupOpenDocument(const std::string& uriStr)
 {
     const std::string key = DocumentKey(uriStr);
@@ -970,22 +1010,15 @@ std::optional<Server::OpenDocument> Server::LookupOpenDocument(const std::string
     {
         if (key.starts_with("angelscript-virtual:") || uriStr.starts_with("angelscript-virtual:"))
         {
-            std::string text = GenerateVirtualMixinDocument(key.starts_with("angelscript-virtual:") ? key : uriStr);
-            if (!text.empty())
-            {
-                document::TreePtr tree =
-                    m_parser ? document::MakeTreePtr(m_parser->Parse(text)) : document::MakeTreePtr(nullptr);
-                m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{key, text, 0, std::move(tree), key});
-                doc = m_documentStore.GetDocument(key);
-            }
-            else
+            doc = ResolveVirtualDocument(key, uriStr);
+            if (!doc)
             {
                 return std::nullopt;
             }
         }
         else
         {
-            return std::nullopt;
+            return LookupPreindexedFallback(key);
         }
     }
 

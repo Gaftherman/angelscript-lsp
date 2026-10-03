@@ -1,11 +1,11 @@
 #include <doctest/doctest.h>
 
-#include "config/ServerConfig.h"
-#include "features/inlay_hint/InlayHintHandler.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "config/ServerConfig.h"
+#include "features/inlay_hint/InlayHintHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
@@ -16,105 +16,116 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    std::string GetHintLabel(const lsp::InlayHint& hint)
+std::string GetHintLabel(const lsp::InlayHint& hint)
+{
+    if (std::holds_alternative<std::string>(hint.label))
     {
-        if (std::holds_alternative<std::string>(hint.label))
+        return std::get<std::string>(hint.label);
+    }
+    if (std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+    {
+        std::string res;
+        for (const auto& part : std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label))
         {
-            return std::get<std::string>(hint.label);
+            res += part.value;
         }
-        if (std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label))
-        {
-            std::string res;
-            for (const auto& part : std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label))
-            {
-                res += part.value;
-            }
-            return res;
-        }
+        return res;
+    }
+    return "";
+}
+
+std::string GetTooltipText(const lsp::Opt<lsp::OneOf<std::string, lsp::MarkupContent>>& opt)
+{
+    if (!opt.has_value())
+    {
         return "";
     }
-
-    struct TestEnvironment
+    if (std::holds_alternative<std::string>(*opt))
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        std::string uri = "file:///test.as";
-        std::string sourceCode;
-        TSTree *tree = nullptr;
-
-        TestEnvironment(const std::string &code)
-            : sourceCode(code)
-        {
-            tree = parser.Parse(sourceCode);
-            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(uri, std::move(rootScope));
-            }
-        }
-
-        ~TestEnvironment()
-        {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
-        }
-
-        std::optional<std::vector<lsp::InlayHint>> InlayHints(
-            lsp::Range range = lsp::Range{{0, 0}, {0, 0}},
-            bool suppressWhenArgumentMatchesName = false,
-            size_t maxParameters = 0,
-            size_t maxLength = 0,
-            config::OmittedDefaultArgumentsMode omittedDefaultArguments =
-                config::OmittedDefaultArgumentsMode::NameAndValue)
-        {
-            InlayHintRequest req{uri,
-                                 sourceCode,
-                                 tree,
-                                 range,
-                                 symbolTable,
-                                 scopeIndex,
-                                 suppressWhenArgumentMatchesName,
-                                 nullptr,
-                                 maxParameters,
-                                 maxLength,
-                                 omittedDefaultArguments};
-            return GetInlayHints(req);
-        }
-
-        std::optional<std::vector<lsp::InlayHint>> InlayHintsWithConfig(
-            const config::ServerConfig& config,
-            lsp::Range range = lsp::Range{{0, 0}, {0, 0}})
-        {
-            InlayHintRequest req{uri,
-                                 sourceCode,
-                                 tree,
-                                 range,
-                                 symbolTable,
-                                 scopeIndex,
-                                 false,
-                                 nullptr,
-                                 0,
-                                 0,
-                                 config::OmittedDefaultArgumentsMode::NameAndValue,
-                                 &config};
-            return GetInlayHints(req);
-        }
-    };
+        return std::get<std::string>(*opt);
+    }
+    if (std::holds_alternative<lsp::MarkupContent>(*opt))
+    {
+        return std::get<lsp::MarkupContent>(*opt).value;
+    }
+    return "";
 }
+
+struct TestEnvironment
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    std::string uri = "file:///test.as";
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    TestEnvironment(const std::string& code) : sourceCode(code)
+    {
+        tree = parser.Parse(sourceCode);
+        symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
+        auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
+        if (rootScope)
+        {
+            scopeIndex.SetScopeTree(uri, std::move(rootScope));
+        }
+    }
+
+    ~TestEnvironment()
+    {
+        if (tree)
+        {
+            ts_tree_delete(tree);
+        }
+    }
+
+    std::optional<std::vector<lsp::InlayHint>> InlayHints(
+        lsp::Range range = lsp::Range{{0, 0}, {0, 0}}, bool suppressWhenArgumentMatchesName = false,
+        size_t maxParameters = 0, size_t maxLength = 0,
+        config::OmittedDefaultArgumentsMode omittedDefaultArguments = config::OmittedDefaultArgumentsMode::NameAndValue)
+    {
+        InlayHintRequest req{uri,
+                             sourceCode,
+                             tree,
+                             range,
+                             symbolTable,
+                             scopeIndex,
+                             suppressWhenArgumentMatchesName,
+                             nullptr,
+                             maxParameters,
+                             maxLength,
+                             omittedDefaultArguments};
+        return GetInlayHints(req);
+    }
+
+    std::optional<std::vector<lsp::InlayHint>> InlayHintsWithConfig(const config::ServerConfig& config,
+                                                                    lsp::Range range = lsp::Range{{0, 0}, {0, 0}})
+    {
+        InlayHintRequest req{uri,
+                             sourceCode,
+                             tree,
+                             range,
+                             symbolTable,
+                             scopeIndex,
+                             false,
+                             nullptr,
+                             0,
+                             0,
+                             config.features.inlayHintsOmittedDefaultArguments,
+                             &config};
+        return GetInlayHints(req);
+    }
+};
+} // namespace
 
 TEST_CASE("InlayHintHandler - Basic Function Call Parameter Hints")
 {
-    std::string code =
-        "void Test(int a, float b) {}\n"
-        "void main() {\n"
-        "    Test(10, 2.5f);\n"
-        "}\n";
+    std::string code = "void Test(int a, float b) {}\n"
+                       "void main() {\n"
+                       "    Test(10, 2.5f);\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -139,11 +150,10 @@ TEST_CASE("InlayHintHandler - Basic Function Call Parameter Hints")
 
 TEST_CASE("InlayHintHandler - Exclusion Rule: Named Arguments")
 {
-    std::string code =
-        "void SetValues(int x, int y) {}\n"
-        "void main() {\n"
-        "    SetValues(x: 10, 20);\n"
-        "}\n";
+    std::string code = "void SetValues(int x, int y) {}\n"
+                       "void main() {\n"
+                       "    SetValues(x: 10, 20);\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -157,13 +167,12 @@ TEST_CASE("InlayHintHandler - Exclusion Rule: Named Arguments")
 
 TEST_CASE("InlayHintHandler - Exclusion Rule: Same-Name Arguments")
 {
-    std::string code =
-        "void SetDimensions(int width, int height) {}\n"
-        "void main() {\n"
-        "    int width = 100;\n"
-        "    int h = 200;\n"
-        "    SetDimensions(width, h);\n"
-        "}\n";
+    std::string code = "void SetDimensions(int width, int height) {}\n"
+                       "void main() {\n"
+                       "    int width = 100;\n"
+                       "    int h = 200;\n"
+                       "    SetDimensions(width, h);\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -174,7 +183,7 @@ TEST_CASE("InlayHintHandler - Exclusion Rule: Same-Name Arguments")
         bool foundWidthHint = false;
         bool foundHeightHint = false;
 
-        for (const auto &hint : *hints)
+        for (const auto& hint : *hints)
         {
             std::string l = GetHintLabel(hint);
             if (l == "width:")
@@ -193,12 +202,12 @@ TEST_CASE("InlayHintHandler - Exclusion Rule: Same-Name Arguments")
 
     // When explicitly suppressed (suppressWhenArgumentMatchesName = true), 'width:' must be suppressed
     {
-        auto hints = env.InlayHints(lsp::Range{ {0, 0}, {0, 0} }, true);
+        auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, true);
         REQUIRE(hints.has_value());
         bool foundWidthHint = false;
         bool foundHeightHint = false;
 
-        for (const auto &hint : *hints)
+        for (const auto& hint : *hints)
         {
             std::string l = GetHintLabel(hint);
             if (l == "width:")
@@ -218,15 +227,14 @@ TEST_CASE("InlayHintHandler - Exclusion Rule: Same-Name Arguments")
 
 TEST_CASE("InlayHintHandler - Class Method Call with Inheritance")
 {
-    std::string code =
-        "class Base {\n"
-        "    void Attack(int damage, float radius) {}\n"
-        "}\n"
-        "class Player : Base {}\n"
-        "void main() {\n"
-        "    Player p;\n"
-        "    p.Attack(50, 10.0f);\n"
-        "}\n";
+    std::string code = "class Base {\n"
+                       "    void Attack(int damage, float radius) {}\n"
+                       "}\n"
+                       "class Player : Base {}\n"
+                       "void main() {\n"
+                       "    Player p;\n"
+                       "    p.Attack(50, 10.0f);\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -235,7 +243,7 @@ TEST_CASE("InlayHintHandler - Class Method Call with Inheritance")
     bool foundDamage = false;
     bool foundRadius = false;
 
-    for (const auto &hint : *hints)
+    for (const auto& hint : *hints)
     {
         std::string l = GetHintLabel(hint);
         if (l == "damage:")
@@ -254,14 +262,13 @@ TEST_CASE("InlayHintHandler - Class Method Call with Inheritance")
 
 TEST_CASE("InlayHintHandler - Auto Variable Type Deduction for Literals")
 {
-    std::string code =
-        "void main() {\n"
-        "    auto a = 42;\n"
-        "    auto b = 3.14f;\n"
-        "    auto c = 2.718;\n"
-        "    auto d = true;\n"
-        "    auto e = \"hello\";\n"
-        "}\n";
+    std::string code = "void main() {\n"
+                       "    auto a = 42;\n"
+                       "    auto b = 3.14f;\n"
+                       "    auto c = 2.718;\n"
+                       "    auto d = true;\n"
+                       "    auto e = \"hello\";\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -270,7 +277,7 @@ TEST_CASE("InlayHintHandler - Auto Variable Type Deduction for Literals")
     REQUIRE(hints->size() == 5);
 
     std::vector<std::string> labels;
-    for (const auto &hint : *hints)
+    for (const auto& hint : *hints)
     {
         std::string l = GetHintLabel(hint);
         labels.push_back(l);
@@ -288,14 +295,13 @@ TEST_CASE("InlayHintHandler - Auto Variable Type Deduction for Literals")
 
 TEST_CASE("InlayHintHandler - Auto Variable Deduction for Function Calls and Casts")
 {
-    std::string code =
-        "class Actor {}\n"
-        "Actor@ SpawnActor() { return null; }\n"
-        "interface IWeapon {}\n"
-        "void main() {\n"
-        "    auto actor = SpawnActor();\n"
-        "    auto weapon = cast<IWeapon>(null);\n"
-        "}\n";
+    std::string code = "class Actor {}\n"
+                       "Actor@ SpawnActor() { return null; }\n"
+                       "interface IWeapon {}\n"
+                       "void main() {\n"
+                       "    auto actor = SpawnActor();\n"
+                       "    auto weapon = cast<IWeapon>(null);\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -306,11 +312,9 @@ TEST_CASE("InlayHintHandler - Auto Variable Deduction for Function Calls and Cas
     bool foundActorType = false;
     bool foundWeaponType = false;
 
-    for (const auto &hint : *hints)
+    for (const auto& hint : *hints)
     {
-        std::string l = std::holds_alternative<std::string>(hint.label)
-                            ? std::get<std::string>(hint.label)
-                            : "";
+        std::string l = std::holds_alternative<std::string>(hint.label) ? std::get<std::string>(hint.label) : "";
         if (l == ": Actor@")
         {
             foundActorType = true;
@@ -331,12 +335,16 @@ TEST_CASE("InlayHintHandler - Auto Handle Variable Deduction with auto@")
     const std::string funcName = test::GenerateRandomSymbolName("SpawnActor");
     const std::string varName = test::GenerateRandomSymbolName("pActor");
 
-    const std::string code =
-        "class " + clsName + " {}\n"
-        "" + clsName + "@ " + funcName + "() { return null; }\n"
-        "void main() {\n"
-        "    auto@ " + varName + " = " + funcName + "();\n"
-        "}\n";
+    const std::string code = "class " + clsName +
+                             " {}\n"
+                             "" +
+                             clsName + "@ " + funcName +
+                             "() { return null; }\n"
+                             "void main() {\n"
+                             "    auto@ " +
+                             varName + " = " + funcName +
+                             "();\n"
+                             "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -345,11 +353,9 @@ TEST_CASE("InlayHintHandler - Auto Handle Variable Deduction with auto@")
     REQUIRE_FALSE(hints->empty());
 
     bool foundHandleHint = false;
-    for (const auto &hint : *hints)
+    for (const auto& hint : *hints)
     {
-        std::string l = std::holds_alternative<std::string>(hint.label)
-                            ? std::get<std::string>(hint.label)
-                            : "";
+        std::string l = std::holds_alternative<std::string>(hint.label) ? std::get<std::string>(hint.label) : "";
         if (l == ": " + clsName + "@")
         {
             foundHandleHint = true;
@@ -361,18 +367,17 @@ TEST_CASE("InlayHintHandler - Auto Handle Variable Deduction with auto@")
 
 TEST_CASE("InlayHintHandler - Sub-range Filtering")
 {
-    std::string code =
-        "void Foo(int x) {}\n"
-        "void Bar(int y) {}\n"
-        "void main() {\n"
-        "    Foo(1);\n"
-        "    Bar(2);\n"
-        "}\n";
+    std::string code = "void Foo(int x) {}\n"
+                       "void Bar(int y) {}\n"
+                       "void main() {\n"
+                       "    Foo(1);\n"
+                       "    Bar(2);\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
     // Range restricting to only line 3 (Foo(1))
-    lsp::Range r{ {3, 0}, {3, 20} };
+    lsp::Range r{{3, 0}, {3, 20}};
     auto hints = env.InlayHints(r);
 
     REQUIRE(hints.has_value());
@@ -383,19 +388,18 @@ TEST_CASE("InlayHintHandler - Sub-range Filtering")
 
 TEST_CASE("InlayHintHandler - Operator Overload Auto Type Deduction")
 {
-    std::string code =
-        "class Matrix {\n"
-        "    Matrix opMul(float scalar) const { return Matrix(); }\n"
-        "}\n"
-        "class Vector {\n"
-        "    Vector opMul_r(const Matrix &in m) const { return Vector(); }\n"
-        "}\n"
-        "void Main() {\n"
-        "    Matrix m;\n"
-        "    Vector v;\n"
-        "    auto res1 = m * 2.0f;\n"
-        "    auto res2 = m * v;\n"
-        "}\n";
+    std::string code = "class Matrix {\n"
+                       "    Matrix opMul(float scalar) const { return Matrix(); }\n"
+                       "}\n"
+                       "class Vector {\n"
+                       "    Vector opMul_r(const Matrix &in m) const { return Vector(); }\n"
+                       "}\n"
+                       "void Main() {\n"
+                       "    Matrix m;\n"
+                       "    Vector v;\n"
+                       "    auto res1 = m * 2.0f;\n"
+                       "    auto res2 = m * v;\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -404,19 +408,15 @@ TEST_CASE("InlayHintHandler - Operator Overload Auto Type Deduction")
     bool foundMatrix = false;
     bool foundVector = false;
 
-    for (const auto &hint : *hints)
+    for (const auto& hint : *hints)
     {
-        std::string l = std::holds_alternative<std::string>(hint.label)
-                            ? std::get<std::string>(hint.label)
-                            : "";
+        std::string l = std::holds_alternative<std::string>(hint.label) ? std::get<std::string>(hint.label) : "";
         if (l == ": Matrix")
         {
             foundMatrix = true;
             if (hint.tooltip.has_value())
             {
-                std::string t = std::holds_alternative<std::string>(*hint.tooltip)
-                                    ? std::get<std::string>(*hint.tooltip)
-                                    : "";
+                std::string t = GetTooltipText(hint.tooltip);
                 CHECK(t == "Deduced type: Matrix");
             }
         }
@@ -425,9 +425,7 @@ TEST_CASE("InlayHintHandler - Operator Overload Auto Type Deduction")
             foundVector = true;
             if (hint.tooltip.has_value())
             {
-                std::string t = std::holds_alternative<std::string>(*hint.tooltip)
-                                    ? std::get<std::string>(*hint.tooltip)
-                                    : "";
+                std::string t = GetTooltipText(hint.tooltip);
                 CHECK(t == "Deduced type: Vector");
             }
         }
@@ -439,33 +437,33 @@ TEST_CASE("InlayHintHandler - Operator Overload Auto Type Deduction")
 
 TEST_CASE("InlayHintHandler - Robustness with Empty / Null Tree")
 {
-    InlayHintRequest req{ "file:///empty.as", "", nullptr, lsp::Range{}, SymbolTable{}, ScopeIndex{} };
+    InlayHintRequest req{"file:///empty.as", "", nullptr, lsp::Range{}, SymbolTable{}, ScopeIndex{}};
     auto hints = GetInlayHints(req);
     CHECK(!hints.has_value());
 }
 
 TEST_CASE("InlayHintHandler - ShootGrenade and trailing parameter hints")
 {
-    std::string code =
-        "namespace INS2GLPROJECTILE {\n"
-        "    void ShootGrenade(int pevOwner, int vecStart, int vecVelocity, float dmg, string model, bool bRocketExplosions = false, const string& in szName = \"proj_ins2gl\") {}\n"
-        "}\n"
-        "void main() {\n"
-        "    INS2GLPROJECTILE::ShootGrenade(1, 2, 3, 4.0f, \"gmodel\", false, \"proj_name\");\n"
-        "}\n";
+    std::string code = "namespace INS2GLPROJECTILE {\n"
+                       "    void ShootGrenade(int pevOwner, int vecStart, int vecVelocity, float dmg, string model, "
+                       "bool bRocketExplosions = false, const string& in szName = \"proj_ins2gl\") {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    INS2GLPROJECTILE::ShootGrenade(1, 2, 3, 4.0f, \"gmodel\", false, \"proj_name\");\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
     REQUIRE(hints.has_value());
     std::vector<std::string> labels;
-    for (const auto &h : *hints)
+    for (const auto& h : *hints)
     {
         {
 
             std::string l = GetHintLabel(h);
 
-            if (!l.empty()) labels.push_back(l);
-
+            if (!l.empty())
+                labels.push_back(l);
         }
     }
     CHECK(labels.size() == 7);
@@ -491,14 +489,14 @@ TEST_CASE("InlayHintHandler - BaseClass and inherited unqualified call parameter
     auto hints = env.InlayHints();
     REQUIRE(hints.has_value());
     std::vector<std::string> labels;
-    for (const auto &h : *hints)
+    for (const auto& h : *hints)
     {
         {
 
             std::string l = GetHintLabel(h);
 
-            if (!l.empty()) labels.push_back(l);
-
+            if (!l.empty())
+                labels.push_back(l);
         }
     }
     CHECK(std::find(labels.begin(), labels.end(), "skiplocal:") != labels.end());
@@ -507,28 +505,27 @@ TEST_CASE("InlayHintHandler - BaseClass and inherited unqualified call parameter
 
 TEST_CASE("InlayHintHandler - Namespaced class this.Method parameter hints")
 {
-    std::string code =
-        "namespace INS2_L85A2 {\n"
-        "    class weapon_ins2l85a2 {\n"
-        "        void SendWeaponAnim(int anim, int body) {}\n"
-        "        void Test() {\n"
-        "            this.SendWeaponAnim(1, 2);\n"
-        "        }\n"
-        "    }\n"
-        "}\n";
+    std::string code = "namespace INS2_L85A2 {\n"
+                       "    class weapon_ins2l85a2 {\n"
+                       "        void SendWeaponAnim(int anim, int body) {}\n"
+                       "        void Test() {\n"
+                       "            this.SendWeaponAnim(1, 2);\n"
+                       "        }\n"
+                       "    }\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
     REQUIRE(hints.has_value());
     std::vector<std::string> labels;
-    for (const auto &h : *hints)
+    for (const auto& h : *hints)
     {
         {
 
             std::string l = GetHintLabel(h);
 
-            if (!l.empty()) labels.push_back(l);
-
+            if (!l.empty())
+                labels.push_back(l);
         }
     }
     CHECK(std::find(labels.begin(), labels.end(), "anim:") != labels.end());
@@ -537,28 +534,27 @@ TEST_CASE("InlayHintHandler - Namespaced class this.Method parameter hints")
 
 TEST_CASE("InlayHintHandler - Constructor Direct-Initialization Parameter Hints")
 {
-    std::string code =
-        "class NetworkMessage {\n"
-        "    NetworkMessage(int msg_type, int svc_message, int pEdict) {}\n"
-        "}\n"
-        "void main() {\n"
-        "    int edict = 1;\n"
-        "    NetworkMessage weapon(100, 200, edict);\n"
-        "}\n";
+    std::string code = "class NetworkMessage {\n"
+                       "    NetworkMessage(int msg_type, int svc_message, int pEdict) {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    int edict = 1;\n"
+                       "    NetworkMessage weapon(100, 200, edict);\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
     REQUIRE(hints.has_value());
 
     std::vector<std::string> labels;
-    for (const auto &h : *hints)
+    for (const auto& h : *hints)
     {
         {
 
             std::string l = GetHintLabel(h);
 
-            if (!l.empty()) labels.push_back(l);
-
+            if (!l.empty())
+                labels.push_back(l);
         }
     }
 
@@ -570,29 +566,28 @@ TEST_CASE("InlayHintHandler - Constructor Direct-Initialization Parameter Hints"
 
 TEST_CASE("InlayHintHandler - Mixin Method Parameter Hints")
 {
-    std::string code =
-        "mixin class PlayerMixin {\n"
-        "    void CommonAddToPlayer(int pPlayer) {}\n"
-        "}\n"
-        "class MyPlayer : PlayerMixin {\n"
-        "    void AddToPlayer() {\n"
-        "        CommonAddToPlayer(42);\n"
-        "    }\n"
-        "}\n";
+    std::string code = "mixin class PlayerMixin {\n"
+                       "    void CommonAddToPlayer(int pPlayer) {}\n"
+                       "}\n"
+                       "class MyPlayer : PlayerMixin {\n"
+                       "    void AddToPlayer() {\n"
+                       "        CommonAddToPlayer(42);\n"
+                       "    }\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
     REQUIRE(hints.has_value());
 
     std::vector<std::string> labels;
-    for (const auto &h : *hints)
+    for (const auto& h : *hints)
     {
         {
 
             std::string l = GetHintLabel(h);
 
-            if (!l.empty()) labels.push_back(l);
-
+            if (!l.empty())
+                labels.push_back(l);
         }
     }
 
@@ -601,29 +596,28 @@ TEST_CASE("InlayHintHandler - Mixin Method Parameter Hints")
 
 TEST_CASE("InlayHintHandler - Mixin Method Parameter Hints on Instance")
 {
-    std::string code =
-        "mixin class PlayerMixin {\n"
-        "    void CommonAddToPlayer(int pPlayer) {}\n"
-        "}\n"
-        "class MyPlayer : PlayerMixin {}\n"
-        "void main() {\n"
-        "    MyPlayer p;\n"
-        "    p.CommonAddToPlayer(42);\n"
-        "}\n";
+    std::string code = "mixin class PlayerMixin {\n"
+                       "    void CommonAddToPlayer(int pPlayer) {}\n"
+                       "}\n"
+                       "class MyPlayer : PlayerMixin {}\n"
+                       "void main() {\n"
+                       "    MyPlayer p;\n"
+                       "    p.CommonAddToPlayer(42);\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
     REQUIRE(hints.has_value());
 
     std::vector<std::string> labels;
-    for (const auto &h : *hints)
+    for (const auto& h : *hints)
     {
         {
 
             std::string l = GetHintLabel(h);
 
-            if (!l.empty()) labels.push_back(l);
-
+            if (!l.empty())
+                labels.push_back(l);
         }
     }
 
@@ -632,33 +626,32 @@ TEST_CASE("InlayHintHandler - Mixin Method Parameter Hints on Instance")
 
 TEST_CASE("InlayHintHandler - BaseClass Method Parameter Hints with Mixin in Hierarchy")
 {
-    std::string code =
-        "mixin class WeaponMixin {\n"
-        "    void MixinMethod() {}\n"
-        "}\n"
-        "class BasePlayerWeapon {\n"
-        "    BasePlayerWeapon@ BaseClass;\n"
-        "    void Holster(int pPlayer) {}\n"
-        "}\n"
-        "class MyWeapon : BasePlayerWeapon, WeaponMixin {\n"
-        "    void Holster() {\n"
-        "        BaseClass.Holster(42);\n"
-        "    }\n"
-        "}\n";
+    std::string code = "mixin class WeaponMixin {\n"
+                       "    void MixinMethod() {}\n"
+                       "}\n"
+                       "class BasePlayerWeapon {\n"
+                       "    BasePlayerWeapon@ BaseClass;\n"
+                       "    void Holster(int pPlayer) {}\n"
+                       "}\n"
+                       "class MyWeapon : BasePlayerWeapon, WeaponMixin {\n"
+                       "    void Holster() {\n"
+                       "        BaseClass.Holster(42);\n"
+                       "    }\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
     REQUIRE(hints.has_value());
 
     std::vector<std::string> labels;
-    for (const auto &h : *hints)
+    for (const auto& h : *hints)
     {
         {
 
             std::string l = GetHintLabel(h);
 
-            if (!l.empty()) labels.push_back(l);
-
+            if (!l.empty())
+                labels.push_back(l);
         }
     }
 
@@ -667,28 +660,27 @@ TEST_CASE("InlayHintHandler - BaseClass Method Parameter Hints with Mixin in Hie
 
 TEST_CASE("InlayHintHandler - Math Utility Object Parameter Hints")
 {
-    std::string code =
-        "class Math {\n"
-        "    void MakeVectors(float pitch, float yaw, float roll) {}\n"
-        "}\n"
-        "void main() {\n"
-        "    Math math;\n"
-        "    math.MakeVectors(10.0f, 20.0f, 30.0f);\n"
-        "}\n";
+    std::string code = "class Math {\n"
+                       "    void MakeVectors(float pitch, float yaw, float roll) {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Math math;\n"
+                       "    math.MakeVectors(10.0f, 20.0f, 30.0f);\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
     REQUIRE(hints.has_value());
 
     std::vector<std::string> labels;
-    for (const auto &h : *hints)
+    for (const auto& h : *hints)
     {
         {
 
             std::string l = GetHintLabel(h);
 
-            if (!l.empty()) labels.push_back(l);
-
+            if (!l.empty())
+                labels.push_back(l);
         }
     }
 
@@ -699,19 +691,18 @@ TEST_CASE("InlayHintHandler - Math Utility Object Parameter Hints")
 
 TEST_CASE("InlayHintHandler - Relaxed Parameter Name Matching Suppression")
 {
-    std::string code =
-        "void DoSomething(int value) {}\n"
-        "void main() {\n"
-        "    int value = 5;\n"
-        "    DoSomething(value);\n"
-        "}\n";
+    std::string code = "void DoSomething(int value) {}\n"
+                       "void main() {\n"
+                       "    int value = 5;\n"
+                       "    DoSomething(value);\n"
+                       "}\n";
 
     TestEnvironment env(code);
     // With explicit suppression (true), "value:" should be suppressed because arg.text == param.name
-    auto suppressedHints = env.InlayHints(lsp::Range{ {0, 0}, {0, 0} }, true);
+    auto suppressedHints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, true);
     REQUIRE(suppressedHints.has_value());
     bool foundSuppressed = false;
-    for (const auto &h : *suppressedHints)
+    for (const auto& h : *suppressedHints)
     {
         if (GetHintLabel(h) == "value:")
         {
@@ -721,10 +712,10 @@ TEST_CASE("InlayHintHandler - Relaxed Parameter Name Matching Suppression")
     CHECK(!foundSuppressed);
 
     // With relaxed suppression (false), "value:" hint should be provided
-    auto relaxedHints = env.InlayHints(lsp::Range{ {0, 0}, {0, 0} }, false);
+    auto relaxedHints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false);
     REQUIRE(relaxedHints.has_value());
     bool foundRelaxed = false;
-    for (const auto &h : *relaxedHints)
+    for (const auto& h : *relaxedHints)
     {
         if (GetHintLabel(h) == "value:")
         {
@@ -737,7 +728,7 @@ TEST_CASE("InlayHintHandler - Relaxed Parameter Name Matching Suppression")
     auto defaultHints = env.InlayHints();
     REQUIRE(defaultHints.has_value());
     bool foundDefault = false;
-    for (const auto &h : *defaultHints)
+    for (const auto& h : *defaultHints)
     {
         if (GetHintLabel(h) == "value:")
         {
@@ -763,14 +754,14 @@ TEST_CASE("InlayHintHandler - Complex Call Involving Namespace Member and Overlo
 
     REQUIRE(hints.has_value());
     std::vector<std::string> labels;
-    for (const auto &h : *hints)
+    for (const auto& h : *hints)
     {
         {
 
             std::string l = GetHintLabel(h);
 
-            if (!l.empty()) labels.push_back(l);
-
+            if (!l.empty())
+                labels.push_back(l);
         }
     }
     CHECK(std::find(labels.begin(), labels.end(), "channel:") != labels.end());
@@ -799,14 +790,14 @@ TEST_CASE("InlayHintHandler - Complex Call Involving Dot-Accessed Namespace Meth
 
     REQUIRE(hints.has_value());
     std::vector<std::string> labels;
-    for (const auto &h : *hints)
+    for (const auto& h : *hints)
     {
         {
 
             std::string l = GetHintLabel(h);
 
-            if (!l.empty()) labels.push_back(l);
-
+            if (!l.empty())
+                labels.push_back(l);
         }
     }
     CHECK(std::find(labels.begin(), labels.end(), "channel:") != labels.end());
@@ -817,11 +808,10 @@ TEST_CASE("InlayHintHandler - Complex Call Involving Dot-Accessed Namespace Meth
 
 TEST_CASE("InlayHintHandler - Call With Default Parameters Retains All Provided Argument Hints")
 {
-    std::string code =
-        "void SetProperties(int width, int height, bool fullscreen = false, int refreshRate = 60) {}\n"
-        "void main() {\n"
-        "    SetProperties(1920, 1080, true);\n"
-        "}\n";
+    std::string code = "void SetProperties(int width, int height, bool fullscreen = false, int refreshRate = 60) {}\n"
+                       "void main() {\n"
+                       "    SetProperties(1920, 1080, true);\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -847,11 +837,10 @@ TEST_CASE("InlayHintHandler - Call With Default Parameters Retains All Provided 
 
 TEST_CASE("InlayHintHandler - Parameter labels are never truncated")
 {
-    std::string code =
-        "void ConfigureLogger(bool shouldTrace, string longParameterIdentifier) {}\n"
-        "void main() {\n"
-        "    ConfigureLogger(true, \"test\");\n"
-        "}\n";
+    std::string code = "void ConfigureLogger(bool shouldTrace, string longParameterIdentifier) {}\n"
+                       "void main() {\n"
+                       "    ConfigureLogger(true, \"test\");\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -868,15 +857,17 @@ TEST_CASE("InlayHintHandler - Parameter labels are never truncated")
 
 TEST_CASE("InlayHintHandler - ShootProp with 13 parameters returns all parameter hints by default")
 {
-    std::string code =
-        "namespace HCASPROP {\n"
-        "    CHCASProp@ ShootProp( entvars_t@ pevOwner, Vector& in vecOrigin, Vector& in vecVelocity, Vector& in vecDropAngle, Vector& in vecAngVelocity, string szModel, array<string> BounceSounds, float flVelFriction = 0.4f, float flAVelFriction = 0.7f, int iBodygroup = 0, int iSkingroup = 0, float flStartFadeOutTime = 5.0f, string szPropName = \"proj_hcasprop\" ) {}\n"
-        "}\n"
-        "void main() {\n"
-        "    auto pProp = HCASPROP::ShootProp( pev, vecOrigin, vecVelocity,\n"
-        "        Vector( -45, vecAngles.y - 65, 0 ), Vector( 0, 0, 0 ), \"model\", sounds,\n"
-        "        0.4f, 0.7f, TOS_BDYGRP, 0, 5.0f, DROP_NAME );\n"
-        "}\n";
+    std::string code = "namespace HCASPROP {\n"
+                       "    CHCASProp@ ShootProp( entvars_t@ pevOwner, Vector& in vecOrigin, Vector& in vecVelocity, "
+                       "Vector& in vecDropAngle, Vector& in vecAngVelocity, string szModel, array<string> "
+                       "BounceSounds, float flVelFriction = 0.4f, float flAVelFriction = 0.7f, int iBodygroup = 0, int "
+                       "iSkingroup = 0, float flStartFadeOutTime = 5.0f, string szPropName = \"proj_hcasprop\" ) {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    auto pProp = HCASPROP::ShootProp( pev, vecOrigin, vecVelocity,\n"
+                       "        Vector( -45, vecAngles.y - 65, 0 ), Vector( 0, 0, 0 ), \"model\", sounds,\n"
+                       "        0.4f, 0.7f, TOS_BDYGRP, 0, 5.0f, DROP_NAME );\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -885,9 +876,7 @@ TEST_CASE("InlayHintHandler - ShootProp with 13 parameters returns all parameter
     // 1 type hint for 'auto' + 13 parameter hints = 14 hints total
     REQUIRE(hints->size() == 14);
 
-    auto getLabel = [&](size_t idx) -> std::string {
-        return GetHintLabel(hints->at(idx));
-    };
+    auto getLabel = [&](size_t idx) -> std::string { return GetHintLabel(hints->at(idx)); };
 
     CHECK(getLabel(1) == "pevOwner:");
     CHECK(getLabel(2) == "vecOrigin:");
@@ -906,15 +895,17 @@ TEST_CASE("InlayHintHandler - ShootProp with 13 parameters returns all parameter
 
 TEST_CASE("InlayHintHandler - maxParameters limits parameter hint count")
 {
-    std::string code =
-        "namespace HCASPROP {\n"
-        "    CHCASProp@ ShootProp( entvars_t@ pevOwner, Vector& in vecOrigin, Vector& in vecVelocity, Vector& in vecDropAngle, Vector& in vecAngVelocity, string szModel, array<string> BounceSounds, float flVelFriction = 0.4f, float flAVelFriction = 0.7f, int iBodygroup = 0, int iSkingroup = 0, float flStartFadeOutTime = 5.0f, string szPropName = \"proj_hcasprop\" ) {}\n"
-        "}\n"
-        "void main() {\n"
-        "    auto pProp = HCASPROP::ShootProp( pev, vecOrigin, vecVelocity,\n"
-        "        Vector( -45, vecAngles.y - 65, 0 ), Vector( 0, 0, 0 ), \"model\", sounds,\n"
-        "        0.4f, 0.7f, TOS_BDYGRP, 0, 5.0f, DROP_NAME );\n"
-        "}\n";
+    std::string code = "namespace HCASPROP {\n"
+                       "    CHCASProp@ ShootProp( entvars_t@ pevOwner, Vector& in vecOrigin, Vector& in vecVelocity, "
+                       "Vector& in vecDropAngle, Vector& in vecAngVelocity, string szModel, array<string> "
+                       "BounceSounds, float flVelFriction = 0.4f, float flAVelFriction = 0.7f, int iBodygroup = 0, int "
+                       "iSkingroup = 0, float flStartFadeOutTime = 5.0f, string szPropName = \"proj_hcasprop\" ) {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    auto pProp = HCASPROP::ShootProp( pev, vecOrigin, vecVelocity,\n"
+                       "        Vector( -45, vecAngles.y - 65, 0 ), Vector( 0, 0, 0 ), \"model\", sounds,\n"
+                       "        0.4f, 0.7f, TOS_BDYGRP, 0, 5.0f, DROP_NAME );\n"
+                       "}\n";
 
     TestEnvironment env(code);
     // Request with maxParameters = 5
@@ -924,9 +915,7 @@ TEST_CASE("InlayHintHandler - maxParameters limits parameter hint count")
     // 1 type hint for 'auto' + 5 parameter hints = 6 hints total
     REQUIRE(hints->size() == 6);
 
-    auto getLabel = [&](size_t idx) -> std::string {
-        return GetHintLabel(hints->at(idx));
-    };
+    auto getLabel = [&](size_t idx) -> std::string { return GetHintLabel(hints->at(idx)); };
 
     CHECK(getLabel(1) == "pevOwner:");
     CHECK(getLabel(5) == "vecAngVelocity:");
@@ -934,15 +923,17 @@ TEST_CASE("InlayHintHandler - maxParameters limits parameter hint count")
 
 TEST_CASE("InlayHintHandler - maxLength truncates parameter labels")
 {
-    std::string code =
-        "namespace HCASPROP {\n"
-        "    CHCASProp@ ShootProp( entvars_t@ pevOwner, Vector& in vecOrigin, Vector& in vecVelocity, Vector& in vecDropAngle, Vector& in vecAngVelocity, string szModel, array<string> BounceSounds, float flVelFriction = 0.4f, float flAVelFriction = 0.7f, int iBodygroup = 0, int iSkingroup = 0, float flStartFadeOutTime = 5.0f, string szPropName = \"proj_hcasprop\" ) {}\n"
-        "}\n"
-        "void main() {\n"
-        "    auto pProp = HCASPROP::ShootProp( pev, vecOrigin, vecVelocity,\n"
-        "        Vector( -45, vecAngles.y - 65, 0 ), Vector( 0, 0, 0 ), \"model\", sounds,\n"
-        "        0.4f, 0.7f, TOS_BDYGRP, 0, 5.0f, DROP_NAME );\n"
-        "}\n";
+    std::string code = "namespace HCASPROP {\n"
+                       "    CHCASProp@ ShootProp( entvars_t@ pevOwner, Vector& in vecOrigin, Vector& in vecVelocity, "
+                       "Vector& in vecDropAngle, Vector& in vecAngVelocity, string szModel, array<string> "
+                       "BounceSounds, float flVelFriction = 0.4f, float flAVelFriction = 0.7f, int iBodygroup = 0, int "
+                       "iSkingroup = 0, float flStartFadeOutTime = 5.0f, string szPropName = \"proj_hcasprop\" ) {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    auto pProp = HCASPROP::ShootProp( pev, vecOrigin, vecVelocity,\n"
+                       "        Vector( -45, vecAngles.y - 65, 0 ), Vector( 0, 0, 0 ), \"model\", sounds,\n"
+                       "        0.4f, 0.7f, TOS_BDYGRP, 0, 5.0f, DROP_NAME );\n"
+                       "}\n";
 
     TestEnvironment env(code);
     // Request with maxLength = 8
@@ -951,9 +942,7 @@ TEST_CASE("InlayHintHandler - maxLength truncates parameter labels")
     REQUIRE(hints.has_value());
     REQUIRE(hints->size() == 14);
 
-    auto getLabel = [&](size_t idx) -> std::string {
-        return GetHintLabel(hints->at(idx));
-    };
+    auto getLabel = [&](size_t idx) -> std::string { return GetHintLabel(hints->at(idx)); };
 
     // 'pevOwner' length is 8 -> not truncated: 'pevOwner:'
     CHECK(getLabel(1) == "pevOwner:");
@@ -972,11 +961,13 @@ TEST_CASE("InlayHintHandler - Invariant randomized symbols with maxParameters an
     const std::string p1 = test::GenerateRandomSymbolName("paramOne");
     const std::string p2 = test::GenerateRandomSymbolName("paramTwo");
 
-    std::string code =
-        "void " + fnName + "(int " + p0 + ", int " + p1 + ", int " + p2 + ") {}\n"
-        "void main() {\n"
-        "    " + fnName + "(1, 2, 3);\n"
-        "}\n";
+    std::string code = "void " + fnName + "(int " + p0 + ", int " + p1 + ", int " + p2 +
+                       ") {}\n"
+                       "void main() {\n"
+                       "    " +
+                       fnName +
+                       "(1, 2, 3);\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -1011,11 +1002,10 @@ TEST_CASE("InlayHintHandler - Invariant randomized symbols with maxParameters an
 
 TEST_CASE("InlayHintHandler - Omitted Default Arguments Mode NameAndValue vs Declaration vs Off")
 {
-    std::string code =
-        "void funct(int id = 0, bool f = true, array<string> argS = array<string>()) {}\n"
-        "void main() {\n"
-        "    funct(f: false);\n"
-        "}\n";
+    std::string code = "void funct(int id = 0, bool f = true, array<string> argS = array<string>()) {}\n"
+                       "void main() {\n"
+                       "    funct(f: false);\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -1030,8 +1020,8 @@ TEST_CASE("InlayHintHandler - Omitted Default Arguments Mode NameAndValue vs Dec
 
     // 2. Declaration mode
     {
-        auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 0,
-                                   config::OmittedDefaultArgumentsMode::Declaration);
+        auto hints =
+            env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 0, config::OmittedDefaultArgumentsMode::Declaration);
         REQUIRE(hints.has_value());
         REQUIRE(hints->size() == 2);
         CHECK(GetHintLabel(hints->at(0)) == "int id = 0, ");
@@ -1040,8 +1030,7 @@ TEST_CASE("InlayHintHandler - Omitted Default Arguments Mode NameAndValue vs Dec
 
     // 3. Off mode
     {
-        auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 0,
-                                   config::OmittedDefaultArgumentsMode::Off);
+        auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 0, config::OmittedDefaultArgumentsMode::Off);
         REQUIRE(hints.has_value());
         CHECK(hints->empty());
     }
@@ -1049,11 +1038,10 @@ TEST_CASE("InlayHintHandler - Omitted Default Arguments Mode NameAndValue vs Dec
 
 TEST_CASE("InlayHintHandler - Omitted Default Arguments In Empty Call")
 {
-    std::string code =
-        "void testEmpty(int a = 1, float b = 2.0f) {}\n"
-        "void main() {\n"
-        "    testEmpty();\n"
-        "}\n";
+    std::string code = "void testEmpty(int a = 1, float b = 2.0f) {}\n"
+                       "void main() {\n"
+                       "    testEmpty();\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -1071,11 +1059,13 @@ TEST_CASE("InlayHintHandler - Invariant Randomized Omitted Default Arguments")
     const std::string p1 = test::GenerateRandomSymbolName("paramMid");
     const std::string p2 = test::GenerateRandomSymbolName("paramLast");
 
-    std::string code =
-        "void " + fnName + "(int " + p0 + " = 10, bool " + p1 + " = true, string " + p2 + " = \"default\") {}\n"
-        "void main() {\n"
-        "    " + fnName + "(" + p1 + ": false);\n"
-        "}\n";
+    std::string code = "void " + fnName + "(int " + p0 + " = 10, bool " + p1 + " = true, string " + p2 +
+                       " = \"default\") {}\n"
+                       "void main() {\n"
+                       "    " +
+                       fnName + "(" + p1 +
+                       ": false);\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -1090,8 +1080,8 @@ TEST_CASE("InlayHintHandler - Invariant Randomized Omitted Default Arguments")
 
     // Declaration mode
     {
-        auto hints = env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 0,
-                                   config::OmittedDefaultArgumentsMode::Declaration);
+        auto hints =
+            env.InlayHints(lsp::Range{{0, 0}, {0, 0}}, false, 0, 0, config::OmittedDefaultArgumentsMode::Declaration);
         REQUIRE(hints.has_value());
         REQUIRE(hints->size() == 2);
         CHECK(GetHintLabel(hints->at(0)) == "int " + p0 + " = 10, ");
@@ -1113,20 +1103,37 @@ TEST_CASE("InlayHint - Scoped calls and enum arguments")
     const std::string paramVal = test::GenerateRandomSymbolName("iValue");
     const std::string paramKey = test::GenerateRandomSymbolName("key");
 
-    std::string code =
-        "class " + playerClass + " {}\n"
-        "enum " + enumName + " { " + enumMember + " }\n"
-        "namespace " + nsStore + " {\n"
-        "    int " + fnGet + "(" + enumName + " " + paramKey + ", " + playerClass + "@ " + paramPlayer + ") { return 0; }\n"
-        "}\n"
-        "namespace " + nsHud + " {\n"
-        "    namespace " + nsMoney + " {\n"
-        "        void " + fnUpdate + "(" + playerClass + "@ " + paramPlayer + ", int " + paramVal + ") {}\n"
-        "    }\n"
-        "}\n"
-        "void main(" + playerClass + "@ target) {\n"
-        "    " + nsHud + "::" + nsMoney + "::" + fnUpdate + "(target, " + nsStore + "::" + fnGet + "(" + enumName + "::" + enumMember + ", target));\n"
-        "}\n";
+    std::string code = "class " + playerClass +
+                       " {}\n"
+                       "enum " +
+                       enumName + " { " + enumMember +
+                       " }\n"
+                       "namespace " +
+                       nsStore +
+                       " {\n"
+                       "    int " +
+                       fnGet + "(" + enumName + " " + paramKey + ", " + playerClass + "@ " + paramPlayer +
+                       ") { return 0; }\n"
+                       "}\n"
+                       "namespace " +
+                       nsHud +
+                       " {\n"
+                       "    namespace " +
+                       nsMoney +
+                       " {\n"
+                       "        void " +
+                       fnUpdate + "(" + playerClass + "@ " + paramPlayer + ", int " + paramVal +
+                       ") {}\n"
+                       "    }\n"
+                       "}\n"
+                       "void main(" +
+                       playerClass +
+                       "@ target) {\n"
+                       "    " +
+                       nsHud + "::" + nsMoney + "::" + fnUpdate + "(target, " + nsStore + "::" + fnGet + "(" +
+                       enumName + "::" + enumMember +
+                       ", target));\n"
+                       "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -1167,14 +1174,18 @@ TEST_CASE("InlayHintHandler - Omitted default parameter in non-empty argument li
     const std::string msgParam = test::GenerateRandomSymbolName("message");
     const std::string argsParam = test::GenerateRandomSymbolName("arguments");
 
-    const std::string code =
-        "class " + loggerClass + " {\n"
-        "    void print(const string &in " + msgParam + ", array<string>@ " + argsParam + " = null) const {}\n"
-        "};\n"
-        "void main() {\n"
-        "    " + loggerClass + " logger;\n"
-        "    logger.print(\"hello\");\n"
-        "}\n";
+    const std::string code = "class " + loggerClass +
+                             " {\n"
+                             "    void print(const string &in " +
+                             msgParam + ", array<string>@ " + argsParam +
+                             " = null) const {}\n"
+                             "};\n"
+                             "void main() {\n"
+                             "    " +
+                             loggerClass +
+                             " logger;\n"
+                             "    logger.print(\"hello\");\n"
+                             "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -1192,9 +1203,7 @@ TEST_CASE("InlayHintHandler - Omitted default parameter in non-empty argument li
             const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
             REQUIRE_FALSE(parts.empty());
             REQUIRE(parts[0].tooltip.has_value());
-            std::string tooltip = std::holds_alternative<std::string>(*parts[0].tooltip)
-                                      ? std::get<std::string>(*parts[0].tooltip)
-                                      : "";
+            std::string tooltip = GetTooltipText(parts[0].tooltip);
             CHECK(tooltip.find("Default parameter:") != std::string::npos);
             CHECK(tooltip.find(argsParam) != std::string::npos);
             CHECK(tooltip.find("null") != std::string::npos);
@@ -1216,13 +1225,17 @@ TEST_CASE("InlayHintHandler - Nameless wildcard parameter ?& in generates fallba
     const std::string fmtParam = test::GenerateRandomSymbolName("szFormat");
     const std::string keyVar = test::GenerateRandomSymbolName("keyName");
 
-    const std::string code =
-        "bool " + funcName + "(string& out " + bufParam + ", const string& in " + fmtParam + ", ?& in) { return true; }\n"
-        "void main() {\n"
-        "    string outBuf;\n"
-        "    string " + keyVar + " = \"myKey\";\n"
-        "    " + funcName + "(outBuf, \"format %1\", " + keyVar + ");\n"
-        "}\n";
+    const std::string code = "bool " + funcName + "(string& out " + bufParam + ", const string& in " + fmtParam +
+                             ", ?& in) { return true; }\n"
+                             "void main() {\n"
+                             "    string outBuf;\n"
+                             "    string " +
+                             keyVar +
+                             " = \"myKey\";\n"
+                             "    " +
+                             funcName + "(outBuf, \"format %1\", " + keyVar +
+                             ");\n"
+                             "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -1234,18 +1247,15 @@ TEST_CASE("InlayHintHandler - Nameless wildcard parameter ?& in generates fallba
     for (const auto& hint : *hints)
     {
         std::string label = GetHintLabel(hint);
-        if (label.find("?:") != std::string::npos || label.find("?& in:") != std::string::npos || label.find("?&in:") != std::string::npos)
+        if (label.find("?:") != std::string::npos || label.find("?& in:") != std::string::npos ||
+            label.find("?&in:") != std::string::npos)
         {
             foundWildcardHint = true;
             REQUIRE(std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label));
             const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
             REQUIRE_FALSE(parts.empty());
-            REQUIRE(parts[0].tooltip.has_value());
-            std::string tooltip = std::holds_alternative<std::string>(*parts[0].tooltip)
-                                      ? std::get<std::string>(*parts[0].tooltip)
-                                      : "";
-            CHECK(tooltip.find("Parameter") != std::string::npos);
-            CHECK(tooltip.find("?") != std::string::npos);
+            REQUIRE(parts[0].location.has_value());
+            CHECK_FALSE(parts[0].tooltip.has_value());
             CHECK_FALSE(hint.tooltip.has_value());
         }
     }
@@ -1262,16 +1272,25 @@ TEST_CASE("InlayHintHandler - Parameter hint label part location navigates to ca
     const std::string typeParam = test::GenerateRandomSymbolName("type");
     const std::string edictParam = test::GenerateRandomSymbolName("pEdict");
 
-    const std::string code =
-        "namespace " + nsName + " {\n"
-        "    enum Type { " + enumVal + " = 1 };\n"
-        "}\n"
-        "class " + msgClass + " {\n"
-        "    " + msgClass + "(int " + destParam + ", " + nsName + "::Type " + typeParam + ", int " + edictParam + " = 0) {}\n"
-        "}\n"
-        "void main() {\n"
-        "    " + msgClass + " m(1, " + nsName + "::" + enumVal + ");\n"
-        "}\n";
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    enum Type { " +
+                             enumVal +
+                             " = 1 };\n"
+                             "}\n"
+                             "class " +
+                             msgClass +
+                             " {\n"
+                             "    " +
+                             msgClass + "(int " + destParam + ", " + nsName + "::Type " + typeParam + ", int " +
+                             edictParam +
+                             " = 0) {}\n"
+                             "}\n"
+                             "void main() {\n"
+                             "    " +
+                             msgClass + " m(1, " + nsName + "::" + enumVal +
+                             ");\n"
+                             "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -1293,7 +1312,7 @@ TEST_CASE("InlayHintHandler - Parameter hint label part location navigates to ca
                 const auto& range = part.location->range;
                 CHECK(range.start.line == 4);
                 CHECK(range.end.line == 4);
-                CHECK(part.tooltip.has_value());
+                CHECK_FALSE(part.tooltip.has_value());
                 CHECK_FALSE(hint.tooltip.has_value());
                 foundTypeHintWithDeclLocation = true;
             }
@@ -1307,13 +1326,16 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
     const std::string funcName = test::GenerateRandomSymbolName("SpawnGrenade");
     const std::string paramName = test::GenerateRandomSymbolName("startEntity");
 
-    const std::string code =
-        "class CBaseEntity {};\n"
-        "void " + funcName + "(CBaseEntity@ " + paramName + ") {}\n"
-        "void main() {\n"
-        "    CBaseEntity@ ent = null;\n"
-        "    " + funcName + "(ent);\n"
-        "}\n";
+    const std::string code = "class CBaseEntity {};\n"
+                             "void " +
+                             funcName + "(CBaseEntity@ " + paramName +
+                             ") {}\n"
+                             "void main() {\n"
+                             "    CBaseEntity@ ent = null;\n"
+                             "    " +
+                             funcName +
+                             "(ent);\n"
+                             "}\n";
 
     TestEnvironment env(code);
 
@@ -1335,13 +1357,9 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
             if (part.value == paramName + ":")
             {
                 foundParamHint = true;
-                REQUIRE(part.tooltip.has_value());
-                std::string tooltip = std::holds_alternative<std::string>(*part.tooltip)
-                                          ? std::get<std::string>(*part.tooltip)
-                                          : "";
-                CHECK(tooltip.find("```angelscript\nCBaseEntity@ " + paramName + "\n```") != std::string::npos);
-                CHECK(tooltip.find("*Parameter for `" + funcName + "`*") != std::string::npos);
+                // With location available, tooltip is omitted to prevent duplicate cards in VS Code
                 CHECK(part.location.has_value());
+                CHECK_FALSE(part.tooltip.has_value());
             }
         }
     }
@@ -1363,11 +1381,12 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
         }
     }
 
-    // 3. Disabled location: part.location should be nullopt
+    // 3. Disabled location: part.location is nullopt and fallback part.tooltip is provided with (parameter) format
     config::ServerConfig noLocationConfig;
     noLocationConfig.features.inlayHintsEnableLocation = false;
     auto noLocationHints = env.InlayHintsWithConfig(noLocationConfig);
     REQUIRE(noLocationHints.has_value());
+    bool foundNoLocParamHint = false;
     for (const auto& hint : *noLocationHints)
     {
         if (std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label))
@@ -1375,8 +1394,179 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
             for (const auto& part : std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label))
             {
                 CHECK_FALSE(part.location.has_value());
+                if (part.value == paramName + ":")
+                {
+                    foundNoLocParamHint = true;
+                    REQUIRE(part.tooltip.has_value());
+                    std::string tooltip = GetTooltipText(part.tooltip);
+                    CHECK(tooltip.find("(parameter) CBaseEntity@ " + paramName) != std::string::npos);
+                }
             }
         }
     }
+    CHECK(foundNoLocParamHint);
 }
 
+TEST_CASE("InlayHintHandler - Constructor call expression parameter hints")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("MenuOption");
+    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("owner");
+    const std::string typeName = angel_lsp::test::GenerateRandomSymbolName("Menu");
+
+    std::string code = "class " + typeName +
+                       " {}\n"
+                       "class " +
+                       className +
+                       " {\n"
+                       "    " +
+                       className + "(" + typeName + "@ " + paramName +
+                       ") {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    " +
+                       typeName +
+                       "@ m;\n"
+                       "    " +
+                       className + "@ opt = " + className +
+                       "(m);\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto& h : *hints)
+    {
+        std::string l = GetHintLabel(h);
+        if (!l.empty())
+        {
+            labels.push_back(l);
+        }
+    }
+
+    CHECK(std::find(labels.begin(), labels.end(), paramName + ":") != labels.end());
+}
+
+TEST_CASE("InlayHintHandler - Omitted default arguments disabled by default")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("PlayAnim");
+    const std::string param1 = angel_lsp::test::GenerateRandomSymbolName("anim");
+    const std::string param2 = angel_lsp::test::GenerateRandomSymbolName("player_anim");
+
+    std::string code = "void " + funcName + "(int " + param1 + ", int " + param2 +
+                       " = 42) {}\n"
+                       "void main() {\n"
+                       "    " +
+                       funcName +
+                       "(10);\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    config::ServerConfig defaultConfig;
+    auto hints = env.InlayHintsWithConfig(defaultConfig);
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto& h : *hints)
+    {
+        std::string l = GetHintLabel(h);
+        if (!l.empty())
+        {
+            labels.push_back(l);
+        }
+    }
+
+    CHECK(std::find(labels.begin(), labels.end(), param1 + ":") != labels.end());
+    CHECK(std::find_if(labels.begin(), labels.end(),
+                       [&](const std::string& l) { return l.find(param2) != std::string::npos; }) == labels.end());
+}
+
+TEST_CASE("InlayHintHandler - Nested Namespace Constructor Call Parameter Hints with This")
+{
+    const std::string nsOuter = angel_lsp::test::GenerateRandomSymbolName("TextMenu");
+    const std::string nsInner = angel_lsp::test::GenerateRandomSymbolName("v1");
+    const std::string classOption = angel_lsp::test::GenerateRandomSymbolName("MenuOption");
+    const std::string classMenu = angel_lsp::test::GenerateRandomSymbolName("Menu");
+    const std::string paramOwner = angel_lsp::test::GenerateRandomSymbolName("owner");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("AddOption");
+
+    std::string code = "namespace " + nsOuter +
+                       " {\n"
+                       "    namespace " +
+                       nsInner +
+                       " {\n"
+                       "        class " +
+                       classOption +
+                       " {\n"
+                       "            " +
+                       classOption +
+                       "() {}\n"
+                       "            " +
+                       classOption + "(" + classMenu + "@ " + paramOwner +
+                       ") {}\n"
+                       "        }\n"
+                       "        class " +
+                       classMenu +
+                       " {\n"
+                       "            " +
+                       classOption + "@ " + methodName +
+                       "() {\n"
+                       "                " +
+                       classOption + "@ option = " + classOption +
+                       "( this );\n"
+                       "                return option;\n"
+                       "            }\n"
+                       "        }\n"
+                       "    }\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto& h : *hints)
+    {
+        std::string l = GetHintLabel(h);
+        if (!l.empty())
+        {
+            labels.push_back(l);
+        }
+    }
+
+    CHECK(std::find(labels.begin(), labels.end(), paramOwner + ":") != labels.end());
+}
+
+TEST_CASE("InlayHintHandler - Invariant: Local funcdef variable call provides argument inlay hints")
+{
+    const std::string funcdefName = angel_lsp::test::GenerateRandomSymbolName("CallbackType");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("cb");
+    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("targetPlayer");
+
+    std::string code = "funcdef void " + funcdefName + "(int " + paramName +
+                       ");\n"
+                       "void test(" +
+                       funcdefName + "@ " + varName +
+                       ") {\n"
+                       "    " +
+                       varName +
+                       "(42);\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+
+    std::vector<std::string> labels;
+    for (const auto& h : *hints)
+    {
+        std::string l = GetHintLabel(h);
+        if (!l.empty())
+        {
+            labels.push_back(l);
+        }
+    }
+
+    CHECK(std::find(labels.begin(), labels.end(), paramName + ":") != labels.end());
+}

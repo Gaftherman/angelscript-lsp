@@ -1,9 +1,11 @@
 import io, re
+from pathlib import Path
 
-FIXTURE = 'tests/fixtures/full-addons.as.predefined'
-SDK = 'tests/fixtures/sdk-addons.as.predefined'
+SERVER = Path(__file__).resolve().parent.parent
+FIXTURE = SERVER / 'tests' / 'fixtures' / 'full-addons.as.predefined'
+SDK = SERVER / 'tests' / 'fixtures' / 'sdk-addons.as.predefined'
 
-text = io.open(FIXTURE, encoding='utf-8').read()
+text = FIXTURE.read_text(encoding='utf-8')
 
 # ---------------------------------------------------------------- 1. correct the socket section
 # scriptsocket IS an SDK add-on (sdk/add_on/scriptsocket), and its API is far smaller than the one
@@ -41,7 +43,7 @@ class socket
 
 '''
 text = text[:start] + corrected_socket + text[end:]
-io.open(FIXTURE, 'w', encoding='utf-8', newline='').write(text)
+FIXTURE.write_text(text, encoding='utf-8', newline='')
 print('fixture socket section corrected')
 
 # ---------------------------------------------------------------- 2. derive the oracle's stub
@@ -78,7 +80,7 @@ sdk = '''// The exact script surface server/tools/oracle/main.cpp registers.
 // Patterns" for what the @listpattern tags do.
 ''' + sdk[header_end:]
 
-io.open(SDK, 'w', encoding='utf-8', newline='').write(sdk)
+SDK.write_text(sdk, encoding='utf-8', newline='')
 print('sdk stub written:', sum(1 for _ in io.open(SDK, encoding='utf-8')), 'lines')
 
 for forbidden in ['class Exception', 'SetException', 'GetException', 'createCoRoutine', 'class socket', 'yield()']:

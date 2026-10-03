@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 
 #include "analysis/SemanticHelpers.h"
-#include "parser/AngelScriptParser.h"
 #include "helpers/TestUtils.h"
+#include "parser/AngelScriptParser.h"
 
 #include <string>
 #include <vector>
@@ -73,11 +73,13 @@ TEST_CASE("AST Structural Traversal - Multi-Argument Template Types")
     const std::string keyType = angel_lsp::test::GenerateRandomSymbolName("Key");
     const std::string valType = angel_lsp::test::GenerateRandomSymbolName("Val");
 
-    const std::string code =
-        "void " + fnName + "(dictionary<" + keyType + ", " + valType + "> dict, int val) {}\n"
-        "void Run() {\n"
-        "    " + fnName + "(dictionary<" + keyType + ", " + valType + ">(), 42);\n"
-        "}\n";
+    const std::string code = "void " + fnName + "(dictionary<" + keyType + ", " + valType +
+                             "> dict, int val) {}\n"
+                             "void Run() {\n"
+                             "    " +
+                             fnName + "(dictionary<" + keyType + ", " + valType +
+                             ">(), 42);\n"
+                             "}\n";
 
     TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
@@ -103,10 +105,11 @@ TEST_CASE("AST Structural Traversal - Default Arguments with Nested Calls and St
     const std::string outerFn = angel_lsp::test::GenerateRandomSymbolName("Outer");
     const std::string innerFn = angel_lsp::test::GenerateRandomSymbolName("Inner");
 
-    const std::string code =
-        "void Run() {\n"
-        "    " + outerFn + "(" + innerFn + "(\"arg1, with, commas\", 10, 20), /* comment, 1 */ 99);\n"
-        "}\n";
+    const std::string code = "void Run() {\n"
+                             "    " +
+                             outerFn + "(" + innerFn +
+                             "(\"arg1, with, commas\", 10, 20), /* comment, 1 */ 99);\n"
+                             "}\n";
 
     TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
@@ -132,10 +135,11 @@ TEST_CASE("AST Structural Traversal - Named Arguments Mapping")
     const std::string arg1Name = angel_lsp::test::GenerateRandomSymbolName("first");
     const std::string arg2Name = angel_lsp::test::GenerateRandomSymbolName("second");
 
-    const std::string code =
-        "void Run() {\n"
-        "    " + fnName + "(" + arg1Name + ": 100, " + arg2Name + ": 200);\n"
-        "}\n";
+    const std::string code = "void Run() {\n"
+                             "    " +
+                             fnName + "(" + arg1Name + ": 100, " + arg2Name +
+                             ": 200);\n"
+                             "}\n";
 
     TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
@@ -166,10 +170,11 @@ TEST_CASE("AST Structural Traversal - Malformed or Incomplete Argument Lists")
     const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Incomplete");
 
     // Syntax error with double comma
-    const std::string code =
-        "void Run() {\n"
-        "    " + fnName + "(10, , 20);\n"
-        "}\n";
+    const std::string code = "void Run() {\n"
+                             "    " +
+                             fnName +
+                             "(10, , 20);\n"
+                             "}\n";
 
     TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);

@@ -62,6 +62,7 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     request.diagnostics = &m_config.diagnostics;
     request.severityOverrides = m_diagnosticSeverities.empty() ? nullptr : &m_diagnosticSeverities;
     request.enableTypeConversionChecks = m_config.features.enableTypeConversionChecks;
+    request.enableCommentSuppressions = m_config.features.enableCommentSuppressions;
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
     request.sourceCode = text;
     request.tree = tree;
@@ -362,6 +363,7 @@ void Server::StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const st
 
 void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
 {
+    LogInfo(fmt::format("[Analysis] Starting predefined analysis for file: {}", req.uriStr));
     const std::string analysisText = AnalysisTextFor(req.uriStr, req.text);
     utils::HighResTimer parseTimer;
     document::TreePtr tree =
@@ -385,9 +387,13 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
     double checkMs = 0.0;
 
     const double totalMs = totalTimer.ElapsedMs();
-    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} "
-                        "ms, Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
-                        req.uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
+    LogInfo(fmt::format("[Analysis] Finished predefined analysis for file: {} in {} (Parse: {}, Symbols: {})",
+                        req.uriStr, utils::FormatDuration(totalMs), utils::FormatDuration(parseMs),
+                        utils::FormatDuration(colMs)));
+    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {} (Parse: {}, Collector: {}"
+                        ", Scopes: {}, Checkers: {})",
+                        req.uriStr, utils::FormatDuration(totalMs), utils::FormatDuration(parseMs),
+                        utils::FormatDuration(colMs), utils::FormatDuration(scopeMs), utils::FormatDuration(checkMs)));
 
     const bool committed = CommitAnalysisResults({
         .uriStr = req.uriStr,
@@ -413,8 +419,44 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
     }
 }
 
+Server::ParseAndCollectResult Server::ParseAndCollectSymbols(AnalyzeDocumentRequest& req,
+                                                             angel_lsp::analysis::SymbolTable& staging)
+{
+    utils::HighResTimer parseTimer;
+    document::TreePtr tree = req.treeCopy ? std::move(req.treeCopy) : document::MakeTreePtr(req.parser.Parse(req.text));
+    double parseMs = parseTimer.ElapsedMs();
+    if (!tree)
+    {
+        return {document::MakeTreePtr(nullptr), {}, parseMs, 0.0};
+    }
+
+    utils::HighResTimer colTimer;
+    auto diagnostics =
+        m_symbolCollector->CollectSymbolsWithTree({req.uriStr, req.text, m_i18n.get()}, tree.get(), staging);
+    double colMs = colTimer.ElapsedMs();
+
+    return {std::move(tree), std::move(diagnostics), parseMs, colMs};
+}
+
+void Server::LogAnalysisProfile(std::string_view prefix, const std::string& uriStr,
+                                const AnalysisTimingProfile& profile) const
+{
+    LogInfo(fmt::format("{} Finished analysis for file: {} in {} (Parse: {}, Collector: {}, "
+                        "Scopes: {}, Checkers: {})",
+                        prefix, uriStr, utils::FormatDuration(profile.totalMs), utils::FormatDuration(profile.parseMs),
+                        utils::FormatDuration(profile.colMs), utils::FormatDuration(profile.scopeMs),
+                        utils::FormatDuration(profile.checkMs)));
+    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {} (Parse: {}, Collector: {}, "
+                        "Scopes: {}, Checkers: {})",
+                        uriStr, utils::FormatDuration(profile.totalMs), utils::FormatDuration(profile.parseMs),
+                        utils::FormatDuration(profile.colMs), utils::FormatDuration(profile.scopeMs),
+                        utils::FormatDuration(profile.checkMs)));
+}
+
 void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
 {
+    LogInfo(fmt::format("[Analysis] Starting background analysis for file: {}", req.uriStr));
+
     if (m_config.features.enablePredefinedLoader && !IsPredefinedReady())
     {
         WaitForPredefinedReady(std::chrono::milliseconds(5000));
@@ -422,22 +464,12 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
 
     IndexModuleClosure(req.uriStr);
 
-    utils::HighResTimer parseTimer;
-    document::TreePtr tree = req.treeCopy ? std::move(req.treeCopy) : document::MakeTreePtr(req.parser.Parse(req.text));
-    double parseMs = parseTimer.ElapsedMs();
-    if (!tree)
+    angel_lsp::analysis::SymbolTable staging;
+    auto parsed = ParseAndCollectSymbols(req, staging);
+    if (!parsed.tree)
     {
         return;
     }
-
-    const TSNode root = ts_tree_root_node(tree.get());
-    analysis::NodeIndex nodeIndex(root);
-
-    utils::HighResTimer colTimer;
-    angel_lsp::analysis::SymbolTable staging;
-    auto diagnostics =
-        m_symbolCollector->CollectSymbolsWithTree({req.uriStr, req.text, m_i18n.get()}, tree.get(), staging);
-    double colMs = colTimer.ElapsedMs();
 
     if (req.generation > 0 && !m_documentStore.IsCurrent(req.uriStr, req.generation, req.version))
     {
@@ -448,6 +480,8 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
         return;
     }
 
+    const TSNode root = ts_tree_root_node(parsed.tree.get());
+    analysis::NodeIndex nodeIndex(root);
     std::unique_ptr<analysis::SymbolTable> analysisSnapshot = m_symbolTable.CreateAnalysisSnapshot(req.uriStr, staging);
 
     utils::HighResTimer scopeTimer;
@@ -457,7 +491,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     double scopeMs = scopeTimer.ElapsedMs();
 
     utils::HighResTimer checkTimer;
-    auto request = BuildAnalysisRequest(req.uriStr, req.text, tree.get(), analysisSnapshot.get());
+    auto request = BuildAnalysisRequest(req.uriStr, req.text, parsed.tree.get(), analysisSnapshot.get());
     request.scopeRoot = scopeRoot;
     request.mutableScopeRoot = scopeRoot.get();
     request.nodeIndex = &nodeIndex;
@@ -465,12 +499,11 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     auto semanticDiagnostics = m_semanticAnalyzer->Analyze(request);
     double checkMs = checkTimer.ElapsedMs();
 
-    diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
-    AppendIncludeDiagnostics(req.uriStr, req.text, diagnostics);
+    parsed.diagnostics.insert(parsed.diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
+    AppendIncludeDiagnostics(req.uriStr, req.text, parsed.diagnostics);
 
-    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, "
-                        "Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
-                        req.uriStr, totalTimer.ElapsedMs(), parseMs, colMs, scopeMs, checkMs));
+    const double totalMs = totalTimer.ElapsedMs();
+    LogAnalysisProfile("[Analysis]", req.uriStr, {totalMs, parsed.parseMs, parsed.colMs, scopeMs, checkMs});
 
     CommitAnalysisResults({.uriStr = req.uriStr,
                            .version = req.version,
@@ -479,7 +512,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
                            .staging = &staging,
                            .scopeRoot = std::move(scopeRoot),
                            .calls = std::move(calls),
-                           .diagnostics = std::move(diagnostics),
+                           .diagnostics = std::move(parsed.diagnostics),
                            .text = req.text});
 }
 

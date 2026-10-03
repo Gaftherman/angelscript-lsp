@@ -156,6 +156,40 @@ TSNode FindCalleeFunctionNode(TSNode callNode)
 }
 
 /**
+ * @brief Collects member symbols across an inheritance hierarchy into candidateSymbols.
+ * @param[in] hierarchy Type hierarchy list.
+ * @param[in] memberName Member identifier text.
+ * @param[in] symbolTable Symbol table to look up in.
+ * @param[in,out] candidateSymbols Output symbol vector.
+ */
+void CollectHierarchyMembers(const std::vector<std::string>& hierarchy, const std::string& memberName,
+                             const analysis::SymbolTable& symbolTable, std::vector<analysis::Symbol>& candidateSymbols)
+{
+    for (const auto& typeName : hierarchy)
+    {
+        std::string qualifiedName = typeName + "::" + memberName;
+        auto found = symbolTable.FindSymbols(qualifiedName);
+        for (const auto& sym : found)
+        {
+            if (sym.type == analysis::SymbolType::Function)
+            {
+                bool overriddenLower =
+                    std::any_of(candidateSymbols.begin(), candidateSymbols.end(), [&](const analysis::Symbol& kept)
+                                { return analysis::HasSameParameterList(kept, sym); });
+                if (!overriddenLower)
+                {
+                    candidateSymbols.push_back(sym);
+                }
+            }
+            else
+            {
+                candidateSymbols.push_back(sym);
+            }
+        }
+    }
+}
+
+/**
  * @brief Collects candidate method symbols for a member call expression across type hierarchy.
  * @param[in] funcNode AST member_expression node.
  * @param[in] request Inlay hint request context.
@@ -191,28 +225,7 @@ std::vector<analysis::Symbol> CollectMemberCalleeCandidates(TSNode funcNode, con
     }
 
     auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, request.symbolTable);
-    for (const auto& typeName : hierarchy)
-    {
-        std::string qualifiedName = typeName + "::" + memText;
-        auto found = request.symbolTable.FindSymbols(qualifiedName);
-        for (const auto& sym : found)
-        {
-            if (sym.type == analysis::SymbolType::Function)
-            {
-                bool overriddenLower =
-                    std::any_of(candidateSymbols.begin(), candidateSymbols.end(), [&](const analysis::Symbol& kept)
-                                { return analysis::HasSameParameterList(kept, sym); });
-                if (!overriddenLower)
-                {
-                    candidateSymbols.push_back(sym);
-                }
-            }
-            else
-            {
-                candidateSymbols.push_back(sym);
-            }
-        }
-    }
+    CollectHierarchyMembers(hierarchy, memText, request.symbolTable, candidateSymbols);
     return candidateSymbols;
 }
 
@@ -233,36 +246,12 @@ void CollectEnclosingClassCallees(const std::string& calleeName, TSNode callNode
         {
             auto hierarchy = analysis::GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName,
                                                                  request.symbolTable);
-            for (const auto& typeName : hierarchy)
-            {
-                std::string qualifiedName = typeName + "::" + calleeName;
-                auto found = request.symbolTable.FindSymbols(qualifiedName);
-                for (const auto& sym : found)
-                {
-                    if (sym.type == analysis::SymbolType::Function)
-                    {
-                        bool overriddenLower = std::any_of(candidateSymbols.begin(), candidateSymbols.end(),
-                                                           [&](const analysis::Symbol& kept)
-                                                           { return analysis::HasSameParameterList(kept, sym); });
-                        if (!overriddenLower)
-                        {
-                            candidateSymbols.push_back(sym);
-                        }
-                    }
-                }
-            }
+            CollectHierarchyMembers(hierarchy, calleeName, request.symbolTable, candidateSymbols);
             break;
         }
     }
 }
 
-/**
- * @brief Collects candidate function symbols for a free or unqualified call expression.
- * @param[in] funcNode AST callee function node.
- * @param[in] callNode AST call_expression node.
- * @param[in] request Inlay hint request context.
- * @return Vector of candidate symbols.
- */
 /**
  * @brief Resolves scoped callee candidates by walking enclosing namespaces and inherited hierarchies.
  * @param[in] calleeName Callee identifier string.
@@ -320,6 +309,39 @@ std::vector<analysis::Symbol> CollectScopedCalleeCandidates(const std::string& c
     return candidates;
 }
 
+/**
+ * @brief Collects constructor candidates for class symbols using fully qualified names with fallback.
+ * @param[in] candidateSymbols Symbols found in scope or table.
+ * @param[in] symbolTable Symbol table for resolution.
+ * @return Vector of constructor function symbols.
+ */
+std::vector<analysis::Symbol> CollectClassConstructorCandidates(const std::vector<analysis::Symbol>& candidateSymbols,
+                                                                const analysis::SymbolTable& symbolTable)
+{
+    std::vector<analysis::Symbol> ctorSymbols;
+    for (const auto& sym : candidateSymbols)
+    {
+        if (sym.type == analysis::SymbolType::Class)
+        {
+            const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            auto ctors = symbolTable.FindSymbols(qName + "::" + sym.name);
+            if (ctors.empty() && qName != sym.name)
+            {
+                ctors = symbolTable.FindSymbols(sym.name + "::" + sym.name);
+            }
+            ctorSymbols.insert(ctorSymbols.end(), ctors.begin(), ctors.end());
+        }
+    }
+    return ctorSymbols;
+}
+
+/**
+ * @brief Collects candidate function symbols for a free or unqualified call expression.
+ * @param[in] funcNode AST callee function node.
+ * @param[in] callNode AST call_expression node.
+ * @param[in] request Inlay hint request context.
+ * @return Vector of candidate symbols.
+ */
 std::vector<analysis::Symbol> CollectFreeCalleeCandidates(TSNode funcNode, TSNode callNode,
                                                           const InlayHintRequest& request)
 {
@@ -342,18 +364,37 @@ std::vector<analysis::Symbol> CollectFreeCalleeCandidates(TSNode funcNode, TSNod
         candidateSymbols = CollectScopedCalleeCandidates(calleeName, callNode, request);
     }
 
-    for (const auto& sym : candidateSymbols)
+    auto ctorSymbols = CollectClassConstructorCandidates(candidateSymbols, request.symbolTable);
+    if (!ctorSymbols.empty())
     {
-        if (sym.type == analysis::SymbolType::Class)
+        return ctorSymbols;
+    }
+
+    if (candidateSymbols.empty())
+    {
+        auto fallbackCtors =
+            analysis::CollectConstructorCandidates(calleeName, callNode, request.sourceCode, request.symbolTable);
+        if (!fallbackCtors.empty())
         {
-            std::string ctorName = sym.name + "::" + sym.name;
-            auto ctorSyms = request.symbolTable.FindSymbols(ctorName);
-            if (!ctorSyms.empty())
+            return fallbackCtors;
+        }
+    }
+
+    if (candidateSymbols.empty())
+    {
+        if (auto rootScope = request.scopeIndex.GetRoot(request.uri))
+        {
+            TSPoint pt = ts_node_start_point(callNode);
+            if (const auto* scope = analysis::FindInnermostScope(rootScope.get(), pt.row, pt.column))
             {
-                return ctorSyms;
+                if (auto callableSym = analysis::TryResolveCallableFuncdef(calleeName, scope, request.symbolTable))
+                {
+                    candidateSymbols.push_back(std::move(*callableSym));
+                }
             }
         }
     }
+
     return candidateSymbols;
 }
 
@@ -434,11 +475,7 @@ CalleeResolutionResult ExtractCalleeFromSymbol(const analysis::Symbol* sym)
         return {};
     }
     const auto* params = GetParametersIfCallable(*sym);
-    return {
-        sym->fileUri,
-        sym->name,
-        params ? *params : std::vector<analysis::ParameterInformation>{}
-    };
+    return {sym->fileUri, sym->name, params ? *params : std::vector<analysis::ParameterInformation>{}};
 }
 
 /**
@@ -448,8 +485,7 @@ CalleeResolutionResult ExtractCalleeFromSymbol(const analysis::Symbol* sym)
  * @param[in] numArgs Number of arguments passed in the call.
  * @return Callee resolution result matching the call.
  */
-CalleeResolutionResult ResolveCalleeParameters(TSNode callNode, const InlayHintRequest& request,
-                                              size_t numArgs)
+CalleeResolutionResult ResolveCalleeParameters(TSNode callNode, const InlayHintRequest& request, size_t numArgs)
 {
     TSNode funcNode = FindCalleeFunctionNode(callNode);
     if (ts_node_is_null(funcNode))
@@ -589,10 +625,8 @@ const analysis::Symbol* MatchConstructorOverload(const std::vector<analysis::Sym
  * @param[in] args Parsed argument information.
  * @return Callee resolution result matching the constructor call.
  */
-CalleeResolutionResult ResolveConstructorParameters(const std::string& declaredTypeName,
-                                                     TSNode declaratorNode,
-                                                     const InlayHintRequest& request,
-                                                     const std::vector<ArgInfo>& args)
+CalleeResolutionResult ResolveConstructorParameters(const std::string& declaredTypeName, TSNode declaratorNode,
+                                                    const InlayHintRequest& request, const std::vector<ArgInfo>& args)
 {
     std::string baseName = analysis::CleanBaseType(declaredTypeName);
     if (baseName.empty())
@@ -1064,8 +1098,7 @@ std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRequest& 
     std::string leftT = DeduceExpressionType(left, request);
     std::string rightT = DeduceExpressionType(right, request);
 
-    const std::string_view strType =
-        request.config ? std::string_view(request.config->types.stringTypeName) : "string";
+    const std::string_view strType = request.config ? std::string_view(request.config->types.stringTypeName) : "string";
     return SelectWiderType(leftT, rightT, strType);
 }
 
@@ -1177,8 +1210,10 @@ std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& reques
                                          ? std::string_view(request.config->types.arrayTypeName)
                                          : std::string_view("array");
 
-    std::string resolved = analysis::ResolveExpressionType(
-        exprNode, {scope, request.symbolTable, request.sourceCode, request.uri, strType, arrType});
+    analysis::ExpressionTypeContext exprCtx{scope, request.symbolTable, request.sourceCode, request.uri};
+    exprCtx.stringTypeName = strType;
+    exprCtx.arrayTypeName = arrType;
+    std::string resolved = analysis::ResolveExpressionType(exprNode, exprCtx);
     if (!resolved.empty() && resolved != "auto")
     {
         return resolved;
@@ -1232,11 +1267,9 @@ std::string ResolveParameterLabel(const analysis::ParameterInformation& param)
  * @brief Formats hover tooltip text for a parameter hint.
  * @param[in] param Parameter information.
  * @param[in] label Resolved parameter label.
- * @param[in] calleeName Name of the callee function or method.
  * @return Formatted tooltip string.
  */
-std::string FormatParameterTooltip(const analysis::ParameterInformation& param, const std::string& label,
-                                   std::string_view calleeName = "")
+std::string FormatParameterTooltip(const analysis::ParameterInformation& param, const std::string& label)
 {
     std::string sig;
     if (!param.name.empty())
@@ -1247,12 +1280,7 @@ std::string FormatParameterTooltip(const analysis::ParameterInformation& param, 
     {
         sig = !param.typeName.empty() ? param.typeName : label;
     }
-    std::string tooltip = "```angelscript\n" + sig + "\n```";
-    if (!calleeName.empty())
-    {
-        tooltip += "\n*Parameter for `" + std::string(calleeName) + "`*";
-    }
-    return tooltip;
+    return "(parameter) " + sig;
 }
 
 /**
@@ -1265,17 +1293,48 @@ struct ParamHintContext
 };
 
 /**
- * @brief Constructs a single parameter inlay hint.
- * @param[in] ctx Parameter hint context.
+ * @brief Resolves target location for an inlay hint parameter definition.
+ * @param[in] fallbackUri Fallback document URI.
+ * @param[in] calleeUri Declared URI of the callee.
+ * @param[in] param Callee parameter information.
+ * @return Resolved Location if parameter has valid range, std::nullopt otherwise.
+ */
+std::optional<lsp::Location> ResolveParameterLocation(const std::string& fallbackUri, const std::string& calleeUri,
+                                                      const analysis::ParameterInformation& param)
+{
+    const std::string& targetUri = calleeUri.empty() ? fallbackUri : calleeUri;
+    if (targetUri.empty())
+    {
+        return std::nullopt;
+    }
+    const bool hasNameLoc =
+        (param.nameStartLine != param.nameEndLine || param.nameStartCharacter != param.nameEndCharacter);
+    const bool hasValidLoc =
+        hasNameLoc || (param.startLine != param.endLine || param.startCharacter != param.endCharacter);
+    if (!hasValidLoc)
+    {
+        return std::nullopt;
+    }
+    const uint32_t sL = hasNameLoc ? param.nameStartLine : param.startLine;
+    const uint32_t sC = hasNameLoc ? param.nameStartCharacter : param.startCharacter;
+    const uint32_t eL = hasNameLoc ? param.nameEndLine : param.endLine;
+    const uint32_t eC = hasNameLoc ? param.nameEndCharacter : param.endCharacter;
+    lsp::Range paramRange{lsp::Position{sL, sC}, lsp::Position{eL, eC}};
+    return lsp::Location{targetUri.rfind("file://", 0) == 0 ? lsp::DocumentUri::parse(targetUri)
+                                                            : lsp::Uri::fileUriFromPath(targetUri),
+                         paramRange};
+}
+
+/**
+ * @brief Builds a parameter inlay hint for a single argument.
+ * @param[in] ctx Parameter hint context containing call and config details.
  * @param[in] param Callee parameter information.
  * @param[in] arg Argument metadata.
  * @param[in] label Formatted parameter label.
  * @return Populated InlayHint.
  */
-lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx,
-                                 const analysis::ParameterInformation& param,
-                                 const ArgInfo& arg,
-                                 std::string label)
+lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx, const analysis::ParameterInformation& param,
+                                  const ArgInfo& arg, std::string label)
 {
     lsp::InlayHint hint;
     hint.position = arg.hintPosition;
@@ -1288,23 +1347,14 @@ lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx,
 
     lsp::InlayHintLabelPart part;
     part.value = label + ":";
-    if (enableTooltip)
+    if (enableLocation)
     {
-        part.tooltip = FormatParameterTooltip(param, label, ctx.callee.calleeName);
+        part.location = ResolveParameterLocation(ctx.request.uri, ctx.callee.fileUri, param);
     }
-    std::string targetUri = ctx.callee.fileUri.empty() ? ctx.request.uri : ctx.callee.fileUri;
-    const bool hasValidLocation = (param.startLine != param.endLine || param.startCharacter != param.endCharacter);
-    if (enableLocation && !targetUri.empty() && hasValidLocation)
+    if (enableTooltip && !part.location.has_value())
     {
-        lsp::Range paramRange{
-            lsp::Position{param.startLine, param.startCharacter},
-            lsp::Position{param.endLine, param.endCharacter}
-        };
-        part.location = lsp::Location{
-            targetUri.rfind("file://", 0) == 0 ? lsp::DocumentUri::parse(targetUri)
-                                               : lsp::Uri::fileUriFromPath(targetUri),
-            paramRange
-        };
+        part.tooltip =
+            lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), FormatParameterTooltip(param, label)};
     }
     hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
     hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
@@ -1452,8 +1502,7 @@ std::vector<CallArgPosition> MapArgumentsToParameters(const std::vector<analysis
  * @param[in] hintInfo Omitted parameter metadata including location.
  * @return InlayHint object.
  */
-lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, std::string label,
-                                      const OmittedParamHint& hintInfo,
+lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, std::string label, const OmittedParamHint& hintInfo,
                                       const InlayHintRequest& request)
 {
     lsp::InlayHint hint;
@@ -1467,23 +1516,20 @@ lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, std::string labe
 
     lsp::InlayHintLabelPart part;
     part.value = std::move(label);
-    if (enableTooltip)
+    if (enableTooltip && !hintInfo.tooltip.empty())
     {
-        part.tooltip = hintInfo.tooltip;
+        part.tooltip = lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), hintInfo.tooltip};
     }
     const bool hasValidLocation = hintInfo.param && (hintInfo.param->startLine != hintInfo.param->endLine ||
-                                                    hintInfo.param->startCharacter != hintInfo.param->endCharacter);
+                                                     hintInfo.param->startCharacter != hintInfo.param->endCharacter);
     if (enableLocation && !hintInfo.fileUri.empty() && hasValidLocation)
     {
-        lsp::Range paramRange{
-            lsp::Position{hintInfo.param->startLine, hintInfo.param->startCharacter},
-            lsp::Position{hintInfo.param->endLine, hintInfo.param->endCharacter}
-        };
-        part.location = lsp::Location{
-            hintInfo.fileUri.rfind("file://", 0) == 0 ? lsp::DocumentUri::parse(hintInfo.fileUri)
-                                                      : lsp::Uri::fileUriFromPath(hintInfo.fileUri),
-            paramRange
-        };
+        lsp::Range paramRange{lsp::Position{hintInfo.param->startLine, hintInfo.param->startCharacter},
+                              lsp::Position{hintInfo.param->endLine, hintInfo.param->endCharacter}};
+        part.location =
+            lsp::Location{hintInfo.fileUri.rfind("file://", 0) == 0 ? lsp::DocumentUri::parse(hintInfo.fileUri)
+                                                                    : lsp::Uri::fileUriFromPath(hintInfo.fileUri),
+                          paramRange};
     }
     hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
     hint.tooltip = std::nullopt;
@@ -1497,8 +1543,8 @@ lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, std::string labe
  * @param[in] hintInfo Omitted parameter metadata.
  * @param[in,out] ctx Bundled request and hints context.
  */
-void EmitEmptyListOmittedHint(TSNode argListNode, const std::string& labelText,
-                              const OmittedParamHint& hintInfo, OmittedHintContext& ctx)
+void EmitEmptyListOmittedHint(TSNode argListNode, const std::string& labelText, const OmittedParamHint& hintInfo,
+                              OmittedHintContext& ctx)
 {
     TSPoint pt = ts_node_start_point(argListNode);
     if (ts_node_child_count(argListNode) > 0)
@@ -1588,8 +1634,8 @@ void AddOmittedDefaultArgumentHints(const CalleeResolutionResult& callee, TSNode
         }
 
         std::string labelText = FormatOmittedDefaultLabel(param, request.omittedDefaultArguments, request.maxLength);
-        std::string tooltip = "Default parameter:\n```angelscript\n" + param.typeName + " " + param.name +
-                              " = " + param.defaultValue + "\n```";
+        std::string tooltip = "Default parameter:\n```angelscript\n" + param.typeName + " " + param.name + " = " +
+                              param.defaultValue + "\n```";
         std::string targetUri = callee.fileUri.empty() ? request.uri : callee.fileUri;
         OmittedParamHint hintInfo{std::move(labelText), std::move(tooltip), std::move(targetUri), &param};
 
@@ -1614,25 +1660,35 @@ void AddOmittedDefaultArgumentHints(const CalleeResolutionResult& callee, TSNode
  */
 void ProcessCallExpression(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {
-    TSNode argListNode = parser::GetChildByField(node, parser::fields::Arguments);
-    if (ts_node_is_null(argListNode))
-    {
-        uint32_t childCount = ts_node_child_count(node);
-        for (uint32_t i = 0; i < childCount; ++i)
-        {
-            TSNode child = ts_node_child(node, i);
-            if (std::string_view(ts_node_type(child)) == "argument_list")
-            {
-                argListNode = child;
-                break;
-            }
-        }
-    }
-
+    TSNode argListNode = analysis::ResolveArgumentListNode(node);
     if (!ts_node_is_null(argListNode))
     {
         auto args = ParseArguments(argListNode, request.sourceCode);
         auto callee = ResolveCalleeParameters(node, request, args.size());
+        AddParameterHints(callee, args, request, hints);
+        AddOmittedDefaultArgumentHints(callee, argListNode, request, hints);
+    }
+}
+
+/**
+ * @brief Processes a construct_call_expression AST node to generate constructor parameter inlay hints.
+ * @param[in] node AST construct_call_expression node.
+ * @param[in] request Inlay hint request context.
+ * @param[in,out] hints Hint vector receiving generated parameter hints.
+ */
+void ProcessConstructorCallExpression(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
+{
+    std::string typeText = DeduceCastOrConstructType(node, request.sourceCode);
+    if (typeText.empty())
+    {
+        return;
+    }
+
+    TSNode argListNode = analysis::ResolveArgumentListNode(node);
+    if (!ts_node_is_null(argListNode))
+    {
+        auto args = ParseArguments(argListNode, request.sourceCode);
+        auto callee = ResolveConstructorParameters(typeText, node, request, args);
         AddParameterHints(callee, args, request, hints);
         AddOmittedDefaultArgumentHints(callee, argListNode, request, hints);
     }
@@ -1685,7 +1741,11 @@ void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequest& re
         hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Type);
         hint.paddingLeft = true;
         hint.paddingRight = false;
-        hint.tooltip = "Deduced type: " + deduced;
+        if (!request.config || request.config->features.inlayHintsEnableTooltip)
+        {
+            hint.tooltip =
+                lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), "Deduced type: " + deduced};
+        }
         hints.push_back(std::move(hint));
     }
 }
@@ -1818,6 +1878,10 @@ void CollectInlayHints(TSNode rootNode, const InlayHintRequest& request, std::ve
             if (nodeType == "call_expression")
             {
                 ProcessCallExpression(currentNode, request, hints);
+            }
+            else if (nodeType == "construct_call_expression")
+            {
+                ProcessConstructorCallExpression(currentNode, request, hints);
             }
             else if (nodeType == "variable_declaration")
             {

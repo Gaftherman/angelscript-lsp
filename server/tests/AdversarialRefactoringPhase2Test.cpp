@@ -1,17 +1,17 @@
+#include <doctest/doctest.h>
 #include <iostream>
 #include <string>
-#include <vector>
-#include <unordered_set>
 #include <unordered_map>
-#include <doctest/doctest.h>
+#include <unordered_set>
+#include <vector>
 
-#include "features/references/ReferencesHandler.h"
-#include "features/rename/RenameHandler.h"
-#include "config/ServerConfig.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "config/ServerConfig.h"
+#include "features/references/ReferencesHandler.h"
+#include "features/rename/RenameHandler.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -22,89 +22,69 @@ using namespace angel_lsp::config;
 
 namespace
 {
-    struct Phase2AdversarialEnv
+struct Phase2AdversarialEnv
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    std::unordered_set<std::string> predefinedUris;
+    std::unordered_map<std::string, std::string> sources;
+    std::unordered_map<std::string, TSTree*> trees;
+
+    void AddFile(const std::string& uri, const std::string& code, bool isPredefined = false)
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        std::unordered_set<std::string> predefinedUris;
-        std::unordered_map<std::string, std::string> sources;
-        std::unordered_map<std::string, TSTree *> trees;
-
-        void AddFile(const std::string &uri, const std::string &code, bool isPredefined = false)
+        sources[uri] = code;
+        TSTree* tree = parser.Parse(code);
+        trees[uri] = tree;
+        symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
+        auto rootScope = scopeCollector.CollectScopes(code, parser);
+        if (rootScope)
         {
-            sources[uri] = code;
-            TSTree *tree = parser.Parse(code);
-            trees[uri] = tree;
-            symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(code, parser);
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(uri, std::move(rootScope));
-            }
-            if (isPredefined)
-            {
-                predefinedUris.insert(uri);
-            }
+            scopeIndex.SetScopeTree(uri, std::move(rootScope));
         }
-
-        ~Phase2AdversarialEnv()
+        if (isPredefined)
         {
-            for (auto &[uri, tree] : trees)
+            predefinedUris.insert(uri);
+        }
+    }
+
+    ~Phase2AdversarialEnv()
+    {
+        for (auto& [uri, tree] : trees)
+        {
+            if (tree)
             {
-                if (tree)
-                {
-                    ts_tree_delete(tree);
-                }
+                ts_tree_delete(tree);
             }
         }
+    }
 
-        std::optional<ReferencesResult> RefsAt(const std::string &uri, uint32_t line, uint32_t character, bool includeDecl = true)
-        {
-            ReferencesRequest req{
-                uri,
-                sources[uri],
-                trees[uri],
-                lsp::Position{ line, character },
-                includeDecl,
-                symbolTable,
-                scopeIndex
-            };
-            return GetReferences(req);
-        }
+    std::optional<ReferencesResult> RefsAt(const std::string& uri, uint32_t line, uint32_t character,
+                                           bool includeDecl = true)
+    {
+        ReferencesRequest req{uri,         sources[uri], trees[uri], lsp::Position{line, character},
+                              includeDecl, symbolTable,  scopeIndex};
+        return GetReferences(req);
+    }
 
-        std::optional<lsp::PrepareRenameResult> PrepareAt(const std::string &uri, uint32_t line, uint32_t character)
-        {
-            PrepareRenameRequest req{
-                uri,
-                sources[uri],
-                trees[uri],
-                lsp::Position{ line, character },
-                symbolTable,
-                scopeIndex,
-                predefinedUris
-            };
-            return PrepareRename(req);
-        }
+    std::optional<lsp::PrepareRenameResult> PrepareAt(const std::string& uri, uint32_t line, uint32_t character)
+    {
+        PrepareRenameRequest req{uri,         sources[uri], trees[uri],    lsp::Position{line, character},
+                                 symbolTable, scopeIndex,   predefinedUris};
+        return PrepareRename(req);
+    }
 
-        std::optional<lsp::WorkspaceEdit> RenameAt(const std::string &uri, uint32_t line, uint32_t character, const std::string &newName)
-        {
-            RenameRequest req{
-                uri,
-                sources[uri],
-                trees[uri],
-                lsp::Position{ line, character },
-                newName,
-                symbolTable,
-                scopeIndex,
-                predefinedUris
-            };
-            return Rename(req);
-        }
-    };
-}
+    std::optional<lsp::WorkspaceEdit> RenameAt(const std::string& uri, uint32_t line, uint32_t character,
+                                               const std::string& newName)
+    {
+        RenameRequest req{uri,     sources[uri], trees[uri], lsp::Position{line, character},
+                          newName, symbolTable,  scopeIndex, predefinedUris};
+        return Rename(req);
+    }
+};
+} // namespace
 
 TEST_SUITE("Phase 2 Adversarial - Find References Stress Testing")
 {
@@ -112,18 +92,17 @@ TEST_SUITE("Phase 2 Adversarial - Find References Stress Testing")
     {
         Phase2AdversarialEnv env;
         std::string uri = "file:///shadowing.as";
-        std::string code =
-            "void TestShadow() {\n"
-            "    int val = 1;\n"                         // Line 1: Level 0 'val'
-            "    if (val > 0) {\n"                        // Line 2: Level 0 'val' usage
-            "        int val = 2;\n"                     // Line 3: Level 1 'val'
-            "        for (int val = 0; val < 10; ++val) {\n" // Line 4: Level 2 'val' (decl, cond, inc)
-            "            val += 1;\n"                    // Line 5: Level 2 'val' usage
-            "        }\n"
-            "        val += 20;\n"                       // Line 7: Level 1 'val' usage
-            "    }\n"
-            "    val += 100;\n"                          // Line 9: Level 0 'val' usage
-            "}\n";
+        std::string code = "void TestShadow() {\n"
+                           "    int val = 1;\n"                             // Line 1: Level 0 'val'
+                           "    if (val > 0) {\n"                           // Line 2: Level 0 'val' usage
+                           "        int val = 2;\n"                         // Line 3: Level 1 'val'
+                           "        for (int val = 0; val < 10; ++val) {\n" // Line 4: Level 2 'val' (decl, cond, inc)
+                           "            val += 1;\n"                        // Line 5: Level 2 'val' usage
+                           "        }\n"
+                           "        val += 20;\n" // Line 7: Level 1 'val' usage
+                           "    }\n"
+                           "    val += 100;\n" // Line 9: Level 0 'val' usage
+                           "}\n";
 
         env.AddFile(uri, code);
 
@@ -166,11 +145,10 @@ TEST_SUITE("Phase 2 Adversarial - Find References Stress Testing")
     {
         Phase2AdversarialEnv env;
         std::string uri = "file:///same_line.as";
-        std::string code =
-            "void Compute() {\n"
-            "    int k = 5;\n"
-            "    k = k + k * k;\n" // Line 2: 4 references to k
-            "}\n";
+        std::string code = "void Compute() {\n"
+                           "    int k = 5;\n"
+                           "    k = k + k * k;\n" // Line 2: 4 references to k
+                           "}\n";
 
         env.AddFile(uri, code);
 
@@ -205,27 +183,26 @@ TEST_SUITE("Phase 2 Adversarial - Find References Stress Testing")
     {
         Phase2AdversarialEnv env;
         std::string uri = "file:///hierarchy.as";
-        std::string code =
-            "class BaseNode {\n"
-            "    int tag = 0;\n"
-            "    void Update() { tag = 1; }\n"
-            "}\n"
-            "class DerivedNode : BaseNode {\n"
-            "    void Process() { Update(); }\n"
-            "}\n"
-            "class SubDerivedNode : DerivedNode {\n"
-            "    void Run() { this.Update(); }\n"
-            "}\n"
-            "class UnrelatedNode {\n"
-            "    int tag = 99;\n"
-            "    void Update() { tag = 99; }\n"
-            "}\n"
-            "void main() {\n"
-            "    SubDerivedNode s;\n"
-            "    s.Update();\n"
-            "    UnrelatedNode u;\n"
-            "    u.Update();\n"
-            "}\n";
+        std::string code = "class BaseNode {\n"
+                           "    int tag = 0;\n"
+                           "    void Update() { tag = 1; }\n"
+                           "}\n"
+                           "class DerivedNode : BaseNode {\n"
+                           "    void Process() { Update(); }\n"
+                           "}\n"
+                           "class SubDerivedNode : DerivedNode {\n"
+                           "    void Run() { this.Update(); }\n"
+                           "}\n"
+                           "class UnrelatedNode {\n"
+                           "    int tag = 99;\n"
+                           "    void Update() { tag = 99; }\n"
+                           "}\n"
+                           "void main() {\n"
+                           "    SubDerivedNode s;\n"
+                           "    s.Update();\n"
+                           "    UnrelatedNode u;\n"
+                           "    u.Update();\n"
+                           "}\n";
 
         env.AddFile(uri, code);
 
@@ -263,25 +240,22 @@ TEST_SUITE("Phase 2 Adversarial - Find References Stress Testing")
     {
         Phase2AdversarialEnv env;
         std::string fileDefs = "file:///defs.as";
-        std::string codeDefs =
-            "int GlobalScore = 100;\n"
-            "void AddScore(int amount) {\n"
-            "    GlobalScore += amount;\n"
-            "}\n";
+        std::string codeDefs = "int GlobalScore = 100;\n"
+                               "void AddScore(int amount) {\n"
+                               "    GlobalScore += amount;\n"
+                               "}\n";
 
         std::string fileConsumer = "file:///consumer.as";
-        std::string codeConsumer =
-            "void Play() {\n"
-            "    AddScore(10);\n"
-            "    GlobalScore += 5;\n"
-            "}\n";
+        std::string codeConsumer = "void Play() {\n"
+                                   "    AddScore(10);\n"
+                                   "    GlobalScore += 5;\n"
+                                   "}\n";
 
         std::string fileShadow = "file:///shadow.as";
-        std::string codeShadow =
-            "void Isolated() {\n"
-            "    int GlobalScore = 0;\n" // Local shadow
-            "    GlobalScore += 1;\n"
-            "}\n";
+        std::string codeShadow = "void Isolated() {\n"
+                                 "    int GlobalScore = 0;\n" // Local shadow
+                                 "    GlobalScore += 1;\n"
+                                 "}\n";
 
         env.AddFile(fileDefs, codeDefs);
         env.AddFile(fileConsumer, codeConsumer);
@@ -309,30 +283,29 @@ TEST_SUITE("Phase 2 Adversarial - Prepare Rename Validation & Rejections")
 {
     TEST_CASE("Prepare Rename - Extensive Keyword and Primitive Type Rejection Matrix")
     {
-        std::string code =
-            "// A comment line\n"
-            "/* Multi-line comment */\n"
-            "class MyClass {\n"
-            "    private int m_count = 0;\n"
-            "    protected float m_speed = 1.5f;\n"
-            "    void Run(bool active) {\n"
-            "        if (active) {\n"
-            "            for (uint i = 0; i < 10; ++i) {\n"
-            "                while (m_count < 10) {\n"
-            "                    return;\n"
-            "                }\n"
-            "            }\n"
-            "        }\n"
-            "    }\n"
-            "}\n";
+        std::string code = "// A comment line\n"
+                           "/* Multi-line comment */\n"
+                           "class MyClass {\n"
+                           "    private int m_count = 0;\n"
+                           "    protected float m_speed = 1.5f;\n"
+                           "    void Run(bool active) {\n"
+                           "        if (active) {\n"
+                           "            for (uint i = 0; i < 10; ++i) {\n"
+                           "                while (m_count < 10) {\n"
+                           "                    return;\n"
+                           "                }\n"
+                           "            }\n"
+                           "        }\n"
+                           "    }\n"
+                           "}\n";
 
         Phase2AdversarialEnv env;
         std::string uri = "file:///keywords.as";
         env.AddFile(uri, code);
 
         // 1. Comments
-        CHECK(!env.PrepareAt(uri, 0, 3).has_value());  // Inside // comment
-        CHECK(!env.PrepareAt(uri, 1, 5).has_value());  // Inside /* comment */
+        CHECK(!env.PrepareAt(uri, 0, 3).has_value()); // Inside // comment
+        CHECK(!env.PrepareAt(uri, 1, 5).has_value()); // Inside /* comment */
 
         // 2. Reserved Keywords
         CHECK(!env.PrepareAt(uri, 2, 2).has_value());  // class
@@ -378,19 +351,17 @@ TEST_SUITE("Phase 2 Adversarial - Prepare Rename Validation & Rejections")
     {
         Phase2AdversarialEnv env;
         std::string predefUri = "file:///builtin.as.predefined";
-        std::string predefCode =
-            "class Vector3 {\n"
-            "    float x, y, z;\n"
-            "    float Length() const;\n"
-            "}\n";
+        std::string predefCode = "class Vector3 {\n"
+                                 "    float x, y, z;\n"
+                                 "    float Length() const;\n"
+                                 "}\n";
 
         std::string userUri = "file:///main.as";
-        std::string userCode =
-            "void main() {\n"
-            "    Vector3 v;\n"
-            "    v.x = 1.0f;\n"
-            "    float len = v.Length();\n"
-            "}\n";
+        std::string userCode = "void main() {\n"
+                               "    Vector3 v;\n"
+                               "    v.x = 1.0f;\n"
+                               "    float len = v.Length();\n"
+                               "}\n";
 
         env.AddFile(predefUri, predefCode, true);
         env.AddFile(userUri, userCode, false);
@@ -413,27 +384,24 @@ TEST_SUITE("Phase 2 Adversarial - Rename Execution & WorkspaceEdit Accuracy")
     {
         Phase2AdversarialEnv env;
         std::string fileA = "file:///fileA.as";
-        std::string codeA =
-            "class ConfigManager {\n"
-            "    int settingId = 42;\n"
-            "}\n";
+        std::string codeA = "class ConfigManager {\n"
+                            "    int settingId = 42;\n"
+                            "}\n";
 
         std::string fileB = "file:///fileB.as";
-        std::string codeB =
-            "void Initialize(ConfigManager@ mgr) {\n"
-            "    if (mgr !is null) {\n"
-            "        mgr.settingId = 100;\n"
-            "    }\n"
-            "}\n";
+        std::string codeB = "void Initialize(ConfigManager@ mgr) {\n"
+                            "    if (mgr !is null) {\n"
+                            "        mgr.settingId = 100;\n"
+                            "    }\n"
+                            "}\n";
 
         std::string fileC = "file:///fileC.as";
-        std::string codeC =
-            "void Run() {\n"
-            "    ConfigManager cfg;\n"
-            "    int settingId = 0;\n" // Unrelated local with same name
-            "    settingId += 1;\n"
-            "    cfg.settingId = settingId;\n"
-            "}\n";
+        std::string codeC = "void Run() {\n"
+                            "    ConfigManager cfg;\n"
+                            "    int settingId = 0;\n" // Unrelated local with same name
+                            "    settingId += 1;\n"
+                            "    cfg.settingId = settingId;\n"
+                            "}\n";
 
         env.AddFile(fileA, codeA);
         env.AddFile(fileB, codeB);
@@ -444,7 +412,7 @@ TEST_SUITE("Phase 2 Adversarial - Rename Execution & WorkspaceEdit Accuracy")
         REQUIRE(edit.has_value());
         REQUIRE(edit->changes.has_value());
 
-        const auto &changes = *edit->changes;
+        const auto& changes = *edit->changes;
         // File A, File B, File C should all be modified
         REQUIRE(changes.size() == 3);
 
@@ -505,35 +473,20 @@ TEST_SUITE("Phase 2 Adversarial - ServerConfig CLI Flags Verification")
 {
     TEST_CASE("ServerConfig - Case-Insensitive Flag Variations and Robust Parsing")
     {
-        const char *argv1[] = {
-            "angel_lsp",
-            "--enable-rename=FALSE",
-            "--enable-references=0",
-            "--disable-hover=false"
-        };
+        const char* argv1[] = {"angel_lsp", "--enable-rename=FALSE", "--enable-references=0", "--disable-hover=false"};
         ServerConfig cfg1 = FromArgs(4, const_cast<char**>(argv1));
         CHECK(cfg1.features.enableRename == false);
         CHECK(cfg1.features.enableReferences == false);
         CHECK(cfg1.features.enableHover == true);
 
-        const char *argv2[] = {
-            "angel_lsp",
-            "--enable-rename=Off",
-            "--enable-references=NO",
-            "--disable-documentsymbols"
-        };
+        const char* argv2[] = {"angel_lsp", "--enable-rename=Off", "--enable-references=NO",
+                               "--disable-documentsymbols"};
         ServerConfig cfg2 = FromArgs(4, const_cast<char**>(argv2));
         CHECK(cfg2.features.enableRename == false);
         CHECK(cfg2.features.enableReferences == false);
         CHECK(cfg2.features.enableDocumentSymbols == false);
 
-        const char *argv3[] = {
-            "angel_lsp",
-            "--disable-rename",
-            "--enable-rename=true",
-            "--enable-references",
-            "false"
-        };
+        const char* argv3[] = {"angel_lsp", "--disable-rename", "--enable-rename=true", "--enable-references", "false"};
         ServerConfig cfg3 = FromArgs(5, const_cast<char**>(argv3));
         CHECK(cfg3.features.enableRename == true);
         CHECK(cfg3.features.enableReferences == false);

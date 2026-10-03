@@ -26,24 +26,22 @@ using namespace angel_lsp::utils;
 
 namespace
 {
-    bool Excludes(const std::string &source, uint32_t line,
-                  const ankerl::unordered_dense::set<std::string> &defined = {})
-    {
-        return IsLineExcluded(FindExcludedLineRanges(source, defined), line);
-    }
+bool Excludes(const std::string& source, uint32_t line, const ankerl::unordered_dense::set<std::string>& defined = {})
+{
+    return IsLineExcluded(FindExcludedLineRanges(source, defined), line);
 }
+} // namespace
 
 TEST_CASE("Preprocessor - An undefined word excludes the whole block")
 {
-    const std::string source =
-        "void before() {}\n"   // 0
-        "#if FALSE\n"          // 1
-        "void inside() {}\n"   // 2
-        "#endif\n"             // 3
-        "void after() {}\n";   // 4
+    const std::string source = "void before() {}\n" // 0
+                               "#if FALSE\n"        // 1
+                               "void inside() {}\n" // 2
+                               "#endif\n"           // 3
+                               "void after() {}\n"; // 4
 
     CHECK_FALSE(Excludes(source, 0));
-    CHECK(Excludes(source, 1));   // the directive line itself is blanked too
+    CHECK(Excludes(source, 1)); // the directive line itself is blanked too
     CHECK(Excludes(source, 2));
     CHECK(Excludes(source, 3));
     CHECK_FALSE(Excludes(source, 4));
@@ -51,10 +49,9 @@ TEST_CASE("Preprocessor - An undefined word excludes the whole block")
 
 TEST_CASE("Preprocessor - A defined word keeps the block")
 {
-    const std::string source =
-        "#if DEBUG_BUILD\n"
-        "void inside() {}\n"
-        "#endif\n";
+    const std::string source = "#if DEBUG_BUILD\n"
+                               "void inside() {}\n"
+                               "#endif\n";
 
     ankerl::unordered_dense::set<std::string> defined;
     defined.insert("DEBUG_BUILD");
@@ -67,15 +64,14 @@ TEST_CASE("Preprocessor - A defined word keeps the block")
 
 TEST_CASE("Preprocessor - Nested directives do not end an excluded block early")
 {
-    const std::string source =
-        "#if OUTER\n"          // 0
-        "void a() {}\n"        // 1
-        "#if INNER\n"          // 2
-        "void b() {}\n"        // 3
-        "#endif\n"             // 4  closes INNER, NOT OUTER
-        "void c() {}\n"        // 5  still inside OUTER
-        "#endif\n"             // 6  closes OUTER
-        "void d() {}\n";       // 7
+    const std::string source = "#if OUTER\n"    // 0
+                               "void a() {}\n"  // 1
+                               "#if INNER\n"    // 2
+                               "void b() {}\n"  // 3
+                               "#endif\n"       // 4  closes INNER, NOT OUTER
+                               "void c() {}\n"  // 5  still inside OUTER
+                               "#endif\n"       // 6  closes OUTER
+                               "void d() {}\n"; // 7
 
     for (uint32_t line = 0; line <= 6; ++line)
     {
@@ -87,11 +83,10 @@ TEST_CASE("Preprocessor - Nested directives do not end an excluded block early")
 
 TEST_CASE("Preprocessor - An unterminated block runs to end of file")
 {
-    const std::string source =
-        "void before() {}\n"
-        "#if FALSE\n"
-        "void inside() {}\n"
-        "void alsoInside() {}\n";
+    const std::string source = "void before() {}\n"
+                               "#if FALSE\n"
+                               "void inside() {}\n"
+                               "void alsoInside() {}\n";
 
     CHECK_FALSE(Excludes(source, 0));
     CHECK(Excludes(source, 2));
@@ -102,21 +97,18 @@ TEST_CASE("Preprocessor - Directives inside comments and strings are not directi
 {
     // A '#if' that is not really a directive must not silently blank out the rest of the file,
     // which is the failure mode a naive line scan would have.
-    const std::string commented =
-        "/*\n"
-        "#if FALSE\n"
-        "*/\n"
-        "void real() {}\n";
+    const std::string commented = "/*\n"
+                                  "#if FALSE\n"
+                                  "*/\n"
+                                  "void real() {}\n";
     CHECK_FALSE(Excludes(commented, 3));
 
-    const std::string lineComment =
-        "// #if FALSE\n"
-        "void real() {}\n";
+    const std::string lineComment = "// #if FALSE\n"
+                                    "void real() {}\n";
     CHECK_FALSE(Excludes(lineComment, 1));
 
-    const std::string inString =
-        "string s = \"#if FALSE\";\n"
-        "void real() {}\n";
+    const std::string inString = "string s = \"#if FALSE\";\n"
+                                 "void real() {}\n";
     CHECK_FALSE(Excludes(inString, 1));
 }
 
@@ -143,14 +135,14 @@ TEST_CASE("Preprocessor - No directives means nothing is excluded")
 TEST_CASE("Preprocessor - ScanDefinedWords extracts define directives from stubs")
 {
     // A single define directive extracts its identifier.
-    CHECK(ScanDefinedWords("#define FOO\n") == std::vector<std::string>{ "FOO" });
+    CHECK(ScanDefinedWords("#define FOO\n") == std::vector<std::string>{"FOO"});
 
     // Multiple directives are returned in their order of appearance.
     CHECK(ScanDefinedWords("#define FIRST\n#define SECOND\n#define THIRD\n") ==
-          std::vector<std::string>{ "FIRST", "SECOND", "THIRD" });
+          std::vector<std::string>{"FIRST", "SECOND", "THIRD"});
 
     // Leading indentation and spaces between hash and directive name are accepted.
-    CHECK(ScanDefinedWords("  \t # \t define   INDENTED\n") == std::vector<std::string>{ "INDENTED" });
+    CHECK(ScanDefinedWords("  \t # \t define   INDENTED\n") == std::vector<std::string>{"INDENTED"});
 
     // Directives within single-line comments are ignored.
     CHECK(ScanDefinedWords("// #define IN_LINE_COMMENT\n").empty());
@@ -165,7 +157,7 @@ TEST_CASE("Preprocessor - ScanDefinedWords extracts define directives from stubs
     CHECK(ScanDefinedWords("#define\n#define   \n").empty());
 
     // Duplicate defines are preserved in appearance order so caller set insertion is explicit.
-    CHECK(ScanDefinedWords("#define DUP\n#define DUP\n") == std::vector<std::string>{ "DUP", "DUP" });
+    CHECK(ScanDefinedWords("#define DUP\n#define DUP\n") == std::vector<std::string>{"DUP", "DUP"});
 
     // A document containing no directives returns an empty vector.
     CHECK(ScanDefinedWords("class Foo { void Bar(); }\n").empty());
@@ -180,10 +172,9 @@ TEST_CASE("Preprocessor - Defined words from stub control exclusion in FindExclu
     const std::string stubWithFoo = "#define FOO\n";
     const std::string stubWithoutFoo = "// No defines here\n";
 
-    const std::string source =
-        "#if FOO\n"
-        "void inside() {}\n"
-        "#endif\n";
+    const std::string source = "#if FOO\n"
+                               "void inside() {}\n"
+                               "#endif\n";
 
     const auto wordsFrom = [](std::string_view stub)
     {
@@ -200,7 +191,6 @@ TEST_CASE("Preprocessor - Defined words from stub control exclusion in FindExclu
     CHECK(IsLineExcluded(excluded, 1));
 }
 
-
 // =====================================================================================
 // Host preprocessor extensions.
 //
@@ -213,13 +203,13 @@ TEST_CASE("Preprocessor - Defined words from stub control exclusion in FindExclu
 
 namespace
 {
-    using angel_lsp::utils::PreprocessorFeatures;
+using angel_lsp::utils::PreprocessorFeatures;
 
-    ankerl::unordered_dense::set<std::string> Defined(std::initializer_list<std::string> words)
-    {
-        return ankerl::unordered_dense::set<std::string>(words);
-    }
+ankerl::unordered_dense::set<std::string> Defined(std::initializer_list<std::string> words)
+{
+    return ankerl::unordered_dense::set<std::string>(words);
 }
+} // namespace
 
 TEST_CASE("Preprocessor - By default #else is swallowed by the block it sits in")
 {
@@ -227,12 +217,11 @@ TEST_CASE("Preprocessor - By default #else is swallowed by the block it sits in"
     // `#else` branch fails with "No matching symbol", not with a complaint about `#else`: the whole
     // block went, `#else` included, because `#else` is not a directive to the stock add-on and the
     // exclusion runs to the `#endif` regardless of what is in between.
-    const std::string source =
-        "#if FOO\n"       // 0
-        "void a() {}\n"   // 1
-        "#else\n"         // 2
-        "void b() {}\n"   // 3
-        "#endif\n";       // 4
+    const std::string source = "#if FOO\n"     // 0
+                               "void a() {}\n" // 1
+                               "#else\n"       // 2
+                               "void b() {}\n" // 3
+                               "#endif\n";     // 4
 
     const auto ranges = FindExcludedLineRanges(source, {});
 
@@ -246,12 +235,11 @@ TEST_CASE("Preprocessor - By default #else is swallowed by the block it sits in"
 
 TEST_CASE("Preprocessor - With elseSupport the two branches are separate")
 {
-    const std::string source =
-        "#if FOO\n"       // 0
-        "void a() {}\n"   // 1
-        "#else\n"         // 2
-        "void b() {}\n"   // 3
-        "#endif\n";       // 4
+    const std::string source = "#if FOO\n"     // 0
+                               "void a() {}\n" // 1
+                               "#else\n"       // 2
+                               "void b() {}\n" // 3
+                               "#endif\n";     // 4
 
     PreprocessorFeatures features;
     features.elseSupport = true;
@@ -266,7 +254,7 @@ TEST_CASE("Preprocessor - With elseSupport the two branches are separate")
 
     SUBCASE("the word is defined, so it is the other way round")
     {
-        const auto ranges = FindExcludedLineRanges(source, Defined({ "FOO" }), features);
+        const auto ranges = FindExcludedLineRanges(source, Defined({"FOO"}), features);
 
         CHECK_FALSE(IsLineExcluded(ranges, 1));
         CHECK(IsLineExcluded(ranges, 3));
@@ -275,16 +263,15 @@ TEST_CASE("Preprocessor - With elseSupport the two branches are separate")
 
 TEST_CASE("Preprocessor - With elifSupport the first true branch is the only live one")
 {
-    const std::string source =
-        "#if FOO\n"       // 0
-        "void a() {}\n"   // 1
-        "#elif BAR\n"     // 2
-        "void b() {}\n"   // 3
-        "#elif BAZ\n"     // 4
-        "void c() {}\n"   // 5
-        "#else\n"         // 6
-        "void d() {}\n"   // 7
-        "#endif\n";       // 8
+    const std::string source = "#if FOO\n"     // 0
+                               "void a() {}\n" // 1
+                               "#elif BAR\n"   // 2
+                               "void b() {}\n" // 3
+                               "#elif BAZ\n"   // 4
+                               "void c() {}\n" // 5
+                               "#else\n"       // 6
+                               "void d() {}\n" // 7
+                               "#endif\n";     // 8
 
     PreprocessorFeatures features;
     features.elseSupport = true;
@@ -293,7 +280,7 @@ TEST_CASE("Preprocessor - With elifSupport the first true branch is the only liv
     SUBCASE("a later branch is dead once an earlier one was taken")
     {
         // Both BAR and BAZ are defined; only BAR's branch is live, and that is the whole rule.
-        const auto ranges = FindExcludedLineRanges(source, Defined({ "BAR", "BAZ" }), features);
+        const auto ranges = FindExcludedLineRanges(source, Defined({"BAR", "BAZ"}), features);
 
         CHECK(IsLineExcluded(ranges, 1));
         CHECK_FALSE(IsLineExcluded(ranges, 3));
@@ -314,18 +301,17 @@ TEST_CASE("Preprocessor - With elifSupport the first true branch is the only liv
 
 TEST_CASE("Preprocessor - ifdefSupport opens a region, and ifndef negates it")
 {
-    const std::string source =
-        "#ifdef FOO\n"    // 0
-        "void a() {}\n"   // 1
-        "#endif\n"        // 2
-        "#ifndef FOO\n"   // 3
-        "void b() {}\n"   // 4
-        "#endif\n";       // 5
+    const std::string source = "#ifdef FOO\n"  // 0
+                               "void a() {}\n" // 1
+                               "#endif\n"      // 2
+                               "#ifndef FOO\n" // 3
+                               "void b() {}\n" // 4
+                               "#endif\n";     // 5
 
     PreprocessorFeatures features;
     features.ifdefSupport = true;
 
-    const auto ranges = FindExcludedLineRanges(source, Defined({ "FOO" }), features);
+    const auto ranges = FindExcludedLineRanges(source, Defined({"FOO"}), features);
 
     CHECK_FALSE(IsLineExcluded(ranges, 1));
     CHECK(IsLineExcluded(ranges, 4));
@@ -335,24 +321,22 @@ TEST_CASE("Preprocessor - Without ifdefSupport neither one opens anything")
 {
     // The stock add-on leaves `#ifdef` in the source and the compiler reports an unexpected token,
     // so it excludes nothing at all - not even the body a reader would expect it to guard.
-    const std::string source =
-        "#ifdef FOO\n"
-        "void a() {}\n"
-        "#endif\n";
+    const std::string source = "#ifdef FOO\n"
+                               "void a() {}\n"
+                               "#endif\n";
 
     CHECK(FindExcludedLineRanges(source, {}).empty());
 }
 
 TEST_CASE("Preprocessor - defineInScripts defines from its own line onwards")
 {
-    const std::string source =
-        "#if FOO\n"       // 0
-        "void early() {}\n"
-        "#endif\n"        // 2
-        "#define FOO\n"   // 3
-        "#if FOO\n"       // 4
-        "void late() {}\n"// 5
-        "#endif\n";       // 6
+    const std::string source = "#if FOO\n" // 0
+                               "void early() {}\n"
+                               "#endif\n"         // 2
+                               "#define FOO\n"    // 3
+                               "#if FOO\n"        // 4
+                               "void late() {}\n" // 5
+                               "#endif\n";        // 6
 
     PreprocessorFeatures features;
     features.defineInScripts = true;
@@ -366,11 +350,10 @@ TEST_CASE("Preprocessor - defineInScripts defines from its own line onwards")
 
 TEST_CASE("Preprocessor - Without defineInScripts a #define in a script defines nothing")
 {
-    const std::string source =
-        "#define FOO\n"
-        "#if FOO\n"
-        "void late() {}\n"
-        "#endif\n";
+    const std::string source = "#define FOO\n"
+                               "#if FOO\n"
+                               "void late() {}\n"
+                               "#endif\n";
 
     // Which is right: the stock add-on does not recognise `#define`, leaves it in the source, and
     // the compiler rejects the file. Silence about the block is the safe half of that.
@@ -381,16 +364,15 @@ TEST_CASE("Preprocessor - A branch boundary inside a nested dead block belongs t
 {
     // The inner `#else` must not be mistaken for the outer one's, or the outer live branch would
     // start in the middle of a block that is going away.
-    const std::string source =
-        "#if OUTER\n"      // 0
-        "#if INNER\n"      // 1
-        "void a() {}\n"    // 2
-        "#else\n"          // 3
-        "void b() {}\n"    // 4
-        "#endif\n"         // 5
-        "#else\n"          // 6
-        "void c() {}\n"    // 7
-        "#endif\n";        // 8
+    const std::string source = "#if OUTER\n"   // 0
+                               "#if INNER\n"   // 1
+                               "void a() {}\n" // 2
+                               "#else\n"       // 3
+                               "void b() {}\n" // 4
+                               "#endif\n"      // 5
+                               "#else\n"       // 6
+                               "void c() {}\n" // 7
+                               "#endif\n";     // 8
 
     PreprocessorFeatures features;
     features.elseSupport = true;
@@ -415,29 +397,26 @@ TEST_CASE("Preprocessor - A branch boundary inside a nested dead block belongs t
 
 namespace
 {
-    /** @brief The directive names reported for a document, in source order. */
-    std::vector<std::string> UnsupportedNames(
-        const std::string &source,
-        const ankerl::unordered_dense::set<std::string> &defined = {},
-        const PreprocessorFeatures &features = {},
-        bool reportPragma = false)
-    {
-        std::vector<std::string> names;
-        for (const auto &d : ScanPreprocessor(source, defined, features, reportPragma).unsupported)
-            names.push_back(d.name);
-        return names;
-    }
+/** @brief The directive names reported for a document, in source order. */
+std::vector<std::string> UnsupportedNames(const std::string& source,
+                                          const ankerl::unordered_dense::set<std::string>& defined = {},
+                                          const PreprocessorFeatures& features = {}, bool reportPragma = false)
+{
+    std::vector<std::string> names;
+    for (const auto& d : ScanPreprocessor(source, defined, features, reportPragma).unsupported)
+        names.push_back(d.name);
+    return names;
 }
+} // namespace
 
 TEST_CASE("Preprocessor - The directives the stock add-on leaves for the compiler are reported")
 {
     // Each of these exits 1 through the oracle on its own.
-    CHECK(UnsupportedNames("#define FOO\n") == std::vector<std::string>{ "define" });
-    CHECK(UnsupportedNames("#ifdef FOO\nvoid a() {}\n#endif\n") ==
-          std::vector<std::string>{ "ifdef", "endif" });
-    CHECK(UnsupportedNames("#ifndef FOO\n#endif\n") == std::vector<std::string>{ "ifndef", "endif" });
-    CHECK(UnsupportedNames("#else\nvoid main() {}\n") == std::vector<std::string>{ "else" });
-    CHECK(UnsupportedNames("#endif\nvoid main() {}\n") == std::vector<std::string>{ "endif" });
+    CHECK(UnsupportedNames("#define FOO\n") == std::vector<std::string>{"define"});
+    CHECK(UnsupportedNames("#ifdef FOO\nvoid a() {}\n#endif\n") == std::vector<std::string>{"ifdef", "endif"});
+    CHECK(UnsupportedNames("#ifndef FOO\n#endif\n") == std::vector<std::string>{"ifndef", "endif"});
+    CHECK(UnsupportedNames("#else\nvoid main() {}\n") == std::vector<std::string>{"else"});
+    CHECK(UnsupportedNames("#endif\nvoid main() {}\n") == std::vector<std::string>{"endif"});
 }
 
 TEST_CASE("Preprocessor - Nothing is reported for a directive the preprocessor already deleted")
@@ -473,7 +452,7 @@ TEST_CASE("Preprocessor - A live #if does not protect what is inside it")
     // the compiler and the file is rejected.
     const std::string source = "#if FOO\n#define BAR\n#endif\n";
 
-    CHECK(UnsupportedNames(source, Defined({ "FOO" })) == std::vector<std::string>{ "define" });
+    CHECK(UnsupportedNames(source, Defined({"FOO"})) == std::vector<std::string>{"define"});
 }
 
 TEST_CASE("Preprocessor - A directive goes quiet as soon as its switch is on")
@@ -484,15 +463,14 @@ TEST_CASE("Preprocessor - A directive goes quiet as soon as its switch is on")
     features.ifdefSupport = true;
     features.defineInScripts = true;
 
-    const std::string source =
-        "#define FOO\n"
-        "#ifdef FOO\n"
-        "void a() {}\n"
-        "#elif BAR\n"
-        "void b() {}\n"
-        "#else\n"
-        "void c() {}\n"
-        "#endif\n";
+    const std::string source = "#define FOO\n"
+                               "#ifdef FOO\n"
+                               "void a() {}\n"
+                               "#elif BAR\n"
+                               "void b() {}\n"
+                               "#else\n"
+                               "void c() {}\n"
+                               "#endif\n";
 
     CHECK(UnsupportedNames(source, {}, features).empty());
 }
@@ -505,16 +483,16 @@ TEST_CASE("Preprocessor - #pragma is reported only when the caller asks")
     const std::string source = "#pragma whatever\nvoid main() {}\n";
 
     CHECK(UnsupportedNames(source).empty());
-    CHECK(UnsupportedNames(source, {}, {}, /*reportPragma=*/true) == std::vector<std::string>{ "pragma" });
+    CHECK(UnsupportedNames(source, {}, {}, /*reportPragma=*/true) == std::vector<std::string>{"pragma"});
 }
 
 TEST_CASE("Preprocessor - A matched #endif is not an orphan")
 {
     CHECK(UnsupportedNames("#if FOO\n#endif\n").empty());
-    CHECK(UnsupportedNames("#if FOO\n#endif\n", Defined({ "FOO" })).empty());
+    CHECK(UnsupportedNames("#if FOO\n#endif\n", Defined({"FOO"})).empty());
 
     // Nested, and both closed.
-    CHECK(UnsupportedNames("#if A\n#if B\n#endif\n#endif\n", Defined({ "A", "B" })).empty());
+    CHECK(UnsupportedNames("#if A\n#if B\n#endif\n#endif\n", Defined({"A", "B"})).empty());
 }
 
 TEST_CASE("Preprocessor - A reported directive points at the directive itself")
@@ -523,8 +501,8 @@ TEST_CASE("Preprocessor - A reported directive points at the directive itself")
 
     REQUIRE(scan.unsupported.size() == 1);
     CHECK(scan.unsupported[0].line == 1);
-    CHECK(scan.unsupported[0].startColumn == 4);   // the '#', past the indentation
-    CHECK(scan.unsupported[0].endColumn == 11);    // one past the 'e' of "define"
+    CHECK(scan.unsupported[0].startColumn == 4); // the '#', past the indentation
+    CHECK(scan.unsupported[0].endColumn == 11);  // one past the 'e' of "define"
 }
 
 TEST_CASE("Preprocessor - A directive written inside a comment or a string is not one")
@@ -578,13 +556,12 @@ TEST_CASE("Preprocessor - The smoke file reports each directive mistake exactly 
     // fixed alongside this is the likeliest cause - a malformed `#if` produced one complaint about
     // the `#if`'s own line and a second about the `#endif` it had orphaned - so this pins the count
     // rather than leaving it to memory.
-    const std::string bothShapes =
-        "#if SERVER_BUILD\n"
-        "void OnServerStart() { }\n"
-        "#endif\n"
-        "#if\n"
-        "int stray = 1;\n"
-        "#endif\n";
+    const std::string bothShapes = "#if SERVER_BUILD\n"
+                                   "void OnServerStart() { }\n"
+                                   "#endif\n"
+                                   "#if\n"
+                                   "int stray = 1;\n"
+                                   "#endif\n";
 
     ankerl::unordered_dense::set<std::string> defined;
     defined.insert("SERVER_BUILD");
@@ -722,7 +699,6 @@ TEST_CASE("Preprocessor - A misspelled directive inside a dead block is still de
     CHECK(scan.unsupported.empty());
 }
 
-
 TEST_CASE("Preprocessor - An include path has to be quoted")
 {
     // The name is spelled correctly, so the unrecognised branch cannot see this one. Measured:
@@ -744,7 +720,6 @@ TEST_CASE("Preprocessor - A quoted include is still silent")
     CHECK(ScanPreprocessor("    #include \"helper.as\"\n").unsupported.empty());
 }
 
-
 TEST_CASE("Preprocessor - A single-quoted include path is a quoted one")
 {
     // AngelScript's string literal is `'...'` as well as `"..."` while asEP_USE_CHARACTER_LITERALS
@@ -756,4 +731,3 @@ TEST_CASE("Preprocessor - A single-quoted include path is a quoted one")
     CHECK(ScanPreprocessor("#include \'helper.as\'\nvoid main() { }\n").unsupported.empty());
     CHECK(ScanPreprocessor("#include \'pcp_misc/misc\'\n").unsupported.empty());
 }
-

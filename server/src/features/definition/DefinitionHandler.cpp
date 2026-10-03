@@ -164,6 +164,17 @@ bool HasArityMatch(const std::vector<analysis::Symbol>& candidates, uint32_t arg
 }
 
 /**
+ * @brief Checks if a candidate function has the same qualified name and parameter list.
+ * @param[in] existing Already collected function symbol.
+ * @param[in] candidate Candidate function symbol to compare against.
+ * @return True if qualified name and parameter list match.
+ */
+bool IsDuplicateFunctionCandidate(const analysis::Symbol& existing, const analysis::Symbol& candidate)
+{
+    return existing.qualifiedName == candidate.qualifiedName && analysis::HasSameParameterList(existing, candidate);
+}
+
+/**
  * @brief Appends found symbols to candidates list if not already present.
  * @param[in] foundSymbols Newly located symbols.
  * @param[in,out] funcCandidates Destination candidate list.
@@ -176,12 +187,9 @@ void AppendUniqueFunctionCandidates(const std::vector<analysis::Symbol>& foundSy
         if (sym.type == analysis::SymbolType::Function &&
             std::holds_alternative<analysis::FunctionSignature>(sym.signature))
         {
-            if (std::none_of(funcCandidates.begin(), funcCandidates.end(),
-                             [&](const analysis::Symbol& existing)
-                             {
-                                 return existing.qualifiedName == sym.qualifiedName &&
-                                        analysis::HasSameParameterList(existing, sym);
-                             }))
+            auto isDuplicate = [&sym](const analysis::Symbol& existing)
+            { return IsDuplicateFunctionCandidate(existing, sym); };
+            if (std::none_of(funcCandidates.begin(), funcCandidates.end(), isDuplicate))
             {
                 funcCandidates.push_back(sym);
             }
@@ -922,9 +930,9 @@ void AppendHostClassHierarchySymbols(std::vector<analysis::Symbol>& symbols, con
 
     for (auto& hs : hostSymbols)
     {
-        bool present = std::any_of(symbols.begin(), symbols.end(), [&](const analysis::Symbol& s)
-                                   { return s.name == hs.name && analysis::HasSameParameterList(s, hs); });
-        if (!present)
+        auto isMatch = [&hs](const analysis::Symbol& s)
+        { return s.name == hs.name && analysis::HasSameParameterList(s, hs); };
+        if (std::none_of(symbols.begin(), symbols.end(), isMatch))
         {
             symbols.push_back(std::move(hs));
         }

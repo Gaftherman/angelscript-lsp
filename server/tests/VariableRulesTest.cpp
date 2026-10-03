@@ -1,17 +1,17 @@
 #include <doctest/doctest.h>
 
+#include "analysis/LocalScopeCollector.h"
+#include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "analysis/rules/VariableRules.h"
+#include "config/ServerConfig.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "helpers/TestUtils.h"
-#include "analysis/rules/VariableRules.h"
-#include "analysis/SemanticAnalyzer.h"
-#include "analysis/SemanticAnalysisRequest.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/SymbolTable.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
-#include "config/ServerConfig.h"
 
 #include <algorithm>
 #include <string>
@@ -22,33 +22,32 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    std::vector<Diagnostic> AnalyzeVariableSnippet(const std::string &code,
-                                                   const std::string &fileUri = "file:///vars.as",
-                                                   const angel_lsp::config::EngineProperties *engine = nullptr)
-    {
-        AngelScriptParser parser;
-        SymbolCollector collector(nullptr);
-        LocalScopeCollector scopes(nullptr);
-        SymbolTable table;
-        static angel_lsp::i18n::I18n i18n;
+std::vector<Diagnostic> AnalyzeVariableSnippet(const std::string& code, const std::string& fileUri = "file:///vars.as",
+                                               const angel_lsp::config::EngineProperties* engine = nullptr)
+{
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    LocalScopeCollector scopes(nullptr);
+    SymbolTable table;
+    static angel_lsp::i18n::I18n i18n;
 
-        collector.CollectSymbols(fileUri, code, parser, table);
+    collector.CollectSymbols(fileUri, code, parser, table);
 
-        SemanticAnalysisRequest request{ table, fileUri, ".as.predefined", &i18n };
-        request.engineProperties = engine;
-        request.scopeRoot = scopes.CollectScopes(code, parser);
-        request.sourceCode = code;
+    SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
+    request.engineProperties = engine;
+    request.scopeRoot = scopes.CollectScopes(code, parser);
+    request.sourceCode = code;
 
-        SemanticAnalyzer analyzer(nullptr);
-        return analyzer.Analyze(request);
-    }
-
-    bool HasCode(const std::vector<Diagnostic> &diagnostics, const std::string &code)
-    {
-        return std::any_of(diagnostics.begin(), diagnostics.end(),
-                           [&code](const Diagnostic &diag) { return diag.code == code; });
-    }
+    SemanticAnalyzer analyzer(nullptr);
+    return analyzer.Analyze(request);
 }
+
+bool HasCode(const std::vector<Diagnostic>& diagnostics, const std::string& code)
+{
+    return std::any_of(diagnostics.begin(), diagnostics.end(),
+                       [&code](const Diagnostic& diag) { return diag.code == code; });
+}
+} // namespace
 
 // =====================================================================================
 // Declared type
@@ -73,9 +72,7 @@ TEST_CASE("VariableRules - Reports a funcdef declared without a handle")
     std::mt19937_64 rng(0x1337BEF1);
     const std::string cbName = angel_lsp::test::GenerateIdentifier(rng, "Callback");
     const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "g_handler");
-    const std::string code =
-        "funcdef void " + cbName + "();\n" +
-        cbName + " " + varName + ";\n";
+    const std::string code = "funcdef void " + cbName + "();\n" + cbName + " " + varName + ";\n";
 
     CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-funcdef-not-handle"));
 }
@@ -85,9 +82,17 @@ TEST_CASE("VariableRules - A funcdef handle is accepted")
     std::mt19937_64 rng(0x1337BEF2);
     const std::string cbName = angel_lsp::test::GenerateIdentifier(rng, "Callback");
     const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "g_handler");
-    const std::string code =
-        "funcdef void " + cbName + "();\n" +
-        cbName + "@ " + varName + ";\n";
+    const std::string code = "funcdef void " + cbName + "();\n" + cbName + "@ " + varName + ";\n";
+
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-funcdef-not-handle"));
+}
+
+TEST_CASE("VariableRules - An array of funcdef handles is accepted without error")
+{
+    std::mt19937_64 rng(0x1337BEF8);
+    const std::string cbName = angel_lsp::test::GenerateIdentifier(rng, "PrintCallback");
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "m_Callbacks");
+    const std::string code = "funcdef void " + cbName + "();\n" + "array<" + cbName + "@> " + varName + ";\n";
 
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-funcdef-not-handle"));
 }
@@ -97,9 +102,7 @@ TEST_CASE("VariableRules - Reports a mixin used as a data type")
     std::mt19937_64 rng(0x1337BEF3);
     const std::string mixinName = angel_lsp::test::GenerateIdentifier(rng, "Helper");
     const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "g_helper");
-    const std::string code =
-        "mixin class " + mixinName + " {}\n" +
-        mixinName + " " + varName + ";\n";
+    const std::string code = "mixin class " + mixinName + " {}\n" + mixinName + " " + varName + ";\n";
 
     CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-mixin-not-a-type"));
 }
@@ -110,12 +113,15 @@ TEST_CASE("VariableRules - An array of handles is not a double handle")
     const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "Schedule");
     const std::string varA = angel_lsp::test::GenerateIdentifier(rng, "g_schedules");
     const std::string varB = angel_lsp::test::GenerateIdentifier(rng, "g_owned");
-    const std::string code =
-        "class " + clsName + " {}\n"
-        "array<" + clsName + "@>@ " + varA + ";\n"
-        "array<" + clsName + "@> " + varB + ";\n";
+    const std::string code = "class " + clsName +
+                             " {}\n"
+                             "array<" +
+                             clsName + "@>@ " + varA +
+                             ";\n"
+                             "array<" +
+                             clsName + "@> " + varB + ";\n";
 
-    for (const auto &d : AnalyzeVariableSnippet(code))
+    for (const auto& d : AnalyzeVariableSnippet(code))
     {
         MESSAGE("  [" << d.code << "] " << d.message);
     }
@@ -139,27 +145,24 @@ TEST_CASE("VariableRules - A type this analyzer cannot see is never judged")
 
 TEST_CASE("VariableRules - Reports an abstract class or an interface declared by value")
 {
-    const std::string abstractClass =
-        "abstract class Shape { void Draw() {} }\n"
-        "Shape g_shape;\n";
+    const std::string abstractClass = "abstract class Shape { void Draw() {} }\n"
+                                      "Shape g_shape;\n";
     CHECK(HasCode(AnalyzeVariableSnippet(abstractClass), "as-err-abstract-instantiated"));
 
-    const std::string iface =
-        "interface IThing { void Do(); }\n"
-        "IThing g_thing;\n";
+    const std::string iface = "interface IThing { void Do(); }\n"
+                              "IThing g_thing;\n";
     CHECK(HasCode(AnalyzeVariableSnippet(iface), "as-err-interface-instantiated"));
 }
 
 TEST_CASE("VariableRules - Reports an abstract class or an interface as a class member")
 {
-    const std::string code =
-        "abstract class Shape { void Draw() {} }\n"
-        "interface IThing { void Do(); }\n"
-        "class Holder\n"
-        "{\n"
-        "    Shape m_shape;\n"
-        "    IThing m_thing;\n"
-        "}\n";
+    const std::string code = "abstract class Shape { void Draw() {} }\n"
+                             "interface IThing { void Do(); }\n"
+                             "class Holder\n"
+                             "{\n"
+                             "    Shape m_shape;\n"
+                             "    IThing m_thing;\n"
+                             "}\n";
 
     const auto diagnostics = AnalyzeVariableSnippet(code);
     CHECK(HasCode(diagnostics, "as-err-abstract-instantiated"));
@@ -168,11 +171,10 @@ TEST_CASE("VariableRules - Reports an abstract class or an interface as a class 
 
 TEST_CASE("VariableRules - A handle to an abstract class or an interface is the correct form")
 {
-    const std::string code =
-        "abstract class Shape { void Draw() {} }\n"
-        "interface IThing { void Do(); }\n"
-        "Shape@ g_shape;\n"
-        "IThing@ g_thing;\n";
+    const std::string code = "abstract class Shape { void Draw() {} }\n"
+                             "interface IThing { void Do(); }\n"
+                             "Shape@ g_shape;\n"
+                             "IThing@ g_thing;\n";
 
     const auto diagnostics = AnalyzeVariableSnippet(code);
     CHECK_FALSE(HasCode(diagnostics, "as-err-abstract-instantiated"));
@@ -185,12 +187,11 @@ TEST_CASE("VariableRules - A template argument is not judged for instantiability
     // reported until the template case was excluded. The engine decides a subtype by the factory
     // registered for it, not by abstractness: `array<Shape>` by value compiles, and
     // `array<IThing>` fails with a message about a missing default factory instead.
-    const std::string code =
-        "abstract class Shape { void Draw() {} }\n"
-        "interface IThing { void Do(); }\n"
-        "array<IThing@> g_things;\n"
-        "array<Shape@> g_shapes;\n"
-        "array<Shape> g_byValue;\n";
+    const std::string code = "abstract class Shape { void Draw() {} }\n"
+                             "interface IThing { void Do(); }\n"
+                             "array<IThing@> g_things;\n"
+                             "array<Shape@> g_shapes;\n"
+                             "array<Shape> g_byValue;\n";
 
     const auto diagnostics = AnalyzeVariableSnippet(code);
     CHECK_FALSE(HasCode(diagnostics, "as-err-abstract-instantiated"));
@@ -199,10 +200,9 @@ TEST_CASE("VariableRules - A template argument is not judged for instantiability
 
 TEST_CASE("VariableRules - An ordinary class is not mistaken for an abstract one")
 {
-    const std::string code =
-        "class Circle { void Draw() {} }\n"
-        "Circle g_circle;\n"
-        "CBaseEntity g_engineType;\n";
+    const std::string code = "class Circle { void Draw() {} }\n"
+                             "Circle g_circle;\n"
+                             "CBaseEntity g_engineType;\n";
 
     const auto diagnostics = AnalyzeVariableSnippet(code);
     CHECK_FALSE(HasCode(diagnostics, "as-err-abstract-instantiated"));
@@ -215,41 +215,37 @@ TEST_CASE("VariableRules - An ordinary class is not mistaken for an abstract one
 
 TEST_CASE("VariableRules - Reports an access modifier on a global")
 {
-    CHECK(HasCode(AnalyzeVariableSnippet("private int g_count;\n"),
-                  "as-err-global-variable-access-modifier"));
+    CHECK(HasCode(AnalyzeVariableSnippet("private int g_count;\n"), "as-err-global-variable-access-modifier"));
 }
 
 TEST_CASE("VariableRules - An access modifier on a class field is accepted")
 {
-    const std::string code =
-        "class Entity\n"
-        "{\n"
-        "    private int m_health;\n"
-        "    protected string m_name;\n"
-        "}\n";
+    const std::string code = "class Entity\n"
+                             "{\n"
+                             "    private int m_health;\n"
+                             "    protected string m_name;\n"
+                             "}\n";
 
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-global-variable-access-modifier"));
 }
 
 TEST_CASE("VariableRules - Reports a const class member")
 {
-    const std::string code =
-        "class Entity\n"
-        "{\n"
-        "    const int m_max = 10;\n"
-        "}\n";
+    const std::string code = "class Entity\n"
+                             "{\n"
+                             "    const int m_max = 10;\n"
+                             "}\n";
 
     CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-class-member-const"));
 }
 
 TEST_CASE("VariableRules - A const at namespace or global scope is accepted")
 {
-    const std::string code =
-        "const int MAX = 10;\n"
-        "namespace Weapon\n"
-        "{\n"
-        "    const string MODEL = \"axe.mdl\";\n"
-        "}\n";
+    const std::string code = "const int MAX = 10;\n"
+                             "namespace Weapon\n"
+                             "{\n"
+                             "    const string MODEL = \"axe.mdl\";\n"
+                             "}\n";
 
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-class-member-const"));
 }
@@ -260,92 +256,86 @@ TEST_CASE("VariableRules - A const at namespace or global scope is accepted")
 
 TEST_CASE("VariableRules - Reports a virtual property accessor with no body")
 {
-    const std::string code =
-        "class Entity\n"
-        "{\n"
-        "    string Name\n"
-        "    {\n"
-        "        get;\n"
-        "    }\n"
-        "}\n";
+    const std::string code = "class Entity\n"
+                             "{\n"
+                             "    string Name\n"
+                             "    {\n"
+                             "        get;\n"
+                             "    }\n"
+                             "}\n";
 
     CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-property-accessor-missing-body"));
 }
 
 TEST_CASE("VariableRules - An interface property needs no accessor body")
 {
-    const std::string code =
-        "interface INamed\n"
-        "{\n"
-        "    string Name { get; set; }\n"
-        "}\n";
+    const std::string code = "interface INamed\n"
+                             "{\n"
+                             "    string Name { get; set; }\n"
+                             "}\n";
 
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-property-accessor-missing-body"));
 }
 
 TEST_CASE("VariableRules - A property with bodies is accepted")
 {
-    const std::string code =
-        "class Entity\n"
-        "{\n"
-        "    private string m_name;\n"
-        "    string Name\n"
-        "    {\n"
-        "        get const { return m_name; }\n"
-        "        set { m_name = value; }\n"
-        "    }\n"
-        "}\n";
+    const std::string code = "class Entity\n"
+                             "{\n"
+                             "    private string m_name;\n"
+                             "    string Name\n"
+                             "    {\n"
+                             "        get const { return m_name; }\n"
+                             "        set { m_name = value; }\n"
+                             "    }\n"
+                             "}\n";
 
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-property-accessor-missing-body"));
 }
 
 TEST_CASE("VariableRules - Reports a duplicated property accessor")
 {
-    const std::string code =
-        "class Entity\n"
-        "{\n"
-        "    private string m_name;\n"
-        "    string Name\n"
-        "    {\n"
-        "        get const { return m_name; }\n"
-        "        get const { return m_name; }\n"
-        "    }\n"
-        "}\n";
+    const std::string code = "class Entity\n"
+                             "{\n"
+                             "    private string m_name;\n"
+                             "    string Name\n"
+                             "    {\n"
+                             "        get const { return m_name; }\n"
+                             "        get const { return m_name; }\n"
+                             "    }\n"
+                             "}\n";
 
     CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-property-duplicate-accessor"));
 }
 
 TEST_CASE("VariableRules - One get and one set are not duplicates")
 {
-    const std::string code =
-        "class Entity\n"
-        "{\n"
-        "    private string m_name;\n"
-        "    string Name\n"
-        "    {\n"
-        "        get const { return m_name; }\n"
-        "        set { m_name = value; }\n"
-        "    }\n"
-        "}\n";
+    const std::string code = "class Entity\n"
+                             "{\n"
+                             "    private string m_name;\n"
+                             "    string Name\n"
+                             "    {\n"
+                             "        get const { return m_name; }\n"
+                             "        set { m_name = value; }\n"
+                             "    }\n"
+                             "}\n";
 
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-property-duplicate-accessor"));
 }
 
 TEST_CASE("VariableRules - Reports a virtual property on a mixin class")
 {
-    const std::string code =
-        "mixin class Helper\n"
-        "{\n"
-        "    string Name { get { return ''; } }\n"
-        "}\n";
+    const std::string code = "mixin class Helper\n"
+                             "{\n"
+                             "    string Name { get { return ''; } }\n"
+                             "}\n";
 
     CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-mixin-virtual-property"));
 }
 
 TEST_CASE("VariableRules - A predefined stub is exempt")
 {
-    const auto diagnostics = AnalyzeVariableSnippet("private int g_count;\nint@ g_handle;\n",
-                                                    "file:///engine.as.predefined");
+    const auto diagnostics =
+        AnalyzeVariableSnippet("private int g_count;\nint@ g_handle;\n", "file:///engine.as.predefined");
     CHECK_FALSE(HasCode(diagnostics, "as-err-global-variable-access-modifier"));
     CHECK_FALSE(HasCode(diagnostics, "as-err-handle-on-primitive"));
 }
@@ -361,8 +351,8 @@ TEST_CASE("VariableRules - Reports a global variable when the host disallows the
     engine.disallowGlobalVars = true;
 
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet("int g_count;\n"), "as-err-global-vars-disallowed"));
-    CHECK(HasCode(AnalyzeVariableSnippet("int g_count;\n", "file:///vars.as", &engine),
-                  "as-err-global-vars-disallowed"));
+    CHECK(
+        HasCode(AnalyzeVariableSnippet("int g_count;\n", "file:///vars.as", &engine), "as-err-global-vars-disallowed"));
 }
 
 TEST_CASE("VariableRules - A class member is not a global variable")
@@ -370,14 +360,12 @@ TEST_CASE("VariableRules - A class member is not a global variable")
     angel_lsp::config::EngineProperties engine;
     engine.disallowGlobalVars = true;
 
-    const std::string code =
-        "class Entity\n"
-        "{\n"
-        "    int health;\n"
-        "}\n";
+    const std::string code = "class Entity\n"
+                             "{\n"
+                             "    int health;\n"
+                             "}\n";
 
-    CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code, "file:///vars.as", &engine),
-                        "as-err-global-vars-disallowed"));
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code, "file:///vars.as", &engine), "as-err-global-vars-disallowed"));
 }
 
 TEST_CASE("VariableRules - A local is not a global variable")
@@ -385,14 +373,12 @@ TEST_CASE("VariableRules - A local is not a global variable")
     angel_lsp::config::EngineProperties engine;
     engine.disallowGlobalVars = true;
 
-    const std::string code =
-        "void Think()\n"
-        "{\n"
-        "    int ticks = 0;\n"
-        "}\n";
+    const std::string code = "void Think()\n"
+                             "{\n"
+                             "    int ticks = 0;\n"
+                             "}\n";
 
-    CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code, "file:///vars.as", &engine),
-                        "as-err-global-vars-disallowed"));
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code, "file:///vars.as", &engine), "as-err-global-vars-disallowed"));
 }
 
 // =====================================================================================
@@ -409,13 +395,12 @@ TEST_CASE("VariableRules - Ordinary template arguments are not judged")
 {
     // Everything else is either valid or decided by a host registration this analyzer cannot see -
     // `array<CBasePlayer@>` is most of the corpus, and reporting it would be reporting the engine.
-    const std::string code =
-        "class Entity {}\n"
-        "array<int> g_numbers;\n"
-        "array<Entity> g_entities;\n"
-        "array<Entity@> g_handles;\n"
-        "array<CBaseUnknown@> g_engineTypes;\n"
-        "array<array<int>> g_nested;\n";
+    const std::string code = "class Entity {}\n"
+                             "array<int> g_numbers;\n"
+                             "array<Entity> g_entities;\n"
+                             "array<Entity@> g_handles;\n"
+                             "array<CBaseUnknown@> g_engineTypes;\n"
+                             "array<array<int>> g_nested;\n";
 
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-array-invalid-template"));
 }
@@ -433,29 +418,30 @@ TEST_CASE("VariableRules - Variable Rules Corpus Audit" * doctest::skip(true))
         return;
     }
 
-    static const std::vector<std::string> k_codes = {
-        "as-err-void-variable", "as-err-handle-on-primitive", "as-err-funcdef-not-handle",
-        "as-err-mixin-not-a-type", "as-err-global-variable-access-modifier",
-        "as-err-property-accessor-missing-body", "as-err-mixin-virtual-property",
-        "as-err-property-duplicate-accessor",
-        "as-err-class-member-const", "as-err-array-invalid-template",
-        "as-err-abstract-instantiated", "as-err-interface-instantiated"
-    };
+    static const std::vector<std::string> k_codes = {"as-err-void-variable",
+                                                     "as-err-handle-on-primitive",
+                                                     "as-err-funcdef-not-handle",
+                                                     "as-err-mixin-not-a-type",
+                                                     "as-err-global-variable-access-modifier",
+                                                     "as-err-property-accessor-missing-body",
+                                                     "as-err-mixin-virtual-property",
+                                                     "as-err-property-duplicate-accessor",
+                                                     "as-err-class-member-const",
+                                                     "as-err-array-invalid-template",
+                                                     "as-err-abstract-instantiated",
+                                                     "as-err-interface-instantiated"};
 
-    const auto result = angel_lsp::test::RunCorpusAudit([](const std::string &code)
-    {
-        return std::find(k_codes.begin(), k_codes.end(), code) != k_codes.end();
-    });
+    const auto result = angel_lsp::test::RunCorpusAudit(
+        [](const std::string& code) { return std::find(k_codes.begin(), k_codes.end(), code) != k_codes.end(); });
 
-    MESSAGE("Variable-rule corpus audit: files=" << result.filesAnalysed
-            << " totalFlagged=" << result.Total()
-            << " seconds=" << result.seconds);
+    MESSAGE("Variable-rule corpus audit: files=" << result.filesAnalysed << " totalFlagged=" << result.Total()
+                                                 << " seconds=" << result.seconds);
 
-    for (const auto &[code, count] : result.countByCode)
+    for (const auto& [code, count] : result.countByCode)
     {
         MESSAGE("  " << code << ": " << count);
     }
-    for (const auto &hit : result.hits)
+    for (const auto& hit : result.hits)
     {
         MESSAGE("  " << hit.fileName << ":" << hit.line << " [" << hit.code << "] " << hit.message);
     }
@@ -478,18 +464,16 @@ TEST_CASE("VariableRules - Variable Rules Corpus Audit" * doctest::skip(true))
 // corpus audit is what surfaced it. tests/parity/doc_p22_auto_handle.as and doc_r24.
 TEST_CASE("VariableRules - auto@ is a deduced handle, not a handle on a primitive")
 {
-    const std::string code =
-        "class Foo { int value; }\n"
-        "Foo@ MakeFoo() { return Foo(); }\n"
-        "void main() { auto@ deduced = MakeFoo(); }\n";
+    const std::string code = "class Foo { int value; }\n"
+                             "Foo@ MakeFoo() { return Foo(); }\n"
+                             "void main() { auto@ deduced = MakeFoo(); }\n";
 
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet(code), "as-err-handle-on-primitive"));
 }
 
 TEST_CASE("VariableRules - A handle on a real primitive is still reported")
 {
-    CHECK(HasCode(AnalyzeVariableSnippet("void main() { int@ handleOnInt; }\n"),
-                  "as-err-handle-on-primitive"));
+    CHECK(HasCode(AnalyzeVariableSnippet("void main() { int@ handleOnInt; }\n"), "as-err-handle-on-primitive"));
 }
 
 // =====================================================================================
@@ -505,12 +489,16 @@ TEST_CASE("VariableRules - Reports a local declared twice in one scope")
     std::mt19937_64 rng(0x1337BEF5);
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Func");
     const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "localVar");
-    const std::string code =
-        "void " + fnName + "()\n"
-        "{\n"
-        "    float " + varName + ";\n"
-        "    float " + varName + ";\n"
-        "}\n";
+    const std::string code = "void " + fnName +
+                             "()\n"
+                             "{\n"
+                             "    float " +
+                             varName +
+                             ";\n"
+                             "    float " +
+                             varName +
+                             ";\n"
+                             "}\n";
 
     CHECK(HasCode(AnalyzeVariableSnippet(code), "as-err-duplicate-symbol"));
 }
@@ -522,8 +510,10 @@ TEST_CASE("VariableRules - Reports a local that repeats a parameter")
     const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "Cls");
     const std::string paramName = angel_lsp::test::GenerateIdentifier(rng, "param");
 
-    CHECK(HasCode(AnalyzeVariableSnippet("void " + fnName + "(float " + paramName + ") { float " + paramName + "; }\n"), "as-err-duplicate-symbol"));
-    CHECK(HasCode(AnalyzeVariableSnippet("class " + clsName + " { void M(float " + paramName + ") { float " + paramName + "; } }\n"),
+    CHECK(HasCode(AnalyzeVariableSnippet("void " + fnName + "(float " + paramName + ") { float " + paramName + "; }\n"),
+                  "as-err-duplicate-symbol"));
+    CHECK(HasCode(AnalyzeVariableSnippet("class " + clsName + " { void M(float " + paramName + ") { float " +
+                                         paramName + "; } }\n"),
                   "as-err-duplicate-symbol"));
 }
 
@@ -533,16 +523,16 @@ TEST_CASE("VariableRules - A nested scope may shadow, and each loop owns its var
     // would report legal code, which is the one thing this project does not do.
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet("void F() { float f = 1; { float f = 2; f += 1; } f += 1; }\n"),
                         "as-err-duplicate-symbol"));
-    CHECK_FALSE(HasCode(AnalyzeVariableSnippet("void F() { for (int i = 0; i < 2; i++) { } for (int i = 0; i < 2; i++) { } }\n"),
-                        "as-err-duplicate-symbol"));
+    CHECK_FALSE(HasCode(
+        AnalyzeVariableSnippet("void F() { for (int i = 0; i < 2; i++) { } for (int i = 0; i < 2; i++) { } }\n"),
+        "as-err-duplicate-symbol"));
     CHECK_FALSE(HasCode(AnalyzeVariableSnippet("void F() { if (true) { int a = 1; } else { int a = 2; } }\n"),
                         "as-err-duplicate-symbol"));
 }
 
 TEST_CASE("VariableRules - Two locals of the same type and different names are not a duplicate")
 {
-    CHECK_FALSE(HasCode(AnalyzeVariableSnippet("void F() { float a, b; a = b; }\n"),
-                        "as-err-duplicate-symbol"));
+    CHECK_FALSE(HasCode(AnalyzeVariableSnippet("void F() { float a, b; a = b; }\n"), "as-err-duplicate-symbol"));
 }
 
 TEST_CASE("VariableRules - Invariant: Lexical scope visibility and undeclared access")
@@ -551,15 +541,20 @@ TEST_CASE("VariableRules - Invariant: Lexical scope visibility and undeclared ac
     const std::string parentVar = angel_lsp::test::GenerateIdentifier(rng, "pVar");
     const std::string childVar = angel_lsp::test::GenerateIdentifier(rng, "cVar");
 
-    const std::string code =
-        "void TestScope()\n"
-        "{\n"
-        "    int " + parentVar + " = 1;\n"
-        "    {\n"
-        "        int " + childVar + " = " + parentVar + " + 1;\n"
-        "    }\n"
-        "    int badAccess = " + childVar + ";\n"
-        "}\n";
+    const std::string code = "void TestScope()\n"
+                             "{\n"
+                             "    int " +
+                             parentVar +
+                             " = 1;\n"
+                             "    {\n"
+                             "        int " +
+                             childVar + " = " + parentVar +
+                             " + 1;\n"
+                             "    }\n"
+                             "    int badAccess = " +
+                             childVar +
+                             ";\n"
+                             "}\n";
 
     const auto diags = AnalyzeVariableSnippet(code);
     CHECK(HasCode(diags, "as-warn-undeclared-identifier"));
@@ -569,11 +564,13 @@ TEST_CASE("VariableRules - Invariant: Child scope parameter shadowing parent par
 {
     std::mt19937_64 rng(0xCAFEBABE);
     const std::string shadowedName = angel_lsp::test::GenerateIdentifier(rng, "shadowed");
-    const std::string code =
-        "void Outer(int " + shadowedName + ")\n"
-        "{\n"
-        "    int " + shadowedName + " = 2;\n"
-        "}\n";
+    const std::string code = "void Outer(int " + shadowedName +
+                             ")\n"
+                             "{\n"
+                             "    int " +
+                             shadowedName +
+                             " = 2;\n"
+                             "}\n";
 
     const auto diags = AnalyzeVariableSnippet(code);
     CHECK(HasCode(diags, "as-err-duplicate-symbol"));

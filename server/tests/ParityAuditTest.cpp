@@ -174,8 +174,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
             fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "Debug" / "angelscript_oracle.exe",
             fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "bin" / "angelscript_oracle.exe",
             fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "Release" / "angelscript_oracle.exe",
-            fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "angelscript_oracle"
-        };
+            fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "angelscript_oracle"};
         for (const auto& candidate : candidates)
         {
             if (fs::exists(candidate))

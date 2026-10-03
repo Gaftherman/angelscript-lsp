@@ -1,4 +1,6 @@
+#include "analysis/DiagnosticSuppression.h"
 #include "features/code_action/CodeActionInternal.h"
+#include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
 
 namespace angel_lsp::features
@@ -75,7 +77,18 @@ bool MatchDiagnosticCode(const lsp::Diagnostic& diag, std::string_view expectedC
     }
     if (std::holds_alternative<lsp::String>(diag.code.value()))
     {
-        return std::get<lsp::String>(diag.code.value()) == expectedCode;
+        const auto& codeStr = std::get<lsp::String>(diag.code.value());
+        if (codeStr == expectedCode)
+        {
+            return true;
+        }
+        std::string_view canonical = analysis::GetCanonicalDiagnosticCode(codeStr);
+        if (!canonical.empty() && canonical == expectedCode)
+        {
+            return true;
+        }
+        std::string_view expectedCanonical = analysis::GetCanonicalDiagnosticCode(expectedCode);
+        return !expectedCanonical.empty() && expectedCanonical == canonical;
     }
     return false;
 }
@@ -188,6 +201,85 @@ TSPoint FindClassClosingBracePoint(TSNode classBody)
     }
     ts_tree_cursor_delete(&cursor);
     return closingPt;
+}
+
+lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions& options)
+{
+    std::string title = i18n::FormatMessage(options.i18n, "action-disable-in-workspace-settings",
+                                            "Disable in workspace settings (angelscript.{})", options.settingKey);
+    std::string cmdTitle = i18n::FormatMessage(options.i18n, "action-disable-in-settings", "Disable in settings");
+
+    lsp::CodeAction action;
+    action.title = std::move(title);
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    action.diagnostics = std::vector<lsp::Diagnostic>{options.diag};
+
+    lsp::Command cmd;
+    cmd.title = std::move(cmdTitle);
+    cmd.command = "angelscript.disableDiagnostic";
+    lsp::json::Array cmdArgs;
+    lsp::json::Object argObj;
+    argObj["settingKey"] = lsp::json::Value("angelscript." + options.settingKey);
+    argObj["setting"] = lsp::json::Value(std::string(options.settingKey));
+    argObj["value"] = lsp::json::Value(false);
+    argObj["code"] = lsp::json::Value(std::string(options.code));
+    cmdArgs.push_back(std::move(argObj));
+    cmd.arguments = std::move(cmdArgs);
+
+    action.command = std::move(cmd);
+    return action;
+}
+
+lsp::CodeAction MakeDisableDiagnosticAction(const lsp::Diagnostic& diag, std::string title, std::string settingKey,
+                                            std::string code)
+{
+    lsp::CodeAction action;
+    action.title = std::move(title);
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    action.diagnostics = std::vector<lsp::Diagnostic>{diag};
+
+    lsp::Command cmd;
+    cmd.title = "Disable in settings";
+    cmd.command = "angelscript.disableDiagnostic";
+    lsp::json::Array cmdArgs;
+    lsp::json::Object argObj;
+    argObj["settingKey"] = lsp::json::Value("angelscript." + settingKey);
+    argObj["setting"] = lsp::json::Value(std::move(settingKey));
+    argObj["value"] = lsp::json::Value(false);
+    argObj["code"] = lsp::json::Value(std::move(code));
+    cmdArgs.push_back(std::move(argObj));
+    cmd.arguments = std::move(cmdArgs);
+
+    action.command = std::move(cmd);
+    return action;
+}
+
+lsp::CodeAction MakeQuickFixAction(QuickFixOptions options)
+{
+    lsp::CodeAction action;
+    action.title = std::move(options.title);
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    action.isPreferred = options.isPreferred;
+    action.diagnostics = std::vector<lsp::Diagnostic>{options.diag};
+
+    lsp::WorkspaceEdit wsEdit;
+    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+    changes[lsp::DocumentUri::parse(std::string(options.uri))] = std::move(options.edits);
+    wsEdit.changes = std::move(changes);
+    action.edit = std::move(wsEdit);
+    return action;
+}
+
+lsp::CodeAction MakeQuickFixAction(std::string title, const lsp::Diagnostic& diag, std::string_view uri,
+                                   std::vector<lsp::TextEdit> edits)
+{
+    return MakeQuickFixAction(QuickFixOptions{
+        .title = std::move(title),
+        .diag = diag,
+        .uri = uri,
+        .edits = std::move(edits),
+        .isPreferred = false,
+    });
 }
 
 } // namespace angel_lsp::features

@@ -10,8 +10,8 @@
 #include "i18n/i18n.h"
 #include "lsp/ModuleIndex.h"
 #include "parser/AngelScriptParser.h"
-#include "utils/Timer.h"
 #include "utils/IncludeResolver.h"
+#include "utils/Timer.h"
 #include "utils/WorkspaceIncludeGraph.h"
 
 #include <algorithm>

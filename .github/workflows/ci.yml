@@ -125,25 +125,30 @@ jobs:
         working-directory: server
         run: python scripts/check-layer-includes.py
 
+      # Prohibition 9: zero dead or unnamed parameters in owned signatures
+      - name: Audit clean signatures
+        working-directory: server
+        run: python scripts/check-clean-signatures.py
+
+      # Clang-format verification across all C++ headers and sources
+      - name: Verify code formatting
+        working-directory: server
+        run: python scripts/format-code.py --check
+
       - name: Configure CMake with the oracle
         run: cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release -DANGELLSP_BUILD_ORACLE=ON
 
-      # After the configure, unlike the two guards above, because it reads the grammar's own
-      # node-types.json and CMake is what fetches it. `nodeType == "function_definition"` compiles,
-      # runs, and is false forever - twenty names in this server were exactly that, taken from the
-      # C, C++ and JavaScript grammars. Nothing else notices: the parity audit reads a grammar gap
-      # as silence, because an unparseable construct costs a symbol rather than raising a
-      # diagnostic.
+      # After the configure, unlike the guards above, because it reads the grammar's own
+      # node-types.json and CMake is what fetches it. --strict guarantees CI never skips silently.
       - name: Audit grammar names
         working-directory: server
-        run: python scripts/check-grammar-names.py
+        run: python scripts/check-grammar-names.py --strict
 
       # The other half of the same question. check-grammar-names asks whether the names the code
-      # uses still resolve; this asks whether the checkout is the commit the pin names at all - a
-      # stale build tree compiles a grammar nobody chose, and nothing else notices.
+      # uses still resolve; this asks whether the checkout is the commit the pin names at all.
       - name: Audit the grammar pin
         working-directory: server
-        run: python scripts/check-grammar-pin.py
+        run: python scripts/check-grammar-pin.py --strict
 
       # VS Code falls back to the literal in the source when a bundle has no entry, so an
       # untranslated message looks exactly like a translated one to anyone running in English -
@@ -243,11 +248,7 @@ jobs:
       # xvfb-run. The harness tests the extension and verifies live LSP feature performance and stability.
       - name: Test Client
         working-directory: client
-        run: |
-          export XDG_RUNTIME_DIR=/tmp/runtime-runner
-          mkdir -p "$XDG_RUNTIME_DIR"
-          chmod 0700 "$XDG_RUNTIME_DIR"
-          xvfb-run -a npm test
+        run: xvfb-run -a npm test
 
       # Packaged, not published: releasing is a deliberate act, and this only proves the extension
       # is in a publishable state on every commit.

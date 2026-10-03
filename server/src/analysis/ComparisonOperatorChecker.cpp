@@ -1,37 +1,20 @@
 #include "analysis/ComparisonOperatorChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/BinaryOperatorHelpers.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
-#include "analysis/TypeExtraction.h"
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 
-#include <algorithm>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace angel_lsp::analysis
 {
 namespace
 {
-struct OperandTypes
-{
-    std::string left;
-    std::string right;
-};
-
-[[nodiscard]] constexpr bool IsComparisonOp(std::string_view op) noexcept
-{
-    return op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=";
-}
-
-[[nodiscard]] constexpr bool IsRelationalOp(std::string_view op) noexcept
-{
-    return op == "<" || op == "<=" || op == ">" || op == ">=";
-}
 
 bool IsHandleAddressOperand(TSNode node)
 {
@@ -46,54 +29,6 @@ bool IsHandleAddressOperand(TSNode node)
 bool ShouldSkipAddressComparison(TSNode left, TSNode right, bool isRelational)
 {
     return !isRelational && (IsHandleAddressOperand(left) || IsHandleAddressOperand(right));
-}
-
-bool IsParameterCompatible(const ParameterInformation& param, const std::string& argType, const SymbolTable& table)
-{
-    const std::string cleanParam = CleanBaseType(param.typeName);
-    if (cleanParam == "?" || cleanParam == "?&" || param.typeName.find('?') != std::string::npos)
-    {
-        return true;
-    }
-    if (cleanParam == argType || param.typeName == argType)
-    {
-        return true;
-    }
-    const auto hierarchy = GetInheritedTypeHierarchy(argType, table);
-    return std::find(hierarchy.begin(), hierarchy.end(), cleanParam) != hierarchy.end();
-}
-
-bool TypeHasOperator(const std::string& typeName, const std::string& opName, const std::string& argType,
-                     const SymbolTable& table)
-{
-    for (const auto& cls : GetInheritedTypeHierarchy(typeName, table))
-    {
-        const auto symbols = table.FindMemberSymbolPtr(cls, opName);
-        if (!symbols)
-        {
-            continue;
-        }
-        for (const auto& sym : *symbols)
-        {
-            if (sym.type == SymbolType::Function && !sym.GetFunction().parameters.empty() &&
-                IsParameterCompatible(sym.GetFunction().parameters.front(), argType, table))
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-bool IsKnownType(const std::string& type, const SymbolTable& table, std::string_view stringTypeName)
-{
-    if (parser::primitives::IsNumeric(type) || type == "bool" || type == stringTypeName ||
-        ResolvesToEnum(type, table))
-    {
-        return true;
-    }
-    const auto symbols = table.FindSymbolsPtr(type);
-    return symbols && !symbols->empty();
 }
 
 bool AreCustomTypesCompatible(std::string_view op, const std::string& left, const std::string& right,
@@ -114,8 +49,7 @@ bool AreCustomTypesCompatible(std::string_view op, const std::string& left, cons
 bool CheckBoolCompatibility(bool isRelational, const std::string& other, const SymbolTable& table,
                             std::string_view stringTypeName)
 {
-    if (parser::primitives::IsNumeric(other) || other == stringTypeName ||
-        ResolvesToEnum(other, table))
+    if (parser::primitives::IsNumeric(other) || other == stringTypeName || ResolvesToEnum(other, table))
     {
         return false;
     }
@@ -169,7 +103,7 @@ bool CheckIdenticalTypes(std::string_view op, const std::string& type, const Sym
     return AreCustomTypesCompatible(op, type, type, table);
 }
 
-bool CheckBoolBranch(bool isRelational, const OperandTypes& types, const SymbolTable& table,
+bool CheckBoolBranch(bool isRelational, const BinaryOperandTypes& types, const SymbolTable& table,
                      std::string_view stringTypeName)
 {
     if (types.left == types.right)
@@ -185,7 +119,7 @@ bool CheckBoolBranch(bool isRelational, const OperandTypes& types, const SymbolT
     return type == stringTypeName;
 }
 
-bool CheckStringBranch(bool isRelational, const OperandTypes& types, const SymbolTable& table,
+bool CheckStringBranch(bool isRelational, const BinaryOperandTypes& types, const SymbolTable& table,
                        std::string_view stringTypeName)
 {
     const bool leftStr = IsStringOperand(types.left, stringTypeName);
@@ -198,7 +132,7 @@ bool CheckStringBranch(bool isRelational, const OperandTypes& types, const Symbo
     return CheckStringCompatibility(isRelational, other, table, stringTypeName);
 }
 
-bool AreComparisonTypesCompatible(std::string_view op, const OperandTypes& types, const SymbolTable& table,
+bool AreComparisonTypesCompatible(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table,
                                   std::string_view stringTypeName)
 {
     if (!IsKnownType(types.left, table, stringTypeName) || !IsKnownType(types.right, table, stringTypeName))
@@ -231,36 +165,8 @@ bool AreComparisonTypesCompatible(std::string_view op, const OperandTypes& types
     return AreCustomTypesCompatible(op, types.left, types.right, table);
 }
 
-bool IsNullOperand(TSNode node, const std::string& type)
-{
-    return type.empty() || type == "null" || IsNullInitializer(node);
-}
-
-std::optional<OperandTypes> ResolveCleanOperandTypes(TSNode left, TSNode right, const Scope* scope,
-                                                     const DiagnosticContext& ctx)
-{
-    const ExpressionTypeContext exprCtx{scope,
-                                        ctx.request.symbolTable,
-                                        ctx.request.sourceCode,
-                                        ctx.request.fileUri,
-                                        ctx.request.GetEffectiveStringTypeName(),
-                                        ctx.request.GetEffectiveArrayTypeName()};
-    const std::string rawLeft = ResolveExpressionType(left, exprCtx);
-    const std::string rawRight = ResolveExpressionType(right, exprCtx);
-    if (IsNullOperand(left, rawLeft) || IsNullOperand(right, rawRight))
-    {
-        return std::nullopt;
-    }
-    std::string cleanLeft = CleanBaseType(rawLeft, ctx.request.GetEffectiveArrayTypeName());
-    std::string cleanRight = CleanBaseType(rawRight, ctx.request.GetEffectiveArrayTypeName());
-    if (cleanLeft.empty() || cleanRight.empty())
-    {
-        return std::nullopt;
-    }
-    return OperandTypes{std::move(cleanLeft), std::move(cleanRight)};
-}
-
-void EmitComparisonDiagnostics(TSNode opNode, std::string_view op, const OperandTypes& types, DiagnosticContext& ctx)
+void EmitComparisonDiagnostics(TSNode opNode, std::string_view op, const BinaryOperandTypes& types,
+                               DiagnosticContext& ctx)
 {
     const TSPoint start = ts_node_start_point(opNode);
     const TSPoint end = ts_node_end_point(opNode);
@@ -279,26 +185,6 @@ void EmitComparisonDiagnostics(TSNode opNode, std::string_view op, const Operand
     }
 }
 } // namespace
-
-bool TypeHasOpImplConvTo(const std::string& typeName, const std::string& targetType, const SymbolTable& table)
-{
-    for (const auto& cls : GetInheritedTypeHierarchy(typeName, table))
-    {
-        const auto symbols = table.FindMemberSymbolPtr(cls, "opImplConv");
-        if (!symbols)
-        {
-            continue;
-        }
-        for (const auto& sym : *symbols)
-        {
-            if (sym.type == SymbolType::Function && CleanBaseType(sym.GetFunction().returnType) == targetType)
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
 
 void CheckComparisonOperatorCompatibility(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
@@ -321,7 +207,7 @@ void CheckComparisonOperatorCompatibility(TSNode node, const Scope* scope, Diagn
         return;
     }
 
-    const auto types = ResolveCleanOperandTypes(left, right, scope, ctx);
+    const auto types = ResolveCleanBinaryOperandTypes(left, right, scope, ctx);
     if (!types)
     {
         return;

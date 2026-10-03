@@ -172,6 +172,11 @@ struct ParameterInformation
     uint32_t startCharacter = 0;
     uint32_t endLine = 0;
     uint32_t endCharacter = 0;
+
+    uint32_t nameStartLine = 0;
+    uint32_t nameStartCharacter = 0;
+    uint32_t nameEndLine = 0;
+    uint32_t nameEndCharacter = 0;
 };
 
 struct SourceRange
@@ -655,11 +660,13 @@ class SymbolTable
     ForEachSymbolWithPrefix(std::string_view prefix,
                             const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const;
 
-    /** @brief Iterates all symbols in the table.
-     *  @param visitor Callback invoked for each (qualifiedName, symbol_list) pair.
-     *  @note The buckets are snapshotted under the lock and visited outside it, so a visitor
-     *        may safely look other symbols up - see the implementation for why that matters. */
     void ForEachSymbol(const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const;
+
+    /**
+     * @brief Iterates global type declarations (Class, Interface, Enum, Typedef, Funcdef) without scanning all symbols.
+     * @param visitor Callback invoked for each matching Symbol.
+     */
+    void ForEachGlobalTypeSymbol(const std::function<void(const Symbol&)>& visitor) const;
 
     /**
      * @brief Iterates only the buckets holding at least one symbol from one document.
@@ -804,6 +811,18 @@ class SymbolTable
     mutable std::mutex m_ruleIndexMutex;
     mutable std::shared_ptr<rules::RuleIndex> m_ruleIndex;
     mutable std::unique_ptr<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>> m_ruleIndexPartials;
+
+    /** @brief Sorted list of bucket keys for O(log N) prefix binary search. */
+    mutable std::mutex m_sortedKeysMutex;
+    mutable std::vector<std::string> m_sortedKeys;
+    mutable uint64_t m_sortedKeysVersion = 0;
+    void EnsureSortedKeysLocked() const;
+
+    /** @brief Cached global type symbols for template argument completion. */
+    mutable std::mutex m_globalTypesMutex;
+    mutable std::vector<Symbol> m_globalTypeSymbols;
+    mutable uint64_t m_globalTypesVersion = 0;
+    void EnsureGlobalTypesLocked() const;
 
     bool m_virtualMixinDocumentsEnabled = false;
     inline static std::atomic<uint64_t> s_tableCloneCount{0};

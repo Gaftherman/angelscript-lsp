@@ -4,11 +4,11 @@
  *        namespace navigation, and multi-sink overload logging.
  */
 
+#include "analysis/LocalScopeCollector.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
-#include "analysis/LocalScopeCollector.h"
 #include "features/definition/DefinitionHandler.h"
 #include "features/hover/HoverHandler.h"
 #include "helpers/TestUtils.h"
@@ -174,15 +174,24 @@ TEST_SUITE("OverloadTemplateSpecialization")
         const std::string nsC = test::GenerateRandomSymbolName("NsLeaf");
         const std::string fnWorker = test::GenerateRandomSymbolName("Worker");
 
-        std::string code = "namespace " + nsA + " {\n"
-                           "    namespace " + nsB + " {\n"
-                           "        namespace " + nsC + " {\n"
-                           "            void " + fnWorker + "() {}\n"
+        std::string code = "namespace " + nsA +
+                           " {\n"
+                           "    namespace " +
+                           nsB +
+                           " {\n"
+                           "        namespace " +
+                           nsC +
+                           " {\n"
+                           "            void " +
+                           fnWorker +
+                           "() {}\n"
                            "        }\n"
                            "    }\n"
                            "}\n\n"
                            "void Invoker() {\n"
-                           "    " + nsA + "::" + nsB + "::" + nsC + "::" + fnWorker + "();\n"
+                           "    " +
+                           nsA + "::" + nsB + "::" + nsC + "::" + fnWorker +
+                           "();\n"
                            "}\n";
 
         TestEnvironment env(code);
@@ -235,21 +244,35 @@ TEST_SUITE("OverloadTemplateSpecialization")
         const std::string fnToArray = test::GenerateRandomSymbolName("ToArray");
         const std::string arrVar = test::GenerateRandomSymbolName("g_Messages");
 
-        std::string code = "namespace " + modNs + " {\n"
-                           "    namespace " + jsonNs + " {\n"
-                           "        namespace " + v1Ns + " {\n"
-                           "            namespace " + fmtNs + " {\n"
-                           "                void " + fnToArray + "(dictionary@ dict, array<float>@ &out) {}\n"
-                           "                void " + fnToArray + "(dictionary@ dict, array<string>@ &out) {}\n"
+        std::string code = "namespace " + modNs +
+                           " {\n"
+                           "    namespace " +
+                           jsonNs +
+                           " {\n"
+                           "        namespace " +
+                           v1Ns +
+                           " {\n"
+                           "            namespace " +
+                           fmtNs +
+                           " {\n"
+                           "                void " +
+                           fnToArray +
+                           "(dictionary@ dict, array<float>@ &out) {}\n"
+                           "                void " +
+                           fnToArray +
+                           "(dictionary@ dict, array<string>@ &out) {}\n"
                            "            }\n"
                            "        }\n"
                            "    }\n"
                            "}\n\n"
                            "class TestHost {\n"
-                           "    array<string> " + arrVar + ";\n"
+                           "    array<string> " +
+                           arrVar +
+                           ";\n"
                            "    void Run(dictionary@ data) {\n"
-                           "        " + modNs + "::" + jsonNs + "::" + v1Ns + "::" + fmtNs + "::" +
-                           fnToArray + "(data, " + arrVar + ");\n"
+                           "        " +
+                           modNs + "::" + jsonNs + "::" + v1Ns + "::" + fmtNs + "::" + fnToArray + "(data, " + arrVar +
+                           ");\n"
                            "    }\n"
                            "}\n";
 

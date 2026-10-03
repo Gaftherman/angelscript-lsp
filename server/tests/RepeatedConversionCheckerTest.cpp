@@ -27,7 +27,8 @@ using namespace angel_lsp::features;
 
 namespace
 {
-std::vector<Diagnostic> AnalyzeScriptWithSvenProfile(const std::string& code, const DiagnosticsConfig* diagConfig = nullptr)
+std::vector<Diagnostic> AnalyzeScriptWithSvenProfile(const std::string& code,
+                                                     const DiagnosticsConfig* diagConfig = nullptr)
 {
     const std::string fileUri = "file:///" + GenerateRandomSymbolName() + ".as";
     parser::AngelScriptParser parser;
@@ -69,8 +70,7 @@ std::vector<Diagnostic> AnalyzeScriptWithSvenProfile(const std::string& code, co
 
 bool HasDiagnostic(const std::vector<Diagnostic>& diagnostics, std::string_view code)
 {
-    return std::any_of(diagnostics.begin(), diagnostics.end(),
-                       [&](const Diagnostic& d) { return d.code == code; });
+    return std::any_of(diagnostics.begin(), diagnostics.end(), [&](const Diagnostic& d) { return d.code == code; });
 }
 } // namespace
 
@@ -81,15 +81,9 @@ TEST_SUITE("RepeatedConversionChecker")
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
 
-        const std::string script =
-            "final class " + className + " : ScriptBaseEntity\n" +
-            "{\n" +
-            "    void " + funcName + "()\n" +
-            "    {\n" +
-            "        if (self.pev.target == \"Foo\") {}\n" +
-            "        else if (self.pev.target == \"Bar\") {}\n" +
-            "    }\n" +
-            "}\n";
+        const std::string script = "final class " + className + " : ScriptBaseEntity\n" + "{\n" + "    void " +
+                                   funcName + "()\n" + "    {\n" + "        if (self.pev.target == \"Foo\") {}\n" +
+                                   "        else if (self.pev.target == \"Bar\") {}\n" + "    }\n" + "}\n";
 
         const auto diags = AnalyzeScriptWithSvenProfile(script);
         size_t count = 0;
@@ -109,14 +103,9 @@ TEST_SUITE("RepeatedConversionChecker")
         const std::string className = GenerateRandomSymbolName();
         const std::string funcName = GenerateRandomSymbolName();
 
-        const std::string script =
-            "final class " + className + " : ScriptBaseEntity\n" +
-            "{\n" +
-            "    void " + funcName + "()\n" +
-            "    {\n" +
-            "        if (self.pev.target == \"Single\") {}\n" +
-            "    }\n" +
-            "}\n";
+        const std::string script = "final class " + className + " : ScriptBaseEntity\n" + "{\n" + "    void " +
+                                   funcName + "()\n" + "    {\n" + "        if (self.pev.target == \"Single\") {}\n" +
+                                   "    }\n" + "}\n";
 
         const auto diags = AnalyzeScriptWithSvenProfile(script);
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::RepeatedConversion));
@@ -131,11 +120,8 @@ TEST_SUITE("RepeatedConversionChecker")
 
         const std::string script =
             "void " + funcName + "(string& out " + timeVar + ", int " + daysVar + ", array<string> " + msgVar + ")\n" +
-            "{\n" +
-            "    if (" + daysVar + " > 0) {\n" +
-            "        snprintf(" + timeVar + ", \"%1%2 %3 \", " + timeVar + ", " + daysVar + ", (" + daysVar + " > 1 ? " + msgVar + "[2] : " + msgVar + "[1]));\n" +
-            "    }\n" +
-            "}\n";
+            "{\n" + "    if (" + daysVar + " > 0) {\n" + "        snprintf(" + timeVar + ", \"%1%2 %3 \", " + timeVar +
+            ", " + daysVar + ", (" + daysVar + " > 1 ? " + msgVar + "[2] : " + msgVar + "[1]));\n" + "    }\n" + "}\n";
 
         const auto diags = AnalyzeScriptWithSvenProfile(script);
         CHECK_FALSE(HasDiagnostic(diags, "as-err-no-implicit-conversion"));
@@ -146,12 +132,9 @@ TEST_SUITE("RepeatedConversionChecker")
         const std::string funcName = GenerateRandomSymbolName();
         const std::string paramName = GenerateRandomSymbolName();
 
-        const std::string script =
-            "void " + funcName + "(SayParameters@ " + paramName + ")\n" +
-            "{\n" +
-            "    " + paramName + ".GetArguments();\n" +
-            "    " + paramName + ".get_ShouldHide();\n" +
-            "}\n";
+        const std::string script = "void " + funcName + "(SayParameters@ " + paramName + ")\n" + "{\n" + "    " +
+                                   paramName + ".GetArguments();\n" + "    " + paramName + ".get_ShouldHide();\n" +
+                                   "}\n";
 
         // Enabled configuration: warns only on first dereference when reportAllNullDereferences is false
         {
@@ -196,28 +179,15 @@ TEST_SUITE("RepeatedConversionChecker")
         const std::string v2 = GenerateRandomSymbolName();
 
         const std::string script =
-            "class " + className + "\n" +
-            "{\n" +
-            "    int m_Major;\n" +
-            "    int m_Minor;\n" +
-            "    int opCmp(const " + className + " &in other) const\n" +
-            "    {\n" +
-            "        if (this.m_Major != other.m_Major)\n" +
+            "class " + className + "\n" + "{\n" + "    int m_Major;\n" + "    int m_Minor;\n" + "    int opCmp(const " +
+            className + " &in other) const\n" + "    {\n" + "        if (this.m_Major != other.m_Major)\n" +
             "            return (this.m_Major < other.m_Major) ? -1 : 1;\n" +
             "        if (this.m_Minor != other.m_Minor)\n" +
-            "            return (this.m_Minor < other.m_Minor) ? -1 : 1;\n" +
-            "        return 0;\n" +
-            "    }\n" +
-            "}\n" +
-            "void " + funcName + "(" + className + " " + v1 + ", " + className + " " + v2 + ")\n" +
-            "{\n" +
-            "    if (" + v1 + " == " + v2 + ") {}\n" +
-            "    if (" + v1 + " != " + v2 + ") {}\n" +
-            "    if (" + v1 + " < " + v2 + ") {}\n" +
-            "    if (" + v1 + " <= " + v2 + ") {}\n" +
-            "    if (" + v1 + " > " + v2 + ") {}\n" +
-            "    if (" + v1 + " >= " + v2 + ") {}\n" +
-            "}\n";
+            "            return (this.m_Minor < other.m_Minor) ? -1 : 1;\n" + "        return 0;\n" + "    }\n" +
+            "}\n" + "void " + funcName + "(" + className + " " + v1 + ", " + className + " " + v2 + ")\n" + "{\n" +
+            "    if (" + v1 + " == " + v2 + ") {}\n" + "    if (" + v1 + " != " + v2 + ") {}\n" + "    if (" + v1 +
+            " < " + v2 + ") {}\n" + "    if (" + v1 + " <= " + v2 + ") {}\n" + "    if (" + v1 + " > " + v2 + ") {}\n" +
+            "    if (" + v1 + " >= " + v2 + ") {}\n" + "}\n";
 
         const auto diags = AnalyzeScriptWithSvenProfile(script);
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
@@ -230,16 +200,11 @@ TEST_SUITE("RepeatedConversionChecker")
         const std::string funcName = GenerateRandomSymbolName();
         const std::string varName = GenerateRandomSymbolName();
 
-        const std::string script =
-            "class " + className + "\n" +
-            "{\n" +
-            "    int opConv() const { return 0; }\n" +
-            "}\n" +
-            "void " + funcName + "(" + className + " " + varName + ")\n" +
-            "{\n" +
-            "    int i = " + varName + ";\n" + // Error: explicit opConv requires cast
-            "    if (" + varName + " == 1) {}\n" + // Error: no implicit conversion
-            "}\n";
+        const std::string script = "class " + className + "\n" + "{\n" + "    int opConv() const { return 0; }\n" +
+                                   "}\n" + "void " + funcName + "(" + className + " " + varName + ")\n" + "{\n" +
+                                   "    int i = " + varName + ";\n" +     // Error: explicit opConv requires cast
+                                   "    if (" + varName + " == 1) {}\n" + // Error: no implicit conversion
+                                   "}\n";
 
         const auto diags = AnalyzeScriptWithSvenProfile(script);
         CHECK(HasDiagnostic(diags, "as-err-no-implicit-conversion"));

@@ -32,7 +32,7 @@ struct InlayHintRequest
     angel_lsp::utils::LspLogger* logger = nullptr;
     size_t maxParameters = 0;
     size_t maxLength = 0;
-    config::OmittedDefaultArgumentsMode omittedDefaultArguments = config::OmittedDefaultArgumentsMode::NameAndValue;
+    config::OmittedDefaultArgumentsMode omittedDefaultArguments = config::OmittedDefaultArgumentsMode::Off;
     const config::ServerConfig* config = nullptr;
 };
 

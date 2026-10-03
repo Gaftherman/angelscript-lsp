@@ -23,6 +23,7 @@ std::string ReadFileFromDisk(const std::string& path)
     buffer << file.rdbuf();
     return buffer.str();
 }
+using FileReader = WorkspaceIncludeGraph::FileReader;
 
 /**
  * @brief Bundled parameters for include resolution.
@@ -33,6 +34,33 @@ struct IncludeContext
     const std::vector<std::string>& allowedRoots;
     std::string_view implicitExtension;
 };
+
+/**
+ * @brief Resolved environment containing normalized roots and file reader.
+ */
+struct ResolvedIncludeEnv
+{
+    std::vector<std::string> allowedRoots;
+    FileReader fileReader;
+
+    [[nodiscard]] IncludeContext MakeContext(const std::vector<std::string>& searchDirectories,
+                                             std::string_view implicitExtension) const noexcept
+    {
+        return IncludeContext{searchDirectories, allowedRoots, implicitExtension};
+    }
+};
+
+template <typename TRequest> ResolvedIncludeEnv PrepareIncludeEnv(const TRequest& request)
+{
+    std::vector<std::string> allowedRoots =
+        !request.allowedRoots.empty() ? request.allowedRoots : request.workspaceRoots;
+    if (request.allowedRoots.empty())
+    {
+        allowedRoots.insert(allowedRoots.end(), request.searchDirectories.begin(), request.searchDirectories.end());
+    }
+    FileReader read = request.fileReader ? request.fileReader : FileReader(ReadFileFromDisk);
+    return ResolvedIncludeEnv{std::move(allowedRoots), std::move(read)};
+}
 
 /**
  * @brief Resolves every `#include` in one file to a normalized path, dropping directives
@@ -192,15 +220,9 @@ void WorkspaceIncludeGraph::Build(const BuildRequest& request)
     // directories. Those are exactly the two places a script is legitimately allowed to include
     // from, and confining the graph here is what stops a hostile `#include "/etc/passwd"` from
     // pulling an arbitrary file into the index in the first place.
-    std::vector<std::string> allowedRoots =
-        !request.allowedRoots.empty() ? request.allowedRoots : request.workspaceRoots;
-    if (request.allowedRoots.empty())
-    {
-        allowedRoots.insert(allowedRoots.end(), request.searchDirectories.begin(), request.searchDirectories.end());
-    }
-
-    const FileReader read = request.fileReader ? request.fileReader : FileReader(ReadFileFromDisk);
-    const IncludeContext includeCtx{request.searchDirectories, allowedRoots, request.implicitExtension};
+    const auto env = PrepareIncludeEnv(request);
+    const auto includeCtx = env.MakeContext(request.searchDirectories, request.implicitExtension);
+    const auto& read = env.fileReader;
 
     // Collect first, then swap under the lock, so a long filesystem walk never blocks the
     // message loop's reads against a half-built graph.
@@ -245,15 +267,9 @@ void WorkspaceIncludeGraph::Build(const std::vector<std::string>& workspaceRoots
 
 void WorkspaceIncludeGraph::BuildFromFiles(const BuildFromFilesRequest& request)
 {
-    std::vector<std::string> allowedRoots =
-        !request.allowedRoots.empty() ? request.allowedRoots : request.workspaceRoots;
-    if (request.allowedRoots.empty())
-    {
-        allowedRoots.insert(allowedRoots.end(), request.searchDirectories.begin(), request.searchDirectories.end());
-    }
-
-    const FileReader read = request.fileReader ? request.fileReader : FileReader(ReadFileFromDisk);
-    const IncludeContext includeCtx{request.searchDirectories, allowedRoots, request.implicitExtension};
+    const auto env = PrepareIncludeEnv(request);
+    const auto includeCtx = env.MakeContext(request.searchDirectories, request.implicitExtension);
+    const auto& read = env.fileReader;
 
     std::vector<FileDirectives> results(request.scriptFiles.size());
     CollectFileDirectives(request, includeCtx, read, results);

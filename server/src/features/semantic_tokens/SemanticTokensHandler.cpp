@@ -1413,27 +1413,45 @@ void CollectHighlightsTokens(const HighlightsQueryData& highlights, const TokenR
 }
 
 /**
+ * @brief Context holding coordinate set and token collection for emission.
+ */
+struct TokenEmitContext
+{
+    ankerl::unordered_dense::set<uint64_t>& existingStarts;
+    std::vector<RawToken>& rawTokens;
+};
+
+/**
+ * @brief Emits a raw token if its start position has not yet been emitted on the same line.
+ * @param[in] node AST node providing start and end coordinates.
+ * @param[in] type Semantic token type identifier.
+ * @param[in] mod Semantic token modifier flags.
+ * @param[in,out] ctx Token emission context.
+ */
+inline void TryEmplaceToken(TSNode node, uint32_t type, uint32_t mod, TokenEmitContext& ctx)
+{
+    TSPoint start = ts_node_start_point(node);
+    TSPoint end = ts_node_end_point(node);
+    uint64_t posKey = PositionKey(start.row, start.column);
+    if (!ctx.existingStarts.contains(posKey) && start.row == end.row && end.column > start.column)
+    {
+        ctx.rawTokens.push_back(RawToken{start.row, start.column, end.column - start.column, type, mod, 3});
+        ctx.existingStarts.insert(posKey);
+    }
+}
+
+/**
  * @brief Processes member expression nodes to emit property tokens.
  * @param[in] curr Member expression AST node.
  * @param[in] syms Grammar symbols.
- * @param[in,out] existingStarts Coordinate set of already-started tokens.
- * @param[in,out] rawTokens Token collection receiving items.
+ * @param[in,out] ctx Token emission context.
  */
-void ProcessMemberExpressionNode(TSNode curr, const GrammarSymbols& syms,
-                                 ankerl::unordered_dense::set<uint64_t>& existingStarts,
-                                 std::vector<RawToken>& rawTokens)
+void ProcessMemberExpressionNode(TSNode curr, const GrammarSymbols& syms, TokenEmitContext& ctx)
 {
     TSNode memberNode = parser::GetChildByField(curr, parser::fields::Member);
     if (!ts_node_is_null(memberNode) && ts_node_symbol(memberNode) == syms.symIdentifier)
     {
-        TSPoint mStart = ts_node_start_point(memberNode);
-        TSPoint mEnd = ts_node_end_point(memberNode);
-        uint64_t posKey = PositionKey(mStart.row, mStart.column);
-        if (!existingStarts.contains(posKey) && mStart.row == mEnd.row && mEnd.column > mStart.column)
-        {
-            rawTokens.push_back(RawToken{mStart.row, mStart.column, mEnd.column - mStart.column, Type_Property, 0, 3});
-            existingStarts.insert(posKey);
-        }
+        TryEmplaceToken(memberNode, Type_Property, 0, ctx);
     }
 }
 
@@ -1441,12 +1459,9 @@ void ProcessMemberExpressionNode(TSNode curr, const GrammarSymbols& syms,
  * @brief Processes lambda parameter list nodes to emit parameter tokens.
  * @param[in] curr Lambda parameter list AST node.
  * @param[in] syms Grammar symbols.
- * @param[in,out] existingStarts Coordinate set of already-started tokens.
- * @param[in,out] rawTokens Token collection receiving items.
+ * @param[in,out] ctx Token emission context.
  */
-void ProcessLambdaParameterListNode(TSNode curr, const GrammarSymbols& syms,
-                                    ankerl::unordered_dense::set<uint64_t>& existingStarts,
-                                    std::vector<RawToken>& rawTokens)
+void ProcessLambdaParameterListNode(TSNode curr, const GrammarSymbols& syms, TokenEmitContext& ctx)
 {
     const uint32_t count = ts_node_named_child_count(curr);
     for (uint32_t i = 0; i < count; ++i)
@@ -1454,15 +1469,7 @@ void ProcessLambdaParameterListNode(TSNode curr, const GrammarSymbols& syms,
         TSNode child = ts_node_named_child(curr, i);
         if (!ts_node_is_null(child) && ts_node_symbol(child) == syms.symIdentifier)
         {
-            TSPoint start = ts_node_start_point(child);
-            TSPoint end = ts_node_end_point(child);
-            uint64_t posKey = PositionKey(start.row, start.column);
-            if (!existingStarts.contains(posKey) && start.row == end.row && end.column > start.column)
-            {
-                rawTokens.push_back(
-                    RawToken{start.row, start.column, end.column - start.column, Type_Parameter, Mod_Declaration, 3});
-                existingStarts.insert(posKey);
-            }
+            TryEmplaceToken(child, Type_Parameter, Mod_Declaration, ctx);
         }
     }
 }
@@ -1471,20 +1478,18 @@ void ProcessLambdaParameterListNode(TSNode curr, const GrammarSymbols& syms,
  * @brief Scans member expressions and lambda parameter lists via precomputed NodeIndex.
  * @param[in] nodeIndex Precomputed AST node index.
  * @param[in] syms Grammar symbols.
- * @param[in,out] existingStarts Coordinate set of already-started tokens.
- * @param[in,out] rawTokens Token collection receiving items.
+ * @param[in,out] ctx Token emission context.
  */
 void CollectMemberAndLambdaFromIndex(const analysis::NodeIndex* nodeIndex, const GrammarSymbols& syms,
-                                     ankerl::unordered_dense::set<uint64_t>& existingStarts,
-                                     std::vector<RawToken>& rawTokens)
+                                     TokenEmitContext& ctx)
 {
     for (TSNode curr : nodeIndex->Nodes(syms.symMemberExpression))
     {
-        ProcessMemberExpressionNode(curr, syms, existingStarts, rawTokens);
+        ProcessMemberExpressionNode(curr, syms, ctx);
     }
     for (TSNode curr : nodeIndex->Nodes(syms.symLambdaParameterList))
     {
-        ProcessLambdaParameterListNode(curr, syms, existingStarts, rawTokens);
+        ProcessLambdaParameterListNode(curr, syms, ctx);
     }
 }
 
@@ -1492,12 +1497,9 @@ void CollectMemberAndLambdaFromIndex(const analysis::NodeIndex* nodeIndex, const
  * @brief Scans member expressions and lambda parameter lists via iterative stack traversal.
  * @param[in] rootNode Document root AST node.
  * @param[in] syms Grammar symbols.
- * @param[in,out] existingStarts Coordinate set of already-started tokens.
- * @param[in,out] rawTokens Token collection receiving items.
+ * @param[in,out] ctx Token emission context.
  */
-void CollectMemberAndLambdaFromTree(TSNode rootNode, const GrammarSymbols& syms,
-                                    ankerl::unordered_dense::set<uint64_t>& existingStarts,
-                                    std::vector<RawToken>& rawTokens)
+void CollectMemberAndLambdaFromTree(TSNode rootNode, const GrammarSymbols& syms, TokenEmitContext& ctx)
 {
     std::vector<TSNode> stack{rootNode};
     while (!stack.empty())
@@ -1511,11 +1513,11 @@ void CollectMemberAndLambdaFromTree(TSNode rootNode, const GrammarSymbols& syms,
         TSSymbol s = ts_node_symbol(curr);
         if (s == syms.symMemberExpression)
         {
-            ProcessMemberExpressionNode(curr, syms, existingStarts, rawTokens);
+            ProcessMemberExpressionNode(curr, syms, ctx);
         }
         else if (s == syms.symLambdaParameterList)
         {
-            ProcessLambdaParameterListNode(curr, syms, existingStarts, rawTokens);
+            ProcessLambdaParameterListNode(curr, syms, ctx);
         }
         uint32_t cc = ts_node_child_count(curr);
         for (uint32_t i = 0; i < cc; ++i)
@@ -1541,13 +1543,14 @@ void CollectMemberAndLambdaTokens(TSNode rootNode, const analysis::NodeIndex* no
     {
         existingStarts.insert(PositionKey(tok.line, tok.startChar));
     }
+    TokenEmitContext ctx{existingStarts, rawTokens};
     if (nodeIndex)
     {
-        CollectMemberAndLambdaFromIndex(nodeIndex, syms, existingStarts, rawTokens);
+        CollectMemberAndLambdaFromIndex(nodeIndex, syms, ctx);
     }
     else
     {
-        CollectMemberAndLambdaFromTree(rootNode, syms, existingStarts, rawTokens);
+        CollectMemberAndLambdaFromTree(rootNode, syms, ctx);
     }
 }
 

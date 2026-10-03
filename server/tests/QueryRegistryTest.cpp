@@ -62,7 +62,8 @@ TEST_CASE("QueryRegistry - Precompiled queries and thread-local cursor invariant
     ts_tree_delete(tree);
 }
 
-namespace {
+namespace
+{
 /**
  * @brief Environment bundle passed to concurrent query worker threads.
  */

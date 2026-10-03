@@ -20,6 +20,7 @@ from pathlib import Path
 SERVER = Path(__file__).resolve().parent.parent
 I18N = SERVER / 'src' / 'i18n' / 'i18n.cpp'
 CODES_HEADER = SERVER / 'src' / 'analysis' / 'DiagnosticCodes.h'
+SUPPRESSION_TABLE = SERVER / 'src' / 'analysis' / 'DiagnosticSuppression.cpp'
 
 # Kept in step with the block at the top of i18n.cpp, which carries the reasoning.
 DELIBERATELY_NEVER_EMITTED = {
@@ -54,7 +55,7 @@ def referenced_codes() -> set:
             constant_of[match.group(1)] = match.group(2)
 
     for path in list((SERVER / 'src').rglob('*.cpp')) + list((SERVER / 'src').rglob('*.h')):
-        if path == I18N or path == CODES_HEADER:
+        if path in (I18N, CODES_HEADER, SUPPRESSION_TABLE):
             continue
         text = path.read_text(encoding='utf-8', errors='replace')
         referenced.update(m.group(1) for m in CODE_PATTERN.finditer(text))
@@ -83,7 +84,7 @@ def unregistered_codes() -> set:
 
     emitted = set()
     for path in list((SERVER / 'src').rglob('*.cpp')) + list((SERVER / 'src').rglob('*.h')):
-        if path in (I18N, CODES_HEADER):
+        if path in (I18N, CODES_HEADER, SUPPRESSION_TABLE):
             continue
         text = path.read_text(encoding='utf-8', errors='replace')
         emitted.update(m.group(1) for m in CODE_PATTERN.finditer(text))

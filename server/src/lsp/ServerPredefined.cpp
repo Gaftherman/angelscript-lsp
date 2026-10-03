@@ -225,8 +225,8 @@ void Server::UnloadUnselectedPredefinedStubs(const std::vector<std::string>& wan
         {
             continue;
         }
-        const bool wanted = std::any_of(wantedPaths.begin(), wantedPaths.end(), [&path](const std::string& candidate)
-                                        { return PathsAreSameFile(candidate, path); });
+        auto matchesPath = [&path](const std::string& candidate) { return PathsAreSameFile(candidate, path); };
+        const bool wanted = std::any_of(wantedPaths.begin(), wantedPaths.end(), matchesPath);
         bool isTransitive = false;
         {
             std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
@@ -251,10 +251,9 @@ bool Server::PathsAreSameFile(const std::string& a, const std::string& b)
     }
 
 #if defined(_WIN32)
-    if (a.size() == b.size() &&
-        std::equal(
-            a.begin(), a.end(), b.begin(), [](char x, char y)
-            { return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y)); }))
+    auto charEqualIgnoreCase = [](char x, char y)
+    { return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y)); };
+    if (a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), charEqualIgnoreCase))
     {
         return true;
     }
@@ -282,8 +281,8 @@ void Server::ReportPredefinedSelection(const std::vector<std::string>& discovere
 
     if (!activePath.empty())
     {
-        const bool found = std::any_of(discovered.begin(), discovered.end(), [&activePath](const std::string& path)
-                                       { return PathsAreSameFile(path, activePath); });
+        auto matchesActive = [&activePath](const std::string& path) { return PathsAreSameFile(path, activePath); };
+        const bool found = std::any_of(discovered.begin(), discovered.end(), matchesActive);
 
         if (!found)
         {
@@ -420,8 +419,14 @@ void Server::ParserPredefined(const std::string& filePath, angel_lsp::parser::An
 
 namespace
 {
-std::optional<std::string> ReadPredefinedFile(const std::string& normPath, const std::string& filePath)
+std::optional<std::string> ReadPredefinedFile(const std::string& normPath, const std::string& filePath,
+                                              angel_lsp::utils::LspLogger* logger)
 {
+    if (logger)
+    {
+        logger->LogInfo(fmt::format("[File Read] Opening and reading predefined file: {}", filePath));
+    }
+    angel_lsp::utils::HighResTimer readTimer;
     std::ifstream file(normPath, std::ios::binary);
     if (!file.is_open())
     {
@@ -429,13 +434,36 @@ std::optional<std::string> ReadPredefinedFile(const std::string& normPath, const
     }
     if (!file.is_open())
     {
+        if (logger)
+        {
+            logger->LogError(fmt::format("[File Read] Cannot open predefined file: {}", filePath));
+        }
         return std::nullopt;
     }
     std::ostringstream ss;
     ss << file.rdbuf();
-    return angel_lsp::utils::SanitizePredefinedContent(ss.str());
+    std::string sanitized = angel_lsp::utils::SanitizePredefinedContent(ss.str());
+    if (logger)
+    {
+        logger->LogInfo(fmt::format("[File Read] Finished reading predefined file: {} in {} ({} bytes)", filePath,
+                                    angel_lsp::utils::FormatDuration(readTimer.ElapsedMs()), sanitized.size()));
+    }
+    return sanitized;
 }
 } // namespace
+
+void Server::CommitPredefinedIndex(const std::string& uri, const std::string& content, document::TreePtr tree)
+{
+    m_scopeIndex.ClearDocument(uri);
+    m_callGraph.ClearDocument(uri);
+    auto preindexedDoc =
+        std::make_shared<const document::Document>(document::DocumentSnapshot{uri, content, 0, 1}, std::move(tree));
+    m_predefinedManager.SetPreindexedDocument(uri, preindexedDoc);
+    if (m_workspaceStore)
+    {
+        m_workspaceStore->SetPreindexedDocument(uri, preindexedDoc);
+    }
+}
 
 void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
                                       bool forceReload, std::unordered_set<std::string>& visited)
@@ -457,10 +485,9 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
     utils::HighResTimer totalTimer;
     std::string uri = UriFromPath(normPath);
 
-    auto contentOpt = ReadPredefinedFile(normPath, filePath);
+    auto contentOpt = ReadPredefinedFile(normPath, filePath, m_logger.get());
     if (!contentOpt)
     {
-        LogError(fmt::format("Cannot open predefined file: {}", filePath));
         UnloadPredefinedUri(uri);
         return;
     }
@@ -471,36 +498,29 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
         return;
     }
 
+    LogInfo(fmt::format("[Predefined Index] Starting index for predefined stub: {}", filePath));
     m_predefinedManager.SetDocumentText(uri, content);
 
     utils::HighResTimer parseTimer;
     document::TreePtr tree = document::MakeTreePtr(parser.Parse(content));
-    int64_t parseUs = parseTimer.ElapsedUs();
+    double parseMs = parseTimer.ElapsedMs();
 
     utils::HighResTimer symTimer;
     ReplaceSymbolsFromTree(uri, content, tree.get());
-    int64_t symUs = symTimer.ElapsedUs();
+    double symMs = symTimer.ElapsedMs();
 
     utils::HighResTimer scopeTimer;
-    m_scopeIndex.ClearDocument(uri);
-    m_callGraph.ClearDocument(uri);
-    auto preindexedDoc = std::make_shared<const document::Document>(
-        document::DocumentSnapshot{uri, content, 0, 1},
-        std::move(tree));
-    m_predefinedManager.SetPreindexedDocument(uri, preindexedDoc);
-    if (m_workspaceStore)
-    {
-        m_workspaceStore->SetPreindexedDocument(uri, preindexedDoc);
-    }
-    int64_t scopeUs = scopeTimer.ElapsedUs();
+    CommitPredefinedIndex(uri, content, std::move(tree));
+    double scopeMs = scopeTimer.ElapsedMs();
 
     if (SetDefinedWordsFrom(normPath, angel_lsp::utils::ScanDefinedWords(content)))
         LogInfo(fmt::format("Defined words changed after loading: {}", filePath));
 
-    int64_t totalUs = totalTimer.ElapsedUs();
-    LogInfo(
-        fmt::format("[ParserPredefined Profile] File: {} | Total: {} us (Parse: {} us, Symbols: {} us, Scopes: {} us)",
-                    filePath, totalUs, parseUs, symUs, scopeUs));
+    const double totalMs = totalTimer.ElapsedMs();
+    LogInfo(fmt::format("[Predefined Index] Finished index for predefined stub: {} in {} "
+                        "(Parse: {}, Symbols: {}, Scopes: {})",
+                        filePath, utils::FormatDuration(totalMs), utils::FormatDuration(parseMs),
+                        utils::FormatDuration(symMs), utils::FormatDuration(scopeMs)));
     LogInfo(fmt::format("Loaded predefined file: {}", filePath));
 
     PredefinedLoadContext ctx{parser, forceReload, visited};

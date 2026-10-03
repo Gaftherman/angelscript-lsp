@@ -30,10 +30,10 @@ void AssertNoOrphanedSemicolons(const std::string& rendered)
 TEST_CASE("DocCommentFuzzer - Sven Co-op exact comment pattern produces clean markdown without stray semicolons")
 {
     const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("ClientPutInServerHook");
-    const std::string source =
-        "//Called when a player has finished connecting and is put into the world. "
-        "It is safe to send network messages to the player at this point.;\n"
-        "funcdef HookReturnCode " + fnName + "(CBasePlayer@);\n";
+    const std::string source = "//Called when a player has finished connecting and is put into the world. "
+                               "It is safe to send network messages to the player at this point.;\n"
+                               "funcdef HookReturnCode " +
+                               fnName + "(CBasePlayer@);\n";
 
     const std::string doc = ExtractDocComment(source, 1);
     CHECK(!doc.empty());
@@ -48,9 +48,7 @@ TEST_CASE("DocCommentFuzzer - High-throughput randomized delimiter mutation fuzz
     const std::vector<std::string> suffixes = {
         ";", ".;", "..;", ". ;", ").;", "].;", "\"..;", "'. ;", "\t;", "  ;",
     };
-    const std::vector<std::string> openers = {
-        "//", "///", "/**", "/*!"
-    };
+    const std::vector<std::string> openers = {"//", "///", "/**", "/*!"};
 
     for (size_t iteration = 0; iteration < 64; ++iteration)
     {
@@ -83,9 +81,8 @@ TEST_CASE("DocCommentFuzzer - Multi-sentence stub comments with punctuation inva
         const std::string id2 = angel_lsp::test::GenerateRandomSymbolName("Execute");
         const std::string id3 = angel_lsp::test::GenerateRandomSymbolName("Teardown");
 
-        const std::string raw =
-            "//" + id1 + " initializes the system. " + id2 + " executes step 1 (default 1.0f). " +
-            id3 + " finalizes the session.;";
+        const std::string raw = "//" + id1 + " initializes the system. " + id2 + " executes step 1 (default 1.0f). " +
+                                id3 + " finalizes the session.;";
 
         const std::string rendered = RenderDoxygenMarkdown(raw);
         CHECK(!rendered.empty());
@@ -99,14 +96,17 @@ TEST_CASE("DocCommentFuzzer - Multi-sentence stub comments with punctuation inva
 TEST_CASE("DocCommentFuzzer - Code blocks preserve internal semicolons intact")
 {
     const std::string varName = angel_lsp::test::GenerateRandomSymbolName("counter");
-    const std::string input =
-        "/**\n"
-        " * @brief Sample code demo.\n"
-        " * @code\n"
-        " * int " + varName + " = 100;\n"
-        " * Foo(" + varName + ");\n"
-        " * @endcode\n"
-        " */";
+    const std::string input = "/**\n"
+                              " * @brief Sample code demo.\n"
+                              " * @code\n"
+                              " * int " +
+                              varName +
+                              " = 100;\n"
+                              " * Foo(" +
+                              varName +
+                              ");\n"
+                              " * @endcode\n"
+                              " */";
 
     const std::string rendered = RenderDoxygenMarkdown(input);
     CHECK(rendered.find("int " + varName + " = 100;") != std::string::npos);

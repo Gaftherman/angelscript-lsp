@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/Diagnostics.h"
+#include "analysis/ExpressionTypeCache.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/rules/RuleIndex.h"
@@ -124,8 +125,14 @@ struct SemanticAnalysisRequest
     /** @brief Optional traversal budget to enforce bounded AST node visits across checkers. */
     TraversalBudget* traversalBudget = nullptr;
 
+    /** @brief Optional memoization cache for resolved expression types across analysis passes. */
+    mutable ExpressionTypeCache* exprCache = nullptr;
+
     /** @brief Kill-switch for the conversion rules (see TypeConversionChecker.h). */
     bool enableTypeConversionChecks = true;
+
+    /** @brief Whether comment-based suppressions (e.g. // disable W156) are enabled. */
+    bool enableCommentSuppressions = true;
 
     /**
      * @brief Line ranges the preprocessor removes, so no diagnostic is reported inside them.
@@ -257,7 +264,6 @@ struct SemanticAnalysisRequest
         const auto configured = GetArrayTypeName();
         return configured.empty() ? std::string_view("array") : configured;
     }
-
 
     /**
      * @brief Templates whose initializer list repeats their element type.
@@ -486,9 +492,9 @@ struct SemanticAnalysisRequest
         return diagnostics && diagnostics->reportUnknownTypes;
     }
 
-    bool IsRegisteredSymbol(const std::string& name) const
+    bool IsRegisteredSymbol(std::string_view name) const
     {
-        return typeConfig && typeConfig->registeredSymbols.contains(name);
+        return typeConfig && typeConfig->registeredSymbols.contains(std::string(name));
     }
 
     /** @brief Cache behind GetRuleIndex(). Never set by a caller; see that accessor. */

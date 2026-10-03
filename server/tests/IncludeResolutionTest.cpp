@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 
-#include "utils/IncludeResolver.h"
 #include "helpers/TestUtils.h"
+#include "utils/IncludeResolver.h"
 
 #include <algorithm>
 #include <chrono>

@@ -17,19 +17,18 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         const std::string clsOOF = GenerateRandomSymbolName("OOF");
         const std::string method = GenerateRandomSymbolName("method");
 
-        const std::string script = fmt::format(
-            "namespace {0} {{\n"
-            "    void {2}() {{}}\n"
-            "}}\n"
-            "\n"
-            "namespace {0}::{1} {{\n"
-            "    class {3} {{\n"
-            "        void {4}() {{\n"
-            "            {2}();\n"
-            "        }}\n"
-            "    }}\n"
-            "}}\n",
-            nsA, nsB, fnFoo, clsOOF, method);
+        const std::string script = fmt::format("namespace {0} {{\n"
+                                               "    void {2}() {{}}\n"
+                                               "}}\n"
+                                               "\n"
+                                               "namespace {0}::{1} {{\n"
+                                               "    class {3} {{\n"
+                                               "        void {4}() {{\n"
+                                               "            {2}();\n"
+                                               "        }}\n"
+                                               "    }}\n"
+                                               "}}\n",
+                                               nsA, nsB, fnFoo, clsOOF, method);
 
         if (fixture.HasOracleBinary())
         {
@@ -60,21 +59,20 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         const std::string fnFoo = GenerateRandomSymbolName("foo");
         const std::string clsOOF = GenerateRandomSymbolName("OOF");
 
-        const std::string script = fmt::format(
-            "namespace {0} {{\n"
-            "    void {2}() {{}}\n"
-            "}}\n"
-            "\n"
-            "namespace {0}::{1} {{\n"
-            "    int {2}() {{ return 42; }}\n"
-            "    class {3} {{\n"
-            "        void run() {{\n"
-            "            int val = {2}();\n"
-            "            if (val > 0) {{}}\n"
-            "        }}\n"
-            "    }}\n"
-            "}}\n",
-            nsA, nsB, fnFoo, clsOOF);
+        const std::string script = fmt::format("namespace {0} {{\n"
+                                               "    void {2}() {{}}\n"
+                                               "}}\n"
+                                               "\n"
+                                               "namespace {0}::{1} {{\n"
+                                               "    int {2}() {{ return 42; }}\n"
+                                               "    class {3} {{\n"
+                                               "        void run() {{\n"
+                                               "            int val = {2}();\n"
+                                               "            if (val > 0) {{}}\n"
+                                               "        }}\n"
+                                               "    }}\n"
+                                               "}}\n",
+                                               nsA, nsB, fnFoo, clsOOF);
 
         if (fixture.HasOracleBinary())
         {
@@ -107,22 +105,21 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         const std::string fnInB = GenerateRandomSymbolName("fnInB");
         const std::string clsOOF = GenerateRandomSymbolName("OOF");
 
-        const std::string script = fmt::format(
-            "namespace {0} {{\n"
-            "    void {3}() {{}}\n"
-            "}}\n"
-            "namespace {0}::{1} {{\n"
-            "    void {4}() {{}}\n"
-            "}}\n"
-            "namespace {0}::{1}::{2} {{\n"
-            "    class {5} {{\n"
-            "        void method() {{\n"
-            "            {3}();\n"
-            "            {4}();\n"
-            "        }}\n"
-            "    }}\n"
-            "}}\n",
-            nsA, nsB, nsC, fnInA, fnInB, clsOOF);
+        const std::string script = fmt::format("namespace {0} {{\n"
+                                               "    void {3}() {{}}\n"
+                                               "}}\n"
+                                               "namespace {0}::{1} {{\n"
+                                               "    void {4}() {{}}\n"
+                                               "}}\n"
+                                               "namespace {0}::{1}::{2} {{\n"
+                                               "    class {5} {{\n"
+                                               "        void method() {{\n"
+                                               "            {3}();\n"
+                                               "            {4}();\n"
+                                               "        }}\n"
+                                               "    }}\n"
+                                               "}}\n",
+                                               nsA, nsB, nsC, fnInA, fnInB, clsOOF);
 
         if (fixture.HasOracleBinary())
         {
@@ -149,28 +146,27 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         const std::string enumVal = GenerateRandomSymbolName("VAL_ONE");
         const std::string parentClass = GenerateRandomSymbolName("BaseConfig");
 
-        const std::string script = fmt::format(
-            "namespace {0} {{\n"
-            "    enum {2} {{\n"
-            "        {3} = 1\n"
-            "    }}\n"
-            "    class {4} {{\n"
-            "        int id = 0;\n"
-            "    }}\n"
-            "}}\n"
-            "\n"
-            "namespace {0}::{1} {{\n"
-            "    class Consumer {{\n"
-            "        {4} config;\n"
-            "        {2} state = {3};\n"
-            "        void execute() {{\n"
-            "            if (state == {3}) {{\n"
-            "                config.id = 1;\n"
-            "            }}\n"
-            "        }}\n"
-            "    }}\n"
-            "}}\n",
-            nsA, nsB, enumType, enumVal, parentClass);
+        const std::string script = fmt::format("namespace {0} {{\n"
+                                               "    enum {2} {{\n"
+                                               "        {3} = 1\n"
+                                               "    }}\n"
+                                               "    class {4} {{\n"
+                                               "        int id = 0;\n"
+                                               "    }}\n"
+                                               "}}\n"
+                                               "\n"
+                                               "namespace {0}::{1} {{\n"
+                                               "    class Consumer {{\n"
+                                               "        {4} config;\n"
+                                               "        {2} state = {3};\n"
+                                               "        void execute() {{\n"
+                                               "            if (state == {3}) {{\n"
+                                               "                config.id = 1;\n"
+                                               "            }}\n"
+                                               "        }}\n"
+                                               "    }}\n"
+                                               "}}\n",
+                                               nsA, nsB, enumType, enumVal, parentClass);
 
         if (fixture.HasOracleBinary())
         {
@@ -196,21 +192,19 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         const std::string fnFoo = GenerateRandomSymbolName("foo");
         const std::string clsOOF = GenerateRandomSymbolName("OOF");
 
-        const std::string commonScript = fmt::format(
-            "namespace {0} {{\n"
-            "    void {1}() {{}}\n"
-            "}}\n",
-            nsA, fnFoo);
+        const std::string commonScript = fmt::format("namespace {0} {{\n"
+                                                     "    void {1}() {{}}\n"
+                                                     "}}\n",
+                                                     nsA, fnFoo);
 
-        const std::string weaponScript = fmt::format(
-            "namespace {0}::{1} {{\n"
-            "    class {2} {{\n"
-            "        void method() {{\n"
-            "            {3}();\n"
-            "        }}\n"
-            "    }}\n"
-            "}}\n",
-            nsA, nsB, clsOOF, fnFoo);
+        const std::string weaponScript = fmt::format("namespace {0}::{1} {{\n"
+                                                     "    class {2} {{\n"
+                                                     "        void method() {{\n"
+                                                     "            {3}();\n"
+                                                     "        }}\n"
+                                                     "    }}\n"
+                                                     "}}\n",
+                                                     nsA, nsB, clsOOF, fnFoo);
 
         const std::string commonUri =
             fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("common")));

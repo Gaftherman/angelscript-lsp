@@ -91,6 +91,8 @@ class Server
      */
     std::atomic<bool> m_formatBraceStyleKR{false};
     std::atomic<bool> m_formatSpacesInsideParentheses{false};
+    std::atomic<bool> m_formatKeepEmptyBlocksOnSingleLine{true};
+    std::atomic<features::PointerAlignment> m_formatPointerAlignment{features::PointerAlignment::Left};
     std::atomic<uint64_t> m_configRevision{0};
 
     std::unique_ptr<angel_lsp::i18n::I18n> m_i18n;
@@ -843,6 +845,14 @@ class Server
      */
     void ParserPredefinedInternal(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
                                   bool forceReload, std::unordered_set<std::string>& visited);
+
+    /**
+     * @brief Commits parsed AST and scopes of a predefined stub to storage.
+     * @param[in] uri Predefined document URI.
+     * @param[in] content Document text content.
+     * @param[in] tree Parsed AST tree handle.
+     */
+    void CommitPredefinedIndex(const std::string& uri, const std::string& content, document::TreePtr tree);
 
     /**
      * @brief Marks whether predefined stubs and engine profiles are ready for document analysis.
@@ -1827,7 +1837,21 @@ class Server
      * @return The document, or nullopt when nothing by that URI is open. A request naming a
      *         document nobody opened is answered with null rather than an error: the client is
      *         allowed to race a close against a request it already sent.
+    /**
+     * @brief Synthesizes and opens a virtual mixin document.
+     * @param[in] key Canonical document key.
+     * @param[in] uriStr Original request URI.
+     * @return Opened document handle, or nullptr on failure.
      */
+    std::shared_ptr<const document::Document> ResolveVirtualDocument(const std::string& key, const std::string& uriStr);
+
+    /**
+     * @brief Looks up a preindexed document snapshot from predefined or workspace stores.
+     * @param[in] key Canonical document key.
+     * @return OpenDocument snapshot if preindexed, std::nullopt otherwise.
+     */
+    std::optional<OpenDocument> LookupPreindexedFallback(const std::string& key);
+
     std::optional<OpenDocument> LookupOpenDocument(const std::string& uriStr);
 
     /**
@@ -1837,6 +1861,36 @@ class Server
      * @return Prepared DefinitionRequest.
      */
     features::DefinitionRequest MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position);
+
+    /**
+     * @brief Dispatches a document definition query with boilerplate deduplicated.
+     * @tparam FeatureFn Invocable returning std::optional<std::vector<lsp::Location>>.
+     * @param[in] uriStr Document URI string.
+     * @param[in] position LSP cursor position.
+     * @param[in] fn Feature query invocable.
+     * @return Result locations or lsp::Null.
+     */
+    template <typename FeatureFn>
+    lsp::requests::TextDocument_Definition::Result
+    DispatchDefinitionQuery(const std::string& uriStr, const lsp::Position& position, FeatureFn&& fn);
+
+    /**
+     * @brief Context bundle for prepare-rename and rename operations.
+     */
+    struct RenameContext
+    {
+        OpenDocument doc;
+        std::unordered_set<std::string> predefinedUris;
+        lsp::Position decodedPosition;
+    };
+
+    /**
+     * @brief Prepares common context for rename operations.
+     * @param[in] uriStr Document URI string.
+     * @param[in] rawPos LSP cursor position before decoding.
+     * @return Prepared RenameContext if valid and enabled, std::nullopt otherwise.
+     */
+    std::optional<RenameContext> SetupRenameContext(const std::string& uriStr, const lsp::Position& rawPos);
 
     void HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Workspace_DidRenameFiles::Params&& params);
 
@@ -1900,6 +1954,18 @@ class Server
     bool CurrentSpacesInsideParentheses() const noexcept
     {
         return m_formatSpacesInsideParentheses.load(std::memory_order_relaxed);
+    }
+
+    /** @brief Whether formatting handlers should keep empty blocks on a single line. */
+    bool CurrentKeepEmptyBlocksOnSingleLine() const noexcept
+    {
+        return m_formatKeepEmptyBlocksOnSingleLine.load(std::memory_order_relaxed);
+    }
+
+    /** @brief Where handle '@' attaches in declarations. */
+    features::PointerAlignment CurrentPointerAlignment() const noexcept
+    {
+        return m_formatPointerAlignment.load(std::memory_order_relaxed);
     }
 
     /**
@@ -2039,6 +2105,41 @@ class Server
      * @param[in] totalTimer High-resolution timer tracking total analysis time.
      */
     void AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
+
+    struct ParseAndCollectResult
+    {
+        document::TreePtr tree;
+        std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
+        double parseMs = 0.0;
+        double colMs = 0.0;
+    };
+
+    /**
+     * @brief Parses document text and collects symbols into a staging table.
+     * @param[in,out] req Analysis request bundle containing text and parser.
+     * @param[out] staging SymbolTable receiving collected symbols.
+     * @return Parse and collection result metrics.
+     */
+    ParseAndCollectResult ParseAndCollectSymbols(AnalyzeDocumentRequest& req,
+                                                 angel_lsp::analysis::SymbolTable& staging);
+
+    struct AnalysisTimingProfile
+    {
+        double totalMs = 0.0;
+        double parseMs = 0.0;
+        double colMs = 0.0;
+        double scopeMs = 0.0;
+        double checkMs = 0.0;
+    };
+
+    /**
+     * @brief Logs detailed and profile telemetry for document analysis phases.
+     * @param[in] prefix Log category prefix (e.g. "[Analysis]" or "[File Open]").
+     * @param[in] uriStr Document URI being reported.
+     * @param[in] profile Aggregated phase timings.
+     */
+    void LogAnalysisProfile(std::string_view prefix, const std::string& uriStr,
+                            const AnalysisTimingProfile& profile) const;
 
     /**
      * @brief Analyzes a normal AngelScript document and commits its symbols, scopes, and diagnostics.

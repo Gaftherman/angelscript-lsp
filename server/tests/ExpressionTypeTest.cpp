@@ -2,6 +2,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 #include <doctest/doctest.h>
 
@@ -296,5 +297,31 @@ TEST_SUITE("ExpressionTypeDeduction")
                            "    Vector;\n"
                            "}\n";
         CHECK(DeduceTypeInMain(code) == "");
+    }
+
+    TEST_CASE("Unary handle operator (@expr) deduces handle type")
+    {
+        const std::string cls = angel_lsp::test::GenerateRandomSymbolName("CustomObj");
+        const std::string var = angel_lsp::test::GenerateRandomSymbolName("myVar");
+        const std::string code1 =
+            "class " + cls + " {}\nvoid main() {\n    " + cls + " " + var + ";\n    @" + var + ";\n}\n";
+        CHECK(DeduceTypeInMain(code1) == cls + "@");
+
+        const std::string code2 =
+            "class " + cls + " {}\nvoid main() {\n    " + cls + "@ " + var + ";\n    @" + var + ";\n}\n";
+        CHECK(DeduceTypeInMain(code2) == cls + "@");
+    }
+
+    TEST_CASE("Ternary with unary handle and null deduces handle type")
+    {
+        const std::string cls = angel_lsp::test::GenerateRandomSymbolName("CustomObj");
+        const std::string var = angel_lsp::test::GenerateRandomSymbolName("myVar");
+        const std::string code1 =
+            "class " + cls + " {}\nvoid main() {\n    " + cls + " " + var + ";\n    true ? @" + var + " : null;\n}\n";
+        CHECK(DeduceTypeInMain(code1) == cls + "@");
+
+        const std::string code2 =
+            "class " + cls + " {}\nvoid main() {\n    " + cls + " " + var + ";\n    false ? null : @" + var + ";\n}\n";
+        CHECK(DeduceTypeInMain(code2) == cls + "@");
     }
 }

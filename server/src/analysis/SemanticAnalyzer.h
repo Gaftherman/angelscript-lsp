@@ -165,6 +165,26 @@ class SemanticAnalyzer
                             DiagnosticContext& ctx) const;
 
     /**
+     * @brief Timing metrics for AST-level rule evaluations.
+     */
+    struct TimedAstBreakdown
+    {
+        double stmtMs = 0.0; ///< Elapsed milliseconds for statement and control flow rules.
+        double typeMs = 0.0; ///< Elapsed milliseconds for type and structural rules.
+        double exprMs = 0.0; ///< Elapsed milliseconds for expression rules.
+    };
+
+    /**
+     * @brief Executes statement, type, and expression rules, recording high-resolution elapsed timings.
+     * @param[in] request The semantic analysis request.
+     * @param[in] indexPtr Optional prebuilt node index.
+     * @param[in,out] ctx Diagnostic context accumulating emitted diagnostics.
+     * @return TimedAstBreakdown containing execution times in milliseconds.
+     */
+    TimedAstBreakdown RunTimedAstRules(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
+                                       DiagnosticContext& ctx) const;
+
+    /**
      * @brief Executes type and structural rules (enums, interfaces, classes).
      * @param[in] request The semantic analysis request.
      * @param[in] indexPtr Optional prebuilt node index.

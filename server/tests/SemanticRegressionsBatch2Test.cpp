@@ -35,7 +35,7 @@ namespace
  * @return Vector of emitted diagnostics.
  */
 std::vector<analysis::Diagnostic> AnalyzeSnippetWithPredefined(const std::string& code,
-                                                             const std::string& predefinedCode = "")
+                                                               const std::string& predefinedCode = "")
 {
     parser::AngelScriptParser parser;
     analysis::SymbolTable table;
@@ -101,16 +101,12 @@ TEST_CASE("Vector 1 - Conditional assignment null flow inside conjunction recogn
     const std::string varAiment = GenerateRandomSymbolName("aiment");
     const std::string varMonster = GenerateRandomSymbolName("monster");
 
-    const std::string code =
-        "class " + baseName + " { bool IsMonster() { return true; } }\n" +
-        "class " + derivedName + " : " + baseName + " { bool IsPlayer() { return false; } }\n" +
-        "void Test(" + baseName + "@ " + varAiment + ") {\n" +
-        "    " + derivedName + "@ " + varMonster + " = null;\n" +
-        "    if (" + varAiment + " !is null && " + varAiment + ".IsMonster() && (@" + varMonster + " = cast<" + derivedName + "@>(" +
-        varAiment + ")) !is null) {\n" +
-        "        " + varMonster + ".IsPlayer();\n" +
-        "    }\n" +
-        "}\n";
+    const std::string code = "class " + baseName + " { bool IsMonster() { return true; } }\n" + "class " + derivedName +
+                             " : " + baseName + " { bool IsPlayer() { return false; } }\n" + "void Test(" + baseName +
+                             "@ " + varAiment + ") {\n" + "    " + derivedName + "@ " + varMonster + " = null;\n" +
+                             "    if (" + varAiment + " !is null && " + varAiment + ".IsMonster() && (@" + varMonster +
+                             " = cast<" + derivedName + "@>(" + varAiment + ")) !is null) {\n" + "        " +
+                             varMonster + ".IsPlayer();\n" + "    }\n" + "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(code);
     DumpDiags("Vector 1", diags);
@@ -126,18 +122,13 @@ TEST_CASE("Vector 2 - Disjunctive short-circuit null flow recognizes non-null on
     const std::string varHit = GenerateRandomSymbolName("hit");
     const std::string globalFuncs = GenerateRandomSymbolName("g_EntityFuncs");
 
-    const std::string code =
-        "class " + entityName + " { bool IsPlayer() { return false; } }\n" +
-        "class " + traceName + " { " + entityName + "@ pHit; }\n" +
-        "class " + funcsName + " { " + entityName + "@ Instance(" + entityName + "@ e) { return e; } }\n" +
-        funcsName + " " + globalFuncs + ";\n" +
-        "void Test(" + traceName + " " + varTr + ") {\n" +
-        "    " + entityName + "@ " + varHit + " = null;\n" +
-        "    if (" + varHit + " !is null || (" + varTr + ".pHit !is null && (@" + varHit + " = " +
-        globalFuncs + ".Instance(" + varTr + ".pHit)) !is null)) {\n" +
-        "        " + varHit + ".IsPlayer();\n" +
-        "    }\n" +
-        "}\n";
+    const std::string code = "class " + entityName + " { bool IsPlayer() { return false; } }\n" + "class " + traceName +
+                             " { " + entityName + "@ pHit; }\n" + "class " + funcsName + " { " + entityName +
+                             "@ Instance(" + entityName + "@ e) { return e; } }\n" + funcsName + " " + globalFuncs +
+                             ";\n" + "void Test(" + traceName + " " + varTr + ") {\n" + "    " + entityName + "@ " +
+                             varHit + " = null;\n" + "    if (" + varHit + " !is null || (" + varTr +
+                             ".pHit !is null && (@" + varHit + " = " + globalFuncs + ".Instance(" + varTr +
+                             ".pHit)) !is null)) {\n" + "        " + varHit + ".IsPlayer();\n" + "    }\n" + "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(code);
     DumpDiags("Vector 2", diags);
@@ -149,13 +140,9 @@ TEST_CASE("Vector 3 - Direct-init constructor with const string&in parameter res
     const std::string loggerClass = GenerateRandomSymbolName("Logger");
     const std::string varLogger = GenerateRandomSymbolName("g_Logger");
 
-    const std::string code =
-        "class " + loggerClass + " {\n" +
-        "    " + loggerClass + "(const string&in Name) {}\n" +
-        "}\n" +
-        "void Test() {\n" +
-        "    " + loggerClass + " " + varLogger + "(\"JSON\");\n" +
-        "}\n";
+    const std::string code = "class " + loggerClass + " {\n" + "    " + loggerClass + "(const string&in Name) {}\n" +
+                             "}\n" + "void Test() {\n" + "    " + loggerClass + " " + varLogger + "(\"JSON\");\n" +
+                             "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(code);
     DumpDiags("Vector 3", diags);
@@ -168,14 +155,9 @@ TEST_CASE("Vector 4 - Direct-init constructor with default argument resolves whe
     const std::string varVal = GenerateRandomSymbolName("validator");
     const std::string varStrict = GenerateRandomSymbolName("strict");
 
-    const std::string code =
-        "class " + validatorClass + " {\n" +
-        "    " + validatorClass + "(bool strict = false) {}\n" +
-        "}\n" +
-        "void Test() {\n" +
-        "    bool " + varStrict + " = true;\n" +
-        "    " + validatorClass + " " + varVal + "(" + varStrict + ");\n" +
-        "}\n";
+    const std::string code = "class " + validatorClass + " {\n" + "    " + validatorClass +
+                             "(bool strict = false) {}\n" + "}\n" + "void Test() {\n" + "    bool " + varStrict +
+                             " = true;\n" + "    " + validatorClass + " " + varVal + "(" + varStrict + ");\n" + "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(code);
     DumpDiags("Vector 4", diags);
@@ -189,18 +171,12 @@ TEST_CASE("Vector 5 - Overload ranking chooses float over int when adding float 
     const std::string varCustom = GenerateRandomSymbolName("pCustom");
     const std::string globalEngine = GenerateRandomSymbolName("g_Engine");
 
-    const std::string code =
-        "class " + customClass + " {\n" +
-        "    void SetKeyvalue(const string&in key, float value) {}\n" +
-        "    void SetKeyvalue(const string&in key, int value) {}\n" +
-        "}\n" +
-        "class " + engineClass + " {\n" +
-        "    float time;\n" +
-        "}\n" +
-        engineClass + " " + globalEngine + ";\n" +
-        "void Test(" + customClass + "@ " + varCustom + ") {\n" +
-        "    " + varCustom + ".SetKeyvalue(\"shield\", " + globalEngine + ".time + 0.1);\n" +
-        "}\n";
+    const std::string code = "class " + customClass + " {\n" +
+                             "    void SetKeyvalue(const string&in key, float value) {}\n" +
+                             "    void SetKeyvalue(const string&in key, int value) {}\n" + "}\n" + "class " +
+                             engineClass + " {\n" + "    float time;\n" + "}\n" + engineClass + " " + globalEngine +
+                             ";\n" + "void Test(" + customClass + "@ " + varCustom + ") {\n" + "    " + varCustom +
+                             ".SetKeyvalue(\"shield\", " + globalEngine + ".time + 0.1);\n" + "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(code);
     DumpDiags("Vector 5", diags);
@@ -215,18 +191,11 @@ TEST_CASE("Vector 6 - Math.max numeric overload resolves cleanly without spuriou
     const std::string varSubsequent = GenerateRandomSymbolName("subsequent");
 
     const std::string code =
-        "namespace " + mathNs + " {\n" +
-        "    float max(float a, float b) { return a; }\n" +
-        "    int64 max(int64 a, int64 b) { return a; }\n" +
-        "    uint64 max(uint64 a, uint64 b) { return a; }\n" +
-        "}\n" +
-        "class " + engineClass + " { float time; }\n" +
-        engineClass + " " + globalEngine + ";\n" +
-        "float Test() {\n" +
-        "    float " + varSubsequent + " = 0.5f;\n" +
-        "    float val = " + mathNs + ".max(0.1, (" + globalEngine + ".time > 0.0f ? 1.0 : " + varSubsequent + "));\n" +
-        "    return val;\n" +
-        "}\n";
+        "namespace " + mathNs + " {\n" + "    float max(float a, float b) { return a; }\n" +
+        "    int64 max(int64 a, int64 b) { return a; }\n" + "    uint64 max(uint64 a, uint64 b) { return a; }\n" +
+        "}\n" + "class " + engineClass + " { float time; }\n" + engineClass + " " + globalEngine + ";\n" +
+        "float Test() {\n" + "    float " + varSubsequent + " = 0.5f;\n" + "    float val = " + mathNs + ".max(0.1, (" +
+        globalEngine + ".time > 0.0f ? 1.0 : " + varSubsequent + "));\n" + "    return val;\n" + "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(code);
     DumpDiags("Vector 6", diags);
@@ -239,15 +208,9 @@ TEST_CASE("Vector 7 - Enum values implicitly promote to float in call arguments"
     const std::string enumName = GenerateRandomSymbolName("SOUND_CHANNEL");
     const std::string fnName = GenerateRandomSymbolName("PlaySound");
 
-    const std::string code =
-        "enum " + enumName + " {\n" +
-        "    CHAN_AUTO = 0,\n" +
-        "    CHAN_WEAPON = 1\n" +
-        "}\n" +
-        "void " + fnName + "(float channel) {}\n" +
-        "void Test() {\n" +
-        "    " + fnName + "(CHAN_WEAPON);\n" +
-        "}\n";
+    const std::string code = "enum " + enumName + " {\n" + "    CHAN_AUTO = 0,\n" + "    CHAN_WEAPON = 1\n" + "}\n" +
+                             "void " + fnName + "(float channel) {}\n" + "void Test() {\n" + "    " + fnName +
+                             "(CHAN_WEAPON);\n" + "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(code);
     DumpDiags("Vector 7", diags);
@@ -265,19 +228,13 @@ TEST_CASE("Vector 8 - Ternary expression retains array bracket type")
     const std::string weaponsNs = GenerateRandomSymbolName("weapons");
 
     const std::string code =
-        "enum " + attackEnum + " { Primary, Secondary }\n" +
-        "class " + gunClass + " {\n" +
-        "    float[] primary_accuracy;\n" +
-        "    float[] secondary_accuracy;\n" +
-        "}\n" +
-        "class " + playerClass + " {}\n" +
-        "namespace " + weaponsNs + " {\n" +
-        "    float Accuracy(" + playerClass + "@ p, float[] acc) { return 0.0f; }\n" +
-        "}\n" +
-        "float Test(" + playerClass + "@ player, " + gunClass + " gp, " + attackEnum + " type) {\n" +
-        "    float cone = " + weaponsNs + "::Accuracy(player, (type == " + attackEnum + "::Primary) ? gp.primary_accuracy : gp.secondary_accuracy);\n" +
-        "    return cone;\n" +
-        "}\n";
+        "enum " + attackEnum + " { Primary, Secondary }\n" + "class " + gunClass + " {\n" +
+        "    float[] primary_accuracy;\n" + "    float[] secondary_accuracy;\n" + "}\n" + "class " + playerClass +
+        " {}\n" + "namespace " + weaponsNs + " {\n" + "    float Accuracy(" + playerClass +
+        "@ p, float[] acc) { return 0.0f; }\n" + "}\n" + "float Test(" + playerClass + "@ player, " + gunClass +
+        " gp, " + attackEnum + " type) {\n" + "    float cone = " + weaponsNs +
+        "::Accuracy(player, (type == " + attackEnum + "::Primary) ? gp.primary_accuracy : gp.secondary_accuracy);\n" +
+        "    return cone;\n" + "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(code);
     DumpDiags("Vector 8", diags);
@@ -295,23 +252,15 @@ TEST_CASE("Vector 9 - Multi-hop base class resolution across predefined stubs")
     const std::string scriptBase = GenerateRandomSymbolName("bts_rc_base_monster");
     const std::string parasiteClass = GenerateRandomSymbolName("monster_parasite");
 
-    const std::string predefinedCode =
-        "class " + taskClass + " {}\n" +
-        "class " + schedClass + " {}\n" +
-        "class " + stubMonster + " {\n" +
-        "    void RunTask(" + taskClass + "@ pTask) {}\n" +
-        "    " + schedClass + "@ m_Schedules;\n" +
-        "    " + stubMonster + "@ BaseClass;\n" +
-        "}\n";
+    const std::string predefinedCode = "class " + taskClass + " {}\n" + "class " + schedClass + " {}\n" + "class " +
+                                       stubMonster + " {\n" + "    void RunTask(" + taskClass + "@ pTask) {}\n" +
+                                       "    " + schedClass + "@ m_Schedules;\n" + "    " + stubMonster +
+                                       "@ BaseClass;\n" + "}\n";
 
-    const std::string scriptCode =
-        "class " + scriptBase + " : " + stubMonster + " {}\n" +
-        "class " + parasiteClass + " : " + scriptBase + " {\n" +
-        "    void CustomMethod(" + taskClass + "@ pTask) {\n" +
-        "        @this.m_Schedules = null;\n" +
-        "        BaseClass.RunTask(pTask);\n" +
-        "    }\n" +
-        "}\n";
+    const std::string scriptCode = "class " + scriptBase + " : " + stubMonster + " {}\n" + "class " + parasiteClass +
+                                   " : " + scriptBase + " {\n" + "    void CustomMethod(" + taskClass + "@ pTask) {\n" +
+                                   "        @this.m_Schedules = null;\n" + "        BaseClass.RunTask(pTask);\n" +
+                                   "    }\n" + "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(scriptCode, predefinedCode);
     DumpDiags("Vector 9", diags);
@@ -321,13 +270,9 @@ TEST_CASE("Vector 9 - Multi-hop base class resolution across predefined stubs")
     // Invariant: BaseClass is not a language keyword; without an explicit declaration it must be flagged
     const std::string cleanBase = GenerateRandomSymbolName("PureBase");
     const std::string cleanDerived = GenerateRandomSymbolName("PureDerived");
-    const std::string cleanCode =
-        "class " + cleanBase + " { void RunTask() {} }\n" +
-        "class " + cleanDerived + " : " + cleanBase + " {\n" +
-        "    void Test() {\n" +
-        "        BaseClass.RunTask();\n" +
-        "    }\n" +
-        "}\n";
+    const std::string cleanCode = "class " + cleanBase + " { void RunTask() {} }\n" + "class " + cleanDerived + " : " +
+                                  cleanBase + " {\n" + "    void Test() {\n" + "        BaseClass.RunTask();\n" +
+                                  "    }\n" + "}\n";
     const auto cleanDiags = AnalyzeSnippetWithPredefined(cleanCode);
     CHECK(HasDiagCode(cleanDiags, "as-warn-undeclared-identifier"));
 }
@@ -338,16 +283,11 @@ TEST_CASE("Vector 10 - L-value output parameter resolves on private class member
     const std::string fnDeserialize = GenerateRandomSymbolName("Deserialize");
     const std::string mgrClass = GenerateRandomSymbolName("ConfigManager");
 
-    const std::string code =
-        "class " + jsonClass + " {}\n" +
-        "void " + fnDeserialize + "(string config, " + jsonClass + "@ &out target) {}\n" +
-        "class " + mgrClass + " {\n" +
-        "    private " + jsonClass + "@ m_defaults;\n" +
-        "    string __GetDefaultConfig__() { return \"\"; }\n" +
-        "    void Init() {\n" +
-        "        " + fnDeserialize + "(this.__GetDefaultConfig__(), m_defaults);\n" +
-        "    }\n" +
-        "}\n";
+    const std::string code = "class " + jsonClass + " {}\n" + "void " + fnDeserialize + "(string config, " + jsonClass +
+                             "@ &out target) {}\n" + "class " + mgrClass + " {\n" + "    private " + jsonClass +
+                             "@ m_defaults;\n" + "    string __GetDefaultConfig__() { return \"\"; }\n" +
+                             "    void Init() {\n" + "        " + fnDeserialize +
+                             "(this.__GetDefaultConfig__(), m_defaults);\n" + "    }\n" + "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(code);
     DumpDiags("Vector 10", diags);
@@ -363,24 +303,13 @@ TEST_CASE("Vector 11 - Multi-segment namespace type and switch CFG exhaustivenes
     const std::string enumType = GenerateRandomSymbolName("JsonType");
     const std::string valueClass = GenerateRandomSymbolName("JsonValue");
 
-    const std::string code =
-        "namespace " + nsRoot + " {\n" +
-        "    namespace " + nsSub + " {\n" +
-        "        namespace v2 {\n" +
-        "            class " + nullClass + " {}\n" +
-        "        }\n" +
-        "    }\n" +
-        "}\n" +
-        "enum " + enumType + " { JT_Null, JT_Bool }\n" +
-        "class " + valueClass + " {\n" +
-        "    " + enumType + " Type;\n" +
-        "    bool Check(const " + nsRoot + "::" + nsSub + "::v2::" + nullClass + "&in value) {\n" +
-        "        switch(this.Type) {\n" +
-        "            case JT_Null: return true;\n" +
-        "            default: return false;\n" +
-        "        }\n" +
-        "    }\n" +
-        "}\n";
+    const std::string code = "namespace " + nsRoot + " {\n" + "    namespace " + nsSub + " {\n" +
+                             "        namespace v2 {\n" + "            class " + nullClass + " {}\n" + "        }\n" +
+                             "    }\n" + "}\n" + "enum " + enumType + " { JT_Null, JT_Bool }\n" + "class " +
+                             valueClass + " {\n" + "    " + enumType + " Type;\n" + "    bool Check(const " + nsRoot +
+                             "::" + nsSub + "::v2::" + nullClass + "&in value) {\n" + "        switch(this.Type) {\n" +
+                             "            case JT_Null: return true;\n" + "            default: return false;\n" +
+                             "        }\n" + "    }\n" + "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(code);
     DumpDiags("Vector 11", diags);
@@ -390,20 +319,19 @@ TEST_CASE("Vector 11 - Multi-segment namespace type and switch CFG exhaustivenes
 
 TEST_CASE("Named arguments - Optional parameter skipped and named parameter provided")
 {
-    const std::string predefined =
-        "class string {};\n"
-        "class CBaseEntity {};\n"
-        "class dictionary {};\n"
-        "class CEntityFuncs {\n"
-        "    CBaseEntity@ CreateEntity(const string& in szClassName, dictionary@ pDictionary = null, bool fSpawn = true);\n"
-        "};\n"
-        "CEntityFuncs g_EntityFuncs;\n";
+    const std::string predefined = "class string {};\n"
+                                   "class CBaseEntity {};\n"
+                                   "class dictionary {};\n"
+                                   "class CEntityFuncs {\n"
+                                   "    CBaseEntity@ CreateEntity(const string& in szClassName, dictionary@ "
+                                   "pDictionary = null, bool fSpawn = true);\n"
+                                   "};\n"
+                                   "CEntityFuncs g_EntityFuncs;\n";
 
-    const std::string script =
-        "void Test() {\n"
-        "    string szAmmoName = \"weapon_9mmclip\";\n"
-        "    CBaseEntity@ pClip = g_EntityFuncs.CreateEntity(szAmmoName, fSpawn: false);\n"
-        "}\n";
+    const std::string script = "void Test() {\n"
+                               "    string szAmmoName = \"weapon_9mmclip\";\n"
+                               "    CBaseEntity@ pClip = g_EntityFuncs.CreateEntity(szAmmoName, fSpawn: false);\n"
+                               "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(script, predefined);
     DumpDiags("Named Args Test", diags);
@@ -416,15 +344,18 @@ TEST_CASE("Named arguments - Parameter label does not mark local variable as use
     const std::string fSpawnVar = GenerateRandomSymbolName("fSpawn");
     const std::string fnName = GenerateRandomSymbolName("MakeItem");
 
-    const std::string predefined =
-        "class string {};\n"
-        "void " + fnName + "(string name, bool " + fSpawnVar + " = true) {}\n";
+    const std::string predefined = "class string {};\n"
+                                   "void " +
+                                   fnName + "(string name, bool " + fSpawnVar + " = true) {}\n";
 
-    const std::string script =
-        "void Test() {\n"
-        "    bool " + fSpawnVar + " = false;\n" // Local variable with same name as parameter
-        "    " + fnName + "(\"test\", " + fSpawnVar + ": true);\n" // Argument label should NOT count as using the local variable
-        "}\n";
+    const std::string script = "void Test() {\n"
+                               "    bool " +
+                               fSpawnVar +
+                               " = false;\n" // Local variable with same name as parameter
+                               "    " +
+                               fnName + "(\"test\", " + fSpawnVar +
+                               ": true);\n" // Argument label should NOT count as using the local variable
+                               "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(script, predefined);
     DumpDiags("Named Arg Local Var Shadow", diags);
@@ -439,18 +370,26 @@ TEST_CASE("Named arguments - Multi-parameter reordered invocation with container
     const std::string fParam = GenerateRandomSymbolName("f");
     const std::string argSParam = GenerateRandomSymbolName("argS");
 
-    const std::string predefined =
-        "class string {};\n"
-        "template <typename T> class array {};\n"
-        "void " + fnName + "(int " + idParam + " = 0, bool " + fParam + " = true, array<string> " + argSParam + " = array<string>()) {}\n";
+    const std::string predefined = "class string {};\n"
+                                   "template <typename T> class array {};\n"
+                                   "void " +
+                                   fnName + "(int " + idParam + " = 0, bool " + fParam + " = true, array<string> " +
+                                   argSParam + " = array<string>()) {}\n";
 
-    const std::string script =
-        "void Test() {\n"
-        "    " + fnName + "(" + argSParam + ": {\"hi\", \"hellol\"}, " + idParam + ": 1, " + fParam + ": false);\n"
-        "    " + fnName + "(" + argSParam + ": {\"only\"});\n"
-        "    " + fnName + "(10, " + argSParam + ": {\"mixed\"});\n"
-        "    " + fnName + "(" + fParam + ": false, " + idParam + ": 42);\n"
-        "}\n";
+    const std::string script = "void Test() {\n"
+                               "    " +
+                               fnName + "(" + argSParam + ": {\"hi\", \"hellol\"}, " + idParam + ": 1, " + fParam +
+                               ": false);\n"
+                               "    " +
+                               fnName + "(" + argSParam +
+                               ": {\"only\"});\n"
+                               "    " +
+                               fnName + "(10, " + argSParam +
+                               ": {\"mixed\"});\n"
+                               "    " +
+                               fnName + "(" + fParam + ": false, " + idParam +
+                               ": 42);\n"
+                               "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(script, predefined);
     DumpDiags("Multi-Param Reordered Named Args", diags);
@@ -465,38 +404,41 @@ TEST_CASE("Named arguments - Rejections for duplicate, conflict, and unknown nam
     const std::string idParam = GenerateRandomSymbolName("id");
     const std::string fParam = GenerateRandomSymbolName("f");
 
-    const std::string predefined =
-        "void " + fnName + "(int " + idParam + ", bool " + fParam + ") {}\n";
+    const std::string predefined = "void " + fnName + "(int " + idParam + ", bool " + fParam + ") {}\n";
 
     // Duplicate named argument
-    const std::string scriptDupe =
-        "void TestDupe() {\n"
-        "    " + fnName + "(" + idParam + ": 1, " + idParam + ": 2);\n"
-        "}\n";
+    const std::string scriptDupe = "void TestDupe() {\n"
+                                   "    " +
+                                   fnName + "(" + idParam + ": 1, " + idParam +
+                                   ": 2);\n"
+                                   "}\n";
     const auto diagsDupe = AnalyzeSnippetWithPredefined(scriptDupe, predefined);
     CHECK(HasDiagCode(diagsDupe, "as-err-call-no-matching-signature"));
 
     // Positional argument conflicting with named argument
-    const std::string scriptConflict =
-        "void TestConflict() {\n"
-        "    " + fnName + "(1, " + idParam + ": 2);\n"
-        "}\n";
+    const std::string scriptConflict = "void TestConflict() {\n"
+                                       "    " +
+                                       fnName + "(1, " + idParam +
+                                       ": 2);\n"
+                                       "}\n";
     const auto diagsConflict = AnalyzeSnippetWithPredefined(scriptConflict, predefined);
     CHECK(HasDiagCode(diagsConflict, "as-err-call-no-matching-signature"));
 
     // Positional argument after named argument
-    const std::string scriptPosAfterNamed =
-        "void TestPosAfterNamed() {\n"
-        "    " + fnName + "(" + idParam + ": 1, true);\n"
-        "}\n";
+    const std::string scriptPosAfterNamed = "void TestPosAfterNamed() {\n"
+                                            "    " +
+                                            fnName + "(" + idParam +
+                                            ": 1, true);\n"
+                                            "}\n";
     const auto diagsPosAfterNamed = AnalyzeSnippetWithPredefined(scriptPosAfterNamed, predefined);
     CHECK(HasDiagCode(diagsPosAfterNamed, "as-err-positional-after-named-arg"));
 
     // Unknown named argument
-    const std::string scriptUnknown =
-        "void TestUnknown() {\n"
-        "    " + fnName + "(unknownParam: 1, " + fParam + ": true);\n"
-        "}\n";
+    const std::string scriptUnknown = "void TestUnknown() {\n"
+                                      "    " +
+                                      fnName + "(unknownParam: 1, " + fParam +
+                                      ": true);\n"
+                                      "}\n";
     const auto diagsUnknown = AnalyzeSnippetWithPredefined(scriptUnknown, predefined);
     CHECK(HasDiagCode(diagsUnknown, "as-err-call-no-matching-signature"));
 }
@@ -507,17 +449,22 @@ TEST_CASE("Named arguments - Incompatible element in named initializer list emit
     const std::string argSParam = GenerateRandomSymbolName("argS");
     const std::string customClass = GenerateRandomSymbolName("MyCustomClass");
 
-    const std::string predefined =
-        "class string {};\n"
-        "template <typename T> class array {};\n"
-        "class " + customClass + " {};\n"
-        "void " + fnName + "(int id = 0, array<string> " + argSParam + " = array<string>()) {}\n";
+    const std::string predefined = "class string {};\n"
+                                   "template <typename T> class array {};\n"
+                                   "class " +
+                                   customClass +
+                                   " {};\n"
+                                   "void " +
+                                   fnName + "(int id = 0, array<string> " + argSParam + " = array<string>()) {}\n";
 
-    const std::string script =
-        "void Test() {\n"
-        "    " + customClass + " customObj;\n"
-        "    " + fnName + "(" + argSParam + ": {customObj});\n"
-        "}\n";
+    const std::string script = "void Test() {\n"
+                               "    " +
+                               customClass +
+                               " customObj;\n"
+                               "    " +
+                               fnName + "(" + argSParam +
+                               ": {customObj});\n"
+                               "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(script, predefined);
     DumpDiags("Named Init List Element Mismatch", diags);
@@ -625,18 +572,28 @@ TEST_CASE("Overload resolution - Mutable reference with default bool does not re
     const std::string cls = test::GenerateRandomSymbolName("CVal");
     const std::string getFn = test::GenerateRandomSymbolName("Get");
 
-    std::string code =
-        "class " + cls + " {\n"
-        "    bool " + getFn + "(const string& in k, int& out val, bool strict = false) const { return false; }\n"
-        "    bool " + getFn + "(const string& in k, float& out val, bool strict = false) const { return false; }\n"
-        "    bool " + getFn + "(const string& in k, bool& out val, bool strict = false) const { return false; }\n"
-        "    bool " + getFn + "(const string& in k, string& out val, bool strict = false) const { return false; }\n"
-        "    void Test() {\n"
-        "        bool temp = false;\n"
-        "        bool strict = true;\n"
-        "        this." + getFn + "(\"key\", temp, strict);\n"
-        "    }\n"
-        "};\n";
+    std::string code = "class " + cls +
+                       " {\n"
+                       "    bool " +
+                       getFn +
+                       "(const string& in k, int& out val, bool strict = false) const { return false; }\n"
+                       "    bool " +
+                       getFn +
+                       "(const string& in k, float& out val, bool strict = false) const { return false; }\n"
+                       "    bool " +
+                       getFn +
+                       "(const string& in k, bool& out val, bool strict = false) const { return false; }\n"
+                       "    bool " +
+                       getFn +
+                       "(const string& in k, string& out val, bool strict = false) const { return false; }\n"
+                       "    void Test() {\n"
+                       "        bool temp = false;\n"
+                       "        bool strict = true;\n"
+                       "        this." +
+                       getFn +
+                       "(\"key\", temp, strict);\n"
+                       "    }\n"
+                       "};\n";
 
     parser::AngelScriptParser parser;
     analysis::SymbolTable table;
@@ -673,14 +630,22 @@ TEST_CASE("Named arguments - Variable name matches parameter name")
     const std::string p1 = test::GenerateRandomSymbolName("flag");
     const std::string p2 = test::GenerateRandomSymbolName("argList");
 
-    std::string code =
-        "int " + p0 + " = 1;\n"
-        "bool " + p1 + " = true;\n"
-        "array<string> " + p2 + " = {};\n"
-        "void " + fnName + "(int " + p0 + " = 0, bool " + p1 + " = true, array<string> " + p2 + " = array<string>()) {}\n"
-        "void main() {\n"
-        "    " + fnName + "(" + p2 + ": " + p2 + ", " + p0 + ": " + p0 + ", " + p1 + ": " + p1 + ");\n"
-        "}\n";
+    std::string code = "int " + p0 +
+                       " = 1;\n"
+                       "bool " +
+                       p1 +
+                       " = true;\n"
+                       "array<string> " +
+                       p2 +
+                       " = {};\n"
+                       "void " +
+                       fnName + "(int " + p0 + " = 0, bool " + p1 + " = true, array<string> " + p2 +
+                       " = array<string>()) {}\n"
+                       "void main() {\n"
+                       "    " +
+                       fnName + "(" + p2 + ": " + p2 + ", " + p0 + ": " + p0 + ", " + p1 + ": " + p1 +
+                       ");\n"
+                       "}\n";
 
     parser::AngelScriptParser parser;
     analysis::SymbolTable table;
@@ -717,11 +682,13 @@ TEST_CASE("Named arguments - Non-existent parameter name emits no matching signa
     const std::string p0 = test::GenerateRandomSymbolName("realParam");
     const std::string fakeParam = test::GenerateRandomSymbolName("fakeParam");
 
-    std::string code =
-        "void " + fnName + "(int " + p0 + " = 0) {}\n"
-        "void main() {\n"
-        "    " + fnName + "(" + fakeParam + ": 123);\n"
-        "}\n";
+    std::string code = "void " + fnName + "(int " + p0 +
+                       " = 0) {}\n"
+                       "void main() {\n"
+                       "    " +
+                       fnName + "(" + fakeParam +
+                       ": 123);\n"
+                       "}\n";
 
     parser::AngelScriptParser parser;
     analysis::SymbolTable table;
@@ -758,17 +725,25 @@ TEST_CASE("Member access on primitive return type emits member not found")
     const std::string propName = test::GenerateRandomSymbolName("HookProp");
     const std::string varName = test::GenerateRandomSymbolName("inst");
 
-    const std::string code =
-        "class " + clsName + " {\n"
-        "    bool " + methodName + "() { return true; }\n"
-        "    void Test() {\n"
-        "        if (!this." + methodName + "()." + propName + ") {}\n"
-        "    }\n"
-        "};\n"
-        "void main() {\n"
-        "    " + clsName + " " + varName + ";\n"
-        "    bool b = " + varName + "." + methodName + "()." + propName + ";\n"
-        "}\n";
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    bool " +
+                             methodName +
+                             "() { return true; }\n"
+                             "    void Test() {\n"
+                             "        if (!this." +
+                             methodName + "()." + propName +
+                             ") {}\n"
+                             "    }\n"
+                             "};\n"
+                             "void main() {\n"
+                             "    " +
+                             clsName + " " + varName +
+                             ";\n"
+                             "    bool b = " +
+                             varName + "." + methodName + "()." + propName +
+                             ";\n"
+                             "}\n";
 
     auto diags = AnalyzeSnippetWithPredefined(code);
     CHECK(HasDiagCode(diags, "as-err-member-not-found"));
@@ -779,13 +754,17 @@ TEST_CASE("Member access using reserved keyword name emits reserved keyword diag
     const std::string clsName = test::GenerateRandomSymbolName("JsonContainer");
     const std::string methodName = test::GenerateRandomSymbolName("GetBool");
 
-    const std::string code =
-        "class " + clsName + " {\n"
-        "    bool " + methodName + "() { return true; }\n"
-        "    void Test() {\n"
-        "        bool b = this." + methodName + "().false;\n"
-        "    }\n"
-        "};\n";
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    bool " +
+                             methodName +
+                             "() { return true; }\n"
+                             "    void Test() {\n"
+                             "        bool b = this." +
+                             methodName +
+                             "().false;\n"
+                             "    }\n"
+                             "};\n";
 
     auto diags = AnalyzeSnippetWithPredefined(code);
     CHECK(HasDiagCode(diags, "as-err-reserved-keyword-name"));
@@ -800,22 +779,40 @@ TEST_CASE("Member access on auto and auto@ variables resolves correctly without 
     const std::string varAuto = test::GenerateRandomSymbolName("charAuto");
     const std::string varHandle = test::GenerateRandomSymbolName("charHandle");
 
-    const std::string code =
-        "class " + clsName + " {\n"
-        "    int " + propName + ";\n"
-        "    bool " + methodName + "() { return true; }\n"
-        "};\n"
-        "" + clsName + "@ " + helperName + "() { return null; }\n"
-        "void main() {\n"
-        "    auto " + varAuto + " = " + helperName + "();\n"
-        "    auto@ " + varHandle + " = " + helperName + "();\n"
-        "    if (" + varAuto + " !is null && " + varAuto + "." + methodName + "()) {\n"
-        "        int val = " + varAuto + "." + propName + ";\n"
-        "    }\n"
-        "    if (" + varHandle + " !is null && " + varHandle + "." + methodName + "()) {\n"
-        "        int val2 = " + varHandle + "." + propName + ";\n"
-        "    }\n"
-        "}\n";
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    int " +
+                             propName +
+                             ";\n"
+                             "    bool " +
+                             methodName +
+                             "() { return true; }\n"
+                             "};\n"
+                             "" +
+                             clsName + "@ " + helperName +
+                             "() { return null; }\n"
+                             "void main() {\n"
+                             "    auto " +
+                             varAuto + " = " + helperName +
+                             "();\n"
+                             "    auto@ " +
+                             varHandle + " = " + helperName +
+                             "();\n"
+                             "    if (" +
+                             varAuto + " !is null && " + varAuto + "." + methodName +
+                             "()) {\n"
+                             "        int val = " +
+                             varAuto + "." + propName +
+                             ";\n"
+                             "    }\n"
+                             "    if (" +
+                             varHandle + " !is null && " + varHandle + "." + methodName +
+                             "()) {\n"
+                             "        int val2 = " +
+                             varHandle + "." + propName +
+                             ";\n"
+                             "    }\n"
+                             "}\n";
 
     auto diags = AnalyzeSnippetWithPredefined(code);
     CHECK_FALSE(HasDiagCode(diags, "as-err-member-not-found"));
@@ -829,19 +826,31 @@ TEST_CASE("Member access on namespace-scoped auto@ factory call resolves members
     const std::string setMethod = test::GenerateRandomSymbolName("Set");
     const std::string varName = test::GenerateRandomSymbolName("schemaProperty");
 
-    const std::string code =
-        "namespace " + nsName + " {\n"
-        "    namespace " + subNs + " {\n"
-        "        class " + clsName + " {\n"
-        "            void " + setMethod + "(const string& in k, const string& in v) {}\n"
-        "        };\n"
-        "        " + clsName + "@ " + clsName + "_factory() { return null; }\n"
-        "    }\n"
-        "}\n"
-        "void main() {\n"
-        "    auto@ " + varName + " = " + nsName + "::" + subNs + "::" + clsName + "_factory();\n"
-        "    " + varName + "." + setMethod + "(\"type\", \"string\");\n"
-        "}\n";
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    namespace " +
+                             subNs +
+                             " {\n"
+                             "        class " +
+                             clsName +
+                             " {\n"
+                             "            void " +
+                             setMethod +
+                             "(const string& in k, const string& in v) {}\n"
+                             "        };\n"
+                             "        " +
+                             clsName + "@ " + clsName +
+                             "_factory() { return null; }\n"
+                             "    }\n"
+                             "}\n"
+                             "void main() {\n"
+                             "    auto@ " +
+                             varName + " = " + nsName + "::" + subNs + "::" + clsName +
+                             "_factory();\n"
+                             "    " +
+                             varName + "." + setMethod +
+                             "(\"type\", \"string\");\n"
+                             "}\n";
 
     auto diags = AnalyzeSnippetWithPredefined(code);
     CHECK_FALSE(HasDiagCode(diags, "as-err-member-not-found"));
@@ -852,11 +861,14 @@ TEST_CASE("Member access on unresolvable auto variable suppresses false positive
     const std::string varName = test::GenerateRandomSymbolName("unresolved");
     const std::string memberName = test::GenerateRandomSymbolName("UnknownMember");
 
-    const std::string code =
-        "void main() {\n"
-        "    auto " + varName + " = MissingCallee();\n"
-        "    " + varName + "." + memberName + "();\n"
-        "}\n";
+    const std::string code = "void main() {\n"
+                             "    auto " +
+                             varName +
+                             " = MissingCallee();\n"
+                             "    " +
+                             varName + "." + memberName +
+                             "();\n"
+                             "}\n";
 
     auto diags = AnalyzeSnippetWithPredefined(code);
     CHECK_FALSE(HasDiagCode(diags, "as-err-member-not-found"));

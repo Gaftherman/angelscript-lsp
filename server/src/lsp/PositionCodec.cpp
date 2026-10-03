@@ -40,6 +40,25 @@ void Encode(std::string_view text, utils::PositionEncoding enc, lsp::Range& rang
     Encode(text, enc, range.end);
 }
 
+void Encode(const utils::LineIndex& lineIndex, std::string_view text, utils::PositionEncoding enc,
+            lsp::Position& position)
+{
+    if (enc == utils::PositionEncoding::Utf8)
+        return;
+
+    const std::string_view line = lineIndex.Line(text, position.line);
+    position.character = utils::ByteToLspCharColumn(line, position.character, enc);
+}
+
+void Encode(const utils::LineIndex& lineIndex, std::string_view text, utils::PositionEncoding enc, lsp::Range& range)
+{
+    if (enc == utils::PositionEncoding::Utf8)
+        return;
+
+    Encode(lineIndex, text, enc, range.start);
+    Encode(lineIndex, text, enc, range.end);
+}
+
 void EncodeSemanticTokens(std::string_view text, utils::PositionEncoding enc, std::vector<lsp::uint>& data)
 {
     constexpr size_t fields = 5;

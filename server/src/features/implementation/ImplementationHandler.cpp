@@ -48,12 +48,6 @@ std::string IdentifierAt(const ImplementationRequest& request, TSNode& outNode)
     return request.sourceCode.substr(start, end - start);
 }
 
-/** @brief Every base a declaration lists, whichever kind of declaration it is. */
-std::vector<std::string> DeclaredBases(const Symbol& sym)
-{
-    return analysis::GetDeclaredBases(sym);
-}
-
 /**
  * @brief Accumulator for subtype collection passes.
  */
@@ -157,7 +151,7 @@ std::vector<Symbol> CollectSubtypesFromRuleIndex(const std::string& rootType, co
  */
 bool MatchesDeclaredBasesOrMixins(const Symbol& sym, const std::vector<std::string>& frontier)
 {
-    for (const auto& base : DeclaredBases(sym))
+    for (const auto& base : analysis::GetDeclaredBases(sym))
     {
         const std::string baseName{analysis::LastScopeSegment(analysis::CleanBaseType(base))};
         if (std::find(frontier.begin(), frontier.end(), baseName) != frontier.end())
@@ -338,51 +332,6 @@ std::string ResolveOwnerType(TSNode node, std::string_view sourceCode, const std
 }
 
 /**
- * @brief Searches for a member symbol inside mixins and bases of a class symbol.
- * @param[in] os Class symbol to inspect.
- * @param[in] name Member name.
- * @param[in] table Symbol table.
- * @return Member symbols pointer if found.
- */
-std::shared_ptr<const std::vector<Symbol>> FindMemberInMixinsAndBases(const Symbol& os, const std::string& name,
-                                                                      const SymbolTable& table)
-{
-    if (os.type != SymbolType::Class || !std::holds_alternative<analysis::ClassSignature>(os.signature))
-    {
-        return nullptr;
-    }
-
-    const auto& cls = os.GetClass();
-    for (const auto& m : cls.includedMixins)
-    {
-        auto mSyms = table.FindSymbolsPtr(m + "::" + name);
-        if (!mSyms || mSyms->empty())
-        {
-            mSyms = table.FindSymbolsPtr(std::string(analysis::LastScopeSegment(m)) + "::" + name);
-        }
-        if (mSyms && !mSyms->empty())
-        {
-            return mSyms;
-        }
-    }
-
-    for (const auto& b : cls.bases)
-    {
-        const std::string cleanB = analysis::CleanBaseType(b);
-        auto mSyms = table.FindSymbolsPtr(cleanB + "::" + name);
-        if (!mSyms || mSyms->empty())
-        {
-            mSyms = table.FindSymbolsPtr(std::string(analysis::LastScopeSegment(cleanB)) + "::" + name);
-        }
-        if (mSyms && !mSyms->empty())
-        {
-            return mSyms;
-        }
-    }
-    return nullptr;
-}
-
-/**
  * @brief Finds a member directly declared in a class or its bare alias.
  * @param[in] clsName Qualified class name.
  * @param[in] name Member name.
@@ -404,6 +353,41 @@ std::shared_ptr<const std::vector<Symbol>> FindMemberInClass(const std::string& 
         if (memberSyms && !memberSyms->empty())
         {
             return memberSyms;
+        }
+    }
+    return nullptr;
+}
+
+/**
+ * @brief Searches for a member symbol inside mixins and bases of a class symbol.
+ * @param[in] os Class symbol to inspect.
+ * @param[in] name Member name.
+ * @param[in] table Symbol table.
+ * @return Member symbols pointer if found.
+ */
+std::shared_ptr<const std::vector<Symbol>> FindMemberInMixinsAndBases(const Symbol& os, const std::string& name,
+                                                                      const SymbolTable& table)
+{
+    if (os.type != SymbolType::Class || !std::holds_alternative<analysis::ClassSignature>(os.signature))
+    {
+        return nullptr;
+    }
+
+    const auto& cls = os.GetClass();
+    for (const auto& m : cls.includedMixins)
+    {
+        if (auto mSyms = FindMemberInClass(m, name, table); mSyms && !mSyms->empty())
+        {
+            return mSyms;
+        }
+    }
+
+    for (const auto& b : cls.bases)
+    {
+        const std::string cleanB = analysis::CleanBaseType(b);
+        if (auto mSyms = FindMemberInClass(cleanB, name, table); mSyms && !mSyms->empty())
+        {
+            return mSyms;
         }
     }
     return nullptr;
@@ -544,8 +528,7 @@ struct MemberImplementationContext
  */
 void CollectSubtypeOverrides(const Symbol& subtype, MemberImplementationContext& ctx)
 {
-    const auto members =
-        ctx.table.FindSymbolsPtr(std::string(analysis::LastScopeSegment(subtype.name)) + "::" + ctx.name);
+    const auto members = ctx.table.FindMemberSymbolPtr(analysis::LastScopeSegment(subtype.name), ctx.name);
     bool hasExplicitOverride = false;
     if (members && !members->empty())
     {

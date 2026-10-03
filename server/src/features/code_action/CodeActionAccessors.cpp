@@ -1,4 +1,5 @@
 #include "features/code_action/CodeActionInternal.h"
+#include "i18n/i18n.h"
 
 namespace angel_lsp::features
 {
@@ -118,8 +119,7 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsFromVarDecl(TSNode
 }
 
 std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TSNode leaf, TSNode classBody,
-                                                                              const CodeActionRequest& request,
-                                                                              const std::string& className)
+                                                                              const CodeActionRequest& request)
 {
     TSNode varDecl = leaf;
     while (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) != "variable_declaration" &&
@@ -133,20 +133,7 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TS
         return CollectFieldsFromVarDecl(varDecl, request.sourceCode);
     }
 
-    std::vector<std::pair<std::string, std::string>> fields;
-    request.symbolTable.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
-        {
-            for (const auto& sym : symList)
-            {
-                if (sym.containerName == className &&
-                    (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property))
-                {
-                    fields.push_back({sym.name, sym.GetVariable().typeName});
-                }
-            }
-        });
-    return fields;
+    return {};
 }
 
 struct GetterSetterContext
@@ -169,7 +156,7 @@ lsp::CodeAction CreateAccessorAction(const std::string& uri, const std::string& 
 {
     lsp::CodeAction action;
     action.title = title;
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::RefactorRewrite);
     lsp::TextEdit edit;
     edit.range = lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
     edit.newText = "\n" + text;
@@ -283,7 +270,7 @@ void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode
     {
         return;
     }
-    auto fields = CollectFieldsForGetterSetter(leaf, classBody, request, className);
+    auto fields = CollectFieldsForGetterSetter(leaf, classBody, request);
     if (fields.empty())
     {
         return;
@@ -337,7 +324,7 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
         edit.newText = " property";
 
         lsp::CodeAction action;
-        action.title = "Add the 'property' keyword";
+        action.title = i18n::FormatMessage(request.i18n, "action-add-property-keyword", "Add the 'property' keyword");
         action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
         action.isPreferred = true;
         action.diagnostics = std::vector<lsp::Diagnostic>{diag};
@@ -349,6 +336,9 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
         action.edit = std::move(wsEdit);
 
         actions.push_back(std::move(action));
+
+        actions.push_back(MakeDisableDiagnosticAction(
+            {diag, "diagnostics.reportAccessorPortability", "as-hint-accessor-portability", request.i18n}));
     }
 }
 

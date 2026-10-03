@@ -20,8 +20,7 @@ using namespace angel_lsp::analysis;
 
 namespace
 {
-std::vector<Diagnostic> AnalyzeScript(const std::string& code,
-                                      const config::DiagnosticsConfig* diagConfig = nullptr)
+std::vector<Diagnostic> AnalyzeScript(const std::string& code, const config::DiagnosticsConfig* diagConfig = nullptr)
 {
     const std::string fileUri = "file:///" + GenerateRandomSymbolName() + ".as";
     parser::AngelScriptParser parser;
@@ -57,8 +56,7 @@ bool HasDiagnosticWithSeverity(const std::vector<Diagnostic>& diagnostics, std::
 
 bool HasDiagnosticCode(const std::vector<Diagnostic>& diagnostics, std::string_view code)
 {
-    return std::any_of(diagnostics.begin(), diagnostics.end(),
-                       [&](const Diagnostic& d) { return d.code == code; });
+    return std::any_of(diagnostics.begin(), diagnostics.end(), [&](const Diagnostic& d) { return d.code == code; });
 }
 } // namespace
 
@@ -70,14 +68,10 @@ TEST_SUITE("HandleComparisonChecker")
         const std::string funcName = GenerateRandomSymbolName();
         const std::string varName = GenerateRandomSymbolName();
 
-        const std::string script = "class " + className + " {}\n" +
-                                   "void " + funcName + "(" + className + "@ " + varName + ")\n" +
-                                   "{\n" +
-                                   "    if (" + varName + " == null) {}\n" +
-                                   "    if (null == " + varName + ") {}\n" +
-                                   "    if (" + varName + " != null) {}\n" +
-                                   "    if (null != " + varName + ") {}\n" +
-                                   "}\n";
+        const std::string script = "class " + className + " {}\n" + "void " + funcName + "(" + className + "@ " +
+                                   varName + ")\n" + "{\n" + "    if (" + varName + " == null) {}\n" +
+                                   "    if (null == " + varName + ") {}\n" + "    if (" + varName + " != null) {}\n" +
+                                   "    if (null != " + varName + ") {}\n" + "}\n";
 
         auto diags = AnalyzeScript(script);
         CHECK(HasDiagnosticWithSeverity(diags, diagnostics::codes::HandleComparisonEquality,
@@ -100,14 +94,10 @@ TEST_SUITE("HandleComparisonChecker")
         const std::string funcName = GenerateRandomSymbolName();
         const std::string varName = GenerateRandomSymbolName();
 
-        const std::string script = "class " + className + " {}\n" +
-                                   "void " + funcName + "(" + className + "@ " + varName + ")\n" +
-                                   "{\n" +
-                                   "    if (" + varName + " is null) {}\n" +
-                                   "    if (null is " + varName + ") {}\n" +
-                                   "    if (" + varName + " !is null) {}\n" +
-                                   "    if (null !is " + varName + ") {}\n" +
-                                   "}\n";
+        const std::string script = "class " + className + " {}\n" + "void " + funcName + "(" + className + "@ " +
+                                   varName + ")\n" + "{\n" + "    if (" + varName + " is null) {}\n" +
+                                   "    if (null is " + varName + ") {}\n" + "    if (" + varName + " !is null) {}\n" +
+                                   "    if (null !is " + varName + ") {}\n" + "}\n";
 
         auto diags = AnalyzeScript(script);
         CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::HandleComparisonEquality));
@@ -122,15 +112,12 @@ TEST_SUITE("HandleComparisonChecker")
         config::DiagnosticsConfig cfg;
         cfg.reportHandleComparisonEquality = 2;
 
-        const std::string script = "class " + className + " {}\n" +
-                                   "void " + funcName + "(" + className + "@ " + varName + ")\n" +
-                                   "{\n" +
-                                   "    if (" + varName + " == null) {}\n" +
-                                   "}\n";
+        const std::string script = "class " + className + " {}\n" + "void " + funcName + "(" + className + "@ " +
+                                   varName + ")\n" + "{\n" + "    if (" + varName + " == null) {}\n" + "}\n";
 
         auto diags = AnalyzeScript(script, &cfg);
-        CHECK(HasDiagnosticWithSeverity(diags, diagnostics::codes::HandleComparisonEquality,
-                                        DiagnosticSeverity::Error));
+        CHECK(
+            HasDiagnosticWithSeverity(diags, diagnostics::codes::HandleComparisonEquality, DiagnosticSeverity::Error));
     }
 
     TEST_CASE("Configurable Severity: Disabled Mode (0)")
@@ -142,12 +129,9 @@ TEST_SUITE("HandleComparisonChecker")
         config::DiagnosticsConfig cfg;
         cfg.reportHandleComparisonEquality = 0;
 
-        const std::string script = "class " + className + " {}\n" +
-                                   "void " + funcName + "(" + className + "@ " + varName + ")\n" +
-                                   "{\n" +
-                                   "    if (" + varName + " == null) {}\n" +
-                                   "    if (" + varName + " != null) {}\n" +
-                                   "}\n";
+        const std::string script = "class " + className + " {}\n" + "void " + funcName + "(" + className + "@ " +
+                                   varName + ")\n" + "{\n" + "    if (" + varName + " == null) {}\n" + "    if (" +
+                                   varName + " != null) {}\n" + "}\n";
 
         auto diags = AnalyzeScript(script, &cfg);
         CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::HandleComparisonEquality));
@@ -159,22 +143,15 @@ TEST_SUITE("HandleComparisonChecker")
         const std::string funcName = GenerateRandomSymbolName();
         const std::string varName = GenerateRandomSymbolName();
 
-        const std::string script = "class " + className + " {}\n" +
-                                   "void " + funcName + "(" + className + "@ " + varName + ")\n" +
-                                   "{\n" +
-                                   "    if (" + varName + " <= null) {}\n" +
-                                   "    if (" + varName + " < null) {}\n" +
-                                   "    if (" + varName + " >= null) {}\n" +
-                                   "    if (" + varName + " > null) {}\n" +
-                                   "    if (null <= " + varName + ") {}\n" +
-                                   "    if (null < " + varName + ") {}\n" +
-                                   "    if (null >= " + varName + ") {}\n" +
-                                   "    if (null > " + varName + ") {}\n" +
-                                   "}\n";
+        const std::string script = "class " + className + " {}\n" + "void " + funcName + "(" + className + "@ " +
+                                   varName + ")\n" + "{\n" + "    if (" + varName + " <= null) {}\n" + "    if (" +
+                                   varName + " < null) {}\n" + "    if (" + varName + " >= null) {}\n" + "    if (" +
+                                   varName + " > null) {}\n" + "    if (null <= " + varName + ") {}\n" +
+                                   "    if (null < " + varName + ") {}\n" + "    if (null >= " + varName + ") {}\n" +
+                                   "    if (null > " + varName + ") {}\n" + "}\n";
 
         auto diags = AnalyzeScript(script);
-        CHECK(HasDiagnosticWithSeverity(diags, diagnostics::codes::IllegalOperation,
-                                        DiagnosticSeverity::Error));
+        CHECK(HasDiagnosticWithSeverity(diags, diagnostics::codes::IllegalOperation, DiagnosticSeverity::Error));
 
         size_t count = 0;
         for (const auto& d : diags)
@@ -194,18 +171,13 @@ TEST_SUITE("HandleComparisonChecker")
         const std::string var1 = GenerateRandomSymbolName();
         const std::string var2 = GenerateRandomSymbolName();
 
-        const std::string script = "class " + className + " {}\n" +
-                                   "void " + funcName + "(" + className + "@ " + var1 + ", " + className + "@ " + var2 + ")\n" +
-                                   "{\n" +
-                                   "    if (" + var1 + " <= " + var2 + ") {}\n" +
-                                   "    if (" + var1 + " < " + var2 + ") {}\n" +
-                                   "    if (" + var1 + " >= " + var2 + ") {}\n" +
-                                   "    if (" + var1 + " > " + var2 + ") {}\n" +
-                                   "}\n";
+        const std::string script = "class " + className + " {}\n" + "void " + funcName + "(" + className + "@ " + var1 +
+                                   ", " + className + "@ " + var2 + ")\n" + "{\n" + "    if (" + var1 + " <= " + var2 +
+                                   ") {}\n" + "    if (" + var1 + " < " + var2 + ") {}\n" + "    if (" + var1 +
+                                   " >= " + var2 + ") {}\n" + "    if (" + var1 + " > " + var2 + ") {}\n" + "}\n";
 
         auto diags = AnalyzeScript(script);
-        CHECK(HasDiagnosticWithSeverity(diags, diagnostics::codes::IllegalOperation,
-                                        DiagnosticSeverity::Error));
+        CHECK(HasDiagnosticWithSeverity(diags, diagnostics::codes::IllegalOperation, DiagnosticSeverity::Error));
 
         size_t count = 0;
         for (const auto& d : diags)
@@ -225,16 +197,11 @@ TEST_SUITE("HandleComparisonChecker")
         const std::string var1 = GenerateRandomSymbolName();
         const std::string var2 = GenerateRandomSymbolName();
 
-        const std::string script = "class " + className + "\n" +
-                                   "{\n" +
-                                   "    int opCmp(const " + className + " &in other) const { return 0; }\n" +
-                                   "}\n" +
-                                   "void " + funcName + "(" + className + "@ " + var1 + ", " + className + "@ " + var2 + ")\n" +
-                                   "{\n" +
-                                   "    if (" + var1 + " <= " + var2 + ") {}\n" +
-                                   "    if (" + var1 + " < " + var2 + ") {}\n" +
-                                   "    if (" + var1 + " >= " + var2 + ") {}\n" +
-                                   "    if (" + var1 + " > " + var2 + ") {}\n" +
+        const std::string script = "class " + className + "\n" + "{\n" + "    int opCmp(const " + className +
+                                   " &in other) const { return 0; }\n" + "}\n" + "void " + funcName + "(" + className +
+                                   "@ " + var1 + ", " + className + "@ " + var2 + ")\n" + "{\n" + "    if (" + var1 +
+                                   " <= " + var2 + ") {}\n" + "    if (" + var1 + " < " + var2 + ") {}\n" + "    if (" +
+                                   var1 + " >= " + var2 + ") {}\n" + "    if (" + var1 + " > " + var2 + ") {}\n" +
                                    "}\n";
 
         auto diags = AnalyzeScript(script);
@@ -249,18 +216,11 @@ TEST_SUITE("HandleComparisonChecker")
         const std::string varName = GenerateRandomSymbolName();
 
         const std::string script =
-            "class " + className + "\n" +
-            "{\n" +
-            "    bool " + methodName + "() { return true; }\n" +
-            "}\n" +
-            "void " + funcName + "(" + className + "@ " + varName + ")\n" +
-            "{\n" +
-            "    if (true || " + varName + " == null) {}\n" +
-            "    if (" + varName + " is null || " + varName + "." + methodName + "()) {}\n" +
-            "    if (" + varName + " !is null && " + varName + "." + methodName + "()) {}\n" +
-            "    bool flag = (" + varName + " != null) ? true : false;\n" +
-            "    while (" + varName + " == null) {}\n" +
-            "}\n";
+            "class " + className + "\n" + "{\n" + "    bool " + methodName + "() { return true; }\n" + "}\n" + "void " +
+            funcName + "(" + className + "@ " + varName + ")\n" + "{\n" + "    if (true || " + varName +
+            " == null) {}\n" + "    if (" + varName + " is null || " + varName + "." + methodName + "()) {}\n" +
+            "    if (" + varName + " !is null && " + varName + "." + methodName + "()) {}\n" + "    bool flag = (" +
+            varName + " != null) ? true : false;\n" + "    while (" + varName + " == null) {}\n" + "}\n";
 
         auto diags = AnalyzeScript(script);
         // The first if, the ternary condition, and while statement have equality comparisons with null
@@ -286,20 +246,14 @@ TEST_SUITE("HandleComparisonChecker")
         const std::string arrName1 = GenerateRandomSymbolName();
         const std::string arrName2 = GenerateRandomSymbolName();
 
-        const std::string script =
-            "class " + className + " {}\n" +
-            "void " + funcName + "(array<" + className + "@> " + arrName1 + ", array<" + className + "@> " + arrName2 + ")\n" +
-            "{\n" +
-            "    if (" + arrName1 + "[0] == null) {}\n" +
-            "    if (null == " + arrName1 + "[0]) {}\n" +
-            "    if (" + arrName1 + "[0] != null) {}\n" +
-            "    if (null != " + arrName1 + "[0]) {}\n" +
-            "    if (" + arrName1 + "[0] is null) {}\n" +
-            "    if (" + arrName1 + "[0] !is null) {}\n" +
-            "    if (" + arrName1 + "[0] <= null) {}\n" +
-            "    if (null <= " + arrName1 + "[0]) {}\n" +
-            "    if (" + arrName1 + "[0] <= " + arrName2 + "[0]) {}\n" +
-            "}\n";
+        const std::string script = "class " + className + " {}\n" + "void " + funcName + "(array<" + className + "@> " +
+                                   arrName1 + ", array<" + className + "@> " + arrName2 + ")\n" + "{\n" + "    if (" +
+                                   arrName1 + "[0] == null) {}\n" + "    if (null == " + arrName1 + "[0]) {}\n" +
+                                   "    if (" + arrName1 + "[0] != null) {}\n" + "    if (null != " + arrName1 +
+                                   "[0]) {}\n" + "    if (" + arrName1 + "[0] is null) {}\n" + "    if (" + arrName1 +
+                                   "[0] !is null) {}\n" + "    if (" + arrName1 + "[0] <= null) {}\n" +
+                                   "    if (null <= " + arrName1 + "[0]) {}\n" + "    if (" + arrName1 +
+                                   "[0] <= " + arrName2 + "[0]) {}\n" + "}\n";
 
         auto diags = AnalyzeScript(script);
         size_t equalityWarnings = 0;
@@ -330,20 +284,13 @@ TEST_SUITE("HandleComparisonChecker")
         const std::string matrixName = GenerateRandomSymbolName();
         const std::string holderVar = GenerateRandomSymbolName();
 
-        const std::string script =
-            "class " + className + " {}\n" +
-            "class " + holderName + "\n" +
-            "{\n" +
-            "    " + className + "@ handleField;\n" +
-            "}\n" +
-            "" + className + "@ " + getFuncName + "() { return null; }\n" +
-            "void " + funcName + "(array<array<" + className + "@>> " + matrixName + ", " + holderName + "@ " + holderVar + ")\n" +
-            "{\n" +
-            "    if (" + matrixName + "[0][0] == null) {}\n" +
-            "    if (" + holderVar + ".handleField == null) {}\n" +
-            "    if (" + getFuncName + "() == null) {}\n" +
-            "    if ((" + holderVar + ".handleField) != null) {}\n" +
-            "}\n";
+        const std::string script = "class " + className + " {}\n" + "class " + holderName + "\n" + "{\n" + "    " +
+                                   className + "@ handleField;\n" + "}\n" + "" + className + "@ " + getFuncName +
+                                   "() { return null; }\n" + "void " + funcName + "(array<array<" + className + "@>> " +
+                                   matrixName + ", " + holderName + "@ " + holderVar + ")\n" + "{\n" + "    if (" +
+                                   matrixName + "[0][0] == null) {}\n" + "    if (" + holderVar +
+                                   ".handleField == null) {}\n" + "    if (" + getFuncName + "() == null) {}\n" +
+                                   "    if ((" + holderVar + ".handleField) != null) {}\n" + "}\n";
 
         auto diags = AnalyzeScript(script);
         size_t equalityWarnings = 0;
@@ -364,12 +311,9 @@ TEST_SUITE("HandleComparisonChecker")
         const std::string valArr = GenerateRandomSymbolName();
         const std::string intArr = GenerateRandomSymbolName();
 
-        const std::string script =
-            "class " + className + " {}\n" +
-            "void " + funcName + "(array<" + className + "> " + valArr + ", array<int> " + intArr + ")\n" +
-            "{\n" +
-            "    if (" + intArr + "[0] <= 5) {}\n" +
-            "}\n";
+        const std::string script = "class " + className + " {}\n" + "void " + funcName + "(array<" + className + "> " +
+                                   valArr + ", array<int> " + intArr + ")\n" + "{\n" + "    if (" + intArr +
+                                   "[0] <= 5) {}\n" + "}\n";
 
         auto diags = AnalyzeScript(script);
         CHECK_FALSE(HasDiagnosticCode(diags, diagnostics::codes::HandleComparisonEquality));
@@ -382,15 +326,10 @@ TEST_SUITE("HandleComparisonChecker")
         const std::string testFuncName = GenerateRandomSymbolName();
         const std::string cbVar = GenerateRandomSymbolName();
 
-        const std::string script =
-            "funcdef void " + funcdefName + "();\n" +
-            "void " + testFuncName + "(" + funcdefName + " " + cbVar + ")\n" +
-            "{\n" +
-            "    if (" + cbVar + " == null) {}\n" +
-            "    if (" + cbVar + " != null) {}\n" +
-            "    if (" + cbVar + " is null) {}\n" +
-            "    if (" + cbVar + " !is null) {}\n" +
-            "}\n";
+        const std::string script = "funcdef void " + funcdefName + "();\n" + "void " + testFuncName + "(" +
+                                   funcdefName + " " + cbVar + ")\n" + "{\n" + "    if (" + cbVar + " == null) {}\n" +
+                                   "    if (" + cbVar + " != null) {}\n" + "    if (" + cbVar + " is null) {}\n" +
+                                   "    if (" + cbVar + " !is null) {}\n" + "}\n";
 
         auto diags = AnalyzeScript(script);
         size_t equalityWarnings = 0;
@@ -410,20 +349,10 @@ TEST_SUITE("HandleComparisonChecker")
         const std::string methodName = GenerateRandomSymbolName();
 
         const std::string script =
-            "class " + className + "\n" +
-            "{\n" +
-            "    void " + methodName + "()\n" +
-            "    {\n" +
-            "        if (this is null) {}\n" +
-            "        if (null is this) {}\n" +
-            "        if (this !is null) {}\n" +
-            "        if (null !is this) {}\n" +
-            "        if (this == null) {}\n" +
-            "        if (null == this) {}\n" +
-            "        if (this != null) {}\n" +
-            "        if (null != this) {}\n" +
-            "    }\n" +
-            "}\n";
+            "class " + className + "\n" + "{\n" + "    void " + methodName + "()\n" + "    {\n" +
+            "        if (this is null) {}\n" + "        if (null is this) {}\n" + "        if (this !is null) {}\n" +
+            "        if (null !is this) {}\n" + "        if (this == null) {}\n" + "        if (null == this) {}\n" +
+            "        if (this != null) {}\n" + "        if (null != this) {}\n" + "    }\n" + "}\n";
 
         auto diags = AnalyzeScript(script);
         size_t equalityWarnings = 0;

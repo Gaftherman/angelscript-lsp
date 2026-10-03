@@ -165,9 +165,10 @@ bool ApplyNumericEngineProperty(EngineProperties& engine, std::string_view name,
 
 struct BoolEngineProp
 {
+    using PropMember = bool EngineProperties::*;
     std::string_view name;
     std::string_view alias;
-    bool EngineProperties::* member;
+    PropMember member;
 };
 
 static constexpr BoolEngineProp kBoolEngineProps[] = {
@@ -341,6 +342,8 @@ void PrintOptionsHelp()
         << "                                          A list or a lambda body keeps its brace on the line\n"
         << "                                          either way - that is correctness, not style.\n"
         << "  --format-spaces-inside-parentheses      Insert spaces inside parentheses (e.g. 'foo( bar )')\n"
+        << "  --format-pointer-alignment=<left|right|middle>\n"
+        << "                                          Where '@' attaches in declarations. Default left.\n"
         << "  -h, --help                              Show this help message and exit\n"
         << "  -v, --version                           Show version information and exit\n";
 }
@@ -419,11 +422,12 @@ bool TryParseHelpOrVersion(ServerConfig& config, const ArgParseContext& ctx)
 
 struct FeatureFlagMapping
 {
+    using FeatureMember = bool FeatureFlags::*;
     std::string_view enableKey;
     std::string_view enableAlias;
     std::string_view disableKey;
     std::string_view disableAlias;
-    bool FeatureFlags::* member;
+    FeatureMember member;
 };
 
 static constexpr FeatureFlagMapping kFeatureFlags[] = {
@@ -481,12 +485,16 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
     {"--completion-complete-function-parens", "--enable-completion-function-parens",
      "--disable-completion-function-parens", "--no-completion-complete-function-parens",
      &FeatureFlags::completionCompleteFunctionParens},
-    {"--hover-string-literal-length", "--enable-hover-string-literal-length",
-     "--disable-hover-string-literal-length", "--no-hover-string-literal-length",
-     &FeatureFlags::hoverStringLiteralLength},
+    {"--completion-qualify-enum-values", "--enable-completion-qualify-enum-values",
+     "--disable-completion-qualify-enum-values", "--no-completion-qualify-enum-values",
+     &FeatureFlags::completionQualifyEnumValues},
+    {"--hover-string-literal-length", "--enable-hover-string-literal-length", "--disable-hover-string-literal-length",
+     "--no-hover-string-literal-length", &FeatureFlags::hoverStringLiteralLength},
     {"--hover-string-literal-path-resolution", "--enable-hover-string-literal-path-resolution",
      "--disable-hover-string-literal-path-resolution", "--no-hover-string-literal-path-resolution",
      &FeatureFlags::hoverStringLiteralPathResolution},
+    {"--enable-comment-suppressions", "--enable-commentsuppressions", "--disable-comment-suppressions",
+     "--disable-commentsuppressions", &FeatureFlags::enableCommentSuppressions},
 };
 
 bool TryParseInlayHintOmittedDefaultsFlag(ServerConfig& config, ArgParseContext& ctx)
@@ -585,9 +593,10 @@ bool TryParseFeatureFlag(ServerConfig& config, ArgParseContext& ctx)
 
 struct DiagnosticFlagMapping
 {
+    using DiagMember = bool DiagnosticsConfig::*;
     std::string_view enableKey;
     std::string_view disableKey;
-    bool DiagnosticsConfig::* member;
+    DiagMember member;
 };
 
 static constexpr DiagnosticFlagMapping kDiagFlags[] = {
@@ -876,13 +885,8 @@ bool TryParsePathAndLocaleOptions(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
-bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
+bool TryParseFormattingOptions(ServerConfig& config, ArgParseContext& ctx)
 {
-    if (ctx.key == "--implicit-include-extension")
-    {
-        config.implicitIncludeExtension = ctx.GetBoolValue(true);
-        return true;
-    }
     if (ctx.key == "--format-brace-style" || ctx.key == "--brace-style")
     {
         std::string_view val;
@@ -900,6 +904,34 @@ bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
     if (ctx.key == "--format-spaces-inside-parentheses")
     {
         config.format.spacesInsideParentheses = ctx.GetBoolValue(true);
+        return true;
+    }
+    if (ctx.key == "--format-keep-empty-blocks-on-single-line")
+    {
+        config.format.keepEmptyBlocksOnSingleLine = ctx.GetBoolValue(true);
+        return true;
+    }
+    if (ctx.key == "--format-pointer-alignment" || ctx.key == "--pointer-alignment")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.format.pointerAlignment = std::string(val);
+        }
+        return true;
+    }
+    return false;
+}
+
+bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
+{
+    if (TryParseFormattingOptions(config, ctx))
+    {
+        return true;
+    }
+    if (ctx.key == "--implicit-include-extension")
+    {
+        config.implicitIncludeExtension = ctx.GetBoolValue(true);
         return true;
     }
     if (ctx.key == "--engine-profile" || ctx.key == "--profile")
@@ -939,9 +971,10 @@ bool TryParseDiagnosticSeverity(ServerConfig& config, ArgParseContext& ctx)
 
 struct EngineBoolFlag
 {
+    using FlagMember = bool EngineProperties::*;
     std::string_view enableFlag;
     std::string_view disableFlag;
-    bool EngineProperties::* member;
+    FlagMember member;
 };
 
 static constexpr EngineBoolFlag kEngineBoolFlags[] = {

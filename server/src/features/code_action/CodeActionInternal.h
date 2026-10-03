@@ -100,6 +100,65 @@ void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_de
  */
 TSPoint FindClassClosingBracePoint(TSNode classBody);
 
+/**
+ * @brief Options bundle for creating a diagnostic disabling quick-fix action.
+ */
+struct DisableDiagnosticActionOptions
+{
+    const lsp::Diagnostic& diag;
+    std::string settingKey;
+    std::string code;
+    const i18n::I18n* i18n = nullptr;
+};
+
+/**
+ * @brief Constructs a QuickFix action that disables a configurable diagnostic in workspace settings.
+ * @param[in] options Options bundle containing diagnostic, settingKey, code, and optional i18n.
+ * @return Constructed CodeAction with command payload.
+ */
+lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions& options);
+
+/**
+ * @brief Constructs a QuickFix action that disables a configurable diagnostic in workspace settings.
+ * @param[in] diag Diagnostic to link.
+ * @param[in] title Human-readable action title.
+ * @param[in] settingKey Client setting path under 'angelscript.'.
+ * @param[in] code Diagnostic code identifier.
+ * @return Constructed CodeAction with command payload.
+ */
+lsp::CodeAction MakeDisableDiagnosticAction(const lsp::Diagnostic& diag, std::string title, std::string settingKey,
+                                            std::string code);
+
+/**
+ * @brief Options bundle for creating a text edit quick-fix code action.
+ */
+struct QuickFixOptions
+{
+    std::string title;
+    const lsp::Diagnostic& diag;
+    std::string_view uri;
+    std::vector<lsp::TextEdit> edits;
+    bool isPreferred = false;
+};
+
+/**
+ * @brief Constructs a QuickFix action with the provided workspace edits.
+ * @param[in] options Quick fix configuration bundle.
+ * @return Constructed CodeAction.
+ */
+lsp::CodeAction MakeQuickFixAction(QuickFixOptions options);
+
+/**
+ * @brief Constructs a QuickFix action with the provided text edits.
+ * @param[in] title Human-readable action title.
+ * @param[in] diag Triggering diagnostic.
+ * @param[in] uri Target document URI.
+ * @param[in] edits Vector of text edits to apply.
+ * @return Constructed CodeAction.
+ */
+lsp::CodeAction MakeQuickFixAction(std::string title, const lsp::Diagnostic& diag, std::string_view uri,
+                                   std::vector<lsp::TextEdit> edits);
+
 // Feature Provider Function Declarations
 void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode rootNode,
                                      std::vector<lsp::CodeAction>& actions);
@@ -138,5 +197,7 @@ void TryAddRepeatedConversionFix(const CodeActionRequest& request, TSNode rootNo
 void TryAddGenerateFuncdefFix(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions);
 
 void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+
+void TryAddDiagnosticSuppressionFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
 } // namespace angel_lsp::features

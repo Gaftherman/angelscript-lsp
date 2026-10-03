@@ -42,7 +42,7 @@ struct FeatureFlags
     bool inlayHintsSuppressWhenArgumentMatchesName = false;
     size_t inlayHintsMaxParameters = 0;
     size_t inlayHintsMaxLength = 0;
-    OmittedDefaultArgumentsMode inlayHintsOmittedDefaultArguments = OmittedDefaultArgumentsMode::NameAndValue;
+    OmittedDefaultArgumentsMode inlayHintsOmittedDefaultArguments = OmittedDefaultArgumentsMode::Off;
     bool enableCodeAction = true;
     bool enableFormatting = true;
     bool enableDocumentLink = true;
@@ -53,14 +53,17 @@ struct FeatureFlags
     bool enableTypeHierarchy = true;
     bool enableLinkedEditing = true;
     bool enableCodeLens = true;
-    bool enableOnTypeFormatting = true;
+    bool enableOnTypeFormatting = false;
     bool enablePullDiagnostics = true;
     bool enableVirtualMixinDocuments = false;
     bool inlayHintsEnableTooltip = true;
     bool inlayHintsEnableLocation = true;
     bool completionCompleteFunctionParens = true;
+    /** @brief Automatically prefix enum name when completing enum values (e.g. 'Enum::Value'). */
+    bool completionQualifyEnumValues = true;
     bool hoverStringLiteralLength = true;
-    bool hoverStringLiteralPathResolution = false;
+    bool hoverStringLiteralPathResolution = true;
+    bool enableCommentSuppressions = true;
     std::vector<std::string> assetSearchPaths;
 };
 
@@ -538,6 +541,20 @@ struct FormatConfig
      * @brief Whether to insert spaces inside parentheses (e.g. 'foo( bar )' vs 'foo(bar)') (default: false).
      */
     bool spacesInsideParentheses = false;
+
+    /**
+     * @brief Whether to keep empty blocks on a single line (e.g. 'ClassName() {}') (default: true).
+     */
+    bool keepEmptyBlocksOnSingleLine = true;
+
+    /**
+     * @brief Where the handle symbol '@' aligns in declarations ("left", "right", "middle").
+     *
+     * "left" formats as 'Type@ var', matching canonical AngelScript style.
+     * "right" formats as 'Type @var'.
+     * "middle" formats as 'Type @ var'.
+     */
+    std::string pointerAlignment = "left";
 };
 
 /**

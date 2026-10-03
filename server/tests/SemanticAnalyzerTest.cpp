@@ -1,17 +1,17 @@
 #include <doctest/doctest.h>
 
+#include "analysis/LocalScopeCollector.h"
+#include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "config/ServerConfig.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "helpers/TestUtils.h"
-#include "analysis/SemanticAnalyzer.h"
-#include <functional>
-#include "analysis/SemanticAnalysisRequest.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/SymbolTable.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
-#include "config/ServerConfig.h"
+#include <functional>
 
 #include <algorithm>
 #include <chrono>
@@ -27,116 +27,116 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    /** @brief Runs the full parse -> SymbolCollector -> LocalScopeCollector -> SemanticAnalyzer
-     *         pipeline for sourceCode and returns the analyzer's diagnostics. table and i18n are
-     *         caller-owned since SemanticAnalysisRequest only holds a reference/pointer to them. */
-    std::vector<Diagnostic> AnalyzeSource(const std::string &sourceCode, SymbolTable &table,
-                                           const angel_lsp::i18n::I18n &i18n, const std::string &fileUri = "file:///test.as",
-                                           const angel_lsp::config::DiagnosticsConfig *diagnosticsConfig = nullptr,
-                                           const angel_lsp::config::EngineProperties *engineProperties = nullptr)
-    {
-        AngelScriptParser symbolParser;
-        SymbolCollector symbolCollector(nullptr);
-        symbolCollector.CollectSymbols(fileUri, sourceCode, symbolParser, table);
+/** @brief Runs the full parse -> SymbolCollector -> LocalScopeCollector -> SemanticAnalyzer
+ *         pipeline for sourceCode and returns the analyzer's diagnostics. table and i18n are
+ *         caller-owned since SemanticAnalysisRequest only holds a reference/pointer to them. */
+std::vector<Diagnostic> AnalyzeSource(const std::string& sourceCode, SymbolTable& table,
+                                      const angel_lsp::i18n::I18n& i18n, const std::string& fileUri = "file:///test.as",
+                                      const angel_lsp::config::DiagnosticsConfig* diagnosticsConfig = nullptr,
+                                      const angel_lsp::config::EngineProperties* engineProperties = nullptr)
+{
+    AngelScriptParser symbolParser;
+    SymbolCollector symbolCollector(nullptr);
+    symbolCollector.CollectSymbols(fileUri, sourceCode, symbolParser, table);
 
-        AngelScriptParser scopeParser;
-        LocalScopeCollector scopeCollector(nullptr);
+    AngelScriptParser scopeParser;
+    LocalScopeCollector scopeCollector(nullptr);
 
-        SemanticAnalysisRequest req{table, fileUri, "", &i18n};
-        req.diagnostics = diagnosticsConfig;
-        req.engineProperties = engineProperties;
-        req.scopeRoot = scopeCollector.CollectScopes(sourceCode, scopeParser);
+    SemanticAnalysisRequest req{table, fileUri, "", &i18n};
+    req.diagnostics = diagnosticsConfig;
+    req.engineProperties = engineProperties;
+    req.scopeRoot = scopeCollector.CollectScopes(sourceCode, scopeParser);
 
-        // The server always analyses with the source text and the parsed tree in hand
-        // (Server.cpp: AnalyzeDocument). Leaving them null here made this harness model something
-        // the server never is, and any rule that has to look at the syntax to decide - the
-        // base-constructor `super(...)` exemption, for one - silently took its no-tree branch, so
-        // the test passed without exercising the rule.
-        AngelScriptParser treeParser;
-        req.sourceCode = sourceCode;
-        req.tree = treeParser.Parse(sourceCode);
+    // The server always analyses with the source text and the parsed tree in hand
+    // (Server.cpp: AnalyzeDocument). Leaving them null here made this harness model something
+    // the server never is, and any rule that has to look at the syntax to decide - the
+    // base-constructor `super(...)` exemption, for one - silently took its no-tree branch, so
+    // the test passed without exercising the rule.
+    AngelScriptParser treeParser;
+    req.sourceCode = sourceCode;
+    req.tree = treeParser.Parse(sourceCode);
 
-        SemanticAnalyzer analyzer(nullptr);
-        auto diagnostics = analyzer.Analyze(req);
+    SemanticAnalyzer analyzer(nullptr);
+    auto diagnostics = analyzer.Analyze(req);
 
-        if (req.tree)
-            ts_tree_delete(const_cast<TSTree *>(req.tree));
+    if (req.tree)
+        ts_tree_delete(const_cast<TSTree*>(req.tree));
 
-        return diagnostics;
-    }
-
-    /** @brief True if diagnostics contains an as-warn-undeclared-identifier flagging exactly name. */
-    bool HasUndefinedIdentifierDiagnostic(const std::vector<Diagnostic> &diagnostics, const std::string &name)
-    {
-        std::string quoted = "'" + name + "'";
-        for (const auto &diag : diagnostics)
-        {
-            if (diag.code == "as-warn-undeclared-identifier" && diag.message.find(quoted) != std::string::npos)
-                return true;
-        }
-        return false;
-    }
-
-    /** @brief True if diagnostics contains an as-warn-unused-variable flagging exactly name. */
-    bool HasUnusedVariableDiagnostic(const std::vector<Diagnostic> &diagnostics, const std::string &name)
-    {
-        std::string quoted = "'" + name + "'";
-        for (const auto &diag : diagnostics)
-        {
-            if (diag.code == "as-warn-unused-variable" && diag.message.find(quoted) != std::string::npos)
-                return true;
-        }
-        return false;
-    }
-
-    /** @brief Counts as-warn-unused-variable diagnostics flagging exactly name. */
-    size_t CountUnusedVariableDiagnostics(const std::vector<Diagnostic> &diagnostics, const std::string &name)
-    {
-        std::string quoted = "'" + name + "'";
-        size_t count = 0;
-        for (const auto &diag : diagnostics)
-        {
-            if (diag.code == "as-warn-unused-variable" && diag.message.find(quoted) != std::string::npos)
-                ++count;
-        }
-        return count;
-    }
-
-    /** @brief True if diagnostics contains an as-err-null-non-handle flagging exactly typeName. */
-    bool HasNullNonHandleDiagnostic(const std::vector<Diagnostic> &diagnostics, const std::string &typeName)
-    {
-        std::string quoted = "'" + typeName + "'";
-        for (const auto &diag : diagnostics)
-        {
-            if (diag.code == "as-err-null-non-handle" && diag.message.find(quoted) != std::string::npos)
-                return true;
-        }
-        return false;
-    }
-
-    /** @brief Extracts the single-quoted identifier name out of an as-warn-undeclared-identifier message. */
-    std::string ExtractFlaggedName(const std::string &message)
-    {
-        size_t open = message.find('\'');
-        size_t close = (open == std::string::npos) ? std::string::npos : message.find('\'', open + 1);
-        if (open == std::string::npos || close == std::string::npos)
-            return message;
-        return message.substr(open + 1, close - open - 1);
-    }
-
-    /** @brief Reads an entire file from the angelscript/ corpus into memory; empty string if missing. */
-    std::string ReadCorpusFile(const std::string &fileName)
-    {
-        std::string path = angel_lsp::test::CorpusDirectory().string() + "/" + fileName;
-        std::ifstream file(path, std::ios::binary);
-        if (!file)
-            return "";
-
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-        return buffer.str();
-    }
+    return diagnostics;
 }
+
+/** @brief True if diagnostics contains an as-warn-undeclared-identifier flagging exactly name. */
+bool HasUndefinedIdentifierDiagnostic(const std::vector<Diagnostic>& diagnostics, const std::string& name)
+{
+    std::string quoted = "'" + name + "'";
+    for (const auto& diag : diagnostics)
+    {
+        if (diag.code == "as-warn-undeclared-identifier" && diag.message.find(quoted) != std::string::npos)
+            return true;
+    }
+    return false;
+}
+
+/** @brief True if diagnostics contains an as-warn-unused-variable flagging exactly name. */
+bool HasUnusedVariableDiagnostic(const std::vector<Diagnostic>& diagnostics, const std::string& name)
+{
+    std::string quoted = "'" + name + "'";
+    for (const auto& diag : diagnostics)
+    {
+        if (diag.code == "as-warn-unused-variable" && diag.message.find(quoted) != std::string::npos)
+            return true;
+    }
+    return false;
+}
+
+/** @brief Counts as-warn-unused-variable diagnostics flagging exactly name. */
+size_t CountUnusedVariableDiagnostics(const std::vector<Diagnostic>& diagnostics, const std::string& name)
+{
+    std::string quoted = "'" + name + "'";
+    size_t count = 0;
+    for (const auto& diag : diagnostics)
+    {
+        if (diag.code == "as-warn-unused-variable" && diag.message.find(quoted) != std::string::npos)
+            ++count;
+    }
+    return count;
+}
+
+/** @brief True if diagnostics contains an as-err-null-non-handle flagging exactly typeName. */
+bool HasNullNonHandleDiagnostic(const std::vector<Diagnostic>& diagnostics, const std::string& typeName)
+{
+    std::string quoted = "'" + typeName + "'";
+    for (const auto& diag : diagnostics)
+    {
+        if (diag.code == "as-err-null-non-handle" && diag.message.find(quoted) != std::string::npos)
+            return true;
+    }
+    return false;
+}
+
+/** @brief Extracts the single-quoted identifier name out of an as-warn-undeclared-identifier message. */
+std::string ExtractFlaggedName(const std::string& message)
+{
+    size_t open = message.find('\'');
+    size_t close = (open == std::string::npos) ? std::string::npos : message.find('\'', open + 1);
+    if (open == std::string::npos || close == std::string::npos)
+        return message;
+    return message.substr(open + 1, close - open - 1);
+}
+
+/** @brief Reads an entire file from the angelscript/ corpus into memory; empty string if missing. */
+std::string ReadCorpusFile(const std::string& fileName)
+{
+    std::string path = angel_lsp::test::CorpusDirectory().string() + "/" + fileName;
+    std::ifstream file(path, std::ios::binary);
+    if (!file)
+        return "";
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+} // namespace
 
 // =====================================================================================
 // Undefined-identifier detection
@@ -157,7 +157,7 @@ void Foo()
 
     CHECK(HasUndefinedIdentifierDiagnostic(diagnostics, "Undefined"));
 
-    for (const auto &diag : diagnostics)
+    for (const auto& diag : diagnostics)
     {
         if (diag.code == "as-warn-undeclared-identifier")
             CHECK(diag.severity == DiagnosticSeverity::Warning);
@@ -312,7 +312,7 @@ void Foo()
 
     CHECK(HasUnusedVariableDiagnostic(diagnostics, "unused"));
 
-    for (const auto &diag : diagnostics)
+    for (const auto& diag : diagnostics)
     {
         if (diag.code == "as-warn-unused-variable")
             CHECK(diag.severity == DiagnosticSeverity::Warning);
@@ -639,7 +639,7 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Across All angel
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -653,7 +653,7 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Across All angel
     double totalSeconds = 0.0;
     std::vector<std::string> sample;
 
-    for (const auto &path : files)
+    for (const auto& path : files)
     {
         std::string sourceCode = ReadCorpusFile(path.filename().string());
         if (sourceCode.empty())
@@ -668,7 +668,7 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Across All angel
         totalSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
         bool sampledThisFile = false;
-        for (const auto &diag : diagnostics)
+        for (const auto& diag : diagnostics)
         {
             if (diag.code != "as-warn-undeclared-identifier")
                 continue;
@@ -678,19 +678,18 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Across All angel
             // of exhausting the cap on whichever file happens to be flagged the most.
             if (!sampledThisFile && sample.size() < 60)
             {
-                sample.push_back(path.filename().string() + ":" + std::to_string(diag.range.start.line + 1)
-                                  + " " + diag.message);
+                sample.push_back(path.filename().string() + ":" + std::to_string(diag.range.start.line + 1) + " " +
+                                 diag.message);
                 sampledThisFile = true;
             }
         }
     }
 
-    MESSAGE("Undefined-identifier corpus audit: files=" << totalFiles
-            << " totalFlagged=" << totalFlagged
-            << " totalSeconds=" << totalSeconds
+    MESSAGE("Undefined-identifier corpus audit: files="
+            << totalFiles << " totalFlagged=" << totalFlagged << " totalSeconds=" << totalSeconds
             << " avgMsPerFile=" << (totalFiles ? (totalSeconds * 1000.0 / static_cast<double>(totalFiles)) : 0.0));
 
-    for (const auto &line : sample)
+    for (const auto& line : sample)
         MESSAGE("  " << line);
 
     CHECK(totalFiles > 0);
@@ -716,7 +715,7 @@ TEST_CASE("SemanticAnalyzer - Unused Variable Corpus Audit Across All angelscrip
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -730,7 +729,7 @@ TEST_CASE("SemanticAnalyzer - Unused Variable Corpus Audit Across All angelscrip
     double totalSeconds = 0.0;
     std::vector<std::string> sample;
 
-    for (const auto &path : files)
+    for (const auto& path : files)
     {
         std::string sourceCode = ReadCorpusFile(path.filename().string());
         if (sourceCode.empty())
@@ -745,7 +744,7 @@ TEST_CASE("SemanticAnalyzer - Unused Variable Corpus Audit Across All angelscrip
         totalSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
         bool sampledThisFile = false;
-        for (const auto &diag : diagnostics)
+        for (const auto& diag : diagnostics)
         {
             if (diag.code != "as-warn-unused-variable")
                 continue;
@@ -753,19 +752,18 @@ TEST_CASE("SemanticAnalyzer - Unused Variable Corpus Audit Across All angelscrip
             ++totalFlagged;
             if (!sampledThisFile && sample.size() < 60)
             {
-                sample.push_back(path.filename().string() + ":" + std::to_string(diag.range.start.line + 1)
-                                  + " " + diag.message);
+                sample.push_back(path.filename().string() + ":" + std::to_string(diag.range.start.line + 1) + " " +
+                                 diag.message);
                 sampledThisFile = true;
             }
         }
     }
 
-    MESSAGE("Unused-variable corpus audit: files=" << totalFiles
-            << " totalFlagged=" << totalFlagged
-            << " totalSeconds=" << totalSeconds
+    MESSAGE("Unused-variable corpus audit: files="
+            << totalFiles << " totalFlagged=" << totalFlagged << " totalSeconds=" << totalSeconds
             << " avgMsPerFile=" << (totalFiles ? (totalSeconds * 1000.0 / static_cast<double>(totalFiles)) : 0.0));
 
-    for (const auto &line : sample)
+    for (const auto& line : sample)
         MESSAGE("  " << line);
 
     CHECK(totalFiles > 0);
@@ -791,7 +789,7 @@ TEST_CASE("SemanticAnalyzer - Null Non Handle Corpus Audit Across All angelscrip
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -805,7 +803,7 @@ TEST_CASE("SemanticAnalyzer - Null Non Handle Corpus Audit Across All angelscrip
     double totalSeconds = 0.0;
     std::vector<std::string> sample;
 
-    for (const auto &path : files)
+    for (const auto& path : files)
     {
         std::string sourceCode = ReadCorpusFile(path.filename().string());
         if (sourceCode.empty())
@@ -820,7 +818,7 @@ TEST_CASE("SemanticAnalyzer - Null Non Handle Corpus Audit Across All angelscrip
         totalSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
         bool sampledThisFile = false;
-        for (const auto &diag : diagnostics)
+        for (const auto& diag : diagnostics)
         {
             if (diag.code != "as-err-null-non-handle")
                 continue;
@@ -828,19 +826,18 @@ TEST_CASE("SemanticAnalyzer - Null Non Handle Corpus Audit Across All angelscrip
             ++totalFlagged;
             if (!sampledThisFile && sample.size() < 60)
             {
-                sample.push_back(path.filename().string() + ":" + std::to_string(diag.range.start.line + 1)
-                                  + " " + diag.message);
+                sample.push_back(path.filename().string() + ":" + std::to_string(diag.range.start.line + 1) + " " +
+                                 diag.message);
                 sampledThisFile = true;
             }
         }
     }
 
-    MESSAGE("Null-non-handle corpus audit: files=" << totalFiles
-            << " totalFlagged=" << totalFlagged
-            << " totalSeconds=" << totalSeconds
+    MESSAGE("Null-non-handle corpus audit: files="
+            << totalFiles << " totalFlagged=" << totalFlagged << " totalSeconds=" << totalSeconds
             << " avgMsPerFile=" << (totalFiles ? (totalSeconds * 1000.0 / static_cast<double>(totalFiles)) : 0.0));
 
-    for (const auto &line : sample)
+    for (const auto& line : sample)
         MESSAGE("  " << line);
 
     CHECK(totalFiles > 0);
@@ -867,7 +864,8 @@ TEST_CASE("SemanticAnalyzer - Null Non Handle Corpus Audit Across All angelscrip
 // how much of the noise was purely a test-harness artifact vs. a real, structural blind spot.
 // =====================================================================================
 
-TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Project (shared SymbolTable)" * doctest::skip(true))
+TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Project (shared SymbolTable)" *
+          doctest::skip(true))
 {
     if (!angel_lsp::test::CorpusIsAvailable())
     {
@@ -878,7 +876,7 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Proje
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -887,7 +885,7 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Proje
     std::sort(files.begin(), files.end());
 
     std::unordered_map<std::string, std::vector<fs::path>> groups;
-    for (const auto &path : files)
+    for (const auto& path : files)
     {
         std::string name = path.filename().string();
         size_t underscorePos = name.find('_');
@@ -901,12 +899,12 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Proje
     double totalSeconds = 0.0;
     std::unordered_map<std::string, size_t> flaggedNameCounts;
 
-    for (auto &[groupName, groupFiles] : groups)
+    for (auto& [groupName, groupFiles] : groups)
     {
         SymbolTable sharedTable;
         std::unordered_map<std::string, std::string> sources;
 
-        for (const auto &path : groupFiles)
+        for (const auto& path : groupFiles)
         {
             std::string sourceCode = ReadCorpusFile(path.filename().string());
             if (sourceCode.empty())
@@ -920,7 +918,7 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Proje
             collector.CollectSymbols(fileUri, sourceCode, parser, sharedTable);
         }
 
-        for (const auto &[fileUri, sourceCode] : sources)
+        for (const auto& [fileUri, sourceCode] : sources)
         {
             ++totalFiles;
 
@@ -937,7 +935,7 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Proje
             CHECK_NOTHROW(diagnostics = analyzer.Analyze(req));
             totalSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
-            for (const auto &diag : diagnostics)
+            for (const auto& diag : diagnostics)
             {
                 if (diag.code != "as-warn-undeclared-identifier")
                     continue;
@@ -948,9 +946,8 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Proje
         }
     }
 
-    MESSAGE("Grouped-workspace undefined-identifier audit: groups=" << groups.size()
-            << " files=" << totalFiles
-            << " totalFlagged=" << totalFlagged
+    MESSAGE("Grouped-workspace undefined-identifier audit: groups="
+            << groups.size() << " files=" << totalFiles << " totalFlagged=" << totalFlagged
             << " totalSeconds=" << totalSeconds
             << " avgMsPerFile=" << (totalFiles ? (totalSeconds * 1000.0 / static_cast<double>(totalFiles)) : 0.0));
     MESSAGE("This corpus has no .as.predefined file anywhere (confirmed by grep), so names like "
@@ -962,7 +959,7 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Proje
             "file are not flagged\" in this same file.");
 
     std::vector<std::pair<std::string, size_t>> ranked(flaggedNameCounts.begin(), flaggedNameCounts.end());
-    std::sort(ranked.begin(), ranked.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
+    std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
 
     MESSAGE("Top 30 most-frequently-flagged names (still-external engine symbols expected to dominate):");
     for (size_t i = 0; i < ranked.size() && i < 30; ++i)
@@ -999,8 +996,8 @@ TEST_CASE("Local vs global - a variable in a nested block is still a local")
 {
     SymbolTable table;
     angel_lsp::i18n::I18n i18n("en");
-    auto diagnostics = AnalyzeSource(
-        "void Main()\n{\n    if (true)\n    {\n        int nested = 1;\n    }\n}\n", table, i18n);
+    auto diagnostics =
+        AnalyzeSource("void Main()\n{\n    if (true)\n    {\n        int nested = 1;\n    }\n}\n", table, i18n);
 
     CHECK(HasUnusedVariableDiagnostic(diagnostics, "nested"));
 }
@@ -1009,8 +1006,8 @@ TEST_CASE("Local vs global - a variable in a method body is a local")
 {
     SymbolTable table;
     angel_lsp::i18n::I18n i18n("en");
-    auto diagnostics = AnalyzeSource(
-        "class Weapon\n{\n    void Fire()\n    {\n        int shots = 1;\n    }\n}\n", table, i18n);
+    auto diagnostics =
+        AnalyzeSource("class Weapon\n{\n    void Fire()\n    {\n        int shots = 1;\n    }\n}\n", table, i18n);
 
     CHECK(HasUnusedVariableDiagnostic(diagnostics, "shots"));
 }
@@ -1019,8 +1016,7 @@ TEST_CASE("Local vs global - a variable in a lambda body is a local")
 {
     SymbolTable table;
     angel_lsp::i18n::I18n i18n("en");
-    auto diagnostics = AnalyzeSource(
-        "void Main()\n{\n    auto fn = function() { int inner = 1; };\n}\n", table, i18n);
+    auto diagnostics = AnalyzeSource("void Main()\n{\n    auto fn = function() { int inner = 1; };\n}\n", table, i18n);
 
     CHECK(HasUnusedVariableDiagnostic(diagnostics, "inner"));
 }
@@ -1038,8 +1034,7 @@ TEST_CASE("Local vs global - a namespace-scope variable is a global")
 {
     SymbolTable table;
     angel_lsp::i18n::I18n i18n("en");
-    auto diagnostics = AnalyzeSource(
-        "namespace Weapons\n{\n    int roundCount = 0;\n}\n", table, i18n);
+    auto diagnostics = AnalyzeSource("namespace Weapons\n{\n    int roundCount = 0;\n}\n", table, i18n);
 
     CHECK_FALSE(HasUnusedVariableDiagnostic(diagnostics, "roundCount"));
 }
@@ -1059,8 +1054,7 @@ TEST_CASE("Local vs global - an unused parameter is not reported, unlike an unus
 {
     SymbolTable table;
     angel_lsp::i18n::I18n i18n("en");
-    auto diagnostics = AnalyzeSource(
-        "void Main(int ignored)\n{\n    int unusedLocal = 1;\n}\n", table, i18n);
+    auto diagnostics = AnalyzeSource("void Main(int ignored)\n{\n    int unusedLocal = 1;\n}\n", table, i18n);
 
     CHECK(HasUnusedVariableDiagnostic(diagnostics, "unusedLocal"));
     CHECK_FALSE(HasUnusedVariableDiagnostic(diagnostics, "ignored"));
@@ -1070,8 +1064,7 @@ TEST_CASE("Local vs global - a local shadowing a global is reported independentl
 {
     SymbolTable table;
     angel_lsp::i18n::I18n i18n("en");
-    auto diagnostics = AnalyzeSource(
-        "int count = 0;\nvoid Main()\n{\n    int count = 1;\n}\n", table, i18n);
+    auto diagnostics = AnalyzeSource("int count = 0;\nvoid Main()\n{\n    int count = 1;\n}\n", table, i18n);
 
     // Exactly one warning: the local. The global with the same name must not be swept in.
     CHECK(CountUnusedVariableDiagnostics(diagnostics, "count") == 1);
@@ -1084,10 +1077,9 @@ TEST_CASE("super - the base-constructor call is not an undeclared identifier")
     // rule has to recognise the shape instead.
     SymbolTable table;
     angel_lsp::i18n::I18n i18n("en");
-    auto diagnostics = AnalyzeSource(
-        "class Base { Base(int x) {} }\n"
-        "class Derived : Base { Derived() { super(1); } }\n",
-        table, i18n);
+    auto diagnostics = AnalyzeSource("class Base { Base(int x) {} }\n"
+                                     "class Derived : Base { Derived() { super(1); } }\n",
+                                     table, i18n);
 
     CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagnostics, "super"));
 }
@@ -1100,10 +1092,9 @@ TEST_CASE("super - outside a constructor it really is undeclared")
     // `super.F()` is an error and the exemption above must not reach it.
     SymbolTable table;
     angel_lsp::i18n::I18n i18n("en");
-    auto diagnostics = AnalyzeSource(
-        "class B { void F() {} }\n"
-        "class D : B { void F() { super.F(); } }\n",
-        table, i18n);
+    auto diagnostics = AnalyzeSource("class B { void F() {} }\n"
+                                     "class D : B { void F() { super.F(); } }\n",
+                                     table, i18n);
 
     CHECK(HasUndefinedIdentifierDiagnostic(diagnostics, "super"));
 }
@@ -1114,8 +1105,7 @@ TEST_CASE("super - a class with no base cannot call one")
     // exemption tests for a base list rather than merely for being in a constructor.
     SymbolTable table;
     angel_lsp::i18n::I18n i18n("en");
-    auto diagnostics = AnalyzeSource(
-        "class Lonely { Lonely() { super(1); } }\n", table, i18n);
+    auto diagnostics = AnalyzeSource("class Lonely { Lonely() { super(1); } }\n", table, i18n);
 
     CHECK(HasUndefinedIdentifierDiagnostic(diagnostics, "super"));
 }
@@ -1127,13 +1117,11 @@ TEST_CASE("virtual property - a bare accessor name inside a method is not undecl
     // named Up is ever in the table.
     SymbolTable table;
     angel_lsp::i18n::I18n i18n("en");
-    auto diagnostics = AnalyzeSource(
-        "class C" + std::string(1, char(10)) +
-        "{" + std::string(1, char(10)) +
-        "    int get_Up() const property { return 1; }" + std::string(1, char(10)) +
-        "    void T() { int v = Up; }" + std::string(1, char(10)) +
-        "}" + std::string(1, char(10)),
-        table, i18n);
+    auto diagnostics =
+        AnalyzeSource("class C" + std::string(1, char(10)) + "{" + std::string(1, char(10)) +
+                          "    int get_Up() const property { return 1; }" + std::string(1, char(10)) +
+                          "    void T() { int v = Up; }" + std::string(1, char(10)) + "}" + std::string(1, char(10)),
+                      table, i18n);
 
     CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagnostics, "Up"));
 }
@@ -1144,13 +1132,11 @@ TEST_CASE("virtual property - the name is only excused where an accessor declare
     // accessor anywhere, so it stays reported.
     SymbolTable table;
     angel_lsp::i18n::I18n i18n("en");
-    auto diagnostics = AnalyzeSource(
-        "class C" + std::string(1, char(10)) +
-        "{" + std::string(1, char(10)) +
-        "    int get_Up() const property { return 1; }" + std::string(1, char(10)) +
-        "    void T() { int v = Down; }" + std::string(1, char(10)) +
-        "}" + std::string(1, char(10)),
-        table, i18n);
+    auto diagnostics =
+        AnalyzeSource("class C" + std::string(1, char(10)) + "{" + std::string(1, char(10)) +
+                          "    int get_Up() const property { return 1; }" + std::string(1, char(10)) +
+                          "    void T() { int v = Down; }" + std::string(1, char(10)) + "}" + std::string(1, char(10)),
+                      table, i18n);
 
     CHECK(HasUndefinedIdentifierDiagnostic(diagnostics, "Down"));
 }
@@ -1161,22 +1147,19 @@ TEST_CASE("virtual property - a get_ prefix with nothing after it is not a prope
     // inserting that would have excused every unresolved name in the workspace.
     SymbolTable table;
     angel_lsp::i18n::I18n i18n("en");
-    auto diagnostics = AnalyzeSource(
-        "class C" + std::string(1, char(10)) +
-        "{" + std::string(1, char(10)) +
-        "    int get_() const property { return 1; }" + std::string(1, char(10)) +
-        "    void T() { int v = Whatever; }" + std::string(1, char(10)) +
-        "}" + std::string(1, char(10)),
-        table, i18n);
+    auto diagnostics = AnalyzeSource("class C" + std::string(1, char(10)) + "{" + std::string(1, char(10)) +
+                                         "    int get_() const property { return 1; }" + std::string(1, char(10)) +
+                                         "    void T() { int v = Whatever; }" + std::string(1, char(10)) + "}" +
+                                         std::string(1, char(10)),
+                                     table, i18n);
 
     CHECK(HasUndefinedIdentifierDiagnostic(diagnostics, "Whatever"));
 }
 
 TEST_CASE("SemanticAnalyzer - Hints that a function name in a type position needs a funcdef")
 {
-    const std::string code =
-        "void Foo(int a) { }\n"
-        "void main() { Foo@ h = @Foo; }\n";
+    const std::string code = "void Foo(int a) { }\n"
+                             "void main() { Foo@ h = @Foo; }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
@@ -1186,14 +1169,13 @@ TEST_CASE("SemanticAnalyzer - Hints that a function name in a type position need
     auto diagnostics = AnalyzeSource(code, table, i18n, "file:///script.as", &diagnosticsConfig);
 
     CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
-                      [](const Diagnostic &d) { return d.code == "as-hint-funcdef-missing"; }));
+                      [](const Diagnostic& d) { return d.code == "as-hint-funcdef-missing"; }));
 }
 
 TEST_CASE("SemanticAnalyzer - Silent about a function name in a type position unless asked")
 {
-    const std::string code =
-        "void Foo(int a) { }\n"
-        "void main() { Foo@ h = @Foo; }\n";
+    const std::string code = "void Foo(int a) { }\n"
+                             "void main() { Foo@ h = @Foo; }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
@@ -1201,15 +1183,14 @@ TEST_CASE("SemanticAnalyzer - Silent about a function name in a type position un
     auto diagnostics = AnalyzeSource(code, table, i18n);
 
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
-                       [](const Diagnostic &d) { return d.code == "as-hint-funcdef-missing"; }));
+                       [](const Diagnostic& d) { return d.code == "as-hint-funcdef-missing"; }));
 }
 
 TEST_CASE("SemanticAnalyzer - A real funcdef of the same name draws no hint")
 {
-    const std::string code =
-        "funcdef void Foo(int);\n"
-        "void Foo(int a) { }\n"
-        "void main() { Foo@ h = @Foo; }\n";
+    const std::string code = "funcdef void Foo(int);\n"
+                             "void Foo(int a) { }\n"
+                             "void main() { Foo@ h = @Foo; }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
@@ -1219,9 +1200,8 @@ TEST_CASE("SemanticAnalyzer - A real funcdef of the same name draws no hint")
     auto diagnostics = AnalyzeSource(code, table, i18n, "file:///script.as", &diagnosticsConfig);
 
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
-                       [](const Diagnostic &d) { return d.code == "as-hint-funcdef-missing"; }));
+                       [](const Diagnostic& d) { return d.code == "as-hint-funcdef-missing"; }));
 }
-
 
 // =====================================================================================
 // A plain "..." string that spans lines.
@@ -1238,51 +1218,47 @@ TEST_CASE("SemanticAnalyzer - A real funcdef of the same name draws no hint")
 
 TEST_CASE("SemanticAnalyzer - Reports a plain string that spans lines")
 {
-    const std::string code =
-        "void main() { string s = \"Line one\nLine two\"; }\n";
+    const std::string code = "void main() { string s = \"Line one\nLine two\"; }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
     auto diagnostics = AnalyzeSource(code, table, i18n);
 
     CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
-                      [](const Diagnostic &d) { return d.code == "as-err-multiline-string"; }));
+                      [](const Diagnostic& d) { return d.code == "as-err-multiline-string"; }));
 }
 
 TEST_CASE("SemanticAnalyzer - A heredoc may span lines under any setting")
 {
     // The whole point of the delimiter check. Both node types are `string_literal` in the grammar,
     // so without it every heredoc in the workspace would be reported.
-    const std::string code =
-        "void main() { string s = \"\"\"Line one\nLine two\"\"\"; }\n";
+    const std::string code = "void main() { string s = \"\"\"Line one\nLine two\"\"\"; }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
     auto diagnostics = AnalyzeSource(code, table, i18n);
 
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
-                       [](const Diagnostic &d) { return d.code == "as-err-multiline-string"; }));
+                       [](const Diagnostic& d) { return d.code == "as-err-multiline-string"; }));
 }
 
 TEST_CASE("SemanticAnalyzer - A single-line string is left alone")
 {
-    const std::string code =
-        "void main() { string s = \"Just one line\"; }\n";
+    const std::string code = "void main() { string s = \"Just one line\"; }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
     auto diagnostics = AnalyzeSource(code, table, i18n);
 
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
-                       [](const Diagnostic &d) { return d.code == "as-err-multiline-string"; }));
+                       [](const Diagnostic& d) { return d.code == "as-err-multiline-string"; }));
 }
 
 TEST_CASE("SemanticAnalyzer - Silent when the host allows multiline strings")
 {
     // The setting exists so the rule cannot be wrong: a host that sets the property compiles this,
     // and reporting it there would be a false positive on working code.
-    const std::string code =
-        "void main() { string s = \"Line one\nLine two\"; }\n";
+    const std::string code = "void main() { string s = \"Line one\nLine two\"; }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
@@ -1292,22 +1268,21 @@ TEST_CASE("SemanticAnalyzer - Silent when the host allows multiline strings")
     auto diagnostics = AnalyzeSource(code, table, i18n, "file:///test.as", nullptr, &engineProperties);
 
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
-                       [](const Diagnostic &d) { return d.code == "as-err-multiline-string"; }));
+                       [](const Diagnostic& d) { return d.code == "as-err-multiline-string"; }));
 }
 
 TEST_CASE("SemanticAnalyzer - The multiline report points at the opening quote")
 {
     // Anchored to the quote rather than the whole literal: a string running away over twenty lines
     // would otherwise underline all twenty, and the defect is the quote that was never closed.
-    const std::string code =
-        "void main() { string s = \"Line one\nLine two\"; }\n";
+    const std::string code = "void main() { string s = \"Line one\nLine two\"; }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
     auto diagnostics = AnalyzeSource(code, table, i18n);
 
     const auto found = std::find_if(diagnostics.begin(), diagnostics.end(),
-                                    [](const Diagnostic &d) { return d.code == "as-err-multiline-string"; });
+                                    [](const Diagnostic& d) { return d.code == "as-err-multiline-string"; });
     REQUIRE(found != diagnostics.end());
 
     CHECK(found->range.start.line == 0);
@@ -1327,17 +1302,15 @@ TEST_CASE("SemanticAnalyzer - Multiline String Corpus Audit" * doctest::skip(tru
         return;
     }
 
-    const auto interesting = [](const std::string &code) { return code == "as-err-multiline-string"; };
+    const auto interesting = [](const std::string& code) { return code == "as-err-multiline-string"; };
     const auto result = angel_lsp::test::RunCorpusAudit(interesting, 10, nullptr);
 
-    MESSAGE("Multiline-string corpus audit: files=" << result.filesAnalysed
-            << " findings=" << result.Total());
-    for (const auto &hit : result.hits)
+    MESSAGE("Multiline-string corpus audit: files=" << result.filesAnalysed << " findings=" << result.Total());
+    for (const auto& hit : result.hits)
     {
         MESSAGE("  " << hit.fileName << ":" << hit.line << " " << hit.message);
     }
 }
-
 
 // =====================================================================================
 // The rules a host's SetEngineProperty calls decide.
@@ -1352,21 +1325,19 @@ TEST_CASE("SemanticAnalyzer - Multiline String Corpus Audit" * doctest::skip(tru
 
 namespace
 {
-    std::vector<Diagnostic> AnalyzeWithEngine(const std::string &code,
-                                              const angel_lsp::config::EngineProperties &engine,
-                                              const angel_lsp::config::DiagnosticsConfig *diagnostics = nullptr)
-    {
-        SymbolTable table;
-        static angel_lsp::i18n::I18n i18n;
-        return AnalyzeSource(code, table, i18n, "file:///dialect.as", diagnostics, &engine);
-    }
-
-    bool Emitted(const std::vector<Diagnostic> &diagnostics, const std::string &code)
-    {
-        return std::any_of(diagnostics.begin(), diagnostics.end(),
-                           [&code](const Diagnostic &d) { return d.code == code; });
-    }
+std::vector<Diagnostic> AnalyzeWithEngine(const std::string& code, const angel_lsp::config::EngineProperties& engine,
+                                          const angel_lsp::config::DiagnosticsConfig* diagnostics = nullptr)
+{
+    SymbolTable table;
+    static angel_lsp::i18n::I18n i18n;
+    return AnalyzeSource(code, table, i18n, "file:///dialect.as", diagnostics, &engine);
 }
+
+bool Emitted(const std::vector<Diagnostic>& diagnostics, const std::string& code)
+{
+    return std::any_of(diagnostics.begin(), diagnostics.end(), [&code](const Diagnostic& d) { return d.code == code; });
+}
+} // namespace
 
 // --- asEP_USE_CHARACTER_LITERALS ---------------------------------------------------------------
 
@@ -1418,8 +1389,7 @@ TEST_CASE("EngineDialect - foreach is fine by default")
 {
     // The one accessor that must default TRUE. Getting it backwards would report every foreach
     // loop in every workspace.
-    const std::string code =
-        "void main() { array<int> a = {1,2,3}; foreach (int v : a) { } }\n";
+    const std::string code = "void main() { array<int> a = {1,2,3}; foreach (int v : a) { } }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
@@ -1428,8 +1398,7 @@ TEST_CASE("EngineDialect - foreach is fine by default")
 
 TEST_CASE("EngineDialect - foreach is reported when the host disabled it")
 {
-    const std::string code =
-        "void main() { array<int> a = {1,2,3}; foreach (int v : a) { } }\n";
+    const std::string code = "void main() { array<int> a = {1,2,3}; foreach (int v : a) { } }\n";
 
     angel_lsp::config::EngineProperties engine;
     engine.foreachSupport = false;
@@ -1520,8 +1489,7 @@ TEST_CASE("EngineDialect - only literals are judged, not variables")
 {
     // Deliberate: resolving operand types here would put a hint on every division in the file, and
     // a wrong one is noise the user cannot switch off per-site.
-    const std::string code =
-        "void main() { int a = 1; int b = 2; float f = a / b; }\n";
+    const std::string code = "void main() { int a = 1; int b = 2; float f = a / b; }\n";
 
     angel_lsp::config::EngineProperties engine;
     angel_lsp::config::DiagnosticsConfig diagnostics;
@@ -1542,16 +1510,18 @@ TEST_CASE("SemanticAnalyzer - Character Literal Corpus Audit" * doctest::skip(tr
         return;
     }
 
-    const auto interesting = [](const std::string &code)
-    { return code == "as-err-character-literal-is-string" || code == "as-err-foreach-unsupported" ||
-             code == "as-err-named-argument-syntax" || code == "as-err-value-assign-for-ref" ||
-             code == "as-err-empty-list-element"; };
+    const auto interesting = [](const std::string& code)
+    {
+        return code == "as-err-character-literal-is-string" || code == "as-err-foreach-unsupported" ||
+               code == "as-err-named-argument-syntax" || code == "as-err-value-assign-for-ref" ||
+               code == "as-err-empty-list-element";
+    };
 
     const auto result = angel_lsp::test::RunCorpusAudit(interesting, 10, nullptr);
 
     MESSAGE("Character-literal / foreach corpus audit: files=" << result.filesAnalysed
-            << " findings=" << result.Total());
-    for (const auto &hit : result.hits)
+                                                               << " findings=" << result.Total());
+    for (const auto& hit : result.hits)
     {
         MESSAGE("  " << hit.fileName << ":" << hit.line << " " << hit.message);
     }
@@ -1562,16 +1532,15 @@ TEST_CASE("SemanticAnalyzer - Character Literal Corpus Audit" * doctest::skip(tr
 TEST_CASE("EngineDialect - f(name = value) is an error under the engine's default")
 {
     // Measured: "No matching symbol 'width'" with no flag, a warning under mode 1, silent under 2.
-    const std::string code =
-        "void Configure(int width = 0) {}\n"
-        "void main() { Configure(width = 5); }\n";
+    const std::string code = "void Configure(int width = 0) {}\n"
+                             "void main() { Configure(width = 5); }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
     const auto diagnostics = AnalyzeSource(code, table, i18n);
 
     CHECK(Emitted(diagnostics, "as-err-named-argument-syntax"));
-    for (const auto &d : diagnostics)
+    for (const auto& d : diagnostics)
     {
         if (d.code == "as-err-named-argument-syntax")
             CHECK(d.severity == DiagnosticSeverity::Error);
@@ -1580,16 +1549,15 @@ TEST_CASE("EngineDialect - f(name = value) is an error under the engine's defaul
 
 TEST_CASE("EngineDialect - f(name = value) is a warning under mode 1")
 {
-    const std::string code =
-        "void Configure(int width = 0) {}\n"
-        "void main() { Configure(width = 5); }\n";
+    const std::string code = "void Configure(int width = 0) {}\n"
+                             "void main() { Configure(width = 5); }\n";
 
     angel_lsp::config::EngineProperties engine;
     engine.alterSyntaxNamedArgs = 1;
 
     const auto diagnostics = AnalyzeWithEngine(code, engine);
     CHECK(Emitted(diagnostics, "as-err-named-argument-syntax"));
-    for (const auto &d : diagnostics)
+    for (const auto& d : diagnostics)
     {
         if (d.code == "as-err-named-argument-syntax")
             CHECK(d.severity == DiagnosticSeverity::Warning);
@@ -1598,9 +1566,8 @@ TEST_CASE("EngineDialect - f(name = value) is a warning under mode 1")
 
 TEST_CASE("EngineDialect - f(name = value) is silent under mode 2")
 {
-    const std::string code =
-        "void Configure(int width = 0) {}\n"
-        "void main() { Configure(width = 5); }\n";
+    const std::string code = "void Configure(int width = 0) {}\n"
+                             "void main() { Configure(width = 5); }\n";
 
     angel_lsp::config::EngineProperties engine;
     engine.alterSyntaxNamedArgs = 2;
@@ -1611,9 +1578,8 @@ TEST_CASE("EngineDialect - f(name = value) is silent under mode 2")
 TEST_CASE("EngineDialect - the colon spelling is never reported")
 {
     // AngelScript's own named-argument syntax. Reporting it would be reporting the correct form.
-    const std::string code =
-        "void Configure(int width = 0) {}\n"
-        "void main() { Configure(width: 5); }\n";
+    const std::string code = "void Configure(int width = 0) {}\n"
+                             "void main() { Configure(width: 5); }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
@@ -1624,10 +1590,9 @@ TEST_CASE("EngineDialect - an assignment to a member is an ordinary argument")
 {
     // `f(obj.field = 1)` is a legal assignment expression passed as an argument. Only a bare name
     // on the left looks like a named argument, and the rule requires one.
-    const std::string code =
-        "class C { int field; }\n"
-        "void Take(int v) {}\n"
-        "void main() { C obj; Take(obj.field = 1); }\n";
+    const std::string code = "class C { int field; }\n"
+                             "void Take(int v) {}\n"
+                             "void main() { C obj; Take(obj.field = 1); }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
@@ -1638,9 +1603,8 @@ TEST_CASE("EngineDialect - an assignment to a member is an ordinary argument")
 
 TEST_CASE("EngineDialect - value assignment on a class is fine by default")
 {
-    const std::string code =
-        "class R { int v; }\n"
-        "void main() { R@ a = R(); R@ b = R(); a = b; }\n";
+    const std::string code = "class R { int v; }\n"
+                             "void main() { R@ a = R(); R@ b = R(); a = b; }\n";
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
@@ -1649,9 +1613,8 @@ TEST_CASE("EngineDialect - value assignment on a class is fine by default")
 
 TEST_CASE("EngineDialect - value assignment on a class is reported when the host forbids it")
 {
-    const std::string code =
-        "class R { int v; }\n"
-        "void main() { R@ a = R(); R@ b = R(); a = b; }\n";
+    const std::string code = "class R { int v; }\n"
+                             "void main() { R@ a = R(); R@ b = R(); a = b; }\n";
 
     angel_lsp::config::EngineProperties engine;
     engine.disallowValueAssignForRef = true;
@@ -1661,9 +1624,8 @@ TEST_CASE("EngineDialect - value assignment on a class is reported when the host
 
 TEST_CASE("EngineDialect - a handle assignment is what the rule asks for, so it is not reported")
 {
-    const std::string code =
-        "class R { int v; }\n"
-        "void main() { R@ a = R(); R@ b = R(); @a = @b; }\n";
+    const std::string code = "class R { int v; }\n"
+                             "void main() { R@ a = R(); R@ b = R(); @a = @b; }\n";
 
     angel_lsp::config::EngineProperties engine;
     engine.disallowValueAssignForRef = true;
@@ -1675,8 +1637,7 @@ TEST_CASE("EngineDialect - a type this analyzer cannot see is left alone")
 {
     // Silent unless fully visible. A host type might be a VALUE type, and the property only forbids
     // assignment on reference types - so reporting one would be a false positive on working code.
-    const std::string code =
-        "void main() { CBaseEntity@ a; CBaseEntity@ b; a = b; }\n";
+    const std::string code = "void main() { CBaseEntity@ a; CBaseEntity@ b; a = b; }\n";
 
     angel_lsp::config::EngineProperties engine;
     engine.disallowValueAssignForRef = true;
@@ -1714,7 +1675,7 @@ TEST_CASE("EngineProperties - the warning mode moves every warning at once")
 
     SUBCASE("0 suppresses warnings entirely")
     {
-        for (const Diagnostic &d : analyseAt(0))
+        for (const Diagnostic& d : analyseAt(0))
         {
             CAPTURE(d.code);
             CHECK(d.severity != DiagnosticSeverity::Warning);
@@ -1724,7 +1685,7 @@ TEST_CASE("EngineProperties - the warning mode moves every warning at once")
     SUBCASE("1 leaves them as warnings, which is the engine's default")
     {
         bool sawWarning = false;
-        for (const Diagnostic &d : analyseAt(1))
+        for (const Diagnostic& d : analyseAt(1))
         {
             if (d.code == "as-warn-unused-variable")
             {
@@ -1738,7 +1699,7 @@ TEST_CASE("EngineProperties - the warning mode moves every warning at once")
     SUBCASE("2 promotes them to errors")
     {
         bool sawPromoted = false;
-        for (const Diagnostic &d : analyseAt(2))
+        for (const Diagnostic& d : analyseAt(2))
         {
             if (d.code == "as-warn-unused-variable")
             {
@@ -1761,7 +1722,7 @@ TEST_CASE("EngineProperties - the warning mode moves every warning at once")
         const auto diagnostics = AnalyzeSource(bad, table, i18n, "file:///warnerr.as", nullptr, &properties);
 
         bool sawError = false;
-        for (const Diagnostic &d : diagnostics)
+        for (const Diagnostic& d : diagnostics)
         {
             if (d.severity == DiagnosticSeverity::Error)
                 sawError = true;
@@ -1793,7 +1754,7 @@ class WeaponHost : WeaponMixin
         const auto diagnostics = AnalyzeSource(code, table, i18n, "file:///mixin_test.as");
 
         bool foundDiagnostic = false;
-        for (const auto &d : diagnostics)
+        for (const auto& d : diagnostics)
         {
             if (d.code == "as-err-mixin-instantiation-member-not-found")
             {
@@ -1830,7 +1791,7 @@ class WeaponHost : WeaponMixin
         const auto diagnostics = AnalyzeSource(code, table, i18n, "file:///mixin_test_ok.as");
 
         bool foundDiagnostic = false;
-        for (const auto &d : diagnostics)
+        for (const auto& d : diagnostics)
         {
             if (d.code == "as-err-mixin-instantiation-member-not-found")
             {
@@ -1865,7 +1826,7 @@ class WeaponHost : WeaponMixin
         const auto diagnostics = AnalyzeSource(code, table, i18n, "file:///mixin_self_var.as");
 
         bool foundDiagnostic = false;
-        for (const auto &d : diagnostics)
+        for (const auto& d : diagnostics)
         {
             if (d.code == "as-err-mixin-instantiation-member-not-found")
             {
@@ -1894,7 +1855,7 @@ class Player : MovementMixin
         const auto diagnostics = AnalyzeSource(code, table, i18n, "file:///mixin_method_test.as");
 
         bool foundDiagnostic = false;
-        for (const auto &d : diagnostics)
+        for (const auto& d : diagnostics)
         {
             if (d.code == "as-err-mixin-instantiation-member-not-found")
             {
@@ -1913,13 +1874,12 @@ TEST_CASE("SemanticAnalyzer - Property Accessor Scope Isolation")
 
     SUBCASE("Accessing container property from inside container method succeeds without undeclared warning")
     {
-        const std::string code =
-            "class CModule {\n"
-            "    int get_ScriptInfo() { return 42; }\n"
-            "    void Test() {\n"
-            "        int x = ScriptInfo;\n"
-            "    }\n"
-            "}\n";
+        const std::string code = "class CModule {\n"
+                                 "    int get_ScriptInfo() { return 42; }\n"
+                                 "    void Test() {\n"
+                                 "        int x = ScriptInfo;\n"
+                                 "    }\n"
+                                 "}\n";
         SymbolTable table;
         const auto diagnostics = AnalyzeSource(code, table, i18n);
         CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
@@ -1927,13 +1887,12 @@ TEST_CASE("SemanticAnalyzer - Property Accessor Scope Isolation")
 
     SUBCASE("Accessing container property from free function emits as-warn-undeclared-identifier")
     {
-        const std::string code =
-            "class CModule {\n"
-            "    int get_ScriptInfo() { return 42; }\n"
-            "}\n"
-            "void main() {\n"
-            "    auto x = ScriptInfo;\n"
-            "}\n";
+        const std::string code = "class CModule {\n"
+                                 "    int get_ScriptInfo() { return 42; }\n"
+                                 "}\n"
+                                 "void main() {\n"
+                                 "    auto x = ScriptInfo;\n"
+                                 "}\n";
         SymbolTable table;
         const auto diagnostics = AnalyzeSource(code, table, i18n);
         CHECK(Emitted(diagnostics, "as-warn-undeclared-identifier"));
@@ -1941,11 +1900,10 @@ TEST_CASE("SemanticAnalyzer - Property Accessor Scope Isolation")
 
     SUBCASE("Global property accessor is accessible from free function")
     {
-        const std::string code =
-            "int get_GlobalCount() { return 10; }\n"
-            "void main() {\n"
-            "    int x = GlobalCount;\n"
-            "}\n";
+        const std::string code = "int get_GlobalCount() { return 10; }\n"
+                                 "void main() {\n"
+                                 "    int x = GlobalCount;\n"
+                                 "}\n";
         SymbolTable table;
         const auto diagnostics = AnalyzeSource(code, table, i18n);
         CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
@@ -1958,11 +1916,10 @@ TEST_CASE("SemanticAnalyzer - Local Variable and Member Shadowing with Type Name
 
     SUBCASE("Local variable having same name as its type is valid in local scope")
     {
-        const std::string code =
-            "class CBasePlayer {}\n"
-            "void Test(CBasePlayer@ player) {\n"
-            "    CBasePlayer@ CBasePlayer = player;\n"
-            "}\n";
+        const std::string code = "class CBasePlayer {}\n"
+                                 "void Test(CBasePlayer@ player) {\n"
+                                 "    CBasePlayer@ CBasePlayer = player;\n"
+                                 "}\n";
         SymbolTable table;
         const auto diagnostics = AnalyzeSource(code, table, i18n);
         CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
@@ -1970,11 +1927,10 @@ TEST_CASE("SemanticAnalyzer - Local Variable and Member Shadowing with Type Name
 
     SUBCASE("Member variable having same name as its type is valid in class scope")
     {
-        const std::string code =
-            "class CBasePlayer {}\n"
-            "class Container {\n"
-            "    CBasePlayer@ CBasePlayer;\n"
-            "}\n";
+        const std::string code = "class CBasePlayer {}\n"
+                                 "class Container {\n"
+                                 "    CBasePlayer@ CBasePlayer;\n"
+                                 "}\n";
         SymbolTable table;
         const auto diagnostics = AnalyzeSource(code, table, i18n);
         CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
@@ -1990,14 +1946,22 @@ TEST_CASE("SemanticAnalyzer - Global and Namespace Indexed Virtual Properties")
 
     SUBCASE("Global indexed virtual property assignment does not emit undeclared identifier")
     {
-        const std::string code =
-            "class " + playerClass + " {}\n"
-            "int get_" + propName + "(" + playerClass + "@ pPlayer) property { return 0; }\n"
-            "void set_" + propName + "(" + playerClass + "@ pPlayer, const int& in iValue) property {}\n"
-            "void GiveInitial(" + playerClass + "@ pPlayer) {\n"
-            "    if (pPlayer is null) return;\n"
-            "    " + propName + "[pPlayer] = 100;\n"
-            "}\n";
+        const std::string code = "class " + playerClass +
+                                 " {}\n"
+                                 "int get_" +
+                                 propName + "(" + playerClass +
+                                 "@ pPlayer) property { return 0; }\n"
+                                 "void set_" +
+                                 propName + "(" + playerClass +
+                                 "@ pPlayer, const int& in iValue) property {}\n"
+                                 "void GiveInitial(" +
+                                 playerClass +
+                                 "@ pPlayer) {\n"
+                                 "    if (pPlayer is null) return;\n"
+                                 "    " +
+                                 propName +
+                                 "[pPlayer] = 100;\n"
+                                 "}\n";
         SymbolTable table;
         const auto diagnostics = AnalyzeSource(code, table, i18n);
         CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
@@ -2005,15 +1969,25 @@ TEST_CASE("SemanticAnalyzer - Global and Namespace Indexed Virtual Properties")
 
     SUBCASE("Namespace-scoped indexed virtual property assignment does not emit undeclared identifier")
     {
-        const std::string code =
-            "class " + playerClass + " {}\n"
-            "namespace " + nsName + " {\n"
-            "    int get_" + propName + "(" + playerClass + "@ pPlayer) property { return 0; }\n"
-            "    void set_" + propName + "(" + playerClass + "@ pPlayer, const int& in iValue) property {}\n"
-            "    void GiveInitial(" + playerClass + "@ pPlayer) {\n"
-            "        " + propName + "[pPlayer] = 100;\n"
-            "    }\n"
-            "}\n";
+        const std::string code = "class " + playerClass +
+                                 " {}\n"
+                                 "namespace " +
+                                 nsName +
+                                 " {\n"
+                                 "    int get_" +
+                                 propName + "(" + playerClass +
+                                 "@ pPlayer) property { return 0; }\n"
+                                 "    void set_" +
+                                 propName + "(" + playerClass +
+                                 "@ pPlayer, const int& in iValue) property {}\n"
+                                 "    void GiveInitial(" +
+                                 playerClass +
+                                 "@ pPlayer) {\n"
+                                 "        " +
+                                 propName +
+                                 "[pPlayer] = 100;\n"
+                                 "    }\n"
+                                 "}\n";
         SymbolTable table;
         const auto diagnostics = AnalyzeSource(code, table, i18n);
         CHECK_FALSE(Emitted(diagnostics, "as-warn-undeclared-identifier"));
@@ -2029,32 +2003,54 @@ TEST_CASE("SemanticAnalyzer - Mixin implementing interface and class inheriting 
     const std::string attackMethod = angel_lsp::test::GenerateRandomSymbolName("Attack");
     const std::string powerProp = angel_lsp::test::GenerateRandomSymbolName("Power");
 
-    const std::string code =
-        "interface " + ifaceName + " {\n"
-        "    void " + attackMethod + "(int damage, float range);\n"
-        "    int " + powerProp + " { get; }\n"
-        "}\n"
-        "mixin class " + mixinName + " : " + ifaceName + " {\n"
-        "    void " + attackMethod + "(int damage, float range) {}\n"
-        "    int get_" + powerProp + "() property { return 100; }\n"
-        "}\n"
-        "class " + heroClass + " : " + mixinName + " {}\n"
-        "void ExecuteCombat(" + ifaceName + "@ combatant) {\n"
-        "    combatant." + attackMethod + "(50, 1.5f);\n"
-        "    int p = combatant." + powerProp + ";\n"
-        "    if (p > 0) {}\n"
-        "}\n"
-        "void main() {\n"
-        "    " + heroClass + " hero;\n"
-        "    hero." + attackMethod + "(25, 2.0f);\n"
-        "    int hp = hero." + powerProp + ";\n"
-        "    if (hp > 0) {}\n"
-        "    ExecuteCombat(hero);\n"
-        "}\n";
+    const std::string code = "interface " + ifaceName +
+                             " {\n"
+                             "    void " +
+                             attackMethod +
+                             "(int damage, float range);\n"
+                             "    int " +
+                             powerProp +
+                             " { get; }\n"
+                             "}\n"
+                             "mixin class " +
+                             mixinName + " : " + ifaceName +
+                             " {\n"
+                             "    void " +
+                             attackMethod +
+                             "(int damage, float range) {}\n"
+                             "    int get_" +
+                             powerProp +
+                             "() property { return 100; }\n"
+                             "}\n"
+                             "class " +
+                             heroClass + " : " + mixinName +
+                             " {}\n"
+                             "void ExecuteCombat(" +
+                             ifaceName +
+                             "@ combatant) {\n"
+                             "    combatant." +
+                             attackMethod +
+                             "(50, 1.5f);\n"
+                             "    int p = combatant." +
+                             powerProp +
+                             ";\n"
+                             "    if (p > 0) {}\n"
+                             "}\n"
+                             "void main() {\n"
+                             "    " +
+                             heroClass +
+                             " hero;\n"
+                             "    hero." +
+                             attackMethod +
+                             "(25, 2.0f);\n"
+                             "    int hp = hero." +
+                             powerProp +
+                             ";\n"
+                             "    if (hp > 0) {}\n"
+                             "    ExecuteCombat(hero);\n"
+                             "}\n";
 
     SymbolTable table;
     const auto diagnostics = AnalyzeSource(code, table, i18n);
     CHECK(diagnostics.empty());
 }
-
-

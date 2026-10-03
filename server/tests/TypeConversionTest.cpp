@@ -1,22 +1,22 @@
 #include <doctest/doctest.h>
 
-#include "helpers/CorpusDirectory.h"
-#include "helpers/TestUtils.h"
-#include "analysis/SemanticAnalyzer.h"
-#include "analysis/SemanticAnalysisRequest.h"
-#include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
+#include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/TypeConversionChecker.h"
+#include "helpers/CorpusDirectory.h"
+#include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
-#include <map>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -27,111 +27,109 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    /**
-     * @brief Owns everything a conversion check reads, since SemanticAnalysisRequest only borrows.
-     *
-     * The tree and the source text in particular have to outlive Analyze(): the conversion rules
-     * read expressions straight out of the tree rather than through the symbol table.
-     */
-    struct ConversionEnvironment
+/**
+ * @brief Owns everything a conversion check reads, since SemanticAnalysisRequest only borrows.
+ *
+ * The tree and the source text in particular have to outlive Analyze(): the conversion rules
+ * read expressions straight out of the tree rather than through the symbol table.
+ */
+struct ConversionEnvironment
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    angel_lsp::i18n::I18n i18n;
+    std::string uri = "file:///conversion.as";
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    explicit ConversionEnvironment(std::string code) : sourceCode(std::move(code))
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        angel_lsp::i18n::I18n i18n;
-        std::string uri = "file:///conversion.as";
-        std::string sourceCode;
-        TSTree *tree = nullptr;
-
-        explicit ConversionEnvironment(std::string code)
-            : sourceCode(std::move(code))
-        {
-            tree = parser.Parse(sourceCode);
-            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-        }
-
-        ~ConversionEnvironment()
-        {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
-        }
-
-        std::vector<Diagnostic> Analyze(bool enabled = true)
-        {
-            SemanticAnalysisRequest request{ symbolTable, uri, "", &i18n };
-            request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
-            request.sourceCode = sourceCode;
-            request.tree = tree;
-            request.enableTypeConversionChecks = enabled;
-
-            SemanticAnalyzer analyzer(nullptr);
-            return analyzer.Analyze(request);
-        }
-    };
-
-    /** @brief Runs the pipeline and returns only the conversion diagnostics. */
-    std::vector<Diagnostic> ConversionDiagnostics(const std::string &code, bool enabled = true)
-    {
-        ConversionEnvironment env(code);
-        std::vector<Diagnostic> result;
-        for (auto &diag : env.Analyze(enabled))
-        {
-            if (diag.code == "as-err-no-implicit-conversion" ||
-                diag.code == "as-err-no-explicit-conversion" ||
-                diag.code == "as-err-invalid-cast")
-            {
-                result.push_back(std::move(diag));
-            }
-        }
-        return result;
+        tree = parser.Parse(sourceCode);
+        symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
     }
 
-    /**
-     * @brief A conversion message reduced to `from -> to`, so findings can be counted by cause.
-     *
-     * The corpus audit reports hundreds of individual findings and about a dozen distinct
-     * conversions account for all of them. Reading 273 lines tells you nothing; reading
-     * `int -> float: 88` tells you where to look.
-     */
-    std::string ConversionShape(const std::string &message)
+    ~ConversionEnvironment()
     {
-        std::vector<std::string> quoted;
-        for (size_t i = 0; i < message.size();)
+        if (tree)
         {
-            const size_t open = message.find('\'', i);
-            if (open == std::string::npos) break;
-            const size_t close = message.find('\'', open + 1);
-            if (close == std::string::npos) break;
-            quoted.push_back(message.substr(open + 1, close - open - 1));
-            i = close + 1;
+            ts_tree_delete(tree);
         }
-
-        if (quoted.size() >= 2)
-        {
-            return quoted[0] + " -> " + quoted[1];
-        }
-        return quoted.empty() ? message : quoted[0];
     }
 
-    /** @brief True if a diagnostic with this code names both types in its message. */
-    bool HasConversionDiagnostic(const std::vector<Diagnostic> &diagnostics,
-                                 const std::string &code,
-                                 const std::string &from,
-                                 const std::string &to)
+    std::vector<Diagnostic> Analyze(bool enabled = true)
     {
-        const std::string quotedFrom = "'" + from + "'";
-        const std::string quotedTo = "'" + to + "'";
-        return std::any_of(diagnostics.begin(), diagnostics.end(), [&](const Diagnostic &diag)
-        {
-            return diag.code == code &&
-                   diag.message.find(quotedFrom) != std::string::npos &&
-                   diag.message.find(quotedTo) != std::string::npos;
-        });
+        SemanticAnalysisRequest request{symbolTable, uri, "", &i18n};
+        request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
+        request.sourceCode = sourceCode;
+        request.tree = tree;
+        request.enableTypeConversionChecks = enabled;
+
+        SemanticAnalyzer analyzer(nullptr);
+        return analyzer.Analyze(request);
     }
+};
+
+/** @brief Runs the pipeline and returns only the conversion diagnostics. */
+std::vector<Diagnostic> ConversionDiagnostics(const std::string& code, bool enabled = true)
+{
+    ConversionEnvironment env(code);
+    std::vector<Diagnostic> result;
+    for (auto& diag : env.Analyze(enabled))
+    {
+        if (diag.code == "as-err-no-implicit-conversion" || diag.code == "as-err-no-explicit-conversion" ||
+            diag.code == "as-err-invalid-cast")
+        {
+            result.push_back(std::move(diag));
+        }
+    }
+    return result;
 }
+
+/**
+ * @brief A conversion message reduced to `from -> to`, so findings can be counted by cause.
+ *
+ * The corpus audit reports hundreds of individual findings and about a dozen distinct
+ * conversions account for all of them. Reading 273 lines tells you nothing; reading
+ * `int -> float: 88` tells you where to look.
+ */
+std::string ConversionShape(const std::string& message)
+{
+    std::vector<std::string> quoted;
+    for (size_t i = 0; i < message.size();)
+    {
+        const size_t open = message.find('\'', i);
+        if (open == std::string::npos)
+            break;
+        const size_t close = message.find('\'', open + 1);
+        if (close == std::string::npos)
+            break;
+        quoted.push_back(message.substr(open + 1, close - open - 1));
+        i = close + 1;
+    }
+
+    if (quoted.size() >= 2)
+    {
+        return quoted[0] + " -> " + quoted[1];
+    }
+    return quoted.empty() ? message : quoted[0];
+}
+
+/** @brief True if a diagnostic with this code names both types in its message. */
+bool HasConversionDiagnostic(const std::vector<Diagnostic>& diagnostics, const std::string& code,
+                             const std::string& from, const std::string& to)
+{
+    const std::string quotedFrom = "'" + from + "'";
+    const std::string quotedTo = "'" + to + "'";
+    return std::any_of(diagnostics.begin(), diagnostics.end(),
+                       [&](const Diagnostic& diag)
+                       {
+                           return diag.code == code && diag.message.find(quotedFrom) != std::string::npos &&
+                                  diag.message.find(quotedTo) != std::string::npos;
+                       });
+}
+} // namespace
 
 // =====================================================================================
 // Implicit conversion: T v = expr;
@@ -139,9 +137,8 @@ namespace
 
 TEST_CASE("TypeConversion - Flags an initializer a class declares no conversion for")
 {
-    const std::string code =
-        "class Plain {}\n"
-        "void main() { Plain p = 1; }\n";
+    const std::string code = "class Plain {}\n"
+                             "void main() { Plain p = 1; }\n";
 
     auto diagnostics = ConversionDiagnostics(code);
     CHECK(HasConversionDiagnostic(diagnostics, "as-err-no-implicit-conversion", "int", "Plain"));
@@ -149,9 +146,8 @@ TEST_CASE("TypeConversion - Flags an initializer a class declares no conversion 
 
 TEST_CASE("TypeConversion - Flags a string initializer with no matching constructor")
 {
-    const std::string code =
-        "class Plain {}\n"
-        "void main() { Plain p = 'hello'; }\n";
+    const std::string code = "class Plain {}\n"
+                             "void main() { Plain p = 'hello'; }\n";
 
     auto diagnostics = ConversionDiagnostics(code);
     CHECK(HasConversionDiagnostic(diagnostics, "as-err-no-implicit-conversion", "string", "Plain"));
@@ -159,9 +155,8 @@ TEST_CASE("TypeConversion - Flags a string initializer with no matching construc
 
 TEST_CASE("TypeConversion - A converting constructor satisfies the initializer")
 {
-    const std::string code =
-        "class Money { Money(int cents) {} }\n"
-        "void main() { Money m = 1; }\n";
+    const std::string code = "class Money { Money(int cents) {} }\n"
+                             "void main() { Money m = 1; }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
@@ -170,53 +165,48 @@ TEST_CASE("TypeConversion - A constructor whose extra parameters default is stil
 {
     // Regression: the first corpus run flagged a legitimate CLogger("name") because the
     // constructor's second parameter had a default and the arity test only accepted size() == 1.
-    const std::string code =
-        "class Logger { Logger(const string &in name, bool isStatic = false) {} }\n"
-        "void main() { Logger l = 'plugin'; Logger k = Logger('plugin'); }\n";
+    const std::string code = "class Logger { Logger(const string &in name, bool isStatic = false) {} }\n"
+                             "void main() { Logger l = 'plugin'; Logger k = Logger('plugin'); }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - opImplConv on the source satisfies the initializer")
 {
-    const std::string code =
-        "class Cents { int opImplConv() const { return 0; } }\n"
-        "class Money { Money(int c) {} }\n"
-        "void main() { Cents c; Money m = c; }\n";
+    const std::string code = "class Cents { int opImplConv() const { return 0; } }\n"
+                             "class Money { Money(int c) {} }\n"
+                             "void main() { Cents c; Money m = c; }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - opAssign satisfies the initializer")
 {
-    const std::string code =
-        "class Money { Money& opAssign(int v) { return this; } }\n"
-        "void main() { Money m = 1; }\n";
+    const std::string code = "class Money { Money& opAssign(int v) { return this; } }\n"
+                             "void main() { Money m = 1; }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - Same type and inherited types are always convertible")
 {
-    const std::string code =
-        "class Base {}\n"
-        "class Derived : Base {}\n"
-        "void main()\n"
-        "{\n"
-        "    Base a;\n"
-        "    Base b = a;\n"
-        "    Derived d;\n"
-        "    Base c = d;\n"
-        "}\n";
+    const std::string code = "class Base {}\n"
+                             "class Derived : Base {}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    Base a;\n"
+                             "    Base b = a;\n"
+                             "    Derived d;\n"
+                             "    Base c = d;\n"
+                             "}\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - A literal assigned to a handle of an unrelated class is flagged")
 {
-    const std::string code =
-        "class Plain {}\n"
-        "void main() { Plain@ p = 1; }\n";
+    const std::string code = "class Plain {}\n"
+                             "void main() { Plain@ p = 1; }\n";
 
     auto diagnostics = ConversionDiagnostics(code);
     CHECK(HasConversionDiagnostic(diagnostics, "as-err-no-implicit-conversion", "int", "Plain"));
@@ -228,9 +218,8 @@ TEST_CASE("TypeConversion - A literal assigned to a handle of an unrelated class
 
 TEST_CASE("TypeConversion - Flags an explicit conversion with no constructor to back it")
 {
-    const std::string code =
-        "class Plain {}\n"
-        "void main() { Plain p = Plain(1); }\n";
+    const std::string code = "class Plain {}\n"
+                             "void main() { Plain p = Plain(1); }\n";
 
     auto diagnostics = ConversionDiagnostics(code);
     CHECK(HasConversionDiagnostic(diagnostics, "as-err-no-explicit-conversion", "int", "Plain"));
@@ -238,9 +227,8 @@ TEST_CASE("TypeConversion - Flags an explicit conversion with no constructor to 
 
 TEST_CASE("TypeConversion - Flags the declarator-argument construction form")
 {
-    const std::string code =
-        "class Plain {}\n"
-        "void main() { Plain p(1); }\n";
+    const std::string code = "class Plain {}\n"
+                             "void main() { Plain p(1); }\n";
 
     auto diagnostics = ConversionDiagnostics(code);
     CHECK(HasConversionDiagnostic(diagnostics, "as-err-no-explicit-conversion", "int", "Plain"));
@@ -248,19 +236,17 @@ TEST_CASE("TypeConversion - Flags the declarator-argument construction form")
 
 TEST_CASE("TypeConversion - A matching constructor satisfies the explicit conversion")
 {
-    const std::string code =
-        "class Money { Money(int c) {} }\n"
-        "void main() { Money a = Money(1); Money b(2); }\n";
+    const std::string code = "class Money { Money(int c) {} }\n"
+                             "void main() { Money a = Money(1); Money b(2); }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - opConv on the source satisfies the explicit conversion")
 {
-    const std::string code =
-        "class Plain {}\n"
-        "class Widget { Plain opConv() const { Plain p; return p; } }\n"
-        "void main() { Widget w; Plain p = Plain(w); }\n";
+    const std::string code = "class Plain {}\n"
+                             "class Widget { Plain opConv() const { Plain p; return p; } }\n"
+                             "void main() { Widget w; Plain p = Plain(w); }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
@@ -281,10 +267,9 @@ TEST_CASE("TypeConversion - A cast between unrelated classes is not an error")
     //
     // Found on a real Sven Co-op plugin, where `cast<CIns2GL@>(CastToScriptClass(pEntity))` is how
     // the game hands a script its own object back. See doc_p121 and doc_p122.
-    const std::string code =
-        "class A {}\n"
-        "class B {}\n"
-        "void main() { A@ a; B@ b = cast<B>(a); }\n";
+    const std::string code = "class A {}\n"
+                             "class B {}\n"
+                             "void main() { A@ a; B@ b = cast<B>(a); }\n";
 
     auto diagnostics = ConversionDiagnostics(code);
     CHECK_FALSE(HasConversionDiagnostic(diagnostics, "as-err-invalid-cast", "A", "B"));
@@ -296,9 +281,8 @@ TEST_CASE("TypeConversion - A cast to a primitive is still an error")
     //
     //     angelscript_oracle d2.as    class A{int x;} void main(){ A a; int r = cast<int>(a); }
     //         ERROR (1, 48): Illegal target type for reference cast
-    const std::string code =
-        "class A {}\n"
-        "void main() { A@ a; int n = cast<int>(a); }\n";
+    const std::string code = "class A {}\n"
+                             "void main() { A@ a; int n = cast<int>(a); }\n";
 
     auto diagnostics = ConversionDiagnostics(code);
     CHECK(HasConversionDiagnostic(diagnostics, "as-err-invalid-cast", "A", "int"));
@@ -306,35 +290,32 @@ TEST_CASE("TypeConversion - A cast to a primitive is still an error")
 
 TEST_CASE("TypeConversion - A cast along the inheritance chain is accepted in both directions")
 {
-    const std::string code =
-        "class Base {}\n"
-        "class Derived : Base {}\n"
-        "void main()\n"
-        "{\n"
-        "    Base@ b;\n"
-        "    Derived@ d = cast<Derived>(b);\n"
-        "    Base@ up = cast<Base>(d);\n"
-        "}\n";
+    const std::string code = "class Base {}\n"
+                             "class Derived : Base {}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    Base@ b;\n"
+                             "    Derived@ d = cast<Derived>(b);\n"
+                             "    Base@ up = cast<Base>(d);\n"
+                             "}\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - A declared opCast keeps a cast accepted")
 {
-    const std::string code =
-        "class A { B@ opCast() { return null; } }\n"
-        "class B {}\n"
-        "void main() { A@ a; B@ b = cast<B>(a); }\n";
+    const std::string code = "class A { B@ opCast() { return null; } }\n"
+                             "class B {}\n"
+                             "void main() { A@ a; B@ b = cast<B>(a); }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - A cast to an interface the class implements is accepted")
 {
-    const std::string code =
-        "interface IThing {}\n"
-        "class Thing : IThing {}\n"
-        "void main() { Thing@ t; IThing@ i = cast<IThing>(t); }\n";
+    const std::string code = "interface IThing {}\n"
+                             "class Thing : IThing {}\n"
+                             "void main() { Thing@ t; IThing@ i = cast<IThing>(t); }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
@@ -347,16 +328,14 @@ TEST_CASE("TypeConversion - An engine-registered type this analyzer cannot see i
 {
     // CBaseEntity has no declaration anywhere in the document, so it is engine-registered as far
     // as this pass knows - and engine types carry conversions that appear nowhere in the source.
-    const std::string code =
-        "void main() { CBaseEntity e = 1; EHandle h = 0; }\n";
+    const std::string code = "void main() { CBaseEntity e = 1; EHandle h = 0; }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - Primitive conversions are left to the engine")
 {
-    const std::string code =
-        "void main() { int i = 1.5; float f = 2; bool b = true; uint u = 3; }\n";
+    const std::string code = "void main() { int i = 1.5; float f = 2; bool b = true; uint u = 3; }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
@@ -370,9 +349,8 @@ TEST_CASE("TypeConversion - Nothing reaches an enum implicitly but that enum")
     //
     // OverloadResolver had it right the whole time, which is why `SetMode(1)` was reported while
     // the identical mistake in an assignment was not. See tests/parity/doc_r09_int_to_enum.as.
-    const std::string code =
-        "enum Color { Red, Green }\n"
-        "void main() { Color c = 1; }\n";
+    const std::string code = "enum Color { Red, Green }\n"
+                             "void main() { Color c = 1; }\n";
 
     CHECK_FALSE(ConversionDiagnostics(code).empty());
 }
@@ -381,15 +359,14 @@ TEST_CASE("TypeConversion - Typedefs and funcdefs are still out of scope")
 {
     // The other two the old test bundled with the enum. Both are accepted by the compiler:
     // `Score` is `int`, and a funcdef takes the address of a matching function.
-    const std::string code =
-        "typedef int Score;\n"
-        "funcdef void Callback();\n"
-        "void Handler() {}\n"
-        "void main()\n"
-        "{\n"
-        "    Score s = 2;\n"
-        "    Callback@ cb = Handler;\n"
-        "}\n";
+    const std::string code = "typedef int Score;\n"
+                             "funcdef void Callback();\n"
+                             "void Handler() {}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    Score s = 2;\n"
+                             "    Callback@ cb = Handler;\n"
+                             "}\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
@@ -399,50 +376,46 @@ TEST_CASE("TypeConversion - The routes an enum does have are left alone")
     // tests/parity/doc_p15_enum_assignments.as, which the compiler accepts in full: the enum
     // itself, a member of it, the explicit Color(1) cast, and a class declaring an operator that
     // produces one. Widening out of an enum is fine too - it is a sink, not a wall.
-    const std::string code =
-        "enum Color { Red = 1, Green = 2 }\n"
-        "class W { Color opImplConv() const { return Red; } }\n"
-        "void main()\n"
-        "{\n"
-        "    Color a = Red;\n"
-        "    Color b = Color::Green;\n"
-        "    Color c = a;\n"
-        "    Color d = Color(1);\n"
-        "    int widened = Color::Red;\n"
-        "    W w;\n"
-        "    Color e = w;\n"
-        "}\n";
+    const std::string code = "enum Color { Red = 1, Green = 2 }\n"
+                             "class W { Color opImplConv() const { return Red; } }\n"
+                             "void main()\n"
+                             "{\n"
+                             "    Color a = Red;\n"
+                             "    Color b = Color::Green;\n"
+                             "    Color c = a;\n"
+                             "    Color d = Color(1);\n"
+                             "    int widened = Color::Red;\n"
+                             "    W w;\n"
+                             "    Color e = w;\n"
+                             "}\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - Template and array declarations are skipped")
 {
-    const std::string code =
-        "class Item {}\n"
-        "void main()\n"
-        "{\n"
-        "    array<int> numbers;\n"
-        "    array<Item@> items;\n"
-        "}\n";
+    const std::string code = "class Item {}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    array<int> numbers;\n"
+                             "    array<Item@> items;\n"
+                             "}\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - Initializer lists are left to their own rules")
 {
-    const std::string code =
-        "class Point { int x; int y; }\n"
-        "void main() { Point p = {1, 2}; }\n";
+    const std::string code = "class Point { int x; int y; }\n"
+                             "void main() { Point p = {1, 2}; }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - A null initializer stays with the null-handle rule")
 {
-    const std::string code =
-        "class Plain {}\n"
-        "void main() { Plain@ p = null; }\n";
+    const std::string code = "class Plain {}\n"
+                             "void main() { Plain@ p = null; }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
@@ -451,19 +424,17 @@ TEST_CASE("TypeConversion - A non-literal assigned to a handle is not judged")
 {
     // Which objects a handle can bind to depends on the whole interface graph, much of which can
     // be engine-side. Only a literal is wrong without needing any of that graph.
-    const std::string code =
-        "class A {}\n"
-        "class B {}\n"
-        "void main() { A a; B@ b = a; }\n";
+    const std::string code = "class A {}\n"
+                             "class B {}\n"
+                             "void main() { A a; B@ b = a; }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - An expression this pass cannot type is never flagged")
 {
-    const std::string code =
-        "class Plain {}\n"
-        "void main() { int a = 1; int b = 2; Plain p = a + b; }\n";
+    const std::string code = "class Plain {}\n"
+                             "void main() { int a = 1; int b = 2; Plain p = a + b; }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
@@ -474,9 +445,8 @@ TEST_CASE("TypeConversion - An expression this pass cannot type is never flagged
 
 TEST_CASE("TypeConversion - The feature flag suppresses every conversion diagnostic")
 {
-    const std::string code =
-        "class Plain {}\n"
-        "void main() { Plain p = 1; Plain q = Plain(2); }\n";
+    const std::string code = "class Plain {}\n"
+                             "void main() { Plain p = 1; Plain q = Plain(2); }\n";
 
     CHECK_FALSE(ConversionDiagnostics(code, /*enabled=*/true).empty());
     CHECK(ConversionDiagnostics(code, /*enabled=*/false).empty());
@@ -484,13 +454,12 @@ TEST_CASE("TypeConversion - The feature flag suppresses every conversion diagnos
 
 TEST_CASE("TypeConversion - Without a tree the pass stays silent instead of guessing")
 {
-    const std::string code =
-        "class Plain {}\n"
-        "void main() { Plain p = 1; }\n";
+    const std::string code = "class Plain {}\n"
+                             "void main() { Plain p = 1; }\n";
 
     ConversionEnvironment env(code);
 
-    SemanticAnalysisRequest request{ env.symbolTable, env.uri, "", &env.i18n };
+    SemanticAnalysisRequest request{env.symbolTable, env.uri, "", &env.i18n};
     request.scopeRoot = env.scopeCollector.CollectScopes(env.sourceCode, env.parser);
     request.sourceCode = env.sourceCode;
     request.tree = nullptr;
@@ -498,107 +467,98 @@ TEST_CASE("TypeConversion - Without a tree the pass stays silent instead of gues
     SemanticAnalyzer analyzer(nullptr);
     auto diagnostics = analyzer.Analyze(request);
 
-    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(), [](const Diagnostic &diag)
-    {
-        return diag.code.rfind("as-err-no-", 0) == 0 || diag.code == "as-err-invalid-cast";
-    }));
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(), [](const Diagnostic& diag)
+                       { return diag.code.rfind("as-err-no-", 0) == 0 || diag.code == "as-err-invalid-cast"; }));
 }
 
 TEST_CASE("TypeConversion - Initializer and Assignment Across Unrelated Classes Fails")
 {
-    const std::string code =
-        "class AnotherClass\n"
-        "{\n"
-        "    void AnotherMethod(float f)\n"
-        "    {\n"
-        "    }\n"
-        "}\n"
-        "class MyClass : AnotherClass\n"
-        "{\n"
-        "    private float f;\n"
-        "    void MyMethod()\n"
-        "    {\n"
-        "        f = 1.0f;\n"
-        "    }\n"
-        "}\n"
-        "namespace MyNamespace\n"
-        "{\n"
-        "    class MyNamespaceClass\n"
-        "    {\n"
-        "        int i;\n"
-        "    }\n"
-        "}\n"
-        "void main()\n"
-        "{\n"
-        "    MyClass myClass = MyNamespace::MyNamespaceClass();\n"
-        "}\n";
+    const std::string code = "class AnotherClass\n"
+                             "{\n"
+                             "    void AnotherMethod(float f)\n"
+                             "    {\n"
+                             "    }\n"
+                             "}\n"
+                             "class MyClass : AnotherClass\n"
+                             "{\n"
+                             "    private float f;\n"
+                             "    void MyMethod()\n"
+                             "    {\n"
+                             "        f = 1.0f;\n"
+                             "    }\n"
+                             "}\n"
+                             "namespace MyNamespace\n"
+                             "{\n"
+                             "    class MyNamespaceClass\n"
+                             "    {\n"
+                             "        int i;\n"
+                             "    }\n"
+                             "}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    MyClass myClass = MyNamespace::MyNamespaceClass();\n"
+                             "}\n";
 
     ConversionEnvironment env(code);
     auto diags = env.Analyze();
     bool hasNoImplicitConv = std::any_of(diags.begin(), diags.end(),
-        [](const Diagnostic &d) { return d.code == "as-err-no-implicit-conversion"; });
+                                         [](const Diagnostic& d) { return d.code == "as-err-no-implicit-conversion"; });
     CHECK(hasNoImplicitConv);
 }
 
 TEST_CASE("TypeConversion - Assignment Expression Passed As Method Argument Is Evaluated Correctly")
 {
-    const std::string code =
-        "class AnotherClass\n"
-        "{\n"
-        "    void AnotherMethod(float f)\n"
-        "    {\n"
-        "    }\n"
-        "}\n"
-        "class MyClass : AnotherClass\n"
-        "{\n"
-        "}\n"
-        "int g_var;\n"
-        "void main()\n"
-        "{\n"
-        "    MyClass myClass;\n"
-        "    myClass.AnotherMethod(g_var = 0);\n"
-        "}\n";
+    const std::string code = "class AnotherClass\n"
+                             "{\n"
+                             "    void AnotherMethod(float f)\n"
+                             "    {\n"
+                             "    }\n"
+                             "}\n"
+                             "class MyClass : AnotherClass\n"
+                             "{\n"
+                             "}\n"
+                             "int g_var;\n"
+                             "void main()\n"
+                             "{\n"
+                             "    MyClass myClass;\n"
+                             "    myClass.AnotherMethod(g_var = 0);\n"
+                             "}\n";
 
     ConversionEnvironment env(code);
     auto diags = env.Analyze();
-    bool hasTypeError = std::any_of(diags.begin(), diags.end(),
-        [](const Diagnostic &d) {
-            return d.code == "as-err-no-implicit-conversion" ||
-                   d.code == "as-err-call-no-matching-signature";
-        });
+    bool hasTypeError = std::any_of(
+        diags.begin(), diags.end(), [](const Diagnostic& d)
+        { return d.code == "as-err-no-implicit-conversion" || d.code == "as-err-call-no-matching-signature"; });
     CHECK_FALSE(hasTypeError);
 }
 
 TEST_CASE("TypeConversion - Reports incompatible return type from function")
 {
-    const std::string code =
-        "float MyFunction()\n"
-        "{\n"
-        "    return \"hola\";\n"
-        "}\n";
+    const std::string code = "float MyFunction()\n"
+                             "{\n"
+                             "    return \"hola\";\n"
+                             "}\n";
 
     ConversionEnvironment env(code);
     auto diags = env.Analyze();
     bool hasTypeError = std::any_of(diags.begin(), diags.end(),
-        [](const Diagnostic &d) { return d.code == "as-err-no-implicit-conversion"; });
+                                    [](const Diagnostic& d) { return d.code == "as-err-no-implicit-conversion"; });
     CHECK(hasTypeError);
 }
 
 TEST_CASE("TypeConversion - Accepts convertible return type from function")
 {
-    const std::string code =
-        "float MyFunction()\n"
-        "{\n"
-        "    return 10;\n"
-        "}\n";
+    const std::string code = "float MyFunction()\n"
+                             "{\n"
+                             "    return 10;\n"
+                             "}\n";
 
     ConversionEnvironment env(code);
     auto diags = env.Analyze();
     bool hasTypeError = std::any_of(diags.begin(), diags.end(),
-        [](const Diagnostic &d) { return d.code == "as-err-no-implicit-conversion"; });
+                                    [](const Diagnostic& d) { return d.code == "as-err-no-implicit-conversion"; });
     CHECK_FALSE(hasTypeError);
 }
-
 
 // =====================================================================================
 // Corpus audit (opt-in - run via
@@ -620,7 +580,7 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
         {
@@ -631,7 +591,7 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
     std::sort(files.begin(), files.end());
 
     std::unordered_map<std::string, std::vector<fs::path>> groups;
-    for (const auto &path : files)
+    for (const auto& path : files)
     {
         const std::string name = path.filename().string();
         const size_t underscore = name.find('_');
@@ -646,12 +606,12 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
     std::map<std::string, size_t> byShape;
     std::vector<std::string> sample;
 
-    for (auto &[groupName, groupFiles] : groups)
+    for (auto& [groupName, groupFiles] : groups)
     {
         SymbolTable sharedTable;
         std::unordered_map<std::string, std::string> sources;
 
-        for (const auto &path : groupFiles)
+        for (const auto& path : groupFiles)
         {
             std::ifstream file(path, std::ios::binary);
             if (!file)
@@ -674,7 +634,7 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
             collector.CollectSymbols(fileUri, sourceCode, parser, sharedTable);
         }
 
-        for (const auto &[fileUri, sourceCode] : sources)
+        for (const auto& [fileUri, sourceCode] : sources)
         {
             ++totalFiles;
 
@@ -682,9 +642,9 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
             LocalScopeCollector scopeCollector(nullptr);
 
             const auto start = std::chrono::steady_clock::now();
-            TSTree *tree = parser.Parse(sourceCode);
+            TSTree* tree = parser.Parse(sourceCode);
 
-            SemanticAnalysisRequest request{ sharedTable, fileUri, "", &i18n };
+            SemanticAnalysisRequest request{sharedTable, fileUri, "", &i18n};
             request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
             request.sourceCode = sourceCode;
             request.tree = tree;
@@ -694,10 +654,9 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
             CHECK_NOTHROW(diagnostics = analyzer.Analyze(request));
             totalSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
-            for (const auto &diag : diagnostics)
+            for (const auto& diag : diagnostics)
             {
-                if (diag.code != "as-err-no-implicit-conversion" &&
-                    diag.code != "as-err-no-explicit-conversion" &&
+                if (diag.code != "as-err-no-implicit-conversion" && diag.code != "as-err-no-explicit-conversion" &&
                     diag.code != "as-err-invalid-cast")
                 {
                     continue;
@@ -714,8 +673,8 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
 
                 if (sample.size() < 60)
                 {
-                    sample.push_back(fileUri.substr(8) + ":" +
-                                     std::to_string(diag.range.start.line + 1) + " " + diag.message);
+                    sample.push_back(fileUri.substr(8) + ":" + std::to_string(diag.range.start.line + 1) + " " +
+                                     diag.message);
                 }
             }
 
@@ -726,27 +685,24 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
         }
     }
 
-    MESSAGE("Type-conversion corpus audit: files=" << totalFiles
-            << " totalFlagged=" << totalFlagged
-            << " totalSeconds=" << totalSeconds
+    MESSAGE("Type-conversion corpus audit: files="
+            << totalFiles << " totalFlagged=" << totalFlagged << " totalSeconds=" << totalSeconds
             << " avgMsPerFile=" << (totalFiles ? (totalSeconds * 1000.0 / static_cast<double>(totalFiles)) : 0.0));
 
-    for (const auto &[code, count] : byCode)
+    for (const auto& [code, count] : byCode)
     {
         MESSAGE("  " << code << ": " << count);
     }
     // Ordered by count, because the shape at the top is the one worth an afternoon.
     std::vector<std::pair<std::string, size_t>> shapes(byShape.begin(), byShape.end());
-    std::sort(shapes.begin(), shapes.end(), [](const auto &a, const auto &b)
-    {
-        return a.second != b.second ? a.second > b.second : a.first < b.first;
-    });
-    for (const auto &[shape, count] : shapes)
+    std::sort(shapes.begin(), shapes.end(), [](const auto& a, const auto& b)
+              { return a.second != b.second ? a.second > b.second : a.first < b.first; });
+    for (const auto& [shape, count] : shapes)
     {
         MESSAGE("  shape " << shape << ": " << count);
     }
 
-    for (const auto &line : sample)
+    for (const auto& line : sample)
     {
         MESSAGE("  " << line);
     }
@@ -805,15 +761,13 @@ TEST_CASE("TypeConversion - A typedef inside a template argument is not a differ
     // The assignment half of the same question the overload resolver answers. `typedef uint8 byte;`
     // makes `array<byte>` and `array<uint8>` one instantiation, and the compiler accepts the
     // assignment in either direction - tests/parity/doc_p19_typedef_template_argument.as.
-    const std::string toBase =
-        "class array<T> { uint length() const; }\n"
-        "typedef uint8 byte;\n"
-        "void main() { array<byte> a; array<uint8> b = a; }\n";
+    const std::string toBase = "class array<T> { uint length() const; }\n"
+                               "typedef uint8 byte;\n"
+                               "void main() { array<byte> a; array<uint8> b = a; }\n";
 
-    const std::string toTypedef =
-        "class array<T> { uint length() const; }\n"
-        "typedef uint8 byte;\n"
-        "void main() { array<uint8> a; array<byte> b = a; }\n";
+    const std::string toTypedef = "class array<T> { uint length() const; }\n"
+                                  "typedef uint8 byte;\n"
+                                  "void main() { array<uint8> a; array<byte> b = a; }\n";
 
     CHECK(ConversionDiagnostics(toBase).empty());
     CHECK(ConversionDiagnostics(toTypedef).empty());
@@ -830,13 +784,12 @@ TEST_CASE("TypeConversion - Handles of engine-registered classes are not judged"
     // from `CBaseEntity` in the engine and neither is declared anywhere in the scripts, so passing
     // one where the other is expected is an upcast the analyzer has no way to see is legal - and
     // no business calling illegal.
-    const std::string code =
-        "dictionary Keyvalues(CBaseEntity@ pEntity) { dictionary d; return d; }\n"
-        "void main()\n"
-        "{\n"
-        "    CBasePlayer@ pTarget = null;\n"
-        "    dictionary stuff = Keyvalues(pTarget);\n"
-        "}\n";
+    const std::string code = "dictionary Keyvalues(CBaseEntity@ pEntity) { dictionary d; return d; }\n"
+                             "void main()\n"
+                             "{\n"
+                             "    CBasePlayer@ pTarget = null;\n"
+                             "    dictionary stuff = Keyvalues(pTarget);\n"
+                             "}\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
@@ -845,14 +798,13 @@ TEST_CASE("TypeConversion - A visible downcast is still reported")
 {
     // The guard above must not silence the case the rule exists for: assigning a base handle to a
     // derived one needs an explicit cast<T>, and here the whole hierarchy is declared.
-    const std::string code =
-        "class Base {}\n"
-        "class Derived : Base {}\n"
-        "void main()\n"
-        "{\n"
-        "    Base@ b = Base();\n"
-        "    Derived@ d = b;\n"
-        "}\n";
+    const std::string code = "class Base {}\n"
+                             "class Derived : Base {}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    Base@ b = Base();\n"
+                             "    Derived@ d = b;\n"
+                             "}\n";
 
     CHECK_FALSE(ConversionDiagnostics(code).empty());
 }
@@ -870,11 +822,10 @@ TEST_CASE("TypeConversion - Every scalar reaches string")
     // The string add-on registers an opAssign for each of them, so all of these compile.
     // doc_p23_string_is_a_sink.as. With the `"" + x` concatenations that ask the same question,
     // this was 149 of the 273 findings.
-    for (const char *scalar : { "int8", "uint8", "int16", "uint16", "int", "uint",
-                                "int64", "uint64", "float", "double", "bool" })
+    for (const char* scalar :
+         {"int8", "uint8", "int16", "uint16", "int", "uint", "int64", "uint64", "float", "double", "bool"})
     {
-        const std::string code =
-            std::string("void main() { ") + scalar + " v; string s = v; }\n";
+        const std::string code = std::string("void main() { ") + scalar + " v; string s = v; }\n";
 
         INFO("scalar: " << scalar);
         CHECK(ConversionDiagnostics(code).empty());
@@ -901,12 +852,10 @@ TEST_CASE("TypeConversion - A visible class with no matching constructor is stil
 {
     // The other half: `Plain` is declared here and declares no constructor, and the compiler
     // rejects `Plain(1)`. Losing this would have made the guard above a blanket exemption.
-    const std::string code =
-        "class Plain {}\n"
-        "void main() { Plain p = Plain(1); }\n";
+    const std::string code = "class Plain {}\n"
+                             "void main() { Plain p = Plain(1); }\n";
 
-    CHECK(HasConversionDiagnostic(ConversionDiagnostics(code),
-                                  "as-err-no-explicit-conversion", "int", "Plain"));
+    CHECK(HasConversionDiagnostic(ConversionDiagnostics(code), "as-err-no-explicit-conversion", "int", "Plain"));
 }
 
 TEST_CASE("TypeConversion - An array's size constructor is not the element's")
@@ -914,9 +863,8 @@ TEST_CASE("TypeConversion - An array's size constructor is not the element's")
     // `array<Element> a(33)` passes 33 to the container's initial-size constructor. Comparing it
     // against `Element` asked whether an int can become one, which it cannot - three corpus
     // declarations, all of them ordinary. doc_p24_conversion_shapes.as.
-    const std::string code =
-        "class Element { int value; }\n"
-        "array<Element> g_elements(33);\n";
+    const std::string code = "class Element { int value; }\n"
+                             "array<Element> g_elements(33);\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
@@ -926,12 +874,11 @@ TEST_CASE("TypeConversion - A namespaced class can be constructed by its bare na
     // The constructor is keyed `Hooks::Hook::Hook`, and the keys built from the written spelling -
     // `Hook::Hook` - reach nothing. The class itself was found, so the pass concluded it had no
     // constructors at all. Ten corpus findings. doc_p24_conversion_shapes.as.
-    const std::string code =
-        "namespace Hooks\n"
-        "{\n"
-        "    class Hook { string name; Hook(const string &in n) { this.name = n; } }\n"
-        "    Hook@ Make() { return @Hook('OnMapActivate'); }\n"
-        "}\n";
+    const std::string code = "namespace Hooks\n"
+                             "{\n"
+                             "    class Hook { string name; Hook(const string &in n) { this.name = n; } }\n"
+                             "    Hook@ Make() { return @Hook('OnMapActivate'); }\n"
+                             "}\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
@@ -940,11 +887,10 @@ TEST_CASE("TypeConversion - auto is never judged")
 {
     // `auto` is a placeholder for whatever the initializer produces; the deduction happens in the
     // compiler and is written nowhere this analyzer can read.
-    const std::string code =
-        "class Element { int value; }\n"
-        "Element@ MakeElement() { return Element(); }\n"
-        "void Consume(Element@ e) {}\n"
-        "void main() { auto@ deduced = MakeElement(); Consume(deduced); }\n";
+    const std::string code = "class Element { int value; }\n"
+                             "Element@ MakeElement() { return Element(); }\n"
+                             "void Consume(Element@ e) {}\n"
+                             "void main() { auto@ deduced = MakeElement(); Consume(deduced); }\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
@@ -965,38 +911,37 @@ TEST_CASE("TypeConversion - auto is never judged")
 
 namespace
 {
-    /** @brief Runs the pipeline and returns only the two numeric warnings. */
-    std::vector<Diagnostic> NumericWarnings(const std::string &code)
+/** @brief Runs the pipeline and returns only the two numeric warnings. */
+std::vector<Diagnostic> NumericWarnings(const std::string& code)
+{
+    ConversionEnvironment env(code);
+    std::vector<Diagnostic> result;
+    for (auto& diag : env.Analyze())
     {
-        ConversionEnvironment env(code);
-        std::vector<Diagnostic> result;
-        for (auto &diag : env.Analyze())
+        if (diag.code == "as-warn-signed-unsigned-mismatch" || diag.code == "as-warn-float-truncation")
         {
-            if (diag.code == "as-warn-signed-unsigned-mismatch" ||
-                diag.code == "as-warn-float-truncation")
-            {
-                result.push_back(std::move(diag));
-            }
+            result.push_back(std::move(diag));
         }
-        return result;
     }
-
-    size_t CountCode(const std::vector<Diagnostic> &diags, std::string_view code)
-    {
-        return static_cast<size_t>(std::count_if(diags.begin(), diags.end(),
-            [code](const Diagnostic &d) { return d.code == code; }));
-    }
+    return result;
 }
+
+size_t CountCode(const std::vector<Diagnostic>& diags, std::string_view code)
+{
+    return static_cast<size_t>(
+        std::count_if(diags.begin(), diags.end(), [code](const Diagnostic& d) { return d.code == code; }));
+}
+} // namespace
 
 TEST_CASE("NumericWarnings - Every comparison operator between a signed and an unsigned reports")
 {
     // Oracle: each of the six answers `WARNING: Signed/Unsigned mismatch`, anchored on the operator.
-    for (const std::string op : { "<", ">", "<=", ">=", "==", "!=" })
+    for (const std::string op : {"<", ">", "<=", ">=", "==", "!="})
     {
-        const std::string code =
-            "void main() { int i = ReadI(); uint u = ReadU(); bool b = i " + op + " u; }\n"
-            "int ReadI() { return 1; }\n"
-            "uint ReadU() { return 1; }\n";
+        const std::string code = "void main() { int i = ReadI(); uint u = ReadU(); bool b = i " + op +
+                                 " u; }\n"
+                                 "int ReadI() { return 1; }\n"
+                                 "uint ReadU() { return 1; }\n";
         INFO("operator: " << op);
         CHECK(CountCode(NumericWarnings(code), "as-warn-signed-unsigned-mismatch") == 1);
     }
@@ -1006,12 +951,12 @@ TEST_CASE("NumericWarnings - Arithmetic and bitwise operators mixing signs are s
 {
     // Oracle: `i * u`, `i & u` and the rest are all clean. The warning follows the comparison,
     // not the conversion - which is why the narrowing table in OverloadResolver cannot drive it.
-    for (const std::string op : { "+", "-", "*", "/", "%", "&", "|", "^" })
+    for (const std::string op : {"+", "-", "*", "/", "%", "&", "|", "^"})
     {
-        const std::string code =
-            "void main() { int i = ReadI(); uint u = ReadU(); uint r = i " + op + " u; }\n"
-            "int ReadI() { return 1; }\n"
-            "uint ReadU() { return 1; }\n";
+        const std::string code = "void main() { int i = ReadI(); uint u = ReadU(); uint r = i " + op +
+                                 " u; }\n"
+                                 "int ReadI() { return 1; }\n"
+                                 "uint ReadU() { return 1; }\n";
         INFO("operator: " << op);
         CHECK(NumericWarnings(code).empty());
     }
@@ -1021,11 +966,10 @@ TEST_CASE("NumericWarnings - Width does not matter and float counts as signed")
 {
     // Oracle: the full 8x8 integer matrix warns on every signed/unsigned pairing and on no
     // same-signedness pairing, whatever the widths. `float < uint` warns; `float < int` does not.
-    auto compare = [](const std::string &a, const std::string &b)
+    auto compare = [](const std::string& a, const std::string& b)
     {
-        return "void main() { " + a + " x = Left(); " + b + " y = Right(); bool r = x < y; }\n" +
-               a + " Left() { return 0; }\n" +
-               b + " Right() { return 0; }\n";
+        return "void main() { " + a + " x = Left(); " + b + " y = Right(); bool r = x < y; }\n" + a +
+               " Left() { return 0; }\n" + b + " Right() { return 0; }\n";
     };
 
     CHECK(CountCode(NumericWarnings(compare("int8", "uint64")), "as-warn-signed-unsigned-mismatch") == 1);
@@ -1048,76 +992,76 @@ TEST_CASE("NumericWarnings - A constant operand folds the comparison away and is
     //   int i;           const uint u;    ->  clean
     //   const int G = 1 (global)          ->  clean
     //   int i < 5                         ->  clean
-    CHECK(NumericWarnings(
-        "void main() { const int i = 1; uint u = ReadU(); bool r = i < u; }\n"
-        "uint ReadU() { return 1; }\n").empty());
+    CHECK(NumericWarnings("void main() { const int i = 1; uint u = ReadU(); bool r = i < u; }\n"
+                          "uint ReadU() { return 1; }\n")
+              .empty());
 
-    CHECK(NumericWarnings(
-        "void main() { int i = ReadI(); const uint u = 2; bool r = i < u; }\n"
-        "int ReadI() { return 1; }\n").empty());
+    CHECK(NumericWarnings("void main() { int i = ReadI(); const uint u = 2; bool r = i < u; }\n"
+                          "int ReadI() { return 1; }\n")
+              .empty());
 
-    CHECK(NumericWarnings(
-        "const int G = 1;\n"
-        "void main() { uint u = ReadU(); bool r = G < u; }\n"
-        "uint ReadU() { return 1; }\n").empty());
+    CHECK(NumericWarnings("const int G = 1;\n"
+                          "void main() { uint u = ReadU(); bool r = G < u; }\n"
+                          "uint ReadU() { return 1; }\n")
+              .empty());
 
-    CHECK(NumericWarnings(
-        "void main() { uint u = ReadU(); bool r = u < 5; }\n"
-        "uint ReadU() { return 1; }\n").empty());
+    CHECK(NumericWarnings("void main() { uint u = ReadU(); bool r = u < 5; }\n"
+                          "uint ReadU() { return 1; }\n")
+              .empty());
 
-    CHECK(NumericWarnings(
-        "void main() { int i = ReadI(); bool r = i < 5; }\n"
-        "int ReadI() { return 1; }\n").empty());
+    CHECK(NumericWarnings("void main() { int i = ReadI(); bool r = i < 5; }\n"
+                          "int ReadI() { return 1; }\n")
+              .empty());
 }
 
 TEST_CASE("NumericWarnings - A bare enum member is a constant and is silent")
 {
     // Oracle: `enum E { A } ... A < u` is clean, the same folding as any other constant.
-    CHECK(NumericWarnings(
-        "enum E { A }\n"
-        "void main() { uint u = ReadU(); bool r = A < u; }\n"
-        "uint ReadU() { return 1; }\n").empty());
+    CHECK(NumericWarnings("enum E { A }\n"
+                          "void main() { uint u = ReadU(); bool r = A < u; }\n"
+                          "uint ReadU() { return 1; }\n")
+              .empty());
 }
 
 TEST_CASE("NumericWarnings - The mismatch survives a member access, a call and an expression")
 {
     // Oracle: none of these fold, so all three warn. They are the shapes that make the rule
     // worth having - `for (int i = 0; i < a.length(); i++)` is the one real code writes.
-    CHECK(CountCode(NumericWarnings(
-        "class C { uint u; }\n"
-        "void main() { C c; int i = ReadI(); bool r = i < c.u; }\n"
-        "int ReadI() { return 1; }\n"), "as-warn-signed-unsigned-mismatch") == 1);
+    CHECK(CountCode(NumericWarnings("class C { uint u; }\n"
+                                    "void main() { C c; int i = ReadI(); bool r = i < c.u; }\n"
+                                    "int ReadI() { return 1; }\n"),
+                    "as-warn-signed-unsigned-mismatch") == 1);
 
-    CHECK(CountCode(NumericWarnings(
-        "uint Count() { return 1; }\n"
-        "void main() { int i = ReadI(); bool r = i < Count(); }\n"
-        "int ReadI() { return 1; }\n"), "as-warn-signed-unsigned-mismatch") == 1);
+    CHECK(CountCode(NumericWarnings("uint Count() { return 1; }\n"
+                                    "void main() { int i = ReadI(); bool r = i < Count(); }\n"
+                                    "int ReadI() { return 1; }\n"),
+                    "as-warn-signed-unsigned-mismatch") == 1);
 
-    CHECK(CountCode(NumericWarnings(
-        "void main() { int i = ReadI(); uint u = ReadU(); bool r = i < u + u; }\n"
-        "int ReadI() { return 1; }\n"
-        "uint ReadU() { return 1; }\n"), "as-warn-signed-unsigned-mismatch") == 1);
+    CHECK(CountCode(NumericWarnings("void main() { int i = ReadI(); uint u = ReadU(); bool r = i < u + u; }\n"
+                                    "int ReadI() { return 1; }\n"
+                                    "uint ReadU() { return 1; }\n"),
+                    "as-warn-signed-unsigned-mismatch") == 1);
 }
 
 TEST_CASE("NumericWarnings - A float value reaching an integer reports where it is written")
 {
     // Oracle: all four warn, at the source expression.
     //   int i = f;      int i; i = f;      i += f;      return f;  (from an int function)
-    CHECK(CountCode(NumericWarnings(
-        "void main() { float f = Read(); int i = f; }\n"
-        "float Read() { return 1.5f; }\n"), "as-warn-float-truncation") == 1);
+    CHECK(CountCode(NumericWarnings("void main() { float f = Read(); int i = f; }\n"
+                                    "float Read() { return 1.5f; }\n"),
+                    "as-warn-float-truncation") == 1);
 
-    CHECK(CountCode(NumericWarnings(
-        "void main() { float f = Read(); int i = 0; i = f; }\n"
-        "float Read() { return 1.5f; }\n"), "as-warn-float-truncation") == 1);
+    CHECK(CountCode(NumericWarnings("void main() { float f = Read(); int i = 0; i = f; }\n"
+                                    "float Read() { return 1.5f; }\n"),
+                    "as-warn-float-truncation") == 1);
 
-    CHECK(CountCode(NumericWarnings(
-        "void main() { float f = Read(); int i = 0; i += f; }\n"
-        "float Read() { return 1.5f; }\n"), "as-warn-float-truncation") == 1);
+    CHECK(CountCode(NumericWarnings("void main() { float f = Read(); int i = 0; i += f; }\n"
+                                    "float Read() { return 1.5f; }\n"),
+                    "as-warn-float-truncation") == 1);
 
-    CHECK(CountCode(NumericWarnings(
-        "int Truncate() { float f = Read(); return f; }\n"
-        "float Read() { return 1.5f; }\n"), "as-warn-float-truncation") == 1);
+    CHECK(CountCode(NumericWarnings("int Truncate() { float f = Read(); return f; }\n"
+                                    "float Read() { return 1.5f; }\n"),
+                    "as-warn-float-truncation") == 1);
 }
 
 TEST_CASE("NumericWarnings - Widening, an explicit cast and a literal source are all silent")
@@ -1127,17 +1071,17 @@ TEST_CASE("NumericWarnings - Widening, an explicit cast and a literal source are
     // too, or answered by a different warning: `int i = 2.0f;` is clean and `int i = 1.5f;` is
     // "Implicit conversion of value is not exact", which needs a constant folder this analyzer
     // does not have. Staying silent on literals is what keeps the two apart.
-    CHECK(NumericWarnings(
-        "void main() { int i = Read(); float f = i; }\n"
-        "int Read() { return 1; }\n").empty());
+    CHECK(NumericWarnings("void main() { int i = Read(); float f = i; }\n"
+                          "int Read() { return 1; }\n")
+              .empty());
 
-    CHECK(NumericWarnings(
-        "void main() { float f = Read(); double d = f; }\n"
-        "float Read() { return 1.5f; }\n").empty());
+    CHECK(NumericWarnings("void main() { float f = Read(); double d = f; }\n"
+                          "float Read() { return 1.5f; }\n")
+              .empty());
 
-    CHECK(NumericWarnings(
-        "void main() { float f = Read(); int i = int(f); }\n"
-        "float Read() { return 1.5f; }\n").empty());
+    CHECK(NumericWarnings("void main() { float f = Read(); int i = int(f); }\n"
+                          "float Read() { return 1.5f; }\n")
+              .empty());
 
     CHECK(NumericWarnings("void main() { int i = 1.5f; }\n").empty());
     CHECK(NumericWarnings("void main() { int i = 2.0f; }\n").empty());
@@ -1147,16 +1091,14 @@ TEST_CASE("NumericWarnings - Both warnings are warnings, not errors")
 {
     // A false error blocks a build; a false warning is noise. These are the compiler's own
     // severity, and nothing here may be promoted to an error without the oracle changing first.
-    const auto mismatch = NumericWarnings(
-        "void main() { int i = ReadI(); uint u = ReadU(); bool r = i < u; }\n"
-        "int ReadI() { return 1; }\n"
-        "uint ReadU() { return 1; }\n");
+    const auto mismatch = NumericWarnings("void main() { int i = ReadI(); uint u = ReadU(); bool r = i < u; }\n"
+                                          "int ReadI() { return 1; }\n"
+                                          "uint ReadU() { return 1; }\n");
     REQUIRE(mismatch.size() == 1);
     CHECK(mismatch[0].severity == DiagnosticSeverity::Warning);
 
-    const auto truncation = NumericWarnings(
-        "void main() { float f = Read(); int i = f; }\n"
-        "float Read() { return 1.5f; }\n");
+    const auto truncation = NumericWarnings("void main() { float f = Read(); int i = f; }\n"
+                                            "float Read() { return 1.5f; }\n");
     REQUIRE(truncation.size() == 1);
     CHECK(truncation[0].severity == DiagnosticSeverity::Warning);
 }
@@ -1173,22 +1115,22 @@ TEST_CASE("NumericWarnings - A const float source is folded and is silent")
     //   float D = 15.0;       int m = D;   ->  "Float value truncated", which is this rule
     //
     // Only the last is ours, so a constant source is skipped whatever its value.
-    CHECK(NumericWarnings(
-        "const float D = 15.0;\n"
-        "void main() { int m = D; }\n").empty());
+    CHECK(NumericWarnings("const float D = 15.0;\n"
+                          "void main() { int m = D; }\n")
+              .empty());
 
-    CHECK(NumericWarnings(
-        "const float D = 15.5;\n"
-        "void main() { int m = D; }\n").empty());
+    CHECK(NumericWarnings("const float D = 15.5;\n"
+                          "void main() { int m = D; }\n")
+              .empty());
 
-    CHECK(NumericWarnings(
-        "const float D = 15.0;\n"
-        "class C { int m = D; }\n"
-        "void main() { C c; }\n").empty());
+    CHECK(NumericWarnings("const float D = 15.0;\n"
+                          "class C { int m = D; }\n"
+                          "void main() { C c; }\n")
+              .empty());
 
-    CHECK(CountCode(NumericWarnings(
-        "float D = 15.0;\n"
-        "void main() { int m = D; }\n"), "as-warn-float-truncation") == 1);
+    CHECK(CountCode(NumericWarnings("float D = 15.0;\n"
+                                    "void main() { int m = D; }\n"),
+                    "as-warn-float-truncation") == 1);
 }
 
 TEST_CASE("NumericWarnings - A hex literal is not a float because it contains an f")
@@ -1198,14 +1140,13 @@ TEST_CASE("NumericWarnings - A hex literal is not a float because it contains an
     // rule downstream believed a bitwise expression was floating point. The corpus audit found
     // it on a Mersenne twister - `y ^= (y << 15) & 0xefc60000;` with `uint64 y` - reported as a
     // truncation into an integer.
-    CHECK(NumericWarnings(
-        "void main() { uint64 y = Seed(); y ^= (y << 15) & 0xefc60000; }\n"
-        "uint64 Seed() { return 1; }\n").empty());
+    CHECK(NumericWarnings("void main() { uint64 y = Seed(); y ^= (y << 15) & 0xefc60000; }\n"
+                          "uint64 Seed() { return 1; }\n")
+              .empty());
 
-    CHECK(NumericWarnings(
-        "void main() { uint64 y = Seed(); y ^= (y >> 11) & 0xdeadbeef; }\n"
-        "uint64 Seed() { return 1; }\n").empty());
-
+    CHECK(NumericWarnings("void main() { uint64 y = Seed(); y ^= (y >> 11) & 0xdeadbeef; }\n"
+                          "uint64 Seed() { return 1; }\n")
+              .empty());
 }
 
 // =====================================================================================
@@ -1224,27 +1165,23 @@ TEST_CASE("NumericWarnings - A hex literal is not a float because it contains an
 
 TEST_CASE("TypeConversion - bool does not convert to any numeric type")
 {
-    for (const std::string target : { "int8", "int16", "int", "int64",
-                                      "uint8", "uint16", "uint", "uint64", "float", "double" })
+    for (const std::string target :
+         {"int8", "int16", "int", "int64", "uint8", "uint16", "uint", "uint64", "float", "double"})
     {
-        const std::string code =
-            "void main() { bool b = true; " + target + " n = b; }\n";
+        const std::string code = "void main() { bool b = true; " + target + " n = b; }\n";
         INFO("target: " << target);
-        CHECK(HasConversionDiagnostic(ConversionDiagnostics(code),
-                                      "as-err-no-implicit-conversion", "bool", target));
+        CHECK(HasConversionDiagnostic(ConversionDiagnostics(code), "as-err-no-implicit-conversion", "bool", target));
     }
 }
 
 TEST_CASE("TypeConversion - no numeric type converts to bool")
 {
-    for (const std::string source : { "int8", "int16", "int", "int64",
-                                      "uint8", "uint16", "uint", "uint64", "float", "double" })
+    for (const std::string source :
+         {"int8", "int16", "int", "int64", "uint8", "uint16", "uint", "uint64", "float", "double"})
     {
-        const std::string code =
-            "void main() { " + source + " n = 1; bool b = n; }\n";
+        const std::string code = "void main() { " + source + " n = 1; bool b = n; }\n";
         INFO("source: " << source);
-        CHECK(HasConversionDiagnostic(ConversionDiagnostics(code),
-                                      "as-err-no-implicit-conversion", source, "bool"));
+        CHECK(HasConversionDiagnostic(ConversionDiagnostics(code), "as-err-no-implicit-conversion", source, "bool"));
     }
 }
 
@@ -1252,11 +1189,9 @@ TEST_CASE("TypeConversion - bool still reaches string, which is a real opAssign"
 {
     // The string add-on registers an opAssign for every scalar including bool, so this one is
     // legal and must not be caught by the rejection above. doc_p23 has the measurement.
-    CHECK(ConversionDiagnostics(
-        "void main() { bool b = true; string s = b; }\n").empty());
+    CHECK(ConversionDiagnostics("void main() { bool b = true; string s = b; }\n").empty());
 
-    CHECK(ConversionDiagnostics(
-        "void main() { bool b = true; bool c = b; }\n").empty());
+    CHECK(ConversionDiagnostics("void main() { bool b = true; bool c = b; }\n").empty());
 }
 
 // =====================================================================================
@@ -1273,185 +1208,186 @@ TEST_CASE("TypeConversion - bool still reaches string, which is a real opAssign"
 
 namespace
 {
-    /** @brief Runs the pipeline and returns only the funcdef signature mismatches. */
-    std::vector<Diagnostic> FuncdefMismatches(const std::string &code)
+/** @brief Runs the pipeline and returns only the funcdef signature mismatches. */
+std::vector<Diagnostic> FuncdefMismatches(const std::string& code)
+{
+    ConversionEnvironment env(code);
+    std::vector<Diagnostic> result;
+    for (auto& diag : env.Analyze())
     {
-        ConversionEnvironment env(code);
-        std::vector<Diagnostic> result;
-        for (auto &diag : env.Analyze())
+        if (diag.code == "as-err-signature-mismatch-func-handle")
         {
-            if (diag.code == "as-err-signature-mismatch-func-handle")
-            {
-                result.push_back(std::move(diag));
-            }
+            result.push_back(std::move(diag));
         }
-        return result;
     }
+    return result;
 }
+} // namespace
 
 TEST_CASE("LambdaFuncdef - Arity is a hard equality, even when every parameter is untyped")
 {
     // Oracle: all three are "Can't implicitly convert from '<auto> lambda(...)' to 'CB@&'".
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void main() { CB@ cb = function() { }; }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void main() { CB@ cb = function() { }; }\n")
+              .size() == 1);
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void main() { CB@ cb = function(a, b) { }; }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void main() { CB@ cb = function(a, b) { }; }\n")
+              .size() == 1);
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB();\n"
-        "void main() { CB@ cb = function(int a) { }; }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB();\n"
+                            "void main() { CB@ cb = function(int a) { }; }\n")
+              .size() == 1);
 }
 
 TEST_CASE("LambdaFuncdef - A funcdef's default argument does not relax the arity")
 {
     // Oracle: `funcdef void CB(int a = 1); CB@ cb = function() { };` is REJECTED. A default
     // argument is for calls, not for the shape of the handle.
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int a = 1);\n"
-        "void main() { CB@ cb = function() { }; }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB(int a = 1);\n"
+                            "void main() { CB@ cb = function() { }; }\n")
+              .size() == 1);
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int a = 1);\n"
-        "void main() { CB@ cb = function(int a) { }; }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(int a = 1);\n"
+                            "void main() { CB@ cb = function(int a) { }; }\n")
+              .empty());
 }
 
 TEST_CASE("LambdaFuncdef - An untyped or partly typed parameter list is accepted")
 {
     // Oracle: the type comes from the funcdef, so leaving it out is the point of the feature.
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void main() { CB@ cb = function(a) { }; }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void main() { CB@ cb = function(a) { }; }\n")
+              .empty());
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int, int);\n"
-        "void main() { CB@ cb = function(int a, b) { }; }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(int, int);\n"
+                            "void main() { CB@ cb = function(int a, b) { }; }\n")
+              .empty());
 
     // A written type with no name is still a written type, and still accepted.
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void main() { CB@ cb = function(int) { }; }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void main() { CB@ cb = function(int) { }; }\n")
+              .empty());
 }
 
 TEST_CASE("LambdaFuncdef - A written parameter type must match, and does not widen")
 {
     // Oracle: `funcdef void CB(int); function(uint a)` is REJECTED. The compiler compares the
     // written signature; it does not convert it, so int -> uint buys nothing here.
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void main() { CB@ cb = function(uint a) { }; }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void main() { CB@ cb = function(uint a) { }; }\n")
+              .size() == 1);
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void main() { CB@ cb = function(string a) { }; }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void main() { CB@ cb = function(string a) { }; }\n")
+              .size() == 1);
 
     // int32 and uint32 are the explicit spellings of int and uint, and compare equal.
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void main() { CB@ cb = function(int32 a) { }; }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void main() { CB@ cb = function(int32 a) { }; }\n")
+              .empty());
 }
 
 TEST_CASE("LambdaFuncdef - Handle, reference and modifier decorations must match")
 {
     // Oracle, one rejection each. None of these depends on resolving the type name, which is why
     // they are checked whatever the name is.
-    CHECK(FuncdefMismatches(
-        "class Foo {}\n"
-        "funcdef void CB(Foo@);\n"
-        "void main() { CB@ cb = function(Foo f) { }; }\n").size() == 1);
+    CHECK(FuncdefMismatches("class Foo {}\n"
+                            "funcdef void CB(Foo@);\n"
+                            "void main() { CB@ cb = function(Foo f) { }; }\n")
+              .size() == 1);
 
-    CHECK(FuncdefMismatches(
-        "class Foo {}\n"
-        "funcdef void CB(Foo);\n"
-        "void main() { CB@ cb = function(Foo@ f) { }; }\n").size() == 1);
+    CHECK(FuncdefMismatches("class Foo {}\n"
+                            "funcdef void CB(Foo);\n"
+                            "void main() { CB@ cb = function(Foo@ f) { }; }\n")
+              .size() == 1);
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int &out);\n"
-        "void main() { CB@ cb = function(int a) { a = 1; }; }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB(int &out);\n"
+                            "void main() { CB@ cb = function(int a) { a = 1; }; }\n")
+              .size() == 1);
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(array<int>@);\n"
-        "void main() { CB@ cb = function(int[] a) { }; }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB(array<int>@);\n"
+                            "void main() { CB@ cb = function(int[] a) { }; }\n")
+              .size() == 1);
 }
 
 TEST_CASE("LambdaFuncdef - Writing the decorations out in full is accepted")
 {
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(const string &in);\n"
-        "void main() { CB@ cb = function(const string &in s) { }; }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(const string &in);\n"
+                            "void main() { CB@ cb = function(const string &in s) { }; }\n")
+              .empty());
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int &out);\n"
-        "void main() { CB@ cb = function(int &out a) { a = 1; }; }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(int &out);\n"
+                            "void main() { CB@ cb = function(int &out a) { a = 1; }; }\n")
+              .empty());
 
-    CHECK(FuncdefMismatches(
-        "class Foo {}\n"
-        "funcdef void CB(Foo@);\n"
-        "void main() { CB@ cb = function(Foo@ f) { }; }\n").empty());
+    CHECK(FuncdefMismatches("class Foo {}\n"
+                            "funcdef void CB(Foo@);\n"
+                            "void main() { CB@ cb = function(Foo@ f) { }; }\n")
+              .empty());
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(const string &in);\n"
-        "void main() { CB@ cb = function(s) { }; }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(const string &in);\n"
+                            "void main() { CB@ cb = function(s) { }; }\n")
+              .empty());
 }
 
 TEST_CASE("LambdaFuncdef - A typedef, a namespace and the two array spellings all compare equal")
 {
     // Oracle accepts every one of these, and a string comparison would report every one. They
     // are the reason the name check goes through LastScopeSegment and steps aside for typedefs.
-    CHECK(FuncdefMismatches(
-        "typedef float real;\n"
-        "funcdef void CB(real);\n"
-        "void main() { CB@ cb = function(float a) { }; }\n").empty());
+    CHECK(FuncdefMismatches("typedef float real;\n"
+                            "funcdef void CB(real);\n"
+                            "void main() { CB@ cb = function(float a) { }; }\n")
+              .empty());
+
+    CHECK(FuncdefMismatches("typedef float real;\n"
+                            "funcdef void CB(float);\n"
+                            "void main() { CB@ cb = function(real a) { }; }\n")
+              .empty());
+
+    CHECK(FuncdefMismatches("funcdef void CB(array<int>@);\n"
+                            "void main() { CB@ cb = function(int[]@ a) { }; }\n")
+              .empty());
+
+    CHECK(FuncdefMismatches("funcdef void CB(int[]@);\n"
+                            "void main() { CB@ cb = function(array<int>@ a) { }; }\n")
+              .empty());
+
+    CHECK(FuncdefMismatches("namespace N { class Foo {} }\n"
+                            "funcdef void CB(N::Foo@);\n"
+                            "void main() { CB@ cb = function(N::Foo@ f) { }; }\n")
+              .empty());
 
     CHECK(FuncdefMismatches(
-        "typedef float real;\n"
-        "funcdef void CB(float);\n"
-        "void main() { CB@ cb = function(real a) { }; }\n").empty());
-
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(array<int>@);\n"
-        "void main() { CB@ cb = function(int[]@ a) { }; }\n").empty());
-
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int[]@);\n"
-        "void main() { CB@ cb = function(array<int>@ a) { }; }\n").empty());
-
-    CHECK(FuncdefMismatches(
-        "namespace N { class Foo {} }\n"
-        "funcdef void CB(N::Foo@);\n"
-        "void main() { CB@ cb = function(N::Foo@ f) { }; }\n").empty());
-
-    CHECK(FuncdefMismatches(
-        "namespace N { class Foo {} funcdef void CB(Foo@); void Use() { CB@ cb = function(Foo@ f) { }; } }\n"
-        "void main() { }\n").empty());
+              "namespace N { class Foo {} funcdef void CB(Foo@); void Use() { CB@ cb = function(Foo@ f) { }; } }\n"
+              "void main() { }\n")
+              .empty());
 }
 
 TEST_CASE("LambdaFuncdef - The check reaches a handle assignment as well as an initializer")
 {
     // Oracle rejects both spellings of the same mistake.
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void main() { CB@ cb; @cb = function() { }; }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void main() { CB@ cb; @cb = function() { }; }\n")
+              .size() == 1);
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void main() { CB@ cb; @cb = function(int a) { }; }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void main() { CB@ cb; @cb = function(int a) { }; }\n")
+              .empty());
 }
 
 TEST_CASE("LambdaFuncdef - A named function on the right-hand side is judged as it always was")
 {
     // The branch this rule adds must not have taken the existing path with it.
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void Handler(int a) {}\n"
-        "void main() { CB@ cb = @Handler; }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void Handler(int a) {}\n"
+                            "void main() { CB@ cb = @Handler; }\n")
+              .empty());
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void Handler(string a) {}\n"
-        "void main() { CB@ cb = @Handler; }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void Handler(string a) {}\n"
+                            "void main() { CB@ cb = @Handler; }\n")
+              .size() == 1);
 }
 
 TEST_CASE("LambdaFuncdef - A funcdef conversion carries the same check as an assignment")
@@ -1463,36 +1399,36 @@ TEST_CASE("LambdaFuncdef - A funcdef conversion carries the same check as an ass
     //   Take(CB(function(){}))          ->  "No matching signatures to 'CB(<auto> lambda())'"
     //   Take(CB(function(string a){}))  ->  "No matching signatures to 'CB(<auto> lambda(string))'"
     //   Take(CB(function(a){}))         ->  accepted, the type comes from CB
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void Take(CB@ c) {}\n"
-        "void main() { Take(CB(function(int a) { })); }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void Take(CB@ c) {}\n"
+                            "void main() { Take(CB(function(int a) { })); }\n")
+              .empty());
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void Take(CB@ c) {}\n"
-        "void main() { Take(CB(function(a) { })); }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void Take(CB@ c) {}\n"
+                            "void main() { Take(CB(function(a) { })); }\n")
+              .empty());
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void Take(CB@ c) {}\n"
-        "void main() { Take(CB(function() { })); }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void Take(CB@ c) {}\n"
+                            "void main() { Take(CB(function() { })); }\n")
+              .size() == 1);
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(int);\n"
-        "void Take(CB@ c) {}\n"
-        "void main() { Take(CB(function(string a) { })); }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB(int);\n"
+                            "void Take(CB@ c) {}\n"
+                            "void main() { Take(CB(function(string a) { })); }\n")
+              .size() == 1);
 
     // The corpus writes it with a handle-of, and nested inside another call.
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(const string &in);\n"
-        "void Register(CB@ c) {}\n"
-        "void main() { Register(@CB(function(const string &in name) { })); }\n").empty());
+    CHECK(FuncdefMismatches("funcdef void CB(const string &in);\n"
+                            "void Register(CB@ c) {}\n"
+                            "void main() { Register(@CB(function(const string &in name) { })); }\n")
+              .empty());
 
-    CHECK(FuncdefMismatches(
-        "funcdef void CB(const string &in);\n"
-        "void Register(CB@ c) {}\n"
-        "void main() { Register(@CB(function() { })); }\n").size() == 1);
+    CHECK(FuncdefMismatches("funcdef void CB(const string &in);\n"
+                            "void Register(CB@ c) {}\n"
+                            "void main() { Register(@CB(function() { })); }\n")
+              .size() == 1);
 }
 
 TEST_CASE("LambdaFuncdef - A class construction that happens to take a lambda is not a funcdef")
@@ -1501,10 +1437,10 @@ TEST_CASE("LambdaFuncdef - A class construction that happens to take a lambda is
     // sharing its bare name with a funcdef elsewhere could have been mistaken for one. The guard
     // is that the sole argument must be a lambda AND the name must reach a funcdef; a real class
     // keeps its own construction check.
-    CHECK(FuncdefMismatches(
-        "namespace N { funcdef void Handler(int); }\n"
-        "class Handler { Handler(int v) {} }\n"
-        "void main() { Handler h(1); }\n").empty());
+    CHECK(FuncdefMismatches("namespace N { funcdef void Handler(int); }\n"
+                            "class Handler { Handler(int v) {} }\n"
+                            "void main() { Handler h(1); }\n")
+              .empty());
 }
 
 // =====================================================================================
@@ -1520,104 +1456,102 @@ TEST_CASE("LambdaFuncdef - A class construction that happens to take a lambda is
 
 namespace
 {
-    std::vector<Diagnostic> LambdaReturnDiagnostics(const std::string &code)
+std::vector<Diagnostic> LambdaReturnDiagnostics(const std::string& code)
+{
+    ConversionEnvironment env(code);
+    std::vector<Diagnostic> result;
+    for (auto& diag : env.Analyze())
     {
-        ConversionEnvironment env(code);
-        std::vector<Diagnostic> result;
-        for (auto &diag : env.Analyze())
+        if (diag.code == "as-err-not-all-paths-return" || diag.code == "as-err-void-return-value" ||
+            diag.code == "as-err-no-implicit-conversion")
         {
-            if (diag.code == "as-err-not-all-paths-return" ||
-                diag.code == "as-err-void-return-value" ||
-                diag.code == "as-err-no-implicit-conversion")
-            {
-                result.push_back(std::move(diag));
-            }
+            result.push_back(std::move(diag));
         }
-        return result;
     }
-
-    bool ReturnsCode(const std::string &code, const std::string &wanted)
-    {
-        const auto diagnostics = LambdaReturnDiagnostics(code);
-        return std::any_of(diagnostics.begin(), diagnostics.end(),
-                           [&wanted](const Diagnostic &d) { return d.code == wanted; });
-    }
+    return result;
 }
+
+bool ReturnsCode(const std::string& code, const std::string& wanted)
+{
+    const auto diagnostics = LambdaReturnDiagnostics(code);
+    return std::any_of(diagnostics.begin(), diagnostics.end(),
+                       [&wanted](const Diagnostic& d) { return d.code == wanted; });
+}
+} // namespace
 
 TEST_CASE("LambdaFuncdef - A non-void funcdef requires every path of the lambda to return")
 {
     // Oracle: "Not all paths return a value" for the first two, accepted for the third.
-    CHECK(ReturnsCode(
-        "funcdef int CB();\n"
-        "void main() { CB@ cb = function() { }; }\n", "as-err-not-all-paths-return"));
+    CHECK(ReturnsCode("funcdef int CB();\n"
+                      "void main() { CB@ cb = function() { }; }\n",
+                      "as-err-not-all-paths-return"));
 
-    CHECK(ReturnsCode(
-        "funcdef int CB();\n"
-        "void main() { CB@ cb = function() { if (true) return 1; }; }\n",
-        "as-err-not-all-paths-return"));
+    CHECK(ReturnsCode("funcdef int CB();\n"
+                      "void main() { CB@ cb = function() { if (true) return 1; }; }\n",
+                      "as-err-not-all-paths-return"));
 
-    CHECK(LambdaReturnDiagnostics(
-        "funcdef int CB();\n"
-        "void main() { CB@ cb = function() { if (true) return 1; return 2; }; }\n").empty());
+    CHECK(LambdaReturnDiagnostics("funcdef int CB();\n"
+                                  "void main() { CB@ cb = function() { if (true) return 1; return 2; }; }\n")
+              .empty());
 
     // A void funcdef requires nothing, and a bare `return;` satisfies it.
-    CHECK(LambdaReturnDiagnostics(
-        "funcdef void CB();\n"
-        "void main() { CB@ cb = function() { }; }\n").empty());
+    CHECK(LambdaReturnDiagnostics("funcdef void CB();\n"
+                                  "void main() { CB@ cb = function() { }; }\n")
+              .empty());
 
-    CHECK(LambdaReturnDiagnostics(
-        "funcdef void CB();\n"
-        "void main() { CB@ cb = function() { return; }; }\n").empty());
+    CHECK(LambdaReturnDiagnostics("funcdef void CB();\n"
+                                  "void main() { CB@ cb = function() { return; }; }\n")
+              .empty());
 }
 
 TEST_CASE("LambdaFuncdef - A returned value is judged against the funcdef's return type")
 {
     // Oracle: "Can't return value when return type is 'void'".
-    CHECK(ReturnsCode(
-        "funcdef void CB();\n"
-        "void main() { CB@ cb = function() { return 1; }; }\n", "as-err-void-return-value"));
+    CHECK(ReturnsCode("funcdef void CB();\n"
+                      "void main() { CB@ cb = function() { return 1; }; }\n",
+                      "as-err-void-return-value"));
 
     // Oracle: "No conversion from 'const string' to 'int' available."
-    CHECK(ReturnsCode(
-        "funcdef int CB();\n"
-        "void main() { CB@ cb = function() { return 'x'; }; }\n", "as-err-no-implicit-conversion"));
+    CHECK(ReturnsCode("funcdef int CB();\n"
+                      "void main() { CB@ cb = function() { return 'x'; }; }\n",
+                      "as-err-no-implicit-conversion"));
 
     // Oracle accepts both of these: int widens to float, and int to int is int.
-    CHECK(LambdaReturnDiagnostics(
-        "funcdef float CB();\n"
-        "void main() { CB@ cb = function() { return 1; }; }\n").empty());
+    CHECK(LambdaReturnDiagnostics("funcdef float CB();\n"
+                                  "void main() { CB@ cb = function() { return 1; }; }\n")
+              .empty());
 
-    CHECK(LambdaReturnDiagnostics(
-        "funcdef int CB();\n"
-        "void main() { CB@ cb = function() { return 1; }; }\n").empty());
+    CHECK(LambdaReturnDiagnostics("funcdef int CB();\n"
+                                  "void main() { CB@ cb = function() { return 1; }; }\n")
+              .empty());
 }
 
 TEST_CASE("LambdaFuncdef - The return type is found through all three ways a lambda reaches a funcdef")
 {
     // A declaration, an argument, and a conversion. Oracle rejects each.
-    CHECK(ReturnsCode(
-        "funcdef int CB();\n"
-        "void main() { CB@ cb = function() { }; }\n", "as-err-not-all-paths-return"));
+    CHECK(ReturnsCode("funcdef int CB();\n"
+                      "void main() { CB@ cb = function() { }; }\n",
+                      "as-err-not-all-paths-return"));
 
-    CHECK(ReturnsCode(
-        "funcdef int CB();\n"
-        "void Take(CB@ c) {}\n"
-        "void main() { Take(function() { }); }\n", "as-err-not-all-paths-return"));
+    CHECK(ReturnsCode("funcdef int CB();\n"
+                      "void Take(CB@ c) {}\n"
+                      "void main() { Take(function() { }); }\n",
+                      "as-err-not-all-paths-return"));
 
-    CHECK(ReturnsCode(
-        "funcdef int CB();\n"
-        "void Take(CB@ c) {}\n"
-        "void main() { Take(CB(function() { })); }\n", "as-err-not-all-paths-return"));
+    CHECK(ReturnsCode("funcdef int CB();\n"
+                      "void Take(CB@ c) {}\n"
+                      "void main() { Take(CB(function() { })); }\n",
+                      "as-err-not-all-paths-return"));
 
-    CHECK(ReturnsCode(
-        "funcdef void CB();\n"
-        "void Take(CB@ c) {}\n"
-        "void main() { Take(function() { return 1; }); }\n", "as-err-void-return-value"));
+    CHECK(ReturnsCode("funcdef void CB();\n"
+                      "void Take(CB@ c) {}\n"
+                      "void main() { Take(function() { return 1; }); }\n",
+                      "as-err-void-return-value"));
 
-    CHECK(ReturnsCode(
-        "funcdef int CB();\n"
-        "void Take(CB@ c) {}\n"
-        "void main() { Take(function() { return 'x'; }); }\n", "as-err-no-implicit-conversion"));
+    CHECK(ReturnsCode("funcdef int CB();\n"
+                      "void Take(CB@ c) {}\n"
+                      "void main() { Take(function() { return 'x'; }); }\n",
+                      "as-err-no-implicit-conversion"));
 }
 
 TEST_CASE("LambdaFuncdef - A lambda with no reachable funcdef keeps its old silence")
@@ -1625,21 +1559,20 @@ TEST_CASE("LambdaFuncdef - A lambda with no reachable funcdef keeps its old sile
     // Nothing names a return type here, so there is no requirement to check against - which is
     // the state every lambda was in before FuncdefTargetOfLambda existed. Reporting one would be
     // inventing a requirement, which is worse than the missing diagnostic it replaces.
-    CHECK(LambdaReturnDiagnostics(
-        "void Take(UnknownCallback@ c) {}\n"
-        "void main() { Take(function() { }); }\n").empty());
+    CHECK(LambdaReturnDiagnostics("void Take(UnknownCallback@ c) {}\n"
+                                  "void main() { Take(function() { }); }\n")
+              .empty());
 
-    CHECK(LambdaReturnDiagnostics(
-        "void main() { SomeHostCall(function() { }); }\n").empty());
+    CHECK(LambdaReturnDiagnostics("void main() { SomeHostCall(function() { }); }\n").empty());
 
     // Two candidates offering different funcdefs: which one the lambda was written against is
     // exactly what is undecided, so no return-type verdict is drawn from it.
-    CHECK(LambdaReturnDiagnostics(
-        "funcdef int WantsInt();\n"
-        "funcdef void WantsNothing();\n"
-        "void T(WantsInt@ c) {}\n"
-        "void T(WantsNothing@ c) {}\n"
-        "void main() { T(function() { }); }\n").empty());
+    CHECK(LambdaReturnDiagnostics("funcdef int WantsInt();\n"
+                                  "funcdef void WantsNothing();\n"
+                                  "void T(WantsInt@ c) {}\n"
+                                  "void T(WantsNothing@ c) {}\n"
+                                  "void main() { T(function() { }); }\n")
+              .empty());
 }
 
 // =====================================================================================
@@ -1683,7 +1616,7 @@ TEST_CASE("LambdaFuncdef - Funcdef Signature Corpus Audit Across All angelscript
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
         {
@@ -1694,7 +1627,7 @@ TEST_CASE("LambdaFuncdef - Funcdef Signature Corpus Audit Across All angelscript
     std::sort(files.begin(), files.end());
 
     std::unordered_map<std::string, std::vector<fs::path>> groups;
-    for (const auto &path : files)
+    for (const auto& path : files)
     {
         const std::string name = path.filename().string();
         const size_t underscore = name.find('_');
@@ -1705,12 +1638,12 @@ TEST_CASE("LambdaFuncdef - Funcdef Signature Corpus Audit Across All angelscript
     size_t totalFiles = 0;
     std::vector<std::string> dump;
 
-    for (auto &[groupName, groupFiles] : groups)
+    for (auto& [groupName, groupFiles] : groups)
     {
         SymbolTable sharedTable;
         std::map<std::string, std::string> sources;
 
-        for (const auto &path : groupFiles)
+        for (const auto& path : groupFiles)
         {
             std::ifstream file(path, std::ios::binary);
             if (!file)
@@ -1733,15 +1666,15 @@ TEST_CASE("LambdaFuncdef - Funcdef Signature Corpus Audit Across All angelscript
             collector.CollectSymbols(fileUri, sourceCode, parser, sharedTable);
         }
 
-        for (const auto &[fileUri, sourceCode] : sources)
+        for (const auto& [fileUri, sourceCode] : sources)
         {
             ++totalFiles;
 
             AngelScriptParser parser;
             LocalScopeCollector scopeCollector(nullptr);
-            TSTree *tree = parser.Parse(sourceCode);
+            TSTree* tree = parser.Parse(sourceCode);
 
-            SemanticAnalysisRequest request{ sharedTable, fileUri, "", &i18n };
+            SemanticAnalysisRequest request{sharedTable, fileUri, "", &i18n};
             request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
             request.sourceCode = sourceCode;
             request.tree = tree;
@@ -1750,14 +1683,13 @@ TEST_CASE("LambdaFuncdef - Funcdef Signature Corpus Audit Across All angelscript
             std::vector<Diagnostic> diagnostics;
             CHECK_NOTHROW(diagnostics = analyzer.Analyze(request));
 
-            for (const auto &diag : diagnostics)
+            for (const auto& diag : diagnostics)
             {
                 if (diag.code != "as-err-signature-mismatch-func-handle")
                 {
                     continue;
                 }
-                dump.push_back(fileUri.substr(8) + ":" +
-                               std::to_string(diag.range.start.line + 1) + ":" +
+                dump.push_back(fileUri.substr(8) + ":" + std::to_string(diag.range.start.line + 1) + ":" +
                                std::to_string(diag.range.start.character + 1));
             }
 
@@ -1775,10 +1707,10 @@ TEST_CASE("LambdaFuncdef - Funcdef Signature Corpus Audit Across All angelscript
         MESSAGE("  " << dump[i]);
     }
 
-    if (const char *dumpPath = std::getenv("ANGELLSP_FUNCDEF_MISMATCH_DUMP"); dumpPath && *dumpPath)
+    if (const char* dumpPath = std::getenv("ANGELLSP_FUNCDEF_MISMATCH_DUMP"); dumpPath && *dumpPath)
     {
         std::ofstream out(dumpPath, std::ios::binary);
-        for (const auto &line : dump)
+        for (const auto& line : dump)
         {
             out << line << "\n";
         }
@@ -1829,7 +1761,7 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
     namespace fs = std::filesystem;
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
         {
@@ -1840,7 +1772,7 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
     std::sort(files.begin(), files.end());
 
     std::unordered_map<std::string, std::vector<fs::path>> groups;
-    for (const auto &path : files)
+    for (const auto& path : files)
     {
         const std::string name = path.filename().string();
         const size_t underscore = name.find('_');
@@ -1854,12 +1786,12 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
     std::vector<std::string> dump;
     std::vector<std::string> sample;
 
-    for (auto &[groupName, groupFiles] : groups)
+    for (auto& [groupName, groupFiles] : groups)
     {
         SymbolTable sharedTable;
         std::map<std::string, std::string> sources;
 
-        for (const auto &path : groupFiles)
+        for (const auto& path : groupFiles)
         {
             std::ifstream file(path, std::ios::binary);
             if (!file)
@@ -1882,15 +1814,15 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
             collector.CollectSymbols(fileUri, sourceCode, parser, sharedTable);
         }
 
-        for (const auto &[fileUri, sourceCode] : sources)
+        for (const auto& [fileUri, sourceCode] : sources)
         {
             ++totalFiles;
 
             AngelScriptParser parser;
             LocalScopeCollector scopeCollector(nullptr);
-            TSTree *tree = parser.Parse(sourceCode);
+            TSTree* tree = parser.Parse(sourceCode);
 
-            SemanticAnalysisRequest request{ sharedTable, fileUri, "", &i18n };
+            SemanticAnalysisRequest request{sharedTable, fileUri, "", &i18n};
             request.scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
             request.sourceCode = sourceCode;
             request.tree = tree;
@@ -1900,10 +1832,9 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
             CHECK_NOTHROW(diagnostics = analyzer.Analyze(request));
 
             bool flaggedHere = false;
-            for (const auto &diag : diagnostics)
+            for (const auto& diag : diagnostics)
             {
-                if (diag.code != "as-warn-signed-unsigned-mismatch" &&
-                    diag.code != "as-warn-float-truncation")
+                if (diag.code != "as-warn-signed-unsigned-mismatch" && diag.code != "as-warn-float-truncation")
                 {
                     continue;
                 }
@@ -1913,8 +1844,7 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
 
                 // 1-based line and column, which is how the compiler reports a position, so the
                 // two dumps can be compared without either side having to be re-indexed.
-                dump.push_back(fileUri.substr(8) + ":" +
-                               std::to_string(diag.range.start.line + 1) + ":" +
+                dump.push_back(fileUri.substr(8) + ":" + std::to_string(diag.range.start.line + 1) + ":" +
                                std::to_string(diag.range.start.character + 1) + " " + diag.code);
 
                 if (sample.size() < 40)
@@ -1934,23 +1864,22 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
         }
     }
 
-    MESSAGE("Numeric warning corpus audit: files=" << totalFiles
-            << " filesWithFindings=" << filesWithFindings
-            << " findings=" << dump.size());
-    for (const auto &[code, count] : byCode)
+    MESSAGE("Numeric warning corpus audit: files=" << totalFiles << " filesWithFindings=" << filesWithFindings
+                                                   << " findings=" << dump.size());
+    for (const auto& [code, count] : byCode)
     {
         MESSAGE("  " << code << ": " << count);
     }
-    for (const auto &line : sample)
+    for (const auto& line : sample)
     {
         MESSAGE("  " << line);
     }
 
-    if (const char *dumpPath = std::getenv("ANGELLSP_NUMERIC_WARNING_DUMP"); dumpPath && *dumpPath)
+    if (const char* dumpPath = std::getenv("ANGELLSP_NUMERIC_WARNING_DUMP"); dumpPath && *dumpPath)
     {
         std::sort(dump.begin(), dump.end());
         std::ofstream out(dumpPath, std::ios::binary);
-        for (const auto &line : dump)
+        for (const auto& line : dump)
         {
             out << line << "\n";
         }
@@ -1988,8 +1917,6 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
     CHECK(filesWithFindings <= k_accountedFindings);
 }
 
-
-
 // =====================================================================================
 // A class standing where a bool is expected.
 //
@@ -2006,47 +1933,44 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
 
 namespace
 {
-    /**
-     * @brief Runs the pipeline with the bool-conversion hint and an engine mode chosen per call.
-     *
-     * The config objects have to outlive Analyze(), which holds them by pointer, so they are locals
-     * of the environment's lifetime rather than temporaries.
-     */
-    std::vector<Diagnostic> AnalyzeForBoolConversion(const std::string &code,
-                                                     bool enabled = true,
-                                                     int mode = 0)
-    {
-        ConversionEnvironment env(code);
+/**
+ * @brief Runs the pipeline with the bool-conversion hint and an engine mode chosen per call.
+ *
+ * The config objects have to outlive Analyze(), which holds them by pointer, so they are locals
+ * of the environment's lifetime rather than temporaries.
+ */
+std::vector<Diagnostic> AnalyzeForBoolConversion(const std::string& code, bool enabled = true, int mode = 0)
+{
+    ConversionEnvironment env(code);
 
-        angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
-        diagnosticsConfig.reportBoolConversion = enabled;
+    angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+    diagnosticsConfig.reportBoolConversion = enabled;
 
-        angel_lsp::config::EngineProperties engineProperties;
-        engineProperties.boolConversionMode = mode;
+    angel_lsp::config::EngineProperties engineProperties;
+    engineProperties.boolConversionMode = mode;
 
-        SemanticAnalysisRequest request{ env.symbolTable, env.uri, "", &env.i18n };
-        request.scopeRoot = env.scopeCollector.CollectScopes(env.sourceCode, env.parser);
-        request.sourceCode = env.sourceCode;
-        request.tree = env.tree;
-        request.enableTypeConversionChecks = true;
-        request.diagnostics = &diagnosticsConfig;
-        request.engineProperties = &engineProperties;
+    SemanticAnalysisRequest request{env.symbolTable, env.uri, "", &env.i18n};
+    request.scopeRoot = env.scopeCollector.CollectScopes(env.sourceCode, env.parser);
+    request.sourceCode = env.sourceCode;
+    request.tree = env.tree;
+    request.enableTypeConversionChecks = true;
+    request.diagnostics = &diagnosticsConfig;
+    request.engineProperties = &engineProperties;
 
-        SemanticAnalyzer analyzer(nullptr);
-        return analyzer.Analyze(request);
-    }
+    SemanticAnalyzer analyzer(nullptr);
+    return analyzer.Analyze(request);
 }
+} // namespace
 
 TEST_CASE("TypeConversion - Hints when a class with opImplConv is used as a condition")
 {
-    const std::string code =
-        "class H { bool opImplConv() const { return true; } }\n"
-        "void main() { H h; if (h) {} }\n";
+    const std::string code = "class H { bool opImplConv() const { return true; } }\n"
+                             "void main() { H h; if (h) {} }\n";
 
     const auto diagnostics = AnalyzeForBoolConversion(code);
 
     bool found = false;
-    for (const auto &d : diagnostics)
+    for (const auto& d : diagnostics)
     {
         if (d.code == "as-hint-bool-conversion")
         {
@@ -2060,14 +1984,13 @@ TEST_CASE("TypeConversion - Hints when a class with opImplConv is used as a cond
 
 TEST_CASE("TypeConversion - opConv is named when that is the only conversion")
 {
-    const std::string code =
-        "class H { bool opConv() const { return true; } }\n"
-        "void main() { H h; if (h) {} }\n";
+    const std::string code = "class H { bool opConv() const { return true; } }\n"
+                             "void main() { H h; if (h) {} }\n";
 
     const auto diagnostics = AnalyzeForBoolConversion(code);
 
     bool found = false;
-    for (const auto &d : diagnostics)
+    for (const auto& d : diagnostics)
     {
         if (d.code == "as-hint-bool-conversion")
         {
@@ -2082,30 +2005,28 @@ TEST_CASE("TypeConversion - Silent when the host runs bool conversion mode 1")
 {
     // The setting exists so this rule can be wrong-proof: a host on mode 1 compiles this, and the
     // hint would be describing a restriction that host does not have.
-    const std::string code =
-        "class H { bool opImplConv() const { return true; } }\n"
-        "void main() { H h; if (h) {} }\n";
+    const std::string code = "class H { bool opImplConv() const { return true; } }\n"
+                             "void main() { H h; if (h) {} }\n";
 
     const auto diagnostics = AnalyzeForBoolConversion(code, true, 1);
 
     // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing
     // at all, so the test would pass just as happily against a rule that never runs.
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
-                       [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+                       [](const Diagnostic& d) { return d.code == "as-hint-bool-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - Silent unless the hint is asked for")
 {
-    const std::string code =
-        "class H { bool opImplConv() const { return true; } }\n"
-        "void main() { H h; if (h) {} }\n";
+    const std::string code = "class H { bool opImplConv() const { return true; } }\n"
+                             "void main() { H h; if (h) {} }\n";
 
     const auto diagnostics = AnalyzeForBoolConversion(code, false);
 
     // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing
     // at all, so the test would pass just as happily against a rule that never runs.
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
-                       [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+                       [](const Diagnostic& d) { return d.code == "as-hint-bool-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - Silent on a type whose declaration is not visible")
@@ -2113,64 +2034,59 @@ TEST_CASE("TypeConversion - Silent on a type whose declaration is not visible")
     // The load-bearing silence. A workspace's host types are registered in C++ and appear in no
     // stub this analyzer can read; assuming such a type has no bool conversion would report every
     // legal use of one.
-    const std::string code =
-        "void main() { CBaseEntity e; if (e) {} }\n";
+    const std::string code = "void main() { CBaseEntity e; if (e) {} }\n";
 
     const auto diagnostics = AnalyzeForBoolConversion(code);
 
     // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing
     // at all, so the test would pass just as happily against a rule that never runs.
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
-                       [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+                       [](const Diagnostic& d) { return d.code == "as-hint-bool-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - A bool expression is left alone")
 {
-    const std::string code =
-        "void main() { bool b = true; if (b) {} while (b) {} }\n";
+    const std::string code = "void main() { bool b = true; if (b) {} while (b) {} }\n";
 
     const auto diagnostics = AnalyzeForBoolConversion(code);
 
     // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing
     // at all, so the test would pass just as happily against a rule that never runs.
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
-                       [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+                       [](const Diagnostic& d) { return d.code == "as-hint-bool-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - A non-bool opConv is not a condition conversion")
 {
     // `int opConv()` converts to something, but not to what a condition needs.
-    const std::string code =
-        "class H { int opConv() const { return 1; } }\n"
-        "void main() { H h; if (h) {} }\n";
+    const std::string code = "class H { int opConv() const { return 1; } }\n"
+                             "void main() { H h; if (h) {} }\n";
 
     const auto diagnostics = AnalyzeForBoolConversion(code);
 
     // none_of rather than a loop of CHECKs: an empty diagnostic list makes a loop assert nothing
     // at all, so the test would pass just as happily against a rule that never runs.
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
-                       [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+                       [](const Diagnostic& d) { return d.code == "as-hint-bool-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - while and do-while conditions are covered too")
 {
     // do/while keeps its condition in the SECOND named child - the body comes first - which is the
     // kind of grammar detail that silently disables a rule for one statement shape.
-    const std::string whileCode =
-        "class H { bool opImplConv() const { return true; } }\n"
-        "void main() { H h; while (h) {} }\n";
+    const std::string whileCode = "class H { bool opImplConv() const { return true; } }\n"
+                                  "void main() { H h; while (h) {} }\n";
 
-    const std::string doWhileCode =
-        "class H { bool opImplConv() const { return true; } }\n"
-        "void main() { H h; do { } while (h); }\n";
+    const std::string doWhileCode = "class H { bool opImplConv() const { return true; } }\n"
+                                    "void main() { H h; do { } while (h); }\n";
 
     const auto whileDiagnostics = AnalyzeForBoolConversion(whileCode);
     const auto doWhileDiagnostics = AnalyzeForBoolConversion(doWhileCode);
 
     CHECK(std::any_of(whileDiagnostics.begin(), whileDiagnostics.end(),
-                      [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+                      [](const Diagnostic& d) { return d.code == "as-hint-bool-conversion"; }));
     CHECK(std::any_of(doWhileDiagnostics.begin(), doWhileDiagnostics.end(),
-                      [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+                      [](const Diagnostic& d) { return d.code == "as-hint-bool-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - Finds the class under a logical operator")
@@ -2178,41 +2094,38 @@ TEST_CASE("TypeConversion - Finds the class under a logical operator")
     // `if (h && true)` resolves to bool at the top, because `&&` yields one. Checking only the
     // condition as a whole missed this entirely - and it is the exact shape of the parity corpus's
     // doc_r06_opimplconv_bool.as, which stayed listed as a gap until the operands were walked.
-    const std::string code =
-        "class H { bool opImplConv() const { return true; } }\n"
-        "void main() { H h; if (h && true) {} }\n";
+    const std::string code = "class H { bool opImplConv() const { return true; } }\n"
+                             "void main() { H h; if (h && true) {} }\n";
 
     const auto diagnostics = AnalyzeForBoolConversion(code);
 
     CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
-                      [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+                      [](const Diagnostic& d) { return d.code == "as-hint-bool-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - Finds the class under a negation")
 {
-    const std::string code =
-        "class H { bool opImplConv() const { return true; } }\n"
-        "void main() { H h; if (!h) {} }\n";
+    const std::string code = "class H { bool opImplConv() const { return true; } }\n"
+                             "void main() { H h; if (!h) {} }\n";
 
     const auto diagnostics = AnalyzeForBoolConversion(code);
 
     CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
-                      [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+                      [](const Diagnostic& d) { return d.code == "as-hint-bool-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - A comparison's operands are not condition conversions")
 {
     // `==` yields a bool too, but its operands are compared rather than converted to bool. Only the
     // logical operators recurse, or every `h == other` would be reported as a failed conversion.
-    const std::string code =
-        "class H { bool opImplConv() const { return true; }\n"
-        "          bool opEquals(const H &in o) const { return true; } }\n"
-        "void main() { H a; H b; if (a == b) {} }\n";
+    const std::string code = "class H { bool opImplConv() const { return true; }\n"
+                             "          bool opEquals(const H &in o) const { return true; } }\n"
+                             "void main() { H a; H b; if (a == b) {} }\n";
 
     const auto diagnostics = AnalyzeForBoolConversion(code);
 
     CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
-                       [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; }));
+                       [](const Diagnostic& d) { return d.code == "as-hint-bool-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - The for header and the ternary are conditions too")
@@ -2222,10 +2135,10 @@ TEST_CASE("TypeConversion - The for header and the ternary are conditions too")
     // mode 0 and accepted under mode 1, which is exactly what `if` and `while` do.
     const std::string preamble = "class H { bool opImplConv() const { return true; } }\n";
 
-    const auto hinted = [](const std::vector<Diagnostic> &diagnostics)
+    const auto hinted = [](const std::vector<Diagnostic>& diagnostics)
     {
         return std::any_of(diagnostics.begin(), diagnostics.end(),
-                           [](const Diagnostic &d) { return d.code == "as-hint-bool-conversion"; });
+                           [](const Diagnostic& d) { return d.code == "as-hint-bool-conversion"; });
     };
 
     SUBCASE("the for condition")
@@ -2240,24 +2153,23 @@ TEST_CASE("TypeConversion - The for header and the ternary are conditions too")
 
     SUBCASE("and neither says anything under mode 1, where the engine accepts them")
     {
-        CHECK_FALSE(hinted(AnalyzeForBoolConversion(
-            preamble + "void main() { H h; for (; h; ) {} }\n", /*enabled=*/true, /*mode=*/1)));
-        CHECK_FALSE(hinted(AnalyzeForBoolConversion(
-            preamble + "void main() { H h; int x = h ? 1 : 2; }\n", /*enabled=*/true, /*mode=*/1)));
+        CHECK_FALSE(hinted(AnalyzeForBoolConversion(preamble + "void main() { H h; for (; h; ) {} }\n",
+                                                    /*enabled=*/true, /*mode=*/1)));
+        CHECK_FALSE(hinted(AnalyzeForBoolConversion(preamble + "void main() { H h; int x = h ? 1 : 2; }\n",
+                                                    /*enabled=*/true, /*mode=*/1)));
     }
 }
 
 TEST_CASE("TypeConversion - IsTruthyCondition first-principles verification")
 {
-    const std::string code =
-        "enum MyEnum { ValueA, ValueB }\n"
-        "class NoConvClass {}\n"
-        "class ConvImplClass { bool opImplConv() const { return true; } }\n"
-        "class ConvExplicitClass { bool opConv() const { return true; } }\n"
-        "class NonBoolConvClass { int opImplConv() const { return 0; } }\n";
+    const std::string code = "enum MyEnum { ValueA, ValueB }\n"
+                             "class NoConvClass {}\n"
+                             "class ConvImplClass { bool opImplConv() const { return true; } }\n"
+                             "class ConvExplicitClass { bool opConv() const { return true; } }\n"
+                             "class NonBoolConvClass { int opImplConv() const { return 0; } }\n";
 
     AngelScriptParser parser;
-    SymbolCollector collector{ nullptr };
+    SymbolCollector collector{nullptr};
     SymbolTable table;
     collector.CollectSymbols("file:///truthy_test.as", code, parser, table);
 
@@ -2288,163 +2200,162 @@ TEST_CASE("TypeConversion - IsTruthyCondition first-principles verification")
 
 TEST_CASE("TypeConversion - Ternary expression branch mismatch emits diagnostic")
 {
-    const std::string code =
-        "void main()\n"
-        "{\n"
-        "    int x = true ? 10 : \"hello\";\n"
-        "}\n";
+    const std::string code = "void main()\n"
+                             "{\n"
+                             "    int x = true ? 10 : \"hello\";\n"
+                             "}\n";
 
     const auto diagnostics = ConversionDiagnostics(code);
     REQUIRE(!diagnostics.empty());
     CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
-                      [](const Diagnostic &d)
-                      {
-                          return d.code == "as-err-no-implicit-conversion";
-                      }));
+                      [](const Diagnostic& d) { return d.code == "as-err-no-implicit-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - Ternary same complex class deduction emits 0 diagnostics")
 {
-    const std::string code =
-        "class Vector\n"
-        "{\n"
-        "    float x, y, z;\n"
-        "    Vector() {}\n"
-        "    Vector(float _x, float _y, float _z) {}\n"
-        "}\n"
-        "void main()\n"
-        "{\n"
-        "    bool cond = true;\n"
-        "    Vector v = cond ? Vector(1.0f, 2.0f, 3.0f) : Vector(0.0f, 0.0f, 0.0f);\n"
-        "}\n";
+    const std::string code = "class Vector\n"
+                             "{\n"
+                             "    float x, y, z;\n"
+                             "    Vector() {}\n"
+                             "    Vector(float _x, float _y, float _z) {}\n"
+                             "}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    bool cond = true;\n"
+                             "    Vector v = cond ? Vector(1.0f, 2.0f, 3.0f) : Vector(0.0f, 0.0f, 0.0f);\n"
+                             "}\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - Ternary with handle and null emits 0 diagnostics (asharness parity)")
 {
-    const std::string code =
-        "class Node {}\n"
-        "void main()\n"
-        "{\n"
-        "    bool cond = true;\n"
-        "    Node@ n = Node();\n"
-        "    Node@ a = cond ? n : null;\n"
-        "    Node@ b = cond ? null : n;\n"
-        "}\n";
+    const std::string code = "class Node {}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    bool cond = true;\n"
+                             "    Node@ n = Node();\n"
+                             "    Node@ a = cond ? n : null;\n"
+                             "    Node@ b = cond ? null : n;\n"
+                             "}\n";
+
+    CHECK(ConversionDiagnostics(code).empty());
+}
+
+TEST_CASE("TypeConversion - Invariant: Ternary with unary handle on value object and null emits 0 diagnostics")
+{
+    const std::string cls = angel_lsp::test::GenerateRandomSymbolName("CustomItem");
+    const std::string var = angel_lsp::test::GenerateRandomSymbolName("item");
+    const std::string code = "class " + cls +
+                             " {}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    bool cond = true;\n"
+                             "    " +
+                             cls + " " + var +
+                             ";\n"
+                             "    " +
+                             cls + "@ a = cond ? @" + var +
+                             " : null;\n"
+                             "    " +
+                             cls + "@ b = cond ? null : @" + var +
+                             ";\n"
+                             "}\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - Ternary with void branch emits diagnostic (asharness parity)")
 {
-    const std::string code =
-        "void DoNothing() {}\n"
-        "void main()\n"
-        "{\n"
-        "    bool cond = true;\n"
-        "    int x = cond ? DoNothing() : 1;\n"
-        "}\n";
+    const std::string code = "void DoNothing() {}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    bool cond = true;\n"
+                             "    int x = cond ? DoNothing() : 1;\n"
+                             "}\n";
 
     const auto diagnostics = ConversionDiagnostics(code);
     REQUIRE(!diagnostics.empty());
     CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
-                      [](const Diagnostic &d)
-                      {
-                          return d.code == "as-err-no-implicit-conversion";
-                      }));
+                      [](const Diagnostic& d) { return d.code == "as-err-no-implicit-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - Ternary with unrelated classes emits diagnostic (asharness parity)")
 {
-    const std::string code =
-        "class Cat {}\n"
-        "class Dog {}\n"
-        "void main()\n"
-        "{\n"
-        "    bool cond = true;\n"
-        "    Cat c;\n"
-        "    Dog d;\n"
-        "    auto x = cond ? c : d;\n"
-        "}\n";
+    const std::string code = "class Cat {}\n"
+                             "class Dog {}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    bool cond = true;\n"
+                             "    Cat c;\n"
+                             "    Dog d;\n"
+                             "    auto x = cond ? c : d;\n"
+                             "}\n";
 
     const auto diagnostics = ConversionDiagnostics(code);
     REQUIRE(!diagnostics.empty());
     CHECK(std::any_of(diagnostics.begin(), diagnostics.end(),
-                      [](const Diagnostic &d)
-                      {
-                          return d.code == "as-err-no-implicit-conversion";
-                      }));
+                      [](const Diagnostic& d) { return d.code == "as-err-no-implicit-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - Integer primitive aliases produce 0 conversion diagnostics")
 {
-    const std::string code =
-        "void main()\n"
-        "{\n"
-        "    int32 a = 10;\n"
-        "    int b = a;\n"
-        "    int32 c = b;\n"
-        "    uint32 u1 = 20;\n"
-        "    uint u2 = u1;\n"
-        "    uint32 u3 = u2;\n"
-        "}\n";
+    const std::string code = "void main()\n"
+                             "{\n"
+                             "    int32 a = 10;\n"
+                             "    int b = a;\n"
+                             "    int32 c = b;\n"
+                             "    uint32 u1 = 20;\n"
+                             "    uint u2 = u1;\n"
+                             "    uint32 u3 = u2;\n"
+                             "}\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - Enum values implicitly widen to integer types")
 {
-    const std::string code =
-        "enum MyEnum { ValueA = 1, ValueB = 2 }\n"
-        "void main()\n"
-        "{\n"
-        "    int a = MyEnum::ValueA;\n"
-        "    int32 a32 = MyEnum::ValueA;\n"
-        "    uint b = MyEnum::ValueB;\n"
-        "    uint32 b32 = MyEnum::ValueB;\n"
-        "    int64 c = MyEnum::ValueA;\n"
-        "    uint64 d = MyEnum::ValueB;\n"
-        "    int16 e = MyEnum::ValueA;\n"
-        "}\n";
+    const std::string code = "enum MyEnum { ValueA = 1, ValueB = 2 }\n"
+                             "void main()\n"
+                             "{\n"
+                             "    int a = MyEnum::ValueA;\n"
+                             "    int32 a32 = MyEnum::ValueA;\n"
+                             "    uint b = MyEnum::ValueB;\n"
+                             "    uint32 b32 = MyEnum::ValueB;\n"
+                             "    int64 c = MyEnum::ValueA;\n"
+                             "    uint64 d = MyEnum::ValueB;\n"
+                             "    int16 e = MyEnum::ValueA;\n"
+                             "}\n";
 
     CHECK(ConversionDiagnostics(code).empty());
 }
 
 TEST_CASE("TypeConversion - Incompatible ternary branches with enum emit diagnostic")
 {
-    const std::string enumStringCode =
-        "enum MyEnum { ValueA, ValueB }\n"
-        "void main()\n"
-        "{\n"
-        "    bool cond = true;\n"
-        "    auto x = cond ? MyEnum::ValueA : \"str\";\n"
-        "}\n";
+    const std::string enumStringCode = "enum MyEnum { ValueA, ValueB }\n"
+                                       "void main()\n"
+                                       "{\n"
+                                       "    bool cond = true;\n"
+                                       "    auto x = cond ? MyEnum::ValueA : \"str\";\n"
+                                       "}\n";
 
     const auto diags1 = ConversionDiagnostics(enumStringCode);
     CHECK_FALSE(diags1.empty());
     CHECK(std::any_of(diags1.begin(), diags1.end(),
-                      [](const Diagnostic &d)
-                      {
-                          return d.code == "as-err-no-implicit-conversion";
-                      }));
+                      [](const Diagnostic& d) { return d.code == "as-err-no-implicit-conversion"; }));
 
-    const std::string enumMismatchCode =
-        "enum EnumA { A1, A2 }\n"
-        "enum EnumB { B1, B2 }\n"
-        "void main()\n"
-        "{\n"
-        "    bool cond = true;\n"
-        "    auto x = cond ? EnumA::A1 : EnumB::B1;\n"
-        "}\n";
+    const std::string enumMismatchCode = "enum EnumA { A1, A2 }\n"
+                                         "enum EnumB { B1, B2 }\n"
+                                         "void main()\n"
+                                         "{\n"
+                                         "    bool cond = true;\n"
+                                         "    auto x = cond ? EnumA::A1 : EnumB::B1;\n"
+                                         "}\n";
 
     const auto diags2 = ConversionDiagnostics(enumMismatchCode);
     CHECK_FALSE(diags2.empty());
     CHECK(std::any_of(diags2.begin(), diags2.end(),
-                      [](const Diagnostic &d)
-                      {
-                          return d.code == "as-err-no-implicit-conversion";
-                      }));
+                      [](const Diagnostic& d) { return d.code == "as-err-no-implicit-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - SEC-03 Recursion Depth Guard & Cycle Breaker")
@@ -2496,7 +2407,7 @@ TEST_CASE("TypeConversion - Invariant: Multi-level inheritance derived-to-base c
     const auto diags = ConversionDiagnostics(code);
     CHECK_FALSE(diags.empty());
     CHECK(std::any_of(diags.begin(), diags.end(),
-                      [](const Diagnostic &d) { return d.code == "as-err-no-implicit-conversion"; }));
+                      [](const Diagnostic& d) { return d.code == "as-err-no-implicit-conversion"; }));
 }
 
 TEST_CASE("TypeConversion - Invariant: Bare data type in variable initializer emits as-err-expression-is-data-type")
@@ -2517,7 +2428,7 @@ TEST_CASE("TypeConversion - Invariant: Bare data type in variable initializer em
     ConversionEnvironment env(code);
     const auto diags = env.Analyze(true);
     size_t count = 0;
-    for (const auto &d : diags)
+    for (const auto& d : diags)
     {
         if (d.code == "as-err-expression-is-data-type")
         {
@@ -2530,15 +2441,18 @@ TEST_CASE("TypeConversion - Invariant: Bare data type in variable initializer em
 TEST_CASE("TypeConversion - Integer division preserves integer type without float truncation warning")
 {
     const std::string varName = angel_lsp::test::GenerateRandomSymbolName("pct");
-    std::string code =
-        "void Test() {\n"
-        "    int " + varName + " = 100;\n"
-        "    " + varName + " = ( " + varName + " / 5 );\n"
-        "}\n";
+    std::string code = "void Test() {\n"
+                       "    int " +
+                       varName +
+                       " = 100;\n"
+                       "    " +
+                       varName + " = ( " + varName +
+                       " / 5 );\n"
+                       "}\n";
 
     ConversionEnvironment env(code);
     const auto diags = env.Analyze(true);
-    for (const auto &d : diags)
+    for (const auto& d : diags)
     {
         CHECK(d.code != "as-warn-float-truncation");
         CHECK(d.code != "as-err-no-implicit-conversion");
@@ -2548,16 +2462,19 @@ TEST_CASE("TypeConversion - Integer division preserves integer type without floa
 TEST_CASE("TypeConversion - Float division emits float truncation warning when assigning to int")
 {
     const std::string varName = angel_lsp::test::GenerateRandomSymbolName("pct");
-    std::string code =
-        "void Test() {\n"
-        "    int " + varName + " = 100;\n"
-        "    " + varName + " = ( " + varName + " / 5.0f );\n"
-        "}\n";
+    std::string code = "void Test() {\n"
+                       "    int " +
+                       varName +
+                       " = 100;\n"
+                       "    " +
+                       varName + " = ( " + varName +
+                       " / 5.0f );\n"
+                       "}\n";
 
     ConversionEnvironment env(code);
     const auto diags = env.Analyze(true);
     bool foundTruncation = false;
-    for (const auto &d : diags)
+    for (const auto& d : diags)
     {
         if (d.code == "as-warn-float-truncation")
         {

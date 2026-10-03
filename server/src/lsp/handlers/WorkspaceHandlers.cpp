@@ -281,13 +281,32 @@ void Server::UpdateFormatConfiguration(const lsp::LSPObject& section)
             LogInfo(fmt::format("Format brace style changed to '{}'", *styleVal));
         }
     }
-    if (auto spacesVal = FindSectionBool(section, formatObj, "spacesInsideParentheses", "format"); spacesVal.has_value())
+    if (auto spacesVal = FindSectionBool(section, formatObj, "spacesInsideParentheses", "format");
+        spacesVal.has_value())
     {
         m_formatSpacesInsideParentheses.store(*spacesVal, std::memory_order_relaxed);
+    }
+    if (auto keepEmpty = FindSectionBool(section, formatObj, "keepEmptyBlocksOnSingleLine", "format");
+        keepEmpty.has_value())
+    {
+        m_formatKeepEmptyBlocksOnSingleLine.store(*keepEmpty, std::memory_order_relaxed);
     }
     if (auto fosVal = FindSectionBool(section, formatObj, "onSave", "format"); fosVal.has_value())
     {
         m_config.format.formatOnSave = *fosVal;
+    }
+    if (auto alignVal = FindSectionString(section, formatObj, "pointerAlignment", "format"); alignVal.has_value())
+    {
+        features::PointerAlignment align = features::PointerAlignment::Left;
+        if (*alignVal == "right" || *alignVal == "Right")
+        {
+            align = features::PointerAlignment::Right;
+        }
+        else if (*alignVal == "middle" || *alignVal == "Middle")
+        {
+            align = features::PointerAlignment::Middle;
+        }
+        m_formatPointerAlignment.store(align, std::memory_order_relaxed);
     }
 }
 
@@ -466,6 +485,10 @@ void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
     {
         m_config.features.enableOnTypeFormatting = *otf;
     }
+    if (auto cs = FindSectionBool(section, featObj, "commentSuppressions", "features"); cs.has_value())
+    {
+        m_config.features.enableCommentSuppressions = *cs;
+    }
 
     const lsp::LSPObject* compObj = nullptr;
     if (const auto* compVal = section.find("completion"); compVal && compVal->isObject())
@@ -479,6 +502,10 @@ void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
     if (auto parens = FindSectionBool(section, compObj, "completeFunctionParens", "completion"); parens.has_value())
     {
         m_config.features.completionCompleteFunctionParens = *parens;
+    }
+    if (auto qualify = FindSectionBool(section, compObj, "qualifyEnumValues", "completion"); qualify.has_value())
+    {
+        m_config.features.completionQualifyEnumValues = *qualify;
     }
 
     UpdateInlayHintFeatureConfig(section, m_config);

@@ -1,10 +1,10 @@
 #include <doctest/doctest.h>
 
-#include "features/code_lens/CodeLensHandler.h"
-#include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
-#include "parser/AngelScriptParser.h"
+#include "analysis/SymbolCollector.h"
+#include "features/code_lens/CodeLensHandler.h"
 #include "helpers/TestUtils.h"
+#include "parser/AngelScriptParser.h"
 
 #include <string>
 #include <vector>
@@ -16,62 +16,59 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct CodeLensFixture
+struct CodeLensFixture
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    std::string uri = "file:///test.as";
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    explicit CodeLensFixture(std::string code) : sourceCode(std::move(code))
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        std::string uri = "file:///test.as";
-        std::string sourceCode;
-        TSTree *tree = nullptr;
-
-        explicit CodeLensFixture(std::string code)
-            : sourceCode(std::move(code))
+        tree = parser.Parse(sourceCode);
+        symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
+        auto scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
+        if (scopeRoot)
         {
-            tree = parser.Parse(sourceCode);
-            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-            auto scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
-            if (scopeRoot)
-            {
-                scopeIndex.SetScopeTree(uri, std::move(scopeRoot));
-            }
+            scopeIndex.SetScopeTree(uri, std::move(scopeRoot));
         }
+    }
 
-        ~CodeLensFixture()
+    ~CodeLensFixture()
+    {
+        if (tree)
         {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
+            ts_tree_delete(tree);
         }
+    }
 
-        std::optional<std::vector<lsp::CodeLens>> GetLenses()
-        {
-            CodeLensRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex };
-            return GetCodeLenses(req);
-        }
-    };
-}
+    std::optional<std::vector<lsp::CodeLens>> GetLenses()
+    {
+        CodeLensRequest req{uri, sourceCode, tree, symbolTable, scopeIndex};
+        return GetCodeLenses(req);
+    }
+};
+} // namespace
 
 TEST_CASE("CodeLens - Computes reference count for functions")
 {
-    CodeLensFixture fixture(
-        "void Helper() {}\n"
-        "void main()\n"
-        "{\n"
-        "    Helper();\n"
-        "    Helper();\n"
-        "}\n"
-    );
+    CodeLensFixture fixture("void Helper() {}\n"
+                            "void main()\n"
+                            "{\n"
+                            "    Helper();\n"
+                            "    Helper();\n"
+                            "}\n");
 
     const auto lenses = fixture.GetLenses();
     REQUIRE(lenses.has_value());
     REQUIRE(!lenses->empty());
 
     bool foundHelper = false;
-    for (const auto &lens : *lenses)
+    for (const auto& lens : *lenses)
     {
         if (lens.range.start.line == 0 && lens.command.has_value())
         {
@@ -84,20 +81,18 @@ TEST_CASE("CodeLens - Computes reference count for functions")
 
 TEST_CASE("CodeLens - Computes implementation count for interfaces")
 {
-    CodeLensFixture fixture(
-        "interface IService {\n"
-        "    void Run();\n"
-        "}\n"
-        "class ServiceImpl : IService {\n"
-        "    void Run() {}\n"
-        "}\n"
-    );
+    CodeLensFixture fixture("interface IService {\n"
+                            "    void Run();\n"
+                            "}\n"
+                            "class ServiceImpl : IService {\n"
+                            "    void Run() {}\n"
+                            "}\n");
 
     const auto lenses = fixture.GetLenses();
     REQUIRE(lenses.has_value());
 
     bool foundInterface = false;
-    for (const auto &lens : *lenses)
+    for (const auto& lens : *lenses)
     {
         if (lens.range.start.line == 0 && lens.command.has_value())
         {
@@ -110,21 +105,19 @@ TEST_CASE("CodeLens - Computes implementation count for interfaces")
 
 TEST_CASE("CodeLens - Computes reference count for classes")
 {
-    CodeLensFixture fixture(
-        "class Player {\n"
-        "    int hp;\n"
-        "}\n"
-        "void Spawn()\n"
-        "{\n"
-        "    Player p;\n"
-        "}\n"
-    );
+    CodeLensFixture fixture("class Player {\n"
+                            "    int hp;\n"
+                            "}\n"
+                            "void Spawn()\n"
+                            "{\n"
+                            "    Player p;\n"
+                            "}\n");
 
     const auto lenses = fixture.GetLenses();
     REQUIRE(lenses.has_value());
 
     bool foundClass = false;
-    for (const auto &lens : *lenses)
+    for (const auto& lens : *lenses)
     {
         if (lens.range.start.line == 0 && lens.command.has_value())
         {
@@ -138,29 +131,27 @@ TEST_CASE("CodeLens - Computes reference count for classes")
 TEST_CASE("CodeLens - Deduplicates mixin methods and aggregates references across host classes")
 {
     AngelScriptParser parser;
-    SymbolCollector symbolCollector{ nullptr };
-    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
     SymbolTable symbolTable;
     ScopeIndex scopeIndex;
 
     const std::string mixinUri = "file:///mixin.as";
-    const std::string mixinCode =
-        "mixin class WeaponMixin {\n"
-        "    void Deploy() {}\n"
-        "}\n";
+    const std::string mixinCode = "mixin class WeaponMixin {\n"
+                                  "    void Deploy() {}\n"
+                                  "}\n";
 
     const std::string hostUri = "file:///weapons.as";
-    const std::string hostCode =
-        "class Rifle : WeaponMixin {}\n"
-        "class Pistol : WeaponMixin {}\n"
-        "void TestCalls(Rifle@ r, Pistol@ p)\n"
-        "{\n"
-        "    r.Deploy();\n"
-        "    p.Deploy();\n"
-        "}\n";
+    const std::string hostCode = "class Rifle : WeaponMixin {}\n"
+                                 "class Pistol : WeaponMixin {}\n"
+                                 "void TestCalls(Rifle@ r, Pistol@ p)\n"
+                                 "{\n"
+                                 "    r.Deploy();\n"
+                                 "    p.Deploy();\n"
+                                 "}\n";
 
     // Parse and collect mixin
-    TSTree *mixinTree = parser.Parse(mixinCode);
+    TSTree* mixinTree = parser.Parse(mixinCode);
     symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
     auto mixinScope = scopeCollector.CollectScopes(mixinCode, parser);
     if (mixinScope)
@@ -169,7 +160,7 @@ TEST_CASE("CodeLens - Deduplicates mixin methods and aggregates references acros
     }
 
     // Parse and collect hosts
-    TSTree *hostTree = parser.Parse(hostCode);
+    TSTree* hostTree = parser.Parse(hostCode);
     symbolCollector.CollectSymbols(hostUri, hostCode, parser, symbolTable);
     auto hostScope = scopeCollector.CollectScopes(hostCode, parser);
     if (hostScope)
@@ -181,14 +172,14 @@ TEST_CASE("CodeLens - Deduplicates mixin methods and aggregates references acros
     symbolTable.ResolveIncludedMixins();
 
     // Query CodeLens on the mixin file
-    CodeLensRequest req{ mixinUri, mixinCode, mixinTree, symbolTable, scopeIndex };
+    CodeLensRequest req{mixinUri, mixinCode, mixinTree, symbolTable, scopeIndex};
     const auto lenses = GetCodeLenses(req);
     REQUIRE(lenses.has_value());
 
     // Count lenses on Deploy() line (line 1)
     size_t deployLensCount = 0;
     std::string deployTitle;
-    for (const auto &lens : *lenses)
+    for (const auto& lens : *lenses)
     {
         if (lens.range.start.line == 1 && lens.command.has_value())
         {
@@ -214,27 +205,26 @@ TEST_CASE("CodeLens - Deduplicates mixin methods and aggregates references acros
 TEST_CASE("CodeLens - Provides virtual document header lens to jump to physical source")
 {
     AngelScriptParser parser;
-    SymbolCollector symbolCollector{ nullptr };
+    SymbolCollector symbolCollector{nullptr};
     SymbolTable symbolTable;
     ScopeIndex scopeIndex;
 
     const std::string mixinUri = "file:///mixin.as";
-    const std::string mixinCode =
-        "mixin class WeaponMixin {\n"
-        "    void Deploy() {}\n"
-        "}\n";
+    const std::string mixinCode = "mixin class WeaponMixin {\n"
+                                  "    void Deploy() {}\n"
+                                  "}\n";
 
     symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
 
     const std::string virtualUri = "angelscript-virtual://Rifle/WeaponMixin.as";
     const std::string virtualCode = "// synthesized virtual document\n";
 
-    CodeLensRequest req{ virtualUri, virtualCode, nullptr, symbolTable, scopeIndex };
+    CodeLensRequest req{virtualUri, virtualCode, nullptr, symbolTable, scopeIndex};
     const auto lenses = GetCodeLenses(req);
     REQUIRE(lenses.has_value());
     REQUIRE(!lenses->empty());
 
-    const auto &lens = (*lenses)[0];
+    const auto& lens = (*lenses)[0];
     CHECK(lens.range.start.line == 0);
     REQUIRE(lens.command.has_value());
     CHECK(lens.command->command == "angelscript.openPhysicalSource");
@@ -244,33 +234,31 @@ TEST_CASE("CodeLens - Provides virtual document header lens to jump to physical 
 TEST_CASE("CodeLens - Provides View Mixin Expansion lens on class mixin inclusions")
 {
     AngelScriptParser parser;
-    SymbolCollector symbolCollector{ nullptr };
+    SymbolCollector symbolCollector{nullptr};
     SymbolTable symbolTable;
     ScopeIndex scopeIndex;
 
     const std::string mixinUri = "file:///mixin.as";
-    const std::string mixinCode =
-        "mixin class WeaponMixin {\n"
-        "    void Deploy() {}\n"
-        "}\n";
+    const std::string mixinCode = "mixin class WeaponMixin {\n"
+                                  "    void Deploy() {}\n"
+                                  "}\n";
 
     const std::string hostUri = "file:///rifle.as";
-    const std::string hostCode =
-        "class Rifle : WeaponMixin {\n"
-        "    void Fire() {}\n"
-        "}\n";
+    const std::string hostCode = "class Rifle : WeaponMixin {\n"
+                                 "    void Fire() {}\n"
+                                 "}\n";
 
-    TSTree *hostTree = parser.Parse(hostCode);
+    TSTree* hostTree = parser.Parse(hostCode);
     symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
     symbolCollector.CollectSymbols(hostUri, hostCode, parser, symbolTable);
     symbolTable.ResolveIncludedMixins();
 
-    CodeLensRequest req{ hostUri, hostCode, hostTree, symbolTable, scopeIndex };
+    CodeLensRequest req{hostUri, hostCode, hostTree, symbolTable, scopeIndex};
     const auto lenses = GetCodeLenses(req);
     REQUIRE(lenses.has_value());
 
     bool foundMixinLens = false;
-    for (const auto &lens : *lenses)
+    for (const auto& lens : *lenses)
     {
         if (lens.command.has_value() && lens.command->command == "angelscript.viewMixinExpansion")
         {
@@ -289,39 +277,36 @@ TEST_CASE("CodeLens - Provides View Mixin Expansion lens on class mixin inclusio
 TEST_CASE("CodeLens - Scope isolation prevents reference leakage between sibling classes")
 {
     AngelScriptParser parser;
-    SymbolCollector symbolCollector{ nullptr };
-    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
     SymbolTable symbolTable;
     ScopeIndex scopeIndex;
 
     const std::string baseUri = "file:///base.as";
-    const std::string baseCode =
-        "class ScriptBasePlayerWeaponEntity {\n"
-        "    void Spawn() {}\n"
-        "}\n";
+    const std::string baseCode = "class ScriptBasePlayerWeaponEntity {\n"
+                                 "    void Spawn() {}\n"
+                                 "}\n";
 
     const std::string uriA = "file:///weapon_a.as";
-    const std::string codeA =
-        "class weapon_ins2m40a1 : ScriptBasePlayerWeaponEntity {\n"
-        "    private int GetBodygroup() { return 1; }\n" // line 1
-        "    void PrimaryAttack() {\n"
-        "        GetBodygroup();\n"                      // line 3
-        "        this.GetBodygroup();\n"                 // line 4
-        "    }\n"
-        "}\n";
+    const std::string codeA = "class weapon_ins2m40a1 : ScriptBasePlayerWeaponEntity {\n"
+                              "    private int GetBodygroup() { return 1; }\n" // line 1
+                              "    void PrimaryAttack() {\n"
+                              "        GetBodygroup();\n"      // line 3
+                              "        this.GetBodygroup();\n" // line 4
+                              "    }\n"
+                              "}\n";
 
     const std::string uriB = "file:///weapon_b.as";
-    const std::string codeB =
-        "class weapon_ins2ak47 : ScriptBasePlayerWeaponEntity {\n"
-        "    private int GetBodygroup() { return 2; }\n" // line 1
-        "    void PrimaryAttack() {\n"
-        "        GetBodygroup();\n"                      // line 3
-        "    }\n"
-        "}\n";
+    const std::string codeB = "class weapon_ins2ak47 : ScriptBasePlayerWeaponEntity {\n"
+                              "    private int GetBodygroup() { return 2; }\n" // line 1
+                              "    void PrimaryAttack() {\n"
+                              "        GetBodygroup();\n" // line 3
+                              "    }\n"
+                              "}\n";
 
-    TSTree *baseTree = parser.Parse(baseCode);
-    TSTree *treeA = parser.Parse(codeA);
-    TSTree *treeB = parser.Parse(codeB);
+    TSTree* baseTree = parser.Parse(baseCode);
+    TSTree* treeA = parser.Parse(codeA);
+    TSTree* treeB = parser.Parse(codeB);
 
     symbolCollector.CollectSymbols(baseUri, baseCode, parser, symbolTable);
     symbolCollector.CollectSymbols(uriA, codeA, parser, symbolTable);
@@ -346,12 +331,12 @@ TEST_CASE("CodeLens - Scope isolation prevents reference leakage between sibling
     }
 
     // Request lenses for weapon_a.as
-    CodeLensRequest reqA{ uriA, codeA, treeA, symbolTable, scopeIndex };
+    CodeLensRequest reqA{uriA, codeA, treeA, symbolTable, scopeIndex};
     auto lensesA = GetCodeLenses(reqA);
     REQUIRE(lensesA.has_value());
 
     bool foundBodygroupA = false;
-    for (const auto &lens : *lensesA)
+    for (const auto& lens : *lensesA)
     {
         if (lens.range.start.line == 1 && lens.command.has_value())
         {
@@ -363,12 +348,12 @@ TEST_CASE("CodeLens - Scope isolation prevents reference leakage between sibling
     CHECK(foundBodygroupA);
 
     // Request lenses for weapon_b.as
-    CodeLensRequest reqB{ uriB, codeB, treeB, symbolTable, scopeIndex };
+    CodeLensRequest reqB{uriB, codeB, treeB, symbolTable, scopeIndex};
     auto lensesB = GetCodeLenses(reqB);
     REQUIRE(lensesB.has_value());
 
     bool foundBodygroupB = false;
-    for (const auto &lens : *lensesB)
+    for (const auto& lens : *lensesB)
     {
         if (lens.range.start.line == 1 && lens.command.has_value())
         {
@@ -394,18 +379,16 @@ TEST_CASE("CodeLens - Scope isolation prevents reference leakage between sibling
 
 TEST_CASE("CodeLens - Method Overload Arity Isolation")
 {
-    CodeLensFixture fixture(
-        "class Knuckles\n"
-        "{\n"
-        "    bool Deploy() { return true; }\n"
-        "    bool Deploy(string a, string b, int c, string d, float e, bool f) { return false; }\n"
-        "    void Test()\n"
-        "    {\n"
-        "        Deploy();\n"
-        "        Deploy(\"a\", \"b\", 1, \"d\", 2.0f, true);\n"
-        "    }\n"
-        "}\n"
-    );
+    CodeLensFixture fixture("class Knuckles\n"
+                            "{\n"
+                            "    bool Deploy() { return true; }\n"
+                            "    bool Deploy(string a, string b, int c, string d, float e, bool f) { return false; }\n"
+                            "    void Test()\n"
+                            "    {\n"
+                            "        Deploy();\n"
+                            "        Deploy(\"a\", \"b\", 1, \"d\", 2.0f, true);\n"
+                            "    }\n"
+                            "}\n");
 
     const auto lenses = fixture.GetLenses();
     REQUIRE(lenses.has_value());
@@ -413,7 +396,7 @@ TEST_CASE("CodeLens - Method Overload Arity Isolation")
 
     bool foundDeploy0 = false;
     bool foundDeploy6 = false;
-    for (const auto &lens : *lenses)
+    for (const auto& lens : *lenses)
     {
         if (lens.range.start.line == 2 && lens.command.has_value())
         {
@@ -457,7 +440,7 @@ TEST_CASE("CodeLens - Batched Reference Resolution Scales Beyond Arbitrary Symbo
 
     bool verifiedFront = false;
     bool verifiedBack = false;
-    for (const auto &lens : *lenses)
+    for (const auto& lens : *lenses)
     {
         if (lens.range.start.line == 0 && lens.command.has_value())
         {
@@ -480,13 +463,21 @@ TEST_CASE("CodeLens - Property Accessor Reference Counting")
     const std::string propName = angel_lsp::test::GenerateRandomSymbolName("BuyPoints");
     const std::string callerFn = angel_lsp::test::GenerateRandomSymbolName("GivePoints");
 
-    std::string code =
-        "class " + playerClass + " {}\n"
-        "int get_" + propName + "(" + playerClass + "@ pPlayer) property { return 0; }\n"
-        "void set_" + propName + "(" + playerClass + "@ pPlayer, const int& in iValue) property {}\n"
-        "void " + callerFn + "(" + playerClass + "@ pPlayer) {\n"
-        "    " + propName + "[pPlayer] = 100;\n"
-        "}\n";
+    std::string code = "class " + playerClass +
+                       " {}\n"
+                       "int get_" +
+                       propName + "(" + playerClass +
+                       "@ pPlayer) property { return 0; }\n"
+                       "void set_" +
+                       propName + "(" + playerClass +
+                       "@ pPlayer, const int& in iValue) property {}\n"
+                       "void " +
+                       callerFn + "(" + playerClass +
+                       "@ pPlayer) {\n"
+                       "    " +
+                       propName +
+                       "[pPlayer] = 100;\n"
+                       "}\n";
 
     CodeLensFixture fixture(std::move(code));
     const auto lenses = fixture.GetLenses();
@@ -516,8 +507,8 @@ TEST_CASE("CodeLens - Property Accessor Reference Counting")
 TEST_CASE("CodeLens - Cross-File Namespace Variable References")
 {
     AngelScriptParser parser;
-    SymbolCollector symbolCollector{ nullptr };
-    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
     SymbolTable symbolTable;
     ScopeIndex scopeIndex;
 
@@ -526,20 +517,26 @@ TEST_CASE("CodeLens - Cross-File Namespace Variable References")
     const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("someFunction");
 
     const std::string uri1 = "file:///decl.as";
-    const std::string code1 =
-        "namespace " + nsName + "\n"
-        "{\n"
-        "    const int " + constName + " = 15;\n"
-        "}\n";
+    const std::string code1 = "namespace " + nsName +
+                              "\n"
+                              "{\n"
+                              "    const int " +
+                              constName +
+                              " = 15;\n"
+                              "}\n";
 
     const std::string uri2 = "file:///usage.as";
-    const std::string code2 =
-        "namespace " + nsName + "\n"
-        "{\n"
-        "    void " + funcName + "(int iHitGroup) {\n"
-        "        if (iHitGroup == " + constName + ") {}\n"
-        "    }\n"
-        "}\n";
+    const std::string code2 = "namespace " + nsName +
+                              "\n"
+                              "{\n"
+                              "    void " +
+                              funcName +
+                              "(int iHitGroup) {\n"
+                              "        if (iHitGroup == " +
+                              constName +
+                              ") {}\n"
+                              "    }\n"
+                              "}\n";
 
     TSTree* tree1 = parser.Parse(code1);
     TSTree* tree2 = parser.Parse(code2);
@@ -558,7 +555,7 @@ TEST_CASE("CodeLens - Cross-File Namespace Variable References")
         scopeIndex.SetScopeTree(uri2, std::move(scope2));
     }
 
-    CodeLensRequest req{ uri1, code1, tree1, symbolTable, scopeIndex };
+    CodeLensRequest req{uri1, code1, tree1, symbolTable, scopeIndex};
     auto lenses = GetCodeLenses(req);
     REQUIRE(lenses.has_value());
 
@@ -582,5 +579,3 @@ TEST_CASE("CodeLens - Cross-File Namespace Variable References")
         ts_tree_delete(tree2);
     }
 }
-
-

@@ -199,7 +199,8 @@ bool IsValidMutatedOutput(const MethodOutputContext& ctx, const analysis::LocalD
         (def->endLine < ctx.stmts.firstStart.row ||
          (def->endLine == ctx.stmts.firstStart.row && def->endCharacter <= ctx.stmts.firstStart.column) ||
          def->kind == analysis::LocalDefinitionKind::Parameter);
-    return declaredBefore && IsVariableReferencedAfter(ctx.fnScope, def->name, ctx.stmts.lastEnd.row, ctx.stmts.lastEnd.column);
+    return declaredBefore &&
+           IsVariableReferencedAfter(ctx.fnScope, def->name, ctx.stmts.lastEnd.row, ctx.stmts.lastEnd.column);
 }
 
 void CollectMutatedOutputs(const MethodOutputContext& ctx, const ankerl::unordered_dense::set<std::string>& mutatedVars,
@@ -239,7 +240,8 @@ void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& stmts, c
         {
             if (def.startLine >= stmts.firstStart.row && def.endLine <= stmts.lastEnd.row)
             {
-                if (IsVariableReferencedAfter(fnScope, def.name, stmts.lastEnd.row + 1, 0) && !seenOutputs.contains(def.name))
+                if (IsVariableReferencedAfter(fnScope, def.name, stmts.lastEnd.row + 1, 0) &&
+                    !seenOutputs.contains(def.name))
                 {
                     seenOutputs.insert(def.name);
                     std::string tName = def.typeName.empty() ? "auto" : def.typeName;
@@ -266,9 +268,7 @@ ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const std::vec
         {
             continue;
         }
-        parser::ForEachDescendantNode(stmt, [&](TSNode curr) {
-            CheckNodeMutations(curr, sourceCode, mutatedVars);
-        });
+        parser::ForEachDescendantNode(stmt, [&](TSNode curr) { CheckNodeMutations(curr, sourceCode, mutatedVars); });
     }
     return mutatedVars;
 }

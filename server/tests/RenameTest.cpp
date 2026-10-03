@@ -1,13 +1,13 @@
-#include <string>
-#include <random>
-#include <doctest/doctest.h>
 #include "helpers/TestUtils.h"
+#include <doctest/doctest.h>
+#include <random>
+#include <string>
 
-#include "features/rename/RenameHandler.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "features/rename/RenameHandler.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -17,107 +17,92 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct MultiFileRenameEnv
+struct MultiFileRenameEnv
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    std::unordered_set<std::string> predefinedUris;
+    std::unordered_map<std::string, std::string> sources;
+    std::unordered_map<std::string, TSTree*> trees;
+
+    void AddFile(const std::string& uri, const std::string& code, bool isPredefined = false)
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        std::unordered_set<std::string> predefinedUris;
-        std::unordered_map<std::string, std::string> sources;
-        std::unordered_map<std::string, TSTree *> trees;
-
-        void AddFile(const std::string &uri, const std::string &code, bool isPredefined = false)
+        sources[uri] = code;
+        TSTree* tree = parser.Parse(code);
+        trees[uri] = tree;
+        symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
+        auto rootScope = scopeCollector.CollectScopes(code, parser);
+        if (rootScope)
         {
-            sources[uri] = code;
-            TSTree *tree = parser.Parse(code);
-            trees[uri] = tree;
-            symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(code, parser);
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(uri, std::move(rootScope));
-            }
-            if (isPredefined)
-            {
-                predefinedUris.insert(uri);
-            }
+            scopeIndex.SetScopeTree(uri, std::move(rootScope));
         }
-
-        ~MultiFileRenameEnv()
+        if (isPredefined)
         {
-            for (auto &[uri, tree] : trees)
-            {
-                if (tree)
-                {
-                    ts_tree_delete(tree);
-                }
-            }
+            predefinedUris.insert(uri);
         }
+    }
 
-        std::optional<lsp::PrepareRenameResult> PrepareAt(const std::string &uri, uint32_t line, uint32_t character)
-        {
-            PrepareRenameRequest req{
-                uri,
-                sources[uri],
-                trees[uri],
-                lsp::Position{ line, character },
-                symbolTable,
-                scopeIndex,
-                predefinedUris
-            };
-            return PrepareRename(req);
-        }
-
-        std::optional<lsp::WorkspaceEdit> RenameAt(const std::string &uri, uint32_t line, uint32_t character, const std::string &newName)
-        {
-            RenameRequest req{
-                uri,
-                sources[uri],
-                trees[uri],
-                lsp::Position{ line, character },
-                newName,
-                symbolTable,
-                scopeIndex,
-                predefinedUris
-            };
-            return Rename(req);
-        }
-    };
-
-    struct RenameTestEnv
+    ~MultiFileRenameEnv()
     {
-        MultiFileRenameEnv multiEnv;
-        std::string uri = "file:///test.as";
-
-        RenameTestEnv(const std::string &code)
+        for (auto& [uri, tree] : trees)
         {
-            multiEnv.AddFile(uri, code);
+            if (tree)
+            {
+                ts_tree_delete(tree);
+            }
         }
+    }
 
-        std::optional<lsp::PrepareRenameResult> PrepareAt(uint32_t line, uint32_t character)
-        {
-            return multiEnv.PrepareAt(uri, line, character);
-        }
+    std::optional<lsp::PrepareRenameResult> PrepareAt(const std::string& uri, uint32_t line, uint32_t character)
+    {
+        PrepareRenameRequest req{uri,         sources[uri], trees[uri],    lsp::Position{line, character},
+                                 symbolTable, scopeIndex,   predefinedUris};
+        return PrepareRename(req);
+    }
 
-        std::optional<lsp::WorkspaceEdit> RenameAt(uint32_t line, uint32_t character, const std::string &newName)
-        {
-            return multiEnv.RenameAt(uri, line, character, newName);
-        }
-    };
-}
+    std::optional<lsp::WorkspaceEdit> RenameAt(const std::string& uri, uint32_t line, uint32_t character,
+                                               const std::string& newName)
+    {
+        RenameRequest req{uri,     sources[uri], trees[uri], lsp::Position{line, character},
+                          newName, symbolTable,  scopeIndex, predefinedUris};
+        return Rename(req);
+    }
+};
+
+struct RenameTestEnv
+{
+    MultiFileRenameEnv multiEnv;
+    std::string uri = "file:///test.as";
+
+    RenameTestEnv(const std::string& code)
+    {
+        multiEnv.AddFile(uri, code);
+    }
+
+    std::optional<lsp::PrepareRenameResult> PrepareAt(uint32_t line, uint32_t character)
+    {
+        return multiEnv.PrepareAt(uri, line, character);
+    }
+
+    std::optional<lsp::WorkspaceEdit> RenameAt(uint32_t line, uint32_t character, const std::string& newName)
+    {
+        return multiEnv.RenameAt(uri, line, character, newName);
+    }
+};
+} // namespace
 
 TEST_CASE("RenameHandler - PrepareRename Validations and Rejections")
 {
-    std::string code =
-        "class Player {\n"
-        "    int score = 0;\n"
-        "    void AddScore(int delta) {\n"
-        "        score += delta;\n"
-        "        return;\n"
-        "    }\n"
-        "}\n";
+    std::string code = "class Player {\n"
+                       "    int score = 0;\n"
+                       "    void AddScore(int delta) {\n"
+                       "        score += delta;\n"
+                       "        return;\n"
+                       "    }\n"
+                       "}\n";
 
     RenameTestEnv env(code);
 
@@ -178,17 +163,15 @@ TEST_CASE("RenameHandler - Predefined Symbols Protection")
 {
     MultiFileRenameEnv env;
     std::string predefinedUri = "file:///predefined.as";
-    std::string predefinedCode =
-        "class EngineObject {\n"
-        "    void Destroy() {}\n"
-        "}\n";
+    std::string predefinedCode = "class EngineObject {\n"
+                                 "    void Destroy() {}\n"
+                                 "}\n";
 
     std::string userUri = "file:///user.as";
-    std::string userCode =
-        "void main() {\n"
-        "    EngineObject obj;\n"
-        "    obj.Destroy();\n"
-        "}\n";
+    std::string userCode = "void main() {\n"
+                           "    EngineObject obj;\n"
+                           "    obj.Destroy();\n"
+                           "}\n";
 
     env.AddFile(predefinedUri, predefinedCode, true);
     env.AddFile(userUri, userCode, false);
@@ -214,15 +197,14 @@ TEST_CASE("RenameHandler - Predefined Symbols Protection")
 
 TEST_CASE("RenameHandler - Local Variable Rename & Shadowing Isolation")
 {
-    std::string code =
-        "void Process() {\n"
-        "    int counter = 0;\n"
-        "    if (true) {\n"
-        "        int counter = 99;\n"
-        "        counter += 1;\n"
-        "    }\n"
-        "    counter += 10;\n"
-        "}\n";
+    std::string code = "void Process() {\n"
+                       "    int counter = 0;\n"
+                       "    if (true) {\n"
+                       "        int counter = 99;\n"
+                       "        counter += 1;\n"
+                       "    }\n"
+                       "    counter += 10;\n"
+                       "}\n";
 
     RenameTestEnv env(code);
 
@@ -231,12 +213,12 @@ TEST_CASE("RenameHandler - Local Variable Rename & Shadowing Isolation")
         auto edit = env.RenameAt(1, 10, "outerCount");
         REQUIRE(edit.has_value());
         REQUIRE(edit->changes.has_value());
-        auto &changesMap = *edit->changes;
+        auto& changesMap = *edit->changes;
         REQUIRE(changesMap.size() == 1);
 
         auto it = changesMap.find(lsp::DocumentUri::parse(env.uri));
         REQUIRE(it != changesMap.end());
-        const auto &edits = it->second;
+        const auto& edits = it->second;
 
         // Expect 2 edits: line 1 (decl) and line 6 (usage)
         REQUIRE(edits.size() == 2);
@@ -251,12 +233,12 @@ TEST_CASE("RenameHandler - Local Variable Rename & Shadowing Isolation")
         auto edit = env.RenameAt(3, 14, "innerCount");
         REQUIRE(edit.has_value());
         REQUIRE(edit->changes.has_value());
-        auto &changesMap = *edit->changes;
+        auto& changesMap = *edit->changes;
         REQUIRE(changesMap.size() == 1);
 
         auto it = changesMap.find(lsp::DocumentUri::parse(env.uri));
         REQUIRE(it != changesMap.end());
-        const auto &edits = it->second;
+        const auto& edits = it->second;
 
         // Expect 2 edits: line 3 (decl) and line 4 (usage)
         REQUIRE(edits.size() == 2);
@@ -284,18 +266,17 @@ TEST_CASE("RenameHandler - Local Variable Rename & Shadowing Isolation")
 
 TEST_CASE("RenameHandler - Class Member Rename")
 {
-    std::string code =
-        "class Player {\n"
-        "    int speed = 5;\n"
-        "    void Move() {\n"
-        "        speed += 1;\n"
-        "        this.speed = 10;\n"
-        "    }\n"
-        "}\n"
-        "void main() {\n"
-        "    Player p;\n"
-        "    p.speed = 20;\n"
-        "}\n";
+    std::string code = "class Player {\n"
+                       "    int speed = 5;\n"
+                       "    void Move() {\n"
+                       "        speed += 1;\n"
+                       "        this.speed = 10;\n"
+                       "    }\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Player p;\n"
+                       "    p.speed = 20;\n"
+                       "}\n";
 
     RenameTestEnv env(code);
 
@@ -306,7 +287,7 @@ TEST_CASE("RenameHandler - Class Member Rename")
 
     auto it = edit->changes->find(lsp::DocumentUri::parse(env.uri));
     REQUIRE(it != edit->changes->end());
-    const auto &edits = it->second;
+    const auto& edits = it->second;
 
     // Line 1 (decl), Line 3 (unqualified), Line 4 (this.speed), Line 9 (p.speed)
     REQUIRE(edits.size() == 4);
@@ -324,16 +305,14 @@ TEST_CASE("RenameHandler - Multi-File Global Symbol Rename WorkspaceEdit")
 {
     MultiFileRenameEnv env;
     std::string fileA = "file:///utils.as";
-    std::string codeA =
-        "void HelperLog(string msg) {\n"
-        "}\n";
+    std::string codeA = "void HelperLog(string msg) {\n"
+                        "}\n";
 
     std::string fileB = "file:///app.as";
-    std::string codeB =
-        "void main() {\n"
-        "    HelperLog(\"Starting app\");\n"
-        "    HelperLog(\"Exiting app\");\n"
-        "}\n";
+    std::string codeB = "void main() {\n"
+                        "    HelperLog(\"Starting app\");\n"
+                        "    HelperLog(\"Exiting app\");\n"
+                        "}\n";
 
     env.AddFile(fileA, codeA);
     env.AddFile(fileB, codeB);
@@ -343,19 +322,19 @@ TEST_CASE("RenameHandler - Multi-File Global Symbol Rename WorkspaceEdit")
     REQUIRE(edit.has_value());
     REQUIRE(edit->changes.has_value());
 
-    const auto &changesMap = *edit->changes;
+    const auto& changesMap = *edit->changes;
     REQUIRE(changesMap.size() == 2);
 
     auto itA = changesMap.find(lsp::DocumentUri::parse(fileA));
     REQUIRE(itA != changesMap.end());
-    const auto &editsA = itA->second;
+    const auto& editsA = itA->second;
     REQUIRE(editsA.size() == 1);
     CHECK(editsA[0].range.start.line == 0);
     CHECK(editsA[0].newText == "LogMessage");
 
     auto itB = changesMap.find(lsp::DocumentUri::parse(fileB));
     REQUIRE(itB != changesMap.end());
-    const auto &editsB = itB->second;
+    const auto& editsB = itB->second;
     REQUIRE(editsB.size() == 2);
     CHECK(editsB[0].range.start.line == 1);
     CHECK(editsB[0].newText == "LogMessage");
@@ -365,16 +344,15 @@ TEST_CASE("RenameHandler - Multi-File Global Symbol Rename WorkspaceEdit")
 
 TEST_CASE("RenameHandler - Namespace Function Rename")
 {
-    std::string code =
-        "namespace Game {\n"
-        "    void Spawn() {}\n" // line 1
-        "    void Init() {\n"
-        "        Spawn();\n"    // line 3
-        "    }\n"
-        "}\n"
-        "void main() {\n"
-        "    Game::Spawn();\n"  // line 7
-        "}\n";
+    std::string code = "namespace Game {\n"
+                       "    void Spawn() {}\n" // line 1
+                       "    void Init() {\n"
+                       "        Spawn();\n" // line 3
+                       "    }\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Game::Spawn();\n" // line 7
+                       "}\n";
 
     RenameTestEnv env(code);
 
@@ -385,7 +363,7 @@ TEST_CASE("RenameHandler - Namespace Function Rename")
 
     auto it = edit->changes->find(lsp::DocumentUri::parse(env.uri));
     REQUIRE(it != edit->changes->end());
-    const auto &edits = it->second;
+    const auto& edits = it->second;
 
     REQUIRE(edits.size() == 3);
     CHECK(edits[0].range.start.line == 1);
@@ -396,18 +374,24 @@ TEST_CASE("RenameHandler - Namespace Function Rename")
     CHECK(edits[2].newText == "CreateEntity");
 }
 
-TEST_CASE("RenameHandler - Invariant: Dynamic rename updates 100% of reference sites and rewritten source parses cleanly")
+TEST_CASE(
+    "RenameHandler - Invariant: Dynamic rename updates 100% of reference sites and rewritten source parses cleanly")
 {
     std::mt19937_64 rng(0x1337BEEF);
     const std::string oldName = angel_lsp::test::GenerateIdentifier(rng, "oldVar");
     const std::string newName = angel_lsp::test::GenerateIdentifier(rng, "newVar");
 
-    std::string code =
-        "void Runner() {\n"
-        "    int " + oldName + " = 10;\n"
-        "    " + oldName + " += 5;\n"
-        "    int res = " + oldName + " * 2;\n"
-        "}\n";
+    std::string code = "void Runner() {\n"
+                       "    int " +
+                       oldName +
+                       " = 10;\n"
+                       "    " +
+                       oldName +
+                       " += 5;\n"
+                       "    int res = " +
+                       oldName +
+                       " * 2;\n"
+                       "}\n";
 
     RenameTestEnv env(code);
     auto edit = env.RenameAt(1, 8, newName);
@@ -416,12 +400,11 @@ TEST_CASE("RenameHandler - Invariant: Dynamic rename updates 100% of reference s
 
     auto it = edit->changes->find(lsp::DocumentUri::parse(env.uri));
     REQUIRE(it != edit->changes->end());
-    const auto &edits = it->second;
+    const auto& edits = it->second;
 
     REQUIRE(edits.size() == 3);
-    for (const auto &e : edits)
+    for (const auto& e : edits)
     {
         CHECK(e.newText == newName);
     }
 }
-

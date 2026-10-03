@@ -31,7 +31,7 @@ SRC = SERVER / 'src'
 
 # Protocol isolation rules
 GUARDED_DIRS = ('analysis', 'parser')
-FORBIDDEN_ANGLED = re.compile(r'#\s*include\s*<\s*lsp/')
+FORBIDDEN_ANGLED = re.compile(r'^[ \t]*#[ \t]*include[ \t]*<[ \t]*lsp/', re.MULTILINE)
 FORBIDDEN_QUOTED = {'utils/LspLogger.h'}
 
 # Layer classification
@@ -52,14 +52,19 @@ DECOUPLED_LSP_MODULES = {
     'lsp/ModuleIndex.h',
 }
 
-QUOTED_INCLUDE = re.compile(r'#\s*include\s*"([^"]+)"')
+QUOTED_INCLUDE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*"([^"\r\n]+)"', re.MULTILINE)
 
 
 def resolve(include: str, origin: Path) -> Path | None:
     """A quoted include is written either from src/ or beside the including file."""
-    for candidate in (SRC / include, origin.parent / include):
-        if candidate.is_file():
-            return candidate.resolve()
+    if '\n' in include or '\r' in include or len(include) > 255:
+        return None
+    try:
+        for candidate in (SRC / include, origin.parent / include):
+            if candidate.is_file():
+                return candidate.resolve()
+    except OSError:
+        return None
     return None
 
 
@@ -89,24 +94,25 @@ def reaches_protocol(header: Path, seen: set[Path]) -> list[str] | None:
     return None
 
 
-def get_layer_info(header: Path) -> tuple[int | None, str, str]:
+def get_layer_info(file_path: Path) -> tuple[int | None, str, str]:
     """Returns (layer_number, top_dir, relative_path_from_src)."""
-    rel = header.resolve().relative_to(SRC.resolve()).as_posix()
+    rel = file_path.resolve().relative_to(SRC.resolve()).as_posix()
     top = rel.split('/')[0]
     return LAYER_MAP.get(top, None), top, rel
 
 
 def check_layer_matrix() -> list[str]:
-    """Validates layer hierarchy and intra-feature encapsulation rules."""
+    """Validates layer hierarchy and intra-feature encapsulation rules across headers and sources."""
     violations = []
-    for header in sorted(SRC.rglob('*.h')):
-        l_from, top_from, rel_from = get_layer_info(header)
+    source_files = sorted(list(SRC.rglob('*.h')) + list(SRC.rglob('*.cpp')))
+    for file_path in source_files:
+        l_from, top_from, rel_from = get_layer_info(file_path)
         if l_from is None:
             continue
 
-        text = header.read_text(encoding='utf-8', errors='replace')
+        text = file_path.read_text(encoding='utf-8', errors='replace')
         for inc in QUOTED_INCLUDE.findall(text):
-            target = resolve(inc, header)
+            target = resolve(inc, file_path)
             if target is None:
                 continue
             l_to, top_to, rel_to = get_layer_info(target)
@@ -140,15 +146,19 @@ def check_layer_matrix() -> list[str]:
 def main() -> int:
     problems = []
 
-    # 1. Protocol isolation check for analysis/ and parser/
+    # 1. Protocol isolation check for analysis/ and parser/ (headers and sources)
     for layer in GUARDED_DIRS:
         for header in sorted((SRC / layer).rglob('*.h')):
             chain = reaches_protocol(header.resolve(), set())
             if chain is not None:
                 problems.append((header.relative_to(SERVER), ' -> '.join(chain)))
+        for cpp_file in sorted((SRC / layer).rglob('*.cpp')):
+            text = cpp_file.read_text(encoding='utf-8', errors='replace')
+            if FORBIDDEN_ANGLED.search(text):
+                problems.append((cpp_file.relative_to(SERVER), 'directly includes <lsp/...>'))
 
     if problems:
-        print('Headers in analysis/ or parser/ that pull in the LSP protocol library:')
+        print('Files in analysis/ or parser/ that pull in the LSP protocol library:')
         for path, chain in problems:
             print(f'  - {path}\n      {chain}')
         print()
@@ -166,10 +176,11 @@ def main() -> int:
             print(f'  - {violation}')
         return 1
 
-    guarded = sum(len(list((SRC / layer).rglob('*.h'))) for layer in GUARDED_DIRS)
-    total_headers = len(list(SRC.rglob('*.h')))
-    print(f'{guarded} headers in analysis/ and parser/ compile without the LSP protocol library.')
-    print(f'{total_headers} total headers conform to the Layer Matrix and modular encapsulation rules.')
+    guarded_headers = sum(len(list((SRC / layer).rglob('*.h'))) for layer in GUARDED_DIRS)
+    guarded_sources = sum(len(list((SRC / layer).rglob('*.cpp'))) for layer in GUARDED_DIRS)
+    total_files = len(list(SRC.rglob('*.h'))) + len(list(SRC.rglob('*.cpp')))
+    print(f'{guarded_headers} headers and {guarded_sources} sources in analysis/ and parser/ compile without the LSP protocol library.')
+    print(f'{total_files} total files (.h and .cpp) conform to the Layer Matrix and modular encapsulation rules.')
     return 0
 
 

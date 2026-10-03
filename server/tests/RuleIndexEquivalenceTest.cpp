@@ -12,213 +12,211 @@ using namespace angel_lsp::analysis::rules;
 
 namespace
 {
-    /**
-     * @brief Creates a helper Symbol for testing.
-     */
-    Symbol MakeTestSymbol(SymbolType type,
-                          const std::string &name,
-                          const std::string &fileUri,
-                          const std::string &containerName = "")
-    {
-        Symbol sym;
-        sym.type = type;
-        sym.name = name;
-        sym.containerName = containerName;
-        sym.qualifiedName = containerName.empty() ? name : containerName + "::" + name;
-        sym.fileUri = fileUri;
+/**
+ * @brief Creates a helper Symbol for testing.
+ */
+Symbol MakeTestSymbol(SymbolType type, const std::string& name, const std::string& fileUri,
+                      const std::string& containerName = "")
+{
+    Symbol sym;
+    sym.type = type;
+    sym.name = name;
+    sym.containerName = containerName;
+    sym.qualifiedName = containerName.empty() ? name : containerName + "::" + name;
+    sym.fileUri = fileUri;
 
-        switch (type)
+    switch (type)
+    {
+    case SymbolType::Function:
+        sym.signature = FunctionSignature{};
+        break;
+    case SymbolType::Class:
+        sym.signature = ClassSignature{};
+        break;
+    case SymbolType::Interface:
+        sym.signature = InterfaceSignature{};
+        break;
+    case SymbolType::Enum:
+        sym.signature = EnumSignature{};
+        break;
+    case SymbolType::Variable:
+        sym.signature = VariableSignature{};
+        break;
+    default:
+        break;
+    }
+    return sym;
+}
+
+/**
+ * @brief Asserts 100% equivalence between an incremental RuleIndex and an oracle rebuild.
+ */
+void AssertRuleIndexEquivalence(const RuleIndex& actual, const RuleIndex& oracle)
+{
+    // 1. allNames
+    CHECK(actual.allNames.size() == oracle.allNames.size());
+    for (const auto& [name, count] : oracle.allNames)
+    {
+        auto it = actual.allNames.find(name);
+        CHECK(it != actual.allNames.end());
+        if (it != actual.allNames.end())
         {
-        case SymbolType::Function:
-            sym.signature = FunctionSignature{};
-            break;
-        case SymbolType::Class:
-            sym.signature = ClassSignature{};
-            break;
-        case SymbolType::Interface:
-            sym.signature = InterfaceSignature{};
-            break;
-        case SymbolType::Enum:
-            sym.signature = EnumSignature{};
-            break;
-        case SymbolType::Variable:
-            sym.signature = VariableSignature{};
-            break;
-        default:
-            break;
+            CHECK(it->second == count);
         }
-        return sym;
     }
 
-    /**
-     * @brief Asserts 100% equivalence between an incremental RuleIndex and an oracle rebuild.
-     */
-    void AssertRuleIndexEquivalence(const RuleIndex &actual, const RuleIndex &oracle)
+    // 2. enumMemberNames & enumMemberCounts
+    CHECK(actual.enumMemberNames.size() == oracle.enumMemberNames.size());
+    for (const auto& name : oracle.enumMemberNames)
     {
-        // 1. allNames
-        CHECK(actual.allNames.size() == oracle.allNames.size());
-        for (const auto &[name, count] : oracle.allNames)
+        CHECK(actual.enumMemberNames.contains(name));
+    }
+    CHECK(actual.enumMemberCounts.size() == oracle.enumMemberCounts.size());
+    for (const auto& [name, count] : oracle.enumMemberCounts)
+    {
+        auto it = actual.enumMemberCounts.find(name);
+        CHECK(it != actual.enumMemberCounts.end());
+        if (it != actual.enumMemberCounts.end())
         {
-            auto it = actual.allNames.find(name);
-            CHECK(it != actual.allNames.end());
-            if (it != actual.allNames.end())
-            {
-                CHECK(it->second == count);
-            }
+            CHECK(it->second == count);
         }
+    }
 
-        // 2. enumMemberNames & enumMemberCounts
-        CHECK(actual.enumMemberNames.size() == oracle.enumMemberNames.size());
-        for (const auto &name : oracle.enumMemberNames)
-        {
-            CHECK(actual.enumMemberNames.contains(name));
-        }
-        CHECK(actual.enumMemberCounts.size() == oracle.enumMemberCounts.size());
-        for (const auto &[name, count] : oracle.enumMemberCounts)
-        {
-            auto it = actual.enumMemberCounts.find(name);
-            CHECK(it != actual.enumMemberCounts.end());
-            if (it != actual.enumMemberCounts.end())
-            {
-                CHECK(it->second == count);
-            }
-        }
+    // 3. globalAccessorPropertyNames & globalAccessorPropertyCounts
+    CHECK(actual.globalAccessorPropertyNames.size() == oracle.globalAccessorPropertyNames.size());
+    for (const auto& name : oracle.globalAccessorPropertyNames)
+    {
+        CHECK(actual.globalAccessorPropertyNames.contains(name));
+    }
 
-        // 3. globalAccessorPropertyNames & globalAccessorPropertyCounts
-        CHECK(actual.globalAccessorPropertyNames.size() == oracle.globalAccessorPropertyNames.size());
-        for (const auto &name : oracle.globalAccessorPropertyNames)
+    // 4. keywordGlobalAccessorPropertyNames & keywordGlobalAccessorPropertyCounts
+    CHECK(actual.keywordGlobalAccessorPropertyNames.size() == oracle.keywordGlobalAccessorPropertyNames.size());
+    for (const auto& name : oracle.keywordGlobalAccessorPropertyNames)
+    {
+        CHECK(actual.keywordGlobalAccessorPropertyNames.contains(name));
+    }
+    CHECK(actual.keywordGlobalAccessorPropertyCounts.size() == oracle.keywordGlobalAccessorPropertyCounts.size());
+    for (const auto& [name, count] : oracle.keywordGlobalAccessorPropertyCounts)
+    {
+        auto it = actual.keywordGlobalAccessorPropertyCounts.find(name);
+        CHECK(it != actual.keywordGlobalAccessorPropertyCounts.end());
+        if (it != actual.keywordGlobalAccessorPropertyCounts.end())
         {
-            CHECK(actual.globalAccessorPropertyNames.contains(name));
+            CHECK(it->second == count);
         }
+    }
 
-        // 4. keywordGlobalAccessorPropertyNames & keywordGlobalAccessorPropertyCounts
-        CHECK(actual.keywordGlobalAccessorPropertyNames.size() == oracle.keywordGlobalAccessorPropertyNames.size());
-        for (const auto &name : oracle.keywordGlobalAccessorPropertyNames)
+    // 4b. enumSymbolsByMemberName
+    CHECK(actual.enumSymbolsByMemberName.size() == oracle.enumSymbolsByMemberName.size());
+    for (const auto& [name, oracleSymbols] : oracle.enumSymbolsByMemberName)
+    {
+        auto it = actual.enumSymbolsByMemberName.find(name);
+        CHECK(it != actual.enumSymbolsByMemberName.end());
+        if (it != actual.enumSymbolsByMemberName.end())
         {
-            CHECK(actual.keywordGlobalAccessorPropertyNames.contains(name));
+            CHECK(it->second.size() == oracleSymbols.size());
         }
-        CHECK(actual.keywordGlobalAccessorPropertyCounts.size() == oracle.keywordGlobalAccessorPropertyCounts.size());
-        for (const auto &[name, count] : oracle.keywordGlobalAccessorPropertyCounts)
-        {
-            auto it = actual.keywordGlobalAccessorPropertyCounts.find(name);
-            CHECK(it != actual.keywordGlobalAccessorPropertyCounts.end());
-            if (it != actual.keywordGlobalAccessorPropertyCounts.end())
-            {
-                CHECK(it->second == count);
-            }
-        }
+    }
 
-        // 4b. enumSymbolsByMemberName
-        CHECK(actual.enumSymbolsByMemberName.size() == oracle.enumSymbolsByMemberName.size());
-        for (const auto &[name, oracleSymbols] : oracle.enumSymbolsByMemberName)
+    // 4c. qualifiedTypesByShortName & qualifiedTypeCounts
+    CHECK(actual.qualifiedTypesByShortName.size() == oracle.qualifiedTypesByShortName.size());
+    for (const auto& [shortName, oracleTypes] : oracle.qualifiedTypesByShortName)
+    {
+        auto it = actual.qualifiedTypesByShortName.find(shortName);
+        CHECK(it != actual.qualifiedTypesByShortName.end());
+        if (it != actual.qualifiedTypesByShortName.end())
         {
-            auto it = actual.enumSymbolsByMemberName.find(name);
-            CHECK(it != actual.enumSymbolsByMemberName.end());
-            if (it != actual.enumSymbolsByMemberName.end())
-            {
-                CHECK(it->second.size() == oracleSymbols.size());
-            }
+            CHECK(it->second.size() == oracleTypes.size());
         }
+    }
+    CHECK(actual.qualifiedTypeCounts.size() == oracle.qualifiedTypeCounts.size());
+    for (const auto& [shortName, oracleCounts] : oracle.qualifiedTypeCounts)
+    {
+        auto it = actual.qualifiedTypeCounts.find(shortName);
+        CHECK(it != actual.qualifiedTypeCounts.end());
+        if (it != actual.qualifiedTypeCounts.end())
+        {
+            CHECK(it->second == oracleCounts);
+        }
+    }
 
-        // 4c. qualifiedTypesByShortName & qualifiedTypeCounts
-        CHECK(actual.qualifiedTypesByShortName.size() == oracle.qualifiedTypesByShortName.size());
-        for (const auto &[shortName, oracleTypes] : oracle.qualifiedTypesByShortName)
+    // 5. derivedByBase
+    CHECK(actual.derivedByBase.size() == oracle.derivedByBase.size());
+    for (const auto& [base, oracleDerived] : oracle.derivedByBase)
+    {
+        auto it = actual.derivedByBase.find(base);
+        CHECK(it != actual.derivedByBase.end());
+        if (it != actual.derivedByBase.end())
         {
-            auto it = actual.qualifiedTypesByShortName.find(shortName);
-            CHECK(it != actual.qualifiedTypesByShortName.end());
-            if (it != actual.qualifiedTypesByShortName.end())
+            CHECK(it->second.size() == oracleDerived.size());
+            for (const auto& d : oracleDerived)
             {
-                CHECK(it->second.size() == oracleTypes.size());
-            }
-        }
-        CHECK(actual.qualifiedTypeCounts.size() == oracle.qualifiedTypeCounts.size());
-        for (const auto &[shortName, oracleCounts] : oracle.qualifiedTypeCounts)
-        {
-            auto it = actual.qualifiedTypeCounts.find(shortName);
-            CHECK(it != actual.qualifiedTypeCounts.end());
-            if (it != actual.qualifiedTypeCounts.end())
-            {
-                CHECK(it->second == oracleCounts);
-            }
-        }
-
-        // 5. derivedByBase
-        CHECK(actual.derivedByBase.size() == oracle.derivedByBase.size());
-        for (const auto &[base, oracleDerived] : oracle.derivedByBase)
-        {
-            auto it = actual.derivedByBase.find(base);
-            CHECK(it != actual.derivedByBase.end());
-            if (it != actual.derivedByBase.end())
-            {
-                CHECK(it->second.size() == oracleDerived.size());
-                for (const auto &d : oracleDerived)
+                bool found = false;
+                for (const auto& act : it->second)
                 {
-                    bool found = false;
-                    for (const auto &act : it->second)
+                    if (act.qualifiedName == d.qualifiedName && act.name == d.name)
                     {
-                        if (act.qualifiedName == d.qualifiedName && act.name == d.name)
-                        {
-                            found = true;
-                            break;
-                        }
+                        found = true;
+                        break;
                     }
-                    CHECK(found);
                 }
+                CHECK(found);
             }
         }
+    }
 
-        // 6. hostClassesByMixin
-        CHECK(actual.hostClassesByMixin.size() == oracle.hostClassesByMixin.size());
-        for (const auto &[mixin, oracleHosts] : oracle.hostClassesByMixin)
+    // 6. hostClassesByMixin
+    CHECK(actual.hostClassesByMixin.size() == oracle.hostClassesByMixin.size());
+    for (const auto& [mixin, oracleHosts] : oracle.hostClassesByMixin)
+    {
+        auto it = actual.hostClassesByMixin.find(mixin);
+        CHECK(it != actual.hostClassesByMixin.end());
+        if (it != actual.hostClassesByMixin.end())
         {
-            auto it = actual.hostClassesByMixin.find(mixin);
-            CHECK(it != actual.hostClassesByMixin.end());
-            if (it != actual.hostClassesByMixin.end())
+            CHECK(it->second.size() == oracleHosts.size());
+            for (const auto& h : oracleHosts)
             {
-                CHECK(it->second.size() == oracleHosts.size());
-                for (const auto &h : oracleHosts)
+                bool found = false;
+                for (const auto& act : it->second)
                 {
-                    bool found = false;
-                    for (const auto &act : it->second)
+                    if (act.qualifiedName == h.qualifiedName && act.name == h.name)
                     {
-                        if (act.qualifiedName == h.qualifiedName && act.name == h.name)
-                        {
-                            found = true;
-                            break;
-                        }
+                        found = true;
+                        break;
                     }
-                    CHECK(found);
                 }
+                CHECK(found);
             }
         }
+    }
 
-        // 7. byContainer
-        CHECK(actual.byContainer.size() == oracle.byContainer.size());
-        for (const auto &[containerName, oracleCm] : oracle.byContainer)
+    // 7. byContainer
+    CHECK(actual.byContainer.size() == oracle.byContainer.size());
+    for (const auto& [containerName, oracleCm] : oracle.byContainer)
+    {
+        auto it = actual.byContainer.find(containerName);
+        CHECK(it != actual.byContainer.end());
+        if (it != actual.byContainer.end())
         {
-            auto it = actual.byContainer.find(containerName);
-            CHECK(it != actual.byContainer.end());
-            if (it != actual.byContainer.end())
-            {
-                const auto &actCm = it->second;
-                CHECK(actCm.methodNames == oracleCm.methodNames);
-                CHECK(actCm.finalMethodNames == oracleCm.finalMethodNames);
-                CHECK(actCm.allMemberNames == oracleCm.allMemberNames);
-                CHECK(actCm.nestedTypeCount == oracleCm.nestedTypeCount);
-                CHECK(actCm.hasNestedType == oracleCm.hasNestedType);
-                CHECK(actCm.memberKeySet == oracleCm.memberKeySet);
-                CHECK(actCm.methodCounts == oracleCm.methodCounts);
-                CHECK(actCm.finalMethodCounts == oracleCm.finalMethodCounts);
-                CHECK(actCm.allMemberCounts == oracleCm.allMemberCounts);
-                CHECK(actCm.memberKeyCounts == oracleCm.memberKeyCounts);
-                CHECK(actCm.accessorPropertyNames == oracleCm.accessorPropertyNames);
-                CHECK(actCm.keywordAccessorPropertyNames == oracleCm.keywordAccessorPropertyNames);
-                CHECK(actCm.accessorPropertyCounts == oracleCm.accessorPropertyCounts);
-                CHECK(actCm.keywordAccessorPropertyCounts == oracleCm.keywordAccessorPropertyCounts);
-            }
+            const auto& actCm = it->second;
+            CHECK(actCm.methodNames == oracleCm.methodNames);
+            CHECK(actCm.finalMethodNames == oracleCm.finalMethodNames);
+            CHECK(actCm.allMemberNames == oracleCm.allMemberNames);
+            CHECK(actCm.nestedTypeCount == oracleCm.nestedTypeCount);
+            CHECK(actCm.hasNestedType == oracleCm.hasNestedType);
+            CHECK(actCm.memberKeySet == oracleCm.memberKeySet);
+            CHECK(actCm.methodCounts == oracleCm.methodCounts);
+            CHECK(actCm.finalMethodCounts == oracleCm.finalMethodCounts);
+            CHECK(actCm.allMemberCounts == oracleCm.allMemberCounts);
+            CHECK(actCm.memberKeyCounts == oracleCm.memberKeyCounts);
+            CHECK(actCm.accessorPropertyNames == oracleCm.accessorPropertyNames);
+            CHECK(actCm.keywordAccessorPropertyNames == oracleCm.keywordAccessorPropertyNames);
+            CHECK(actCm.accessorPropertyCounts == oracleCm.accessorPropertyCounts);
+            CHECK(actCm.keywordAccessorPropertyCounts == oracleCm.keywordAccessorPropertyCounts);
         }
     }
 }
+} // namespace
 
 TEST_CASE("RuleIndex - Equivalence with Oracle on Incremental Additions and Removals")
 {
@@ -231,7 +229,7 @@ TEST_CASE("RuleIndex - Equivalence with Oracle on Incremental Additions and Remo
     docA.push_back(MakeTestSymbol(SymbolType::Function, "Reload", "file:///weapon.as", "Weapon"));
     {
         SymbolTable staging;
-        for (const auto &sym : docA)
+        for (const auto& sym : docA)
         {
             staging.AddSymbol(sym);
         }
@@ -248,7 +246,7 @@ TEST_CASE("RuleIndex - Equivalence with Oracle on Incremental Additions and Remo
     docB.push_back(MakeTestSymbol(SymbolType::Function, "Move", "file:///player.as", "Player"));
     {
         SymbolTable staging;
-        for (const auto &sym : docB)
+        for (const auto& sym : docB)
         {
             staging.AddSymbol(sym);
         }
@@ -281,7 +279,7 @@ TEST_CASE("RuleIndex - Equivalence when Mixin Added AFTER Host Class")
         docH.push_back(MakeTestSymbol(SymbolType::Function, "Fire", "file:///rifle.as", "Rifle"));
 
         SymbolTable staging;
-        for (const auto &sym : docH)
+        for (const auto& sym : docH)
         {
             staging.AddSymbol(sym);
         }
@@ -303,7 +301,7 @@ TEST_CASE("RuleIndex - Equivalence when Mixin Added AFTER Host Class")
         docM.push_back(MakeTestSymbol(SymbolType::Function, "GetAmmo", "file:///weapon_mixin.as", "WeaponMixin"));
 
         SymbolTable staging;
-        for (const auto &sym : docM)
+        for (const auto& sym : docM)
         {
             staging.AddSymbol(sym);
         }
@@ -340,7 +338,7 @@ TEST_CASE("RuleIndex - Equivalence when Mixin Added BEFORE Host Class")
         docM.push_back(MakeTestSymbol(SymbolType::Function, "GetAmmo", "file:///weapon_mixin.as", "WeaponMixin"));
 
         SymbolTable staging;
-        for (const auto &sym : docM)
+        for (const auto& sym : docM)
         {
             staging.AddSymbol(sym);
         }
@@ -356,7 +354,7 @@ TEST_CASE("RuleIndex - Equivalence when Mixin Added BEFORE Host Class")
         docH.push_back(MakeTestSymbol(SymbolType::Function, "Fire", "file:///rifle.as", "Rifle"));
 
         SymbolTable staging;
-        for (const auto &sym : docH)
+        for (const auto& sym : docH)
         {
             staging.AddSymbol(sym);
         }
@@ -385,7 +383,7 @@ TEST_CASE("RuleIndex - Equivalence with Overloaded Functions and Shared Names")
         docA.push_back(MakeTestSymbol(SymbolType::Function, "Log", "file:///a.as", "Logger"));
 
         SymbolTable staging;
-        for (const auto &sym : docA)
+        for (const auto& sym : docA)
         {
             staging.AddSymbol(sym);
         }
@@ -398,7 +396,7 @@ TEST_CASE("RuleIndex - Equivalence with Overloaded Functions and Shared Names")
         docB.push_back(MakeTestSymbol(SymbolType::Function, "Format", "file:///b.as"));
 
         SymbolTable staging;
-        for (const auto &sym : docB)
+        for (const auto& sym : docB)
         {
             staging.AddSymbol(sym);
         }
@@ -432,7 +430,7 @@ TEST_CASE("RuleIndex - Reader Snapshot Safety During Mutations")
         doc.push_back(MakeTestSymbol(SymbolType::Function, "Init", "file:///alpha.as", "Alpha"));
 
         SymbolTable staging;
-        for (const auto &sym : doc)
+        for (const auto& sym : doc)
         {
             staging.AddSymbol(sym);
         }
@@ -453,7 +451,7 @@ TEST_CASE("RuleIndex - Reader Snapshot Safety During Mutations")
         doc.push_back(MakeTestSymbol(SymbolType::Function, "Run", "file:///beta.as", "Beta"));
 
         SymbolTable staging;
-        for (const auto &sym : doc)
+        for (const auto& sym : doc)
         {
             staging.AddSymbol(sym);
         }
@@ -490,7 +488,7 @@ TEST_CASE("RuleIndex - Equivalence on Mixin Mutation and Multi-File Dependency")
         docM.push_back(MakeTestSymbol(SymbolType::Function, "M1_Action", "file:///m1.as", "M1"));
 
         SymbolTable staging;
-        for (const auto &sym : docM)
+        for (const auto& sym : docM)
         {
             staging.AddSymbol(sym);
         }
@@ -506,7 +504,7 @@ TEST_CASE("RuleIndex - Equivalence on Mixin Mutation and Multi-File Dependency")
         docH1.push_back(MakeTestSymbol(SymbolType::Function, "H1_Func", "file:///h1.as", "H1"));
 
         SymbolTable staging;
-        for (const auto &sym : docH1)
+        for (const auto& sym : docH1)
         {
             staging.AddSymbol(sym);
         }
@@ -522,7 +520,7 @@ TEST_CASE("RuleIndex - Equivalence on Mixin Mutation and Multi-File Dependency")
         docH2.push_back(MakeTestSymbol(SymbolType::Function, "H2_Func", "file:///h2.as", "H2"));
 
         SymbolTable staging;
-        for (const auto &sym : docH2)
+        for (const auto& sym : docH2)
         {
             staging.AddSymbol(sym);
         }
@@ -544,7 +542,7 @@ TEST_CASE("RuleIndex - Equivalence on Mixin Mutation and Multi-File Dependency")
         docM.push_back(MakeTestSymbol(SymbolType::Function, "M1_Action2", "file:///m1.as", "M1"));
 
         SymbolTable staging;
-        for (const auto &sym : docM)
+        for (const auto& sym : docM)
         {
             staging.AddSymbol(sym);
         }

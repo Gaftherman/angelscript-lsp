@@ -161,7 +161,9 @@ void Server::ReanalyzeDependentsOnSave(const std::string& uriStr)
 void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params&& params)
 {
     std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
+    utils::HighResTimer totalTimer;
     std::string uriStr = DocumentKey(params.textDocument.uri.toString());
+    LogInfo(fmt::format("[File Save] Processing save and re-analysis for: {}", uriStr));
     m_documentStore.SetClientUri(uriStr, params.textDocument.uri.toString());
     std::string text = params.text.has_value() ? params.text.value() : "";
 
@@ -217,6 +219,9 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
 
     PublishDiagnostics(uriStr, analysisText, diagnostics, version);
 
+    LogInfo(fmt::format("[File Save] Finished save analysis for: {} in {}", uriStr,
+                        utils::FormatDuration(totalTimer.ElapsedMs())));
+
     HandleSavedInterfaceChange(uriStr, interfaceChanged);
 }
 
@@ -253,8 +258,8 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
 
     if (!contributes)
     {
-        m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{
-            req.uriStr, req.text, req.version, document::MakeTreePtr(nullptr), req.clientUri});
+        m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
+                                                                        document::MakeTreePtr(nullptr), req.clientUri});
         m_symbolTable.ClearDocumentSymbols(req.uriStr);
         m_predefinedManager.RemoveStub(req.uriStr);
         if (m_workspaceStore)
@@ -262,9 +267,11 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
             m_workspaceStore->SetPreindexedDocument(req.uriStr, nullptr);
         }
         const double totalMs = req.totalTimer.ElapsedMs();
-        LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: 0.00 ms, Collector: 0.00 ms, "
+        LogInfo(fmt::format("[File Open] Predefined file opened (non-contributing): {} in {}", req.uriStr,
+                            utils::FormatDuration(totalMs)));
+        LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {} (Parse: 0.00 ms, Collector: 0.00 ms, "
                             "Scopes: 0.00 ms, Checkers: 0.00 ms)",
-                            req.uriStr, totalMs));
+                            req.uriStr, utils::FormatDuration(totalMs)));
         PublishDiagnostics(req.uriStr, {}, req.version);
         return;
     }
@@ -283,18 +290,20 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     {
         m_documentStore.LinkDocument(req.uriStr, preindexedDoc, req.clientUri);
         const double totalMs = req.totalTimer.ElapsedMs();
+        LogInfo(fmt::format("[File Open] Finished opening predefined file (zero-copy link): {} in {}", req.uriStr,
+                            utils::FormatDuration(totalMs)));
         LogInfo(fmt::format("[Predefined Zero-Copy Fast Path] File: {} content unchanged; linked pre-indexed snapshot "
-                            "in {:.2f} ms",
-                            req.uriStr, totalMs));
-        LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: 0.00 ms, Collector: 0.00 ms, "
+                            "in {}",
+                            req.uriStr, utils::FormatDuration(totalMs)));
+        LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {} (Parse: 0.00 ms, Collector: 0.00 ms, "
                             "Scopes: 0.00 ms, Checkers: 0.00 ms)",
-                            req.uriStr, totalMs));
+                            req.uriStr, utils::FormatDuration(totalMs)));
         PublishDiagnostics(req.uriStr, {}, req.version);
         return;
     }
 
-    m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{
-        req.uriStr, req.text, req.version, document::MakeTreePtr(nullptr), req.clientUri});
+    m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
+                                                                    document::MakeTreePtr(nullptr), req.clientUri});
 
     ScheduleAnalysisImmediate(ScheduleAnalysisRequest{
         .uriStr = req.uriStr,
@@ -305,8 +314,10 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     });
 
     const double totalMs = req.totalTimer.ElapsedMs();
-    LogInfo(fmt::format("[Predefined Offload Fast Path] File: {} reparse offloaded to worker in {:.2f} ms",
-                        req.uriStr, totalMs));
+    LogInfo(fmt::format("[File Open] Predefined file offloaded to analysis worker: {} in {}", req.uriStr,
+                        utils::FormatDuration(totalMs)));
+    LogInfo(fmt::format("[Predefined Offload Fast Path] File: {} reparse offloaded to worker in {}", req.uriStr,
+                        utils::FormatDuration(totalMs)));
 }
 
 void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params&& params)
@@ -317,6 +328,7 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     const std::string clientUri = params.textDocument.uri.toString();
     const int version = params.textDocument.version;
     std::string text = std::move(params.textDocument.text);
+    LogInfo(fmt::format("[File Open] Opening document: {}", uriStr));
 
     if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
     {
@@ -370,10 +382,9 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
         PublishDiagnostics(uriStr, analysisText, diagnostics, version);
     }
 
-    double totalMs = totalTimer.ElapsedMs();
-    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {:.2f} ms (Parse: {:.2f} ms, Collector: {:.2f} ms, "
-                        "Scopes: {:.2f} ms, Checkers: {:.2f} ms)",
-                        uriStr, totalMs, parseMs, colMs, scopeMs, checkMs));
+    const double totalMs = totalTimer.ElapsedMs();
+    LogInfo(fmt::format("[File Open] Finished opening document: {} in {}", uriStr, utils::FormatDuration(totalMs)));
+    LogAnalysisProfile("[File Open]", uriStr, {totalMs, parseMs, colMs, scopeMs, checkMs});
 }
 
 void Server::ApplyContentChange(std::string& buffer, document::TreePtr& workingTree,
@@ -480,12 +491,16 @@ bool Server::RestoreClosedModuleFile(const std::string& uriStr, const std::strin
     angel_lsp::parser::AngelScriptParser restoreParser(m_logger.get());
     IndexClosureFile(path, restoreParser);
 
+    LogInfo(fmt::format("[File Read] Reading closed module file from disk: {}", path));
+    utils::HighResTimer readTimer;
     std::ifstream file(path, std::ios::binary);
     if (file.is_open())
     {
         std::ostringstream ss;
         ss << file.rdbuf();
         const std::string content = ss.str();
+        LogInfo(fmt::format("[File Read] Finished reading file: {} in {} ({} bytes)", path,
+                            utils::FormatDuration(readTimer.ElapsedMs()), content.size()));
         {
             std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
             m_publishedForModules.insert(uriStr);
@@ -499,6 +514,7 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
 {
     std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
     std::string uriStr = DocumentKey(params.textDocument.uri.toString());
+    LogInfo(fmt::format("[File Close] Document closed: {}", uriStr));
     m_documentStore.CloseDocument(uriStr);
 
     if (m_analysisScheduler)

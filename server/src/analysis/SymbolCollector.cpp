@@ -1264,6 +1264,56 @@ void SymbolCollector::ReportParseErrors(TSNode rootNode, SymbolCollectContext& s
     ts_tree_cursor_delete(&cursor);
 }
 
+namespace
+{
+/**
+ * @brief Formats an argument list syntax error when two arguments appear without a comma.
+ * @param[in] node AST error node.
+ * @param[in] sourceCode Source text buffer.
+ * @param[in,out] diag Diagnostic to populate.
+ * @return True if formatted as an argument list syntax error.
+ */
+bool TryFormatArgumentListSyntaxError(TSNode node, std::string_view sourceCode, Diagnostic& diag)
+{
+    TSNode parent = ts_node_parent(node);
+    if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "argument_list")
+    {
+        return false;
+    }
+
+    TSNode nextSibling = ts_node_next_sibling(node);
+    if (ts_node_is_null(nextSibling))
+    {
+        return false;
+    }
+
+    std::string_view nextType = ts_node_type(nextSibling);
+    if (nextType == "," || nextType == ")")
+    {
+        return false;
+    }
+
+    std::string nextText = parser::GetNodeText(nextSibling, sourceCode);
+    while (!nextText.empty() && (nextText.front() == ' ' || nextText.front() == '\t'))
+    {
+        nextText.erase(nextText.begin());
+    }
+    while (!nextText.empty() && (nextText.back() == ' ' || nextText.back() == '\t'))
+    {
+        nextText.pop_back();
+    }
+    if (nextText.size() > 24)
+    {
+        nextText = nextText.substr(0, 24) + "...";
+    }
+
+    diag.range.end.line = ts_node_end_point(nextSibling).row;
+    diag.range.end.character = ts_node_end_point(nextSibling).column;
+    diag.message = fmt::format("Expected ',' or ')' before '{}'", nextText);
+    return true;
+}
+} // namespace
+
 void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext& sCtx) const
 {
     TSPoint startPt = ts_node_start_point(node);
@@ -1287,6 +1337,10 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
         std::string pattern =
             sCtx.request.i18n ? sCtx.request.i18n->GetMessage("as-syntax-error-missing") : "Syntax error: missing '{}'";
         diag.message = fmt::format(fmt::runtime(pattern), missingToken);
+        logMsg = diag.message;
+    }
+    else if (TryFormatArgumentListSyntaxError(node, sCtx.request.sourceCode, diag))
+    {
         logMsg = diag.message;
     }
     else
@@ -1605,6 +1659,16 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std
     paramInfo.startCharacter = startPt.column;
     paramInfo.endLine = endPt.row;
     paramInfo.endCharacter = endPt.column;
+
+    if (!ts_node_is_null(pNameNode))
+    {
+        TSPoint nameStart = ts_node_start_point(pNameNode);
+        TSPoint nameEnd = ts_node_end_point(pNameNode);
+        paramInfo.nameStartLine = nameStart.row;
+        paramInfo.nameStartCharacter = nameStart.column;
+        paramInfo.nameEndLine = nameEnd.row;
+        paramInfo.nameEndCharacter = nameEnd.column;
+    }
 
     uint32_t refCount = 0;
     ExtractParamTypeRefAndConst(pTypeNode, sourceCode, paramInfo, refCount);

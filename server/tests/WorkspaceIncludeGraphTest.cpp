@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 
-#include "utils/WorkspaceIncludeGraph.h"
 #include "helpers/TestUtils.h"
+#include "utils/WorkspaceIncludeGraph.h"
 
 #include <algorithm>
 #include <chrono>

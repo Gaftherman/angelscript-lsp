@@ -3,6 +3,7 @@
 #include "analysis/DiagnosticContext.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
+#include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/rules/RuleIndex.h"
@@ -218,7 +219,7 @@ bool NamesAFunctionNotAType(std::string_view name, const SymbolTable& table)
         return false;
     }
 
-    const auto symsPtr = table.FindSymbolsPtr(std::string(name));
+    const auto symsPtr = table.FindSymbolsPtr(name);
     if (!symsPtr)
     {
         // Resolves to nothing. That is an unresolved type, assumed engine-registered, and not
@@ -385,7 +386,7 @@ NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const
         return NonInstantiableKind::None;
     }
 
-    auto symsPtr = table.FindSymbolsPtr(std::string(baseTypeName));
+    auto symsPtr = table.FindSymbolsPtr(baseTypeName);
     if (!symsPtr)
     {
         return NonInstantiableKind::None;
@@ -475,7 +476,7 @@ bool MatchesParentNamespaceType(std::string_view clean, const SymbolTable& table
 }
 } // namespace
 
-bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx)
+bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx)
 {
     if (ctx.logger && ctx.logger->IsTraceEnabled())
     {
@@ -490,8 +491,7 @@ bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx)
     if (ctx.request.IsRegisteredSymbol(baseName) || ctx.request.symbolTable.HasSymbolAnywhere(baseName))
         return true;
 
-    std::string_view baseView = baseName;
-    std::string_view clean = baseView.starts_with("::") ? baseView.substr(2) : baseView;
+    std::string_view clean = baseName.starts_with("::") ? baseName.substr(2) : baseName;
     if (ctx.request.symbolTable.HasSymbol(clean))
         return true;
 
@@ -575,11 +575,9 @@ std::string SubstituteTypeParam(std::string_view typeStr, std::string_view param
 TemplateBinding BindTemplateArguments(const std::string& writtenType, const SymbolTable& table)
 {
     TemplateBinding binding;
+    const auto decomp = DecomposeTemplateType(writtenType);
 
-    const size_t open = writtenType.find('<');
-    const std::string name = (open == std::string::npos) ? writtenType : writtenType.substr(0, open);
-
-    const auto declarations = table.FindSymbolsPtr(LastScopeSegment(name));
+    const auto declarations = table.FindSymbolsPtr(LastScopeSegment(decomp.containerName));
     if (!declarations)
     {
         return binding;
@@ -602,13 +600,12 @@ TemplateBinding BindTemplateArguments(const std::string& writtenType, const Symb
         break;
     }
 
-    if (!binding.isTemplate || open == std::string::npos || !writtenType.ends_with('>'))
+    if (!binding.isTemplate || !decomp.isTemplate)
     {
         return binding;
     }
 
-    const std::string inner = writtenType.substr(open + 1, writtenType.size() - open - 2);
-    binding.arguments = SplitTemplateArguments(inner);
+    binding.arguments = SplitTemplateArguments(decomp.innerArguments);
 
     if (!binding.arguments.empty() && binding.arguments.back().empty())
     {
@@ -989,17 +986,32 @@ void EnqueueInterfaceBases(const Symbol& sym, ankerl::unordered_dense::set<std::
     }
 }
 
-std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className, const SymbolTable& symbolTable)
+std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className, const SymbolTable& symbolTable,
+                                                   ExpressionTypeCache* cache)
 {
     std::vector<std::string> hierarchy;
-    ankerl::unordered_dense::set<std::string> visited;
-    std::vector<std::string> queue;
-
     const std::string rootType = CleanBaseType(className);
     if (rootType.empty())
     {
         return hierarchy;
     }
+
+    if (parser::primitives::IsPrimitive(rootType))
+    {
+        return {rootType};
+    }
+
+    if (cache)
+    {
+        auto it = cache->hierarchies.find(rootType);
+        if (it != cache->hierarchies.end())
+        {
+            return it->second;
+        }
+    }
+
+    ankerl::unordered_dense::set<std::string> visited;
+    std::vector<std::string> queue;
 
     visited.insert(rootType);
     queue.push_back(rootType);
@@ -1027,6 +1039,11 @@ std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className,
                 EnqueueInterfaceBases(sym, visited, queue);
             }
         }
+    }
+
+    if (cache)
+    {
+        cache->hierarchies.emplace(rootType, hierarchy);
     }
 
     return hierarchy;
@@ -2242,7 +2259,7 @@ static std::pair<std::string_view, std::string_view> GetBinaryOpMethods(std::str
 static std::string ResolveBinaryOverloadMethod(const std::string& typeName, std::string_view opMethod,
                                                const std::string& argType, const SymbolTable& symbolTable)
 {
-    if (opMethod.empty() || typeName.empty())
+    if (opMethod.empty() || typeName.empty() || parser::primitives::IsPrimitive(typeName))
     {
         return "";
     }
@@ -2427,15 +2444,30 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
 
     std::string cleanLeft = CleanBaseType(leftType);
     std::string cleanRight = CleanBaseType(rightType);
+
+    const bool leftIsPrim = parser::primitives::IsPrimitive(cleanLeft);
+    const bool rightIsPrim = parser::primitives::IsPrimitive(cleanRight);
+
+    if (leftIsPrim && rightIsPrim)
+    {
+        return ResolveBinaryPrimitivePromotion(op, cleanLeft, cleanRight, ctx.disableIntegerDivision);
+    }
+
     auto [opMethod, revOpMethod] = GetBinaryOpMethods(op);
 
-    if (auto res = ResolveBinaryOverloadMethod(cleanLeft, opMethod, rightType, ctx.symbolTable); !res.empty())
+    if (!leftIsPrim)
     {
-        return res;
+        if (auto res = ResolveBinaryOverloadMethod(cleanLeft, opMethod, rightType, ctx.symbolTable); !res.empty())
+        {
+            return res;
+        }
     }
-    if (auto res = ResolveBinaryOverloadMethod(cleanRight, revOpMethod, leftType, ctx.symbolTable); !res.empty())
+    if (!rightIsPrim)
     {
-        return res;
+        if (auto res = ResolveBinaryOverloadMethod(cleanRight, revOpMethod, leftType, ctx.symbolTable); !res.empty())
+        {
+            return res;
+        }
     }
     return ResolveBinaryPrimitivePromotion(op, cleanLeft, cleanRight, ctx.disableIntegerDivision);
 }
@@ -2548,7 +2580,7 @@ static std::string ResolveTernaryBranchTypes(std::string_view t1, std::string_vi
     {
         return (t1.ends_with("@") && t2.ends_with("@")) ? c1 + "@" : c1;
     }
-    if (auto nullRes = ResolveTernaryNullBranch(std::string(t1), std::string(t2), c1, c2); !nullRes.empty())
+    if (auto nullRes = ResolveTernaryNullBranch(clean1, clean2, c1, c2); !nullRes.empty())
     {
         return nullRes;
     }
@@ -3175,6 +3207,11 @@ static bool IsFunctionHandleTarget(TSNode target, TSNode exprNode, const Express
  */
 static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
+    TSNode operandNode = parser::GetChildByField(exprNode, parser::fields::Operand);
+    if (ts_node_is_null(operandNode))
+    {
+        return {};
+    }
     TSNode operatorNode = parser::GetChildByField(exprNode, parser::fields::Operator);
     if (!ts_node_is_null(operatorNode))
     {
@@ -3185,15 +3222,20 @@ static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext
         }
         if (op == "@")
         {
-            TSNode target = parser::GetChildByField(exprNode, parser::fields::Operand);
-            if (IsFunctionHandleTarget(target, exprNode, ctx))
+            if (IsFunctionHandleTarget(operandNode, exprNode, ctx))
             {
                 return {};
             }
+            std::string operandType = ResolveExpressionType(operandNode, ctx, depth + 1);
+            if (operandType.empty())
+            {
+                return {};
+            }
+            std::string clean = CleanExpressionType(operandType);
+            return clean.ends_with("@") ? clean : clean + "@";
         }
     }
-    TSNode operandNode = parser::GetChildByField(exprNode, parser::fields::Operand);
-    return ts_node_is_null(operandNode) ? std::string() : ResolveExpressionType(operandNode, ctx, depth + 1);
+    return ResolveExpressionType(operandNode, ctx, depth + 1);
 }
 
 /**
@@ -3412,6 +3454,16 @@ static std::string ResolveCompositeExpr(std::string_view nodeType, TSNode exprNo
     return ResolveOtherExpr(nodeType, exprNode, ctx, depth);
 }
 
+static std::string ResolveExpressionTypeUncached(std::string_view nodeType, TSNode exprNode,
+                                                 const ExpressionTypeContext& ctx, int depth)
+{
+    if (auto primary = ResolvePrimaryExpr(nodeType, exprNode, ctx, depth))
+    {
+        return *primary;
+    }
+    return ResolveCompositeExpr(nodeType, exprNode, ctx, depth);
+}
+
 std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
     // This resolver recurses on operands and member chains with nothing else bounding it, so a
@@ -3430,12 +3482,24 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
         return "void";
     }
 
-    std::string_view nodeType = ts_node_type(exprNode);
-    if (auto primary = ResolvePrimaryExpr(nodeType, exprNode, ctx, depth))
+    if (ctx.cache)
     {
-        return *primary;
+        const ExpressionCacheKey key{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode),
+                                     ts_node_symbol(exprNode)};
+        auto it = ctx.cache->types.find(key);
+        if (it != ctx.cache->types.end())
+        {
+            return it->second;
+        }
+
+        std::string_view nodeType = ts_node_type(exprNode);
+        std::string resolved = ResolveExpressionTypeUncached(nodeType, exprNode, ctx, depth);
+        ctx.cache->types.emplace(key, resolved);
+        return resolved;
     }
-    return ResolveCompositeExpr(nodeType, exprNode, ctx, depth);
+
+    std::string_view nodeType = ts_node_type(exprNode);
+    return ResolveExpressionTypeUncached(nodeType, exprNode, ctx, depth);
 }
 
 /**
@@ -3774,6 +3838,13 @@ std::vector<CallArgumentInfo> ExtractCallArguments(TSNode argumentList, std::str
                 inArgument = false;
             }
             continue;
+        }
+
+        if (inArgument && !ts_node_is_null(current.exprNode))
+        {
+            result.push_back(std::move(current));
+            current = CallArgumentInfo{};
+            current.index = static_cast<uint32_t>(result.size());
         }
 
         const char* field = ts_tree_cursor_current_field_name(&cursor);
@@ -4285,9 +4356,9 @@ bool LambdaContradictsFuncdef(TSNode lambdaNode, const FuncdefSignature& funcdef
     return LambdaContradictsFuncdef(ReadLambdaParameters(listNode, sourceCode), funcdefSig, table);
 }
 
-std::optional<Symbol> FindFuncdefSymbol(const std::string& typeName, const SymbolTable& table)
+std::optional<Symbol> FindFuncdefSymbol(std::string_view typeName, const SymbolTable& table)
 {
-    if (typeName.empty())
+    if (typeName.empty() || parser::primitives::IsPrimitive(typeName))
     {
         return std::nullopt;
     }
@@ -4303,7 +4374,7 @@ std::optional<Symbol> FindFuncdefSymbol(const std::string& typeName, const Symbo
         }
     }
 
-    const std::string bare = LastSegmentOf(typeName);
+    const std::string_view bare = LastScopeSegment(typeName);
     const auto matches = table.FindTypeSymbolsByShortName(bare);
     for (const auto& sym : matches)
     {
@@ -4674,4 +4745,109 @@ std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName
     }
     return "";
 }
+
+Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callName)
+{
+    Symbol sym;
+    sym.type = SymbolType::Function;
+    sym.name = std::string(callName);
+    sym.containerName = funcdefSym.containerName;
+    sym.qualifiedName = funcdefSym.qualifiedName;
+    sym.fileUri = funcdefSym.fileUri;
+    sym.startLine = funcdefSym.startLine;
+    sym.startCharacter = funcdefSym.startCharacter;
+    sym.endLine = funcdefSym.endLine;
+    sym.endCharacter = funcdefSym.endCharacter;
+
+    if (std::holds_alternative<FuncdefSignature>(funcdefSym.signature))
+    {
+        const auto& fd = funcdefSym.GetFuncdef();
+        FunctionSignature fnSig;
+        fnSig.returnType = fd.returnType;
+        fnSig.returnBaseTypeName = fd.returnBaseTypeName;
+        fnSig.returnTemplateName = fd.returnTemplateName;
+        fnSig.returnTypeKind = fd.returnTypeKind;
+        fnSig.returnIsArray = fd.returnIsArray;
+        fnSig.returnIsConst = fd.returnIsConst;
+        fnSig.returnHasPrimitiveHandle = fd.returnHasPrimitiveHandle;
+        fnSig.returnArrayDepth = fd.returnArrayDepth;
+        fnSig.modifiers = fd.modifiers;
+        fnSig.parameters = fd.parameters;
+        sym.signature = std::move(fnSig);
+    }
+    return sym;
+}
+
+std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const Scope* scope, const SymbolTable& table)
+{
+    if (!scope || name.empty())
+    {
+        return std::nullopt;
+    }
+    const LocalDefinition* def = ResolveInScope(scope, name);
+    if (!def || (def->kind != LocalDefinitionKind::Variable && def->kind != LocalDefinitionKind::Parameter))
+    {
+        return std::nullopt;
+    }
+    const std::string clean = CleanBaseType(def->typeName);
+    if (clean.empty())
+    {
+        return std::nullopt;
+    }
+    auto funcdefSym = FindFuncdefSymbol(clean, table);
+    if (!funcdefSym)
+    {
+        return std::nullopt;
+    }
+    return FuncdefToFunctionSymbol(*funcdefSym, name);
+}
+
+namespace
+{
+bool IsValidNumberLiteral(std::string_view s) noexcept
+{
+    const size_t start = (s.front() == '+' || s.front() == '-') ? 1 : 0;
+    if (start >= s.size() || !std::isdigit(static_cast<unsigned char>(s[start])))
+    {
+        return false;
+    }
+    constexpr std::string_view k_allowed = "0123456789abcdefABCDEF.xXfFuUlL";
+    return s.substr(start).find_first_not_of(k_allowed) == std::string_view::npos;
+}
+
+bool IsQuotedLiteral(std::string_view s) noexcept
+{
+    if (s.size() < 2)
+    {
+        return false;
+    }
+    return (s.front() == '"' && s.back() == '"') || (s.front() == '\'' && s.back() == '\'');
+}
+} // namespace
+
+bool IsSimpleLiteralExpression(std::string_view expr)
+{
+    while (!expr.empty() && (expr.front() == ' ' || expr.front() == '\t'))
+    {
+        expr.remove_prefix(1);
+    }
+    while (!expr.empty() && (expr.back() == ' ' || expr.back() == '\t'))
+    {
+        expr.remove_suffix(1);
+    }
+    if (expr.empty())
+    {
+        return false;
+    }
+    if (expr == "true" || expr == "false" || expr == "null")
+    {
+        return true;
+    }
+    if (IsQuotedLiteral(expr))
+    {
+        return true;
+    }
+    return IsValidNumberLiteral(expr);
+}
+
 } // namespace angel_lsp::analysis

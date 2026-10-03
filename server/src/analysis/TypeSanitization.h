@@ -20,10 +20,25 @@ void TrimTypeWhitespace(std::string_view& typeName);
 void StripLeadingConst(std::string_view& typeName);
 
 /**
+ * @brief Strips trailing reference '&', handle '@', const, and array '[]' decorators from a string view in place.
+ * @param[in,out] result String view to strip in place.
+ */
+void StripTrailingDecorationsView(std::string_view& result) noexcept;
+
+/**
  * @brief Strips trailing reference '&', handle '@', const, and array '[]' decorators.
  * @param[in,out] result String to strip in place.
  */
 void StripTrailingDecorations(std::string& result);
+
+/**
+ * @brief Reduces a type name view to its innermost base/element type view without allocations.
+ * @param[in] typeName The type name view to clean.
+ * @param[in] arrayTypeName Optional custom array template name (defaults to "array").
+ * @return Cleaned base type name view.
+ */
+[[nodiscard]] std::string_view CleanBaseTypeView(std::string_view typeName,
+                                                 std::string_view arrayTypeName = "") noexcept;
 
 /**
  * @brief Reduces a type name to its innermost base/element type.
@@ -55,6 +70,42 @@ std::string MemberOwnerType(std::string_view typeName, std::string_view arrayTyp
  * @return Canonical type name.
  */
 [[nodiscard]] std::string CanonicalizeType(std::string_view typeName);
+
+/**
+ * @brief Decomposition of a template type into container name and inner argument view.
+ */
+struct TemplateDecomposition
+{
+    std::string_view containerName;
+    std::string_view innerArguments;
+    bool isTemplate = false;
+};
+
+/**
+ * @brief Decomposes a template type string into its container name and inner argument substring without allocations.
+ * @param[in] typeName The type string (e.g. "array<int>").
+ * @return Decomposed template views.
+ */
+[[nodiscard]] constexpr TemplateDecomposition DecomposeTemplateType(std::string_view typeName) noexcept
+{
+    if (typeName.ends_with('>'))
+    {
+        const size_t open = typeName.find('<');
+        if (open != std::string_view::npos && open > 0)
+        {
+            return {
+                .containerName = typeName.substr(0, open),
+                .innerArguments = typeName.substr(open + 1, typeName.size() - open - 2),
+                .isTemplate = true,
+            };
+        }
+    }
+    return {
+        .containerName = typeName,
+        .innerArguments = {},
+        .isTemplate = false,
+    };
+}
 
 /**
  * @brief Splits comma-separated template arguments respecting nested angle brackets.

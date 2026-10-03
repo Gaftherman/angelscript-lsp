@@ -10,57 +10,54 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    /** @brief Collects a snippet and renders the declaration of one qualified symbol. */
-    std::string RenderFirst(const std::string &code, const std::string &qualifiedName)
+/** @brief Collects a snippet and renders the declaration of one qualified symbol. */
+std::string RenderFirst(const std::string& code, const std::string& qualifiedName)
+{
+    AngelScriptParser parser;
+    SymbolCollector collector{nullptr};
+    SymbolTable table;
+    collector.CollectSymbols("file:///fmt.as", code, parser, table);
+
+    const auto symbol = table.FindFirstSymbol(qualifiedName);
+    if (!symbol.has_value())
     {
-        AngelScriptParser parser;
-        SymbolCollector collector{ nullptr };
-        SymbolTable table;
-        collector.CollectSymbols("file:///fmt.as", code, parser, table);
+        return "";
+    }
 
-        const auto symbol = table.FindFirstSymbol(qualifiedName);
-        if (!symbol.has_value())
-        {
-            return "";
-        }
-
-        switch (symbol->type)
-        {
-        case SymbolType::Function:
-        case SymbolType::Funcdef:
-            return FormatFunctionDeclaration(*symbol);
-        case SymbolType::Class:
-        case SymbolType::Interface:
-            return FormatTypeDeclaration(*symbol);
-        case SymbolType::Variable:
-            return FormatVariableDeclaration(symbol->GetVariable(), symbol->name);
-        default:
-            return symbol->name;
-        }
+    switch (symbol->type)
+    {
+    case SymbolType::Function:
+    case SymbolType::Funcdef:
+        return FormatFunctionDeclaration(*symbol);
+    case SymbolType::Class:
+    case SymbolType::Interface:
+        return FormatTypeDeclaration(*symbol);
+    case SymbolType::Variable:
+        return FormatVariableDeclaration(symbol->GetVariable(), symbol->name);
+    default:
+        return symbol->name;
     }
 }
+} // namespace
 
 TEST_CASE("SignatureFormatter - renders parameter reference direction")
 {
-    const std::string code =
-        "class Foo\n"
-        "{\n"
-        "\tvoid Store(const string &in key, int64 &inout value, bool &out ok);\n"
-        "}\n";
+    const std::string code = "class Foo\n"
+                             "{\n"
+                             "\tvoid Store(const string &in key, int64 &inout value, bool &out ok);\n"
+                             "}\n";
 
-    CHECK(RenderFirst(code, "Foo::Store") ==
-          "void Foo::Store(const string &in key, int64 &inout value, bool &out ok)");
+    CHECK(RenderFirst(code, "Foo::Store") == "void Foo::Store(const string &in key, int64 &inout value, bool &out ok)");
 }
 
 TEST_CASE("SignatureFormatter - renders access modifiers on members")
 {
-    const std::string code =
-        "class Foo\n"
-        "{\n"
-        "\tprivate void Hidden();\n"
-        "\tprotected void Shielded();\n"
-        "\tvoid Open();\n"
-        "}\n";
+    const std::string code = "class Foo\n"
+                             "{\n"
+                             "\tprivate void Hidden();\n"
+                             "\tprotected void Shielded();\n"
+                             "\tvoid Open();\n"
+                             "}\n";
 
     CHECK(RenderFirst(code, "Foo::Hidden") == "private void Foo::Hidden()");
     CHECK(RenderFirst(code, "Foo::Shielded") == "protected void Foo::Shielded()");
@@ -69,14 +66,13 @@ TEST_CASE("SignatureFormatter - renders access modifiers on members")
 
 TEST_CASE("SignatureFormatter - renders trailing const and function attributes")
 {
-    const std::string code =
-        "class Foo\n"
-        "{\n"
-        "\tuint Length() const;\n"
-        "\tvoid Tick() override;\n"
-        "\tvoid Seal() final;\n"
-        "\tvoid Both() const override;\n"
-        "}\n";
+    const std::string code = "class Foo\n"
+                             "{\n"
+                             "\tuint Length() const;\n"
+                             "\tvoid Tick() override;\n"
+                             "\tvoid Seal() final;\n"
+                             "\tvoid Both() const override;\n"
+                             "}\n";
 
     CHECK(RenderFirst(code, "Foo::Length") == "uint Foo::Length() const");
     CHECK(RenderFirst(code, "Foo::Tick") == "void Foo::Tick() override");
@@ -86,15 +82,14 @@ TEST_CASE("SignatureFormatter - renders trailing const and function attributes")
 
 TEST_CASE("SignatureFormatter - keeps handles and const on types")
 {
-    const std::string code =
-        "class Foo\n"
-        "{\n"
-        "\tprivate Foo@ m_next;\n"
-        "\tprotected const string m_name;\n"
-        "\tFoo@ Clone() const;\n"
-        "\tvoid Adopt(const Foo@ &in other);\n"
-        "}\n"
-        "Foo@ g_active;\n";
+    const std::string code = "class Foo\n"
+                             "{\n"
+                             "\tprivate Foo@ m_next;\n"
+                             "\tprotected const string m_name;\n"
+                             "\tFoo@ Clone() const;\n"
+                             "\tvoid Adopt(const Foo@ &in other);\n"
+                             "}\n"
+                             "Foo@ g_active;\n";
 
     CHECK(RenderFirst(code, "Foo::m_next") == "private Foo@ m_next");
     CHECK(RenderFirst(code, "Foo::m_name") == "protected const string m_name");
@@ -105,12 +100,11 @@ TEST_CASE("SignatureFormatter - keeps handles and const on types")
 
 TEST_CASE("SignatureFormatter - renders by-reference returns")
 {
-    const std::string code =
-        "class Foo\n"
-        "{\n"
-        "\tconst string& GetName();\n"
-        "\tFoo& opAssign(const Foo &in other);\n"
-        "}\n";
+    const std::string code = "class Foo\n"
+                             "{\n"
+                             "\tconst string& GetName();\n"
+                             "\tFoo& opAssign(const Foo &in other);\n"
+                             "}\n";
 
     CHECK(RenderFirst(code, "Foo::GetName") == "const string& Foo::GetName()");
     CHECK(RenderFirst(code, "Foo::opAssign") == "Foo& Foo::opAssign(const Foo &in other)");
@@ -118,19 +112,17 @@ TEST_CASE("SignatureFormatter - renders by-reference returns")
 
 TEST_CASE("SignatureFormatter - renders default argument values")
 {
-    const std::string code =
-        "void Sort(uint startAt = 0, uint count = uint(-1));\n";
+    const std::string code = "void Sort(uint startAt = 0, uint count = uint(-1));\n";
 
     CHECK(RenderFirst(code, "Sort") == "void Sort(uint startAt = 0, uint count = uint(-1))");
 }
 
 TEST_CASE("SignatureFormatter - renders class declaration modifiers")
 {
-    const std::string code =
-        "shared abstract class Base {}\n"
-        "final class Leaf : Base {}\n"
-        "mixin class Helper {}\n"
-        "interface IThing {}\n";
+    const std::string code = "shared abstract class Base {}\n"
+                             "final class Leaf : Base {}\n"
+                             "mixin class Helper {}\n"
+                             "interface IThing {}\n";
 
     CHECK(RenderFirst(code, "Base") == "shared abstract class Base");
     CHECK(RenderFirst(code, "Leaf") == "final class Leaf : Base");
@@ -140,8 +132,7 @@ TEST_CASE("SignatureFormatter - renders class declaration modifiers")
 
 TEST_CASE("SignatureFormatter - renders funcdef parameters with modifiers")
 {
-    const std::string code =
-        "funcdef bool less(const ?&in a, const ?&in b);\n";
+    const std::string code = "funcdef bool less(const ?&in a, const ?&in b);\n";
 
     CHECK(RenderFirst(code, "less") == "funcdef bool less(const ? &in a, const ? &in b)");
 }

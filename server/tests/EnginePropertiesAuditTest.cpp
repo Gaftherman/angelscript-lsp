@@ -1,9 +1,9 @@
 #include <doctest/doctest.h>
 
-#include "analysis/SemanticAnalyzer.h"
-#include "analysis/SemanticAnalysisRequest.h"
-#include "analysis/SymbolCollector.h"
 #include "analysis/LocalScopeCollector.h"
+#include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/TypeConversionChecker.h"
 #include "config/ServerConfig.h"
@@ -64,8 +64,7 @@ PipelineResult RunPipeline(const std::string& sourceCode, const EngineProperties
 
 bool HasDiagnostic(const std::vector<Diagnostic>& diags, std::string_view code)
 {
-    return std::any_of(diags.begin(), diags.end(),
-                       [code](const Diagnostic& d) { return d.code == code; });
+    return std::any_of(diags.begin(), diags.end(), [code](const Diagnostic& d) { return d.code == code; });
 }
 
 struct ArgvHelper
@@ -104,11 +103,9 @@ TEST_CASE("EngineProperties: asEP_REQUIRE_ENUM_SCOPE on/off behavior")
 
     SUBCASE("Default off: unqualified enumerators resolve cleanly")
     {
-        const std::string code = "enum " + enumName + " { " + memRed + ", " + memBlue + " };\n" +
-                                 enumName + " " + varGlobal + " = " + memRed + ";\n" +
-                                 "void " + fnName + "() {\n" +
-                                 "    " + enumName + " " + varLocal + " = " + memBlue + ";\n" +
-                                 "}\n";
+        const std::string code = "enum " + enumName + " { " + memRed + ", " + memBlue + " };\n" + enumName + " " +
+                                 varGlobal + " = " + memRed + ";\n" + "void " + fnName + "() {\n" + "    " + enumName +
+                                 " " + varLocal + " = " + memBlue + ";\n" + "}\n";
 
         EngineProperties engine;
         engine.requireEnumScope = false;
@@ -118,11 +115,9 @@ TEST_CASE("EngineProperties: asEP_REQUIRE_ENUM_SCOPE on/off behavior")
 
     SUBCASE("Enabled on: unqualified enumerators emit as-err-enum-scope-required")
     {
-        const std::string code = "enum " + enumName + " { " + memRed + ", " + memBlue + " };\n" +
-                                 enumName + " " + varGlobal + " = " + memRed + ";\n" +
-                                 "void " + fnName + "() {\n" +
-                                 "    " + enumName + " " + varLocal + " = " + memBlue + ";\n" +
-                                 "}\n";
+        const std::string code = "enum " + enumName + " { " + memRed + ", " + memBlue + " };\n" + enumName + " " +
+                                 varGlobal + " = " + memRed + ";\n" + "void " + fnName + "() {\n" + "    " + enumName +
+                                 " " + varLocal + " = " + memBlue + ";\n" + "}\n";
 
         EngineProperties engine;
         engine.requireEnumScope = true;
@@ -132,11 +127,9 @@ TEST_CASE("EngineProperties: asEP_REQUIRE_ENUM_SCOPE on/off behavior")
 
     SUBCASE("Enabled on: scoped enumerators Enum::Member resolve without error")
     {
-        const std::string code = "enum " + enumName + " { " + memRed + ", " + memBlue + " };\n" +
-                                 enumName + " " + varGlobal + " = " + enumName + "::" + memRed + ";\n" +
-                                 "void " + fnName + "() {\n" +
-                                 "    " + enumName + " " + varLocal + " = " + enumName + "::" + memBlue + ";\n" +
-                                 "}\n";
+        const std::string code = "enum " + enumName + " { " + memRed + ", " + memBlue + " };\n" + enumName + " " +
+                                 varGlobal + " = " + enumName + "::" + memRed + ";\n" + "void " + fnName + "() {\n" +
+                                 "    " + enumName + " " + varLocal + " = " + enumName + "::" + memBlue + ";\n" + "}\n";
 
         EngineProperties engine;
         engine.requireEnumScope = true;
@@ -151,12 +144,8 @@ TEST_CASE("EngineProperties: asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT on/off behavior"
     const std::string varName = GenerateRandomSymbolName("inst");
     const std::string fnName = GenerateRandomSymbolName("CreateInstance");
 
-    const std::string code = "class " + className + " {\n" +
-                             "    " + className + "(int a) {}\n" +
-                             "};\n" +
-                             "void " + fnName + "() {\n" +
-                             "    " + className + " " + varName + ";\n" +
-                             "}\n";
+    const std::string code = "class " + className + " {\n" + "    " + className + "(int a) {}\n" + "};\n" + "void " +
+                             fnName + "() {\n" + "    " + className + " " + varName + ";\n" + "}\n";
 
     SUBCASE("Default off: class with only non-default ctor cannot default construct")
     {
@@ -204,9 +193,7 @@ TEST_CASE("EngineProperties: CLI flags and boolean value parsing")
 {
     SUBCASE("Flag with boolean literals")
     {
-        ArgvHelper args{"angel_lsp",
-                        "--require-enum-scope=true",
-                        "--always-impl-default-construct=1",
+        ArgvHelper args{"angel_lsp", "--require-enum-scope=true", "--always-impl-default-construct=1",
                         "--ignore-duplicate-shared-intf=on"};
         ServerConfig config = FromArgs(args.argc(), args.data());
         CHECK(config.engine.requireEnumScope == true);
@@ -216,11 +203,8 @@ TEST_CASE("EngineProperties: CLI flags and boolean value parsing")
 
     SUBCASE("Negative flags toggle off cleanly")
     {
-        ArgvHelper args{"angel_lsp",
-                        "--require-enum-scope=true",
-                        "--no-require-enum-scope",
-                        "--always-impl-default-construct=true",
-                        "--no-always-impl-default-construct"};
+        ArgvHelper args{"angel_lsp", "--require-enum-scope=true", "--no-require-enum-scope",
+                        "--always-impl-default-construct=true", "--no-always-impl-default-construct"};
         ServerConfig config = FromArgs(args.argc(), args.data());
         CHECK(config.engine.requireEnumScope == false);
         CHECK(config.engine.alwaysImplDefaultConstruct == false);
@@ -228,10 +212,8 @@ TEST_CASE("EngineProperties: CLI flags and boolean value parsing")
 
     SUBCASE("Engine-property syntax with varied boolean forms")
     {
-        ArgvHelper args{"angel_lsp",
-                        "--engine-property=requireEnumScope=true",
-                        "--engine-prop=alwaysImplDefaultConstruct=1",
-                        "--engine-property=allowMultilineStrings=true",
+        ArgvHelper args{"angel_lsp", "--engine-property=requireEnumScope=true",
+                        "--engine-prop=alwaysImplDefaultConstruct=1", "--engine-property=allowMultilineStrings=true",
                         "--engine-property=disallowValueAssignForRef=true"};
         ServerConfig config = FromArgs(args.argc(), args.data());
         CHECK(config.engine.requireEnumScope == true);

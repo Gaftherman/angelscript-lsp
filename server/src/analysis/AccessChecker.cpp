@@ -326,20 +326,27 @@ MemberAccess FindMember(const std::string& typeName, const std::string& memberNa
 std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin, const SymbolTable& table)
 {
     insideMixin = false;
-    for (const auto& container : GetEnclosingContainers(node, sourceCode))
+    TSNode curr = ts_node_parent(node);
+    size_t depth = 0;
+    while (!ts_node_is_null(curr) && ++depth <= kMaxScopeDepth)
     {
-        if (container.kind != ContainerKind::Class)
+        if (std::string_view(ts_node_type(curr)) == parser::nodes::ClassDeclaration)
         {
-            continue;
+            TSNode nameNode = parser::GetChildByField(curr, parser::fields::Name);
+            if (!ts_node_is_null(nameNode))
+            {
+                std::string className = NodeText(nameNode, sourceCode);
+                const auto symbols = table.FindSymbolsPtr(className);
+                if (symbols)
+                {
+                    insideMixin =
+                        std::any_of(symbols->begin(), symbols->end(), [](const Symbol& sym)
+                                    { return sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin; });
+                }
+                return className;
+            }
         }
-
-        const auto symbols = table.FindSymbolsPtr(container.name);
-        if (symbols)
-        {
-            insideMixin = std::any_of(symbols->begin(), symbols->end(), [](const Symbol& sym)
-                                      { return sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin; });
-        }
-        return container.name;
+        curr = ts_node_parent(curr);
     }
     return "";
 }
@@ -349,17 +356,13 @@ std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insid
  *
  * @param[in] objectNode AST node of the object expression.
  * @param[in] scope Current lexical scope.
- * @param[in] request Access check request.
  * @param[in] ctx Diagnostic context.
  * @return Normalized owner type name.
  */
-std::string ResolveObjectOwnerType(TSNode objectNode, const Scope* scope, const AccessCheckRequest& request,
-                                   const DiagnosticContext& ctx)
+std::string ResolveObjectOwnerType(TSNode objectNode, const Scope* scope, const DiagnosticContext& ctx)
 {
     const std::string_view arrayContainer = ctx.request.GetEffectiveArrayTypeName();
-    return MemberOwnerType(
-        ResolveExpressionType(objectNode, {scope, ctx.request.symbolTable, request.sourceCode, ctx.request.fileUri}),
-        arrayContainer);
+    return MemberOwnerType(ResolveExpressionType(objectNode, ExpressionTypeContext(scope, ctx)), arrayContainer);
 }
 
 /**
@@ -434,7 +437,7 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
     }
 
     const SymbolTable& table = ctx.request.symbolTable;
-    const std::string objectType = ResolveObjectOwnerType(objectNode, scope, request, ctx);
+    const std::string objectType = ResolveObjectOwnerType(objectNode, scope, ctx);
     if (objectType.empty() || objectType == "auto")
     {
         return;

@@ -265,24 +265,9 @@ jobs:
             echo "Release $TAG already exists, updating assets..."
           fi
 
-          # Upload assets sequentially with retry logic to avoid socket exhaustion
-          for asset in release/*; do
-            echo "Uploading $asset..."
-            uploaded=false
-            for attempt in 1 2 3; do
-              if gh release upload "$TAG" "$asset" --clobber; then
-                echo "Successfully uploaded $asset"
-                uploaded=true
-                break
-              fi
-              echo "Attempt $attempt failed for $asset; retrying in 5 seconds..."
-              sleep 5
-            done
-            if [ "$uploaded" = false ]; then
-              echo "::error::Failed to upload $asset after 3 attempts."
-              exit 1
-            fi
-          done
+          # Upload release assets cleanly using official GitHub CLI
+          echo "Uploading release assets..."
+          gh release upload "$TAG" release/* --clobber
 
           # Ensure the release is published and not retained as a draft
           gh release edit "$TAG" --draft=false

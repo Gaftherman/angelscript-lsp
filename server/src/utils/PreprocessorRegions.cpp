@@ -1,4 +1,5 @@
 #include "utils/PreprocessorRegions.h"
+#include "utils/Utils.h"
 
 #include <cctype>
 #include <optional>
@@ -160,20 +161,7 @@ void SkipBlockComment(std::string_view sourceCode, LineScanState& state)
  */
 bool TrySkipComment(std::string_view sourceCode, LineScanState& state)
 {
-    if (sourceCode[state.index] != '/' || state.index + 1 >= sourceCode.size())
-        return false;
-    const char next = sourceCode[state.index + 1];
-    if (next == '/')
-    {
-        SkipLineComment(sourceCode, state);
-        return true;
-    }
-    if (next == '*')
-    {
-        SkipBlockComment(sourceCode, state);
-        return true;
-    }
-    return false;
+    return TrySkipCommentDispatch(sourceCode, state, SkipLineComment, SkipBlockComment);
 }
 
 /**
@@ -184,24 +172,7 @@ bool TrySkipComment(std::string_view sourceCode, LineScanState& state)
 void SkipStringLiteral(std::string_view sourceCode, LineScanState& state)
 {
     const char quote = sourceCode[state.index];
-    ++state.index;
-    const size_t n = sourceCode.size();
-    while (state.index < n)
-    {
-        if (sourceCode[state.index] == '\\')
-        {
-            state.index += 2;
-            continue;
-        }
-        if (sourceCode[state.index] == quote)
-        {
-            ++state.index;
-            break;
-        }
-        if (sourceCode[state.index] == '\n' || sourceCode[state.index] == '\r')
-            break;
-        ++state.index;
-    }
+    SkipEscapedStringLiteral(sourceCode, state.index, quote);
 }
 
 /**

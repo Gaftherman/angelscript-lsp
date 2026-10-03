@@ -2,7 +2,7 @@
   "name": "angelscript-gaftherman",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "0.9.27",
+  "version": "1.0.0",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -325,6 +325,16 @@
             "default": "left",
             "markdownDescription": "%config.statusBar.alignment.description%"
           },
+          "angelscript.statusBar.enabled": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.statusBar.enabled.description%"
+          },
+          "angelscript.statusBar.showStub": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.statusBar.showStub.description%"
+          },
           "angelscript.dimInactiveRegions": {
             "type": "boolean",
             "default": true,
@@ -536,7 +546,7 @@
               "%config.inlayHints.omittedDefaultArguments.declaration%",
               "%config.inlayHints.omittedDefaultArguments.off%"
             ],
-            "default": "nameAndValue",
+            "default": "off",
             "markdownDescription": "%config.inlayHints.omittedDefaultArguments.description%"
           }
         }
@@ -552,7 +562,7 @@
           },
           "angelscript.features.onTypeFormatting": {
             "type": "boolean",
-            "default": true,
+            "default": false,
             "markdownDescription": "%config.features.onTypeFormatting.description%"
           },
           "angelscript.format.onSave": {
@@ -577,6 +587,26 @@
             "type": "boolean",
             "default": false,
             "markdownDescription": "%config.format.spacesInsideParentheses.description%"
+          },
+          "angelscript.format.keepEmptyBlocksOnSingleLine": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.format.keepEmptyBlocksOnSingleLine.description%"
+          },
+          "angelscript.format.pointerAlignment": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right",
+              "middle"
+            ],
+            "enumDescriptions": [
+              "%config.format.pointerAlignment.enum.0%",
+              "%config.format.pointerAlignment.enum.1%",
+              "%config.format.pointerAlignment.enum.2%"
+            ],
+            "default": "left",
+            "markdownDescription": "%config.format.pointerAlignment.description%"
           }
         }
       },
@@ -597,7 +627,7 @@
           },
           "angelscript.hover.stringLiteralPathResolution": {
             "type": "boolean",
-            "default": false,
+            "default": true,
             "scope": "resource",
             "markdownDescription": "%config.hover.stringLiteralPathResolution.description%"
           },
@@ -626,6 +656,12 @@
             "default": true,
             "scope": "resource",
             "markdownDescription": "%config.completion.completeFunctionParens.description%"
+          },
+          "angelscript.completion.qualifyEnumValues": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.completion.qualifyEnumValues.description%"
           },
           "angelscript.features.definition": {
             "type": "boolean",
@@ -726,6 +762,11 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%config.features.predefinedLoader.description%"
+          },
+          "angelscript.features.enableCommentSuppressions": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.features.enableCommentSuppressions.description%"
           }
         }
       },

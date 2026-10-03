@@ -1,5 +1,5 @@
-#include <doctest/doctest.h>
 #include "lsp/PredefinedStubManager.h"
+#include <doctest/doctest.h>
 
 using namespace angel_lsp;
 
@@ -74,4 +74,3 @@ TEST_CASE("PredefinedStubManager - ClaimFile and UnloadUri")
     CHECK_FALSE(mgr.HasStub(uri2));
     CHECK(mgr.GetUriByPath(path) == std::nullopt);
 }
-

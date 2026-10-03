@@ -67,12 +67,14 @@ TEST_SUITE("TypeConfig_Decoupling")
         config::ServerConfig cfg;
         cfg.types.stringTypeName = customStr;
 
-        const std::string script =
-            "class " + customStr + " {}\n"
-            "void Main() {\n"
-            "    " + customStr + " validStr;\n"
-            "    string invalidStr;\n"
-            "}\n";
+        const std::string script = "class " + customStr +
+                                   " {}\n"
+                                   "void Main() {\n"
+                                   "    " +
+                                   customStr +
+                                   " validStr;\n"
+                                   "    string invalidStr;\n"
+                                   "}\n";
 
         auto doc = CreateTestDocumentWithConfig(docUri, script, cfg);
         REQUIRE(doc.get() != nullptr);
@@ -81,8 +83,7 @@ TEST_SUITE("TypeConfig_Decoupling")
         bool foundUnresolvedString = false;
         for (const auto& diag : diagnostics)
         {
-            if ((diag.code == "as-err-unresolved-type" || diag.code == "E_UNKNOWN_TYPE") &&
-                diag.range.start.line == 3)
+            if ((diag.code == "as-err-unresolved-type" || diag.code == "E_UNKNOWN_TYPE") && diag.range.start.line == 3)
             {
                 foundUnresolvedString = true;
             }
@@ -118,13 +119,19 @@ TEST_SUITE("TypeConfig_Decoupling")
         config::ServerConfig cfg;
         cfg.types.stringTypeName = customStr;
 
-        const std::string script =
-            "interface " + ifaceName + " {\n"
-            "    " + customStr + " GetName();\n"
-            "    void SetName(" + customStr + " name);\n"
-            "}\n"
-            "class " + clsName + " : " + ifaceName + " {\n"
-            "}\n";
+        const std::string script = "interface " + ifaceName +
+                                   " {\n"
+                                   "    " +
+                                   customStr +
+                                   " GetName();\n"
+                                   "    void SetName(" +
+                                   customStr +
+                                   " name);\n"
+                                   "}\n"
+                                   "class " +
+                                   clsName + " : " + ifaceName +
+                                   " {\n"
+                                   "}\n";
 
         AngelScriptParser parser;
         TSTree* tree = parser.Parse(script);
@@ -142,17 +149,15 @@ TEST_SUITE("TypeConfig_Decoupling")
             scopeIndex.SetScopeTree(docUri, std::move(rootScope));
         }
 
-        CodeActionRequest req{
-            .uri = docUri,
-            .sourceCode = script,
-            .tree = tree,
-            .range = lsp::Range{{4, 0}, {5, 1}},
-            .context = lsp::CodeActionContext{},
-            .symbolTable = symbolTable,
-            .scopeIndex = scopeIndex,
-            .allowedRoots = {},
-            .config = &cfg
-        };
+        CodeActionRequest req{.uri = docUri,
+                              .sourceCode = script,
+                              .tree = tree,
+                              .range = lsp::Range{{4, 0}, {5, 1}},
+                              .context = lsp::CodeActionContext{},
+                              .symbolTable = symbolTable,
+                              .scopeIndex = scopeIndex,
+                              .allowedRoots = {},
+                              .config = &cfg};
 
         auto actions = GetCodeActions(req);
         REQUIRE(actions.has_value());
@@ -188,11 +193,11 @@ TEST_SUITE("TypeConfig_Decoupling")
         config::ServerConfig cfg;
         cfg.types.stringTypeName = customStr;
 
-        const std::string script =
-            "class " + customStr + " {}\n"
-            "void TestBinary() {\n"
-            "    auto res = \"left\" + \"right\";\n"
-            "}\n";
+        const std::string script = "class " + customStr +
+                                   " {}\n"
+                                   "void TestBinary() {\n"
+                                   "    auto res = \"left\" + \"right\";\n"
+                                   "}\n";
 
         AngelScriptParser parser;
         TSTree* tree = parser.Parse(script);
@@ -210,20 +215,18 @@ TEST_SUITE("TypeConfig_Decoupling")
             scopeIndex.SetScopeTree(docUri, std::move(rootScope));
         }
 
-        InlayHintRequest req{
-            .uri = docUri,
-            .sourceCode = script,
-            .tree = tree,
-            .range = lsp::Range{{0, 0}, {4, 0}},
-            .symbolTable = symbolTable,
-            .scopeIndex = scopeIndex,
-            .suppressWhenArgumentMatchesName = false,
-            .logger = nullptr,
-            .maxParameters = 0,
-            .maxLength = 0,
-            .omittedDefaultArguments = config::OmittedDefaultArgumentsMode::NameAndValue,
-            .config = &cfg
-        };
+        InlayHintRequest req{.uri = docUri,
+                             .sourceCode = script,
+                             .tree = tree,
+                             .range = lsp::Range{{0, 0}, {4, 0}},
+                             .symbolTable = symbolTable,
+                             .scopeIndex = scopeIndex,
+                             .suppressWhenArgumentMatchesName = false,
+                             .logger = nullptr,
+                             .maxParameters = 0,
+                             .maxLength = 0,
+                             .omittedDefaultArguments = config::OmittedDefaultArgumentsMode::NameAndValue,
+                             .config = &cfg};
 
         auto hints = GetInlayHints(req);
         REQUIRE(hints.has_value());
@@ -251,12 +254,16 @@ TEST_SUITE("AnonymousObjects_TypedInitializerLists")
         const std::string fnName = GenerateRandomSymbolName("Consume");
         const std::string docUri = "file:///workspace/test_typed_init.as";
 
-        const std::string script =
-            "class " + containerName + "<T> {}\n"
-            "void " + fnName + "(" + containerName + "<int> arg) {}\n"
-            "void Main() {\n"
-            "    " + fnName + "(" + containerName + "<int> = {1, 2, 3});\n"
-            "}\n";
+        const std::string script = "class " + containerName +
+                                   "<T> {}\n"
+                                   "void " +
+                                   fnName + "(" + containerName +
+                                   "<int> arg) {}\n"
+                                   "void Main() {\n"
+                                   "    " +
+                                   fnName + "(" + containerName +
+                                   "<int> = {1, 2, 3});\n"
+                                   "}\n";
 
         AngelScriptParser parser;
         TSTree* tree = parser.Parse(script);
@@ -318,14 +325,22 @@ TEST_SUITE("AnonymousObjects_TypedInitializerLists")
         const std::string weakrefName = GenerateRandomSymbolName("weakref");
         const std::string docUri = "file:///workspace/test_nested_anon.as";
 
-        const std::string script =
-            "class " + dictName + " {}\n"
-            "class " + targetName + " {}\n"
-            "class " + weakrefName + "<T> {}\n"
-            "void Worker() {\n"
-            "    " + dictName + " = {{1, " + dictName + " = {{2, 3}}}};\n"
-            "    " + weakrefName + "<" + targetName + ">@ handle;\n"
-            "}\n";
+        const std::string script = "class " + dictName +
+                                   " {}\n"
+                                   "class " +
+                                   targetName +
+                                   " {}\n"
+                                   "class " +
+                                   weakrefName +
+                                   "<T> {}\n"
+                                   "void Worker() {\n"
+                                   "    " +
+                                   dictName + " = {{1, " + dictName +
+                                   " = {{2, 3}}}};\n"
+                                   "    " +
+                                   weakrefName + "<" + targetName +
+                                   ">@ handle;\n"
+                                   "}\n";
 
         auto doc = CreateTestDocument(docUri, script);
         REQUIRE(doc.get() != nullptr);

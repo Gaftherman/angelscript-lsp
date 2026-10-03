@@ -259,13 +259,22 @@ TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on typed lambda par
     SvenTestContext ctx;
     const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("MapActivate");
     const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("player");
-    const std::string script = "void " + fnName + "()\n"
+    const std::string script = "void " + fnName +
+                               "()\n"
                                "{\n"
                                "    g_Hooks.RegisterHook( Hooks::Player::PlayerPostThink,\n"
-                               "    @PlayerPostThinkHook( function( CBasePlayer@ " + paramName + " ) {\n"
-                               "        if( " + paramName + " !is null ) {\n"
-                               "            " + paramName + ".ResetOverriddenPlayerModel( true, true );\n"
-                               "            " + paramName + ".SetOverriddenPlayerModel( g_EngineFuncs.GetInfoKeyBuffer( " + paramName + ".edict() ).GetValue( \"model\" ) );\n"
+                               "    @PlayerPostThinkHook( function( CBasePlayer@ " +
+                               paramName +
+                               " ) {\n"
+                               "        if( " +
+                               paramName +
+                               " !is null ) {\n"
+                               "            " +
+                               paramName +
+                               ".ResetOverriddenPlayerModel( true, true );\n"
+                               "            " +
+                               paramName + ".SetOverriddenPlayerModel( g_EngineFuncs.GetInfoKeyBuffer( " + paramName +
+                               ".edict() ).GetValue( \"model\" ) );\n"
                                "        }\n"
                                "        return HOOK_CONTINUE;\n"
                                "    } ) );\n"
@@ -310,11 +319,16 @@ TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on typed lambda par
     REQUIRE(contentParam != nullptr);
     CHECK(contentParam->value.find("CBasePlayer") != std::string::npos);
 
-    const std::string compScript = "void " + fnName + "()\n"
+    const std::string compScript = "void " + fnName +
+                                   "()\n"
                                    "{\n"
                                    "    g_Hooks.RegisterHook( Hooks::Player::PlayerPostThink,\n"
-                                   "    @PlayerPostThinkHook( function( CBasePlayer@ " + paramName + " ) {\n"
-                                   "        " + paramName + ".\n"
+                                   "    @PlayerPostThinkHook( function( CBasePlayer@ " +
+                                   paramName +
+                                   " ) {\n"
+                                   "        " +
+                                   paramName +
+                                   ".\n"
                                    "    } ) );\n"
                                    "}\n";
     size_t dotPos = compScript.find(paramName + ".");
@@ -324,12 +338,12 @@ TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on typed lambda par
 
     auto items = ctx.CompleteAt(compScript, 4, compCol);
     CHECK(!items.empty());
-    bool hasReset = std::any_of(items.begin(), items.end(),
-                                [](const lsp::CompletionItem& item) { return item.label == "ResetOverriddenPlayerModel"; });
+    bool hasReset = std::any_of(items.begin(), items.end(), [](const lsp::CompletionItem& item)
+                                { return item.label == "ResetOverriddenPlayerModel"; });
     bool hasSet = std::any_of(items.begin(), items.end(),
                               [](const lsp::CompletionItem& item) { return item.label == "SetOverriddenPlayerModel"; });
-    bool hasEdict = std::any_of(items.begin(), items.end(),
-                                [](const lsp::CompletionItem& item) { return item.label == "edict"; });
+    bool hasEdict =
+        std::any_of(items.begin(), items.end(), [](const lsp::CompletionItem& item) { return item.label == "edict"; });
     CHECK(hasReset);
     CHECK(hasSet);
     CHECK(hasEdict);
@@ -340,11 +354,16 @@ TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on untyped lambda p
     SvenTestContext ctx;
     const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("MapActivateUntyped");
     const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("player");
-    const std::string script = "void " + fnName + "()\n"
+    const std::string script = "void " + fnName +
+                               "()\n"
                                "{\n"
                                "    g_Hooks.RegisterHook( Hooks::Player::PlayerPostThink,\n"
-                               "    @PlayerPostThinkHook( function( " + paramName + " ) {\n"
-                               "        " + paramName + ".ResetOverriddenPlayerModel( true, true );\n"
+                               "    @PlayerPostThinkHook( function( " +
+                               paramName +
+                               " ) {\n"
+                               "        " +
+                               paramName +
+                               ".ResetOverriddenPlayerModel( true, true );\n"
                                "        return HOOK_CONTINUE;\n"
                                "    } ) );\n"
                                "}\n";
@@ -360,11 +379,16 @@ TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on untyped lambda p
     REQUIRE(contentReset != nullptr);
     CHECK(contentReset->value.find("ResetOverriddenPlayerModel") != std::string::npos);
 
-    const std::string compScript = "void " + fnName + "()\n"
+    const std::string compScript = "void " + fnName +
+                                   "()\n"
                                    "{\n"
                                    "    g_Hooks.RegisterHook( Hooks::Player::PlayerPostThink,\n"
-                                   "    @PlayerPostThinkHook( function( " + paramName + " ) {\n"
-                                   "        " + paramName + ".\n"
+                                   "    @PlayerPostThinkHook( function( " +
+                                   paramName +
+                                   " ) {\n"
+                                   "        " +
+                                   paramName +
+                                   ".\n"
                                    "    } ) );\n"
                                    "}\n";
     size_t dotPos = compScript.find(paramName + ".");
@@ -374,8 +398,8 @@ TEST_CASE("SvenCoopScriptReproduction - Hover and Completion on untyped lambda p
 
     auto items = ctx.CompleteAt(compScript, 4, compCol);
     CHECK(!items.empty());
-    bool hasReset = std::any_of(items.begin(), items.end(),
-                                [](const lsp::CompletionItem& item) { return item.label == "ResetOverriddenPlayerModel"; });
+    bool hasReset = std::any_of(items.begin(), items.end(), [](const lsp::CompletionItem& item)
+                                { return item.label == "ResetOverriddenPlayerModel"; });
     CHECK(hasReset);
 }
 

@@ -1,11 +1,12 @@
-#include <doctest/doctest.h>
 #include "helpers/TestUtils.h"
+#include <doctest/doctest.h>
+#include <fstream>
 
-#include "features/hover/HoverHandler.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "features/hover/HoverHandler.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/Utils.h"
 
@@ -16,112 +17,113 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct TestEnvironment
+struct TestEnvironment
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    std::string uri = "file:///test.as";
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    TestEnvironment(const std::string& code) : sourceCode(code)
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        std::string uri = "file:///test.as";
-        std::string sourceCode;
-        TSTree *tree = nullptr;
-
-        TestEnvironment(const std::string &code)
-            : sourceCode(code)
+        tree = parser.Parse(sourceCode);
+        symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
+        auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
+        if (rootScope)
         {
-            tree = parser.Parse(sourceCode);
-            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(uri, std::move(rootScope));
-            }
+            scopeIndex.SetScopeTree(uri, std::move(rootScope));
         }
+    }
 
-        ~TestEnvironment()
-        {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
-        }
-
-        std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character, const config::ServerConfig* config = nullptr)
-        {
-            HoverRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{ line, character } };
-            req.config = config;
-            return GetHover(req);
-        }
-    };
-
-    /**
-     * @brief Two files, so a symbol's declaration and the hover position are not in the same text.
-     *
-     * The single-file environment above cannot see the defect this exists for: with one file,
-     * reading the declaration's line out of the hovered file is right by accident.
-     */
-    struct TwoFileEnvironment
+    ~TestEnvironment()
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-
-        std::string declaringUri = "file:///library.as";
-        std::string declaringCode;
-        std::string usingUri = "file:///main.as";
-        std::string usingCode;
-        TSTree *tree = nullptr;
-
-        TwoFileEnvironment(const std::string &library, const std::string &main)
-            : declaringCode(library), usingCode(main)
+        if (tree)
         {
-            symbolCollector.CollectSymbols(declaringUri, declaringCode, parser, symbolTable);
-            symbolCollector.CollectSymbols(usingUri, usingCode, parser, symbolTable);
-
-            tree = parser.Parse(usingCode);
-            auto rootScope = scopeCollector.CollectScopes(usingCode, parser);
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(usingUri, std::move(rootScope));
-            }
+            ts_tree_delete(tree);
         }
+    }
 
-        ~TwoFileEnvironment()
+    std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character, const config::ServerConfig* config = nullptr)
+    {
+        HoverRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
+        req.config = config;
+        return GetHover(req);
+    }
+};
+
+/**
+ * @brief Two files, so a symbol's declaration and the hover position are not in the same text.
+ *
+ * The single-file environment above cannot see the defect this exists for: with one file,
+ * reading the declaration's line out of the hovered file is right by accident.
+ */
+struct TwoFileEnvironment
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+
+    std::string declaringUri = "file:///library.as";
+    std::string declaringCode;
+    std::string usingUri = "file:///main.as";
+    std::string usingCode;
+    TSTree* tree = nullptr;
+
+    TwoFileEnvironment(const std::string& library, const std::string& main) : declaringCode(library), usingCode(main)
+    {
+        symbolCollector.CollectSymbols(declaringUri, declaringCode, parser, symbolTable);
+        symbolCollector.CollectSymbols(usingUri, usingCode, parser, symbolTable);
+
+        tree = parser.Parse(usingCode);
+        auto rootScope = scopeCollector.CollectScopes(usingCode, parser);
+        if (rootScope)
         {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
+            scopeIndex.SetScopeTree(usingUri, std::move(rootScope));
         }
+    }
 
-        /** @brief Hovers in main.as, with library.as reachable through readDocument. */
-        std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character)
+    ~TwoFileEnvironment()
+    {
+        if (tree)
         {
-            HoverRequest req{
-                usingUri, usingCode, tree, symbolTable, scopeIndex,
-                lsp::Position{ line, character },
-                [this](const std::string &uri) -> const std::string *
-                {
-                    if (uri == declaringUri) return &declaringCode;
-                    if (uri == usingUri) return &usingCode;
-                    return nullptr;
-                }
-            };
-            return GetHover(req);
+            ts_tree_delete(tree);
         }
+    }
 
-        /** @brief The same hover with no reader at all, which must show no documentation. */
-        std::optional<lsp::Hover> HoverAtWithoutReader(uint32_t line, uint32_t character)
-        {
-            HoverRequest req{ usingUri, usingCode, tree, symbolTable, scopeIndex,
-                              lsp::Position{ line, character } };
-            return GetHover(req);
-        }
-    };
-}
+    /** @brief Hovers in main.as, with library.as reachable through readDocument. */
+    std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character)
+    {
+        HoverRequest req{usingUri,
+                         usingCode,
+                         tree,
+                         symbolTable,
+                         scopeIndex,
+                         lsp::Position{line, character},
+                         [this](const std::string& uri) -> const std::string*
+                         {
+                             if (uri == declaringUri)
+                                 return &declaringCode;
+                             if (uri == usingUri)
+                                 return &usingCode;
+                             return nullptr;
+                         }};
+        return GetHover(req);
+    }
+
+    /** @brief The same hover with no reader at all, which must show no documentation. */
+    std::optional<lsp::Hover> HoverAtWithoutReader(uint32_t line, uint32_t character)
+    {
+        HoverRequest req{usingUri, usingCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
+        return GetHover(req);
+    }
+};
+} // namespace
 
 // A documentation comment sits above the *declaration*, and startLine counts lines in the file
 // that declares the symbol - not in the file being hovered over. Pairing the two showed whatever
@@ -129,22 +131,21 @@ namespace
 // to render: a comment about something else entirely, presented as the symbol's documentation.
 TEST_CASE("HoverHandler - A cross-file hover reads the declaring file's comment")
 {
-    TwoFileEnvironment env(
-        "// filler\n"
-        "// filler\n"
-        "/// Fires the weapon and returns whether it hit.\n"
-        "bool Fire(int rounds) { return true; }\n",
+    TwoFileEnvironment env("// filler\n"
+                           "// filler\n"
+                           "/// Fires the weapon and returns whether it hit.\n"
+                           "bool Fire(int rounds) { return true; }\n",
 
-        "// filler\n"
-        "// filler\n"
-        "/// THIS IS THE WRONG COMMENT - it describes Reload, not Fire.\n"
-        "void Reload() {}\n"
-        "void Use() { Fire(1); }\n");
+                           "// filler\n"
+                           "// filler\n"
+                           "/// THIS IS THE WRONG COMMENT - it describes Reload, not Fire.\n"
+                           "void Reload() {}\n"
+                           "void Use() { Fire(1); }\n");
 
     auto hover = env.HoverAt(4, 14); // 'Fire' in main.as
     REQUIRE(hover.has_value());
 
-    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
     CHECK(markup.value.find("Fires the weapon") != std::string::npos);
     CHECK(markup.value.find("WRONG COMMENT") == std::string::npos);
 }
@@ -154,44 +155,42 @@ TEST_CASE("HoverHandler - A method with no comment inherits the interface's")
     // SUGG-04. The contract is written on the interface and repeating it on every implementer is
     // what nobody does, so an implementation with no comment of its own should show the one it is
     // implementing rather than nothing.
-    TwoFileEnvironment env(
-        "interface IWeapon\n"
-        "{\n"
-        "    /// Fires the weapon and returns whether it hit.\n"
-        "    bool Fire(int rounds);\n"
-        "}\n",
+    TwoFileEnvironment env("interface IWeapon\n"
+                           "{\n"
+                           "    /// Fires the weapon and returns whether it hit.\n"
+                           "    bool Fire(int rounds);\n"
+                           "}\n",
 
-        "class Rifle : IWeapon\n"
-        "{\n"
-        "    bool Fire(int rounds) { return true; }\n"
-        "}\n");
+                           "class Rifle : IWeapon\n"
+                           "{\n"
+                           "    bool Fire(int rounds) { return true; }\n"
+                           "}\n");
 
     auto hover = env.HoverAt(2, 10); // 'Fire' in Rifle
     REQUIRE(hover.has_value());
 
-    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
     CHECK(markup.value.find("Fires the weapon") != std::string::npos);
 }
 
 TEST_CASE("HoverHandler - A method's own comment wins over the interface's")
 {
-    TwoFileEnvironment env(
-        "interface IWeapon\n"
-        "{\n"
-        "    /// The interface contract.\n"
-        "    bool Fire(int rounds);\n"
-        "}\n",
+    TwoFileEnvironment env("interface IWeapon\n"
+                           "{\n"
+                           "    /// The interface contract.\n"
+                           "    bool Fire(int rounds);\n"
+                           "}\n",
 
-        "class Rifle : IWeapon\n"
-        "{\n"
-        "    /// Rifles fire one round at a time.\n"
-        "    bool Fire(int rounds) { return true; }\n"
-        "}\n");
+                           "class Rifle : IWeapon\n"
+                           "{\n"
+                           "    /// Rifles fire one round at a time.\n"
+                           "    bool Fire(int rounds) { return true; }\n"
+                           "}\n");
 
     auto hover = env.HoverAt(3, 10);
     REQUIRE(hover.has_value());
 
-    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
     CHECK(markup.value.find("one round at a time") != std::string::npos);
     CHECK(markup.value.find("interface contract") == std::string::npos);
 }
@@ -200,17 +199,16 @@ TEST_CASE("HoverHandler - Without a reader a cross-file hover shows no documenta
 {
     // Silence over a guess: the declaring file may have been indexed and released, and a hover
     // that says less is better than one that says something untrue.
-    TwoFileEnvironment env(
-        "/// Fires the weapon and returns whether it hit.\n"
-        "bool Fire(int rounds) { return true; }\n",
+    TwoFileEnvironment env("/// Fires the weapon and returns whether it hit.\n"
+                           "bool Fire(int rounds) { return true; }\n",
 
-        "/// THIS IS THE WRONG COMMENT.\n"
-        "void Use() { Fire(1); }\n");
+                           "/// THIS IS THE WRONG COMMENT.\n"
+                           "void Use() { Fire(1); }\n");
 
     auto hover = env.HoverAtWithoutReader(1, 14);
     REQUIRE(hover.has_value());
 
-    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
     CHECK(markup.value.find("WRONG COMMENT") == std::string::npos);
     CHECK(markup.value.find("bool Fire") != std::string::npos);
 }
@@ -227,7 +225,7 @@ TEST_CASE("HoverHandler - Primitive Type Hover")
 TEST_CASE("HoverHandler - Local Variable and Parameter Hover")
 {
     TestEnvironment env("void Foo(float speed) { int count = 10; count = 20; }");
-    
+
     // Hover on 'speed' at column 15
     auto hoverParam = env.HoverAt(0, 15);
     REQUIRE(hoverParam.has_value());
@@ -243,11 +241,10 @@ TEST_CASE("HoverHandler - Local Variable and Parameter Hover")
 
 TEST_CASE("HoverHandler - Global Function Hover with Overloads")
 {
-    std::string code = 
-        "/// Calculates distance.\n"
-        "float Dist(float x, float y) { return 0.0f; }\n"
-        "float Dist(float x, float y, float z) { return 0.0f; }\n"
-        "void main() { Dist(1.0, 2.0); }\n";
+    std::string code = "/// Calculates distance.\n"
+                       "float Dist(float x, float y) { return 0.0f; }\n"
+                       "float Dist(float x, float y, float z) { return 0.0f; }\n"
+                       "void main() { Dist(1.0, 2.0); }\n";
 
     TestEnvironment env(code);
     auto hover = env.HoverAt(3, 15); // 'Dist'
@@ -260,15 +257,14 @@ TEST_CASE("HoverHandler - Global Function Hover with Overloads")
 
 TEST_CASE("HoverHandler - Class and Member Hover")
 {
-    std::string code =
-        "class Player : BaseEntity {\n"
-        "    int health;\n"
-        "    void Attack(int dmg) {}\n"
-        "}\n"
-        "void main() {\n"
-        "    Player p;\n"
-        "    p.Attack(10);\n"
-        "}\n";
+    std::string code = "class Player : BaseEntity {\n"
+                       "    int health;\n"
+                       "    void Attack(int dmg) {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Player p;\n"
+                       "    p.Attack(10);\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -294,17 +290,16 @@ TEST_CASE("HoverHandler - Invalid Position Returns Nullopt")
 
 TEST_CASE("HoverHandler - Class Method Declaration and Sibling Method Call")
 {
-    std::string code =
-        "class Entity {\n"
-        "    /// Takes damage.\n"
-        "    void TakeDamage(int dmg) {}\n"
-        "}\n"
-        "class Player : Entity {\n"
-        "    /// Attacks enemy.\n"
-        "    void Attack() {\n"
-        "        TakeDamage(5);\n"
-        "    }\n"
-        "}\n";
+    std::string code = "class Entity {\n"
+                       "    /// Takes damage.\n"
+                       "    void TakeDamage(int dmg) {}\n"
+                       "}\n"
+                       "class Player : Entity {\n"
+                       "    /// Attacks enemy.\n"
+                       "    void Attack() {\n"
+                       "        TakeDamage(5);\n"
+                       "    }\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -325,17 +320,16 @@ TEST_CASE("HoverHandler - Class Method Declaration and Sibling Method Call")
 
 TEST_CASE("HoverHandler - Namespace Function Hover")
 {
-    std::string code =
-        "namespace Game {\n"
-        "    /// Spawns entity at location.\n"
-        "    void Spawn(int id) {}\n"
-        "    void Init() {\n"
-        "        Spawn(1);\n"
-        "    }\n"
-        "}\n"
-        "void main() {\n"
-        "    Game::Spawn(2);\n"
-        "}\n";
+    std::string code = "namespace Game {\n"
+                       "    /// Spawns entity at location.\n"
+                       "    void Spawn(int id) {}\n"
+                       "    void Init() {\n"
+                       "        Spawn(1);\n"
+                       "    }\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Game::Spawn(2);\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -356,16 +350,15 @@ TEST_CASE("HoverHandler - Namespace Function Hover")
 
 TEST_CASE("HoverHandler - Shows parameter reference direction on a method")
 {
-    std::string code =
-        "class Store\n"
-        "{\n"
-        "    void Put(const string &in key, int64 &inout value, bool &out ok) {}\n"
-        "}\n"
-        "void main()\n"
-        "{\n"
-        "    Store s;\n"
-        "    s.Put('a', 1, true);\n"
-        "}\n";
+    std::string code = "class Store\n"
+                       "{\n"
+                       "    void Put(const string &in key, int64 &inout value, bool &out ok) {}\n"
+                       "}\n"
+                       "void main()\n"
+                       "{\n"
+                       "    Store s;\n"
+                       "    s.Put('a', 1, true);\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -379,20 +372,19 @@ TEST_CASE("HoverHandler - Shows parameter reference direction on a method")
 
 TEST_CASE("HoverHandler - Shows access modifiers, const and handles on members")
 {
-    std::string code =
-        "class Node\n"
-        "{\n"
-        "    private const string m_name;\n"
-        "    protected Node@ m_next;\n"
-        "    private void Detach() const {}\n"
-        "}\n"
-        "void main()\n"
-        "{\n"
-        "    Node n;\n"
-        "    n.m_name;\n"
-        "    n.m_next;\n"
-        "    n.Detach();\n"
-        "}\n";
+    std::string code = "class Node\n"
+                       "{\n"
+                       "    private const string m_name;\n"
+                       "    protected Node@ m_next;\n"
+                       "    private void Detach() const {}\n"
+                       "}\n"
+                       "void main()\n"
+                       "{\n"
+                       "    Node n;\n"
+                       "    n.m_name;\n"
+                       "    n.m_next;\n"
+                       "    n.Detach();\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -406,17 +398,17 @@ TEST_CASE("HoverHandler - Shows access modifiers, const and handles on members")
 
     auto detach = env.HoverAt(11, 7);
     REQUIRE(detach.has_value());
-    CHECK(std::get<lsp::MarkupContent>(detach->contents).value.find("private void Node::Detach() const") != std::string::npos);
+    CHECK(std::get<lsp::MarkupContent>(detach->contents).value.find("private void Node::Detach() const") !=
+          std::string::npos);
 }
 
 TEST_CASE("HoverHandler - Shows declaration modifiers on a class")
 {
-    std::string code =
-        "shared abstract class Base {}\n"
-        "void main()\n"
-        "{\n"
-        "    Base@ b = null;\n"
-        "}\n";
+    std::string code = "shared abstract class Base {}\n"
+                       "void main()\n"
+                       "{\n"
+                       "    Base@ b = null;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -427,20 +419,20 @@ TEST_CASE("HoverHandler - Shows declaration modifiers on a class")
 
 TEST_CASE("HoverHandler - Parameter hover keeps its declared type and direction")
 {
-    std::string code =
-        "class Foo {}\n"
-        "void run(const string &in key, Foo@ owner, int &out count)\n"
-        "{\n"
-        "    key;\n"
-        "    owner;\n"
-        "    count;\n"
-        "}\n";
+    std::string code = "class Foo {}\n"
+                       "void run(const string &in key, Foo@ owner, int &out count)\n"
+                       "{\n"
+                       "    key;\n"
+                       "    owner;\n"
+                       "    count;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
     auto key = env.HoverAt(3, 5);
     REQUIRE(key.has_value());
-    CHECK(std::get<lsp::MarkupContent>(key->contents).value.find("(parameter) const string &in key") != std::string::npos);
+    CHECK(std::get<lsp::MarkupContent>(key->contents).value.find("(parameter) const string &in key") !=
+          std::string::npos);
 
     auto owner = env.HoverAt(4, 5);
     REQUIRE(owner.has_value());
@@ -455,12 +447,11 @@ TEST_CASE("HoverHandler - The same declaration indexed twice is shown once")
 {
     // A predefined stub reachable under two URI spellings used to be collected once per spelling.
     // The hover must collapse the identical copies instead of printing the signature twice.
-    std::string code =
-        "void Ping(int id) {}\n"
-        "void main()\n"
-        "{\n"
-        "    Ping(1);\n"
-        "}\n";
+    std::string code = "void Ping(int id) {}\n"
+                       "void main()\n"
+                       "{\n"
+                       "    Ping(1);\n"
+                       "}\n";
 
     TestEnvironment env(code);
     env.symbolCollector.CollectSymbols("file:///other-spelling.as", code, env.parser, env.symbolTable);
@@ -476,13 +467,12 @@ TEST_CASE("HoverHandler - The same declaration indexed twice is shown once")
 
 TEST_CASE("HoverHandler - Distinct overloads are all shown")
 {
-    std::string code =
-        "void Emit(int id) {}\n"
-        "void Emit(const string &in name) {}\n"
-        "void main()\n"
-        "{\n"
-        "    Emit(1);\n"
-        "}\n";
+    std::string code = "void Emit(int id) {}\n"
+                       "void Emit(const string &in name) {}\n"
+                       "void main()\n"
+                       "{\n"
+                       "    Emit(1);\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -496,14 +486,13 @@ TEST_CASE("HoverHandler - Distinct overloads are all shown")
 
 TEST_CASE("HoverHandler - Global Variable vs Local Variable Hover")
 {
-    std::string code =
-        "const int g_var = 100;\n"
-        "void main()\n"
-        "{\n"
-        "    int local_var = 42;\n"
-        "    g_var;\n"
-        "    local_var;\n"
-        "}\n";
+    std::string code = "const int g_var = 100;\n"
+                       "void main()\n"
+                       "{\n"
+                       "    int local_var = 42;\n"
+                       "    g_var;\n"
+                       "    local_var;\n"
+                       "}\n";
 
     TestEnvironment env(code);
 
@@ -529,20 +518,18 @@ TEST_CASE("HoverHandler - Global Variable vs Local Variable Hover")
     CHECK(textLocal.find("int local_var") != std::string::npos);
 }
 
-
 // `int[]` and `array<int>` are one type - tests/parity/doc_p09_bracket_array_members.as - and the
 // bracket spelling used to reach member resolution as plain `int`, which has no members at all.
 // Hovering `length` on it produced nothing where the template spelling produced its signature.
 TEST_CASE("HoverHandler - A method on a bracket-declared array resolves")
 {
-    TestEnvironment env(
-        "class array<T> { uint length() const; }\n"
-        "void main() { int[] a; uint n = a.length(); }\n");
+    TestEnvironment env("class array<T> { uint length() const; }\n"
+                        "void main() { int[] a; uint n = a.length(); }\n");
 
     auto hover = env.HoverAt(1, 34); // 'length'
     REQUIRE(hover.has_value());
 
-    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
     CHECK(markup.value.find("length") != std::string::npos);
 }
 
@@ -551,26 +538,23 @@ TEST_CASE("HoverHandler - A method on a template-declared array resolves too")
     // The template spelling was broken in the same place and for the same reason; it only looked
     // healthy because `length`, `size` and `isEmpty` had a hardcoded shortcut elsewhere. A fourth
     // method has no shortcut, so it is what this asks about.
-    TestEnvironment env(
-        "class array<T> { void insertLast(const T&in value); }\n"
-        "void main() { array<int> a; a.insertLast(1); }\n");
+    TestEnvironment env("class array<T> { void insertLast(const T&in value); }\n"
+                        "void main() { array<int> a; a.insertLast(1); }\n");
 
     auto hover = env.HoverAt(1, 31); // 'insertLast'
     REQUIRE(hover.has_value());
 
-    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
+    const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
     CHECK(markup.value.find("insertLast") != std::string::npos);
 }
 
 TEST_CASE("HoverHandler - Bracket and template arrays hover identically")
 {
-    TestEnvironment bracketEnv(
-        "class array<T> { void insertLast(const T&in value); }\n"
-        "void main() { int[] a; a.insertLast(1); }\n");
+    TestEnvironment bracketEnv("class array<T> { void insertLast(const T&in value); }\n"
+                               "void main() { int[] a; a.insertLast(1); }\n");
 
-    TestEnvironment templateEnv(
-        "class array<T> { void insertLast(const T&in value); }\n"
-        "void main() { array<int> a; a.insertLast(1); }\n");
+    TestEnvironment templateEnv("class array<T> { void insertLast(const T&in value); }\n"
+                                "void main() { array<int> a; a.insertLast(1); }\n");
 
     auto bracketHover = bracketEnv.HoverAt(1, 26);   // 'insertLast'
     auto templateHover = templateEnv.HoverAt(1, 31); // 'insertLast'
@@ -589,25 +573,24 @@ TEST_CASE("HoverHandler - Bracket and template arrays hover identically")
 
 TEST_CASE("HoverHandler - A property backed by accessors is described")
 {
-    const std::string code =
-        "class HostEntityA\n"
-        "{\n"
-        "    int m_health;\n"
-        "    int get_Health() const property { return m_health; }\n"
-        "    void set_Health(int v) property { m_health = v; }\n"
-        "}\n"
-        "void main()\n"
-        "{\n"
-        "    HostEntityA e;\n"
-        "    e.Health = 100;\n"
-        "}\n";
+    const std::string code = "class HostEntityA\n"
+                             "{\n"
+                             "    int m_health;\n"
+                             "    int get_Health() const property { return m_health; }\n"
+                             "    void set_Health(int v) property { m_health = v; }\n"
+                             "}\n"
+                             "void main()\n"
+                             "{\n"
+                             "    HostEntityA e;\n"
+                             "    e.Health = 100;\n"
+                             "}\n";
 
     TestEnvironment env(code);
     auto hover = env.HoverAt(9, 8);
 
     REQUIRE(hover.has_value());
-    const auto &markup = std::get<lsp::MarkupContent>(hover->contents);
-    const std::string &text = markup.value;
+    const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
+    const std::string& text = markup.value;
     INFO(text);
 
     // Named as the property it is, with the accessors below it as the implementation.
@@ -629,45 +612,43 @@ TEST_CASE("HoverHandler - A property backed by accessors is described")
 
 namespace
 {
-    /** @brief Hovers one position in a document, with a stub resolver standing in for the disk. */
-    std::optional<lsp::Hover> HoverInclude(const std::string &source,
-                                           uint32_t line,
-                                           uint32_t character,
-                                           std::function<std::string(const std::string &)> resolver)
-    {
-        AngelScriptParser parser;
-        TSTree *tree = parser.Parse(source);
-        REQUIRE(tree != nullptr);
+/** @brief Hovers one position in a document, with a stub resolver standing in for the disk. */
+std::optional<lsp::Hover> HoverInclude(const std::string& source, uint32_t line, uint32_t character,
+                                       std::function<std::string(const std::string&)> resolver)
+{
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(source);
+    REQUIRE(tree != nullptr);
 
-        SymbolTable table;
-        ScopeIndex scopes;
-        const std::string uri = "file:///main.as";
+    SymbolTable table;
+    ScopeIndex scopes;
+    const std::string uri = "file:///main.as";
 
-        HoverRequest request{ uri, source, tree, table, scopes, lsp::Position{ line, character } };
-        request.resolveInclude = std::move(resolver);
+    HoverRequest request{uri, source, tree, table, scopes, lsp::Position{line, character}};
+    request.resolveInclude = std::move(resolver);
 
-        auto hover = GetHover(request);
-        ts_tree_delete(tree);
-        return hover;
-    }
-
-    /** @brief The markdown of a hover, or "" when there was none. */
-    std::string HoverText(const std::optional<lsp::Hover> &hover)
-    {
-        if (!hover.has_value())
-            return "";
-        if (const auto *content = std::get_if<lsp::MarkupContent>(&hover->contents))
-            return content->value;
-        return "";
-    }
+    auto hover = GetHover(request);
+    ts_tree_delete(tree);
+    return hover;
 }
+
+/** @brief The markdown of a hover, or "" when there was none. */
+std::string HoverText(const std::optional<lsp::Hover>& hover)
+{
+    if (!hover.has_value())
+        return "";
+    if (const auto* content = std::get_if<lsp::MarkupContent>(&hover->contents))
+        return content->value;
+    return "";
+}
+} // namespace
 
 TEST_CASE("Hover - An include shows the file it resolves to")
 {
     const std::string source = "#include \"helper.as\"\nvoid main() { }\n";
 
-    const auto hover = HoverInclude(source, 0, 12,
-        [](const std::string &raw) { return "/virtual/workspace/scripts/" + raw; });
+    const auto hover =
+        HoverInclude(source, 0, 12, [](const std::string& raw) { return "/virtual/workspace/scripts/" + raw; });
 
     const std::string text = HoverText(hover);
     INFO(text);
@@ -682,8 +663,7 @@ TEST_CASE("Hover - An include that resolves to nothing says so")
     // editor, and only one of them is a mistake they can fix.
     const std::string source = "#include \"missing.as\"\nvoid main() { }\n";
 
-    const auto hover = HoverInclude(source, 0, 12,
-        [](const std::string &) { return std::string(); });
+    const auto hover = HoverInclude(source, 0, 12, [](const std::string&) { return std::string(); });
 
     const std::string text = HoverText(hover);
     INFO(text);
@@ -697,12 +677,12 @@ TEST_CASE("Hover - The whole directive answers, not only the quoted part")
     // filename, so both positions answer. Past the closing quote is a different question and gets
     // no answer at all.
     const std::string source = "#include \"helper.as\"\nvoid main() { }\n";
-    const auto resolver = [](const std::string &raw) { return "/scripts/" + raw; };
+    const auto resolver = [](const std::string& raw) { return "/scripts/" + raw; };
 
-    CHECK_FALSE(HoverText(HoverInclude(source, 0, 0, resolver)).empty());   // the '#'
-    CHECK_FALSE(HoverText(HoverInclude(source, 0, 4, resolver)).empty());   // inside "include"
-    CHECK_FALSE(HoverText(HoverInclude(source, 0, 19, resolver)).empty());  // the closing quote
-    CHECK(HoverText(HoverInclude(source, 0, 25, resolver)).empty());        // past the end
+    CHECK_FALSE(HoverText(HoverInclude(source, 0, 0, resolver)).empty());  // the '#'
+    CHECK_FALSE(HoverText(HoverInclude(source, 0, 4, resolver)).empty());  // inside "include"
+    CHECK_FALSE(HoverText(HoverInclude(source, 0, 19, resolver)).empty()); // the closing quote
+    CHECK(HoverText(HoverInclude(source, 0, 25, resolver)).empty());       // past the end
 }
 
 TEST_CASE("Hover - A line that is not an include is left to the ordinary path")
@@ -710,7 +690,7 @@ TEST_CASE("Hover - A line that is not an include is left to the ordinary path")
     // The control, and it guards the thing that would actually break: this branch runs before the
     // tree is consulted at all, so a loose match here would swallow every other hover in the file.
     const std::string source = "int gCounter = 0;\nvoid main() { }\n";
-    const auto resolver = [](const std::string &raw) { return "/scripts/" + raw; };
+    const auto resolver = [](const std::string& raw) { return "/scripts/" + raw; };
 
     const std::string text = HoverText(HoverInclude(source, 0, 5, resolver));
     INFO(text);
@@ -724,20 +704,18 @@ TEST_CASE("Hover - A spaced directive is not an include")
     // away, is calling it an error.
     const std::string source = "# include \"helper.as\"\nvoid main() { }\n";
 
-    const auto hover = HoverInclude(source, 0, 13,
-        [](const std::string &raw) { return "/scripts/" + raw; });
+    const auto hover = HoverInclude(source, 0, 13, [](const std::string& raw) { return "/scripts/" + raw; });
 
     CHECK(HoverText(hover).find("#include") == std::string::npos);
 }
 
 TEST_CASE("Hover - Global property accessors show property and accessor declaration")
 {
-    const std::string source =
-        "class CModule {}\n"
-        "CModule@ get_g_Module();\n"
-        "void main() {\n"
-        "    g_Module;\n"
-        "}\n";
+    const std::string source = "class CModule {}\n"
+                               "CModule@ get_g_Module();\n"
+                               "void main() {\n"
+                               "    g_Module;\n"
+                               "}\n";
 
     TestEnvironment env(source);
     const auto hover = env.HoverAt(3, 6);
@@ -749,15 +727,14 @@ TEST_CASE("Hover - Global property accessors show property and accessor declarat
 
 TEST_CASE("Hover - Cross-file class hover shows class declaration and doc comment")
 {
-    TwoFileEnvironment env(
-        "// CVar class\n"
-        "class CCVar {\n"
-        "    void SetInt(int val);\n"
-        "}\n",
-        "CCVar@ g_MaxMoney;\n"
-        "void main() {\n"
-        "    CCVar@ cvar = g_MaxMoney;\n"
-        "}\n");
+    TwoFileEnvironment env("// CVar class\n"
+                           "class CCVar {\n"
+                           "    void SetInt(int val);\n"
+                           "}\n",
+                           "CCVar@ g_MaxMoney;\n"
+                           "void main() {\n"
+                           "    CCVar@ cvar = g_MaxMoney;\n"
+                           "}\n");
 
     // Hover on CCVar type in declaration
     const auto hoverType = env.HoverAt(0, 2);
@@ -782,11 +759,10 @@ TEST_CASE("Hover - Cross-file class hover shows class declaration and doc commen
 
 TEST_CASE("Hover - Trailing comment on constructor is rendered in hover")
 {
-    TestEnvironment env(
-        "class Entity {\n"
-        "    Entity(); // asBEHAVE_CONSTRUCT;\n"
-        "    void Spawn(); // asBEHAVE_SPAWN;\n"
-        "};\n");
+    TestEnvironment env("class Entity {\n"
+                        "    Entity(); // asBEHAVE_CONSTRUCT;\n"
+                        "    void Spawn(); // asBEHAVE_SPAWN;\n"
+                        "};\n");
 
     const auto hoverConstruct = env.HoverAt(1, 4);
     REQUIRE(hoverConstruct.has_value());
@@ -801,23 +777,22 @@ TEST_CASE("Hover - Trailing comment on constructor is rendered in hover")
 
 TEST_CASE("Hover - Predefined stub with inline list pattern allows hover on subsequent lines")
 {
-    const std::string stub =
-        "class array<T>\n"
-        "{\n"
-        "    array(int &in type, int &in list) {repeat T}; // asBEHAVE_LIST_FACTORY\n"
-        "    T& opIndex(uint index);\n"
-        "}\n";
+    const std::string stub = "class array<T>\n"
+                             "{\n"
+                             "    array(int &in type, int &in list) {repeat T}; // asBEHAVE_LIST_FACTORY\n"
+                             "    T& opIndex(uint index);\n"
+                             "}\n";
 
     const std::string rewritten = angel_lsp::utils::SanitizePredefinedContent(stub);
 
     AngelScriptParser parser;
-    SymbolCollector symbolCollector{ nullptr };
-    LocalScopeCollector scopeCollector{ nullptr };
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
     SymbolTable symbolTable;
     ScopeIndex scopeIndex;
 
     const std::string stubUri = "file:///as.predefined";
-    TSTree *tree = parser.Parse(rewritten);
+    TSTree* tree = parser.Parse(rewritten);
     symbolCollector.CollectSymbols(stubUri, rewritten, parser, symbolTable);
     auto rootScope = scopeCollector.CollectScopes(rewritten, parser);
     if (rootScope)
@@ -826,10 +801,7 @@ TEST_CASE("Hover - Predefined stub with inline list pattern allows hover on subs
     }
 
     // Line 3: "    T& opIndex(uint index);" -> column 7 is on "opIndex"
-    HoverRequest req{
-        stubUri, rewritten, tree, symbolTable, scopeIndex,
-        lsp::Position{ 3, 7 }
-    };
+    HoverRequest req{stubUri, rewritten, tree, symbolTable, scopeIndex, lsp::Position{3, 7}};
 
     auto hover = GetHover(req);
     REQUIRE(hover.has_value());
@@ -841,17 +813,16 @@ TEST_CASE("Hover - Predefined stub with inline list pattern allows hover on subs
 
 TEST_CASE("Hover - Multiple overloads display distinct doc comments")
 {
-    TestEnvironment env(
-        "class Worker {\n"
-        "    /// First overload docs.\n"
-        "    void DoWork(int a);\n"
-        "    /// Second overload docs.\n"
-        "    void DoWork(string b);\n"
-        "};\n"
-        "void main() {\n"
-        "    Worker w;\n"
-        "    w.DoWork(1);\n"
-        "}\n");
+    TestEnvironment env("class Worker {\n"
+                        "    /// First overload docs.\n"
+                        "    void DoWork(int a);\n"
+                        "    /// Second overload docs.\n"
+                        "    void DoWork(string b);\n"
+                        "};\n"
+                        "void main() {\n"
+                        "    Worker w;\n"
+                        "    w.DoWork(1);\n"
+                        "}\n");
 
     // Line 8, column 7 is on "DoWork"
     const auto hover = env.HoverAt(8, 7);
@@ -862,13 +833,12 @@ TEST_CASE("Hover - Multiple overloads display distinct doc comments")
 
 TEST_CASE("Hover - Variable with default value displays initializer")
 {
-    TestEnvironment env(
-        "namespace INS2_L85A2 {\n"
-        "    string SPR_CAT = \"ins2/arf/\";\n"
-        "}\n"
-        "void main() {\n"
-        "    int speed = 40;\n"
-        "}\n");
+    TestEnvironment env("namespace INS2_L85A2 {\n"
+                        "    string SPR_CAT = \"ins2/arf/\";\n"
+                        "}\n"
+                        "void main() {\n"
+                        "    int speed = 40;\n"
+                        "}\n");
 
     // Line 1, column 12 is on SPR_CAT
     const auto hover1 = env.HoverAt(1, 12);
@@ -887,16 +857,15 @@ TEST_CASE("Hover - Variable with default value displays initializer")
 
 TEST_CASE("Hover - Member access on unqualified namespaced class resolves correctly")
 {
-    TestEnvironment env(
-        "namespace INS2PROP {\n"
-        "    class CIns2Prop {\n"
-        "        int health;\n"
-        "    };\n"
-        "}\n"
-        "void main() {\n"
-        "    CIns2Prop@ n;\n"
-        "    n.health;\n"
-        "}\n");
+    TestEnvironment env("namespace INS2PROP {\n"
+                        "    class CIns2Prop {\n"
+                        "        int health;\n"
+                        "    };\n"
+                        "}\n"
+                        "void main() {\n"
+                        "    CIns2Prop@ n;\n"
+                        "    n.health;\n"
+                        "}\n");
 
     // Line 7, column 7 is on health
     const auto hover = env.HoverAt(7, 7);
@@ -907,18 +876,17 @@ TEST_CASE("Hover - Member access on unqualified namespaced class resolves correc
 
 TEST_CASE("Hover - Member access on class member variable of unqualified namespaced class")
 {
-    TestEnvironment env(
-        "namespace INS2PROP {\n"
-        "    class CIns2Prop {\n"
-        "        int health;\n"
-        "    };\n"
-        "}\n"
-        "class Weapon {\n"
-        "    CIns2Prop@ n;\n"
-        "    void Attack() {\n"
-        "        n.health;\n"
-        "    }\n"
-        "}\n");
+    TestEnvironment env("namespace INS2PROP {\n"
+                        "    class CIns2Prop {\n"
+                        "        int health;\n"
+                        "    };\n"
+                        "}\n"
+                        "class Weapon {\n"
+                        "    CIns2Prop@ n;\n"
+                        "    void Attack() {\n"
+                        "        n.health;\n"
+                        "    }\n"
+                        "}\n");
 
     // Line 8, column 11 is on health
     const auto hover = env.HoverAt(8, 11);
@@ -929,15 +897,14 @@ TEST_CASE("Hover - Member access on class member variable of unqualified namespa
 
 TEST_CASE("Hover - Enum member displays default value and property tag")
 {
-    TestEnvironment env(
-        "namespace INS2_L85A2 {\n"
-        "    enum INS2_L85A2_Animations {\n"
-        "        IDLE = 0\n"
-        "    };\n"
-        "}\n"
-        "void main() {\n"
-        "    INS2_L85A2::IDLE;\n"
-        "}\n");
+    TestEnvironment env("namespace INS2_L85A2 {\n"
+                        "    enum INS2_L85A2_Animations {\n"
+                        "        IDLE = 0\n"
+                        "    };\n"
+                        "}\n"
+                        "void main() {\n"
+                        "    INS2_L85A2::IDLE;\n"
+                        "}\n");
 
     // Line 6, column 18 is on IDLE
     const auto hover = env.HoverAt(6, 18);
@@ -946,13 +913,12 @@ TEST_CASE("Hover - Enum member displays default value and property tag")
     CHECK(text.find("(property)") != std::string::npos);
     CHECK(text.find("IDLE = 0") != std::string::npos);
 
-    TestEnvironment envBare(
-        "enum SimpleEnum {\n"
-        "    FIRST = 10\n"
-        "};\n"
-        "void main() {\n"
-        "    FIRST;\n"
-        "}\n");
+    TestEnvironment envBare("enum SimpleEnum {\n"
+                            "    FIRST = 10\n"
+                            "};\n"
+                            "void main() {\n"
+                            "    FIRST;\n"
+                            "}\n");
 
     const auto hoverBare = envBare.HoverAt(4, 5);
     REQUIRE(hoverBare.has_value());
@@ -979,7 +945,9 @@ TEST_CASE("HoverHandler - Call overload resolution across inheritance hierarchy"
     auto hover = env.HoverAt(6, 9);
     REQUIRE(hover.has_value());
     auto content = std::get<lsp::MarkupContent>(hover->contents);
-    CHECK(content.value.find("bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)") != std::string::npos);
+    CHECK(content.value.find(
+              "bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)") !=
+          std::string::npos);
     CHECK(content.value.find("bool weapon_ins2l85a2::Deploy()") != std::string::npos);
     // Best matching overload must appear before the 0-arg overload
     size_t posBest = content.value.find("WeaponBase::Deploy");
@@ -1004,7 +972,9 @@ TEST_CASE("HoverHandler - Call overload resolution fallback when argument type m
     auto hover = env.HoverAt(6, 9);
     REQUIRE(hover.has_value());
     auto content = std::get<lsp::MarkupContent>(hover->contents);
-    CHECK(content.value.find("bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)") != std::string::npos);
+    CHECK(content.value.find(
+              "bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)") !=
+          std::string::npos);
     size_t posBest = content.value.find("WeaponBase::Deploy");
     size_t posDerived = content.value.find("weapon_ins2l85a2::Deploy");
     CHECK(posBest < posDerived);
@@ -1012,15 +982,14 @@ TEST_CASE("HoverHandler - Call overload resolution fallback when argument type m
 
 TEST_CASE("HoverHandler - Predefined Stub Parameter AST Fallback")
 {
-    std::string code =
-        "class ref\n"
-        "{\n"
-        "    ref(const ref& in other);\n"
-        "    void opAssign(const ref& in other);\n"
-        "}\n";
+    std::string code = "class ref\n"
+                       "{\n"
+                       "    ref(const ref& in other);\n"
+                       "    void opAssign(const ref& in other);\n"
+                       "}\n";
 
     AngelScriptParser parser;
-    SymbolCollector symbolCollector{ nullptr };
+    SymbolCollector symbolCollector{nullptr};
     SymbolTable symbolTable;
     ScopeIndex emptyScopeIndex;
     std::string uri = "file:///sven.as.predefined";
@@ -1028,7 +997,7 @@ TEST_CASE("HoverHandler - Predefined Stub Parameter AST Fallback")
     symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
 
     // Hover at "other" on line 2, character 23
-    HoverRequest req{ uri, code, tree, symbolTable, emptyScopeIndex, lsp::Position{ 2, 23 } };
+    HoverRequest req{uri, code, tree, symbolTable, emptyScopeIndex, lsp::Position{2, 23}};
     auto hover = GetHover(req);
     REQUIRE(hover.has_value());
     auto content = std::get<lsp::MarkupContent>(hover->contents);
@@ -1042,15 +1011,21 @@ TEST_CASE("HoverHandler - Variable Direct Initialization shows Constructor Signa
     const std::string className = angel_lsp::test::GenerateRandomSymbolName("NetMsg");
     const std::string varName = angel_lsp::test::GenerateRandomSymbolName("m");
 
-    std::string code =
-        "class " + className + " {\n"
-        "    " + className + "(int dest, int type) {}\n"
-        "    void WriteCoord(float x) {}\n"
-        "}\n"
-        "void Test() {\n"
-        "    " + className + " " + varName + "(1, 2);\n"
-        "    " + varName + ".WriteCoord(1.0f);\n"
-        "}\n";
+    std::string code = "class " + className +
+                       " {\n"
+                       "    " +
+                       className +
+                       "(int dest, int type) {}\n"
+                       "    void WriteCoord(float x) {}\n"
+                       "}\n"
+                       "void Test() {\n"
+                       "    " +
+                       className + " " + varName +
+                       "(1, 2);\n"
+                       "    " +
+                       varName +
+                       ".WriteCoord(1.0f);\n"
+                       "}\n";
 
     TestEnvironment env(code);
     // Line 5: "    NetMsg m(1, 2);"
@@ -1074,11 +1049,12 @@ TEST_CASE("HoverHandler - Variable Direct Initialization shows Constructor Signa
 TEST_CASE("HoverHandler - String Literal Hover")
 {
     const std::string rawText = angel_lsp::test::GenerateRandomSymbolName("sample_text");
-    std::string code =
-        "void Test() {\n"
-        "    string s = \"" + rawText + "\";\n"
-        "    string p = \"path/to/missing_asset.wav\";\n"
-        "}\n";
+    std::string code = "void Test() {\n"
+                       "    string s = \"" +
+                       rawText +
+                       "\";\n"
+                       "    string p = \"path/to/missing_asset.wav\";\n"
+                       "}\n";
 
     TestEnvironment env(code);
     // Hover over non-path string literal on line 1
@@ -1086,22 +1062,23 @@ TEST_CASE("HoverHandler - String Literal Hover")
     REQUIRE(hoverText.has_value());
     auto contentText = std::get<lsp::MarkupContent>(hoverText->contents);
     CHECK(contentText.value.find("```angelscript\n\"" + rawText + "\"\n```") != std::string::npos);
-    CHECK(contentText.value.find("- **Length**: " + std::to_string(rawText.size()) + " characters") != std::string::npos);
+    CHECK(contentText.value.find("- **Length**: " + std::to_string(rawText.size()) + " characters") !=
+          std::string::npos);
 
-    // Hover over path string literal with default config (path resolution false by default)
+    // Hover over path string literal with default config (path resolution is true by default)
     auto hoverPathDefault = env.HoverAt(2, 18);
     REQUIRE(hoverPathDefault.has_value());
     auto contentDefault = std::get<lsp::MarkupContent>(hoverPathDefault->contents);
     CHECK(contentDefault.value.find("```angelscript\n\"path/to/missing_asset.wav\"\n```") != std::string::npos);
-    CHECK(contentDefault.value.find("- **File**: Not found") == std::string::npos);
+    CHECK(contentDefault.value.find("- **File**: Not found") != std::string::npos);
 
-    // Hover over path string literal with path resolution enabled
-    config::ServerConfig pathConfig;
-    pathConfig.features.hoverStringLiteralPathResolution = true;
-    auto hoverPathEnabled = env.HoverAt(2, 18, &pathConfig);
-    REQUIRE(hoverPathEnabled.has_value());
-    auto contentEnabled = std::get<lsp::MarkupContent>(hoverPathEnabled->contents);
-    CHECK(contentEnabled.value.find("- **File**: Not found") != std::string::npos);
+    // Hover over path string literal with path resolution explicitly disabled
+    config::ServerConfig pathDisabledConfig;
+    pathDisabledConfig.features.hoverStringLiteralPathResolution = false;
+    auto hoverPathDisabled = env.HoverAt(2, 18, &pathDisabledConfig);
+    REQUIRE(hoverPathDisabled.has_value());
+    auto contentDisabled = std::get<lsp::MarkupContent>(hoverPathDisabled->contents);
+    CHECK(contentDisabled.value.find("- **File**: Not found") == std::string::npos);
 
     // Hover over string literal with length display disabled
     config::ServerConfig noLengthConfig;
@@ -1118,17 +1095,23 @@ TEST_CASE("HoverHandler - Enum Member Declaration Hover Isolation")
     const std::string enumB = angel_lsp::test::GenerateRandomSymbolName("WeaponFlareAnim");
     const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("Idle");
 
-    std::string code =
-        "enum " + enumA + "\n"
-        "{\n"
-        "    " + memberName + " = 0,\n"
-        "    Shoot1\n"
-        "};\n"
-        "enum " + enumB + "\n"
-        "{\n"
-        "    " + memberName + " = 0,\n"
-        "    Shoot2\n"
-        "};\n";
+    std::string code = "enum " + enumA +
+                       "\n"
+                       "{\n"
+                       "    " +
+                       memberName +
+                       " = 0,\n"
+                       "    Shoot1\n"
+                       "};\n"
+                       "enum " +
+                       enumB +
+                       "\n"
+                       "{\n"
+                       "    " +
+                       memberName +
+                       " = 0,\n"
+                       "    Shoot2\n"
+                       "};\n";
 
     TestEnvironment env(code);
 
@@ -1147,3 +1130,180 @@ TEST_CASE("HoverHandler - Enum Member Declaration Hover Isolation")
     CHECK(contentB.value.find(enumA) == std::string::npos);
 }
 
+TEST_CASE("HoverHandler - Constructor Call Overload Resolution")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("Color");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("MakeColor");
+
+    std::string code = "class " + className +
+                       "\n"
+                       "{\n"
+                       "    " +
+                       className +
+                       "() {}\n"
+                       "    " +
+                       className +
+                       "(int r, int g, int b, int a) {}\n"
+                       "};\n"
+                       "void " +
+                       fnName +
+                       "()\n"
+                       "{\n"
+                       "    " +
+                       className +
+                       "(10, 20, 30, 40);\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+
+    // Hover on className in call at line 7, column 5
+    auto hover = env.HoverAt(7, 5);
+    REQUIRE(hover.has_value());
+    auto content = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(content.value.find(className + "(int r, int g, int b, int a)") != std::string::npos);
+    CHECK(content.value.find("void " + className) == std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Primitive Types Display Exact Bit-Width and Ranges")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("PrimitiveTester");
+    std::string code = "void " + fnName +
+                       "()\n"
+                       "{\n"
+                       "    int a = 1;\n"
+                       "    uint8 b = 2;\n"
+                       "    float c = 3.0f;\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+
+    // Hover on 'int' keyword at line 2, column 5
+    auto hoverInt = env.HoverAt(2, 5);
+    REQUIRE(hoverInt.has_value());
+    auto contentInt = std::get<lsp::MarkupContent>(hoverInt->contents);
+    CHECK(contentInt.value.find("32-bit signed integer") != std::string::npos);
+    CHECK(contentInt.value.find("-2,147,483,648 to 2,147,483,647") != std::string::npos);
+
+    // Hover on 'uint8' keyword at line 3, column 5
+    auto hoverUint8 = env.HoverAt(3, 5);
+    REQUIRE(hoverUint8.has_value());
+    auto contentUint8 = std::get<lsp::MarkupContent>(hoverUint8->contents);
+    CHECK(contentUint8.value.find("8-bit unsigned integer") != std::string::npos);
+    CHECK(contentUint8.value.find("0 to 255") != std::string::npos);
+
+    // Hover on 'float' keyword at line 4, column 5
+    auto hoverFloat = env.HoverAt(4, 5);
+    REQUIRE(hoverFloat.has_value());
+    auto contentFloat = std::get<lsp::MarkupContent>(hoverFloat->contents);
+    CHECK(contentFloat.value.find("IEEE 754") != std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Typedef Displays Underlying Primitive Bit-Width and Ranges")
+{
+    const std::string typeName1 = angel_lsp::test::GenerateRandomSymbolName("CustomInt");
+    const std::string typeName2 = angel_lsp::test::GenerateRandomSymbolName("SpecialInt");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("val");
+
+    std::string code = "typedef int " + typeName1 +
+                       ";\n"
+                       "typedef " +
+                       typeName1 + " " + typeName2 +
+                       ";\n"
+                       "void main()\n"
+                       "{\n"
+                       "    " +
+                       typeName2 + " " + varName +
+                       " = 42;\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+
+    // Hover on typeName2 at line 4, column 5
+    auto hover = env.HoverAt(4, 5);
+    REQUIRE(hover.has_value());
+    auto content = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(content.value.find(typeName2) != std::string::npos);
+    CHECK(content.value.find("32-bit signed integer") != std::string::npos);
+    CHECK(content.value.find("-2,147,483,648 to 2,147,483,647") != std::string::npos);
+    CHECK(content.value.find("underlying type: `int`") != std::string::npos);
+}
+
+TEST_CASE("HoverHandler - Constant string concatenation resolves asset path")
+{
+    const std::string folderVar = angel_lsp::test::GenerateRandomSymbolName("hardcoded_folder");
+    const std::string extVar = angel_lsp::test::GenerateRandomSymbolName("hardcoded_ext");
+    const std::string resultVar = angel_lsp::test::GenerateRandomSymbolName("s1");
+    const std::string assetBase = angel_lsp::test::GenerateRandomSymbolName("model");
+
+    std::error_code ec;
+    auto tempRoot =
+        std::filesystem::temp_directory_path() / angel_lsp::test::GenerateRandomSymbolName("lsp_asset_test");
+    auto subDir = tempRoot / "models";
+    std::filesystem::create_directories(subDir, ec);
+
+    auto assetFile = subDir / (assetBase + ".mdl");
+    {
+        std::ofstream ofs(assetFile);
+        ofs << "dummy model data 123456789";
+    }
+
+    config::ServerConfig cfg;
+    cfg.features.hoverStringLiteralPathResolution = true;
+    cfg.features.assetSearchPaths.push_back(tempRoot.string());
+    cfg.features.assetSearchPaths.push_back(subDir.string());
+
+    std::string code = "const string " + folderVar +
+                       " = \"models/\";\n"
+                       "const string " +
+                       extVar +
+                       " = \".mdl\";\n"
+                       "void main() {\n"
+                       "    string " +
+                       resultVar + " = \"" + assetBase + "\" + " + extVar +
+                       ";\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    std::string line3Prefix = "    string " + resultVar + " = \"";
+    uint32_t hoverCol = static_cast<uint32_t>(line3Prefix.size() + 1);
+    auto hover = env.HoverAt(3, hoverCol, &cfg);
+    REQUIRE(hover.has_value());
+    auto content = std::get<lsp::MarkupContent>(hover->contents);
+    CHECK(content.value.find("*(asset)*") != std::string::npos);
+    CHECK(content.value.find("Status**: Exists") != std::string::npos);
+    CHECK(content.value.find(assetBase + ".mdl") != std::string::npos);
+
+    std::filesystem::remove_all(tempRoot, ec);
+}
+
+TEST_CASE("HoverHandler - Invariant: Local variable of funcdef type displays funcdef signature and doc comment without "
+          "arbitrary initializer")
+{
+    const std::string funcdefName = angel_lsp::test::GenerateRandomSymbolName("CallbackFunc");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("cb");
+    const std::string docText = "Callback for when an action occurs.";
+
+    std::string code = "/** " + docText +
+                       " */\n"
+                       "funcdef void " +
+                       funcdefName +
+                       "(int player, float option);\n"
+                       "void main() {\n"
+                       "    " +
+                       funcdefName + "@ " + varName +
+                       " = GetSomeDynamicValue();\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    std::string line3 = "    " + funcdefName + "@ " + varName;
+    uint32_t charPos = static_cast<uint32_t>(line3.size() - 2);
+
+    auto hover = env.HoverAt(3, charPos);
+    REQUIRE(hover.has_value());
+    auto content = std::get<lsp::MarkupContent>(hover->contents);
+
+    CHECK(content.value.find("(local variable) " + funcdefName + "@ " + varName) != std::string::npos);
+    CHECK(content.value.find("GetSomeDynamicValue") == std::string::npos);
+    CHECK(content.value.find("funcdef void " + funcdefName + "(int player, float option)") != std::string::npos);
+    CHECK(content.value.find(docText) != std::string::npos);
+}

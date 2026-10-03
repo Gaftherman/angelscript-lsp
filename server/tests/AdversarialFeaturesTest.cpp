@@ -1,18 +1,18 @@
 #include <doctest/doctest.h>
 
-#include "features/hover/HoverHandler.h"
-#include "features/definition/DefinitionHandler.h"
-#include "features/completion/CompletionHandler.h"
-#include "features/signature_help/SignatureHelpHandler.h"
-#include "features/semantic_tokens/SemanticTokensHandler.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "features/completion/CompletionHandler.h"
+#include "features/definition/DefinitionHandler.h"
+#include "features/hover/HoverHandler.h"
+#include "features/semantic_tokens/SemanticTokensHandler.h"
+#include "features/signature_help/SignatureHelpHandler.h"
 #include "parser/AngelScriptParser.h"
-#include <vector>
-#include <string>
 #include <optional>
+#include <string>
+#include <vector>
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;
@@ -21,83 +21,83 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct AdversarialTestEnv
+struct AdversarialTestEnv
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    std::string uri = "file:///adversarial_test.as";
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    AdversarialTestEnv(const std::string& code) : sourceCode(code)
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        std::string uri = "file:///adversarial_test.as";
-        std::string sourceCode;
-        TSTree *tree = nullptr;
-
-        AdversarialTestEnv(const std::string &code)
-            : sourceCode(code)
+        tree = parser.Parse(sourceCode);
+        symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
+        auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
+        if (rootScope)
         {
-            tree = parser.Parse(sourceCode);
-            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(uri, std::move(rootScope));
-            }
+            scopeIndex.SetScopeTree(uri, std::move(rootScope));
         }
+    }
 
-        ~AdversarialTestEnv()
+    ~AdversarialTestEnv()
+    {
+        if (tree)
         {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
+            ts_tree_delete(tree);
         }
+    }
 
-        std::optional<lsp::Hover> Hover(uint32_t line, uint32_t col)
-        {
-            HoverRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{ line, col } };
-            return GetHover(req);
-        }
+    std::optional<lsp::Hover> Hover(uint32_t line, uint32_t col)
+    {
+        HoverRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, col}};
+        return GetHover(req);
+    }
 
-        std::optional<std::vector<lsp::Location>> Def(uint32_t line, uint32_t col)
-        {
-            DefinitionRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{ line, col } };
-            return GetDefinition(req);
-        }
+    std::optional<std::vector<lsp::Location>> Def(uint32_t line, uint32_t col)
+    {
+        DefinitionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, col}};
+        return GetDefinition(req);
+    }
 
-        std::optional<std::vector<lsp::Location>> TypeDef(uint32_t line, uint32_t col)
-        {
-            DefinitionRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{ line, col } };
-            return GetTypeDefinition(req);
-        }
+    std::optional<std::vector<lsp::Location>> TypeDef(uint32_t line, uint32_t col)
+    {
+        DefinitionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, col}};
+        return GetTypeDefinition(req);
+    }
 
-        std::vector<lsp::CompletionItem> Complete(uint32_t line, uint32_t col)
-        {
-            CompletionRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{ line, col } };
-            return GetCompletion(req);
-        }
+    std::vector<lsp::CompletionItem> Complete(uint32_t line, uint32_t col)
+    {
+        CompletionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, col}};
+        return GetCompletion(req);
+    }
 
-        std::optional<lsp::SignatureHelp> SigHelp(uint32_t line, uint32_t col)
-        {
-            SignatureHelpRequest req{ uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{ line, col } };
-            return GetSignatureHelp(req);
-        }
+    std::optional<lsp::SignatureHelp> SigHelp(uint32_t line, uint32_t col)
+    {
+        SignatureHelpRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, col}};
+        return GetSignatureHelp(req);
+    }
 
-        lsp::SemanticTokens Tokens()
-        {
-            SemanticTokensRequest req{ uri, sourceCode, tree, symbolTable };
-            return GetSemanticTokens(req);
-        }
+    lsp::SemanticTokens Tokens()
+    {
+        SemanticTokensRequest req{uri, sourceCode, tree, symbolTable};
+        return GetSemanticTokens(req);
+    }
 
-        bool HasCompletionItem(const std::vector<lsp::CompletionItem> &items, const std::string &label)
+    bool HasCompletionItem(const std::vector<lsp::CompletionItem>& items, const std::string& label)
+    {
+        for (const auto& item : items)
         {
-            for (const auto &item : items)
-            {
-                if (item.label == label) return true;
-            }
-            return false;
+            if (item.label == label)
+                return true;
         }
-    };
-}
+        return false;
+    }
+};
+} // namespace
 
 // =============================================================================
 // 1. HOVER ADVERSARIAL TESTS
@@ -154,7 +154,8 @@ TEST_CASE("Adversarial Hover - Syntax Error Recovery States")
 {
     // Broken class with unclosed methods
     {
-        std::string brokenCode = "class BrokenClass { void Incomplete(int a, \n int validField;\n void main() { validField = 10; }";
+        std::string brokenCode =
+            "class BrokenClass { void Incomplete(int a, \n int validField;\n void main() { validField = 10; }";
         AdversarialTestEnv env(brokenCode);
         CHECK_NOTHROW(env.Hover(1, 6));
     }
@@ -170,18 +171,17 @@ TEST_CASE("Adversarial Hover - Syntax Error Recovery States")
 
 TEST_CASE("Adversarial Hover - Deeply Nested Scopes and Shadowing")
 {
-    std::string code =
-        "int x = 1;\n"
-        "void main() {\n"
-        "    int x = 2;\n"
-        "    {\n"
-        "        int x = 3;\n"
-        "        {\n"
-        "            int x = 4;\n"
-        "            int y = x;\n" // Line 7, col 20: 'x' here is 4
-        "        }\n"
-        "    }\n"
-        "}\n";
+    std::string code = "int x = 1;\n"
+                       "void main() {\n"
+                       "    int x = 2;\n"
+                       "    {\n"
+                       "        int x = 3;\n"
+                       "        {\n"
+                       "            int x = 4;\n"
+                       "            int y = x;\n" // Line 7, col 20: 'x' here is 4
+                       "        }\n"
+                       "    }\n"
+                       "}\n";
 
     AdversarialTestEnv env(code);
     auto hover = env.Hover(7, 20);
@@ -201,14 +201,13 @@ TEST_CASE("Adversarial Hover - Doxygen Doc Comments Edge Cases")
 
     // Line comments with interleaved blank lines
     {
-        std::string docWithBlanks =
-            "/// @brief First line of brief\n"
-            "///\n"
-            "/// Second line of brief.\n"
-            "/// @param a Input param.\n"
-            "/// @return Result.\n"
-            "\n"
-            "int ComplexDoc(int a);\n";
+        std::string docWithBlanks = "/// @brief First line of brief\n"
+                                    "///\n"
+                                    "/// Second line of brief.\n"
+                                    "/// @param a Input param.\n"
+                                    "/// @return Result.\n"
+                                    "\n"
+                                    "int ComplexDoc(int a);\n";
 
         AdversarialTestEnv env(docWithBlanks);
         auto hover = env.Hover(6, 6);
@@ -220,16 +219,15 @@ TEST_CASE("Adversarial Hover - Doxygen Doc Comments Edge Cases")
 
     // Tricky Doxygen tags: @tparam, \param, \note, \warning, @see
     {
-        std::string backslashTags =
-            "/**\n"
-            " * \\brief Backslash brief.\n"
-            " * \\tparam T Template type.\n"
-            " * \\param val Value.\n"
-            " * \\note Important note.\n"
-            " * \\warning Be careful.\n"
-            " * \\see OtherFunc, AnotherFunc\n"
-            " */\n"
-            "void BackslashFunc(int val);\n";
+        std::string backslashTags = "/**\n"
+                                    " * \\brief Backslash brief.\n"
+                                    " * \\tparam T Template type.\n"
+                                    " * \\param val Value.\n"
+                                    " * \\note Important note.\n"
+                                    " * \\warning Be careful.\n"
+                                    " * \\see OtherFunc, AnotherFunc\n"
+                                    " */\n"
+                                    "void BackslashFunc(int val);\n";
 
         AdversarialTestEnv env(backslashTags);
         auto hover = env.Hover(8, 6);
@@ -259,15 +257,14 @@ TEST_CASE("Adversarial Definition - Empty, Out of Bounds, Whitespace")
 
 TEST_CASE("Adversarial Definition - Variable Shadowing Navigation")
 {
-    std::string code =
-        "int target = 0;\n"         // Line 0
-        "void Func() {\n"
-        "    int target = 1;\n"     // Line 2
-        "    {\n"
-        "        int target = 2;\n" // Line 4
-        "        int use = target;\n"// Line 5, col 19
-        "    }\n"
-        "}\n";
+    std::string code = "int target = 0;\n" // Line 0
+                       "void Func() {\n"
+                       "    int target = 1;\n" // Line 2
+                       "    {\n"
+                       "        int target = 2;\n"   // Line 4
+                       "        int use = target;\n" // Line 5, col 19
+                       "    }\n"
+                       "}\n";
 
     AdversarialTestEnv env(code);
     auto def = env.Def(5, 19);
@@ -278,15 +275,14 @@ TEST_CASE("Adversarial Definition - Variable Shadowing Navigation")
 
 TEST_CASE("Adversarial Definition - Direct Base Class Member Resolution")
 {
-    std::string code =
-        "class Parent {\n"
-        "    void parentMethod() {}\n"// Line 1
-        "}\n"
-        "class Child : Parent {\n"
-        "    void test() {\n"
-        "        this.parentMethod();\n"// Line 5, col 15: parentMethod
-        "    }\n"
-        "}\n";
+    std::string code = "class Parent {\n"
+                       "    void parentMethod() {}\n" // Line 1
+                       "}\n"
+                       "class Child : Parent {\n"
+                       "    void test() {\n"
+                       "        this.parentMethod();\n" // Line 5, col 15: parentMethod
+                       "    }\n"
+                       "}\n";
 
     AdversarialTestEnv env(code);
 
@@ -298,14 +294,13 @@ TEST_CASE("Adversarial Definition - Direct Base Class Member Resolution")
 
 TEST_CASE("Adversarial Definition - Go to Type Definition")
 {
-    std::string code =
-        "class Weapon {}\n"         // Line 0
-        "enum Element { Fire }\n"   // Line 1
-        "void main() {\n"
-        "    int primitive = 10;\n"
-        "    Weapon@ w = null;\n"   // Line 4, col 13: w
-        "    Element e = Element::Fire;\n" // Line 5, col 13: e
-        "}\n";
+    std::string code = "class Weapon {}\n"       // Line 0
+                       "enum Element { Fire }\n" // Line 1
+                       "void main() {\n"
+                       "    int primitive = 10;\n"
+                       "    Weapon@ w = null;\n"          // Line 4, col 13: w
+                       "    Element e = Element::Fire;\n" // Line 5, col 13: e
+                       "}\n";
 
     AdversarialTestEnv env(code);
 
@@ -361,15 +356,14 @@ TEST_CASE("Adversarial Completion - Non-existent and Invalid Receivers")
 
 TEST_CASE("Adversarial Completion - Arrow Operator Is Not Member Access")
 {
-    std::string code =
-        "class Node {\n"
-        "    Node@ next;\n"
-        "    int value;\n"
-        "}\n"
-        "void main() {\n"
-        "    Node n;\n"
-        "    n->\n"
-        "}\n";
+    std::string code = "class Node {\n"
+                       "    Node@ next;\n"
+                       "    int value;\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Node n;\n"
+                       "    n->\n"
+                       "}\n";
 
     AdversarialTestEnv env(code);
     auto items = env.Complete(6, 7);
@@ -379,15 +373,14 @@ TEST_CASE("Adversarial Completion - Arrow Operator Is Not Member Access")
 
 TEST_CASE("Adversarial Completion - Incomplete Code and Syntax Error Recovery")
 {
-    std::string code =
-        "class Entity {\n"
-        "    int id;\n"
-        "}\n"
-        "void main() {\n"
-        "    Entity e;\n"
-        "    if (e.id > 0) {\n"
-        "        for (int i = 0; i < 10; ++i) {\n"
-        "            e.\n";
+    std::string code = "class Entity {\n"
+                       "    int id;\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Entity e;\n"
+                       "    if (e.id > 0) {\n"
+                       "        for (int i = 0; i < 10; ++i) {\n"
+                       "            e.\n";
 
     AdversarialTestEnv env(code);
     auto items = env.Complete(7, 14);
@@ -400,18 +393,17 @@ TEST_CASE("Adversarial Completion - Incomplete Code and Syntax Error Recovery")
 
 TEST_CASE("Adversarial SignatureHelp - Overloaded Functions with Varying Arities")
 {
-    std::string code =
-        "void Log() {}\n"
-        "void Log(int a) {}\n"
-        "void Log(int a, float b) {}\n"
-        "void Log(int a, float b, string c) {}\n"
-        "void main() {\n"
-        "    Log();\n"                         // Line 5, col 8
-        "    Log(10);\n"                       // Line 6, col 10
-        "    Log(10, 2.5);\n"                  // Line 7, col 14
-        "    Log(10, 2.5, \"msg\");\n"         // Line 8, col 20
-        "    Log(10, 2.5, \"msg\", 999);\n"    // Line 9, col 27 (excess args)
-        "}\n";
+    std::string code = "void Log() {}\n"
+                       "void Log(int a) {}\n"
+                       "void Log(int a, float b) {}\n"
+                       "void Log(int a, float b, string c) {}\n"
+                       "void main() {\n"
+                       "    Log();\n"                      // Line 5, col 8
+                       "    Log(10);\n"                    // Line 6, col 10
+                       "    Log(10, 2.5);\n"               // Line 7, col 14
+                       "    Log(10, 2.5, \"msg\");\n"      // Line 8, col 20
+                       "    Log(10, 2.5, \"msg\", 999);\n" // Line 9, col 27 (excess args)
+                       "}\n";
 
     AdversarialTestEnv env(code);
 
@@ -443,11 +435,10 @@ TEST_CASE("Adversarial SignatureHelp - Overloaded Functions with Varying Arities
 
 TEST_CASE("Adversarial SignatureHelp - Complex Expressions, Quotes and Braces in Args")
 {
-    std::string code =
-        "void Draw(string title, int x, int y) {}\n"
-        "void main() {\n"
-        "    Draw(\"hello, world \\\"quoted, string\\\"\", 100, 200);\n"
-        "}\n";
+    std::string code = "void Draw(string title, int x, int y) {}\n"
+                       "void main() {\n"
+                       "    Draw(\"hello, world \\\"quoted, string\\\"\", 100, 200);\n"
+                       "}\n";
 
     AdversarialTestEnv env(code);
 
@@ -464,10 +455,9 @@ TEST_CASE("Adversarial SignatureHelp - Complex Expressions, Quotes and Braces in
 
 TEST_CASE("Adversarial SignatureHelp - Unclosed Parenthesis / Typing in Progress")
 {
-    std::string incompleteCode =
-        "void Compute(int val, float scale) {}\n"
-        "void main() {\n"
-        "    Compute(42, \n";
+    std::string incompleteCode = "void Compute(int val, float scale) {}\n"
+                                 "void main() {\n"
+                                 "    Compute(42, \n";
 
     AdversarialTestEnv env(incompleteCode);
     auto sig = env.SigHelp(2, 16);
@@ -486,31 +476,30 @@ TEST_CASE("Adversarial SignatureHelp - Unclosed Parenthesis / Typing in Progress
 
 TEST_CASE("Adversarial SemanticTokens - Invariant Verification")
 {
-    std::string complexCode =
-        "#include \"engine.as\"\n"
-        "#pragma once\n"
-        "\n"
-        "shared class BaseNode {\n"
-        "    private int m_id = 0;\n"
-        "    int id { get const { return m_id; } }\n"
-        "}\n"
-        "\n"
-        "enum Status {\n"
-        "    Ok = 200,\n"
-        "    Error = 500\n"
-        "}\n"
-        "\n"
-        "funcdef void ActionCallback(int code, const string &in msg);\n"
-        "\n"
-        "/* Multi-line\n"
-        "   Block Comment */\n"
-        "void Process(int count, ActionCallback@ cb) {\n"
-        "    for (int i = 0; i < count; ++i) {\n"
-        "        if (i % 2 == 0) {\n"
-        "            cb(i, \"Status: \" + i);\n"
-        "        }\n"
-        "    }\n"
-        "}\n";
+    std::string complexCode = "#include \"engine.as\"\n"
+                              "#pragma once\n"
+                              "\n"
+                              "shared class BaseNode {\n"
+                              "    private int m_id = 0;\n"
+                              "    int id { get const { return m_id; } }\n"
+                              "}\n"
+                              "\n"
+                              "enum Status {\n"
+                              "    Ok = 200,\n"
+                              "    Error = 500\n"
+                              "}\n"
+                              "\n"
+                              "funcdef void ActionCallback(int code, const string &in msg);\n"
+                              "\n"
+                              "/* Multi-line\n"
+                              "   Block Comment */\n"
+                              "void Process(int count, ActionCallback@ cb) {\n"
+                              "    for (int i = 0; i < count; ++i) {\n"
+                              "        if (i % 2 == 0) {\n"
+                              "            cb(i, \"Status: \" + i);\n"
+                              "        }\n"
+                              "    }\n"
+                              "}\n";
 
     AdversarialTestEnv env(complexCode);
     auto tokens = env.Tokens();
@@ -518,14 +507,14 @@ TEST_CASE("Adversarial SemanticTokens - Invariant Verification")
     REQUIRE(tokens.data.size() % 5 == 0);
     REQUIRE(tokens.data.size() > 0);
 
-    const auto &legend = GetSemanticTokensLegend();
+    const auto& legend = GetSemanticTokensLegend();
     size_t numTokens = tokens.data.size() / 5;
 
     for (size_t i = 0; i < numTokens; ++i)
     {
         uint32_t deltaLine = tokens.data[i * 5 + 0];
         uint32_t deltaChar = tokens.data[i * 5 + 1];
-        uint32_t length    = tokens.data[i * 5 + 2];
+        uint32_t length = tokens.data[i * 5 + 2];
         uint32_t tokenType = tokens.data[i * 5 + 3];
 
         CHECK(length > 0);
@@ -553,22 +542,22 @@ TEST_CASE("Adversarial SemanticTokens - Severely Broken Syntax")
 
 TEST_CASE("Adversarial Remediation - Member Access vs Local Variable Shadowing")
 {
-    std::string code =
-        "class Player {\n"
-        "    int health;\n"
-        "    void attack() {}\n"
-        "}\n"
-        "void main() {\n"
-        "    int health = 100;\n"
-        "    int attack = 5;\n"
-        "    Player p;\n"
-        "    p.health = 50;\n"
-        "    p.attack();\n"
-        "}\n";
+    std::string code = "class Player {\n"
+                       "    int health;\n"
+                       "    void attack() {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    int health = 100;\n"
+                       "    int attack = 5;\n"
+                       "    Player p;\n"
+                       "    p.health = 50;\n"
+                       "    p.attack();\n"
+                       "}\n";
 
     AdversarialTestEnv env(code);
 
-    // Hover on 'health' in 'p.health' (line 8, col 6) -> Should resolve to property health on Player, not local variable
+    // Hover on 'health' in 'p.health' (line 8, col 6) -> Should resolve to property health on Player, not local
+    // variable
     auto hoverHealth = env.Hover(8, 6);
     REQUIRE(hoverHealth.has_value());
     auto healthContent = std::get<lsp::MarkupContent>(hoverHealth->contents).value;
@@ -597,32 +586,31 @@ TEST_CASE("Adversarial Remediation - Member Access vs Local Variable Shadowing")
 
 TEST_CASE("Adversarial Remediation - Multi-Level Recursive Inheritance & Interface Traversal")
 {
-    std::string code =
-        "interface ISerializable {\n"
-        "    void serialize();\n"
-        "}\n"
-        "class Entity {\n"
-        "    int entityId;\n"
-        "    void spawn(int x, int y) {}\n"
-        "}\n"
-        "class Actor : Entity {\n"
-        "    float speed;\n"
-        "    void move(float dir) {}\n"
-        "}\n"
-        "class Hero : Actor, ISerializable {\n"
-        "    string heroName;\n"
-        "    void castSpell(int id) {}\n"
-        "}\n"
-        "void main() {\n"
-        "    Hero h;\n"
-        "    h.entityId = 1;\n"
-        "    h.speed = 2.5f;\n"
-        "    h.heroName = \"Aragorn\";\n"
-        "    h.spawn(10, 20);\n"
-        "    h.move(1.0f);\n"
-        "    h.castSpell(42);\n"
-        "    h.serialize();\n"
-        "}\n";
+    std::string code = "interface ISerializable {\n"
+                       "    void serialize();\n"
+                       "}\n"
+                       "class Entity {\n"
+                       "    int entityId;\n"
+                       "    void spawn(int x, int y) {}\n"
+                       "}\n"
+                       "class Actor : Entity {\n"
+                       "    float speed;\n"
+                       "    void move(float dir) {}\n"
+                       "}\n"
+                       "class Hero : Actor, ISerializable {\n"
+                       "    string heroName;\n"
+                       "    void castSpell(int id) {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Hero h;\n"
+                       "    h.entityId = 1;\n"
+                       "    h.speed = 2.5f;\n"
+                       "    h.heroName = \"Aragorn\";\n"
+                       "    h.spawn(10, 20);\n"
+                       "    h.move(1.0f);\n"
+                       "    h.castSpell(42);\n"
+                       "    h.serialize();\n"
+                       "}\n";
 
     AdversarialTestEnv env(code);
 
@@ -667,7 +655,7 @@ TEST_CASE("Adversarial Remediation - Multi-Level Recursive Inheritance & Interfa
     // 3. Member completion on 'h.' includes all inherited members
     auto completions = env.Complete(17, 6);
     std::unordered_set<std::string> compLabels;
-    for (const auto &item : completions)
+    for (const auto& item : completions)
     {
         compLabels.insert(item.label);
     }
@@ -690,12 +678,11 @@ TEST_CASE("Adversarial Remediation - Multi-Level Recursive Inheritance & Interfa
 
 TEST_CASE("Adversarial Remediation - SignatureHelp with Comments and Template Brackets")
 {
-    std::string code =
-        "void Configure(string tag, int mode, float factor) {}\n"
-        "void main() {\n"
-        "    Configure(cast<array<int, 2>>(x), /* comment, with, commas */ 42, // inline, comment\n"
-        "              3.14f);\n"
-        "}\n";
+    std::string code = "void Configure(string tag, int mode, float factor) {}\n"
+                       "void main() {\n"
+                       "    Configure(cast<array<int, 2>>(x), /* comment, with, commas */ 42, // inline, comment\n"
+                       "              3.14f);\n"
+                       "}\n";
 
     AdversarialTestEnv env(code);
 
@@ -717,4 +704,3 @@ TEST_CASE("Adversarial Remediation - SignatureHelp with Comments and Template Br
     REQUIRE(sig2->activeParameter.has_value());
     CHECK(sig2->activeParameter.value().value() == 2u);
 }
-

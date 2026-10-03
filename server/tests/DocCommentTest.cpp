@@ -8,17 +8,16 @@ using namespace angel_lsp::analysis;
 
 TEST_CASE("DocComment - Renders every Doxygen tag a declaration carries")
 {
-    const std::string source =
-        "/**\n"
-        " * @brief Calculates the sum.\n"
-        " * @param a First value.\n"
-        " * @param b Second value.\n"
-        " * @return The sum.\n"
-        " * @note Important function.\n"
-        " * @warning Use with care.\n"
-        " * @see OtherFunc\n"
-        " */\n"
-        "int Add(int a, int b);\n";
+    const std::string source = "/**\n"
+                               " * @brief Calculates the sum.\n"
+                               " * @param a First value.\n"
+                               " * @param b Second value.\n"
+                               " * @return The sum.\n"
+                               " * @note Important function.\n"
+                               " * @warning Use with care.\n"
+                               " * @see OtherFunc\n"
+                               " */\n"
+                               "int Add(int a, int b);\n";
 
     const std::string doc = ExtractDocComment(source, 9);
     CHECK(doc.find("Calculates the sum.") != std::string::npos);
@@ -32,10 +31,9 @@ TEST_CASE("DocComment - Renders every Doxygen tag a declaration carries")
 
 TEST_CASE("DocComment - Reads a run of line comments")
 {
-    const std::string source =
-        "/// Spawns the entity.\n"
-        "/// Call once per round.\n"
-        "void Spawn();\n";
+    const std::string source = "/// Spawns the entity.\n"
+                               "/// Call once per round.\n"
+                               "void Spawn();\n";
 
     const std::string doc = ExtractDocComment(source, 2);
     CHECK(doc.find("Spawns the entity.") != std::string::npos);
@@ -44,11 +42,10 @@ TEST_CASE("DocComment - Reads a run of line comments")
 
 TEST_CASE("DocComment - Skips blank lines between the comment and the declaration")
 {
-    const std::string source =
-        "/// Spawns the entity.\n"
-        "\n"
-        "\n"
-        "void Spawn();\n";
+    const std::string source = "/// Spawns the entity.\n"
+                               "\n"
+                               "\n"
+                               "void Spawn();\n";
 
     CHECK(ExtractDocComment(source, 3).find("Spawns the entity.") != std::string::npos);
 }
@@ -110,10 +107,12 @@ TEST_CASE("DocComment - Reads trailing comments on declaration line")
 
     SUBCASE("Strips internal list pattern marker following real trailing comment")
     {
-        const std::string sourceWithoutSemi = "array(int &in) {repeat T}; // asBEHAVE_LIST_FACTORY//@listpattern {repeat T}\n";
+        const std::string sourceWithoutSemi =
+            "array(int &in) {repeat T}; // asBEHAVE_LIST_FACTORY//@listpattern {repeat T}\n";
         CHECK(ExtractDocComment(sourceWithoutSemi, 0) == "asBEHAVE_LIST_FACTORY");
 
-        const std::string sourceWithSemi = "array(int &in) {repeat T}; // asBEHAVE_LIST_FACTORY;//@listpattern {repeat T}\n";
+        const std::string sourceWithSemi =
+            "array(int &in) {repeat T}; // asBEHAVE_LIST_FACTORY;//@listpattern {repeat T}\n";
         CHECK(ExtractDocComment(sourceWithSemi, 0) == "asBEHAVE_LIST_FACTORY;");
     }
 
@@ -123,4 +122,3 @@ TEST_CASE("DocComment - Reads trailing comments on declaration line")
         CHECK(ExtractDocComment(source, 0) == "Spawns the entity");
     }
 }
-

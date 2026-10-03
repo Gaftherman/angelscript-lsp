@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 
-#include "features/document_symbol/DocumentSymbolHandler.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "features/document_symbol/DocumentSymbolHandler.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -12,80 +12,78 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct DocumentSymbolTestEnv
+struct DocumentSymbolTestEnv
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    SymbolTable symbolTable;
+    std::string uri = "file:///test.as";
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    DocumentSymbolTestEnv(const std::string& code) : sourceCode(code)
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        SymbolTable symbolTable;
-        std::string uri = "file:///test.as";
-        std::string sourceCode;
-        TSTree *tree = nullptr;
+        tree = parser.Parse(sourceCode);
+        symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
+    }
 
-        DocumentSymbolTestEnv(const std::string &code)
-            : sourceCode(code)
-        {
-            tree = parser.Parse(sourceCode);
-            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-        }
-
-        ~DocumentSymbolTestEnv()
-        {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
-        }
-
-        std::optional<DocumentSymbolResult> GetSymbols()
-        {
-            DocumentSymbolRequest req{ uri, sourceCode, tree, symbolTable };
-            return GetDocumentSymbols(req);
-        }
-
-        std::optional<DocumentSymbolResult> GetSymbolsNullTree()
-        {
-            DocumentSymbolRequest req{ uri, sourceCode, nullptr, symbolTable };
-            return GetDocumentSymbols(req);
-        }
-    };
-
-    void ValidateRangeContainment(const lsp::DocumentSymbol &sym)
+    ~DocumentSymbolTestEnv()
     {
-        // range.start <= selectionRange.start
-        if (sym.range.start.line == sym.selectionRange.start.line)
+        if (tree)
         {
-            CHECK(sym.range.start.character <= sym.selectionRange.start.character);
+            ts_tree_delete(tree);
         }
-        else
-        {
-            CHECK(sym.range.start.line <= sym.selectionRange.start.line);
-        }
+    }
 
-        // selectionRange.end <= range.end
-        if (sym.selectionRange.end.line == sym.range.end.line)
-        {
-            CHECK(sym.selectionRange.end.character <= sym.range.end.character);
-        }
-        else
-        {
-            CHECK(sym.selectionRange.end.line <= sym.range.end.line);
-        }
+    std::optional<DocumentSymbolResult> GetSymbols()
+    {
+        DocumentSymbolRequest req{uri, sourceCode, tree, symbolTable};
+        return GetDocumentSymbols(req);
+    }
 
-        if (sym.children.has_value())
+    std::optional<DocumentSymbolResult> GetSymbolsNullTree()
+    {
+        DocumentSymbolRequest req{uri, sourceCode, nullptr, symbolTable};
+        return GetDocumentSymbols(req);
+    }
+};
+
+void ValidateRangeContainment(const lsp::DocumentSymbol& sym)
+{
+    // range.start <= selectionRange.start
+    if (sym.range.start.line == sym.selectionRange.start.line)
+    {
+        CHECK(sym.range.start.character <= sym.selectionRange.start.character);
+    }
+    else
+    {
+        CHECK(sym.range.start.line <= sym.selectionRange.start.line);
+    }
+
+    // selectionRange.end <= range.end
+    if (sym.selectionRange.end.line == sym.range.end.line)
+    {
+        CHECK(sym.selectionRange.end.character <= sym.range.end.character);
+    }
+    else
+    {
+        CHECK(sym.selectionRange.end.line <= sym.range.end.line);
+    }
+
+    if (sym.children.has_value())
+    {
+        for (const auto& child : sym.children.value())
         {
-            for (const auto &child : sym.children.value())
-            {
-                ValidateRangeContainment(child);
-            }
+            ValidateRangeContainment(child);
         }
     }
 }
+} // namespace
 
 TEST_CASE("DocumentSymbolHandler - Global Declarations")
 {
-    std::string code =
-        "int g_GlobalCount = 100;\n"
-        "void GlobalFunction(int a, float b) {}\n";
+    std::string code = "int g_GlobalCount = 100;\n"
+                       "void GlobalFunction(int a, float b) {}\n";
 
     DocumentSymbolTestEnv env(code);
     auto symbols = env.GetSymbols();
@@ -106,15 +104,14 @@ TEST_CASE("DocumentSymbolHandler - Global Declarations")
 
 TEST_CASE("DocumentSymbolHandler - Class Hierarchy with Methods, Fields, and Constructors")
 {
-    std::string code =
-        "class Player\n"
-        "{\n"
-        "    int health;\n"
-        "    float speed;\n"
-        "    Player() {}\n"
-        "    ~Player() {}\n"
-        "    void Move(float dx, float dy) {}\n"
-        "}\n";
+    std::string code = "class Player\n"
+                       "{\n"
+                       "    int health;\n"
+                       "    float speed;\n"
+                       "    Player() {}\n"
+                       "    ~Player() {}\n"
+                       "    void Move(float dx, float dy) {}\n"
+                       "}\n";
 
     DocumentSymbolTestEnv env(code);
     auto symbols = env.GetSymbols();
@@ -122,12 +119,12 @@ TEST_CASE("DocumentSymbolHandler - Class Hierarchy with Methods, Fields, and Con
     REQUIRE(symbols.has_value());
     REQUIRE(symbols->size() == 1);
 
-    const auto &player = (*symbols)[0];
+    const auto& player = (*symbols)[0];
     CHECK(player.name == "Player");
     CHECK(player.kind == lsp::SymbolKind::Class);
     CHECK(player.children.has_value());
 
-    const auto &children = player.children.value();
+    const auto& children = player.children.value();
     REQUIRE(children.size() == 5);
 
     CHECK(children[0].name == "health");
@@ -150,17 +147,16 @@ TEST_CASE("DocumentSymbolHandler - Class Hierarchy with Methods, Fields, and Con
 
 TEST_CASE("DocumentSymbolHandler - Namespace Nesting")
 {
-    std::string code =
-        "namespace Engine\n"
-        "{\n"
-        "    namespace Graphics\n"
-        "    {\n"
-        "        class Renderer\n"
-        "        {\n"
-        "            void Render() {}\n"
-        "        }\n"
-        "    }\n"
-        "}\n";
+    std::string code = "namespace Engine\n"
+                       "{\n"
+                       "    namespace Graphics\n"
+                       "    {\n"
+                       "        class Renderer\n"
+                       "        {\n"
+                       "            void Render() {}\n"
+                       "        }\n"
+                       "    }\n"
+                       "}\n";
 
     DocumentSymbolTestEnv env(code);
     auto symbols = env.GetSymbols();
@@ -168,34 +164,33 @@ TEST_CASE("DocumentSymbolHandler - Namespace Nesting")
     REQUIRE(symbols.has_value());
     REQUIRE(symbols->size() == 1);
 
-    const auto &engine = (*symbols)[0];
+    const auto& engine = (*symbols)[0];
     CHECK(engine.name == "Engine");
     CHECK(engine.kind == lsp::SymbolKind::Namespace);
     REQUIRE(engine.children.has_value());
 
-    const auto &graphics = engine.children.value()[0];
+    const auto& graphics = engine.children.value()[0];
     CHECK(graphics.name == "Graphics");
     CHECK(graphics.kind == lsp::SymbolKind::Namespace);
     REQUIRE(graphics.children.has_value());
 
-    const auto &renderer = graphics.children.value()[0];
+    const auto& renderer = graphics.children.value()[0];
     CHECK(renderer.name == "Renderer");
     CHECK(renderer.kind == lsp::SymbolKind::Class);
     REQUIRE(renderer.children.has_value());
 
-    const auto &renderMethod = renderer.children.value()[0];
+    const auto& renderMethod = renderer.children.value()[0];
     CHECK(renderMethod.name == "Render");
     CHECK(renderMethod.kind == lsp::SymbolKind::Method);
 }
 
 TEST_CASE("DocumentSymbolHandler - Interfaces and Methods")
 {
-    std::string code =
-        "interface IUpdatable\n"
-        "{\n"
-        "    void Update(float dt);\n"
-        "    int GetPriority();\n"
-        "}\n";
+    std::string code = "interface IUpdatable\n"
+                       "{\n"
+                       "    void Update(float dt);\n"
+                       "    int GetPriority();\n"
+                       "}\n";
 
     DocumentSymbolTestEnv env(code);
     auto symbols = env.GetSymbols();
@@ -203,12 +198,12 @@ TEST_CASE("DocumentSymbolHandler - Interfaces and Methods")
     REQUIRE(symbols.has_value());
     REQUIRE(symbols->size() == 1);
 
-    const auto &iface = (*symbols)[0];
+    const auto& iface = (*symbols)[0];
     CHECK(iface.name == "IUpdatable");
     CHECK(iface.kind == lsp::SymbolKind::Interface);
     REQUIRE(iface.children.has_value());
 
-    const auto &children = iface.children.value();
+    const auto& children = iface.children.value();
     REQUIRE(children.size() == 2);
 
     CHECK(children[0].name == "Update");
@@ -220,13 +215,12 @@ TEST_CASE("DocumentSymbolHandler - Interfaces and Methods")
 
 TEST_CASE("DocumentSymbolHandler - Enums and Enum Members")
 {
-    std::string code =
-        "enum LogLevel\n"
-        "{\n"
-        "    Info = 0,\n"
-        "    Warning,\n"
-        "    Error = 10\n"
-        "}\n";
+    std::string code = "enum LogLevel\n"
+                       "{\n"
+                       "    Info = 0,\n"
+                       "    Warning,\n"
+                       "    Error = 10\n"
+                       "}\n";
 
     DocumentSymbolTestEnv env(code);
     auto symbols = env.GetSymbols();
@@ -234,12 +228,12 @@ TEST_CASE("DocumentSymbolHandler - Enums and Enum Members")
     REQUIRE(symbols.has_value());
     REQUIRE(symbols->size() == 1);
 
-    const auto &enumSym = (*symbols)[0];
+    const auto& enumSym = (*symbols)[0];
     CHECK(enumSym.name == "LogLevel");
     CHECK(enumSym.kind == lsp::SymbolKind::Enum);
     REQUIRE(enumSym.children.has_value());
 
-    const auto &members = enumSym.children.value();
+    const auto& members = enumSym.children.value();
     REQUIRE(members.size() == 3);
 
     CHECK(members[0].name == "Info");
@@ -258,13 +252,12 @@ TEST_CASE("DocumentSymbolHandler - Enums and Enum Members")
 
 TEST_CASE("DocumentSymbolHandler - Virtual Properties, Typedefs, and Funcdefs")
 {
-    std::string code =
-        "typedef uint EntityId;\n"
-        "funcdef void EventCallback(int id, float value);\n"
-        "class Canvas\n"
-        "{\n"
-        "    int width { get const; set; }\n"
-        "}\n";
+    std::string code = "typedef uint EntityId;\n"
+                       "funcdef void EventCallback(int id, float value);\n"
+                       "class Canvas\n"
+                       "{\n"
+                       "    int width { get const; set; }\n"
+                       "}\n";
 
     DocumentSymbolTestEnv env(code);
     auto symbols = env.GetSymbols();
@@ -280,7 +273,7 @@ TEST_CASE("DocumentSymbolHandler - Virtual Properties, Typedefs, and Funcdefs")
     CHECK((*symbols)[1].kind == lsp::SymbolKind::Function);
     CHECK((*symbols)[1].detail.value().find("funcdef") != std::string::npos);
 
-    const auto &canvas = (*symbols)[2];
+    const auto& canvas = (*symbols)[2];
     CHECK(canvas.name == "Canvas");
     REQUIRE(canvas.children.has_value());
     CHECK(canvas.children.value()[0].name == "width");
@@ -312,23 +305,22 @@ TEST_CASE("DocumentSymbolHandler - Multiple Variable Declarators in One Statemen
 
 TEST_CASE("DocumentSymbolHandler - Range Invariants and Selection Range Containment")
 {
-    std::string code =
-        "namespace MyNamespace\n"
-        "{\n"
-        "    class ComplexActor\n"
-        "    {\n"
-        "        int m_id = 0;\n"
-        "        ComplexActor() {}\n"
-        "        void Process() {}\n"
-        "    }\n"
-        "    enum Status { Ok, Failed }\n"
-        "}\n";
+    std::string code = "namespace MyNamespace\n"
+                       "{\n"
+                       "    class ComplexActor\n"
+                       "    {\n"
+                       "        int m_id = 0;\n"
+                       "        ComplexActor() {}\n"
+                       "        void Process() {}\n"
+                       "    }\n"
+                       "    enum Status { Ok, Failed }\n"
+                       "}\n";
 
     DocumentSymbolTestEnv env(code);
     auto symbols = env.GetSymbols();
 
     REQUIRE(symbols.has_value());
-    for (const auto &sym : *symbols)
+    for (const auto& sym : *symbols)
     {
         ValidateRangeContainment(sym);
     }
@@ -336,11 +328,10 @@ TEST_CASE("DocumentSymbolHandler - Range Invariants and Selection Range Containm
 
 TEST_CASE("DocumentSymbolHandler - Null Tree Fallback and Empty Document")
 {
-    std::string code =
-        "class TestClass\n"
-        "{\n"
-        "    void DoWork() {}\n"
-        "}\n";
+    std::string code = "class TestClass\n"
+                       "{\n"
+                       "    void DoWork() {}\n"
+                       "}\n";
 
     DocumentSymbolTestEnv env(code);
 

@@ -4,8 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "analysis/SemanticHelpers.h"
 #include "analysis/EngineProfiles.h"
+#include "analysis/SemanticHelpers.h"
 #include "parser/Keywords.h"
 #include "parser/Primitives.h"
 
@@ -23,7 +23,7 @@ using namespace angel_lsp;
 TEST_CASE("Vocabulary - a reserved word can never be a name, a contextual one can")
 {
     // Measured against the compiler, one file per word: `void t() { int <word>; }`.
-    for (const std::string_view reserved : { "int", "class", "return", "foreach", "using", "xor" })
+    for (const std::string_view reserved : {"int", "class", "return", "foreach", "using", "xor"})
     {
         CAPTURE(reserved);
         CHECK(parser::keywords::IsReserved(reserved));
@@ -31,7 +31,7 @@ TEST_CASE("Vocabulary - a reserved word can never be a name, a contextual one ca
     }
 
     // `int final;` and `int get;` both compile. These may colour and complete, never reject.
-    for (const std::string_view contextual : { "final", "get", "set", "shared", "this", "super" })
+    for (const std::string_view contextual : {"final", "get", "set", "shared", "this", "super"})
     {
         CAPTURE(contextual);
         CHECK_FALSE(parser::keywords::IsReserved(contextual));
@@ -81,19 +81,19 @@ TEST_CASE("Vocabulary - the template argument splitter counts nesting, not comma
     };
 
     const Case cases[] = {
-        { "int",                       { "int" } },
-        { "int, float",                { "int", "float" } },
-        { " int , float ",             { "int", "float" } },
+        {"int", {"int"}},
+        {"int, float", {"int", "float"}},
+        {" int , float ", {"int", "float"}},
         // The comma inside the inner list belongs to it: three arguments, not four.
-        { "int, array<int, float>",    { "int", "array<int, float>" } },
-        { "array<array<int>>, string", { "array<array<int>>", "string" } },
+        {"int, array<int, float>", {"int", "array<int, float>"}},
+        {"array<array<int>>, string", {"array<array<int>>", "string"}},
         // Empties are kept by the splitter; what to do with them is each caller's business.
-        { "int,",                      { "int", "" } },
-        { "int,,float",                { "int", "", "float" } },
-        { "",                          { "" } },
+        {"int,", {"int", ""}},
+        {"int,,float", {"int", "", "float"}},
+        {"", {""}},
     };
 
-    for (const Case &c : cases)
+    for (const Case& c : cases)
     {
         CAPTURE(c.inner);
         CHECK(analysis::SplitTemplateArguments(c.inner) == c.expected);
@@ -125,12 +125,9 @@ TEST_CASE("EngineProfiles - a misspelled profile name is recognisable as misspel
     using namespace angel_lsp::analysis;
 
     // Every spelling the parser accepts must be known, or the warning fires on a valid name.
-    for (const std::string_view good : { "none", "standard", "std", "default",
-                                         "svencoop", "sven", "sven_coop", "svenco-op",
-                                         "urho3d", "urho", "atomic",
-                                         "openxray", "xray", "stalker",
-                                         "ootp", "ootpbaseball",
-                                         "auto", "detect" })
+    for (const std::string_view good :
+         {"none", "standard", "std", "default", "svencoop", "sven", "sven_coop", "svenco-op", "urho3d", "urho",
+          "atomic", "openxray", "xray", "stalker", "ootp", "ootpbaseball", "auto", "detect"})
     {
         CAPTURE(good);
         CHECK(IsKnownEngineProfileName(good));
@@ -141,7 +138,7 @@ TEST_CASE("EngineProfiles - a misspelled profile name is recognisable as misspel
     CHECK(IsKnownEngineProfileName("STANDARD"));
 
     // The typos that started this, and what the parser does with them.
-    for (const std::string_view bad : { "svencop", "urho4d", "sven coop", "openxray2", "" })
+    for (const std::string_view bad : {"svencop", "urho4d", "sven coop", "openxray2", ""})
     {
         CAPTURE(bad);
         CHECK_FALSE(IsKnownEngineProfileName(bad));

@@ -113,8 +113,6 @@ TEST_CASE("Document - struct initialization and fields")
     CHECK(doc.tree == nullptr);
 }
 
-
-
 // =====================================================================================
 // Exclude globs.
 //
@@ -153,7 +151,7 @@ TEST_CASE("Utils - A directory is pruned when a pattern reaches into it")
 {
     using angel_lsp::utils::IsExcludedDirectory;
 
-    const std::vector<std::string> defaults = { "**/.git/**", "**/build/**", "**/node_modules/**" };
+    const std::vector<std::string> defaults = {"**/.git/**", "**/build/**", "**/node_modules/**"};
 
     // The directory itself matches, which is what pruning needs - the pattern names what is INSIDE
     // it, and testing the directory against the pattern unchanged would never fire.
@@ -188,13 +186,12 @@ TEST_CASE("SanitizePredefinedContent - blanks inline list patterns and preserves
 
 TEST_CASE("SanitizePredefinedContent - handles multiple patterns in one file")
 {
-    const std::string input =
-        "class array<T> {\n"
-        "\tarray(int &in type, int &in list) {repeat T};\n"
-        "}\n"
-        "class complex {\n"
-        "\tcomplex(const int &in) {float, float};\n"
-        "}\n";
+    const std::string input = "class array<T> {\n"
+                              "\tarray(int &in type, int &in list) {repeat T};\n"
+                              "}\n"
+                              "class complex {\n"
+                              "\tcomplex(const int &in) {float, float};\n"
+                              "}\n";
 
     const std::string sanitized = SanitizePredefinedContent(input);
     CHECK(sanitized.size() == input.size());
@@ -204,11 +201,10 @@ TEST_CASE("SanitizePredefinedContent - handles multiple patterns in one file")
 
 TEST_CASE("SanitizePredefinedContent - sanitizes arbitrary list patterns without repeat keyword")
 {
-    const std::string input =
-        "class Vector3 {\n"
-        "\tVector3(int &in) {float, float, float};\n"
-        "\tVector3(float x, float y, float z);\n"
-        "}\n";
+    const std::string input = "class Vector3 {\n"
+                              "\tVector3(int &in) {float, float, float};\n"
+                              "\tVector3(float x, float y, float z);\n"
+                              "}\n";
 
     const std::string sanitized = SanitizePredefinedContent(input);
     CHECK(sanitized.size() == input.size());
@@ -234,4 +230,3 @@ TEST_CASE("HighResTimer - measures elapsed time in ms and us")
     CHECK(timer.ElapsedMs() >= 0.0);
     CHECK(timer.ElapsedUs() >= 0);
 }
-

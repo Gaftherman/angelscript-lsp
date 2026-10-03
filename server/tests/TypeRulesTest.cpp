@@ -2696,8 +2696,11 @@ TEST_SUITE("AngelScript_SemanticTokens_Template_Disambiguation")
         const std::string varMin = GenerateRandomSymbolName("minVal");
         const std::string varVal = GenerateRandomSymbolName("curVal");
         const std::string varMax = GenerateRandomSymbolName("maxVal");
-        const std::string script = "void Test(int " + varMin + ", int " + varVal + ", int " + varMax + ") {\n"
-                                   "    if (" + varMin + " < " + varVal + " && " + varVal + " > " + varMax + ") {}\n"
+        const std::string script = "void Test(int " + varMin + ", int " + varVal + ", int " + varMax +
+                                   ") {\n"
+                                   "    if (" +
+                                   varMin + " < " + varVal + " && " + varVal + " > " + varMax +
+                                   ") {}\n"
                                    "}\n";
 
         auto doc = CreateTestDocument("file:///test_chained_relational.as", script);

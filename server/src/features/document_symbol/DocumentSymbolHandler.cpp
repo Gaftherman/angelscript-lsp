@@ -57,6 +57,24 @@ inline TSNode GetChildByFieldName(TSNode node, const char* fieldName)
     return parser::GetChildByField(node, fieldName);
 }
 
+/**
+ * @brief Constructs a DocumentSymbol with range and selectionRange initialized from AST nodes.
+ * @param[in] name Symbol identifier name.
+ * @param[in] kind LSP SymbolKind category.
+ * @param[in] node AST enclosing node for the entire symbol range.
+ * @param[in] nameNode AST name identifier node for the selection range.
+ * @return Initialized DocumentSymbol.
+ */
+inline lsp::DocumentSymbol MakeDocumentSymbol(std::string name, lsp::SymbolKind kind, TSNode node, TSNode nameNode)
+{
+    lsp::DocumentSymbol sym;
+    sym.name = std::move(name);
+    sym.kind = kind;
+    sym.range = ToLspRange(node);
+    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : ToLspRange(nameNode);
+    return sym;
+}
+
 std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, const TraversalContext& ctx);
 void ProcessNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols);
 
@@ -75,11 +93,7 @@ void ProcessNamespace(TSNode node, const TraversalContext& ctx, std::vector<lsp:
         return;
     }
 
-    lsp::DocumentSymbol sym;
-    sym.name = std::move(name);
-    sym.kind = lsp::SymbolKind::Namespace;
-    sym.range = ToLspRange(node);
-    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : ToLspRange(nameNode);
+    auto sym = MakeDocumentSymbol(std::move(name), lsp::SymbolKind::Namespace, node, nameNode);
     sym.detail = "namespace";
 
     TSNode bodyNode = GetChildByFieldName(node, "body");
@@ -113,20 +127,10 @@ void ProcessClassLike(TSNode node, std::string_view nodeType, const TraversalCon
         return;
     }
 
-    lsp::DocumentSymbol sym;
-    sym.name = name;
-    if (nodeType == "interface_declaration")
-    {
-        sym.kind = lsp::SymbolKind::Interface;
-        sym.detail = "interface";
-    }
-    else
-    {
-        sym.kind = lsp::SymbolKind::Class;
-        sym.detail = (nodeType == "mixin_declaration") ? "mixin" : "class";
-    }
-    sym.range = ToLspRange(node);
-    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : ToLspRange(nameNode);
+    const bool isInterface = (nodeType == "interface_declaration");
+    const auto kind = isInterface ? lsp::SymbolKind::Interface : lsp::SymbolKind::Class;
+    auto sym = MakeDocumentSymbol(name, kind, node, nameNode);
+    sym.detail = isInterface ? "interface" : ((nodeType == "mixin_declaration") ? "mixin" : "class");
 
     TSNode bodyNode = GetChildByFieldName(node, "body");
     if (!ts_node_is_null(bodyNode))
@@ -161,11 +165,7 @@ std::vector<lsp::DocumentSymbol> CollectEnumMembers(TSNode enumNode, std::string
             std::string mName = GetNodeText(mNameNode, sourceCode);
             if (!mName.empty())
             {
-                lsp::DocumentSymbol mSym;
-                mSym.name = std::move(mName);
-                mSym.kind = lsp::SymbolKind::EnumMember;
-                mSym.range = ToLspRange(child);
-                mSym.selectionRange = ts_node_is_null(mNameNode) ? mSym.range : ToLspRange(mNameNode);
+                auto mSym = MakeDocumentSymbol(std::move(mName), lsp::SymbolKind::EnumMember, child, mNameNode);
 
                 TSNode valNode = GetChildByFieldName(child, "value");
                 if (!ts_node_is_null(valNode))
@@ -194,11 +194,7 @@ void ProcessEnum(TSNode node, const TraversalContext& ctx, std::vector<lsp::Docu
         return;
     }
 
-    lsp::DocumentSymbol sym;
-    sym.name = std::move(name);
-    sym.kind = lsp::SymbolKind::Enum;
-    sym.range = ToLspRange(node);
-    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : ToLspRange(nameNode);
+    auto sym = MakeDocumentSymbol(std::move(name), lsp::SymbolKind::Enum, node, nameNode);
     sym.detail = "enum";
 
     auto members = CollectEnumMembers(node, ctx.sourceCode);
@@ -255,6 +251,36 @@ std::string BuildFunctionDetail(std::string_view retStr, std::string_view params
 }
 
 /**
+ * @brief Extracted components of a function or method AST node.
+ */
+struct FunctionComponents
+{
+    TSNode nameNode;
+    std::string name;
+    TSNode retNode;
+    TSNode paramsNode;
+};
+
+/**
+ * @brief Extracts standard function components (name, return type, parameters) from an AST node.
+ * @param[in] node AST node.
+ * @param[in] sourceCode Document text.
+ * @return Extracted components if a non-empty name is present.
+ */
+std::optional<FunctionComponents> ExtractFunctionComponents(TSNode node, std::string_view sourceCode)
+{
+    TSNode nameNode = GetChildByFieldName(node, "name");
+    std::string name = GetNodeText(nameNode, sourceCode);
+    if (name.empty())
+    {
+        return std::nullopt;
+    }
+    TSNode retNode = GetChildByFieldName(node, "return_type");
+    TSNode paramsNode = GetChildByFieldName(node, "parameters");
+    return FunctionComponents{nameNode, std::move(name), retNode, paramsNode};
+}
+
+/**
  * @brief Processes a func_declaration AST node.
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
@@ -262,40 +288,23 @@ std::string BuildFunctionDetail(std::string_view retStr, std::string_view params
  */
 void ProcessFunction(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
-    TSNode nameNode = GetChildByFieldName(node, "name");
-    std::string name = GetNodeText(nameNode, ctx.sourceCode);
-    if (name.empty())
+    auto comps = ExtractFunctionComponents(node, ctx.sourceCode);
+    if (!comps)
     {
         return;
     }
 
     const bool isDestructor = IsDestructorNode(node);
-    const bool isConstructor = ctx.isInsideClass && name == ctx.enclosingClassName;
+    const bool isConstructor = ctx.isInsideClass && comps->name == ctx.enclosingClassName;
 
-    lsp::DocumentSymbol sym;
-    if (isDestructor)
-    {
-        sym.name = "~" + name;
-        sym.kind = lsp::SymbolKind::Constructor;
-    }
-    else if (isConstructor)
-    {
-        sym.name = name;
-        sym.kind = lsp::SymbolKind::Constructor;
-    }
-    else
-    {
-        sym.name = name;
-        sym.kind = ctx.isInsideClass ? lsp::SymbolKind::Method : lsp::SymbolKind::Function;
-    }
+    const auto kind = (isDestructor || isConstructor)
+                          ? lsp::SymbolKind::Constructor
+                          : (ctx.isInsideClass ? lsp::SymbolKind::Method : lsp::SymbolKind::Function);
+    std::string symName = isDestructor ? ("~" + comps->name) : std::move(comps->name);
+    auto sym = MakeDocumentSymbol(std::move(symName), kind, node, comps->nameNode);
 
-    sym.range = ToLspRange(node);
-    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : ToLspRange(nameNode);
-
-    TSNode retNode = GetChildByFieldName(node, "return_type");
-    TSNode paramsNode = GetChildByFieldName(node, "parameters");
-    const std::string retStr = GetNodeText(retNode, ctx.sourceCode);
-    const std::string paramsStr = GetNodeText(paramsNode, ctx.sourceCode);
+    const std::string retStr = GetNodeText(comps->retNode, ctx.sourceCode);
+    const std::string paramsStr = GetNodeText(comps->paramsNode, ctx.sourceCode);
 
     sym.detail = BuildFunctionDetail(retStr, paramsStr, isDestructor || isConstructor);
     outSymbols.push_back(std::move(sym));
@@ -309,24 +318,16 @@ void ProcessFunction(TSNode node, const TraversalContext& ctx, std::vector<lsp::
  */
 void ProcessInterfaceMethod(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
-    TSNode nameNode = GetChildByFieldName(node, "name");
-    std::string name = GetNodeText(nameNode, ctx.sourceCode);
-    if (name.empty())
+    auto comps = ExtractFunctionComponents(node, ctx.sourceCode);
+    if (!comps)
     {
         return;
     }
 
-    TSNode retNode = GetChildByFieldName(node, "return_type");
-    TSNode paramsNode = GetChildByFieldName(node, "parameters");
+    auto sym = MakeDocumentSymbol(std::move(comps->name), lsp::SymbolKind::Method, node, comps->nameNode);
 
-    lsp::DocumentSymbol sym;
-    sym.name = std::move(name);
-    sym.kind = lsp::SymbolKind::Method;
-    sym.range = ToLspRange(node);
-    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : ToLspRange(nameNode);
-
-    const std::string retStr = GetNodeText(retNode, ctx.sourceCode);
-    const std::string paramsStr = GetNodeText(paramsNode, ctx.sourceCode);
+    const std::string retStr = GetNodeText(comps->retNode, ctx.sourceCode);
+    const std::string paramsStr = GetNodeText(comps->paramsNode, ctx.sourceCode);
     sym.detail = BuildFunctionDetail(retStr, paramsStr, false);
 
     outSymbols.push_back(std::move(sym));
@@ -347,11 +348,7 @@ void ProcessImport(TSNode node, const TraversalContext& ctx, std::vector<lsp::Do
         return;
     }
 
-    lsp::DocumentSymbol sym;
-    sym.name = std::move(name);
-    sym.kind = lsp::SymbolKind::Function;
-    sym.range = ToLspRange(node);
-    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : ToLspRange(nameNode);
+    auto sym = MakeDocumentSymbol(std::move(name), lsp::SymbolKind::Function, node, nameNode);
     sym.detail = "import";
 
     outSymbols.push_back(std::move(sym));
@@ -418,11 +415,7 @@ void ProcessVirtualProperty(TSNode node, const TraversalContext& ctx, std::vecto
     }
 
     TSNode typeNode = GetChildByFieldName(node, "prop_type");
-    lsp::DocumentSymbol sym;
-    sym.name = std::move(name);
-    sym.kind = lsp::SymbolKind::Property;
-    sym.range = ToLspRange(node);
-    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : ToLspRange(nameNode);
+    auto sym = MakeDocumentSymbol(std::move(name), lsp::SymbolKind::Property, node, nameNode);
     sym.detail = GetNodeText(typeNode, ctx.sourceCode);
 
     outSymbols.push_back(std::move(sym));
@@ -444,11 +437,7 @@ void ProcessTypedef(TSNode node, const TraversalContext& ctx, std::vector<lsp::D
     }
 
     TSNode baseTypeNode = GetChildByFieldName(node, "base_type");
-    lsp::DocumentSymbol sym;
-    sym.name = std::move(name);
-    sym.kind = lsp::SymbolKind::Class;
-    sym.range = ToLspRange(node);
-    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : ToLspRange(nameNode);
+    auto sym = MakeDocumentSymbol(std::move(name), lsp::SymbolKind::Class, node, nameNode);
     sym.detail = "typedef " + GetNodeText(baseTypeNode, ctx.sourceCode);
 
     outSymbols.push_back(std::move(sym));
@@ -462,22 +451,15 @@ void ProcessTypedef(TSNode node, const TraversalContext& ctx, std::vector<lsp::D
  */
 void ProcessFuncdef(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
-    TSNode nameNode = GetChildByFieldName(node, "name");
-    std::string name = GetNodeText(nameNode, ctx.sourceCode);
-    if (name.empty())
+    auto comps = ExtractFunctionComponents(node, ctx.sourceCode);
+    if (!comps)
     {
         return;
     }
 
-    TSNode retNode = GetChildByFieldName(node, "return_type");
-    TSNode paramsNode = GetChildByFieldName(node, "parameters");
-
-    lsp::DocumentSymbol sym;
-    sym.name = std::move(name);
-    sym.kind = lsp::SymbolKind::Function;
-    sym.range = ToLspRange(node);
-    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : ToLspRange(nameNode);
-    sym.detail = "funcdef " + GetNodeText(retNode, ctx.sourceCode) + " " + GetNodeText(paramsNode, ctx.sourceCode);
+    auto sym = MakeDocumentSymbol(std::move(comps->name), lsp::SymbolKind::Function, node, comps->nameNode);
+    sym.detail =
+        "funcdef " + GetNodeText(comps->retNode, ctx.sourceCode) + " " + GetNodeText(comps->paramsNode, ctx.sourceCode);
 
     outSymbols.push_back(std::move(sym));
 }

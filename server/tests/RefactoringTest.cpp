@@ -1,12 +1,12 @@
 #include <doctest/doctest.h>
 
-#include "features/code_action/CodeActionHandler.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
-#include "parser/AngelScriptParser.h"
+#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolTable.h"
+#include "features/code_action/CodeActionHandler.h"
 #include "helpers/TestUtils.h"
+#include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;
@@ -15,68 +15,65 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    /**
-     * @brief In-memory test environment for code actions and refactorings.
-     */
-    struct RefactorTestEnvironment
+/**
+ * @brief In-memory test environment for code actions and refactorings.
+ */
+struct RefactorTestEnvironment
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+    std::string uri = "file:///test.as";
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    RefactorTestEnvironment(const std::string& code) : sourceCode(code)
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        LocalScopeCollector scopeCollector{ nullptr };
-        SymbolTable symbolTable;
-        ScopeIndex scopeIndex;
-        std::string uri = "file:///test.as";
-        std::string sourceCode;
-        TSTree *tree = nullptr;
-
-        RefactorTestEnvironment(const std::string &code)
-            : sourceCode(code)
+        tree = parser.Parse(sourceCode);
+        symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
+        auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
+        if (rootScope)
         {
-            tree = parser.Parse(sourceCode);
-            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-            auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
-            if (rootScope)
-            {
-                scopeIndex.SetScopeTree(uri, std::move(rootScope));
-            }
+            scopeIndex.SetScopeTree(uri, std::move(rootScope));
         }
+    }
 
-        ~RefactorTestEnvironment()
+    ~RefactorTestEnvironment()
+    {
+        if (tree)
         {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
+            ts_tree_delete(tree);
         }
+    }
 
-        std::optional<std::vector<lsp::CodeAction>> CodeActions(
-            lsp::Range range = lsp::Range{ { 0, 0 }, { 0, 0 } },
-            lsp::CodeActionContext context = lsp::CodeActionContext{})
-        {
-            CodeActionRequest req{ uri, sourceCode, tree, range, context, symbolTable, scopeIndex };
-            return GetCodeActions(req);
-        }
-    };
-}
+    std::optional<std::vector<lsp::CodeAction>> CodeActions(lsp::Range range = lsp::Range{{0, 0}, {0, 0}},
+                                                            lsp::CodeActionContext context = lsp::CodeActionContext{})
+    {
+        CodeActionRequest req{uri, sourceCode, tree, range, context, symbolTable, scopeIndex};
+        return GetCodeActions(req);
+    }
+};
+} // namespace
 
 TEST_CASE("Refactoring - Extract Variable: Arithmetic Expression")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    int a = 1;\n"
-        "    int b = 2;\n"
-        "    int c = a + b * 2;\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    int a = 1;\n"
+                       "    int b = 2;\n"
+                       "    int c = a + b * 2;\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select "a + b * 2" on line 4, cols 12 to 21
-    lsp::Range range{ { 4, 12 }, { 4, 21 } };
+    lsp::Range range{{4, 12}, {4, 21}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Variable")
         {
@@ -86,7 +83,7 @@ TEST_CASE("Refactoring - Extract Variable: Arithmetic Expression")
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
 
             // Edit 0: Declaration inserted before line 4
@@ -105,24 +102,23 @@ TEST_CASE("Refactoring - Extract Variable: Arithmetic Expression")
 
 TEST_CASE("Refactoring - Extract Variable: Call Expression")
 {
-    std::string code =
-        "class Player {}\n"
-        "class Target {}\n"
-        "Target@ GetTarget(Player@ p) { return null; }\n"
-        "void main()\n"
-        "{\n"
-        "    Player@ player = Player();\n"
-        "    Target@ t = GetTarget(player);\n"
-        "}\n";
+    std::string code = "class Player {}\n"
+                       "class Target {}\n"
+                       "Target@ GetTarget(Player@ p) { return null; }\n"
+                       "void main()\n"
+                       "{\n"
+                       "    Player@ player = Player();\n"
+                       "    Target@ t = GetTarget(player);\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select "GetTarget(player)" on line 6, cols 16 to 33
-    lsp::Range range{ { 6, 16 }, { 6, 33 } };
+    lsp::Range range{{6, 16}, {6, 33}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Variable")
         {
@@ -130,7 +126,7 @@ TEST_CASE("Refactoring - Extract Variable: Call Expression")
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
             CHECK(edits[0].newText.find("Target@ target = GetTarget(player);") != std::string::npos);
             CHECK(edits[1].newText == "target");
@@ -141,24 +137,23 @@ TEST_CASE("Refactoring - Extract Variable: Call Expression")
 
 TEST_CASE("Refactoring - Extract Variable: Inside If Condition")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    int x = 5;\n"
-        "    int y = 10;\n"
-        "    if (x + y > 10)\n"
-        "    {\n"
-        "    }\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    int x = 5;\n"
+                       "    int y = 10;\n"
+                       "    if (x + y > 10)\n"
+                       "    {\n"
+                       "    }\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select "x + y" on line 4, cols 8 to 13
-    lsp::Range range{ { 4, 8 }, { 4, 13 } };
+    lsp::Range range{{4, 8}, {4, 13}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Variable")
         {
@@ -166,7 +161,7 @@ TEST_CASE("Refactoring - Extract Variable: Inside If Condition")
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
             CHECK(edits[0].range.start.line == 4);
             CHECK(edits[0].range.start.character == 0);
@@ -179,20 +174,19 @@ TEST_CASE("Refactoring - Extract Variable: Inside If Condition")
 
 TEST_CASE("Refactoring - Extract Variable: Auto Fallback on Untyped/Complex Expression")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    DoSomething(UnknownFunc());\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    DoSomething(UnknownFunc());\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select "UnknownFunc()" on line 2, cols 16 to 29
-    lsp::Range range{ { 2, 16 }, { 2, 29 } };
+    lsp::Range range{{2, 16}, {2, 29}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Variable")
         {
@@ -200,7 +194,7 @@ TEST_CASE("Refactoring - Extract Variable: Auto Fallback on Untyped/Complex Expr
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
             CHECK(edits[0].newText.find("auto newVar = UnknownFunc();\n") != std::string::npos);
         }
@@ -210,21 +204,20 @@ TEST_CASE("Refactoring - Extract Variable: Auto Fallback on Untyped/Complex Expr
 
 TEST_CASE("Refactoring - Extract Variable: Rejects Assignment LHS")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    int x = 0;\n"
-        "    x = 10;\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    int x = 0;\n"
+                       "    x = 10;\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select "x" on line 3, cols 4 to 5 (LHS of assignment)
-    lsp::Range range{ { 3, 4 }, { 3, 5 } };
+    lsp::Range range{{3, 4}, {3, 5}};
     auto actions = env.CodeActions(range);
 
     if (actions.has_value())
     {
-        for (const auto &action : *actions)
+        for (const auto& action : *actions)
         {
             CHECK(action.title != "Extract Variable");
         }
@@ -233,23 +226,22 @@ TEST_CASE("Refactoring - Extract Variable: Rejects Assignment LHS")
 
 TEST_CASE("Refactoring - Extract Method: Simple Void Statements")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    int a = 1;\n"
-        "    Print(a);\n"
-        "    Print(a + 1);\n"
-        "    int b = 2;\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    int a = 1;\n"
+                       "    Print(a);\n"
+                       "    Print(a + 1);\n"
+                       "    int b = 2;\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select lines 3 to 4: "Print(a);\n    Print(a + 1);"
-    lsp::Range range{ { 3, 4 }, { 4, 17 } };
+    lsp::Range range{{3, 4}, {4, 17}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Method")
         {
@@ -259,7 +251,7 @@ TEST_CASE("Refactoring - Extract Method: Simple Void Statements")
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
 
             // Call site edit replaces selected statements
@@ -274,23 +266,22 @@ TEST_CASE("Refactoring - Extract Method: Simple Void Statements")
 
 TEST_CASE("Refactoring - Extract Method: Single Return Value")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    int a = 1;\n"
-        "    int b = 2;\n"
-        "    int sum = a + b;\n"
-        "    Print(sum);\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    int a = 1;\n"
+                       "    int b = 2;\n"
+                       "    int sum = a + b;\n"
+                       "    Print(sum);\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select lines 2 to 4: "int a = 1;\n    int b = 2;\n    int sum = a + b;"
-    lsp::Range range{ { 2, 4 }, { 4, 20 } };
+    lsp::Range range{{2, 4}, {4, 20}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Method")
         {
@@ -298,7 +289,7 @@ TEST_CASE("Refactoring - Extract Method: Single Return Value")
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
 
             // Call site assigns sum
@@ -314,26 +305,25 @@ TEST_CASE("Refactoring - Extract Method: Single Return Value")
 
 TEST_CASE("Refactoring - Extract Method: Inside Class Definition")
 {
-    std::string code =
-        "class Calculator\n"
-        "{\n"
-        "    void Compute()\n"
-        "    {\n"
-        "        int x = 10;\n"
-        "        int y = 20;\n"
-        "        int total = x + y;\n"
-        "        Print(total);\n"
-        "    }\n"
-        "}\n";
+    std::string code = "class Calculator\n"
+                       "{\n"
+                       "    void Compute()\n"
+                       "    {\n"
+                       "        int x = 10;\n"
+                       "        int y = 20;\n"
+                       "        int total = x + y;\n"
+                       "        Print(total);\n"
+                       "    }\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select lines 4 to 6
-    lsp::Range range{ { 4, 8 }, { 6, 26 } };
+    lsp::Range range{{4, 8}, {6, 26}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Method")
         {
@@ -341,7 +331,7 @@ TEST_CASE("Refactoring - Extract Method: Inside Class Definition")
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
 
             // Call site inside class
@@ -357,15 +347,14 @@ TEST_CASE("Refactoring - Extract Method: Inside Class Definition")
 
 TEST_CASE("Refactoring - Generate Getters and Setters: Prefixed Field (m_speed)")
 {
-    std::string code =
-        "class Player\n"
-        "{\n"
-        "    int m_speed;\n"
-        "}\n";
+    std::string code = "class Player\n"
+                       "{\n"
+                       "    int m_speed;\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Position cursor on m_speed (line 2, col 8)
-    lsp::Range range{ { 2, 8 }, { 2, 8 } };
+    lsp::Range range{{2, 8}, {2, 8}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
@@ -373,14 +362,14 @@ TEST_CASE("Refactoring - Generate Getters and Setters: Prefixed Field (m_speed)"
     bool foundSetter = false;
     bool foundBoth = false;
 
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Generate Getter")
         {
             foundGetter = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].newText.find("int get_Speed() const") != std::string::npos);
             CHECK(edits[0].newText.find("return m_speed;") != std::string::npos);
@@ -390,7 +379,7 @@ TEST_CASE("Refactoring - Generate Getters and Setters: Prefixed Field (m_speed)"
             foundSetter = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].newText.find("void set_Speed(int value)") != std::string::npos);
             CHECK(edits[0].newText.find("m_speed = value;") != std::string::npos);
@@ -400,7 +389,7 @@ TEST_CASE("Refactoring - Generate Getters and Setters: Prefixed Field (m_speed)"
             foundBoth = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].newText.find("int get_Speed() const") != std::string::npos);
             CHECK(edits[0].newText.find("void set_Speed(int value)") != std::string::npos);
@@ -414,27 +403,26 @@ TEST_CASE("Refactoring - Generate Getters and Setters: Prefixed Field (m_speed)"
 
 TEST_CASE("Refactoring - Generate Getters and Setters: Complex Object Field (string m_name)")
 {
-    std::string code =
-        "class Player\n"
-        "{\n"
-        "    string m_name;\n"
-        "}\n";
+    std::string code = "class Player\n"
+                       "{\n"
+                       "    string m_name;\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
-    lsp::Range range{ { 2, 8 }, { 2, 8 } };
+    lsp::Range range{{2, 8}, {2, 8}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundSetter = false;
 
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Generate Setter")
         {
             foundSetter = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].newText.find("void set_Name(const string &in value)") != std::string::npos);
             CHECK(edits[0].newText.find("m_name = value;") != std::string::npos);
@@ -446,15 +434,14 @@ TEST_CASE("Refactoring - Generate Getters and Setters: Complex Object Field (str
 
 TEST_CASE("Refactoring - Generate Getters and Setters: Existing Getter Skipped")
 {
-    std::string code =
-        "class Player\n"
-        "{\n"
-        "    int m_speed;\n"
-        "    int get_Speed() const { return m_speed; }\n"
-        "}\n";
+    std::string code = "class Player\n"
+                       "{\n"
+                       "    int m_speed;\n"
+                       "    int get_Speed() const { return m_speed; }\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
-    lsp::Range range{ { 2, 8 }, { 2, 8 } };
+    lsp::Range range{{2, 8}, {2, 8}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
@@ -462,11 +449,14 @@ TEST_CASE("Refactoring - Generate Getters and Setters: Existing Getter Skipped")
     bool foundSetter = false;
     bool foundBoth = false;
 
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
-        if (action.title == "Generate Getter") foundGetter = true;
-        if (action.title == "Generate Setter") foundSetter = true;
-        if (action.title == "Generate Getter and Setter") foundBoth = true;
+        if (action.title == "Generate Getter")
+            foundGetter = true;
+        if (action.title == "Generate Setter")
+            foundSetter = true;
+        if (action.title == "Generate Getter and Setter")
+            foundBoth = true;
     }
 
     CHECK(!foundGetter);
@@ -476,29 +466,28 @@ TEST_CASE("Refactoring - Generate Getters and Setters: Existing Getter Skipped")
 
 TEST_CASE("Refactoring - Add const Qualifier: Quick Fix on Diagnostic")
 {
-    std::string code =
-        "class Character\n"
-        "{\n"
-        "    void Attack() {}\n"
-        "}\n"
-        "void Test(const Character &in c)\n"
-        "{\n"
-        "    c.Attack();\n"
-        "}\n";
+    std::string code = "class Character\n"
+                       "{\n"
+                       "    void Attack() {}\n"
+                       "}\n"
+                       "void Test(const Character &in c)\n"
+                       "{\n"
+                       "    c.Attack();\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
 
     lsp::Diagnostic diag;
     diag.code = lsp::String("as-err-const-method-required");
-    diag.range = lsp::Range{ { 6, 6 }, { 6, 12 } }; // "Attack"
+    diag.range = lsp::Range{{6, 6}, {6, 12}}; // "Attack"
     lsp::CodeActionContext ctx;
-    ctx.diagnostics = { diag };
+    ctx.diagnostics = {diag};
 
     auto actions = env.CodeActions(diag.range, ctx);
 
     REQUIRE(actions.has_value());
     bool foundConstFix = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Add 'const' qualifier to method")
         {
@@ -508,7 +497,7 @@ TEST_CASE("Refactoring - Add const Qualifier: Quick Fix on Diagnostic")
             CHECK(action.isPreferred.value_or(false) == true);
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].range.start.line == 2);
             CHECK(edits[0].newText == " const");
@@ -519,30 +508,29 @@ TEST_CASE("Refactoring - Add const Qualifier: Quick Fix on Diagnostic")
 
 TEST_CASE("Refactoring - Add const Qualifier: Intention on Read-Only Method")
 {
-    std::string code =
-        "class Character\n"
-        "{\n"
-        "    int m_health;\n"
-        "    int GetHealth()\n"
-        "    {\n"
-        "        return m_health;\n"
-        "    }\n"
-        "}\n";
+    std::string code = "class Character\n"
+                       "{\n"
+                       "    int m_health;\n"
+                       "    int GetHealth()\n"
+                       "    {\n"
+                       "        return m_health;\n"
+                       "    }\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
-    lsp::Range range{ { 3, 8 }, { 3, 8 } }; // on GetHealth declaration
+    lsp::Range range{{3, 8}, {3, 8}}; // on GetHealth declaration
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundConstAction = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Add 'const' qualifier to method")
         {
             foundConstAction = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].range.start.line == 3);
             CHECK(edits[0].newText == " const");
@@ -553,23 +541,22 @@ TEST_CASE("Refactoring - Add const Qualifier: Intention on Read-Only Method")
 
 TEST_CASE("Refactoring - Add const Qualifier: Mutating Method Ignored")
 {
-    std::string code =
-        "class Character\n"
-        "{\n"
-        "    int m_health;\n"
-        "    void TakeDamage(int dmg)\n"
-        "    {\n"
-        "        m_health -= dmg;\n"
-        "    }\n"
-        "}\n";
+    std::string code = "class Character\n"
+                       "{\n"
+                       "    int m_health;\n"
+                       "    void TakeDamage(int dmg)\n"
+                       "    {\n"
+                       "        m_health -= dmg;\n"
+                       "    }\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
-    lsp::Range range{ { 3, 9 }, { 3, 9 } }; // on TakeDamage
+    lsp::Range range{{3, 9}, {3, 9}}; // on TakeDamage
     auto actions = env.CodeActions(range);
 
     if (actions.has_value())
     {
-        for (const auto &action : *actions)
+        for (const auto& action : *actions)
         {
             CHECK(action.title != "Add 'const' qualifier to method");
         }
@@ -578,21 +565,20 @@ TEST_CASE("Refactoring - Add const Qualifier: Mutating Method Ignored")
 
 TEST_CASE("Refactoring - Sort and Clean Includes: Alphabetical and Grouped")
 {
-    std::string code =
-        "#include \"utils/Math.as\"\n"
-        "#include <system/Core.as>\n"
-        "#include \"common/Types.as\"\n"
-        "#include <engine/Audio.as>\n"
-        "\n"
-        "void main() {}\n";
+    std::string code = "#include \"utils/Math.as\"\n"
+                       "#include <system/Core.as>\n"
+                       "#include \"common/Types.as\"\n"
+                       "#include <engine/Audio.as>\n"
+                       "\n"
+                       "void main() {}\n";
 
     RefactorTestEnvironment env(code);
-    lsp::Range range{ { 0, 0 }, { 3, 20 } };
+    lsp::Range range{{0, 0}, {3, 20}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundOrganize = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Sort and Clean #include Directives")
         {
@@ -601,17 +587,16 @@ TEST_CASE("Refactoring - Sort and Clean Includes: Alphabetical and Grouped")
             CHECK(action.kind.value() == lsp::CodeActionKind::SourceOrganizeImports);
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].range.start.line == 0);
             CHECK(edits[0].range.end.line == 4);
 
-            std::string expected =
-                "#include <engine/Audio.as>\n"
-                "#include <system/Core.as>\n"
-                "\n"
-                "#include \"common/Types.as\"\n"
-                "#include \"utils/Math.as\"\n";
+            std::string expected = "#include <engine/Audio.as>\n"
+                                   "#include <system/Core.as>\n"
+                                   "\n"
+                                   "#include \"common/Types.as\"\n"
+                                   "#include \"utils/Math.as\"\n";
 
             CHECK(edits[0].newText == expected);
         }
@@ -621,32 +606,30 @@ TEST_CASE("Refactoring - Sort and Clean Includes: Alphabetical and Grouped")
 
 TEST_CASE("Refactoring - Sort and Clean Includes: Removes Duplicates")
 {
-    std::string code =
-        "#include \"utils/Math.as\"\n"
-        "#include \"utils/Math.as\"\n"
-        "#include <system/Core.as>\n"
-        "\n"
-        "void main() {}\n";
+    std::string code = "#include \"utils/Math.as\"\n"
+                       "#include \"utils/Math.as\"\n"
+                       "#include <system/Core.as>\n"
+                       "\n"
+                       "void main() {}\n";
 
     RefactorTestEnvironment env(code);
     auto actions = env.CodeActions();
 
     REQUIRE(actions.has_value());
     bool foundOrganize = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Sort and Clean #include Directives")
         {
             foundOrganize = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
 
-            std::string expected =
-                "#include <system/Core.as>\n"
-                "\n"
-                "#include \"utils/Math.as\"\n";
+            std::string expected = "#include <system/Core.as>\n"
+                                   "\n"
+                                   "#include \"utils/Math.as\"\n";
 
             CHECK(edits[0].newText == expected);
         }
@@ -658,14 +641,13 @@ TEST_CASE("Refactoring - Sort and Clean Includes: Removes Unused When Symbols Kn
 {
     // Populate symbolTable with symbols in an included file
     RefactorTestEnvironment env("void dummy() {}\n");
-    env.sourceCode =
-        "#include \"unused.as\"\n"
-        "#include \"used.as\"\n"
-        "\n"
-        "void main()\n"
-        "{\n"
-        "    UsedFunction();\n"
-        "}\n";
+    env.sourceCode = "#include \"unused.as\"\n"
+                     "#include \"used.as\"\n"
+                     "\n"
+                     "void main()\n"
+                     "{\n"
+                     "    UsedFunction();\n"
+                     "}\n";
 
     env.tree = env.parser.Parse(env.sourceCode);
     env.symbolCollector.CollectSymbols(env.uri, env.sourceCode, env.parser, env.symbolTable);
@@ -692,14 +674,14 @@ TEST_CASE("Refactoring - Sort and Clean Includes: Removes Unused When Symbols Kn
     auto actions = env.CodeActions();
     REQUIRE(actions.has_value());
     bool foundOrganize = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Sort and Clean #include Directives")
         {
             foundOrganize = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             CHECK(edits[0].newText.find("#include \"used.as\"") != std::string::npos);
             CHECK(edits[0].newText.find("#include \"unused.as\"") == std::string::npos);
@@ -710,30 +692,29 @@ TEST_CASE("Refactoring - Sort and Clean Includes: Removes Unused When Symbols Kn
 
 TEST_CASE("Adversarial Refactoring - Extract Variable: Chained Call and Indexing")
 {
-    std::string code =
-        "class Inventory { array<int> items; }\n"
-        "class Player { Inventory@ GetInventory() { return null; } }\n"
-        "void main()\n"
-        "{\n"
-        "    Player@ player = Player();\n"
-        "    int ammo = player.GetInventory().items[0];\n"
-        "}\n";
+    std::string code = "class Inventory { array<int> items; }\n"
+                       "class Player { Inventory@ GetInventory() { return null; } }\n"
+                       "void main()\n"
+                       "{\n"
+                       "    Player@ player = Player();\n"
+                       "    int ammo = player.GetInventory().items[0];\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select "player.GetInventory().items[0]" on line 5, cols 15 to 44
-    lsp::Range range{ { 5, 15 }, { 5, 44 } };
+    lsp::Range range{{5, 15}, {5, 44}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Variable")
         {
             foundExtract = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
             CHECK(edits[0].range.start.line == 5);
             CHECK(edits[0].newText.find("newVar = player.GetInventory().items[0];\n") != std::string::npos);
@@ -745,28 +726,27 @@ TEST_CASE("Adversarial Refactoring - Extract Variable: Chained Call and Indexing
 
 TEST_CASE("Adversarial Refactoring - Extract Variable: Nested Binary Expressions")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    int a = 1, b = 2, c = 3, d = 4;\n"
-        "    int res = (a + b) * (c + d);\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    int a = 1, b = 2, c = 3, d = 4;\n"
+                       "    int res = (a + b) * (c + d);\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select "(a + b)" on line 3, cols 14 to 21
-    lsp::Range range{ { 3, 14 }, { 3, 21 } };
+    lsp::Range range{{3, 14}, {3, 21}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Variable")
         {
             foundExtract = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
             CHECK(edits[0].range.start.line == 3);
             CHECK(edits[0].newText.find("int newVar = (a + b);\n") != std::string::npos);
@@ -778,30 +758,29 @@ TEST_CASE("Adversarial Refactoring - Extract Variable: Nested Binary Expressions
 
 TEST_CASE("Adversarial Refactoring - Extract Variable: Inside For Loop Header")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    array<int> list;\n"
-        "    for (uint i = 0; i < list.length(); ++i)\n"
-        "    {\n"
-        "    }\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    array<int> list;\n"
+                       "    for (uint i = 0; i < list.length(); ++i)\n"
+                       "    {\n"
+                       "    }\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select "list.length()" on line 3, cols 25 to 38
-    lsp::Range range{ { 3, 25 }, { 3, 38 } };
+    lsp::Range range{{3, 25}, {3, 38}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Variable")
         {
             foundExtract = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
             // Declaration inserted before the for statement (line 3)
             CHECK(edits[0].range.start.line == 3);
@@ -814,28 +793,27 @@ TEST_CASE("Adversarial Refactoring - Extract Variable: Inside For Loop Header")
 
 TEST_CASE("Adversarial Refactoring - Extract Variable: Ternary Expression")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    bool flag = true;\n"
-        "    int val = flag ? 100 : 200;\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    bool flag = true;\n"
+                       "    int val = flag ? 100 : 200;\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select "flag ? 100 : 200" on line 3, cols 14 to 30
-    lsp::Range range{ { 3, 14 }, { 3, 30 } };
+    lsp::Range range{{3, 14}, {3, 30}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Variable")
         {
             foundExtract = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
             CHECK(edits[0].newText.find("newVar = flag ? 100 : 200;\n") != std::string::npos);
             CHECK(edits[1].newText == "newVar");
@@ -846,32 +824,31 @@ TEST_CASE("Adversarial Refactoring - Extract Variable: Ternary Expression")
 
 TEST_CASE("Adversarial Refactoring - Extract Method: Multiple Inputs and Multiple Outputs")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    int a = 10;\n"
-        "    int b = 20;\n"
-        "    int c = 30;\n"
-        "    int out1 = a + b;\n"
-        "    int out2 = b + c;\n"
-        "    Print(out1 + out2);\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    int a = 10;\n"
+                       "    int b = 20;\n"
+                       "    int c = 30;\n"
+                       "    int out1 = a + b;\n"
+                       "    int out2 = b + c;\n"
+                       "    Print(out1 + out2);\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select lines 5 to 6: "int out1 = a + b;\n    int out2 = b + c;"
-    lsp::Range range{ { 5, 4 }, { 6, 21 } };
+    lsp::Range range{{5, 4}, {6, 21}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Method")
         {
             foundExtract = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
 
             // Call site: return out1, pass out2 as &out
@@ -887,34 +864,33 @@ TEST_CASE("Adversarial Refactoring - Extract Method: Multiple Inputs and Multipl
 
 TEST_CASE("Adversarial Refactoring - Extract Method: Member Variables In Class")
 {
-    std::string code =
-        "class Entity\n"
-        "{\n"
-        "    int m_health;\n"
-        "    int m_armor;\n"
-        "    void Damage(int amount)\n"
-        "    {\n"
-        "        int absorbed = amount / 2;\n"
-        "        m_armor -= absorbed;\n"
-        "        m_health -= (amount - absorbed);\n"
-        "    }\n"
-        "}\n";
+    std::string code = "class Entity\n"
+                       "{\n"
+                       "    int m_health;\n"
+                       "    int m_armor;\n"
+                       "    void Damage(int amount)\n"
+                       "    {\n"
+                       "        int absorbed = amount / 2;\n"
+                       "        m_armor -= absorbed;\n"
+                       "        m_health -= (amount - absorbed);\n"
+                       "    }\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select lines 6 to 8: absorbed, m_armor, m_health
-    lsp::Range range{ { 6, 8 }, { 8, 40 } };
+    lsp::Range range{{6, 8}, {8, 40}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Method")
         {
             foundExtract = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
 
             // Only local parameter `amount` should be in input parameters, NOT member variables `m_health`/`m_armor`
@@ -929,23 +905,22 @@ TEST_CASE("Adversarial Refactoring - Extract Method: Member Variables In Class")
 
 TEST_CASE("Adversarial Refactoring - Generate Getters and Setters: Weird Field Names (m_pScore, _val_2, x)")
 {
-    std::string code =
-        "class TestClass\n"
-        "{\n"
-        "    int m_pScore;\n"
-        "    float _val_2;\n"
-        "    bool x;\n"
-        "}\n";
+    std::string code = "class TestClass\n"
+                       "{\n"
+                       "    int m_pScore;\n"
+                       "    float _val_2;\n"
+                       "    bool x;\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
 
     // 1. Test m_pScore -> PScore
     {
-        lsp::Range range{ { 2, 8 }, { 2, 8 } };
+        lsp::Range range{{2, 8}, {2, 8}};
         auto actions = env.CodeActions(range);
         REQUIRE(actions.has_value());
         bool foundBoth = false;
-        for (const auto &act : *actions)
+        for (const auto& act : *actions)
         {
             if (act.title == "Generate Getter and Setter")
             {
@@ -962,11 +937,11 @@ TEST_CASE("Adversarial Refactoring - Generate Getters and Setters: Weird Field N
 
     // 2. Test _val_2 -> Val_2
     {
-        lsp::Range range{ { 3, 10 }, { 3, 10 } };
+        lsp::Range range{{3, 10}, {3, 10}};
         auto actions = env.CodeActions(range);
         REQUIRE(actions.has_value());
         bool foundBoth = false;
-        for (const auto &act : *actions)
+        for (const auto& act : *actions)
         {
             if (act.title == "Generate Getter and Setter")
             {
@@ -983,11 +958,11 @@ TEST_CASE("Adversarial Refactoring - Generate Getters and Setters: Weird Field N
 
     // 3. Test x -> X
     {
-        lsp::Range range{ { 4, 9 }, { 4, 9 } };
+        lsp::Range range{{4, 9}, {4, 9}};
         auto actions = env.CodeActions(range);
         REQUIRE(actions.has_value());
         bool foundBoth = false;
-        for (const auto &act : *actions)
+        for (const auto& act : *actions)
         {
             if (act.title == "Generate Getter and Setter")
             {
@@ -1005,15 +980,14 @@ TEST_CASE("Adversarial Refactoring - Generate Getters and Setters: Weird Field N
 
 TEST_CASE("Adversarial Refactoring - Generate Getters and Setters: Existing Setter Only Generates Getter")
 {
-    std::string code =
-        "class Player\n"
-        "{\n"
-        "    int m_speed;\n"
-        "    void set_Speed(int val) { m_speed = val; }\n"
-        "}\n";
+    std::string code = "class Player\n"
+                       "{\n"
+                       "    int m_speed;\n"
+                       "    void set_Speed(int val) { m_speed = val; }\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
-    lsp::Range range{ { 2, 8 }, { 2, 8 } };
+    lsp::Range range{{2, 8}, {2, 8}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
@@ -1021,11 +995,14 @@ TEST_CASE("Adversarial Refactoring - Generate Getters and Setters: Existing Sett
     bool foundSetter = false;
     bool foundBoth = false;
 
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
-        if (action.title == "Generate Getter") foundGetter = true;
-        if (action.title == "Generate Setter") foundSetter = true;
-        if (action.title == "Generate Getter and Setter") foundBoth = true;
+        if (action.title == "Generate Getter")
+            foundGetter = true;
+        if (action.title == "Generate Setter")
+            foundSetter = true;
+        if (action.title == "Generate Getter and Setter")
+            foundBoth = true;
     }
 
     CHECK(foundGetter);
@@ -1035,25 +1012,24 @@ TEST_CASE("Adversarial Refactoring - Generate Getters and Setters: Existing Sett
 
 TEST_CASE("Adversarial Refactoring - Add const: Method Calling Const vs Non-Const Helpers")
 {
-    std::string code =
-        "class Game\n"
-        "{\n"
-        "    int m_state;\n"
-        "    void Mutate() { m_state = 1; }\n"
-        "    int ReadOnlyHelper() const { return m_state; }\n"
-        "    int MethodCallingNonConst() { Mutate(); return 0; }\n"
-        "    int MethodCallingConst() { return ReadOnlyHelper(); }\n"
-        "}\n";
+    std::string code = "class Game\n"
+                       "{\n"
+                       "    int m_state;\n"
+                       "    void Mutate() { m_state = 1; }\n"
+                       "    int ReadOnlyHelper() const { return m_state; }\n"
+                       "    int MethodCallingNonConst() { Mutate(); return 0; }\n"
+                       "    int MethodCallingConst() { return ReadOnlyHelper(); }\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
 
     // MethodCallingNonConst (line 5, col 8) should NOT get 'Add const qualifier'
     {
-        lsp::Range range{ { 5, 8 }, { 5, 8 } };
+        lsp::Range range{{5, 8}, {5, 8}};
         auto actions = env.CodeActions(range);
         if (actions.has_value())
         {
-            for (const auto &act : *actions)
+            for (const auto& act : *actions)
             {
                 CHECK(act.title != "Add 'const' qualifier to method");
             }
@@ -1062,11 +1038,11 @@ TEST_CASE("Adversarial Refactoring - Add const: Method Calling Const vs Non-Cons
 
     // MethodCallingConst (line 6, col 8) SHOULD get 'Add const qualifier'
     {
-        lsp::Range range{ { 6, 8 }, { 6, 8 } };
+        lsp::Range range{{6, 8}, {6, 8}};
         auto actions = env.CodeActions(range);
         REQUIRE(actions.has_value());
         bool foundConst = false;
-        for (const auto &act : *actions)
+        for (const auto& act : *actions)
         {
             if (act.title == "Add 'const' qualifier to method")
             {
@@ -1079,25 +1055,24 @@ TEST_CASE("Adversarial Refactoring - Add const: Method Calling Const vs Non-Cons
 
 TEST_CASE("Adversarial Refactoring - Add const: Local Variable With Same Name Does Not Mutate Field")
 {
-    std::string code =
-        "class Player\n"
-        "{\n"
-        "    int count;\n"
-        "    int Calculate()\n"
-        "    {\n"
-        "        int count = 5;\n"
-        "        count += 10;\n"
-        "        return count;\n"
-        "    }\n"
-        "}\n";
+    std::string code = "class Player\n"
+                       "{\n"
+                       "    int count;\n"
+                       "    int Calculate()\n"
+                       "    {\n"
+                       "        int count = 5;\n"
+                       "        count += 10;\n"
+                       "        return count;\n"
+                       "    }\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
-    lsp::Range range{ { 3, 8 }, { 3, 8 } };
+    lsp::Range range{{3, 8}, {3, 8}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundConst = false;
-    for (const auto &act : *actions)
+    for (const auto& act : *actions)
     {
         if (act.title == "Add 'const' qualifier to method")
         {
@@ -1109,34 +1084,32 @@ TEST_CASE("Adversarial Refactoring - Add const: Local Variable With Same Name Do
 
 TEST_CASE("Adversarial Refactoring - Sort and Clean Includes: Mixed System/Local With Unresolved Preserved")
 {
-    std::string code =
-        "#include \"unresolved/Config.as\"\n"
-        "#include <engine/Renderer.as>\n"
-        "#include \"unresolved/Config.as\"\n"
-        "#include <core/Math.as>\n"
-        "\n"
-        "void main() {}\n";
+    std::string code = "#include \"unresolved/Config.as\"\n"
+                       "#include <engine/Renderer.as>\n"
+                       "#include \"unresolved/Config.as\"\n"
+                       "#include <core/Math.as>\n"
+                       "\n"
+                       "void main() {}\n";
 
     RefactorTestEnvironment env(code);
     auto actions = env.CodeActions();
 
     REQUIRE(actions.has_value());
     bool foundOrganize = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Sort and Clean #include Directives")
         {
             foundOrganize = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
 
-            std::string expected =
-                "#include <core/Math.as>\n"
-                "#include <engine/Renderer.as>\n"
-                "\n"
-                "#include \"unresolved/Config.as\"\n";
+            std::string expected = "#include <core/Math.as>\n"
+                                   "#include <engine/Renderer.as>\n"
+                                   "\n"
+                                   "#include \"unresolved/Config.as\"\n";
 
             CHECK(edits[0].newText == expected);
         }
@@ -1146,28 +1119,27 @@ TEST_CASE("Adversarial Refactoring - Sort and Clean Includes: Mixed System/Local
 
 TEST_CASE("Adversarial Refactoring - Extract Variable: Unary Minus and Cast Expression")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    int speed = 50;\n"
-        "    float v = -float(speed);\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    int speed = 50;\n"
+                       "    float v = -float(speed);\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select "-float(speed)" on line 3, cols 14 to 27
-    lsp::Range range{ { 3, 14 }, { 3, 27 } };
+    lsp::Range range{{3, 14}, {3, 27}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Variable")
         {
             foundExtract = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
             CHECK(edits[0].newText.find("newVar = -float(speed);\n") != std::string::npos);
             CHECK(edits[1].newText == "newVar");
@@ -1178,33 +1150,32 @@ TEST_CASE("Adversarial Refactoring - Extract Variable: Unary Minus and Cast Expr
 
 TEST_CASE("Adversarial Refactoring - Extract Method: Extracted Loop With Internal Break")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    int sum = 0;\n"
-        "    for (int i = 0; i < 100; ++i)\n"
-        "    {\n"
-        "        sum += i;\n"
-        "        if (sum > 50) break;\n"
-        "    }\n"
-        "    Print(sum);\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    int sum = 0;\n"
+                       "    for (int i = 0; i < 100; ++i)\n"
+                       "    {\n"
+                       "        sum += i;\n"
+                       "        if (sum > 50) break;\n"
+                       "    }\n"
+                       "    Print(sum);\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Select entire for-loop (lines 3 to 7)
-    lsp::Range range{ { 3, 4 }, { 7, 5 } };
+    lsp::Range range{{3, 4}, {7, 5}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Method")
         {
             foundExtract = true;
             REQUIRE(action.edit.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
             MESSAGE("Call edit text: " << edits[0].newText);
             MESSAGE("Method def edit text: " << edits[1].newText);
@@ -1217,20 +1188,19 @@ TEST_CASE("Adversarial Refactoring - Extract Method: Extracted Loop With Interna
 
 TEST_CASE("Adversarial Refactoring - Add const: Interface Method Without Body")
 {
-    std::string code =
-        "interface IWeapon\n"
-        "{\n"
-        "    void Fire();\n"
-        "}\n";
+    std::string code = "interface IWeapon\n"
+                       "{\n"
+                       "    void Fire();\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
-    lsp::Range range{ { 2, 9 }, { 2, 9 } };
+    lsp::Range range{{2, 9}, {2, 9}};
     auto actions = env.CodeActions(range);
 
     // Interface methods shouldn't offer add const intention since they have no class body or implementation
     if (actions.has_value())
     {
-        for (const auto &act : *actions)
+        for (const auto& act : *actions)
         {
             CHECK(act.title != "Add 'const' qualifier to method");
         }
@@ -1241,27 +1211,31 @@ TEST_CASE("Refactoring - Extract Variable: Smart Name From Method Call")
 {
     const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("CPlayer");
     const std::string varObj = angel_lsp::test::GenerateRandomSymbolName("player");
-    std::string code =
-        "class " + clsName + "\n"
-        "{\n"
-        "    string GetModel() { return \"models/player.mdl\"; }\n"
-        "}\n"
-        "void main()\n"
-        "{\n"
-        "    " + clsName + "@ " + varObj + " = " + clsName + "();\n"
-        "    string m = " + varObj + ".GetModel();\n"
-        "}\n";
+    std::string code = "class " + clsName +
+                       "\n"
+                       "{\n"
+                       "    string GetModel() { return \"models/player.mdl\"; }\n"
+                       "}\n"
+                       "void main()\n"
+                       "{\n"
+                       "    " +
+                       clsName + "@ " + varObj + " = " + clsName +
+                       "();\n"
+                       "    string m = " +
+                       varObj +
+                       ".GetModel();\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     uint32_t lineIdx = 7;
     uint32_t colStart = 15;
     uint32_t colEnd = static_cast<uint32_t>(colStart + varObj.size() + 11);
-    lsp::Range range{ { lineIdx, colStart }, { lineIdx, colEnd } };
+    lsp::Range range{{lineIdx, colStart}, {lineIdx, colEnd}};
     auto actions = env.CodeActions(range);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Variable")
         {
@@ -1269,7 +1243,7 @@ TEST_CASE("Refactoring - Extract Variable: Smart Name From Method Call")
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
             CHECK(edits[0].newText.find("model = " + varObj + ".GetModel();") != std::string::npos);
             CHECK(edits[1].newText == "model");
@@ -1280,21 +1254,20 @@ TEST_CASE("Refactoring - Extract Variable: Smart Name From Method Call")
 
 TEST_CASE("Refactoring - Extract Method: Rejects Empty Selection On Variable Or Inner Expression")
 {
-    std::string code =
-        "void main()\n"
-        "{\n"
-        "    int a = 1;\n"
-        "    int b = 2;\n"
-        "    int c = a + b;\n"
-        "}\n";
+    std::string code = "void main()\n"
+                       "{\n"
+                       "    int a = 1;\n"
+                       "    int b = 2;\n"
+                       "    int c = a + b;\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
-    lsp::Range cursorRange{ { 4, 16 }, { 4, 16 } };
+    lsp::Range cursorRange{{4, 16}, {4, 16}};
     auto actions = env.CodeActions(cursorRange);
 
     if (actions.has_value())
     {
-        for (const auto &action : *actions)
+        for (const auto& action : *actions)
         {
             CHECK(action.title != "Extract Method");
         }
@@ -1303,23 +1276,22 @@ TEST_CASE("Refactoring - Extract Method: Rejects Empty Selection On Variable Or 
 
 TEST_CASE("Refactoring - Extract Variable: Member Expression Climbing")
 {
-    std::string code =
-        "class CScriptInfo { void SetAuthor(string a) {} }\n"
-        "class CModule { CScriptInfo@ ScriptInfo; }\n"
-        "CModule g_Module;\n"
-        "void main()\n"
-        "{\n"
-        "    g_Module.ScriptInfo.SetAuthor(\"Mikk\");\n"
-        "}\n";
+    std::string code = "class CScriptInfo { void SetAuthor(string a) {} }\n"
+                       "class CModule { CScriptInfo@ ScriptInfo; }\n"
+                       "CModule g_Module;\n"
+                       "void main()\n"
+                       "{\n"
+                       "    g_Module.ScriptInfo.SetAuthor(\"Mikk\");\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Cursor on "ScriptInfo" (line 5, character 15)
-    lsp::Range cursorRange{ { 5, 15 }, { 5, 15 } };
+    lsp::Range cursorRange{{5, 15}, {5, 15}};
     auto actions = env.CodeActions(cursorRange);
 
     REQUIRE(actions.has_value());
     bool foundExtract = false;
-    for (const auto &action : *actions)
+    for (const auto& action : *actions)
     {
         if (action.title == "Extract Variable")
         {
@@ -1327,7 +1299,7 @@ TEST_CASE("Refactoring - Extract Variable: Member Expression Climbing")
             REQUIRE(action.edit.has_value());
             REQUIRE(action.edit->changes.has_value());
             auto changes = action.edit->changes.value();
-            const auto &edits = changes[lsp::DocumentUri::parse(env.uri)];
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(edits.size() == 2);
             // Declarator must extract g_Module.ScriptInfo, NOT lone ScriptInfo!
             CHECK(edits[0].newText.find("= g_Module.ScriptInfo;\n") != std::string::npos);
@@ -1338,25 +1310,22 @@ TEST_CASE("Refactoring - Extract Variable: Member Expression Climbing")
 
 TEST_CASE("Refactoring - Extract Variable: Rejects Void Returning Call Expression")
 {
-    std::string code =
-        "void DoNothing() {}\n"
-        "void main()\n"
-        "{\n"
-        "    DoNothing();\n"
-        "}\n";
+    std::string code = "void DoNothing() {}\n"
+                       "void main()\n"
+                       "{\n"
+                       "    DoNothing();\n"
+                       "}\n";
 
     RefactorTestEnvironment env(code);
     // Selection on DoNothing()
-    lsp::Range range{ { 3, 4 }, { 3, 15 } };
+    lsp::Range range{{3, 4}, {3, 15}};
     auto actions = env.CodeActions(range);
 
     if (actions.has_value())
     {
-        for (const auto &action : *actions)
+        for (const auto& action : *actions)
         {
             CHECK(action.title != "Extract Variable");
         }
     }
 }
-
-

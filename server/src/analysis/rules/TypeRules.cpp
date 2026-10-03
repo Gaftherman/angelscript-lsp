@@ -142,7 +142,7 @@ void ValidateTypedef(const Symbol& sym, const DiagnosticContext& ctx)
     }
 
     const auto& sig = sym.GetTypedef();
-    const std::string baseType = CleanBaseType(sig.baseType);
+    const std::string_view baseType = CleanBaseTypeView(sig.baseType);
 
     if (!sig.hasSemicolon)
     {
@@ -176,7 +176,8 @@ void ValidateFuncdefReturnType(const Symbol& sym, const FuncdefSignature& sig, c
         ctx.Emit(sym, "as-err-handle-on-primitive", sig.returnBaseTypeName);
     }
 
-    const std::string retBase = CleanBaseType(sig.returnBaseTypeName.empty() ? sig.returnType : sig.returnBaseTypeName);
+    const std::string_view retBase =
+        CleanBaseTypeView(sig.returnBaseTypeName.empty() ? sig.returnType : sig.returnBaseTypeName);
     if (!retBase.empty() && retBase != "void" && retBase != "auto" && !IsKnownType(retBase, ctx))
     {
         ctx.LogRule("ValidateFuncdef", "as-err-unresolved-type", sym);
@@ -204,7 +205,8 @@ void ValidateFuncdefParameter(const Symbol& sym, const ParameterInformation& par
 
     const bool isPredefined =
         angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
-    const std::string paramBase = CleanBaseType(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
+    const std::string_view paramBase =
+        CleanBaseTypeView(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
     if (!paramBase.empty() && paramBase != "void" && paramBase != "auto" && !(isPredefined && paramBase == "?") &&
         !IsKnownType(paramBase, ctx))
     {
@@ -484,7 +486,7 @@ bool AreIdenticalFunctionSignatures(const Symbol& first, const Symbol& other)
     if (first.GetFunction().returnType != other.GetFunction().returnType)
     {
         if (first.name == "opConv" || first.name == "opImplConv" || first.name == "opCast" ||
-            first.name == "opImplCast")
+            first.name == "opImplCast" || first.name == "opIndex")
         {
             return false;
         }
@@ -499,7 +501,7 @@ bool AreIdenticalFunctionSignatures(const Symbol& first, const Symbol& other)
     {
         if (firstParams[p].typeName != otherParams[p].typeName || firstParams[p].modifier != otherParams[p].modifier ||
             firstParams[p].isReference != otherParams[p].isReference ||
-            firstParams[p].isHandle != otherParams[p].isHandle)
+            firstParams[p].isHandle != otherParams[p].isHandle || firstParams[p].isConst != otherParams[p].isConst)
         {
             return false;
         }
@@ -678,20 +680,28 @@ void ValidateDuplicates(const std::vector<Symbol>& symbols, const DiagnosticCont
         return;
     }
 
-    std::vector<const Symbol*> candidates = moduleMates;
-    candidates.insert(candidates.end(), local.begin(), local.end());
-
-    for (size_t i = 1; i < candidates.size(); ++i)
+    for (size_t i = 0; i < local.size(); ++i)
     {
-        const Symbol& other = *candidates[i];
-        if (other.fileUri != ctx.request.fileUri)
+        const Symbol& other = *local[i];
+        bool foundDup = false;
+
+        for (const Symbol* mate : moduleMates)
+        {
+            if (CheckDuplicatePair(*mate, other, ctx))
+            {
+                foundDup = true;
+                break;
+            }
+        }
+
+        if (foundDup)
         {
             continue;
         }
 
         for (size_t j = 0; j < i; ++j)
         {
-            if (CheckDuplicatePair(*candidates[j], other, ctx))
+            if (CheckDuplicatePair(*local[j], other, ctx))
             {
                 break;
             }

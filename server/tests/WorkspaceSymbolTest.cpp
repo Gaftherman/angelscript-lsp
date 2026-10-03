@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 
-#include "features/workspace_symbol/WorkspaceSymbolHandler.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "features/workspace_symbol/WorkspaceSymbolHandler.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
@@ -12,33 +12,32 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct WorkspaceSymbolTestEnv
+struct WorkspaceSymbolTestEnv
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    SymbolTable symbolTable;
+
+    void AddFile(const std::string& uri, const std::string& sourceCode)
     {
-        AngelScriptParser parser;
-        SymbolCollector symbolCollector{ nullptr };
-        SymbolTable symbolTable;
+        symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
+    }
 
-        void AddFile(const std::string &uri, const std::string &sourceCode)
-        {
-            symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
-        }
-
-        std::optional<WorkspaceSymbolResult> Search(std::string_view query, size_t maxResults = 100)
-        {
-            WorkspaceSymbolRequest req{ query, symbolTable, maxResults };
-            return GetWorkspaceSymbols(req);
-        }
-    };
-}
+    std::optional<WorkspaceSymbolResult> Search(std::string_view query, size_t maxResults = 100)
+    {
+        WorkspaceSymbolRequest req{query, symbolTable, maxResults};
+        return GetWorkspaceSymbols(req);
+    }
+};
+} // namespace
 
 TEST_CASE("WorkspaceSymbolHandler - Exact Match Ranking")
 {
     WorkspaceSymbolTestEnv env;
-    std::string code =
-        "class Player {}\n"
-        "void PlaySound() {}\n"
-        "class PlayerController {}\n"
-        "int GetPlayer() { return 0; }\n";
+    std::string code = "class Player {}\n"
+                       "void PlaySound() {}\n"
+                       "class PlayerController {}\n"
+                       "int GetPlayer() { return 0; }\n";
 
     env.AddFile("file:///game.as", code);
 
@@ -54,10 +53,9 @@ TEST_CASE("WorkspaceSymbolHandler - Exact Match Ranking")
 TEST_CASE("WorkspaceSymbolHandler - Prefix and Substring Matching")
 {
     WorkspaceSymbolTestEnv env;
-    std::string code =
-        "void PlaySound() {}\n"
-        "void PlayMusic() {}\n"
-        "void StopAudio() {}\n";
+    std::string code = "void PlaySound() {}\n"
+                       "void PlayMusic() {}\n"
+                       "void StopAudio() {}\n";
 
     env.AddFile("file:///audio.as", code);
 
@@ -65,7 +63,7 @@ TEST_CASE("WorkspaceSymbolHandler - Prefix and Substring Matching")
     auto prefixRes = env.Search("Play");
     REQUIRE(prefixRes.has_value());
     CHECK(prefixRes->size() >= 2);
-    for (const auto &sym : *prefixRes)
+    for (const auto& sym : *prefixRes)
     {
         CHECK(sym.name.starts_with("Play"));
     }
@@ -92,14 +90,13 @@ TEST_CASE("WorkspaceSymbolHandler - Case Insensitive Search")
 TEST_CASE("WorkspaceSymbolHandler - Qualified Name Matching")
 {
     WorkspaceSymbolTestEnv env;
-    std::string code =
-        "namespace Engine\n"
-        "{\n"
-        "    namespace Audio\n"
-        "    {\n"
-        "        void StreamSound() {}\n"
-        "    }\n"
-        "}\n";
+    std::string code = "namespace Engine\n"
+                       "{\n"
+                       "    namespace Audio\n"
+                       "    {\n"
+                       "        void StreamSound() {}\n"
+                       "    }\n"
+                       "}\n";
 
     env.AddFile("file:///engine.as", code);
 
@@ -108,7 +105,7 @@ TEST_CASE("WorkspaceSymbolHandler - Qualified Name Matching")
     REQUIRE(!res->empty());
 
     bool foundStreamSound = false;
-    for (const auto &sym : *res)
+    for (const auto& sym : *res)
     {
         if (sym.name == "StreamSound")
         {
@@ -133,10 +130,9 @@ TEST_CASE("WorkspaceSymbolHandler - Fuzzy Subsequence Search")
 TEST_CASE("WorkspaceSymbolHandler - Empty Query Returns All Symbols")
 {
     WorkspaceSymbolTestEnv env;
-    std::string code =
-        "int a = 1;\n"
-        "int b = 2;\n"
-        "int c = 3;\n";
+    std::string code = "int a = 1;\n"
+                       "int b = 2;\n"
+                       "int c = 3;\n";
 
     env.AddFile("file:///vars.as", code);
 
@@ -148,12 +144,11 @@ TEST_CASE("WorkspaceSymbolHandler - Empty Query Returns All Symbols")
 TEST_CASE("WorkspaceSymbolHandler - MaxResults Truncation")
 {
     WorkspaceSymbolTestEnv env;
-    std::string code =
-        "int var0 = 0;\n"
-        "int var1 = 1;\n"
-        "int var2 = 2;\n"
-        "int var3 = 3;\n"
-        "int var4 = 4;\n";
+    std::string code = "int var0 = 0;\n"
+                       "int var1 = 1;\n"
+                       "int var2 = 2;\n"
+                       "int var3 = 3;\n"
+                       "int var4 = 4;\n";
 
     env.AddFile("file:///many.as", code);
 
@@ -165,12 +160,11 @@ TEST_CASE("WorkspaceSymbolHandler - MaxResults Truncation")
 TEST_CASE("WorkspaceSymbolHandler - Container Name and Symbol Kind Mapping")
 {
     WorkspaceSymbolTestEnv env;
-    std::string code =
-        "class Vehicle\n"
-        "{\n"
-        "    int speed;\n"
-        "    void Accelerate() {}\n"
-        "}\n";
+    std::string code = "class Vehicle\n"
+                       "{\n"
+                       "    int speed;\n"
+                       "    void Accelerate() {}\n"
+                       "}\n";
 
     env.AddFile("file:///vehicle.as", code);
 
@@ -194,13 +188,12 @@ TEST_CASE("WorkspaceSymbolHandler - Container Name and Symbol Kind Mapping")
 TEST_CASE("WorkspaceSymbolHandler - Enum Deduplication")
 {
     WorkspaceSymbolTestEnv env;
-    std::string code =
-        "enum Difficulty\n"
-        "{\n"
-        "    Easy,\n"
-        "    Normal,\n"
-        "    Hard\n"
-        "}\n";
+    std::string code = "enum Difficulty\n"
+                       "{\n"
+                       "    Easy,\n"
+                       "    Normal,\n"
+                       "    Hard\n"
+                       "}\n";
 
     env.AddFile("file:///enum.as", code);
 
@@ -223,7 +216,7 @@ TEST_CASE("WorkspaceSymbolHandler - Multi-File Workspace Symbols")
 
     bool foundA = false;
     bool foundB = false;
-    for (const auto &sym : *res)
+    for (const auto& sym : *res)
     {
         if (sym.name == "ActorA")
         {

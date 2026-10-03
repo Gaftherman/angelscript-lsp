@@ -111,6 +111,18 @@ suite('buildServerArgs', () => {
         assert.ok(args.includes('--disable-hover'), `expected --disable-hover in ${args.join(' ')}`);
     });
 
+    test('hover.stringLiteralPathResolution switched off adds disabling flag', async () => {
+        const args = await withSetting('hover.stringLiteralPathResolution', false, buildServerArgs);
+        assert.ok(args.includes('--disable-hover-string-literal-path-resolution'),
+                  `expected --disable-hover-string-literal-path-resolution in ${args.join(' ')}`);
+    });
+
+    test('hover.stringLiteralPathResolution left on adds no disabling flag', async () => {
+        const args = await withSetting('hover.stringLiteralPathResolution', true, buildServerArgs);
+        assert.ok(!args.includes('--disable-hover-string-literal-path-resolution'),
+                  `unexpected disabling flag in ${args.join(' ')}`);
+    });
+
     test('the accessor mode is passed for both values the manifest offers', async () => {
         for (const mode of [2, 3]) {
             const args = await withSetting('engine.propertyAccessorMode', mode, buildServerArgs);

@@ -1,9 +1,9 @@
 #include <doctest/doctest.h>
 
-#include "helpers/CorpusDirectory.h"
-#include "helpers/TestUtils.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/ScopeTree.h"
+#include "helpers/CorpusDirectory.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
@@ -21,151 +21,170 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    /** @brief Parses sourceCode with a fresh parser/collector pair and returns its Scope tree. */
-    std::unique_ptr<Scope> CollectScopesFromSource(const std::string &sourceCode)
-    {
-        AngelScriptParser parser;
-        LocalScopeCollector collector(nullptr);
-        return collector.CollectScopes(sourceCode, parser);
-    }
-
-    /**
-     * @brief Whether the angelscript/ corpus is present.
-     *
-     * It is not part of the repository - `.gitignore` excludes `angelscript/`, because it is a
-     * thousand third-party scripts collected for auditing rather than source of this project. So a
-     * fresh clone and every CI runner have no corpus, and a smoke test that REQUIREs one there is
-     * reporting the checkout rather than the code. The corpus audits are opt-in already
-     * (`doctest::skip`); these two smoke tests run by default and have to say so themselves.
-     */
-    bool CorpusIsAvailable()
-    {
-        std::error_code ec;
-        return std::filesystem::is_directory(angel_lsp::test::CorpusDirectory(), ec);
-    }
-
-    /** @brief Reads an entire file from the angelscript/ corpus into memory; empty string if missing. */
-    std::string ReadCorpusFile(const std::string &fileName)
-    {
-        std::string path = angel_lsp::test::CorpusDirectory().string() + "/" + fileName;
-        std::ifstream file(path, std::ios::binary);
-        if (!file)
-            return "";
-
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-        return buffer.str();
-    }
-
-    struct SourcePos
-    {
-        uint32_t line;
-        uint32_t character;
-    };
-
-    /** @brief Locates the 0-indexed line/character of needle's first occurrence in source, starting the search at startAt. */
-    SourcePos FindPosition(const std::string &source, const std::string &needle, size_t startAt = 0)
-    {
-        size_t pos = source.find(needle, startAt);
-        REQUIRE_MESSAGE(pos != std::string::npos, "Expected to find \"" << needle << "\" in test source");
-
-        uint32_t line = 0;
-        size_t lineStart = 0;
-        for (size_t i = 0; i < pos; ++i)
-        {
-            if (source[i] == '\n')
-            {
-                ++line;
-                lineStart = i + 1;
-            }
-        }
-
-        return SourcePos{line, static_cast<uint32_t>(pos - lineStart)};
-    }
-
-    /** @brief Searches only scope's own references (not descendants) for one matching name. */
-    const LocalReference *FindReferenceByName(const Scope *scope, const std::string &name)
-    {
-        for (const auto &ref : scope->references)
-        {
-            if (ref.name == name)
-                return &ref;
-        }
-        return nullptr;
-    }
-
-    /** @brief Walks down from scope to the innermost child whose range contains (line, character). */
-    /**
-     * @brief Innermost containing scope, falling back to the scope passed in.
-     *
-     * Not analysis::FindInnermostScope: that reports nullptr when the point lies outside the root,
-     * this returns the root. These tests hand it a scope they already know contains the point and
-     * want the deepest child, so the fallback is what they mean - but the two must not share a
-     * name, or a later reader will assume the null contract holds here.
-     */
-    const Scope *FindEnclosingScopeOrRoot(const Scope *scope, uint32_t line, uint32_t character)
-    {
-        for (const auto &child : scope->children)
-        {
-            bool afterStart = (line > child->startLine) || (line == child->startLine && character >= child->startCharacter);
-            bool beforeEnd = (line < child->endLine) || (line == child->endLine && character <= child->endCharacter);
-
-            if (afterStart && beforeEnd)
-                return FindEnclosingScopeOrRoot(child.get(), line, character);
-        }
-
-        return scope;
-    }
-
-    /** @brief Recursively counts every LocalDefinition across scope and its descendants. */
-    size_t CountDefinitions(const Scope *scope)
-    {
-        size_t count = scope->definitions.size();
-        for (const auto &child : scope->children)
-            count += CountDefinitions(child.get());
-        return count;
-    }
-
-    /** @brief Recursively counts every Scope node (scope itself plus descendants). */
-    size_t CountScopes(const Scope *scope)
-    {
-        size_t count = 1;
-        for (const auto &child : scope->children)
-            count += CountScopes(child.get());
-        return count;
-    }
-
-    /** @brief Recursively counts every LocalReference across scope and its descendants. */
-    size_t CountReferences(const Scope *scope)
-    {
-        size_t count = scope->references.size();
-        for (const auto &child : scope->children)
-            count += CountReferences(child.get());
-        return count;
-    }
-
-    /** @brief Recursively tallies definitions by kind across scope and its descendants into counts. */
-    void TallyDefinitionsByKind(const Scope *scope, std::unordered_map<std::string, size_t> &counts)
-    {
-        for (const auto &def : scope->definitions)
-        {
-            switch (def.kind)
-            {
-            case LocalDefinitionKind::Parameter: ++counts["Parameter"]; break;
-            case LocalDefinitionKind::Variable: ++counts["Variable"]; break;
-            case LocalDefinitionKind::Field: ++counts["Field"]; break;
-            case LocalDefinitionKind::Function: ++counts["Function"]; break;
-            case LocalDefinitionKind::Method: ++counts["Method"]; break;
-            case LocalDefinitionKind::Type: ++counts["Type"]; break;
-            case LocalDefinitionKind::Constant: ++counts["Constant"]; break;
-            case LocalDefinitionKind::Namespace: ++counts["Namespace"]; break;
-            case LocalDefinitionKind::Import: ++counts["Import"]; break;
-            }
-        }
-        for (const auto &child : scope->children)
-            TallyDefinitionsByKind(child.get(), counts);
-    }
+/** @brief Parses sourceCode with a fresh parser/collector pair and returns its Scope tree. */
+std::unique_ptr<Scope> CollectScopesFromSource(const std::string& sourceCode)
+{
+    AngelScriptParser parser;
+    LocalScopeCollector collector(nullptr);
+    return collector.CollectScopes(sourceCode, parser);
 }
+
+/**
+ * @brief Whether the angelscript/ corpus is present.
+ *
+ * It is not part of the repository - `.gitignore` excludes `angelscript/`, because it is a
+ * thousand third-party scripts collected for auditing rather than source of this project. So a
+ * fresh clone and every CI runner have no corpus, and a smoke test that REQUIREs one there is
+ * reporting the checkout rather than the code. The corpus audits are opt-in already
+ * (`doctest::skip`); these two smoke tests run by default and have to say so themselves.
+ */
+bool CorpusIsAvailable()
+{
+    std::error_code ec;
+    return std::filesystem::is_directory(angel_lsp::test::CorpusDirectory(), ec);
+}
+
+/** @brief Reads an entire file from the angelscript/ corpus into memory; empty string if missing. */
+std::string ReadCorpusFile(const std::string& fileName)
+{
+    std::string path = angel_lsp::test::CorpusDirectory().string() + "/" + fileName;
+    std::ifstream file(path, std::ios::binary);
+    if (!file)
+        return "";
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
+struct SourcePos
+{
+    uint32_t line;
+    uint32_t character;
+};
+
+/** @brief Locates the 0-indexed line/character of needle's first occurrence in source, starting the search at startAt.
+ */
+SourcePos FindPosition(const std::string& source, const std::string& needle, size_t startAt = 0)
+{
+    size_t pos = source.find(needle, startAt);
+    REQUIRE_MESSAGE(pos != std::string::npos, "Expected to find \"" << needle << "\" in test source");
+
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < pos; ++i)
+    {
+        if (source[i] == '\n')
+        {
+            ++line;
+            lineStart = i + 1;
+        }
+    }
+
+    return SourcePos{line, static_cast<uint32_t>(pos - lineStart)};
+}
+
+/** @brief Searches only scope's own references (not descendants) for one matching name. */
+const LocalReference* FindReferenceByName(const Scope* scope, const std::string& name)
+{
+    for (const auto& ref : scope->references)
+    {
+        if (ref.name == name)
+            return &ref;
+    }
+    return nullptr;
+}
+
+/** @brief Walks down from scope to the innermost child whose range contains (line, character). */
+/**
+ * @brief Innermost containing scope, falling back to the scope passed in.
+ *
+ * Not analysis::FindInnermostScope: that reports nullptr when the point lies outside the root,
+ * this returns the root. These tests hand it a scope they already know contains the point and
+ * want the deepest child, so the fallback is what they mean - but the two must not share a
+ * name, or a later reader will assume the null contract holds here.
+ */
+const Scope* FindEnclosingScopeOrRoot(const Scope* scope, uint32_t line, uint32_t character)
+{
+    for (const auto& child : scope->children)
+    {
+        bool afterStart = (line > child->startLine) || (line == child->startLine && character >= child->startCharacter);
+        bool beforeEnd = (line < child->endLine) || (line == child->endLine && character <= child->endCharacter);
+
+        if (afterStart && beforeEnd)
+            return FindEnclosingScopeOrRoot(child.get(), line, character);
+    }
+
+    return scope;
+}
+
+/** @brief Recursively counts every LocalDefinition across scope and its descendants. */
+size_t CountDefinitions(const Scope* scope)
+{
+    size_t count = scope->definitions.size();
+    for (const auto& child : scope->children)
+        count += CountDefinitions(child.get());
+    return count;
+}
+
+/** @brief Recursively counts every Scope node (scope itself plus descendants). */
+size_t CountScopes(const Scope* scope)
+{
+    size_t count = 1;
+    for (const auto& child : scope->children)
+        count += CountScopes(child.get());
+    return count;
+}
+
+/** @brief Recursively counts every LocalReference across scope and its descendants. */
+size_t CountReferences(const Scope* scope)
+{
+    size_t count = scope->references.size();
+    for (const auto& child : scope->children)
+        count += CountReferences(child.get());
+    return count;
+}
+
+/** @brief Recursively tallies definitions by kind across scope and its descendants into counts. */
+void TallyDefinitionsByKind(const Scope* scope, std::unordered_map<std::string, size_t>& counts)
+{
+    for (const auto& def : scope->definitions)
+    {
+        switch (def.kind)
+        {
+        case LocalDefinitionKind::Parameter:
+            ++counts["Parameter"];
+            break;
+        case LocalDefinitionKind::Variable:
+            ++counts["Variable"];
+            break;
+        case LocalDefinitionKind::Field:
+            ++counts["Field"];
+            break;
+        case LocalDefinitionKind::Function:
+            ++counts["Function"];
+            break;
+        case LocalDefinitionKind::Method:
+            ++counts["Method"];
+            break;
+        case LocalDefinitionKind::Type:
+            ++counts["Type"];
+            break;
+        case LocalDefinitionKind::Constant:
+            ++counts["Constant"];
+            break;
+        case LocalDefinitionKind::Namespace:
+            ++counts["Namespace"];
+            break;
+        case LocalDefinitionKind::Import:
+            ++counts["Import"];
+            break;
+        }
+    }
+    for (const auto& child : scope->children)
+        TallyDefinitionsByKind(child.get(), counts);
+}
+} // namespace
 
 // =====================================================================================
 // Basic definition/reference resolution
@@ -177,20 +196,22 @@ TEST_CASE("LocalScopeCollector - parameter definition and body reference resolve
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Func");
     const std::string paramName = angel_lsp::test::GenerateIdentifier(rng, "param");
 
-    std::string source =
-        "void " + fnName + "(int " + paramName + ")\n"
-        "{\n"
-        "    return " + paramName + " + 1;\n"
-        "}\n";
+    std::string source = "void " + fnName + "(int " + paramName +
+                         ")\n"
+                         "{\n"
+                         "    return " +
+                         paramName +
+                         " + 1;\n"
+                         "}\n";
 
     auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, paramName + " + 1");
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *resolved = ResolveInScope(innermost, paramName);
+    const LocalDefinition* resolved = ResolveInScope(innermost, paramName);
     REQUIRE(resolved != nullptr);
     CHECK(resolved->name == paramName);
     CHECK(resolved->kind == LocalDefinitionKind::Parameter);
@@ -206,27 +227,33 @@ TEST_CASE("LocalScopeCollector - nested block shadowing resolves to the innermos
     const std::string fnName = angel_lsp::test::GenerateIdentifier(rng, "Func");
     const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "idx");
 
-    std::string source =
-        "void " + fnName + "()\n"
-        "{\n"
-        "    for (int " + varName + " = 0; " + varName + " < 10; " + varName + "++)\n"
-        "    {\n"
-        "        if (true)\n"
-        "        {\n"
-        "            int " + varName + " = 5;\n"
-        "            " + varName + " = " + varName + " + 1;\n"
-        "        }\n"
-        "    }\n"
-        "}\n";
+    std::string source = "void " + fnName +
+                         "()\n"
+                         "{\n"
+                         "    for (int " +
+                         varName + " = 0; " + varName + " < 10; " + varName +
+                         "++)\n"
+                         "    {\n"
+                         "        if (true)\n"
+                         "        {\n"
+                         "            int " +
+                         varName +
+                         " = 5;\n"
+                         "            " +
+                         varName + " = " + varName +
+                         " + 1;\n"
+                         "        }\n"
+                         "    }\n"
+                         "}\n";
 
     auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, varName + " + 1");
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *resolved = ResolveInScope(innermost, varName);
+    const LocalDefinition* resolved = ResolveInScope(innermost, varName);
     REQUIRE(resolved != nullptr);
     CHECK(resolved->kind == LocalDefinitionKind::Variable);
 
@@ -242,24 +269,26 @@ TEST_CASE("LocalScopeCollector - lambda parameters are captured as definitions")
     const std::string paramA = angel_lsp::test::GenerateIdentifier(rng, "pA");
     const std::string paramB = angel_lsp::test::GenerateIdentifier(rng, "pB");
 
-    std::string source =
-        "void " + fnName + "()\n"
-        "{\n"
-        "    SomeCall(function(" + paramA + ", " + paramB + ") { return " + paramA + " < " + paramB + "; });\n"
-        "}\n";
+    std::string source = "void " + fnName +
+                         "()\n"
+                         "{\n"
+                         "    SomeCall(function(" +
+                         paramA + ", " + paramB + ") { return " + paramA + " < " + paramB +
+                         "; });\n"
+                         "}\n";
 
     auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, paramA + " < " + paramB);
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *resolvedA = ResolveInScope(innermost, paramA);
+    const LocalDefinition* resolvedA = ResolveInScope(innermost, paramA);
     REQUIRE(resolvedA != nullptr);
     CHECK(resolvedA->kind == LocalDefinitionKind::Parameter);
 
-    const LocalDefinition *resolvedB = ResolveInScope(innermost, paramB);
+    const LocalDefinition* resolvedB = ResolveInScope(innermost, paramB);
     REQUIRE(resolvedB != nullptr);
     CHECK(resolvedB->kind == LocalDefinitionKind::Parameter);
 }
@@ -271,30 +300,35 @@ TEST_CASE("LocalScopeCollector - Invariant: Multi-level nested scope visibility"
     const std::string varChild1 = angel_lsp::test::GenerateIdentifier(rng, "midVar");
     const std::string varChild2 = angel_lsp::test::GenerateIdentifier(rng, "leafVar");
 
-    std::string source =
-        "void Main()\n"
-        "{\n"
-        "    int " + varRoot + " = 10;\n"
-        "    {\n"
-        "        int " + varChild1 + " = 20;\n"
-        "        {\n"
-        "            int " + varChild2 + " = " + varRoot + " + " + varChild1 + ";\n"
-        "        }\n"
-        "    }\n"
-        "}\n";
+    std::string source = "void Main()\n"
+                         "{\n"
+                         "    int " +
+                         varRoot +
+                         " = 10;\n"
+                         "    {\n"
+                         "        int " +
+                         varChild1 +
+                         " = 20;\n"
+                         "        {\n"
+                         "            int " +
+                         varChild2 + " = " + varRoot + " + " + varChild1 +
+                         ";\n"
+                         "        }\n"
+                         "    }\n"
+                         "}\n";
 
     auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, varRoot + " + " + varChild1);
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *defRoot = ResolveInScope(innermost, varRoot);
+    const LocalDefinition* defRoot = ResolveInScope(innermost, varRoot);
     REQUIRE(defRoot != nullptr);
     CHECK(defRoot->name == varRoot);
 
-    const LocalDefinition *defMid = ResolveInScope(innermost, varChild1);
+    const LocalDefinition* defMid = ResolveInScope(innermost, varChild1);
     REQUIRE(defMid != nullptr);
     CHECK(defMid->name == varChild1);
 }
@@ -312,15 +346,15 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, "value = 5");
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalReference *memberRef = FindReferenceByName(innermost, "value");
+    const LocalReference* memberRef = FindReferenceByName(innermost, "value");
     REQUIRE(memberRef != nullptr);
     CHECK(memberRef->isMemberAccess == true);
 
     // The object side of "obj.value" is an ordinary lexical reference, not a member access.
-    const LocalReference *objectRef = FindReferenceByName(innermost, "obj");
+    const LocalReference* objectRef = FindReferenceByName(innermost, "obj");
     REQUIRE(objectRef != nullptr);
     CHECK(objectRef->isMemberAccess == false);
 }
@@ -342,7 +376,7 @@ class Foo
     REQUIRE(root != nullptr);
     REQUIRE(root->children.size() == 1);
 
-    const Scope *classScope = root->children[0].get();
+    const Scope* classScope = root->children[0].get();
     REQUIRE(classScope->definitions.size() == 1);
     CHECK(classScope->definitions[0].name == "value");
     CHECK(classScope->definitions[0].kind == LocalDefinitionKind::Field);
@@ -367,7 +401,7 @@ class Foo
     REQUIRE(root != nullptr);
     REQUIRE(root->children.size() == 1);
 
-    const Scope *classScope = root->children[0].get();
+    const Scope* classScope = root->children[0].get();
     REQUIRE(classScope->definitions.size() == 1);
     CHECK(classScope->definitions[0].name == "Bar");
     CHECK(classScope->definitions[0].kind == LocalDefinitionKind::Method);
@@ -393,17 +427,17 @@ void Foo()
     REQUIRE(root != nullptr);
 
     // Helper's own name lives in the root (script) scope, not inside Helper's own body.
-    const LocalDefinition *helperDef = ResolveInScope(root.get(), "Helper");
+    const LocalDefinition* helperDef = ResolveInScope(root.get(), "Helper");
     REQUIRE(helperDef != nullptr);
     CHECK(helperDef->kind == LocalDefinitionKind::Function);
 
     // A reference to Helper() from inside Foo's body resolves to that same definition via
     // ResolveInScope alone - no SymbolTable fallback needed.
     SourcePos refPos = FindPosition(source, "Helper();", source.find("void Foo"));
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *resolved = ResolveInScope(innermost, "Helper");
+    const LocalDefinition* resolved = ResolveInScope(innermost, "Helper");
     REQUIRE(resolved != nullptr);
     CHECK(resolved->kind == LocalDefinitionKind::Function);
     CHECK(resolved->startLine == helperDef->startLine);
@@ -428,10 +462,10 @@ class Foo
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, "value = value");
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *resolved = ResolveInScope(innermost, "value");
+    const LocalDefinition* resolved = ResolveInScope(innermost, "value");
     REQUIRE(resolved != nullptr);
     CHECK(resolved->kind == LocalDefinitionKind::Parameter);
 }
@@ -454,10 +488,10 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos declPos = FindPosition(source, "f = null");
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), declPos.line, declPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), declPos.line, declPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *def = ResolveInScope(innermost, "f");
+    const LocalDefinition* def = ResolveInScope(innermost, "f");
     REQUIRE(def != nullptr);
     CHECK(def->kind == LocalDefinitionKind::Variable);
     CHECK(def->isHandleType == false);
@@ -479,10 +513,10 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos declPos = FindPosition(source, "h = null");
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), declPos.line, declPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), declPos.line, declPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *def = ResolveInScope(innermost, "h");
+    const LocalDefinition* def = ResolveInScope(innermost, "h");
     REQUIRE(def != nullptr);
     CHECK(def->isHandleType == true);
     CHECK(def->hasNullInitializer == true);
@@ -501,10 +535,10 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos declPos = FindPosition(source, "f = someFunc");
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), declPos.line, declPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), declPos.line, declPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *def = ResolveInScope(innermost, "f");
+    const LocalDefinition* def = ResolveInScope(innermost, "f");
     REQUIRE(def != nullptr);
     CHECK(def->hasNullInitializer == false);
 }
@@ -531,10 +565,10 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos loopPos = FindPosition(source, "int v : items");
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), loopPos.line, loopPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), loopPos.line, loopPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *v = ResolveInScope(innermost, "v");
+    const LocalDefinition* v = ResolveInScope(innermost, "v");
     REQUIRE(v != nullptr);
     CHECK(v->hasNullInitializer == false);
     CHECK(v->isHandleType == false);
@@ -561,10 +595,10 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos loopPos = FindPosition(source, "auto v : items");
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), loopPos.line, loopPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), loopPos.line, loopPos.character);
     REQUIRE(innermost != nullptr);
 
-    const LocalDefinition *v = ResolveInScope(innermost, "v");
+    const LocalDefinition* v = ResolveInScope(innermost, "v");
     REQUIRE(v != nullptr);
     CHECK(v->typeName == "auto");
 }
@@ -586,7 +620,7 @@ void Foo()
     REQUIRE(root != nullptr);
 
     SourcePos refPos = FindPosition(source, "Undefined");
-    const Scope *innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
+    const Scope* innermost = FindEnclosingScopeOrRoot(root.get(), refPos.line, refPos.character);
     REQUIRE(innermost != nullptr);
 
     CHECK(ResolveInScope(innermost, "Undefined") == nullptr);
@@ -612,7 +646,7 @@ TEST_CASE("LocalScopeCollector - builds scope trees for real-world AngelScript f
         "svencoop_ChatSounds.as",
     };
 
-    for (const auto &fileName : corpusFiles)
+    for (const auto& fileName : corpusFiles)
     {
         std::string sourceCode = ReadCorpusFile(fileName);
         REQUIRE_MESSAGE(!sourceCode.empty(), "Expected corpus file to exist and be non-empty: " << fileName);
@@ -633,42 +667,42 @@ TEST_CASE("LocalScopeCollector - builds scope trees for real-world AngelScript f
 // `angel_lsp_tests.exe --no-skip --test-case="*Local Scope Corpus Audit*"`)
 // =====================================================================================
 
-    struct AuditStats
-    {
-        size_t totalFiles = 0;
-        size_t totalScopes = 0;
-        size_t totalDefinitions = 0;
-        size_t totalReferences = 0;
-        double totalSeconds = 0.0;
-        std::unordered_map<std::string, size_t> definitionKindCounts;
-        std::vector<std::string> zeroDefinitionFiles;
-    };
+struct AuditStats
+{
+    size_t totalFiles = 0;
+    size_t totalScopes = 0;
+    size_t totalDefinitions = 0;
+    size_t totalReferences = 0;
+    double totalSeconds = 0.0;
+    std::unordered_map<std::string, size_t> definitionKindCounts;
+    std::vector<std::string> zeroDefinitionFiles;
+};
 
-    void AuditCorpusPath(const std::filesystem::path& path, AuditStats& stats)
-    {
-        std::string sourceCode = ReadCorpusFile(path.filename().string());
-        if (sourceCode.empty())
-            return;
+void AuditCorpusPath(const std::filesystem::path& path, AuditStats& stats)
+{
+    std::string sourceCode = ReadCorpusFile(path.filename().string());
+    if (sourceCode.empty())
+        return;
 
-        ++stats.totalFiles;
+    ++stats.totalFiles;
 
-        std::unique_ptr<Scope> root;
-        auto start = std::chrono::steady_clock::now();
-        root = CollectScopesFromSource(sourceCode);
-        stats.totalSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    std::unique_ptr<Scope> root;
+    auto start = std::chrono::steady_clock::now();
+    root = CollectScopesFromSource(sourceCode);
+    stats.totalSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
-        if (!root)
-            return;
+    if (!root)
+        return;
 
-        stats.totalScopes += CountScopes(root.get());
-        size_t fileDefinitions = CountDefinitions(root.get());
-        stats.totalDefinitions += fileDefinitions;
-        stats.totalReferences += CountReferences(root.get());
+    stats.totalScopes += CountScopes(root.get());
+    size_t fileDefinitions = CountDefinitions(root.get());
+    stats.totalDefinitions += fileDefinitions;
+    stats.totalReferences += CountReferences(root.get());
 
-        TallyDefinitionsByKind(root.get(), stats.definitionKindCounts);
-        if (fileDefinitions == 0)
-            stats.zeroDefinitionFiles.push_back(path.filename().string());
-    }
+    TallyDefinitionsByKind(root.get(), stats.definitionKindCounts);
+    if (fileDefinitions == 0)
+        stats.zeroDefinitionFiles.push_back(path.filename().string());
+}
 
 TEST_CASE("LocalScopeCollector - Local Scope Corpus Audit Across All angelscript Files" * doctest::skip(true))
 {
@@ -680,7 +714,7 @@ TEST_CASE("LocalScopeCollector - Local Scope Corpus Audit Across All angelscript
 
     namespace fs = std::filesystem;
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -689,19 +723,18 @@ TEST_CASE("LocalScopeCollector - Local Scope Corpus Audit Across All angelscript
     std::sort(files.begin(), files.end());
 
     AuditStats stats;
-    for (const auto &path : files)
+    for (const auto& path : files)
     {
         AuditCorpusPath(path, stats);
     }
 
-    MESSAGE("Local scope corpus audit: files=" << stats.totalFiles
-            << " totalScopes=" << stats.totalScopes
-            << " totalDefinitions=" << stats.totalDefinitions
-            << " totalReferences=" << stats.totalReferences
-            << " totalSeconds=" << stats.totalSeconds
-            << " avgMsPerFile=" << (stats.totalFiles ? (stats.totalSeconds * 1000.0 / static_cast<double>(stats.totalFiles)) : 0.0));
+    MESSAGE("Local scope corpus audit: files="
+            << stats.totalFiles << " totalScopes=" << stats.totalScopes
+            << " totalDefinitions=" << stats.totalDefinitions << " totalReferences=" << stats.totalReferences
+            << " totalSeconds=" << stats.totalSeconds << " avgMsPerFile="
+            << (stats.totalFiles ? (stats.totalSeconds * 1000.0 / static_cast<double>(stats.totalFiles)) : 0.0));
 
-    for (const auto &[kindName, count] : stats.definitionKindCounts)
+    for (const auto& [kindName, count] : stats.definitionKindCounts)
         MESSAGE("  " << kindName << ": " << count);
 
     CHECK(stats.totalFiles > 0);
@@ -718,31 +751,30 @@ TEST_CASE("LocalScopeCollector - Local Scope Corpus Audit Across All angelscript
 
 namespace
 {
-    /** @brief Counts definitions of the given name and kind anywhere in the scope tree. */
-    size_t CountDefinitions(const Scope *scope, const std::string &name, LocalDefinitionKind kind)
+/** @brief Counts definitions of the given name and kind anywhere in the scope tree. */
+size_t CountDefinitions(const Scope* scope, const std::string& name, LocalDefinitionKind kind)
+{
+    size_t total = 0;
+
+    for (const auto& def : scope->definitions)
     {
-        size_t total = 0;
-
-        for (const auto &def : scope->definitions)
-        {
-            if (def.name == name && def.kind == kind)
-                ++total;
-        }
-
-        for (const auto &child : scope->children)
-            total += CountDefinitions(child.get(), name, kind);
-
-        return total;
+        if (def.name == name && def.kind == kind)
+            ++total;
     }
+
+    for (const auto& child : scope->children)
+        total += CountDefinitions(child.get(), name, kind);
+
+    return total;
 }
+} // namespace
 
 TEST_CASE("LOCALS_QUERY - a class field is captured as a field and not also as a variable")
 {
-    const std::string source =
-        "class Weapon\n"
-        "{\n"
-        "    int ammo;\n"
-        "}\n";
+    const std::string source = "class Weapon\n"
+                               "{\n"
+                               "    int ammo;\n"
+                               "}\n";
 
     const auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
@@ -753,11 +785,10 @@ TEST_CASE("LOCALS_QUERY - a class field is captured as a field and not also as a
 
 TEST_CASE("LOCALS_QUERY - a function-body local is still captured as a variable")
 {
-    const std::string source =
-        "void Fire()\n"
-        "{\n"
-        "    int ammo = 30;\n"
-        "}\n";
+    const std::string source = "void Fire()\n"
+                               "{\n"
+                               "    int ammo = 30;\n"
+                               "}\n";
 
     const auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
@@ -778,11 +809,10 @@ TEST_CASE("LOCALS_QUERY - a module-scope global is still captured as a variable"
 
 TEST_CASE("LOCALS_QUERY - a namespace-scope variable is still captured")
 {
-    const std::string source =
-        "namespace Weapons\n"
-        "{\n"
-        "    int shared_count = 0;\n"
-        "}\n";
+    const std::string source = "namespace Weapons\n"
+                               "{\n"
+                               "    int shared_count = 0;\n"
+                               "}\n";
 
     const auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
@@ -792,11 +822,10 @@ TEST_CASE("LOCALS_QUERY - a namespace-scope variable is still captured")
 
 TEST_CASE("LOCALS_QUERY - a for-loop init variable is still captured")
 {
-    const std::string source =
-        "void Loop()\n"
-        "{\n"
-        "    for (int i = 0; i < 10; i++) { }\n"
-        "}\n";
+    const std::string source = "void Loop()\n"
+                               "{\n"
+                               "    for (int i = 0; i < 10; i++) { }\n"
+                               "}\n";
 
     const auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
@@ -806,16 +835,15 @@ TEST_CASE("LOCALS_QUERY - a for-loop init variable is still captured")
 
 TEST_CASE("LOCALS_QUERY - a variable declared inside a case clause is still captured")
 {
-    const std::string source =
-        "void Pick(int mode)\n"
-        "{\n"
-        "    switch (mode)\n"
-        "    {\n"
-        "        case 1:\n"
-        "            int chosen = 5;\n"
-        "            break;\n"
-        "    }\n"
-        "}\n";
+    const std::string source = "void Pick(int mode)\n"
+                               "{\n"
+                               "    switch (mode)\n"
+                               "    {\n"
+                               "        case 1:\n"
+                               "            int chosen = 5;\n"
+                               "            break;\n"
+                               "    }\n"
+                               "}\n";
 
     const auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
@@ -825,15 +853,14 @@ TEST_CASE("LOCALS_QUERY - a variable declared inside a case clause is still capt
 
 TEST_CASE("LOCALS_QUERY - a field and a local sharing a name stay distinct")
 {
-    const std::string source =
-        "class Weapon\n"
-        "{\n"
-        "    int ammo;\n"
-        "    void Fire()\n"
-        "    {\n"
-        "        int ammo = 1;\n"
-        "    }\n"
-        "}\n";
+    const std::string source = "class Weapon\n"
+                               "{\n"
+                               "    int ammo;\n"
+                               "    void Fire()\n"
+                               "    {\n"
+                               "        int ammo = 1;\n"
+                               "    }\n"
+                               "}\n";
 
     const auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
@@ -844,62 +871,60 @@ TEST_CASE("LOCALS_QUERY - a field and a local sharing a name stay distinct")
 
 TEST_CASE("ScopeTree - ScopeKind classification and FindEnclosingClosure")
 {
-    const std::string source =
-        "int g_var = 1;\n"
-        "class MyClass\n"
-        "{\n"
-        "    int field;\n"
-        "    void Method(int param)\n"
-        "    {\n"
-        "        int outerLocal = 10;\n"
-        "        auto cb = function(int lambdaParam) {\n"
-        "            int innerLocal = 20;\n"
-        "            return innerLocal + lambdaParam;\n"
-        "        };\n"
-        "    }\n"
-        "}\n";
+    const std::string source = "int g_var = 1;\n"
+                               "class MyClass\n"
+                               "{\n"
+                               "    int field;\n"
+                               "    void Method(int param)\n"
+                               "    {\n"
+                               "        int outerLocal = 10;\n"
+                               "        auto cb = function(int lambdaParam) {\n"
+                               "            int innerLocal = 20;\n"
+                               "            return innerLocal + lambdaParam;\n"
+                               "        };\n"
+                               "    }\n"
+                               "}\n";
 
     const auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
     CHECK(root->kind == ScopeKind::Global);
 
     SourcePos innerPos = FindPosition(source, "innerLocal + lambdaParam");
-    const Scope *innerScope = FindEnclosingScopeOrRoot(root.get(), innerPos.line, innerPos.character);
+    const Scope* innerScope = FindEnclosingScopeOrRoot(root.get(), innerPos.line, innerPos.character);
     REQUIRE(innerScope != nullptr);
 
-    const Scope *closureScope = FindEnclosingClosure(innerScope);
+    const Scope* closureScope = FindEnclosingClosure(innerScope);
     REQUIRE(closureScope != nullptr);
     CHECK(closureScope->kind == ScopeKind::Closure);
 
     // FindEnclosingClosure outside closure returns nullptr
     SourcePos methodPos = FindPosition(source, "outerLocal = 10");
-    const Scope *methodScope = FindEnclosingScopeOrRoot(root.get(), methodPos.line, methodPos.character);
+    const Scope* methodScope = FindEnclosingScopeOrRoot(root.get(), methodPos.line, methodPos.character);
     REQUIRE(methodScope != nullptr);
     CHECK(FindEnclosingClosure(methodScope) == nullptr);
 }
 
 TEST_CASE("ScopeTree - Closure barrier blocks outer local capture while allowing globals, members, and own locals")
 {
-    const std::string source =
-        "int g_var = 1;\n"
-        "class MyClass\n"
-        "{\n"
-        "    int field;\n"
-        "    void Method(int outerParam)\n"
-        "    {\n"
-        "        int outerLocal = 10;\n"
-        "        auto cb = function(int lambdaParam) {\n"
-        "            int innerLocal = 20;\n"
-        "            return innerLocal;\n"
-        "        };\n"
-        "    }\n"
-        "}\n";
+    const std::string source = "int g_var = 1;\n"
+                               "class MyClass\n"
+                               "{\n"
+                               "    int field;\n"
+                               "    void Method(int outerParam)\n"
+                               "    {\n"
+                               "        int outerLocal = 10;\n"
+                               "        auto cb = function(int lambdaParam) {\n"
+                               "            int innerLocal = 20;\n"
+                               "            return innerLocal;\n"
+                               "        };\n"
+                               "    }\n"
+                               "}\n";
 
     const auto root = CollectScopesFromSource(source);
     REQUIRE(root != nullptr);
 
     SourcePos innerPos = FindPosition(source, "return innerLocal");
-    const Scope *innerScope = FindEnclosingScopeOrRoot(root.get(), innerPos.line, innerPos.character);
+    const Scope* innerScope = FindEnclosingScopeOrRoot(root.get(), innerPos.line, innerPos.character);
     REQUIRE(innerScope != nullptr);
 
     // 1. Inside closure: own local and parameter resolve
@@ -954,4 +979,3 @@ TEST_CASE("LocalScopeCollector - Invariant: Nested namespace type specifiers mar
     CHECK(foundNs2);
     CHECK(foundType);
 }
-

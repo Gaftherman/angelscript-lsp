@@ -11,7 +11,7 @@ namespace angel_lsp::analysis::rules
 namespace
 {
 /** @brief Looks up what kind of declaration a type name refers to, if this analyzer sees one. */
-const Symbol* FindTypeDeclaration(const std::string& typeName, const SymbolTable& table,
+const Symbol* FindTypeDeclaration(std::string_view typeName, const SymbolTable& table,
                                   std::shared_ptr<const std::vector<Symbol>>& keepAlive)
 {
     if (typeName.empty())
@@ -82,7 +82,7 @@ void CheckTemplateArguments(const Symbol& sym, const VariableSignature& sig, con
 
     for (const auto& argument : sig.templateArgumentTypes)
     {
-        if (CleanBaseType(argument) != "void")
+        if (CleanBaseTypeView(argument) != "void")
         {
             continue;
         }
@@ -139,7 +139,7 @@ void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const Di
 {
     CheckPrimitiveOrVoidType(sym, sig, ctx);
 
-    const std::string baseType = CleanBaseType(sig.baseTypeName.empty() ? sig.typeName : sig.baseTypeName);
+    const std::string_view baseType = CleanBaseTypeView(sig.baseTypeName.empty() ? sig.typeName : sig.baseTypeName);
     std::shared_ptr<const std::vector<Symbol>> keepAlive;
     const Symbol* declaration = FindTypeDeclaration(baseType, ctx.request.symbolTable, keepAlive);
     if (!declaration)
@@ -149,7 +149,7 @@ void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const Di
         return;
     }
 
-    if (declaration->type == SymbolType::Funcdef && !sig.modifiers.isHandle)
+    if (!sig.isArray && sig.templateName.empty() && declaration->type == SymbolType::Funcdef && !sig.modifiers.isHandle)
     {
         ctx.LogRule("CheckDeclaredType", "as-err-funcdef-not-handle", sym);
         ctx.Emit(sym, "as-err-funcdef-not-handle", baseType, baseType);

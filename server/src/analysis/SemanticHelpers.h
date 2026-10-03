@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/DiagnosticContext.h"
+#include "analysis/ExpressionTypeCache.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/TypeSanitization.h"
 #include "parser/ASTUtils.h"
@@ -336,7 +337,7 @@ NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const
  * @param ctx DiagnosticContext containing request and SymbolTable.
  * @return True if baseName is a known valid type.
  */
-bool IsKnownType(const std::string& baseName, const DiagnosticContext& ctx);
+bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx);
 
 /**
  * @brief Checks whether the given type name denotes an enum in the symbol table.
@@ -367,7 +368,8 @@ bool IsVariableType(std::string_view typeName);
  * @param symbolTable The symbol table to look up class and interface definitions.
  * @return Vector of type names in the hierarchy including className and its transitive bases.
  */
-std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className, const SymbolTable& symbolTable);
+std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className, const SymbolTable& symbolTable,
+                                                   ExpressionTypeCache* cache = nullptr);
 
 /**
  * @brief Resolves the direct non-mixin base class of a given class according to its inheritance hierarchy.
@@ -609,12 +611,10 @@ struct ExpressionTypeContext
     std::string_view stringTypeName = "string";
     std::string_view arrayTypeName = "array";
     bool disableIntegerDivision = false;
+    ExpressionTypeCache* cache = nullptr;
 
-    ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "",
-                          std::string_view strType = "string", std::string_view arrType = "array",
-                          bool disableIntDiv = false)
-        : scope(sc), symbolTable(st), sourceCode(src), uri(u), stringTypeName(strType), arrayTypeName(arrType),
-          disableIntegerDivision(disableIntDiv)
+    ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "")
+        : scope(sc), symbolTable(st), sourceCode(src), uri(u)
     {
     }
 
@@ -622,7 +622,7 @@ struct ExpressionTypeContext
         : scope(sc), symbolTable(diagCtx.request.symbolTable), sourceCode(diagCtx.request.sourceCode),
           uri(diagCtx.request.fileUri), stringTypeName(diagCtx.request.GetEffectiveStringTypeName()),
           arrayTypeName(diagCtx.request.GetEffectiveArrayTypeName()),
-          disableIntegerDivision(diagCtx.request.DisablesIntegerDivision())
+          disableIntegerDivision(diagCtx.request.DisablesIntegerDivision()), cache(diagCtx.request.exprCache)
     {
     }
 };
@@ -839,7 +839,7 @@ bool LambdaContradictsFuncdef(TSNode lambdaNode, const FuncdefSignature& funcdef
  * Falls back to a last-`::`-segment scan when the qualified name resolves to nothing, the way
  * a bare name inside a namespace has to.
  */
-std::optional<Symbol> FindFuncdefSymbol(const std::string& typeName, const SymbolTable& table);
+std::optional<Symbol> FindFuncdefSymbol(std::string_view typeName, const SymbolTable& table);
 
 /**
  * @brief Checks if a resolved type represents an AngelScript handle type.
@@ -876,4 +876,31 @@ std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable
  */
 std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName, const SymbolTable& symbolTable,
                                  std::string_view sourceCode);
+
+struct Scope;
+
+/**
+ * @brief Converts a Funcdef symbol into a synthetic Function symbol for call evaluation.
+ * @param[in] funcdefSym Source symbol of type SymbolType::Funcdef.
+ * @param[in] callName Target function name to assign to the synthesized symbol.
+ * @return Synthesized Symbol of type SymbolType::Function with equivalent signature.
+ */
+Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callName);
+
+/**
+ * @brief Checks if an identifier resolves to a callable local or parameter funcdef in scope.
+ * @param[in] name Identifier name.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in] table Symbol table.
+ * @return Synthesized function Symbol if callee is a funcdef variable, nullopt otherwise.
+ */
+std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const Scope* scope, const SymbolTable& table);
+
+/**
+ * @brief Checks whether a text expression represents a simple literal constant value.
+ * @param[in] expr Expression text as written in source code.
+ * @return True if expression is a number, boolean, or string literal.
+ */
+bool IsSimpleLiteralExpression(std::string_view expr);
+
 } // namespace angel_lsp::analysis

@@ -1,3 +1,4 @@
+#include "analysis/DiagnosticSuppression.h"
 #include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
 #include "utils/PositionEncoding.h"
@@ -24,6 +25,40 @@ lsp::DiagnosticSeverity ToProtocolSeverity(angel_lsp::analysis::DiagnosticSeveri
     }
     return lsp::DiagnosticSeverity::Error;
 }
+
+/**
+ * @brief Formats an LSP diagnostic message with an explicit severity and code prefix.
+ * @param[in] severity AngelScript analysis severity.
+ * @param[in] displayCode Formatted display code alias.
+ * @param[in] rawMessage Original diagnostic message.
+ * @return Prefixed message string.
+ */
+std::string FormatPrefixedDiagnosticMessage(angel_lsp::analysis::DiagnosticSeverity severity,
+                                            std::string_view displayCode, std::string_view rawMessage)
+{
+    if (displayCode.empty() || rawMessage.starts_with("["))
+    {
+        return std::string(rawMessage);
+    }
+
+    std::string prefix;
+    switch (severity)
+    {
+    case angel_lsp::analysis::DiagnosticSeverity::Error:
+        prefix = fmt::format("[ERROR: {}] ", displayCode);
+        break;
+    case angel_lsp::analysis::DiagnosticSeverity::Warning:
+        prefix = fmt::format("[WARN: {}] ", displayCode);
+        break;
+    case angel_lsp::analysis::DiagnosticSeverity::Hint:
+        prefix = fmt::format("[HINT: {}] ", displayCode);
+        break;
+    default:
+        prefix = fmt::format("[INFO: {}] ", displayCode);
+        break;
+    }
+    return prefix + std::string(rawMessage);
+}
 } // namespace
 
 void Server::EncodeIn(std::string_view text, lsp::Range& range) const
@@ -39,93 +74,113 @@ void Server::EncodeIn(std::string_view text, lsp::Hover& hover) const
     codec::Encode(text, m_positionEncoding, hover.range.value());
 }
 
+namespace
+{
+void EncodeSymbolsRecursive(const utils::LineIndex& lineIndex, std::string_view text, utils::PositionEncoding enc,
+                            std::vector<lsp::DocumentSymbol>& symbols)
+{
+    for (auto& symbol : symbols)
+    {
+        codec::Encode(lineIndex, text, enc, symbol.range);
+        codec::Encode(lineIndex, text, enc, symbol.selectionRange);
+
+        if (symbol.children.has_value())
+        {
+            EncodeSymbolsRecursive(lineIndex, text, enc, symbol.children.value());
+        }
+    }
+}
+} // namespace
+
 void Server::EncodeIn(std::string_view text, std::vector<lsp::TextEdit>& edits) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || edits.empty())
         return;
 
+    const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
     for (auto& edit : edits)
-        codec::Encode(text, m_positionEncoding, edit.range);
+        codec::Encode(lineIndex, text, m_positionEncoding, edit.range);
 }
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::DocumentHighlight>& highlights) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || highlights.empty())
         return;
 
+    const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
     for (auto& highlight : highlights)
-        codec::Encode(text, m_positionEncoding, highlight.range);
+        codec::Encode(lineIndex, text, m_positionEncoding, highlight.range);
 }
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::FoldingRange>& ranges) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || ranges.empty())
         return;
 
+    const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
     for (auto& range : ranges)
     {
         if (range.startCharacter.has_value())
         {
-            range.startCharacter = angel_lsp::utils::ByteToLspCharColumn(
-                angel_lsp::utils::GetLine(text, range.startLine), range.startCharacter.value(), m_positionEncoding);
+            const std::string_view line = lineIndex.Line(text, range.startLine);
+            range.startCharacter =
+                angel_lsp::utils::ByteToLspCharColumn(line, range.startCharacter.value(), m_positionEncoding);
         }
 
         if (range.endCharacter.has_value())
         {
-            range.endCharacter = angel_lsp::utils::ByteToLspCharColumn(angel_lsp::utils::GetLine(text, range.endLine),
-                                                                       range.endCharacter.value(), m_positionEncoding);
+            const std::string_view line = lineIndex.Line(text, range.endLine);
+            range.endCharacter =
+                angel_lsp::utils::ByteToLspCharColumn(line, range.endCharacter.value(), m_positionEncoding);
         }
     }
 }
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::DocumentLink>& links) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || links.empty())
         return;
 
+    const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
     for (auto& link : links)
-        codec::Encode(text, m_positionEncoding, link.range);
+        codec::Encode(lineIndex, text, m_positionEncoding, link.range);
 }
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::InlayHint>& hints) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || hints.empty())
         return;
 
+    const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
     for (auto& hint : hints)
     {
-        codec::Encode(text, m_positionEncoding, hint.position);
+        codec::Encode(lineIndex, text, m_positionEncoding, hint.position);
 
         if (hint.textEdits.has_value())
         {
             for (auto& edit : hint.textEdits.value())
-                codec::Encode(text, m_positionEncoding, edit.range);
+                codec::Encode(lineIndex, text, m_positionEncoding, edit.range);
         }
     }
 }
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::DocumentSymbol>& symbols) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || symbols.empty())
         return;
 
-    for (auto& symbol : symbols)
-    {
-        codec::Encode(text, m_positionEncoding, symbol.range);
-        codec::Encode(text, m_positionEncoding, symbol.selectionRange);
-
-        if (symbol.children.has_value())
-            EncodeIn(text, symbol.children.value());
-    }
+    const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
+    EncodeSymbolsRecursive(lineIndex, text, m_positionEncoding, symbols);
 }
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::CodeLens>& lenses) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || lenses.empty())
         return;
 
+    const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
     for (auto& lens : lenses)
-        codec::Encode(text, m_positionEncoding, lens.range);
+        codec::Encode(lineIndex, text, m_positionEncoding, lens.range);
 }
 
 void Server::EncodeIn(std::string_view text, lsp::PrepareRenameResult& result) const
@@ -270,10 +325,12 @@ Server::ToProtocolDiagnostics(const std::string& text,
         lspDiag.range.start.character = diag.range.start.character;
         lspDiag.range.end.line = diag.range.end.line;
         lspDiag.range.end.character = diag.range.end.character;
-        lspDiag.message = diag.message;
         lspDiag.severity = ToProtocolSeverity(diag.severity);
         lspDiag.source = diag.source;
+        std::string displayCode = angel_lsp::analysis::FormatDiagnosticDisplayCode(diag.code);
         lspDiag.code = diag.code;
+        lspDiag.message =
+            FormatPrefixedDiagnosticMessage(diag.severity, displayCode.empty() ? diag.code : displayCode, diag.message);
 
         if (!diag.relatedInformation.empty())
         {

@@ -1,5 +1,6 @@
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/BinaryOperatorChecker.h"
 #include "analysis/ComparisonOperatorChecker.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/HandleComparisonChecker.h"
@@ -11,6 +12,7 @@
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 #include "utils/LspLogger.h"
+#include "utils/Utils.h"
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <functional>
@@ -474,6 +476,11 @@ bool CanTriviallyConvert(const std::string& from, const std::string& to, const D
         return true;
     }
 
+    if ((from == "null" || CanonicalizeType(from) == "null") && to.ends_with("@"))
+    {
+        return true;
+    }
+
     // `?` is AngelScript's variable type, not a type name: a parameter declared `const ?&in`
     // or `?&out` takes a value of any type at all. dictionary::set/get, ref, Dispose and the
     // format/scan helpers are all declared that way, so without this the analyzer reported
@@ -887,8 +894,7 @@ ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const D
 
     if (nodeType == "member_expression")
     {
-        const std::string resolved =
-            ResolveExpressionType(node, scope, ctx.request.symbolTable, ctx.request.sourceCode);
+        const std::string resolved = ResolveExpressionType(node, ExpressionTypeContext(scope, ctx));
         return resolved.empty() ? ExpressionType{} : ExpressionType{CleanBaseType(resolved), true, false};
     }
 
@@ -1610,8 +1616,46 @@ void CheckConstruction(TSNode argumentListNode, const std::string& targetType, c
     }
 }
 
+struct ZeroArgConstructorStatus
+{
+    bool hasZeroArg = false;
+    bool isDeleted = false;
+};
+
+/**
+ * @brief Inspects constructors to determine whether a zero-argument default constructor exists.
+ * @param[in] constructors List of candidate constructor symbols.
+ * @return ZeroArgConstructorStatus indicating existence and deleted status.
+ */
+ZeroArgConstructorStatus InspectZeroArgConstructor(const std::vector<Symbol>& constructors)
+{
+    ZeroArgConstructorStatus status;
+    for (const auto& ctor : constructors)
+    {
+        const auto& sig = ctor.GetFunction();
+        bool canTakeZero = sig.parameters.empty();
+        if (!canTakeZero)
+        {
+            canTakeZero = std::all_of(sig.parameters.begin(), sig.parameters.end(),
+                                      [](const ParameterInformation& p) { return !p.defaultValue.empty(); });
+        }
+        if (canTakeZero)
+        {
+            status.hasZeroArg = true;
+            status.isDeleted = sig.modifiers.isDelete;
+            break;
+        }
+    }
+    return status;
+}
+
 void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName, DiagnosticContext& ctx)
 {
+    if (utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
+    {
+        return;
+    }
+
     if (typeName.empty() || IsBuiltInValueType(typeName, ctx))
     {
         return;
@@ -1637,32 +1681,12 @@ void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName,
         return;
     }
 
-    bool hasZeroArg = false;
-    bool zeroArgDeleted = false;
-    for (const auto& ctor : constructors)
-    {
-        const auto& sig = ctor.GetFunction();
-        bool canTakeZero = sig.parameters.empty();
-        if (!canTakeZero)
-        {
-            canTakeZero = std::all_of(sig.parameters.begin(), sig.parameters.end(),
-                                      [](const ParameterInformation& p) { return !p.defaultValue.empty(); });
-        }
-        if (canTakeZero)
-        {
-            hasZeroArg = true;
-            if (sig.modifiers.isDelete)
-            {
-                zeroArgDeleted = true;
-            }
-            break;
-        }
-    }
+    const auto [hasZeroArg, isDeleted] = InspectZeroArgConstructor(constructors);
 
     TSNode nameNode = parser::GetChildByField(declaratorNode, parser::fields::Name);
     TSNode targetNode = ts_node_is_null(nameNode) ? declaratorNode : nameNode;
 
-    if (zeroArgDeleted)
+    if (isDeleted)
     {
         EmitAtNode(targetNode, ctx, "as-err-deleted-method-called", {typeName, typeName});
     }
@@ -2233,8 +2257,8 @@ void CheckBooleanOperands(TSNode condition, const Scope* scope, DiagnosticContex
 
     for (const TSNode& operand : operands)
     {
-        const std::string operandType = CleanBaseType(ResolveExpressionType(
-            operand, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri}));
+        const std::string operandType =
+            CleanBaseType(ResolveExpressionType(operand, ExpressionTypeContext(scope, ctx)));
 
         if (operandType.empty() || operandType == "auto" || operandType == "void")
         {
@@ -2348,6 +2372,10 @@ static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
 
 static bool AreTernaryBranchesIncompatible(const std::string& clean1, const std::string& clean2, DiagnosticContext& ctx)
 {
+    if ((clean1 == "null" && clean2.ends_with("@")) || (clean2 == "null" && clean1.ends_with("@")))
+    {
+        return false;
+    }
     if (IsStringType(clean1, ctx) != IsStringType(clean2, ctx))
     {
         return true;
@@ -3059,10 +3087,29 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
  */
 void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
+    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    if (ts_node_is_null(opNode))
+    {
+        return;
+    }
+    const std::string_view op = GetNodeTextView(opNode, ctx.request.sourceCode);
     const Scope* scope = ResolveNodeScope(node, request);
-    CheckSignedUnsignedComparison(node, scope, ctx);
-    CheckHandleComparison(node, scope, ctx);
-    CheckComparisonOperatorCompatibility(node, scope, ctx);
+
+    if (op == "is" || op == "!is")
+    {
+        CheckHandleComparison(node, scope, ctx);
+        return;
+    }
+
+    if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=")
+    {
+        CheckSignedUnsignedComparison(node, scope, ctx);
+        CheckHandleComparison(node, scope, ctx);
+        CheckComparisonOperatorCompatibility(node, scope, ctx);
+        return;
+    }
+
+    CheckBinaryOperatorCompatibility(node, scope, ctx);
 }
 
 /**

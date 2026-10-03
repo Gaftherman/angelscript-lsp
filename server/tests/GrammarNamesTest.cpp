@@ -6,11 +6,11 @@
 
 #include "parser/GrammarNames.h"
 
-extern "C" const TSLanguage *tree_sitter_angelscript();
+extern "C" const TSLanguage* tree_sitter_angelscript();
 
 namespace
 {
-    using namespace angel_lsp::parser;
+using namespace angel_lsp::parser;
 }
 
 // =====================================================================================
@@ -31,7 +31,7 @@ namespace
 
 TEST_CASE("GrammarNames - every node type constant is a node type the grammar defines")
 {
-    const TSLanguage *language = tree_sitter_angelscript();
+    const TSLanguage* language = tree_sitter_angelscript();
     REQUIRE(language != nullptr);
 
     std::vector<std::string> missing;
@@ -40,54 +40,56 @@ TEST_CASE("GrammarNames - every node type constant is a node type the grammar de
         // `true` asks for a named node. An anonymous token of the same spelling does not count:
         // "class" the keyword is not "class_declaration" the node, and a rule that walks the tree
         // wants the second.
-        const TSSymbol symbol = ts_language_symbol_for_name(
-            language, name.data(), static_cast<uint32_t>(name.length()), true);
+        const TSSymbol symbol =
+            ts_language_symbol_for_name(language, name.data(), static_cast<uint32_t>(name.length()), true);
 
         if (symbol == 0)
             missing.emplace_back(name);
     }
 
-    INFO("node types the grammar no longer defines: " << [&]
-    {
-        std::string joined;
-        for (const std::string &name : missing)
-        {
-            if (!joined.empty())
-                joined += ", ";
-            joined += name;
-        }
-        return joined;
-    }());
+    INFO("node types the grammar no longer defines: " <<
+         [&]
+         {
+             std::string joined;
+             for (const std::string& name : missing)
+             {
+                 if (!joined.empty())
+                     joined += ", ";
+                 joined += name;
+             }
+             return joined;
+         }());
 
     CHECK(missing.empty());
 }
 
 TEST_CASE("GrammarNames - every field constant is a field the grammar defines")
 {
-    const TSLanguage *language = tree_sitter_angelscript();
+    const TSLanguage* language = tree_sitter_angelscript();
     REQUIRE(language != nullptr);
 
     std::vector<std::string> missing;
     for (const std::string_view name : k_allFieldNames)
     {
-        const TSFieldId field = ts_language_field_id_for_name(
-            language, name.data(), static_cast<uint32_t>(name.length()));
+        const TSFieldId field =
+            ts_language_field_id_for_name(language, name.data(), static_cast<uint32_t>(name.length()));
 
         if (field == 0)
             missing.emplace_back(name);
     }
 
-    INFO("fields the grammar no longer defines: " << [&]
-    {
-        std::string joined;
-        for (const std::string &name : missing)
-        {
-            if (!joined.empty())
-                joined += ", ";
-            joined += name;
-        }
-        return joined;
-    }());
+    INFO("fields the grammar no longer defines: " <<
+         [&]
+         {
+             std::string joined;
+             for (const std::string& name : missing)
+             {
+                 if (!joined.empty())
+                     joined += ", ";
+                 joined += name;
+             }
+             return joined;
+         }());
 
     CHECK(missing.empty());
 }
@@ -101,15 +103,15 @@ TEST_CASE("GrammarNames - every field constant is a field the grammar defines")
 // name and the checks above have a new meaning.
 TEST_CASE("GrammarNames - the check can fail: names from other grammars do not resolve here")
 {
-    const TSLanguage *language = tree_sitter_angelscript();
+    const TSLanguage* language = tree_sitter_angelscript();
     REQUIRE(language != nullptr);
 
-    for (const std::string_view foreign : { "function_definition", "subscript_expression",
-                                            "update_expression", "compound_statement" })
+    for (const std::string_view foreign :
+         {"function_definition", "subscript_expression", "update_expression", "compound_statement"})
     {
         CAPTURE(foreign);
-        CHECK(ts_language_symbol_for_name(language, foreign.data(),
-                                          static_cast<uint32_t>(foreign.length()), true) == 0);
+        CHECK(ts_language_symbol_for_name(language, foreign.data(), static_cast<uint32_t>(foreign.length()), true) ==
+              0);
     }
 
     // Same for the field lookup, using the one that motivated a hand-written '=' scan in four
@@ -124,7 +126,7 @@ TEST_CASE("GrammarNames - the check can fail: names from other grammars do not r
 // someone added a field upstream would only teach people to delete the test.
 TEST_CASE("GrammarNames - what the grammar offers that this server never reads")
 {
-    const TSLanguage *language = tree_sitter_angelscript();
+    const TSLanguage* language = tree_sitter_angelscript();
     REQUIRE(language != nullptr);
 
     const uint32_t fieldCount = ts_language_field_count(language);
@@ -132,7 +134,7 @@ TEST_CASE("GrammarNames - what the grammar offers that this server never reads")
 
     for (TSFieldId id = 1; id <= static_cast<TSFieldId>(fieldCount); ++id)
     {
-        const char *name = ts_language_field_name_for_id(language, id);
+        const char* name = ts_language_field_name_for_id(language, id);
         if (name == nullptr)
             continue;
 
@@ -151,7 +153,7 @@ TEST_CASE("GrammarNames - what the grammar offers that this server never reads")
     }
 
     MESSAGE("grammar fields: " << fieldCount << ", declared here: " << std::size(k_allFieldNames));
-    for (const std::string &name : unread)
+    for (const std::string& name : unread)
         MESSAGE("  not in GrammarNames.h: " << name);
 
     CHECK(true);

@@ -42,36 +42,48 @@ std::string_view Slice(const std::string& source, uint32_t from, uint32_t to)
     return std::string_view(source).substr(from, to - from);
 }
 
+/** @brief Iterates over each line in text view, invoking consumer with the line slice and last flag. */
+template <typename LineConsumer> void ForEachLine(std::string_view text, LineConsumer&& consumer)
+{
+    size_t lineStart = 0;
+    while (lineStart <= text.size())
+    {
+        size_t lineEnd = text.find('\n', lineStart);
+        const bool last = (lineEnd == std::string_view::npos);
+        if (last)
+        {
+            lineEnd = text.size();
+        }
+
+        consumer(text.substr(lineStart, lineEnd - lineStart), last);
+
+        if (last)
+        {
+            break;
+        }
+        lineStart = lineEnd + 1;
+    }
+}
+
 /** @brief Drops trailing spaces and tabs from every line, leaving the line breaks alone. */
 std::string TrimTrailingSpaceOnEachLine(std::string_view text)
 {
     std::string out;
     out.reserve(text.size());
 
-    size_t lineStart = 0;
-    while (lineStart <= text.size())
-    {
-        size_t lineEnd = text.find('\n', lineStart);
-        const bool last = lineEnd == std::string_view::npos;
-        if (last)
-        {
-            lineEnd = text.size();
-        }
-
-        std::string_view line = text.substr(lineStart, lineEnd - lineStart);
-        while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r'))
-        {
-            line.remove_suffix(1);
-        }
-
-        out.append(line);
-        if (last)
-        {
-            break;
-        }
-        out.push_back('\n');
-        lineStart = lineEnd + 1;
-    }
+    ForEachLine(text,
+                [&](std::string_view line, bool last)
+                {
+                    while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r'))
+                    {
+                        line.remove_suffix(1);
+                    }
+                    out.append(line);
+                    if (!last)
+                    {
+                        out.push_back('\n');
+                    }
+                });
 
     return out;
 }
@@ -88,43 +100,29 @@ std::string Reindent(std::string_view text, const std::string& indent)
     std::string out;
     out.reserve(text.size() + text.size() / 8);
 
-    size_t lineStart = 0;
-    while (lineStart <= text.size())
-    {
-        size_t lineEnd = text.find('\n', lineStart);
-        const bool last = lineEnd == std::string_view::npos;
-        if (last)
-        {
-            lineEnd = text.size();
-        }
+    ForEachLine(text,
+                [&](std::string_view line, [[maybe_unused]] bool last)
+                {
+                    while (!line.empty() && (line.back() == '\r'))
+                    {
+                        line.remove_suffix(1);
+                    }
+                    while (!line.empty() && (line.front() == ' ' || line.front() == '\t'))
+                    {
+                        line.remove_prefix(1);
+                    }
+                    while (!line.empty() && (line.back() == ' ' || line.back() == '\t'))
+                    {
+                        line.remove_suffix(1);
+                    }
 
-        std::string_view line = text.substr(lineStart, lineEnd - lineStart);
-        while (!line.empty() && (line.back() == '\r'))
-        {
-            line.remove_suffix(1);
-        }
-        while (!line.empty() && (line.front() == ' ' || line.front() == '\t'))
-        {
-            line.remove_prefix(1);
-        }
-        while (!line.empty() && (line.back() == ' ' || line.back() == '\t'))
-        {
-            line.remove_suffix(1);
-        }
-
-        if (!line.empty())
-        {
-            out.append(indent);
-            out.append(line);
-        }
-        out.push_back('\n');
-
-        if (last)
-        {
-            break;
-        }
-        lineStart = lineEnd + 1;
-    }
+                    if (!line.empty())
+                    {
+                        out.append(indent);
+                        out.append(line);
+                    }
+                    out.push_back('\n');
+                });
 
     // The loop above ends every line, including one the source did not.
     if (!out.empty() && out.back() == '\n')

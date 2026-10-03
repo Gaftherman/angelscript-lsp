@@ -6,6 +6,7 @@
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
+#include "utils/Utils.h"
 
 namespace angel_lsp
 {
@@ -111,7 +112,12 @@ Server::HandleRequestsTextDocument_SemanticTokens_Full(lsp::requests::TextDocume
         return lsp::Null{};
     }
 
-    return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
+    utils::HighResTimer timer;
+    auto tokens = ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
+    const double elapsedMs = timer.ElapsedMs();
+    LogInfo(fmt::format("[Semantic Tokens] Finished full in {:.2f} ms for {} ({} tokens)", elapsedMs, doc->uri,
+                        tokens.data.size() / 5));
+    return tokens;
 }
 
 lsp::requests::TextDocument_SemanticTokens_Full_Delta::Result
@@ -128,6 +134,7 @@ Server::HandleRequestsTextDocument_SemanticTokens_Full_Delta(
         return lsp::Null{};
     }
 
+    utils::HighResTimer timer;
     CachedTokensSnapshot snap;
     {
         std::lock_guard<std::mutex> lock(m_semanticTokensMutex);
@@ -159,6 +166,8 @@ Server::HandleRequestsTextDocument_SemanticTokens_Full_Delta(
         lsp::SemanticTokensDelta delta;
         delta.resultId = newResultId;
         delta.edits = {};
+        LogInfo(fmt::format("[Semantic Tokens] Finished delta in {:.2f} ms for {} (unchanged)", timer.ElapsedMs(),
+                            doc->uri));
         return delta;
     }
 
@@ -171,6 +180,8 @@ Server::HandleRequestsTextDocument_SemanticTokens_Full_Delta(
     {
         return tokens;
     }
+    LogInfo(fmt::format("[Semantic Tokens] Finished delta in {:.2f} ms for {} ({} edits)", timer.ElapsedMs(), doc->uri,
+                        delta.edits.size()));
     return delta;
 }
 
@@ -219,13 +230,18 @@ Server::HandleRequestsTextDocument_FoldingRange(lsp::requests::TextDocument_Fold
         return lsp::Array<lsp::FoldingRange>{};
     }
 
+    utils::HighResTimer timer;
     features::FoldingRangeRequest fr{doc->uri, *doc->text, doc->tree};
     auto ranges = features::GetFoldingRanges(fr);
+    const double elapsedMs = timer.ElapsedMs();
     if (ranges.has_value())
     {
+        LogInfo(fmt::format("[Folding Ranges] Finished in {:.2f} ms for {} ({} ranges)", elapsedMs, doc->uri,
+                            ranges->size()));
         EncodeIn(*doc->text, ranges.value());
         return ranges.value();
     }
+    LogInfo(fmt::format("[Folding Ranges] Finished in {:.2f} ms for {} (0 ranges)", elapsedMs, doc->uri));
     return lsp::Array<lsp::FoldingRange>{};
 }
 
@@ -242,6 +258,12 @@ Server::HandleRequestsTextDocument_InlayHint(lsp::requests::TextDocument_InlayHi
         return lsp::Null{};
     }
 
+    if (angel_lsp::utils::IsPredefinedFile(doc->uri, m_config.info.predefinedFileExtension))
+    {
+        return lsp::Array<lsp::InlayHint>{};
+    }
+
+    utils::HighResTimer timer;
     features::InlayHintRequest ihr{doc->uri,
                                    *doc->text,
                                    doc->tree,
@@ -255,8 +277,11 @@ Server::HandleRequestsTextDocument_InlayHint(lsp::requests::TextDocument_InlayHi
                                    m_config.features.inlayHintsOmittedDefaultArguments,
                                    &m_config};
     auto hints = features::GetInlayHints(ihr);
+    const double elapsedMs = timer.ElapsedMs();
     if (hints.has_value())
     {
+        LogInfo(
+            fmt::format("[Inlay Hints] Finished in {:.2f} ms for {} ({} hints)", elapsedMs, doc->uri, hints->size()));
         EncodeIn(*doc->text, hints.value());
         return hints.value();
     }

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <string_view>
 
 /**
@@ -60,6 +61,51 @@ inline constexpr std::array<std::string_view, 14> k_all = {
 [[nodiscard]] constexpr bool IsPrimitive(std::string_view name) noexcept
 {
     return std::find(k_all.begin(), k_all.end(), name) != k_all.end();
+}
+
+/**
+ * @brief Documentation metadata and value ranges for primitive types.
+ */
+struct PrimitiveDocInfo
+{
+    std::string_view name;
+    std::string_view description;
+    std::string_view range;
+};
+
+inline constexpr std::array<PrimitiveDocInfo, 14> k_primitiveDocTable = {{
+    {"int8", "8-bit signed integer", "-128 to 127"},
+    {"uint8", "8-bit unsigned integer", "0 to 255 (0x00 to 0xFF)"},
+    {"int16", "16-bit signed integer", "-32,768 to 32,767"},
+    {"uint16", "16-bit unsigned integer", "0 to 65,535 (0x0000 to 0xFFFF)"},
+    {"int", "32-bit signed integer", "-2,147,483,648 to 2,147,483,647"},
+    {"int32", "32-bit signed integer", "-2,147,483,648 to 2,147,483,647"},
+    {"uint", "32-bit unsigned integer", "0 to 4,294,967,295 (0x0 to 0xFFFFFFFF)"},
+    {"uint32", "32-bit unsigned integer", "0 to 4,294,967,295 (0x0 to 0xFFFFFFFF)"},
+    {"int64", "64-bit signed integer", "-9,223,372,036,854,775,808 to 9,223,372,036,854,775,807"},
+    {"uint64", "64-bit unsigned integer", "0 to 18,446,744,073,709,551,615 (0x0 to 0xFFFFFFFFFFFFFFFF)"},
+    {"float", "32-bit single-precision floating-point (IEEE 754)", "\u00B11.17549435e-38 to \u00B13.40282347e+38"},
+    {"double", "64-bit double-precision floating-point (IEEE 754)",
+     "\u00B12.2250738585072014e-308 to \u00B11.7976931348623157e+308"},
+    {"bool", "Boolean type", "true or false"},
+    {"void", "Absence of type / value", ""},
+}};
+
+/**
+ * @brief Retrieves documentation description and range for a primitive type.
+ * @param name Primitive type name.
+ * @return PrimitiveDocInfo if matched, std::nullopt otherwise.
+ */
+[[nodiscard]] constexpr std::optional<PrimitiveDocInfo> GetPrimitiveDocInfo(std::string_view name) noexcept
+{
+    for (const auto& item : k_primitiveDocTable)
+    {
+        if (item.name == name)
+        {
+            return item;
+        }
+    }
+    return std::nullopt;
 }
 
 /**

@@ -138,12 +138,21 @@ TEST_CASE("PrimitiveVsCustomClassCast - Genuine primitive functional casts produ
     const std::string varF = test::GenerateRandomSymbolName("f");
     const std::string varOk = test::GenerateRandomSymbolName("ok");
 
-    const std::string code = "void " + fnName + "()\n"
+    const std::string code = "void " + fnName +
+                             "()\n"
                              "{\n"
-                             "    uint8 " + varB + " = 65;\n"
-                             "    int " + varX + " = int(" + varB + ");\n"
-                             "    float " + varF + " = float(" + varB + ");\n"
-                             "    bool " + varOk + " = bool(" + varB + ");\n"
+                             "    uint8 " +
+                             varB +
+                             " = 65;\n"
+                             "    int " +
+                             varX + " = int(" + varB +
+                             ");\n"
+                             "    float " +
+                             varF + " = float(" + varB +
+                             ");\n"
+                             "    bool " +
+                             varOk + " = bool(" + varB +
+                             ");\n"
                              "}\n";
 
     const auto diags = AnalyzeScript(code);
@@ -186,7 +195,8 @@ TEST_CASE("PrimitiveVsCustomClassCast - Genuine primitive functional casts produ
  * @brief Verifies that a user-defined char class matching Sven Co-op's stub without a numeric
  *        constructor emits as-err-no-matching-constructor with signature char(uint8).
  */
-TEST_CASE("PrimitiveVsCustomClassCast - Custom char class without numeric constructor emits as-err-no-matching-constructor")
+TEST_CASE(
+    "PrimitiveVsCustomClassCast - Custom char class without numeric constructor emits as-err-no-matching-constructor")
 {
     const std::string fnName = test::GenerateRandomSymbolName("TestCharInit");
     const std::string varVal = test::GenerateRandomSymbolName("val");
@@ -200,10 +210,16 @@ TEST_CASE("PrimitiveVsCustomClassCast - Custom char class without numeric constr
                                  "    char(const string& in);\n"
                                  "    char(const char& in);\n"
                                  "}\n"
-                                 "void " + fnName + "()\n"
+                                 "void " +
+                                 fnName +
+                                 "()\n"
                                  "{\n"
-                                 "    uint8 " + varVal + " = 65;\n"
-                                 "    char " + varC + "(" + varVal + ");\n"
+                                 "    uint8 " +
+                                 varVal +
+                                 " = 65;\n"
+                                 "    char " +
+                                 varC + "(" + varVal +
+                                 ");\n"
                                  "}\n";
 
         AssertCharInitFails(code);
@@ -217,10 +233,16 @@ TEST_CASE("PrimitiveVsCustomClassCast - Custom char class without numeric constr
                                  "    void char(const string& in);\n"
                                  "    void char(const char& in);\n"
                                  "}\n"
-                                 "void " + fnName + "()\n"
+                                 "void " +
+                                 fnName +
+                                 "()\n"
                                  "{\n"
-                                 "    uint8 " + varVal + " = 65;\n"
-                                 "    char " + varC + "(" + varVal + ");\n"
+                                 "    uint8 " +
+                                 varVal +
+                                 " = 65;\n"
+                                 "    char " +
+                                 varC + "(" + varVal +
+                                 ");\n"
                                  "}\n";
 
         AssertCharInitFails(code);
@@ -238,14 +260,23 @@ TEST_CASE("PrimitiveVsCustomClassCast - Custom class with integer constructor ac
     const std::string varVal = test::GenerateRandomSymbolName("val");
     const std::string varC = test::GenerateRandomSymbolName("c");
 
-    const std::string code = "class " + customClassName + "\n"
+    const std::string code = "class " + customClassName +
+                             "\n"
                              "{\n"
-                             "    " + customClassName + "(int code);\n"
+                             "    " +
+                             customClassName +
+                             "(int code);\n"
                              "}\n"
-                             "void " + fnName + "()\n"
+                             "void " +
+                             fnName +
+                             "()\n"
                              "{\n"
-                             "    uint8 " + varVal + " = 65;\n"
-                             "    " + customClassName + " " + varC + "(" + varVal + ");\n"
+                             "    uint8 " +
+                             varVal +
+                             " = 65;\n"
+                             "    " +
+                             customClassName + " " + varC + "(" + varVal +
+                             ");\n"
                              "}\n";
 
     const auto diags = AnalyzeScript(code);

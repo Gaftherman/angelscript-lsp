@@ -12,11 +12,9 @@ PrimitiveScriptInfo GeneratePrimitiveFunctionsScript(std::mt19937_64& rng)
     info.varName = GenerateIdentifier(rng, "result");
     const std::string paramName = GenerateIdentifier(rng, "input");
 
-    info.script = info.typeName + " " + info.funcName + "(" + info.typeName + " " + paramName + ")\n"
-                + "{\n"
-                + "    " + info.typeName + " " + info.varName + " = " + paramName + ";\n"
-                + "    return " + info.varName + ";\n"
-                + "}\n";
+    info.script = info.typeName + " " + info.funcName + "(" + info.typeName + " " + paramName + ")\n" + "{\n" + "    " +
+                  info.typeName + " " + info.varName + " = " + paramName + ";\n" + "    return " + info.varName +
+                  ";\n" + "}\n";
 
     info.varLine = 2;
     info.varCol = 4 + static_cast<uint32_t>(info.typeName.size()) + 1;

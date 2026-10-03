@@ -6,6 +6,7 @@
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/ast/SemanticNodes.h"
+#include "analysis/overload/OverloadTypeConversions.h"
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
@@ -607,10 +608,9 @@ bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& valCtx)
 ObjectTypeInfo ResolveMemberObjectType(TSNode objectNode, const CallValidationContext& valCtx)
 {
     ObjectTypeInfo info;
-    const std::string rawObjType = CanonicalizeArrayType(
-        ResolveExpressionType(objectNode, {valCtx.scope, valCtx.ctx.request.symbolTable, valCtx.request.sourceCode,
-                                           valCtx.ctx.request.fileUri}),
-        valCtx.ctx.request.GetEffectiveArrayTypeName());
+    const std::string rawObjType =
+        CanonicalizeArrayType(ResolveExpressionType(objectNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx)),
+                              valCtx.ctx.request.GetEffectiveArrayTypeName());
     info.objectType = CleanBaseType(rawObjType);
     info.isConst = rawObjType.starts_with("const ") || rawObjType.ends_with("const") || HasConstModifier(rawObjType) ||
                    IsObjectNodeConst(objectNode, valCtx);
@@ -788,6 +788,42 @@ bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
 }
 
 /**
+ * @brief Attempts to resolve a callable funcdef member property or variable.
+ *
+ * @param[in] objectType Receiver object type.
+ * @param[in] memberName Member name being called.
+ * @param[in] table Symbol table.
+ * @return Optional synthesized function symbol.
+ */
+std::optional<Symbol> TryResolveMemberCallableFuncdef(const std::string& objectType, const std::string& memberName,
+                                                      const SymbolTable& table)
+{
+    const auto hierarchy = GetInheritedTypeHierarchy(objectType, table);
+    for (const auto& typeName : hierarchy)
+    {
+        if (const auto found = table.FindMemberSymbolPtr(typeName, memberName))
+        {
+            for (const auto& sym : *found)
+            {
+                if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                    std::holds_alternative<VariableSignature>(sym.signature))
+                {
+                    std::string clean = CleanBaseType(sym.GetVariable().typeName);
+                    if (!clean.empty())
+                    {
+                        if (auto funcdefSym = FindFuncdefSymbol(clean, table))
+                        {
+                            return FuncdefToFunctionSymbol(*funcdefSym, memberName);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+/**
  * @brief Resolves candidates and reports invalid constructors for member calls.
  *
  * @param[in] valCtx Call validation context.
@@ -827,6 +863,14 @@ CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
     FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
     ApplyTemplateSubstitutions(res.candidates, objInfo.objectType, objInfo.templateArgs,
                                valCtx.ctx.request.symbolTable);
+    if (res.candidates.empty())
+    {
+        if (auto callableSym =
+                TryResolveMemberCallableFuncdef(objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable))
+        {
+            res.candidates.push_back(std::move(*callableSym));
+        }
+    }
     return res;
 }
 
@@ -887,6 +931,15 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
     }
 
     const std::string shortName = std::string(LastScopeSegment(written));
+    if (auto callableSym = TryResolveCallableFuncdef(shortName, valCtx.scope, valCtx.ctx.request.symbolTable))
+    {
+        res.reportedName = shortName;
+        res.candidates = {std::move(*callableSym)};
+        res.candidatesAreFreeFunctions = true;
+        res.shouldCheck = true;
+        return res;
+    }
+
     if (IsShadowedOrTypeName(shortName, valCtx.scope, valCtx.ctx.request.symbolTable))
     {
         res.shouldCheck = false;
@@ -992,6 +1045,9 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
 {
     CallArgTypes result;
     result.argNodes = GetArgumentNodes(valCtx.arguments);
+    const size_t argCount = result.argNodes.size();
+    result.argTypes.reserve(argCount);
+    result.argIsLValue.reserve(argCount);
     result.argNames = GetArgumentNames(valCtx.arguments, valCtx.request.sourceCode);
 
     for (const auto& argNode : result.argNodes)
@@ -1011,8 +1067,7 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
             continue;
         }
 
-        std::string argType = ResolveExpressionType(argNode, {valCtx.scope, valCtx.ctx.request.symbolTable,
-                                                              valCtx.request.sourceCode, valCtx.ctx.request.fileUri});
+        std::string argType = ResolveExpressionType(argNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
         if (argType.empty())
         {
             result.allArgsResolved = false;
@@ -1107,6 +1162,30 @@ TSNode UnwrapParenNode(TSNode node)
 }
 
 /**
+ * @brief Checks if a ternary branch type is compatible with expected parameter type.
+ *
+ * @param[in] branchType Resolved branch type.
+ * @param[in] expected Expected parameter type name.
+ * @return True if compatible.
+ */
+static bool IsTernaryBranchCompatible(const std::string& branchType, const std::string& expected)
+{
+    if (branchType.empty())
+    {
+        return true;
+    }
+    if (branchType == expected || IsSameType(branchType, expected))
+    {
+        return true;
+    }
+    if (branchType == "null" && expected.ends_with("@"))
+    {
+        return true;
+    }
+    return false;
+}
+
+/**
  * @brief Identifies the mismatching type in a malformed ternary expression.
  *
  * @param[in] t1 Consequence branch resolved type.
@@ -1116,11 +1195,11 @@ TSNode UnwrapParenNode(TSNode node)
  */
 std::string ResolveTernaryMismatchType(const std::string& t1, const std::string& t2, const std::string& expected)
 {
-    if (!t1.empty() && t1 != expected)
+    if (!t1.empty() && !IsTernaryBranchCompatible(t1, expected))
     {
         return t1;
     }
-    if (!t2.empty() && t2 != expected)
+    if (!t2.empty() && !IsTernaryBranchCompatible(t2, expected))
     {
         return t2;
     }
@@ -1160,10 +1239,13 @@ void CheckMalformedTernaryArgs(const std::vector<TSNode>& argNodes, const std::v
         const std::string expected = fn.parameters[i].typeName;
         TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
         TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
-        std::string t1 = ResolveExpressionType(consequence, {valCtx.scope, valCtx.ctx.request.symbolTable,
-                                                             valCtx.request.sourceCode, valCtx.ctx.request.fileUri});
-        std::string t2 = ResolveExpressionType(alternative, {valCtx.scope, valCtx.ctx.request.symbolTable,
-                                                             valCtx.request.sourceCode, valCtx.ctx.request.fileUri});
+        std::string t1 = ResolveExpressionType(consequence, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
+        std::string t2 = ResolveExpressionType(alternative, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
+
+        if (IsTernaryBranchCompatible(t1, expected) && IsTernaryBranchCompatible(t2, expected))
+        {
+            continue;
+        }
 
         std::string badType = ResolveTernaryMismatchType(t1, t2, expected);
         const TSPoint aStart = ts_node_start_point(argNodes[i]);
@@ -1287,7 +1369,7 @@ bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, const S
             return true;
         }
     }
-    auto syms = table.FindSymbolsPtr(std::string(name));
+    auto syms = table.FindSymbolsPtr(name);
     if (syms)
     {
         for (const auto& s : *syms)
@@ -1980,8 +2062,7 @@ void CheckDeclaratorDirectInit(TSNode declarator, const VarInitContext& vctx)
     std::vector<std::string> argTypes;
     for (TSNode argNode : argNodes)
     {
-        argTypes.push_back(ResolveExpressionType(
-            argNode, {scope, vctx.ctx.request.symbolTable, vctx.request.sourceCode, vctx.ctx.request.fileUri}));
+        argTypes.push_back(ResolveExpressionType(argNode, ExpressionTypeContext(scope, vctx.ctx)));
     }
 
     if (IsCorePrimitive(vctx.baseName))

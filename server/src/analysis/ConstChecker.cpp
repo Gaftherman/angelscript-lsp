@@ -33,6 +33,22 @@ bool TypeTextIsConst(std::string_view typeText)
 }
 
 /**
+ * @brief True when a handle type is declared const itself (e.g. `Type@ const`).
+ */
+bool TypeTextIsHandleConst(std::string_view typeText)
+{
+    while (!typeText.empty() && (typeText.front() == ' ' || typeText.front() == '\t'))
+    {
+        typeText.remove_prefix(1);
+    }
+    while (!typeText.empty() && (typeText.back() == ' ' || typeText.back() == '\t'))
+    {
+        typeText.remove_suffix(1);
+    }
+    return typeText.ends_with(" const");
+}
+
+/**
  * @brief Constness of a parameter, read off the enclosing declaration's parameter list.
  *
  * The scope tree records a parameter as a definition but not its written type - it fills
@@ -45,9 +61,11 @@ bool TypeTextIsConst(std::string_view typeText)
  * @param[in] node AST node inside the function or method.
  * @param[in] name Parameter name to search for.
  * @param[in] sourceCode Document source text.
+ * @param[in] checkHandleConst True to check if handle itself is const (Type@ const).
  * @return True/false if parameter found and whether its type is const; std::nullopt if not found.
  */
-std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::string_view sourceCode)
+std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::string_view sourceCode,
+                                     bool checkHandleConst = false)
 {
     TSNode owner = node;
     while (!ts_node_is_null(owner))
@@ -87,7 +105,12 @@ std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::st
         }
 
         TSNode typeNode = parser::GetChildByField(parameter, parser::fields::ParamType);
-        return !ts_node_is_null(typeNode) && TypeTextIsConst(NodeText(typeNode, sourceCode));
+        if (ts_node_is_null(typeNode))
+        {
+            return false;
+        }
+        const std::string_view typeText = NodeText(typeNode, sourceCode);
+        return checkHandleConst ? TypeTextIsHandleConst(typeText) : TypeTextIsConst(typeText);
     }
     return std::nullopt;
 }
@@ -143,7 +166,7 @@ Constness ResolveNameConstness(std::string_view name, TSNode node, const ConstCo
         }
     }
 
-    const auto symbols = ctx.table.FindSymbolsPtr(std::string(name));
+    const auto symbols = ctx.table.FindSymbolsPtr(name);
     if (!symbols)
     {
         return Constness::Unknown;
@@ -159,6 +182,237 @@ Constness ResolveNameConstness(std::string_view name, TSNode node, const ConstCo
     return Constness::Unknown;
 }
 
+/** @brief Class and const qualification for enclosing method or accessor. */
+struct EnclosingMethodInfo
+{
+    bool inClass = false;
+    bool isConstMethod = false;
+    std::string className;
+};
+
+/**
+ * @brief Identifies enclosing class and whether the enclosing method or accessor is const.
+ *
+ * @param[in] node AST node inside the method.
+ * @param[in] sourceCode Source text.
+ * @return EnclosingMethodInfo containing class membership and const qualification.
+ */
+EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode)
+{
+    EnclosingMethodInfo info;
+    TSNode curr = node;
+    TSNode funcNode{};
+
+    while (!ts_node_is_null(curr))
+    {
+        const std::string_view type = ts_node_type(curr);
+        if (ts_node_is_null(funcNode) && (type == parser::nodes::FuncDeclaration || type == parser::nodes::Accessor))
+        {
+            funcNode = curr;
+        }
+        else if (type == parser::nodes::ClassDeclaration)
+        {
+            info.inClass = true;
+            TSNode nameNode = parser::GetChildByField(curr, parser::fields::Name);
+            if (!ts_node_is_null(nameNode))
+            {
+                info.className = NodeText(nameNode, sourceCode);
+            }
+            break;
+        }
+        curr = ts_node_parent(curr);
+    }
+
+    if (!info.inClass || ts_node_is_null(funcNode))
+    {
+        return info;
+    }
+
+    TSTreeCursor cursor = ts_tree_cursor_new(funcNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            const std::string_view ctype = ts_node_type(child);
+            if (ctype == "const" || (ctype == parser::nodes::FuncAttributes &&
+                                     NodeText(child, sourceCode).find("const") != std::string::npos))
+            {
+                info.isConstMethod = true;
+                break;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+    return info;
+}
+
+/**
+ * @brief Finds a member variable or property in a class's inheritance hierarchy.
+ *
+ * @param[in] className Name of the class to search.
+ * @param[in] memberName Member name to look for.
+ * @param[in] table Workspace symbol table.
+ * @return Pointer to VariableSignature if found, nullptr otherwise.
+ */
+const VariableSignature* FindClassMemberVariable(const std::string& className, const std::string& memberName,
+                                                 const SymbolTable& table)
+{
+    if (className.empty() || memberName.empty())
+    {
+        return nullptr;
+    }
+    for (const auto& owner : GetInheritedTypeHierarchy(className, table))
+    {
+        if (const auto candidates = table.FindSymbolsPtr(owner + "::" + memberName))
+        {
+            for (const auto& sym : *candidates)
+            {
+                if (sym.type == SymbolType::Variable || sym.type == SymbolType::Property)
+                {
+                    return &sym.GetVariable();
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+bool IsMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
+                    std::string& outMemberName);
+
+/**
+ * @brief Checks if an identifier or scoped identifier represents a member of 'this'.
+ *
+ * @param[in] target AST node representing the identifier.
+ * @param[in] encInfo Enclosing method information.
+ * @param[in] ctx Const context.
+ * @param[out] outMemberName Resolved member name if matched.
+ * @return True if target represents a member of 'this'.
+ */
+bool IsIdentifierMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
+                              std::string& outMemberName)
+{
+    const std::string text = NodeText(target, ctx.sourceCode);
+    const std::string_view baseName = LastScopeSegment(text);
+    if (text != baseName)
+    {
+        const size_t sepPos = text.rfind("::");
+        if (sepPos != std::string::npos && text.substr(0, sepPos) != encInfo.className)
+        {
+            return false;
+        }
+    }
+
+    const std::string name(baseName);
+    if (ctx.scope)
+    {
+        const Scope* owner = nullptr;
+        if (const LocalDefinition* def = ResolveInScope(ctx.scope, name, &owner))
+        {
+            if (def->kind == LocalDefinitionKind::Field || (owner && owner->kind == ScopeKind::Class))
+            {
+                outMemberName = name;
+                return true;
+            }
+            return false;
+        }
+    }
+    if (FindClassMemberVariable(encInfo.className, name, ctx.table))
+    {
+        outMemberName = name;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if a member expression represents a mutation of 'this'.
+ *
+ * @param[in] target AST node representing the member expression.
+ * @param[in] encInfo Enclosing method information.
+ * @param[in] ctx Const context.
+ * @param[out] outMemberName Resolved member name if matched.
+ * @return True if target represents a member of 'this'.
+ */
+bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
+                        std::string& outMemberName)
+{
+    TSNode obj = parser::GetChildByField(target, parser::fields::Object);
+    TSNode member = parser::GetChildByField(target, parser::fields::Member);
+    if (ts_node_is_null(obj) || ts_node_is_null(member))
+    {
+        return false;
+    }
+
+    const std::string_view objType = ts_node_type(obj);
+    if (objType == "this_expression" || (objType == "identifier" && NodeText(obj, ctx.sourceCode) == "this"))
+    {
+        outMemberName = NodeText(member, ctx.sourceCode);
+        return true;
+    }
+
+    std::string parentMember;
+    if (IsMemberOfThis(obj, encInfo, ctx, parentMember))
+    {
+        bool isHandle = false;
+        if (const auto* var = FindClassMemberVariable(encInfo.className, parentMember, ctx.table))
+        {
+            isHandle = var->modifiers.isHandle;
+        }
+        else if (ctx.scope)
+        {
+            if (const auto* def = ResolveInScope(ctx.scope, parentMember))
+            {
+                isHandle = def->isHandleType;
+            }
+        }
+        if (!isHandle)
+        {
+            outMemberName = NodeText(member, ctx.sourceCode);
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Determines if an assignment target refers to a member of 'this' in a const method.
+ *
+ * @param[in] target Target AST node of the assignment.
+ * @param[in] encInfo Enclosing method information.
+ * @param[in] ctx Const context.
+ * @param[out] outMemberName Name of the modified member.
+ * @return True if target modifies 'this' or a member of 'this' in a const context.
+ */
+bool IsMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
+                    std::string& outMemberName)
+{
+    if (!encInfo.inClass || !encInfo.isConstMethod || ts_node_is_null(target))
+    {
+        return false;
+    }
+
+    const std::string_view targetType = ts_node_type(target);
+    if (targetType == "this_expression" || (targetType == "identifier" && NodeText(target, ctx.sourceCode) == "this"))
+    {
+        outMemberName = "this";
+        return true;
+    }
+
+    if (targetType == "identifier" || targetType == "scoped_identifier")
+    {
+        return IsIdentifierMemberOfThis(target, encInfo, ctx, outMemberName);
+    }
+
+    if (targetType == "member_expression")
+    {
+        return IsMemberExprOfThis(target, encInfo, ctx, outMemberName);
+    }
+
+    return false;
+}
+
 Constness ResolveConstness(TSNode node, const ConstContext& ctx, int depth)
 {
     // See k_maxAstDepth in ASTUtils.h.
@@ -168,6 +422,12 @@ Constness ResolveConstness(TSNode node, const ConstContext& ctx, int depth)
     }
 
     const std::string_view nodeType = ts_node_type(node);
+
+    if (nodeType == "this_expression" || (nodeType == "identifier" && NodeText(node, ctx.sourceCode) == "this"))
+    {
+        const auto encInfo = FindEnclosingMethod(node, ctx.sourceCode);
+        return (encInfo.inClass && encInfo.isConstMethod) ? Constness::Const : Constness::Mutable;
+    }
 
     if (nodeType == "identifier")
     {
@@ -298,19 +558,6 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, const DiagArgs& diag)
     ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diag.code, diag.arg1, diag.arg2);
 }
 
-bool TypeTextIsHandleConst(std::string_view typeText)
-{
-    while (!typeText.empty() && (typeText.front() == ' ' || typeText.front() == '\t'))
-    {
-        typeText.remove_prefix(1);
-    }
-    while (!typeText.empty() && (typeText.back() == ' ' || typeText.back() == '\t'))
-    {
-        typeText.remove_suffix(1);
-    }
-    return typeText.ends_with(" const");
-}
-
 Constness ResolveHandleConstness(TSNode node, const ConstContext& ctx)
 {
     if (ts_node_is_null(node))
@@ -329,6 +576,11 @@ Constness ResolveHandleConstness(TSNode node, const ConstContext& ctx)
                 if (!def->typeName.empty())
                 {
                     return TypeTextIsHandleConst(def->typeName) ? Constness::Const : Constness::Mutable;
+                }
+                const auto isConst = ParameterIsConst(node, name, ctx.sourceCode, true);
+                if (isConst.has_value())
+                {
+                    return *isConst ? Constness::Const : Constness::Mutable;
                 }
             }
         }
@@ -371,6 +623,15 @@ void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope*
     }
 
     const ConstContext constCtx{scope, ctx.request.symbolTable, request.sourceCode};
+    const auto encInfo = FindEnclosingMethod(node, request.sourceCode);
+
+    std::string memberName;
+    if (IsMemberOfThis(actualTarget, encInfo, constCtx, memberName))
+    {
+        EmitAtNode(target, ctx, {"as-err-readonly-reference", memberName});
+        return;
+    }
+
     if (isHandleAssignment)
     {
         if (ResolveHandleConstness(actualTarget, constCtx) == Constness::Const)
@@ -410,8 +671,7 @@ void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope*
         return;
     }
 
-    const std::string objectType =
-        CleanBaseType(ResolveExpressionType(objectNode, {scope, table, request.sourceCode, ctx.request.fileUri}));
+    const std::string objectType = CleanBaseType(ResolveExpressionType(objectNode, ExpressionTypeContext(scope, ctx)));
     if (objectType.empty() || !HierarchyIsFullyVisible(objectType, table))
     {
         return;

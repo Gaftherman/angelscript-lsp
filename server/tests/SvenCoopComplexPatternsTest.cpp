@@ -91,7 +91,7 @@ struct ComplexPatternsTestContext
      * @return Optional hover result.
      */
     std::optional<lsp::Hover> HoverAt(const std::string& scriptCode, uint32_t line, uint32_t character,
-                                                 const std::string& fileUri = "file:///ComplexPatternsHover.as")
+                                      const std::string& fileUri = "file:///ComplexPatternsHover.as")
     {
         collector.CollectSymbols(fileUri, scriptCode, parser, table);
         auto rootScope = scopes.CollectScopes(scriptCode, parser);
@@ -133,9 +133,11 @@ TEST_CASE("SvenCoopComplexPatterns - Predefined Stub Path Deduplication")
     {
         std::error_code relEc;
         const std::filesystem::path relPath = std::filesystem::relative(absPath, relEc);
-        const std::filesystem::path dotPath = repoRoot / "predefined" / "." / ".." / "predefined" / "sven.as.predefined";
+        const std::filesystem::path dotPath =
+            repoRoot / "predefined" / "." / ".." / "predefined" / "sven.as.predefined";
 
-        const std::string norm1 = angel_lsp::PredefinedStubManager::CanonicalizeStubPath(relEc ? absPath.string() : relPath.string());
+        const std::string norm1 =
+            angel_lsp::PredefinedStubManager::CanonicalizeStubPath(relEc ? absPath.string() : relPath.string());
         const std::string norm2 = angel_lsp::PredefinedStubManager::CanonicalizeStubPath(absPath.string());
         const std::string norm3 = angel_lsp::PredefinedStubManager::CanonicalizeStubPath(dotPath.string());
         CHECK(norm1 == norm2);
@@ -158,22 +160,33 @@ TEST_CASE("SvenCoopComplexPatterns - Cyclic Auto False Positive Avoidance")
     const std::string globalFuncs = angel_lsp::test::GenerateRandomSymbolName("g_PlayerFuncs");
     const std::string cyclicVar = angel_lsp::test::GenerateRandomSymbolName("selfRef");
 
-    const std::string code =
-        "class " + pmoveCls + " {\n"
-        "    int " + playerMember + ";\n"
-        "}\n"
-        "class " + funcsCls + " {\n"
-        "    int FindPlayerByIndex(int idx) { return idx; }\n"
-        "}\n"
-        + funcsCls + " " + globalFuncs + ";\n"
-        "void TestMemberAccess(" + pmoveCls + "@ pmove) {\n"
-        "    auto " + playerMember + " = " + globalFuncs + ".FindPlayerByIndex(pmove." + playerMember + ");\n"
-        "    auto key = \"literal_key\";\n"
-        "    auto val = key;\n"
-        "}\n"
-        "void TestCyclic() {\n"
-        "    auto " + cyclicVar + " = " + cyclicVar + " + 1;\n"
-        "}\n";
+    const std::string code = "class " + pmoveCls +
+                             " {\n"
+                             "    int " +
+                             playerMember +
+                             ";\n"
+                             "}\n"
+                             "class " +
+                             funcsCls +
+                             " {\n"
+                             "    int FindPlayerByIndex(int idx) { return idx; }\n"
+                             "}\n" +
+                             funcsCls + " " + globalFuncs +
+                             ";\n"
+                             "void TestMemberAccess(" +
+                             pmoveCls +
+                             "@ pmove) {\n"
+                             "    auto " +
+                             playerMember + " = " + globalFuncs + ".FindPlayerByIndex(pmove." + playerMember +
+                             ");\n"
+                             "    auto key = \"literal_key\";\n"
+                             "    auto val = key;\n"
+                             "}\n"
+                             "void TestCyclic() {\n"
+                             "    auto " +
+                             cyclicVar + " = " + cyclicVar +
+                             " + 1;\n"
+                             "}\n";
 
     auto diags = ctx.Analyze(code);
     CHECK_FALSE(HasCode(diags, "as-err-auto-requires-initializer"));
@@ -200,20 +213,28 @@ TEST_CASE("SvenCoopComplexPatterns - Instance Member vs Enum Constant Collision"
     const std::string errorName = angel_lsp::test::GenerateRandomSymbolName("Error");
     const std::string msgVar = angel_lsp::test::GenerateRandomSymbolName("msg");
 
-    const std::string code =
-        "class " + loggerCls + " {\n"
-        "    enum LogLevel {\n"
-        "        None,\n"
-        "        Info,\n"
-        "        Warning,\n"
-        "        " + errorName + "\n"
-        "    };\n"
-        "    void " + errorName + "(const string& in " + msgVar + ") {}\n"
-        "    void LogEvent() {\n"
-        "        this." + errorName + "(\"test message\");\n"
-        "        " + errorName + "(\"direct call\");\n"
-        "    }\n"
-        "}\n";
+    const std::string code = "class " + loggerCls +
+                             " {\n"
+                             "    enum LogLevel {\n"
+                             "        None,\n"
+                             "        Info,\n"
+                             "        Warning,\n"
+                             "        " +
+                             errorName +
+                             "\n"
+                             "    };\n"
+                             "    void " +
+                             errorName + "(const string& in " + msgVar +
+                             ") {}\n"
+                             "    void LogEvent() {\n"
+                             "        this." +
+                             errorName +
+                             "(\"test message\");\n"
+                             "        " +
+                             errorName +
+                             "(\"direct call\");\n"
+                             "    }\n"
+                             "}\n";
 
     auto diags = ctx.Analyze(code);
     for (const auto& d : diags)
@@ -232,18 +253,30 @@ TEST_CASE("SvenCoopComplexPatterns - Anonymous Function Lambdas Callback Inferen
     const std::string clientCmdCls = angel_lsp::test::GenerateRandomSymbolName("CClientCommand");
     const std::string regFunc = angel_lsp::test::GenerateRandomSymbolName("RegisterCommands");
 
-    const std::string code =
-        "class " + cmdCls + " {};\n"
-        "funcdef void " + cbFuncdef + "(const " + cmdCls + "@ args);\n"
-        "class " + clientCmdCls + " {\n"
-        "    " + clientCmdCls + "(const string& in name, const string& in desc, " + cbFuncdef + "@ cb) {}\n"
-        "}\n"
-        "void " + regFunc + "() {\n"
-        "    " + clientCmdCls + "(\"cmd\", \"desc\", function(const " + cmdCls + "@ args) {\n"
-        "        // anonymous callback\n"
-        "    });\n"
-        "    " + cbFuncdef + "@ localCb = function(const " + cmdCls + "@ args) {};\n"
-        "}\n";
+    const std::string code = "class " + cmdCls +
+                             " {};\n"
+                             "funcdef void " +
+                             cbFuncdef + "(const " + cmdCls +
+                             "@ args);\n"
+                             "class " +
+                             clientCmdCls +
+                             " {\n"
+                             "    " +
+                             clientCmdCls + "(const string& in name, const string& in desc, " + cbFuncdef +
+                             "@ cb) {}\n"
+                             "}\n"
+                             "void " +
+                             regFunc +
+                             "() {\n"
+                             "    " +
+                             clientCmdCls + "(\"cmd\", \"desc\", function(const " + cmdCls +
+                             "@ args) {\n"
+                             "        // anonymous callback\n"
+                             "    });\n"
+                             "    " +
+                             cbFuncdef + "@ localCb = function(const " + cmdCls +
+                             "@ args) {};\n"
+                             "}\n";
 
     auto diags = ctx.Analyze(code);
     for (const auto& d : diags)
@@ -263,23 +296,37 @@ TEST_CASE("SvenCoopComplexPatterns - Scoped Identifier Segment Hover & Property 
     const std::string entityCls = angel_lsp::test::GenerateRandomSymbolName("Entity");
     const std::string hpProp = angel_lsp::test::GenerateRandomSymbolName("hp");
 
-    const std::string code =
-        "namespace " + outerNs + " {\n"
-        "    namespace " + innerNs + " {\n"
-        "        class " + workerCls + " {\n"
-        "            void Work() {}\n"
-        "        }\n"
-        "    }\n"
-        "}\n"
-        "class " + entityCls + " {\n"
-        "    /** @brief The entity health score. */\n"
-        "    int get_" + hpProp + "() property { return 100; }\n"
-        "}\n"
-        "void Runner() {\n"
-        "    " + outerNs + "::" + innerNs + "::" + workerCls + " w;\n"
-        "    " + entityCls + " e;\n"
-        "    int val = e." + hpProp + ";\n"
-        "}\n";
+    const std::string code = "namespace " + outerNs +
+                             " {\n"
+                             "    namespace " +
+                             innerNs +
+                             " {\n"
+                             "        class " +
+                             workerCls +
+                             " {\n"
+                             "            void Work() {}\n"
+                             "        }\n"
+                             "    }\n"
+                             "}\n"
+                             "class " +
+                             entityCls +
+                             " {\n"
+                             "    /** @brief The entity health score. */\n"
+                             "    int get_" +
+                             hpProp +
+                             "() property { return 100; }\n"
+                             "}\n"
+                             "void Runner() {\n"
+                             "    " +
+                             outerNs + "::" + innerNs + "::" + workerCls +
+                             " w;\n"
+                             "    " +
+                             entityCls +
+                             " e;\n"
+                             "    int val = e." +
+                             hpProp +
+                             ";\n"
+                             "}\n";
 
     // Hover on 'InnerNs' in 'OuterNs::InnerNs::Worker w;'
     // Line 12: "    " + outerNs + "::" + innerNs + "::" + workerCls + " w;\n"

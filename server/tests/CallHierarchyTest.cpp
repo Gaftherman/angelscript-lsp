@@ -1,9 +1,9 @@
 #include <doctest/doctest.h>
 
-#include "features/call_hierarchy/CallHierarchyHandler.h"
 #include "analysis/CallGraph.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "features/call_hierarchy/CallHierarchyHandler.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
@@ -23,72 +23,65 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-    struct Fixture
+struct Fixture
+{
+    AngelScriptParser parser;
+    SymbolCollector collector{nullptr};
+    SymbolTable table;
+    CallGraphIndex callGraph;
+    std::string uri = "file:///calls.as";
+    std::string sourceCode;
+    TSTree* tree = nullptr;
+
+    explicit Fixture(std::string code) : sourceCode(std::move(code))
     {
-        AngelScriptParser parser;
-        SymbolCollector collector{ nullptr };
-        SymbolTable table;
-        CallGraphIndex callGraph;
-        std::string uri = "file:///calls.as";
-        std::string sourceCode;
-        TSTree *tree = nullptr;
-
-        explicit Fixture(std::string code)
-            : sourceCode(std::move(code))
+        tree = parser.Parse(sourceCode);
+        collector.CollectSymbols(uri, sourceCode, parser, table);
+        if (tree)
         {
-            tree = parser.Parse(sourceCode);
-            collector.CollectSymbols(uri, sourceCode, parser, table);
-            if (tree)
-            {
-                callGraph.SetDocumentCalls(uri, CollectCalls(ts_tree_root_node(tree), sourceCode));
-            }
+            callGraph.SetDocumentCalls(uri, CollectCalls(ts_tree_root_node(tree), sourceCode));
         }
-
-        ~Fixture()
-        {
-            if (tree)
-            {
-                ts_tree_delete(tree);
-            }
-        }
-
-        std::optional<std::vector<lsp::CallHierarchyItem>> Prepare(uint32_t line, uint32_t character)
-        {
-            const CallHierarchyPrepareRequest request{
-                uri, sourceCode, tree, table, lsp::Position{ line, character }
-            };
-            return PrepareCallHierarchy(request);
-        }
-
-        std::optional<std::vector<lsp::CallHierarchyIncomingCall>> Incoming(const lsp::CallHierarchyItem &item)
-        {
-            return GetIncomingCalls(CallHierarchyItemRequest{ table, callGraph, item });
-        }
-
-        std::optional<std::vector<lsp::CallHierarchyOutgoingCall>> Outgoing(const lsp::CallHierarchyItem &item)
-        {
-            return GetOutgoingCalls(CallHierarchyItemRequest{ table, callGraph, item });
-        }
-    };
-
-    bool HasFrom(const std::optional<std::vector<lsp::CallHierarchyIncomingCall>> &calls, const std::string &name)
-    {
-        return calls.has_value() &&
-               std::any_of(calls->begin(), calls->end(), [&name](const lsp::CallHierarchyIncomingCall &call)
-               {
-                   return call.from.name == name;
-               });
     }
 
-    bool HasTo(const std::optional<std::vector<lsp::CallHierarchyOutgoingCall>> &calls, const std::string &name)
+    ~Fixture()
     {
-        return calls.has_value() &&
-               std::any_of(calls->begin(), calls->end(), [&name](const lsp::CallHierarchyOutgoingCall &call)
-               {
-                   return call.to.name == name;
-               });
+        if (tree)
+        {
+            ts_tree_delete(tree);
+        }
     }
+
+    std::optional<std::vector<lsp::CallHierarchyItem>> Prepare(uint32_t line, uint32_t character)
+    {
+        const CallHierarchyPrepareRequest request{uri, sourceCode, tree, table, lsp::Position{line, character}};
+        return PrepareCallHierarchy(request);
+    }
+
+    std::optional<std::vector<lsp::CallHierarchyIncomingCall>> Incoming(const lsp::CallHierarchyItem& item)
+    {
+        return GetIncomingCalls(CallHierarchyItemRequest{table, callGraph, item});
+    }
+
+    std::optional<std::vector<lsp::CallHierarchyOutgoingCall>> Outgoing(const lsp::CallHierarchyItem& item)
+    {
+        return GetOutgoingCalls(CallHierarchyItemRequest{table, callGraph, item});
+    }
+};
+
+bool HasFrom(const std::optional<std::vector<lsp::CallHierarchyIncomingCall>>& calls, const std::string& name)
+{
+    return calls.has_value() &&
+           std::any_of(calls->begin(), calls->end(),
+                       [&name](const lsp::CallHierarchyIncomingCall& call) { return call.from.name == name; });
 }
+
+bool HasTo(const std::optional<std::vector<lsp::CallHierarchyOutgoingCall>>& calls, const std::string& name)
+{
+    return calls.has_value() &&
+           std::any_of(calls->begin(), calls->end(),
+                       [&name](const lsp::CallHierarchyOutgoingCall& call) { return call.to.name == name; });
+}
+} // namespace
 
 // =====================================================================================
 // The call graph itself
@@ -97,14 +90,13 @@ namespace
 TEST_CASE("CallGraph - Records the function each call is written inside")
 {
     AngelScriptParser parser;
-    const std::string code =
-        "void Helper() { }\n"
-        "void Spawn()\n"
-        "{\n"
-        "    Helper();\n"
-        "}\n";
+    const std::string code = "void Helper() { }\n"
+                             "void Spawn()\n"
+                             "{\n"
+                             "    Helper();\n"
+                             "}\n";
 
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
     const auto calls = CollectCalls(ts_tree_root_node(tree), code);
@@ -119,17 +111,16 @@ TEST_CASE("CallGraph - Records the function each call is written inside")
 TEST_CASE("CallGraph - Qualifies a caller by its class and namespace")
 {
     AngelScriptParser parser;
-    const std::string code =
-        "void Helper() { }\n"
-        "namespace Game\n"
-        "{\n"
-        "    class Entity\n"
-        "    {\n"
-        "        void Think() { Helper(); }\n"
-        "    }\n"
-        "}\n";
+    const std::string code = "void Helper() { }\n"
+                             "namespace Game\n"
+                             "{\n"
+                             "    class Entity\n"
+                             "    {\n"
+                             "        void Think() { Helper(); }\n"
+                             "    }\n"
+                             "}\n";
 
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
     const auto calls = CollectCalls(ts_tree_root_node(tree), code);
@@ -142,11 +133,10 @@ TEST_CASE("CallGraph - Qualifies a caller by its class and namespace")
 TEST_CASE("CallGraph - A method call records the member name, not the receiver")
 {
     AngelScriptParser parser;
-    const std::string code =
-        "class Entity { void Think() { } }\n"
-        "void Spawn(Entity@ e) { e.Think(); }\n";
+    const std::string code = "class Entity { void Think() { } }\n"
+                             "void Spawn(Entity@ e) { e.Think(); }\n";
 
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
     const auto calls = CollectCalls(ts_tree_root_node(tree), code);
@@ -159,12 +149,11 @@ TEST_CASE("CallGraph - A method call records the member name, not the receiver")
 TEST_CASE("CallGraph - A call nested in an argument is recorded too")
 {
     AngelScriptParser parser;
-    const std::string code =
-        "int Inner() { return 1; }\n"
-        "void Outer(int v) { }\n"
-        "void Spawn() { Outer(Inner()); }\n";
+    const std::string code = "int Inner() { return 1; }\n"
+                             "void Outer(int v) { }\n"
+                             "void Spawn() { Outer(Inner()); }\n";
 
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
     const auto calls = CollectCalls(ts_tree_root_node(tree), code);
@@ -176,11 +165,10 @@ TEST_CASE("CallGraph - A call nested in an argument is recorded too")
 TEST_CASE("CallGraph - A call written outside any function has no caller")
 {
     AngelScriptParser parser;
-    const std::string code =
-        "int Compute() { return 1; }\n"
-        "int g_value = Compute();\n";
+    const std::string code = "int Compute() { return 1; }\n"
+                             "int g_value = Compute();\n";
 
-    TSTree *tree = parser.Parse(code);
+    TSTree* tree = parser.Parse(code);
     REQUIRE(tree != nullptr);
 
     const auto calls = CollectCalls(ts_tree_root_node(tree), code);
@@ -193,7 +181,7 @@ TEST_CASE("CallGraph - A call written outside any function has no caller")
 TEST_CASE("CallGraph - Clearing a document removes its calls")
 {
     CallGraphIndex index;
-    index.SetDocumentCalls("file:///a.as", { CallSite{ "Spawn", "Helper", {} } });
+    index.SetDocumentCalls("file:///a.as", {CallSite{"Spawn", "Helper", {}}});
     CHECK(index.FindCallsTo("Helper").size() == 1);
 
     index.ClearDocument("file:///a.as");
@@ -206,9 +194,8 @@ TEST_CASE("CallGraph - Clearing a document removes its calls")
 
 TEST_CASE("CallHierarchy - Opens on the function name under the cursor")
 {
-    Fixture fixture(
-        "void Helper() { }\n"
-        "void Spawn() { Helper(); }\n");
+    Fixture fixture("void Helper() { }\n"
+                    "void Spawn() { Helper(); }\n");
 
     const auto items = fixture.Prepare(0, 6);
     REQUIRE(items.has_value());
@@ -219,12 +206,11 @@ TEST_CASE("CallHierarchy - Opens on the function name under the cursor")
 
 TEST_CASE("CallHierarchy - Opens on the function whose body the cursor sits in")
 {
-    Fixture fixture(
-        "void Helper() { }\n"
-        "void Spawn()\n"
-        "{\n"
-        "    int ticks = 0;\n"
-        "}\n");
+    Fixture fixture("void Helper() { }\n"
+                    "void Spawn()\n"
+                    "{\n"
+                    "    int ticks = 0;\n"
+                    "}\n");
 
     const auto items = fixture.Prepare(3, 9);
     REQUIRE(items.has_value());
@@ -246,10 +232,9 @@ TEST_CASE("CallHierarchy - A method opens as a method and carries its qualified 
 
 TEST_CASE("CallHierarchy - Incoming calls name the calling function")
 {
-    Fixture fixture(
-        "void Helper() { }\n"
-        "void Spawn() { Helper(); }\n"
-        "void Respawn() { Helper(); }\n");
+    Fixture fixture("void Helper() { }\n"
+                    "void Spawn() { Helper(); }\n"
+                    "void Respawn() { Helper(); }\n");
 
     const auto items = fixture.Prepare(0, 6);
     REQUIRE(items.has_value());
@@ -264,13 +249,12 @@ TEST_CASE("CallHierarchy - Incoming calls name the calling function")
 TEST_CASE("CallHierarchy - One caller with two calls is one entry with two ranges")
 {
     // The protocol asks for one entry per caller carrying every range at which it writes the call.
-    Fixture fixture(
-        "void Helper() { }\n"
-        "void Spawn()\n"
-        "{\n"
-        "    Helper();\n"
-        "    Helper();\n"
-        "}\n");
+    Fixture fixture("void Helper() { }\n"
+                    "void Spawn()\n"
+                    "{\n"
+                    "    Helper();\n"
+                    "    Helper();\n"
+                    "}\n");
 
     const auto items = fixture.Prepare(0, 6);
     REQUIRE(items.has_value());
@@ -283,9 +267,8 @@ TEST_CASE("CallHierarchy - One caller with two calls is one entry with two range
 
 TEST_CASE("CallHierarchy - A call written outside any function yields no caller entry")
 {
-    Fixture fixture(
-        "int Compute() { return 1; }\n"
-        "int g_value = Compute();\n");
+    Fixture fixture("int Compute() { return 1; }\n"
+                    "int g_value = Compute();\n");
 
     const auto items = fixture.Prepare(0, 5);
     REQUIRE(items.has_value());
@@ -294,14 +277,13 @@ TEST_CASE("CallHierarchy - A call written outside any function yields no caller 
 
 TEST_CASE("CallHierarchy - Outgoing calls name what the function calls")
 {
-    Fixture fixture(
-        "void First() { }\n"
-        "void Second() { }\n"
-        "void Spawn()\n"
-        "{\n"
-        "    First();\n"
-        "    Second();\n"
-        "}\n");
+    Fixture fixture("void First() { }\n"
+                    "void Second() { }\n"
+                    "void Spawn()\n"
+                    "{\n"
+                    "    First();\n"
+                    "    Second();\n"
+                    "}\n");
 
     const auto items = fixture.Prepare(2, 6);
     REQUIRE(items.has_value());
@@ -315,9 +297,8 @@ TEST_CASE("CallHierarchy - Outgoing calls name what the function calls")
 
 TEST_CASE("CallHierarchy - Outgoing calls reach a method through its receiver")
 {
-    Fixture fixture(
-        "class Entity { void Think() { } }\n"
-        "void Spawn(Entity@ e) { e.Think(); }\n");
+    Fixture fixture("class Entity { void Think() { } }\n"
+                    "void Spawn(Entity@ e) { e.Think(); }\n");
 
     const auto items = fixture.Prepare(1, 6);
     REQUIRE(items.has_value());
@@ -349,9 +330,8 @@ TEST_CASE("CallHierarchy - A function that calls nothing and is called by nothin
 
 TEST_CASE("CallHierarchy - A cursor on nothing callable opens no hierarchy")
 {
-    Fixture fixture(
-        "int g_count = 0;\n"
-        "class Entity { }\n");
+    Fixture fixture("int g_count = 0;\n"
+                    "class Entity { }\n");
 
     CHECK_FALSE(fixture.Prepare(0, 5).has_value());
 }
@@ -359,31 +339,29 @@ TEST_CASE("CallHierarchy - A cursor on nothing callable opens no hierarchy")
 TEST_CASE("CallHierarchy - Mixin methods across host classes")
 {
     AngelScriptParser parser;
-    SymbolCollector collector{ nullptr };
+    SymbolCollector collector{nullptr};
     SymbolTable table;
     CallGraphIndex callGraph;
 
     const std::string mixinUri = "file:///mixin.as";
-    const std::string mixinCode =
-        "void PlaySound() {}\n"
-        "mixin class WeaponMixin {\n"
-        "    void Deploy() { PlaySound(); }\n"
-        "}\n";
+    const std::string mixinCode = "void PlaySound() {}\n"
+                                  "mixin class WeaponMixin {\n"
+                                  "    void Deploy() { PlaySound(); }\n"
+                                  "}\n";
 
     const std::string hostUri = "file:///weapon.as";
-    const std::string hostCode =
-        "class Garand : WeaponMixin {\n"
-        "    void Attack() { Deploy(); }\n"
-        "}\n";
+    const std::string hostCode = "class Garand : WeaponMixin {\n"
+                                 "    void Attack() { Deploy(); }\n"
+                                 "}\n";
 
-    TSTree *mixinTree = parser.Parse(mixinCode);
+    TSTree* mixinTree = parser.Parse(mixinCode);
     collector.CollectSymbols(mixinUri, mixinCode, parser, table);
     if (mixinTree)
     {
         callGraph.SetDocumentCalls(mixinUri, CollectCalls(ts_tree_root_node(mixinTree), mixinCode));
     }
 
-    TSTree *hostTree = parser.Parse(hostCode);
+    TSTree* hostTree = parser.Parse(hostCode);
     collector.CollectSymbols(hostUri, hostCode, parser, table);
     if (hostTree)
     {
@@ -393,9 +371,7 @@ TEST_CASE("CallHierarchy - Mixin methods across host classes")
     table.ResolveIncludedMixins();
 
     // Prepare on Deploy inside mixin (line 2, col 10)
-    const CallHierarchyPrepareRequest prepReq{
-        mixinUri, mixinCode, mixinTree, table, lsp::Position{ 2, 10 }
-    };
+    const CallHierarchyPrepareRequest prepReq{mixinUri, mixinCode, mixinTree, table, lsp::Position{2, 10}};
     const auto items = PrepareCallHierarchy(prepReq);
     REQUIRE(items.has_value());
     REQUIRE(!items->empty());
@@ -404,12 +380,12 @@ TEST_CASE("CallHierarchy - Mixin methods across host classes")
     CHECK((*items)[0].name == "Deploy");
 
     // Incoming calls to Deploy() should find Garand::Attack
-    const auto incoming = GetIncomingCalls(CallHierarchyItemRequest{ table, callGraph, (*items)[0] });
+    const auto incoming = GetIncomingCalls(CallHierarchyItemRequest{table, callGraph, (*items)[0]});
     REQUIRE(incoming.has_value());
     CHECK(HasFrom(incoming, "Attack"));
 
     // Outgoing calls from Deploy() should reach PlaySound
-    const auto outgoing = GetOutgoingCalls(CallHierarchyItemRequest{ table, callGraph, (*items)[0] });
+    const auto outgoing = GetOutgoingCalls(CallHierarchyItemRequest{table, callGraph, (*items)[0]});
     REQUIRE(outgoing.has_value());
     CHECK(HasTo(outgoing, "PlaySound"));
 

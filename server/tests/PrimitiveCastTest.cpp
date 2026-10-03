@@ -28,10 +28,7 @@ TEST_SUITE("PrimitiveCastAndContextualKeywords")
     TEST_CASE("PrimitiveCast - Resolves constructor-style primitive casts")
     {
         const std::string funcName = test::GenerateRandomSymbolName("CastFunc");
-        const std::string code = "void " + funcName + "(uint8 val)\n" +
-                                 "{\n" +
-                                 "    int(val);\n" +
-                                 "}\n";
+        const std::string code = "void " + funcName + "(uint8 val)\n" + "{\n" + "    int(val);\n" + "}\n";
 
         AngelScriptParser parser;
         SymbolCollector collector(nullptr);
@@ -86,15 +83,9 @@ TEST_SUITE("PrimitiveCastAndContextualKeywords")
     {
         const std::string className = test::GenerateRandomSymbolName("Logger");
 
-        const std::string code = "class " + className + "\n" +
-                                 "{\n" +
-                                 "    " + className + "(int priority) {}\n" +
-                                 "}\n" +
-                                 className + " global" + className + "(10);\n" +
-                                 "void Test()\n" +
-                                 "{\n" +
-                                 "    " + className + " " + className + "(5);\n" +
-                                 "}\n";
+        const std::string code = "class " + className + "\n" + "{\n" + "    " + className + "(int priority) {}\n" +
+                                 "}\n" + className + " global" + className + "(10);\n" + "void Test()\n" + "{\n" +
+                                 "    " + className + " " + className + "(5);\n" + "}\n";
 
         AngelScriptParser parser;
         SymbolCollector collector(nullptr);
@@ -149,13 +140,8 @@ TEST_SUITE("PrimitiveCastAndContextualKeywords")
     {
         const std::string cbName = test::GenerateRandomSymbolName("Callback");
 
-        const std::string code = "funcdef void " + cbName + "();\n" +
-                                 "void Process(" + cbName + "@ function)\n" +
-                                 "{\n" +
-                                 "    if (function !is null)\n" +
-                                 "    {\n" +
-                                 "    }\n" +
-                                 "}\n";
+        const std::string code = "funcdef void " + cbName + "();\n" + "void Process(" + cbName + "@ function)\n" +
+                                 "{\n" + "    if (function !is null)\n" + "    {\n" + "    }\n" + "}\n";
 
         AngelScriptParser parser;
         SymbolCollector collector(nullptr);
