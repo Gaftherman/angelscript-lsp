@@ -2,7 +2,7 @@
   "name": "angelscript-gaftherman",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "0.9.28",
+  "version": "1.0.0",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -592,6 +592,21 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%config.format.keepEmptyBlocksOnSingleLine.description%"
+          },
+          "angelscript.format.pointerAlignment": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right",
+              "middle"
+            ],
+            "enumDescriptions": [
+              "%config.format.pointerAlignment.enum.0%",
+              "%config.format.pointerAlignment.enum.1%",
+              "%config.format.pointerAlignment.enum.2%"
+            ],
+            "default": "left",
+            "markdownDescription": "%config.format.pointerAlignment.description%"
           }
         }
       },

@@ -28,6 +28,7 @@ A diferencia de los enfoques basados en ejecutar scripts dentro de un entorno ho
 - **Documentos virtuales de mixins**: Inspección de documentos sintéticos (`angelscript-virtual://`) que permite visualización en línea y validación de miembros en el ámbito del host.
 - **Inspección de rutas de activos**: Las cadenas que coinciden con rutas de archivos o activos se comprueban en el espacio de trabajo y rutas de búsqueda para existencia y métricas en hover.
 - **Dialecto del motor e integración con el host**: Resolución de `#include` sin extensión al estilo Sven Co-op, stubs predefinidos del host (`.as.predefined`) y flags configurables del preprocesador (`#if`, `#define`).
+- **Motor nativo Clang-Format**: Soporte completo para [Clang-Format Style Options](https://clang.llvm.org/docs/ClangFormatStyleOptions.html) mediante archivos `.clang-format`, `_clang-format` o `.as-clang-format` (incluyendo presets `BasedOnStyle` como `LLVM`, `Google`, `Chromium`, `Mozilla`, `WebKit`, `Microsoft`, `GNU`, `Allman`, secciones multilenguaje `Language: AngelScript` / `Cpp`, `BraceWrapping`, `SpaceBeforeParens`, `PointerAlignment`, `ShortBlocks/Functions/If/Loops`, `ReflowComments` y `// clang-format off/on`).
 - **Alto rendimiento y bajo consumo**: C++20 nativo, registro cero en disco por defecto en compilaciones release, flujos de tokens con cero asignaciones dinámicas y seguridad de memoria para el AST.
 - **Soporte bilingüe nativo**: Localización dual integrada para diagnósticos, títulos de comandos y ajustes de configuración en inglés (`en`) y español (`es`) mediante `@vscode/l10n`.
 
@@ -240,6 +241,9 @@ El aislamiento de capas es estrictamente validado por `server/scripts/check-laye
 | `angelscript.format.braceStyle` | `"allman"` | Estilo de llaves: `"allman"` (en nueva línea) o `"kr"` (en la misma línea). |
 | `angelscript.format.spacesInsideParentheses` | `false` | Inserta espacios dentro de paréntesis (ej. `foo( bar )`). |
 | `angelscript.format.keepEmptyBlocksOnSingleLine` | `true` | Mantiene bloques vacíos en una sola línea (ej. `{}`). |
+| `angelscript.format.pointerAlignment` | `"left"` | Alineación de calificadores de handle (`@`) y referencia (`&`): `"left"` (`Foo@ bar`), `"right"` (`Foo @bar`) o `"middle"` (`Foo @ bar`). |
+
+> **Consejo:** Colocar un archivo `.clang-format`, `_clang-format` o `.as-clang-format` en el espacio de trabajo o directorio padre sobrescribe automáticamente los ajustes del editor con soporte completo de opciones YAML de Clang-Format (`BasedOnStyle`, `BraceWrapping`, `PointerAlignment`, `ColumnLimit`, `IndentCaseLabels`, `SortIncludes`, etc.).
 
 #### 5. Diagnósticos y Dialecto del Motor
 | Configuración | Por defecto | Descripción |

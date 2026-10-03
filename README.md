@@ -28,6 +28,7 @@ Unlike approaches that rely on running scripts inside an embedded host runtime o
 - **Virtual Mixin Documents**: Synthetic document inspection (`angelscript-virtual://`) enabling inline peek and host-scoped member validation.
 - **Asset Path Probing**: String literals matching asset or script file paths are probed against the workspace and asset directories for existence and metrics on hover.
 - **Engine Dialect & Host Integration**: Sven Co-op extensionless `#include` resolution, predefined host stubs (`.as.predefined`), and configurable preprocessor flags (`#if`, `#define`).
+- **Native Clang-Format Engine**: Full LLVM [Clang-Format Style Options](https://clang.llvm.org/docs/ClangFormatStyleOptions.html) support via `.clang-format`, `_clang-format`, or `.as-clang-format` (including `BasedOnStyle` presets `LLVM`, `Google`, `Chromium`, `Mozilla`, `WebKit`, `Microsoft`, `GNU`, `Allman`, multi-language `Language: AngelScript` / `Cpp` sections, `BraceWrapping`, `SpaceBeforeParens`, `PointerAlignment`, `ShortBlocks/Functions/If/Loops`, `ReflowComments`, and `// clang-format off/on`).
 - **High Performance & Low Overhead**: Native C++20, zero disk logging by default in release builds, zero-allocation token streams, and AST memory safety.
 - **Native Bilingual Support**: Built-in dual localization for diagnostics, command titles, and configuration settings in English (`en`) and Spanish (`es`) via `@vscode/l10n`.
 
@@ -240,6 +241,9 @@ Layer isolation is strictly enforced by `server/scripts/check-layer-includes.py`
 | `angelscript.format.braceStyle` | `"allman"` | Brace placement style: `"allman"` (new line) or `"kr"` (same line). |
 | `angelscript.format.spacesInsideParentheses` | `false` | Inserts spaces inside parentheses (e.g. `foo( bar )` instead of `foo(bar)`). |
 | `angelscript.format.keepEmptyBlocksOnSingleLine` | `true` | Preserves empty blocks on a single line (e.g. `{}`). |
+| `angelscript.format.pointerAlignment` | `"left"` | Handle (`@`) and reference (`&`) alignment: `"left"` (`Foo@ bar`), `"right"` (`Foo @bar`), or `"middle"` (`Foo @ bar`). |
+
+> **Tip:** Placing a `.clang-format`, `_clang-format`, or `.as-clang-format` file in your workspace or parent directory automatically overrides editor settings with full Clang-Format YAML options (`BasedOnStyle`, `BraceWrapping`, `PointerAlignment`, `ColumnLimit`, `IndentCaseLabels`, `SortIncludes`, etc.).
 
 #### 5. Diagnostics & Engine Dialect
 | Setting | Default | Description |

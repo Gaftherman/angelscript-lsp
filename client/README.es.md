@@ -144,6 +144,7 @@ Todos los comandos pueden ejecutarse desde la Paleta de comandos (`Ctrl+Shift+P`
 - **Comprobación de nulos sensible al flujo**: Diagnósticos intraprocedimentales (`as-warn-possible-null-dereference`) que advierten sobre handles no verificados o usados tras asignación a `null`.
 - **Hover y navegación precisos**: Tooltips de documentación aislados por sobrecarga, renderizado de docstrings Doxygen (`@brief`, `@param`, `@return`), resolución de constructores, contratos de lambdas, Ir a definición (`F12`) e Ir a implementación (`Ctrl+F12`).
 - **Autocompletado inteligente con ranking de tipos**: Clasificación contextual que prioriza tipos coincidentes en argumentos y asignaciones, calificación de valores enum y snippets.
+- **Motor nativo Clang-Format**: Descubrimiento automático de archivos `.clang-format`, `_clang-format` y `.as-clang-format` con soporte completo de opciones de estilo de LLVM Clang-Format (presets `BasedOnStyle` como `LLVM`, `Google`, `Chromium`, `Mozilla`, `WebKit`, `Microsoft`, `GNU`, `Allman`, secciones multilenguaje `Language: AngelScript` / `Cpp`, `BraceWrapping`, `SpaceBeforeParens`, `PointerAlignment`, `ShortBlocks/Functions/If/Loops`, `ReflowComments` y `// clang-format off/on`).
 - **Acciones rápidas (Quick Fixes) localizadas**: Correcciones automáticas bilingües en inglés y español para errores de compilador, variables no utilizadas y supresión de diagnósticos.
 
 ---
@@ -177,7 +178,6 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 ### Catálogo de configuraciones
 
 <!-- SETTINGS_CATALOG_START -->
-
 #### 1. Configuración general y del servidor
 
 | Configuración | Valor por defecto | Descripción |
@@ -231,6 +231,7 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 | `angelscript.format.braceStyle` | `"allman"` | Dónde se coloca la llave de apertura de un bloque. Una lista de inicializadores y el cuerpo de una lambda mantienen su llave en la misma línea bajo cualquier estilo. |
 | `angelscript.format.spacesInsideParentheses` | `false` | Determina si se deben insertar espacios dentro de los paréntesis (por ejemplo, 'foo( bar )' en lugar de 'foo(bar)'). |
 | `angelscript.format.keepEmptyBlocksOnSingleLine` | `true` | Mantener los bloques vacíos en una sola línea (ej. 'ClassName() {}') en lugar de expandirlos en varias líneas. |
+| `angelscript.format.pointerAlignment` | `"left"` | Alineación de los calificadores de handle (`@`) y referencia (`&`) en declaraciones y parámetros. Se sobrescribe cuando existe un archivo `.clang-format`, `_clang-format` o `.as-clang-format` en el espacio de trabajo. |
 
 #### 5. Configuración de características LSP y autocompletado
 
@@ -307,7 +308,6 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 | `angelscript.preprocessor.ifdefSupport` | `false` | Active esto si el host aplicó un parche a su copia de `scriptbuilder.cpp` para comprender `#ifdef` y `#ifndef`.  No está presente en el complemento de serie, donde cualquiera de los dos se deja en el código fuente y el compilador reporta `Unexpected token`. |
 | `angelscript.preprocessor.defineInScripts` | `false` | Active esto si el host aplicó un parche a su copia de `scriptbuilder.cpp` para que `#define WORD` en un script defina una palabra.  No está presente en el complemento de serie, donde `DefineWord` es una llamada de C++ que realiza el host y un `#define` escrito en un script es un error de sintaxis. Para declarar las palabras que el propio host define, use `#angelscript.define` o una línea `#define` en un stub predefinido, que no se ven afectados por esta configuración. |
 | `angelscript.preprocessor.pragmaMode` | `"accept"` | Qué reportar para un `#pragma`.  El complemento de serie los rechaza todos: al no haber ningún callback de pragma registrado, sustituye la respuesta del callback por un fallo, escribe `Invalid #pragma directive` y hace fallar toda la sección. Sin embargo, el valor predeterminado aquí es `accept`, porque un host que registra un callback es el caso habitual y reportar un error por defecto pondría un subrayado ondulado en un pragma que compila bien. Elija `error` para un host que realmente no haya registrado nada, o `hint` si no está seguro. |
-
 <!-- SETTINGS_CATALOG_END -->
 ---
 

@@ -144,6 +144,7 @@ All commands can be triggered via the Command Palette (`Ctrl+Shift+P` / `Cmd+Shi
 - **Flow-Sensitive Null Checks**: Intraprocedural diagnostics (`as-warn-possible-null-dereference`) warning on unchecked handles or handles used after null assignment.
 - **Precise Hover & Navigation**: Overload-isolated documentation tooltips at call sites, Doxygen docstrings (`@brief`, `@param`, `@return`), constructor resolution, lambda signatures, Go to Definition (`F12`), and Go to Implementation (`Ctrl+F12`).
 - **Autocompletion with Smart Type Ranking**: Contextual type ranking prioritizing matching parameter and assignment types, enum member qualification, and snippet expansion.
+- **Native Clang-Format Engine**: Automatic discovery of `.clang-format`, `_clang-format`, and `.as-clang-format` with full LLVM Clang-Format style options (`BasedOnStyle` presets `LLVM`, `Google`, `Chromium`, `Mozilla`, `WebKit`, `Microsoft`, `GNU`, `Allman`, multi-language `Language: AngelScript` / `Cpp` sections, `BraceWrapping`, `SpaceBeforeParens`, `PointerAlignment`, `ShortBlocks/Functions/If/Loops`, `ReflowComments`, and `// clang-format off/on`).
 - **Localized Quick Fixes (Code Actions)**: Quick fixes with dual English and Spanish localization for common compiler errors, unused variables, and diagnostic suppressions.
 
 ---
@@ -177,7 +178,6 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 ### Settings Catalog
 
 <!-- SETTINGS_CATALOG_START -->
-
 #### 1. General & Server Configuration
 
 | Setting | Default | Description |
@@ -231,6 +231,7 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.format.braceStyle` | `"allman"` | Where a block's opening brace goes. An initializer list and a lambda body keep their brace on the line under either style. |
 | `angelscript.format.spacesInsideParentheses` | `false` | Whether to insert spaces inside parentheses (e.g. 'foo( bar )' instead of 'foo(bar)'). |
 | `angelscript.format.keepEmptyBlocksOnSingleLine` | `true` | Keep empty blocks on a single line (e.g. 'ClassName() {}') rather than expanding them across multiple lines. |
+| `angelscript.format.pointerAlignment` | `"left"` | Alignment of handle (`@`) and reference (`&`) qualifiers in declarations and parameters. Overridden when a `.clang-format`, `_clang-format`, or `.as-clang-format` file is present in the workspace. |
 
 #### 5. Language Features & Autocompletion Configuration
 
@@ -307,7 +308,6 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.preprocessor.ifdefSupport` | `false` | Set this if the host patched its copy of `scriptbuilder.cpp` to understand `#ifdef` and `#ifndef`.  Not in the stock add-on, where either one is left in the source and the compiler reports `Unexpected token`. |
 | `angelscript.preprocessor.defineInScripts` | `false` | Set this if the host patched its copy of `scriptbuilder.cpp` so `#define WORD` in a script defines a word.  Not in the stock add-on, where `DefineWord` is a C++ call the host makes and a `#define` written in a script is a syntax error. To declare the words the host itself defines, use `#angelscript.define` or a `#define` line in a predefined stub, which are not affected by this setting. |
 | `angelscript.preprocessor.pragmaMode` | `"accept"` | What to report for a `#pragma`.  The stock add-on rejects every one: with no pragma callback registered it substitutes a failure for the callback's answer, writes `Invalid #pragma directive` and fails the whole section. The default here is nevertheless `accept`, because a host that registers a callback is the common case and reporting an error by default would put a squiggle on a pragma that builds fine. Choose `error` for a host that really registered nothing, or `hint` if you are not sure. |
-
 <!-- SETTINGS_CATALOG_END -->
 ---
 

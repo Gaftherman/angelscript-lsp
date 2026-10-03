@@ -4,6 +4,38 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.0.0] - 2026-10-03
+
+### Native Clang-Format Style Engine, Hot-Path Performance Hardening, Full Bilingual Localization (EN/ES), and Compiler Parity
+
+- Native Clang-Format Style Engine & C++ Interoperability:
+  - Implemented full support for LLVM [Clang-Format Style Options](https://clang.llvm.org/docs/ClangFormatStyleOptions.html) adapted to AngelScript syntax.
+  - Added automatic upward filesystem discovery for `.as-clang-format`, `.clang-format`, and `_clang-format` up to the workspace root, with seamless fallback to VS Code `angelscript.format.*` settings (`braceStyle`, `spacesInsideParentheses`, `keepEmptyBlocksOnSingleLine`, `pointerAlignment`).
+  - Supported multi-language `.clang-format` files (`---` YAML document separators with `Language: AngelScript`, `Language: Cpp`, or default unmarked sections), allowing shared C++ / AngelScript repositories to use a single `.clang-format` file.
+  - Added all 8 standard `BasedOnStyle` presets (`LLVM`, `Google`, `Chromium`, `Mozilla`, `WebKit`, `Microsoft`, `GNU`, `Allman`) and full `BreakBeforeBraces` modes (`Attach`, `Linux`, `Mozilla`, `Stroustrup`, `Allman`, `Whitesmiths`, `GNU`, `WebKit`, `Custom`) with granular `BraceWrapping` flags (`AfterClass`, `AfterFunction`, `AfterControlStatement`, `AfterEnum`, `AfterNamespace`, `BeforeCatch`, `BeforeElse`, `SplitEmptyFunction`, `SplitEmptyRecord`, `IndentBraces`).
+  - Added fine-grained spacing and alignment controls: `PointerAlignment` (`Left`, `Right`, `Middle`) for AngelScript `@` handles and `&` references (`&in`, `&out`, `&inout`), `SpaceBeforeParens` (`Never`, `ControlStatements`, `ControlStatementsExceptControlMacros`, `NonEmptyParentheses`, `Always`, `Custom` with `SpaceBeforeParensOptions`), `SpacesInParentheses`, `SpaceInEmptyParentheses`, `SpacesInAngles`, `SpacesInSquareBrackets`, `SpaceBeforeSquareBrackets`, `SpaceBeforeAssignmentOperators`, `SpaceBeforeCtorInitializerColon`, `SpaceBeforeInheritanceColon`, `SpacesInContainerLiterals`, `SpaceBeforeCaseColon`, and `SpaceBeforeCpp11BracedList`.
+  - Added line-breaking, wrapping, and layout controls: `ColumnLimit`, `ContinuationIndentWidth`, `BreakBeforeBinaryOperators` (`None`, `NonAssignment`, `All`), `BreakBeforeTernaryOperators`, `AllowShortBlocksOnASingleLine`, `AllowShortFunctionsOnASingleLine`, `AllowShortIfStatementsOnASingleLine`, `AllowShortLoopsOnASingleLine`, `AllowShortCaseLabelsOnASingleLine`, `AllowShortEnumsOnASingleLine`, `IndentCaseLabels`, `IndentCaseBlocks`, `IndentAccessModifiers`, `AccessModifierOffset`, `NamespaceIndentation` (`None`, `Inner`, `All`), `PackConstructorInitializers`, `BreakConstructorInitializers`, `MaxEmptyLinesToKeep`, `KeepEmptyLinesAtTheStartOfBlocks`, `SortIncludes`, `ReflowComments`, `SpacesBeforeTrailingComments`, `FixNamespaceComments`, `InsertBraces`, `InsertNewlineAtEOF`, and `LineEnding` (`LF`, `CRLF`, `DeriveLF`, `DeriveCRLF`).
+  - Added `// clang-format off` and `// clang-format on` verbatim region preservation.
+  - Decomposed the monolithic `FormattingHandler.cpp` into 8 cohesive Layer 3 modules (`FormattingTypes.h`, `ClangFormatPresets`, `ClangFormatReader`, `FormattingLexer`, `FormattingTokens`, `FormattingSpacing`, `FormattingLineBuilder`, `FormattingRenderer`, and `FormattingHandler`), each strictly under 300 LOC and $\text{CCN} \le 15$.
+  - Added AngelScript-specific control keyword classification (`if`, `for`, `foreach`, `while`, `switch`, `catch`) and bitwise XOR (`^^`) / unsigned right-shift (`>>>`, `>>>=`) tokenization.
+- Hot-Path Performance Hardening & Zero-Duplication Architecture:
+  - Memoized AST expression type evaluations and optimized binary operator dispatch to eliminate redundant subtree traversals.
+  - Replaced $O(N)$ linear scans and string allocations across `OverloadResolver`, `SymbolTable`, and `SemanticHelpers` with zero-copy `std::string_view` lookups and `ankerl::unordered_dense` hash maps.
+  - Optimized UTF-16 / UTF-8 LSP position encoding with `LineIndex` binary search.
+  - Consolidated duplicated checker and feature patterns into shared Layer 1/2 helpers, driving codebase duplication (`jscpd`) down to $0.16\%$.
+- Full Dual-Language Localization (English & Spanish) & Automated Documentation Sync:
+  - Provided complete English (`en`) and Spanish (`es`) localization across all VS Code client UI elements (`bundle.l10n.json`, `bundle.l10n.es.json`), 96+ manifest settings (`package.nls.json`, `package.nls.es.json`), and server diagnostics / quick-fix code actions (`DiagnosticMessages`).
+  - Refactored code actions to use parameterized dictionary formatting (`FormatMessage`) instead of language branching.
+  - Added `server/scripts/sync-readme-settings.py` and quality gate #11 to automatically synchronize and verify settings catalog tables across `README.md`, `README.es.md`, `client/README.md`, and `client/README.es.md`.
+  - Added compatibility verification and documentation for external community predefined stubs (`sven.as.predefined`, Trackmania Nations Forever, OpenSiv3D).
+- Compiler Parity, Hover, Completion & Quick-Fix Enhancements:
+  - Enforced `const` method and modifier error parity with the reference AngelScript compiler.
+  - Resolved unary `@` handle operator, `null` ternary branch compatibility, and `funcdef` variable call evaluation.
+  - Added scope- and file-proximity priority sorting to autocompletion, deduplicated scoped enum completions, and added option to qualify enum values (`EnumName::Value`).
+  - Added constructor signature resolution, scoped constructor inlay hints, and concatenated string literal path hover.
+  - Preserved comment line breaks in Doxygen option lists and formatted link tags cleanly in hover tooltips.
+  - Added comment-based diagnostic suppressions (`// disable <CODE>` / `// enable <CODE>`) and quick fixes to insert suppression directives.
+
 ## [0.9.27] - 2026-09-30
 
 ### Predefined Stubs Fast-Path, Inlay Hint Navigation, Multi-Stub Selector, and Headless CI Stability

@@ -1079,6 +1079,11 @@ export function buildServerArgs(): string[] {
         args.push('--format-keep-empty-blocks-on-single-line=false');
     }
 
+    const pointerAlignment = config.get<string>('format.pointerAlignment', 'left').trim();
+    if (pointerAlignment.length > 0 && pointerAlignment !== 'left') {
+        args.push(`--format-pointer-alignment=${pointerAlignment}`);
+    }
+
     const severities = config.get<Record<string, string>>('diagnosticSeverity', {});
     for (const [code, severity] of Object.entries(severities ?? {})) {
         if (code.trim().length > 0 && typeof severity === 'string' && severity.trim().length > 0) {
