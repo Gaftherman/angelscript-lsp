@@ -63,6 +63,7 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     request.severityOverrides = m_diagnosticSeverities.empty() ? nullptr : &m_diagnosticSeverities;
     request.enableTypeConversionChecks = m_config.features.enableTypeConversionChecks;
     request.enableCommentSuppressions = m_config.features.enableCommentSuppressions;
+    request.enableMetadata = m_config.features.enableMetadata;
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
     request.sourceCode = text;
     request.tree = tree;

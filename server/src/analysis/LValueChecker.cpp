@@ -152,11 +152,7 @@ void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symbol>& ca
 
 void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
-    if (ts_node_is_null(funcNode) && ts_node_child_count(callNode) > 0)
-    {
-        funcNode = ts_node_child(callNode, 0);
-    }
+    TSNode funcNode = parser::GetCallCallee(callNode);
     if (ts_node_is_null(funcNode))
     {
         return;

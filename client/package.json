@@ -1020,6 +1020,11 @@
             ],
             "default": "accept",
             "markdownDescription": "%config.preprocessor.pragmaMode.description%"
+          },
+          "angelscript.metadata.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.metadata.enabled.description%"
           }
         }
       }

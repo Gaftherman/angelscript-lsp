@@ -147,5 +147,6 @@
   "config.diagnostics.missingAssetPathSeverity.description": "Diagnostic severity for string literals referencing missing asset files. Off by default.",
   "config.stubs.activeFiles.description": "List of active predefined stub files loaded into the workspace index. Managed dynamically via the AngelScript: Select Predefined Stubs command.",
   "command.rescanWorkspace.title": "Rescan Workspace",
-  "command.selectStubs.title": "Select Predefined Stubs"
+  "command.selectStubs.title": "Select Predefined Stubs",
+  "config.metadata.enabled.description": "Enable support for CScriptBuilder metadata blocks ('[...]') before script declarations (classes, interfaces, functions, variables)."
 }

@@ -230,4 +230,5 @@ inline constexpr std::string_view InvalidReferenceReturn = "as-err-invalid-refer
 inline constexpr std::string_view ReadonlyHandle = "as-err-readonly-handle";
 inline constexpr std::string_view StandaloneReference = "as-err-standalone-reference";
 inline constexpr std::string_view ReadonlyReference = "as-err-readonly-reference";
+inline constexpr std::string_view MetadataDisabled = "as-warn-metadata-disabled";
 } // namespace angel_lsp::diagnostics::codes

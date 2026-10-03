@@ -180,6 +180,7 @@ class SymbolCollector
     TSSymbol m_symBaseClassList = 0;
     TSSymbol m_symParameter = 0;
     TSSymbol m_symMemberExpression = 0;
+    TSSymbol m_symMetadata = 0;
 
     // Anonymous token symbols (resolved once, compared via ts_node_symbol)
     TSSymbol m_tokConst = 0;

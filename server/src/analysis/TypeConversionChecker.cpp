@@ -787,11 +787,7 @@ ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const
 /** @brief Resolves what a call expression evaluates to: a constructed type, or a return type. */
 ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
 {
-    TSNode callee = parser::GetChildByField(node, parser::fields::Function);
-    if (ts_node_is_null(callee) && ts_node_child_count(node) > 0)
-    {
-        callee = ts_node_child(node, 0);
-    }
+    TSNode callee = parser::GetCallCallee(node);
     if (ts_node_is_null(callee))
     {
         return ExpressionType{};
@@ -1926,15 +1922,7 @@ void CheckConstructorDelegationStatement(TSNode stmt, const std::string& classNa
     std::string_view exprType = ts_node_type(expr);
     if (exprType == node_types::CallExpression || exprType == "construct_call_expression")
     {
-        TSNode callee = parser::GetChildByField(expr, parser::fields::Function);
-        if (ts_node_is_null(callee))
-        {
-            callee = parser::GetChildByField(expr, parser::fields::Type);
-        }
-        if (ts_node_is_null(callee) && ts_node_child_count(expr) > 0)
-        {
-            callee = ts_node_child(expr, 0);
-        }
+        TSNode callee = parser::GetCallCallee(expr);
         if (!ts_node_is_null(callee) && NodeText(callee, ctx.request.sourceCode) == className)
         {
             EmitAtNode(expr, ctx, "as-err-constructor-delegation-disallowed");
@@ -3394,16 +3382,7 @@ void ProcessReturnStatementNode(TSNode node, const TypeConversionCheckRequest& r
  */
 TSNode ResolveCalleeNode(TSNode node)
 {
-    TSNode callee = parser::GetChildByField(node, parser::fields::Type);
-    if (ts_node_is_null(callee))
-    {
-        callee = parser::GetChildByField(node, parser::fields::Function);
-    }
-    if (ts_node_is_null(callee) && ts_node_child_count(node) > 0)
-    {
-        callee = ts_node_child(node, 0);
-    }
-    return callee;
+    return parser::GetCallCallee(node);
 }
 
 /**

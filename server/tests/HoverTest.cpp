@@ -1307,3 +1307,34 @@ TEST_CASE("HoverHandler - Invariant: Local variable of funcdef type displays fun
     CHECK(content.value.find("funcdef void " + funcdefName + "(int player, float option)") != std::string::npos);
     CHECK(content.value.find(docText) != std::string::npos);
 }
+
+TEST_CASE("Hover - Displays metadata on class and property declarations")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("MetadataEntity");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("health");
+
+    const std::string code = "[factory func = CreateEntity]\n"
+                             "class " +
+                             className +
+                             " {\n"
+                             "    [editable]\n"
+                             "    int " +
+                             propName +
+                             ";\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    // Line 1: class <className>
+    auto hoverClass = env.HoverAt(1, 7);
+    REQUIRE(hoverClass.has_value());
+    auto classContent = std::get<lsp::MarkupContent>(hoverClass->contents);
+    CHECK(classContent.value.find("[factory func = CreateEntity]") != std::string::npos);
+    CHECK(classContent.value.find(className) != std::string::npos);
+
+    // Line 3: int <propName>
+    auto hoverProp = env.HoverAt(3, 9);
+    REQUIRE(hoverProp.has_value());
+    auto propContent = std::get<lsp::MarkupContent>(hoverProp->contents);
+    CHECK(propContent.value.find("[editable]") != std::string::npos);
+    CHECK(propContent.value.find(propName) != std::string::npos);
+}

@@ -11,6 +11,7 @@
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
+#include "parser/QueryRegistry.h"
 #include "utils/LspLogger.h"
 #include <optional>
 #include <spdlog/fmt/fmt.h>
@@ -1555,34 +1556,34 @@ std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std:
 std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode)
 {
     std::vector<std::string> usings;
-    std::vector<TSNode> stack = {root};
-    while (!stack.empty())
+    if (ts_node_is_null(root))
     {
-        TSNode cur = stack.back();
-        stack.pop_back();
+        return usings;
+    }
 
-        std::string_view type = ts_node_type(cur);
-        if (type == "using_declaration")
+    const TSQuery* query = parser::QueryRegistry::GetUsingQuery();
+    TSQueryCursor* cursor = parser::QueryRegistry::GetThreadLocalCursor();
+    if (!query || !cursor)
+    {
+        return usings;
+    }
+
+    ts_query_cursor_exec(cursor, query, root);
+    TSQueryMatch match;
+    while (ts_query_cursor_next_match(cursor, &match))
+    {
+        for (uint16_t i = 0; i < match.capture_count; ++i)
         {
-            TSNode nameNode = parser::GetChildByField(cur, parser::fields::Name);
-            if (!ts_node_is_null(nameNode))
+            TSNode nameNode = match.captures[i].node;
+            std::string uName = GetNodeText(nameNode, sourceCode);
+            while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front())))
+                uName.erase(uName.begin());
+            while (!uName.empty() && isspace(static_cast<unsigned char>(uName.back())))
+                uName.pop_back();
+            if (!uName.empty())
             {
-                std::string uName = GetNodeText(nameNode, sourceCode);
-                while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front())))
-                    uName.erase(uName.begin());
-                while (!uName.empty() && isspace(static_cast<unsigned char>(uName.back())))
-                    uName.pop_back();
-                if (!uName.empty())
-                {
-                    usings.push_back(uName);
-                }
+                usings.push_back(std::move(uName));
             }
-        }
-
-        uint32_t count = ts_node_child_count(cur);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            stack.push_back(ts_node_child(cur, i));
         }
     }
     return usings;
@@ -3119,11 +3120,7 @@ static std::string ResolveBareCallExpr(TSNode exprNode, TSNode funcNode, const s
  */
 static std::string ResolveCallExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
-    TSNode funcNode = parser::GetChildByField(exprNode, parser::fields::Function);
-    if (ts_node_is_null(funcNode) && ts_node_child_count(exprNode) > 0)
-    {
-        funcNode = ts_node_child(exprNode, 0);
-    }
+    TSNode funcNode = parser::GetCallCallee(exprNode);
     if (ts_node_is_null(funcNode))
     {
         return "";
@@ -4510,16 +4507,7 @@ static std::optional<uint32_t> FindChildPosition(TSNode parent, TSNode targetChi
  */
 static TSNode ExtractCallCalleeNode(TSNode call)
 {
-    TSNode callee = parser::GetChildByField(call, parser::fields::Type);
-    if (ts_node_is_null(callee))
-    {
-        callee = parser::GetChildByField(call, parser::fields::Function);
-    }
-    if (ts_node_is_null(callee) && ts_node_child_count(call) > 0)
-    {
-        callee = ts_node_child(call, 0);
-    }
-    return callee;
+    return parser::GetCallCallee(call);
 }
 
 namespace

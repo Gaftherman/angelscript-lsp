@@ -347,6 +347,8 @@ void PopulateEnglishMessages6(MessageMap& m_messages)
     m_messages["as-err-foreach-unsupported"] =
         "`foreach` is not available: the host built its engine with asEP_FOREACH_SUPPORT off, and the compiler reports "
         "the loop variable as a syntax error. Use a `for` loop over the container's index.";
+    m_messages["as-warn-metadata-disabled"] =
+        "Metadata blocks '[]' are disabled. Enable 'angelscript.metadata.enabled' in settings to use them.";
     m_messages["as-err-initializer-list-expected"] = "Expected a list enclosed by {{ }} to match pattern.";
     m_messages["as-err-initializer-list-too-few"] = "Not enough values to match pattern.";
     m_messages["as-err-initializer-list-too-many"] = "Too many values to match pattern.";
@@ -717,6 +719,8 @@ void PopulateSpanishMessages6(MessageMap& m_messages)
         "`foreach` no está disponible: el host construyó su motor con asEP_FOREACH_SUPPORT desactivado, y el "
         "compilador reporta la variable del bucle como error de sintaxis. Usa un bucle `for` sobre el índice del "
         "contenedor.";
+    m_messages["as-warn-metadata-disabled"] = "Los bloques de metadatos '[]' están deshabilitados. Habilite "
+                                              "'angelscript.metadata.enabled' en la configuración para usarlos.";
     m_messages["as-err-initializer-list-expected"] = "Se esperaba una lista entre {{ }} para coincidir con el patrón.";
     m_messages["as-err-initializer-list-too-few"] = "No hay suficientes valores para coincidir con el patrón.";
     m_messages["as-err-initializer-list-too-many"] = "Demasiados valores para coincidir con el patrón.";

@@ -5,6 +5,7 @@
 #include "analysis/ConstChecker.h"
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/DefiniteAssignmentChecker.h"
+#include "analysis/DiagnosticCodes.h"
 #include "analysis/DiagnosticSuppression.h"
 #include "analysis/InitializerListChecker.h"
 #include "analysis/IsolationChecker.h"
@@ -222,6 +223,22 @@ SemanticAnalyzer::TimedAstBreakdown SemanticAnalyzer::RunTimedAstRules(const Sem
     return breakdown;
 }
 
+static void CheckMetadataSupport(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
+                                 DiagnosticContext& ctx)
+{
+    if (!request.enableMetadata && indexPtr)
+    {
+        const auto metaNodes = indexPtr->Nodes(parser::nodes::Metadata);
+        for (TSNode metaNode : metaNodes)
+        {
+            const TSPoint start = ts_node_start_point(metaNode);
+            const TSPoint end = ts_node_end_point(metaNode);
+            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::MetadataDisabled,
+                            DiagnosticSeverity::Warning);
+        }
+    }
+}
+
 std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest& request) const
 {
     std::vector<Diagnostic> diagnostics;
@@ -262,6 +279,7 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
 
         const auto breakdown = RunTimedAstRules(request, indexPtr, ctx);
         CheckDirectivesAndModules(request, ctx);
+        CheckMetadataSupport(request, indexPtr, ctx);
 
         if (m_logger && m_logger->IsEnabled(utils::LogLevel::Info))
         {

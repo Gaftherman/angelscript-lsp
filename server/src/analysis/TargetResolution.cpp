@@ -639,11 +639,7 @@ FunctionArgConstraints GetCallArgumentConstraints(TSNode outNode)
         std::string_view wpType = ts_node_type(walkP);
         if (wpType == "call_expression")
         {
-            TSNode funcChild = parser::GetChildByField(walkP, parser::fields::Function);
-            if (ts_node_is_null(funcChild) && ts_node_child_count(walkP) > 0)
-            {
-                funcChild = ts_node_child(walkP, 0);
-            }
+            TSNode funcChild = parser::GetCallCallee(walkP);
             if (!ts_node_is_null(funcChild) &&
                 (ts_node_eq(funcChild, walk) || ts_node_start_byte(funcChild) == ts_node_start_byte(walk)))
             {

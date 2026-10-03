@@ -174,6 +174,34 @@ inline constexpr std::string_view VarType = "var_type";
     return ts_node_child_by_field_name(parent, fieldName.data(), static_cast<uint32_t>(fieldName.length()));
 }
 
+/**
+ * @brief Retrieves the callee function/method node of a call expression safely.
+ * @param[in] callNode The call_expression or construct_call_expression AST node.
+ * @return The function node, or a null TSNode if not found.
+ */
+[[nodiscard]] inline TSNode GetCallCallee(TSNode callNode) noexcept
+{
+    if (ts_node_is_null(callNode))
+    {
+        return TSNode{};
+    }
+    TSNode fn = GetChildByField(callNode, fields::Function);
+    if (!ts_node_is_null(fn))
+    {
+        return fn;
+    }
+    TSNode typeNode = GetChildByField(callNode, fields::Type);
+    if (!ts_node_is_null(typeNode))
+    {
+        return typeNode;
+    }
+    if (ts_node_named_child_count(callNode) > 0)
+    {
+        return ts_node_named_child(callNode, 0);
+    }
+    return TSNode{};
+}
+
 /** @brief Every constant in nodes::, for the test that checks they still resolve. */
 inline constexpr std::string_view k_allNodeTypes[] = {
     nodes::Accessor,

@@ -96,6 +96,7 @@ void SymbolCollector::ResolveGrammarSymbols(const TSLanguage* lang)
     m_symBaseClassList = ts_language_symbol_for_name(lang, SYM_NAME("base_class_list"), true);
     m_symParameter = ts_language_symbol_for_name(lang, SYM_NAME("parameter"), true);
     m_symMemberExpression = ts_language_symbol_for_name(lang, SYM_NAME("member_expression"), true);
+    m_symMetadata = ts_language_symbol_for_name(lang, SYM_NAME("metadata"), true);
 
     m_tokConst = ts_language_symbol_for_name(lang, SYM_NAME("const"), false);
     m_tokIn = ts_language_symbol_for_name(lang, SYM_NAME("in"), false);
@@ -1748,6 +1749,25 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
 
     sym.fullRange = {startPt.row, startPt.column, endPt.row, endPt.column};
     sym.selectionRange = {nameStartPt.row, nameStartPt.column, nameEndPt.row, nameEndPt.column};
+
+    TSNode declNode = node;
+    TSNode parentNode = ts_node_parent(node);
+    if (!ts_node_is_null(parentNode) && ts_node_symbol(node) == m_symVariableDeclarator)
+    {
+        declNode = parentNode;
+    }
+    TSNode prev = ts_node_prev_named_sibling(declNode);
+    std::vector<std::string> metaBlocks;
+    while (!ts_node_is_null(prev) && ts_node_symbol(prev) == m_symMetadata)
+    {
+        metaBlocks.push_back(GetNodeText(prev, loc.sourceCode));
+        prev = ts_node_prev_named_sibling(prev);
+    }
+    if (!metaBlocks.empty())
+    {
+        std::reverse(metaBlocks.begin(), metaBlocks.end());
+        sym.metadata = std::move(metaBlocks);
+    }
 
     return sym;
 }

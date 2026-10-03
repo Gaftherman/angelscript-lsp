@@ -495,6 +495,8 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
      &FeatureFlags::hoverStringLiteralPathResolution},
     {"--enable-comment-suppressions", "--enable-commentsuppressions", "--disable-comment-suppressions",
      "--disable-commentsuppressions", &FeatureFlags::enableCommentSuppressions},
+    {"--enable-metadata", "--enable-script-metadata", "--disable-metadata", "--disable-script-metadata",
+     &FeatureFlags::enableMetadata},
 };
 
 bool TryParseInlayHintOmittedDefaultsFlag(ServerConfig& config, ArgParseContext& ctx)

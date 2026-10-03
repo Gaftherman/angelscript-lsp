@@ -336,9 +336,10 @@ struct Symbol
     SourceRange fullRange;      ///< Full enclosing source range of the declaration (for DocumentSymbol).
     SourceRange selectionRange; ///< Source range of the identifier token itself (for DocumentSymbol/Rename).
 
-    bool isSynthesized = false; ///< True when synthesized into a host class (e.g. from an included mixin).
-    std::string virtualFileUri; ///< Synthetic URI when virtual mixin documents are enabled (e.g.
-                                ///< angelscript-virtual://<host_class>/<mixin>.as).
+    bool isSynthesized = false;        ///< True when synthesized into a host class (e.g. from an included mixin).
+    std::string virtualFileUri;        ///< Synthetic URI when virtual mixin documents are enabled (e.g.
+                                       ///< angelscript-virtual://<host_class>/<mixin>.as).
+    std::vector<std::string> metadata; ///< CScriptBuilder metadata strings attached to this symbol.
 
     std::variant<std::monostate, FunctionSignature, VariableSignature, EnumSignature, ClassSignature,
                  InterfaceSignature, TypedefSignature, FuncdefSignature, CallReferenceSignature>

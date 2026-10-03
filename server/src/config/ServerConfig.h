@@ -64,6 +64,8 @@ struct FeatureFlags
     bool hoverStringLiteralLength = true;
     bool hoverStringLiteralPathResolution = true;
     bool enableCommentSuppressions = true;
+    /** @brief Whether CScriptBuilder metadata blocks '[]' before declarations are supported. */
+    bool enableMetadata = false;
     std::vector<std::string> assetSearchPaths;
 };
 
