@@ -101,7 +101,7 @@ void TryAddExtractMethodAction(const CodeActionRequest& request, TSNode rootNode
     ExtractedMethodPlan plan = DeduceExtractedMethodSignature(vars, *stmts, request);
 
     lsp::CodeAction action;
-    action.title = "Extract Method";
+    action.title = i18n::FormatMessage(request.i18n, "action-extract-method", "Extract Method");
     action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::RefactorExtract);
     action.edit = BuildExtractMethodEdits(request, *stmts, plan);
     actions.push_back(std::move(action));

@@ -161,25 +161,12 @@ std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, cons
  */
 std::vector<std::string> GetAllIndexedFileUris(const analysis::SymbolTable& symbolTable, const std::string& currentUri)
 {
-    std::unordered_set<std::string> uriSet;
-    if (!currentUri.empty())
+    std::vector<std::string> uris = symbolTable.GetIndexedFileUris();
+    if (!currentUri.empty() && std::find(uris.begin(), uris.end(), currentUri) == uris.end())
     {
-        uriSet.insert(currentUri);
+        uris.push_back(currentUri);
     }
-
-    symbolTable.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
-        {
-            for (const auto& sym : symbols)
-            {
-                if (!sym.fileUri.empty())
-                {
-                    uriSet.insert(sym.fileUri);
-                }
-            }
-        });
-
-    return std::vector<std::string>(uriSet.begin(), uriSet.end());
+    return uris;
 }
 
 } // namespace
@@ -561,7 +548,8 @@ bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const Resolv
 void ResolveGlobalFallbackTarget(const std::string& nodeText, const ResolveTargetRequest& request,
                                  TargetDescriptor& target)
 {
-    request.symbolTable.ForEachSymbol(
+    request.symbolTable.ForEachSymbolInFile(
+        request.uri,
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
@@ -1627,7 +1615,8 @@ void CollectNamespaceOccurrences(const CollectOccurrencesRequest& request, Occur
         }
 
         std::vector<std::pair<uint32_t, uint32_t>> nsRanges;
-        request.symbolTable.ForEachSymbol(
+        request.symbolTable.ForEachSymbolInFile(
+            fileUri,
             [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& sList)
             {
                 for (const auto& s : sList)

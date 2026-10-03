@@ -41,6 +41,9 @@ void RuleIndexPartial::Merge(RuleIndexPartial&& other)
     hostClassesByMixin.insert(hostClassesByMixin.end(), std::make_move_iterator(other.hostClassesByMixin.begin()),
                               std::make_move_iterator(other.hostClassesByMixin.end()));
 
+    sharedDeclarations.insert(sharedDeclarations.end(), std::make_move_iterator(other.sharedDeclarations.begin()),
+                              std::make_move_iterator(other.sharedDeclarations.end()));
+
     for (auto& [containerName, contrib] : other.byContainer)
     {
         auto& target = byContainer[containerName];
@@ -238,6 +241,27 @@ void ProcessContainerMember(RuleIndexPartial& partial, const Symbol& sym)
     }
 }
 
+/** @brief Records non-external shared class or function declarations. */
+void ProcessSharedDeclaration(RuleIndexPartial& partial, const Symbol& sym)
+{
+    bool declaresShared = false;
+    if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+    {
+        const auto& c = sym.GetClass();
+        declaresShared = c.hasBraces && c.modifiers.isShared && !c.modifiers.isExternal;
+    }
+    else if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+    {
+        const auto& f = sym.GetFunction();
+        declaresShared = f.hasBody && f.modifiers.isShared && !f.modifiers.isExternal;
+    }
+    if (declaresShared)
+    {
+        const std::string& key = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+        partial.sharedDeclarations.emplace_back(key, sym.fileUri);
+    }
+}
+
 /** @brief Processes a single symbol and extracts its contributions to the partial index. */
 void ProcessSymbol(RuleIndexPartial& partial, const Symbol& sym)
 {
@@ -245,6 +269,7 @@ void ProcessSymbol(RuleIndexPartial& partial, const Symbol& sym)
     ProcessEnumSymbol(partial, sym);
     ProcessTypeSymbol(partial, sym);
     ProcessInheritanceSymbol(partial, sym);
+    ProcessSharedDeclaration(partial, sym);
 
     if (sym.containerName.empty() && sym.type == SymbolType::Function)
     {
@@ -338,6 +363,11 @@ void ApplyHierarchy(RuleIndex& index, const RuleIndexPartial& partial)
     for (const auto& [mixin, host] : partial.hostClassesByMixin)
     {
         index.hostClassesByMixin[mixin].push_back(host);
+    }
+
+    for (const auto& [key, fileUri] : partial.sharedDeclarations)
+    {
+        index.sharedDeclarationFilesByKey[key].push_back(fileUri);
     }
 }
 
@@ -509,6 +539,23 @@ void RemoveHierarchy(RuleIndex& index, const RuleIndexPartial& partial)
             if (it->second.empty())
             {
                 index.hostClassesByMixin.erase(it);
+            }
+        }
+    }
+
+    for (const auto& [key, fileUri] : partial.sharedDeclarations)
+    {
+        auto it = index.sharedDeclarationFilesByKey.find(key);
+        if (it != index.sharedDeclarationFilesByKey.end())
+        {
+            auto vecIt = std::find(it->second.begin(), it->second.end(), fileUri);
+            if (vecIt != it->second.end())
+            {
+                it->second.erase(vecIt);
+            }
+            if (it->second.empty())
+            {
+                index.sharedDeclarationFilesByKey.erase(it);
             }
         }
     }

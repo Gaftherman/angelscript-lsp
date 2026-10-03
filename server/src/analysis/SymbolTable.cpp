@@ -1173,6 +1173,21 @@ void SymbolTable::ForEachSymbolInFile(
         visitor(*key, *symbols);
 }
 
+std::vector<std::string> SymbolTable::GetIndexedFileUris() const
+{
+    std::vector<std::string> uris;
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    uris.reserve(m_keysByFile.size());
+    for (const auto& [fileUri, keys] : m_keysByFile)
+    {
+        if (!fileUri.empty() && !keys.empty())
+        {
+            uris.push_back(fileUri);
+        }
+    }
+    return uris;
+}
+
 uint64_t SymbolTable::Version() const
 {
     std::shared_lock<std::shared_mutex> lock(m_mutex);

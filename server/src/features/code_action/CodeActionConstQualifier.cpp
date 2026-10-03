@@ -85,7 +85,7 @@ std::optional<lsp::CodeAction> TryBuildMissingConstFixForSymbol(const CodeAction
     edit.newText = " const";
 
     lsp::CodeAction action;
-    action.title = "Add 'const' qualifier to method";
+    action.title = i18n::FormatMessage(request.i18n, "action-add-const-qualifier", "Add 'const' qualifier to method");
     action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
     action.isPreferred = true;
     action.diagnostics = {diag};
@@ -112,7 +112,8 @@ void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TSNode ro
     std::string objType = analysis::CleanBaseType(
         analysis::ResolveExpressionType(objNode, {scope, request.symbolTable, request.sourceCode, request.uri}));
 
-    request.symbolTable.ForEachSymbol(
+    request.symbolTable.ForEachSymbolInFile(
+        request.uri,
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
         {
             for (const auto& sym : symList)
@@ -192,7 +193,8 @@ void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootN
         edit.newText = " const";
 
         lsp::CodeAction action;
-        action.title = "Add 'const' qualifier to method";
+        action.title =
+            i18n::FormatMessage(request.i18n, "action-add-const-qualifier", "Add 'const' qualifier to method");
         action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
 
         lsp::WorkspaceEdit wsEdit;

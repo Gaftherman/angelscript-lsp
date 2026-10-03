@@ -1147,10 +1147,11 @@ void SymbolCollector::CheckUsingDeclarationCapture(TSNode usingNode, SymbolColle
     diag.code = "as-err-reserved-keyword-name";
     diag.source = "AngelScript";
     diag.fileUri = sCtx.request.fileUri;
-    std::string pattern = sCtx.request.i18n ? sCtx.request.i18n->GetMessage("as-err-reserved-keyword-name")
-                                            : "Instead found reserved keyword '{}'.";
+    const std::string_view pattern = sCtx.request.i18n
+                                         ? sCtx.request.i18n->GetMessageView("as-err-reserved-keyword-name")
+                                         : std::string_view("Instead found reserved keyword '{}'.");
     diag.message = fmt::format(fmt::runtime(pattern), nameText);
-    sCtx.diagnostics.push_back(diag);
+    sCtx.diagnostics.push_back(std::move(diag));
 }
 
 void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollectContext& sCtx) const
@@ -1186,11 +1187,11 @@ void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollect
                         diag.code = "as-err-attribute-repeated";
                         diag.source = "AngelScript";
                         diag.fileUri = sCtx.request.fileUri;
-                        std::string pattern = sCtx.request.i18n
-                                                  ? sCtx.request.i18n->GetMessage("as-err-attribute-repeated")
-                                                  : "Attribute '{}' is informed multiple times.";
+                        const std::string_view pattern =
+                            sCtx.request.i18n ? sCtx.request.i18n->GetMessageView("as-err-attribute-repeated")
+                                              : std::string_view("Attribute '{}' is informed multiple times.");
                         diag.message = fmt::format(fmt::runtime(pattern), modText);
-                        sCtx.diagnostics.push_back(diag);
+                        sCtx.diagnostics.push_back(std::move(diag));
                     }
                     else
                     {
@@ -1273,10 +1274,12 @@ namespace
  * @brief Formats an argument list syntax error when two arguments appear without a comma.
  * @param[in] node AST error node.
  * @param[in] sourceCode Source text buffer.
+ * @param[in] i18n Optional localization instance.
  * @param[in,out] diag Diagnostic to populate.
  * @return True if formatted as an argument list syntax error.
  */
-bool TryFormatArgumentListSyntaxError(TSNode node, std::string_view sourceCode, Diagnostic& diag)
+bool TryFormatArgumentListSyntaxError(TSNode node, std::string_view sourceCode, const angel_lsp::i18n::I18n* i18n,
+                                      Diagnostic& diag)
 {
     TSNode parent = ts_node_parent(node);
     if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "argument_list")
@@ -1312,7 +1315,8 @@ bool TryFormatArgumentListSyntaxError(TSNode node, std::string_view sourceCode, 
 
     diag.range.end.line = ts_node_end_point(nextSibling).row;
     diag.range.end.character = ts_node_end_point(nextSibling).column;
-    diag.message = fmt::format("Expected ',' or ')' before '{}'", nextText);
+    diag.message = i18n::FormatMessage(i18n, "note-expected-comma-or-paren", "Expected ',' or ')' before '{}'",
+                                       std::string_view(nextText));
     return true;
 }
 } // namespace
@@ -1336,13 +1340,14 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
 
     if (ts_node_is_missing(node))
     {
-        std::string missingToken = ts_node_type(node);
-        std::string pattern =
-            sCtx.request.i18n ? sCtx.request.i18n->GetMessage("as-syntax-error-missing") : "Syntax error: missing '{}'";
+        std::string_view missingToken = ts_node_type(node);
+        const std::string_view pattern = sCtx.request.i18n
+                                             ? sCtx.request.i18n->GetMessageView("as-syntax-error-missing")
+                                             : std::string_view("Syntax error: missing '{}'");
         diag.message = fmt::format(fmt::runtime(pattern), missingToken);
         logMsg = diag.message;
     }
-    else if (TryFormatArgumentListSyntaxError(node, sCtx.request.sourceCode, diag))
+    else if (TryFormatArgumentListSyntaxError(node, sCtx.request.sourceCode, sCtx.request.i18n, diag))
     {
         logMsg = diag.message;
     }
@@ -1353,7 +1358,7 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
         logMsg = diag.message;
     }
 
-    sCtx.diagnostics.push_back(diag);
+    sCtx.diagnostics.push_back(std::move(diag));
 
     if (m_logger)
     {
@@ -1370,15 +1375,16 @@ std::string SymbolCollector::FormatSyntaxErrorMessage(const std::string& rawErrT
     if (firstToken == "shared")
     {
         outCode = "as-err-shared-not-allowed-on-entity";
-        return i18n ? i18n->GetMessage("as-err-shared-not-allowed-on-entity")
+        return i18n ? std::string(i18n->GetMessageView("as-err-shared-not-allowed-on-entity"))
                     : "The 'shared' modifier is not allowed on this entity";
     }
     if (firstToken.empty())
     {
-        return i18n ? i18n->GetMessage("as-syntax-error-generic") : "Syntax error";
+        return i18n ? std::string(i18n->GetMessageView("as-syntax-error-generic")) : "Syntax error";
     }
 
-    std::string pattern = i18n ? i18n->GetMessage("as-syntax-error") : "Syntax error: \"{}\"";
+    const std::string_view pattern =
+        i18n ? i18n->GetMessageView("as-syntax-error") : std::string_view("Syntax error: \"{}\"");
     return fmt::format(fmt::runtime(pattern), firstToken);
 }
 

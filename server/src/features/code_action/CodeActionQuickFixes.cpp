@@ -104,7 +104,8 @@ void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::Diagnost
     edits.push_back(std::move(rename));
 
     actions.push_back(MakeQuickFixAction(QuickFixOptions{
-        .title = "Declare funcdef '" + item.funcdefName + "' for '" + item.functionName + "'",
+        .title = i18n::FormatMessage(request.i18n, "action-declare-funcdef", "Declare funcdef '{}' for '{}'",
+                                     std::string_view(item.funcdefName), std::string_view(item.functionName)),
         .diag = diag,
         .uri = request.uri,
         .edits = std::move(edits),

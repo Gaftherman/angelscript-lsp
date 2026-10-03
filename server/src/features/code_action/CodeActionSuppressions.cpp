@@ -23,8 +23,9 @@ void AddLineSuppressionFix(const CodeActionRequest& request, const lsp::Diagnost
     edit.range.end = lsp::Position{line, static_cast<uint32_t>(lineStr.size())};
     edit.newText = " // disable-line " + std::string(aliasOrCode);
 
-    actions.push_back(MakeQuickFixAction("Disable " + std::string(aliasOrCode) + " for this line", diag, request.uri,
-                                         {std::move(edit)}));
+    actions.push_back(MakeQuickFixAction(
+        i18n::FormatMessage(request.i18n, "action-suppress-line", "Disable {} for this line", aliasOrCode), diag,
+        request.uri, {std::move(edit)}));
 }
 
 void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag, std::string_view aliasOrCode,
@@ -46,8 +47,9 @@ void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::Diagnos
     endEdit.range.end = lsp::Position{endLine, static_cast<uint32_t>(endLineStr.size())};
     endEdit.newText = "\n" + endIndent + "// enable " + std::string(aliasOrCode);
 
-    actions.push_back(MakeQuickFixAction("Disable " + std::string(aliasOrCode) + " with // disable ... // enable", diag,
-                                         request.uri, {std::move(startEdit), std::move(endEdit)}));
+    actions.push_back(MakeQuickFixAction(i18n::FormatMessage(request.i18n, "action-suppress-range",
+                                                             "Disable {} with // disable ... // enable", aliasOrCode),
+                                         diag, request.uri, {std::move(startEdit), std::move(endEdit)}));
 }
 
 void AddFileSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag, std::string_view aliasOrCode,
@@ -58,8 +60,9 @@ void AddFileSuppressionFix(const CodeActionRequest& request, const lsp::Diagnost
     edit.range.end = lsp::Position{0, 0};
     edit.newText = "// disable " + std::string(aliasOrCode) + "\n";
 
-    actions.push_back(MakeQuickFixAction("Disable " + std::string(aliasOrCode) + " for entire file", diag, request.uri,
-                                         {std::move(edit)}));
+    actions.push_back(MakeQuickFixAction(
+        i18n::FormatMessage(request.i18n, "action-suppress-file", "Disable {} for entire file", aliasOrCode), diag,
+        request.uri, {std::move(edit)}));
 }
 
 } // namespace

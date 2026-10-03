@@ -434,7 +434,12 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
     m_messages["action-suppress-range"] = "Disable {} with // disable ... // enable";
     m_messages["action-suppress-file"] = "Disable {} for entire file";
     m_messages["action-remove-unused-variable"] = "Remove unused variable '{}'";
+    m_messages["action-generate-getter"] = "Generate Getter";
+    m_messages["action-generate-setter"] = "Generate Setter";
+    m_messages["action-generate-getter-setter"] = "Generate Getter and Setter";
     m_messages["note-call-ambiguous-priority"] = "Call to '{}' is ambiguous (Priority: '{}').";
+    m_messages["note-expected-comma-or-paren"] = "Expected ',' or ')' before '{}'";
+    m_messages["note-in-mixin-member"] = "In mixin '{}': Member '{}'";
 }
 
 /**
@@ -806,7 +811,12 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["action-suppress-range"] = "Deshabilitar {} con // disable ... // enable";
     m_messages["action-suppress-file"] = "Deshabilitar {} para todo el archivo";
     m_messages["action-remove-unused-variable"] = "Eliminar variable no utilizada '{}'";
+    m_messages["action-generate-getter"] = "Generar Getter";
+    m_messages["action-generate-setter"] = "Generar Setter";
+    m_messages["action-generate-getter-setter"] = "Generar Getter y Setter";
     m_messages["note-call-ambiguous-priority"] = "La llamada a '{}' es ambigua (Prioridad: '{}').";
+    m_messages["note-expected-comma-or-paren"] = "Se esperaba ',' o ')' antes de '{}'";
+    m_messages["note-in-mixin-member"] = "En el mixin '{}': Miembro '{}'";
 }
 
 /**

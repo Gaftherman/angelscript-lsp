@@ -702,6 +702,12 @@ class SymbolTable
                              const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const;
 
     /**
+     * @brief Returns all document file URIs that currently hold indexed symbols in this table.
+     * @return Vector of unique indexed file URIs in O(F) time.
+     */
+    [[nodiscard]] std::vector<std::string> GetIndexedFileUris() const;
+
+    /**
      * @brief Finds the name of the class or interface enclosing the given document line.
      * @param[in] uri Document file URI.
      * @param[in] line 0-based line number.

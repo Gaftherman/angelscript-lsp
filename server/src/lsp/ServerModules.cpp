@@ -1,3 +1,4 @@
+#include "analysis/rules/RuleIndex.h"
 #include "features/document_link/DocumentLinkHandler.h"
 #include "lsp/Server.h"
 #include "utils/IncludeResolver.h"
@@ -610,10 +611,16 @@ void Server::SyncModuleIndexSymbols()
     {
         exported.push_back(ModuleIndex::ExportedSymbol{view.name, view.folderPath, "", 0, 0});
     }
-    m_symbolTable.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<angel_lsp::analysis::Symbol>& syms)
+    if (const auto ruleIndex = m_symbolTable.GetRuleIndex())
+    {
+        for (const auto& [key, _] : ruleIndex->sharedDeclarationFilesByKey)
         {
-            for (const auto& sym : syms)
+            auto symsPtr = m_symbolTable.FindSymbolsPtr(key);
+            if (!symsPtr)
+            {
+                continue;
+            }
+            for (const auto& sym : *symsPtr)
             {
                 if (SymbolDeclaresShared(sym))
                 {
@@ -621,33 +628,31 @@ void Server::SyncModuleIndexSymbols()
                                                                    sym.startLine, sym.startCharacter});
                 }
             }
-        });
+        }
+    }
     m_moduleIndex.SetExportedSymbols(std::move(exported));
 }
 
 void Server::CollectSharedSymbolsElsewhere(const ModuleView& owning,
                                            ankerl::unordered_dense::set<std::string>& outShared) const
 {
-    m_symbolTable.ForEachSymbol(
-        [&owning, &outShared](const std::string& name, const std::vector<angel_lsp::analysis::Symbol>& symbols)
+    const auto ruleIndex = m_symbolTable.GetRuleIndex();
+    if (!ruleIndex)
+    {
+        return;
+    }
+    for (const auto& [name, fileUris] : ruleIndex->sharedDeclarationFilesByKey)
+    {
+        for (const auto& fileUri : fileUris)
         {
-            for (const auto& symbol : symbols)
+            const std::string declaringPath = CanonicalPathFromUri(fileUri);
+            if (!declaringPath.empty() && !owning.memberPaths.contains(declaringPath))
             {
-                if (!SymbolDeclaresShared(symbol))
-                {
-                    continue;
-                }
-
-                const std::string declaringPath = CanonicalPathFromUri(symbol.fileUri);
-                if (declaringPath.empty() || owning.memberPaths.contains(declaringPath))
-                {
-                    continue;
-                }
-
                 outShared.insert(name);
-                return;
+                break;
             }
-        });
+        }
+    }
 }
 
 std::optional<angel_lsp::analysis::SemanticAnalysisRequest::ModuleContext>

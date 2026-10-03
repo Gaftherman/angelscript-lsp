@@ -179,29 +179,15 @@ lsp::CodeAction CreateAccessorAction(const std::string& uri, const std::string& 
 std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& table, const std::string& className,
                                           const std::string& propName)
 {
-    std::string getterName = "get_" + propName;
-    std::string setterName = "set_" + propName;
-    bool hasGetter = false;
-    bool hasSetter = false;
-    table.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
-        {
-            for (const auto& sym : symList)
-            {
-                if (sym.containerName == className && sym.type == analysis::SymbolType::Function)
-                {
-                    if (sym.name == getterName)
-                    {
-                        hasGetter = true;
-                    }
-                    if (sym.name == setterName)
-                    {
-                        hasSetter = true;
-                    }
-                }
-            }
-        });
-    return {hasGetter, hasSetter};
+    const std::string getterName = "get_" + propName;
+    const std::string setterName = "set_" + propName;
+    if (const auto ruleIdx = table.GetRuleIndex())
+    {
+        const auto& members = ruleIdx->Members(className);
+        return {members.methodNames.contains(getterName), members.methodNames.contains(setterName)};
+    }
+    return {table.FindMemberSymbolPtr(className, getterName) != nullptr,
+            table.FindMemberSymbolPtr(className, setterName) != nullptr};
 }
 
 /**
@@ -237,16 +223,22 @@ void EmitGetterSetterActionsForField(const CodeActionRequest& request, const Get
 
     if (!hasGetter)
     {
-        actions.push_back(CreateAccessorAction(request.uri, "Generate Getter", getterCode, ctx.insertPt));
+        actions.push_back(CreateAccessorAction(
+            request.uri, i18n::FormatMessage(request.i18n, "action-generate-getter", "Generate Getter"), getterCode,
+            ctx.insertPt));
     }
     if (!hasSetter)
     {
-        actions.push_back(CreateAccessorAction(request.uri, "Generate Setter", setterCode, ctx.insertPt));
+        actions.push_back(CreateAccessorAction(
+            request.uri, i18n::FormatMessage(request.i18n, "action-generate-setter", "Generate Setter"), setterCode,
+            ctx.insertPt));
     }
     if (!hasGetter && !hasSetter)
     {
-        actions.push_back(CreateAccessorAction(request.uri, "Generate Getter and Setter",
-                                               getterCode + "\n" + setterCode, ctx.insertPt));
+        actions.push_back(CreateAccessorAction(
+            request.uri,
+            i18n::FormatMessage(request.i18n, "action-generate-getter-setter", "Generate Getter and Setter"),
+            getterCode + "\n" + setterCode, ctx.insertPt));
     }
 }
 

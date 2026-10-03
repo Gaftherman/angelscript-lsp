@@ -3,8 +3,6 @@
 #include <string_view>
 #include <vector>
 
-#include <lsp/uri.h>
-
 #include "parser/Primitives.h"
 #include <algorithm>
 #include <unordered_set>
@@ -79,19 +77,27 @@ bool TextContentMatchesIgnoringLineEndings(std::string_view a, std::string_view 
 
 std::string UriToPath(const std::string& uriStr)
 {
-    if (uriStr.rfind("file://", 0) == 0)
+    if (uriStr.starts_with("file://"))
     {
-        const lsp::Uri uri = lsp::Uri::parse(uriStr);
-        if (uri.isValid() && uri.isFileUri())
+        std::string_view rest = std::string_view(uriStr).substr(7);
+        if (!rest.empty() && rest.front() != '/' && rest.front() != '?' && rest.front() != '#')
         {
-            return UrlDecode(uri.fsPath());
+            const size_t slashPos = rest.find_first_of("/?#");
+            if (slashPos != std::string_view::npos && rest[slashPos] == '/')
+            {
+                rest = rest.substr(slashPos);
+            }
         }
-        std::string s = UrlDecode(uriStr.substr(7));
+        const size_t queryOrFrag = rest.find_first_of("?#");
+        const std::string_view rawPath = (queryOrFrag == std::string_view::npos) ? rest : rest.substr(0, queryOrFrag);
+        std::string decoded = UrlDecode(UrlDecode(rawPath));
 #if defined(_WIN32)
-        if (!s.empty() && s[0] == '/')
-            s = s.substr(1);
+        if (!decoded.empty() && decoded[0] == '/')
+        {
+            decoded.erase(decoded.begin());
+        }
 #endif
-        return s;
+        return decoded;
     }
 #if defined(_WIN32)
     if (!uriStr.empty() && uriStr[0] == '/')

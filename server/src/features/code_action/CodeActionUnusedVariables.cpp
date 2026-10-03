@@ -259,7 +259,8 @@ void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode ro
 
         lsp::TextEdit edit = BuildRemoveUnusedVariableEdit(rootNode, request.sourceCode, def);
         lsp::CodeAction action;
-        action.title = "Remove unused variable '" + def->name + "'";
+        action.title = i18n::FormatMessage(request.i18n, "action-remove-unused-variable", "Remove unused variable '{}'",
+                                           std::string_view(def->name));
         action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
         action.isPreferred = true;
 
