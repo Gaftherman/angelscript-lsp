@@ -1,3 +1,4 @@
+#include "features/formatting/ClangFormatReader.h"
 #include "features/formatting/FormattingHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
@@ -759,5 +760,295 @@ TEST_SUITE("Formatting")
         CHECK_FALSE(edits.has_value());
 
         ts_tree_delete(tree);
+    }
+
+    TEST_CASE("ForeachControlKeywordSpacing")
+    {
+        const std::string itemVar = test::GenerateRandomSymbolName("item");
+        const std::string listVar = test::GenerateRandomSymbolName("list");
+        std::string code = "void main() { foreach(auto " + itemVar + " : " + listVar + ") { int x = 1; } }";
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        std::string formatted = FormatSourceCode(code, options);
+        CHECK(formatted.find("foreach (auto " + itemVar + " : " + listVar + ")") != std::string::npos);
+    }
+
+    TEST_CASE("PrecisionHandleDeclarationsAndPointerAlignment")
+    {
+        const std::string typeName = test::GenerateRandomSymbolName("Person");
+        const std::string varName = test::GenerateRandomSymbolName("p");
+        std::string code = typeName + " @ " + varName + " = null;";
+
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        // Default: Left alignment ("Type@ var")
+        FormatCodeOptions leftOpts{options, BraceStyle::Allman, false, false, PointerAlignment::Left};
+        std::string leftFormatted = FormatSourceCode(code, leftOpts);
+        CHECK(leftFormatted == typeName + "@ " + varName + " = null;\n");
+
+        // Right alignment ("Type @var")
+        FormatCodeOptions rightOpts{options, BraceStyle::Allman, false, false, PointerAlignment::Right};
+        std::string rightFormatted = FormatSourceCode(code, rightOpts);
+        CHECK(rightFormatted == typeName + " @" + varName + " = null;\n");
+
+        // Middle alignment ("Type @ var")
+        FormatCodeOptions midOpts{options, BraceStyle::Allman, false, false, PointerAlignment::Middle};
+        std::string midFormatted = FormatSourceCode(code, midOpts);
+        CHECK(midFormatted == typeName + " @ " + varName + " = null;\n");
+    }
+
+    TEST_CASE("UnaryHandleOperatorFormatting")
+    {
+        const std::string varA = test::GenerateRandomSymbolName("a");
+        const std::string varB = test::GenerateRandomSymbolName("b");
+        std::string code = "void test() { @ " + varA + " = @ " + varB + "; if ( @ " + varA + " == @ " + varB +
+                           " ) return @ " + varA + "; }";
+
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        std::string formatted = FormatSourceCode(code, options);
+        // Unary handle operator '@' must have NO space after it: "@a = @b;"
+        CHECK(formatted.find("@" + varA + " = @" + varB + ";") != std::string::npos);
+        CHECK(formatted.find("if (@" + varA + " == @" + varB + ")") != std::string::npos);
+        CHECK(formatted.find("return @" + varA + ";") != std::string::npos);
+    }
+
+    TEST_CASE("TemplateCastAndConsecutiveHandles")
+    {
+        const std::string typeName = test::GenerateRandomSymbolName("TargetType");
+        const std::string objVar = test::GenerateRandomSymbolName("obj");
+        std::string code = typeName + "@@ h; " + typeName + "@ res = cast< " + typeName + "@ > ( " + objVar + " );";
+
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        std::string formatted = FormatSourceCode(code, options);
+        // Consecutive handles: Type@@ h;
+        CHECK(formatted.find(typeName + "@@ h;") != std::string::npos);
+        // Template cast: cast<Type@>(obj) without extra space before '>' or '('
+        CHECK(formatted.find("cast<" + typeName + "@>(" + objVar + ")") != std::string::npos);
+    }
+
+    TEST_CASE("ClangFormatConfigParsing")
+    {
+        std::string yamlConfig = "# Clang format config\n"
+                                 "BasedOnStyle: LLVM\n"
+                                 "IndentWidth: 2\n"
+                                 "UseTab: Always\n"
+                                 "BreakBeforeBraces: Attach\n"
+                                 "PointerAlignment: Right\n"
+                                 "SpacesInParentheses: true\n"
+                                 "AllowShortBlocksOnASingleLine: false\n";
+
+        auto style = ParseClangFormat(yamlConfig);
+        REQUIRE(style.has_value());
+        CHECK(style->indentWidth == 2);
+        CHECK(style->useTab == UseTabStyle::Always);
+        CHECK(style->braceStyle == BraceStyle::KAndR);
+        CHECK(style->pointerAlignment == PointerAlignment::Right);
+        CHECK(style->spacesInsideParentheses == true);
+        CHECK(style->allowShortBlocksOnASingleLine == ShortBlockStyle::Never);
+
+        FormatCodeOptions opts;
+        ApplyClangFormatStyle(opts, *style);
+        CHECK(opts.options.tabSize == 2);
+        CHECK(opts.options.insertSpaces == false);
+        CHECK(opts.braceStyle == BraceStyle::KAndR);
+        CHECK(opts.pointerAlignment == PointerAlignment::Right);
+        CHECK(opts.spacesInsideParentheses == true);
+        CHECK(opts.allowShortBlocksOnASingleLine == ShortBlockStyle::Never);
+    }
+
+    TEST_CASE("ClangFormatPresetsTest")
+    {
+        auto msStyle = ParseClangFormat("BasedOnStyle: Microsoft\n");
+        REQUIRE(msStyle.has_value());
+        CHECK(msStyle->braceStyle == BraceStyle::Allman);
+        CHECK(msStyle->indentWidth == 4);
+        CHECK(msStyle->pointerAlignment == PointerAlignment::Left);
+        CHECK(msStyle->namespaceIndentation == NamespaceIndentationStyle::All);
+
+        auto googleStyle = ParseClangFormat("BasedOnStyle: Google\n");
+        REQUIRE(googleStyle.has_value());
+        CHECK(googleStyle->braceStyle == BraceStyle::KAndR);
+        CHECK(googleStyle->indentWidth == 2);
+        CHECK(googleStyle->pointerAlignment == PointerAlignment::Left);
+        CHECK(googleStyle->indentCaseLabels == true);
+
+        auto gnuStyle = ParseClangFormat("BasedOnStyle: GNU\n");
+        REQUIRE(gnuStyle.has_value());
+        CHECK(gnuStyle->braceStyle == BraceStyle::GNU);
+        CHECK(gnuStyle->spaceBeforeParens == SpaceBeforeParensStyle::Always);
+    }
+
+    TEST_CASE("MultiLanguageClangFormatConfigTest")
+    {
+        std::string multiDoc = "BasedOnStyle: LLVM\n"
+                               "IndentWidth: 2\n"
+                               "---\n"
+                               "Language: Cpp\n"
+                               "IndentWidth: 4\n"
+                               "PointerAlignment: Left\n"
+                               "---\n"
+                               "Language: JavaScript\n"
+                               "IndentWidth: 8\n";
+        auto style = ParseClangFormat(multiDoc);
+        REQUIRE(style.has_value());
+        CHECK(style->indentWidth == 4);
+        CHECK(style->pointerAlignment == PointerAlignment::Left);
+
+        std::string withAs = multiDoc + "---\nLanguage: AngelScript\nIndentWidth: 3\nPointerAlignment: Right\n";
+        auto asStyle = ParseClangFormat(withAs);
+        REQUIRE(asStyle.has_value());
+        CHECK(asStyle->indentWidth == 3);
+        CHECK(asStyle->pointerAlignment == PointerAlignment::Right);
+    }
+
+    TEST_CASE("CombinatorialBraceStylesTest")
+    {
+        const std::string fnName = test::GenerateRandomSymbolName("func");
+        std::string code = "void " + fnName + "() { if (true) { int a = 1; } else { int b = 2; } }";
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        FormatCodeOptions allmanOpts;
+        allmanOpts.options = options;
+        allmanOpts.braceStyle = BraceStyle::Allman;
+        std::string allman = FormatSourceCode(code, allmanOpts);
+        CHECK(allman.find("void " + fnName + "()\n{\n") != std::string::npos);
+        CHECK(allman.find("    }\n    else\n    {\n") != std::string::npos);
+
+        FormatCodeOptions krOpts;
+        krOpts.options = options;
+        krOpts.braceStyle = BraceStyle::KAndR;
+        std::string kr = FormatSourceCode(code, krOpts);
+        CHECK(kr.find("void " + fnName + "() {\n") != std::string::npos);
+        CHECK(kr.find("} else {\n") != std::string::npos);
+
+        FormatCodeOptions stroustrupOpts;
+        stroustrupOpts.options = options;
+        stroustrupOpts.braceStyle = BraceStyle::Stroustrup;
+        std::string st = FormatSourceCode(code, stroustrupOpts);
+        CHECK(st.find("void " + fnName + "() {\n") != std::string::npos);
+        CHECK(st.find("    }\n    else {\n") != std::string::npos);
+    }
+
+    TEST_CASE("CombinatorialPointerAndReferenceAlignmentTest")
+    {
+        const std::string typeName = test::GenerateRandomSymbolName("Entity");
+        const std::string varName = test::GenerateRandomSymbolName("ent");
+        std::string handleCode = typeName + " @ " + varName + ";";
+        std::string refCode = "void f(const " + typeName + " & in " + varName + ");";
+
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        FormatCodeOptions leftOpts;
+        leftOpts.options = options;
+        leftOpts.pointerAlignment = PointerAlignment::Left;
+        leftOpts.referenceAlignment = ReferenceAlignment::Left;
+        CHECK(FormatSourceCode(handleCode, leftOpts) == typeName + "@ " + varName + ";\n");
+        CHECK(FormatSourceCode(refCode, leftOpts).find("const " + typeName + "& in " + varName) != std::string::npos);
+
+        FormatCodeOptions rightOpts;
+        rightOpts.options = options;
+        rightOpts.pointerAlignment = PointerAlignment::Right;
+        rightOpts.referenceAlignment = ReferenceAlignment::Right;
+        CHECK(FormatSourceCode(handleCode, rightOpts) == typeName + " @" + varName + ";\n");
+        CHECK(FormatSourceCode(refCode, rightOpts).find("const " + typeName + " &in " + varName) != std::string::npos);
+
+        FormatCodeOptions midOpts;
+        midOpts.options = options;
+        midOpts.pointerAlignment = PointerAlignment::Middle;
+        midOpts.referenceAlignment = ReferenceAlignment::Middle;
+        CHECK(FormatSourceCode(handleCode, midOpts) == typeName + " @ " + varName + ";\n");
+        CHECK(FormatSourceCode(refCode, midOpts).find("const " + typeName + " & in " + varName) != std::string::npos);
+    }
+
+    TEST_CASE("CombinatorialSpacingRulesTest")
+    {
+        const std::string fn = test::GenerateRandomSymbolName("calc");
+        std::string code = "void " + fn + "(int a, int b) { if(a == b) { array<int> arr = {1, 2}; int x = arr[0]; } }";
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        FormatCodeOptions spaceOpts;
+        spaceOpts.options = options;
+        spaceOpts.spacesInsideParentheses = true;
+        spaceOpts.spacesInSquareBrackets = true;
+        spaceOpts.spacesInAngles = true;
+        spaceOpts.spaceBeforeParens = SpaceBeforeParensStyle::Never;
+        std::string sp = FormatSourceCode(code, spaceOpts);
+        CHECK(sp.find("if( a == b )") != std::string::npos);
+        CHECK(sp.find("array< int >") != std::string::npos);
+        CHECK(sp.find("arr[ 0 ]") != std::string::npos);
+
+        FormatCodeOptions alwaysOpts;
+        alwaysOpts.options = options;
+        alwaysOpts.spaceBeforeParens = SpaceBeforeParensStyle::Always;
+        std::string al = FormatSourceCode("void test() { " + fn + "(1, 2); }", alwaysOpts);
+        CHECK(al.find(fn + " (1, 2);") != std::string::npos);
+    }
+
+    TEST_CASE("SwitchCaseAndAccessModifierOffsetTest")
+    {
+        std::string code = "class MyClass { public: int x; private: int y; };";
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        FormatCodeOptions defOpts;
+        defOpts.options = options;
+        defOpts.accessModifierOffset = -4;
+        std::string defOut = FormatSourceCode(code, defOpts);
+        CHECK(defOut.find("\npublic:\n") != std::string::npos);
+
+        FormatCodeOptions zeroOpts;
+        zeroOpts.options = options;
+        zeroOpts.accessModifierOffset = 0;
+        std::string zeroOut = FormatSourceCode(code, zeroOpts);
+        CHECK(zeroOut.find("\n    public:\n") != std::string::npos);
+    }
+
+    TEST_CASE("ClangFormatOffOnPragmaTest")
+    {
+        std::string code = "// clang-format off\n"
+                           "void    messy_func  (   int   x  ,int y)   {return;}\n"
+                           "// clang-format on\n"
+                           "void clean_func(int a,int b){return;}";
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        std::string formatted = FormatSourceCode(code, options);
+        CHECK(formatted.find("void    messy_func  (   int   x  ,int y)   {return;}") != std::string::npos);
+        CHECK(formatted.find("void clean_func(int a, int b)") != std::string::npos);
+    }
+
+    TEST_CASE("MaxEmptyLinesAndTrailingCommentsTest")
+    {
+        std::string code = "int a = 1; // comment 1\n\n\n\n\nint b = 2;";
+        lsp::FormattingOptions options;
+        options.tabSize = 4;
+        options.insertSpaces = true;
+
+        FormatCodeOptions opts;
+        opts.options = options;
+        opts.maxEmptyLinesToKeep = 1;
+        opts.spacesBeforeTrailingComments = 3;
+        std::string formatted = FormatSourceCode(code, opts);
+        CHECK(formatted.find("int a = 1;   // comment 1") != std::string::npos);
+        CHECK(formatted.find("\n\nint b = 2;") != std::string::npos);
+        CHECK(formatted.find("\n\n\nint b = 2;") == std::string::npos);
     }
 }

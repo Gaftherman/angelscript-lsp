@@ -295,6 +295,19 @@ void Server::UpdateFormatConfiguration(const lsp::LSPObject& section)
     {
         m_config.format.formatOnSave = *fosVal;
     }
+    if (auto alignVal = FindSectionString(section, formatObj, "pointerAlignment", "format"); alignVal.has_value())
+    {
+        features::PointerAlignment align = features::PointerAlignment::Left;
+        if (*alignVal == "right" || *alignVal == "Right")
+        {
+            align = features::PointerAlignment::Right;
+        }
+        else if (*alignVal == "middle" || *alignVal == "Middle")
+        {
+            align = features::PointerAlignment::Middle;
+        }
+        m_formatPointerAlignment.store(align, std::memory_order_relaxed);
+    }
 }
 
 bool Server::UpdateEngineConfiguration(const lsp::LSPObject& section)

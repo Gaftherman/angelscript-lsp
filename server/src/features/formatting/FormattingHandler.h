@@ -1,93 +1,15 @@
 #pragma once
 
-#include <lsp/messages.h>
-#include <lsp/types.h>
+#include "features/formatting/FormattingTypes.h"
 #include <optional>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::features
 {
 /**
- * @brief Where a *block*'s opening brace goes.
- *
- * Only blocks. A brace that opens a value - an initializer list, a lambda body passed as an
- * argument - stays on its line under either style, because that is not a matter of taste:
- * `array<int> a =` followed by a lone `{` on the next line is what this formatter used to
- * produce, and it is wrong in every brace style there is.
- */
-enum class BraceStyle
-{
-    Allman, ///< `{` on its own line, aligned with the statement that owns it. The default.
-    KAndR   ///< `{` at the end of the statement line, and `else` beside the `}` before it.
-};
-
-/**
- * @brief Context and options for document formatting.
- */
-struct FormattingRequest
-{
-    const std::string& uri;
-    const std::string& sourceCode;
-    TSTree* tree = nullptr;
-    lsp::FormattingOptions options;
-    BraceStyle braceStyle = BraceStyle::Allman;
-    bool spacesInsideParentheses = false;
-    bool keepEmptyBlocksOnSingleLine = false;
-};
-
-/**
- * @brief Context and options for range formatting.
- */
-struct RangeFormattingRequest
-{
-    const std::string& uri;
-    const std::string& sourceCode;
-    TSTree* tree = nullptr;
-    lsp::Range range;
-    lsp::FormattingOptions options;
-    BraceStyle braceStyle = BraceStyle::Allman;
-    bool spacesInsideParentheses = false;
-    bool keepEmptyBlocksOnSingleLine = false;
-};
-
-/**
- * @brief Context and options for on-type formatting.
- */
-struct OnTypeFormattingRequest
-{
-    const std::string& uri;
-    const std::string& sourceCode;
-    TSTree* tree = nullptr;
-    lsp::Position position;
-    std::string ch;
-    lsp::FormattingOptions options;
-    BraceStyle braceStyle = BraceStyle::Allman;
-    bool spacesInsideParentheses = false;
-    bool keepEmptyBlocksOnSingleLine = false;
-};
-
-using FormattingResult = std::vector<lsp::TextEdit>;
-
-// Type aliases for naming compatibility
-using DocumentFormattingRequest = FormattingRequest;
-using DocumentRangeFormattingRequest = RangeFormattingRequest;
-
-/**
- * @brief Options bundling for direct source code formatting.
- */
-struct FormatCodeOptions
-{
-    lsp::FormattingOptions options;
-    BraceStyle braceStyle = BraceStyle::Allman;
-    bool spacesInsideParentheses = false;
-    bool keepEmptyBlocksOnSingleLine = false;
-};
-
-/**
- * @brief Formats an entire AngelScript document according to options and Allman style.
+ * @brief Formats an entire AngelScript document according to options and style.
  * @param request Immutable formatting request context.
  * @return List of TextEdits (or std::nullopt if formatting failed / no edits needed).
  */

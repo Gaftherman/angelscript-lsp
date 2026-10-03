@@ -546,6 +546,15 @@ struct FormatConfig
      * @brief Whether to keep empty blocks on a single line (e.g. 'ClassName() {}') (default: true).
      */
     bool keepEmptyBlocksOnSingleLine = true;
+
+    /**
+     * @brief Where the handle symbol '@' aligns in declarations ("left", "right", "middle").
+     *
+     * "left" formats as 'Type@ var', matching canonical AngelScript style.
+     * "right" formats as 'Type @var'.
+     * "middle" formats as 'Type @ var'.
+     */
+    std::string pointerAlignment = "left";
 };
 
 /**

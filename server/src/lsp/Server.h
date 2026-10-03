@@ -92,6 +92,7 @@ class Server
     std::atomic<bool> m_formatBraceStyleKR{false};
     std::atomic<bool> m_formatSpacesInsideParentheses{false};
     std::atomic<bool> m_formatKeepEmptyBlocksOnSingleLine{true};
+    std::atomic<features::PointerAlignment> m_formatPointerAlignment{features::PointerAlignment::Left};
     std::atomic<uint64_t> m_configRevision{0};
 
     std::unique_ptr<angel_lsp::i18n::I18n> m_i18n;
@@ -1959,6 +1960,12 @@ class Server
     bool CurrentKeepEmptyBlocksOnSingleLine() const noexcept
     {
         return m_formatKeepEmptyBlocksOnSingleLine.load(std::memory_order_relaxed);
+    }
+
+    /** @brief Where handle '@' attaches in declarations. */
+    features::PointerAlignment CurrentPointerAlignment() const noexcept
+    {
+        return m_formatPointerAlignment.load(std::memory_order_relaxed);
     }
 
     /**

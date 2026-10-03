@@ -342,6 +342,8 @@ void PrintOptionsHelp()
         << "                                          A list or a lambda body keeps its brace on the line\n"
         << "                                          either way - that is correctness, not style.\n"
         << "  --format-spaces-inside-parentheses      Insert spaces inside parentheses (e.g. 'foo( bar )')\n"
+        << "  --format-pointer-alignment=<left|right|middle>\n"
+        << "                                          Where '@' attaches in declarations. Default left.\n"
         << "  -h, --help                              Show this help message and exit\n"
         << "  -v, --version                           Show version information and exit\n";
 }
@@ -883,13 +885,8 @@ bool TryParsePathAndLocaleOptions(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
-bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
+bool TryParseFormattingOptions(ServerConfig& config, ArgParseContext& ctx)
 {
-    if (ctx.key == "--implicit-include-extension")
-    {
-        config.implicitIncludeExtension = ctx.GetBoolValue(true);
-        return true;
-    }
     if (ctx.key == "--format-brace-style" || ctx.key == "--brace-style")
     {
         std::string_view val;
@@ -912,6 +909,29 @@ bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
     if (ctx.key == "--format-keep-empty-blocks-on-single-line")
     {
         config.format.keepEmptyBlocksOnSingleLine = ctx.GetBoolValue(true);
+        return true;
+    }
+    if (ctx.key == "--format-pointer-alignment" || ctx.key == "--pointer-alignment")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.format.pointerAlignment = std::string(val);
+        }
+        return true;
+    }
+    return false;
+}
+
+bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
+{
+    if (TryParseFormattingOptions(config, ctx))
+    {
+        return true;
+    }
+    if (ctx.key == "--implicit-include-extension")
+    {
+        config.implicitIncludeExtension = ctx.GetBoolValue(true);
         return true;
     }
     if (ctx.key == "--engine-profile" || ctx.key == "--profile")

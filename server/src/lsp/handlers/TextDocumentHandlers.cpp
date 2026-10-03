@@ -522,7 +522,8 @@ Server::HandleRequestsTextDocument_Formatting(lsp::requests::TextDocument_Format
                                    req.options,
                                    CurrentBraceStyle(),
                                    CurrentSpacesInsideParentheses(),
-                                   CurrentKeepEmptyBlocksOnSingleLine()};
+                                   CurrentKeepEmptyBlocksOnSingleLine(),
+                                   CurrentPointerAlignment()};
     auto edits = features::FormatDocument(fr);
     if (edits.has_value())
     {
@@ -552,7 +553,8 @@ Server::HandleRequestsTextDocument_RangeFormatting(lsp::requests::TextDocument_R
                                          req.options,
                                          CurrentBraceStyle(),
                                          CurrentSpacesInsideParentheses(),
-                                         CurrentKeepEmptyBlocksOnSingleLine()};
+                                         CurrentKeepEmptyBlocksOnSingleLine(),
+                                         CurrentPointerAlignment()};
     auto edits = features::FormatRange(rfr);
     if (edits.has_value())
     {
@@ -583,7 +585,8 @@ Server::HandleRequestsTextDocument_OnTypeFormatting(lsp::requests::TextDocument_
                                            req.options,
                                            CurrentBraceStyle(),
                                            CurrentSpacesInsideParentheses(),
-                                           CurrentKeepEmptyBlocksOnSingleLine()};
+                                           CurrentKeepEmptyBlocksOnSingleLine(),
+                                           CurrentPointerAlignment()};
     auto edits = features::FormatOnType(otfr);
     if (edits.has_value())
     {
@@ -882,9 +885,15 @@ Server::HandleRequestsTextDocument_RangesFormatting(lsp::requests::TextDocument_
     std::vector<lsp::TextEdit> allEdits;
     for (const auto& range : params.ranges)
     {
-        features::RangeFormattingRequest rfr{doc->uri,       *doc->text,
-                                             doc->tree,      codec::Decode(*doc->text, m_positionEncoding, range),
-                                             params.options, CurrentBraceStyle()};
+        features::RangeFormattingRequest rfr{doc->uri,
+                                             *doc->text,
+                                             doc->tree,
+                                             codec::Decode(*doc->text, m_positionEncoding, range),
+                                             params.options,
+                                             CurrentBraceStyle(),
+                                             CurrentSpacesInsideParentheses(),
+                                             CurrentKeepEmptyBlocksOnSingleLine(),
+                                             CurrentPointerAlignment()};
         auto edits = features::FormatRange(rfr);
         if (edits.has_value())
         {
@@ -928,7 +937,8 @@ Server::HandleRequestsTextDocument_WillSaveWaitUntil(lsp::requests::TextDocument
                                    options,
                                    CurrentBraceStyle(),
                                    CurrentSpacesInsideParentheses(),
-                                   CurrentKeepEmptyBlocksOnSingleLine()};
+                                   CurrentKeepEmptyBlocksOnSingleLine(),
+                                   CurrentPointerAlignment()};
     auto edits = features::FormatDocument(fr);
     if (edits.has_value())
     {
