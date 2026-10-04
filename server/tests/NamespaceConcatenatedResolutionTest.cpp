@@ -215,4 +215,119 @@ TEST_SUITE("NamespaceConcatenatedResolution")
         fixture.AddVirtualDocument(weaponUri, weaponScript);
         fixture.AssertNoDiagnostics(weaponUri);
     }
+
+    TEST_CASE("Same-name namespace and class: unqualified type access fails in Oracle and LSP")
+    {
+        LspSemanticHarnessFixture fixture;
+        const std::string name = GenerateRandomSymbolName("Logger");
+        const std::string cbName = GenerateRandomSymbolName("OutputCallback");
+        const std::string varName = GenerateRandomSymbolName("cb");
+
+        const std::string script = fmt::format("namespace {0} {{\n"
+                                               "    funcdef void {1}(const string& in);\n"
+                                               "}}\n"
+                                               "\n"
+                                               "class {0} {{\n"
+                                               "    {1}@ {2};\n"
+                                               "}}\n",
+                                               name, cbName, varName);
+
+        if (fixture.HasOracleBinary())
+        {
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK_FALSE(oracleAccepted);
+            CHECK(oracleError.find("not a data type") != std::string::npos);
+        }
+
+        const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
+        fixture.AddVirtualDocument(docUri, script);
+        fixture.AssertDiagnosticAt(docUri, 5, "as-err-unresolved-type");
+    }
+
+    TEST_CASE("Same-name namespace and class: qualified type access compiles cleanly")
+    {
+        LspSemanticHarnessFixture fixture;
+        const std::string name = GenerateRandomSymbolName("Logger");
+        const std::string cbName = GenerateRandomSymbolName("OutputCallback");
+        const std::string varName = GenerateRandomSymbolName("cb");
+
+        const std::string script = fmt::format("namespace {0} {{\n"
+                                               "    funcdef void {1}(const string& in);\n"
+                                               "}}\n"
+                                               "\n"
+                                               "class {0} {{\n"
+                                               "    {0}::{1}@ {2};\n"
+                                               "}}\n",
+                                               name, cbName, varName);
+
+        if (fixture.HasOracleBinary())
+        {
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+        }
+
+        const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
+        fixture.AddVirtualDocument(docUri, script);
+        fixture.AssertNoDiagnostics(docUri);
+    }
+
+    TEST_CASE("Same-name namespace and class: nested class accesses sibling type cleanly")
+    {
+        LspSemanticHarnessFixture fixture;
+        const std::string name = GenerateRandomSymbolName("Logger");
+        const std::string cbName = GenerateRandomSymbolName("OutputCallback");
+        const std::string varName = GenerateRandomSymbolName("cb");
+
+        const std::string script = fmt::format("namespace {0} {{\n"
+                                               "    funcdef void {1}(const string& in);\n"
+                                               "    class {0} {{\n"
+                                               "        {1}@ {2};\n"
+                                               "    }}\n"
+                                               "}}\n",
+                                               name, cbName, varName);
+
+        if (fixture.HasOracleBinary())
+        {
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+        }
+
+        const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
+        fixture.AddVirtualDocument(docUri, script);
+        fixture.AssertNoDiagnostics(docUri);
+    }
+
+    TEST_CASE("Same-name namespace and class: unqualified function call fails in Oracle and LSP")
+    {
+        LspSemanticHarnessFixture fixture;
+        const std::string name = GenerateRandomSymbolName("Logger");
+        const std::string fnName = GenerateRandomSymbolName("Log");
+        const std::string testMethod = GenerateRandomSymbolName("Test");
+
+        const std::string script = fmt::format("namespace {0} {{\n"
+                                               "    void {1}(const string& in msg) {{}}\n"
+                                               "}}\n"
+                                               "\n"
+                                               "class {0} {{\n"
+                                               "    void {2}() {{\n"
+                                               "        {1}(\"hello\");\n"
+                                               "    }}\n"
+                                               "}}\n",
+                                               name, fnName, testMethod);
+
+        if (fixture.HasOracleBinary())
+        {
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK_FALSE(oracleAccepted);
+            CHECK(oracleError.find("No matching symbol") != std::string::npos);
+        }
+
+        const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
+        fixture.AddVirtualDocument(docUri, script);
+        fixture.AssertDiagnosticAt(docUri, 6, "as-err-undefined-identifier");
+    }
 }

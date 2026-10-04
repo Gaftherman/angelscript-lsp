@@ -249,6 +249,10 @@ std::vector<Symbol> FindMethodCandidates(const std::string& typeName, const std:
             {
                 continue;
             }
+            if (sym.containerKind == ContainerKind::Namespace || sym.containerKind == ContainerKind::Enum)
+            {
+                continue;
+            }
 
             const bool overriddenLower =
                 std::any_of(candidates.begin(), candidates.end(),

@@ -218,9 +218,14 @@ void CheckReturnTypeResolution(const Symbol& sym, const FunctionSignature& sig, 
 {
     const bool isPredefined =
         angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
-    if ((sig.isImported || ctx.request.ReportsUnknownTypes()) && !sig.returnBaseTypeName.empty() &&
-        sig.returnBaseTypeName != "void" && !(isPredefined && sig.returnBaseTypeName == "?") &&
-        !IsKnownType(sig.returnBaseTypeName, ctx))
+    const std::string enclosingNs = EnclosingNamespaceForSymbol(sym, ctx.request.symbolTable);
+    const auto ruleIndex = ctx.request.symbolTable.GetRuleIndex();
+    const bool existsInOtherScope = ruleIndex && ruleIndex->allNames.contains(sig.returnBaseTypeName);
+    if ((sig.isImported || ctx.request.ReportsUnknownTypes() || existsInOtherScope) &&
+        !sig.returnBaseTypeName.empty() && sig.returnBaseTypeName != "void" &&
+        !(isPredefined && (sig.returnBaseTypeName == "?" || sig.returnBaseTypeName == "T")) &&
+        !IsTemplateParameterOfContainer(sig.returnBaseTypeName, sym, ctx.request.symbolTable) &&
+        !IsKnownType(sig.returnBaseTypeName, ctx, enclosingNs))
     {
         ctx.LogRule("CheckReturnType", "as-err-unresolved-type", sym);
         ctx.EmitAtTypeName(sym, "as-err-unresolved-type", sig.returnBaseTypeName);
@@ -638,10 +643,15 @@ void CheckParamTypeResolution(const Symbol& sym, const ParameterInformation& par
 {
     const bool isPredefined =
         angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
-    const bool judgeParameterType =
-        (sym.type == SymbolType::Function && sym.GetFunction().isImported) || ctx.request.ReportsUnknownTypes();
-    if (judgeParameterType && !param.baseTypeName.empty() && !(isPredefined && param.baseTypeName == "?") &&
-        !IsKnownType(param.baseTypeName, ctx))
+    const std::string enclosingNs = EnclosingNamespaceForSymbol(sym, ctx.request.symbolTable);
+    const auto ruleIndex = ctx.request.symbolTable.GetRuleIndex();
+    const bool existsInOtherScope = ruleIndex && ruleIndex->allNames.contains(param.baseTypeName);
+    const bool judgeParameterType = (sym.type == SymbolType::Function && sym.GetFunction().isImported) ||
+                                    ctx.request.ReportsUnknownTypes() || existsInOtherScope;
+    if (judgeParameterType && !param.baseTypeName.empty() &&
+        !(isPredefined && (param.baseTypeName == "?" || param.baseTypeName == "T")) &&
+        !IsTemplateParameterOfContainer(param.baseTypeName, sym, ctx.request.symbolTable) &&
+        !IsKnownType(param.baseTypeName, ctx, enclosingNs))
     {
         ctx.LogParam("ValidateParameters", "as-err-unresolved-type", param, sym);
         ctx.EmitAtTypeName(param, sym, "as-err-unresolved-type", param.baseTypeName);

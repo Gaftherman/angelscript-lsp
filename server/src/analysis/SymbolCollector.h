@@ -214,6 +214,7 @@ class SymbolCollector
         bool isInsideFunction = false;
         bool isInsideClass = false;
         bool isInsideNamespace = false;
+        ContainerKind containerKind = ContainerKind::None;
     };
 
     /** @brief Bundles mutable collectors and immutable request state during AST walks. */
@@ -230,6 +231,7 @@ class SymbolCollector
         std::string_view sourceCode;
         const std::string& fileUri;
         const std::string& containerPath;
+        ContainerKind containerKind = ContainerKind::None;
     };
 
     struct VariableHeaderInfo

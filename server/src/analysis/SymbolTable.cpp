@@ -705,6 +705,7 @@ void SymbolTable::SynthesizeSingleMixinMemberLocked(const std::string& hostQName
 
     Symbol synth = mSym;
     synth.containerName = mSym.containerName.empty() ? mixinName : mSym.containerName;
+    synth.containerKind = ContainerKind::Class;
     synth.qualifiedName = synthKey;
     synth.fileUri = mSym.fileUri;
     synth.isSynthesized = true;

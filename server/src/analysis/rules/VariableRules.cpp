@@ -1,6 +1,7 @@
 #include "analysis/rules/VariableRules.h"
 #include "analysis/SemanticHelpers.h"
 #include "spdlog/fmt/fmt.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <string>
@@ -12,7 +13,8 @@ namespace
 {
 /** @brief Looks up what kind of declaration a type name refers to, if this analyzer sees one. */
 const Symbol* FindTypeDeclaration(std::string_view typeName, const SymbolTable& table,
-                                  std::shared_ptr<const std::vector<Symbol>>& keepAlive)
+                                  std::shared_ptr<const std::vector<Symbol>>& keepAlive,
+                                  std::string_view enclosingNs = {})
 {
     if (typeName.empty())
     {
@@ -20,6 +22,24 @@ const Symbol* FindTypeDeclaration(std::string_view typeName, const SymbolTable& 
     }
 
     keepAlive = table.FindSymbolsPtr(typeName);
+    if (!keepAlive && !enclosingNs.empty())
+    {
+        std::string current(enclosingNs);
+        while (!current.empty())
+        {
+            keepAlive = table.FindSymbolsPtr(current + "::" + std::string(typeName));
+            if (keepAlive)
+            {
+                break;
+            }
+            const auto lastSep = current.rfind("::");
+            if (lastSep == std::string::npos)
+            {
+                break;
+            }
+            current.erase(lastSep);
+        }
+    }
     if (!keepAlive)
     {
         return nullptr;
@@ -134,18 +154,46 @@ void CheckNonInstantiableType(const Symbol& sym, const VariableSignature& sig, s
     }
 }
 
+void CheckUnresolvedVariableType(const Symbol& sym, std::string_view baseType, std::string_view enclosingNs,
+                                 const DiagnosticContext& ctx)
+{
+    if (baseType.empty() || baseType == "auto" || IsReservedKeyword(std::string(baseType)))
+    {
+        return;
+    }
+    const bool isPredefined =
+        angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
+    if (isPredefined && (baseType == "?" || baseType == "T"))
+    {
+        return;
+    }
+    if (IsTemplateParameterOfContainer(baseType, sym, ctx.request.symbolTable) ||
+        IsKnownType(std::string(baseType), ctx, enclosingNs))
+    {
+        return;
+    }
+
+    const auto ruleIndex = ctx.request.symbolTable.GetRuleIndex();
+    const bool existsInOtherScope = ruleIndex && ruleIndex->allNames.contains(std::string(baseType));
+    if (ctx.request.ReportsUnknownTypes() || existsInOtherScope)
+    {
+        ctx.LogRule("CheckDeclaredType", "as-err-unresolved-type", sym);
+        ctx.Emit(sym, "as-err-unresolved-type", baseType);
+    }
+}
+
 /** @brief Rules about what the declared type may be. */
 void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
     CheckPrimitiveOrVoidType(sym, sig, ctx);
 
     const std::string_view baseType = CleanBaseTypeView(sig.baseTypeName.empty() ? sig.typeName : sig.baseTypeName);
+    const std::string enclosingNs = EnclosingNamespaceForSymbol(sym, ctx.request.symbolTable);
     std::shared_ptr<const std::vector<Symbol>> keepAlive;
-    const Symbol* declaration = FindTypeDeclaration(baseType, ctx.request.symbolTable, keepAlive);
+    const Symbol* declaration = FindTypeDeclaration(baseType, ctx.request.symbolTable, keepAlive, enclosingNs);
     if (!declaration)
     {
-        // Unresolved is what an engine-registered type looks like, so nothing more is said
-        // about this declaration's type.
+        CheckUnresolvedVariableType(sym, baseType, enclosingNs, ctx);
         return;
     }
 

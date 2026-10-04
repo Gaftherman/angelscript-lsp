@@ -178,7 +178,13 @@ void ValidateFuncdefReturnType(const Symbol& sym, const FuncdefSignature& sig, c
 
     const std::string_view retBase =
         CleanBaseTypeView(sig.returnBaseTypeName.empty() ? sig.returnType : sig.returnBaseTypeName);
-    if (!retBase.empty() && retBase != "void" && retBase != "auto" && !IsKnownType(retBase, ctx))
+    const bool isPredefined =
+        angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
+    const std::string enclosingNs = EnclosingNamespaceForSymbol(sym, ctx.request.symbolTable);
+    if (!retBase.empty() && retBase != "void" && retBase != "auto" &&
+        !(isPredefined && (retBase == "?" || retBase == "T")) &&
+        !IsTemplateParameterOfContainer(retBase, sym, ctx.request.symbolTable) &&
+        !IsKnownType(retBase, ctx, enclosingNs))
     {
         ctx.LogRule("ValidateFuncdef", "as-err-unresolved-type", sym);
         if (sig.returnTypeEndCharacter > sig.returnTypeStartCharacter ||
@@ -207,8 +213,11 @@ void ValidateFuncdefParameter(const Symbol& sym, const ParameterInformation& par
         angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
     const std::string_view paramBase =
         CleanBaseTypeView(param.baseTypeName.empty() ? param.typeName : param.baseTypeName);
-    if (!paramBase.empty() && paramBase != "void" && paramBase != "auto" && !(isPredefined && paramBase == "?") &&
-        !IsKnownType(paramBase, ctx))
+    const std::string enclosingNs = EnclosingNamespaceForSymbol(sym, ctx.request.symbolTable);
+    if (!paramBase.empty() && paramBase != "void" && paramBase != "auto" &&
+        !(isPredefined && (paramBase == "?" || paramBase == "T")) &&
+        !IsTemplateParameterOfContainer(paramBase, sym, ctx.request.symbolTable) &&
+        !IsKnownType(paramBase, ctx, enclosingNs))
     {
         ctx.LogRule("ValidateFuncdef", "as-err-unresolved-type", sym);
         if (param.endCharacter > param.startCharacter || param.endLine > param.startLine)

@@ -160,8 +160,8 @@ TEST_CASE("External Predefined Stubs - Trackmania Nations Forever (Sashi0034)")
     const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("OnTick");
     const std::string varName = angel_lsp::test::GenerateRandomSymbolName("cam");
     const std::string script = "void " + fnName + "() {\n" + "    float val = Math::Clamp(1.5f, 0.0f, 1.0f);\n" +
-                               "    GameCamera " + varName + ";\n" + "    vec3 speed = " + varName + ".get_Speed();\n" +
-                               "}\n";
+                               "    TM::GameCamera " + varName + ";\n" + "    vec3 speed = " + varName +
+                               ".get_Speed();\n" + "}\n";
 
     const auto errors = AnalyzeScript(script, table);
     CHECK(errors.empty());

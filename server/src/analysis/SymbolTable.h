@@ -81,6 +81,18 @@ enum class TypeKind
 };
 
 /**
+ * @brief Classification categories for enclosing lexical containers.
+ */
+enum class ContainerKind : uint8_t
+{
+    None = 0,
+    Class,
+    Interface,
+    Namespace,
+    Enum
+};
+
+/**
  * @brief Syntactic placement of declaration modifiers and attributes.
  */
 enum class ModifierPlacement : uint8_t
@@ -325,6 +337,7 @@ struct Symbol
     SymbolType type;
     std::string name;
     std::string containerName;
+    ContainerKind containerKind = ContainerKind::None;
     std::string qualifiedName;
     std::string fileUri;
 
