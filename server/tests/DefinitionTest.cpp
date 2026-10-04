@@ -751,3 +751,25 @@ TEST_CASE("DefinitionHandler - Go to Type Definition for Namespace-Scoped Variab
     REQUIRE(typeDef->size() == 1);
     CHECK((*typeDef)[0].range.start.line == 1);
 }
+
+TEST_CASE("DefinitionHandler - Go to Definition on Enum Member Declaration stays on declaration")
+{
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("WeaponAnim");
+    const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("Idle1");
+
+    std::string code = fmt::format("enum {}\n"
+                                   "{{\n"
+                                   "    {} = 0,\n"
+                                   "    Shoot\n"
+                                   "}};\n",
+                                   enumName, memberName);
+
+    TestEnvironment env(code);
+
+    // Line 2: "    Idle1 = 0," -> column 4 is on memberName
+    auto defs = env.DefAt(2, 4);
+    REQUIRE(defs.has_value());
+    REQUIRE(defs->size() == 1);
+    CHECK((*defs)[0].range.start.line == 2);
+    CHECK((*defs)[0].range.start.character == 4);
+}

@@ -123,6 +123,8 @@ struct ReferenceCollectionCriteria
     const ankerl::unordered_dense::set<std::string>& compatibleClasses;
     const DeclRangeSet& allDeclRanges;
     const std::string& targetNamespace;
+    const std::string& targetEnumContainer;
+    bool isEnumConstant = false;
     analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
     bool isFunction = false;
     size_t minArgs = 0;
@@ -154,12 +156,15 @@ bool IsDeclarationOrDefinition(const std::string& fileUri, const analysis::Local
             return true;
         }
     }
-    for (const auto& def : scope->definitions)
+    for (const auto* s = scope; s != nullptr; s = s->parent)
     {
-        if (def.name == criteria.targetName && def.startLine == ref.startLine &&
-            def.startCharacter == ref.startCharacter)
+        for (const auto& def : s->definitions)
         {
-            return true;
+            if (def.name == criteria.targetName && def.startLine == ref.startLine &&
+                def.startCharacter == ref.startCharacter)
+            {
+                return true;
+            }
         }
     }
     return false;
@@ -438,6 +443,100 @@ bool MatchesTargetNamespaceQualifier(const std::string& fileUri, const analysis:
 }
 
 /**
+ * @brief Checks if a qualifier string matches the target enum container or target namespace.
+ * @param[in] q Qualifier string.
+ * @param[in] targetEnumContainer Target enum container name.
+ * @param[in] targetNamespace Target namespace name.
+ * @return True if qualifier matches.
+ */
+bool QualifierMatchesEnumContainer(std::string_view q, std::string_view targetEnumContainer,
+                                   std::string_view targetNamespace)
+{
+    if (q.empty())
+    {
+        return false;
+    }
+    if (q == targetEnumContainer || q.ends_with("::" + std::string(targetEnumContainer)) ||
+        targetEnumContainer.ends_with("::" + std::string(q)))
+    {
+        return true;
+    }
+    return !targetNamespace.empty() && (q == targetNamespace || q.ends_with("::" + std::string(targetNamespace)));
+}
+
+/**
+ * @brief Validates member or scoped access to an enum constant.
+ * @param[in] fileUri Document URI.
+ * @param[in] ref Reference under test.
+ * @param[in] scope Lexical scope.
+ * @param[in] criteria Active search criteria.
+ * @return True if member qualifier matches target enum container.
+ */
+bool IsValidEnumMemberAccess(const std::string& fileUri, const analysis::LocalReference& ref,
+                             const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
+{
+    if (fileUri == criteria.request.uri)
+    {
+        std::string q = GetMemberObjectText(criteria.request, ref);
+        if (QualifierMatchesEnumContainer(q, criteria.targetEnumContainer, criteria.targetNamespace))
+        {
+            return true;
+        }
+    }
+    if (scope)
+    {
+        for (const auto& candRef : scope->references)
+        {
+            if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
+            {
+                if (QualifierMatchesEnumContainer(candRef.name, criteria.targetEnumContainer, criteria.targetNamespace))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Validates accessibility for enum constant references.
+ * @param[in] fileUri Document URI.
+ * @param[in] ref Reference under test.
+ * @param[in] scope Lexical scope.
+ * @param[in] criteria Active search criteria.
+ * @return True if reference is a valid access to the enum constant.
+ */
+bool IsValidEnumAccess(const std::string& fileUri, const analysis::LocalReference& ref, const analysis::Scope* scope,
+                       const ReferenceCollectionCriteria& criteria)
+{
+    if (ref.isCall)
+    {
+        return false;
+    }
+    if (ref.isMemberAccess)
+    {
+        return IsValidEnumMemberAccess(fileUri, ref, scope, criteria);
+    }
+
+    if (!criteria.targetNamespace.empty())
+    {
+        if (!IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable))
+        {
+            return false;
+        }
+    }
+    else if (fileUri != criteria.request.uri)
+    {
+        return false;
+    }
+
+    const analysis::LocalDefinition* localShadow = analysis::ResolveInScope(scope, ref.name);
+    return !(localShadow && (localShadow->kind == analysis::LocalDefinitionKind::Parameter ||
+                             localShadow->kind == analysis::LocalDefinitionKind::Variable));
+}
+
+/**
  * @brief Checks whether a reference has valid accessibility and scope visibility.
  * @param[in] fileUri Document URI.
  * @param[in] ref Reference under test.
@@ -448,6 +547,10 @@ bool MatchesTargetNamespaceQualifier(const std::string& fileUri, const analysis:
 bool IsValidAccess(const std::string& fileUri, const analysis::LocalReference& ref, const analysis::Scope* scope,
                    const ReferenceCollectionCriteria& criteria)
 {
+    if (criteria.isEnumConstant)
+    {
+        return IsValidEnumAccess(fileUri, ref, scope, criteria);
+    }
     if (!criteria.compatibleClasses.empty())
     {
         if (criteria.targetAccess == analysis::AccessModifier::Private ||
@@ -494,6 +597,8 @@ struct SymbolLensTarget
     ankerl::unordered_dense::set<std::string> compatibleClasses;
     DeclRangeSet allDeclRanges;
     std::string targetNamespace;
+    std::string targetEnumContainer;
+    bool isEnumConstant = false;
     analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
     bool isFunction = false;
     size_t minArgs = 0;
@@ -542,6 +647,8 @@ void ProcessScopeReferencesBatch(const std::string& fileUri, const analysis::Sco
                 .compatibleClasses = target.compatibleClasses,
                 .allDeclRanges = target.allDeclRanges,
                 .targetNamespace = target.targetNamespace,
+                .targetEnumContainer = target.targetEnumContainer,
+                .isEnumConstant = target.isEnumConstant,
                 .targetAccess = target.targetAccess,
                 .isFunction = target.isFunction,
                 .minArgs = target.minArgs,
@@ -791,6 +898,15 @@ SymbolGroups CollectSymbolGroups(const CodeLensRequest& request)
  */
 const analysis::Symbol& SelectPrimarySymbol(const std::vector<analysis::Symbol>& symGroup)
 {
+    for (const auto& s : symGroup)
+    {
+        if (s.type == analysis::SymbolType::Variable &&
+            std::holds_alternative<analysis::VariableSignature>(s.signature) && s.GetVariable().isEnumConstant &&
+            !s.containerName.empty())
+        {
+            return s;
+        }
+    }
     for (const auto& s : symGroup)
     {
         if (!s.isSynthesized)
@@ -1238,6 +1354,8 @@ SymbolLensTarget CreateFunctionOrVariableTarget(const RangeKey& key, const analy
     bool isFunction = false;
     size_t minArgs = 0;
     size_t maxArgs = 0;
+    bool isEnumConstant = false;
+    std::string targetEnumContainer;
     if (std::holds_alternative<analysis::FunctionSignature>(sym.signature))
     {
         const auto& fn = sym.GetFunction();
@@ -1254,14 +1372,28 @@ SymbolLensTarget CreateFunctionOrVariableTarget(const RangeKey& key, const analy
     }
     else if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
     {
-        targetAccess = sym.GetVariable().modifiers.access;
+        const auto& var = sym.GetVariable();
+        targetAccess = var.modifiers.access;
+        isEnumConstant = var.isEnumConstant;
+        if (isEnumConstant)
+        {
+            targetEnumContainer = sym.containerName;
+        }
     }
 
     auto compatibleClasses = CollectCompatibleClasses(symGroup, sym, targetAccess, ctx);
     auto allDeclRanges = CollectAllDeclRanges(sym.name, symGroup, compatibleClasses, ctx.symbolTable);
 
     std::string targetNamespace;
-    if (!sym.containerName.empty() && !IsContainerClass(sym.containerName, ctx.symbolTable))
+    if (isEnumConstant)
+    {
+        auto sepPos = sym.containerName.rfind("::");
+        if (sepPos != std::string::npos)
+        {
+            targetNamespace = sym.containerName.substr(0, sepPos);
+        }
+    }
+    else if (!sym.containerName.empty() && !IsContainerClass(sym.containerName, ctx.symbolTable))
     {
         targetNamespace = sym.containerName;
     }
@@ -1273,6 +1405,8 @@ SymbolLensTarget CreateFunctionOrVariableTarget(const RangeKey& key, const analy
         .compatibleClasses = std::move(compatibleClasses),
         .allDeclRanges = std::move(allDeclRanges),
         .targetNamespace = std::move(targetNamespace),
+        .targetEnumContainer = std::move(targetEnumContainer),
+        .isEnumConstant = isEnumConstant,
         .targetAccess = targetAccess,
         .isFunction = isFunction,
         .minArgs = minArgs,
@@ -1301,6 +1435,8 @@ SymbolLensTarget CreateClassTarget(const RangeKey& key, const analysis::Symbol& 
         .compatibleClasses = {},
         .allDeclRanges = std::move(allDeclRanges),
         .targetNamespace = {},
+        .targetEnumContainer = {},
+        .isEnumConstant = false,
         .targetAccess = analysis::AccessModifier::Public,
         .isFunction = false,
         .minArgs = 0,
