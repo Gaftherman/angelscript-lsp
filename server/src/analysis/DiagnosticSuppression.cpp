@@ -2,6 +2,7 @@
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "parser/GrammarNames.h"
+#include "utils/Utils.h"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -196,14 +197,7 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
 
 bool EqualsCaseInsensitive(std::string_view a, std::string_view b) noexcept
 {
-    if (a.size() != b.size())
-        return false;
-    for (size_t i = 0; i < a.size(); ++i)
-    {
-        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
-            return false;
-    }
-    return true;
+    return angel_lsp::utils::CaseInsensitiveEquals(a, b);
 }
 
 std::string_view StripCommentDelimiters(std::string_view text) noexcept

@@ -2147,3 +2147,41 @@ TEST_CASE("Completion - Unqualified enum constants inside enclosing namespace an
     }
     CHECK(foundImportedIron);
 }
+
+TEST_CASE("Completion - Case-insensitive prefix matching for symbols, types, and enums")
+{
+    const std::string typeName = "entvars_" + angel_lsp::test::GenerateRandomSymbolName("t");
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("Classification");
+    const std::string enumMember = "Security_" + angel_lsp::test::GenerateRandomSymbolName("Mem");
+    const std::string queryTypePrefix = "Entvar";
+    const std::string queryEnumPrefix = "security";
+
+    std::string code = "class " + typeName + " { int health; }\n" + "enum " + enumName + " {\n    " + enumMember +
+                       " = 1\n}\n" + "void main()\n{\n    " + queryTypePrefix + "\n}\n" + "void helper()\n{\n    " +
+                       queryEnumPrefix + "\n}\n";
+
+    TestEnvironment env(code);
+    auto typeItems = env.CompleteAt(6, 10);
+    bool foundType = false;
+    for (const auto& item : typeItems)
+    {
+        if (item.label == typeName)
+        {
+            foundType = true;
+            break;
+        }
+    }
+    CHECK(foundType);
+
+    auto enumItems = env.CompleteAt(10, 12);
+    bool foundEnumMember = false;
+    for (const auto& item : enumItems)
+    {
+        if (item.label == enumMember)
+        {
+            foundEnumMember = true;
+            break;
+        }
+    }
+    CHECK(foundEnumMember);
+}

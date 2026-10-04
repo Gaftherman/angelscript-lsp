@@ -958,9 +958,12 @@ std::shared_ptr<const std::string> Server::FindDocumentText(const std::string& u
 
     // Closure files are not open, but their ranges still reach the client through references,
     // definitions and multi-file rename edits, so their text has to be reachable too.
-    if (const auto closure = m_closureDocuments.find(key); closure != m_closureDocuments.end())
     {
-        return std::shared_ptr<const std::string>(std::shared_ptr<void>(), &closure->second);
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        if (const auto closure = m_closureDocuments.find(key); closure != m_closureDocuments.end())
+        {
+            return std::make_shared<const std::string>(closure->second);
+        }
     }
 
     return nullptr;

@@ -164,4 +164,48 @@ inline bool TrySkipCommentDispatch(std::string_view sourceCode, State& state, Li
     }
     return false;
 }
+
+/**
+ * @brief Compares two strings case-insensitively for equality.
+ * @param[in] a First string to compare.
+ * @param[in] b Second string to compare.
+ * @return True if both strings match identically ignoring ASCII case.
+ */
+inline bool CaseInsensitiveEquals(std::string_view a, std::string_view b) noexcept
+{
+    if (a.size() != b.size())
+    {
+        return false;
+    }
+    for (size_t i = 0; i < a.size(); ++i)
+    {
+        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief Checks if a string starts with a given prefix case-insensitively.
+ * @param[in] str Full string to check.
+ * @param[in] prefix Prefix to check against.
+ * @return True if str begins with prefix ignoring ASCII case.
+ */
+inline bool CaseInsensitiveStartsWith(std::string_view str, std::string_view prefix) noexcept
+{
+    if (str.size() < prefix.size())
+    {
+        return false;
+    }
+    for (size_t i = 0; i < prefix.size(); ++i)
+    {
+        if (std::tolower(static_cast<unsigned char>(str[i])) != std::tolower(static_cast<unsigned char>(prefix[i])))
+        {
+            return false;
+        }
+    }
+    return true;
+}
 } // namespace angel_lsp::utils

@@ -516,13 +516,20 @@ bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined
     m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
         path, content, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
 
-    if (const auto indexed = m_indexedUriByPath.find(path); indexed != m_indexedUriByPath.end())
+    std::string indexedUriToReindex;
     {
-        const std::string indexedUri = indexed->second;
-        m_symbolTable.ClearDocumentSymbols(indexedUri);
-        m_scopeIndex.ClearDocument(indexedUri);
-        m_callGraph.ClearDocument(indexedUri);
-        m_closureDocuments.erase(indexedUri);
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        if (const auto indexed = m_indexedUriByPath.find(path); indexed != m_indexedUriByPath.end())
+        {
+            indexedUriToReindex = indexed->second;
+            m_closureDocuments.erase(indexedUriToReindex);
+        }
+    }
+    if (!indexedUriToReindex.empty())
+    {
+        m_symbolTable.ClearDocumentSymbols(indexedUriToReindex);
+        m_scopeIndex.ClearDocument(indexedUriToReindex);
+        m_callGraph.ClearDocument(indexedUriToReindex);
         IndexClosureFile(path, parser);
     }
     return true;
@@ -669,32 +676,39 @@ void Server::HandleNotificationsSetTrace(lsp::notifications::SetTrace::Params&& 
     }
 }
 
+void Server::InvalidateCreatedClosureFiles(const std::vector<std::string>& createdPaths)
+{
+    angel_lsp::parser::AngelScriptParser createdParser(m_logger.get());
+    for (const std::string& path : createdPaths)
+    {
+        std::string indexedUri;
+        {
+            std::lock_guard<std::mutex> lock(m_closureMutex);
+            if (const auto indexed = m_indexedUriByPath.find(path); indexed != m_indexedUriByPath.end())
+            {
+                indexedUri = indexed->second;
+                m_closureDocuments.erase(indexedUri);
+            }
+        }
+        if (!indexedUri.empty())
+        {
+            m_symbolTable.ClearDocumentSymbols(indexedUri);
+            m_scopeIndex.ClearDocument(indexedUri);
+            m_callGraph.ClearDocument(indexedUri);
+            IndexClosureFile(path, createdParser);
+        }
+    }
+}
+
+// The third of the file-operation notifications, and the one that was missing. A file the
+// editor has just created is on no watcher's tick yet, and an `#include` naming it has been
+// resolving to nothing - so the whole module it belongs to is missing declarations.
+// What actually has to happen is the reverse direction: the OPEN documents' directives are
+// re-resolved, because one of them now names a file that exists.
+// And the created file's own contents have to be forgotten, which is the second half of
+// this and was missing.
 void Server::HandleNotificationsWorkspace_DidCreateFiles(lsp::notifications::Workspace_DidCreateFiles::Params&& params)
 {
-    // The third of the file-operation notifications, and the one that was missing. A file the
-    // editor has just created is on no watcher's tick yet, and an `#include` naming it has been
-    // resolving to nothing - so the whole module it belongs to is missing declarations.
-    //
-    // The first version of this guarded on `GetFilesIncluding(path)` being non-empty, which
-    // reads well and cannot work: the graph has no edge INTO a file that did not exist when the
-    // edge was built. That is precisely the case this notification exists for, so the guard
-    // excluded the only scenario it was meant to serve. The test caught it.
-    //
-    // What actually has to happen is the reverse direction: the OPEN documents' directives are
-    // re-resolved, because one of them now names a file that exists.
-    // And the created file's own contents have to be forgotten, which is the second half of
-    // this and was missing. A name can already be in the closure cache before the file exists:
-    // an editor that writes a placeholder and then the real thing, a template that scaffolds
-    // and fills in, a `git checkout` racing the first analysis. The closure indexer skips
-    // anything m_closureDocuments already holds, so whichever read wins decides the contents
-    // for good, and no later reanalysis re-reads it.
-    //
-    // Measured: the test for this failed 60 times in 60 runs on Linux and 0 in 40 on Windows -
-    // the two platforms losing the same race on opposite sides, which is what reached CI as an
-    // intermittent. Waiting longer in the test does not help, because nothing was going to
-    // re-read the file.
-    //
-    // The watched-file handler above has done this all along; this one had not learned it.
     std::vector<std::string> createdPaths;
     for (const auto& created : params.files)
     {
@@ -708,21 +722,7 @@ void Server::HandleNotificationsWorkspace_DidCreateFiles(lsp::notifications::Wor
     if (createdPaths.empty())
         return;
 
-    {
-        angel_lsp::parser::AngelScriptParser createdParser(m_logger.get());
-        for (const std::string& path : createdPaths)
-        {
-            if (const auto indexed = m_indexedUriByPath.find(path); indexed != m_indexedUriByPath.end())
-            {
-                const std::string indexedUri = indexed->second;
-                m_symbolTable.ClearDocumentSymbols(indexedUri);
-                m_scopeIndex.ClearDocument(indexedUri);
-                m_callGraph.ClearDocument(indexedUri);
-                m_closureDocuments.erase(indexedUri);
-                IndexClosureFile(path, createdParser);
-            }
-        }
-    }
+    InvalidateCreatedClosureFiles(createdPaths);
 
     const auto searchDirectories = SearchDirectories();
     for (const auto& [openUri, text] : m_documentStore.GetSnapshot())
@@ -797,7 +797,13 @@ void Server::HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Wor
         // The file at its new name is indexed only if something already reached it - the same
         // rule the watched-files handler applies, and for the same reason: reading every
         // renamed file off disk would turn a directory rename into a full workspace parse.
-        if (!includers.empty() || m_indexedUriByPath.contains(oldPath))
+        bool shouldIndex = !includers.empty();
+        if (!shouldIndex)
+        {
+            std::lock_guard<std::mutex> lock(m_closureMutex);
+            shouldIndex = m_indexedUriByPath.contains(oldPath);
+        }
+        if (shouldIndex)
             IndexClosureFile(newPath, renameParser);
     }
 

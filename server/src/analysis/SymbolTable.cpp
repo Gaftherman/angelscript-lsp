@@ -1090,20 +1090,43 @@ void SymbolTable::ForEachSymbolWithPrefix(
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         EnsureSortedKeysLocked();
 
+        ankerl::unordered_dense::set<const std::string*> seenKeys;
+
         auto collectMatching = [&](std::string_view p)
         {
             if (p.empty())
             {
                 return;
             }
-            auto it = std::lower_bound(m_sortedKeys.begin(), m_sortedKeys.end(), p);
-            for (; it != m_sortedKeys.end() && it->starts_with(p); ++it)
+            char c = p[0];
+            char cUpper = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            char cLower = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+            auto scanChar = [&](char firstChar)
             {
-                auto mapIt = m_symbols.find(*it);
-                if (mapIt != m_symbols.end())
+                std::string startPattern(1, firstChar);
+                auto it = std::lower_bound(m_sortedKeys.begin(), m_sortedKeys.end(), startPattern);
+                for (; it != m_sortedKeys.end(); ++it)
                 {
-                    snapshot.emplace_back(&mapIt->first, mapIt->second);
+                    if (it->empty() || (*it)[0] != firstChar)
+                    {
+                        break;
+                    }
+                    if (angel_lsp::utils::CaseInsensitiveStartsWith(*it, p))
+                    {
+                        auto mapIt = m_symbols.find(*it);
+                        if (mapIt != m_symbols.end() && seenKeys.insert(&mapIt->first).second)
+                        {
+                            snapshot.emplace_back(&mapIt->first, mapIt->second);
+                        }
+                    }
                 }
+            };
+
+            scanChar(cUpper);
+            if (cLower != cUpper)
+            {
+                scanChar(cLower);
             }
         };
 
