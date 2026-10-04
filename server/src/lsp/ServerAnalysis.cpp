@@ -48,7 +48,9 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     if (const std::string ownPath = CanonicalPathFromUri(uriStr); !ownPath.empty())
     {
         request.moduleFileUris.insert(uriStr);
-        for (const auto& path : ComputeModuleClosure(ownPath))
+        const auto closurePaths = ComputeModuleClosure(ownPath);
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        for (const auto& path : closurePaths)
         {
             if (path == ownPath)
                 continue;
@@ -454,6 +456,23 @@ void Server::LogAnalysisProfile(std::string_view prefix, const std::string& uriS
                         utils::FormatDuration(profile.checkMs)));
 }
 
+bool Server::IsUnchangedClosedDocument(const std::string& uriStr, uint64_t generation,
+                                       const angel_lsp::analysis::SymbolTable& staging) const
+{
+    if (generation != 0 || m_documentStore.IsOpen(uriStr))
+    {
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        if (!m_closureDocuments.contains(uriStr))
+        {
+            return false;
+        }
+    }
+    return m_symbolTable.ComputeDocumentInterfaceHash(uriStr) == staging.ComputeDocumentInterfaceHash(uriStr);
+}
+
 void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
 {
     LogInfo(fmt::format("[Analysis] Starting background analysis for file: {}", req.uriStr));
@@ -483,9 +502,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
 
     const TSNode root = ts_tree_root_node(parsed.tree.get());
     analysis::NodeIndex nodeIndex(root);
-    const bool unchangedClosedFile =
-        req.generation == 0 && !m_documentStore.IsOpen(req.uriStr) && m_closureDocuments.contains(req.uriStr) &&
-        m_symbolTable.ComputeDocumentInterfaceHash(req.uriStr) == staging.ComputeDocumentInterfaceHash(req.uriStr);
+    const bool unchangedClosedFile = IsUnchangedClosedDocument(req.uriStr, req.generation, staging);
     std::unique_ptr<analysis::SymbolTable> analysisSnapshot =
         unchangedClosedFile ? nullptr : m_symbolTable.CreateAnalysisSnapshot(req.uriStr, staging);
     const analysis::SymbolTable* activeTable = unchangedClosedFile ? &m_symbolTable : analysisSnapshot.get();

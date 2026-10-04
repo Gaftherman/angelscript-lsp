@@ -1,4 +1,5 @@
 #include "lsp/ModuleIndex.h"
+#include "utils/Utils.h"
 
 namespace angel_lsp
 {
@@ -141,13 +142,33 @@ std::vector<ModuleIndex::ExportedSymbol> ModuleIndex::FindSymbolsByPrefix(std::s
     {
         return m_exportedSymbols;
     }
-    auto it = std::lower_bound(m_exportedSymbols.begin(), m_exportedSymbols.end(), prefix,
-                               [](const ExportedSymbol& sym, std::string_view p) { return sym.name < p; });
     std::vector<ExportedSymbol> results;
-    while (it != m_exportedSymbols.end() && it->name.starts_with(prefix))
+    char c = prefix[0];
+    char cUpper = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    char cLower = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+    auto scanChar = [&](char firstChar)
     {
-        results.push_back(*it);
-        ++it;
+        std::string startPattern(1, firstChar);
+        auto it = std::lower_bound(m_exportedSymbols.begin(), m_exportedSymbols.end(), startPattern,
+                                   [](const ExportedSymbol& sym, std::string_view p) { return sym.name < p; });
+        for (; it != m_exportedSymbols.end(); ++it)
+        {
+            if (it->name.empty() || it->name[0] != firstChar)
+            {
+                break;
+            }
+            if (angel_lsp::utils::CaseInsensitiveStartsWith(it->name, prefix))
+            {
+                results.push_back(*it);
+            }
+        }
+    };
+
+    scanChar(cUpper);
+    if (cLower != cUpper)
+    {
+        scanChar(cLower);
     }
     return results;
 }

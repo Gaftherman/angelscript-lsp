@@ -2072,17 +2072,19 @@ std::string_view ExtractQueryPrefix(std::string_view linePrefix)
  */
 bool BucketMatchesPrefix(const std::string& qualifiedName, std::string_view queryPrefix, bool accessorsAreProperties)
 {
-    if (queryPrefix.empty() || qualifiedName.starts_with(queryPrefix))
+    if (queryPrefix.empty() || angel_lsp::utils::CaseInsensitiveStartsWith(qualifiedName, queryPrefix))
     {
         return true;
     }
     if (accessorsAreProperties)
     {
-        if (qualifiedName.starts_with("get_") && std::string_view(qualifiedName).substr(4).starts_with(queryPrefix))
+        if (angel_lsp::utils::CaseInsensitiveStartsWith(qualifiedName, "get_") &&
+            angel_lsp::utils::CaseInsensitiveStartsWith(std::string_view(qualifiedName).substr(4), queryPrefix))
         {
             return true;
         }
-        if (qualifiedName.starts_with("set_") && std::string_view(qualifiedName).substr(4).starts_with(queryPrefix))
+        if (angel_lsp::utils::CaseInsensitiveStartsWith(qualifiedName, "set_") &&
+            angel_lsp::utils::CaseInsensitiveStartsWith(std::string_view(qualifiedName).substr(4), queryPrefix))
         {
             return true;
         }

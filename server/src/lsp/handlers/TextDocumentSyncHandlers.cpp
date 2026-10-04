@@ -472,10 +472,13 @@ bool Server::RestoreClosedModuleFile(const std::string& uriStr, const std::strin
         return false;
     }
 
-    if (const auto indexed = m_indexedUriByPath.find(path);
-        indexed != m_indexedUriByPath.end() && indexed->second == uriStr)
     {
-        m_indexedUriByPath.erase(indexed);
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        if (const auto indexed = m_indexedUriByPath.find(path);
+            indexed != m_indexedUriByPath.end() && indexed->second == uriStr)
+        {
+            m_indexedUriByPath.erase(indexed);
+        }
     }
 
     bool isClaimedOrPublished = false;
@@ -539,7 +542,10 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
     m_symbolTable.ClearDocumentSymbols(uriStr);
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
-    m_closureDocuments.erase(uriStr);
+    {
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        m_closureDocuments.erase(uriStr);
+    }
 
     const std::string path = CanonicalPathFromUri(uriStr);
     const bool isModuleFile = RestoreClosedModuleFile(uriStr, path);

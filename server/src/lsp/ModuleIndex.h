@@ -140,8 +140,8 @@ class ModuleIndex
     void SetExportedSymbols(std::vector<ExportedSymbol> symbols);
 
     /**
-     * @brief Performs an O(log N + K) binary prefix search for exported symbols.
-     * @param[in] prefix Case-sensitive prefix to match against symbol names.
+     * @brief Performs a prefix search for exported symbols matching prefix case-insensitively.
+     * @param[in] prefix Prefix to match against symbol names.
      * @return Vector of matched symbols starting with prefix.
      */
     [[nodiscard]] std::vector<ExportedSymbol> FindSymbolsByPrefix(std::string_view prefix) const;

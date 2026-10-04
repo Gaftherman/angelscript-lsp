@@ -362,28 +362,28 @@ void DiagnosticContext::EmitAtTypeName(const ParameterInformation& param, const 
     EmitAtRange(range, code, typeName, DiagnosticSeverity::Error);
 }
 
-// --- Debug Logging ---
+// --- Trace Logging ---
 
 void DiagnosticContext::LogRule(std::string_view ruleName, std::string_view code, const Symbol& sym) const
 {
-    if (!logger || !logger->IsDebugEnabled())
+    if (!logger || !logger->IsTraceEnabled())
     {
         return;
     }
 
-    logger->LogDebug(fmt::format("[SA-DEBUG] rule={:<35} code={:<35} sym={} container={}", ruleName, code, sym.name,
+    logger->LogTrace(fmt::format("[SA-TRACE] rule={:<35} code={:<35} sym={} container={}", ruleName, code, sym.name,
                                  sym.containerName));
 }
 
 void DiagnosticContext::LogParam(std::string_view ruleName, std::string_view code, const ParameterInformation& param,
                                  const Symbol& parentSym) const
 {
-    if (!logger || !logger->IsDebugEnabled())
+    if (!logger || !logger->IsTraceEnabled())
     {
         return;
     }
 
-    logger->LogDebug(fmt::format("[SA-DEBUG] rule={:<35} code={:<35} param={} parent={}", ruleName, code, param.name,
+    logger->LogTrace(fmt::format("[SA-TRACE] rule={:<35} code={:<35} param={} parent={}", ruleName, code, param.name,
                                  parentSym.name));
 }
 } // namespace angel_lsp::analysis

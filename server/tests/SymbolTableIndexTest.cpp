@@ -2,6 +2,7 @@
 
 #include "analysis/SymbolTable.h"
 #include "analysis/rules/RuleIndex.h"
+#include "helpers/TestUtils.h"
 
 #include <string>
 #include <vector>
@@ -263,4 +264,27 @@ TEST_CASE("SymbolTable - ComputeDocumentInterfaceHash detects signature changes"
         table.AddSymbol(MakeSymbol(SymbolType::Variable, "m_ammo", "file:///weapon.as"));
         CHECK(table.ComputeDocumentInterfaceHash("file:///weapon.as") != baseHash);
     }
+}
+
+TEST_CASE("SymbolTable - ForEachSymbolWithPrefix matches case-insensitively")
+{
+    const std::string lowerName = "entity_" + angel_lsp::test::GenerateRandomSymbolName("t");
+    const std::string upperPrefix = "ENTITY_";
+
+    const std::string upperName = "WEAPON_" + angel_lsp::test::GenerateRandomSymbolName("CONF");
+    const std::string lowerPrefix = "weapon_";
+
+    SymbolTable table;
+    table.AddSymbol(MakeSymbol(SymbolType::Class, lowerName, "file:///a.as"));
+    table.AddSymbol(MakeSymbol(SymbolType::Class, upperName, "file:///a.as"));
+
+    std::vector<std::string> matchesForUpper;
+    table.ForEachSymbolWithPrefix(upperPrefix, [&](const std::string& name, const std::vector<Symbol>&)
+                                  { matchesForUpper.push_back(name); });
+    CHECK(Contains(matchesForUpper, lowerName));
+
+    std::vector<std::string> matchesForLower;
+    table.ForEachSymbolWithPrefix(lowerPrefix, [&](const std::string& name, const std::vector<Symbol>&)
+                                  { matchesForLower.push_back(name); });
+    CHECK(Contains(matchesForLower, upperName));
 }
