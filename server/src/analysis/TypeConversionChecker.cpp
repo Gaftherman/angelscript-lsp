@@ -80,6 +80,57 @@ void ForEachSymbolNamed(std::string_view qualifiedName, const SymbolTable& table
     }
 }
 
+/**
+ * @brief Trims leading and trailing whitespace from a string.
+ * @param[in] str Input string.
+ * @return Trimmed string.
+ */
+static std::string TrimString(std::string str)
+{
+    while (!str.empty() && isspace(static_cast<unsigned char>(str.front())))
+    {
+        str.erase(str.begin());
+    }
+    while (!str.empty() && isspace(static_cast<unsigned char>(str.back())))
+    {
+        str.pop_back();
+    }
+    return str;
+}
+
+/**
+ * @brief Collects candidate symbols of type Function matching a name.
+ * @param[in] funcName Target function name or qualified name.
+ * @param[in] table Workspace symbol table.
+ * @return Vector of function symbols matching the name.
+ */
+static std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName, const SymbolTable& table)
+{
+    std::vector<Symbol> candidates;
+    auto addCandidates = [&](const std::string& name)
+    {
+        if (auto found = table.FindSymbolsPtr(name))
+        {
+            for (const auto& s : *found)
+            {
+                if (s.type == SymbolType::Function)
+                {
+                    candidates.push_back(s);
+                }
+            }
+        }
+    };
+
+    addCandidates(funcName);
+    if (candidates.empty())
+    {
+        addCandidates(std::string(LastScopeSegment(funcName)));
+    }
+    return candidates;
+}
+
+std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& table);
+
 /** @brief Looks up what a type name denotes.
  *  @return found == false when the name resolves to nothing this analyzer can see - which
  *          is the signal to stay silent about anything involving it. */
@@ -1030,6 +1081,91 @@ PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, co
     return info;
 }
 
+/**
+ * @brief Checks if a member expression resolves to a method rather than a property or variable.
+ * @param[in] expr Member expression syntax node.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in] ctx Diagnostic collection context.
+ * @return True if expr denotes a method.
+ */
+static bool IsMemberMethodReference(TSNode expr, const Scope* scope, const DiagnosticContext& ctx)
+{
+    const PropertyAccessInfo info = InspectPropertyAccess(expr, scope, ctx);
+    if (info.isProperty || info.propName.empty())
+    {
+        return false;
+    }
+
+    const std::string cleanObj = CleanBaseType(info.receiverType);
+    if (!cleanObj.empty())
+    {
+        const auto hierarchy = GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable);
+        for (const auto& typeName : hierarchy)
+        {
+            if (const auto syms = ctx.request.symbolTable.FindMemberSymbolPtr(typeName, info.propName))
+            {
+                for (const auto& s : *syms)
+                {
+                    if (s.type == SymbolType::Function)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    const auto candidates = CollectFunctionCandidates(info.propName, ctx.request.symbolTable);
+    return std::any_of(candidates.begin(), candidates.end(),
+                       [](const Symbol& s) { return s.type == SymbolType::Function; });
+}
+
+/**
+ * @brief Checks if an expression resolves to a bare function or method symbol.
+ * @param[in] expr Expression syntax node.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in] ctx Diagnostic collection context.
+ * @return True if expr denotes a bare function or method.
+ */
+static bool IsFunctionReference(TSNode expr, const Scope* scope, const DiagnosticContext& ctx)
+{
+    while (!ts_node_is_null(expr) && std::string_view(ts_node_type(expr)) == "parenthesized_expression" &&
+           ts_node_named_child_count(expr) > 0)
+    {
+        expr = ts_node_named_child(expr, 0);
+    }
+    if (ts_node_is_null(expr))
+    {
+        return false;
+    }
+
+    const std::string_view type = ts_node_type(expr);
+    if (type == node_types::CallExpression || type == "construct_call_expression")
+    {
+        return false;
+    }
+    if (type == "member_expression")
+    {
+        return IsMemberMethodReference(expr, scope, ctx);
+    }
+    if (type == "identifier" || type == "scoped_identifier")
+    {
+        const std::string name = TrimString(NodeText(expr, ctx.request.sourceCode));
+        if (name.empty())
+        {
+            return false;
+        }
+        if (type == "identifier" && scope && ResolveInScope(scope, name))
+        {
+            return false;
+        }
+        const auto candidates = CollectFunctionCandidates(name, ctx.request.symbolTable);
+        return std::any_of(candidates.begin(), candidates.end(),
+                           [](const Symbol& s) { return s.type == SymbolType::Function; });
+    }
+    return false;
+}
+
 struct DiagnosticArgs
 {
     std::string first{};
@@ -1345,14 +1481,10 @@ DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
     return result;
 }
 
-void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declared, DiagnosticContext& ctx)
+void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declared, const Scope* scope,
+                                   DiagnosticContext& ctx)
 {
-    std::string identName = NodeText(valueNode, ctx.request.sourceCode);
-    while (!identName.empty() && isspace(static_cast<unsigned char>(identName.front())))
-        identName.erase(identName.begin());
-    while (!identName.empty() && isspace(static_cast<unsigned char>(identName.back())))
-        identName.pop_back();
-
+    const std::string identName = TrimString(NodeText(valueNode, ctx.request.sourceCode));
     if (identName.empty())
     {
         return;
@@ -1371,6 +1503,12 @@ void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declare
                            return true;
                        });
     if (isTypeOrTemplate)
+    {
+        EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", {identName, declared.baseName});
+        return;
+    }
+
+    if (!FindFuncdef(declared.baseName, ctx.request.symbolTable) && IsFunctionReference(valueNode, scope, ctx))
     {
         EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", {identName, declared.baseName});
     }
@@ -1425,7 +1563,7 @@ void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const
     const ExpressionType source = ResolveValueType(valueNode, scope, ctx);
     if (!source.known || source.baseName.empty())
     {
-        CheckUnknownInitializerSource(valueNode, declared, ctx);
+        CheckUnknownInitializerSource(valueNode, declared, scope, ctx);
         return;
     }
 
@@ -1821,44 +1959,6 @@ bool CheckLambdaFuncdefAssignment(TSNode targetNode, const FuncdefSignature& fun
         EmitAtNode(targetNode, ctx, "as-err-signature-mismatch-func-handle");
     }
     return true;
-}
-
-static std::string TrimString(std::string str)
-{
-    while (!str.empty() && isspace(static_cast<unsigned char>(str.front())))
-    {
-        str.erase(str.begin());
-    }
-    while (!str.empty() && isspace(static_cast<unsigned char>(str.back())))
-    {
-        str.pop_back();
-    }
-    return str;
-}
-
-static std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName, const SymbolTable& table)
-{
-    std::vector<Symbol> candidates;
-    auto addCandidates = [&](const std::string& name)
-    {
-        if (auto found = table.FindSymbolsPtr(name))
-        {
-            for (const auto& s : *found)
-            {
-                if (s.type == SymbolType::Function)
-                {
-                    candidates.push_back(s);
-                }
-            }
-        }
-    };
-
-    addCandidates(funcName);
-    if (candidates.empty())
-    {
-        addCandidates(std::string(LastScopeSegment(funcName)));
-    }
-    return candidates;
 }
 
 static bool HasMatchingFuncdefCandidate(const std::vector<Symbol>& candidates, const FuncdefSignature& funcdefSig)
@@ -2421,6 +2521,12 @@ void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckReques
     if (const auto dataTypeName = IsBareDataType(expr, scope, ctx.request.symbolTable, request.sourceCode))
     {
         EmitAtNode(expr, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+        return;
+    }
+
+    if (IsFunctionReference(expr, scope, ctx))
+    {
+        EmitAtNode(expr, ctx, diagnostics::codes::IllegalOperation);
     }
 }
 
@@ -3061,6 +3167,11 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
     if (leftFuncdef)
     {
         CheckFuncdefAssignment(node, leftFuncdef->GetFuncdef(), right, ctx);
+    }
+    else if (types.from.empty() && IsFunctionReference(right, scope, ctx))
+    {
+        EmitAtNode(right, ctx, "as-err-no-implicit-conversion",
+                   {TrimString(NodeText(right, ctx.request.sourceCode)), types.to});
     }
 
     CheckHandleConstAssignment({left, right}, types, scope, ctx);

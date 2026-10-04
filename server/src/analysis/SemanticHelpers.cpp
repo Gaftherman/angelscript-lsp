@@ -2154,10 +2154,6 @@ static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const Expression
             {
                 return CleanExpressionType(sym.GetVariable().typeName);
             }
-            if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
-            {
-                return CleanExpressionType(sym.GetFunction().returnType);
-            }
         }
         if (auto enumType = ResolveScopedEnumMember(whole, ctx.symbolTable); !enumType.empty())
         {
@@ -2264,10 +2260,6 @@ static std::string ResolveIdentifierVirtualFallback(const std::string& name, con
                 {
                     return CleanExpressionType(sym.GetVariable().typeName);
                 }
-                if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
-                {
-                    return CleanExpressionType(sym.GetFunction().returnType);
-                }
             }
             break;
         }
@@ -2345,10 +2337,6 @@ static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeCo
             !sym.GetVariable().typeName.empty())
         {
             return CleanExpressionType(sym.GetVariable().typeName);
-        }
-        if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
-        {
-            return CleanExpressionType(sym.GetFunction().returnType);
         }
     }
     return ResolveIdentifierAccessorFallback(name, ctx.symbolTable);
@@ -2862,13 +2850,19 @@ static std::string ExtractMemberSymbolType(const Symbol& sym)
     }
     if (sym.type == SymbolType::Function)
     {
-        if (!sym.GetFunction().returnType.empty() && sym.GetFunction().returnType != "void")
+        const bool isAccessor =
+            sym.name.starts_with("get_") || sym.name.starts_with("set_") ||
+            (std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isProperty);
+        if (isAccessor)
         {
-            return CleanExpressionType(sym.GetFunction().returnType);
-        }
-        if (!sym.GetFunction().parameters.empty())
-        {
-            return CleanExpressionType(sym.GetFunction().parameters.back().typeName);
+            if (!sym.GetFunction().returnType.empty() && sym.GetFunction().returnType != "void")
+            {
+                return CleanExpressionType(sym.GetFunction().returnType);
+            }
+            if (!sym.GetFunction().parameters.empty())
+            {
+                return CleanExpressionType(sym.GetFunction().parameters.back().typeName);
+            }
         }
     }
     return "";
