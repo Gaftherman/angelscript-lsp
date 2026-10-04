@@ -401,7 +401,14 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
             auto hierarchy = analysis::GetInheritedTypeHierarchy(container.qualifiedName, request.symbolTable);
             for (const auto& cls : hierarchy)
             {
-                if (request.symbolTable.HasSymbol(cls + "::" + nodeText))
+                auto syms = request.symbolTable.FindSymbols(cls + "::" + nodeText);
+                bool hasMember = std::any_of(syms.begin(), syms.end(),
+                                             [](const Symbol& s)
+                                             {
+                                                 return s.containerKind != analysis::ContainerKind::Namespace &&
+                                                        s.containerKind != analysis::ContainerKind::Enum;
+                                             });
+                if (hasMember)
                 {
                     target.kind = TargetKind::ClassMember;
                     target.declaringClass = cls;
@@ -412,7 +419,15 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
         else if (container.kind == analysis::ContainerKind::Namespace)
         {
             std::string qName = container.qualifiedName + "::" + nodeText;
-            if (request.symbolTable.HasSymbol(qName))
+            auto syms = request.symbolTable.FindSymbols(qName);
+            bool hasNsSym = std::any_of(syms.begin(), syms.end(),
+                                        [](const Symbol& s)
+                                        {
+                                            return s.containerKind != analysis::ContainerKind::Class &&
+                                                   s.containerKind != analysis::ContainerKind::Interface &&
+                                                   s.containerKind != analysis::ContainerKind::Enum;
+                                        });
+            if (hasNsSym)
             {
                 target.kind = TargetKind::NamespaceSymbol;
                 target.declaringNamespace = container.qualifiedName;
@@ -539,6 +554,60 @@ bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const Resolv
     return false;
 }
 
+bool AssignTargetFromContainerKind(const analysis::Symbol& sym, TargetDescriptor& target)
+{
+    if (sym.containerKind == analysis::ContainerKind::Class || sym.containerKind == analysis::ContainerKind::Interface)
+    {
+        target.kind = TargetKind::ClassMember;
+        target.declaringClass = sym.containerName;
+        return true;
+    }
+    if (sym.containerKind == analysis::ContainerKind::Namespace)
+    {
+        target.kind = TargetKind::NamespaceSymbol;
+        target.declaringNamespace = sym.containerName;
+        target.qualifiedName = sym.qualifiedName;
+        return true;
+    }
+    if (sym.containerKind == analysis::ContainerKind::Enum)
+    {
+        target.kind = TargetKind::EnumMember;
+        target.declaringEnum = sym.containerName;
+        target.qualifiedName = sym.qualifiedName;
+        return true;
+    }
+    return false;
+}
+
+bool AssignTargetFromContainerLookup(const analysis::Symbol& sym, const SymbolTable& table, TargetDescriptor& target)
+{
+    auto containerSyms = table.FindSymbols(sym.containerName);
+    for (const auto& csym : containerSyms)
+    {
+        if (csym.type == analysis::SymbolType::Class || csym.type == analysis::SymbolType::Interface)
+        {
+            target.kind = TargetKind::ClassMember;
+            target.declaringClass = sym.containerName;
+            return true;
+        }
+        if (csym.type == analysis::SymbolType::Namespace)
+        {
+            target.kind = TargetKind::NamespaceSymbol;
+            target.declaringNamespace = sym.containerName;
+            target.qualifiedName = sym.qualifiedName;
+            return true;
+        }
+        if (csym.type == analysis::SymbolType::Enum)
+        {
+            target.kind = TargetKind::EnumMember;
+            target.declaringEnum = sym.containerName;
+            target.qualifiedName = sym.qualifiedName;
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * @brief Checks global symbols for class or namespace containers matching the symbol.
  * @param[in] nodeText Symbol identifier text.
@@ -561,29 +630,10 @@ void ResolveGlobalFallbackTarget(const std::string& nodeText, const ResolveTarge
                     {
                         continue;
                     }
-                    auto containerSyms = request.symbolTable.FindSymbols(sym.containerName);
-                    for (const auto& csym : containerSyms)
+                    if (AssignTargetFromContainerKind(sym, target) ||
+                        AssignTargetFromContainerLookup(sym, request.symbolTable, target))
                     {
-                        if (csym.type == analysis::SymbolType::Class || csym.type == analysis::SymbolType::Interface)
-                        {
-                            target.kind = TargetKind::ClassMember;
-                            target.declaringClass = sym.containerName;
-                            return;
-                        }
-                        if (csym.type == analysis::SymbolType::Namespace)
-                        {
-                            target.kind = TargetKind::NamespaceSymbol;
-                            target.declaringNamespace = sym.containerName;
-                            target.qualifiedName = sym.qualifiedName;
-                            return;
-                        }
-                        if (csym.type == analysis::SymbolType::Enum)
-                        {
-                            target.kind = TargetKind::EnumMember;
-                            target.declaringEnum = sym.containerName;
-                            target.qualifiedName = sym.qualifiedName;
-                            return;
-                        }
+                        return;
                     }
                 }
             }

@@ -281,6 +281,10 @@ SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, st
 
         if (sym == m_symClassBody || sym == m_symInterfaceBody)
         {
+            if (ctx.containerKind == ContainerKind::None)
+            {
+                ctx.containerKind = (sym == m_symClassBody) ? ContainerKind::Class : ContainerKind::Interface;
+            }
             ctx.isInsideClass = true;
             TSNode parentDecl = ts_node_parent(current);
             TSNode nameNode = GetChildByFieldName(parentDecl, "name");
@@ -298,6 +302,10 @@ SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, st
         }
         else if (sym == m_symNamespaceBody)
         {
+            if (ctx.containerKind == ContainerKind::None)
+            {
+                ctx.containerKind = ContainerKind::Namespace;
+            }
             ctx.isInsideNamespace = true;
             TSNode parentDecl = ts_node_parent(current);
             TSNode nameNode = GetChildByFieldName(parentDecl, "name");
@@ -411,7 +419,7 @@ void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC
     SymbolModifiers modifiers = ExtractModifiers(varDeclNode, sCtx.request.sourceCode);
     modifiers.isHandle = typeInfo.isHandle || modifiers.isHandle;
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Property, varDeclNode, nameNode, loc);
 
     VariableSignature varSig;
@@ -478,7 +486,7 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     TSNode nameNode = GetChildByFieldName(declaratorNode, "name");
     TSNode valueNode = FindDeclaratorValueNode(declaratorNode, sCtx.request.sourceCode);
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Variable, varDeclNode, nameNode, loc);
 
     VariableSignature varSig;
@@ -510,7 +518,8 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     {
         CallReferenceSignature callSig;
         callSig.calleeName = header.typeStr;
-        SymbolLocationContext callLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+        SymbolLocationContext callLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath,
+                                      ctx.containerKind};
         TSNode varTypeNode = GetChildByFieldName(varDeclNode, "var_type");
         TSNode refNode = ts_node_is_null(varTypeNode) ? declaratorNode : varTypeNode;
         Symbol callSym = CreateSymbol(SymbolType::CallReference, declaratorNode, refNode, callLoc);
@@ -658,7 +667,7 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     }
     ts_tree_cursor_delete(&delCursor);
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Function, funcNode, nameNode, loc);
 
     FunctionSignature funcSig;
@@ -735,6 +744,7 @@ static void SynthesizeDefaultConstructor(const Symbol& sym, SymbolTable& table)
     ctorSym.type = SymbolType::Function;
     ctorSym.name = sym.name;
     ctorSym.containerName = sym.qualifiedName;
+    ctorSym.containerKind = ContainerKind::Class;
     SymbolCollector::appendQualifiedName(ctorSym.qualifiedName, sym.qualifiedName, sym.name);
     ctorSym.fileUri = sym.fileUri;
     ctorSym.fullRange = sym.fullRange;
@@ -754,7 +764,7 @@ static void SynthesizeDefaultConstructor(const Symbol& sym, SymbolTable& table)
 void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldName(classNode, "name");
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Class, classNode, nameNode, loc);
 
     ClassSignature classSig;
@@ -828,7 +838,8 @@ void SymbolCollector::ProcessNamespace(TSNode namespaceNode, SymbolCollectContex
             {
                 continue;
             }
-            SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, currentPath};
+            SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, currentPath,
+                                      ContainerKind::Namespace};
             Symbol subSym = CreateSymbol(SymbolType::Namespace, namespaceNode, segNode, loc);
             sCtx.symbolTable.AddSymbol(subSym);
             currentPath = subSym.qualifiedName;
@@ -836,7 +847,7 @@ void SymbolCollector::ProcessNamespace(TSNode namespaceNode, SymbolCollectContex
     }
     else
     {
-        SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+        SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
         Symbol sym = CreateSymbol(SymbolType::Namespace, namespaceNode, nameNode, loc);
         sCtx.symbolTable.AddSymbol(sym);
     }
@@ -851,7 +862,7 @@ void SymbolCollector::ProcessTypedef(TSNode node, SymbolCollectContext& sCtx, co
         baseTypeNode = GetChildByFieldName(node, "type");
     }
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Typedef, node, nameNode, loc);
     TypedefSignature typedefSig;
 
@@ -888,7 +899,7 @@ void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, co
     modifiers.isReturnReference = retInfo.isReference || modifiers.isReturnReference;
     modifiers.isConst = retInfo.isConst || modifiers.isConst;
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Funcdef, node, nameNode, loc);
 
     FuncdefSignature funcdefSig;
@@ -1008,7 +1019,8 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
             memberNameNode = it->second.nameNode;
         }
 
-        SymbolLocationContext contLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+        SymbolLocationContext contLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath,
+                                      ctx.containerKind};
         Symbol mSym = CreateSymbol(SymbolType::Variable, memberDeclNode, memberNameNode, contLoc);
         mSym.name = m.name;
         appendQualifiedName(mSym.qualifiedName, ctx.containerPath, m.name);
@@ -1016,7 +1028,8 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
         mSym.signature = varSig;
         sCtx.symbolTable.AddSymbol(mSym);
 
-        SymbolLocationContext enumLoc{sCtx.request.sourceCode, sCtx.request.fileUri, enumContainer};
+        SymbolLocationContext enumLoc{sCtx.request.sourceCode, sCtx.request.fileUri, enumContainer,
+                                      ContainerKind::Enum};
         Symbol mSymScoped = CreateSymbol(SymbolType::Variable, memberDeclNode, memberNameNode, enumLoc);
         mSymScoped.name = m.name;
         appendQualifiedName(mSymScoped.qualifiedName, enumContainer, m.name);
@@ -1029,7 +1042,7 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
 void SymbolCollector::ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldName(node, "name");
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Enum, node, nameNode, loc);
 
     EnumSignature enumSig;
@@ -1052,7 +1065,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
     TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
     SymbolModifiers modifiers = ExtractModifiers(node, sCtx.request.sourceCode);
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Property, node, nameNode, loc);
 
     VariableSignature varSig;
@@ -1076,7 +1089,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
 void SymbolCollector::ProcessInterface(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldName(node, "name");
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Interface, node, nameNode, loc);
 
     InterfaceSignature ifaceSig;
@@ -1124,7 +1137,7 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
     if (callSig.calleeName.empty())
         return;
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::CallReference, callNode, nameNode, loc);
     sym.signature = callSig;
     sCtx.symbolTable.AddSymbol(sym);
@@ -1745,6 +1758,7 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
     sym.type = type;
     sym.name = GetNodeText(nameNode, loc.sourceCode);
     sym.containerName = loc.containerPath;
+    sym.containerKind = loc.containerKind;
     appendQualifiedName(sym.qualifiedName, loc.containerPath, sym.name);
     sym.fileUri = loc.fileUri;
     sym.startLine = startPt.row;

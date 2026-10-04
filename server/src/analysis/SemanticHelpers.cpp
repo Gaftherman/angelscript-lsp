@@ -432,10 +432,11 @@ static bool MatchesQualifiedTypeSuffix(std::string_view clean, const rules::Rule
     {
         return false;
     }
+    const bool isPartiallyQualified = clean.find("::") != std::string_view::npos;
     const std::string suffix = "::" + std::string(clean);
     for (const auto& qType : it->second)
     {
-        if (qType == clean || qType.ends_with(suffix))
+        if (qType == clean || (isPartiallyQualified && qType.ends_with(suffix)))
         {
             return true;
         }
@@ -475,9 +476,102 @@ bool MatchesParentNamespaceType(std::string_view clean, const SymbolTable& table
     }
     return false;
 }
+
+bool IsReachableViaUsingDirectives(std::string_view clean, const DiagnosticContext& ctx)
+{
+    if (!ctx.request.tree)
+    {
+        return false;
+    }
+    TSNode root = ts_tree_root_node(ctx.request.tree);
+    auto usings = CollectUsingNamespaces(root, ctx.request.sourceCode);
+    for (const auto& ns : usings)
+    {
+        std::string q = ns + "::" + std::string(clean);
+        if (ctx.request.symbolTable.HasSymbol(q))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IsReachableInContainerScope(std::string_view clean, std::string_view containerScope, const SymbolTable& table)
+{
+    if (containerScope.empty())
+    {
+        return false;
+    }
+    std::string prefix(containerScope);
+    while (!prefix.empty())
+    {
+        std::string q = prefix + "::" + std::string(clean);
+        if (table.HasSymbol(q))
+        {
+            return true;
+        }
+        const size_t sep = prefix.rfind("::");
+        if (sep == std::string_view::npos)
+        {
+            break;
+        }
+        prefix.resize(sep);
+    }
+    return false;
+}
 } // namespace
 
-bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx)
+std::string EnclosingNamespaceForSymbol(const Symbol& sym, const SymbolTable& table)
+{
+    if (sym.containerKind == ContainerKind::Namespace)
+    {
+        return sym.containerName;
+    }
+    if (sym.containerKind == ContainerKind::Class || sym.containerKind == ContainerKind::Interface)
+    {
+        auto classSyms = table.FindSymbols(sym.containerName);
+        for (const auto& cs : classSyms)
+        {
+            if (cs.type == SymbolType::Class || cs.type == SymbolType::Interface)
+            {
+                if (cs.containerKind == ContainerKind::Namespace)
+                {
+                    return cs.containerName;
+                }
+                break;
+            }
+        }
+    }
+    return "";
+}
+
+bool IsTemplateParameterOfContainer(std::string_view typeName, const Symbol& sym, const SymbolTable& table)
+{
+    if (typeName.empty() || sym.containerName.empty())
+    {
+        return false;
+    }
+    const std::string cleanContainer = CleanBaseType(sym.containerName);
+    const auto containerSyms = table.FindSymbolsPtr(cleanContainer.empty() ? sym.containerName : cleanContainer);
+    if (!containerSyms)
+    {
+        return false;
+    }
+    for (const auto& owner : *containerSyms)
+    {
+        if (owner.type == SymbolType::Class && std::holds_alternative<ClassSignature>(owner.signature))
+        {
+            const auto& sig = owner.GetClass();
+            if (std::find(sig.templateParams.begin(), sig.templateParams.end(), typeName) != sig.templateParams.end())
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx, std::string_view containerScope)
 {
     if (ctx.logger && ctx.logger->IsTraceEnabled())
     {
@@ -489,18 +583,24 @@ bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx)
         return true;
     if (!ctx.request.GetArrayTypeName().empty() && baseName == ctx.request.GetArrayTypeName())
         return true;
-    if (ctx.request.IsRegisteredSymbol(baseName) || ctx.request.symbolTable.HasSymbolAnywhere(baseName))
+    if (ctx.request.IsRegisteredSymbol(baseName))
         return true;
 
     std::string_view clean = baseName.starts_with("::") ? baseName.substr(2) : baseName;
     if (ctx.request.symbolTable.HasSymbol(clean))
         return true;
 
+    if (IsReachableInContainerScope(clean, containerScope, ctx.request.symbolTable))
+        return true;
+
     const auto* ruleIndex = ctx.request.symbolTable.GetRuleIndex().get();
     if (MatchesQualifiedTypeSuffix(clean, ruleIndex))
         return true;
 
-    return MatchesParentNamespaceType(clean, ctx.request.symbolTable, ruleIndex);
+    if (MatchesParentNamespaceType(clean, ctx.request.symbolTable, ruleIndex))
+        return true;
+
+    return IsReachableViaUsingDirectives(clean, ctx);
 }
 
 std::string_view LastScopeSegment(std::string_view name) noexcept
@@ -1682,6 +1782,31 @@ bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourc
 }
 
 /**
+ * @brief Filters candidate symbols to ensure they match the expected container kind.
+ * @param[in] found Symbol candidates to filter.
+ * @param[in] expected Expected enclosing container kind.
+ * @return Filtered vector containing only symbols consistent with expected container.
+ */
+static std::vector<Symbol> FilterSymbolsByContainerKind(std::vector<Symbol> found, ContainerKind expected)
+{
+    std::erase_if(found,
+                  [expected](const Symbol& s)
+                  {
+                      if (expected == ContainerKind::Class || expected == ContainerKind::Interface)
+                      {
+                          return s.containerKind == ContainerKind::Namespace || s.containerKind == ContainerKind::Enum;
+                      }
+                      if (expected == ContainerKind::Namespace)
+                      {
+                          return s.containerKind == ContainerKind::Class ||
+                                 s.containerKind == ContainerKind::Interface || s.containerKind == ContainerKind::Enum;
+                      }
+                      return false;
+                  });
+    return found;
+}
+
+/**
  * @brief Searches for a symbol name within an enclosing container hierarchy.
  */
 static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& symbolTable,
@@ -1706,7 +1831,7 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
             auto hierarchy = GetInheritedTypeHierarchy(container.qualifiedName, symbolTable);
             for (const auto& cls : hierarchy)
             {
-                auto found = symbolTable.FindSymbols(cls + "::" + name);
+                auto found = FilterSymbolsByContainerKind(symbolTable.FindSymbols(cls + "::" + name), container.kind);
                 if (!found.empty())
                 {
                     return found;
@@ -1718,7 +1843,8 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
                 auto bareHierarchy = GetInheritedTypeHierarchy(container.name, symbolTable);
                 for (const auto& cls : bareHierarchy)
                 {
-                    auto found = symbolTable.FindSymbols(cls + "::" + name);
+                    auto found =
+                        FilterSymbolsByContainerKind(symbolTable.FindSymbols(cls + "::" + name), container.kind);
                     if (!found.empty())
                     {
                         return found;
@@ -1728,7 +1854,8 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
         }
         else if (container.kind == ContainerKind::Namespace)
         {
-            auto found = symbolTable.FindSymbols(container.qualifiedName + "::" + name);
+            auto found = FilterSymbolsByContainerKind(symbolTable.FindSymbols(container.qualifiedName + "::" + name),
+                                                      container.kind);
             if (!found.empty())
             {
                 return found;
@@ -4786,6 +4913,7 @@ Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callNa
     sym.type = SymbolType::Function;
     sym.name = std::string(callName);
     sym.containerName = funcdefSym.containerName;
+    sym.containerKind = funcdefSym.containerKind;
     sym.qualifiedName = funcdefSym.qualifiedName;
     sym.fileUri = funcdefSym.fileUri;
     sym.startLine = funcdefSym.startLine;

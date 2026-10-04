@@ -51,16 +51,6 @@ using parser::GetNodeText;
 [[nodiscard]] std::string_view GetNodeTextView(TSNode node, std::string_view sourceCode) noexcept;
 
 /**
- * @brief Classification categories for enclosing lexical containers.
- */
-enum class ContainerKind
-{
-    Class,
-    Interface,
-    Namespace
-};
-
-/**
  * @brief Information about a parsed generic template type (e.g. array<dictionary<string, int>>).
  */
 struct TemplateTypeInfo
@@ -349,12 +339,30 @@ enum class NonInstantiableKind
 NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const class SymbolTable& table);
 
 /**
+ * @brief Returns the enclosing namespace prefix for a symbol, if any.
+ * @param[in] sym The symbol whose enclosing namespace is being inspected.
+ * @param[in] table Symbol table to look up declaring class if sym is a class member.
+ * @return Qualified namespace string, or empty if sym is in global namespace.
+ */
+std::string EnclosingNamespaceForSymbol(const Symbol& sym, const SymbolTable& table);
+
+/**
+ * @brief Checks if a type name corresponds to a template parameter of the symbol's enclosing container.
+ * @param[in] typeName Type name to check (e.g. "T").
+ * @param[in] sym Symbol whose container to inspect.
+ * @param[in] table Workspace symbol table.
+ * @return True if typeName matches an enclosing container's template parameter.
+ */
+bool IsTemplateParameterOfContainer(std::string_view typeName, const Symbol& sym, const SymbolTable& table);
+
+/**
  * @brief Checks whether the given base type name is a known type (primitive, string, array, or in SymbolTable).
  * @param baseName Type base name to check.
  * @param ctx DiagnosticContext containing request and SymbolTable.
+ * @param containerScope Optional enclosing namespace/container scope prefix.
  * @return True if baseName is a known valid type.
  */
-bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx);
+bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx, std::string_view containerScope = {});
 
 /**
  * @brief Checks whether the given type name denotes an enum in the symbol table.
