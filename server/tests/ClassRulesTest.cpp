@@ -8,6 +8,7 @@
 #include "analysis/rules/ClassRules.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
+#include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
@@ -585,4 +586,88 @@ TEST_CASE("ClassRules - Class Rules Corpus Audit" * doctest::skip(true))
     }
 
     CHECK(result.filesAnalysed > 0);
+}
+
+TEST_CASE("ClassRules - Missing interface method diagnostic underlines only class identifier, not full body")
+{
+    const std::string ifaceName = angel_lsp::test::GenerateRandomSymbolName("IConfigurable");
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("ASDynamicAmmoConfig");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Register");
+    const std::string helperName = angel_lsp::test::GenerateRandomSymbolName("ValidateAmmunition");
+
+    const std::string code = "interface " + ifaceName + "\n{\n    bool " + methodName + "();\n}\n\n" + "final class " +
+                             className + " : " + ifaceName + "\n{\n    void " + helperName +
+                             "()\n    {\n        int x = 1;\n        x = 2;\n    }\n}\n";
+
+    const auto diagnostics = AnalyzeClassSnippet(code);
+    bool foundInterfaceErr = false;
+    for (const auto& d : diagnostics)
+    {
+        if (d.code == "as-err-interface-impl-missing")
+        {
+            foundInterfaceErr = true;
+            CHECK(d.range.start.line == 5);
+            CHECK(d.range.end.line == 5);
+            CHECK(d.range.start.character == 12);
+            CHECK(d.range.end.character == static_cast<uint32_t>(12 + className.size()));
+        }
+    }
+    CHECK(foundInterfaceErr);
+}
+
+TEST_CASE("ClassRules - Missing opening brace before else-if does not synthesize fake else/if/return variables")
+{
+    const std::string ifaceName = angel_lsp::test::GenerateRandomSymbolName("IConfigurable");
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("ASDynamicAmmoConfig");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Register");
+    const std::string validateName = angel_lsp::test::GenerateRandomSymbolName("ValidateAmmunition");
+
+    const std::string code = "interface " + ifaceName + "\n{\n    bool " + methodName + "();\n}\n\n" + "final class " +
+                             className + " : " + ifaceName + "\n{\n    int " + validateName +
+                             "(int weapon, int health, int armor)\n    {\n"
+                             "        for (int ui = 0; ui < 2; ui++)\n        {\n"
+                             "            int idx = 0;\n"
+                             "            int type = 0;\n"
+                             "            if (weapon != 0)\n\n"
+                             "                idx = 1;\n"
+                             "                type = 2;\n"
+                             "            }\n"
+                             "            else if (health > 0)\n"
+                             "            {\n"
+                             "                type = 3;\n"
+                             "            }\n"
+                             "            else if (armor > 0)\n"
+                             "            {\n"
+                             "                type = 4;\n"
+                             "            }\n"
+                             "            else\n"
+                             "            {\n"
+                             "                type = 5;\n"
+                             "            }\n"
+                             "        }\n"
+                             "        return 0;\n"
+                             "    }\n\n"
+                             "    bool " +
+                             methodName + "() override\n    {\n        return true;\n    }\n}\n";
+
+    const auto diagnostics = AnalyzeClassSnippet(code);
+    bool hasSyntaxError = false;
+    for (const auto& d : diagnostics)
+    {
+        if (d.code == "as-syntax-error" || d.code == "as-syntax-error-missing")
+        {
+            hasSyntaxError = true;
+        }
+        // Must never register 'else if' as duplicate variable 'if' or unused variable 'if'
+        if (d.code == "as-err-duplicate-symbol" || d.code == "as-warn-unused-variable")
+        {
+            CHECK(d.message.find("'if'") == std::string::npos);
+        }
+        // No diagnostic may span across the entire multi-line class body
+        if (d.code == "as-err-interface-impl-missing")
+        {
+            CHECK(d.range.start.line == d.range.end.line);
+        }
+    }
+    CHECK(hasSyntaxError);
 }

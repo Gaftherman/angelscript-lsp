@@ -203,18 +203,33 @@ Diagnostic DiagnosticContext::CreateDiagnostic(SourceRange range, std::string_vi
     return diag;
 }
 
+/**
+ * @brief Resolves the diagnostic range for a symbol declaration, preferring its identifier selectionRange.
+ * @param[in] sym Target symbol declaration.
+ * @return Identifier selection range when valid, or the symbol's full range as fallback.
+ */
+SourceRange ResolveSymbolDiagnosticRange(const Symbol& sym) noexcept
+{
+    if (sym.selectionRange.endLine > sym.selectionRange.startLine ||
+        sym.selectionRange.endCharacter > sym.selectionRange.startCharacter)
+    {
+        return sym.selectionRange;
+    }
+    return SourceRange{sym.startLine, sym.startCharacter, sym.endLine, sym.endCharacter};
+}
+
 // --- Diagnostic Emission for Symbol ---
 
 void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, DiagnosticSeverity severity) const
 {
-    SourceRange range{sym.startLine, sym.startCharacter, sym.endLine, sym.endCharacter};
+    const SourceRange range = ResolveSymbolDiagnosticRange(sym);
     Append(CreateDiagnostic(range, sym.fileUri, code, severity));
 }
 
 void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_view arg1,
                              DiagnosticSeverity severity) const
 {
-    SourceRange range{sym.startLine, sym.startCharacter, sym.endLine, sym.endCharacter};
+    const SourceRange range = ResolveSymbolDiagnosticRange(sym);
     Diagnostic diag = CreateDiagnostic(range, sym.fileUri, code, severity);
     ApplyMessageFormatting(diag, request.i18n, code, {arg1});
     Append(std::move(diag));
@@ -223,7 +238,7 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri
 void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_view arg1,
                              std::string_view arg2) const
 {
-    SourceRange range{sym.startLine, sym.startCharacter, sym.endLine, sym.endCharacter};
+    const SourceRange range = ResolveSymbolDiagnosticRange(sym);
     Diagnostic diag = CreateDiagnostic(range, sym.fileUri, code, DiagnosticSeverity::Error);
     ApplyMessageFormatting(diag, request.i18n, code, {arg1, arg2});
     Append(std::move(diag));
@@ -232,7 +247,7 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri
 void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::initializer_list<std::string_view> args,
                              DiagnosticSeverity severity) const
 {
-    SourceRange range{sym.startLine, sym.startCharacter, sym.endLine, sym.endCharacter};
+    const SourceRange range = ResolveSymbolDiagnosticRange(sym);
     Diagnostic diag = CreateDiagnostic(range, sym.fileUri, code, severity);
     ApplyMessageFormatting(diag, request.i18n, code, args);
     Append(std::move(diag));

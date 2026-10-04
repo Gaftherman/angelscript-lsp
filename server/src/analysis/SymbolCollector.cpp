@@ -526,6 +526,11 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
     TSNode typeNode = GetChildByFieldName(varDeclNode, "var_type");
     std::string typeStr = GetNodeText(typeNode, sCtx.request.sourceCode);
     TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
+    if (IsReservedKeyword(typeInfo.baseTypeName) && !IsPrimitiveTypeName(typeInfo.baseTypeName) &&
+        typeInfo.baseTypeName != "auto")
+    {
+        return;
+    }
     SymbolModifiers modifiers = ExtractModifiers(varDeclNode, sCtx.request.sourceCode);
     modifiers.isHandle = typeInfo.isHandle || modifiers.isHandle;
     modifiers.isReturnReference = typeInfo.isReference || modifiers.isReturnReference;

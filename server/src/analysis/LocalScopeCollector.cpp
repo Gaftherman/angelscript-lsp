@@ -290,6 +290,12 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
         capture.definitionKind == LocalDefinitionKind::Parameter)
     {
         ReadVariableTypeInfo(capture.node, sourceCode, def);
+        const std::string baseType = CleanBaseType(def.typeName);
+        if (capture.definitionKind == LocalDefinitionKind::Variable && IsReservedKeyword(baseType) &&
+            !IsPrimitiveTypeName(baseType) && baseType != "auto")
+        {
+            return;
+        }
     }
 
     current->definitions.push_back(std::move(def));
