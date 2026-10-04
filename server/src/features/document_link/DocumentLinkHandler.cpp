@@ -84,7 +84,6 @@ std::optional<DocumentLinkResult> GetDocumentLinks(const DocumentLinkRequest& re
         link.range.end.line = static_cast<uint32_t>(directive.line);
         link.range.end.character = span->second;
         link.target = lsp::Uri::fileUriFromPath(target);
-        link.tooltip = target;
 
         links.push_back(std::move(link));
     }

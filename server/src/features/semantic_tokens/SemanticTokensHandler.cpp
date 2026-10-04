@@ -1,5 +1,6 @@
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "analysis/NodeIndex.h"
+#include "analysis/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
 #include "parser/GrammarNames.h"
 #include "parser/QueryRegistry.h"
@@ -1055,6 +1056,116 @@ PrecalculateDeclarationRefinements(const analysis::NodeIndex* nodeIndex, const G
 }
 
 /**
+ * @brief Checks if any symbol in a list is an enum constant.
+ * @param[in] symbols Symbol vector to inspect.
+ * @return True if at least one symbol is an enum constant.
+ */
+bool ContainsEnumConstant(const std::shared_ptr<const std::vector<analysis::Symbol>>& symbols)
+{
+    if (!symbols || symbols->empty())
+    {
+        return false;
+    }
+    return std::any_of(symbols->begin(), symbols->end(), [](const analysis::Symbol& sym)
+                       { return sym.type == analysis::SymbolType::Variable && sym.GetVariable().isEnumConstant; });
+}
+
+/**
+ * @brief Checks if all symbols in a non-empty list are enum types.
+ * @param[in] symbols Symbol vector to inspect.
+ * @return True if all symbols have SymbolType::Enum.
+ */
+bool AreAllEnumTypes(const std::shared_ptr<const std::vector<analysis::Symbol>>& symbols)
+{
+    return symbols && !symbols->empty() &&
+           std::all_of(symbols->begin(), symbols->end(),
+                       [](const analysis::Symbol& sym) { return sym.type == analysis::SymbolType::Enum; });
+}
+
+/**
+ * @brief Applies RuleIndex-based enum qualifier and member upgrades for a scoped_identifier.
+ * @param[in] scopedNode AST node of type scoped_identifier.
+ * @param[in] sourceCode Source text buffer.
+ * @param[in] ruleIndex Pre-indexed workspace symbol metadata.
+ * @param[in,out] upgrades Map from start byte to upgraded token type.
+ */
+void ApplyRuleIndexEnumUpgrades(TSNode scopedNode, std::string_view sourceCode,
+                                const analysis::rules::RuleIndex& ruleIndex,
+                                ankerl::unordered_dense::map<uint32_t, uint32_t>& upgrades)
+{
+    const uint32_t namedCount = ts_node_named_child_count(scopedNode);
+    TSNode leftNode = ts_node_named_child(scopedNode, 0);
+    TSNode rightNode = ts_node_named_child(scopedNode, namedCount - 1);
+    TSNode prevNode = ts_node_named_child(scopedNode, namedCount - 2);
+    const std::string_view leftText = analysis::GetNodeTextView(leftNode, sourceCode);
+    const std::string_view rightText = analysis::GetNodeTextView(rightNode, sourceCode);
+    const std::string_view prevText = analysis::GetNodeTextView(prevNode, sourceCode);
+    auto enumIt = ruleIndex.enumSymbolsByMemberName.find(std::string(rightText));
+    if (enumIt == ruleIndex.enumSymbolsByMemberName.end())
+    {
+        return;
+    }
+    const uint32_t rightStart = ts_node_start_byte(rightNode);
+    for (const auto& enumSym : enumIt->second)
+    {
+        if (prevText == enumSym.name)
+        {
+            upgrades[ts_node_start_byte(prevNode)] = Type_Enum;
+            upgrades[rightStart] = Type_EnumMember;
+            return;
+        }
+        if (leftText == enumSym.containerName || prevText == enumSym.containerName ||
+            prevText == analysis::LastScopeSegment(enumSym.containerName))
+        {
+            upgrades[rightStart] = Type_EnumMember;
+        }
+    }
+}
+
+/**
+ * @brief Upgrades a single scoped_identifier node's enum and enum-member segments.
+ * @param[in] scopedNode AST node of type scoped_identifier.
+ * @param[in] sourceCode Source text buffer.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in,out] upgrades Map from start byte to upgraded token type.
+ */
+void UpgradeScopedIdentifierEnumTokens(TSNode scopedNode, std::string_view sourceCode,
+                                       const analysis::SymbolTable& symbolTable,
+                                       ankerl::unordered_dense::map<uint32_t, uint32_t>& upgrades)
+{
+    const uint32_t namedCount = ts_node_named_child_count(scopedNode);
+    if (namedCount < 2)
+    {
+        return;
+    }
+    TSNode leftNode = ts_node_named_child(scopedNode, 0);
+    TSNode rightNode = ts_node_named_child(scopedNode, namedCount - 1);
+    const std::string_view leftText = analysis::GetNodeTextView(leftNode, sourceCode);
+    const std::string_view rightText = analysis::GetNodeTextView(rightNode, sourceCode);
+    if (leftText.empty() || rightText.empty())
+    {
+        return;
+    }
+
+    const uint32_t leftStart = ts_node_start_byte(leftNode);
+    const uint32_t rightStart = ts_node_start_byte(rightNode);
+    if (AreAllEnumTypes(symbolTable.FindSymbolsPtr(leftText)))
+    {
+        upgrades[leftStart] = Type_Enum;
+        upgrades[rightStart] = Type_EnumMember;
+        return;
+    }
+    if (ContainsEnumConstant(symbolTable.FindSymbolsPtr(analysis::GetNodeTextView(scopedNode, sourceCode))))
+    {
+        upgrades[rightStart] = Type_EnumMember;
+    }
+    if (const auto ruleIndex = symbolTable.GetRuleIndex())
+    {
+        ApplyRuleIndexEnumUpgrades(scopedNode, sourceCode, *ruleIndex, upgrades);
+    }
+}
+
+/**
  * @brief Pre-calculates scoped enum qualifier and member token upgrades.
  * @param[in] nodeIndex Pre-indexed AST, or nullptr.
  * @param[in] sourceCode Source text buffer.
@@ -1074,45 +1185,7 @@ PrecalculateScopedEnumUpgrades(const analysis::NodeIndex* nodeIndex, std::string
 
     for (TSNode scopedNode : nodeIndex->Nodes(syms.symScopedIdentifier))
     {
-        uint32_t namedCount = ts_node_named_child_count(scopedNode);
-        TSNode leftNode = TSNode{};
-        TSNode rightNode = TSNode{};
-        if (namedCount >= 2)
-        {
-            leftNode = ts_node_named_child(scopedNode, 0);
-            rightNode = ts_node_named_child(scopedNode, namedCount - 1);
-        }
-        else
-        {
-            uint32_t allCount = ts_node_child_count(scopedNode);
-            if (allCount >= 2)
-            {
-                leftNode = ts_node_child(scopedNode, 0);
-                rightNode = ts_node_child(scopedNode, allCount - 1);
-            }
-        }
-
-        if (!ts_node_is_null(leftNode) && !ts_node_is_null(rightNode))
-        {
-            uint32_t leftStart = ts_node_start_byte(leftNode);
-            uint32_t leftEnd = ts_node_end_byte(leftNode);
-            if (leftStart < leftEnd && leftEnd <= sourceCode.size())
-            {
-                std::string_view leftText(sourceCode.data() + leftStart, leftEnd - leftStart);
-                const auto leftSymbols = symbolTable.FindSymbolsPtr(leftText);
-                if (leftSymbols && !leftSymbols->empty())
-                {
-                    bool allEnum = std::all_of(leftSymbols->begin(), leftSymbols->end(), [](const analysis::Symbol& sym)
-                                               { return sym.type == analysis::SymbolType::Enum; });
-                    if (allEnum)
-                    {
-                        upgrades[leftStart] = Type_Enum;
-                        uint32_t rightStart = ts_node_start_byte(rightNode);
-                        upgrades[rightStart] = Type_EnumMember;
-                    }
-                }
-            }
-        }
+        UpgradeScopedIdentifierEnumTokens(scopedNode, sourceCode, symbolTable, upgrades);
     }
     return upgrades;
 }
@@ -1221,19 +1294,50 @@ uint32_t MatchAgreedSymbolType(analysis::SymbolType agreedType, uint32_t tokenTy
 }
 
 /**
+ * @brief Fallback refinement using RuleIndex for namespace-scoped enums and types.
+ * @param[in] tokenText Identifier text.
+ * @param[in] tokenType Current token type.
+ * @param[in] ctx Refinement context.
+ * @return Refined token type.
+ */
+uint32_t RefineRuleIndexFallback(std::string_view tokenText, uint32_t tokenType, const TokenRefinementContext& ctx)
+{
+    if (!ctx.ruleIndex)
+    {
+        return tokenType;
+    }
+    if (tokenType == Type_Variable && ctx.ruleIndex->enumMemberNames.contains(std::string(tokenText)))
+    {
+        return Type_EnumMember;
+    }
+    if (tokenType == Type_Type)
+    {
+        auto it = ctx.ruleIndex->qualifiedTypesByShortName.find(std::string(tokenText));
+        if (it != ctx.ruleIndex->qualifiedTypesByShortName.end() && !it->second.empty())
+        {
+            const auto syms = ctx.request.symbolTable.FindSymbolsPtr(it->second.front());
+            if (syms && !syms->empty())
+            {
+                return MatchAgreedSymbolType(syms->front().type, tokenType, true, false);
+            }
+        }
+    }
+    return tokenType;
+}
+
+/**
  * @brief Matches an identifier with symbolTable declarations to upgrade coarse tokens.
  * @param[in] tokenText Identifier text.
  * @param[in] tokenType Current token type.
- * @param[in] symbolTable Global symbol table.
+ * @param[in] ctx Refinement context.
  * @return Refined token type.
  */
-uint32_t RefineSymbolTableMatch(std::string_view tokenText, uint32_t tokenType,
-                                const analysis::SymbolTable& symbolTable)
+uint32_t RefineSymbolTableMatch(std::string_view tokenText, uint32_t tokenType, const TokenRefinementContext& ctx)
 {
-    const auto symbols = symbolTable.FindSymbolsPtr(tokenText);
+    const auto symbols = ctx.request.symbolTable.FindSymbolsPtr(tokenText);
     if (!symbols || symbols->empty())
     {
-        return tokenType;
+        return RefineRuleIndexFallback(tokenText, tokenType, ctx);
     }
     const analysis::SymbolType agreedType = symbols->front().type;
     bool allSymbolsMatch = std::all_of(symbols->begin(), symbols->end(),
@@ -1308,7 +1412,7 @@ uint32_t RefineSyntaxContext(std::string_view tokenText, uint32_t startByte, uin
     }
     if (tokenType == Type_Type || tokenType == Type_Variable || tokenType == Type_Function)
     {
-        tokenType = RefineSymbolTableMatch(tokenText, tokenType, ctx.request.symbolTable);
+        tokenType = RefineSymbolTableMatch(tokenText, tokenType, ctx);
     }
     return tokenType;
 }

@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "analysis/DocComment.h"
+#include "helpers/TestUtils.h"
 
 #include <string>
 
@@ -40,14 +41,15 @@ TEST_CASE("DocComment - Reads a run of line comments")
     CHECK(doc.find("Call once per round.") != std::string::npos);
 }
 
-TEST_CASE("DocComment - Skips blank lines between the comment and the declaration")
+TEST_CASE("DocComment - Does not attach comments separated by blank lines from the declaration")
 {
-    const std::string source = "/// Spawns the entity.\n"
-                               "\n"
-                               "\n"
-                               "void Spawn();\n";
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("func");
+    const std::string commentText = angel_lsp::test::GenerateRandomSymbolName("DisconnectedComment");
+    const std::string sourceWithBlank = "// " + commentText + "\n\nvoid " + fnName + "() {}\n";
+    CHECK(ExtractDocComment(sourceWithBlank, 2).empty());
 
-    CHECK(ExtractDocComment(source, 3).find("Spawns the entity.") != std::string::npos);
+    const std::string sourceAdjacent = "// " + commentText + "\nvoid " + fnName + "() {}\n";
+    CHECK(ExtractDocComment(sourceAdjacent, 1).find(commentText) != std::string::npos);
 }
 
 TEST_CASE("DocComment - Returns nothing when there is no comment to read")

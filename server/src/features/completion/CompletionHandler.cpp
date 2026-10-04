@@ -949,6 +949,99 @@ void CollectEnumMembersUnderQualifier(const std::string& qualifier, CompletionCo
  * @param[out] kind Computed LSP completion item kind.
  * @param[out] detail Computed detail string.
  */
+/**
+ * @brief Reconstructs the qualified namespace path for a lexical scope node.
+ * @param[in] scope Starting lexical scope node.
+ * @param[in] request Completion request context.
+ * @return Qualified namespace path, or empty string if at global scope.
+ */
+std::string BuildScopeNamespacePath(const analysis::Scope* scope, const CompletionRequest& request)
+{
+    if (!scope || !request.tree)
+    {
+        return "";
+    }
+    TSNode rootNode = ts_tree_root_node(request.tree);
+    TSPoint pt{scope->startLine, scope->startCharacter};
+    TSNode curNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+    for (const auto& c : analysis::GetEnclosingContainers(curNode, request.sourceCode))
+    {
+        if (c.kind == analysis::ContainerKind::Namespace)
+        {
+            return c.qualifiedName;
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Appends a namespace name to the list if non-empty and not yet present.
+ * @param[in,out] out Target namespace list.
+ * @param[in] ns Candidate namespace string.
+ */
+void AppendUniqueNamespace(std::vector<std::string>& out, const std::string& ns)
+{
+    if (!ns.empty() && std::find(out.begin(), out.end(), ns) == out.end())
+    {
+        out.push_back(ns);
+    }
+}
+
+/**
+ * @brief Collects all namespaces visible at the cursor via enclosing blocks and `using namespace` directives.
+ * @param[in] request Completion request context.
+ * @param[in] innermostScope Innermost lexical scope at cursor, if available.
+ * @return Ordered list of unique visible namespace names.
+ */
+std::vector<std::string> CollectVisibleNamespaces(const CompletionRequest& request,
+                                                  const analysis::Scope* innermostScope)
+{
+    std::vector<std::string> visible;
+    std::vector<std::string> enclosing;
+    if (request.tree)
+    {
+        TSNode rootNode = ts_tree_root_node(request.tree);
+        TSPoint pt{request.position.line, request.position.character};
+        TSNode curNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+        for (const auto& c : analysis::GetEnclosingContainers(curNode, request.sourceCode))
+        {
+            if (c.kind == analysis::ContainerKind::Namespace)
+            {
+                AppendUniqueNamespace(enclosing, c.qualifiedName);
+                AppendUniqueNamespace(visible, c.qualifiedName);
+            }
+        }
+    }
+    for (const analysis::Scope* cur = innermostScope; cur != nullptr; cur = cur->parent)
+    {
+        if (cur->kind == analysis::ScopeKind::Namespace)
+        {
+            std::string nsPath = BuildScopeNamespacePath(cur, request);
+            AppendUniqueNamespace(enclosing, nsPath);
+            AppendUniqueNamespace(visible, nsPath);
+        }
+    }
+    if (request.tree)
+    {
+        TSNode rootNode = ts_tree_root_node(request.tree);
+        for (const auto& imported : analysis::CollectUsingNamespaces(rootNode, request.sourceCode))
+        {
+            AppendUniqueNamespace(visible, imported);
+            for (const auto& enc : enclosing)
+            {
+                AppendUniqueNamespace(visible, enc + "::" + imported);
+            }
+        }
+    }
+    return visible;
+}
+
+/**
+ * @brief Resolves completion item kind and detail for a container member symbol.
+ * @param[in] sym Container member symbol.
+ * @param[out] kind Computed LSP completion item kind.
+ * @param[out] detail Computed detail string.
+ */
 void ResolveContainerMemberItemDetails(const analysis::Symbol& sym, lsp::CompletionItemKind& kind, std::string& detail)
 {
     kind = lsp::CompletionItemKind::Variable;
@@ -959,8 +1052,17 @@ void ResolveContainerMemberItemDetails(const analysis::Symbol& sym, lsp::Complet
         detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
         break;
     case analysis::SymbolType::Variable:
-        kind = lsp::CompletionItemKind::Variable;
-        detail = sym.GetVariable().typeName;
+        if (sym.GetVariable().isEnumConstant)
+        {
+            kind = lsp::CompletionItemKind::EnumMember;
+            const auto& var = sym.GetVariable();
+            detail = var.typeName.empty() ? sym.qualifiedName : (var.typeName + "::" + sym.name);
+        }
+        else
+        {
+            kind = lsp::CompletionItemKind::Variable;
+            detail = sym.GetVariable().typeName;
+        }
         break;
     case analysis::SymbolType::Class:
         kind = lsp::CompletionItemKind::Class;
@@ -1032,10 +1134,6 @@ void AddContainerMembers(const std::string& container, const std::string& qualif
         }
         for (const auto& sym : *symList)
         {
-            if (sym.type == analysis::SymbolType::Variable && sym.GetVariable().isEnumConstant)
-            {
-                continue;
-            }
             if (sym.containerName == container || sym.containerName == qualifier)
             {
                 lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
@@ -1071,6 +1169,11 @@ void CollectContainerMembersUnderQualifier(const std::string& qualifier, Complet
             }
         }
     }
+    for (const auto& ns : CollectVisibleNamespaces(collector.request, nullptr))
+    {
+        const std::string qualifiedContainer = ns + "::" + qualifier;
+        AddContainerMembers(qualifiedContainer, qualifier, ruleIndex.get(), collector);
+    }
 }
 
 /**
@@ -1093,6 +1196,10 @@ bool TryCompleteScopeResolution(const std::string& prefix, CompletionCollector& 
         qualifier.resize(qualifier.size() - 2);
     }
     CollectEnumMembersUnderQualifier(qualifier, collector);
+    for (const auto& ns : CollectVisibleNamespaces(collector.request, nullptr))
+    {
+        CollectEnumMembersUnderQualifier(ns + "::" + qualifier, collector);
+    }
     if (IsEnumQualifier(qualifier, collector.request.symbolTable))
     {
         return true;
@@ -1301,7 +1408,7 @@ std::string FindEnclosingClassName(const CompletionRequest& request)
         {
             if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
             {
-                return c.name;
+                return c.qualifiedName.empty() ? c.name : c.qualifiedName;
             }
         }
     }
@@ -1316,7 +1423,7 @@ std::string FindEnclosingClassName(const CompletionRequest& request)
                 {
                     if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
                     {
-                        className = sym.name;
+                        className = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
                         return;
                     }
                 }
@@ -1681,25 +1788,54 @@ static void AddEnumConstantCandidate(CompletionCollector& collector, const analy
 }
 
 /**
- * @brief Processes a single local scope definition and adds completion candidate.
+ * @brief Processes a local scope constant definition (enum constant) and adds completion candidate.
  * @param[in] def Local definition entry.
+ * @param[in] scopeNs Enclosing namespace path of the scope.
  * @param[in,out] collector Completion collector context.
  * @param[in] prox Symbol proximity tier.
  */
-void ProcessScopeDefinition(const analysis::LocalDefinition& def, CompletionCollector& collector, SymbolProximity prox)
+void ProcessScopeConstantDefinition(const analysis::LocalDefinition& def, const std::string& scopeNs,
+                                    CompletionCollector& collector, SymbolProximity prox)
+{
+    const std::string symbolKey = scopeNs.empty() ? def.name : (scopeNs + "::" + def.name);
+    auto syms = collector.request.symbolTable.FindSymbols(symbolKey);
+    if (syms.empty() && !scopeNs.empty())
+    {
+        syms = collector.request.symbolTable.FindSymbols(def.name);
+    }
+    bool added = false;
+    for (const auto& sym : syms)
+    {
+        if (sym.type == analysis::SymbolType::Variable && sym.GetVariable().isEnumConstant)
+        {
+            AddEnumConstantCandidate(collector, sym);
+            added = true;
+        }
+    }
+    if (!added)
+    {
+        std::string sortText = FormatProximitySortText(prox, def.name);
+        AddItemIfNew(collector, {def.name, lsp::CompletionItemKind::EnumMember, def.typeName, "", symbolKey, "",
+                                 std::move(sortText)});
+    }
+}
+
+/**
+ * @brief Processes a single local scope definition and adds completion candidate.
+ * @param[in] def Local definition entry.
+ * @param[in] scopeNs Enclosing namespace path of the scope.
+ * @param[in,out] collector Completion collector context.
+ * @param[in] prox Symbol proximity tier.
+ */
+void ProcessScopeDefinition(const analysis::LocalDefinition& def, const std::string& scopeNs,
+                            CompletionCollector& collector, SymbolProximity prox)
 {
     if (def.kind == analysis::LocalDefinitionKind::Constant)
     {
-        auto syms = collector.request.symbolTable.FindSymbols(def.name);
-        for (const auto& sym : syms)
-        {
-            if (sym.type == analysis::SymbolType::Variable && sym.GetVariable().isEnumConstant)
-            {
-                AddEnumConstantCandidate(collector, sym);
-            }
-        }
+        ProcessScopeConstantDefinition(def, scopeNs, collector, prox);
         return;
     }
+    const std::string symbolKey = scopeNs.empty() ? def.name : (scopeNs + "::" + def.name);
     lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
     bool isCallable = false;
     std::string snippet;
@@ -1711,7 +1847,11 @@ void ProcessScopeDefinition(const analysis::LocalDefinition& def, CompletionColl
             !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
         if (collector.request.snippetSupport && completeParens)
         {
-            snippet = CallSnippetForName(def.name, collector.request.symbolTable);
+            snippet = CallSnippetForName(symbolKey, collector.request.symbolTable);
+            if (snippet.empty() && !scopeNs.empty())
+            {
+                snippet = CallSnippetForName(def.name, collector.request.symbolTable);
+            }
         }
     }
     else if (def.kind == analysis::LocalDefinitionKind::Type)
@@ -1719,11 +1859,15 @@ void ProcessScopeDefinition(const analysis::LocalDefinition& def, CompletionColl
         kind = lsp::CompletionItemKind::Class;
         if (collector.request.snippetSupport)
         {
-            snippet = TemplateSnippetForName(def.name, collector.request.symbolTable);
+            snippet = TemplateSnippetForName(symbolKey, collector.request.symbolTable);
+            if (snippet.empty() && !scopeNs.empty())
+            {
+                snippet = TemplateSnippetForName(def.name, collector.request.symbolTable);
+            }
         }
     }
     std::string sortText = FormatProximitySortText(prox, def.name);
-    AddItemIfNew(collector, {def.name, kind, def.typeName, "", isCallable ? def.name : std::string{}, snippet,
+    AddItemIfNew(collector, {def.name, kind, def.typeName, "", isCallable ? symbolKey : std::string{}, snippet,
                              std::move(sortText)});
 }
 
@@ -1743,9 +1887,10 @@ void CollectScopeDefinitions(const analysis::Scope* innermostScope, CompletionCo
         const bool isLocal = (cur->kind == analysis::ScopeKind::Block || cur->kind == analysis::ScopeKind::Function ||
                               cur->kind == analysis::ScopeKind::Closure);
         const SymbolProximity prox = isLocal ? SymbolProximity::Local : SymbolProximity::CurrentFile;
+        const std::string scopeNs = BuildScopeNamespacePath(cur, collector.request);
         for (const auto& def : cur->definitions)
         {
-            ProcessScopeDefinition(def, collector, prox);
+            ProcessScopeDefinition(def, scopeNs, collector, prox);
         }
     }
 }
@@ -1753,7 +1898,7 @@ void CollectScopeDefinitions(const analysis::Scope* innermostScope, CompletionCo
 static void CollectEnclosingMemberCandidate(const analysis::Symbol& sym, const std::string& enclosingClassName,
                                             CompletionCollector& collector)
 {
-    if (sym.containerName != enclosingClassName)
+    if (sym.containerName != enclosingClassName && sym.containerName != analysis::LastScopeSegment(enclosingClassName))
     {
         return;
     }
@@ -1977,6 +2122,45 @@ void CollectGlobalSymbols(bool accessorsAreProperties, bool accessorKeywordRequi
         for (const auto& [name, detail] : collector.request.findModuleSymbols(queryPrefix))
         {
             AddItemIfNew(collector, {name, lsp::CompletionItemKind::Module, detail, "", name});
+        }
+    }
+}
+
+/**
+ * @brief Collects symbols from enclosing namespaces and active `using namespace` directives.
+ * @param[in] innermostScope Innermost lexical scope at cursor.
+ * @param[in] queryPrefix Prefix to filter candidate symbol names by.
+ * @param[in,out] collector Completion collector context.
+ */
+void CollectVisibleNamespaceSymbols(const analysis::Scope* innermostScope, std::string_view queryPrefix,
+                                    CompletionCollector& collector)
+{
+    const auto ruleIndex = collector.request.symbolTable.GetRuleIndex();
+    if (!ruleIndex)
+    {
+        return;
+    }
+    const int accessorMode = collector.request.config ? collector.request.config->engine.propertyAccessorMode : 2;
+    const bool accessorsAreProperties = accessorMode >= 2;
+    const bool accessorKeywordRequired = accessorMode == 3;
+    for (const auto& ns : CollectVisibleNamespaces(collector.request, innermostScope))
+    {
+        const auto& cm = ruleIndex->Members(ns);
+        for (const auto& key : cm.memberKeys)
+        {
+            const auto symList = collector.request.symbolTable.FindSymbolsPtr(key);
+            if (!symList)
+            {
+                continue;
+            }
+            for (const auto& sym : *symList)
+            {
+                if (sym.containerName == ns && sym.type != analysis::SymbolType::CallReference &&
+                    BucketMatchesPrefix(sym.name, queryPrefix, accessorsAreProperties))
+                {
+                    CollectGlobalSymbolItem(sym, accessorsAreProperties, accessorKeywordRequired, collector);
+                }
+            }
         }
     }
 }
@@ -2504,6 +2688,7 @@ std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
     CollectScopeDefinitions(innermostScope, collector);
     CollectEnclosingClassMembers(collector);
     const std::string_view queryPrefix = ExtractQueryPrefix(prefix);
+    CollectVisibleNamespaceSymbols(innermostScope, queryPrefix, collector);
     CollectGlobalSymbols(accessorsAreProperties, accessorKeywordRequired, queryPrefix, collector);
     CollectDeclarationSnippets(collector);
     CollectKeywords(collector);

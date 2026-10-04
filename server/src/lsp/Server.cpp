@@ -808,6 +808,10 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uri
     }
 
     features::SemanticTokensRequest request{uriStr, text, tree, m_symbolTable};
+    if (tree != nullptr && m_localScopeCollector != nullptr)
+    {
+        m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), text));
+    }
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
     request.nodeIndex = nodeIndexPtr;
     request.excludedLineRanges = ExcludedLineRanges(text);

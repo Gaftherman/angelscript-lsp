@@ -1462,3 +1462,62 @@ TEST_CASE("SemanticTokensHandler - Handle '@' and parameter reference '&out' cla
 
     ts_tree_delete(tree);
 }
+
+TEST_CASE("SemanticTokensHandler - Namespace-qualified and unqualified enum members classify as enumMember")
+{
+    const std::string nsBase = angel_lsp::test::GenerateRandomSymbolName("INS2BASE");
+    const std::string enumIron = angel_lsp::test::GenerateRandomSymbolName("INS2_IRON_OPTIONS");
+    const std::string memIronIn = angel_lsp::test::GenerateRandomSymbolName("IRON_IN");
+    const std::string memScpFire = angel_lsp::test::GenerateRandomSymbolName("SCP_FIRE_FOV20");
+
+    const std::string code = fmt::format("namespace {}\n"
+                                         "{{\n"
+                                         "enum {}\n"
+                                         "{{\n"
+                                         "    {} = 0,\n"
+                                         "    {}\n"
+                                         "}};\n"
+                                         "}}\n"
+                                         "using namespace {};\n"
+                                         "void TestFn()\n"
+                                         "{{\n"
+                                         "    int a = {}::{};\n"
+                                         "    int b = {}::{}::{};\n"
+                                         "    int c = {};\n"
+                                         "}}\n",
+                                         nsBase, enumIron, memIronIn, memScpFire, nsBase, nsBase, memIronIn, nsBase,
+                                         enumIron, memIronIn, memScpFire);
+
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{nullptr};
+    SymbolTable table;
+    collector.CollectSymbols("file:///test_ns_enum.as", code, parser, table);
+
+    // Intentionally omit scopeRoot (simulating keystroke before background ScopeIndex refresh)
+    SemanticTokensRequest request{"file:///test_ns_enum.as", code, tree, table};
+    const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
+
+    int ironInEnumMemberCount = 0;
+    int scpFireEnumMemberCount = 0;
+    for (const auto& tok : tokens)
+    {
+        const std::string tokText = TextAt(code, tok.line, tok.character, tok.length);
+        if (tokText == memIronIn && tok.line >= 11)
+        {
+            CHECK(tok.type == "enumMember");
+            ++ironInEnumMemberCount;
+        }
+        else if (tokText == memScpFire && tok.line >= 11)
+        {
+            CHECK(tok.type == "enumMember");
+            ++scpFireEnumMemberCount;
+        }
+    }
+    CHECK(ironInEnumMemberCount == 2);
+    CHECK(scpFireEnumMemberCount == 1);
+
+    ts_tree_delete(tree);
+}

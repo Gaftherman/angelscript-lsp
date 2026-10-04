@@ -75,6 +75,7 @@ TEST_CASE("GetDocumentLinks - a resolvable include becomes a link over the quote
           "base.as");
     REQUIRE(link.target.has_value());
     CHECK(std::string(link.target->toString()).ends_with("base.as"));
+    CHECK_FALSE(link.tooltip.has_value());
 }
 
 TEST_CASE("GetDocumentLinks - an indented directive still gets the right columns")
