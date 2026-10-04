@@ -184,6 +184,7 @@ target_link_libraries(angel_lsp_core PUBLIC
 if(MSVC)
     target_compile_options(angel_lsp_core PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
+        $<$<COMPILE_LANGUAGE:CXX>:/MP>
         /W4
         /WX
         /permissive-
@@ -208,6 +209,7 @@ target_link_libraries(angel_lsp PRIVATE angel_lsp_core)
 if(MSVC)
     target_compile_options(angel_lsp PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
+        $<$<COMPILE_LANGUAGE:CXX>:/MP>
         /W4
         /WX
         /permissive-
@@ -282,6 +284,7 @@ if(TEST_SOURCES)
     if(MSVC)
         target_compile_options(angel_lsp_tests PRIVATE
             $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
+            $<$<COMPILE_LANGUAGE:CXX>:/MP>
             $<$<COMPILE_LANGUAGE:CXX>:/FS>
             $<$<COMPILE_LANGUAGE:CXX>:/wd5285>
             /W4

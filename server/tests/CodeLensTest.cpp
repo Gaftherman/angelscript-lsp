@@ -661,3 +661,66 @@ TEST_CASE("CodeLens - Computes reference count for class member within same clas
     }
     CHECK(methodChecked);
 }
+
+TEST_CASE("CodeLens - Enum Member Reference Count and Isolation from Method Calls")
+{
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("ModeEnum");
+    const std::string semiMember = angel_lsp::test::GenerateRandomSymbolName("SemiAuto");
+    const std::string fullMember = angel_lsp::test::GenerateRandomSymbolName("FullAuto");
+    const std::string reloadMember = angel_lsp::test::GenerateRandomSymbolName("Reload");
+
+    std::string code = fmt::format("enum {}\n"
+                                   "{{\n"
+                                   "    {},\n"
+                                   "    {},\n"
+                                   "    {}\n"
+                                   "}};\n"
+                                   "class Weapon\n"
+                                   "{{\n"
+                                   "    void {}(int x) {{}}\n"
+                                   "    void Run()\n"
+                                   "    {{\n"
+                                   "        int a = {}::{};\n"
+                                   "        int b = {}::{};\n"
+                                   "        int c = {}::{};\n"
+                                   "        int d = {}::{};\n"
+                                   "        {}(42);\n"
+                                   "    }}\n"
+                                   "}}\n",
+                                   enumName, semiMember, fullMember, reloadMember, reloadMember, enumName, semiMember,
+                                   enumName, semiMember, enumName, fullMember, enumName, semiMember, reloadMember);
+
+    CodeLensFixture fixture(std::move(code));
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool checkedSemi = false;
+    bool checkedFull = false;
+    bool checkedReload = false;
+    for (const auto& lens : *lenses)
+    {
+        if (!lens.command.has_value())
+        {
+            continue;
+        }
+        if (lens.range.start.line == 2)
+        {
+            CHECK(lens.command->title == "3 references");
+            checkedSemi = true;
+        }
+        else if (lens.range.start.line == 3)
+        {
+            CHECK(lens.command->title == "1 reference");
+            checkedFull = true;
+        }
+        else if (lens.range.start.line == 4)
+        {
+            // Reload enum member must NOT count the method call reload(42)
+            CHECK(lens.command->title == "0 references");
+            checkedReload = true;
+        }
+    }
+    CHECK(checkedSemi);
+    CHECK(checkedFull);
+    CHECK(checkedReload);
+}

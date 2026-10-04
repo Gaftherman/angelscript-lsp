@@ -1265,6 +1265,10 @@ async function startClient(context: ExtensionContext): Promise<void> {
             fileEvents: timed('createFileSystemWatcher',
                               () => workspace.createFileSystemWatcher('**/*.{as,angelscript,predefined}'))
         },
+        markdown: {
+            isTrusted: true,
+            supportHtml: true
+        },
         outputChannel: lspOutputChannel,
         errorHandler
     };

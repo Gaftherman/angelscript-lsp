@@ -76,6 +76,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y g++-multilib gcc-multilib
 
+      # Optimize Windows Defender for build performance on Windows runners
+      - name: Optimize Windows Defender for Build Performance
+        if: matrix.os == 'windows'
+        shell: powershell
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          Add-MpPreference -ExclusionPath "${{ github.workspace }}"
+          Add-MpPreference -ExclusionProcess "cl.exe", "link.exe", "cmake.exe", "msbuild.exe"
+
       - name: Configure CMake
         shell: bash
         run: |

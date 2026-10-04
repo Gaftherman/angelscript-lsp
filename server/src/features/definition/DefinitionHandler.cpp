@@ -1077,6 +1077,12 @@ std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(TSNode n
     {
         return std::nullopt;
     }
+    TSNode nameNode = parser::GetChildByField(p, parser::fields::Name);
+    if (!ts_node_is_null(nameNode) && !ts_node_eq(nameNode, node) &&
+        ts_node_start_byte(nameNode) != ts_node_start_byte(node))
+    {
+        return std::nullopt;
+    }
     TSPoint s = ts_node_start_point(node);
     TSPoint e = ts_node_end_point(node);
     uint32_t sLine = s.row;
@@ -1257,6 +1263,11 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
         return contextualLocs;
     }
 
+    if (auto declFallback = TryResolveDeclarationFallback(node, ctx))
+    {
+        return declFallback;
+    }
+
     std::vector<analysis::Symbol> symbols = ResolveCandidateSymbols(node, nodeText, ctx);
     if (symbols.empty())
     {
@@ -1274,13 +1285,29 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
         }
     }
 
+    if (symbols.size() > 1)
+    {
+        std::vector<analysis::Symbol> localSymbols;
+        for (const auto& s : symbols)
+        {
+            if (s.fileUri == request.uri)
+            {
+                localSymbols.push_back(s);
+            }
+        }
+        if (!localSymbols.empty())
+        {
+            symbols = std::move(localSymbols);
+        }
+    }
+
     auto locations = ConvertSymbolsToLocations(symbols, request);
     if (!locations.empty())
     {
         return locations;
     }
 
-    return TryResolveDeclarationFallback(node, ctx);
+    return std::nullopt;
 }
 
 std::optional<std::vector<lsp::Location>> GetTypeDefinition(const DefinitionRequest& request)
