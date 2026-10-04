@@ -384,6 +384,41 @@ void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& rootScope,
 }
 
 /**
+ * @brief Checks if any symbol in candidates represents a class or interface member.
+ * @param[in] syms Candidate symbols to inspect.
+ * @return True if at least one candidate is not from a namespace or enum.
+ */
+static bool HasClassMemberSymbol(const std::vector<Symbol>& syms)
+{
+    for (const auto& s : syms)
+    {
+        if (s.containerKind != analysis::ContainerKind::Namespace && s.containerKind != analysis::ContainerKind::Enum)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if any symbol in candidates represents a namespace-scoped symbol.
+ * @param[in] syms Candidate symbols to inspect.
+ * @return True if at least one candidate is not declared within a class, interface, or enum.
+ */
+static bool HasNamespaceSymbol(const std::vector<Symbol>& syms)
+{
+    for (const auto& s : syms)
+    {
+        if (s.containerKind != analysis::ContainerKind::Class &&
+            s.containerKind != analysis::ContainerKind::Interface && s.containerKind != analysis::ContainerKind::Enum)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * @brief Resolves target through enclosing class, interface, or namespace containers.
  * @param[in] outNode AST node.
  * @param[in] nodeText Symbol identifier text.
@@ -402,13 +437,7 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
             for (const auto& cls : hierarchy)
             {
                 auto syms = request.symbolTable.FindSymbols(cls + "::" + nodeText);
-                bool hasMember = std::any_of(syms.begin(), syms.end(),
-                                             [](const Symbol& s)
-                                             {
-                                                 return s.containerKind != analysis::ContainerKind::Namespace &&
-                                                        s.containerKind != analysis::ContainerKind::Enum;
-                                             });
-                if (hasMember)
+                if (HasClassMemberSymbol(syms))
                 {
                     target.kind = TargetKind::ClassMember;
                     target.declaringClass = cls;
@@ -420,14 +449,7 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
         {
             std::string qName = container.qualifiedName + "::" + nodeText;
             auto syms = request.symbolTable.FindSymbols(qName);
-            bool hasNsSym = std::any_of(syms.begin(), syms.end(),
-                                        [](const Symbol& s)
-                                        {
-                                            return s.containerKind != analysis::ContainerKind::Class &&
-                                                   s.containerKind != analysis::ContainerKind::Interface &&
-                                                   s.containerKind != analysis::ContainerKind::Enum;
-                                        });
-            if (hasNsSym)
+            if (HasNamespaceSymbol(syms))
             {
                 target.kind = TargetKind::NamespaceSymbol;
                 target.declaringNamespace = container.qualifiedName;
