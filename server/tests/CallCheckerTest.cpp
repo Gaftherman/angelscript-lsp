@@ -1601,3 +1601,68 @@ TEST_CASE("CallChecker - Invariant: Tied overloads emit Warning severity and rep
     }
     CHECK(foundAmbiguousWarning);
 }
+
+TEST_CASE("CallChecker - Invariant: Unqualified member call resolves class method when global enum member shares name")
+{
+    std::mt19937_64 rng(0x8A12FE31);
+    const std::string enumName = angel_lsp::test::GenerateIdentifier(rng, "AnimEnum");
+    const std::string methodName = angel_lsp::test::GenerateIdentifier(rng, "PerformAction");
+    const std::string nsName = angel_lsp::test::GenerateIdentifier(rng, "TestNs");
+    const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "EntityMaker");
+
+    const std::string code = "enum " + enumName +
+                             " {\n"
+                             "    " +
+                             methodName +
+                             " = 0\n"
+                             "};\n"
+                             "namespace " +
+                             nsName +
+                             " {\n"
+                             "    class " +
+                             clsName +
+                             " {\n"
+                             "        void " +
+                             methodName +
+                             "(int a, float b) {}\n"
+                             "        void Run() {\n"
+                             "            " +
+                             methodName +
+                             "(10, 2.5f);\n"
+                             "        }\n"
+                             "    };\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("CallChecker - Invariant: Scoped constructor call is not shadowed by local variable")
+{
+    std::mt19937_64 rng(0x7C98BA24);
+    const std::string nsName = angel_lsp::test::GenerateIdentifier(rng, "TimerNs");
+    const std::string clsName = angel_lsp::test::GenerateIdentifier(rng, "Chrono");
+
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    class " +
+                             clsName +
+                             " {\n"
+                             "        " +
+                             clsName +
+                             "() {}\n"
+                             "        void Stop() {}\n"
+                             "    };\n"
+                             "}\n"
+                             "void Test() {\n"
+                             "    " +
+                             nsName + "::" + clsName + "@ " + clsName +
+                             " = null;\n"
+                             "    @" +
+                             clsName + " = " + nsName + "::" + clsName +
+                             "();\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}

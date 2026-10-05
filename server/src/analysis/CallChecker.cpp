@@ -148,9 +148,13 @@ bool NamesAType(const std::string& name, const SymbolTable& table)
             return true;
         }
     }
-    const std::string_view shortName = LastScopeSegment(name);
-    const auto matches = table.FindTypeSymbolsByShortName(shortName);
-    return !matches.empty();
+    if (!HasScopeQualifier(name))
+    {
+        const std::string_view shortName = LastScopeSegment(name);
+        const auto matches = table.FindTypeSymbolsByShortName(shortName);
+        return !matches.empty();
+    }
+    return false;
 }
 
 /**
@@ -932,8 +936,8 @@ CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
     return res;
 }
 
-static bool CheckScopeNonCallable(std::string_view written, const std::string& shortName,
-                                  const CallValidationContext& valCtx, CalleeResolution& res)
+static bool CheckLocalNonCallable(const std::string& shortName, const CallValidationContext& valCtx,
+                                  CalleeResolution& res)
 {
     if (valCtx.scope)
     {
@@ -945,31 +949,50 @@ static bool CheckScopeNonCallable(std::string_view written, const std::string& s
             }
         }
     }
+    return false;
+}
 
-    if (!HasScopeQualifier(written))
+static bool CheckScopedNonCallableVariable(std::string_view written, const std::string& shortName,
+                                           const CallValidationContext& valCtx, CalleeResolution& res)
+{
+    if (const auto found = valCtx.ctx.request.symbolTable.FindSymbolsPtr(written))
     {
-        if (const auto found = valCtx.ctx.request.symbolTable.FindSymbolsPtr(written))
+        for (const auto& sym : *found)
         {
-            bool hasVar = false;
-            bool hasFunc = false;
-            std::string varType;
-            for (const auto& sym : *found)
+            if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                std::holds_alternative<VariableSignature>(sym.signature))
             {
-                if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
-                    std::holds_alternative<VariableSignature>(sym.signature))
-                {
-                    hasVar = true;
-                    varType = sym.GetVariable().typeName;
-                }
-                if (sym.type == SymbolType::Function)
-                {
-                    hasFunc = true;
-                }
+                return CheckNonCallableVariable(shortName, sym.GetVariable().typeName, valCtx, res);
             }
-            if (hasVar && !hasFunc)
+        }
+    }
+    return false;
+}
+
+static bool CheckGlobalNonCallableVariable(std::string_view written, const std::string& shortName,
+                                           const CallValidationContext& valCtx, CalleeResolution& res)
+{
+    if (const auto found = valCtx.ctx.request.symbolTable.FindSymbolsPtr(written))
+    {
+        bool hasVar = false;
+        bool hasFunc = false;
+        std::string varType;
+        for (const auto& sym : *found)
+        {
+            if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                std::holds_alternative<VariableSignature>(sym.signature))
             {
-                return CheckNonCallableVariable(shortName, varType, valCtx, res);
+                hasVar = true;
+                varType = sym.GetVariable().typeName;
             }
+            if (sym.type == SymbolType::Function)
+            {
+                hasFunc = true;
+            }
+        }
+        if (hasVar && !hasFunc)
+        {
+            return CheckNonCallableVariable(shortName, varType, valCtx, res);
         }
     }
     return false;
@@ -1010,6 +1033,44 @@ std::string FindEnclosingClassOrInterface(TSNode node, std::string_view sourceCo
     return "";
 }
 
+static bool ResolveScopedCallee(std::string_view written, const std::string& shortName,
+                                const CallValidationContext& valCtx, CalleeResolution& res)
+{
+    if (NamesAType(std::string(written), valCtx.ctx.request.symbolTable))
+    {
+        res.shouldCheck = false;
+        return true;
+    }
+    res.candidates = CollectScopedFunctionCandidates(written, valCtx.ctx.request.symbolTable);
+    res.candidatesAreFreeFunctions = true;
+    if (!res.candidates.empty() || CheckScopedNonCallableVariable(written, shortName, valCtx, res))
+    {
+        return true;
+    }
+    return true;
+}
+
+static bool ResolveEnclosingClassCallee(std::string_view written, const CallValidationContext& valCtx,
+                                        CalleeResolution& res)
+{
+    const std::string enclosingClass = FindEnclosingClassOrInterface(valCtx.callNode, valCtx.request.sourceCode);
+    if (enclosingClass.empty())
+    {
+        return false;
+    }
+    res.candidates = FindMethodCandidates(enclosingClass, std::string(written), valCtx.ctx.request.symbolTable);
+    if (!res.candidates.empty())
+    {
+        res.candidatesAreFreeFunctions = false;
+        res.isUnqualifiedClassCall = true;
+        res.isReceiverConst = IsEnclosingMethodConst(valCtx.callNode, valCtx.request.sourceCode);
+        FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
+        ApplyTemplateSubstitutions(res.candidates, enclosingClass, {}, valCtx.ctx.request.symbolTable);
+        return true;
+    }
+    return CheckMemberNonCallableVariable(enclosingClass, std::string(written), valCtx, res);
+}
+
 /**
  * @brief Resolves candidates for identifier and scoped identifier callees.
  *
@@ -1027,16 +1088,23 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
     }
 
     const std::string shortName = std::string(LastScopeSegment(written));
+    res.reportedName = shortName;
+
+    if (HasScopeQualifier(written))
+    {
+        ResolveScopedCallee(written, shortName, valCtx, res);
+        return res;
+    }
+
     if (auto callableSym = TryResolveCallableFuncdef(shortName, valCtx.scope, valCtx.ctx.request.symbolTable))
     {
-        res.reportedName = shortName;
         res.candidates = {std::move(*callableSym)};
         res.candidatesAreFreeFunctions = true;
         res.shouldCheck = true;
         return res;
     }
 
-    if (CheckScopeNonCallable(written, shortName, valCtx, res))
+    if (CheckLocalNonCallable(shortName, valCtx, res) || ResolveEnclosingClassCallee(written, valCtx, res))
     {
         return res;
     }
@@ -1045,28 +1113,6 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
     {
         res.shouldCheck = false;
         return res;
-    }
-
-    res.reportedName = shortName;
-    if (HasScopeQualifier(written))
-    {
-        res.candidates = CollectScopedFunctionCandidates(written, valCtx.ctx.request.symbolTable);
-        return res;
-    }
-
-    const std::string enclosingClass = FindEnclosingClassOrInterface(valCtx.callNode, valCtx.request.sourceCode);
-    if (!enclosingClass.empty())
-    {
-        res.candidates = FindMethodCandidates(enclosingClass, written, valCtx.ctx.request.symbolTable);
-        if (!res.candidates.empty())
-        {
-            res.candidatesAreFreeFunctions = false;
-            res.isUnqualifiedClassCall = true;
-            res.isReceiverConst = IsEnclosingMethodConst(valCtx.callNode, valCtx.request.sourceCode);
-            FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
-            ApplyTemplateSubstitutions(res.candidates, enclosingClass, {}, valCtx.ctx.request.symbolTable);
-            return res;
-        }
     }
 
     res.candidatesAreFreeFunctions = true;
@@ -1078,6 +1124,11 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
                                     valCtx.ctx.request.GetRuleIndex(),
                                     valCtx.ctx.request.moduleFileUris};
     res.candidates = FindFreeCandidates(written, freeCtx);
+    if (!res.candidates.empty() || CheckGlobalNonCallableVariable(written, shortName, valCtx, res))
+    {
+        return res;
+    }
+
     return res;
 }
 

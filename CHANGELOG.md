@@ -2,6 +2,18 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.0.2] - 2026-10-04
+
+### Unqualified Member Call Disambiguation, Scoped Constructor Resolution, and Auto-Indentation on Paste
+
+- Semantic Analysis & Scope Disambiguation:
+  - Resolved unqualified class member calls (e.g. `Use(...)`, `Idle()`, `Fire()`) within member functions against the enclosing class methods and inheritance hierarchy before checking outer global variables, eliminating false-positive `as-err-call-no-matching-signature` errors caused by colliding global enum members.
+  - Isolated scoped constructor calls (`Server::chrono()`) from local function variables with matching short names (`chrono`), prioritizing qualified type constructors over function local scopes.
+  - Fixed semantic tokens classification for unqualified member calls, ensuring method tokens are not coerced into `enumMember` when names collide with global enum definitions.
+  - Enhanced class span indexing to record fully-qualified class names for classes nested inside namespaces.
+- Editor & VS Code Client Polish:
+  - Added standard C-family `indentationRules` (`increaseIndentPattern`, `decreaseIndentPattern`) and `onEnterRules` (`if/else/for/while` outdent and `//` comment continuation) to `language-configuration.json`, resolving the extra tab issue when pasting indented code.
+
 ## [1.0.1] - 2026-10-04
 
 ### Native Compiler Parity, Negative Syntax/Semantics Hardening, Scope Disambiguation, and Case-Insensitive Completion
