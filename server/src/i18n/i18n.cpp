@@ -444,6 +444,14 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
     m_messages["note-in-mixin-member"] = "In mixin '{}': Member '{}'";
     m_messages["hover-more-overloads-singular"] = "1 more overload";
     m_messages["hover-more-overloads-plural"] = "{} more overloads";
+    m_messages["hover-wildcard-type-desc"] =
+        "The variable type `?` represents any type. It is used in parameter declarations "
+        "to accept arguments of any type by reference (`?& in`, `?& out`, `?& inout`).";
+    m_messages["hover-string-length"] = "- **Length**: {} characters";
+    m_messages["hover-string-file-not-found"] = "- **File**: Not found";
+    m_messages["hover-asset-status-exists"] = "- **Status**: Exists";
+    m_messages["hover-asset-size"] = "- **Size**: {}";
+    m_messages["hover-asset-path"] = "- **Path**: `{}`";
 }
 
 /**
@@ -825,6 +833,14 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["note-in-mixin-member"] = "En el mixin '{}': Miembro '{}'";
     m_messages["hover-more-overloads-singular"] = "1 sobrecarga más";
     m_messages["hover-more-overloads-plural"] = "{} sobrecargas más";
+    m_messages["hover-wildcard-type-desc"] =
+        "El tipo variable `?` representa cualquier tipo. Se utiliza en declaraciones de parámetros "
+        "para aceptar argumentos de cualquier tipo por referencia (`?& in`, `?& out`, `?& inout`).";
+    m_messages["hover-string-length"] = "- **Longitud**: {} caracteres";
+    m_messages["hover-string-file-not-found"] = "- **Archivo**: No encontrado";
+    m_messages["hover-asset-status-exists"] = "- **Estado**: Existe";
+    m_messages["hover-asset-size"] = "- **Tamaño**: {}";
+    m_messages["hover-asset-path"] = "- **Ruta**: `{}`";
 }
 
 /**

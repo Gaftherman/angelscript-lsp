@@ -47,10 +47,12 @@ struct TestEnvironment
         }
     }
 
-    std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character, const config::ServerConfig* config = nullptr)
+    std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character, const config::ServerConfig* config = nullptr,
+                                      const angel_lsp::i18n::I18n* i18n = nullptr)
     {
         HoverRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
         req.config = config;
+        req.i18n = i18n;
         return GetHover(req);
     }
 };
@@ -1345,11 +1347,21 @@ TEST_CASE("Hover - Wildcard variable type ? returns descriptive documentation")
 
     const size_t qMarkIn = code.find("?& in");
     REQUIRE(qMarkIn != std::string::npos);
+
+    // Default English hover
     auto hoverIn = env.HoverAt(0, static_cast<uint32_t>(qMarkIn));
     REQUIRE(hoverIn.has_value());
     auto contentIn = std::get<lsp::MarkupContent>(hoverIn->contents);
     CHECK(contentIn.value.find("(variable type) ?") != std::string::npos);
     CHECK(contentIn.value.find("The variable type `?` represents any type") != std::string::npos);
+
+    // Spanish localized hover
+    const angel_lsp::i18n::I18n spanish("es");
+    auto hoverEs = env.HoverAt(0, static_cast<uint32_t>(qMarkIn), nullptr, &spanish);
+    REQUIRE(hoverEs.has_value());
+    auto contentEs = std::get<lsp::MarkupContent>(hoverEs->contents);
+    CHECK(contentEs.value.find("(variable type) ?") != std::string::npos);
+    CHECK(contentEs.value.find("El tipo variable `?` representa cualquier tipo") != std::string::npos);
 
     const size_t qMarkOut = code.find("?& out");
     REQUIRE(qMarkOut != std::string::npos);

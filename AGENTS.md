@@ -93,7 +93,7 @@ Format: `<type>(<scope>): <short imperative description>`
 
 ---
 
-## 8. The 10 Absolute Prohibitions
+## 8. The 11 Absolute Prohibitions
 
 1. **PROHIBITION 1: No Unprotected Raw AST Pointer Escaping:** Never return or store raw `TSTree*` pointers without an enclosing reader lock or owning `std::shared_ptr<const document::Document>`.
 2. **PROHIBITION 2: No Uncaught Exceptions Escaping Secondary Threads:** Never allow an exception to escape a `std::thread` boundary; unhandled exceptions that invoke `std::terminate()` are classified as critical severity bugs.
@@ -105,6 +105,7 @@ Format: `<type>(<scope>): <short imperative description>`
 8. **PROHIBITION 8: No Functions Exceeding 15 CCN or 70 Lines:** Every function must pass `lizard -C 15 -L 70 -a 4` without warnings.
 9. **PROHIBITION 9: No Dead or Unnamed Parameters (`/we4100`):** In owned signatures, every formal parameter must be named and referenced, or cleanly removed. In contract-mandated signatures (virtual overrides, external callbacks), unused parameters must be named and explicitly silenced with `[[maybe_unused]] Type name`. Nameless (`Type`) or commented-out (`Type /*name*/`) parameters are strictly banned.
 10. **PROHIBITION 10: No Static or Hardcoded Test Fixtures:** Tests must use dynamic randomized generators and sandboxes to verify semantic invariants rather than overfitting to fixed strings.
+11. **PROHIBITION 11: No Hardcoded User-Facing Text or Ad-Hoc Bilingual Conditionals:** Every string displayed to the end user (hover markdown tooltips, diagnostics, code action titles, document link titles, notifications) must be externalized in `server/src/i18n/i18n.cpp` and resolved via `angel_lsp::i18n::FormatMessage(i18n, key, fallback, ...)` (or `bundle.l10n.json` via `l10n.t()` in the client). Hardcoding raw user-facing natural language strings directly in C++ feature handlers or writing ad-hoc language branching (`if (locale == "es")`) is strictly prohibited.
 
 ---
 
@@ -123,3 +124,20 @@ When writing or refactoring C++ code in `server/src/`, all contributions MUST ad
 4. **Mandatory Execution Gate:**
    - Always run `python server/scripts/check-quality.py` before committing.
    - If any gate fails, inspect the report, fix root causes, and re-verify.
+
+---
+
+## 10. Mandatory Internationalization (i18n/l10n) Standard
+
+AngelLSP supports multi-language environments out of the box (English `en` and Spanish `es`).
+All contributions must strictly adhere to:
+1. **Zero Hardcoded User-Facing Strings:**
+   - Hover explanations, markdown sections, diagnostic descriptions, and code actions must never contain hardcoded English or Spanish prose in Layer 2 or Layer 3.
+   - Use `angel_lsp::i18n::FormatMessage(i18n, key, fallbackPattern, ...)` for all dynamic text formatting.
+2. **Dual-Language Dictionary Parity:**
+   - Every key added to the English dictionary (`PopulateEnglishMessages*`) in `server/src/i18n/i18n.cpp` must be simultaneously added to the Spanish dictionary (`PopulateSpanishMessages*`).
+   - Client-side strings in `client/l10n/bundle.l10n.json` must be 1:1 synchronized with `client/l10n/bundle.l10n.es.json`.
+3. **No Ad-Hoc Language Conditionals:**
+   - Never write `if (locale == "es")` or ternary strings `locale == "es" ? "..." : "..."` in feature handlers.
+   - All locale resolution is performed centrally by `angel_lsp::i18n::I18n`.
+

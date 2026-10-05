@@ -818,11 +818,12 @@ std::optional<lsp::Hover> TryHoverPrimitiveType(std::string_view nodeText, const
  * @brief Attempts to produce hover documentation for the wildcard type '?'.
  * @param[in] nodeText Text of the hover target.
  * @param[in] range Target range in the document.
+ * @param[in] i18n Optional localization dictionary pointer.
  * @param[in,out] profiler Performance profiler.
  * @return Populated Hover if nodeText is '?', std::nullopt otherwise.
  */
 std::optional<lsp::Hover> TryHoverWildcardType(std::string_view nodeText, const lsp::Range& range,
-                                               HoverProfiler& profiler)
+                                               const angel_lsp::i18n::I18n* i18n, HoverProfiler& profiler)
 {
     if (nodeText != "?")
     {
@@ -835,9 +836,11 @@ std::optional<lsp::Hover> TryHoverWildcardType(std::string_view nodeText, const 
         profiler.symbolName = "?";
     }
     utils::HighResTimer fmtTimer;
-    std::string md = "```angelscript\n(variable type) ?\n```\n\n"
-                     "The variable type `?` represents any type. It is used in parameter declarations "
-                     "to accept arguments of any type by reference (`?& in`, `?& out`, `?& inout`).";
+    std::string desc = angel_lsp::i18n::FormatMessage(
+        i18n, "hover-wildcard-type-desc",
+        "The variable type `?` represents any type. It is used in parameter declarations "
+        "to accept arguments of any type by reference (`?& in`, `?& out`, `?& inout`).");
+    std::string md = "```angelscript\n(variable type) ?\n```\n\n" + desc;
     profiler.fmtMs += fmtTimer.ElapsedMs();
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, range};
 }
@@ -2531,7 +2534,8 @@ static std::string_view UnquoteStringLiteral(std::string_view txt)
     return txt;
 }
 
-static std::string FormatResolvedAssetMarkdown(std::string_view unquoted, const std::string& resolved, bool showLength)
+static std::string FormatResolvedAssetMarkdown(std::string_view unquoted, const std::string& resolved, bool showLength,
+                                               const angel_lsp::i18n::I18n* i18n = nullptr)
 {
     std::error_code ec;
     auto fsize = std::filesystem::file_size(resolved, ec);
@@ -2539,17 +2543,18 @@ static std::string FormatResolvedAssetMarkdown(std::string_view unquoted, const 
     std::string normalizedPath = resolved;
     std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
 
-    std::string md = "*(asset)* `" + std::string(unquoted) +
-                     "`\n\n"
-                     "- **Status**: Exists\n"
-                     "- **Size**: " +
-                     sizeStr +
-                     "\n"
-                     "- **Path**: `" +
-                     normalizedPath + "`";
+    std::string statusBullet =
+        angel_lsp::i18n::FormatMessage(i18n, "hover-asset-status-exists", "- **Status**: Exists");
+    std::string sizeBullet = angel_lsp::i18n::FormatMessage(i18n, "hover-asset-size", "- **Size**: {}", sizeStr);
+    std::string pathBullet =
+        angel_lsp::i18n::FormatMessage(i18n, "hover-asset-path", "- **Path**: `{}`", normalizedPath);
+
+    std::string md =
+        "*(asset)* `" + std::string(unquoted) + "`\n\n" + statusBullet + "\n" + sizeBullet + "\n" + pathBullet;
     if (showLength)
     {
-        md += "\n- **Length**: " + std::to_string(unquoted.size()) + " characters";
+        md += "\n" + angel_lsp::i18n::FormatMessage(i18n, "hover-string-length", "- **Length**: {} characters",
+                                                    unquoted.size());
     }
     return md;
 }
@@ -2696,7 +2701,7 @@ std::optional<lsp::Hover> TryHoverConcatenatedString(const HoverTarget& target, 
         return std::nullopt;
     }
 
-    std::string md = FormatResolvedAssetMarkdown(*evalStr, resolved, showLength);
+    std::string md = FormatResolvedAssetMarkdown(*evalStr, resolved, showLength, request.i18n);
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, target.range};
 }
 
@@ -2727,16 +2732,18 @@ std::optional<lsp::Hover> TryHoverStringLiteral(const HoverTarget& target, const
         const std::string resolved = ResolveStringLiteralPath(unquoted, request);
         if (!resolved.empty())
         {
-            md = FormatResolvedAssetMarkdown(unquoted, resolved, showLength);
+            md = FormatResolvedAssetMarkdown(unquoted, resolved, showLength, request.i18n);
             return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
                               target.range};
         }
         md = "```angelscript\n" + std::string(txt) + "\n```";
         if (showLength)
         {
-            md += "\n\n- **Length**: " + std::to_string(unquoted.size()) + " characters";
+            md += "\n\n" + angel_lsp::i18n::FormatMessage(request.i18n, "hover-string-length",
+                                                          "- **Length**: {} characters", unquoted.size());
         }
-        md += "\n- **File**: Not found";
+        md +=
+            "\n" + angel_lsp::i18n::FormatMessage(request.i18n, "hover-string-file-not-found", "- **File**: Not found");
         return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
                           target.range};
     }
@@ -2744,7 +2751,8 @@ std::optional<lsp::Hover> TryHoverStringLiteral(const HoverTarget& target, const
     md = "```angelscript\n" + std::string(txt) + "\n```";
     if (showLength)
     {
-        md += "\n\n- **Length**: " + std::to_string(unquoted.size()) + " characters";
+        md += "\n\n" + angel_lsp::i18n::FormatMessage(request.i18n, "hover-string-length",
+                                                      "- **Length**: {} characters", unquoted.size());
     }
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, target.range};
 }
@@ -2787,7 +2795,7 @@ static std::optional<lsp::Hover> TryHoverLiteralOrType(const HoverTarget& target
         return primHover;
     }
 
-    return TryHoverWildcardType(target.text, target.range, profiler);
+    return TryHoverWildcardType(target.text, target.range, request.i18n, profiler);
 }
 } // namespace
 
