@@ -12,7 +12,8 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
   - Fixed semantic tokens classification for unqualified member calls, ensuring method tokens are not coerced into `enumMember` when names collide with global enum definitions.
   - Enhanced class span indexing to record fully-qualified class names for classes nested inside namespaces.
 - Editor & VS Code Client Polish:
-  - Added standard C-family `indentationRules` (`increaseIndentPattern`, `decreaseIndentPattern`) and `onEnterRules` (`if/else/for/while` outdent and `//` comment continuation) to `language-configuration.json`, resolving the extra tab issue when pasting indented code.
+  - Added standard C-family `indentationRules` (`increaseIndentPattern`, `decreaseIndentPattern`, `indentNextLinePattern`, `unIndentedLinePattern`) and `onEnterRules` (Doxygen/Javadoc expansion, `if/else/for/while` outdent, `//` comment continuation) to `language-configuration.json`, resolving the extra tab issue when pasting indented code.
+  - Aligned declarative language configuration with official VS Code Language Configuration Guide and samples, including `colorizedBracketPairs`, refined `autoCloseBefore`, and `#region` / `//#region` code folding markers.
 
 ## [1.0.1] - 2026-10-04
 
