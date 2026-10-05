@@ -1,5 +1,6 @@
 #include "analysis/rules/VariableRules.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/rules/EngineRuleChecker.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/Utils.h"
 
@@ -374,5 +375,7 @@ void ValidateVariable(const Symbol& sym, const DiagnosticContext& ctx)
     CheckDeclaredType(sym, sig, ctx);
     CheckPlacement(sym, sig, ctx);
     CheckVirtualProperty(sym, sig, ctx);
+    CheckEngineStorageRules(sym, sig, ctx);
+    CheckEngineTypeSuggestions(sym, sig, ctx);
 }
 } // namespace angel_lsp::analysis::rules

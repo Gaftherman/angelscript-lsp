@@ -31,6 +31,9 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"W109", diagnostics::codes::PossibleNullDereference},
     {"W110", diagnostics::codes::HandleComparisonEquality},
     {"W112", diagnostics::codes::IncludeNotFound},
+    {"W113", diagnostics::codes::EngineStorageRule},
+    {"W114", diagnostics::codes::EngineSchedulerSafety},
+    {"W115", diagnostics::codes::EngineScheduledEnumDiscriminant},
     // Hints
     {"W151", diagnostics::codes::AccessorDisabled},
     {"W152", diagnostics::codes::AccessorPortability},
@@ -41,6 +44,7 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"W157", diagnostics::codes::RepeatedConversion},
     {"W158", diagnostics::codes::ImportUnknownModule},
     {"W159", diagnostics::codes::FileInSeveralModules},
+    {"W160", diagnostics::codes::EngineTypeSuggestion},
     // Syntax errors
     {"E100", diagnostics::codes::SyntaxError},
     {"E101", diagnostics::codes::SyntaxErrorGeneric},

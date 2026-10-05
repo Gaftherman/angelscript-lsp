@@ -369,6 +369,8 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
             }
         } reanalyseOnExit{this, stopToken};
 
+        LoadWorkspaceEngineRules(roots);
+
         WorkspaceFilesWalkResult walkResult;
         if (!CollectWorkspaceFiles(roots, stopToken, walkResult))
         {
@@ -601,7 +603,14 @@ void Server::HandleNotificationsWorkspace_DidChangeWatchedFiles(
         }
 
         const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
-        if (event.type == lsp::FileChangeType::Deleted)
+        const bool isRulesFile = path.ends_with("angelscript.rules.json") ||
+                                 (!m_config.rulesFile.empty() && PathsAreSameFile(path, m_config.rulesFile));
+        if (isRulesFile)
+        {
+            LoadWorkspaceEngineRules(ConvertWorkspaceRootsToPaths(WorkspaceRoots()));
+            graphChanged = true;
+        }
+        else if (event.type == lsp::FileChangeType::Deleted)
         {
             graphChanged =
                 HandleWatchedFileDeleted(path, uriStr, isPredefined, stubSelectionInvalidated) || graphChanged;

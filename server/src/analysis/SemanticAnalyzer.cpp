@@ -16,6 +16,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
+#include "analysis/rules/EngineRuleChecker.h"
 #include "analysis/rules/FunctionRules.h"
 #include "analysis/rules/OperatorRules.h"
 #include "analysis/rules/TypeRules.h"
@@ -1481,6 +1482,8 @@ void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
     {
         ctx.EmitAtRange(range, "as-err-unresolved-type", base, DiagnosticSeverity::Error);
     }
+
+    rules::CheckEngineLocalTypeSuggestions(def, ctx);
 }
 } // namespace
 

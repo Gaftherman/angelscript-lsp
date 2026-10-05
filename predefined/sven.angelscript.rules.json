@@ -1,0 +1,55 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
+  "name": "Sven Co-op Engine Safety Rules",
+  "engineProperties": {
+    "propertyAccessorMode": 2,
+    "disallowGlobalVars": false,
+    "requireEnumScope": false
+  },
+  "storageRules": [
+    {
+      "id": "unsafe-entity-handle",
+      "inheritsFrom": "CBaseEntity",
+      "typeRegex": "CBase.*",
+      "handleOnly": true,
+      "disallowInMembers": true,
+      "disallowInArrays": true,
+      "suggestReplacement": "EHandle",
+      "message": "Entity handle '{}' in member or array can dangle if removed by engine; store 'EHandle' instead.",
+      "severity": "warning"
+    },
+    {
+      "id": "custom-keyvalue-local-only",
+      "types": ["CustomKeyvalue"],
+      "disallowInMembers": true,
+      "disallowInGlobals": true,
+      "disallowInArrays": true,
+      "message": "'CustomKeyvalue' should only be used as a local variable and must not be stored.",
+      "severity": "warning"
+    }
+  ],
+  "typeSuggestions": [
+    {
+      "id": "prefer-regular-string",
+      "fromType": "string_t",
+      "toType": "string",
+      "appliesTo": ["local", "member", "param"],
+      "message": "Consider using regular 'string' instead of 'string_t' to avoid engine string pool allocations.",
+      "severity": "hint"
+    }
+  ],
+  "schedulerRules": [
+    {
+      "id": "scheduler-safety",
+      "callee": "g_Scheduler",
+      "methods": ["SetTimeout", "SetInterval"],
+      "disallowArgInheritsFrom": "CBaseEntity",
+      "disallowArgRegex": "CBase.*",
+      "disallowArgHandleOnly": true,
+      "argSuggestReplacement": "EHandle",
+      "requireExplicitEnumConstruct": true,
+      "message": "Passing raw entity handle to scheduled callback is unsafe. Use 'EHandle'.",
+      "severity": "warning"
+    }
+  ]
+}

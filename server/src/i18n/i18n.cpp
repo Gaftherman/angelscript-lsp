@@ -411,6 +411,10 @@ void PopulateEnglishMessages7(MessageMap& m_messages)
     m_messages["as-warn-handle-comparison-equality"] =
         "Handle comparison with '{}' causes implicit conversion; use '{}' for reference identity.";
     m_messages["as-err-illegal-operation"] = "Illegal operation on this datatype.";
+    m_messages["as-warn-engine-storage-rule"] = "{}";
+    m_messages["as-hint-engine-type-suggestion"] = "{}";
+    m_messages["as-warn-engine-scheduler-safety"] = "{}";
+    m_messages["as-warn-engine-scheduled-enum-discriminant"] = "{}";
 }
 
 /**
@@ -799,6 +803,10 @@ void PopulateSpanishMessages7(MessageMap& m_messages)
     m_messages["as-warn-handle-comparison-equality"] =
         "La comparación de handle con '{}' provoca una conversión implícita; use '{}' para identidad de referencia.";
     m_messages["as-err-illegal-operation"] = "Operación no válida en este tipo de datos.";
+    m_messages["as-warn-engine-storage-rule"] = "{}";
+    m_messages["as-hint-engine-type-suggestion"] = "{}";
+    m_messages["as-warn-engine-scheduler-safety"] = "{}";
+    m_messages["as-warn-engine-scheduled-enum-discriminant"] = "{}";
 }
 
 /**
