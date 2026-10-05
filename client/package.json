@@ -226,6 +226,10 @@
             "storage.type.built-in.primitive.angelscript",
             "storage.type.built-in",
             "storage.type"
+          ],
+          "modifier": [
+            "keyword.control.conditional.angelscript",
+            "storage.modifier.reference.angelscript"
           ]
         }
       },
@@ -241,6 +245,10 @@
             "storage.type.built-in.primitive.angelscript",
             "storage.type.built-in",
             "storage.type"
+          ],
+          "modifier": [
+            "keyword.control.conditional.angelscript",
+            "storage.modifier.reference.angelscript"
           ]
         }
       }

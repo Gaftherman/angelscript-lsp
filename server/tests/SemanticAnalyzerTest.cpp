@@ -2201,3 +2201,122 @@ TEST_CASE("Metadata - Grammar does not conflict with opIndex, multidimensional a
         CHECK(warnIt == diagnostics.end());
     }
 }
+
+TEST_CASE("SemanticAnalyzer - Undeclared variables passed to wildcard parameters emit warning")
+{
+    const std::string varX = angel_lsp::test::GenerateRandomSymbolName("varX");
+    const std::string varY = angel_lsp::test::GenerateRandomSymbolName("varY");
+    const std::string varZ = angel_lsp::test::GenerateRandomSymbolName("varZ");
+    const std::string varColor = angel_lsp::test::GenerateRandomSymbolName("varColor");
+    const std::string vectorClass = angel_lsp::test::GenerateRandomSymbolName("Vector");
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const std::string vectorCode = "class " + vectorClass +
+                                   " {\n"
+                                   "    float " +
+                                   varX + ", " + varY + ", " + varZ +
+                                   ";\n"
+                                   "    int " +
+                                   varColor +
+                                   ";\n"
+                                   "}\n";
+    collector.CollectSymbols("file:///vector.as", vectorCode, parser, table);
+
+    const std::string stubCode =
+        "void SetTimeout(const string& in fn, float delay, ?& in a, ?& in b, ?& in c, ?& in d);\n";
+    collector.CollectSymbols("file:///stubs.as", stubCode, parser, table);
+
+    const std::string mainCode = "void main() {\n"
+                                 "    SetTimeout(\"Effect\", 0.5f, " +
+                                 varX + ", " + varY + ", " + varZ + ", " + varColor +
+                                 ");\n"
+                                 "}\n";
+
+    const angel_lsp::i18n::I18n i18n("en");
+    const auto diags = AnalyzeSource(mainCode, table, i18n, "file:///main.as");
+
+    std::vector<std::string> undeclaredVars;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-warn-undeclared-identifier")
+        {
+            undeclaredVars.push_back(d.message);
+        }
+    }
+
+    CHECK(undeclaredVars.size() == 4);
+    for (const auto& varName : {varX, varY, varZ, varColor})
+    {
+        CHECK(std::any_of(undeclaredVars.begin(), undeclaredVars.end(),
+                          [&](const std::string& msg) { return msg.find(varName) != std::string::npos; }));
+    }
+}
+
+TEST_CASE("SemanticAnalyzer - Inherited base class members accessed unqualified do not emit undeclared identifier")
+{
+    const std::string baseClass = angel_lsp::test::GenerateRandomSymbolName("CBaseWeapon");
+    const std::string derivedClass = angel_lsp::test::GenerateRandomSymbolName("CMyWeapon");
+    const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("m_flTimeIdle");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Idle");
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const std::string baseCode = "class " + baseClass +
+                                 " {\n"
+                                 "    float " +
+                                 memberName +
+                                 ";\n"
+                                 "    float " +
+                                 methodName +
+                                 "() { return 1.0f; }\n"
+                                 "}\n";
+    collector.CollectSymbols("file:///base.as", baseCode, parser, table);
+
+    const std::string derivedCode = "class " + derivedClass + " : " + baseClass +
+                                    " {\n"
+                                    "    void WeaponIdle() {\n"
+                                    "        " +
+                                    memberName + " = " + methodName +
+                                    "();\n"
+                                    "    }\n"
+                                    "}\n";
+
+    const angel_lsp::i18n::I18n i18n("en");
+    const auto diags = AnalyzeSource(derivedCode, table, i18n, "file:///derived.as");
+
+    const auto undeclaredIt = std::find_if(diags.begin(), diags.end(), [](const Diagnostic& d)
+                                           { return d.code == "as-warn-undeclared-identifier"; });
+    CHECK(undeclaredIt == diags.end());
+}
+
+TEST_CASE("SemanticAnalyzer - Unqualified enum member access does not emit undeclared identifier by default")
+{
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("USE_TYPE");
+    const std::string enumMember = angel_lsp::test::GenerateRandomSymbolName("USE_TOGGLE");
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const std::string enumCode = "enum " + enumName + " { " + enumMember + " = 1 };\n";
+    collector.CollectSymbols("file:///enum.as", enumCode, parser, table);
+
+    const std::string callCode = "void Use(int a, int b) {}\n"
+                                 "void main() {\n"
+                                 "    Use(0, " +
+                                 enumMember +
+                                 ");\n"
+                                 "}\n";
+
+    const angel_lsp::i18n::I18n i18n("en");
+    const auto diags = AnalyzeSource(callCode, table, i18n, "file:///main.as");
+
+    const auto undeclaredIt = std::find_if(diags.begin(), diags.end(), [](const Diagnostic& d)
+                                           { return d.code == "as-warn-undeclared-identifier"; });
+    CHECK(undeclaredIt == diags.end());
+}

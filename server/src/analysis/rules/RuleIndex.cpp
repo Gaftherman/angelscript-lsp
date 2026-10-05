@@ -21,6 +21,9 @@ void RuleIndexPartial::Merge(RuleIndexPartial&& other)
     allNames.insert(allNames.end(), std::make_move_iterator(other.allNames.begin()),
                     std::make_move_iterator(other.allNames.end()));
 
+    globalNames.insert(globalNames.end(), std::make_move_iterator(other.globalNames.begin()),
+                       std::make_move_iterator(other.globalNames.end()));
+
     enumMembers.insert(enumMembers.end(), std::make_move_iterator(other.enumMembers.begin()),
                        std::make_move_iterator(other.enumMembers.end()));
 
@@ -94,6 +97,48 @@ void ProcessSymbolNames(RuleIndexPartial& partial, const Symbol& sym)
         {
             partial.allNames.push_back(std::string(remaining));
         }
+    }
+}
+
+/**
+ * @brief Extracts and records top-level / unqualified global names.
+ * @param[in,out] partial Target partial rule index.
+ * @param[in] sym Symbol to inspect.
+ */
+void ProcessGlobalNames(RuleIndexPartial& partial, const Symbol& sym)
+{
+    if (!sym.containerName.empty())
+    {
+        return;
+    }
+
+    switch (sym.type)
+    {
+    case SymbolType::Function:
+    case SymbolType::Variable:
+    case SymbolType::Class:
+    case SymbolType::Interface:
+    case SymbolType::Enum:
+    case SymbolType::Typedef:
+    case SymbolType::Funcdef:
+        partial.globalNames.push_back(sym.name);
+        break;
+    case SymbolType::Namespace:
+    {
+        std::string_view remaining = sym.name;
+        const size_t at = remaining.find("::");
+        if (at != std::string_view::npos)
+        {
+            partial.globalNames.push_back(std::string(remaining.substr(0, at)));
+        }
+        else
+        {
+            partial.globalNames.push_back(sym.name);
+        }
+        break;
+    }
+    default:
+        break;
     }
 }
 
@@ -241,6 +286,31 @@ void ProcessContainerMember(RuleIndexPartial& partial, const Symbol& sym)
     }
 }
 
+/** @brief Records template parameters of a class as members of that class container. */
+void ProcessClassTemplateParams(RuleIndexPartial& partial, const Symbol& sym)
+{
+    if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
+    {
+        const auto& classSig = sym.GetClass();
+        if (!classSig.templateParams.empty())
+        {
+            auto& byName = partial.byContainer[sym.name];
+            for (const auto& param : classSig.templateParams)
+            {
+                byName.allMemberNames.push_back(param);
+            }
+            if (!sym.qualifiedName.empty() && sym.qualifiedName != sym.name)
+            {
+                auto& byQual = partial.byContainer[sym.qualifiedName];
+                for (const auto& param : classSig.templateParams)
+                {
+                    byQual.allMemberNames.push_back(param);
+                }
+            }
+        }
+    }
+}
+
 /** @brief Records non-external shared class or function declarations. */
 void ProcessSharedDeclaration(RuleIndexPartial& partial, const Symbol& sym)
 {
@@ -266,6 +336,7 @@ void ProcessSharedDeclaration(RuleIndexPartial& partial, const Symbol& sym)
 void ProcessSymbol(RuleIndexPartial& partial, const Symbol& sym)
 {
     ProcessSymbolNames(partial, sym);
+    ProcessGlobalNames(partial, sym);
     ProcessEnumSymbol(partial, sym);
     ProcessTypeSymbol(partial, sym);
     ProcessInheritanceSymbol(partial, sym);
@@ -277,6 +348,7 @@ void ProcessSymbol(RuleIndexPartial& partial, const Symbol& sym)
     }
 
     ProcessContainerMember(partial, sym);
+    ProcessClassTemplateParams(partial, sym);
 }
 
 /** @brief Populates partial index from range of symbols. */
@@ -311,6 +383,11 @@ void ApplyNamesAndEnums(RuleIndex& index, const RuleIndexPartial& partial)
     for (const auto& name : partial.allNames)
     {
         ++index.allNames[name];
+    }
+
+    for (const auto& name : partial.globalNames)
+    {
+        ++index.globalNames[name];
     }
 
     for (const auto& [name, sym] : partial.enumMembers)
@@ -439,6 +516,15 @@ void RemoveNamesAndEnums(RuleIndex& index, const RuleIndexPartial& partial)
         if (it != index.allNames.end() && --it->second == 0)
         {
             index.allNames.erase(it);
+        }
+    }
+
+    for (const auto& name : partial.globalNames)
+    {
+        auto it = index.globalNames.find(name);
+        if (it != index.globalNames.end() && --it->second == 0)
+        {
+            index.globalNames.erase(it);
         }
     }
 

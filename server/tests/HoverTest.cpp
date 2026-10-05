@@ -1336,3 +1336,25 @@ TEST_CASE("Hover - Displays metadata on class and property declarations")
     CHECK(propContent.value.find("[editable]") != std::string::npos);
     CHECK(propContent.value.find(propName) != std::string::npos);
 }
+
+TEST_CASE("Hover - Wildcard variable type ? returns descriptive documentation")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("SetTimeout");
+    const std::string code = "void " + funcName + "(const ?& in value, ?& out result) {}\n";
+    TestEnvironment env(code);
+
+    const size_t qMarkIn = code.find("?& in");
+    REQUIRE(qMarkIn != std::string::npos);
+    auto hoverIn = env.HoverAt(0, static_cast<uint32_t>(qMarkIn));
+    REQUIRE(hoverIn.has_value());
+    auto contentIn = std::get<lsp::MarkupContent>(hoverIn->contents);
+    CHECK(contentIn.value.find("(variable type) ?") != std::string::npos);
+    CHECK(contentIn.value.find("The variable type `?` represents any type") != std::string::npos);
+
+    const size_t qMarkOut = code.find("?& out");
+    REQUIRE(qMarkOut != std::string::npos);
+    auto hoverOut = env.HoverAt(0, static_cast<uint32_t>(qMarkOut));
+    REQUIRE(hoverOut.has_value());
+    auto contentOut = std::get<lsp::MarkupContent>(hoverOut->contents);
+    CHECK(contentOut.value.find("(variable type) ?") != std::string::npos);
+}

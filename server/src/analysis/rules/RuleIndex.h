@@ -71,6 +71,7 @@ struct RuleIndexPartial
     std::vector<std::string> globalAccessorProperties;
     std::vector<std::string> keywordGlobalAccessorProperties;
     std::vector<std::string> allNames;
+    std::vector<std::string> globalNames;
     std::vector<std::pair<std::string, DerivedType>> derivedByBase;
     std::vector<std::pair<std::string, DerivedType>> hostClassesByMixin;
     std::vector<std::pair<std::string, std::string>> sharedDeclarations;
@@ -113,6 +114,12 @@ struct RuleIndex
      * @brief Every declared name in the workspace, with refcounts for incremental updates.
      */
     ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>> allNames;
+
+    /**
+     * @brief Declared names accessible at global/unqualified scope (free functions, global variables,
+     * declared types, namespace root segments), with refcounts for incremental updates.
+     */
+    ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>> globalNames;
 
     ankerl::unordered_dense::map<std::string, std::vector<DerivedType>> derivedByBase;
     ankerl::unordered_dense::map<std::string, std::vector<DerivedType>> hostClassesByMixin;

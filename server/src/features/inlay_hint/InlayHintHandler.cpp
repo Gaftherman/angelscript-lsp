@@ -1293,6 +1293,21 @@ struct ParamHintContext
 };
 
 /**
+ * @brief Parses an LSP URI or converts a local file system path into a document URI.
+ * @param[in] uriStr URI or file path string.
+ * @return Parsed lsp::DocumentUri.
+ */
+[[nodiscard]] inline lsp::DocumentUri ParseOrConvertUri(const std::string& uriStr)
+{
+    if (uriStr.find("://") != std::string::npos || uriStr.starts_with("angelscript-predefined:") ||
+        uriStr.starts_with("angelscript-virtual:"))
+    {
+        return lsp::DocumentUri::parse(uriStr);
+    }
+    return lsp::Uri::fileUriFromPath(uriStr);
+}
+
+/**
  * @brief Resolves target location for an inlay hint parameter definition.
  * @param[in] fallbackUri Fallback document URI.
  * @param[in] calleeUri Declared URI of the callee.
@@ -1320,9 +1335,7 @@ std::optional<lsp::Location> ResolveParameterLocation(const std::string& fallbac
     const uint32_t eL = hasNameLoc ? param.nameEndLine : param.endLine;
     const uint32_t eC = hasNameLoc ? param.nameEndCharacter : param.endCharacter;
     lsp::Range paramRange{lsp::Position{sL, sC}, lsp::Position{eL, eC}};
-    return lsp::Location{targetUri.rfind("file://", 0) == 0 ? lsp::DocumentUri::parse(targetUri)
-                                                            : lsp::Uri::fileUriFromPath(targetUri),
-                         paramRange};
+    return lsp::Location{ParseOrConvertUri(targetUri), paramRange};
 }
 
 /**
@@ -1526,10 +1539,7 @@ lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, std::string labe
     {
         lsp::Range paramRange{lsp::Position{hintInfo.param->startLine, hintInfo.param->startCharacter},
                               lsp::Position{hintInfo.param->endLine, hintInfo.param->endCharacter}};
-        part.location =
-            lsp::Location{hintInfo.fileUri.rfind("file://", 0) == 0 ? lsp::DocumentUri::parse(hintInfo.fileUri)
-                                                                    : lsp::Uri::fileUriFromPath(hintInfo.fileUri),
-                          paramRange};
+        part.location = lsp::Location{ParseOrConvertUri(hintInfo.fileUri), paramRange};
     }
     hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
     hint.tooltip = std::nullopt;

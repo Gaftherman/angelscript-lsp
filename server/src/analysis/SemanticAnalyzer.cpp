@@ -60,7 +60,7 @@ void SemanticAnalyzer::RunScopeRules(const SemanticAnalysisRequest& request, Dia
     {
         return;
     }
-    CheckUndefinedIdentifiers(request.scopeRoot.get(), request.GetRuleIndex().allNames, ctx);
+    CheckUndefinedIdentifiers(request.scopeRoot.get(), request.GetRuleIndex().globalNames, ctx);
 
     ankerl::unordered_dense::set<const LocalDefinition*> used;
     CollectUsedDefinitions(request.scopeRoot.get(), used);
@@ -955,21 +955,28 @@ bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefinition* 
     // enumerator DOES resolve from the scope tree - LOCALS_QUERY captures `enum_member` as
     // a definition - and continuing on that is what made the first attempt at this rule
     // never run.
-    if (!ctx.request.RequiresEnumScope() || resolved == nullptr || resolved->kind != LocalDefinitionKind::Constant ||
-        !ctx.request.GetRuleIndex().enumMemberNames.contains(ref.name))
+    if (resolved != nullptr && resolved->kind != LocalDefinitionKind::Constant)
+    {
+        return false;
+    }
+    if (!ctx.request.GetRuleIndex().enumMemberNames.contains(ref.name))
     {
         return false;
     }
 
     const bool isOwnDeclaration =
-        resolved->startLine == ref.startLine && resolved->startCharacter == ref.startCharacter;
+        resolved != nullptr && resolved->startLine == ref.startLine && resolved->startCharacter == ref.startCharacter;
     if (isOwnDeclaration || IsEnumReferenceQualified(ref, ctx))
     {
         return false;
     }
 
-    ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter}, "as-err-enum-scope-required",
-                    ref.name);
+    if (ctx.request.RequiresEnumScope())
+    {
+        ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
+                        "as-err-enum-scope-required", ref.name);
+        return true;
+    }
     return true;
 }
 
@@ -1014,6 +1021,60 @@ bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, co
     return false;
 }
 
+/**
+ * @brief Checks if an identifier name is declared in an enclosing container or using-namespace.
+ * @param[in] node AST descendant node for the reference.
+ * @param[in] refName Identifier name to check.
+ * @param[in] usingNamespaces Active using-namespace list for the document.
+ * @param[in] ctx Diagnostic context.
+ * @return True if refName is a declared member in the enclosing scope hierarchy.
+ */
+bool IsEnclosingScopeMember(TSNode node, const std::string& refName, const std::vector<std::string>& usingNamespaces,
+                            const DiagnosticContext& ctx)
+{
+    if (ts_node_is_null(node))
+    {
+        return false;
+    }
+    const auto& index = ctx.request.GetRuleIndex();
+    const auto containers = GetEnclosingContainers(node, ctx.request.sourceCode);
+    for (const auto& container : containers)
+    {
+        if (container.kind == ContainerKind::Namespace)
+        {
+            const std::string nsName = container.qualifiedName.empty() ? container.name : container.qualifiedName;
+            if (index.Members(nsName).allMemberNames.contains(refName))
+            {
+                return true;
+            }
+            continue;
+        }
+        if (container.kind != ContainerKind::Class && container.kind != ContainerKind::Interface)
+        {
+            continue;
+        }
+        const auto hierarchy = GetInheritedTypeHierarchy(
+            container.qualifiedName.empty() ? container.name : container.qualifiedName, ctx.request.symbolTable);
+        for (const auto& typeName : hierarchy)
+        {
+            if (index.Members(typeName).allMemberNames.contains(refName))
+            {
+                return true;
+            }
+        }
+    }
+
+    for (const auto& uNs : usingNamespaces)
+    {
+        if (index.Members(uNs).allMemberNames.contains(refName))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticContext& ctx)
 {
     if (IsReservedKeyword(ref.name))
@@ -1047,36 +1108,43 @@ bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticCont
     return false;
 }
 
-void CheckScopeReferences(
-    const Scope* scope,
-    const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames,
-    const MixinRanges& mixinRanges, DiagnosticContext& ctx)
-{
-    for (const auto& ref : scope->references)
-    {
-        if (ShouldIgnoreReference(ref, ctx) || IsReferenceInMixin(ref, mixinRanges))
-            continue;
-
-        const LocalDefinition* resolved = ResolveInScope(scope, ref.name);
-        if (CheckEnumScopeDiagnostic(ref, resolved, ctx))
-            continue;
-
-        if (resolved != nullptr || knownGlobalNames.contains(ref.name))
-            continue;
-
-        if (IsAccessorPropertyOrKeyword(ref, ctx))
-            continue;
-
-        ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
-                        "as-warn-undeclared-identifier", ref.name, DiagnosticSeverity::Warning);
-    }
-}
 struct UndefinedIdentifierContext
 {
     const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames;
     const MixinRanges& mixinRanges;
+    const std::vector<std::string>& usingNamespaces;
     DiagnosticContext& ctx;
 };
+
+void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& uCtx)
+{
+    for (const auto& ref : scope->references)
+    {
+        if (ShouldIgnoreReference(ref, uCtx.ctx) || IsReferenceInMixin(ref, uCtx.mixinRanges))
+            continue;
+
+        const LocalDefinition* resolved = ResolveInScope(scope, ref.name);
+        if (CheckEnumScopeDiagnostic(ref, resolved, uCtx.ctx))
+            continue;
+
+        if (resolved != nullptr || uCtx.knownGlobalNames.contains(ref.name))
+            continue;
+
+        if (IsAccessorPropertyOrKeyword(ref, uCtx.ctx))
+            continue;
+
+        if (uCtx.ctx.request.tree)
+        {
+            const TSPoint at{ref.startLine, ref.startCharacter};
+            const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(uCtx.ctx.request.tree), at, at);
+            if (IsEnclosingScopeMember(node, ref.name, uCtx.usingNamespaces, uCtx.ctx))
+                continue;
+        }
+
+        uCtx.ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
+                             "as-warn-undeclared-identifier", ref.name, DiagnosticSeverity::Warning);
+    }
+}
 
 void CheckUndefinedIdentifiersRecursive(const Scope* scope, const UndefinedIdentifierContext& uCtx, int depth)
 {
@@ -1085,7 +1153,7 @@ void CheckUndefinedIdentifiersRecursive(const Scope* scope, const UndefinedIdent
         return;
     }
 
-    CheckScopeReferences(scope, uCtx.knownGlobalNames, uCtx.mixinRanges, uCtx.ctx);
+    CheckScopeReferences(scope, uCtx);
 
     for (const auto& child : scope->children)
     {
@@ -1106,7 +1174,10 @@ void SemanticAnalyzer::CheckUndefinedIdentifiers(
     }
 
     const MixinRanges mixinRanges = CollectMixinRanges(ctx.request.symbolTable, ctx.request.fileUri);
-    const UndefinedIdentifierContext uCtx{knownGlobalNames, mixinRanges, ctx};
+    const std::vector<std::string> usingNamespaces =
+        ctx.request.tree ? CollectUsingNamespaces(ts_tree_root_node(ctx.request.tree), ctx.request.sourceCode)
+                         : std::vector<std::string>{};
+    const UndefinedIdentifierContext uCtx{knownGlobalNames, mixinRanges, usingNamespaces, ctx};
     CheckUndefinedIdentifiersRecursive(scope, uCtx, depth);
 }
 

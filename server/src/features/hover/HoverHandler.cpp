@@ -416,8 +416,9 @@ struct HoverTarget
 
 bool IsHoverableIdentifier(std::string_view txt, std::string_view type)
 {
-    if (type == "identifier" || type == "scoped_identifier" || type == "primitive_type" || type == "string_literal" ||
-        analysis::IsPrimitiveTypeName(std::string(txt)) || analysis::IsReservedKeyword(std::string(txt)))
+    if (txt == "?" || type == "datatype" || type == "identifier" || type == "scoped_identifier" ||
+        type == "primitive_type" || type == "string_literal" || analysis::IsPrimitiveTypeName(std::string(txt)) ||
+        analysis::IsReservedKeyword(std::string(txt)))
     {
         return true;
     }
@@ -809,6 +810,34 @@ std::optional<lsp::Hover> TryHoverPrimitiveType(std::string_view nodeText, const
             }
         }
     }
+    profiler.fmtMs += fmtTimer.ElapsedMs();
+    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, range};
+}
+
+/**
+ * @brief Attempts to produce hover documentation for the wildcard type '?'.
+ * @param[in] nodeText Text of the hover target.
+ * @param[in] range Target range in the document.
+ * @param[in,out] profiler Performance profiler.
+ * @return Populated Hover if nodeText is '?', std::nullopt otherwise.
+ */
+std::optional<lsp::Hover> TryHoverWildcardType(std::string_view nodeText, const lsp::Range& range,
+                                               HoverProfiler& profiler)
+{
+    if (nodeText != "?")
+    {
+        return std::nullopt;
+    }
+    profiler.nodeType = "wildcard_type";
+    if (profiler.IsActive())
+    {
+        profiler.pathText = "?";
+        profiler.symbolName = "?";
+    }
+    utils::HighResTimer fmtTimer;
+    std::string md = "```angelscript\n(variable type) ?\n```\n\n"
+                     "The variable type `?` represents any type. It is used in parameter declarations "
+                     "to accept arguments of any type by reference (`?& in`, `?& out`, `?& inout`).";
     profiler.fmtMs += fmtTimer.ElapsedMs();
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, range};
 }
@@ -2730,9 +2759,35 @@ static bool IsStringOrBinaryLiteral(const HoverTarget& target)
     std::string_view type = ts_node_type(target.node);
     if (type == "string_literal" || type == "binary_expression")
     {
-        return true;
+        return !target.text.empty() && target.text.front() == '"' && target.text.back() == '"';
     }
-    return !target.text.empty() && target.text.front() == '"' && target.text.back() == '"';
+    return false;
+}
+
+/**
+ * @brief Attempts to produce hover for string/binary literals or primitive/wildcard types.
+ * @param[in] target Extracted hover target.
+ * @param[in] request Original hover request.
+ * @param[in,out] profiler Performance profiler.
+ * @return Populated Hover if matched, std::nullopt otherwise.
+ */
+static std::optional<lsp::Hover> TryHoverLiteralOrType(const HoverTarget& target, const HoverRequest& request,
+                                                       HoverProfiler& profiler)
+{
+    if (IsStringOrBinaryLiteral(target))
+    {
+        if (auto strHover = TryHoverStringLiteral(target, request))
+        {
+            return strHover;
+        }
+    }
+
+    if (auto primHover = TryHoverPrimitiveType(target.text, target.range, profiler))
+    {
+        return primHover;
+    }
+
+    return TryHoverWildcardType(target.text, target.range, profiler);
 }
 } // namespace
 
@@ -2765,14 +2820,6 @@ std::optional<lsp::Hover> GetHover(const HoverRequest& request)
         return std::nullopt;
     }
 
-    if (IsStringOrBinaryLiteral(*target))
-    {
-        if (auto strHover = TryHoverStringLiteral(*target, request))
-        {
-            return strHover;
-        }
-    }
-
     profiler.nodeType = ts_node_type(target->node);
     if (profiler.IsActive())
     {
@@ -2780,9 +2827,9 @@ std::optional<lsp::Hover> GetHover(const HoverRequest& request)
         profiler.symbolName = target->text;
     }
 
-    if (auto primHover = TryHoverPrimitiveType(target->text, target->range, profiler))
+    if (auto earlyHover = TryHoverLiteralOrType(*target, request, profiler))
     {
-        return primHover;
+        return earlyHover;
     }
 
     HoverQueryContext ctx = BuildHoverQueryContext(request, profiler, std::move(*target));

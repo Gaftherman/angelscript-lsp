@@ -1570,3 +1570,51 @@ TEST_CASE("InlayHintHandler - Invariant: Local funcdef variable call provides ar
 
     CHECK(std::find(labels.begin(), labels.end(), paramName + ":") != labels.end());
 }
+
+TEST_CASE("InlayHintHandler - Predefined stub parameter location preserves URI scheme")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("SetTimeout");
+    const std::string predefinedUri = "angelscript-predefined://core.as.predefined";
+    const std::string stubCode = "void " + funcName + "(const ?& in delay, ?& in callback);\n";
+
+    TestEnvironment env("");
+    env.symbolCollector.CollectSymbols(predefinedUri, stubCode, env.parser, env.symbolTable);
+
+    const std::string callCode = "void main() { " + funcName + "(1.0f, null); }\n";
+    env.sourceCode = callCode;
+    if (env.tree)
+    {
+        ts_tree_delete(env.tree);
+    }
+    env.tree = env.parser.Parse(callCode);
+    auto rootScope = env.scopeCollector.CollectScopes(callCode, env.parser);
+    if (rootScope)
+    {
+        env.scopeIndex.SetScopeTree(env.uri, std::move(rootScope));
+    }
+
+    auto hints = env.InlayHints();
+    REQUIRE(hints.has_value());
+    REQUIRE_FALSE(hints->empty());
+
+    bool foundPredefinedLocation = false;
+    for (const auto& h : *hints)
+    {
+        if (std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(h.label))
+        {
+            for (const auto& part : std::get<std::vector<lsp::InlayHintLabelPart>>(h.label))
+            {
+                if (part.location.has_value())
+                {
+                    const std::string uriStr = part.location->uri.toString();
+                    CHECK(uriStr.find("file:///angelscript-predefined") == std::string::npos);
+                    if (uriStr.find("angelscript-predefined") != std::string::npos)
+                    {
+                        foundPredefinedLocation = true;
+                    }
+                }
+            }
+        }
+    }
+    CHECK(foundPredefinedLocation);
+}
