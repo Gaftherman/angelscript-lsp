@@ -911,6 +911,41 @@ TEST_SUITE("Formatting")
         CHECK(asStyle->pointerAlignment == PointerAlignment::Right);
     }
 
+    TEST_CASE("ClangFormatReader - Real-world Legacy ClangFormat Gist Ingestion")
+    {
+        const std::string gistYaml = "TabWidth: 4\n"
+                                     "IndentWidth: 4\n"
+                                     "UseTab: Never\n"
+                                     "Language: Cpp\n"
+                                     "Standard: Cpp11\n"
+                                     "PointerAlignment: Left\n"
+                                     "AccessModifierOffset: 0\n"
+                                     "BreakBeforeBraces: Attach\n"
+                                     "ColumnLimit: 80\n"
+                                     "SpaceBeforeParens: Always\n"
+                                     "SpaceAfterCStyleCast: false\n"
+                                     "SpacesInAngles: false\n"
+                                     "SpacesInParentheses: false\n"
+                                     "SpacesInSquareBrackets: false\n"
+                                     "MaxEmptyLinesToKeep: 2\n"
+                                     "DerivePointerBinding: false\n"
+                                     "AllowShortBlocksOnASingleLine: false\n"
+                                     "AllowShortFunctionsOnASingleLine: false\n";
+
+        auto style = ParseClangFormat(gistYaml);
+        REQUIRE(style.has_value());
+        CHECK(style->tabWidth == 4);
+        CHECK(style->indentWidth == 4);
+        CHECK(style->useTab == UseTabStyle::Never);
+        CHECK(style->braceStyle == BraceStyle::KAndR);
+        CHECK(style->pointerAlignment == PointerAlignment::Left);
+        CHECK(style->spaceBeforeParens == SpaceBeforeParensStyle::Always);
+        CHECK(style->columnLimit == 80);
+        CHECK(style->spacesInsideParentheses == false);
+        CHECK(style->allowShortBlocksOnASingleLine == ShortBlockStyle::Never);
+        CHECK(style->allowShortFunctionsOnASingleLine == ShortFunctionStyle::None);
+    }
+
     TEST_CASE("CombinatorialBraceStylesTest")
     {
         const std::string fnName = test::GenerateRandomSymbolName("func");
