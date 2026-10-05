@@ -1451,7 +1451,14 @@ void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
 
     if (def.typeName == "void" || base == "void")
     {
-        ctx.EmitAtRange(range, "as-err-void-variable", def.name, DiagnosticSeverity::Error);
+        if (def.kind == LocalDefinitionKind::Parameter)
+        {
+            ctx.EmitAtRange(range, "as-err-void-parameter", {def.name, "<anonymous>"}, DiagnosticSeverity::Error);
+        }
+        else
+        {
+            ctx.EmitAtRange(range, "as-err-void-variable", def.name, DiagnosticSeverity::Error);
+        }
         return;
     }
     if (IsMixinClass(base, ctx.request.symbolTable))
@@ -1516,7 +1523,8 @@ void SemanticAnalyzer::CheckLocalTypes(const Scope* scope, DiagnosticContext& ct
 {
     for (const auto& def : scope->definitions)
     {
-        if (def.kind == LocalDefinitionKind::Variable)
+        if (def.kind == LocalDefinitionKind::Variable ||
+            (scope->kind == ScopeKind::Closure && def.kind == LocalDefinitionKind::Parameter))
         {
             ValidateVariableType(def, ctx);
         }

@@ -2185,3 +2185,80 @@ TEST_CASE("Completion - Case-insensitive prefix matching for symbols, types, and
     }
     CHECK(foundEnumMember);
 }
+
+TEST_CASE("Completion - Suppress duplicate parentheses snippet when '(' follows cursor")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("ColorGray");
+    std::string code = "class Renderer {\n"
+                       "    void " +
+                       fnName +
+                       "() {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Renderer r;\n"
+                       "    r." +
+                       fnName.substr(0, 5) +
+                       "();\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    // Position cursor at r.Color|() -> line 5, col 11
+    auto items = env.CompleteAt(5, 11);
+    bool found = false;
+    for (const auto& item : items)
+    {
+        if (item.label == fnName)
+        {
+            found = true;
+            // When '(' follows cursor, insertText must NOT contain snippet parens
+            if (item.insertText.has_value())
+            {
+                CHECK(item.insertText->find("(") == std::string::npos);
+            }
+            break;
+        }
+    }
+    CHECK(found);
+}
+
+TEST_CASE("Completion - Resolve enclosing class member receiver this.m_field.")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("EnvCredits");
+    const std::string memberDict = angel_lsp::test::GenerateRandomSymbolName("m_PlayersVoting");
+
+    std::string code = "class DictHelper {\n"
+                       "    void getKeys() {}\n"
+                       "    int getSize() { return 0; }\n"
+                       "}\n"
+                       "class " +
+                       className +
+                       " {\n"
+                       "    DictHelper " +
+                       memberDict +
+                       ";\n"
+                       "    void OnTick() {\n"
+                       "        this." +
+                       memberDict +
+                       ".\n"
+                       "    }\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    size_t col = 8 + 5 + memberDict.size() + 1;
+    auto items = env.CompleteAt(7, static_cast<uint32_t>(col));
+    bool foundGetKeys = false;
+    bool foundGetSize = false;
+    for (const auto& item : items)
+    {
+        if (item.label == "getKeys")
+        {
+            foundGetKeys = true;
+        }
+        if (item.label == "getSize")
+        {
+            foundGetSize = true;
+        }
+    }
+    CHECK(foundGetKeys);
+    CHECK(foundGetSize);
+}

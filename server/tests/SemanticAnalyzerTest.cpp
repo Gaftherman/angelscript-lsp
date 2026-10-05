@@ -2320,3 +2320,61 @@ TEST_CASE("SemanticAnalyzer - Unqualified enum member access does not emit undec
                                            { return d.code == "as-warn-undeclared-identifier"; });
     CHECK(undeclaredIt == diags.end());
 }
+
+TEST_CASE("SemanticAnalyzer - Lambda parameter with unresolved type emits as-err-unresolved-type")
+{
+    const std::string unknownTypeName = angel_lsp::test::GenerateRandomSymbolName("MenuOption");
+    const std::string knownClassName = angel_lsp::test::GenerateRandomSymbolName("CBasePlayer");
+    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("option");
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const std::string declCode = "class " + knownClassName +
+                                 " {};\n"
+                                 "funcdef void Callback(" +
+                                 knownClassName + "@, const " + unknownTypeName + "@);\n";
+    collector.CollectSymbols("file:///decl.as", declCode, parser, table);
+
+    const std::string lambdaCode = "void RegisterCallback(Callback@ cb) {}\n"
+                                   "void main() {\n"
+                                   "    RegisterCallback(function(" +
+                                   knownClassName + "@ player, const " + unknownTypeName + "@ " + paramName +
+                                   ") {});\n"
+                                   "}\n";
+
+    const angel_lsp::i18n::I18n i18n("en");
+    const auto diags = AnalyzeSource(lambdaCode, table, i18n, "file:///main.as");
+
+    const auto it = std::find_if(
+        diags.begin(), diags.end(), [&](const Diagnostic& d)
+        { return d.code == "as-err-unresolved-type" && d.message.find(unknownTypeName) != std::string::npos; });
+    CHECK(it != diags.end());
+}
+
+TEST_CASE("SemanticAnalyzer - Untyped and valid lambda parameters emit no unresolved type diagnostics")
+{
+    const std::string knownClassName = angel_lsp::test::GenerateRandomSymbolName("CBasePlayer");
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const std::string declCode = "class " + knownClassName + " {};\n";
+    collector.CollectSymbols("file:///decl.as", declCode, parser, table);
+
+    const std::string lambdaCode = "void main() {\n"
+                                   "    auto f1 = function(a, b) {};\n"
+                                   "    auto f2 = function(" +
+                                   knownClassName +
+                                   "@ player, int count) {};\n"
+                                   "}\n";
+
+    const angel_lsp::i18n::I18n i18n("en");
+    const auto diags = AnalyzeSource(lambdaCode, table, i18n, "file:///main.as");
+
+    const auto it = std::find_if(diags.begin(), diags.end(),
+                                 [](const Diagnostic& d) { return d.code == "as-err-unresolved-type"; });
+    CHECK(it == diags.end());
+}

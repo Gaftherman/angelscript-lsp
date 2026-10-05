@@ -1246,3 +1246,52 @@ TEST_CASE("CodeActionHandler - QuickFix localization in Spanish")
     const auto* explicitCallFixEn = ActionTitled(actionsEn, "Call opImplConv() explicitly");
     REQUIRE(explicitCallFixEn != nullptr);
 }
+
+TEST_CASE(
+    "CodeActionHandler - Implement Interface with reference return, const qualifier, and override at top of class")
+{
+    const std::string ifaceName = angel_lsp::test::GenerateRandomSymbolName("IConfigurable");
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("ASDataTracker");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("GetName");
+
+    std::string code = "interface " + ifaceName +
+                       " {\n"
+                       "    const string& " +
+                       methodName +
+                       "() const;\n"
+                       "    const string GetSchema() const;\n"
+                       "    bool Register(btson@ config);\n"
+                       "}\n"
+                       "class " +
+                       className + " : " + ifaceName +
+                       "\n"
+                       "{\n"
+                       "    int m_existingField = 42;\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    lsp::Range r{{5, 0}, {7, 1}};
+    auto actions = env.CodeActions(r);
+
+    REQUIRE(actions.has_value());
+    bool foundAction = false;
+    for (const auto& action : *actions)
+    {
+        if (action.title == "Implement missing interface methods for '" + ifaceName + "'")
+        {
+            foundAction = true;
+            REQUIRE(action.edit.has_value());
+            REQUIRE(action.edit->changes.has_value());
+            auto changes = action.edit->changes.value();
+            const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
+            REQUIRE(!edits.empty());
+            const std::string& newText = edits[0].newText;
+            CHECK(newText.find("const string& " + methodName + "() const override") != std::string::npos);
+            CHECK(newText.find("const string GetSchema() const override") != std::string::npos);
+            CHECK(newText.find("bool Register(btson@ config) override") != std::string::npos);
+            // Insertion position must be at line 6 (right after opening brace '{'), before line 7 (m_existingField)
+            CHECK(edits[0].range.start.line == 6);
+        }
+    }
+    CHECK(foundAction);
+}

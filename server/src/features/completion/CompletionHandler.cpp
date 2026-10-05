@@ -1301,6 +1301,44 @@ struct MemberTemplateContext
 };
 
 /**
+ * @brief Checks if an open parenthesis immediately follows the cursor position.
+ * @param[in] sourceCode Document source text.
+ * @param[in] position Cursor position.
+ * @return True if '(' follows cursor ignoring inline whitespace, false otherwise.
+ */
+static bool HasTrailingOpenParen(std::string_view sourceCode, const lsp::Position& position)
+{
+    if (sourceCode.empty())
+    {
+        return false;
+    }
+    size_t offset = utils::LineStartOffset(sourceCode, position.line) + position.character;
+    while (offset < sourceCode.size())
+    {
+        char c = sourceCode[offset];
+        if (c == ' ' || c == '\t')
+        {
+            ++offset;
+            continue;
+        }
+        return c == '(';
+    }
+    return false;
+}
+
+/**
+ * @brief Determines whether function/method call parentheses snippet should be generated.
+ * @param[in] collector Completion collector context.
+ * @return True if snippet parentheses should be inserted, false otherwise.
+ */
+static bool ShouldCompleteParens(const CompletionCollector& collector)
+{
+    const bool configEnabled =
+        !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
+    return configEnabled && !HasTrailingOpenParen(collector.request.sourceCode, collector.request.position);
+}
+
+/**
  * @brief Converts a member symbol into a completion candidate item.
  * @param[in] sym Target member symbol.
  * @param[in] typeName Container type name.
@@ -1317,8 +1355,7 @@ void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std::strin
     {
         kind = lsp::CompletionItemKind::Method;
         detail = FormatMethodDetail(sym, tCtx.binding, tCtx.templateArgs);
-        const bool completeParens =
-            !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
+        const bool completeParens = ShouldCompleteParens(collector);
         if (collector.request.snippetSupport && completeParens)
         {
             snippet = sym.GetFunction().parameters.empty() ? (sym.name + "()$0") : (sym.name + "($0)");
@@ -1551,6 +1588,41 @@ TSNode FindReceiverNodeAtDot(TSNode rootNode, std::string_view sourceCode, size_
     return FindReceiverPrecedingDot(rootNode, sourceCode, dotByteOffset);
 }
 
+/**
+ * @brief Resolves member type in class type hierarchy.
+ * @param[in] table Symbol table.
+ * @param[in] parentType Name of parent class/container type.
+ * @param[in] memberName Target member name.
+ * @return Resolved raw type name of variable or return type of function, or empty string.
+ */
+static std::string FindMemberInTypeHierarchy(const analysis::SymbolTable& table, const std::string& parentType,
+                                             std::string_view memberName)
+{
+    if (parentType.empty() || memberName.empty())
+    {
+        return "";
+    }
+    auto hierarchy = GetInheritedTypeHierarchy(table, parentType);
+    for (const auto& cls : hierarchy)
+    {
+        if (auto syms = table.FindSymbolsPtr(cls + "::" + std::string(memberName)))
+        {
+            for (const auto& sym : *syms)
+            {
+                if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().typeName.empty())
+                {
+                    return sym.GetVariable().typeName;
+                }
+                if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().returnType.empty())
+                {
+                    return sym.GetFunction().returnType;
+                }
+            }
+        }
+    }
+    return "";
+}
+
 static std::string ResolveNamedReceiverType(std::string_view nodeText, const CompletionRequest& request,
                                             const analysis::Scope* innermostScope)
 {
@@ -1561,6 +1633,10 @@ static std::string ResolveNamedReceiverType(std::string_view nodeText, const Com
     if (nodeText == "this")
     {
         return FindEnclosingClassName(request);
+    }
+    if (nodeText.starts_with("this."))
+    {
+        return ResolveNamedReceiverType(nodeText.substr(5), request, innermostScope);
     }
     if (innermostScope)
     {
@@ -1580,7 +1656,7 @@ static std::string ResolveNamedReceiverType(std::string_view nodeText, const Com
             }
         }
     }
-    return "";
+    return FindMemberInTypeHierarchy(request.symbolTable, FindEnclosingClassName(request), nodeText);
 }
 
 /**
@@ -1653,6 +1729,25 @@ static size_t PeelIndexBrackets(const std::string& prefix, size_t& s)
     return count;
 }
 
+static size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)
+{
+    while (pos > 0 && (text[pos - 1] == ' ' || text[pos - 1] == '\t'))
+    {
+        --pos;
+    }
+    return pos;
+}
+
+static size_t ExtractIdentifierBackward(const std::string& text, size_t end)
+{
+    size_t s = end;
+    while (s > 0 && (std::isalnum(static_cast<unsigned char>(text[s - 1])) || text[s - 1] == '_'))
+    {
+        --s;
+    }
+    return s;
+}
+
 /**
  * @brief Resolves fallback receiver type when AST node resolution is unavailable or incomplete.
  * @param[in] prefix Prefix text before cursor.
@@ -1665,23 +1760,26 @@ static std::string ResolveFallbackReceiverType(const std::string& prefix, size_t
                                                const CompletionCollector& collector,
                                                const analysis::Scope* innermostScope)
 {
-    size_t s = dotCol;
-    while (s > 0 && (prefix[s - 1] == ' ' || prefix[s - 1] == '\t'))
-    {
-        --s;
-    }
+    size_t s = SkipInlineWhitespaceBackward(prefix, dotCol);
     size_t indexCount = PeelIndexBrackets(prefix, s);
     size_t e = s;
-    while (s > 0 && (std::isalnum(static_cast<unsigned char>(prefix[s - 1])) || prefix[s - 1] == '_'))
-    {
-        --s;
-    }
+    s = ExtractIdentifierBackward(prefix, s);
     if (e <= s)
     {
         return "";
     }
     std::string ident(prefix.substr(s, e - s));
-    std::string rawTypeName = ResolveNamedReceiverType(ident, collector.request, innermostScope);
+    std::string rawTypeName;
+    size_t prevDot = SkipInlineWhitespaceBackward(prefix, s);
+    if (prevDot > 0 && prefix[prevDot - 1] == '.')
+    {
+        std::string parentType = ResolveFallbackReceiverType(prefix, prevDot - 1, collector, innermostScope);
+        rawTypeName = FindMemberInTypeHierarchy(collector.request.symbolTable, parentType, ident);
+    }
+    if (rawTypeName.empty())
+    {
+        rawTypeName = ResolveNamedReceiverType(ident, collector.request, innermostScope);
+    }
     if (!rawTypeName.empty() && indexCount > 0)
     {
         const auto& arrayContainer = ConfiguredArrayTypeName(collector.request);
@@ -1843,8 +1941,7 @@ void ProcessScopeDefinition(const analysis::LocalDefinition& def, const std::str
     {
         kind = lsp::CompletionItemKind::Function;
         isCallable = true;
-        const bool completeParens =
-            !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
+        const bool completeParens = ShouldCompleteParens(collector);
         if (collector.request.snippetSupport && completeParens)
         {
             snippet = CallSnippetForName(symbolKey, collector.request.symbolTable);
@@ -1914,8 +2011,7 @@ static void CollectEnclosingMemberCandidate(const analysis::Symbol& sym, const s
     if (sym.type == analysis::SymbolType::Function)
     {
         detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
-        const bool completeParens =
-            !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
+        const bool completeParens = ShouldCompleteParens(collector);
         if (collector.request.snippetSupport && completeParens)
         {
             snippet = sym.GetFunction().parameters.empty() ? (sym.name + "()$0") : (sym.name + "($0)");
@@ -1962,8 +2058,7 @@ static void CollectGlobalFunctionSymbol(const analysis::Symbol& sym, bool access
 {
     std::string detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
     std::string snippet;
-    const bool completeParens =
-        !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
+    const bool completeParens = ShouldCompleteParens(collector);
     if (collector.request.snippetSupport && completeParens)
     {
         snippet = CallSnippet(sym.name, sym.GetFunction().parameters);

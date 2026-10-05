@@ -1069,11 +1069,10 @@ void CollectOverloadDocs(const HoverRequest& request, const std::vector<analysis
  */
 std::string FormatMoreOverloads(const angel_lsp::i18n::I18n* i18n, size_t count)
 {
-    if (count == 1)
-    {
-        return angel_lsp::i18n::FormatMessage(i18n, "hover-more-overloads-singular", "1 more overload");
-    }
-    return angel_lsp::i18n::FormatMessage(i18n, "hover-more-overloads-plural", "{} more overloads", count);
+    std::string text =
+        (count == 1) ? angel_lsp::i18n::FormatMessage(i18n, "hover-more-overloads-singular", "1 more overload")
+                     : angel_lsp::i18n::FormatMessage(i18n, "hover-more-overloads-plural", "{} more overloads", count);
+    return "[" + text + "](command:editor.action.triggerParameterHints)";
 }
 
 /**

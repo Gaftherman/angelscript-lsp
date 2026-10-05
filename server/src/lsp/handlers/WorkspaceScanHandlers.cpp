@@ -357,13 +357,17 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
         struct ReanalyseOnExit
         {
             Server* server;
+            const angel_lsp::utils::StopFlag& stopToken;
             ~ReanalyseOnExit()
             {
                 server->SetPredefinedReady(true);
                 server->m_workspaceScanComplete.store(true);
-                server->ScheduleOpenDocumentsForReanalysis();
+                if (!stopToken.stop_requested())
+                {
+                    server->ScheduleOpenDocumentsForReanalysis();
+                }
             }
-        } reanalyseOnExit{this};
+        } reanalyseOnExit{this, stopToken};
 
         WorkspaceFilesWalkResult walkResult;
         if (!CollectWorkspaceFiles(roots, stopToken, walkResult))
