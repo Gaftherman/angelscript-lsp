@@ -161,25 +161,12 @@ std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, cons
  */
 std::vector<std::string> GetAllIndexedFileUris(const analysis::SymbolTable& symbolTable, const std::string& currentUri)
 {
-    std::unordered_set<std::string> uriSet;
-    if (!currentUri.empty())
+    std::vector<std::string> uris = symbolTable.GetIndexedFileUris();
+    if (!currentUri.empty() && std::find(uris.begin(), uris.end(), currentUri) == uris.end())
     {
-        uriSet.insert(currentUri);
+        uris.push_back(currentUri);
     }
-
-    symbolTable.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
-        {
-            for (const auto& sym : symbols)
-            {
-                if (!sym.fileUri.empty())
-                {
-                    uriSet.insert(sym.fileUri);
-                }
-            }
-        });
-
-    return std::vector<std::string>(uriSet.begin(), uriSet.end());
+    return uris;
 }
 
 } // namespace
@@ -397,6 +384,41 @@ void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& rootScope,
 }
 
 /**
+ * @brief Checks if any symbol in candidates represents a class or interface member.
+ * @param[in] syms Candidate symbols to inspect.
+ * @return True if at least one candidate is not from a namespace or enum.
+ */
+static bool HasClassMemberSymbol(const std::vector<Symbol>& syms)
+{
+    for (const auto& s : syms)
+    {
+        if (s.containerKind != analysis::ContainerKind::Namespace && s.containerKind != analysis::ContainerKind::Enum)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if any symbol in candidates represents a namespace-scoped symbol.
+ * @param[in] syms Candidate symbols to inspect.
+ * @return True if at least one candidate is not declared within a class, interface, or enum.
+ */
+static bool HasNamespaceSymbol(const std::vector<Symbol>& syms)
+{
+    for (const auto& s : syms)
+    {
+        if (s.containerKind != analysis::ContainerKind::Class &&
+            s.containerKind != analysis::ContainerKind::Interface && s.containerKind != analysis::ContainerKind::Enum)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * @brief Resolves target through enclosing class, interface, or namespace containers.
  * @param[in] outNode AST node.
  * @param[in] nodeText Symbol identifier text.
@@ -414,7 +436,8 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
             auto hierarchy = analysis::GetInheritedTypeHierarchy(container.qualifiedName, request.symbolTable);
             for (const auto& cls : hierarchy)
             {
-                if (request.symbolTable.HasSymbol(cls + "::" + nodeText))
+                auto syms = request.symbolTable.FindSymbols(cls + "::" + nodeText);
+                if (HasClassMemberSymbol(syms))
                 {
                     target.kind = TargetKind::ClassMember;
                     target.declaringClass = cls;
@@ -425,7 +448,8 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
         else if (container.kind == analysis::ContainerKind::Namespace)
         {
             std::string qName = container.qualifiedName + "::" + nodeText;
-            if (request.symbolTable.HasSymbol(qName))
+            auto syms = request.symbolTable.FindSymbols(qName);
+            if (HasNamespaceSymbol(syms))
             {
                 target.kind = TargetKind::NamespaceSymbol;
                 target.declaringNamespace = container.qualifiedName;
@@ -552,6 +576,60 @@ bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const Resolv
     return false;
 }
 
+bool AssignTargetFromContainerKind(const analysis::Symbol& sym, TargetDescriptor& target)
+{
+    if (sym.containerKind == analysis::ContainerKind::Class || sym.containerKind == analysis::ContainerKind::Interface)
+    {
+        target.kind = TargetKind::ClassMember;
+        target.declaringClass = sym.containerName;
+        return true;
+    }
+    if (sym.containerKind == analysis::ContainerKind::Namespace)
+    {
+        target.kind = TargetKind::NamespaceSymbol;
+        target.declaringNamespace = sym.containerName;
+        target.qualifiedName = sym.qualifiedName;
+        return true;
+    }
+    if (sym.containerKind == analysis::ContainerKind::Enum)
+    {
+        target.kind = TargetKind::EnumMember;
+        target.declaringEnum = sym.containerName;
+        target.qualifiedName = sym.qualifiedName;
+        return true;
+    }
+    return false;
+}
+
+bool AssignTargetFromContainerLookup(const analysis::Symbol& sym, const SymbolTable& table, TargetDescriptor& target)
+{
+    auto containerSyms = table.FindSymbols(sym.containerName);
+    for (const auto& csym : containerSyms)
+    {
+        if (csym.type == analysis::SymbolType::Class || csym.type == analysis::SymbolType::Interface)
+        {
+            target.kind = TargetKind::ClassMember;
+            target.declaringClass = sym.containerName;
+            return true;
+        }
+        if (csym.type == analysis::SymbolType::Namespace)
+        {
+            target.kind = TargetKind::NamespaceSymbol;
+            target.declaringNamespace = sym.containerName;
+            target.qualifiedName = sym.qualifiedName;
+            return true;
+        }
+        if (csym.type == analysis::SymbolType::Enum)
+        {
+            target.kind = TargetKind::EnumMember;
+            target.declaringEnum = sym.containerName;
+            target.qualifiedName = sym.qualifiedName;
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * @brief Checks global symbols for class or namespace containers matching the symbol.
  * @param[in] nodeText Symbol identifier text.
@@ -561,7 +639,8 @@ bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const Resolv
 void ResolveGlobalFallbackTarget(const std::string& nodeText, const ResolveTargetRequest& request,
                                  TargetDescriptor& target)
 {
-    request.symbolTable.ForEachSymbol(
+    request.symbolTable.ForEachSymbolInFile(
+        request.uri,
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
@@ -573,29 +652,10 @@ void ResolveGlobalFallbackTarget(const std::string& nodeText, const ResolveTarge
                     {
                         continue;
                     }
-                    auto containerSyms = request.symbolTable.FindSymbols(sym.containerName);
-                    for (const auto& csym : containerSyms)
+                    if (AssignTargetFromContainerKind(sym, target) ||
+                        AssignTargetFromContainerLookup(sym, request.symbolTable, target))
                     {
-                        if (csym.type == analysis::SymbolType::Class || csym.type == analysis::SymbolType::Interface)
-                        {
-                            target.kind = TargetKind::ClassMember;
-                            target.declaringClass = sym.containerName;
-                            return;
-                        }
-                        if (csym.type == analysis::SymbolType::Namespace)
-                        {
-                            target.kind = TargetKind::NamespaceSymbol;
-                            target.declaringNamespace = sym.containerName;
-                            target.qualifiedName = sym.qualifiedName;
-                            return;
-                        }
-                        if (csym.type == analysis::SymbolType::Enum)
-                        {
-                            target.kind = TargetKind::EnumMember;
-                            target.declaringEnum = sym.containerName;
-                            target.qualifiedName = sym.qualifiedName;
-                            return;
-                        }
+                        return;
                     }
                 }
             }
@@ -651,11 +711,7 @@ FunctionArgConstraints GetCallArgumentConstraints(TSNode outNode)
         std::string_view wpType = ts_node_type(walkP);
         if (wpType == "call_expression")
         {
-            TSNode funcChild = parser::GetChildByField(walkP, parser::fields::Function);
-            if (ts_node_is_null(funcChild) && ts_node_child_count(walkP) > 0)
-            {
-                funcChild = ts_node_child(walkP, 0);
-            }
+            TSNode funcChild = parser::GetCallCallee(walkP);
             if (!ts_node_is_null(funcChild) &&
                 (ts_node_eq(funcChild, walk) || ts_node_start_byte(funcChild) == ts_node_start_byte(walk)))
             {
@@ -1215,7 +1271,8 @@ bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const analys
                                const std::unordered_set<std::string>& relatedSet, const OccurrenceScanContext& ctx)
 {
     std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
-    if (encClass.empty() || !relatedSet.contains(encClass))
+    if (encClass.empty() ||
+        (!relatedSet.contains(encClass) && !relatedSet.contains(std::string(analysis::LastScopeSegment(encClass)))))
     {
         return false;
     }
@@ -1223,7 +1280,7 @@ bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const analys
     bool inTargetHierarchy = false;
     std::string cleanEnc = analysis::CleanBaseType(encClass);
     std::string cleanDecl = analysis::CleanBaseType(ctx.request.target.declaringClass);
-    if (cleanEnc == cleanDecl || cleanDecl.empty())
+    if (cleanDecl.empty() || analysis::MatchesDeclOrScope(cleanEnc, cleanDecl))
     {
         inTargetHierarchy = true;
     }
@@ -1232,7 +1289,7 @@ bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const analys
         auto hierarchy = analysis::GetInheritedTypeHierarchy(cleanEnc, ctx.request.symbolTable);
         for (const auto& ancestor : hierarchy)
         {
-            if (analysis::CleanBaseType(ancestor) == cleanDecl)
+            if (analysis::MatchesDeclOrScope(analysis::CleanBaseType(ancestor), cleanDecl))
             {
                 inTargetHierarchy = true;
                 break;
@@ -1353,7 +1410,8 @@ bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const anal
         if (ctx.fileUri != ctx.request.currentUri)
         {
             std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
-            return encClass.empty() || relatedSet.contains(encClass);
+            return encClass.empty() || relatedSet.contains(encClass) ||
+                   relatedSet.contains(std::string(analysis::LastScopeSegment(encClass)));
         }
         return false;
     }
@@ -1394,7 +1452,8 @@ void ScanDocumentForClassMember(const analysis::Scope* root, const std::unordere
                 ctx.request.target.access == analysis::AccessModifier::Protected)
             {
                 std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
-                if (encClass.empty() || !relatedSet.contains(encClass))
+                if (encClass.empty() || (!relatedSet.contains(encClass) &&
+                                         !relatedSet.contains(std::string(analysis::LastScopeSegment(encClass)))))
                 {
                     continue;
                 }
@@ -1627,7 +1686,8 @@ void CollectNamespaceOccurrences(const CollectOccurrencesRequest& request, Occur
         }
 
         std::vector<std::pair<uint32_t, uint32_t>> nsRanges;
-        request.symbolTable.ForEachSymbol(
+        request.symbolTable.ForEachSymbolInFile(
+            fileUri,
             [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& sList)
             {
                 for (const auto& s : sList)

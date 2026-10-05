@@ -172,9 +172,38 @@ void LogOverloadTelemetry(const OverloadLogRequest& req)
     }
 }
 
+static const Symbol* SelectPriorityCandidate(const std::vector<EvaluatedCandidate>& nonDominated)
+{
+    if (nonDominated.empty())
+    {
+        return nullptr;
+    }
+    const EvaluatedCandidate* best = &nonDominated.front();
+    int bestScore = 0;
+    for (const auto& c : best->conversions)
+    {
+        bestScore += c.legacyScore;
+    }
+    for (size_t i = 1; i < nonDominated.size(); ++i)
+    {
+        int score = 0;
+        for (const auto& c : nonDominated[i].conversions)
+        {
+            score += c.legacyScore;
+        }
+        if (score < bestScore || (score == bestScore && nonDominated[i].defaultArgs < best->defaultArgs))
+        {
+            best = &nonDominated[i];
+            bestScore = score;
+        }
+    }
+    return best->symbol;
+}
+
 static void PopulateWinner(OverloadMatchResult& result, EvaluatedCandidate cand)
 {
     result.bestCandidate = cand.symbol;
+    result.priorityCandidate = cand.symbol;
     result.bestScore = 0;
     result.bestCostVector.clear();
     result.bestCostVector.reserve(cand.conversions.size());
@@ -234,6 +263,7 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
     if (result.isAmbiguous)
     {
         result.bestCandidate = nullptr;
+        result.priorityCandidate = SelectPriorityCandidate(nonDominated);
     }
     else
     {

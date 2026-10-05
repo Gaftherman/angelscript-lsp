@@ -1,6 +1,7 @@
 #include "SymbolTable.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/SignatureFormatter.h"
 #include "analysis/rules/RuleIndex.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
@@ -349,7 +350,14 @@ void SymbolTable::AddSymbol(const Symbol& symbol)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     const std::string& key = symbol.qualifiedName.empty() ? symbol.name : symbol.qualifiedName;
-    MutableBucket(m_symbols[key]).push_back(symbol);
+    auto& bucket = MutableBucket(m_symbols[key]);
+    bucket.push_back(symbol);
+    Symbol& stored = bucket.back();
+    if (stored.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(stored.signature) &&
+        stored.GetFunction().displaySignature.empty())
+    {
+        stored.GetFunction().displaySignature = FormatFunctionDeclaration(stored, true);
+    }
     IndexKeyForFileLocked(symbol.fileUri, key);
 
     const bool isClass = (symbol.type == SymbolType::Class && std::holds_alternative<ClassSignature>(symbol.signature));
@@ -483,6 +491,12 @@ void SymbolTable::PublishDocumentSymbols(const std::string& fileUri, std::vector
                 addedMixin = true;
             }
             freshClassKeys.push_back(key);
+        }
+
+        if (symbol.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(symbol.signature) &&
+            symbol.GetFunction().displaySignature.empty())
+        {
+            symbol.GetFunction().displaySignature = FormatFunctionDeclaration(symbol, true);
         }
 
         // Indexed before the move, not after: the index is keyed by the symbol's own file, not
@@ -691,12 +705,18 @@ void SymbolTable::SynthesizeSingleMixinMemberLocked(const std::string& hostQName
 
     Symbol synth = mSym;
     synth.containerName = mSym.containerName.empty() ? mixinName : mSym.containerName;
+    synth.containerKind = ContainerKind::Class;
     synth.qualifiedName = synthKey;
     synth.fileUri = mSym.fileUri;
     synth.isSynthesized = true;
     if (m_virtualMixinDocumentsEnabled)
     {
         synth.virtualFileUri = BuildVirtualMixinUri(hostQName, mixinName);
+    }
+    if (synth.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(synth.signature))
+    {
+        synth.GetFunction().displaySignature.clear();
+        synth.GetFunction().displaySignature = FormatFunctionDeclaration(synth, true);
     }
 
     MutableBucket(m_symbols[synthKey]).push_back(std::move(synth));
@@ -1071,20 +1091,43 @@ void SymbolTable::ForEachSymbolWithPrefix(
         std::shared_lock<std::shared_mutex> lock(m_mutex);
         EnsureSortedKeysLocked();
 
+        ankerl::unordered_dense::set<const std::string*> seenKeys;
+
         auto collectMatching = [&](std::string_view p)
         {
             if (p.empty())
             {
                 return;
             }
-            auto it = std::lower_bound(m_sortedKeys.begin(), m_sortedKeys.end(), p);
-            for (; it != m_sortedKeys.end() && it->starts_with(p); ++it)
+            char c = p[0];
+            char cUpper = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            char cLower = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+            auto scanChar = [&](char firstChar)
             {
-                auto mapIt = m_symbols.find(*it);
-                if (mapIt != m_symbols.end())
+                std::string startPattern(1, firstChar);
+                auto it = std::lower_bound(m_sortedKeys.begin(), m_sortedKeys.end(), startPattern);
+                for (; it != m_sortedKeys.end(); ++it)
                 {
-                    snapshot.emplace_back(&mapIt->first, mapIt->second);
+                    if (it->empty() || (*it)[0] != firstChar)
+                    {
+                        break;
+                    }
+                    if (angel_lsp::utils::CaseInsensitiveStartsWith(*it, p))
+                    {
+                        auto mapIt = m_symbols.find(*it);
+                        if (mapIt != m_symbols.end() && seenKeys.insert(&mapIt->first).second)
+                        {
+                            snapshot.emplace_back(&mapIt->first, mapIt->second);
+                        }
+                    }
                 }
+            };
+
+            scanChar(cUpper);
+            if (cLower != cUpper)
+            {
+                scanChar(cLower);
             }
         };
 
@@ -1152,6 +1195,21 @@ void SymbolTable::ForEachSymbolInFile(
 
     for (const auto& [key, symbols] : snapshot)
         visitor(*key, *symbols);
+}
+
+std::vector<std::string> SymbolTable::GetIndexedFileUris() const
+{
+    std::vector<std::string> uris;
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    uris.reserve(m_keysByFile.size());
+    for (const auto& [fileUri, keys] : m_keysByFile)
+    {
+        if (!fileUri.empty() && !keys.empty())
+        {
+            uris.push_back(fileUri);
+        }
+    }
+    return uris;
 }
 
 uint64_t SymbolTable::Version() const
@@ -1593,6 +1651,7 @@ std::string SymbolTable::FindEnclosingClassName(std::string_view uri, uint32_t l
 {
     std::string enclosingClass;
     std::string uriStr(uri);
+    uint32_t bestSpan = UINT32_MAX;
     ForEachSymbolInFile(uriStr,
                         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
                         {
@@ -1603,7 +1662,12 @@ std::string SymbolTable::FindEnclosingClassName(std::string_view uri, uint32_t l
                                 {
                                     if (line >= sym.startLine && line <= sym.endLine)
                                     {
-                                        enclosingClass = sym.name;
+                                        uint32_t span = sym.endLine - sym.startLine;
+                                        if (span <= bestSpan)
+                                        {
+                                            bestSpan = span;
+                                            enclosingClass = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                                        }
                                     }
                                 }
                             }

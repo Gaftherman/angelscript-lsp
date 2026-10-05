@@ -207,7 +207,8 @@ std::vector<EvaluatedCandidate> FilterNonDominatedCandidates(const std::vector<E
     for (const auto& cand : evaluated)
     {
         if (hasLosslessStandardCandidate &&
-            std::any_of(cand.conversions.begin(), cand.conversions.end(), [](const auto& c) { return c.isLossy; }))
+            std::any_of(cand.conversions.begin(), cand.conversions.end(),
+                        [](const auto& c) { return c.isLossy || c.rank >= ConversionRank::UserDefined; }))
         {
             continue;
         }

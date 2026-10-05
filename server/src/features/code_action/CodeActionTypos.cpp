@@ -133,7 +133,8 @@ void EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<TypoCandid
     for (size_t i = 0; i < offered; ++i)
     {
         lsp::CodeAction action;
-        action.title = "Did you mean '" + ranked[i].name + "'?";
+        action.title = i18n::FormatMessage(ctx.request.i18n, "action-did-you-mean", "Did you mean '{}'?",
+                                           std::string_view(ranked[i].name));
         action.kind = lsp::CodeActionKind::QuickFix;
         action.diagnostics = std::vector<lsp::Diagnostic>{ctx.diag};
 

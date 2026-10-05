@@ -134,6 +134,9 @@ struct SemanticAnalysisRequest
     /** @brief Whether comment-based suppressions (e.g. // disable W156) are enabled. */
     bool enableCommentSuppressions = true;
 
+    /** @brief Whether CScriptBuilder metadata blocks '[]' are supported. */
+    bool enableMetadata = false;
+
     /**
      * @brief Line ranges the preprocessor removes, so no diagnostic is reported inside them.
      *

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <lsp/messagehandler.h>
+#include <lsp/messages.h>
 
 namespace angel_lsp::utils
 {

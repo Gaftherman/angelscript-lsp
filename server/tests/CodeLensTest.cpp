@@ -6,6 +6,7 @@
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
+#include "spdlog/fmt/fmt.h"
 #include <string>
 #include <vector>
 
@@ -578,4 +579,148 @@ TEST_CASE("CodeLens - Cross-File Namespace Variable References")
     {
         ts_tree_delete(tree2);
     }
+}
+
+TEST_CASE("CodeLens - Computes reference count for class methods inside same-named namespace and namespace functions")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("monster_zombie");
+    const std::string baseName = angel_lsp::test::GenerateRandomSymbolName("base_monster");
+    const std::string methodTarget = angel_lsp::test::GenerateRandomSymbolName("CheckTraceHullAttack");
+    const std::string funcTarget = angel_lsp::test::GenerateRandomSymbolName("Register");
+
+    std::string code =
+        fmt::format("class {} {{\n"
+                    "    void {}(int a, int b, int c) {{}}\n"
+                    "}}\n"
+                    "namespace {} {{\n"
+                    "    final class {} : {} {{\n"
+                    "        void Attack() {{\n"
+                    "            {}(70, 25, 0);\n"
+                    "        }}\n"
+                    "    }}\n"
+                    "    void {}() {{}}\n"
+                    "}}\n"
+                    "void CallSite() {{\n"
+                    "    {}::{}();\n"
+                    "}}\n",
+                    baseName, methodTarget, nsName, nsName, baseName, methodTarget, funcTarget, nsName, funcTarget);
+
+    CodeLensFixture fixture(std::move(code));
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool methodChecked = false;
+    bool funcChecked = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.command.has_value())
+        {
+            if (lens.range.start.line == 1)
+            {
+                CHECK(lens.command->title == "1 reference");
+                methodChecked = true;
+            }
+            else if (lens.range.start.line == 9)
+            {
+                CHECK(lens.command->title == "1 reference");
+                funcChecked = true;
+            }
+        }
+    }
+    CHECK(methodChecked);
+    CHECK(funcChecked);
+}
+
+TEST_CASE("CodeLens - Computes reference count for class member within same class in same-named namespace")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("zombie_grenadier");
+    const std::string methodTarget = angel_lsp::test::GenerateRandomSymbolName("CheckTraceHullAttack");
+
+    std::string code = fmt::format("namespace {} {{\n"
+                                   "    final class {} {{\n"
+                                   "        void {}(int dist, int dmg, int type) {{}}\n"
+                                   "        void Attack() {{\n"
+                                   "            {}(70, 25, 0);\n"
+                                   "        }}\n"
+                                   "    }}\n"
+                                   "}}\n",
+                                   nsName, nsName, methodTarget, methodTarget);
+
+    CodeLensFixture fixture(std::move(code));
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool methodChecked = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.command.has_value() && lens.range.start.line == 2)
+        {
+            CHECK(lens.command->title == "1 reference");
+            methodChecked = true;
+        }
+    }
+    CHECK(methodChecked);
+}
+
+TEST_CASE("CodeLens - Enum Member Reference Count and Isolation from Method Calls")
+{
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("ModeEnum");
+    const std::string semiMember = angel_lsp::test::GenerateRandomSymbolName("SemiAuto");
+    const std::string fullMember = angel_lsp::test::GenerateRandomSymbolName("FullAuto");
+    const std::string reloadMember = angel_lsp::test::GenerateRandomSymbolName("Reload");
+
+    std::string code = fmt::format("enum {}\n"
+                                   "{{\n"
+                                   "    {},\n"
+                                   "    {},\n"
+                                   "    {}\n"
+                                   "}};\n"
+                                   "class Weapon\n"
+                                   "{{\n"
+                                   "    void {}(int x) {{}}\n"
+                                   "    void Run()\n"
+                                   "    {{\n"
+                                   "        int a = {}::{};\n"
+                                   "        int b = {}::{};\n"
+                                   "        int c = {}::{};\n"
+                                   "        int d = {}::{};\n"
+                                   "        {}(42);\n"
+                                   "    }}\n"
+                                   "}}\n",
+                                   enumName, semiMember, fullMember, reloadMember, reloadMember, enumName, semiMember,
+                                   enumName, semiMember, enumName, fullMember, enumName, semiMember, reloadMember);
+
+    CodeLensFixture fixture(std::move(code));
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool checkedSemi = false;
+    bool checkedFull = false;
+    bool checkedReload = false;
+    for (const auto& lens : *lenses)
+    {
+        if (!lens.command.has_value())
+        {
+            continue;
+        }
+        if (lens.range.start.line == 2)
+        {
+            CHECK(lens.command->title == "3 references");
+            checkedSemi = true;
+        }
+        else if (lens.range.start.line == 3)
+        {
+            CHECK(lens.command->title == "1 reference");
+            checkedFull = true;
+        }
+        else if (lens.range.start.line == 4)
+        {
+            // Reload enum member must NOT count the method call reload(42)
+            CHECK(lens.command->title == "0 references");
+            checkedReload = true;
+        }
+    }
+    CHECK(checkedSemi);
+    CHECK(checkedFull);
+    CHECK(checkedReload);
 }

@@ -81,6 +81,12 @@ const TSQuery* QueryRegistry::GetBinaryExpressionQuery()
     return s_query.get();
 }
 
+const TSQuery* QueryRegistry::GetUsingQuery()
+{
+    static const UniqueTSQuery s_query = CompileQuery(queries::USING_DECLARATION_QUERY);
+    return s_query.get();
+}
+
 TSQueryCursor* QueryRegistry::GetThreadLocalCursor()
 {
     thread_local CursorHolder t_holder;

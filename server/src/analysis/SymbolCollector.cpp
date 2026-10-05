@@ -1,6 +1,7 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/DocComment.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/SignatureFormatter.h"
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
 #include "parser/QueryRegistry.h"
@@ -95,6 +96,7 @@ void SymbolCollector::ResolveGrammarSymbols(const TSLanguage* lang)
     m_symBaseClassList = ts_language_symbol_for_name(lang, SYM_NAME("base_class_list"), true);
     m_symParameter = ts_language_symbol_for_name(lang, SYM_NAME("parameter"), true);
     m_symMemberExpression = ts_language_symbol_for_name(lang, SYM_NAME("member_expression"), true);
+    m_symMetadata = ts_language_symbol_for_name(lang, SYM_NAME("metadata"), true);
 
     m_tokConst = ts_language_symbol_for_name(lang, SYM_NAME("const"), false);
     m_tokIn = ts_language_symbol_for_name(lang, SYM_NAME("in"), false);
@@ -279,6 +281,10 @@ SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, st
 
         if (sym == m_symClassBody || sym == m_symInterfaceBody)
         {
+            if (ctx.containerKind == ContainerKind::None)
+            {
+                ctx.containerKind = (sym == m_symClassBody) ? ContainerKind::Class : ContainerKind::Interface;
+            }
             ctx.isInsideClass = true;
             TSNode parentDecl = ts_node_parent(current);
             TSNode nameNode = GetChildByFieldName(parentDecl, "name");
@@ -296,6 +302,10 @@ SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, st
         }
         else if (sym == m_symNamespaceBody)
         {
+            if (ctx.containerKind == ContainerKind::None)
+            {
+                ctx.containerKind = ContainerKind::Namespace;
+            }
             ctx.isInsideNamespace = true;
             TSNode parentDecl = ts_node_parent(current);
             TSNode nameNode = GetChildByFieldName(parentDecl, "name");
@@ -409,7 +419,7 @@ void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC
     SymbolModifiers modifiers = ExtractModifiers(varDeclNode, sCtx.request.sourceCode);
     modifiers.isHandle = typeInfo.isHandle || modifiers.isHandle;
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Property, varDeclNode, nameNode, loc);
 
     VariableSignature varSig;
@@ -476,7 +486,7 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     TSNode nameNode = GetChildByFieldName(declaratorNode, "name");
     TSNode valueNode = FindDeclaratorValueNode(declaratorNode, sCtx.request.sourceCode);
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Variable, varDeclNode, nameNode, loc);
 
     VariableSignature varSig;
@@ -508,7 +518,8 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     {
         CallReferenceSignature callSig;
         callSig.calleeName = header.typeStr;
-        SymbolLocationContext callLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+        SymbolLocationContext callLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath,
+                                      ctx.containerKind};
         TSNode varTypeNode = GetChildByFieldName(varDeclNode, "var_type");
         TSNode refNode = ts_node_is_null(varTypeNode) ? declaratorNode : varTypeNode;
         Symbol callSym = CreateSymbol(SymbolType::CallReference, declaratorNode, refNode, callLoc);
@@ -524,6 +535,11 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
     TSNode typeNode = GetChildByFieldName(varDeclNode, "var_type");
     std::string typeStr = GetNodeText(typeNode, sCtx.request.sourceCode);
     TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
+    if (IsReservedKeyword(typeInfo.baseTypeName) && !IsPrimitiveTypeName(typeInfo.baseTypeName) &&
+        typeInfo.baseTypeName != "auto")
+    {
+        return;
+    }
     SymbolModifiers modifiers = ExtractModifiers(varDeclNode, sCtx.request.sourceCode);
     modifiers.isHandle = typeInfo.isHandle || modifiers.isHandle;
     modifiers.isReturnReference = typeInfo.isReference || modifiers.isReturnReference;
@@ -651,7 +667,7 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     }
     ts_tree_cursor_delete(&delCursor);
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Function, funcNode, nameNode, loc);
 
     FunctionSignature funcSig;
@@ -674,7 +690,8 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
         funcSig.originModule = ExtractOriginModule(funcNode, sCtx.request.sourceCode);
     }
 
-    sym.signature = funcSig;
+    sym.signature = std::move(funcSig);
+    sym.GetFunction().displaySignature = FormatFunctionDeclaration(sym, true);
     sCtx.symbolTable.AddSymbol(sym);
 }
 
@@ -727,6 +744,7 @@ static void SynthesizeDefaultConstructor(const Symbol& sym, SymbolTable& table)
     ctorSym.type = SymbolType::Function;
     ctorSym.name = sym.name;
     ctorSym.containerName = sym.qualifiedName;
+    ctorSym.containerKind = ContainerKind::Class;
     SymbolCollector::appendQualifiedName(ctorSym.qualifiedName, sym.qualifiedName, sym.name);
     ctorSym.fileUri = sym.fileUri;
     ctorSym.fullRange = sym.fullRange;
@@ -739,13 +757,14 @@ static void SynthesizeDefaultConstructor(const Symbol& sym, SymbolTable& table)
     ctorSig.returnTypeKind = TypeKind::Object;
     ctorSig.hasBody = true;
     ctorSym.signature = std::move(ctorSig);
+    ctorSym.GetFunction().displaySignature = FormatFunctionDeclaration(ctorSym, true);
     table.AddSymbol(ctorSym);
 }
 
 void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldName(classNode, "name");
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Class, classNode, nameNode, loc);
 
     ClassSignature classSig;
@@ -819,7 +838,8 @@ void SymbolCollector::ProcessNamespace(TSNode namespaceNode, SymbolCollectContex
             {
                 continue;
             }
-            SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, currentPath};
+            SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, currentPath,
+                                      ContainerKind::Namespace};
             Symbol subSym = CreateSymbol(SymbolType::Namespace, namespaceNode, segNode, loc);
             sCtx.symbolTable.AddSymbol(subSym);
             currentPath = subSym.qualifiedName;
@@ -827,7 +847,7 @@ void SymbolCollector::ProcessNamespace(TSNode namespaceNode, SymbolCollectContex
     }
     else
     {
-        SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+        SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
         Symbol sym = CreateSymbol(SymbolType::Namespace, namespaceNode, nameNode, loc);
         sCtx.symbolTable.AddSymbol(sym);
     }
@@ -842,7 +862,7 @@ void SymbolCollector::ProcessTypedef(TSNode node, SymbolCollectContext& sCtx, co
         baseTypeNode = GetChildByFieldName(node, "type");
     }
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Typedef, node, nameNode, loc);
     TypedefSignature typedefSig;
 
@@ -879,7 +899,7 @@ void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, co
     modifiers.isReturnReference = retInfo.isReference || modifiers.isReturnReference;
     modifiers.isConst = retInfo.isConst || modifiers.isConst;
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Funcdef, node, nameNode, loc);
 
     FuncdefSignature funcdefSig;
@@ -999,7 +1019,8 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
             memberNameNode = it->second.nameNode;
         }
 
-        SymbolLocationContext contLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+        SymbolLocationContext contLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath,
+                                      ctx.containerKind};
         Symbol mSym = CreateSymbol(SymbolType::Variable, memberDeclNode, memberNameNode, contLoc);
         mSym.name = m.name;
         appendQualifiedName(mSym.qualifiedName, ctx.containerPath, m.name);
@@ -1007,7 +1028,8 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
         mSym.signature = varSig;
         sCtx.symbolTable.AddSymbol(mSym);
 
-        SymbolLocationContext enumLoc{sCtx.request.sourceCode, sCtx.request.fileUri, enumContainer};
+        SymbolLocationContext enumLoc{sCtx.request.sourceCode, sCtx.request.fileUri, enumContainer,
+                                      ContainerKind::Enum};
         Symbol mSymScoped = CreateSymbol(SymbolType::Variable, memberDeclNode, memberNameNode, enumLoc);
         mSymScoped.name = m.name;
         appendQualifiedName(mSymScoped.qualifiedName, enumContainer, m.name);
@@ -1020,7 +1042,7 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
 void SymbolCollector::ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldName(node, "name");
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Enum, node, nameNode, loc);
 
     EnumSignature enumSig;
@@ -1043,7 +1065,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
     TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
     SymbolModifiers modifiers = ExtractModifiers(node, sCtx.request.sourceCode);
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Property, node, nameNode, loc);
 
     VariableSignature varSig;
@@ -1067,7 +1089,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
 void SymbolCollector::ProcessInterface(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldName(node, "name");
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Interface, node, nameNode, loc);
 
     InterfaceSignature ifaceSig;
@@ -1115,7 +1137,7 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
     if (callSig.calleeName.empty())
         return;
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath};
+    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::CallReference, callNode, nameNode, loc);
     sym.signature = callSig;
     sCtx.symbolTable.AddSymbol(sym);
@@ -1144,10 +1166,11 @@ void SymbolCollector::CheckUsingDeclarationCapture(TSNode usingNode, SymbolColle
     diag.code = "as-err-reserved-keyword-name";
     diag.source = "AngelScript";
     diag.fileUri = sCtx.request.fileUri;
-    std::string pattern = sCtx.request.i18n ? sCtx.request.i18n->GetMessage("as-err-reserved-keyword-name")
-                                            : "Instead found reserved keyword '{}'.";
+    const std::string_view pattern = sCtx.request.i18n
+                                         ? sCtx.request.i18n->GetMessageView("as-err-reserved-keyword-name")
+                                         : std::string_view("Instead found reserved keyword '{}'.");
     diag.message = fmt::format(fmt::runtime(pattern), nameText);
-    sCtx.diagnostics.push_back(diag);
+    sCtx.diagnostics.push_back(std::move(diag));
 }
 
 void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollectContext& sCtx) const
@@ -1183,11 +1206,11 @@ void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollect
                         diag.code = "as-err-attribute-repeated";
                         diag.source = "AngelScript";
                         diag.fileUri = sCtx.request.fileUri;
-                        std::string pattern = sCtx.request.i18n
-                                                  ? sCtx.request.i18n->GetMessage("as-err-attribute-repeated")
-                                                  : "Attribute '{}' is informed multiple times.";
+                        const std::string_view pattern =
+                            sCtx.request.i18n ? sCtx.request.i18n->GetMessageView("as-err-attribute-repeated")
+                                              : std::string_view("Attribute '{}' is informed multiple times.");
                         diag.message = fmt::format(fmt::runtime(pattern), modText);
-                        sCtx.diagnostics.push_back(diag);
+                        sCtx.diagnostics.push_back(std::move(diag));
                     }
                     else
                     {
@@ -1270,10 +1293,12 @@ namespace
  * @brief Formats an argument list syntax error when two arguments appear without a comma.
  * @param[in] node AST error node.
  * @param[in] sourceCode Source text buffer.
+ * @param[in] i18n Optional localization instance.
  * @param[in,out] diag Diagnostic to populate.
  * @return True if formatted as an argument list syntax error.
  */
-bool TryFormatArgumentListSyntaxError(TSNode node, std::string_view sourceCode, Diagnostic& diag)
+bool TryFormatArgumentListSyntaxError(TSNode node, std::string_view sourceCode, const angel_lsp::i18n::I18n* i18n,
+                                      Diagnostic& diag)
 {
     TSNode parent = ts_node_parent(node);
     if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "argument_list")
@@ -1309,7 +1334,8 @@ bool TryFormatArgumentListSyntaxError(TSNode node, std::string_view sourceCode, 
 
     diag.range.end.line = ts_node_end_point(nextSibling).row;
     diag.range.end.character = ts_node_end_point(nextSibling).column;
-    diag.message = fmt::format("Expected ',' or ')' before '{}'", nextText);
+    diag.message = i18n::FormatMessage(i18n, "note-expected-comma-or-paren", "Expected ',' or ')' before '{}'",
+                                       std::string_view(nextText));
     return true;
 }
 } // namespace
@@ -1333,13 +1359,14 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
 
     if (ts_node_is_missing(node))
     {
-        std::string missingToken = ts_node_type(node);
-        std::string pattern =
-            sCtx.request.i18n ? sCtx.request.i18n->GetMessage("as-syntax-error-missing") : "Syntax error: missing '{}'";
+        std::string_view missingToken = ts_node_type(node);
+        const std::string_view pattern = sCtx.request.i18n
+                                             ? sCtx.request.i18n->GetMessageView("as-syntax-error-missing")
+                                             : std::string_view("Syntax error: missing '{}'");
         diag.message = fmt::format(fmt::runtime(pattern), missingToken);
         logMsg = diag.message;
     }
-    else if (TryFormatArgumentListSyntaxError(node, sCtx.request.sourceCode, diag))
+    else if (TryFormatArgumentListSyntaxError(node, sCtx.request.sourceCode, sCtx.request.i18n, diag))
     {
         logMsg = diag.message;
     }
@@ -1350,7 +1377,7 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
         logMsg = diag.message;
     }
 
-    sCtx.diagnostics.push_back(diag);
+    sCtx.diagnostics.push_back(std::move(diag));
 
     if (m_logger)
     {
@@ -1367,15 +1394,16 @@ std::string SymbolCollector::FormatSyntaxErrorMessage(const std::string& rawErrT
     if (firstToken == "shared")
     {
         outCode = "as-err-shared-not-allowed-on-entity";
-        return i18n ? i18n->GetMessage("as-err-shared-not-allowed-on-entity")
+        return i18n ? std::string(i18n->GetMessageView("as-err-shared-not-allowed-on-entity"))
                     : "The 'shared' modifier is not allowed on this entity";
     }
     if (firstToken.empty())
     {
-        return i18n ? i18n->GetMessage("as-syntax-error-generic") : "Syntax error";
+        return i18n ? std::string(i18n->GetMessageView("as-syntax-error-generic")) : "Syntax error";
     }
 
-    std::string pattern = i18n ? i18n->GetMessage("as-syntax-error") : "Syntax error: \"{}\"";
+    const std::string_view pattern =
+        i18n ? i18n->GetMessageView("as-syntax-error") : std::string_view("Syntax error: \"{}\"");
     return fmt::format(fmt::runtime(pattern), firstToken);
 }
 
@@ -1730,6 +1758,7 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
     sym.type = type;
     sym.name = GetNodeText(nameNode, loc.sourceCode);
     sym.containerName = loc.containerPath;
+    sym.containerKind = loc.containerKind;
     appendQualifiedName(sym.qualifiedName, loc.containerPath, sym.name);
     sym.fileUri = loc.fileUri;
     sym.startLine = startPt.row;
@@ -1739,6 +1768,25 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
 
     sym.fullRange = {startPt.row, startPt.column, endPt.row, endPt.column};
     sym.selectionRange = {nameStartPt.row, nameStartPt.column, nameEndPt.row, nameEndPt.column};
+
+    TSNode declNode = node;
+    TSNode parentNode = ts_node_parent(node);
+    if (!ts_node_is_null(parentNode) && ts_node_symbol(node) == m_symVariableDeclarator)
+    {
+        declNode = parentNode;
+    }
+    TSNode prev = ts_node_prev_named_sibling(declNode);
+    std::vector<std::string> metaBlocks;
+    while (!ts_node_is_null(prev) && ts_node_symbol(prev) == m_symMetadata)
+    {
+        metaBlocks.push_back(GetNodeText(prev, loc.sourceCode));
+        prev = ts_node_prev_named_sibling(prev);
+    }
+    if (!metaBlocks.empty())
+    {
+        std::reverse(metaBlocks.begin(), metaBlocks.end());
+        sym.metadata = std::move(metaBlocks);
+    }
 
     return sym;
 }

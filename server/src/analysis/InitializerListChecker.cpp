@@ -1171,20 +1171,36 @@ void DispatchIndexedInitializerLists(const InitializerListContext& initCtx)
  */
 void DispatchTreeWalkInitializerLists(const InitializerListContext& initCtx)
 {
-    std::vector<TSNode> stack = {initCtx.request.root};
-    while (!stack.empty())
+    if (ts_node_is_null(initCtx.request.root))
     {
-        TSNode node = stack.back();
-        stack.pop_back();
-
-        DispatchInitListNode(node, initCtx);
-
-        const uint32_t count = ts_node_child_count(node);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            stack.push_back(ts_node_child(node, i));
-        }
+        return;
     }
+    TSTreeCursor cursor = ts_tree_cursor_new(initCtx.request.root);
+    bool visitedChildren = false;
+    while (true)
+    {
+        TSNode node = ts_tree_cursor_current_node(&cursor);
+        if (!visitedChildren)
+        {
+            DispatchInitListNode(node, initCtx);
+            if (ts_tree_cursor_goto_first_child(&cursor))
+            {
+                continue;
+            }
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            visitedChildren = false;
+            continue;
+        }
+        if (ts_tree_cursor_goto_parent(&cursor))
+        {
+            visitedChildren = true;
+            continue;
+        }
+        break;
+    }
+    ts_tree_cursor_delete(&cursor);
 }
 } // namespace
 

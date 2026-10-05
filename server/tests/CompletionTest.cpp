@@ -2050,3 +2050,138 @@ TEST_CASE("Completion - Scoped enum completion does not duplicate member as vari
         CHECK(tertMatches[0].detail->find(enumName + "::" + mem3) != std::string::npos);
     }
 }
+
+TEST_CASE("Completion - Namespace-qualified enum constants and using namespace resolution")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("INS2BASE");
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("INS2_IRON_OPTIONS");
+    const std::string memOut = angel_lsp::test::GenerateRandomSymbolName("IRON_OUT");
+    const std::string memIn = angel_lsp::test::GenerateRandomSymbolName("IRON_IN");
+
+    std::string code = "namespace " + nsName +
+                       "\n{\n"
+                       "enum " +
+                       enumName +
+                       "\n{\n"
+                       "    " +
+                       memOut +
+                       " = 0,\n"
+                       "    " +
+                       memIn +
+                       "\n};\n}\n"
+                       "void main()\n{\n"
+                       "    " +
+                       nsName +
+                       "::\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    auto items = env.CompleteAt(10, static_cast<uint32_t>(nsName.size() + 6));
+
+    auto findItem = [&](const std::string& label) -> const lsp::CompletionItem*
+    {
+        for (const auto& item : items)
+        {
+            if (item.label == label)
+            {
+                return &item;
+            }
+        }
+        return nullptr;
+    };
+
+    const auto* itemOut = findItem(memOut);
+    const auto* itemIn = findItem(memIn);
+    REQUIRE(itemOut != nullptr);
+    REQUIRE(itemIn != nullptr);
+    CHECK(itemIn->kind == lsp::CompletionItemKind::EnumMember);
+    CHECK(!itemIn->insertText.has_value());
+}
+
+TEST_CASE("Completion - Unqualified enum constants inside enclosing namespace and using namespace")
+{
+    const std::string nsBase = angel_lsp::test::GenerateRandomSymbolName("INS2BASE");
+    const std::string enumBase = angel_lsp::test::GenerateRandomSymbolName("IRON_OPTS");
+    const std::string memIron = angel_lsp::test::GenerateRandomSymbolName("IRON_IN");
+    const std::string nsMosin = angel_lsp::test::GenerateRandomSymbolName("INS2_MOSIN");
+    const std::string enumAnim = angel_lsp::test::GenerateRandomSymbolName("MOSIN_Anims");
+    const std::string memScopeFrom = "SCOPE_FROM_" + angel_lsp::test::GenerateRandomSymbolName("A");
+    const std::string memScopeEmpty = "SCOPE_FROM_" + angel_lsp::test::GenerateRandomSymbolName("B");
+    const std::string clsWeapon = angel_lsp::test::GenerateRandomSymbolName("weapon_mosin");
+
+    std::string code = "namespace " + nsBase + " { enum " + enumBase + " { " + memIron + " = 0 }; }\n" +
+                       "using namespace " + nsBase + ";\n" + "namespace " + nsMosin + "\n{\n" + "enum " + enumAnim +
+                       "\n{\n    " + memScopeFrom + " = 0,\n    " + memScopeEmpty + "\n};\n" + "class " + clsWeapon +
+                       "\n{\n    void Fire()\n    {\n        SCOPE_F\n    }\n}\n}\n";
+
+    TestEnvironment env(code);
+    auto items = env.CompleteAt(13, 15);
+
+    bool foundFrom = false;
+    bool foundEmpty = false;
+    for (const auto& item : items)
+    {
+        if (item.label == memScopeFrom)
+        {
+            foundFrom = true;
+            CHECK(item.kind == lsp::CompletionItemKind::EnumMember);
+        }
+        if (item.label == memScopeEmpty)
+        {
+            foundEmpty = true;
+            CHECK(item.kind == lsp::CompletionItemKind::EnumMember);
+        }
+    }
+    CHECK(foundFrom);
+    CHECK(foundEmpty);
+
+    auto allItems = env.CompleteAt(13, 8);
+    bool foundImportedIron = false;
+    for (const auto& item : allItems)
+    {
+        if (item.label == memIron)
+        {
+            foundImportedIron = true;
+            CHECK(item.kind == lsp::CompletionItemKind::EnumMember);
+        }
+    }
+    CHECK(foundImportedIron);
+}
+
+TEST_CASE("Completion - Case-insensitive prefix matching for symbols, types, and enums")
+{
+    const std::string typeName = "entvars_" + angel_lsp::test::GenerateRandomSymbolName("t");
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("Classification");
+    const std::string enumMember = "Security_" + angel_lsp::test::GenerateRandomSymbolName("Mem");
+    const std::string queryTypePrefix = "Entvar";
+    const std::string queryEnumPrefix = "security";
+
+    std::string code = "class " + typeName + " { int health; }\n" + "enum " + enumName + " {\n    " + enumMember +
+                       " = 1\n}\n" + "void main()\n{\n    " + queryTypePrefix + "\n}\n" + "void helper()\n{\n    " +
+                       queryEnumPrefix + "\n}\n";
+
+    TestEnvironment env(code);
+    auto typeItems = env.CompleteAt(6, 10);
+    bool foundType = false;
+    for (const auto& item : typeItems)
+    {
+        if (item.label == typeName)
+        {
+            foundType = true;
+            break;
+        }
+    }
+    CHECK(foundType);
+
+    auto enumItems = env.CompleteAt(10, 12);
+    bool foundEnumMember = false;
+    for (const auto& item : enumItems)
+    {
+        if (item.label == enumMember)
+        {
+            foundEnumMember = true;
+            break;
+        }
+    }
+    CHECK(foundEnumMember);
+}

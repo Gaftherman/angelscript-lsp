@@ -808,6 +808,10 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uri
     }
 
     features::SemanticTokensRequest request{uriStr, text, tree, m_symbolTable};
+    if (tree != nullptr && m_localScopeCollector != nullptr)
+    {
+        m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), text));
+    }
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
     request.nodeIndex = nodeIndexPtr;
     request.excludedLineRanges = ExcludedLineRanges(text);
@@ -954,9 +958,12 @@ std::shared_ptr<const std::string> Server::FindDocumentText(const std::string& u
 
     // Closure files are not open, but their ranges still reach the client through references,
     // definitions and multi-file rename edits, so their text has to be reachable too.
-    if (const auto closure = m_closureDocuments.find(key); closure != m_closureDocuments.end())
     {
-        return std::shared_ptr<const std::string>(std::shared_ptr<void>(), &closure->second);
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        if (const auto closure = m_closureDocuments.find(key); closure != m_closureDocuments.end())
+        {
+            return std::make_shared<const std::string>(closure->second);
+        }
     }
 
     return nullptr;

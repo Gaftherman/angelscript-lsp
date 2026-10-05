@@ -124,8 +124,8 @@ Están disponibles los siguientes stubs comunitarios probados:
 
 | Entorno del Host | Fuente y Enlace | Estado y Recomendación |
 | :--- | :--- | :--- |
-| **Sven Co-op** | [Sven Co-op - Gaftherman](https://github.com/Gaftherman/angelscript-lsp/blob/main/predefined/sven.as.predefined) | **Recomendado (Recommended)** — Mantenido activamente y actualizado para Sven Co-op 5.26+, con cualificadores `const`, calificadores de referencia y estructuras completas de matemáticas y motor. Recomendado prioritariamente para Sven Co-op. |
-| **Sven Co-op** | [Sven Co-op - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Sven%20Co-op/as.predefined) | **Heredado (Legacy)** — Mantenido por retrocompatibilidad con proyectos existentes; desactualizado respecto a las versiones modernas del juego. |
+| **Sven Co-op** | [Sven Co-op - Gaftherman](https://github.com/Gaftherman/angelscript-lsp/blob/main/predefined/sven.as.predefined) | **Recomendado** — Mantenido activamente y actualizado para Sven Co-op 5.26+, con cualificadores `const`, calificadores de referencia y estructuras completas de matemáticas y motor. Recomendado prioritariamente para Sven Co-op. |
+| **Sven Co-op** | [Sven Co-op - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Sven%20Co-op/as.predefined) | **Heredado** — Mantenido por retrocompatibilidad con proyectos existentes; desactualizado respecto a las versiones modernas del juego. |
 | **Trackmania Nations Forever** | [Trackmania Nations Forever - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Trackmania%20Nations%20Forever/as.predefined) | Compatible — Vinculaciones del host para scripting en Trackmania Nations Forever (`CGameCtnApp`, `MwFastBuffer`, etc.). |
 | **OpenSiv3D** | [OpenSiv3D - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/OpenSiv3D/as.predefined) | Compatible — Vinculaciones del framework C++ de videojuegos OpenSiv3D (`Vec2`, `ColorF`, `Circle`, etc.). |
 
@@ -140,19 +140,19 @@ Todos los comandos pueden ejecutarse desde la Paleta de comandos (`Ctrl+Shift+P`
 
 | Comando | Título | Descripción |
 | :--- | :--- | :--- |
-| `angelscript.selectPredefined` | **AngelScript: Select Active Host Stub** | Alterna el stub activo `.as.predefined` mediante una lista QuickPick. |
-| `angelscript.selectStubs` | **AngelScript: Select Host Stubs** | Diálogo de selección múltiple para habilitar y fusionar varios stubs. |
-| `angelscript.rescanWorkspace` | **AngelScript: Rescan Workspace** | Fuerza un reescaneo y reindexado completo de los archivos del espacio. |
-| `angelscript.statusMenu` | **AngelScript: Status Menu** | Muestra el menú de estado del servidor, stub activo y accesos rápidos. |
-| `angelscript.showServerLog` | **AngelScript: Show Language Server Log** | Enfoca el canal de salida del servidor de lenguaje en la consola de Salida. |
-| `angelscript.openLogsFolder` | **AngelScript: Open Logs Folder** | Abre la carpeta de registros locales del servidor en el explorador. |
-| `angelscript.restartServer` | **AngelScript: Restart Server** | Detiene y reinicia el proceso del servidor de lenguaje. |
-| `angelscript.setModuleEntryPoint` | **AngelScript: Set as Module Entry Point** | Acción del menú contextual en archivos `.as` para configurar el punto de entrada. |
-| `angelscript.setModuleFolder` | **AngelScript: Set as Module Folder** | Acción del menú contextual en carpetas para configurar pertenencia del módulo. |
-| `angelscript.formatPredefinedStub` | **AngelScript: Format Predefined Stub Header** | Acción del menú contextual en archivos `.predefined` para formatear encabezados. |
-| `angelscript.viewMixinExpansion` | **AngelScript: View Mixin Expansion** | Abre el documento virtual sintetizado (`angelscript-virtual://`). |
-| `angelscript.peekMixinInline` | **AngelScript: Peek Mixin Inline** | Abre una vista de inspección en línea para ver la clase mixin expandida. |
-| `angelscript.openPhysicalSource` | **AngelScript: Open Physical Source** | Navega desde el documento virtual al archivo físico original. |
+| `angelscript.selectPredefined` | **AngelScript: Seleccionar stub predefinido** | Alterna el stub activo `.as.predefined` mediante una lista QuickPick. |
+| `angelscript.selectStubs` | **AngelScript: Seleccionar stubs predefinidos** | Diálogo de selección múltiple para habilitar y fusionar varios stubs. |
+| `angelscript.rescanWorkspace` | **AngelScript: Volver a examinar el espacio de trabajo** | Fuerza un reescaneo y reindexado completo de los archivos del espacio. |
+| `angelscript.statusMenu` | **AngelScript: Menú de estado de AngelScript** | Muestra el menú de estado del servidor, stub activo y accesos rápidos. |
+| `angelscript.showServerLog` | **AngelScript: Mostrar registro del servidor** | Enfoca el canal de salida del servidor de lenguaje en la consola de Salida. |
+| `angelscript.openLogsFolder` | **AngelScript: Abrir carpeta de registros** | Abre la carpeta de registros locales del servidor en el explorador. |
+| `angelscript.restartServer` | **AngelScript: Reiniciar servidor** | Detiene y reinicia el proceso del servidor de lenguaje. |
+| `angelscript.setModuleEntryPoint` | **AngelScript: Definir como punto de entrada del módulo** | Acción del menú contextual en archivos `.as` para configurar el punto de entrada. |
+| `angelscript.setModuleFolder` | **AngelScript: Definir como carpeta del módulo** | Acción del menú contextual en carpetas para configurar pertenencia del módulo. |
+| `angelscript.formatPredefinedStub` | **AngelScript: Formatear stub predefinido** | Acción del menú contextual en archivos `.predefined` para formatear encabezados. |
+| `angelscript.viewMixinExpansion` | **AngelScript: Ver expansión de mixin** | Abre el documento virtual sintetizado (`angelscript-virtual://`). |
+| `angelscript.peekMixinInline` | **AngelScript: Inspeccionar mixin en línea** | Abre una vista de inspección en línea para ver la clase mixin expandida. |
+| `angelscript.openPhysicalSource` | **AngelScript: Abrir archivo físico** | Navega desde el documento virtual al archivo físico original. |
 
 ---
 

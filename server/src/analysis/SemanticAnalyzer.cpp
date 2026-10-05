@@ -5,6 +5,7 @@
 #include "analysis/ConstChecker.h"
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/DefiniteAssignmentChecker.h"
+#include "analysis/DiagnosticCodes.h"
 #include "analysis/DiagnosticSuppression.h"
 #include "analysis/InitializerListChecker.h"
 #include "analysis/IsolationChecker.h"
@@ -222,6 +223,22 @@ SemanticAnalyzer::TimedAstBreakdown SemanticAnalyzer::RunTimedAstRules(const Sem
     return breakdown;
 }
 
+static void CheckMetadataSupport(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
+                                 DiagnosticContext& ctx)
+{
+    if (!request.enableMetadata && indexPtr)
+    {
+        const auto metaNodes = indexPtr->Nodes(parser::nodes::Metadata);
+        for (TSNode metaNode : metaNodes)
+        {
+            const TSPoint start = ts_node_start_point(metaNode);
+            const TSPoint end = ts_node_end_point(metaNode);
+            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::MetadataDisabled,
+                            DiagnosticSeverity::Warning);
+        }
+    }
+}
+
 std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest& request) const
 {
     std::vector<Diagnostic> diagnostics;
@@ -262,6 +279,7 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
 
         const auto breakdown = RunTimedAstRules(request, indexPtr, ctx);
         CheckDirectivesAndModules(request, ctx);
+        CheckMetadataSupport(request, indexPtr, ctx);
 
         if (m_logger && m_logger->IsEnabled(utils::LogLevel::Info))
         {
@@ -1279,17 +1297,18 @@ SourceRange GetDefinitionTypeRange(const LocalDefinition& def)
     };
 }
 
-void ValidateTemplateArguments(const LocalDefinition& def, const TemplateTypeInfo& tmplInfo, const SourceRange& range,
-                               DiagnosticContext& ctx)
+void ValidateTemplateArguments(const LocalDefinition& def, const TemplateTypeInfo& tmplInfo,
+                               std::string_view enclosingNs, DiagnosticContext& ctx)
 {
-    if (!IsKnownType(tmplInfo.containerName, ctx))
+    const SourceRange range = GetDefinitionTypeRange(def);
+    if (!IsKnownType(tmplInfo.containerName, ctx, enclosingNs))
     {
         ctx.EmitAtRange(range, "as-err-unresolved-type", tmplInfo.containerName, DiagnosticSeverity::Error);
     }
     for (size_t i = 0; i < tmplInfo.templateArgs.size(); ++i)
     {
         std::string cleanArg = CleanBaseType(tmplInfo.templateArgs[i]);
-        if (!IsKnownType(cleanArg, ctx))
+        if (!IsKnownType(cleanArg, ctx, enclosingNs))
         {
             uint32_t sLine = range.startLine;
             uint32_t sChar = range.startCharacter;
@@ -1332,6 +1351,28 @@ bool CheckIllegalHandleOnPrimitive(const LocalDefinition& def, const std::string
     return false;
 }
 
+std::string ResolveEnclosingNamespaceForDefinition(const LocalDefinition& def, const DiagnosticContext& ctx)
+{
+    if (!ctx.request.tree || ctx.request.sourceCode.empty())
+    {
+        return "";
+    }
+    const TSNode node = ts_node_descendant_for_point_range(
+        ts_tree_root_node(ctx.request.tree), {def.startLine, def.startCharacter}, {def.endLine, def.endCharacter});
+    if (ts_node_is_null(node))
+    {
+        return "";
+    }
+    for (const auto& container : GetEnclosingContainers(node, ctx.request.sourceCode))
+    {
+        if (container.kind == ContainerKind::Namespace)
+        {
+            return container.qualifiedName;
+        }
+    }
+    return "";
+}
+
 void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
 {
     const SourceRange range = GetDefinitionTypeRange(def);
@@ -1352,12 +1393,13 @@ void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
         return;
     }
 
+    const std::string enclosingNs = ResolveEnclosingNamespaceForDefinition(def, ctx);
     const TemplateTypeInfo tmplInfo = ParseTemplateType(def.typeName);
     if (!tmplInfo.templateArgs.empty())
     {
-        ValidateTemplateArguments(def, tmplInfo, range, ctx);
+        ValidateTemplateArguments(def, tmplInfo, enclosingNs, ctx);
     }
-    else if (!base.empty() && base != "auto" && !IsReservedKeyword(base) && !IsKnownType(base, ctx))
+    else if (!base.empty() && base != "auto" && !IsReservedKeyword(base) && !IsKnownType(base, ctx, enclosingNs))
     {
         ctx.EmitAtRange(range, "as-err-unresolved-type", base, DiagnosticSeverity::Error);
     }

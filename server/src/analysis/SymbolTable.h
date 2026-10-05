@@ -81,6 +81,18 @@ enum class TypeKind
 };
 
 /**
+ * @brief Classification categories for enclosing lexical containers.
+ */
+enum class ContainerKind : uint8_t
+{
+    None = 0,
+    Class,
+    Interface,
+    Namespace,
+    Enum
+};
+
+/**
  * @brief Syntactic placement of declaration modifiers and attributes.
  */
 enum class ModifierPlacement : uint8_t
@@ -218,6 +230,7 @@ struct FunctionSignature
     bool isImported = false;
     std::string originModule;
     std::string defaultValue;
+    std::string displaySignature; ///< Canonical pre-formatted declaration for zero-copy std::string_view diagnostics.
 };
 
 struct VariableSignature
@@ -324,6 +337,7 @@ struct Symbol
     SymbolType type;
     std::string name;
     std::string containerName;
+    ContainerKind containerKind = ContainerKind::None;
     std::string qualifiedName;
     std::string fileUri;
 
@@ -335,9 +349,10 @@ struct Symbol
     SourceRange fullRange;      ///< Full enclosing source range of the declaration (for DocumentSymbol).
     SourceRange selectionRange; ///< Source range of the identifier token itself (for DocumentSymbol/Rename).
 
-    bool isSynthesized = false; ///< True when synthesized into a host class (e.g. from an included mixin).
-    std::string virtualFileUri; ///< Synthetic URI when virtual mixin documents are enabled (e.g.
-                                ///< angelscript-virtual://<host_class>/<mixin>.as).
+    bool isSynthesized = false;        ///< True when synthesized into a host class (e.g. from an included mixin).
+    std::string virtualFileUri;        ///< Synthetic URI when virtual mixin documents are enabled (e.g.
+                                       ///< angelscript-virtual://<host_class>/<mixin>.as).
+    std::vector<std::string> metadata; ///< CScriptBuilder metadata strings attached to this symbol.
 
     std::variant<std::monostate, FunctionSignature, VariableSignature, EnumSignature, ClassSignature,
                  InterfaceSignature, TypedefSignature, FuncdefSignature, CallReferenceSignature>
@@ -421,6 +436,23 @@ struct Symbol
     const CallReferenceSignature& GetCallReference() const
     {
         return std::get<CallReferenceSignature>(signature);
+    }
+
+    /**
+     * @brief Returns a zero-copy string_view of the canonical pre-formatted function declaration.
+     * @return Pre-formatted signature string_view if populated, or symbol name as fallback.
+     */
+    [[nodiscard]] std::string_view GetDisplaySignature() const noexcept
+    {
+        if (type == SymbolType::Function && std::holds_alternative<FunctionSignature>(signature))
+        {
+            const auto& sig = std::get<FunctionSignature>(signature);
+            if (!sig.displaySignature.empty())
+            {
+                return sig.displaySignature;
+            }
+        }
+        return qualifiedName.empty() ? std::string_view(name) : std::string_view(qualifiedName);
     }
 };
 
@@ -682,6 +714,12 @@ class SymbolTable
      */
     void ForEachSymbolInFile(const std::string& fileUri,
                              const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const;
+
+    /**
+     * @brief Returns all document file URIs that currently hold indexed symbols in this table.
+     * @return Vector of unique indexed file URIs in O(F) time.
+     */
+    [[nodiscard]] std::vector<std::string> GetIndexedFileUris() const;
 
     /**
      * @brief Finds the name of the class or interface enclosing the given document line.

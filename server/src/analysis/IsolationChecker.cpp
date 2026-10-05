@@ -136,24 +136,32 @@ bool IsLocalVariableOrParameter(const Scope* startScope, std::string_view name)
 
 bool NodeHasModifierToken(TSNode node, std::string_view modifierName, std::string_view sourceCode)
 {
-    uint32_t count = ts_node_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
+    if (ts_node_is_null(node))
     {
-        TSNode child = ts_node_child(node, i);
-        std::string text = GetNodeText(child, sourceCode);
-        if (text == modifierName)
+        return false;
+    }
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (!ts_tree_cursor_goto_first_child(&cursor))
+    {
+        ts_tree_cursor_delete(&cursor);
+        return false;
+    }
+    do
+    {
+        TSNode child = ts_tree_cursor_current_node(&cursor);
+        const uint32_t start = ts_node_start_byte(child);
+        const uint32_t end = ts_node_end_byte(child);
+        if (start < end && end <= sourceCode.size())
         {
-            return true;
-        }
-        uint32_t subCount = ts_node_child_count(child);
-        for (uint32_t j = 0; j < subCount; ++j)
-        {
-            if (GetNodeText(ts_node_child(child, j), sourceCode) == modifierName)
+            if (sourceCode.substr(start, end - start) == modifierName)
             {
+                ts_tree_cursor_delete(&cursor);
                 return true;
             }
         }
-    }
+    } while (ts_tree_cursor_goto_next_sibling(&cursor));
+
+    ts_tree_cursor_delete(&cursor);
     return false;
 }
 
@@ -244,11 +252,7 @@ void CheckSharedEntityEligibility(std::string_view sourceCode, DiagnosticContext
 
 bool IsCallFunctionNode(TSNode p, TSNode node)
 {
-    TSNode fn = parser::GetChildByField(p, parser::fields::Function);
-    if (ts_node_is_null(fn))
-    {
-        fn = ts_node_child(p, 0);
-    }
+    TSNode fn = parser::GetCallCallee(p);
     return !ts_node_is_null(fn) && (fn.id == node.id || ts_node_parent(node).id == fn.id);
 }
 
@@ -399,11 +403,7 @@ struct IsolationVisitor
 
     void CheckSharedCallExpression(TSNode node)
     {
-        TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
-        if (ts_node_is_null(funcNode))
-        {
-            funcNode = ts_node_child(node, 0);
-        }
+        TSNode funcNode = parser::GetCallCallee(node);
         if (ts_node_is_null(funcNode))
         {
             return;

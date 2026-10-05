@@ -180,6 +180,7 @@ class SymbolCollector
     TSSymbol m_symBaseClassList = 0;
     TSSymbol m_symParameter = 0;
     TSSymbol m_symMemberExpression = 0;
+    TSSymbol m_symMetadata = 0;
 
     // Anonymous token symbols (resolved once, compared via ts_node_symbol)
     TSSymbol m_tokConst = 0;
@@ -213,6 +214,7 @@ class SymbolCollector
         bool isInsideFunction = false;
         bool isInsideClass = false;
         bool isInsideNamespace = false;
+        ContainerKind containerKind = ContainerKind::None;
     };
 
     /** @brief Bundles mutable collectors and immutable request state during AST walks. */
@@ -229,6 +231,7 @@ class SymbolCollector
         std::string_view sourceCode;
         const std::string& fileUri;
         const std::string& containerPath;
+        ContainerKind containerKind = ContainerKind::None;
     };
 
     struct VariableHeaderInfo

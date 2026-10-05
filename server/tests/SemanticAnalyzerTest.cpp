@@ -65,6 +65,34 @@ std::vector<Diagnostic> AnalyzeSource(const std::string& sourceCode, SymbolTable
     return diagnostics;
 }
 
+/** @brief Runs the analysis pipeline with explicit metadata flag. */
+std::vector<Diagnostic> AnalyzeSourceWithMetadata(const std::string& sourceCode, SymbolTable& table,
+                                                  const angel_lsp::i18n::I18n& i18n, bool enableMetadata)
+{
+    AngelScriptParser symbolParser;
+    SymbolCollector symbolCollector(nullptr);
+    symbolCollector.CollectSymbols("file:///test.as", sourceCode, symbolParser, table);
+
+    AngelScriptParser scopeParser;
+    LocalScopeCollector scopeCollector(nullptr);
+
+    SemanticAnalysisRequest req{table, "file:///test.as", "", &i18n};
+    req.enableMetadata = enableMetadata;
+    req.scopeRoot = scopeCollector.CollectScopes(sourceCode, scopeParser);
+
+    AngelScriptParser treeParser;
+    req.sourceCode = sourceCode;
+    req.tree = treeParser.Parse(sourceCode);
+
+    SemanticAnalyzer analyzer(nullptr);
+    auto diagnostics = analyzer.Analyze(req);
+
+    if (req.tree)
+        ts_tree_delete(const_cast<TSTree*>(req.tree));
+
+    return diagnostics;
+}
+
 /** @brief True if diagnostics contains an as-warn-undeclared-identifier flagging exactly name. */
 bool HasUndefinedIdentifierDiagnostic(const std::vector<Diagnostic>& diagnostics, const std::string& name)
 {
@@ -2053,4 +2081,123 @@ TEST_CASE("SemanticAnalyzer - Mixin implementing interface and class inheriting 
     SymbolTable table;
     const auto diagnostics = AnalyzeSource(code, table, i18n);
     CHECK(diagnostics.empty());
+}
+
+TEST_CASE("Metadata - Warning emitted when metadata is disabled")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("OgreClass");
+    const std::string fieldName = angel_lsp::test::GenerateRandomSymbolName("strength");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("CreateEntity");
+
+    const std::string code = "[factory func = " + funcName + "] class " + className +
+                             " {\n"
+                             "    [editable] int " +
+                             fieldName +
+                             ";\n"
+                             "}\n"
+                             "[factory] " +
+                             className + "@ " + funcName +
+                             "() {\n"
+                             "    return @" +
+                             className +
+                             "();\n"
+                             "}\n";
+
+    // Test English warning
+    {
+        SymbolTable table;
+        const angel_lsp::i18n::I18n i18nEn("en");
+        const auto diagnostics = AnalyzeSourceWithMetadata(code, table, i18nEn, false);
+
+        const auto warnIt = std::find_if(diagnostics.begin(), diagnostics.end(),
+                                         [](const Diagnostic& d) { return d.code == "as-warn-metadata-disabled"; });
+        REQUIRE(warnIt != diagnostics.end());
+        CHECK(warnIt->message.find("Metadata blocks '[]' are disabled") != std::string::npos);
+    }
+
+    // Test Spanish warning
+    {
+        SymbolTable table;
+        const angel_lsp::i18n::I18n i18nEs("es");
+        const auto diagnostics = AnalyzeSourceWithMetadata(code, table, i18nEs, false);
+
+        const auto warnIt = std::find_if(diagnostics.begin(), diagnostics.end(),
+                                         [](const Diagnostic& d) { return d.code == "as-warn-metadata-disabled"; });
+        REQUIRE(warnIt != diagnostics.end());
+        CHECK(warnIt->message.find("Los bloques de metadatos '[]'") != std::string::npos);
+    }
+}
+
+TEST_CASE("Metadata - Allowed when enabled and symbols store metadata entries")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("VehicleClass");
+    const std::string fieldName = angel_lsp::test::GenerateRandomSymbolName("velocity");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("BuildVehicle");
+
+    const std::string code = "[factory func = " + funcName + "] class " + className +
+                             " {\n"
+                             "    [editable] [range [0, 100]] int " +
+                             fieldName +
+                             ";\n"
+                             "}\n"
+                             "[factory] " +
+                             className + "@ " + funcName +
+                             "() {\n"
+                             "    return @" +
+                             className +
+                             "();\n"
+                             "}\n";
+
+    SymbolTable table;
+    const angel_lsp::i18n::I18n i18nEn("en");
+    const auto diagnostics = AnalyzeSourceWithMetadata(code, table, i18nEn, true);
+
+    const auto warnIt = std::find_if(diagnostics.begin(), diagnostics.end(),
+                                     [](const Diagnostic& d) { return d.code == "as-warn-metadata-disabled"; });
+    CHECK(warnIt == diagnostics.end());
+
+    // Verify metadata stored on symbols
+    const auto classSymbols = table.FindSymbols(className);
+    REQUIRE_FALSE(classSymbols.empty());
+    CHECK_FALSE(classSymbols.front().metadata.empty());
+    CHECK(classSymbols.front().metadata.front().find("factory func = " + funcName) != std::string::npos);
+
+    const auto funcSymbols = table.FindSymbols(funcName);
+    REQUIRE_FALSE(funcSymbols.empty());
+    CHECK_FALSE(funcSymbols.front().metadata.empty());
+    CHECK(funcSymbols.front().metadata.front().find("factory") != std::string::npos);
+}
+
+TEST_CASE("Metadata - Grammar does not conflict with opIndex, multidimensional arrays, or initializers")
+{
+    const std::string arrVar = angel_lsp::test::GenerateRandomSymbolName("myArray");
+    const std::string matrixVar = angel_lsp::test::GenerateRandomSymbolName("myMatrix");
+    const std::string elemVar = angel_lsp::test::GenerateRandomSymbolName("element");
+
+    const std::string code = "void TestArraysAndIndex() {\n"
+                             "    int[] " +
+                             arrVar +
+                             " = {10, 20, 30};\n"
+                             "    int " +
+                             elemVar + " = " + arrVar +
+                             "[0];\n"
+                             "    int[][] " +
+                             matrixVar +
+                             ";\n"
+                             "    if (" +
+                             elemVar +
+                             " > 0) {}\n"
+                             "}\n";
+
+    // Test with both metadata disabled and enabled
+    for (bool enableMeta : {false, true})
+    {
+        SymbolTable table;
+        const angel_lsp::i18n::I18n i18n("en");
+        const auto diagnostics = AnalyzeSourceWithMetadata(code, table, i18n, enableMeta);
+
+        const auto warnIt = std::find_if(diagnostics.begin(), diagnostics.end(),
+                                         [](const Diagnostic& d) { return d.code == "as-warn-metadata-disabled"; });
+        CHECK(warnIt == diagnostics.end());
+    }
 }

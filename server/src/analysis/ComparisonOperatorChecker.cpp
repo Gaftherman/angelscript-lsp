@@ -135,6 +135,10 @@ bool CheckStringBranch(bool isRelational, const BinaryOperandTypes& types, const
 bool AreComparisonTypesCompatible(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table,
                                   std::string_view stringTypeName)
 {
+    if (types.left == "void" || types.right == "void")
+    {
+        return false;
+    }
     if (!IsKnownType(types.left, table, stringTypeName) || !IsKnownType(types.right, table, stringTypeName))
     {
         return true;
@@ -204,6 +208,32 @@ void CheckComparisonOperatorCompatibility(TSNode node, const Scope* scope, Diagn
 
     if (ShouldSkipAddressComparison(left, right, IsRelationalOp(op)))
     {
+        return;
+    }
+
+    if (const auto dt = IsBareDataType(left, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        const TSPoint start = ts_node_start_point(left);
+        const TSPoint end = ts_node_end_point(left);
+        ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
+                        diagnostics::codes::ExpressionIsDataType, *dt);
+        return;
+    }
+    if (const auto dt = IsBareDataType(right, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        const TSPoint start = ts_node_start_point(right);
+        const TSPoint end = ts_node_end_point(right);
+        ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
+                        diagnostics::codes::ExpressionIsDataType, *dt);
+        return;
+    }
+    if (IsFunctionReference(left, scope, ctx.request.symbolTable, ctx.request.sourceCode) ||
+        IsFunctionReference(right, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        const TSPoint start = ts_node_start_point(opNode);
+        const TSPoint end = ts_node_end_point(opNode);
+        ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
+                        diagnostics::codes::NoMatchingOperator, {std::string_view(op), "function", "value"});
         return;
     }
 

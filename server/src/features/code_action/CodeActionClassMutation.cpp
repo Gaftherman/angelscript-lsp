@@ -12,6 +12,98 @@ namespace
 {
 
 /**
+ * @brief Checks if a node type represents a method or constructor declaration that should not be recursed into.
+ * @param[in] nodeType Tree-sitter node type.
+ * @return True if subtree should be skipped for field collection.
+ */
+bool IsSubtreeSkippable(std::string_view nodeType) noexcept
+{
+    return nodeType == "function_declaration" || nodeType == "method_declaration" ||
+           nodeType == "constructor_declaration" || nodeType == "destructor_declaration";
+}
+
+/**
+ * @brief Traverses up the AST cursor to find the next available sibling or reaches root.
+ * @param[in,out] cursor Active tree-sitter cursor.
+ * @param[in,out] depth Current traversal depth counter.
+ * @param[in] rootNode Enclosing root node boundary.
+ * @return True if a next sibling was found, false if root was reached.
+ */
+bool StepUpCursor(TSTreeCursor& cursor, size_t& depth, TSNode rootNode)
+{
+    while (true)
+    {
+        if (!ts_tree_cursor_goto_parent(&cursor))
+        {
+            return false;
+        }
+        if (depth > 0)
+        {
+            --depth;
+        }
+        if (ts_node_eq(ts_tree_cursor_current_node(&cursor), rootNode))
+        {
+            return false;
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            return true;
+        }
+    }
+}
+
+/**
+ * @brief Collects field declarator names from a class AST node using a flat cursor walk.
+ * @param[in] classNode Class declaration AST node.
+ * @param[in] sourceCode Document source text.
+ * @param[in,out] classFields Set of member field names to populate.
+ */
+void CollectAstClassFields(TSNode classNode, std::string_view sourceCode,
+                           ankerl::unordered_dense::set<std::string>& classFields)
+{
+    if (ts_node_is_null(classNode))
+    {
+        return;
+    }
+
+    TSTreeCursor cursor = ts_tree_cursor_new(classNode);
+    size_t depth = 0;
+    constexpr size_t k_maxAstDepth = 64;
+
+    while (true)
+    {
+        TSNode curr = ts_tree_cursor_current_node(&cursor);
+        std::string_view nodeType = ts_node_is_null(curr) ? std::string_view{} : std::string_view(ts_node_type(curr));
+
+        if (nodeType == "variable_declarator")
+        {
+            TSNode vNameNode = parser::GetChildByField(curr, parser::fields::Name);
+            std::string fName = GetNodeText(vNameNode, sourceCode);
+            if (!fName.empty())
+            {
+                classFields.insert(std::move(fName));
+            }
+        }
+
+        if (!IsSubtreeSkippable(nodeType) && depth < k_maxAstDepth && ts_tree_cursor_goto_first_child(&cursor))
+        {
+            ++depth;
+            continue;
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            continue;
+        }
+        if (!StepUpCursor(cursor, depth, classNode))
+        {
+            break;
+        }
+    }
+
+    ts_tree_cursor_delete(&cursor);
+}
+
+/**
  * @brief Collects declared class field names from the symbol table and class body AST.
  * @param[in] context Mutation check context.
  * @return Set of member field names for the active class.
@@ -19,10 +111,17 @@ namespace
 ankerl::unordered_dense::set<std::string> CollectClassFields(const ClassMutationContext& context)
 {
     ankerl::unordered_dense::set<std::string> classFields;
-    context.table.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
+    if (const auto ruleIndex = context.table.GetRuleIndex())
+    {
+        const auto& cm = ruleIndex->Members(context.className);
+        for (const auto& memberKey : cm.memberKeys)
         {
-            for (const auto& sym : symList)
+            auto symsPtr = context.table.FindSymbolsPtr(memberKey);
+            if (!symsPtr)
+            {
+                continue;
+            }
+            for (const auto& sym : *symsPtr)
             {
                 if (sym.containerName == context.className &&
                     (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property))
@@ -30,53 +129,10 @@ ankerl::unordered_dense::set<std::string> CollectClassFields(const ClassMutation
                     classFields.insert(sym.name);
                 }
             }
-        });
-
-    if (ts_node_is_null(context.classNode))
-    {
-        return classFields;
-    }
-
-    TSNode cBody = parser::GetChildByField(context.classNode, parser::fields::Body);
-    if (ts_node_is_null(cBody))
-    {
-        uint32_t cnt = ts_node_child_count(context.classNode);
-        for (uint32_t i = 0; i < cnt; ++i)
-        {
-            TSNode ch = ts_node_child(context.classNode, i);
-            if (std::string_view(ts_node_type(ch)) == "class_body")
-            {
-                cBody = ch;
-                break;
-            }
         }
     }
 
-    if (!ts_node_is_null(cBody))
-    {
-        uint32_t bCnt = ts_node_child_count(cBody);
-        for (uint32_t i = 0; i < bCnt; ++i)
-        {
-            TSNode ch = ts_node_child(cBody, i);
-            if (std::string_view(ts_node_type(ch)) == "variable_declaration")
-            {
-                uint32_t vCnt = ts_node_child_count(ch);
-                for (uint32_t j = 0; j < vCnt; ++j)
-                {
-                    TSNode vCh = ts_node_child(ch, j);
-                    if (std::string_view(ts_node_type(vCh)) == "variable_declarator")
-                    {
-                        TSNode vNameNode = parser::GetChildByField(vCh, parser::fields::Name);
-                        std::string fName = GetNodeText(vNameNode, context.sourceCode);
-                        if (!fName.empty())
-                        {
-                            classFields.insert(fName);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    CollectAstClassFields(context.classNode, context.sourceCode, classFields);
     return classFields;
 }
 
@@ -190,6 +246,35 @@ bool CheckIncDecMutatesClassState(const ClassMutationContext& context,
 }
 
 /**
+ * @brief Resolves method name called on `this` implicitly or explicitly.
+ * @param[in] callee Function expression AST node.
+ * @param[in] sourceCode Document source text.
+ * @return Method identifier text if invoked on `this`, or empty string.
+ */
+std::string ExtractThisCallMethodName(TSNode callee, std::string_view sourceCode)
+{
+    if (ts_node_is_null(callee))
+    {
+        return {};
+    }
+    std::string_view cType = ts_node_type(callee);
+    if (cType == "identifier" || cType == "scoped_identifier")
+    {
+        return GetNodeText(callee, sourceCode);
+    }
+    if (cType == "member_expression")
+    {
+        TSNode obj = parser::GetChildByField(callee, parser::fields::Object);
+        TSNode mem = parser::GetChildByField(callee, parser::fields::Member);
+        if (!ts_node_is_null(obj) && std::string_view(ts_node_type(obj)) == "this_expression")
+        {
+            return GetNodeText(mem, sourceCode);
+        }
+    }
+    return {};
+}
+
+/**
  * @brief Checks if a method call on `this` calls a non-const method.
  * @param[in] context Mutation check context.
  * @param[in] curr Candidate call expression AST node.
@@ -202,49 +287,24 @@ bool CheckMethodCallMutatesClassState(const ClassMutationContext& context, TSNod
         return false;
     }
     TSNode callee = parser::GetChildByField(curr, parser::fields::Function);
-    if (ts_node_is_null(callee))
+    std::string callMethodName = ExtractThisCallMethodName(callee, context.sourceCode);
+    if (callMethodName.empty())
     {
         return false;
     }
-    std::string_view cType = ts_node_type(callee);
-    std::string callMethodName;
-    bool isMemberOnThis = false;
 
-    if (cType == "identifier" || cType == "scoped_identifier")
+    auto symsPtr = context.table.FindMemberSymbolPtr(context.className, callMethodName);
+    if (!symsPtr)
     {
-        callMethodName = GetNodeText(callee, context.sourceCode);
-        isMemberOnThis = true;
+        return false;
     }
-    else if (cType == "member_expression")
+    for (const auto& sym : *symsPtr)
     {
-        TSNode obj = parser::GetChildByField(callee, parser::fields::Object);
-        TSNode mem = parser::GetChildByField(callee, parser::fields::Member);
-        if (!ts_node_is_null(obj) && std::string_view(ts_node_type(obj)) == "this_expression")
+        if (sym.type == analysis::SymbolType::Function && sym.containerName == context.className &&
+            sym.name == callMethodName && !sym.GetFunction().modifiers.isConst)
         {
-            callMethodName = GetNodeText(mem, context.sourceCode);
-            isMemberOnThis = true;
+            return true;
         }
-    }
-
-    if (isMemberOnThis && !callMethodName.empty())
-    {
-        bool mutates = false;
-        context.table.ForEachSymbol(
-            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
-            {
-                for (const auto& sym : symList)
-                {
-                    if (sym.type == analysis::SymbolType::Function && sym.containerName == context.className &&
-                        sym.name == callMethodName)
-                    {
-                        if (!sym.GetFunction().modifiers.isConst)
-                        {
-                            mutates = true;
-                        }
-                    }
-                }
-            });
-        return mutates;
     }
     return false;
 }
@@ -259,24 +319,37 @@ bool MethodBodyMutatesClassState(const ClassMutationContext& context)
     }
 
     auto classFields = CollectClassFields(context);
-    std::vector<TSNode> stack = {context.bodyNode};
-    while (!stack.empty())
-    {
-        TSNode curr = stack.back();
-        stack.pop_back();
+    TSTreeCursor cursor = ts_tree_cursor_new(context.bodyNode);
+    size_t depth = 0;
+    constexpr size_t k_maxAstDepth = 64;
 
-        if (CheckAssignmentMutatesClassState(context, classFields, curr) ||
-            CheckIncDecMutatesClassState(context, classFields, curr) || CheckMethodCallMutatesClassState(context, curr))
+    while (true)
+    {
+        TSNode curr = ts_tree_cursor_current_node(&cursor);
+        if (!ts_node_is_null(curr) && (CheckAssignmentMutatesClassState(context, classFields, curr) ||
+                                       CheckIncDecMutatesClassState(context, classFields, curr) ||
+                                       CheckMethodCallMutatesClassState(context, curr)))
         {
+            ts_tree_cursor_delete(&cursor);
             return true;
         }
 
-        uint32_t childCount = ts_node_child_count(curr);
-        for (uint32_t i = 0; i < childCount; ++i)
+        if (depth < k_maxAstDepth && ts_tree_cursor_goto_first_child(&cursor))
         {
-            stack.push_back(ts_node_child(curr, i));
+            ++depth;
+            continue;
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            continue;
+        }
+        if (!StepUpCursor(cursor, depth, context.bodyNode))
+        {
+            break;
         }
     }
+
+    ts_tree_cursor_delete(&cursor);
     return false;
 }
 

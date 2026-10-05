@@ -30,16 +30,18 @@ SERVER = Path(__file__).resolve().parent.parent
 SRC = SERVER / 'src'
 
 # Protocol isolation rules
-GUARDED_DIRS = ('analysis', 'parser')
+GUARDED_DIRS = ('core', 'config', 'document', 'parser', 'i18n', 'analysis')
 FORBIDDEN_ANGLED = re.compile(r'^[ \t]*#[ \t]*include[ \t]*<[ \t]*lsp/', re.MULTILINE)
-FORBIDDEN_QUOTED = {'utils/LspLogger.h'}
+FORBIDDEN_QUOTED = set()
 
 # Layer classification
 LAYER_MAP = {
+    'core': 1,
     'config': 1,
     'document': 1,
     'parser': 1,
     'utils': 1,
+    'i18n': 1,
     'analysis': 2,
     'features': 3,
     'lsp': 4,
@@ -146,16 +148,19 @@ def check_layer_matrix() -> list[str]:
 def main() -> int:
     problems = []
 
-    # 1. Protocol isolation check for analysis/ and parser/ (headers and sources)
+    # 1. Protocol isolation check for guarded layers (both headers and sources transitively)
     for layer in GUARDED_DIRS:
-        for header in sorted((SRC / layer).rglob('*.h')):
+        layer_dir = SRC / layer
+        if not layer_dir.exists():
+            continue
+        for header in sorted(layer_dir.rglob('*.h')):
             chain = reaches_protocol(header.resolve(), set())
             if chain is not None:
                 problems.append((header.relative_to(SERVER), ' -> '.join(chain)))
-        for cpp_file in sorted((SRC / layer).rglob('*.cpp')):
-            text = cpp_file.read_text(encoding='utf-8', errors='replace')
-            if FORBIDDEN_ANGLED.search(text):
-                problems.append((cpp_file.relative_to(SERVER), 'directly includes <lsp/...>'))
+        for cpp_file in sorted(layer_dir.rglob('*.cpp')):
+            chain = reaches_protocol(cpp_file.resolve(), set())
+            if chain is not None:
+                problems.append((cpp_file.relative_to(SERVER), ' -> '.join(chain)))
 
     if problems:
         print('Files in analysis/ or parser/ that pull in the LSP protocol library:')

@@ -317,7 +317,7 @@ class TestDocument
 
         for (const auto& d : m_diagnostics)
         {
-            if (d.severity == analysis::DiagnosticSeverity::Error ||
+            if (d.severity == analysis::DiagnosticSeverity::Error || d.code == "as-err-call-ambiguous" ||
                 (m_uri == "file:///workspace/template_main.as" &&
                  (d.code == "as-warn-unused-variable" || d.code == "as-warn-undeclared-identifier")))
             {

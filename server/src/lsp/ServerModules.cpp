@@ -1,3 +1,4 @@
+#include "analysis/rules/RuleIndex.h"
 #include "features/document_link/DocumentLinkHandler.h"
 #include "lsp/Server.h"
 #include "utils/IncludeResolver.h"
@@ -154,6 +155,30 @@ Server::ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& de
 
 namespace
 {
+bool NormalizedPathsEqual(std::string_view a, std::string_view b)
+{
+    if (a == b)
+    {
+        return true;
+    }
+#if defined(_WIN32)
+    if (a.size() != b.size())
+    {
+        return false;
+    }
+    for (size_t i = 0; i < a.size(); ++i)
+    {
+        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
+        {
+            return false;
+        }
+    }
+    return true;
+#else
+    return false;
+#endif
+}
+
 void AppendUniqueDirectory(std::vector<std::string>& dirs, const std::string& dir, bool& added)
 {
     if (dir.empty())
@@ -248,17 +273,14 @@ void Server::BuildModuleIndex()
 
 bool Server::PathIsInside(const std::string& normalizedPath, const std::string& normalizedDirectory)
 {
-    if (normalizedDirectory.empty() || normalizedPath.size() <= normalizedDirectory.size())
+    if (normalizedDirectory.empty() || normalizedPath.size() <= normalizedDirectory.size() ||
+        normalizedPath[normalizedDirectory.size()] != '/')
     {
         return false;
     }
 
-    if (!PathsAreSameFile(normalizedPath.substr(0, normalizedDirectory.size()), normalizedDirectory))
-    {
-        return false;
-    }
-
-    return normalizedPath[normalizedDirectory.size()] == '/';
+    return NormalizedPathsEqual(std::string_view(normalizedPath).substr(0, normalizedDirectory.size()),
+                                normalizedDirectory);
 }
 
 Server::ModuleClaim Server::ClaimFor(const std::string& normalizedPath) const
@@ -401,13 +423,23 @@ void Server::AnalyzeConfiguredModules()
                 continue;
             }
 
-            std::ifstream file(path, std::ios::binary);
-            if (!file.is_open())
+            std::string content;
             {
-                continue;
+                std::lock_guard<std::mutex> lock(m_closureMutex);
+                if (const auto cached = m_closureDocuments.find(uriStr); cached != m_closureDocuments.end())
+                {
+                    content = cached->second;
+                }
             }
-
-            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            if (content.empty())
+            {
+                std::ifstream file(path, std::ios::binary);
+                if (!file.is_open())
+                {
+                    continue;
+                }
+                content.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            }
 
             {
                 std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
@@ -491,6 +523,7 @@ std::vector<std::string>
 Server::CollectStaleClosureUris(const ankerl::unordered_dense::set<std::string>& wantedPaths) const
 {
     std::vector<std::string> toPurge;
+    std::lock_guard<std::mutex> lock(m_closureMutex);
     for (const auto& [uriStr, _] : m_closureDocuments)
     {
         const std::string p = CanonicalPathFromUri(uriStr);
@@ -544,14 +577,25 @@ void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser
                 continue;
             }
 
-            if (const auto indexed = m_indexedUriByPath.find(path);
-                indexed != m_indexedUriByPath.end() && indexed->second == uriStr)
+            bool alreadyIndexed = false;
+            {
+                std::lock_guard<std::mutex> lock(m_closureMutex);
+                if (const auto indexed = m_indexedUriByPath.find(path);
+                    indexed != m_indexedUriByPath.end() && indexed->second == uriStr)
+                {
+                    alreadyIndexed = true;
+                }
+            }
+            if (alreadyIndexed)
             {
                 continue;
             }
 
             IndexClosureFile(path, parser);
-            m_indexedUriByPath[path] = uriStr;
+            {
+                std::lock_guard<std::mutex> lock(m_closureMutex);
+                m_indexedUriByPath[path] = uriStr;
+            }
         }
     }
     SyncModuleIndexSymbols();
@@ -582,10 +626,16 @@ void Server::SyncModuleIndexSymbols()
     {
         exported.push_back(ModuleIndex::ExportedSymbol{view.name, view.folderPath, "", 0, 0});
     }
-    m_symbolTable.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<angel_lsp::analysis::Symbol>& syms)
+    if (const auto ruleIndex = m_symbolTable.GetRuleIndex())
+    {
+        for (const auto& [key, _] : ruleIndex->sharedDeclarationFilesByKey)
         {
-            for (const auto& sym : syms)
+            auto symsPtr = m_symbolTable.FindSymbolsPtr(key);
+            if (!symsPtr)
+            {
+                continue;
+            }
+            for (const auto& sym : *symsPtr)
             {
                 if (SymbolDeclaresShared(sym))
                 {
@@ -593,33 +643,31 @@ void Server::SyncModuleIndexSymbols()
                                                                    sym.startLine, sym.startCharacter});
                 }
             }
-        });
+        }
+    }
     m_moduleIndex.SetExportedSymbols(std::move(exported));
 }
 
 void Server::CollectSharedSymbolsElsewhere(const ModuleView& owning,
                                            ankerl::unordered_dense::set<std::string>& outShared) const
 {
-    m_symbolTable.ForEachSymbol(
-        [&owning, &outShared](const std::string& name, const std::vector<angel_lsp::analysis::Symbol>& symbols)
+    const auto ruleIndex = m_symbolTable.GetRuleIndex();
+    if (!ruleIndex)
+    {
+        return;
+    }
+    for (const auto& [name, fileUris] : ruleIndex->sharedDeclarationFilesByKey)
+    {
+        for (const auto& fileUri : fileUris)
         {
-            for (const auto& symbol : symbols)
+            const std::string declaringPath = CanonicalPathFromUri(fileUri);
+            if (!declaringPath.empty() && !owning.memberPaths.contains(declaringPath))
             {
-                if (!SymbolDeclaresShared(symbol))
-                {
-                    continue;
-                }
-
-                const std::string declaringPath = CanonicalPathFromUri(symbol.fileUri);
-                if (declaringPath.empty() || owning.memberPaths.contains(declaringPath))
-                {
-                    continue;
-                }
-
                 outShared.insert(name);
-                return;
+                break;
             }
-        });
+        }
+    }
 }
 
 std::optional<angel_lsp::analysis::SemanticAnalysisRequest::ModuleContext>
@@ -775,8 +823,11 @@ void Server::IndexClosureFile(const std::string& path, angel_lsp::parser::AngelS
         m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree.get()), content));
     }
 
-    m_closureDocuments[uriStr] = std::move(content);
-    m_indexedUriByPath[path] = uriStr;
+    {
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        m_closureDocuments[uriStr] = std::move(content);
+        m_indexedUriByPath[path] = uriStr;
+    }
 }
 
 void Server::AppendIncludeDiagnostics(const std::string& uriStr, const std::string& text,
@@ -806,13 +857,17 @@ void Server::PurgeClosureFile(const std::string& uriStr)
     m_symbolTable.ClearDocumentSymbols(uriStr);
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
-    m_closureDocuments.erase(uriStr);
 
-    const std::string path = CanonicalPathFromUri(uriStr);
-    if (!path.empty())
     {
-        if (const auto it = m_indexedUriByPath.find(path); it != m_indexedUriByPath.end() && it->second == uriStr)
-            m_indexedUriByPath.erase(it);
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        m_closureDocuments.erase(uriStr);
+
+        const std::string path = CanonicalPathFromUri(uriStr);
+        if (!path.empty())
+        {
+            if (const auto it = m_indexedUriByPath.find(path); it != m_indexedUriByPath.end() && it->second == uriStr)
+                m_indexedUriByPath.erase(it);
+        }
     }
 }
 
@@ -824,7 +879,7 @@ std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPat
         const std::string entryPath = ResolveConfiguredPath(m_config.moduleEntryPoint);
         auto fwd = m_includeGraph.GetForwardClosure(entryPath);
         if (std::any_of(fwd.begin(), fwd.end(),
-                        [&openPath](const std::string& p) { return PathsAreSameFile(p, openPath); }))
+                        [&openPath](const std::string& p) { return NormalizedPathsEqual(p, openPath); }))
         {
             closure = std::move(fwd);
         }
@@ -843,12 +898,12 @@ std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPat
     {
         for (const auto& member : claim.owner->closurePaths)
         {
-            if (!PathsAreSameFile(member, openPath))
+            if (!NormalizedPathsEqual(member, openPath))
                 closure.push_back(member);
         }
         for (const auto& member : claim.owner->memberPaths)
         {
-            if (!PathsAreSameFile(member, openPath))
+            if (!NormalizedPathsEqual(member, openPath))
                 closure.push_back(member);
         }
     }
@@ -874,12 +929,20 @@ size_t Server::IndexModuleClosure(const std::string& openUriStr)
     if (openPath.empty())
         return 0;
 
-    if (const auto previous = m_indexedUriByPath.find(openPath); previous != m_indexedUriByPath.end())
+    std::string previousToPurge;
     {
-        if (previous->second != openUriStr)
-            PurgeClosureFile(previous->second);
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        if (const auto previous = m_indexedUriByPath.find(openPath); previous != m_indexedUriByPath.end())
+        {
+            if (previous->second != openUriStr)
+                previousToPurge = previous->second;
+        }
+        m_indexedUriByPath[openPath] = openUriStr;
     }
-    m_indexedUriByPath[openPath] = openUriStr;
+    if (!previousToPurge.empty())
+    {
+        PurgeClosureFile(previousToPurge);
+    }
 
     std::vector<std::string> indexed;
     size_t newlyIndexed = 0;
@@ -888,21 +951,24 @@ size_t Server::IndexModuleClosure(const std::string& openUriStr)
 
     for (const auto& path : closure)
     {
-        if (path == openPath)
+        if (NormalizedPathsEqual(path, openPath))
             continue;
 
-        const std::string uriStr = UriFromPath(path);
-
-        if (m_documentStore.IsOpen(uriStr))
-            continue;
-
-        if (const auto already = m_indexedUriByPath.find(path);
-            already != m_indexedUriByPath.end() && m_documentStore.IsOpen(already->second))
+        std::string uriStr;
+        bool alreadyOpen = false;
+        bool alreadyIndexed = false;
         {
-            continue;
+            std::lock_guard<std::mutex> lock(m_closureMutex);
+            const auto already = m_indexedUriByPath.find(path);
+            uriStr = (already != m_indexedUriByPath.end()) ? already->second : UriFromPath(path);
+            alreadyOpen = m_documentStore.IsOpen(uriStr);
+            alreadyIndexed = m_closureDocuments.contains(uriStr);
         }
 
-        if (!m_closureDocuments.contains(uriStr))
+        if (alreadyOpen)
+            continue;
+
+        if (!alreadyIndexed)
         {
             IndexClosureFile(path, closureParser);
             ++newlyIndexed;
@@ -916,41 +982,57 @@ size_t Server::IndexModuleClosure(const std::string& openUriStr)
         LogInfo(fmt::format("Indexed {} file(s) from the #include module of {}", newlyIndexed, openUriStr));
     }
 
-    m_openDocumentClosures[openUriStr] = std::move(indexed);
+    {
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        if (m_documentStore.IsOpen(openUriStr) || !m_closureDocuments.contains(openUriStr))
+        {
+            m_openDocumentClosures[openUriStr] = std::move(indexed);
+        }
+    }
     return newlyIndexed;
 }
 
 void Server::ReleaseModuleClosure(const std::string& openUriStr)
 {
-    const auto closure = m_openDocumentClosures.find(openUriStr);
-    if (closure == m_openDocumentClosures.end())
-        return;
-
-    const std::vector<std::string> released = std::move(closure->second);
-    m_openDocumentClosures.erase(closure);
-
-    for (const auto& uriStr : released)
+    std::vector<std::string> released;
+    std::vector<std::string> toPurge;
     {
-        bool stillNeeded = false;
-        for (const auto& [otherUri, otherClosure] : m_openDocumentClosures)
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        const auto closure = m_openDocumentClosures.find(openUriStr);
+        if (closure == m_openDocumentClosures.end())
+            return;
+
+        released = std::move(closure->second);
+        m_openDocumentClosures.erase(closure);
+
+        for (const auto& uriStr : released)
         {
-            if (std::find(otherClosure.begin(), otherClosure.end(), uriStr) != otherClosure.end())
+            bool stillNeeded = false;
+            for (const auto& [otherUri, otherClosure] : m_openDocumentClosures)
             {
-                stillNeeded = true;
-                break;
+                if (std::find(otherClosure.begin(), otherClosure.end(), uriStr) != otherClosure.end())
+                {
+                    stillNeeded = true;
+                    break;
+                }
+            }
+
+            if (!stillNeeded)
+            {
+                const std::string path = CanonicalPathFromUri(uriStr);
+                if (!path.empty() && ClaimFor(path).owner != nullptr)
+                {
+                    continue;
+                }
+
+                toPurge.push_back(uriStr);
             }
         }
+    }
 
-        if (!stillNeeded)
-        {
-            const std::string path = CanonicalPathFromUri(uriStr);
-            if (!path.empty() && ClaimFor(path).owner != nullptr)
-            {
-                continue;
-            }
-
-            PurgeClosureFile(uriStr);
-        }
+    for (const auto& uriStr : toPurge)
+    {
+        PurgeClosureFile(uriStr);
     }
 }
 } // namespace angel_lsp

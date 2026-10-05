@@ -102,8 +102,8 @@ The following community and tested host stubs are available:
 
 | Host Environment | Source & Link | Status & Recommendation |
 | :--- | :--- | :--- |
-| **Sven Co-op** | [Sven Co-op - Gaftherman](https://github.com/Gaftherman/angelscript-lsp/blob/main/predefined/sven.as.predefined) | **Recommended (Recomendado)** — Actively maintained and updated for modern Sven Co-op 5.26+ engine API bindings, complete const-correctness, ref qualifiers, and math/engine structs. We strongly recommend this stub for all Sven Co-op scripting. |
-| **Sven Co-op** | [Sven Co-op - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Sven%20Co-op/as.predefined) | **Legacy (Heredado)** — Retained for backwards compatibility with older projects and configurations; outdated compared to modern engine releases. |
+| **Sven Co-op** | [Sven Co-op - Gaftherman](https://github.com/Gaftherman/angelscript-lsp/blob/main/predefined/sven.as.predefined) | **Recommended** — Actively maintained and updated for modern Sven Co-op 5.26+ engine API bindings, complete const-correctness, ref qualifiers, and math/engine structs. We strongly recommend this stub for all Sven Co-op scripting. |
+| **Sven Co-op** | [Sven Co-op - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Sven%20Co-op/as.predefined) | **Legacy** — Retained for backwards compatibility with older projects and configurations; outdated compared to modern engine releases. |
 | **Trackmania Nations Forever** | [Trackmania Nations Forever - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/Trackmania%20Nations%20Forever/as.predefined) | Compatible — Host API bindings for Trackmania Nations Forever scripting (`CGameCtnApp`, `MwFastBuffer`, etc.). |
 | **OpenSiv3D** | [OpenSiv3D - Sashi0034](https://github.com/sashi0034/angel-lsp/blob/main/examples/OpenSiv3D/as.predefined) | Compatible — Host API bindings for the OpenSiv3D C++ game framework (`Vec2`, `ColorF`, `Circle`, etc.). |
 
@@ -308,6 +308,7 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.preprocessor.ifdefSupport` | `false` | Set this if the host patched its copy of `scriptbuilder.cpp` to understand `#ifdef` and `#ifndef`.  Not in the stock add-on, where either one is left in the source and the compiler reports `Unexpected token`. |
 | `angelscript.preprocessor.defineInScripts` | `false` | Set this if the host patched its copy of `scriptbuilder.cpp` so `#define WORD` in a script defines a word.  Not in the stock add-on, where `DefineWord` is a C++ call the host makes and a `#define` written in a script is a syntax error. To declare the words the host itself defines, use `#angelscript.define` or a `#define` line in a predefined stub, which are not affected by this setting. |
 | `angelscript.preprocessor.pragmaMode` | `"accept"` | What to report for a `#pragma`.  The stock add-on rejects every one: with no pragma callback registered it substitutes a failure for the callback's answer, writes `Invalid #pragma directive` and fails the whole section. The default here is nevertheless `accept`, because a host that registers a callback is the common case and reporting an error by default would put a squiggle on a pragma that builds fine. Choose `error` for a host that really registered nothing, or `hint` if you are not sure. |
+| `angelscript.metadata.enabled` | `false` | Enable support for CScriptBuilder metadata blocks ('[...]') before script declarations (classes, interfaces, functions, variables). |
 <!-- SETTINGS_CATALOG_END -->
 ---
 

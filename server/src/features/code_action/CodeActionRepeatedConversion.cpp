@@ -104,7 +104,9 @@ void BuildCodeActionEdits(TSNode rootIf, const ExtractedDiagInfo& info, const Co
     }
 
     lsp::CodeAction action;
-    action.title = "Initialize local '" + info.toType + "' variable for '" + info.exprText + "'";
+    action.title =
+        i18n::FormatMessage(request.i18n, "action-init-local-variable", "Initialize local '{}' variable for '{}'",
+                            std::string_view(info.toType), std::string_view(info.exprText));
     action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
     action.isPreferred = true;
 

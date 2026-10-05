@@ -1358,7 +1358,7 @@ lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx, const analysis::P
     }
     hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
     hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
-    hint.paddingRight = true;
+    hint.paddingRight = false;
     hint.paddingLeft = false;
     hint.tooltip = std::nullopt;
     return hint;

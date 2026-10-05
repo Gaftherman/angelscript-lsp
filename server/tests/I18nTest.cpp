@@ -68,7 +68,8 @@ TEST_CASE("I18n - Every code the analyzer emits has both languages")
                                                      "as-err-mixin-final",
                                                      "as-err-mixin-abstract",
                                                      "as-err-inherit-final",
-                                                     "as-err-duplicate-symbol"};
+                                                     "as-err-duplicate-symbol",
+                                                     "as-warn-metadata-disabled"};
 
     const I18n english("en");
     const I18n spanish("es");

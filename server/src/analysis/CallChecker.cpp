@@ -249,6 +249,10 @@ std::vector<Symbol> FindMethodCandidates(const std::string& typeName, const std:
             {
                 continue;
             }
+            if (sym.containerKind == ContainerKind::Namespace || sym.containerKind == ContainerKind::Enum)
+            {
+                continue;
+            }
 
             const bool overriddenLower =
                 std::any_of(candidates.begin(), candidates.end(),
@@ -465,11 +469,12 @@ LambdaCandidateStatus EvaluateCandidateLambdaShape(const Symbol& candidate, cons
  * @brief Emits diagnostics for lambda shape matching results.
  *
  * @param[in] acceptedShapes Matrix of accepted funcdef shapes per viable candidate.
+ * @param[in] priorityCandidate First accepted overload candidate.
  * @param[in] lctx Lambda verification context.
  * @param[in,out] ctx Diagnostic context.
  */
 void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>& acceptedShapes,
-                             const LambdaCheckContext& lctx, DiagnosticContext& ctx)
+                             const Symbol* priorityCandidate, const LambdaCheckContext& lctx, DiagnosticContext& ctx)
 {
     const TSPoint start = ts_node_start_point(lctx.callee);
     const TSPoint end = ts_node_end_point(lctx.arguments);
@@ -486,7 +491,10 @@ void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>& accept
                     [&](const std::vector<std::string>& shape) { return shape == acceptedShapes.front(); });
     if (acceptedShapes.size() > 1 && !everyShapeIdentical)
     {
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-ambiguous", lctx.reportedName);
+        const std::string_view prioritySig =
+            priorityCandidate != nullptr ? priorityCandidate->GetDisplaySignature() : std::string_view{};
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-ambiguous",
+                        {std::string_view(lctx.reportedName), prioritySig});
     }
 }
 
@@ -506,6 +514,7 @@ void CheckLambdaArguments(std::span<const Symbol* const> candidates, const Lambd
     }
 
     std::vector<std::vector<std::string>> acceptedShapes;
+    const Symbol* firstAccepted = nullptr;
     for (const auto* candidate : candidates)
     {
         if (!candidate)
@@ -520,11 +529,15 @@ void CheckLambdaArguments(std::span<const Symbol* const> candidates, const Lambd
         }
         if (status == LambdaCandidateStatus::Accepted)
         {
+            if (!firstAccepted)
+            {
+                firstAccepted = candidate;
+            }
             acceptedShapes.push_back(std::move(shape));
         }
     }
 
-    ReportLambdaDiagnostics(acceptedShapes, lctx, ctx);
+    ReportLambdaDiagnostics(acceptedShapes, firstAccepted, lctx, ctx);
 }
 
 /** @brief Context bundled for overall call validation. */
@@ -823,6 +836,47 @@ std::optional<Symbol> TryResolveMemberCallableFuncdef(const std::string& objectT
     return std::nullopt;
 }
 
+static bool CheckNonCallableVariable(const std::string& name, const std::string& typeName,
+                                     const CallValidationContext& valCtx, CalleeResolution& res)
+{
+    std::string cleanType = CleanBaseType(typeName);
+    auto opCallSyms = FindMethodCandidates(cleanType, "opCall", valCtx.ctx.request.symbolTable);
+    if (!opCallSyms.empty())
+    {
+        res.reportedName = name;
+        res.candidates = std::move(opCallSyms);
+        res.candidatesAreFreeFunctions = false;
+        res.shouldCheck = true;
+        return true;
+    }
+    const TSPoint start = ts_node_start_point(valCtx.callee);
+    const TSPoint end = ts_node_end_point(valCtx.arguments);
+    valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::CallNoMatchingSignature,
+                           name);
+    res.shouldCheck = false;
+    return true;
+}
+
+static bool CheckMemberNonCallableVariable(const std::string& objType, const std::string& memberName,
+                                           const CallValidationContext& valCtx, CalleeResolution& res)
+{
+    for (const auto& cls : GetInheritedTypeHierarchy(objType, valCtx.ctx.request.symbolTable))
+    {
+        if (auto found = valCtx.ctx.request.symbolTable.FindSymbolsPtr(cls + "::" + memberName))
+        {
+            for (const auto& sym : *found)
+            {
+                if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                    std::holds_alternative<VariableSignature>(sym.signature))
+                {
+                    return CheckNonCallableVariable(memberName, sym.GetVariable().typeName, valCtx, res);
+                }
+            }
+        }
+    }
+    return false;
+}
+
 /**
  * @brief Resolves candidates and reports invalid constructors for member calls.
  *
@@ -870,29 +924,71 @@ CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
         {
             res.candidates.push_back(std::move(*callableSym));
         }
+        else if (CheckMemberNonCallableVariable(objInfo.objectType, res.reportedName, valCtx, res))
+        {
+            return res;
+        }
     }
     return res;
 }
 
-/**
- * @brief Checks whether an identifier is shadowed by a local/parameter or names a type.
- *
- * @param[in] shortName Unqualified identifier.
- * @param[in] scope Lexical scope.
- * @param[in] table Symbol table.
- * @return True if shadowed or names a type.
- */
-bool IsShadowedOrTypeName(const std::string& shortName, const Scope* scope, const SymbolTable& table)
+static bool CheckScopeNonCallable(std::string_view written, const std::string& shortName,
+                                  const CallValidationContext& valCtx, CalleeResolution& res)
 {
-    if (scope)
+    if (valCtx.scope)
     {
-        const LocalDefinition* shadow = ResolveInScope(scope, shortName);
-        if (shadow && (shadow->kind == LocalDefinitionKind::Variable || shadow->kind == LocalDefinitionKind::Parameter))
+        if (const LocalDefinition* shadow = ResolveInScope(valCtx.scope, shortName))
         {
-            return true;
+            if (shadow->kind == LocalDefinitionKind::Variable || shadow->kind == LocalDefinitionKind::Parameter)
+            {
+                return CheckNonCallableVariable(shortName, shadow->typeName, valCtx, res);
+            }
         }
     }
-    return NamesAType(shortName, table);
+
+    if (!HasScopeQualifier(written))
+    {
+        if (const auto found = valCtx.ctx.request.symbolTable.FindSymbolsPtr(written))
+        {
+            bool hasVar = false;
+            bool hasFunc = false;
+            std::string varType;
+            for (const auto& sym : *found)
+            {
+                if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                    std::holds_alternative<VariableSignature>(sym.signature))
+                {
+                    hasVar = true;
+                    varType = sym.GetVariable().typeName;
+                }
+                if (sym.type == SymbolType::Function)
+                {
+                    hasFunc = true;
+                }
+            }
+            if (hasVar && !hasFunc)
+            {
+                return CheckNonCallableVariable(shortName, varType, valCtx, res);
+            }
+        }
+    }
+    return false;
+}
+
+static std::vector<Symbol> CollectScopedFunctionCandidates(std::string_view written, const SymbolTable& table)
+{
+    std::vector<Symbol> candidates;
+    if (const auto found = table.FindSymbolsPtr(written))
+    {
+        for (const auto& sym : *found)
+        {
+            if (IsFunctionSymbol(sym))
+            {
+                candidates.push_back(sym);
+            }
+        }
+    }
+    return candidates;
 }
 
 /**
@@ -940,7 +1036,12 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
         return res;
     }
 
-    if (IsShadowedOrTypeName(shortName, valCtx.scope, valCtx.ctx.request.symbolTable))
+    if (CheckScopeNonCallable(written, shortName, valCtx, res))
+    {
+        return res;
+    }
+
+    if (NamesAType(shortName, valCtx.ctx.request.symbolTable))
     {
         res.shouldCheck = false;
         return res;
@@ -949,16 +1050,7 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
     res.reportedName = shortName;
     if (HasScopeQualifier(written))
     {
-        if (const auto found = valCtx.ctx.request.symbolTable.FindSymbolsPtr(written))
-        {
-            for (const auto& sym : *found)
-            {
-                if (IsFunctionSymbol(sym))
-                {
-                    res.candidates.push_back(sym);
-                }
-            }
-        }
+        res.candidates = CollectScopedFunctionCandidates(written, valCtx.ctx.request.symbolTable);
         return res;
     }
 
@@ -1071,6 +1163,10 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
         if (argType.empty())
         {
             result.allArgsResolved = false;
+        }
+        else if (!HasConstModifier(argType) && IsObjectNodeConst(argNode, valCtx))
+        {
+            argType.insert(0, "const ");
         }
         result.argTypes.push_back(std::move(argType));
     }
@@ -1366,7 +1462,7 @@ bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, const S
         if (def && (def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter ||
                     def->kind == LocalDefinitionKind::Field))
         {
-            return true;
+            return !HasConstModifier(def->typeName);
         }
     }
     auto syms = table.FindSymbolsPtr(name);
@@ -1593,8 +1689,12 @@ void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const Call
     {
         const TSPoint start = ts_node_start_point(valCtx.callee);
         const TSPoint end = ts_node_end_point(valCtx.arguments);
+        const std::string_view prioritySig =
+            match.priorityCandidate != nullptr ? match.priorityCandidate->GetDisplaySignature() : std::string_view{};
         valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-ambiguous",
-                               calleeRes.reportedName);
+                               {std::string_view(calleeRes.reportedName), prioritySig},
+                               match.priorityCandidate != nullptr ? DiagnosticSeverity::Warning
+                                                                  : DiagnosticSeverity::Error);
     }
     else if (match.viableCandidates.empty() || match.bestCandidate == nullptr)
     {

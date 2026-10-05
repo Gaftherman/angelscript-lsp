@@ -63,6 +63,10 @@ std::string_view Trim(std::string_view text)
  */
 std::string_view ClauseKeyword(TSNode clause)
 {
+    if (ts_node_is_null(clause) || ts_node_child_count(clause) == 0)
+    {
+        return {};
+    }
     return NodeType(ts_node_child(clause, 0));
 }
 

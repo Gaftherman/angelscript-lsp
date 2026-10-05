@@ -207,6 +207,11 @@ Server::HandleRequestsTextDocument_SemanticTokens_Range(lsp::requests::TextDocum
     }
 
     features::SemanticTokensRequest sr{doc->uri, *doc->text, doc->tree, m_symbolTable};
+    if (doc->tree != nullptr && m_localScopeCollector != nullptr)
+    {
+        m_scopeIndex.SetScopeTree(
+            doc->uri, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(doc->tree), *doc->text));
+    }
     sr.scopeRoot = m_scopeIndex.GetRoot(doc->uri);
     sr.nodeIndex = nodeIndexPtr;
     sr.excludedLineRanges = ExcludedLineRanges(*doc->text);

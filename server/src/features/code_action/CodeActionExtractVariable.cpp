@@ -374,7 +374,7 @@ std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionReques
     replEdit.newText = varName;
 
     lsp::CodeAction action;
-    action.title = "Extract Variable";
+    action.title = i18n::FormatMessage(request.i18n, "action-extract-variable", "Extract Variable");
     action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::RefactorExtract);
 
     lsp::WorkspaceEdit wsEdit;

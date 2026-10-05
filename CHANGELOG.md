@@ -2,6 +2,33 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.0.1] - 2026-10-04
+
+### Native Compiler Parity, Negative Syntax/Semantics Hardening, Scope Disambiguation, and Case-Insensitive Completion
+
+- Native AngelScript Compiler Parity & Negative Expression Diagnostics:
+  - Diagnosed bare data types (classes, interfaces, typedefs, enums, structs) in invalid value expression contexts: variable initializers (`int a = MyClass;`), binary arithmetic (`1 + MyClass`), ternary branches, and assignment targets (`MyClass = 5;`), issuing `as-err-expression-is-data-type` (`Expression '<type>' is a data type`).
+  - Diagnosed bare function identifiers without call parentheses in expressions and statements (`int i = fn + 1;`), emitting `as-err-no-matching-operator`, `as-err-illegal-operation`, or `as-err-no-implicit-conversion`, while cleanly preserving the handle-of operator `@fn` for `funcdef` bindings.
+  - Diagnosed non-callable variables, parameters, and properties invoked as functions (`int x; x();`), emitting `as-err-call-no-matching-signature`.
+  - Diagnosed `void` operands in arithmetic and comparison expressions (`voidFn() + 1`, `voidFn() == 0`), preventing invalid promotion or false compatibility.
+  - Diagnosed isolated namespace references in expressions (`int i = Ns;`), emitting `as-err-undefined-identifier`.
+  - Validated all negative semantic patterns against the native AngelScript Compiler oracle (`angelscript_oracle.exe`) with 1:1 behavioral agreement.
+- Namespace & Container Scope Disambiguation:
+  - Disambiguated collisions where namespaces, classes, and members share identifiers across lexical scopes (e.g. `Namespace::Class` vs class methods/fields sharing names).
+  - Enforced strict type reachability and container lookup isolation without leaking outer identifiers.
+- Language Server Protocol (LSP) Features & Editor Polish:
+  - Added case-insensitive prefix matching for autocompletion, improving typing speed and fuzzy discovery.
+  - Resolved enum reference lookup and completion across nested namespaces and `using namespace` directives.
+  - Unified semantic tokens for declaration modifiers and fixed CodeLens reference counters inside namespaces.
+  - Cleaned up blank doc comment formatting and enabled hover documentation for `#include` directives.
+  - Improved inlay hint hitboxes and interactive navigation (`Ctrl+Click` to parameter definition).
+  - Added native metadata extraction (`[Meta(...)]`) and eliminated Tree-Sitter AST child index loops.
+- Concurrency, Resilience & Performance:
+  - Constrained unclosed control flow and missing closing brace cascading syntax errors in `ParserUtils` and `LocalScopeCollector` to prevent diagnostic floods.
+  - Hardened thread safety with mutex protection around closure maps and background analysis state during rapid workspace edits.
+  - Enforced zero-copy `std::string_view` lookups and table-driven locale overlays (`GetMessageView`), achieving $O(1)$ symbol indexing and faster module load times.
+  - Resolved const-reference (`const Type& in`) vs output-reference (`Type& out`) overload resolution priority according to official AngelScript rules.
+
 ## [1.0.0] - 2026-10-03
 
 ### Native Clang-Format Style Engine, Hot-Path Performance Hardening, Full Bilingual Localization (EN/ES), and Compiler Parity

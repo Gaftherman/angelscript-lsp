@@ -48,7 +48,9 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     if (const std::string ownPath = CanonicalPathFromUri(uriStr); !ownPath.empty())
     {
         request.moduleFileUris.insert(uriStr);
-        for (const auto& path : ComputeModuleClosure(ownPath))
+        const auto closurePaths = ComputeModuleClosure(ownPath);
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        for (const auto& path : closurePaths)
         {
             if (path == ownPath)
                 continue;
@@ -63,6 +65,7 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     request.severityOverrides = m_diagnosticSeverities.empty() ? nullptr : &m_diagnosticSeverities;
     request.enableTypeConversionChecks = m_config.features.enableTypeConversionChecks;
     request.enableCommentSuppressions = m_config.features.enableCommentSuppressions;
+    request.enableMetadata = m_config.features.enableMetadata;
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
     request.sourceCode = text;
     request.tree = tree;
@@ -453,6 +456,23 @@ void Server::LogAnalysisProfile(std::string_view prefix, const std::string& uriS
                         utils::FormatDuration(profile.checkMs)));
 }
 
+bool Server::IsUnchangedClosedDocument(const std::string& uriStr, uint64_t generation,
+                                       const angel_lsp::analysis::SymbolTable& staging) const
+{
+    if (generation != 0 || m_documentStore.IsOpen(uriStr))
+    {
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        if (!m_closureDocuments.contains(uriStr))
+        {
+            return false;
+        }
+    }
+    return m_symbolTable.ComputeDocumentInterfaceHash(uriStr) == staging.ComputeDocumentInterfaceHash(uriStr);
+}
+
 void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
 {
     LogInfo(fmt::format("[Analysis] Starting background analysis for file: {}", req.uriStr));
@@ -482,7 +502,10 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
 
     const TSNode root = ts_tree_root_node(parsed.tree.get());
     analysis::NodeIndex nodeIndex(root);
-    std::unique_ptr<analysis::SymbolTable> analysisSnapshot = m_symbolTable.CreateAnalysisSnapshot(req.uriStr, staging);
+    const bool unchangedClosedFile = IsUnchangedClosedDocument(req.uriStr, req.generation, staging);
+    std::unique_ptr<analysis::SymbolTable> analysisSnapshot =
+        unchangedClosedFile ? nullptr : m_symbolTable.CreateAnalysisSnapshot(req.uriStr, staging);
+    const analysis::SymbolTable* activeTable = unchangedClosedFile ? &m_symbolTable : analysisSnapshot.get();
 
     utils::HighResTimer scopeTimer;
     std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot =
@@ -491,7 +514,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     double scopeMs = scopeTimer.ElapsedMs();
 
     utils::HighResTimer checkTimer;
-    auto request = BuildAnalysisRequest(req.uriStr, req.text, parsed.tree.get(), analysisSnapshot.get());
+    auto request = BuildAnalysisRequest(req.uriStr, req.text, parsed.tree.get(), activeTable);
     request.scopeRoot = scopeRoot;
     request.mutableScopeRoot = scopeRoot.get();
     request.nodeIndex = &nodeIndex;
@@ -509,7 +532,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
                            .version = req.version,
                            .generation = req.generation,
                            .configRevision = req.configRevision,
-                           .staging = &staging,
+                           .staging = unchangedClosedFile ? nullptr : &staging,
                            .scopeRoot = std::move(scopeRoot),
                            .calls = std::move(calls),
                            .diagnostics = std::move(parsed.diagnostics),

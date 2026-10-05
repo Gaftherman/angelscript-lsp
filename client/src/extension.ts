@@ -946,6 +946,10 @@ export function buildServerArgs(): string[] {
         args.push(`--preprocessor-feature=pragmaMode=${pragmaMode}`);
     }
 
+    if (config.get<boolean>('metadata.enabled', false) === true) {
+        args.push('--enable-metadata');
+    }
+
     // Opt-in diagnostics. Not a feature switch and not an engine option: a rule that is right for
     // a workspace whose declarations are complete and wrong for one whose host registers types in
     // C++. Passed on only when asked for, so an untouched setting stays off the command line.
@@ -1260,6 +1264,10 @@ async function startClient(context: ExtensionContext): Promise<void> {
             // assuming the watcher followed them would be the natural mistake to make.
             fileEvents: timed('createFileSystemWatcher',
                               () => workspace.createFileSystemWatcher('**/*.{as,angelscript,predefined}'))
+        },
+        markdown: {
+            isTrusted: true,
+            supportHtml: true
         },
         outputChannel: lspOutputChannel,
         errorHandler

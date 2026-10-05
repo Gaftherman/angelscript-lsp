@@ -38,8 +38,8 @@ void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const Symbo
     {
         return;
     }
-    TSNode firstChild = ts_node_child(node, 0);
-    if (std::string_view(ts_node_type(firstChild)) != "identifier")
+    TSNode firstChild = ts_node_named_child(node, 0);
+    if (ts_node_is_null(firstChild) || std::string_view(ts_node_type(firstChild)) != "identifier")
     {
         return;
     }
@@ -66,11 +66,7 @@ void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const Symbo
  */
 std::string ExtractCalleeName(TSNode node, std::string_view sourceCode)
 {
-    TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
-    if (ts_node_is_null(funcNode) && ts_node_child_count(node) > 0)
-    {
-        funcNode = ts_node_child(node, 0);
-    }
+    TSNode funcNode = parser::GetCallCallee(node);
     if (ts_node_is_null(funcNode))
     {
         return {};
@@ -95,11 +91,7 @@ bool IsKnownCallee(const std::string& name, TSNode node, const NamespaceCheckReq
 {
     if (name == "super")
     {
-        TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
-        if (ts_node_is_null(funcNode) && ts_node_child_count(node) > 0)
-        {
-            funcNode = ts_node_child(node, 0);
-        }
+        TSNode funcNode = parser::GetCallCallee(node);
         if (IsBaseConstructorCall(funcNode, request.sourceCode))
         {
             return true;
@@ -144,11 +136,7 @@ void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, Diag
         return;
     }
 
-    TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
-    if (ts_node_is_null(funcNode) && ts_node_child_count(node) > 0)
-    {
-        funcNode = ts_node_child(node, 0);
-    }
+    TSNode funcNode = parser::GetCallCallee(node);
     const TSPoint startPt = ts_node_start_point(funcNode);
     const TSPoint endPt = ts_node_end_point(funcNode);
     ctx.EmitAtRange({startPt.row, startPt.column, endPt.row, endPt.column}, "as-err-undefined-identifier", calleeName,
@@ -205,20 +193,36 @@ void CheckFromNodeIndex(const NamespaceCheckRequest& request, DiagnosticContext&
 
 void CheckFromASTTraversal(TSNode root, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
 {
-    std::vector<TSNode> stack = {root};
-    while (!stack.empty())
+    if (ts_node_is_null(root))
     {
-        TSNode node = stack.back();
-        stack.pop_back();
-
-        ProcessNamespaceNode(node, request, ctx);
-
-        const uint32_t count = ts_node_child_count(node);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            stack.push_back(ts_node_child(node, i));
-        }
+        return;
     }
+    TSTreeCursor cursor = ts_tree_cursor_new(root);
+    bool visitedChildren = false;
+    while (true)
+    {
+        TSNode node = ts_tree_cursor_current_node(&cursor);
+        if (!visitedChildren)
+        {
+            ProcessNamespaceNode(node, request, ctx);
+            if (ts_tree_cursor_goto_first_child(&cursor))
+            {
+                continue;
+            }
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            visitedChildren = false;
+            continue;
+        }
+        if (ts_tree_cursor_goto_parent(&cursor))
+        {
+            visitedChildren = true;
+            continue;
+        }
+        break;
+    }
+    ts_tree_cursor_delete(&cursor);
 }
 } // namespace
 

@@ -7,6 +7,8 @@
 #include "parser/AngelScriptParser.h"
 #include "parser/Keywords.h"
 
+#include "helpers/TestUtils.h"
+#include "spdlog/fmt/fmt.h"
 #include <algorithm>
 #include <array>
 #include <filesystem>
@@ -1406,6 +1408,116 @@ TEST_CASE("SemanticTokensHandler - Golden Test: Bit-for-bit identity across Node
     // Test delta computation stability: unchanged token sequence gives empty delta
     auto deltaEdits = ComputeSemanticTokensDelta(tokensFallback.data, tokensWithIndex.data);
     CHECK(deltaEdits.empty());
+
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("SemanticTokensHandler - Handle '@' and parameter reference '&out' classified as modifiers")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("PlayerEntity");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("HitTarget");
+    const std::string trName = angel_lsp::test::GenerateRandomSymbolName("TraceResult");
+
+    std::string code = fmt::format("class {} {{}}\n"
+                                   "class {} {{}}\n"
+                                   "void {}({}@ player, {}&out tr)\n"
+                                   "{{\n"
+                                   "    {}@ p = cast<{}@>(player);\n"
+                                   "}}\n",
+                                   clsName, trName, fnName, clsName, trName, clsName, clsName);
+
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{nullptr};
+    SymbolTable table;
+    collector.CollectSymbols("file:///test_modifiers.as", code, parser, table);
+
+    LocalScopeCollector scopeCollector{nullptr};
+    std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(code, parser);
+
+    SemanticTokensRequest request{"file:///test_modifiers.as", code, tree, table};
+    request.scopeRoot = scopeRoot;
+    const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
+
+    bool foundAtInCast = false;
+    bool foundAmpInParam = false;
+    for (const auto& tok : tokens)
+    {
+        std::string tokText = TextAt(code, tok.line, tok.character, tok.length);
+        if (tokText == "@")
+        {
+            CHECK(tok.type == "modifier");
+            foundAtInCast = true;
+        }
+        else if (tokText == "&")
+        {
+            CHECK(tok.type == "modifier");
+            foundAmpInParam = true;
+        }
+    }
+    CHECK(foundAtInCast);
+    CHECK(foundAmpInParam);
+
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("SemanticTokensHandler - Namespace-qualified and unqualified enum members classify as enumMember")
+{
+    const std::string nsBase = angel_lsp::test::GenerateRandomSymbolName("INS2BASE");
+    const std::string enumIron = angel_lsp::test::GenerateRandomSymbolName("INS2_IRON_OPTIONS");
+    const std::string memIronIn = angel_lsp::test::GenerateRandomSymbolName("IRON_IN");
+    const std::string memScpFire = angel_lsp::test::GenerateRandomSymbolName("SCP_FIRE_FOV20");
+
+    const std::string code = fmt::format("namespace {}\n"
+                                         "{{\n"
+                                         "enum {}\n"
+                                         "{{\n"
+                                         "    {} = 0,\n"
+                                         "    {}\n"
+                                         "}};\n"
+                                         "}}\n"
+                                         "using namespace {};\n"
+                                         "void TestFn()\n"
+                                         "{{\n"
+                                         "    int a = {}::{};\n"
+                                         "    int b = {}::{}::{};\n"
+                                         "    int c = {};\n"
+                                         "}}\n",
+                                         nsBase, enumIron, memIronIn, memScpFire, nsBase, nsBase, memIronIn, nsBase,
+                                         enumIron, memIronIn, memScpFire);
+
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{nullptr};
+    SymbolTable table;
+    collector.CollectSymbols("file:///test_ns_enum.as", code, parser, table);
+
+    // Intentionally omit scopeRoot (simulating keystroke before background ScopeIndex refresh)
+    SemanticTokensRequest request{"file:///test_ns_enum.as", code, tree, table};
+    const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
+
+    int ironInEnumMemberCount = 0;
+    int scpFireEnumMemberCount = 0;
+    for (const auto& tok : tokens)
+    {
+        const std::string tokText = TextAt(code, tok.line, tok.character, tok.length);
+        if (tokText == memIronIn && tok.line >= 11)
+        {
+            CHECK(tok.type == "enumMember");
+            ++ironInEnumMemberCount;
+        }
+        else if (tokText == memScpFire && tok.line >= 11)
+        {
+            CHECK(tok.type == "enumMember");
+            ++scpFireEnumMemberCount;
+        }
+    }
+    CHECK(ironInEnumMemberCount == 2);
+    CHECK(scpFireEnumMemberCount == 1);
 
     ts_tree_delete(tree);
 }

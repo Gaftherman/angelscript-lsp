@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "analysis/DiagnosticCodes.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
@@ -7,6 +8,7 @@
 #include "analysis/SymbolTable.h"
 #include "analysis/TypeConversionChecker.h"
 #include "helpers/CorpusDirectory.h"
+#include "helpers/LspSemanticHarnessFixture.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
@@ -24,6 +26,7 @@
 
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
+using namespace angel_lsp::diagnostics::codes;
 
 namespace
 {
@@ -2482,4 +2485,494 @@ TEST_CASE("TypeConversion - Float division emits float truncation warning when a
         }
     }
     CHECK(foundTruncation);
+}
+
+TEST_CASE("TypeConversion - Bare function identifier assigned to variable emits error and matches oracle")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("func");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
+    const std::string code = "int " + fnName +
+                             "() { return 0; }\n"
+                             "void Test() {\n"
+                             "    int " +
+                             varName + " = " + fnName +
+                             ";\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundConversionError = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-no-implicit-conversion")
+        {
+            foundConversionError = true;
+        }
+    }
+    CHECK(foundConversionError);
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK_FALSE(oracleAccepted);
+        CHECK(oracleError.find("Can't implicitly convert") != std::string::npos);
+    }
+}
+
+TEST_CASE("TypeConversion - Bare function identifier in assignment statement emits error and matches oracle")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("func");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
+    const std::string code = "int " + fnName +
+                             "() { return 0; }\n"
+                             "void Test() {\n"
+                             "    int " +
+                             varName +
+                             ";\n"
+                             "    " +
+                             varName + " = " + fnName +
+                             ";\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundConversionError = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-no-implicit-conversion")
+        {
+            foundConversionError = true;
+        }
+    }
+    CHECK(foundConversionError);
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK_FALSE(oracleAccepted);
+        CHECK(oracleError.find("Can't implicitly convert") != std::string::npos);
+    }
+}
+
+TEST_CASE("TypeConversion - Bare function identifier on standalone line emits illegal operation and matches oracle")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("func");
+    const std::string code = "int " + fnName +
+                             "() { return 0; }\n"
+                             "void Test() {\n"
+                             "    " +
+                             fnName +
+                             ";\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundIllegalOp = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-illegal-operation")
+        {
+            foundIllegalOp = true;
+        }
+    }
+    CHECK(foundIllegalOp);
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK_FALSE(oracleAccepted);
+    }
+}
+
+TEST_CASE("TypeConversion - Bare member method expression emits error and matches oracle")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Cls");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Method");
+    const std::string instName = angel_lsp::test::GenerateRandomSymbolName("inst");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("val");
+
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    int " +
+                             methodName +
+                             "() { return 42; }\n"
+                             "}\n"
+                             "void Test() {\n"
+                             "    " +
+                             clsName + " " + instName +
+                             ";\n"
+                             "    int " +
+                             varName + " = " + instName + "." + methodName +
+                             ";\n"
+                             "    " +
+                             instName + "." + methodName +
+                             ";\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundConversion = false;
+    bool foundIllegalOp = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-no-implicit-conversion")
+        {
+            foundConversion = true;
+        }
+        if (d.code == "as-err-illegal-operation")
+        {
+            foundIllegalOp = true;
+        }
+    }
+    CHECK(foundConversion);
+    CHECK(foundIllegalOp);
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK_FALSE(oracleAccepted);
+        CHECK(oracleError.find("Invalid operation on method") != std::string::npos);
+    }
+}
+
+TEST_CASE("TypeConversion - Valid funcdef assignment to bare function is accepted with zero errors and matches oracle")
+{
+    const std::string cbName = angel_lsp::test::GenerateRandomSymbolName("Callback");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("TargetFunc");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("cbInst");
+
+    const std::string code = "funcdef int " + cbName +
+                             "();\n"
+                             "int " +
+                             fnName +
+                             "() { return 10; }\n"
+                             "void Test() {\n"
+                             "    " +
+                             cbName + "@ " + varName + " = " + fnName +
+                             ";\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    for (const auto& d : diags)
+    {
+        CHECK(d.code != "as-err-no-implicit-conversion");
+        CHECK(d.code != "as-err-illegal-operation");
+        CHECK(d.code != "as-err-signature-mismatch-func-handle");
+    }
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK(oracleAccepted);
+    }
+}
+
+TEST_CASE(
+    "TypeConversion - Incompatible funcdef assignment to bare function emits signature mismatch and matches oracle")
+{
+    const std::string cbName = angel_lsp::test::GenerateRandomSymbolName("Callback");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("TargetFunc");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("cbInst");
+
+    const std::string code = "funcdef void " + cbName +
+                             "(int a);\n"
+                             "int " +
+                             fnName +
+                             "() { return 10; }\n"
+                             "void Test() {\n"
+                             "    " +
+                             cbName + "@ " + varName + " = " + fnName +
+                             ";\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundMismatch = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-signature-mismatch-func-handle")
+        {
+            foundMismatch = true;
+        }
+    }
+    CHECK(foundMismatch);
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK_FALSE(oracleAccepted);
+    }
+}
+
+TEST_CASE("TypeConversion - Bare data type in variable initializer emits ExpressionIsDataType and matches oracle")
+{
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("MyClass");
+
+    const std::string code = "class " + clsName +
+                             " {}\n"
+                             "void " +
+                             fnName +
+                             "() {\n"
+                             "    int " +
+                             varName + " = " + clsName +
+                             ";\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundDiag = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == angel_lsp::diagnostics::codes::ExpressionIsDataType)
+        {
+            foundDiag = true;
+        }
+    }
+    CHECK(foundDiag);
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK_FALSE(oracleAccepted);
+    }
+}
+
+TEST_CASE("TypeConversion - Bare data type in binary expression emits ExpressionIsDataType and matches oracle")
+{
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("MyType");
+
+    const std::string code = "class " + clsName +
+                             " {}\n"
+                             "void " +
+                             fnName +
+                             "() {\n"
+                             "    int " +
+                             varName + " = 1 + " + clsName +
+                             ";\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundDiag = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == angel_lsp::diagnostics::codes::ExpressionIsDataType)
+        {
+            foundDiag = true;
+        }
+    }
+    CHECK(foundDiag);
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK_FALSE(oracleAccepted);
+    }
+}
+
+TEST_CASE("TypeConversion - Bare data type as assignment target emits ExpressionIsDataType and matches oracle")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("MyType");
+
+    const std::string code = "class " + clsName +
+                             " {}\n"
+                             "void " +
+                             fnName +
+                             "() {\n"
+                             "    " +
+                             clsName +
+                             " = 5;\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundDiag = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == angel_lsp::diagnostics::codes::ExpressionIsDataType)
+        {
+            foundDiag = true;
+        }
+    }
+    CHECK(foundDiag);
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK_FALSE(oracleAccepted);
+    }
+}
+
+TEST_CASE("TypeConversion - Bare function identifier in binary expression emits NoMatchingOperator and matches oracle")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("targetFunc");
+    const std::string testName = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("result");
+
+    const std::string code = "int " + fnName +
+                             "() { return 42; }\n"
+                             "void " +
+                             testName +
+                             "() {\n"
+                             "    int " +
+                             varName + " = " + fnName +
+                             " + 1;\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundDiag = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == angel_lsp::diagnostics::codes::NoMatchingOperator || d.code == "as-err-no-implicit-conversion")
+        {
+            foundDiag = true;
+        }
+    }
+    CHECK(foundDiag);
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK_FALSE(oracleAccepted);
+    }
+}
+
+TEST_CASE("TypeConversion - Non-callable variable invoked as function emits error and matches oracle")
+{
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("myVar");
+    const std::string testName = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+
+    const std::string code = "void " + testName +
+                             "() {\n"
+                             "    int " +
+                             varName +
+                             " = 10;\n"
+                             "    " +
+                             varName +
+                             "();\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundDiag = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == angel_lsp::diagnostics::codes::CallNoMatchingSignature ||
+            d.code == "as-err-call-no-matching-signature")
+        {
+            foundDiag = true;
+        }
+    }
+    CHECK(foundDiag);
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK_FALSE(oracleAccepted);
+    }
+}
+
+TEST_CASE("TypeConversion - Void operand in binary arithmetic emits NoMatchingOperator and matches oracle")
+{
+    const std::string voidFn = angel_lsp::test::GenerateRandomSymbolName("voidAction");
+    const std::string testName = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("val");
+
+    const std::string code = "void " + voidFn +
+                             "() {}\n"
+                             "void " +
+                             testName +
+                             "() {\n"
+                             "    int " +
+                             varName + " = " + voidFn +
+                             "() + 1;\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundDiag = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == angel_lsp::diagnostics::codes::NoMatchingOperator || d.code == "as-err-no-implicit-conversion")
+        {
+            foundDiag = true;
+        }
+    }
+    CHECK(foundDiag);
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK_FALSE(oracleAccepted);
+    }
+}
+
+TEST_CASE("TypeConversion - Bare namespace identifier in assignment emits UndefinedIdentifier and matches oracle")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("MyNamespace");
+    const std::string testName = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("targetVar");
+
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    int innerVal = 1;\n"
+                             "}\n"
+                             "void " +
+                             testName +
+                             "() {\n"
+                             "    int " +
+                             varName + " = " + nsName +
+                             ";\n"
+                             "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    bool foundDiag = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-undefined-identifier" || d.code == "as-err-no-implicit-conversion")
+        {
+            foundDiag = true;
+        }
+    }
+    CHECK(foundDiag);
+
+    angel_lsp::test::LspSemanticHarnessFixture fixture;
+    if (fixture.HasOracleBinary())
+    {
+        std::string oracleError;
+        const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
+        CHECK_FALSE(oracleAccepted);
+    }
 }

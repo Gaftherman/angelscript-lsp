@@ -73,6 +73,7 @@ struct RuleIndexPartial
     std::vector<std::string> allNames;
     std::vector<std::pair<std::string, DerivedType>> derivedByBase;
     std::vector<std::pair<std::string, DerivedType>> hostClassesByMixin;
+    std::vector<std::pair<std::string, std::string>> sharedDeclarations;
 
     void Merge(RuleIndexPartial&& other);
 };
@@ -115,6 +116,9 @@ struct RuleIndex
 
     ankerl::unordered_dense::map<std::string, std::vector<DerivedType>> derivedByBase;
     ankerl::unordered_dense::map<std::string, std::vector<DerivedType>> hostClassesByMixin;
+
+    /** @brief SymbolTable bucket key -> file URIs declaring a non-external `shared` class or function body. */
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>> sharedDeclarationFilesByKey;
 
     /** @brief Members of one container, or an empty set of them when it declares none. */
     const ContainerMembers& Members(std::string_view containerName) const;

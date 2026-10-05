@@ -663,13 +663,14 @@ void EmitMixinMemberNotFound(const MixinCheckContext& mctx, std::string_view mem
     DiagnosticRelatedInformation rel;
     rel.fileUri = mctx.mixinSym->fileUri;
     rel.range = {{sPoint.row, sPoint.column}, {ePoint.row, ePoint.column}};
-    rel.message = fmt::format("In mixin '{}': Member '{}'", mctx.mixinSym->name, memberName);
+    rel.message = i18n::FormatMessage(ctx.request.i18n, "note-in-mixin-member", "In mixin '{}': Member '{}'",
+                                      std::string_view(mctx.mixinSym->name), memberName);
 
     RelatedDiagnosticRequest req;
     req.range = {mctx.hostRange.startLine, mctx.hostRange.startChar, mctx.hostRange.endLine, mctx.hostRange.endChar};
     req.code = diagnostics::codes::MixinInstantiationMemberNotFound;
     req.args = {mctx.mixinSym->name, mctx.hostClassName, std::string(memberName), mctx.hostClassName};
-    req.related = rel;
+    req.related = std::move(rel);
     req.severity = DiagnosticSeverity::Error;
     ctx.EmitWithRelated(req);
 }

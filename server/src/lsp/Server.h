@@ -233,6 +233,7 @@ class Server
     // Files pulled in because some open document's #include module needs them, keyed by the URI
     // they were indexed under. Their text is kept so position conversion can reach them and so a
     // second open document in the same module does not re-read them off disk.
+    mutable std::mutex m_closureMutex;
     ankerl::unordered_dense::map<std::string, std::string> m_closureDocuments;
 
     // Open document URI -> the closure URIs indexed on its behalf. Closure files outlive the
@@ -1921,6 +1922,12 @@ class Server
      * file answers nobody - which is exactly the case this notification exists for. What
      * changed is that an OPEN document's directive now names something real.
      */
+    /**
+     * @brief Clears symbols, scopes, and reindexes closure files that were created on disk.
+     * @param[in] createdPaths Canonical paths of newly created files.
+     */
+    void InvalidateCreatedClosureFiles(const std::vector<std::string>& createdPaths);
+
     void HandleNotificationsWorkspace_DidCreateFiles(lsp::notifications::Workspace_DidCreateFiles::Params&& params);
     void HandleNotificationsWorkspace_DidDeleteFiles(lsp::notifications::Workspace_DidDeleteFiles::Params&& params);
 
@@ -2147,6 +2154,16 @@ class Server
      * @param[in] totalTimer High-resolution timer tracking total analysis time.
      */
     void AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
+
+    /**
+     * @brief Checks if a closed document's interface hash is identical to its indexed symbols.
+     * @param[in] uriStr Document URI.
+     * @param[in] generation Edit generation of the request.
+     * @param[in] staging Staged symbols from the parsed tree.
+     * @return True if symbols can be preserved without updating the active symbol table.
+     */
+    bool IsUnchangedClosedDocument(const std::string& uriStr, uint64_t generation,
+                                   const angel_lsp::analysis::SymbolTable& staging) const;
 
     /**
      * @brief Rebuilds symbols, scopes and diagnostics for one document and publishes them.

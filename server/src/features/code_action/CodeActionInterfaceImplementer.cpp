@@ -232,7 +232,8 @@ void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode root
                                          ? std::string_view(request.config->types.stringTypeName)
                                          : std::string_view("string");
 
-    request.symbolTable.ForEachSymbol(
+    request.symbolTable.ForEachSymbolInFile(
+        request.uri,
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& clsSym : symbols)
@@ -269,7 +270,9 @@ void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode root
                     edit.newText = stubs;
 
                     lsp::CodeAction action;
-                    action.title = "Implement missing interface methods for '" + cleanIface + "'";
+                    action.title = i18n::FormatMessage(request.i18n, "action-implement-interface",
+                                                       "Implement missing interface methods for '{}'",
+                                                       std::string_view(cleanIface));
                     action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
                     action.isPreferred = true;
 

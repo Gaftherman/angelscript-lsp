@@ -2,7 +2,7 @@
   "name": "angelscript-gaftherman",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -1020,6 +1020,11 @@
             ],
             "default": "accept",
             "markdownDescription": "%config.preprocessor.pragmaMode.description%"
+          },
+          "angelscript.metadata.enabled": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.metadata.enabled.description%"
           }
         }
       }

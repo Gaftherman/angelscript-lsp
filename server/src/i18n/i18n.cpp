@@ -1,5 +1,6 @@
 #include "i18n.h"
 
+#include <array>
 #include <cctype>
 
 namespace angel_lsp::i18n
@@ -100,7 +101,7 @@ std::string PrimaryLanguageSubtag(const std::string& locale)
 // ---------------------------------------------------------------------------------
 namespace
 {
-using MessageMap = ankerl::unordered_dense::map<std::string, std::string>;
+using MessageMap = ankerl::unordered_dense::map<std::string, std::string, I18nStringHash, std::equal_to<>>;
 
 /**
  * @brief Populates English diagnostic messages (batch 1).
@@ -346,6 +347,8 @@ void PopulateEnglishMessages6(MessageMap& m_messages)
     m_messages["as-err-foreach-unsupported"] =
         "`foreach` is not available: the host built its engine with asEP_FOREACH_SUPPORT off, and the compiler reports "
         "the loop variable as a syntax error. Use a `for` loop over the container's index.";
+    m_messages["as-warn-metadata-disabled"] =
+        "Metadata blocks '[]' are disabled. Enable 'angelscript.metadata.enabled' in settings to use them.";
     m_messages["as-err-initializer-list-expected"] = "Expected a list enclosed by {{ }} to match pattern.";
     m_messages["as-err-initializer-list-too-few"] = "Not enough values to match pattern.";
     m_messages["as-err-initializer-list-too-many"] = "Too many values to match pattern.";
@@ -433,6 +436,12 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
     m_messages["action-suppress-range"] = "Disable {} with // disable ... // enable";
     m_messages["action-suppress-file"] = "Disable {} for entire file";
     m_messages["action-remove-unused-variable"] = "Remove unused variable '{}'";
+    m_messages["action-generate-getter"] = "Generate Getter";
+    m_messages["action-generate-setter"] = "Generate Setter";
+    m_messages["action-generate-getter-setter"] = "Generate Getter and Setter";
+    m_messages["note-call-ambiguous-priority"] = "Call to '{}' is ambiguous (Priority: '{}').";
+    m_messages["note-expected-comma-or-paren"] = "Expected ',' or ')' before '{}'";
+    m_messages["note-in-mixin-member"] = "In mixin '{}': Member '{}'";
 }
 
 /**
@@ -710,6 +719,8 @@ void PopulateSpanishMessages6(MessageMap& m_messages)
         "`foreach` no está disponible: el host construyó su motor con asEP_FOREACH_SUPPORT desactivado, y el "
         "compilador reporta la variable del bucle como error de sintaxis. Usa un bucle `for` sobre el índice del "
         "contenedor.";
+    m_messages["as-warn-metadata-disabled"] = "Los bloques de metadatos '[]' están deshabilitados. Habilite "
+                                              "'angelscript.metadata.enabled' en la configuración para usarlos.";
     m_messages["as-err-initializer-list-expected"] = "Se esperaba una lista entre {{ }} para coincidir con el patrón.";
     m_messages["as-err-initializer-list-too-few"] = "No hay suficientes valores para coincidir con el patrón.";
     m_messages["as-err-initializer-list-too-many"] = "Demasiados valores para coincidir con el patrón.";
@@ -804,6 +815,12 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["action-suppress-range"] = "Deshabilitar {} con // disable ... // enable";
     m_messages["action-suppress-file"] = "Deshabilitar {} para todo el archivo";
     m_messages["action-remove-unused-variable"] = "Eliminar variable no utilizada '{}'";
+    m_messages["action-generate-getter"] = "Generar Getter";
+    m_messages["action-generate-setter"] = "Generar Setter";
+    m_messages["action-generate-getter-setter"] = "Generar Getter y Setter";
+    m_messages["note-call-ambiguous-priority"] = "La llamada a '{}' es ambigua (Prioridad: '{}').";
+    m_messages["note-expected-comma-or-paren"] = "Se esperaba ',' o ')' antes de '{}'";
+    m_messages["note-in-mixin-member"] = "En el mixin '{}': Miembro '{}'";
 }
 
 /**
@@ -821,33 +838,55 @@ void PopulateSpanishMessages(MessageMap& m_messages)
     PopulateSpanishMessages7(m_messages);
     PopulateSpanishActionMessages(m_messages);
 }
+
+/**
+ * @brief Entry mapping a primary language subtag to its localization overlay populator.
+ */
+struct LocaleOverlayEntry
+{
+    std::string_view languageSubtag;
+    void (*populate)(MessageMap&);
+};
+
+constexpr std::array<LocaleOverlayEntry, 1> kLocaleOverlays = {{
+    {"es", &PopulateSpanishMessages},
+}};
 } // namespace
 
 I18n::I18n(const std::string& localeTag) : m_locale(PrimaryLanguageSubtag(localeTag))
 {
     PopulateEnglishMessages(m_messages);
-    if (m_locale == "es")
+    for (const auto& entry : kLocaleOverlays)
     {
-        PopulateSpanishMessages(m_messages);
+        if (m_locale == entry.languageSubtag)
+        {
+            entry.populate(m_messages);
+            break;
+        }
     }
 }
 
-std::string I18n::GetMessage(const std::string& key) const
+std::string_view I18n::GetMessageView(std::string_view key) const noexcept
 {
     auto it = m_messages.find(key);
     if (it != m_messages.end())
     {
         return it->second;
     }
-    return "";
+    return {};
 }
 
-std::string I18n::GetMessageOrDefault(const std::string& key, const std::string& defaultMessage) const
+std::string I18n::GetMessage(std::string_view key) const
 {
-    auto it = m_messages.find(key);
-    if (it != m_messages.end() && !it->second.empty())
+    return std::string(GetMessageView(key));
+}
+
+std::string I18n::GetMessageOrDefault(std::string_view key, const std::string& defaultMessage) const
+{
+    const std::string_view view = GetMessageView(key);
+    if (!view.empty())
     {
-        return it->second;
+        return std::string(view);
     }
     return defaultMessage;
 }

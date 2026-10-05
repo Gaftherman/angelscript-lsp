@@ -80,6 +80,57 @@ void ForEachSymbolNamed(std::string_view qualifiedName, const SymbolTable& table
     }
 }
 
+/**
+ * @brief Trims leading and trailing whitespace from a string.
+ * @param[in] str Input string.
+ * @return Trimmed string.
+ */
+static std::string TrimString(std::string str)
+{
+    while (!str.empty() && isspace(static_cast<unsigned char>(str.front())))
+    {
+        str.erase(str.begin());
+    }
+    while (!str.empty() && isspace(static_cast<unsigned char>(str.back())))
+    {
+        str.pop_back();
+    }
+    return str;
+}
+
+/**
+ * @brief Collects candidate symbols of type Function matching a name.
+ * @param[in] funcName Target function name or qualified name.
+ * @param[in] table Workspace symbol table.
+ * @return Vector of function symbols matching the name.
+ */
+static std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName, const SymbolTable& table)
+{
+    std::vector<Symbol> candidates;
+    auto addCandidates = [&](const std::string& name)
+    {
+        if (auto found = table.FindSymbolsPtr(name))
+        {
+            for (const auto& s : *found)
+            {
+                if (s.type == SymbolType::Function)
+                {
+                    candidates.push_back(s);
+                }
+            }
+        }
+    };
+
+    addCandidates(funcName);
+    if (candidates.empty())
+    {
+        addCandidates(std::string(LastScopeSegment(funcName)));
+    }
+    return candidates;
+}
+
+std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& table);
+
 /** @brief Looks up what a type name denotes.
  *  @return found == false when the name resolves to nothing this analyzer can see - which
  *          is the signal to stay silent about anything involving it. */
@@ -787,11 +838,7 @@ ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const
 /** @brief Resolves what a call expression evaluates to: a constructed type, or a return type. */
 ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
 {
-    TSNode callee = parser::GetChildByField(node, parser::fields::Function);
-    if (ts_node_is_null(callee) && ts_node_child_count(node) > 0)
-    {
-        callee = ts_node_child(node, 0);
-    }
+    TSNode callee = parser::GetCallCallee(node);
     if (ts_node_is_null(callee))
     {
         return ExpressionType{};
@@ -1032,6 +1079,18 @@ PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, co
         }
     }
     return info;
+}
+
+/**
+ * @brief Checks if an expression resolves to a bare function or method symbol.
+ * @param[in] expr Expression syntax node.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in] ctx Diagnostic collection context.
+ * @return True if expr denotes a bare function or method.
+ */
+static bool IsFunctionReference(TSNode expr, const Scope* scope, const DiagnosticContext& ctx)
+{
+    return IsFunctionReference(expr, scope, ctx.request.symbolTable, ctx.request.sourceCode);
 }
 
 struct DiagnosticArgs
@@ -1349,20 +1408,17 @@ DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
     return result;
 }
 
-void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declared, DiagnosticContext& ctx)
+void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declared, const Scope* scope,
+                                   DiagnosticContext& ctx)
 {
-    std::string identName = NodeText(valueNode, ctx.request.sourceCode);
-    while (!identName.empty() && isspace(static_cast<unsigned char>(identName.front())))
-        identName.erase(identName.begin());
-    while (!identName.empty() && isspace(static_cast<unsigned char>(identName.back())))
-        identName.pop_back();
-
+    const std::string identName = TrimString(NodeText(valueNode, ctx.request.sourceCode));
     if (identName.empty())
     {
         return;
     }
 
     bool isTypeOrTemplate = false;
+    bool isNamespace = false;
     ForEachSymbolNamed(identName, ctx.request.symbolTable,
                        [&](const Symbol& s) -> bool
                        {
@@ -1372,9 +1428,25 @@ void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declare
                                isTypeOrTemplate = true;
                                return false;
                            }
+                           if (s.type == SymbolType::Namespace)
+                           {
+                               isNamespace = true;
+                               return false;
+                           }
                            return true;
                        });
     if (isTypeOrTemplate)
+    {
+        EmitAtNode(valueNode, ctx, diagnostics::codes::ExpressionIsDataType, identName);
+        return;
+    }
+    if (isNamespace)
+    {
+        EmitAtNode(valueNode, ctx, "as-err-undefined-identifier", identName);
+        return;
+    }
+
+    if (!FindFuncdef(declared.baseName, ctx.request.symbolTable) && IsFunctionReference(valueNode, scope, ctx))
     {
         EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", {identName, declared.baseName});
     }
@@ -1429,7 +1501,7 @@ void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const
     const ExpressionType source = ResolveValueType(valueNode, scope, ctx);
     if (!source.known || source.baseName.empty())
     {
-        CheckUnknownInitializerSource(valueNode, declared, ctx);
+        CheckUnknownInitializerSource(valueNode, declared, scope, ctx);
         return;
     }
 
@@ -1827,44 +1899,6 @@ bool CheckLambdaFuncdefAssignment(TSNode targetNode, const FuncdefSignature& fun
     return true;
 }
 
-static std::string TrimString(std::string str)
-{
-    while (!str.empty() && isspace(static_cast<unsigned char>(str.front())))
-    {
-        str.erase(str.begin());
-    }
-    while (!str.empty() && isspace(static_cast<unsigned char>(str.back())))
-    {
-        str.pop_back();
-    }
-    return str;
-}
-
-static std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName, const SymbolTable& table)
-{
-    std::vector<Symbol> candidates;
-    auto addCandidates = [&](const std::string& name)
-    {
-        if (auto found = table.FindSymbolsPtr(name))
-        {
-            for (const auto& s : *found)
-            {
-                if (s.type == SymbolType::Function)
-                {
-                    candidates.push_back(s);
-                }
-            }
-        }
-    };
-
-    addCandidates(funcName);
-    if (candidates.empty())
-    {
-        addCandidates(std::string(LastScopeSegment(funcName)));
-    }
-    return candidates;
-}
-
 static bool HasMatchingFuncdefCandidate(const std::vector<Symbol>& candidates, const FuncdefSignature& funcdefSig)
 {
     for (const auto& cand : candidates)
@@ -1926,15 +1960,7 @@ void CheckConstructorDelegationStatement(TSNode stmt, const std::string& classNa
     std::string_view exprType = ts_node_type(expr);
     if (exprType == node_types::CallExpression || exprType == "construct_call_expression")
     {
-        TSNode callee = parser::GetChildByField(expr, parser::fields::Function);
-        if (ts_node_is_null(callee))
-        {
-            callee = parser::GetChildByField(expr, parser::fields::Type);
-        }
-        if (ts_node_is_null(callee) && ts_node_child_count(expr) > 0)
-        {
-            callee = ts_node_child(expr, 0);
-        }
+        TSNode callee = parser::GetCallCallee(expr);
         if (!ts_node_is_null(callee) && NodeText(callee, ctx.request.sourceCode) == className)
         {
             EmitAtNode(expr, ctx, "as-err-constructor-delegation-disallowed");
@@ -2398,11 +2424,35 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
     }
 
     const Scope* scope = ResolveNodeScope(node, request);
+    if (const auto dt1 = IsBareDataType(consequence, scope, ctx.request.symbolTable, request.sourceCode))
+    {
+        EmitAtNode(consequence, ctx, diagnostics::codes::ExpressionIsDataType, *dt1);
+        return;
+    }
+    if (const auto dt2 = IsBareDataType(alternative, scope, ctx.request.symbolTable, request.sourceCode))
+    {
+        EmitAtNode(alternative, ctx, diagnostics::codes::ExpressionIsDataType, *dt2);
+        return;
+    }
+
     const std::string t1 = ResolveExpressionType(consequence, ExpressionTypeContext(scope, ctx));
     const std::string t2 = ResolveExpressionType(alternative, ExpressionTypeContext(scope, ctx));
 
     const std::string clean1 = CanonicalizeType(CleanExpressionType(t1));
     const std::string clean2 = CanonicalizeType(CleanExpressionType(t2));
+
+    if (IsFunctionReference(consequence, scope, ctx))
+    {
+        EmitAtNode(consequence, ctx, "as-err-no-implicit-conversion",
+                   {TrimString(NodeText(consequence, request.sourceCode)), clean2});
+        return;
+    }
+    if (IsFunctionReference(alternative, scope, ctx))
+    {
+        EmitAtNode(alternative, ctx, "as-err-no-implicit-conversion",
+                   {TrimString(NodeText(alternative, request.sourceCode)), clean1});
+        return;
+    }
 
     if (IsIncompleteOrIgnoredBranchType(clean1) || IsIncompleteOrIgnoredBranchType(clean2))
     {
@@ -2433,6 +2483,34 @@ void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckReques
     if (const auto dataTypeName = IsBareDataType(expr, scope, ctx.request.symbolTable, request.sourceCode))
     {
         EmitAtNode(expr, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+        return;
+    }
+
+    if (IsFunctionReference(expr, scope, ctx))
+    {
+        EmitAtNode(expr, ctx, diagnostics::codes::IllegalOperation);
+        return;
+    }
+
+    const std::string text = TrimString(NodeText(expr, request.sourceCode));
+    if (!text.empty())
+    {
+        if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(text))
+        {
+            bool onlyNs = true;
+            for (const auto& s : *syms)
+            {
+                if (s.type != SymbolType::Namespace)
+                {
+                    onlyNs = false;
+                    break;
+                }
+            }
+            if (onlyNs)
+            {
+                EmitAtNode(expr, ctx, "as-err-undefined-identifier", text);
+            }
+        }
     }
 }
 
@@ -3061,6 +3139,39 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
     }
 
     const Scope* scope = ResolveNodeScope(node, request);
+    if (const auto dt = IsBareDataType(left, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        EmitAtNode(left, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
+        return;
+    }
+    if (const auto dt = IsBareDataType(right, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        EmitAtNode(right, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
+        return;
+    }
+
+    const std::string rightIdent = TrimString(NodeText(right, ctx.request.sourceCode));
+    if (!rightIdent.empty())
+    {
+        if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(rightIdent))
+        {
+            bool onlyNs = true;
+            for (const auto& s : *syms)
+            {
+                if (s.type != SymbolType::Namespace)
+                {
+                    onlyNs = false;
+                    break;
+                }
+            }
+            if (onlyNs)
+            {
+                EmitAtNode(right, ctx, "as-err-undefined-identifier", rightIdent);
+                return;
+            }
+        }
+    }
+
     CheckAssignmentPropertyAccess(node, scope, ctx);
 
     const std::string leftType = ResolveExpressionType(left, ExpressionTypeContext(scope, ctx));
@@ -3073,6 +3184,11 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
     if (leftFuncdef)
     {
         CheckFuncdefAssignment(node, leftFuncdef->GetFuncdef(), right, ctx);
+    }
+    else if (types.from.empty() && IsFunctionReference(right, scope, ctx))
+    {
+        EmitAtNode(right, ctx, "as-err-no-implicit-conversion",
+                   {TrimString(NodeText(right, ctx.request.sourceCode)), types.to});
     }
 
     CheckHandleConstAssignment({left, right}, types, scope, ctx);
@@ -3112,6 +3228,52 @@ void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, D
     CheckBinaryOperatorCompatibility(node, scope, ctx);
 }
 
+static TSNode FindUnaryOperand(TSNode node)
+{
+    TSNode operand = parser::GetChildByField(node, parser::fields::Operand);
+    if (!ts_node_is_null(operand))
+    {
+        return operand;
+    }
+    const uint32_t count = ts_node_named_child_count(node);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        TSNode ch = ts_node_named_child(node, i);
+        std::string_view ct = ts_node_type(ch);
+        if (ct != "operator" && ct != "++" && ct != "--" && ct != "!" && ct != "-" && ct != "+" && ct != "~")
+        {
+            return ch;
+        }
+    }
+    return TSNode{};
+}
+
+static bool CheckUnaryInvalidOperand(TSNode node, TSNode operand, const Scope* scope, DiagnosticContext& ctx)
+{
+    if (ts_node_is_null(operand))
+    {
+        return false;
+    }
+    if (const auto dt = IsBareDataType(operand, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        EmitAtNode(operand, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
+        return true;
+    }
+    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    std::string opText = NodeText(opNode, ctx.request.sourceCode);
+    std::string text = TrimString(NodeText(node, ctx.request.sourceCode));
+    if (opText == "@" || (!text.empty() && text.front() == '@'))
+    {
+        return false;
+    }
+    if (IsFunctionReference(operand, scope, ctx))
+    {
+        EmitAtNode(node, ctx, diagnostics::codes::IllegalOperation);
+        return true;
+    }
+    return false;
+}
+
 /**
  * @brief Validates increment and decrement expressions on virtual properties.
  * @param[in] node Unary or postfix expression syntax node.
@@ -3120,6 +3282,13 @@ void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, D
  */
 void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
+    const Scope* scope = ResolveNodeScope(node, request);
+    TSNode operand = FindUnaryOperand(node);
+    if (CheckUnaryInvalidOperand(node, operand, scope, ctx))
+    {
+        return;
+    }
+
     TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
     const std::string opText = NodeText(opNode, request.sourceCode);
     const std::string nodeText = NodeText(node, request.sourceCode);
@@ -3129,26 +3298,9 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
         return;
     }
 
-    TSNode argNode = parser::GetChildByField(node, parser::fields::Operand);
-    if (ts_node_is_null(argNode))
+    if (!ts_node_is_null(operand))
     {
-        const uint32_t count = ts_node_named_child_count(node);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            TSNode ch = ts_node_named_child(node, i);
-            std::string_view ct = ts_node_type(ch);
-            if (ct != "operator" && ct != "++" && ct != "--")
-            {
-                argNode = ch;
-                break;
-            }
-        }
-    }
-
-    if (!ts_node_is_null(argNode))
-    {
-        const Scope* scope = ResolveNodeScope(node, request);
-        PropertyAccessInfo pInfo = InspectPropertyAccess(argNode, scope, ctx);
+        PropertyAccessInfo pInfo = InspectPropertyAccess(operand, scope, ctx);
         if (pInfo.isProperty)
         {
             EmitAtNode(node, ctx, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
@@ -3231,6 +3383,18 @@ void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* sco
 
     if (!expected.empty())
     {
+        if (const auto dataTypeName = IsBareDataType(expr, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+        {
+            EmitAtNode(expr, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+            return;
+        }
+        if (IsFunctionReference(expr, scope, ctx))
+        {
+            EmitAtNode(expr, ctx, "as-err-no-implicit-conversion",
+                       {TrimString(NodeText(expr, ctx.request.sourceCode)), expected});
+            return;
+        }
+
         const std::string actual = CleanBaseType(ResolveExpressionType(expr, ExpressionTypeContext(scope, ctx)));
         CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
         if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
@@ -3342,6 +3506,18 @@ void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Sco
 
     if (!expected.empty())
     {
+        if (const auto dataTypeName = IsBareDataType(expr, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+        {
+            EmitAtNode(expr, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+            return;
+        }
+        if (IsFunctionReference(expr, scope, ctx))
+        {
+            EmitAtNode(expr, ctx, "as-err-no-implicit-conversion",
+                       {TrimString(NodeText(expr, ctx.request.sourceCode)), expected});
+            return;
+        }
+
         const std::string actual = CleanBaseType(ResolveExpressionType(expr, ExpressionTypeContext(scope, ctx)));
         CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
         if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
@@ -3394,16 +3570,7 @@ void ProcessReturnStatementNode(TSNode node, const TypeConversionCheckRequest& r
  */
 TSNode ResolveCalleeNode(TSNode node)
 {
-    TSNode callee = parser::GetChildByField(node, parser::fields::Type);
-    if (ts_node_is_null(callee))
-    {
-        callee = parser::GetChildByField(node, parser::fields::Function);
-    }
-    if (ts_node_is_null(callee) && ts_node_child_count(node) > 0)
-    {
-        callee = ts_node_child(node, 0);
-    }
-    return callee;
+    return parser::GetCallCallee(node);
 }
 
 /**

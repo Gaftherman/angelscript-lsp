@@ -102,7 +102,7 @@ struct DiagnosticContext
     void EmitAtTypeName(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
                         std::string_view typeName) const;
 
-    // --- Debug Logging ---
+    // --- Trace Logging ---
     void LogRule(std::string_view ruleName, std::string_view code, const Symbol& sym) const;
     void LogParam(std::string_view ruleName, std::string_view code, const ParameterInformation& param,
                   const Symbol& parentSym) const;

@@ -11,6 +11,7 @@
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
+#include "parser/QueryRegistry.h"
 #include "utils/LspLogger.h"
 #include <optional>
 #include <spdlog/fmt/fmt.h>
@@ -305,20 +306,27 @@ bool AreAllSymbolsPureTypes(const std::vector<Symbol>& syms)
     return false;
 }
 
-std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
-                                          std::string_view sourceCode)
+static TSNode UnwrapParens(TSNode node)
+{
+    while (!ts_node_is_null(node) && std::string_view(ts_node_type(node)) == "parenthesized_expression" &&
+           ts_node_named_child_count(node) > 0)
+    {
+        node = ts_node_named_child(node, 0);
+    }
+    return node;
+}
+
+static std::string ExtractTrimmedIdentifier(TSNode node, std::string_view sourceCode)
 {
     if (ts_node_is_null(node))
     {
-        return std::nullopt;
+        return {};
     }
-
     const std::string_view nodeType = ts_node_type(node);
     if (nodeType != parser::nodes::Identifier && nodeType != parser::nodes::ScopedIdentifier)
     {
-        return std::nullopt;
+        return {};
     }
-
     std::string name = GetNodeText(node, sourceCode);
     while (!name.empty() && isspace(static_cast<unsigned char>(name.front())))
     {
@@ -328,6 +336,14 @@ std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const
     {
         name.pop_back();
     }
+    return name;
+}
+
+std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
+                                          std::string_view sourceCode)
+{
+    node = UnwrapParens(node);
+    std::string name = ExtractTrimmedIdentifier(node, sourceCode);
     if (name.empty())
     {
         return std::nullopt;
@@ -353,6 +369,129 @@ std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const
     }
 
     return std::nullopt;
+}
+
+static bool IsMemberMethodSymbol(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
+                                 std::string_view sourceCode)
+{
+    TSNode objNode = parser::GetChildByField(node, parser::fields::Object);
+    TSNode memNode = parser::GetChildByField(node, parser::fields::Member);
+    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
+    {
+        return false;
+    }
+    const std::string memName = NodeText(memNode, sourceCode);
+    const std::string objType = ResolveExpressionType(objNode, ExpressionTypeContext(scope, symbolTable, sourceCode));
+    const std::string cleanObj = CleanBaseType(objType);
+    if (cleanObj.empty() || memName.empty())
+    {
+        return false;
+    }
+    for (const auto& cls : GetInheritedTypeHierarchy(cleanObj, symbolTable))
+    {
+        if (const auto syms = symbolTable.FindSymbolsPtr(cls + "::" + memName))
+        {
+            bool hasFunc = false;
+            bool hasVarOrProp = false;
+            for (const auto& s : *syms)
+            {
+                if (s.type == SymbolType::Function)
+                {
+                    hasFunc = true;
+                }
+                else if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
+                {
+                    hasVarOrProp = true;
+                }
+            }
+            if (hasFunc && !hasVarOrProp)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static bool HasFunctionSymbolOnly(const std::vector<Symbol>& syms)
+{
+    bool hasFunc = false;
+    bool hasVarOrProp = false;
+    for (const auto& s : syms)
+    {
+        if (s.type == SymbolType::Function)
+        {
+            hasFunc = true;
+        }
+        else if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
+        {
+            hasVarOrProp = true;
+        }
+    }
+    return hasFunc && !hasVarOrProp;
+}
+
+static bool IsIdentifierFunctionSymbol(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
+                                       std::string_view sourceCode)
+{
+    const std::string_view nodeType = ts_node_type(node);
+    std::string name = NodeText(node, sourceCode);
+    while (!name.empty() && isspace(static_cast<unsigned char>(name.front())))
+    {
+        name.erase(name.begin());
+    }
+    while (!name.empty() && isspace(static_cast<unsigned char>(name.back())))
+    {
+        name.pop_back();
+    }
+    if (name.empty())
+    {
+        return false;
+    }
+    if (nodeType == parser::nodes::Identifier && scope && ResolveInScope(scope, name))
+    {
+        return false;
+    }
+    if (const auto found = symbolTable.FindSymbolsPtr(name))
+    {
+        return HasFunctionSymbolOnly(*found);
+    }
+    const std::string_view lastSeg = LastScopeSegment(name);
+    if (lastSeg != name)
+    {
+        if (const auto found = symbolTable.FindSymbolsPtr(lastSeg))
+        {
+            return HasFunctionSymbolOnly(*found);
+        }
+    }
+    return false;
+}
+
+bool IsFunctionReference(TSNode node, const Scope* scope, const SymbolTable& symbolTable, std::string_view sourceCode)
+{
+    while (!ts_node_is_null(node) && std::string_view(ts_node_type(node)) == "parenthesized_expression" &&
+           ts_node_named_child_count(node) > 0)
+    {
+        node = ts_node_named_child(node, 0);
+    }
+    if (ts_node_is_null(node))
+    {
+        return false;
+    }
+    const std::string_view type = ts_node_type(node);
+    if (type == parser::nodes::CallExpression || type == parser::nodes::ConstructCallExpression)
+    {
+        return false;
+    }
+    if (type == "member_expression")
+    {
+        return IsMemberMethodSymbol(node, scope, symbolTable, sourceCode);
+    }
+    if (type == parser::nodes::Identifier || type == parser::nodes::ScopedIdentifier)
+    {
+        return IsIdentifierFunctionSymbol(node, scope, symbolTable, sourceCode);
+    }
+    return false;
 }
 
 bool IsMixinClass(std::string_view baseTypeName, const SymbolTable& table)
@@ -431,10 +570,11 @@ static bool MatchesQualifiedTypeSuffix(std::string_view clean, const rules::Rule
     {
         return false;
     }
+    const bool isPartiallyQualified = clean.find("::") != std::string_view::npos;
     const std::string suffix = "::" + std::string(clean);
     for (const auto& qType : it->second)
     {
-        if (qType == clean || qType.ends_with(suffix))
+        if (qType == clean || (isPartiallyQualified && qType.ends_with(suffix)))
         {
             return true;
         }
@@ -474,9 +614,102 @@ bool MatchesParentNamespaceType(std::string_view clean, const SymbolTable& table
     }
     return false;
 }
+
+bool IsReachableViaUsingDirectives(std::string_view clean, const DiagnosticContext& ctx)
+{
+    if (!ctx.request.tree)
+    {
+        return false;
+    }
+    TSNode root = ts_tree_root_node(ctx.request.tree);
+    auto usings = CollectUsingNamespaces(root, ctx.request.sourceCode);
+    for (const auto& ns : usings)
+    {
+        std::string q = ns + "::" + std::string(clean);
+        if (ctx.request.symbolTable.HasSymbol(q))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IsReachableInContainerScope(std::string_view clean, std::string_view containerScope, const SymbolTable& table)
+{
+    if (containerScope.empty())
+    {
+        return false;
+    }
+    std::string prefix(containerScope);
+    while (!prefix.empty())
+    {
+        std::string q = prefix + "::" + std::string(clean);
+        if (table.HasSymbol(q))
+        {
+            return true;
+        }
+        const size_t sep = prefix.rfind("::");
+        if (sep == std::string_view::npos)
+        {
+            break;
+        }
+        prefix.resize(sep);
+    }
+    return false;
+}
 } // namespace
 
-bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx)
+std::string EnclosingNamespaceForSymbol(const Symbol& sym, const SymbolTable& table)
+{
+    if (sym.containerKind == ContainerKind::Namespace)
+    {
+        return sym.containerName;
+    }
+    if (sym.containerKind == ContainerKind::Class || sym.containerKind == ContainerKind::Interface)
+    {
+        auto classSyms = table.FindSymbols(sym.containerName);
+        for (const auto& cs : classSyms)
+        {
+            if (cs.type == SymbolType::Class || cs.type == SymbolType::Interface)
+            {
+                if (cs.containerKind == ContainerKind::Namespace)
+                {
+                    return cs.containerName;
+                }
+                break;
+            }
+        }
+    }
+    return "";
+}
+
+bool IsTemplateParameterOfContainer(std::string_view typeName, const Symbol& sym, const SymbolTable& table)
+{
+    if (typeName.empty() || sym.containerName.empty())
+    {
+        return false;
+    }
+    const std::string cleanContainer = CleanBaseType(sym.containerName);
+    const auto containerSyms = table.FindSymbolsPtr(cleanContainer.empty() ? sym.containerName : cleanContainer);
+    if (!containerSyms)
+    {
+        return false;
+    }
+    for (const auto& owner : *containerSyms)
+    {
+        if (owner.type == SymbolType::Class && std::holds_alternative<ClassSignature>(owner.signature))
+        {
+            const auto& sig = owner.GetClass();
+            if (std::find(sig.templateParams.begin(), sig.templateParams.end(), typeName) != sig.templateParams.end())
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx, std::string_view containerScope)
 {
     if (ctx.logger && ctx.logger->IsTraceEnabled())
     {
@@ -488,18 +721,24 @@ bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx)
         return true;
     if (!ctx.request.GetArrayTypeName().empty() && baseName == ctx.request.GetArrayTypeName())
         return true;
-    if (ctx.request.IsRegisteredSymbol(baseName) || ctx.request.symbolTable.HasSymbolAnywhere(baseName))
+    if (ctx.request.IsRegisteredSymbol(baseName))
         return true;
 
     std::string_view clean = baseName.starts_with("::") ? baseName.substr(2) : baseName;
     if (ctx.request.symbolTable.HasSymbol(clean))
         return true;
 
+    if (IsReachableInContainerScope(clean, containerScope, ctx.request.symbolTable))
+        return true;
+
     const auto* ruleIndex = ctx.request.symbolTable.GetRuleIndex().get();
     if (MatchesQualifiedTypeSuffix(clean, ruleIndex))
         return true;
 
-    return MatchesParentNamespaceType(clean, ctx.request.symbolTable, ruleIndex);
+    if (MatchesParentNamespaceType(clean, ctx.request.symbolTable, ruleIndex))
+        return true;
+
+    return IsReachableViaUsingDirectives(clean, ctx);
 }
 
 std::string_view LastScopeSegment(std::string_view name) noexcept
@@ -934,7 +1173,12 @@ std::vector<Symbol> FindHierarchyTypeSymbols(const std::string& curType, const S
     const auto symbols = symbolTable.FindSymbolsPtr(curType);
     if (symbols && !symbols->empty())
     {
-        return *symbols;
+        const bool hasType = std::any_of(symbols->begin(), symbols->end(), [](const Symbol& s)
+                                         { return s.type == SymbolType::Class || s.type == SymbolType::Interface; });
+        if (hasType)
+        {
+            return *symbols;
+        }
     }
     if (curType.find("::") == std::string::npos)
     {
@@ -1555,34 +1799,34 @@ std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std:
 std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode)
 {
     std::vector<std::string> usings;
-    std::vector<TSNode> stack = {root};
-    while (!stack.empty())
+    if (ts_node_is_null(root))
     {
-        TSNode cur = stack.back();
-        stack.pop_back();
+        return usings;
+    }
 
-        std::string_view type = ts_node_type(cur);
-        if (type == "using_declaration")
+    const TSQuery* query = parser::QueryRegistry::GetUsingQuery();
+    TSQueryCursor* cursor = parser::QueryRegistry::GetThreadLocalCursor();
+    if (!query || !cursor)
+    {
+        return usings;
+    }
+
+    ts_query_cursor_exec(cursor, query, root);
+    TSQueryMatch match;
+    while (ts_query_cursor_next_match(cursor, &match))
+    {
+        for (uint16_t i = 0; i < match.capture_count; ++i)
         {
-            TSNode nameNode = parser::GetChildByField(cur, parser::fields::Name);
-            if (!ts_node_is_null(nameNode))
+            TSNode nameNode = match.captures[i].node;
+            std::string uName = GetNodeText(nameNode, sourceCode);
+            while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front())))
+                uName.erase(uName.begin());
+            while (!uName.empty() && isspace(static_cast<unsigned char>(uName.back())))
+                uName.pop_back();
+            if (!uName.empty())
             {
-                std::string uName = GetNodeText(nameNode, sourceCode);
-                while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front())))
-                    uName.erase(uName.begin());
-                while (!uName.empty() && isspace(static_cast<unsigned char>(uName.back())))
-                    uName.pop_back();
-                if (!uName.empty())
-                {
-                    usings.push_back(uName);
-                }
+                usings.push_back(std::move(uName));
             }
-        }
-
-        uint32_t count = ts_node_child_count(cur);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            stack.push_back(ts_node_child(cur, i));
         }
     }
     return usings;
@@ -1676,6 +1920,31 @@ bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourc
 }
 
 /**
+ * @brief Filters candidate symbols to ensure they match the expected container kind.
+ * @param[in] found Symbol candidates to filter.
+ * @param[in] expected Expected enclosing container kind.
+ * @return Filtered vector containing only symbols consistent with expected container.
+ */
+static std::vector<Symbol> FilterSymbolsByContainerKind(std::vector<Symbol> found, ContainerKind expected)
+{
+    std::erase_if(found,
+                  [expected](const Symbol& s)
+                  {
+                      if (expected == ContainerKind::Class || expected == ContainerKind::Interface)
+                      {
+                          return s.containerKind == ContainerKind::Namespace || s.containerKind == ContainerKind::Enum;
+                      }
+                      if (expected == ContainerKind::Namespace)
+                      {
+                          return s.containerKind == ContainerKind::Class ||
+                                 s.containerKind == ContainerKind::Interface || s.containerKind == ContainerKind::Enum;
+                      }
+                      return false;
+                  });
+    return found;
+}
+
+/**
  * @brief Searches for a symbol name within an enclosing container hierarchy.
  */
 static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& symbolTable,
@@ -1700,7 +1969,7 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
             auto hierarchy = GetInheritedTypeHierarchy(container.qualifiedName, symbolTable);
             for (const auto& cls : hierarchy)
             {
-                auto found = symbolTable.FindSymbols(cls + "::" + name);
+                auto found = FilterSymbolsByContainerKind(symbolTable.FindSymbols(cls + "::" + name), container.kind);
                 if (!found.empty())
                 {
                     return found;
@@ -1712,7 +1981,8 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
                 auto bareHierarchy = GetInheritedTypeHierarchy(container.name, symbolTable);
                 for (const auto& cls : bareHierarchy)
                 {
-                    auto found = symbolTable.FindSymbols(cls + "::" + name);
+                    auto found =
+                        FilterSymbolsByContainerKind(symbolTable.FindSymbols(cls + "::" + name), container.kind);
                     if (!found.empty())
                     {
                         return found;
@@ -1722,7 +1992,8 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
         }
         else if (container.kind == ContainerKind::Namespace)
         {
-            auto found = symbolTable.FindSymbols(container.qualifiedName + "::" + name);
+            auto found = FilterSymbolsByContainerKind(symbolTable.FindSymbols(container.qualifiedName + "::" + name),
+                                                      container.kind);
             if (!found.empty())
             {
                 return found;
@@ -2021,10 +2292,6 @@ static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const Expression
             {
                 return CleanExpressionType(sym.GetVariable().typeName);
             }
-            if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
-            {
-                return CleanExpressionType(sym.GetFunction().returnType);
-            }
         }
         if (auto enumType = ResolveScopedEnumMember(whole, ctx.symbolTable); !enumType.empty())
         {
@@ -2131,10 +2398,6 @@ static std::string ResolveIdentifierVirtualFallback(const std::string& name, con
                 {
                     return CleanExpressionType(sym.GetVariable().typeName);
                 }
-                if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
-                {
-                    return CleanExpressionType(sym.GetFunction().returnType);
-                }
             }
             break;
         }
@@ -2212,10 +2475,6 @@ static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeCo
             !sym.GetVariable().typeName.empty())
         {
             return CleanExpressionType(sym.GetVariable().typeName);
-        }
-        if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
-        {
-            return CleanExpressionType(sym.GetFunction().returnType);
         }
     }
     return ResolveIdentifierAccessorFallback(name, ctx.symbolTable);
@@ -2341,6 +2600,10 @@ static std::string ResolveBinary64OrFloat(const std::string& cleanLeft, const st
  */
 static std::string ResolveBinary32OrLess(const std::string& cleanLeft, const std::string& cleanRight)
 {
+    if (cleanLeft == "void" || cleanRight == "void")
+    {
+        return "";
+    }
     if (cleanLeft == "uint" || cleanRight == "uint" || cleanLeft == "uint32" || cleanRight == "uint32")
     {
         return "uint";
@@ -2388,7 +2651,7 @@ static std::string ResolveBinaryDivisionPromotion(const std::string& cleanLeft, 
 static std::string ResolveBinaryPrimitivePromotion(std::string_view op, const std::string& cleanLeft,
                                                    const std::string& cleanRight, bool disableIntegerDivision = false)
 {
-    if (cleanLeft.empty() || cleanRight.empty())
+    if (cleanLeft.empty() || cleanRight.empty() || cleanLeft == "void" || cleanRight == "void")
     {
         return "";
     }
@@ -2729,13 +2992,19 @@ static std::string ExtractMemberSymbolType(const Symbol& sym)
     }
     if (sym.type == SymbolType::Function)
     {
-        if (!sym.GetFunction().returnType.empty() && sym.GetFunction().returnType != "void")
+        const bool isAccessor =
+            sym.name.starts_with("get_") || sym.name.starts_with("set_") ||
+            (std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isProperty);
+        if (isAccessor)
         {
-            return CleanExpressionType(sym.GetFunction().returnType);
-        }
-        if (!sym.GetFunction().parameters.empty())
-        {
-            return CleanExpressionType(sym.GetFunction().parameters.back().typeName);
+            if (!sym.GetFunction().returnType.empty() && sym.GetFunction().returnType != "void")
+            {
+                return CleanExpressionType(sym.GetFunction().returnType);
+            }
+            if (!sym.GetFunction().parameters.empty())
+            {
+                return CleanExpressionType(sym.GetFunction().parameters.back().typeName);
+            }
         }
     }
     return "";
@@ -3119,11 +3388,7 @@ static std::string ResolveBareCallExpr(TSNode exprNode, TSNode funcNode, const s
  */
 static std::string ResolveCallExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
-    TSNode funcNode = parser::GetChildByField(exprNode, parser::fields::Function);
-    if (ts_node_is_null(funcNode) && ts_node_child_count(exprNode) > 0)
-    {
-        funcNode = ts_node_child(exprNode, 0);
-    }
+    TSNode funcNode = parser::GetCallCallee(exprNode);
     if (ts_node_is_null(funcNode))
     {
         return "";
@@ -3868,6 +4133,42 @@ size_t CountCallArguments(TSNode argumentList)
     return ExtractCallArguments(argumentList, "").size();
 }
 
+static bool IsConstArgumentNode(TSNode exprNode, const ExpressionTypeContext& ctx)
+{
+    if (ts_node_is_null(exprNode))
+    {
+        return false;
+    }
+    const std::string_view nodeType = ts_node_type(exprNode);
+    if (nodeType != "identifier" && nodeType != "scoped_identifier")
+    {
+        return false;
+    }
+    const std::string name = GetTrimmedNodeText(exprNode, ctx.sourceCode);
+    if (ctx.scope)
+    {
+        if (const auto* def = ResolveInScope(ctx.scope, name))
+        {
+            if (!def->typeName.empty() && HasConstModifier(def->typeName))
+            {
+                return true;
+            }
+        }
+    }
+    if (const auto syms = ctx.symbolTable.FindSymbolsPtr(name))
+    {
+        for (const auto& sym : *syms)
+        {
+            if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                sym.GetVariable().modifiers.isConst)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const ExpressionTypeContext& ctx)
 {
     auto args = ExtractCallArguments(callNode, ctx.sourceCode);
@@ -3881,7 +4182,12 @@ std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const Express
         }
         else
         {
-            types.push_back(ResolveExpressionType(arg.exprNode, ctx));
+            std::string argType = ResolveExpressionType(arg.exprNode, ctx);
+            if (!argType.empty() && !HasConstModifier(argType) && IsConstArgumentNode(arg.exprNode, ctx))
+            {
+                argType.insert(0, "const ");
+            }
+            types.push_back(std::move(argType));
         }
     }
     return types;
@@ -4469,16 +4775,7 @@ static std::optional<uint32_t> FindChildPosition(TSNode parent, TSNode targetChi
  */
 static TSNode ExtractCallCalleeNode(TSNode call)
 {
-    TSNode callee = parser::GetChildByField(call, parser::fields::Type);
-    if (ts_node_is_null(callee))
-    {
-        callee = parser::GetChildByField(call, parser::fields::Function);
-    }
-    if (ts_node_is_null(callee) && ts_node_child_count(call) > 0)
-    {
-        callee = ts_node_child(call, 0);
-    }
-    return callee;
+    return parser::GetCallCallee(call);
 }
 
 namespace
@@ -4752,6 +5049,7 @@ Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callNa
     sym.type = SymbolType::Function;
     sym.name = std::string(callName);
     sym.containerName = funcdefSym.containerName;
+    sym.containerKind = funcdefSym.containerKind;
     sym.qualifiedName = funcdefSym.qualifiedName;
     sym.fileUri = funcdefSym.fileUri;
     sym.startLine = funcdefSym.startLine;

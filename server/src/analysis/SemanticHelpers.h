@@ -51,16 +51,6 @@ using parser::GetNodeText;
 [[nodiscard]] std::string_view GetNodeTextView(TSNode node, std::string_view sourceCode) noexcept;
 
 /**
- * @brief Classification categories for enclosing lexical containers.
- */
-enum class ContainerKind
-{
-    Class,
-    Interface,
-    Namespace
-};
-
-/**
  * @brief Information about a parsed generic template type (e.g. array<dictionary<string, int>>).
  */
 struct TemplateTypeInfo
@@ -159,6 +149,23 @@ bool IsReservedKeyword(const std::string& name);
  * @return Parent scope view, or empty view if name contains no `::`.
  */
 [[nodiscard]] std::string_view ParentScope(std::string_view name) noexcept;
+
+/**
+ * @brief Checks if two type or class names match directly or by short scope segment.
+ * @param[in] a First type name.
+ * @param[in] b Second type name.
+ * @return True if names match directly or by unqualified segment.
+ */
+[[nodiscard]] inline bool MatchesDeclOrScope(std::string_view a, std::string_view b) noexcept
+{
+    if (a == b)
+    {
+        return true;
+    }
+    auto segA = LastScopeSegment(a);
+    auto segB = LastScopeSegment(b);
+    return a == segB || segA == b || segA == segB;
+}
 
 [[nodiscard]] constexpr bool IsFloatingPointPrimitive(std::string_view typeName) noexcept
 {
@@ -308,6 +315,17 @@ bool NamesAFunctionNotAType(std::string_view name, const class SymbolTable& tabl
 std::optional<std::string> IsBareDataType(TSNode node, const struct Scope* scope, const class SymbolTable& symbolTable,
                                           std::string_view sourceCode);
 
+/**
+ * @brief Checks if an expression denotes a bare function or method reference.
+ * @param[in] node AST expression node.
+ * @param[in] scope Lexical scope at the node, or nullptr.
+ * @param[in] symbolTable Symbol table for symbol lookups.
+ * @param[in] sourceCode Source text of the document.
+ * @return True if the expression denotes a bare function or method without invocation.
+ */
+bool IsFunctionReference(TSNode node, const struct Scope* scope, const class SymbolTable& symbolTable,
+                         std::string_view sourceCode);
+
 /** @brief What a type is when it cannot be instantiated, for the message that says so. */
 enum class NonInstantiableKind
 {
@@ -332,12 +350,30 @@ enum class NonInstantiableKind
 NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const class SymbolTable& table);
 
 /**
+ * @brief Returns the enclosing namespace prefix for a symbol, if any.
+ * @param[in] sym The symbol whose enclosing namespace is being inspected.
+ * @param[in] table Symbol table to look up declaring class if sym is a class member.
+ * @return Qualified namespace string, or empty if sym is in global namespace.
+ */
+std::string EnclosingNamespaceForSymbol(const Symbol& sym, const SymbolTable& table);
+
+/**
+ * @brief Checks if a type name corresponds to a template parameter of the symbol's enclosing container.
+ * @param[in] typeName Type name to check (e.g. "T").
+ * @param[in] sym Symbol whose container to inspect.
+ * @param[in] table Workspace symbol table.
+ * @return True if typeName matches an enclosing container's template parameter.
+ */
+bool IsTemplateParameterOfContainer(std::string_view typeName, const Symbol& sym, const SymbolTable& table);
+
+/**
  * @brief Checks whether the given base type name is a known type (primitive, string, array, or in SymbolTable).
  * @param baseName Type base name to check.
  * @param ctx DiagnosticContext containing request and SymbolTable.
+ * @param containerScope Optional enclosing namespace/container scope prefix.
  * @return True if baseName is a known valid type.
  */
-bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx);
+bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx, std::string_view containerScope = {});
 
 /**
  * @brief Checks whether the given type name denotes an enum in the symbol table.

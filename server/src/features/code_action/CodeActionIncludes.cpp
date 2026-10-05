@@ -142,7 +142,8 @@ void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<Incl
     for (size_t i = 0; i < offered; ++i)
     {
         lsp::CodeAction action;
-        action.title = "Did you mean '" + ranked[i].spelling + "'?";
+        action.title = i18n::FormatMessage(ctx.request.i18n, "action-did-you-mean", "Did you mean '{}'?",
+                                           std::string_view(ranked[i].spelling));
         action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
         action.diagnostics = std::vector<lsp::Diagnostic>{ctx.diag};
         if (i == 0 && hasClearWinner)
@@ -336,7 +337,8 @@ void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vec
     edit.newText = FormatSortedIncludesBlock(angledIncludes, quotedIncludes);
 
     lsp::CodeAction action;
-    action.title = "Sort and Clean #include Directives";
+    action.title =
+        i18n::FormatMessage(request.i18n, "action-sort-and-clean-includes", "Sort and Clean #include Directives");
     action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::SourceOrganizeImports);
 
     lsp::WorkspaceEdit wsEdit;

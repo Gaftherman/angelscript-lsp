@@ -418,4 +418,8 @@ namespace angel_lsp::parser::queries
 [[maybe_unused]] inline constexpr const char* BINARY_EXPRESSION_QUERY = R"SCM(
 (binary_expression) @binary
 )SCM";
+
+[[maybe_unused]] inline constexpr const char* USING_DECLARATION_QUERY = R"SCM(
+(using_declaration name: (scoped_identifier) @name)
+)SCM";
 } // namespace angel_lsp::parser::queries

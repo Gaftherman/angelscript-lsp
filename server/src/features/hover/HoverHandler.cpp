@@ -333,34 +333,45 @@ static std::string FormatNamespaceDeclaration(const analysis::Symbol& sym)
 /** @brief Renders the single hover line that describes a symbol of any kind. */
 std::string FormatDeclarationText(const analysis::Symbol& sym, const analysis::SymbolTable* symbolTable = nullptr)
 {
-    switch (sym.type)
+    std::string metaPrefix;
+    for (const auto& meta : sym.metadata)
     {
-    case analysis::SymbolType::Function:
-    case analysis::SymbolType::Funcdef:
-        return FormatFunctionSignature(sym);
-    case analysis::SymbolType::Class:
-    case analysis::SymbolType::Interface:
-        return FormatClassSignature(sym);
-    case analysis::SymbolType::Enum:
-        return "enum " + sym.name;
-    case analysis::SymbolType::Variable:
-    {
-        bool isProperty = IsVariableProperty(sym, symbolTable);
-        return FormatVariableSignature(sym, isProperty ? "(property) " : "(global variable) ");
+        metaPrefix += meta + "\n";
     }
-    case analysis::SymbolType::Typedef:
-        return "typedef " + sym.GetTypedef().baseType + " " + sym.name;
-    case analysis::SymbolType::Namespace:
-        return FormatNamespaceDeclaration(sym);
-    case analysis::SymbolType::Property:
-        if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
+
+    auto formatBody = [&]() -> std::string
+    {
+        switch (sym.type)
         {
-            return FormatVariableSignature(sym, "(property) ");
+        case analysis::SymbolType::Function:
+        case analysis::SymbolType::Funcdef:
+            return FormatFunctionSignature(sym);
+        case analysis::SymbolType::Class:
+        case analysis::SymbolType::Interface:
+            return FormatClassSignature(sym);
+        case analysis::SymbolType::Enum:
+            return "enum " + sym.name;
+        case analysis::SymbolType::Variable:
+        {
+            bool isProperty = IsVariableProperty(sym, symbolTable);
+            return FormatVariableSignature(sym, isProperty ? "(property) " : "(global variable) ");
         }
-        return "(property) " + sym.name;
-    default:
-        return sym.name;
-    }
+        case analysis::SymbolType::Typedef:
+            return "typedef " + sym.GetTypedef().baseType + " " + sym.name;
+        case analysis::SymbolType::Namespace:
+            return FormatNamespaceDeclaration(sym);
+        case analysis::SymbolType::Property:
+            if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
+            {
+                return FormatVariableSignature(sym, "(property) ");
+            }
+            return "(property) " + sym.name;
+        default:
+            return sym.name;
+        }
+    };
+
+    return metaPrefix + formatBody();
 }
 
 /** @brief Drops symbols that are the same declaration seen twice.
@@ -687,6 +698,10 @@ std::optional<analysis::Symbol> ResolveCallOverload(TSNode node, const std::vect
     if (match.bestCandidate != nullptr)
     {
         return *match.bestCandidate;
+    }
+    if (match.priorityCandidate != nullptr)
+    {
+        return *match.priorityCandidate;
     }
 
     const analysis::Symbol* fallback = analysis::FindBestFallbackOverload(candidates, argTypes, request.symbolTable);
@@ -1304,6 +1319,10 @@ std::optional<analysis::Symbol> ResolveConstructorForDeclarator(TSNode declarato
     if (match.bestCandidate != nullptr)
     {
         return *match.bestCandidate;
+    }
+    if (match.priorityCandidate != nullptr)
+    {
+        return *match.priorityCandidate;
     }
 
     const analysis::Symbol* fallback =

@@ -461,6 +461,40 @@ static void UpdateHoverFeatureConfig(const lsp::LSPObject& section, config::Serv
     }
 }
 
+static void UpdateMetadataFeatureConfig(const lsp::LSPObject& section, config::ServerConfig& cfg)
+{
+    const lsp::LSPObject* metaObj = nullptr;
+    if (const auto* metaVal = section.find("metadata"); metaVal && metaVal->isObject())
+    {
+        metaObj = &metaVal->object();
+    }
+    if (auto meta = FindSectionBool(section, metaObj, "enabled", "metadata"); meta.has_value())
+    {
+        cfg.features.enableMetadata = *meta;
+    }
+}
+
+static void UpdateCompletionFeatureConfig(const lsp::LSPObject& section, config::ServerConfig& cfg)
+{
+    const lsp::LSPObject* compObj = nullptr;
+    if (const auto* compVal = section.find("completion"); compVal && compVal->isObject())
+    {
+        compObj = &compVal->object();
+    }
+    if (auto smart = FindSectionBool(section, compObj, "smartTypeRanking", "completion"); smart.has_value())
+    {
+        cfg.features.completionSmartTypeRanking = *smart;
+    }
+    if (auto parens = FindSectionBool(section, compObj, "completeFunctionParens", "completion"); parens.has_value())
+    {
+        cfg.features.completionCompleteFunctionParens = *parens;
+    }
+    if (auto qualify = FindSectionBool(section, compObj, "qualifyEnumValues", "completion"); qualify.has_value())
+    {
+        cfg.features.completionQualifyEnumValues = *qualify;
+    }
+}
+
 void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
 {
     const lsp::LSPObject* featObj = nullptr;
@@ -490,24 +524,8 @@ void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
         m_config.features.enableCommentSuppressions = *cs;
     }
 
-    const lsp::LSPObject* compObj = nullptr;
-    if (const auto* compVal = section.find("completion"); compVal && compVal->isObject())
-    {
-        compObj = &compVal->object();
-    }
-    if (auto smart = FindSectionBool(section, compObj, "smartTypeRanking", "completion"); smart.has_value())
-    {
-        m_config.features.completionSmartTypeRanking = *smart;
-    }
-    if (auto parens = FindSectionBool(section, compObj, "completeFunctionParens", "completion"); parens.has_value())
-    {
-        m_config.features.completionCompleteFunctionParens = *parens;
-    }
-    if (auto qualify = FindSectionBool(section, compObj, "qualifyEnumValues", "completion"); qualify.has_value())
-    {
-        m_config.features.completionQualifyEnumValues = *qualify;
-    }
-
+    UpdateMetadataFeatureConfig(section, m_config);
+    UpdateCompletionFeatureConfig(section, m_config);
     UpdateInlayHintFeatureConfig(section, m_config);
     UpdateHoverFeatureConfig(section, m_config);
 }

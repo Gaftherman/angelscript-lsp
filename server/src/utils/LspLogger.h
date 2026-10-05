@@ -1,11 +1,15 @@
 #pragma once
 
 #include <atomic>
-#include <lsp/messagehandler.h>
-#include <lsp/messages.h>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
+
+namespace lsp
+{
+class MessageHandler;
+}
 
 namespace angel_lsp::utils
 {

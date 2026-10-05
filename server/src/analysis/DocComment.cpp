@@ -153,12 +153,21 @@ std::vector<std::string> CollectLineComments(const std::vector<std::string>& lin
     return commentLines;
 }
 
+bool IsMetadataBlockLine(std::string_view trimmed)
+{
+    return trimmed.size() >= 2 && trimmed.front() == '[' && trimmed.back() == ']';
+}
+
 int FindPrecedingCommentLine(const std::vector<std::string>& lines, int startLine)
 {
     int line = startLine;
-    while (line >= 0 && Trim(lines[line]).empty())
+    while (line >= 0 && IsMetadataBlockLine(Trim(lines[line])))
     {
         line--;
+    }
+    if (line < 0 || Trim(lines[line]).empty())
+    {
+        return -1;
     }
     return line;
 }

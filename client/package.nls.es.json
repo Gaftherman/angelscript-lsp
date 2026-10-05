@@ -147,5 +147,6 @@
   "config.diagnostics.missingAssetPathSeverity.description": "Severidad del diagnostico para cadenas literales que hacen referencia a archivos de recursos no encontrados. Desactivado por defecto.",
   "config.stubs.activeFiles.description": "Lista de archivos de stubs predefinidos activos cargados en el índice del espacio de trabajo. Administrado dinámicamente mediante el comando AngelScript: Seleccionar stubs predefinidos.",
   "command.rescanWorkspace.title": "Volver a examinar el espacio de trabajo",
-  "command.selectStubs.title": "Seleccionar stubs predefinidos"
+  "command.selectStubs.title": "Seleccionar stubs predefinidos",
+  "config.metadata.enabled.description": "Habilita el soporte para bloques de metadatos de CScriptBuilder ('[...]') antes de declaraciones de script (clases, interfaces, funciones, variables)."
 }

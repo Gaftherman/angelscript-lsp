@@ -199,18 +199,17 @@ TEST_CASE("Adversarial Hover - Doxygen Doc Comments Edge Cases")
         CHECK_NOTHROW(env.Hover(1, 6));
     }
 
-    // Line comments with interleaved blank lines
+    // Line comments with empty comment lines (no blank non-comment line before declaration)
     {
         std::string docWithBlanks = "/// @brief First line of brief\n"
                                     "///\n"
                                     "/// Second line of brief.\n"
                                     "/// @param a Input param.\n"
                                     "/// @return Result.\n"
-                                    "\n"
                                     "int ComplexDoc(int a);\n";
 
         AdversarialTestEnv env(docWithBlanks);
-        auto hover = env.Hover(6, 6);
+        auto hover = env.Hover(5, 6);
         REQUIRE(hover.has_value());
         auto content = std::get<lsp::MarkupContent>(hover->contents);
         CHECK(content.value.find("First line of brief") != std::string::npos);
