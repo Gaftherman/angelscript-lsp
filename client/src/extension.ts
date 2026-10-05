@@ -414,6 +414,39 @@ function updateLanguageStatus(isIndexing = false): void {
 }
 
 /**
+ * @brief Checks if the extension was updated and prompts the user to reload the window.
+ *
+ * VS Code applies extension updates in the background without automatically restarting
+ * the running extension host, language server process, or reloading declarative
+ * language-configuration.json contributions. Prompting to reload ensures the new version
+ * takes effect immediately.
+ *
+ * @param context The extension context.
+ */
+function checkExtensionUpdate(context: ExtensionContext): void {
+    const LAST_VERSION_KEY = 'angelscript.installedVersion';
+    const currentVersion = context.extension.packageJSON?.version;
+    if (typeof currentVersion !== 'string' || currentVersion.length === 0) {
+        return;
+    }
+
+    const previousVersion = context.globalState.get<string>(LAST_VERSION_KEY);
+    if (previousVersion && previousVersion !== currentVersion) {
+        const reloadAction = l10n.t('Reload Window');
+        void window.showInformationMessage(
+            l10n.t('AngelScript LSP has been updated to v{0}. Please reload the window to apply all language configuration and server updates.', currentVersion),
+            reloadAction
+        ).then(selection => {
+            if (selection === reloadAction) {
+                void commands.executeCommand('workbench.action.reloadWindow');
+            }
+        });
+    }
+
+    void context.globalState.update(LAST_VERSION_KEY, currentVersion);
+}
+
+/**
  * @brief Tells the user the server is not running, in the editor rather than in a log.
  *
  * @param summary One line, and the only part most users will read.
@@ -1435,6 +1468,7 @@ export async function activate(context: ExtensionContext) {
 
     timed('statusBarItem', () => createStatusBarItem(context));
     timed('languageStatusItem', () => createLanguageStatusItem(context));
+    timed('checkExtensionUpdate', () => checkExtensionUpdate(context));
 
     // Deliberately not awaited. Everything this extension contributes to the UI - the commands,
     // the status bar item, the output channel - is registered above and ready now; what follows is

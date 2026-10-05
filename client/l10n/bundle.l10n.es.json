@@ -67,5 +67,7 @@
   "e.g. HealthMixin": "p. ej. HealthMixin",
   "e.g. MyPlayer": "p. ej. MyPlayer",
   "{0} Stubs": "{0} stubs",
-  "{0} active stubs | Click to manage": "{0} stubs activos | Clic para administrar"
+  "{0} active stubs | Click to manage": "{0} stubs activos | Clic para administrar",
+  "AngelScript LSP has been updated to v{0}. Please reload the window to apply all language configuration and server updates.": "AngelScript LSP se ha actualizado a v{0}. Por favor recarga la ventana para aplicar todos los cambios de configuración y servidor.",
+  "Reload Window": "Recargar ventana"
 }

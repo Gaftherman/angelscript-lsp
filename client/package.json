@@ -277,7 +277,8 @@
         },
         "editor.suggestOnTriggerCharacters": true,
         "editor.wordBasedSuggestions": "off",
-        "editor.semanticHighlighting.enabled": true
+        "editor.semanticHighlighting.enabled": true,
+        "editor.autoIndentOnPaste": false
       },
       "[angelscript-predefined]": {
         "editor.quickSuggestions": {
@@ -287,7 +288,8 @@
         },
         "editor.suggestOnTriggerCharacters": true,
         "editor.wordBasedSuggestions": "off",
-        "editor.semanticHighlighting.enabled": true
+        "editor.semanticHighlighting.enabled": true,
+        "editor.autoIndentOnPaste": false
       }
     },
     "configuration": [
