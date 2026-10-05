@@ -306,20 +306,27 @@ bool AreAllSymbolsPureTypes(const std::vector<Symbol>& syms)
     return false;
 }
 
-std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
-                                          std::string_view sourceCode)
+static TSNode UnwrapParens(TSNode node)
+{
+    while (!ts_node_is_null(node) && std::string_view(ts_node_type(node)) == "parenthesized_expression" &&
+           ts_node_named_child_count(node) > 0)
+    {
+        node = ts_node_named_child(node, 0);
+    }
+    return node;
+}
+
+static std::string ExtractTrimmedIdentifier(TSNode node, std::string_view sourceCode)
 {
     if (ts_node_is_null(node))
     {
-        return std::nullopt;
+        return {};
     }
-
     const std::string_view nodeType = ts_node_type(node);
     if (nodeType != parser::nodes::Identifier && nodeType != parser::nodes::ScopedIdentifier)
     {
-        return std::nullopt;
+        return {};
     }
-
     std::string name = GetNodeText(node, sourceCode);
     while (!name.empty() && isspace(static_cast<unsigned char>(name.front())))
     {
@@ -329,6 +336,14 @@ std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const
     {
         name.pop_back();
     }
+    return name;
+}
+
+std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
+                                          std::string_view sourceCode)
+{
+    node = UnwrapParens(node);
+    std::string name = ExtractTrimmedIdentifier(node, sourceCode);
     if (name.empty())
     {
         return std::nullopt;
@@ -354,6 +369,129 @@ std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const
     }
 
     return std::nullopt;
+}
+
+static bool IsMemberMethodSymbol(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
+                                 std::string_view sourceCode)
+{
+    TSNode objNode = parser::GetChildByField(node, parser::fields::Object);
+    TSNode memNode = parser::GetChildByField(node, parser::fields::Member);
+    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
+    {
+        return false;
+    }
+    const std::string memName = NodeText(memNode, sourceCode);
+    const std::string objType = ResolveExpressionType(objNode, ExpressionTypeContext(scope, symbolTable, sourceCode));
+    const std::string cleanObj = CleanBaseType(objType);
+    if (cleanObj.empty() || memName.empty())
+    {
+        return false;
+    }
+    for (const auto& cls : GetInheritedTypeHierarchy(cleanObj, symbolTable))
+    {
+        if (const auto syms = symbolTable.FindSymbolsPtr(cls + "::" + memName))
+        {
+            bool hasFunc = false;
+            bool hasVarOrProp = false;
+            for (const auto& s : *syms)
+            {
+                if (s.type == SymbolType::Function)
+                {
+                    hasFunc = true;
+                }
+                else if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
+                {
+                    hasVarOrProp = true;
+                }
+            }
+            if (hasFunc && !hasVarOrProp)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static bool HasFunctionSymbolOnly(const std::vector<Symbol>& syms)
+{
+    bool hasFunc = false;
+    bool hasVarOrProp = false;
+    for (const auto& s : syms)
+    {
+        if (s.type == SymbolType::Function)
+        {
+            hasFunc = true;
+        }
+        else if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
+        {
+            hasVarOrProp = true;
+        }
+    }
+    return hasFunc && !hasVarOrProp;
+}
+
+static bool IsIdentifierFunctionSymbol(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
+                                       std::string_view sourceCode)
+{
+    const std::string_view nodeType = ts_node_type(node);
+    std::string name = NodeText(node, sourceCode);
+    while (!name.empty() && isspace(static_cast<unsigned char>(name.front())))
+    {
+        name.erase(name.begin());
+    }
+    while (!name.empty() && isspace(static_cast<unsigned char>(name.back())))
+    {
+        name.pop_back();
+    }
+    if (name.empty())
+    {
+        return false;
+    }
+    if (nodeType == parser::nodes::Identifier && scope && ResolveInScope(scope, name))
+    {
+        return false;
+    }
+    if (const auto found = symbolTable.FindSymbolsPtr(name))
+    {
+        return HasFunctionSymbolOnly(*found);
+    }
+    const std::string_view lastSeg = LastScopeSegment(name);
+    if (lastSeg != name)
+    {
+        if (const auto found = symbolTable.FindSymbolsPtr(lastSeg))
+        {
+            return HasFunctionSymbolOnly(*found);
+        }
+    }
+    return false;
+}
+
+bool IsFunctionReference(TSNode node, const Scope* scope, const SymbolTable& symbolTable, std::string_view sourceCode)
+{
+    while (!ts_node_is_null(node) && std::string_view(ts_node_type(node)) == "parenthesized_expression" &&
+           ts_node_named_child_count(node) > 0)
+    {
+        node = ts_node_named_child(node, 0);
+    }
+    if (ts_node_is_null(node))
+    {
+        return false;
+    }
+    const std::string_view type = ts_node_type(node);
+    if (type == parser::nodes::CallExpression || type == parser::nodes::ConstructCallExpression)
+    {
+        return false;
+    }
+    if (type == "member_expression")
+    {
+        return IsMemberMethodSymbol(node, scope, symbolTable, sourceCode);
+    }
+    if (type == parser::nodes::Identifier || type == parser::nodes::ScopedIdentifier)
+    {
+        return IsIdentifierFunctionSymbol(node, scope, symbolTable, sourceCode);
+    }
+    return false;
 }
 
 bool IsMixinClass(std::string_view baseTypeName, const SymbolTable& table)
@@ -2462,6 +2600,10 @@ static std::string ResolveBinary64OrFloat(const std::string& cleanLeft, const st
  */
 static std::string ResolveBinary32OrLess(const std::string& cleanLeft, const std::string& cleanRight)
 {
+    if (cleanLeft == "void" || cleanRight == "void")
+    {
+        return "";
+    }
     if (cleanLeft == "uint" || cleanRight == "uint" || cleanLeft == "uint32" || cleanRight == "uint32")
     {
         return "uint";
@@ -2509,7 +2651,7 @@ static std::string ResolveBinaryDivisionPromotion(const std::string& cleanLeft, 
 static std::string ResolveBinaryPrimitivePromotion(std::string_view op, const std::string& cleanLeft,
                                                    const std::string& cleanRight, bool disableIntegerDivision = false)
 {
-    if (cleanLeft.empty() || cleanRight.empty())
+    if (cleanLeft.empty() || cleanRight.empty() || cleanLeft == "void" || cleanRight == "void")
     {
         return "";
     }

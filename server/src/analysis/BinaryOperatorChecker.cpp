@@ -154,12 +154,16 @@ bool AreArithmeticOperandsCompatible(std::string_view op, const BinaryOperandTyp
 bool AreBinaryOperandsCompatible(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table,
                                  std::string_view stringTypeName)
 {
+    if (types.left == "void" || types.right == "void")
+    {
+        return false;
+    }
     if (!IsKnownType(types.left, table, stringTypeName) || !IsKnownType(types.right, table, stringTypeName))
     {
         return true;
     }
-    if (types.left == "auto" || types.right == "auto" || types.left == "void" || types.right == "void" ||
-        types.left.find('?') != std::string::npos || types.right.find('?') != std::string::npos)
+    if (types.left == "auto" || types.right == "auto" || types.left.find('?') != std::string::npos ||
+        types.right.find('?') != std::string::npos)
     {
         return true;
     }
@@ -191,6 +195,32 @@ void CheckBinaryOperatorCompatibility(TSNode node, const Scope* scope, Diagnosti
         return;
     }
 
+    if (const auto dt = IsBareDataType(left, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        const TSPoint start = ts_node_start_point(left);
+        const TSPoint end = ts_node_end_point(left);
+        ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
+                        diagnostics::codes::ExpressionIsDataType, *dt);
+        return;
+    }
+    if (const auto dt = IsBareDataType(right, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        const TSPoint start = ts_node_start_point(right);
+        const TSPoint end = ts_node_end_point(right);
+        ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
+                        diagnostics::codes::ExpressionIsDataType, *dt);
+        return;
+    }
+    if (IsFunctionReference(left, scope, ctx.request.symbolTable, ctx.request.sourceCode) ||
+        IsFunctionReference(right, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        const TSPoint start = ts_node_start_point(opNode);
+        const TSPoint end = ts_node_end_point(opNode);
+        ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
+                        diagnostics::codes::NoMatchingOperator, {std::string_view(op), "function", "value"});
+        return;
+    }
+
     const auto types = ResolveCleanBinaryOperandTypes(left, right, scope, ctx);
     if (!types)
     {
@@ -201,8 +231,8 @@ void CheckBinaryOperatorCompatibility(TSNode node, const Scope* scope, Diagnosti
     {
         const TSPoint start = ts_node_start_point(opNode);
         const TSPoint end = ts_node_end_point(opNode);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::NoMatchingOperator,
-                        {std::string(op), types->left, types->right}, DiagnosticSeverity::Error);
+        ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
+                        diagnostics::codes::NoMatchingOperator, {std::string_view(op), types->left, types->right});
     }
 }
 } // namespace angel_lsp::analysis

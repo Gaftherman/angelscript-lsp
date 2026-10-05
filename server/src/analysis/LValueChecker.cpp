@@ -1,5 +1,6 @@
 #include "analysis/LValueChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/GrammarNames.h"
@@ -12,11 +13,18 @@ namespace angel_lsp::analysis
 {
 namespace
 {
-void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code)
+void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, std::string_view arg = {})
 {
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code);
+    if (arg.empty())
+    {
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code);
+    }
+    else
+    {
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, arg);
+    }
 }
 
 struct CallCandidateContext
@@ -211,6 +219,11 @@ TSNode UnwrapParentheses(TSNode node)
 
 bool IsIdentifierAssignable(std::string_view name, const Scope* scope, const SymbolTable& table)
 {
+    if (IsPrimitiveTypeName(name))
+    {
+        return false;
+    }
+
     if (scope)
     {
         const LocalDefinition* localDef = ResolveInScope(scope, name);
@@ -225,12 +238,57 @@ bool IsIdentifierAssignable(std::string_view name, const Scope* scope, const Sym
     {
         for (const auto& sym : *symbols)
         {
-            if (sym.type != SymbolType::Function && sym.type != SymbolType::Funcdef)
+            if (sym.type == SymbolType::Variable || sym.type == SymbolType::Property)
             {
                 return true;
             }
         }
         return false;
+    }
+    return true;
+}
+
+bool IsAssignableMember(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
+{
+    TSNode objNode = parser::GetChildByField(node, parser::fields::Object);
+    TSNode memNode = parser::GetChildByField(node, parser::fields::Member);
+    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
+    {
+        return true;
+    }
+    std::string memName = NodeText(memNode, sourceCode);
+    if (memName.empty())
+    {
+        return true;
+    }
+    std::string objType = ResolveExpressionType(objNode, ExpressionTypeContext(scope, table, sourceCode));
+    std::string cleanObj = CleanBaseType(objType);
+    if (cleanObj.empty())
+    {
+        return true;
+    }
+    for (const auto& typeName : GetInheritedTypeHierarchy(cleanObj, table))
+    {
+        if (auto found = table.FindSymbolsPtr(typeName + "::" + memName))
+        {
+            bool hasAssignable = false;
+            for (const auto& sym : *found)
+            {
+                if (sym.type == SymbolType::Variable || sym.type == SymbolType::Property)
+                {
+                    hasAssignable = true;
+                    break;
+                }
+            }
+            if (!hasAssignable)
+            {
+                auto setters = table.FindSymbolsPtr(typeName + "::set_" + memName);
+                if (!setters || setters->empty())
+                {
+                    return false;
+                }
+            }
+        }
     }
     return true;
 }
@@ -286,7 +344,11 @@ bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const SymbolTabl
     {
         return IsUnaryAssignable(node, scope, table, sourceCode);
     }
-    if (nodeType == "member_expression" || nodeType == "index_expression")
+    if (nodeType == "member_expression")
+    {
+        return IsAssignableMember(node, scope, table, sourceCode);
+    }
+    if (nodeType == "index_expression")
     {
         return true;
     }
@@ -327,7 +389,14 @@ void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request, const
 
     if (!IsAssignableLValueNode(target, scope, ctx.request.symbolTable, request.sourceCode))
     {
-        EmitAtNode(target, ctx, "as-err-not-lvalue");
+        if (const auto dt = IsBareDataType(target, scope, ctx.request.symbolTable, request.sourceCode))
+        {
+            EmitAtNode(target, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
+        }
+        else
+        {
+            EmitAtNode(target, ctx, "as-err-not-lvalue");
+        }
     }
 }
 

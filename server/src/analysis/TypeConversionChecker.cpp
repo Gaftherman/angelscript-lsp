@@ -1082,45 +1082,6 @@ PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, co
 }
 
 /**
- * @brief Checks if a member expression resolves to a method rather than a property or variable.
- * @param[in] expr Member expression syntax node.
- * @param[in] scope Enclosing lexical scope.
- * @param[in] ctx Diagnostic collection context.
- * @return True if expr denotes a method.
- */
-static bool IsMemberMethodReference(TSNode expr, const Scope* scope, const DiagnosticContext& ctx)
-{
-    const PropertyAccessInfo info = InspectPropertyAccess(expr, scope, ctx);
-    if (info.isProperty || info.propName.empty())
-    {
-        return false;
-    }
-
-    const std::string cleanObj = CleanBaseType(info.receiverType);
-    if (!cleanObj.empty())
-    {
-        const auto hierarchy = GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable);
-        for (const auto& typeName : hierarchy)
-        {
-            if (const auto syms = ctx.request.symbolTable.FindMemberSymbolPtr(typeName, info.propName))
-            {
-                for (const auto& s : *syms)
-                {
-                    if (s.type == SymbolType::Function)
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-
-    const auto candidates = CollectFunctionCandidates(info.propName, ctx.request.symbolTable);
-    return std::any_of(candidates.begin(), candidates.end(),
-                       [](const Symbol& s) { return s.type == SymbolType::Function; });
-}
-
-/**
  * @brief Checks if an expression resolves to a bare function or method symbol.
  * @param[in] expr Expression syntax node.
  * @param[in] scope Enclosing lexical scope.
@@ -1129,41 +1090,7 @@ static bool IsMemberMethodReference(TSNode expr, const Scope* scope, const Diagn
  */
 static bool IsFunctionReference(TSNode expr, const Scope* scope, const DiagnosticContext& ctx)
 {
-    while (!ts_node_is_null(expr) && std::string_view(ts_node_type(expr)) == "parenthesized_expression" &&
-           ts_node_named_child_count(expr) > 0)
-    {
-        expr = ts_node_named_child(expr, 0);
-    }
-    if (ts_node_is_null(expr))
-    {
-        return false;
-    }
-
-    const std::string_view type = ts_node_type(expr);
-    if (type == node_types::CallExpression || type == "construct_call_expression")
-    {
-        return false;
-    }
-    if (type == "member_expression")
-    {
-        return IsMemberMethodReference(expr, scope, ctx);
-    }
-    if (type == "identifier" || type == "scoped_identifier")
-    {
-        const std::string name = TrimString(NodeText(expr, ctx.request.sourceCode));
-        if (name.empty())
-        {
-            return false;
-        }
-        if (type == "identifier" && scope && ResolveInScope(scope, name))
-        {
-            return false;
-        }
-        const auto candidates = CollectFunctionCandidates(name, ctx.request.symbolTable);
-        return std::any_of(candidates.begin(), candidates.end(),
-                           [](const Symbol& s) { return s.type == SymbolType::Function; });
-    }
-    return false;
+    return IsFunctionReference(expr, scope, ctx.request.symbolTable, ctx.request.sourceCode);
 }
 
 struct DiagnosticArgs
@@ -1491,6 +1418,7 @@ void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declare
     }
 
     bool isTypeOrTemplate = false;
+    bool isNamespace = false;
     ForEachSymbolNamed(identName, ctx.request.symbolTable,
                        [&](const Symbol& s) -> bool
                        {
@@ -1500,11 +1428,21 @@ void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declare
                                isTypeOrTemplate = true;
                                return false;
                            }
+                           if (s.type == SymbolType::Namespace)
+                           {
+                               isNamespace = true;
+                               return false;
+                           }
                            return true;
                        });
     if (isTypeOrTemplate)
     {
-        EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", {identName, declared.baseName});
+        EmitAtNode(valueNode, ctx, diagnostics::codes::ExpressionIsDataType, identName);
+        return;
+    }
+    if (isNamespace)
+    {
+        EmitAtNode(valueNode, ctx, "as-err-undefined-identifier", identName);
         return;
     }
 
@@ -2486,11 +2424,35 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
     }
 
     const Scope* scope = ResolveNodeScope(node, request);
+    if (const auto dt1 = IsBareDataType(consequence, scope, ctx.request.symbolTable, request.sourceCode))
+    {
+        EmitAtNode(consequence, ctx, diagnostics::codes::ExpressionIsDataType, *dt1);
+        return;
+    }
+    if (const auto dt2 = IsBareDataType(alternative, scope, ctx.request.symbolTable, request.sourceCode))
+    {
+        EmitAtNode(alternative, ctx, diagnostics::codes::ExpressionIsDataType, *dt2);
+        return;
+    }
+
     const std::string t1 = ResolveExpressionType(consequence, ExpressionTypeContext(scope, ctx));
     const std::string t2 = ResolveExpressionType(alternative, ExpressionTypeContext(scope, ctx));
 
     const std::string clean1 = CanonicalizeType(CleanExpressionType(t1));
     const std::string clean2 = CanonicalizeType(CleanExpressionType(t2));
+
+    if (IsFunctionReference(consequence, scope, ctx))
+    {
+        EmitAtNode(consequence, ctx, "as-err-no-implicit-conversion",
+                   {TrimString(NodeText(consequence, request.sourceCode)), clean2});
+        return;
+    }
+    if (IsFunctionReference(alternative, scope, ctx))
+    {
+        EmitAtNode(alternative, ctx, "as-err-no-implicit-conversion",
+                   {TrimString(NodeText(alternative, request.sourceCode)), clean1});
+        return;
+    }
 
     if (IsIncompleteOrIgnoredBranchType(clean1) || IsIncompleteOrIgnoredBranchType(clean2))
     {
@@ -2527,6 +2489,28 @@ void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckReques
     if (IsFunctionReference(expr, scope, ctx))
     {
         EmitAtNode(expr, ctx, diagnostics::codes::IllegalOperation);
+        return;
+    }
+
+    const std::string text = TrimString(NodeText(expr, request.sourceCode));
+    if (!text.empty())
+    {
+        if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(text))
+        {
+            bool onlyNs = true;
+            for (const auto& s : *syms)
+            {
+                if (s.type != SymbolType::Namespace)
+                {
+                    onlyNs = false;
+                    break;
+                }
+            }
+            if (onlyNs)
+            {
+                EmitAtNode(expr, ctx, "as-err-undefined-identifier", text);
+            }
+        }
     }
 }
 
@@ -3155,6 +3139,39 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
     }
 
     const Scope* scope = ResolveNodeScope(node, request);
+    if (const auto dt = IsBareDataType(left, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        EmitAtNode(left, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
+        return;
+    }
+    if (const auto dt = IsBareDataType(right, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        EmitAtNode(right, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
+        return;
+    }
+
+    const std::string rightIdent = TrimString(NodeText(right, ctx.request.sourceCode));
+    if (!rightIdent.empty())
+    {
+        if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(rightIdent))
+        {
+            bool onlyNs = true;
+            for (const auto& s : *syms)
+            {
+                if (s.type != SymbolType::Namespace)
+                {
+                    onlyNs = false;
+                    break;
+                }
+            }
+            if (onlyNs)
+            {
+                EmitAtNode(right, ctx, "as-err-undefined-identifier", rightIdent);
+                return;
+            }
+        }
+    }
+
     CheckAssignmentPropertyAccess(node, scope, ctx);
 
     const std::string leftType = ResolveExpressionType(left, ExpressionTypeContext(scope, ctx));
@@ -3211,6 +3228,52 @@ void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, D
     CheckBinaryOperatorCompatibility(node, scope, ctx);
 }
 
+static TSNode FindUnaryOperand(TSNode node)
+{
+    TSNode operand = parser::GetChildByField(node, parser::fields::Operand);
+    if (!ts_node_is_null(operand))
+    {
+        return operand;
+    }
+    const uint32_t count = ts_node_named_child_count(node);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        TSNode ch = ts_node_named_child(node, i);
+        std::string_view ct = ts_node_type(ch);
+        if (ct != "operator" && ct != "++" && ct != "--" && ct != "!" && ct != "-" && ct != "+" && ct != "~")
+        {
+            return ch;
+        }
+    }
+    return TSNode{};
+}
+
+static bool CheckUnaryInvalidOperand(TSNode node, TSNode operand, const Scope* scope, DiagnosticContext& ctx)
+{
+    if (ts_node_is_null(operand))
+    {
+        return false;
+    }
+    if (const auto dt = IsBareDataType(operand, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    {
+        EmitAtNode(operand, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
+        return true;
+    }
+    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    std::string opText = NodeText(opNode, ctx.request.sourceCode);
+    std::string text = TrimString(NodeText(node, ctx.request.sourceCode));
+    if (opText == "@" || (!text.empty() && text.front() == '@'))
+    {
+        return false;
+    }
+    if (IsFunctionReference(operand, scope, ctx))
+    {
+        EmitAtNode(node, ctx, diagnostics::codes::IllegalOperation);
+        return true;
+    }
+    return false;
+}
+
 /**
  * @brief Validates increment and decrement expressions on virtual properties.
  * @param[in] node Unary or postfix expression syntax node.
@@ -3219,6 +3282,13 @@ void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, D
  */
 void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
+    const Scope* scope = ResolveNodeScope(node, request);
+    TSNode operand = FindUnaryOperand(node);
+    if (CheckUnaryInvalidOperand(node, operand, scope, ctx))
+    {
+        return;
+    }
+
     TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
     const std::string opText = NodeText(opNode, request.sourceCode);
     const std::string nodeText = NodeText(node, request.sourceCode);
@@ -3228,26 +3298,9 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
         return;
     }
 
-    TSNode argNode = parser::GetChildByField(node, parser::fields::Operand);
-    if (ts_node_is_null(argNode))
+    if (!ts_node_is_null(operand))
     {
-        const uint32_t count = ts_node_named_child_count(node);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            TSNode ch = ts_node_named_child(node, i);
-            std::string_view ct = ts_node_type(ch);
-            if (ct != "operator" && ct != "++" && ct != "--")
-            {
-                argNode = ch;
-                break;
-            }
-        }
-    }
-
-    if (!ts_node_is_null(argNode))
-    {
-        const Scope* scope = ResolveNodeScope(node, request);
-        PropertyAccessInfo pInfo = InspectPropertyAccess(argNode, scope, ctx);
+        PropertyAccessInfo pInfo = InspectPropertyAccess(operand, scope, ctx);
         if (pInfo.isProperty)
         {
             EmitAtNode(node, ctx, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
@@ -3330,6 +3383,18 @@ void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* sco
 
     if (!expected.empty())
     {
+        if (const auto dataTypeName = IsBareDataType(expr, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+        {
+            EmitAtNode(expr, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+            return;
+        }
+        if (IsFunctionReference(expr, scope, ctx))
+        {
+            EmitAtNode(expr, ctx, "as-err-no-implicit-conversion",
+                       {TrimString(NodeText(expr, ctx.request.sourceCode)), expected});
+            return;
+        }
+
         const std::string actual = CleanBaseType(ResolveExpressionType(expr, ExpressionTypeContext(scope, ctx)));
         CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
         if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
@@ -3441,6 +3506,18 @@ void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Sco
 
     if (!expected.empty())
     {
+        if (const auto dataTypeName = IsBareDataType(expr, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+        {
+            EmitAtNode(expr, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+            return;
+        }
+        if (IsFunctionReference(expr, scope, ctx))
+        {
+            EmitAtNode(expr, ctx, "as-err-no-implicit-conversion",
+                       {TrimString(NodeText(expr, ctx.request.sourceCode)), expected});
+            return;
+        }
+
         const std::string actual = CleanBaseType(ResolveExpressionType(expr, ExpressionTypeContext(scope, ctx)));
         CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
         if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))

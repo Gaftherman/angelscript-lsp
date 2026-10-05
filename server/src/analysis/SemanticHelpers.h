@@ -315,6 +315,17 @@ bool NamesAFunctionNotAType(std::string_view name, const class SymbolTable& tabl
 std::optional<std::string> IsBareDataType(TSNode node, const struct Scope* scope, const class SymbolTable& symbolTable,
                                           std::string_view sourceCode);
 
+/**
+ * @brief Checks if an expression denotes a bare function or method reference.
+ * @param[in] node AST expression node.
+ * @param[in] scope Lexical scope at the node, or nullptr.
+ * @param[in] symbolTable Symbol table for symbol lookups.
+ * @param[in] sourceCode Source text of the document.
+ * @return True if the expression denotes a bare function or method without invocation.
+ */
+bool IsFunctionReference(TSNode node, const struct Scope* scope, const class SymbolTable& symbolTable,
+                         std::string_view sourceCode);
+
 /** @brief What a type is when it cannot be instantiated, for the message that says so. */
 enum class NonInstantiableKind
 {
