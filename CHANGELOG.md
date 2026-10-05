@@ -2,6 +2,17 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.0.3] - 2026-10-05
+
+### Single Resolved Overload Hover Display & Localized Overload Summary
+
+- Hover Tooltip & Overload Resolution:
+  - Streamlined function and method hover tooltips to render only the single winning/resolved overload signature inside the code block instead of dumping entire overload sets (up to 16 declarations).
+  - Added declaration-site cursor awareness to match and display the specific overload being hovered at its declaration.
+  - Added localized overload summary lines below the code block (e.g. `2 sobrecargas más` / `8 sobrecargas más` in Spanish, `2 more overloads` / `8 more overloads` in English) indicating the count of additional callable routines.
+  - Plumbed `i18n` localization provider into `HoverRequest` and `TextDocumentHandlers` to automatically sync tooltip messages with the editor's display language.
+  - Unified member method and scoped symbol formatting into a single cohesive, non-duplicated implementation.
+
 ## [1.0.2] - 2026-10-04
 
 ### Unqualified Member Call Disambiguation, Scoped Constructor Resolution, and Auto-Indentation on Paste
