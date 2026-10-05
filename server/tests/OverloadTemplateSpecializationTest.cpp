@@ -292,11 +292,9 @@ TEST_SUITE("OverloadTemplateSpecialization")
         auto hoverFn = env.HoverAt(posFn.line, posFn.character);
         REQUIRE(hoverFn.has_value());
         const std::string hoverContent = GetHoverText(*hoverFn);
-        size_t posStr = hoverContent.find("array<string>@ &out");
-        size_t posFloat = hoverContent.find("array<float>@ &out");
-        CHECK(posStr != std::string::npos);
-        CHECK(posFloat != std::string::npos);
-        CHECK(posStr < posFloat);
+        CHECK(hoverContent.find("array<string>@ &out") != std::string::npos);
+        CHECK(hoverContent.find("1 more overload") != std::string::npos);
+        CHECK(hoverContent.find("array<float>@ &out") == std::string::npos);
     }
 
     /**

@@ -5,6 +5,7 @@
 #include "analysis/SignatureFormatter.h"
 #include "analysis/VirtualMixinContext.h"
 #include "analysis/overload/ConversionRankingEngine.h"
+#include "i18n/i18n.h"
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 #include "utils/IncludeResolver.h"
@@ -1028,24 +1029,109 @@ void CollectOverloadDocs(const HoverRequest& request, const std::vector<analysis
     }
 }
 
-std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& memberSymbols,
-                                            std::string_view accessorPropertyType, const HoverQueryContext& ctx)
+/**
+ * @brief Formats the summary text for additional unshown overloads.
+ * @param[in] i18n Optional localization pointer.
+ * @param[in] count Number of additional overloads (must be >= 1).
+ * @return Localized summary text e.g. "2 sobrecargas más" or "2 more overloads".
+ */
+std::string FormatMoreOverloads(const angel_lsp::i18n::I18n* i18n, size_t count)
 {
-    auto best = ResolveCallOverload(ctx.node, memberSymbols, ctx.request, ctx.scope);
-    if (best)
+    if (count == 1)
     {
-        auto it = std::find_if(memberSymbols.begin(), memberSymbols.end(), [&](const analysis::Symbol& s)
-                               { return s.name == best->name && analysis::HasSameParameterList(s, *best); });
-        if (it != memberSymbols.end())
+        return angel_lsp::i18n::FormatMessage(i18n, "hover-more-overloads-singular", "1 more overload");
+    }
+    return angel_lsp::i18n::FormatMessage(i18n, "hover-more-overloads-plural", "{} more overloads", count);
+}
+
+/**
+ * @brief Checks whether a symbol represents a callable routine (function, method, constructor).
+ * @param[in] sym Symbol to test.
+ * @return True if callable routine, false otherwise.
+ */
+bool IsCallableSymbol(const analysis::Symbol& sym)
+{
+    return sym.type == analysis::SymbolType::Function ||
+           std::holds_alternative<analysis::FunctionSignature>(sym.signature);
+}
+
+/**
+ * @brief Counts additional callable overloads sharing the primary symbol's name.
+ * @param[in] symbols Deduplicated candidate symbols list.
+ * @return Count of other overloads with the same name.
+ */
+size_t CountMoreOverloads(const std::vector<analysis::Symbol>& symbols)
+{
+    if (symbols.size() <= 1 || !IsCallableSymbol(symbols.front()))
+    {
+        return 0;
+    }
+    size_t count = 0;
+    const std::string_view primaryName = symbols.front().name;
+    for (size_t i = 1; i < symbols.size(); ++i)
+    {
+        if (symbols[i].name == primaryName && IsCallableSymbol(symbols[i]))
         {
-            std::rotate(memberSymbols.begin(), it, it + 1);
+            ++count;
         }
     }
+    return count;
+}
 
-    RemoveDuplicateSymbols(memberSymbols);
-    if (!memberSymbols.empty() && ctx.profiler.IsActive())
+/**
+ * @brief Resolves best matching call overload, or finds the declaration matching cursor position.
+ * @param[in,out] symbols Candidate symbols list.
+ * @param[in] ctx Hover query context.
+ * @return Best matching symbol if resolved or matched at declaration, std::nullopt otherwise.
+ */
+std::optional<analysis::Symbol> ResolveOrMatchCandidate(std::vector<analysis::Symbol>& symbols,
+                                                        const HoverQueryContext& ctx)
+{
+    auto best = ResolveCallOverload(ctx.node, symbols, ctx.request, ctx.scope);
+    if (!best)
     {
-        ctx.profiler.symbolName = memberSymbols.front().name;
+        auto it = std::find_if(symbols.begin(), symbols.end(),
+                               [&](const analysis::Symbol& s)
+                               {
+                                   if (s.fileUri != ctx.request.uri)
+                                   {
+                                       return false;
+                                   }
+                                   return s.startLine == ctx.queryLine || s.selectionRange.startLine == ctx.queryLine;
+                               });
+        if (it != symbols.end())
+        {
+            best = *it;
+            std::rotate(symbols.begin(), it, it + 1);
+        }
+    }
+    else
+    {
+        auto it = std::find_if(symbols.begin(), symbols.end(), [&](const analysis::Symbol& s)
+                               { return s.name == best->name && analysis::HasSameParameterList(s, *best); });
+        if (it != symbols.end())
+        {
+            std::rotate(symbols.begin(), it, it + 1);
+        }
+    }
+    return best;
+}
+
+/**
+ * @brief Formats hover information for a resolved set of symbols with single signature and overload summary.
+ * @param[in,out] symbols Candidate symbol list.
+ * @param[in] accessorPropertyType Optional synthesized property accessor type.
+ * @param[in] ctx Hover query context.
+ * @return Formatted LSP hover response.
+ */
+lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::string_view accessorPropertyType,
+                              const HoverQueryContext& ctx)
+{
+    auto best = ResolveOrMatchCandidate(symbols, ctx);
+    RemoveDuplicateSymbols(symbols);
+    if (!symbols.empty() && ctx.profiler.IsActive())
+    {
+        ctx.profiler.symbolName = symbols.front().name;
     }
 
     utils::HighResTimer fmtTimer;
@@ -1056,24 +1142,21 @@ std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& membe
     {
         oss << "(property) " << accessorPropertyType << " " << ctx.nodeText << "\n";
     }
-    constexpr size_t kMaxMemberSymbols = 16;
-    const size_t displayCount = std::min(memberSymbols.size(), kMaxMemberSymbols);
-    for (size_t i = 0; i < displayCount; ++i)
+
+    if (!symbols.empty())
     {
-        if (i > 0)
-        {
-            oss << "\n";
-        }
-        oss << FormatDeclarationText(memberSymbols[i]);
-    }
-    if (memberSymbols.size() > kMaxMemberSymbols)
-    {
-        oss << "\n// ... and " << (memberSymbols.size() - kMaxMemberSymbols) << " more overloads";
+        oss << FormatDeclarationText(symbols.front(), &ctx.request.symbolTable);
     }
     oss << "\n```";
 
+    const size_t moreCount = CountMoreOverloads(symbols);
+    if (moreCount > 0)
+    {
+        oss << "\n\n" << FormatMoreOverloads(ctx.request.i18n, moreCount);
+    }
+
     std::vector<std::string> docs;
-    CollectOverloadDocs(ctx.request, memberSymbols, best, docs);
+    CollectOverloadDocs(ctx.request, symbols, best, docs);
     for (const auto& d : docs)
     {
         oss << "\n\n" << d;
@@ -1081,6 +1164,19 @@ std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& membe
 
     ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
+}
+
+/**
+ * @brief Formats hover information for class member access.
+ * @param[in,out] memberSymbols Candidate member symbols list.
+ * @param[in] accessorPropertyType Optional synthesized property accessor type.
+ * @param[in] ctx Hover query context.
+ * @return Formatted LSP hover response.
+ */
+std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& memberSymbols,
+                                            std::string_view accessorPropertyType, const HoverQueryContext& ctx)
+{
+    return FormatSymbolsHover(memberSymbols, accessorPropertyType, ctx);
 }
 
 std::optional<lsp::Hover> TryHoverMemberAccess(const HoverQueryContext& ctx)
@@ -1890,62 +1986,6 @@ std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
     FilterEnumMemberSymbols(symbols, ctx);
     std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
     return symbols;
-}
-
-lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::string_view accessorPropertyType,
-                              const HoverQueryContext& ctx)
-{
-    auto best = ResolveCallOverload(ctx.node, symbols, ctx.request, ctx.scope);
-    if (best)
-    {
-        auto it = std::find_if(symbols.begin(), symbols.end(), [&](const analysis::Symbol& s)
-                               { return s.name == best->name && analysis::HasSameParameterList(s, *best); });
-        if (it != symbols.end())
-        {
-            std::rotate(symbols.begin(), it, it + 1);
-        }
-    }
-
-    RemoveDuplicateSymbols(symbols);
-    if (!symbols.empty() && ctx.profiler.IsActive())
-    {
-        ctx.profiler.symbolName = symbols.front().name;
-    }
-
-    utils::HighResTimer fmtTimer;
-    std::ostringstream oss;
-    oss << "```angelscript\n";
-
-    if (!accessorPropertyType.empty())
-    {
-        oss << "(property) " << accessorPropertyType << " " << ctx.nodeText << "\n";
-    }
-
-    constexpr size_t kMaxHoverSymbols = 16;
-    const size_t displayCount = std::min(symbols.size(), kMaxHoverSymbols);
-    for (size_t i = 0; i < displayCount; ++i)
-    {
-        if (i > 0)
-        {
-            oss << "\n";
-        }
-        oss << FormatDeclarationText(symbols[i], &ctx.request.symbolTable);
-    }
-    if (symbols.size() > kMaxHoverSymbols)
-    {
-        oss << "\n// ... and " << (symbols.size() - kMaxHoverSymbols) << " more overloads";
-    }
-    oss << "\n```";
-
-    std::vector<std::string> docs;
-    CollectOverloadDocs(ctx.request, symbols, best, docs);
-    for (const auto& d : docs)
-    {
-        oss << "\n\n" << d;
-    }
-
-    ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
-    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
 }
 
 /**

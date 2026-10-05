@@ -251,7 +251,8 @@ TEST_CASE("HoverHandler - Global Function Hover with Overloads")
     REQUIRE(hover.has_value());
     auto content = std::get<lsp::MarkupContent>(hover->contents);
     CHECK(content.value.find("float Dist(float x, float y)") != std::string::npos);
-    CHECK(content.value.find("float Dist(float x, float y, float z)") != std::string::npos);
+    CHECK(content.value.find("1 more overload") != std::string::npos);
+    CHECK(content.value.find("float Dist(float x, float y, float z)") == std::string::npos);
     CHECK(content.value.find("Calculates distance.") != std::string::npos);
 }
 
@@ -465,7 +466,7 @@ TEST_CASE("HoverHandler - The same declaration indexed twice is shown once")
     CHECK(rendered.find("void Ping(int id)", first + 1) == std::string::npos);
 }
 
-TEST_CASE("HoverHandler - Distinct overloads are all shown")
+TEST_CASE("HoverHandler - Call overload shows resolved signature and summarizes additional overloads")
 {
     std::string code = "void Emit(int id) {}\n"
                        "void Emit(const string &in name) {}\n"
@@ -481,7 +482,8 @@ TEST_CASE("HoverHandler - Distinct overloads are all shown")
     const std::string rendered = std::get<lsp::MarkupContent>(hover->contents).value;
 
     CHECK(rendered.find("void Emit(int id)") != std::string::npos);
-    CHECK(rendered.find("void Emit(const string &in name)") != std::string::npos);
+    CHECK(rendered.find("1 more overload") != std::string::npos);
+    CHECK(rendered.find("void Emit(const string &in name)") == std::string::npos);
 }
 
 TEST_CASE("HoverHandler - Global Variable vs Local Variable Hover")
@@ -948,11 +950,8 @@ TEST_CASE("HoverHandler - Call overload resolution across inheritance hierarchy"
     CHECK(content.value.find(
               "bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)") !=
           std::string::npos);
-    CHECK(content.value.find("bool weapon_ins2l85a2::Deploy()") != std::string::npos);
-    // Best matching overload must appear before the 0-arg overload
-    size_t posBest = content.value.find("WeaponBase::Deploy");
-    size_t posDerived = content.value.find("weapon_ins2l85a2::Deploy");
-    CHECK(posBest < posDerived);
+    CHECK(content.value.find("1 more overload") != std::string::npos);
+    CHECK(content.value.find("weapon_ins2l85a2::Deploy") == std::string::npos);
 }
 
 TEST_CASE("HoverHandler - Call overload resolution fallback when argument type mismatches")
@@ -975,9 +974,8 @@ TEST_CASE("HoverHandler - Call overload resolution fallback when argument type m
     CHECK(content.value.find(
               "bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)") !=
           std::string::npos);
-    size_t posBest = content.value.find("WeaponBase::Deploy");
-    size_t posDerived = content.value.find("weapon_ins2l85a2::Deploy");
-    CHECK(posBest < posDerived);
+    CHECK(content.value.find("1 more overload") != std::string::npos);
+    CHECK(content.value.find("weapon_ins2l85a2::Deploy") == std::string::npos);
 }
 
 TEST_CASE("HoverHandler - Predefined Stub Parameter AST Fallback")

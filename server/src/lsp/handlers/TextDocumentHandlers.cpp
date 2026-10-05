@@ -67,7 +67,8 @@ Server::HandleRequestsTextDocument_Hover(lsp::requests::TextDocument_Hover::Para
                                           .implicitExtension = ImplicitIncludeExtension(),
                                       });
                               },
-                              m_logger.get()};
+                              m_logger.get(),
+                              m_i18n.get()};
     auto hover = features::GetHover(hr);
     double roundtripMs = roundtripTimer.ElapsedMs();
     LogInfo(fmt::format("[Hover Roundtrip] Total: {:.2f} ms for {} at {}:{}", roundtripMs, doc->uri, req.position.line,

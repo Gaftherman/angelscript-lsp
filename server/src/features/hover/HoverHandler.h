@@ -15,6 +15,11 @@ namespace angel_lsp::utils
 class LspLogger;
 }
 
+namespace angel_lsp::i18n
+{
+class I18n;
+}
+
 namespace angel_lsp::features
 {
 /**
@@ -77,6 +82,11 @@ struct HoverRequest
      * @brief Optional LSP logger for performance profiling telemetry.
      */
     angel_lsp::utils::LspLogger* logger = nullptr;
+
+    /**
+     * @brief Optional localization instance for translating UI feedback and overload summaries.
+     */
+    const angel_lsp::i18n::I18n* i18n = nullptr;
 };
 
 /**
