@@ -1521,3 +1521,55 @@ TEST_CASE("SemanticTokensHandler - Namespace-qualified and unqualified enum memb
 
     ts_tree_delete(tree);
 }
+
+TEST_CASE("SemanticTokensHandler - Invariant: Unqualified member call with colliding global enum is tokenized as "
+          "method not enumMember")
+{
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("WeaponAnim");
+    const std::string actionName = angel_lsp::test::GenerateRandomSymbolName("Use");
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("Chamber");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("EntityMaker");
+
+    const std::string code = fmt::format("enum {}\n"
+                                         "{{\n"
+                                         "    {} = 0\n"
+                                         "}};\n"
+                                         "namespace {}\n"
+                                         "{{\n"
+                                         "    class {}\n"
+                                         "    {{\n"
+                                         "        void {}(int a, float b) {{}}\n"
+                                         "        void Spawn()\n"
+                                         "        {{\n"
+                                         "            {}(1, 2.0f);\n"
+                                         "        }}\n"
+                                         "    }};\n"
+                                         "}}\n",
+                                         enumName, actionName, nsName, clsName, actionName, actionName);
+
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{nullptr};
+    SymbolTable table;
+    collector.CollectSymbols("file:///test_unqualified_call.as", code, parser, table);
+
+    SemanticTokensRequest request{"file:///test_unqualified_call.as", code, tree, table};
+    const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
+
+    bool foundCallToken = false;
+    for (const auto& tok : tokens)
+    {
+        const std::string tokText = TextAt(code, tok.line, tok.character, tok.length);
+        if (tokText == actionName && tok.line >= 10)
+        {
+            foundCallToken = true;
+            CHECK(tok.type != "enumMember");
+            CHECK((tok.type == "method" || tok.type == "function"));
+        }
+    }
+    CHECK(foundCallToken);
+
+    ts_tree_delete(tree);
+}

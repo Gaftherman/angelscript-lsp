@@ -786,7 +786,7 @@ struct ClassSpan
 {
     uint32_t startByte = 0;
     uint32_t endByte = 0;
-    std::string_view name;
+    std::string name;
     int parent = -1;
 };
 
@@ -820,8 +820,19 @@ class ClassSpanIndex
                 uint32_t cEnd = ts_node_end_byte(classNameNode);
                 if (cStart < cEnd && cEnd <= sourceCode.size())
                 {
-                    index.m_spans.push_back(ClassSpan{ts_node_start_byte(classDecl), ts_node_end_byte(classDecl),
-                                                      std::string_view(sourceCode.data() + cStart, cEnd - cStart), -1});
+                    std::string_view bareName(sourceCode.data() + cStart, cEnd - cStart);
+                    std::string qName;
+                    const auto containers = analysis::GetEnclosingContainers(classDecl, sourceCode);
+                    if (!containers.empty() && !containers.front().qualifiedName.empty())
+                    {
+                        qName = containers.front().qualifiedName + "::" + std::string(bareName);
+                    }
+                    else
+                    {
+                        qName = std::string(bareName);
+                    }
+                    index.m_spans.push_back(
+                        ClassSpan{ts_node_start_byte(classDecl), ts_node_end_byte(classDecl), std::move(qName), -1});
                 }
             }
         }
@@ -1219,37 +1230,18 @@ uint32_t RefineEnclosingClassMember(std::string_view tokenText, uint32_t startBy
     {
         return tokenType;
     }
-    char keyBuf[256];
-    std::string_view qualifiedKey;
-    std::string heapKey;
-    const size_t keyLen = className.size() + 2 + tokenText.size();
-    if (keyLen < sizeof(keyBuf))
-    {
-        memcpy(keyBuf, className.data(), className.size());
-        keyBuf[className.size()] = ':';
-        keyBuf[className.size() + 1] = ':';
-        memcpy(keyBuf + className.size() + 2, tokenText.data(), tokenText.size());
-        qualifiedKey = std::string_view(keyBuf, keyLen);
-    }
-    else
-    {
-        heapKey.reserve(keyLen);
-        heapKey.append(className);
-        heapKey.append("::");
-        heapKey.append(tokenText);
-        qualifiedKey = heapKey;
-    }
 
-    const auto& typeMembers = ctx.ruleIndex->Members(className);
-    if (typeMembers.memberKeySet.contains(qualifiedKey))
+    const std::string nameStr(tokenText);
+    for (const auto& owner : analysis::GetInheritedTypeHierarchy(std::string(className), ctx.request.symbolTable))
     {
-        if (tokenType == Type_Variable)
-        {
-            return Type_Property;
-        }
-        if (tokenType == Type_Function)
+        const auto& ownerMembers = ctx.ruleIndex->Members(owner);
+        if (tokenType == Type_Function && ownerMembers.methodNames.contains(nameStr))
         {
             return Type_Method;
+        }
+        if (tokenType == Type_Variable && ownerMembers.allMemberNames.contains(nameStr))
+        {
+            return Type_Property;
         }
     }
     return tokenType;
@@ -1279,13 +1271,13 @@ uint32_t MatchAgreedSymbolType(analysis::SymbolType agreedType, uint32_t tokenTy
     {
         return Type_Method;
     }
-    if (agreedType == analysis::SymbolType::Variable)
+    if (agreedType == analysis::SymbolType::Variable && tokenType == Type_Variable)
     {
         if (isEnumConstant)
         {
             return Type_EnumMember;
         }
-        if (tokenType == Type_Variable && hasContainer)
+        if (hasContainer)
         {
             return Type_Property;
         }
