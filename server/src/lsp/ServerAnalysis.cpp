@@ -62,6 +62,7 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     request.moduleContext = ModuleContextFor(uriStr);
 
     request.diagnostics = &m_config.diagnostics;
+    request.engineRules = &m_config.engineRules;
     request.severityOverrides = m_diagnosticSeverities.empty() ? nullptr : &m_diagnosticSeverities;
     request.enableTypeConversionChecks = m_config.features.enableTypeConversionChecks;
     request.enableCommentSuppressions = m_config.features.enableCommentSuppressions;

@@ -7,6 +7,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/ast/SemanticNodes.h"
 #include "analysis/overload/OverloadTypeConversions.h"
+#include "analysis/rules/EngineRuleChecker.h"
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
@@ -1868,6 +1869,8 @@ void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope,
 
     CheckMalformedTernaryArgs(args.argNodes, args.argTypes, matchingArity, valCtx);
     CheckCallOverloads(matchingArity, args, calleeRes, valCtx);
+    rules::CheckEngineSchedulerCall(
+        rules::SchedulerCallRequest{node, calleeRes.reportedName, args.argNodes, args.argTypes, matchingArity}, ctx);
 }
 
 /**

@@ -694,6 +694,16 @@ bool Server::UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& secti
         }
     }
 
+    if (const auto* rulesFileVal = section.find("rulesFile"); rulesFileVal && rulesFileVal->isString())
+    {
+        if (rulesFileVal->string() != m_config.rulesFile)
+        {
+            m_config.rulesFile = rulesFileVal->string();
+            LogInfo(fmt::format("Rules file changed to '{}'; reloading engine rules", m_config.rulesFile));
+            shouldRescan = true;
+        }
+    }
+
     return shouldRescan;
 }
 

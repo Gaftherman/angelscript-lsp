@@ -121,6 +121,7 @@ struct SemanticAnalysisRequest
      * above and for the same reason: a test that does not care should not have to build one.
      */
     const config::DiagnosticsConfig* diagnostics = nullptr;
+    const config::EngineRuleConfig* engineRules = nullptr;
 
     /** @brief Optional traversal budget to enforce bounded AST node visits across checkers. */
     TraversalBudget* traversalBudget = nullptr;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config/EngineRuleConfig.h"
 #include "utils/PreprocessorRegions.h"
 
 #include <string>
@@ -761,6 +762,16 @@ struct ServerConfig
      * Predefined API stubs on disk (.as.predefined) supersede built-in engine profiles.
      */
     std::string engineProfile = "none";
+
+    /**
+     * @brief Path to the engine rules configuration file (default: "angelscript.rules.json").
+     */
+    std::string rulesFile;
+
+    /**
+     * @brief Active data-driven engine rules loaded from angelscript.rules.json.
+     */
+    EngineRuleConfig engineRules;
 
     /**
      * @brief Per-rule diagnostic severity overrides, keyed by diagnostic code.

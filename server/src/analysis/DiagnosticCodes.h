@@ -231,4 +231,10 @@ inline constexpr std::string_view ReadonlyHandle = "as-err-readonly-handle";
 inline constexpr std::string_view StandaloneReference = "as-err-standalone-reference";
 inline constexpr std::string_view ReadonlyReference = "as-err-readonly-reference";
 inline constexpr std::string_view MetadataDisabled = "as-warn-metadata-disabled";
+
+// Data-driven Engine Rules (angelscript.rules.json)
+inline constexpr std::string_view EngineStorageRule = "as-warn-engine-storage-rule";
+inline constexpr std::string_view EngineTypeSuggestion = "as-hint-engine-type-suggestion";
+inline constexpr std::string_view EngineSchedulerSafety = "as-warn-engine-scheduler-safety";
+inline constexpr std::string_view EngineScheduledEnumDiscriminant = "as-warn-engine-scheduled-enum-discriminant";
 } // namespace angel_lsp::diagnostics::codes

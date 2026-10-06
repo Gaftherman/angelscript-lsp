@@ -301,6 +301,7 @@ void PrintOptionsHelp()
            "(repeatable)\n"
         << "  --predefined-active=<path>              Select the single predefined stub workspace scan will\n"
         << "                                          load (leaving it empty loads all discovered stubs)\n"
+        << "  --rules-file=<path>                     Path to angelscript.rules.json custom rules configuration\n"
         << "  --module=<name>=<path>                  Name one script module and the .as it is built from\n"
         << "  --module-folder=<name>=<dir>            Name one script module and a directory whose scripts\n"
         << "                                          all belong to it (repeatable). The deepest folder wins.\n"
@@ -942,6 +943,15 @@ bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
         if (ctx.GetStringValue(val) && !val.empty())
         {
             config.engineProfile = std::string(val);
+        }
+        return true;
+    }
+    if (ctx.key == "--rules-file" || ctx.key == "--rules")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.rulesFile = std::string(val);
         }
         return true;
     }
