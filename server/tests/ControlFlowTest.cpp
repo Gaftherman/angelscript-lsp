@@ -8,6 +8,7 @@
 #include "analysis/SymbolTable.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
+#include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
@@ -660,4 +661,79 @@ TEST_CASE("ControlFlow - A bare return inside a lambda owes the funcdef's value"
                              "}\n";
 
     CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-return-value-required"));
+}
+
+// =====================================================================================
+// Variable declaration inside switch cases
+// =====================================================================================
+
+TEST_CASE("ControlFlow - Reports variable declared in switch case without block")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
+    const std::string code = "void " + fnName +
+                             "(int x) {\n"
+                             "    switch (x) {\n"
+                             "        case 1:\n"
+                             "            int " +
+                             varName +
+                             " = 1;\n"
+                             "            break;\n"
+                             "    }\n"
+                             "}\n";
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
+}
+
+TEST_CASE("ControlFlow - Variable declared in statement block inside switch case is accepted")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
+    const std::string code = "void " + fnName +
+                             "(int x) {\n"
+                             "    switch (x) {\n"
+                             "        case 1: {\n"
+                             "            int " +
+                             varName +
+                             " = 1;\n"
+                             "            break;\n"
+                             "        }\n"
+                             "    }\n"
+                             "}\n";
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
+}
+
+TEST_CASE("ControlFlow - Reports variable declared in default clause without block")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
+    const std::string code = "void " + fnName +
+                             "(int x) {\n"
+                             "    switch (x) {\n"
+                             "        default:\n"
+                             "            int " +
+                             varName +
+                             " = 10;\n"
+                             "            break;\n"
+                             "    }\n"
+                             "}\n";
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
+}
+
+TEST_CASE("ControlFlow - Variable declared in nested if block inside switch case is accepted")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("fn");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("var");
+    const std::string code = "void " + fnName +
+                             "(int x) {\n"
+                             "    switch (x) {\n"
+                             "        case 1:\n"
+                             "            if (x > 0) {\n"
+                             "                int " +
+                             varName +
+                             " = 5;\n"
+                             "            }\n"
+                             "            break;\n"
+                             "    }\n"
+                             "}\n";
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-variable-in-switch-case"));
 }

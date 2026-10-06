@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
+  "$schema": "../schemas/angelscript.rules.schema.json",
   "name": "Sven Co-op Engine Safety Rules",
   "engineProperties": {
     "propertyAccessorMode": 2,

@@ -202,6 +202,7 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"E247", diagnostics::codes::StandaloneReference},
     {"E248", diagnostics::codes::ReadonlyReference},
     {"E249", diagnostics::codes::GlobalFunctionAttribute},
+    {"E250", diagnostics::codes::VariableInSwitchCase},
 };
 
 bool EqualsCaseInsensitive(std::string_view a, std::string_view b) noexcept

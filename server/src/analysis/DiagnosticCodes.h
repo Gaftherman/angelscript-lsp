@@ -242,4 +242,6 @@ inline constexpr std::string_view EngineStorageRule = "as-warn-engine-storage-ru
 inline constexpr std::string_view EngineTypeSuggestion = "as-hint-engine-type-suggestion";
 inline constexpr std::string_view EngineSchedulerSafety = "as-warn-engine-scheduler-safety";
 inline constexpr std::string_view EngineScheduledEnumDiscriminant = "as-warn-engine-scheduled-enum-discriminant";
+
+inline constexpr std::string_view VariableInSwitchCase = "as-err-variable-in-switch-case";
 } // namespace angel_lsp::diagnostics::codes

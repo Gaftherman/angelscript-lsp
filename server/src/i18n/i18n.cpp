@@ -257,6 +257,8 @@ void PopulateEnglishMessages4(MessageMap& m_messages)
     m_messages["as-err-invalid-case-type"] = "Case value must be an integer, char, or enum constant expression.";
     m_messages["as-err-duplicate-case-value"] = "Duplicate case value '{}' in switch statement.";
     m_messages["as-err-default-must-be-last"] = "The default case must be the last one.";
+    m_messages["as-err-variable-in-switch-case"] =
+        "Variables cannot be declared in switch cases, except inside statement blocks.";
     m_messages["as-err-if-empty-statement"] = "If with empty statement.";
     m_messages["as-err-else-empty-statement"] = "Else with empty statement.";
     m_messages["as-err-not-all-paths-return"] = "Not all paths of '{}' return a value.";
@@ -644,6 +646,8 @@ void PopulateSpanishMessages4(MessageMap& m_messages)
         "El valor de 'case' debe ser una expresión constante entera, de carácter o de enumeración.";
     m_messages["as-err-duplicate-case-value"] = "Valor de 'case' duplicado ('{}') en la sentencia 'switch'.";
     m_messages["as-err-default-must-be-last"] = "El caso por defecto (default) debe ser el último.";
+    m_messages["as-err-variable-in-switch-case"] =
+        "No se pueden declarar variables en casos de switch, excepto dentro de bloques de sentencias.";
     m_messages["as-err-if-empty-statement"] = "'if' con sentencia vacía.";
     m_messages["as-err-else-empty-statement"] = "'else' con sentencia vacía.";
     m_messages["as-err-not-all-paths-return"] = "No todos los caminos de '{}' devuelven un valor.";

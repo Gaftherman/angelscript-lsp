@@ -1,5 +1,6 @@
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/RuleIndex.h"
@@ -645,6 +646,25 @@ void ProcessCaseClause(TSNode clause, std::string_view sourceCode, std::vector<s
     }
 }
 
+/**
+ * @brief Reports any variable declared directly inside a switch case or default clause without a statement block.
+ * @param[in] clause The case_clause AST node.
+ * @param[in,out] ctx Diagnostic collection context.
+ */
+void CheckVariablesInClause(TSNode clause, DiagnosticContext& ctx)
+{
+    const uint32_t first = FirstStatementIndex(clause);
+    const uint32_t count = ts_node_named_child_count(clause);
+    for (uint32_t i = first; i < count; ++i)
+    {
+        TSNode stmt = ts_node_named_child(clause, i);
+        if (NodeType(stmt) == parser::nodes::VariableDeclaration)
+        {
+            EmitAtNode(stmt, ctx, diagnostics::codes::VariableInSwitchCase);
+        }
+    }
+}
+
 void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticContext& ctx)
 {
     std::vector<std::string> seenValues;
@@ -658,8 +678,14 @@ void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticContext& ct
         TSNode clause = ts_node_named_child(node, i);
         if (NodeType(clause) != "case_clause")
         {
+            if (NodeType(clause) == parser::nodes::VariableDeclaration)
+            {
+                EmitAtNode(clause, ctx, diagnostics::codes::VariableInSwitchCase);
+            }
             continue;
         }
+
+        CheckVariablesInClause(clause, ctx);
 
         if (IsDefaultClause(clause))
         {
