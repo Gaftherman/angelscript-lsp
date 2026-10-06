@@ -1038,6 +1038,15 @@
           }
         }
       }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "*angelscript.rules.json",
+          "angelscript.rules.json"
+        ],
+        "url": "./schemas/angelscript.rules.schema.json"
+      }
     ]
   },
   "scripts": {

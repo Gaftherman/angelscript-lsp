@@ -1,0 +1,248 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
+  "title": "AngelScript Engine Rules Configuration",
+  "description": "JSON schema for AngelScript data-driven engine safety rules and compiler property configurations (angelscript.rules.json).",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URL to the schema definition."
+    },
+    "name": {
+      "type": "string",
+      "description": "Friendly human-readable display name for this engine ruleset."
+    },
+    "engineProperties": {
+      "type": "object",
+      "description": "Native AngelScript engine properties (asEP_*) that configure compiler and parser behavior.",
+      "additionalProperties": false,
+      "properties": {
+        "propertyAccessorMode": {
+          "type": "integer",
+          "enum": [0, 1, 2, 3],
+          "default": 2,
+          "description": "asEP_PROPERTY_ACCESSOR_MODE: 0 = disabled, 1 = explicit get/set only, 2 = automatic virtual property getters and setters, 3 = backward compatibility mode."
+        },
+        "disallowGlobalVars": {
+          "type": "boolean",
+          "default": false,
+          "description": "asEP_DISALLOW_GLOBAL_VARS: When true, prohibits scripts from declaring global variables."
+        },
+        "requireEnumScope": {
+          "type": "boolean",
+          "default": false,
+          "description": "asEP_REQUIRE_ENUM_SCOPE: When true, enum values must be qualified with the enum scope (EnumName::Value)."
+        },
+        "boolConversionMode": {
+          "type": "integer",
+          "enum": [0, 1],
+          "default": 0,
+          "description": "asEP_BOOL_CONVERSION_MODE: 0 = strict bool conversions, 1 = allows conversions from numbers and handles."
+        },
+        "allowUnsafeReferences": {
+          "type": "boolean",
+          "default": false,
+          "description": "asEP_ALLOW_UNSAFE_REFERENCES: When true, allows unsafe references and pointer syntax."
+        },
+        "allowMultilineStrings": {
+          "type": "boolean",
+          "default": false,
+          "description": "asEP_ALLOW_MULTILINE_STRINGS: When true, allows multiline string literals."
+        },
+        "disableIntegerDivision": {
+          "type": "boolean",
+          "default": false,
+          "description": "asEP_DISABLE_INTEGER_DIVISION: When true, integer division results in float values."
+        }
+      }
+    },
+    "storageRules": {
+      "type": "array",
+      "description": "Rules for restricting storage locations of unsafe types (e.g. raw handles in class members or global arrays).",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for this storage safety rule."
+          },
+          "types": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of exact type names to match."
+          },
+          "inheritsFrom": {
+            "type": "string",
+            "description": "Base type name. Any type inheriting from this type will trigger the rule."
+          },
+          "typeRegex": {
+            "type": "string",
+            "description": "Regular expression pattern to match type names (e.g. 'CBase.*')."
+          },
+          "handleOnly": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, the rule only triggers when the type is stored as a handle ('@')."
+          },
+          "disallowInMembers": {
+            "type": "boolean",
+            "default": false,
+            "description": "Prohibit storing matching types in class or struct member variables."
+          },
+          "disallowInGlobals": {
+            "type": "boolean",
+            "default": false,
+            "description": "Prohibit storing matching types in global variables."
+          },
+          "disallowInArrays": {
+            "type": "boolean",
+            "default": false,
+            "description": "Prohibit storing matching types as elements of arrays (array<T>)."
+          },
+          "suggestReplacement": {
+            "type": "string",
+            "description": "Safe replacement type to recommend in the diagnostic message (e.g. 'EHandle')."
+          },
+          "message": {
+            "type": "string",
+            "description": "Custom diagnostic message template. Supports '{}' formatting placeholders for variable name and suggested replacement."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["error", "warning", "info", "information", "hint"],
+            "default": "warning",
+            "description": "Diagnostic severity reported to the client."
+          }
+        }
+      }
+    },
+    "typeSuggestions": {
+      "type": "array",
+      "description": "Suggestions to migrate from discouraged or engine-specific types to safer or standard alternatives.",
+      "items": {
+        "type": "object",
+        "required": ["id", "fromType", "toType"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for this type suggestion rule."
+          },
+          "fromType": {
+            "type": "string",
+            "description": "Discouraged or sub-optimal type name (e.g. 'string_t')."
+          },
+          "toType": {
+            "type": "string",
+            "description": "Recommended replacement type name (e.g. 'string')."
+          },
+          "appliesTo": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["local", "member", "param", "return", "all"]
+            },
+            "default": ["all"],
+            "description": "Scopes where this type suggestion should trigger."
+          },
+          "message": {
+            "type": "string",
+            "description": "Custom diagnostic message template."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["error", "warning", "info", "information", "hint"],
+            "default": "hint",
+            "description": "Diagnostic severity reported to the client."
+          }
+        }
+      }
+    },
+    "schedulerRules": {
+      "type": "array",
+      "description": "Rules for validating asynchronous callback registrations and scheduler invocations (e.g. g_Scheduler.SetTimeout).",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for this scheduler safety rule."
+          },
+          "callee": {
+            "type": "string",
+            "description": "Identifier name or callee object (e.g. 'g_Scheduler')."
+          },
+          "receiverTypes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Type names of the receiver object (e.g. ['CScheduler'])."
+          },
+          "methods": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Method names to validate (e.g. ['SetTimeout', 'SetInterval'])."
+          },
+          "methodNames": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Alias for methods array."
+          },
+          "disallowParamInheritsFrom": {
+            "type": "string",
+            "description": "Prohibit callback functions having parameters derived from this type."
+          },
+          "disallowParamRegex": {
+            "type": "string",
+            "description": "Regex pattern matching parameter types prohibited in scheduled callbacks."
+          },
+          "disallowParamHandleOnly": {
+            "type": "boolean",
+            "default": true,
+            "description": "If true, only disallow handle parameters in callbacks."
+          },
+          "paramSuggestReplacement": {
+            "type": "string",
+            "description": "Safe replacement to suggest for callback parameters (e.g. 'EHandle')."
+          },
+          "disallowArgInheritsFrom": {
+            "type": "string",
+            "description": "Prohibit passing arguments derived from this type to the scheduler."
+          },
+          "disallowArgRegex": {
+            "type": "string",
+            "description": "Regex pattern matching arguments prohibited in scheduled call expressions."
+          },
+          "disallowArgHandleOnly": {
+            "type": "boolean",
+            "default": true,
+            "description": "If true, only disallow raw handle arguments passed to the scheduler."
+          },
+          "argSuggestReplacement": {
+            "type": "string",
+            "description": "Safe replacement to suggest for scheduler arguments (e.g. 'EHandle')."
+          },
+          "requireExplicitEnumConstruct": {
+            "type": "boolean",
+            "default": false,
+            "description": "Warn when integer discriminants are passed to wildcard '?& in' arguments intended for enum parameters without an explicit enum constructor or cast."
+          },
+          "message": {
+            "type": "string",
+            "description": "Custom diagnostic message template."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["error", "warning", "info", "information", "hint"],
+            "default": "warning",
+            "description": "Diagnostic severity reported to the client."
+          }
+        }
+      }
+    }
+  }
+}
