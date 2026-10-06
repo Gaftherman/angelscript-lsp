@@ -212,6 +212,53 @@ void ParseSchedulerRules(const nlohmann::json& j, std::vector<SchedulerRule>& ru
     }
 }
 
+void ParseReflectionCallees(const nlohmann::json& obj, std::vector<StringReflectionCallee>& callees)
+{
+    if (!obj.contains("stringReflectionCallees") || !obj["stringReflectionCallees"].is_array())
+    {
+        return;
+    }
+    for (const auto& item : obj["stringReflectionCallees"])
+    {
+        if (!item.is_object())
+            continue;
+        StringReflectionCallee c;
+        c.callee = item.value("callee", "");
+        ParseStringArray(item, "methods", c.methods);
+        if (item.contains("argIndices") && item["argIndices"].is_array())
+        {
+            for (const auto& idx : item["argIndices"])
+                if (idx.is_number_unsigned())
+                    c.argIndices.push_back(idx.get<size_t>());
+        }
+        else if (item.contains("argIndex") && item["argIndex"].is_number_unsigned())
+        {
+            c.argIndices.push_back(item["argIndex"].get<size_t>());
+        }
+        callees.push_back(std::move(c));
+    }
+}
+
+void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& rules)
+{
+    if (!j.contains("unusedSymbolRules") || !j["unusedSymbolRules"].is_object())
+    {
+        return;
+    }
+    const auto& u = j["unusedSymbolRules"];
+    rules.enabled = u.value("enabled", true);
+    rules.checkLocals = u.value("checkLocals", true);
+    rules.checkMembers = u.value("checkMembers", true);
+    rules.checkGlobals = u.value("checkGlobals", true);
+    rules.checkFunctions = u.value("checkFunctions", true);
+    rules.checkClasses = u.value("checkClasses", true);
+    rules.ignoredGlobalFunctionRegex = u.value("ignoredGlobalFunctionRegex", "");
+    ParseStringArray(u, "ignoredGlobalFunctions", rules.ignoredGlobalFunctions);
+    ParseStringArray(u, "ignoredBaseClasses", rules.ignoredBaseClasses);
+    ParseStringArray(u, "lifecycleMethods", rules.lifecycleMethods);
+    ParseReflectionCallees(u, rules.stringReflectionCallees);
+}
+
 } // namespace
 
 std::optional<EngineRuleConfig> ParseEngineRuleConfigJson(std::string_view jsonText)
@@ -231,6 +278,7 @@ std::optional<EngineRuleConfig> ParseEngineRuleConfigJson(std::string_view jsonT
         ParseStorageRules(parsed, config.storageRules);
         ParseTypeSuggestions(parsed, config.typeSuggestions);
         ParseSchedulerRules(parsed, config.schedulerRules);
+        ParseUnusedSymbolRules(parsed, config.unusedRules);
 
         return config;
     }

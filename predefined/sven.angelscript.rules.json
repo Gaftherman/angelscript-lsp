@@ -51,5 +51,82 @@
       "message": "Passing raw entity handle to scheduled callback is unsafe. Use 'EHandle'.",
       "severity": "warning"
     }
-  ]
+  ],
+  "unusedSymbolRules": {
+    "enabled": true,
+    "checkLocals": true,
+    "checkMembers": true,
+    "checkGlobals": true,
+    "checkFunctions": true,
+    "checkClasses": true,
+    "ignoredGlobalFunctions": [
+      "main",
+      "Main",
+      "PluginInit",
+      "MapInit",
+      "MapStart",
+      "MapActivate"
+    ],
+    "ignoredGlobalFunctionRegex": "^(On|Hook_|Client_|Server_|Player_|Monster_).*",
+    "ignoredBaseClasses": [
+      "ScriptBaseEntity",
+      "ScriptBaseAnimating",
+      "ScriptBaseMonsterEntity",
+      "ScriptBaseTankEntity",
+      "ScriptBasePlayerItemEntity",
+      "ScriptBasePlayerWeaponEntity",
+      "ScriptBaseItemEntity",
+      "ScriptBasePlayerAmmoEntity",
+      "ScriptBaseCustomEntity",
+      "ScriptClassInterface"
+    ],
+    "lifecycleMethods": [
+      "Spawn",
+      "Precache",
+      "KeyValue",
+      "PostSpawn",
+      "Think",
+      "Touch",
+      "Use",
+      "Blocked",
+      "ObjectCaps",
+      "GetItemInfo",
+      "PrimaryAttack",
+      "SecondaryAttack",
+      "TertiaryAttack",
+      "Reload",
+      "WeaponIdle",
+      "Deploy",
+      "Holster",
+      "ItemSlot",
+      "ItemPosition",
+      "AddToPlayer",
+      "AddDuplicate",
+      "ExtractAmmo",
+      "ExtractClipAmmo",
+      "InactiveItemPreFrame",
+      "InactiveItemPostFrame",
+      "ItemPreFrame",
+      "ItemPostFrame",
+      "ItemBusyFrame",
+      "PlayEmptySound"
+    ],
+    "stringReflectionCallees": [
+      {
+        "callee": "g_CustomEntityFuncs",
+        "methods": ["RegisterCustomEntity", "UnRegisterCustomEntity"],
+        "argIndices": [0]
+      },
+      {
+        "callee": "g_Scheduler",
+        "methods": ["SetTimeout", "SetInterval"],
+        "argIndices": [0]
+      },
+      {
+        "callee": "g_ItemRegistry",
+        "methods": ["RegisterWeapon"],
+        "argIndices": [4, 5]
+      }
+    ]
+  }
 }

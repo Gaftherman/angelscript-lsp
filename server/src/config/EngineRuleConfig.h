@@ -74,6 +74,44 @@ struct NativeEngineProperties
 };
 
 /**
+ * @brief Configuration for reflection calls passing symbol names as string literals.
+ */
+struct StringReflectionCallee
+{
+    std::string callee;               ///< Callee object or namespace (e.g. "g_CustomEntityFuncs").
+    std::vector<std::string> methods; ///< Method names (e.g. ["RegisterCustomEntity"]).
+    std::vector<size_t> argIndices;   ///< Argument positions containing string symbol names.
+};
+
+/**
+ * @brief Configuration for detecting unused symbols and exempting engine callbacks.
+ */
+struct UnusedSymbolRules
+{
+    bool enabled = false;                            ///< Whether extended unused symbol rules are active.
+    bool checkLocals = true;                         ///< Check unused local variables.
+    bool checkMembers = true;                        ///< Check unused class and mixin member variables.
+    bool checkGlobals = true;                        ///< Check unused global variables.
+    bool checkFunctions = true;                      ///< Check unused functions.
+    bool checkClasses = true;                        ///< Check unused classes.
+    std::vector<std::string> ignoredGlobalFunctions; ///< Functions called by engine (e.g. "MapInit").
+    std::string ignoredGlobalFunctionRegex;          ///< Regex pattern for engine hooks (e.g. "^(On|Hook_).*").
+    std::vector<std::string> ignoredBaseClasses;     ///< Entity base classes (e.g. "ScriptBaseEntity").
+    std::vector<std::string> lifecycleMethods;       ///< Lifecycle callback methods (e.g. "Spawn").
+    std::vector<StringReflectionCallee> stringReflectionCallees; ///< Reflection callees taking string symbols.
+
+    /**
+     * @brief Checks if unused symbol rules or exemptions are configured.
+     * @return True if any unused symbol rules or exemptions exist.
+     */
+    [[nodiscard]] bool HasActiveRules() const noexcept
+    {
+        return enabled || !ignoredBaseClasses.empty() || !lifecycleMethods.empty() || !ignoredGlobalFunctions.empty() ||
+               !stringReflectionCallees.empty();
+    }
+};
+
+/**
  * @brief Complete engine rule configuration loaded from angelscript.rules.json.
  */
 struct EngineRuleConfig
@@ -83,6 +121,7 @@ struct EngineRuleConfig
     std::vector<StorageRule> storageRules;           ///< Storage safety rules.
     std::vector<TypeSuggestionRule> typeSuggestions; ///< Type suggestion rules.
     std::vector<SchedulerRule> schedulerRules;       ///< Scheduler / callback safety rules.
+    UnusedSymbolRules unusedRules;                   ///< Unused symbol detection & exemption rules.
 
     /**
      * @brief Checks if any rules or engine properties are active.
@@ -90,7 +129,8 @@ struct EngineRuleConfig
      */
     [[nodiscard]] bool HasRules() const noexcept
     {
-        return !storageRules.empty() || !typeSuggestions.empty() || !schedulerRules.empty();
+        return !storageRules.empty() || !typeSuggestions.empty() || !schedulerRules.empty() ||
+               unusedRules.HasActiveRules();
     }
 };
 

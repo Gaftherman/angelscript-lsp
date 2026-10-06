@@ -243,6 +243,91 @@
           }
         }
       }
+    },
+    "unusedSymbolRules": {
+      "type": "object",
+      "description": "Rules for reporting unused symbols and exempting engine callbacks, reflection registrations, and lifecycle methods.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether unused symbol checks and engine exemptions are enabled."
+        },
+        "checkLocals": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to check unused local variables."
+        },
+        "checkMembers": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to check unused class and mixin member variables."
+        },
+        "checkGlobals": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to check unused global variables."
+        },
+        "checkFunctions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to check unused functions."
+        },
+        "checkClasses": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to check unused classes."
+        },
+        "ignoredGlobalFunctions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Global entry point functions called by the host engine (e.g. ['MapInit', 'PluginInit', 'main'])."
+        },
+        "ignoredGlobalFunctionRegex": {
+          "type": "string",
+          "description": "Regex pattern matching global hook or callback functions (e.g. '^(On|Hook_|Client_).*')."
+        },
+        "ignoredBaseClasses": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Base classes whose derived types represent engine entities instantiated by reflection or map placement."
+        },
+        "lifecycleMethods": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Methods on engine entity classes called by host reflection (e.g. ['Spawn', 'Precache', 'KeyValue'])."
+        },
+        "stringReflectionCallees": {
+          "type": "array",
+          "description": "Engine registration functions that reference class or function names via string literal arguments.",
+          "items": {
+            "type": "object",
+            "required": ["callee", "methods"],
+            "additionalProperties": false,
+            "properties": {
+              "callee": {
+                "type": "string",
+                "description": "Callee object or namespace (e.g. 'g_CustomEntityFuncs')."
+              },
+              "methods": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Method names (e.g. ['RegisterCustomEntity'])."
+              },
+              "argIndices": {
+                "type": "array",
+                "items": { "type": "integer" },
+                "description": "Argument indices containing string symbol references."
+              },
+              "argIndex": {
+                "type": "integer",
+                "description": "Single argument index containing string symbol references."
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

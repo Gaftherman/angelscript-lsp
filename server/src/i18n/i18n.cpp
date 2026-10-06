@@ -287,6 +287,11 @@ void PopulateEnglishMessages5(MessageMap& m_messages)
     m_messages["as-warn-undeclared-identifier"] = "Undeclared identifier '{}'.";
     m_messages["as-warn-possible-null-dereference"] = "Possible null handle dereference: '{}' may be null.";
     m_messages["as-warn-unused-variable"] = "Local variable '{}' is never used.";
+    m_messages["as-warn-unused-field"] = "Member variable '{}' is never used.";
+    m_messages["as-warn-unused-global-variable"] = "Global variable '{}' is never used.";
+    m_messages["as-warn-unused-function"] = "Function '{}' is never used.";
+    m_messages["as-warn-unused-method"] = "Method '{}' is never used.";
+    m_messages["as-warn-unused-class"] = "Class '{}' is never used.";
     m_messages["as-warn-signed-unsigned-mismatch"] =
         "Signed/Unsigned mismatch: '{}' is compared with '{}'. Half of one range has no counterpart in the other, so "
         "the conversion wraps.";
@@ -669,6 +674,11 @@ void PopulateSpanishMessages5(MessageMap& m_messages)
     m_messages["as-warn-undeclared-identifier"] = "Identificador no declarado '{}'.";
     m_messages["as-warn-possible-null-dereference"] = "Posible desreferencia de handle nulo: '{}' puede ser nulo.";
     m_messages["as-warn-unused-variable"] = "La variable local '{}' nunca se usa.";
+    m_messages["as-warn-unused-field"] = "La variable miembro '{}' nunca se usa.";
+    m_messages["as-warn-unused-global-variable"] = "La variable global '{}' nunca se usa.";
+    m_messages["as-warn-unused-function"] = "La función '{}' nunca se usa.";
+    m_messages["as-warn-unused-method"] = "El método '{}' nunca se usa.";
+    m_messages["as-warn-unused-class"] = "La clase '{}' nunca se usa.";
     m_messages["as-warn-signed-unsigned-mismatch"] =
         "Discrepancia con/sin signo: se compara '{}' con '{}'. La mitad de un rango no tiene equivalente en el "
         "otro, así que la conversión da la vuelta.";

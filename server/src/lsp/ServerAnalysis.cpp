@@ -68,6 +68,7 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     request.enableCommentSuppressions = m_config.features.enableCommentSuppressions;
     request.enableMetadata = m_config.features.enableMetadata;
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
+    request.scopeIndex = &m_scopeIndex;
     request.sourceCode = text;
     request.tree = tree;
 

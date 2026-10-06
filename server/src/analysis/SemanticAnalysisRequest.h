@@ -191,6 +191,9 @@ struct SemanticAnalysisRequest
     /** @brief Root of the document's lexical Scope tree (see ScopeTree.h), or nullptr if none was collected. */
     std::shared_ptr<const Scope> scopeRoot;
 
+    /** @brief Optional scope index of workspace documents for cross-file reference checking. */
+    const ScopeIndex* scopeIndex = nullptr;
+
     /**
      * @brief The same tree as scopeRoot, non-null only while this caller exclusively owns it.
      *
@@ -231,7 +234,7 @@ struct SemanticAnalysisRequest
      *
      * When null, SemanticAnalyzer builds a local NodeIndex from tree on first use.
      */
-    const NodeIndex* nodeIndex = nullptr;
+    mutable const NodeIndex* nodeIndex = nullptr;
 
     /**
      * @brief Gets configured name for the string type or empty if not configured.

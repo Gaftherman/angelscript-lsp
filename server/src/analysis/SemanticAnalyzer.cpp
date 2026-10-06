@@ -20,6 +20,7 @@
 #include "analysis/rules/FunctionRules.h"
 #include "analysis/rules/OperatorRules.h"
 #include "analysis/rules/TypeRules.h"
+#include "analysis/rules/UnusedSymbolChecker.h"
 #include "analysis/rules/VariableRules.h"
 #include "parser/GrammarNames.h"
 #include "spdlog/fmt/fmt.h"
@@ -63,9 +64,7 @@ void SemanticAnalyzer::RunScopeRules(const SemanticAnalysisRequest& request, Dia
     }
     CheckUndefinedIdentifiers(request.scopeRoot.get(), request.GetRuleIndex().globalNames, ctx);
 
-    ankerl::unordered_dense::set<const LocalDefinition*> used;
-    CollectUsedDefinitions(request.scopeRoot.get(), used);
-    CheckUnusedVariables(request.scopeRoot.get(), used, ctx);
+    rules::CheckUnusedSymbols(request, ctx);
 
     CheckNullAssignedToNonHandleInScope(request.scopeRoot.get(), ctx);
     CheckLocalVariableDeclarations(request.scopeRoot.get(), ctx);
@@ -240,6 +239,26 @@ static void CheckMetadataSupport(const SemanticAnalysisRequest& request, const N
     }
 }
 
+static void FilterSuppressedDiagnostics(std::vector<Diagnostic>& diagnostics, const SemanticAnalysisRequest& request,
+                                        const NodeIndex* indexPtr)
+{
+    if (!request.excludedLineRanges.empty())
+    {
+        std::erase_if(diagnostics, [&request](const Diagnostic& d)
+                      { return utils::IsLineExcluded(request.excludedLineRanges, d.range.start.line); });
+    }
+
+    if (request.enableCommentSuppressions && !request.sourceCode.empty())
+    {
+        const auto suppressions = ParseDiagnosticSuppressions(request.sourceCode, indexPtr);
+        if (!suppressions.Empty())
+        {
+            std::erase_if(diagnostics,
+                          [&](const Diagnostic& d) { return suppressions.IsSuppressed(d.code, d.range.start.line); });
+        }
+    }
+}
+
 std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest& request) const
 {
     std::vector<Diagnostic> diagnostics;
@@ -269,6 +288,21 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         indexPtr = localNodeIndex.get();
     }
 
+    struct NodeIndexGuard
+    {
+        const SemanticAnalysisRequest& req;
+        const NodeIndex* prev;
+        ~NodeIndexGuard()
+        {
+            req.nodeIndex = prev;
+        }
+    } nodeGuard{request, request.nodeIndex};
+
+    if (!request.nodeIndex && indexPtr)
+    {
+        request.nodeIndex = indexPtr;
+    }
+
     {
         DiagnosticContext ctx{request, diagnostics, m_logger};
         CheckNullAssignedToNonHandle(request.symbolTable, ctx);
@@ -291,22 +325,7 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         }
     }
 
-    if (!request.excludedLineRanges.empty())
-    {
-        std::erase_if(diagnostics, [&request](const Diagnostic& d)
-                      { return utils::IsLineExcluded(request.excludedLineRanges, d.range.start.line); });
-    }
-
-    if (request.enableCommentSuppressions && !request.sourceCode.empty())
-    {
-        const auto suppressions = ParseDiagnosticSuppressions(request.sourceCode, indexPtr);
-        if (!suppressions.Empty())
-        {
-            std::erase_if(diagnostics,
-                          [&](const Diagnostic& d) { return suppressions.IsSuppressed(d.code, d.range.start.line); });
-        }
-    }
-
+    FilterSuppressedDiagnostics(diagnostics, request, indexPtr);
     return diagnostics;
 }
 
