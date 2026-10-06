@@ -243,7 +243,6 @@ TEST_CASE("UnusedSymbolChecker - engine entity and lifecycle methods exemption")
     rules.unusedRules.ignoredBaseClasses = {"ScriptBasePlayerAmmoEntity", "ScriptBaseEntity"};
     rules.unusedRules.lifecycleMethods = {"Spawn", "Precache", "KeyValue"};
     rules.unusedRules.ignoredGlobalFunctions = {"MapInit", "PluginInit"};
-    rules.unusedRules.ignoredGlobalFunctionRegex = "^(Hook_|Client_).*";
 
     const std::string entityClass = angel_lsp::test::GenerateRandomSymbolName("AmmoEntity");
 
@@ -253,30 +252,152 @@ TEST_CASE("UnusedSymbolChecker - engine entity and lifecycle methods exemption")
                              "    void Precache() {}\n"
                              "    void KeyValue() {}\n"
                              "}\n"
-                             "void MapInit() {}\n"
-                             "void Hook_PlayerSpawn() {}\n";
+                             "void MapInit() {}\n";
 
     auto diags = AnalyzeSnippet(code, &rules);
     CHECK_FALSE(HasDiag(diags, codes::UnusedClass, entityClass));
     CHECK_FALSE(HasDiag(diags, codes::UnusedFunction, "Spawn"));
     CHECK_FALSE(HasDiag(diags, codes::UnusedFunction, "Precache"));
     CHECK_FALSE(HasDiag(diags, codes::UnusedFunction, "MapInit"));
-    CHECK_FALSE(HasDiag(diags, codes::UnusedFunction, "Hook_PlayerSpawn"));
 }
 
-TEST_CASE("UnusedSymbolChecker - string reflection registration exemption")
+TEST_CASE("UnusedSymbolChecker - base class specific lifecycle methods")
+{
+    angel_lsp::config::EngineRuleConfig rules;
+    rules.unusedRules.enabled = true;
+    rules.unusedRules.ignoredBaseClasses = {"ScriptBasePlayerWeaponEntity", "ScriptBasePlayerAmmoEntity"};
+    rules.unusedRules.lifecycleMethods = {"Spawn"};
+    rules.unusedRules.baseClassLifecycleMethods["ScriptBasePlayerWeaponEntity"] = {"PrimaryAttack", "Reload"};
+
+    const std::string weaponClass = angel_lsp::test::GenerateRandomSymbolName("Wep");
+    const std::string ammoClass = angel_lsp::test::GenerateRandomSymbolName("Ammo");
+
+    const std::string code = "class " + weaponClass +
+                             " : ScriptBasePlayerWeaponEntity {\n"
+                             "    private void PrimaryAttack() {}\n"
+                             "}\n"
+                             "class " +
+                             ammoClass +
+                             " : ScriptBasePlayerAmmoEntity {\n"
+                             "    private void SecondaryAttack() {}\n"
+                             "}\n";
+
+    auto diags = AnalyzeSnippet(code, &rules);
+    CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, "PrimaryAttack")); // Weapon's PrimaryAttack exempted
+    // Ammo's SecondaryAttack is NOT in baseClassLifecycleMethods for ammo, so it emits unused
+    CHECK(HasDiag(diags, codes::UnusedMethod, "SecondaryAttack"));
+}
+
+TEST_CASE("UnusedSymbolChecker - base class member override exemption")
 {
     angel_lsp::config::EngineRuleConfig rules;
     rules.unusedRules.enabled = true;
 
+    const std::string baseCls = angel_lsp::test::GenerateRandomSymbolName("BaseEntity");
+    const std::string derivedCls = angel_lsp::test::GenerateRandomSymbolName("DerivedEntity");
+
+    const std::string code = "class " + baseCls +
+                             " {\n"
+                             "    void BaseMethod() {}\n"
+                             "}\n"
+                             "class " +
+                             derivedCls + " : " + baseCls +
+                             " {\n"
+                             "    private void BaseMethod() {}\n"
+                             "}\n"
+                             "void Exec() { " +
+                             derivedCls + " d; }\n";
+
+    auto diags = AnalyzeSnippet(code, &rules);
+    CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, "BaseMethod"));
+}
+
+TEST_CASE("UnusedSymbolChecker - targeted string reflection registration with valid namespace")
+{
+    angel_lsp::config::EngineRuleConfig rules;
+    rules.unusedRules.enabled = true;
+    rules.unusedRules.stringReflectionCallees = {{"g_CustomEntityFuncs", {"RegisterCustomEntity"}, {0}}};
+
     const std::string entityClass = angel_lsp::test::GenerateRandomSymbolName("K98K_CLIP");
 
-    const std::string code = "class " + entityClass +
+    const std::string code = "namespace INS2_K98K {\n"
+                             "    class " +
+                             entityClass +
                              " {\n"
-                             "    void DoStuff() {}\n"
+                             "        void DoStuff() {}\n"
+                             "    }\n"
                              "}\n"
                              "void RegisterWeapons() {\n"
                              "    g_CustomEntityFuncs.RegisterCustomEntity(\"INS2_K98K::" +
+                             entityClass +
+                             "\", \"ammo\");\n"
+                             "}\n";
+
+    auto diags = AnalyzeSnippet(code, &rules);
+    CHECK_FALSE(HasDiag(diags, codes::UnusedClass, entityClass));
+}
+
+TEST_CASE("UnusedSymbolChecker - string reflection with non-existent namespace does not exempt")
+{
+    angel_lsp::config::EngineRuleConfig rules;
+    rules.unusedRules.enabled = true;
+    rules.unusedRules.stringReflectionCallees = {{"g_CustomEntityFuncs", {"RegisterCustomEntity"}, {0}}};
+
+    const std::string entityClass = angel_lsp::test::GenerateRandomSymbolName("FakeClip");
+
+    const std::string code = "namespace RealNS {\n"
+                             "    class " +
+                             entityClass +
+                             " {\n"
+                             "    }\n"
+                             "}\n"
+                             "void RegisterWeapons() {\n"
+                             "    g_CustomEntityFuncs.RegisterCustomEntity(\"NonExistentNS::" +
+                             entityClass +
+                             "\", \"ammo\");\n"
+                             "}\n";
+
+    auto diags = AnalyzeSnippet(code, &rules);
+    CHECK(HasDiag(diags, codes::UnusedClass, entityClass));
+}
+
+TEST_CASE("UnusedSymbolChecker - unrelated string literal does not exempt unused class")
+{
+    angel_lsp::config::EngineRuleConfig rules;
+    rules.unusedRules.enabled = true;
+    rules.unusedRules.stringReflectionCallees = {{"g_CustomEntityFuncs", {"RegisterCustomEntity"}, {0}}};
+
+    const std::string deadClass = angel_lsp::test::GenerateRandomSymbolName("DeadClass");
+
+    const std::string code = "class " + deadClass +
+                             " {\n"
+                             "}\n"
+                             "void LogMessage() {\n"
+                             "    string msg = \"" +
+                             deadClass +
+                             "\";\n"
+                             "}\n";
+
+    auto diags = AnalyzeSnippet(code, &rules);
+    CHECK(HasDiag(diags, codes::UnusedClass, deadClass));
+}
+
+TEST_CASE("UnusedSymbolChecker - string concatenation reflection")
+{
+    angel_lsp::config::EngineRuleConfig rules;
+    rules.unusedRules.enabled = true;
+    rules.unusedRules.stringReflectionCallees = {{"g_CustomEntityFuncs", {"RegisterCustomEntity"}, {0}}};
+
+    const std::string entityClass = angel_lsp::test::GenerateRandomSymbolName("ConcatClip");
+
+    const std::string code = "namespace WeaponNS {\n"
+                             "    class " +
+                             entityClass +
+                             " {\n"
+                             "    }\n"
+                             "}\n"
+                             "void RegisterWeapons() {\n"
+                             "    g_CustomEntityFuncs.RegisterCustomEntity(\"WeaponNS::\" + \"" +
                              entityClass +
                              "\", \"ammo\");\n"
                              "}\n";

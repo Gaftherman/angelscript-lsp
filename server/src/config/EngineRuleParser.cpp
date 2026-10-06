@@ -239,6 +239,26 @@ void ParseReflectionCallees(const nlohmann::json& obj, std::vector<StringReflect
     }
 }
 
+void ParseBaseClassLifecycleMethods(const nlohmann::json& obj,
+                                    std::unordered_map<std::string, std::vector<std::string>>& map)
+{
+    if (!obj.contains("baseClassLifecycleMethods") || !obj["baseClassLifecycleMethods"].is_object())
+    {
+        return;
+    }
+    for (const auto& [baseClass, methods] : obj["baseClassLifecycleMethods"].items())
+    {
+        if (!methods.is_array())
+            continue;
+        std::vector<std::string>& list = map[baseClass];
+        for (const auto& m : methods)
+        {
+            if (m.is_string())
+                list.push_back(m.get<std::string>());
+        }
+    }
+}
+
 void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& rules)
 {
     if (!j.contains("unusedSymbolRules") || !j["unusedSymbolRules"].is_object())
@@ -256,6 +276,7 @@ void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& rules)
     ParseStringArray(u, "ignoredGlobalFunctions", rules.ignoredGlobalFunctions);
     ParseStringArray(u, "ignoredBaseClasses", rules.ignoredBaseClasses);
     ParseStringArray(u, "lifecycleMethods", rules.lifecycleMethods);
+    ParseBaseClassLifecycleMethods(u, rules.baseClassLifecycleMethods);
     ParseReflectionCallees(u, rules.stringReflectionCallees);
 }
 

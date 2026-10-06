@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace angel_lsp::config
@@ -98,6 +99,8 @@ struct UnusedSymbolRules
     std::string ignoredGlobalFunctionRegex;          ///< Regex pattern for engine hooks (e.g. "^(On|Hook_).*").
     std::vector<std::string> ignoredBaseClasses;     ///< Entity base classes (e.g. "ScriptBaseEntity").
     std::vector<std::string> lifecycleMethods;       ///< Lifecycle callback methods (e.g. "Spawn").
+    std::unordered_map<std::string, std::vector<std::string>>
+        baseClassLifecycleMethods;                               ///< Per-base-class lifecycle methods.
     std::vector<StringReflectionCallee> stringReflectionCallees; ///< Reflection callees taking string symbols.
 
     /**
@@ -106,7 +109,8 @@ struct UnusedSymbolRules
      */
     [[nodiscard]] bool HasActiveRules() const noexcept
     {
-        return enabled || !ignoredBaseClasses.empty() || !lifecycleMethods.empty() || !ignoredGlobalFunctions.empty() ||
+        return enabled || !ignoredBaseClasses.empty() || !lifecycleMethods.empty() ||
+               !baseClassLifecycleMethods.empty() || !ignoredGlobalFunctions.empty() ||
                !stringReflectionCallees.empty();
     }
 };

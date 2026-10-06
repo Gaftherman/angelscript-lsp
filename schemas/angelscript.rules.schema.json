@@ -298,6 +298,14 @@
           "items": { "type": "string" },
           "description": "Methods on engine entity classes called by host reflection (e.g. ['Spawn', 'Precache', 'KeyValue'])."
         },
+        "baseClassLifecycleMethods": {
+          "type": "object",
+          "description": "Mapping from engine base class names to lifecycle callback methods invoked dynamically for that specific entity type.",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
         "stringReflectionCallees": {
           "type": "array",
           "description": "Engine registration functions that reference class or function names via string literal arguments.",

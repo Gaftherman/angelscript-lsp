@@ -94,22 +94,104 @@ void CollectCrossFileReferences(const SemanticAnalysisRequest& req, ankerl::unor
     }
 }
 
-ankerl::unordered_dense::set<std::string> CollectStringReflection(const SemanticAnalysisRequest& request)
+std::string ExtractStringValue(TSNode exprNode, const SemanticAnalysisRequest& req, int depth = 0)
+{
+    if (ts_node_is_null(exprNode) || depth > 8)
+        return {};
+
+    const std::string_view type = ts_node_type(exprNode);
+    if (type == parser::nodes::StringLiteral)
+    {
+        std::string text = parser::GetNodeText(exprNode, req.sourceCode);
+        if (text.size() >= 2 && text.front() == '"' && text.back() == '"')
+            return text.substr(1, text.size() - 2);
+        return text;
+    }
+    if (type == parser::nodes::BinaryExpression)
+    {
+        TSNode left = ts_node_child_by_field_name(exprNode, "left", 4);
+        TSNode right = ts_node_child_by_field_name(exprNode, "right", 5);
+        return ExtractStringValue(left, req, depth + 1) + ExtractStringValue(right, req, depth + 1);
+    }
+    return {};
+}
+
+bool MatchCallee(std::string_view funcText, const config::StringReflectionCallee& c)
+{
+    std::string_view receiver;
+    std::string_view method = funcText;
+    const auto dotPos = funcText.find('.');
+    const auto colonPos = funcText.rfind("::");
+
+    if (dotPos != std::string_view::npos)
+    {
+        receiver = funcText.substr(0, dotPos);
+        method = funcText.substr(dotPos + 1);
+    }
+    else if (colonPos != std::string_view::npos)
+    {
+        receiver = funcText.substr(0, colonPos);
+        method = funcText.substr(colonPos + 2);
+    }
+
+    if (!c.callee.empty() && receiver != c.callee)
+        return false;
+
+    return std::any_of(c.methods.begin(), c.methods.end(), [&](const std::string& m) { return m == method; });
+}
+
+void RegisterReflectedSymbol(const std::string& str, const SemanticAnalysisRequest& req,
+                             ankerl::unordered_dense::set<std::string>& outReflections)
+{
+    if (str.empty())
+        return;
+
+    if (const auto sym = req.symbolTable.FindFirstSymbol(str))
+    {
+        outReflections.insert(sym->name);
+        outReflections.insert(sym->qualifiedName);
+        return;
+    }
+
+    if (str.find("::") == std::string::npos)
+    {
+        auto types = req.symbolTable.FindTypeSymbolsByShortName(str);
+        for (const auto& t : types)
+        {
+            outReflections.insert(t.name);
+            outReflections.insert(t.qualifiedName);
+        }
+    }
+}
+
+ankerl::unordered_dense::set<std::string> CollectStringReflection(const SemanticAnalysisRequest& req)
 {
     ankerl::unordered_dense::set<std::string> result;
-    if (!request.nodeIndex)
+    if (!req.nodeIndex || !req.engineRules)
         return result;
-    for (TSNode strNode : request.nodeIndex->Nodes(parser::nodes::StringLiteral))
+
+    const auto& callees = req.engineRules->unusedRules.stringReflectionCallees;
+    if (callees.empty())
+        return result;
+
+    for (TSNode callNode : req.nodeIndex->Nodes(parser::nodes::CallExpression))
     {
-        std::string raw = parser::GetNodeText(strNode, request.sourceCode);
-        if (raw.size() >= 2 && raw.front() == '"' && raw.back() == '"')
-            raw = raw.substr(1, raw.size() - 2);
-        if (!raw.empty())
+        TSNode funcNode = ts_node_child_by_field_name(callNode, "function", 8);
+        if (ts_node_is_null(funcNode))
+            continue;
+
+        std::string funcText = parser::GetNodeText(funcNode, req.sourceCode);
+        for (const auto& c : callees)
         {
-            result.insert(raw);
-            const auto pos = raw.rfind("::");
-            if (pos != std::string::npos && pos + 2 < raw.size())
-                result.insert(raw.substr(pos + 2));
+            if (!MatchCallee(funcText, c))
+                continue;
+
+            auto callArgs = ExtractCallArguments(callNode, req.sourceCode);
+            for (size_t idx : c.argIndices)
+            {
+                if (idx < callArgs.size())
+                    RegisterReflectedSymbol(ExtractStringValue(callArgs[idx].exprNode, req), req, result);
+            }
         }
     }
     return result;
@@ -129,13 +211,38 @@ bool IsEngineEntity(const std::string& className, const SemanticAnalysisRequest&
                        { return std::find(ignored.begin(), ignored.end(), b) != ignored.end(); });
 }
 
-bool IsLifecycleMethod(const std::string& methodName, const std::string& className,
-                       const SemanticAnalysisRequest& request)
+bool IsLifecycleOrOverride(const Symbol& sym, const SemanticAnalysisRequest& req)
 {
-    if (!request.engineRules || !IsEngineEntity(className, request))
+    if (sym.containerName.empty())
         return false;
-    const auto& methods = request.engineRules->unusedRules.lifecycleMethods;
-    return std::find(methods.begin(), methods.end(), methodName) != methods.end();
+
+    const auto hierarchy = GetInheritedTypeHierarchy(sym.containerName, req.symbolTable);
+    for (const auto& ancestor : hierarchy)
+    {
+        if (ancestor != sym.containerName && req.symbolTable.FindMemberSymbolPtr(ancestor, sym.name) != nullptr)
+            return true;
+    }
+
+    if (!req.engineRules)
+        return false;
+
+    const auto& unusedRules = req.engineRules->unusedRules;
+    for (const auto& ancestor : hierarchy)
+    {
+        auto it = unusedRules.baseClassLifecycleMethods.find(ancestor);
+        if (it != unusedRules.baseClassLifecycleMethods.end() &&
+            std::find(it->second.begin(), it->second.end(), sym.name) != it->second.end())
+            return true;
+    }
+
+    if (IsEngineEntity(sym.containerName, req))
+    {
+        const auto& methods = unusedRules.lifecycleMethods;
+        if (std::find(methods.begin(), methods.end(), sym.name) != methods.end())
+            return true;
+    }
+
+    return false;
 }
 
 bool IsIgnoredFunction(const std::string& name, const SemanticAnalysisRequest& request)
@@ -200,7 +307,8 @@ void CheckUnusedGlobals(const SemanticAnalysisRequest& req, const UnusedCheckCon
             for (const auto& sym : syms)
             {
                 if (sym.type == SymbolType::Variable && sym.containerName.empty() &&
-                    !uCtx.refNames.contains(sym.name) && !uCtx.reflections.contains(sym.name))
+                    !uCtx.refNames.contains(sym.name) && !uCtx.reflections.contains(sym.name) &&
+                    !uCtx.reflections.contains(sym.qualifiedName))
                 {
                     ctx.Emit(sym, diagnostics::codes::UnusedGlobalVariable, sym.name, DiagnosticSeverity::Warning);
                 }
@@ -211,10 +319,10 @@ void CheckUnusedGlobals(const SemanticAnalysisRequest& req, const UnusedCheckCon
 bool ShouldSkipFunction(const Symbol& sym, const SemanticAnalysisRequest& req,
                         const ankerl::unordered_dense::set<std::string>& reflections)
 {
-    if (IsIgnoredFunction(sym.name, req) || reflections.contains(sym.name) || sym.name == sym.containerName ||
-        sym.name.rfind('~', 0) == 0 || sym.name.rfind("op", 0) == 0)
+    if (IsIgnoredFunction(sym.name, req) || reflections.contains(sym.name) || reflections.contains(sym.qualifiedName) ||
+        sym.name == sym.containerName || sym.name.rfind('~', 0) == 0 || sym.name.rfind("op", 0) == 0)
         return true;
-    return !sym.containerName.empty() && IsLifecycleMethod(sym.name, sym.containerName, req);
+    return IsLifecycleOrOverride(sym, req);
 }
 
 void CheckUnusedFunctions(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
