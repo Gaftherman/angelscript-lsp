@@ -245,4 +245,65 @@ template <typename Callback> void ForEachChildNode(TSNode parent, Callback&& cal
     ts_tree_cursor_delete(&cursor);
 }
 
+/**
+ * @brief Iterates over direct named child nodes of an AST node using a flat TSTreeCursor.
+ * @tparam Callback Callable with signature void(TSNode).
+ * @param[in] parent Parent AST node.
+ * @param[in] callback Visitor callback invoked for each direct named child node.
+ */
+template <typename Callback> void ForEachNamedChildNode(TSNode parent, Callback&& callback)
+{
+    if (ts_node_is_null(parent))
+    {
+        return;
+    }
+    TSTreeCursor cursor = ts_tree_cursor_new(parent);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode node = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_is_named(node))
+            {
+                callback(node);
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+}
+
+/**
+ * @brief Iterates over direct named child nodes until predicate returns false.
+ * @tparam Predicate Callable with signature bool(TSNode) returning false to stop traversal.
+ * @param[in] parent Parent AST node.
+ * @param[in] predicate Visitor invoked for each direct named child node.
+ * @return True if iteration completed without early interruption; false if stopped early.
+ */
+template <typename Predicate> bool ForEachNamedChildNodeUntil(TSNode parent, Predicate&& predicate)
+{
+    if (ts_node_is_null(parent))
+    {
+        return true;
+    }
+    TSTreeCursor cursor = ts_tree_cursor_new(parent);
+    bool completed = true;
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode node = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_is_named(node))
+            {
+                if (!predicate(node))
+                {
+                    completed = false;
+                    break;
+                }
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+    return completed;
+}
+
 } // namespace angel_lsp::parser

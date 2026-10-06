@@ -230,16 +230,28 @@ bool DefinitelyReturns(TSNode node, std::string_view sourceCode)
 
 bool BlockOrClauseDefinitelyReturns(TSNode node, std::string_view type, std::string_view sourceCode)
 {
-    const uint32_t first = type == "case_clause" ? FirstStatementIndex(node) : 0u;
-    const uint32_t count = ts_node_named_child_count(node);
-    for (uint32_t i = first; i < count; ++i)
-    {
-        if (DefinitelyReturns(ts_node_named_child(node, i), sourceCode))
-        {
-            return true;
-        }
-    }
-    return false;
+    const bool isCaseClause = (type == "case_clause");
+    const bool isDefault = isCaseClause && IsDefaultClause(node);
+    bool skippedLabel = false;
+    bool returned = false;
+
+    ForEachNamedChildNodeUntil(node,
+                               [&](TSNode child)
+                               {
+                                   if (isCaseClause && !isDefault && !skippedLabel)
+                                   {
+                                       skippedLabel = true;
+                                       return true;
+                                   }
+                                   if (DefinitelyReturns(child, sourceCode))
+                                   {
+                                       returned = true;
+                                       return false;
+                                   }
+                                   return true;
+                               });
+
+    return returned;
 }
 
 bool IfDefinitelyReturns(TSNode node, std::string_view sourceCode)
@@ -314,31 +326,31 @@ bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode)
     bool allClausesReturnDirectly = true;
     uint32_t clauseCount = 0;
 
-    const uint32_t count = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode clause = ts_node_named_child(node, i);
-        if (NodeType(clause) != "case_clause")
-        {
-            continue;
-        }
-        ++clauseCount;
-        const bool isDef = IsDefaultClause(clause);
-        if (isDef)
-        {
-            hasDefault = true;
-            defaultReturns = DefinitelyReturns(clause, sourceCode);
-        }
-        if (ClauseHasEscapingBreak(clause))
-        {
-            hasEscapingBreak = true;
-        }
-        const bool hasStatements = ts_node_named_child_count(clause) > FirstStatementIndex(clause);
-        if (hasStatements && !DefinitelyReturns(clause, sourceCode))
-        {
-            allClausesReturnDirectly = false;
-        }
-    }
+    ForEachNamedChildNode(node,
+                          [&](TSNode clause)
+                          {
+                              if (NodeType(clause) != "case_clause")
+                              {
+                                  return;
+                              }
+                              ++clauseCount;
+                              const bool isDef = IsDefaultClause(clause);
+                              if (isDef)
+                              {
+                                  hasDefault = true;
+                                  defaultReturns = DefinitelyReturns(clause, sourceCode);
+                              }
+                              if (ClauseHasEscapingBreak(clause))
+                              {
+                                  hasEscapingBreak = true;
+                              }
+                              const bool hasStatements =
+                                  ts_node_named_child_count(clause) > FirstStatementIndex(clause);
+                              if (hasStatements && !DefinitelyReturns(clause, sourceCode))
+                              {
+                                  allClausesReturnDirectly = false;
+                              }
+                          });
 
     if (clauseCount == 0 || hasEscapingBreak)
     {
@@ -360,19 +372,22 @@ bool TryDefinitelyReturns(TSNode node, std::string_view sourceCode)
     //
     // The grammar gives `try` and `catch` a `statement_block` each and no fields, so the
     // named children are exactly the blocks to check.
-    const uint32_t blockCount = ts_node_named_child_count(node);
-    if (blockCount == 0)
+    if (ts_node_named_child_count(node) == 0)
     {
         return false;
     }
-    for (uint32_t i = 0; i < blockCount; ++i)
-    {
-        if (!DefinitelyReturns(ts_node_named_child(node, i), sourceCode))
-        {
-            return false;
-        }
-    }
-    return true;
+    bool allReturn = true;
+    ForEachNamedChildNodeUntil(node,
+                               [&](TSNode block)
+                               {
+                                   if (!DefinitelyReturns(block, sourceCode))
+                                   {
+                                       allReturn = false;
+                                       return false;
+                                   }
+                                   return true;
+                               });
+    return allReturn;
 }
 
 // =====================================================================
@@ -653,16 +668,21 @@ void ProcessCaseClause(TSNode clause, std::string_view sourceCode, std::vector<s
  */
 void CheckVariablesInClause(TSNode clause, DiagnosticContext& ctx)
 {
-    const uint32_t first = FirstStatementIndex(clause);
-    const uint32_t count = ts_node_named_child_count(clause);
-    for (uint32_t i = first; i < count; ++i)
-    {
-        TSNode stmt = ts_node_named_child(clause, i);
-        if (NodeType(stmt) == parser::nodes::VariableDeclaration)
-        {
-            EmitAtNode(stmt, ctx, diagnostics::codes::VariableInSwitchCase);
-        }
-    }
+    const bool isDefault = IsDefaultClause(clause);
+    bool skippedLabel = false;
+    ForEachNamedChildNode(clause,
+                          [&](TSNode stmt)
+                          {
+                              if (!isDefault && !skippedLabel)
+                              {
+                                  skippedLabel = true;
+                                  return;
+                              }
+                              if (NodeType(stmt) == parser::nodes::VariableDeclaration)
+                              {
+                                  EmitAtNode(stmt, ctx, diagnostics::codes::VariableInSwitchCase);
+                              }
+                          });
 }
 
 void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticContext& ctx)
@@ -672,36 +692,35 @@ void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticContext& ct
     bool haveDefault = false;
     bool defaultIsLast = true;
 
-    const uint32_t count = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode clause = ts_node_named_child(node, i);
-        if (NodeType(clause) != "case_clause")
-        {
-            if (NodeType(clause) == parser::nodes::VariableDeclaration)
-            {
-                EmitAtNode(clause, ctx, diagnostics::codes::VariableInSwitchCase);
-            }
-            continue;
-        }
+    ForEachNamedChildNode(node,
+                          [&](TSNode clause)
+                          {
+                              if (NodeType(clause) != "case_clause")
+                              {
+                                  if (NodeType(clause) == parser::nodes::VariableDeclaration)
+                                  {
+                                      EmitAtNode(clause, ctx, diagnostics::codes::VariableInSwitchCase);
+                                  }
+                                  return;
+                              }
 
-        CheckVariablesInClause(clause, ctx);
+                              CheckVariablesInClause(clause, ctx);
 
-        if (IsDefaultClause(clause))
-        {
-            defaultClause = clause;
-            haveDefault = true;
-            defaultIsLast = true;
-            continue;
-        }
+                              if (IsDefaultClause(clause))
+                              {
+                                  defaultClause = clause;
+                                  haveDefault = true;
+                                  defaultIsLast = true;
+                                  return;
+                              }
 
-        if (haveDefault)
-        {
-            defaultIsLast = false;
-        }
+                              if (haveDefault)
+                              {
+                                  defaultIsLast = false;
+                              }
 
-        ProcessCaseClause(clause, sourceCode, seenValues, ctx);
-    }
+                              ProcessCaseClause(clause, sourceCode, seenValues, ctx);
+                          });
 
     if (haveDefault && !defaultIsLast)
     {

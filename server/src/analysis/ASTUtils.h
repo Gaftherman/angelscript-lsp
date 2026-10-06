@@ -11,6 +11,8 @@ namespace angel_lsp::analysis
 {
 using parser::ForEachChildNode;
 using parser::ForEachDescendantNode;
+using parser::ForEachNamedChildNode;
+using parser::ForEachNamedChildNodeUntil;
 using parser::GetNodeText;
 using parser::NodeText;
 using parser::NodeTextResult;
