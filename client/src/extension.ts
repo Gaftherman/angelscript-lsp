@@ -147,6 +147,16 @@ const OPEN_PHYSICAL_SOURCE_COMMAND = 'angelscript.openPhysicalSource';
 /** @brief Command that disables a configurable diagnostic rule in workspace settings. */
 const DISABLE_DIAGNOSTIC_COMMAND = 'angelscript.disableDiagnostic';
 
+/** @brief Command that clears local session state overrides for modules and stubs. */
+const CLEAR_LOCAL_STATE_COMMAND = 'angelscript.clearLocalState';
+
+let extensionContext: ExtensionContext | undefined;
+
+/** @brief Sets or resets the active extension context (exported for unit testing). */
+export function setExtensionContext(context: ExtensionContext | undefined): void {
+    extensionContext = context;
+}
+
 /**
  * @brief Wording of the button on every failure notification.
  *
@@ -374,8 +384,7 @@ function createLanguageStatusItem(context: ExtensionContext): void {
 }
 
 function updateLanguageStatus(isIndexing = false): void {
-    const config = workspace.getConfiguration('angelscript');
-    const activeStubs = config.get<string[]>('stubs.activeFiles', []);
+    const activeStubs = getActiveStubFiles();
     const stubsCount = activeStubs.length > 0 ? activeStubs.length : (activeStubLabel.length > 0 ? 1 : 0);
 
     if (languageStatusItem) {
@@ -822,6 +831,133 @@ function resolveAgainstWorkspace(entry: string): string[] {
     return resolved;
 }
 
+/** @brief An entry in the `angelscript.modules` workspace setting. */
+export interface ModuleConfig {
+    name: string;
+    folder?: string;
+    entry?: string;
+}
+
+export type ConfigurationTargetScope = 'workspace' | 'localState' | 'user';
+
+/**
+ * @brief Reads the configured storage target for active module and stub selections.
+ */
+export function getConfigurationTarget(): ConfigurationTargetScope {
+    const target = workspace.getConfiguration('angelscript').get<string>('configurationTarget', 'workspace');
+    if (target === 'localState' || target === 'user') {
+        return target;
+    }
+    return 'workspace';
+}
+
+/**
+ * @brief Returns true if local workspace session state overrides exist for stubs or modules.
+ */
+export function hasLocalStateOverrides(): boolean {
+    if (!extensionContext) {
+        return false;
+    }
+    return extensionContext.workspaceState.get('angelscript.local.predefined.active') !== undefined ||
+           extensionContext.workspaceState.get('angelscript.local.stubs.activeFiles') !== undefined ||
+           extensionContext.workspaceState.get('angelscript.local.modules') !== undefined;
+}
+
+/**
+ * @brief Reads the effective active predefined stub, prioritizing local session state when configured.
+ */
+export function getActivePredefinedStub(): string {
+    if (getConfigurationTarget() === 'localState' && extensionContext) {
+        const local = extensionContext.workspaceState.get<string>('angelscript.local.predefined.active');
+        if (local !== undefined) {
+            return local;
+        }
+    }
+    return workspace.getConfiguration('angelscript').get<string>('predefined.active', '');
+}
+
+/**
+ * @brief Stores the active predefined stub according to the configured configurationTarget.
+ */
+export async function setActivePredefinedStub(stubPath: string): Promise<void> {
+    const portable = portableStubPath(stubPath);
+    const target = getConfigurationTarget();
+    if (target === 'localState' && extensionContext) {
+        await extensionContext.workspaceState.update('angelscript.local.predefined.active', portable);
+        await applyLocalStateChanges();
+    } else {
+        const vsTarget = target === 'user' ? ConfigurationTarget.Global : ConfigurationTarget.Workspace;
+        await workspace.getConfiguration('angelscript').update('predefined.active', portable, vsTarget);
+    }
+}
+
+/**
+ * @brief Reads active stub files, prioritizing local session state when configured.
+ */
+export function getActiveStubFiles(): string[] {
+    if (getConfigurationTarget() === 'localState' && extensionContext) {
+        const local = extensionContext.workspaceState.get<string[]>('angelscript.local.stubs.activeFiles');
+        if (local !== undefined) {
+            return local;
+        }
+    }
+    return workspace.getConfiguration('angelscript').get<string[]>('stubs.activeFiles', []);
+}
+
+/**
+ * @brief Stores active stub files according to the configured configurationTarget.
+ */
+export async function setActiveStubFiles(paths: string[]): Promise<void> {
+    const target = getConfigurationTarget();
+    if (target === 'localState' && extensionContext) {
+        await extensionContext.workspaceState.update('angelscript.local.stubs.activeFiles', paths);
+        await applyLocalStateChanges();
+    } else {
+        const vsTarget = target === 'user' ? ConfigurationTarget.Global : ConfigurationTarget.Workspace;
+        await workspace.getConfiguration('angelscript').update('stubs.activeFiles', paths, vsTarget);
+    }
+}
+
+/**
+ * @brief Reads configured modules, prioritizing local session state when configured.
+ */
+export function getConfiguredModules(): ModuleConfig[] {
+    if (getConfigurationTarget() === 'localState' && extensionContext) {
+        const local = extensionContext.workspaceState.get<ModuleConfig[]>('angelscript.local.modules');
+        if (local !== undefined) {
+            return local;
+        }
+    }
+    return workspace.getConfiguration('angelscript').get<ModuleConfig[]>('modules', []);
+}
+
+/**
+ * @brief Stores configured modules according to the configured configurationTarget.
+ */
+export async function setConfiguredModules(modules: ModuleConfig[]): Promise<void> {
+    const target = getConfigurationTarget();
+    if (target === 'localState' && extensionContext) {
+        await extensionContext.workspaceState.update('angelscript.local.modules', modules);
+        await applyLocalStateChanges();
+    } else {
+        const vsTarget = target === 'user' ? ConfigurationTarget.Global : ConfigurationTarget.Workspace;
+        await workspace.getConfiguration('angelscript').update('modules', modules, vsTarget);
+    }
+}
+
+/**
+ * @brief Clears locally remembered module and stub overrides, reverting to workspace settings.
+ */
+export async function clearLocalState(): Promise<void> {
+    if (extensionContext) {
+        await extensionContext.workspaceState.update('angelscript.local.predefined.active', undefined);
+        await extensionContext.workspaceState.update('angelscript.local.stubs.activeFiles', undefined);
+        await extensionContext.workspaceState.update('angelscript.local.modules', undefined);
+        await applyLocalStateChanges();
+        void window.showInformationMessage(l10n.t('Cleared local session overrides. Reverted to workspace configuration.'));
+    }
+}
+
 export function buildServerArgs(): string[] {
     const config = workspace.getConfiguration('angelscript');
     const args: string[] = [];
@@ -843,7 +979,7 @@ export function buildServerArgs(): string[] {
     // The one stub the workspace scan should load, when the user has chosen one. Needed on the
     // command line so a server starting fresh honours the choice; a server already running is told
     // through didChangeConfiguration instead, which is why the restart watcher ignores this flag.
-    const activeStub = config.get<string>('predefined.active', '').trim();
+    const activeStub = getActivePredefinedStub().trim();
     if (activeStub.toLowerCase() === 'all') {
         // Not a filename to resolve: it asks the server to load every stub it finds, which is what
         // it used to do whenever nothing was selected.
@@ -874,7 +1010,7 @@ export function buildServerArgs(): string[] {
         }
     }
 
-    for (const entry of config.get<string[]>('stubs.activeFiles', [])) {
+    for (const entry of getActiveStubFiles()) {
         if (entry.trim().length > 0) {
             for (const resolved of resolveAgainstWorkspace(entry.trim())) {
                 args.push(`--active-stub-file=${resolved}`);
@@ -915,7 +1051,7 @@ export function buildServerArgs(): string[] {
         args.push('--implicit-include-extension=true');
     }
 
-    for (const mod of config.get<Array<{ name?: string; entry?: string; folder?: string }>>('modules', [])) {
+    for (const mod of getConfiguredModules()) {
         const name = mod?.name?.trim();
         const entry = mod?.entry?.trim();
         const folder = mod?.folder?.trim();
@@ -1388,6 +1524,7 @@ export class VirtualMixinContentProvider implements TextDocumentContentProvider 
  * @param context The extension context provided by VS Code.
  */
 export async function activate(context: ExtensionContext) {
+    extensionContext = context;
     const activateEnteredAt = Date.now();
     activationTimings['moduleToActivate'] = activateEnteredAt - moduleEvaluatedAt;
 
@@ -1412,6 +1549,9 @@ export async function activate(context: ExtensionContext) {
 
         context.subscriptions.push(
             commands.registerCommand(SELECT_STUBS_COMMAND, () => selectMultiStubs()));
+
+        context.subscriptions.push(
+            commands.registerCommand(CLEAR_LOCAL_STATE_COMMAND, () => clearLocalState()));
 
         context.subscriptions.push(
             commands.registerCommand(RESCAN_WORKSPACE_COMMAND, () => rescanWorkspace()));
@@ -1528,7 +1668,8 @@ export async function activate(context: ExtensionContext) {
                 }
             }
             if (event.affectsConfiguration('angelscript.stubs') ||
-                event.affectsConfiguration('angelscript.predefined')) {
+                event.affectsConfiguration('angelscript.predefined') ||
+                event.affectsConfiguration('angelscript.configurationTarget')) {
                 updateLanguageStatus();
             }
 
@@ -1607,6 +1748,14 @@ async function showStatusMenu(context: ExtensionContext): Promise<void> {
             run: () => rescanWorkspace()
         }
     ];
+
+    if (hasLocalStateOverrides()) {
+        actions.push({
+            label: '$(trash) ' + l10n.t('Clear Local Session Overrides'),
+            description: l10n.t('Clears locally remembered module and stub overrides, reverting to workspace settings.'),
+            run: () => clearLocalState()
+        });
+    }
 
     const chosen = await window.showQuickPick(actions, {
         placeHolder: l10n.t('AngelScript language server')
@@ -1752,6 +1901,59 @@ export function portableStubPath(stubPath: string): string {
     return stubPath;
 }
 
+function getEffectiveAngelscriptConfig(): Record<string, unknown> {
+    const raw = (workspace.getConfiguration().get('angelscript') ?? {}) as Record<string, unknown>;
+    const copy = { ...raw };
+    if (getConfigurationTarget() === 'localState' && extensionContext) {
+        const localPredefinedActive = extensionContext.workspaceState.get<string>('angelscript.local.predefined.active');
+        if (localPredefinedActive !== undefined) {
+            const nested = typeof copy['predefined'] === 'object' && copy['predefined'] !== null
+                ? { ...(copy['predefined'] as Record<string, unknown>) }
+                : {};
+            nested['active'] = localPredefinedActive;
+            copy['predefined'] = nested;
+        }
+
+        const localStubsActiveFiles = extensionContext.workspaceState.get<string[]>('angelscript.local.stubs.activeFiles');
+        if (localStubsActiveFiles !== undefined) {
+            const nested = typeof copy['stubs'] === 'object' && copy['stubs'] !== null
+                ? { ...(copy['stubs'] as Record<string, unknown>) }
+                : {};
+            nested['activeFiles'] = localStubsActiveFiles;
+            copy['stubs'] = nested;
+        }
+
+        const localModules = extensionContext.workspaceState.get<ModuleConfig[]>('angelscript.local.modules');
+        if (localModules !== undefined) {
+            copy['modules'] = localModules;
+        }
+    }
+    return copy;
+}
+
+async function applyLocalStateChanges(): Promise<void> {
+    const next = buildServerArgs();
+    const withoutHotReloadable = (args: string[]) =>
+        args.filter(arg => !arg.startsWith('--predefined-active=') &&
+                           !arg.startsWith('--module=') &&
+                           !arg.startsWith('--module-folder=') &&
+                           !arg.startsWith('--inlay-hints-'));
+
+    const unchanged =
+        withoutHotReloadable(next).join('\u0000') === withoutHotReloadable(runningServerArgs).join('\u0000');
+    runningServerArgs = next;
+
+    if (client && clientIsRunning()) {
+        if (unchanged) {
+            await pushConfiguration();
+        } else if (extensionContext) {
+            await restartClient(extensionContext, 'Server restarted due to local configuration change.');
+        }
+    }
+    void refreshStubStatus();
+    updateLanguageStatus();
+}
+
 async function pushConfiguration(): Promise<void> {
     const running = client;
     if (!running) {
@@ -1769,10 +1971,10 @@ async function pushConfiguration(): Promise<void> {
 
     try {
         await running.sendNotification(DidChangeConfigurationNotification.type, {
-            settings: { angelscript: expandConfiguredPaths(workspace.getConfiguration().get('angelscript') ?? {}) }
+            settings: { angelscript: expandConfiguredPaths(getEffectiveAngelscriptConfig()) }
         });
     } catch (error) {
-        lspOutputChannel.appendLine(
+        lspOutputChannel?.appendLine(
             `Could not hand the server its new configuration: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
@@ -1788,7 +1990,7 @@ async function pushConfiguration(): Promise<void> {
  */
 function restartClient(context: ExtensionContext, reason: string): Promise<void> {
     if (restartPending) {
-        lspOutputChannel.appendLine(`${reason} (folded into the restart already queued)`);
+        lspOutputChannel?.appendLine(`${reason} (folded into the restart already queued)`);
         return restartChain;
     }
 
@@ -1814,7 +2016,7 @@ function restartClient(context: ExtensionContext, reason: string): Promise<void>
  * @param reason Written to the log, so a restart is never a silent gap in it.
  */
 async function performRestart(context: ExtensionContext, reason: string): Promise<void> {
-    lspOutputChannel.appendLine(reason);
+    lspOutputChannel?.appendLine(reason);
     setStatus('starting', l10n.t('Restarting the AngelScript language server.'));
 
     if (client) {
@@ -1923,7 +2125,7 @@ async function refreshStubStatus(stubs?: PredefinedStubsResult): Promise<void> {
  * offer a choice has to be able to offer it, and only a client with a picker can.
  */
 async function offerStubChoice(): Promise<void> {
-    if (workspace.getConfiguration('angelscript').get<string>('predefined.active', '').trim().length > 0) {
+    if (getActivePredefinedStub().trim().length > 0) {
         // Already answered - asking again on every server start would be nagging. The bar still has
         // to catch up, and it is the way back to the picker once this notification is gone.
         void refreshStubStatus();
@@ -2051,8 +2253,7 @@ async function selectPredefinedStub(): Promise<void> {
         return;
     }
 
-    await workspace.getConfiguration('angelscript')
-        .update('predefined.active', portableStubPath(chosen.stubPath), ConfigurationTarget.Workspace);
+    await setActivePredefinedStub(chosen.stubPath);
 
     // The server reloads on its own, and the bar has to follow. Not awaited on the rescan, because
     // there is nothing to wait on: this reads what the server has now and will be right on the next
@@ -2088,8 +2289,7 @@ async function selectMultiStubs(): Promise<void> {
         stubPath: string;
     }
 
-    const config = workspace.getConfiguration('angelscript');
-    const currentlyActive = config.get<string[]>('stubs.activeFiles', []);
+    const currentlyActive = getActiveStubFiles();
     const items: MultiStubItem[] = [];
 
     for (const stubPath of result.stubs) {
@@ -2122,7 +2322,7 @@ async function selectMultiStubs(): Promise<void> {
     }
 
     const chosenPaths = selected.map(item => portableStubPath(item.stubPath));
-    await config.update('stubs.activeFiles', chosenPaths, ConfigurationTarget.Workspace);
+    await setActiveStubFiles(chosenPaths);
     updateLanguageStatus();
 }
 
@@ -2221,13 +2421,6 @@ async function formatPredefinedStub(resource?: Uri): Promise<void> {
     }
 }
 
-/** @brief An entry in the `angelscript.modules` workspace setting. */
-interface ModuleConfig {
-    name: string;
-    folder?: string;
-    entry?: string;
-}
-
 /**
  * @brief Prompts for a module name and associates the clicked resource with it in workspace settings.
  *
@@ -2268,8 +2461,7 @@ async function configureModule(resource: Uri, kind: 'entry' | 'folder'): Promise
         return;
     }
 
-    const config = workspace.getConfiguration('angelscript');
-    const current = config.get<ModuleConfig[]>('modules', []);
+    const current = getConfiguredModules();
     const next = current.map(item => ({ ...item }));
 
     const portablePath = portableStubPath(resource.fsPath);
@@ -2289,7 +2481,7 @@ async function configureModule(resource: Uri, kind: 'entry' | 'folder'): Promise
         );
     }
 
-    await workspace.getConfiguration('angelscript').update('modules', next, ConfigurationTarget.Workspace);
+    await setConfiguredModules(next);
 
     void window.showInformationMessage(
         kind === 'entry'

@@ -4,7 +4,24 @@ import { ConfigurationTarget, commands, extensions, workspace, Uri } from 'vscod
 
 import * as os from 'os';
 
-import { buildServerArgs, portableStubPath, VirtualMixinContentProvider, openPhysicalSource, viewMixinExpansion, resolveServerBinary } from '../extension';
+import {
+    buildServerArgs,
+    portableStubPath,
+    VirtualMixinContentProvider,
+    openPhysicalSource,
+    viewMixinExpansion,
+    resolveServerBinary,
+    getConfigurationTarget,
+    getActivePredefinedStub,
+    setActivePredefinedStub,
+    getActiveStubFiles,
+    setActiveStubFiles,
+    getConfiguredModules,
+    setConfiguredModules,
+    clearLocalState,
+    hasLocalStateOverrides,
+    setExtensionContext
+} from '../extension';
 
 // =====================================================================================
 // The client's settings-to-arguments mapping.
@@ -572,5 +589,78 @@ suite('Workspace Trust Gate', function () {
         }
     });
 });
+
+suite('ConfigurationTarget and LocalState Scope', () => {
+    let mockState: Map<string, unknown>;
+    let mockContext: any;
+
+    setup(() => {
+        mockState = new Map<string, unknown>();
+        mockContext = {
+            workspaceState: {
+                get: <T>(key: string, defaultValue?: T): T => {
+                    return mockState.has(key) ? (mockState.get(key) as T) : (defaultValue as T);
+                },
+                update: async (key: string, value: unknown) => {
+                    if (value === undefined) {
+                        mockState.delete(key);
+                    } else {
+                        mockState.set(key, value);
+                    }
+                }
+            }
+        };
+        setExtensionContext(mockContext);
+    });
+
+    teardown(() => {
+        setExtensionContext(undefined);
+    });
+
+    test('default configurationTarget is workspace', () => {
+        assert.strictEqual(getConfigurationTarget(), 'workspace');
+    });
+
+    test('getConfigurationTarget respects user and localState values', async () => {
+        await withSetting('configurationTarget', 'localState', () => {
+            assert.strictEqual(getConfigurationTarget(), 'localState');
+        });
+        await withSetting('configurationTarget', 'user', () => {
+            assert.strictEqual(getConfigurationTarget(), 'user');
+        });
+        await withSetting('configurationTarget', 'workspace', () => {
+            assert.strictEqual(getConfigurationTarget(), 'workspace');
+        });
+    });
+
+    test('localState overrides are isolated to workspaceState and do not pollute settings', async () => {
+        await withSetting('configurationTarget', 'localState', async () => {
+            assert.strictEqual(hasLocalStateOverrides(), false);
+
+            await setActivePredefinedStub('C:/custom/stub.as.predefined');
+            assert.strictEqual(hasLocalStateOverrides(), true);
+            assert.strictEqual(getActivePredefinedStub(), 'C:/custom/stub.as.predefined');
+
+            await setActiveStubFiles(['C:/custom/extra.as.predefined']);
+            assert.deepStrictEqual(getActiveStubFiles(), ['C:/custom/extra.as.predefined']);
+
+            await setConfiguredModules([{ name: 'mod_test', entry: 'C:/maps/test/main.as' }]);
+            assert.deepStrictEqual(getConfiguredModules(), [{ name: 'mod_test', entry: 'C:/maps/test/main.as' }]);
+
+            // Clear overrides
+            await clearLocalState();
+            assert.strictEqual(hasLocalStateOverrides(), false);
+        });
+    });
+
+    test('localState falls back to workspace settings when no local override is set', async () => {
+        await withSetting('configurationTarget', 'localState', async () => {
+            await withSetting('predefined.active', 'fallback_stub.as.predefined', () => {
+                assert.strictEqual(getActivePredefinedStub(), 'fallback_stub.as.predefined');
+            });
+        });
+    });
+});
+
 
 

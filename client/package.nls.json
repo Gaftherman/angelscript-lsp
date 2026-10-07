@@ -148,5 +148,10 @@
   "config.stubs.activeFiles.description": "List of active predefined stub files loaded into the workspace index. Managed dynamically via the AngelScript: Select Predefined Stubs command.",
   "command.rescanWorkspace.title": "Rescan Workspace",
   "command.selectStubs.title": "Select Predefined Stubs",
-  "config.metadata.enabled.description": "Enable support for CScriptBuilder metadata blocks ('[...]') before script declarations (classes, interfaces, functions, variables)."
+  "config.metadata.enabled.description": "Enable support for CScriptBuilder metadata blocks ('[...]') before script declarations (classes, interfaces, functions, variables).",
+  "config.configurationTarget.description": "Specifies where commands like 'Set Module Entry Point' or 'Select Predefined Stub' store their choices: in the workspace file (.vscode/settings.json), in local workspace session state (context.workspaceState, avoiding Git changes), or in global user settings.",
+  "config.configurationTarget.workspace": "Store in the workspace (.vscode/settings.json). Best for single-user repos or when configuration is shared with the team.",
+  "config.configurationTarget.localState": "Store in local session state (workspaceState). Never modifies .vscode/settings.json or Git, isolating changes to your local machine.",
+  "config.configurationTarget.user": "Store in global user settings (settings.json). Applies to all workspaces on this machine where no workspace configuration exists.",
+  "command.clearLocalState.title": "Clear Local Session Overrides"
 }

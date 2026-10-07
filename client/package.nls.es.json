@@ -148,5 +148,10 @@
   "config.stubs.activeFiles.description": "Lista de archivos de stubs predefinidos activos cargados en el índice del espacio de trabajo. Administrado dinámicamente mediante el comando AngelScript: Seleccionar stubs predefinidos.",
   "command.rescanWorkspace.title": "Volver a examinar el espacio de trabajo",
   "command.selectStubs.title": "Seleccionar stubs predefinidos",
-  "config.metadata.enabled.description": "Habilita el soporte para bloques de metadatos de CScriptBuilder ('[...]') antes de declaraciones de script (clases, interfaces, funciones, variables)."
+  "config.metadata.enabled.description": "Habilita el soporte para bloques de metadatos de CScriptBuilder ('[...]') antes de declaraciones de script (clases, interfaces, funciones, variables).",
+  "config.configurationTarget.description": "Especifica dónde guardan sus elecciones comandos como 'Establecer punto de entrada del módulo' o 'Seleccionar stub predefinido': en el archivo del espacio de trabajo (.vscode/settings.json), en el estado de sesión local (workspaceState, evitando cambios en Git) o en la configuración global de usuario.",
+  "config.configurationTarget.workspace": "Guardar en el espacio de trabajo (.vscode/settings.json). Ideal para repositorios individuales o cuando la configuración se comparte con el equipo.",
+  "config.configurationTarget.localState": "Guardar en el estado de sesión local (workspaceState). Nunca modifica .vscode/settings.json ni Git, aislando los cambios a tu máquina local.",
+  "config.configurationTarget.user": "Guardar en la configuración global de usuario (settings.json). Se aplica a todos los espacios de trabajo en esta máquina donde no exista configuración de espacio de trabajo.",
+  "command.clearLocalState.title": "Limpiar anulaciones de sesión local"
 }

@@ -69,5 +69,8 @@
   "{0} Stubs": "{0} stubs",
   "{0} active stubs | Click to manage": "{0} stubs activos | Clic para administrar",
   "AngelScript LSP has been updated to v{0}. Please reload the window to apply all language configuration and server updates.": "AngelScript LSP se ha actualizado a v{0}. Por favor recarga la ventana para aplicar todos los cambios de configuración y servidor.",
-  "Reload Window": "Recargar ventana"
+  "Reload Window": "Recargar ventana",
+  "Clear Local Session Overrides": "Limpiar anulaciones de sesión local",
+  "Clears locally remembered module and stub overrides, reverting to workspace settings.": "Limpia los módulos y stubs recordados localmente, volviendo a la configuración del espacio de trabajo.",
+  "Cleared local session overrides. Reverted to workspace configuration.": "Se limpiaron las anulaciones de sesión local. Se volvió a la configuración del espacio de trabajo."
 }

@@ -144,6 +144,11 @@
         "command": "angelscript.openPhysicalSource",
         "title": "%command.openPhysicalSource.title%",
         "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.clearLocalState",
+        "title": "%command.clearLocalState.title%",
+        "category": "%command.selectPredefined.category%"
       }
     ],
     "menus": {
@@ -363,6 +368,22 @@
         "order": 2,
         "title": "%config.category.workspace%",
         "properties": {
+          "angelscript.configurationTarget": {
+            "type": "string",
+            "scope": "resource",
+            "enum": [
+              "workspace",
+              "localState",
+              "user"
+            ],
+            "enumDescriptions": [
+              "%config.configurationTarget.workspace%",
+              "%config.configurationTarget.localState%",
+              "%config.configurationTarget.user%"
+            ],
+            "default": "workspace",
+            "markdownDescription": "%config.configurationTarget.description%"
+          },
           "angelscript.modules": {
             "type": "array",
             "scope": "resource",
