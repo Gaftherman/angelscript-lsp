@@ -185,6 +185,7 @@ struct GrammarSymbols
     TSSymbol symLambdaParameterList = 0;
     TSSymbol symType = 0;
     TSSymbol symDatatype = 0;
+    TSSymbol symScope = 0;
 };
 
 /**
@@ -223,6 +224,7 @@ const GrammarSymbols& GetGrammarSymbols()
         gs.symLambdaParameterList = symFor(parser::nodes::LambdaParameterList);
         gs.symType = symFor(parser::nodes::Type);
         gs.symDatatype = symFor(parser::nodes::Datatype);
+        gs.symScope = symFor(parser::nodes::Scope);
         return gs;
     }();
     return s_symbols;
@@ -1177,6 +1179,67 @@ void UpgradeScopedIdentifierEnumTokens(TSNode scopedNode, std::string_view sourc
 }
 
 /**
+ * @brief Upgrades scoped enum type qualifiers and member tokens in type AST nodes.
+ * @param[in] typeNode Type AST node.
+ * @param[in] sourceCode Source text buffer.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in,out] upgrades Map from start byte to upgraded token type.
+ */
+void UpgradeScopedTypeEnumTokens(TSNode typeNode, std::string_view sourceCode, const analysis::SymbolTable& symbolTable,
+                                 ankerl::unordered_dense::map<uint32_t, uint32_t>& upgrades)
+{
+    if (ts_node_named_child_count(typeNode) < 2)
+    {
+        return;
+    }
+    const auto& syms = GetGrammarSymbols();
+    TSNode firstChild = ts_node_named_child(typeNode, 0);
+    TSNode secondChild = ts_node_named_child(typeNode, 1);
+    if (ts_node_symbol(firstChild) != syms.symScope || ts_node_symbol(secondChild) != syms.symDatatype)
+    {
+        return;
+    }
+
+    std::string_view scopeText = analysis::GetNodeTextView(firstChild, sourceCode);
+    while (scopeText.ends_with(':'))
+    {
+        scopeText.remove_suffix(1);
+    }
+    if (scopeText.starts_with("::"))
+    {
+        scopeText.remove_prefix(2);
+    }
+    const std::string_view memberText = analysis::GetNodeTextView(secondChild, sourceCode);
+    if (scopeText.empty() || memberText.empty())
+    {
+        return;
+    }
+
+    TSNode scopeId = ts_node_named_child(firstChild, 0);
+    if (!ts_node_is_null(scopeId) && ts_node_named_child_count(scopeId) > 0)
+    {
+        scopeId = ts_node_named_child(scopeId, ts_node_named_child_count(scopeId) - 1);
+    }
+    TSNode memberId = ts_node_named_child(secondChild, 0);
+
+    const uint32_t scopeStart = ts_node_is_null(scopeId) ? ts_node_start_byte(firstChild) : ts_node_start_byte(scopeId);
+    const uint32_t memberStart =
+        ts_node_is_null(memberId) ? ts_node_start_byte(secondChild) : ts_node_start_byte(memberId);
+
+    if (AreAllEnumTypes(symbolTable.FindSymbolsPtr(scopeText)))
+    {
+        upgrades[scopeStart] = Type_Enum;
+        upgrades[memberStart] = Type_EnumMember;
+        return;
+    }
+    const std::string qualifiedName = std::string(scopeText) + "::" + std::string(memberText);
+    if (ContainsEnumConstant(symbolTable.FindSymbolsPtr(qualifiedName)))
+    {
+        upgrades[memberStart] = Type_EnumMember;
+    }
+}
+
+/**
  * @brief Pre-calculates scoped enum qualifier and member token upgrades.
  * @param[in] nodeIndex Pre-indexed AST, or nullptr.
  * @param[in] sourceCode Source text buffer.
@@ -1197,6 +1260,10 @@ PrecalculateScopedEnumUpgrades(const analysis::NodeIndex* nodeIndex, std::string
     for (TSNode scopedNode : nodeIndex->Nodes(syms.symScopedIdentifier))
     {
         UpgradeScopedIdentifierEnumTokens(scopedNode, sourceCode, symbolTable, upgrades);
+    }
+    for (TSNode typeNode : nodeIndex->Nodes(syms.symType))
+    {
+        UpgradeScopedTypeEnumTokens(typeNode, sourceCode, symbolTable, upgrades);
     }
     return upgrades;
 }
@@ -1248,6 +1315,58 @@ uint32_t RefineEnclosingClassMember(std::string_view tokenText, uint32_t startBy
 }
 
 /**
+ * @brief Matches agreed type with coarse Type_Type token.
+ * @param[in] agreedType Consensus symbol type.
+ * @param[in] isEnumConstant True if symbol is an enum constant.
+ * @return Refined token type.
+ */
+[[nodiscard]] inline uint32_t MatchAgreedTypeToken(analysis::SymbolType agreedType, bool isEnumConstant) noexcept
+{
+    if (agreedType == analysis::SymbolType::Class)
+        return Type_Class;
+    if (agreedType == analysis::SymbolType::Interface)
+        return Type_Interface;
+    if (agreedType == analysis::SymbolType::Enum)
+        return Type_Enum;
+    if (agreedType == analysis::SymbolType::Variable && isEnumConstant)
+        return Type_EnumMember;
+    return Type_Type;
+}
+
+/**
+ * @brief Matches agreed type with coarse Type_Namespace token.
+ * @param[in] agreedType Consensus symbol type.
+ * @return Refined token type.
+ */
+[[nodiscard]] inline uint32_t MatchAgreedNamespaceToken(analysis::SymbolType agreedType) noexcept
+{
+    if (agreedType == analysis::SymbolType::Enum)
+        return Type_Enum;
+    if (agreedType == analysis::SymbolType::Class)
+        return Type_Class;
+    return Type_Namespace;
+}
+
+/**
+ * @brief Matches agreed variable symbol attributes to refined token type.
+ * @param[in] isEnumConstant True if symbol is an enum constant.
+ * @param[in] hasContainer True if symbol belongs to a container.
+ * @return Refined token type.
+ */
+[[nodiscard]] inline uint32_t MatchAgreedVariableToken(bool isEnumConstant, bool hasContainer) noexcept
+{
+    if (isEnumConstant)
+    {
+        return Type_EnumMember;
+    }
+    if (hasContainer)
+    {
+        return Type_Property;
+    }
+    return Type_Variable;
+}
+
+/**
  * @brief Matches agreed SymbolType with current coarse token type.
  * @param[in] agreedType Consensus symbol type.
  * @param[in] tokenType Current coarse token type.
@@ -1260,12 +1379,11 @@ uint32_t MatchAgreedSymbolType(analysis::SymbolType agreedType, uint32_t tokenTy
 {
     if (tokenType == Type_Type)
     {
-        if (agreedType == analysis::SymbolType::Class)
-            return Type_Class;
-        if (agreedType == analysis::SymbolType::Interface)
-            return Type_Interface;
-        if (agreedType == analysis::SymbolType::Enum)
-            return Type_Enum;
+        return MatchAgreedTypeToken(agreedType, isEnumConstant);
+    }
+    if (tokenType == Type_Namespace)
+    {
+        return MatchAgreedNamespaceToken(agreedType);
     }
     if (agreedType == analysis::SymbolType::Function && tokenType == Type_Function && hasContainer)
     {
@@ -1273,14 +1391,7 @@ uint32_t MatchAgreedSymbolType(analysis::SymbolType agreedType, uint32_t tokenTy
     }
     if (agreedType == analysis::SymbolType::Variable && tokenType == Type_Variable)
     {
-        if (isEnumConstant)
-        {
-            return Type_EnumMember;
-        }
-        if (hasContainer)
-        {
-            return Type_Property;
-        }
+        return MatchAgreedVariableToken(isEnumConstant, hasContainer);
     }
     return tokenType;
 }
@@ -1298,7 +1409,8 @@ uint32_t RefineRuleIndexFallback(std::string_view tokenText, uint32_t tokenType,
     {
         return tokenType;
     }
-    if (tokenType == Type_Variable && ctx.ruleIndex->enumMemberNames.contains(std::string(tokenText)))
+    if ((tokenType == Type_Variable || tokenType == Type_Type) &&
+        ctx.ruleIndex->enumMemberNames.contains(std::string(tokenText)))
     {
         return Type_EnumMember;
     }
@@ -1402,7 +1514,8 @@ uint32_t RefineSyntaxContext(std::string_view tokenText, uint32_t startByte, uin
     {
         tokenType = RefineEnclosingClassMember(tokenText, startByte, tokenType, ctx);
     }
-    if (tokenType == Type_Type || tokenType == Type_Variable || tokenType == Type_Function)
+    if (tokenType == Type_Type || tokenType == Type_Variable || tokenType == Type_Function ||
+        tokenType == Type_Namespace)
     {
         tokenType = RefineSymbolTableMatch(tokenText, tokenType, ctx);
     }

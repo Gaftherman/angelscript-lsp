@@ -1573,3 +1573,66 @@ TEST_CASE("SemanticTokensHandler - Invariant: Unqualified member call with colli
 
     ts_tree_delete(tree);
 }
+
+TEST_CASE("SemanticTokensHandler - Invariant: Direct variable initialization with scoped enum classifies as enum and "
+          "enumMember")
+{
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("Classification");
+    const std::string unsetMember = angel_lsp::test::GenerateRandomSymbolName("Unset");
+    const std::string sizeMember = angel_lsp::test::GenerateRandomSymbolName("__Size__");
+    const std::string charType = angel_lsp::test::GenerateRandomSymbolName("CCharacter");
+    const std::string charsVar = angel_lsp::test::GenerateRandomSymbolName("g_Characters");
+    const std::string selectVar = angel_lsp::test::GenerateRandomSymbolName("g_LastSelectedCharacter");
+
+    const std::string code =
+        fmt::format("class {} {{}};\n"
+                    "enum {}\n"
+                    "{{\n"
+                    "    {} = -1,\n"
+                    "    Security = 0,\n"
+                    "    {}\n"
+                    "}};\n"
+                    "array<array<{}@>> {}({}::{});\n"
+                    "array<uint> {}({}::{});\n"
+                    "void TestFunc(int iClassify)\n"
+                    "{{\n"
+                    "    if ({}::{} < iClassify && iClassify < {}::{}) {{}}\n"
+                    "}}\n",
+                    charType, enumName, unsetMember, sizeMember, charType, charsVar, enumName, sizeMember, selectVar,
+                    enumName, sizeMember, enumName, unsetMember, enumName, sizeMember);
+
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{nullptr};
+    SymbolTable table;
+    collector.CollectSymbols("file:///test_direct_init_enum.as", code, parser, table);
+
+    SemanticTokensRequest request{"file:///test_direct_init_enum.as", code, tree, table};
+    const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
+
+    int enumNameTokenCount = 0;
+    int sizeMemberTokenCount = 0;
+    for (const auto& tok : tokens)
+    {
+        const std::string tokText = TextAt(code, tok.line, tok.character, tok.length);
+        if (tokText == enumName)
+        {
+            CHECK(tok.type == "enum");
+            ++enumNameTokenCount;
+        }
+        else if (tokText == sizeMember)
+        {
+            CHECK(tok.type == "enumMember");
+            ++sizeMemberTokenCount;
+        }
+    }
+
+    // enum declaration (1) + 2 direct inits (2) + 2 expressions in TestFunc (2) = 5 for enumName
+    // sizeMember: declaration (1) + 2 direct inits (2) + 1 expression in TestFunc (1) = 4 for sizeMember
+    CHECK(enumNameTokenCount == 5);
+    CHECK(sizeMemberTokenCount == 4);
+
+    ts_tree_delete(tree);
+}
