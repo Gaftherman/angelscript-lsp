@@ -245,12 +245,25 @@ enum class SymbolProximity : uint8_t
 inline std::string FormatProximitySortText(SymbolProximity prox, std::string_view label)
 {
     static constexpr std::array<std::string_view, 6> k_proxPrefixes = {"0_", "1_", "2_", "3_", "4_", "5_"};
-    const size_t idx = static_cast<size_t>(prox);
-    if (idx < k_proxPrefixes.size())
+    std::string_view underscoreTier = "0_";
+    if (label.starts_with("__"))
     {
-        return std::string(k_proxPrefixes[idx]) + std::string(label);
+        underscoreTier = "2_";
     }
-    return std::string("9_") + std::string(label);
+    else if (label.starts_with('_'))
+    {
+        underscoreTier = "1_";
+    }
+
+    const size_t idx = static_cast<size_t>(prox);
+    const std::string_view proxPrefix = (idx < k_proxPrefixes.size()) ? k_proxPrefixes[idx] : "9_";
+
+    std::string result;
+    result.reserve(proxPrefix.size() + underscoreTier.size() + label.size());
+    result.append(proxPrefix);
+    result.append(underscoreTier);
+    result.append(label);
+    return result;
 }
 
 /**
@@ -1134,6 +1147,10 @@ void AddContainerMembers(const std::string& container, const std::string& qualif
         }
         for (const auto& sym : *symList)
         {
+            if (sym.type == analysis::SymbolType::CallReference)
+            {
+                continue;
+            }
             if (sym.containerName == container || sym.containerName == qualifier)
             {
                 lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
@@ -1420,6 +1437,10 @@ void PopulateMembersForType(const std::string& typeName, const analysis::Templat
         }
         for (const auto& sym : *symbols)
         {
+            if (sym.type == analysis::SymbolType::CallReference)
+            {
+                continue;
+            }
             if (sym.containerName == typeName && !IsConstructorOrDestructor(sym, typeName))
             {
                 PopulateMemberSymbolCandidate(sym, typeName, tCtx, collector);
@@ -1995,6 +2016,10 @@ void CollectScopeDefinitions(const analysis::Scope* innermostScope, CompletionCo
 static void CollectEnclosingMemberCandidate(const analysis::Symbol& sym, const std::string& enclosingClassName,
                                             CompletionCollector& collector)
 {
+    if (sym.type == analysis::SymbolType::CallReference)
+    {
+        return;
+    }
     if (sym.containerName != enclosingClassName && sym.containerName != analysis::LastScopeSegment(enclosingClassName))
     {
         return;

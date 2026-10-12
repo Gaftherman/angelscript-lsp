@@ -280,7 +280,8 @@ Server::HandleRequestsTextDocument_InlayHint(lsp::requests::TextDocument_InlayHi
                                    m_config.features.inlayHintsMaxParameters,
                                    m_config.features.inlayHintsMaxLength,
                                    m_config.features.inlayHintsOmittedDefaultArguments,
-                                   &m_config};
+                                   &m_config,
+                                   m_i18n.get()};
     auto hints = features::GetInlayHints(ihr);
     const double elapsedMs = timer.ElapsedMs();
     if (hints.has_value())

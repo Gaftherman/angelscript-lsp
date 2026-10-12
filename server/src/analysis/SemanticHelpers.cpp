@@ -3083,9 +3083,11 @@ static std::string ResolveMemberExpr(TSNode exprNode, const ExpressionTypeContex
  * @return Fallback method return type, or empty string.
  */
 static std::string ResolveContainerMethodFallback(std::string_view memName, const TemplateTypeInfo& templateInfo,
-                                                  std::string_view objType)
+                                                  std::string_view objType, std::string_view arrayTypeName)
 {
-    if (!templateInfo.templateArgs.empty() || objType.ends_with("[]"))
+    const std::string_view effectiveArrayName = arrayTypeName.empty() ? "array" : arrayTypeName;
+    if ((templateInfo.containerName == effectiveArrayName && !templateInfo.templateArgs.empty()) ||
+        objType.ends_with("[]"))
     {
         if (memName == "length" || memName == "size")
         {
@@ -3200,10 +3202,10 @@ static std::string ResolveMemberCallExpr(TSNode funcNode, const std::vector<std:
         return "";
     }
 
-    std::string objType = CanonicalizeArrayType(ResolveExpressionType(objNode, ctx, depth + 1));
+    std::string objType = CanonicalizeArrayType(ResolveExpressionType(objNode, ctx, depth + 1), ctx.arrayTypeName);
     std::string memName = GetTrimmedNodeText(memNode, ctx.sourceCode);
 
-    std::string ownerType = MemberOwnerType(objType);
+    std::string ownerType = MemberOwnerType(objType, ctx.arrayTypeName);
     if (ownerType.empty())
     {
         ownerType = CleanExpressionType(objType);
@@ -3220,7 +3222,7 @@ static std::string ResolveMemberCallExpr(TSNode funcNode, const std::vector<std:
     }
 
     auto templateInfo = ParseTemplateType(objType);
-    return ResolveContainerMethodFallback(memName, templateInfo, objType);
+    return ResolveContainerMethodFallback(memName, templateInfo, objType, ctx.arrayTypeName);
 }
 
 /**
@@ -5168,6 +5170,56 @@ bool IsSimpleLiteralExpression(std::string_view expr)
         return true;
     }
     return IsValidNumberLiteral(expr);
+}
+
+TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::string_view mixinShortName,
+                              std::string_view sourceCode)
+{
+    if (ts_node_is_null(hostNode))
+    {
+        return {};
+    }
+
+    TSNode found{};
+    const std::string shortSuffix = "::" + std::string(mixinShortName);
+    TSNode baseList = parser::FindFirstChildOfType(hostNode, "base_class_list");
+    if (!ts_node_is_null(baseList))
+    {
+        parser::ForEachNamedChildNodeUntil(baseList,
+                                           [&](TSNode baseChild)
+                                           {
+                                               const std::string bText = GetNodeText(baseChild, sourceCode);
+                                               if (CleanBaseType(bText) == mixinName || bText == mixinShortName ||
+                                                   bText.ends_with(shortSuffix))
+                                               {
+                                                   found = baseChild;
+                                                   return false;
+                                               }
+                                               return true;
+                                           });
+        if (!ts_node_is_null(found))
+        {
+            return found;
+        }
+    }
+
+    TSNode bodyNode = parser::GetChildByField(hostNode, parser::fields::Body);
+    if (!ts_node_is_null(bodyNode))
+    {
+        parser::ForEachChildNodeUntil(bodyNode,
+                                      [&](TSNode mNode)
+                                      {
+                                          const std::string mText = GetNodeText(mNode, sourceCode);
+                                          if (!mixinShortName.empty() &&
+                                              mText.find(mixinShortName) != std::string::npos)
+                                          {
+                                              found = mNode;
+                                              return false;
+                                          }
+                                          return true;
+                                      });
+    }
+    return found;
 }
 
 } // namespace angel_lsp::analysis

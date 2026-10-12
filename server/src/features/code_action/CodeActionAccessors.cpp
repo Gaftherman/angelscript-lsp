@@ -253,19 +253,24 @@ TSPoint FindAccessorPropertyInsertionPoint(TSNode funcNode, TSNode parametersNod
 {
     TSPoint insertAt = ts_node_end_point(parametersNode);
     const uint32_t paramsEndByte = ts_node_end_byte(parametersNode);
-    const uint32_t childCount = ts_node_child_count(funcNode);
-    for (uint32_t i = 0; i < childCount; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(funcNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode child = ts_node_child(funcNode, i);
-        if (ts_node_start_byte(child) >= paramsEndByte)
+        do
         {
-            std::string_view childType = ts_node_type(child);
-            if (childType == "const" || GetNodeText(child, sourceCode) == "const")
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (!ts_node_is_null(child) && ts_node_start_byte(child) >= paramsEndByte)
             {
-                return ts_node_end_point(child);
+                std::string_view childType = ts_node_type(child);
+                if (childType == "const" || GetNodeText(child, sourceCode) == "const")
+                {
+                    insertAt = ts_node_end_point(child);
+                    break;
+                }
             }
-        }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
     return insertAt;
 }
 

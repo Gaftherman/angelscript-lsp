@@ -939,4 +939,15 @@ std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const S
  */
 bool IsSimpleLiteralExpression(std::string_view expr);
 
+/**
+ * @brief Locates the AST node where a mixin is included inside a host class declaration (base list or body).
+ * @param[in] hostNode Enclosing class_declaration AST node.
+ * @param[in] mixinName Mixin name as listed on the class (qualified or short).
+ * @param[in] mixinShortName Short identifier of the mixin symbol.
+ * @param[in] sourceCode Document source text.
+ * @return Matching AST node inside base_class_list or class body, or null TSNode if not found.
+ */
+TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::string_view mixinShortName,
+                              std::string_view sourceCode);
+
 } // namespace angel_lsp::analysis

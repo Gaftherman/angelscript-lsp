@@ -204,15 +204,19 @@ lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view so
     }
 
     std::vector<TSNode> declarators;
-    uint32_t dCount = ts_node_child_count(decl);
-    for (uint32_t i = 0; i < dCount; ++i)
+    TSTreeCursor cursor = ts_tree_cursor_new(decl);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        TSNode child = ts_node_child(decl, i);
-        if (std::string_view(ts_node_type(child)) == "variable_declarator")
+        do
         {
-            declarators.push_back(child);
-        }
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (!ts_node_is_null(child) && std::string_view(ts_node_type(child)) == "variable_declarator")
+            {
+                declarators.push_back(child);
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
 
     if (declarators.size() <= 1)
     {
@@ -221,11 +225,32 @@ lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view so
     return BuildRemoveMultiDeclaratorItem(declarators, declarator);
 }
 
+void AppendUnusedFunctionDisableActions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+{
+    for (const auto& diag : request.context.diagnostics)
+    {
+        if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedFunction))
+        {
+            actions.push_back(
+                MakeDisableDiagnosticAction({diag, "diagnostics.reportUnusedFunctions",
+                                             std::string(diagnostics::codes::UnusedFunction), request.i18n}));
+        }
+        else if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedMethod))
+        {
+            actions.push_back(
+                MakeDisableDiagnosticAction({diag, "diagnostics.reportUnusedFunctions",
+                                             std::string(diagnostics::codes::UnusedMethod), request.i18n}));
+        }
+    }
+}
+
 } // namespace
 
 void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode rootNode,
                                      std::vector<lsp::CodeAction>& actions)
 {
+    AppendUnusedFunctionDisableActions(request, actions);
+
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     if (!rootScope)
     {

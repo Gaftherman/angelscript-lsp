@@ -188,7 +188,7 @@ void Foo()
     for (const auto& diag : diagnostics)
     {
         if (diag.code == "as-warn-undeclared-identifier")
-            CHECK(diag.severity == DiagnosticSeverity::Warning);
+            CHECK(diag.severity == DiagnosticSeverity::Error);
     }
 }
 

@@ -883,7 +883,7 @@ std::optional<lsp::Hover> TryHoverThis(const HoverQueryContext& ctx)
     }
 
     utils::HighResTimer fmtTimer;
-    std::string md = fmt::format("```angelscript\n{} {}\n```", className, ctx.nodeText);
+    std::string md = fmt::format("```angelscript\n(self) {} {}\n```", className, ctx.nodeText);
     ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, ctx.range};
 }
@@ -1062,20 +1062,6 @@ void CollectOverloadDocs(const HoverRequest& request, const std::vector<analysis
 }
 
 /**
- * @brief Formats the summary text for additional unshown overloads.
- * @param[in] i18n Optional localization pointer.
- * @param[in] count Number of additional overloads (must be >= 1).
- * @return Localized summary text e.g. "2 sobrecargas más" or "2 more overloads".
- */
-std::string FormatMoreOverloads(const angel_lsp::i18n::I18n* i18n, size_t count)
-{
-    std::string text =
-        (count == 1) ? angel_lsp::i18n::FormatMessage(i18n, "hover-more-overloads-singular", "1 more overload")
-                     : angel_lsp::i18n::FormatMessage(i18n, "hover-more-overloads-plural", "{} more overloads", count);
-    return "[" + text + "](command:editor.action.triggerParameterHints)";
-}
-
-/**
  * @brief Checks whether a symbol represents a callable routine (function, method, constructor).
  * @param[in] sym Symbol to test.
  * @return True if callable routine, false otherwise.
@@ -1107,6 +1093,111 @@ size_t CountMoreOverloads(const std::vector<analysis::Symbol>& symbols)
         }
     }
     return count;
+}
+
+/**
+ * @brief Percent-encodes a JSON string for use inside a VS Code command URI query parameter.
+ * @param[in] input Raw JSON text.
+ * @return Percent-encoded string safe for Markdown command links.
+ */
+std::string UrlEncodeCommandArgs(std::string_view input)
+{
+    static constexpr char k_hexDigits[] = "0123456789ABCDEF";
+    std::string encoded;
+    encoded.reserve(input.size() * 2);
+    for (unsigned char ch : input)
+    {
+        const bool isUnreserved = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') ||
+                                  ch == '-' || ch == '_' || ch == '.' || ch == '~';
+        if (isUnreserved)
+        {
+            encoded.push_back(static_cast<char>(ch));
+        }
+        else
+        {
+            encoded.push_back('%');
+            encoded.push_back(k_hexDigits[(ch >> 4) & 0x0F]);
+            encoded.push_back(k_hexDigits[ch & 0x0F]);
+        }
+    }
+    return encoded;
+}
+
+/**
+ * @brief Builds a clickable command link that opens VS Code Peek Locations for all overloads.
+ * @param[in] symbols Candidate overload symbols.
+ * @param[in] ctx Hover query context.
+ * @return Markdown link invoking angelscript.peekOverloads.
+ */
+std::string BuildPeekOverloadsLink(const std::vector<analysis::Symbol>& symbols, const HoverQueryContext& ctx)
+{
+    std::ostringstream json;
+    json << "[{\"uri\":\"" << ctx.request.uri << "\",\"line\":" << ctx.request.position.line
+         << ",\"character\":" << ctx.request.position.character << ",\"locations\":[";
+
+    const std::string_view primaryName = symbols.front().name;
+    bool first = true;
+    for (const auto& sym : symbols)
+    {
+        if (sym.name != primaryName || !IsCallableSymbol(sym))
+        {
+            continue;
+        }
+        if (!first)
+        {
+            json << ",";
+        }
+        first = false;
+        const std::string_view symUri =
+            sym.fileUri.empty() ? std::string_view(ctx.request.uri) : std::string_view(sym.fileUri);
+        const uint32_t sLine = sym.selectionRange.startLine > 0 ? sym.selectionRange.startLine : sym.startLine;
+        const uint32_t eLine = sym.selectionRange.endLine > 0 ? sym.selectionRange.endLine : sLine;
+        json << "{\"uri\":\"" << symUri << "\",\"startLine\":" << sLine
+             << ",\"startChar\":" << sym.selectionRange.startCharacter << ",\"endLine\":" << eLine
+             << ",\"endChar\":" << sym.selectionRange.endCharacter << "}";
+    }
+    json << "]}]";
+
+    const std::string label =
+        angel_lsp::i18n::FormatMessage(ctx.request.i18n, "hover-peek-overloads", "Peek overloads");
+    return "[" + label + "](command:angelscript.peekOverloads?" + UrlEncodeCommandArgs(json.str()) + ")";
+}
+
+/**
+ * @brief Formats the collapsible details section and peek command link for additional overloads.
+ * @param[in] symbols Deduplicated candidate symbols list.
+ * @param[in] count Number of additional overloads (must be >= 1).
+ * @param[in] ctx Hover query context.
+ * @return Localized collapsible details block and clickable peek link.
+ */
+std::string FormatMoreOverloads(const std::vector<analysis::Symbol>& symbols, size_t count,
+                                const HoverQueryContext& ctx)
+{
+    const std::string summaryText =
+        (count == 1)
+            ? angel_lsp::i18n::FormatMessage(ctx.request.i18n, "hover-more-overloads-singular", "1 more overload")
+            : angel_lsp::i18n::FormatMessage(ctx.request.i18n, "hover-more-overloads-plural", "{} more overloads",
+                                             count);
+
+    std::ostringstream oss;
+    oss << "<details><summary>" << summaryText << "</summary>\n\n```angelscript\n";
+    const std::string_view primaryName = symbols.front().name;
+    bool first = true;
+    for (size_t i = 1; i < symbols.size(); ++i)
+    {
+        if (symbols[i].name != primaryName || !IsCallableSymbol(symbols[i]))
+        {
+            continue;
+        }
+        if (!first)
+        {
+            oss << "\n";
+        }
+        first = false;
+        oss << FormatDeclarationText(symbols[i], &ctx.request.symbolTable);
+    }
+    oss << "\n```\n\n</details>\n\n" << BuildPeekOverloadsLink(symbols, ctx);
+    return oss.str();
 }
 
 /**
@@ -1183,14 +1274,18 @@ lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::strin
     const size_t moreCount = CountMoreOverloads(symbols);
     if (moreCount > 0)
     {
-        oss << "\n\n" << FormatMoreOverloads(ctx.request.i18n, moreCount);
+        oss << "\n\n" << FormatMoreOverloads(symbols, moreCount, ctx);
     }
 
     std::vector<std::string> docs;
     CollectOverloadDocs(ctx.request, symbols, best, docs);
-    for (const auto& d : docs)
+    if (!docs.empty())
     {
-        oss << "\n\n" << d;
+        oss << "\n\n---";
+        for (const auto& d : docs)
+        {
+            oss << "\n\n" << d;
+        }
     }
 
     ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
@@ -1584,7 +1679,7 @@ static void AppendLocalDoc(const analysis::LocalDefinition& def, std::string_vie
     }
     if (!doc.empty())
     {
-        md += "\n\n";
+        md += "\n\n---\n\n";
         md += doc;
     }
 }
@@ -1941,7 +2036,7 @@ std::optional<lsp::Hover> TryHoverScopeFallback(const HoverQueryContext& ctx)
     std::string doc = analysis::ExtractDocComment(ctx.request.sourceCode, def->startLine);
     if (!doc.empty())
     {
-        oss << "\n\n" << doc;
+        oss << "\n\n---\n\n" << doc;
     }
     ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
@@ -2050,16 +2145,16 @@ void FormatLambdaParameters(TSNode lambdaNode, std::string_view sourceCode, std:
     TSNode paramListNode = ts_node_child_by_field_name(lambdaNode, "parameters", 10);
     if (ts_node_is_null(paramListNode))
     {
-        uint32_t count = ts_node_named_child_count(lambdaNode);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            TSNode child = ts_node_named_child(lambdaNode, i);
-            if (std::string_view(ts_node_type(child)) == "parameter_list")
-            {
-                paramListNode = child;
-                break;
-            }
-        }
+        parser::ForEachNamedChildNodeUntil(lambdaNode,
+                                           [&](TSNode child)
+                                           {
+                                               if (std::string_view(ts_node_type(child)) == "parameter_list")
+                                               {
+                                                   paramListNode = child;
+                                                   return false;
+                                               }
+                                               return true;
+                                           });
     }
     if (!ts_node_is_null(paramListNode))
     {
@@ -2113,7 +2208,7 @@ std::optional<lsp::Hover> TryHoverLambda(const HoverQueryContext& ctx)
         std::string doc = DocCommentForSymbol(ctx.request, *targetFuncdef);
         if (!doc.empty())
         {
-            oss << "\n\n" << doc;
+            oss << "\n\n---\n\n" << doc;
         }
     }
 

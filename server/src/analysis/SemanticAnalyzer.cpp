@@ -1147,7 +1147,8 @@ void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& 
         if (CheckEnumScopeDiagnostic(ref, resolved, uCtx.ctx))
             continue;
 
-        if (resolved != nullptr || uCtx.knownGlobalNames.contains(ref.name))
+        if (resolved != nullptr || ResolveInScope(scope, ref.name, nullptr, false) != nullptr ||
+            uCtx.knownGlobalNames.contains(ref.name))
             continue;
 
         if (IsAccessorPropertyOrKeyword(ref, uCtx.ctx))
@@ -1162,7 +1163,7 @@ void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& 
         }
 
         uCtx.ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
-                             "as-warn-undeclared-identifier", ref.name, DiagnosticSeverity::Warning);
+                             "as-warn-undeclared-identifier", ref.name, DiagnosticSeverity::Error);
     }
 }
 

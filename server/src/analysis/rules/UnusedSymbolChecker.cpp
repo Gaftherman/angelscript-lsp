@@ -245,25 +245,66 @@ bool IsLifecycleOrOverride(const Symbol& sym, const SemanticAnalysisRequest& req
     return false;
 }
 
-bool IsIgnoredFunction(const std::string& name, const SemanticAnalysisRequest& request)
+bool MatchesRegexSafe(const std::string& candidate, const std::string& pattern)
 {
-    if (!request.engineRules)
-        return false;
-    const auto& rules = request.engineRules->unusedRules;
-    if (std::find(rules.ignoredGlobalFunctions.begin(), rules.ignoredGlobalFunctions.end(), name) !=
-        rules.ignoredGlobalFunctions.end())
-        return true;
-    if (!rules.ignoredGlobalFunctionRegex.empty())
+    if (pattern.empty() || candidate.empty())
     {
-        try
+        return false;
+    }
+    try
+    {
+        return std::regex_match(candidate, std::regex(pattern));
+    }
+    catch (const std::regex_error&)
+    {
+        return false;
+    }
+}
+
+bool IsIgnoredByDiagnosticsConfig(const Symbol& sym, const SemanticAnalysisRequest& request)
+{
+    if (!request.diagnostics)
+    {
+        return false;
+    }
+    const auto& diag = *request.diagnostics;
+    if (diag.ignoredUnusedFunctions.contains(sym.name) ||
+        (!sym.qualifiedName.empty() && diag.ignoredUnusedFunctions.contains(sym.qualifiedName)))
+    {
+        return true;
+    }
+    for (const auto& pattern : diag.ignoredUnusedFunctionPatterns)
+    {
+        if (MatchesRegexSafe(sym.name, pattern) ||
+            (!sym.qualifiedName.empty() && MatchesRegexSafe(sym.qualifiedName, pattern)))
         {
-            return std::regex_match(name, std::regex(rules.ignoredGlobalFunctionRegex));
-        }
-        catch (const std::regex_error&)
-        {
+            return true;
         }
     }
     return false;
+}
+
+bool IsIgnoredFunction(const Symbol& sym, const SemanticAnalysisRequest& request)
+{
+    if (IsIgnoredByDiagnosticsConfig(sym, request))
+    {
+        return true;
+    }
+    if (!request.engineRules)
+    {
+        return false;
+    }
+    const auto& rules = request.engineRules->unusedRules;
+    if (std::find(rules.ignoredGlobalFunctions.begin(), rules.ignoredGlobalFunctions.end(), sym.name) !=
+            rules.ignoredGlobalFunctions.end() ||
+        (!sym.qualifiedName.empty() &&
+         std::find(rules.ignoredGlobalFunctions.begin(), rules.ignoredGlobalFunctions.end(), sym.qualifiedName) !=
+             rules.ignoredGlobalFunctions.end()))
+    {
+        return true;
+    }
+    return MatchesRegexSafe(sym.name, rules.ignoredGlobalFunctionRegex) ||
+           (!sym.qualifiedName.empty() && MatchesRegexSafe(sym.qualifiedName, rules.ignoredGlobalFunctionRegex));
 }
 
 void CheckLocalsAndFields(const Scope* scope, const UnusedCheckContext& uCtx, DiagnosticContext& ctx, int depth = 0)
@@ -316,11 +357,18 @@ void CheckUnusedGlobals(const SemanticAnalysisRequest& req, const UnusedCheckCon
         });
 }
 
-bool ShouldSkipFunction(const Symbol& sym, const SemanticAnalysisRequest& req,
-                        const ankerl::unordered_dense::set<std::string>& reflections)
+bool IsPropertyAccessorUsed(std::string_view name, const ankerl::unordered_dense::set<std::string>& refNames)
 {
-    if (IsIgnoredFunction(sym.name, req) || reflections.contains(sym.name) || reflections.contains(sym.qualifiedName) ||
-        sym.name == sym.containerName || sym.name.rfind('~', 0) == 0 || sym.name.rfind("op", 0) == 0)
+    if (name.size() <= 4 || (!name.starts_with("get_") && !name.starts_with("set_")))
+        return false;
+    return refNames.contains(std::string(name.substr(4)));
+}
+
+bool ShouldSkipFunction(const Symbol& sym, const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx)
+{
+    if (IsIgnoredFunction(sym, req) || uCtx.reflections.contains(sym.name) ||
+        uCtx.reflections.contains(sym.qualifiedName) || sym.name == sym.containerName || sym.name.rfind('~', 0) == 0 ||
+        sym.name.rfind("op", 0) == 0 || IsPropertyAccessorUsed(sym.name, uCtx.refNames))
         return true;
     return IsLifecycleOrOverride(sym, req);
 }
@@ -336,11 +384,11 @@ void CheckUnusedFunctions(const SemanticAnalysisRequest& req, const UnusedCheckC
         {
             for (const auto& sym : syms)
             {
-                if (sym.type != SymbolType::Function || ShouldSkipFunction(sym, req, uCtx.reflections) ||
+                if (sym.type != SymbolType::Function || ShouldSkipFunction(sym, req, uCtx) ||
                     uCtx.refNames.contains(sym.name))
                     continue;
 
-                if (sym.containerName.empty())
+                if (sym.containerName.empty() || sym.containerKind == ContainerKind::Namespace)
                     ctx.Emit(sym, diagnostics::codes::UnusedFunction, sym.name, DiagnosticSeverity::Warning);
                 else if (sym.GetFunction().modifiers.access == AccessModifier::Private)
                     ctx.Emit(sym, diagnostics::codes::UnusedMethod, sym.name, DiagnosticSeverity::Warning);
@@ -408,8 +456,12 @@ void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContex
     {
         rules.checkMembers = false;
         rules.checkGlobals = false;
-        rules.checkFunctions = false;
+        rules.checkFunctions = request.diagnostics && request.diagnostics->reportUnusedFunctions;
         rules.checkClasses = false;
+    }
+    else if (request.diagnostics && request.diagnostics->reportUnusedFunctionsExplicit)
+    {
+        rules.checkFunctions = request.diagnostics->reportUnusedFunctions;
     }
 
     ankerl::unordered_dense::set<uint64_t> defLocs;

@@ -564,59 +564,6 @@ TSNode FindMixinAstNode(const TSTree* mixinTree, const Symbol& mixinSym)
     return mixinNode;
 }
 
-/** @brief Searches the base_class_list node for the mixin inclusion range. */
-std::optional<InstantiationRange> FindMixinRangeInBases(TSNode hostNode, const Symbol& mixinSym,
-                                                        const std::string& mixinName, std::string_view sourceCode)
-{
-    const uint32_t childCount = ts_node_child_count(hostNode);
-    for (uint32_t c = 0; c < childCount; ++c)
-    {
-        TSNode child = ts_node_child(hostNode, c);
-        if (NodeType(child) == "base_class_list")
-        {
-            const uint32_t bCount = ts_node_named_child_count(child);
-            for (uint32_t b = 0; b < bCount; ++b)
-            {
-                TSNode baseChild = ts_node_named_child(child, b);
-                std::string bText = GetNodeText(baseChild, sourceCode);
-                if (CleanBaseType(bText) == mixinName || bText == mixinSym.name ||
-                    bText.ends_with("::" + mixinSym.name))
-                {
-                    TSPoint sp = ts_node_start_point(baseChild);
-                    TSPoint ep = ts_node_end_point(baseChild);
-                    return InstantiationRange{sp.row, sp.column, ep.row, ep.column};
-                }
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-/** @brief Searches the class body node for the mixin inclusion range. */
-std::optional<InstantiationRange> FindMixinRangeInBody(TSNode hostNode, const Symbol& mixinSym,
-                                                       std::string_view sourceCode)
-{
-    TSNode bodyNode = GetChildByField(hostNode, "body");
-    if (ts_node_is_null(bodyNode))
-    {
-        return std::nullopt;
-    }
-
-    const uint32_t mCount = ts_node_child_count(bodyNode);
-    for (uint32_t m = 0; m < mCount; ++m)
-    {
-        TSNode mNode = ts_node_child(bodyNode, m);
-        std::string mText = GetNodeText(mNode, sourceCode);
-        if (mText.find(mixinSym.name) != std::string::npos)
-        {
-            TSPoint sp = ts_node_start_point(mNode);
-            TSPoint ep = ts_node_end_point(mNode);
-            return InstantiationRange{sp.row, sp.column, ep.row, ep.column};
-        }
-    }
-    return std::nullopt;
-}
-
 /** @brief Locates the point range where a mixin is included in the host class. */
 InstantiationRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym, const std::string& mixinName,
                                       const DiagnosticContext& ctx)
@@ -635,21 +582,13 @@ InstantiationRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym,
         hostNode = ts_node_parent(hostNode);
     }
 
-    if (ts_node_is_null(hostNode))
+    TSNode incNode = FindMixinInclusionNode(hostNode, mixinName, mixinSym.name, ctx.request.sourceCode);
+    if (!ts_node_is_null(incNode))
     {
-        return range;
+        TSPoint sp = ts_node_start_point(incNode);
+        TSPoint ep = ts_node_end_point(incNode);
+        return InstantiationRange{sp.row, sp.column, ep.row, ep.column};
     }
-
-    if (auto r = FindMixinRangeInBases(hostNode, mixinSym, mixinName, ctx.request.sourceCode))
-    {
-        return *r;
-    }
-
-    if (auto r = FindMixinRangeInBody(hostNode, mixinSym, ctx.request.sourceCode))
-    {
-        return *r;
-    }
-
     return range;
 }
 
@@ -783,26 +722,25 @@ void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, Func
 void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinCheckContext& mctx,
                     const DiagnosticContext& ctx)
 {
-    const uint32_t memberCount = ts_node_child_count(bodyNode);
-    for (uint32_t m = 0; m < memberCount; ++m)
-    {
-        TSNode mem = ts_node_child(bodyNode, m);
-        if (NodeType(mem) != "func_declaration")
-        {
-            continue;
-        }
+    parser::ForEachChildNode(bodyNode,
+                             [&](TSNode mem)
+                             {
+                                 if (NodeType(mem) != "func_declaration")
+                                 {
+                                     return;
+                                 }
 
-        TSNode funcBody = GetChildByField(mem, "body");
-        if (ts_node_is_null(funcBody))
-        {
-            continue;
-        }
+                                 TSNode funcBody = GetChildByField(mem, "body");
+                                 if (ts_node_is_null(funcBody))
+                                 {
+                                     return;
+                                 }
 
-        ankerl::unordered_dense::set<std::string> localNames;
-        CollectLocalNames(mem, funcBody, mixinSource, localNames);
-        FunctionCheckState state{localNames, mctx};
-        CheckFuncBodyStatements(funcBody, mixinSource, state, ctx);
-    }
+                                 ankerl::unordered_dense::set<std::string> localNames;
+                                 CollectLocalNames(mem, funcBody, mixinSource, localNames);
+                                 FunctionCheckState state{localNames, mctx};
+                                 CheckFuncBodyStatements(funcBody, mixinSource, state, ctx);
+                             });
 }
 
 /** @brief RAII holder for parsed mixin tree. */

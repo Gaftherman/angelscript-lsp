@@ -1255,7 +1255,8 @@ TEST_CASE("InlayHintHandler - Nameless wildcard parameter ?& in generates fallba
             const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
             REQUIRE_FALSE(parts.empty());
             REQUIRE(parts[0].location.has_value());
-            CHECK_FALSE(parts[0].tooltip.has_value());
+            REQUIRE(parts[0].tooltip.has_value());
+            CHECK(GetTooltipText(parts[0].tooltip).find("[Go to Definition](") != std::string::npos);
             CHECK_FALSE(hint.tooltip.has_value());
         }
     }
@@ -1312,7 +1313,8 @@ TEST_CASE("InlayHintHandler - Parameter hint label part location navigates to ca
                 const auto& range = part.location->range;
                 CHECK(range.start.line == 4);
                 CHECK(range.end.line == 4);
-                CHECK_FALSE(part.tooltip.has_value());
+                REQUIRE(part.tooltip.has_value());
+                CHECK(GetTooltipText(part.tooltip).find("[Go to Definition](file:///test.as#L5,") != std::string::npos);
                 CHECK_FALSE(hint.tooltip.has_value());
                 foundTypeHintWithDeclLocation = true;
             }
@@ -1339,7 +1341,7 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
 
     TestEnvironment env(code);
 
-    // 1. Default config: tooltip should be wrapped in ```angelscript code block
+    // 1. Default config: tooltip contains clickable Go to Definition link without duplicating signature card
     auto defaultHints = env.InlayHints();
     REQUIRE(defaultHints.has_value());
     REQUIRE_FALSE(defaultHints->empty());
@@ -1357,9 +1359,11 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
             if (part.value == paramName + ":")
             {
                 foundParamHint = true;
-                // With location available, tooltip is omitted to prevent duplicate cards in VS Code
                 CHECK(part.location.has_value());
-                CHECK_FALSE(part.tooltip.has_value());
+                REQUIRE(part.tooltip.has_value());
+                const std::string tip = GetTooltipText(part.tooltip);
+                CHECK(tip.find("[Go to Definition](file:///test.as#L2,") != std::string::npos);
+                CHECK(tip.find("(parameter)") == std::string::npos);
             }
         }
     }

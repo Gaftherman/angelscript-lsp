@@ -168,21 +168,9 @@ struct GrammarSymbols
     TSSymbol symAssignmentExpression = 0;
     TSSymbol symUnaryExpression = 0;
     TSSymbol symPostfixExpression = 0;
-    TSSymbol symStatementBlock = 0;
-    TSSymbol symLambdaExpression = 0;
     TSSymbol symParameter = 0;
-    TSSymbol symInterfaceMethod = 0;
-    TSSymbol symFuncDeclaration = 0;
-    TSSymbol symVariableDeclaration = 0;
-    TSSymbol symClassBody = 0;
-    TSSymbol symInterfaceBody = 0;
-    TSSymbol symEnumDeclaration = 0;
-    TSSymbol symEnumMember = 0;
     TSSymbol symScopedIdentifier = 0;
     TSSymbol symClassDeclaration = 0;
-    TSSymbol symMemberExpression = 0;
-    TSSymbol symIdentifier = 0;
-    TSSymbol symLambdaParameterList = 0;
     TSSymbol symType = 0;
     TSSymbol symDatatype = 0;
     TSSymbol symScope = 0;
@@ -207,21 +195,9 @@ const GrammarSymbols& GetGrammarSymbols()
         gs.symAssignmentExpression = symFor(parser::nodes::AssignmentExpression);
         gs.symUnaryExpression = symFor(parser::nodes::UnaryExpression);
         gs.symPostfixExpression = symFor(parser::nodes::PostfixExpression);
-        gs.symStatementBlock = symFor(parser::nodes::StatementBlock);
-        gs.symLambdaExpression = symFor(parser::nodes::LambdaExpression);
         gs.symParameter = symFor(parser::nodes::Parameter);
-        gs.symInterfaceMethod = symFor(parser::nodes::InterfaceMethod);
-        gs.symFuncDeclaration = symFor(parser::nodes::FuncDeclaration);
-        gs.symVariableDeclaration = symFor(parser::nodes::VariableDeclaration);
-        gs.symClassBody = symFor(parser::nodes::ClassBody);
-        gs.symInterfaceBody = symFor(parser::nodes::InterfaceBody);
-        gs.symEnumDeclaration = symFor(parser::nodes::EnumDeclaration);
-        gs.symEnumMember = symFor(parser::nodes::EnumMember);
         gs.symScopedIdentifier = symFor(parser::nodes::ScopedIdentifier);
         gs.symClassDeclaration = symFor(parser::nodes::ClassDeclaration);
-        gs.symMemberExpression = symFor(parser::nodes::MemberExpression);
-        gs.symIdentifier = symFor(parser::nodes::Identifier);
-        gs.symLambdaParameterList = symFor(parser::nodes::LambdaParameterList);
         gs.symType = symFor(parser::nodes::Type);
         gs.symDatatype = symFor(parser::nodes::Datatype);
         gs.symScope = symFor(parser::nodes::Scope);
@@ -380,204 +356,6 @@ ClassifyOperatorOrPunctuation(TSNode node, std::string_view sourceCode, const Gr
 }
 
 /**
- * @brief Checks if a node corresponds to the "name" field of its parent.
- * @param[in] node Identifier node.
- * @param[in] parent Enclosing declaration node.
- * @return True if node matches the name field.
- */
-bool IsNodeNameField(TSNode node, TSNode parent) noexcept
-{
-    if (ts_node_is_null(parent))
-    {
-        return false;
-    }
-    TSNode nameChild = parser::GetChildByField(parent, parser::fields::Name);
-    if (ts_node_is_null(nameChild))
-    {
-        return false;
-    }
-    if (ts_node_eq(nameChild, node))
-    {
-        return true;
-    }
-    uint32_t nameStart = ts_node_start_byte(nameChild);
-    uint32_t nameEnd = ts_node_end_byte(nameChild);
-    uint32_t nodeStart = ts_node_start_byte(node);
-    uint32_t nodeEnd = ts_node_end_byte(node);
-    if (nameStart == nameEnd || nodeStart == nodeEnd)
-    {
-        return false;
-    }
-    return (nameStart <= nodeStart && nodeEnd <= nameEnd) || (nodeStart <= nameStart && nameEnd <= nodeEnd);
-}
-
-/**
- * @brief Refines func_declaration token type based on enclosing container.
- * @param[in] node Identifier node.
- * @param[in] curr func_declaration node.
- * @param[in] syms Grammar symbol table.
- * @return Optional refined token type (Type_Method or nullopt).
- */
-std::optional<uint32_t> RefineMethodOrFunction(TSNode node, TSNode curr, const GrammarSymbols& syms) noexcept
-{
-    if (!IsNodeNameField(node, curr))
-    {
-        return std::nullopt;
-    }
-    for (TSNode anc = ts_node_parent(curr); !ts_node_is_null(anc); anc = ts_node_parent(anc))
-    {
-        const TSSymbol ancSym = ts_node_symbol(anc);
-        if (ancSym == syms.symClassBody || ancSym == syms.symInterfaceBody)
-        {
-            return Type_Method;
-        }
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Refines variable_declaration token type when declared inside a class body.
- * @param[in] curr variable_declaration node.
- * @param[in] syms Grammar symbol table.
- * @return Optional refined token type (Type_Property or nullopt).
- */
-std::optional<uint32_t> RefineClassProperty(TSNode curr, const GrammarSymbols& syms) noexcept
-{
-    for (TSNode anc = ts_node_parent(curr); !ts_node_is_null(anc); anc = ts_node_parent(anc))
-    {
-        const TSSymbol ancSym = ts_node_symbol(anc);
-        if (ancSym == syms.symStatementBlock || ancSym == syms.symFuncDeclaration)
-        {
-            break;
-        }
-        if (ancSym == syms.symClassBody)
-        {
-            return Type_Property;
-        }
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Refines enum members vs enum's own name.
- * @param[in] node Identifier node.
- * @param[in] curr enum_declaration or enum_member node.
- * @param[in] syms Grammar symbol table.
- * @return Optional refined token type (Type_EnumMember or nullopt).
- */
-std::optional<uint32_t> RefineEnumDeclarationOrMember(TSNode node, TSNode curr, const GrammarSymbols& syms) noexcept
-{
-    bool isEnumOwnName = false;
-    for (TSNode anc = curr; !ts_node_is_null(anc); anc = ts_node_parent(anc))
-    {
-        if (ts_node_symbol(anc) == syms.symEnumDeclaration)
-        {
-            if (IsNodeNameField(node, anc))
-            {
-                isEnumOwnName = true;
-            }
-            break;
-        }
-    }
-    if (!isEnumOwnName)
-    {
-        return Type_EnumMember;
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Result from inspecting a syntax ancestor for token refinement.
- */
-struct AncestorRefinementResult
-{
-    bool terminal = false;
-    std::optional<uint32_t> refinedType;
-};
-
-/**
- * @brief Inspects a single ancestor node to refine an identifier token.
- * @param[in] node Target identifier node.
- * @param[in] directParent Direct parent of identifier node.
- * @param[in] curr Current ancestor node being tested.
- * @param[in] syms Grammar symbol table.
- * @return AncestorRefinementResult indication.
- */
-AncestorRefinementResult InspectAncestorNode(TSNode node, TSNode directParent, TSNode curr,
-                                             const GrammarSymbols& syms) noexcept
-{
-    const TSSymbol currSym = ts_node_symbol(curr);
-    if (currSym == syms.symStatementBlock || currSym == syms.symLambdaExpression)
-    {
-        return {true, std::nullopt};
-    }
-    if ((currSym == syms.symParameter || currSym == syms.symInterfaceMethod) &&
-        (IsNodeNameField(node, curr) || ts_node_eq(directParent, curr)))
-    {
-        return {true, (currSym == syms.symParameter) ? Type_Parameter : Type_Method};
-    }
-    if (currSym == syms.symFuncDeclaration)
-    {
-        auto refined = RefineMethodOrFunction(node, curr, syms);
-        return {true, refined};
-    }
-    if (currSym == syms.symVariableDeclaration)
-    {
-        if (auto prop = RefineClassProperty(curr, syms))
-        {
-            return {false, prop};
-        }
-    }
-    if (currSym == syms.symEnumDeclaration || currSym == syms.symEnumMember)
-    {
-        auto member = RefineEnumDeclarationOrMember(node, curr, syms);
-        return {true, member};
-    }
-    return {false, std::nullopt};
-}
-
-/**
- * @brief Upgrades coarse token types for identifier declarations by walking ancestors.
- * @param[in] node Identifier AST node.
- * @param[in] tokenType Current coarse token type.
- * @return Refined token type index.
- */
-[[nodiscard]] inline uint32_t RefineDeclarationTokenType(TSNode node, uint32_t tokenType) noexcept
-{
-    if (tokenType != Type_Variable && tokenType != Type_Function)
-    {
-        return tokenType;
-    }
-    if (ts_node_is_null(node))
-    {
-        return tokenType;
-    }
-
-    TSNode directParent = ts_node_parent(node);
-    if (ts_node_is_null(directParent))
-    {
-        return tokenType;
-    }
-
-    const auto& syms = GetGrammarSymbols();
-    TSNode curr = directParent;
-
-    for (int level = 0; level < 8 && !ts_node_is_null(curr); ++level, curr = ts_node_parent(curr))
-    {
-        auto res = InspectAncestorNode(node, directParent, curr, syms);
-        if (res.refinedType.has_value())
-        {
-            return *res.refinedType;
-        }
-        if (res.terminal)
-        {
-            return tokenType;
-        }
-    }
-    return tokenType;
-}
-
-/**
  * @brief Classification rule for a single tree-sitter query capture pattern.
  */
 struct CaptureRule
@@ -675,6 +453,39 @@ bool MatchKeywordOrConstantRule(std::string_view name, CaptureRule& rule)
 }
 
 /**
+ * @brief Matches function, method, and property capture patterns.
+ * @param[in] name Capture name.
+ * @param[out] rule Output classification rule.
+ * @return True if pattern matched.
+ */
+bool MatchCallableOrPropertyRule(std::string_view name, CaptureRule& rule)
+{
+    if (name == "function" || name == "function.method")
+    {
+        rule.tokenType = (name == "function.method") ? Type_Method : Type_Function;
+        rule.tokenMod = Mod_Declaration;
+        rule.priority = (name == "function.method") ? 7 : 6;
+        rule.valid = true;
+        return true;
+    }
+    if (name == "function.call" || name == "function.method.call" || name == "property")
+    {
+        rule.tokenType = (name == "property") ? Type_Property : (name == "function.call" ? Type_Function : Type_Method);
+        rule.priority = 5;
+        rule.valid = true;
+        return true;
+    }
+    if (name == "property.access")
+    {
+        rule.tokenType = Type_Property;
+        rule.priority = 3;
+        rule.valid = true;
+        return true;
+    }
+    return false;
+}
+
+/**
  * @brief Matches types, functions, variables, and properties.
  * @param[in] name Capture name.
  * @param[out] rule Output classification rule.
@@ -697,25 +508,15 @@ bool MatchEntityCaptureRule(std::string_view name, CaptureRule& rule)
         rule.valid = true;
         return true;
     }
-    if (name == "function")
+    if (MatchCallableOrPropertyRule(name, rule))
     {
-        rule.tokenType = Type_Function;
-        rule.tokenMod = Mod_Declaration;
-        rule.priority = 6;
-        rule.valid = true;
         return true;
     }
-    if (name == "function.call" || name == "function.method.call" || name == "property")
+    if (name == "variable" || name == "variable.parameter" || name == "variable.parameter.declaration")
     {
-        rule.tokenType = (name == "property") ? Type_Property : (name == "function.call" ? Type_Function : Type_Method);
-        rule.priority = 5;
-        rule.valid = true;
-        return true;
-    }
-    if (name == "variable" || name == "variable.parameter")
-    {
-        rule.tokenType = (name == "variable.parameter") ? Type_Parameter : Type_Variable;
-        rule.priority = (name == "variable.parameter") ? 4 : 3;
+        rule.tokenType = (name == "variable") ? Type_Variable : Type_Parameter;
+        rule.tokenMod = (name == "variable.parameter.declaration") ? Mod_Declaration : 0;
+        rule.priority = (name == "variable") ? 3 : 4;
         rule.valid = true;
         return true;
     }
@@ -899,174 +700,6 @@ class ClassSpanIndex
   private:
     std::vector<ClassSpan> m_spans;
 };
-
-/**
- * @brief Records variable declarator identifiers as properties in class bodies.
- * @param[in] member Variable declaration AST node.
- * @param[in] syms Grammar symbols.
- * @param[in,out] out Refinement map from start byte to Type_Property.
- */
-void RecordVariableDeclaratorRefinements(TSNode member, const GrammarSymbols& syms,
-                                         ankerl::unordered_dense::map<uint32_t, uint32_t>& out)
-{
-    const uint32_t varChildCount = ts_node_child_count(member);
-    for (uint32_t j = 0; j < varChildCount; ++j)
-    {
-        TSNode child = ts_node_child(member, j);
-        if (ts_node_symbol(child) == syms.symIdentifier)
-        {
-            out[ts_node_start_byte(child)] = Type_Property;
-        }
-        else
-        {
-            TSNode nameChild = parser::GetChildByField(child, parser::fields::Name);
-            if (!ts_node_is_null(nameChild))
-            {
-                out[ts_node_start_byte(nameChild)] = Type_Property;
-            }
-            else
-            {
-                const uint32_t subCount = ts_node_child_count(child);
-                for (uint32_t k = 0; k < subCount; ++k)
-                {
-                    TSNode subChild = ts_node_child(child, k);
-                    if (ts_node_symbol(subChild) == syms.symIdentifier)
-                    {
-                        out[ts_node_start_byte(subChild)] = Type_Property;
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * @brief Records parameter and interface method refinements into the map.
- * @param[in] nodeIndex Pre-built AST index.
- * @param[in] syms Grammar symbols.
- * @param[in,out] out Output refinement map.
- */
-void RecordParamAndMethodRefinements(const analysis::NodeIndex& nodeIndex, const GrammarSymbols& syms,
-                                     ankerl::unordered_dense::map<uint32_t, uint32_t>& out)
-{
-    for (TSNode paramNode : nodeIndex.Nodes(syms.symParameter))
-    {
-        TSNode nameChild = parser::GetChildByField(paramNode, parser::fields::Name);
-        if (!ts_node_is_null(nameChild))
-        {
-            out[ts_node_start_byte(nameChild)] = Type_Parameter;
-        }
-    }
-    for (TSNode methodNode : nodeIndex.Nodes(syms.symInterfaceMethod))
-    {
-        TSNode nameChild = parser::GetChildByField(methodNode, parser::fields::Name);
-        if (!ts_node_is_null(nameChild))
-        {
-            out[ts_node_start_byte(nameChild)] = Type_Method;
-        }
-    }
-}
-
-/**
- * @brief Records class and interface body member refinements into the map.
- * @param[in] nodeIndex Pre-built AST index.
- * @param[in] syms Grammar symbols.
- * @param[in,out] out Output refinement map.
- */
-void RecordBodyMemberRefinements(const analysis::NodeIndex& nodeIndex, const GrammarSymbols& syms,
-                                 ankerl::unordered_dense::map<uint32_t, uint32_t>& out)
-{
-    for (TSNode classBody : nodeIndex.Nodes(syms.symClassBody))
-    {
-        const uint32_t memberCount = ts_node_child_count(classBody);
-        for (uint32_t i = 0; i < memberCount; ++i)
-        {
-            TSNode member = ts_node_child(classBody, i);
-            const TSSymbol memberSym = ts_node_symbol(member);
-            if (memberSym == syms.symFuncDeclaration)
-            {
-                TSNode nameChild = parser::GetChildByField(member, parser::fields::Name);
-                if (!ts_node_is_null(nameChild))
-                {
-                    out[ts_node_start_byte(nameChild)] = Type_Method;
-                }
-            }
-            else if (memberSym == syms.symVariableDeclaration)
-            {
-                RecordVariableDeclaratorRefinements(member, syms, out);
-            }
-        }
-    }
-
-    for (TSNode ifaceBody : nodeIndex.Nodes(syms.symInterfaceBody))
-    {
-        const uint32_t memberCount = ts_node_child_count(ifaceBody);
-        for (uint32_t i = 0; i < memberCount; ++i)
-        {
-            TSNode member = ts_node_child(ifaceBody, i);
-            const TSSymbol memberSym = ts_node_symbol(member);
-            if (memberSym == syms.symFuncDeclaration || memberSym == syms.symInterfaceMethod)
-            {
-                TSNode nameChild = parser::GetChildByField(member, parser::fields::Name);
-                if (!ts_node_is_null(nameChild))
-                {
-                    out[ts_node_start_byte(nameChild)] = Type_Method;
-                }
-            }
-        }
-    }
-}
-
-/**
- * @brief Records enum member refinements into the map.
- * @param[in] nodeIndex Pre-built AST index.
- * @param[in] syms Grammar symbols.
- * @param[in,out] out Output refinement map.
- */
-void RecordEnumMemberRefinements(const analysis::NodeIndex& nodeIndex, const GrammarSymbols& syms,
-                                 ankerl::unordered_dense::map<uint32_t, uint32_t>& out)
-{
-    for (TSNode enumMember : nodeIndex.Nodes(syms.symEnumMember))
-    {
-        TSNode nameChild = parser::GetChildByField(enumMember, parser::fields::Name);
-        if (!ts_node_is_null(nameChild))
-        {
-            out[ts_node_start_byte(nameChild)] = Type_EnumMember;
-        }
-        else
-        {
-            const uint32_t childCount = ts_node_child_count(enumMember);
-            for (uint32_t i = 0; i < childCount; ++i)
-            {
-                TSNode child = ts_node_child(enumMember, i);
-                if (ts_node_symbol(child) == syms.symIdentifier)
-                {
-                    out[ts_node_start_byte(child)] = Type_EnumMember;
-                }
-            }
-        }
-    }
-}
-
-/**
- * @brief Pre-calculates declaration refinements across AST to avoid ancestor walks.
- * @param[in] nodeIndex Pre-indexed AST, or nullptr.
- * @param[in] syms Grammar symbols.
- * @return Map from start byte to refined token type.
- */
-ankerl::unordered_dense::map<uint32_t, uint32_t>
-PrecalculateDeclarationRefinements(const analysis::NodeIndex* nodeIndex, const GrammarSymbols& syms)
-{
-    ankerl::unordered_dense::map<uint32_t, uint32_t> refinedDecl;
-    if (!nodeIndex)
-    {
-        return refinedDecl;
-    }
-    RecordParamAndMethodRefinements(*nodeIndex, syms, refinedDecl);
-    RecordBodyMemberRefinements(*nodeIndex, syms, refinedDecl);
-    RecordEnumMemberRefinements(*nodeIndex, syms, refinedDecl);
-    return refinedDecl;
-}
 
 /**
  * @brief Checks if any symbol in a list is an enum constant.
@@ -1261,9 +894,13 @@ PrecalculateScopedEnumUpgrades(const analysis::NodeIndex* nodeIndex, std::string
     {
         UpgradeScopedIdentifierEnumTokens(scopedNode, sourceCode, symbolTable, upgrades);
     }
-    for (TSNode typeNode : nodeIndex->Nodes(syms.symType))
+    for (TSNode scopeNode : nodeIndex->Nodes(syms.symScope))
     {
-        UpgradeScopedTypeEnumTokens(typeNode, sourceCode, symbolTable, upgrades);
+        TSNode parentNode = ts_node_parent(scopeNode);
+        if (!ts_node_is_null(parentNode) && ts_node_symbol(parentNode) == syms.symType)
+        {
+            UpgradeScopedTypeEnumTokens(parentNode, sourceCode, symbolTable, upgrades);
+        }
     }
     return upgrades;
 }
@@ -1275,7 +912,6 @@ struct TokenRefinementContext
 {
     const SemanticTokensRequest& request;
     const ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& referenceKinds;
-    const ankerl::unordered_dense::map<uint32_t, uint32_t>& refinedDeclByStartByte;
     const ankerl::unordered_dense::map<uint32_t, uint32_t>& scopedEnumUpgrades;
     const ClassSpanIndex& classSpans;
     std::shared_ptr<const analysis::rules::RuleIndex> ruleIndex;
@@ -1537,19 +1173,6 @@ uint32_t RefineCapturedTokenType(TSNode node, uint32_t tokenType, const TokenRef
         tokenType = ResolveReferenceTokenType(startPoint, ctx.referenceKinds, tokenType);
     }
 
-    if (tokenType == Type_Variable || tokenType == Type_Function)
-    {
-        const uint32_t sb = ts_node_start_byte(node);
-        if (auto it = ctx.refinedDeclByStartByte.find(sb); it != ctx.refinedDeclByStartByte.end())
-        {
-            tokenType = it->second;
-        }
-        else if (!ctx.request.nodeIndex)
-        {
-            tokenType = RefineDeclarationTokenType(node, tokenType);
-        }
-    }
-
     if (tokenType == Type_Type || tokenType == Type_Variable || tokenType == Type_Function ||
         tokenType == Type_Namespace)
     {
@@ -1674,148 +1297,6 @@ void CollectHighlightsTokens(const HighlightsQueryData& highlights, const TokenR
         }
 
         EmitTokenOrSplitLines(node, TokenMeta{tokenType, tokenMod, priority}, sourceLines, rawTokens);
-    }
-}
-
-/**
- * @brief Context holding coordinate set and token collection for emission.
- */
-struct TokenEmitContext
-{
-    ankerl::unordered_dense::set<uint64_t>& existingStarts;
-    std::vector<RawToken>& rawTokens;
-};
-
-/**
- * @brief Emits a raw token if its start position has not yet been emitted on the same line.
- * @param[in] node AST node providing start and end coordinates.
- * @param[in] type Semantic token type identifier.
- * @param[in] mod Semantic token modifier flags.
- * @param[in,out] ctx Token emission context.
- */
-inline void TryEmplaceToken(TSNode node, uint32_t type, uint32_t mod, TokenEmitContext& ctx)
-{
-    TSPoint start = ts_node_start_point(node);
-    TSPoint end = ts_node_end_point(node);
-    uint64_t posKey = PositionKey(start.row, start.column);
-    if (!ctx.existingStarts.contains(posKey) && start.row == end.row && end.column > start.column)
-    {
-        ctx.rawTokens.push_back(RawToken{start.row, start.column, end.column - start.column, type, mod, 3});
-        ctx.existingStarts.insert(posKey);
-    }
-}
-
-/**
- * @brief Processes member expression nodes to emit property tokens.
- * @param[in] curr Member expression AST node.
- * @param[in] syms Grammar symbols.
- * @param[in,out] ctx Token emission context.
- */
-void ProcessMemberExpressionNode(TSNode curr, const GrammarSymbols& syms, TokenEmitContext& ctx)
-{
-    TSNode memberNode = parser::GetChildByField(curr, parser::fields::Member);
-    if (!ts_node_is_null(memberNode) && ts_node_symbol(memberNode) == syms.symIdentifier)
-    {
-        TryEmplaceToken(memberNode, Type_Property, 0, ctx);
-    }
-}
-
-/**
- * @brief Processes lambda parameter list nodes to emit parameter tokens.
- * @param[in] curr Lambda parameter list AST node.
- * @param[in] syms Grammar symbols.
- * @param[in,out] ctx Token emission context.
- */
-void ProcessLambdaParameterListNode(TSNode curr, const GrammarSymbols& syms, TokenEmitContext& ctx)
-{
-    const uint32_t count = ts_node_named_child_count(curr);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_named_child(curr, i);
-        if (!ts_node_is_null(child) && ts_node_symbol(child) == syms.symIdentifier)
-        {
-            TryEmplaceToken(child, Type_Parameter, Mod_Declaration, ctx);
-        }
-    }
-}
-
-/**
- * @brief Scans member expressions and lambda parameter lists via precomputed NodeIndex.
- * @param[in] nodeIndex Precomputed AST node index.
- * @param[in] syms Grammar symbols.
- * @param[in,out] ctx Token emission context.
- */
-void CollectMemberAndLambdaFromIndex(const analysis::NodeIndex* nodeIndex, const GrammarSymbols& syms,
-                                     TokenEmitContext& ctx)
-{
-    for (TSNode curr : nodeIndex->Nodes(syms.symMemberExpression))
-    {
-        ProcessMemberExpressionNode(curr, syms, ctx);
-    }
-    for (TSNode curr : nodeIndex->Nodes(syms.symLambdaParameterList))
-    {
-        ProcessLambdaParameterListNode(curr, syms, ctx);
-    }
-}
-
-/**
- * @brief Scans member expressions and lambda parameter lists via iterative stack traversal.
- * @param[in] rootNode Document root AST node.
- * @param[in] syms Grammar symbols.
- * @param[in,out] ctx Token emission context.
- */
-void CollectMemberAndLambdaFromTree(TSNode rootNode, const GrammarSymbols& syms, TokenEmitContext& ctx)
-{
-    std::vector<TSNode> stack{rootNode};
-    while (!stack.empty())
-    {
-        TSNode curr = stack.back();
-        stack.pop_back();
-        if (ts_node_is_null(curr))
-        {
-            continue;
-        }
-        TSSymbol s = ts_node_symbol(curr);
-        if (s == syms.symMemberExpression)
-        {
-            ProcessMemberExpressionNode(curr, syms, ctx);
-        }
-        else if (s == syms.symLambdaParameterList)
-        {
-            ProcessLambdaParameterListNode(curr, syms, ctx);
-        }
-        uint32_t cc = ts_node_child_count(curr);
-        for (uint32_t i = 0; i < cc; ++i)
-        {
-            stack.push_back(ts_node_child(curr, i));
-        }
-    }
-}
-
-/**
- * @brief Processes member expressions and lambda parameter lists to emit property and parameter tokens.
- * @param[in] rootNode Document root node.
- * @param[in] nodeIndex Pre-built AST index, or nullptr.
- * @param[in] syms Grammar symbols.
- * @param[in,out] rawTokens Token collection receiving items.
- */
-void CollectMemberAndLambdaTokens(TSNode rootNode, const analysis::NodeIndex* nodeIndex, const GrammarSymbols& syms,
-                                  std::vector<RawToken>& rawTokens)
-{
-    ankerl::unordered_dense::set<uint64_t> existingStarts;
-    existingStarts.reserve(rawTokens.size());
-    for (const auto& tok : rawTokens)
-    {
-        existingStarts.insert(PositionKey(tok.line, tok.startChar));
-    }
-    TokenEmitContext ctx{existingStarts, rawTokens};
-    if (nodeIndex)
-    {
-        CollectMemberAndLambdaFromIndex(nodeIndex, syms, ctx);
-    }
-    else
-    {
-        CollectMemberAndLambdaFromTree(rootNode, syms, ctx);
     }
 }
 
@@ -2008,7 +1489,6 @@ lsp::SemanticTokens GetSemanticTokens(const SemanticTokensRequest& request)
     }
 
     ClassSpanIndex classSpans = ClassSpanIndex::Build(nodeIndex, request.sourceCode, syms);
-    auto refinedDecl = PrecalculateDeclarationRefinements(nodeIndex, syms);
     auto scopedEnumUpgrades = PrecalculateScopedEnumUpgrades(nodeIndex, request.sourceCode, request.symbolTable, syms);
 
     ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind> referenceKinds;
@@ -2017,13 +1497,12 @@ lsp::SemanticTokens GetSemanticTokens(const SemanticTokensRequest& request)
         CollectReferenceKinds(request.scopeRoot.get(), referenceKinds);
     }
 
-    TokenRefinementContext ctx{
-        request, referenceKinds, refinedDecl, scopedEnumUpgrades, classSpans, request.symbolTable.GetRuleIndex()};
+    TokenRefinementContext ctx{request, referenceKinds, scopedEnumUpgrades, classSpans,
+                               request.symbolTable.GetRuleIndex()};
 
     std::vector<RawToken> rawTokens;
     auto sourceLines = SplitLinesView(request.sourceCode);
     CollectHighlightsTokens(highlightsData, ctx, sourceLines, rawTokens);
-    CollectMemberAndLambdaTokens(ts_tree_root_node(request.tree), nodeIndex, syms, rawTokens);
 
     if (!request.excludedLineRanges.empty())
     {

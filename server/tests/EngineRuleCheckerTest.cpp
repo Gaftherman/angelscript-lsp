@@ -308,3 +308,56 @@ TEST_CASE("EngineRuleChecker - Enforces explicit enum construct on scheduled dis
     auto diags = AnalyzeWithRules(code, &config);
     CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineScheduledEnumDiscriminant));
 }
+
+TEST_CASE("EngineRuleChecker - Custom array-like template and Spanish i18n fallback")
+{
+    std::mt19937_64 rng(0x42A116);
+    const std::string entType = angel_lsp::test::GenerateIdentifier(rng, "EntityBase");
+    const std::string customContainer = angel_lsp::test::GenerateIdentifier(rng, "DynVec");
+    const std::string arrVar = angel_lsp::test::GenerateIdentifier(rng, "m_items");
+
+    angel_lsp::config::EngineRuleConfig ruleCfg;
+    angel_lsp::config::StorageRule rule;
+    rule.id = "custom-vec-rule";
+    rule.types = {entType};
+    rule.handleOnly = true;
+    rule.disallowInArrays = true;
+    rule.suggestReplacement = "SafeRef";
+    ruleCfg.storageRules.push_back(rule);
+
+    const std::string code = "class " + entType +
+                             " {}\n"
+                             "class Holder {\n"
+                             "    " +
+                             customContainer + "<" + entType + "@> " + arrVar +
+                             ";\n"
+                             "}\n";
+
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    LocalScopeCollector scopes(nullptr);
+    SymbolTable table;
+    angel_lsp::i18n::I18n esI18n("es");
+    angel_lsp::config::TypeConfig typeCfg;
+    typeCfg.arrayLikeTemplates.insert(customContainer);
+
+    collector.CollectSymbols("file:///custom_vec.as", code, parser, table);
+    SemanticAnalysisRequest request{table, "file:///custom_vec.as", ".as.predefined", &esI18n};
+    request.scopeRoot = scopes.CollectScopes(code, parser);
+    request.sourceCode = code;
+    request.tree = parser.Parse(code);
+    request.engineRules = &ruleCfg;
+    request.typeConfig = &typeCfg;
+
+    SemanticAnalyzer analyzer(nullptr);
+    auto diags = analyzer.Analyze(request);
+    if (request.tree)
+    {
+        ts_tree_delete(const_cast<TSTree*>(request.tree));
+    }
+
+    CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineStorageRule));
+    const bool hasSpanishText = std::any_of(diags.begin(), diags.end(), [](const Diagnostic& d)
+                                            { return d.message.find("infringe la regla") != std::string::npos; });
+    CHECK(hasSpanishText);
+}

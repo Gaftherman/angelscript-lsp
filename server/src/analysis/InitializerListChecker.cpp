@@ -169,20 +169,19 @@ uint32_t ListValueCount(TSNode listNode)
 {
     uint32_t separators = 0;
     uint32_t written = 0;
-    const uint32_t count = ts_node_child_count(listNode);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_child(listNode, i);
-        const std::string_view type = NodeType(child);
-        if (type == ",")
-        {
-            ++separators;
-        }
-        else if (ts_node_is_named(child) && type != "comment")
-        {
-            ++written;
-        }
-    }
+    parser::ForEachChildNode(listNode,
+                             [&](TSNode child)
+                             {
+                                 const std::string_view type = NodeType(child);
+                                 if (type == ",")
+                                 {
+                                     ++separators;
+                                 }
+                                 else if (ts_node_is_named(child) && type != "comment")
+                                 {
+                                     ++written;
+                                 }
+                             });
 
     if (separators > 0)
     {

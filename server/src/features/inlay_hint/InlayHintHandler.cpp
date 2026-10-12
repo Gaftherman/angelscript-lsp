@@ -1,6 +1,7 @@
 #include "features/inlay_hint/InlayHintHandler.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
+#include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/LspLogger.h"
@@ -778,16 +779,16 @@ std::string DeduceCastOrConstructType(TSNode exprNode, std::string_view sourceCo
         if (!ts_node_is_null(typeNode))
         {
             std::string cType = GetNodeText(typeNode, sourceCode);
-            uint32_t count = ts_node_child_count(exprNode);
-            for (uint32_t i = 0; i < count; ++i)
-            {
-                TSNode child = ts_node_child(exprNode, i);
-                if (std::string_view(ts_node_type(child)) == "template_type_list")
-                {
-                    cType += GetNodeText(child, sourceCode);
-                    break;
-                }
-            }
+            parser::ForEachChildNodeUntil(exprNode,
+                                          [&](TSNode child)
+                                          {
+                                              if (std::string_view(ts_node_type(child)) == "template_type_list")
+                                              {
+                                                  cType += GetNodeText(child, sourceCode);
+                                                  return false;
+                                              }
+                                              return true;
+                                          });
             return cType;
         }
     }
@@ -1138,17 +1139,19 @@ std::string DeduceUnaryExpressionType(TSNode exprNode, const InlayHintRequest& r
  */
 std::string DeduceParenthesizedType(TSNode exprNode, const InlayHintRequest& request)
 {
-    uint32_t count = ts_node_child_count(exprNode);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_child(exprNode, i);
-        std::string_view cType = ts_node_type(child);
-        if (cType != "(" && cType != ")")
-        {
-            return DeduceExpressionType(child, request);
-        }
-    }
-    return "";
+    std::string result;
+    parser::ForEachChildNodeUntil(exprNode,
+                                  [&](TSNode child)
+                                  {
+                                      std::string_view cType = ts_node_type(child);
+                                      if (cType != "(" && cType != ")")
+                                      {
+                                          result = DeduceExpressionType(child, request);
+                                          return false;
+                                      }
+                                      return true;
+                                  });
+    return result;
 }
 
 /**
@@ -1339,6 +1342,20 @@ std::optional<lsp::Location> ResolveParameterLocation(const std::string& fallbac
 }
 
 /**
+ * @brief Formats a clickable Markdown link to navigate to the parameter definition location.
+ * @param[in] loc Target parameter definition location.
+ * @param[in] i18n Optional localization instance.
+ * @return Markdown link string e.g. "[Go to Definition](file:///...#L1,5)".
+ */
+std::string FormatGoToDefinitionLink(const lsp::Location& loc, const angel_lsp::i18n::I18n* i18n)
+{
+    const std::string label = angel_lsp::i18n::FormatMessage(i18n, "inlay-go-to-definition", "Go to Definition");
+    const uint32_t line1 = loc.range.start.line + 1;
+    const uint32_t col1 = loc.range.start.character + 1;
+    return fmt::format("[{}]({}#L{},{})", label, loc.uri.toString(), line1, col1);
+}
+
+/**
  * @brief Builds a parameter inlay hint for a single argument.
  * @param[in] ctx Parameter hint context containing call and config details.
  * @param[in] param Callee parameter information.
@@ -1364,10 +1381,12 @@ lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx, const analysis::P
     {
         part.location = ResolveParameterLocation(ctx.request.uri, ctx.callee.fileUri, param);
     }
-    if (enableTooltip && !part.location.has_value())
+    if (enableTooltip)
     {
-        part.tooltip =
-            lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), FormatParameterTooltip(param, label)};
+        const std::string tooltipMd = part.location.has_value()
+                                          ? FormatGoToDefinitionLink(*part.location, ctx.request.i18n)
+                                          : FormatParameterTooltip(param, label);
+        part.tooltip = lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), tooltipMd};
     }
     hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
     hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);
@@ -1529,10 +1548,6 @@ lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, std::string labe
 
     lsp::InlayHintLabelPart part;
     part.value = std::move(label);
-    if (enableTooltip && !hintInfo.tooltip.empty())
-    {
-        part.tooltip = lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), hintInfo.tooltip};
-    }
     const bool hasValidLocation = hintInfo.param && (hintInfo.param->startLine != hintInfo.param->endLine ||
                                                      hintInfo.param->startCharacter != hintInfo.param->endCharacter);
     if (enableLocation && !hintInfo.fileUri.empty() && hasValidLocation)
@@ -1540,6 +1555,15 @@ lsp::InlayHint MakeOmittedDefaultHint(const lsp::Position& pos, std::string labe
         lsp::Range paramRange{lsp::Position{hintInfo.param->startLine, hintInfo.param->startCharacter},
                               lsp::Position{hintInfo.param->endLine, hintInfo.param->endCharacter}};
         part.location = lsp::Location{ParseOrConvertUri(hintInfo.fileUri), paramRange};
+    }
+    if (enableTooltip && !hintInfo.tooltip.empty())
+    {
+        std::string tooltipMd = hintInfo.tooltip;
+        if (part.location.has_value())
+        {
+            tooltipMd += "\n\n" + FormatGoToDefinitionLink(*part.location, request.i18n);
+        }
+        part.tooltip = lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(tooltipMd)};
     }
     hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
     hint.tooltip = std::nullopt;
@@ -1770,15 +1794,16 @@ TSNode FindDeclaratorArgumentList(TSNode declarator)
     TSNode argListNode = parser::GetChildByField(declarator, parser::fields::Arguments);
     if (ts_node_is_null(argListNode))
     {
-        uint32_t count = ts_node_child_count(declarator);
-        for (uint32_t j = 0; j < count; ++j)
-        {
-            TSNode grandChild = ts_node_child(declarator, j);
-            if (std::string_view(ts_node_type(grandChild)) == "argument_list")
-            {
-                return grandChild;
-            }
-        }
+        parser::ForEachChildNodeUntil(declarator,
+                                      [&](TSNode grandChild)
+                                      {
+                                          if (std::string_view(ts_node_type(grandChild)) == "argument_list")
+                                          {
+                                              argListNode = grandChild;
+                                              return false;
+                                          }
+                                          return true;
+                                      });
     }
     return argListNode;
 }
@@ -1813,15 +1838,16 @@ TSNode FindVariableTypeNode(TSNode varDeclNode)
     TSNode varTypeNode = parser::GetChildByField(varDeclNode, parser::fields::VarType);
     if (ts_node_is_null(varTypeNode))
     {
-        uint32_t count = ts_node_child_count(varDeclNode);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            TSNode child = ts_node_child(varDeclNode, i);
-            if (std::string_view(ts_node_type(child)) == "type")
-            {
-                return child;
-            }
-        }
+        parser::ForEachChildNodeUntil(varDeclNode,
+                                      [&](TSNode child)
+                                      {
+                                          if (std::string_view(ts_node_type(child)) == "type")
+                                          {
+                                              varTypeNode = child;
+                                              return false;
+                                          }
+                                          return true;
+                                      });
     }
     return varTypeNode;
 }
@@ -1843,22 +1869,22 @@ void ProcessVariableDeclaration(TSNode node, const InlayHintRequest& request, st
     std::string typeText = GetNodeText(varTypeNode, request.sourceCode);
     bool isAuto = (analysis::CleanBaseType(typeText) == "auto");
     bool isHandle = (typeText.find('@') != std::string::npos);
-    uint32_t count = ts_node_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_child(node, i);
-        if (std::string_view(ts_node_type(child)) == "variable_declarator")
-        {
-            if (isAuto)
-            {
-                ProcessAutoVariableDeclarator(child, request, hints, isHandle);
-            }
-            else if (!typeText.empty())
-            {
-                ProcessConstructorInitDeclarator(typeText, child, request, hints);
-            }
-        }
-    }
+    parser::ForEachChildNode(node,
+                             [&](TSNode child)
+                             {
+                                 if (std::string_view(ts_node_type(child)) != "variable_declarator")
+                                 {
+                                     return;
+                                 }
+                                 if (isAuto)
+                                 {
+                                     ProcessAutoVariableDeclarator(child, request, hints, isHandle);
+                                 }
+                                 else if (!typeText.empty())
+                                 {
+                                     ProcessConstructorInitDeclarator(typeText, child, request, hints);
+                                 }
+                             });
 }
 
 /**

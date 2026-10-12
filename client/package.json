@@ -855,6 +855,27 @@
             "default": true,
             "markdownDescription": "%config.diagnostics.reportPossibleNullDereference.description%"
           },
+          "angelscript.diagnostics.reportUnusedFunctions": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.diagnostics.reportUnusedFunctions.description%"
+          },
+          "angelscript.diagnostics.ignoredUnusedFunctions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%config.diagnostics.ignoredUnusedFunctions.description%"
+          },
+          "angelscript.diagnostics.ignoredUnusedFunctionPatterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%config.diagnostics.ignoredUnusedFunctionPatterns.description%"
+          },
           "angelscript.diagnostics.reportHandleComparisonEquality": {
             "type": "integer",
             "enum": [

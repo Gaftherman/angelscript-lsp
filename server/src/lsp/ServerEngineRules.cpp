@@ -8,8 +8,35 @@ namespace angel_lsp
 {
 namespace
 {
+std::string TryResolveSiblingRulesForStub(const std::string& stubFilePath)
+{
+    if (stubFilePath.empty())
+    {
+        return {};
+    }
+    std::error_code ec;
+    std::filesystem::path predefPath(stubFilePath);
+    std::string filename = predefPath.filename().string();
+    constexpr std::string_view k_asPredef = ".as.predefined";
+    constexpr std::string_view k_predef = ".predefined";
+    if (filename.ends_with(k_asPredef))
+    {
+        filename = filename.substr(0, filename.size() - k_asPredef.size());
+    }
+    else if (filename.ends_with(k_predef))
+    {
+        filename = filename.substr(0, filename.size() - k_predef.size());
+    }
+    std::filesystem::path candidate = predefPath.parent_path() / (filename + ".angelscript.rules.json");
+    if (std::filesystem::is_regular_file(candidate, ec))
+    {
+        return candidate.string();
+    }
+    return {};
+}
+
 std::string ResolveRulesPath(const std::string& configuredPath, const std::vector<std::string>& workspaceRoots,
-                             const std::string& effectivePredefined)
+                             const std::string& effectivePredefined, const std::vector<std::string>& fallbackStubs)
 {
     std::error_code ec;
     if (!configuredPath.empty())
@@ -38,24 +65,16 @@ std::string ResolveRulesPath(const std::string& configuredPath, const std::vecto
         }
     }
 
-    if (!effectivePredefined.empty())
+    if (std::string resolved = TryResolveSiblingRulesForStub(effectivePredefined); !resolved.empty())
     {
-        std::filesystem::path predefPath(effectivePredefined);
-        std::string filename = predefPath.filename().string();
-        constexpr std::string_view k_asPredef = ".as.predefined";
-        constexpr std::string_view k_predef = ".predefined";
-        if (filename.ends_with(k_asPredef))
+        return resolved;
+    }
+
+    for (const auto& stub : fallbackStubs)
+    {
+        if (std::string resolved = TryResolveSiblingRulesForStub(stub); !resolved.empty())
         {
-            filename = filename.substr(0, filename.size() - k_asPredef.size());
-        }
-        else if (filename.ends_with(k_predef))
-        {
-            filename = filename.substr(0, filename.size() - k_predef.size());
-        }
-        std::filesystem::path candidate = predefPath.parent_path() / (filename + ".angelscript.rules.json");
-        if (std::filesystem::is_regular_file(candidate, ec))
-        {
-            return candidate.string();
+            return resolved;
         }
     }
 
@@ -97,7 +116,16 @@ void ApplyEngineProperties(const config::NativeEngineProperties& props, config::
 
 void Server::LoadWorkspaceEngineRules(const std::vector<std::string>& workspaceRoots)
 {
-    const std::string rulesPath = ResolveRulesPath(m_config.rulesFile, workspaceRoots, m_effectivePredefined);
+    std::string effectivePredef;
+    std::vector<std::string> fallbackStubs = m_config.activeStubFiles;
+    fallbackStubs.insert(fallbackStubs.end(), m_config.predefinedFiles.begin(), m_config.predefinedFiles.end());
+    {
+        std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+        effectivePredef = m_effectivePredefined;
+        fallbackStubs.insert(fallbackStubs.end(), m_discoveredPredefined.begin(), m_discoveredPredefined.end());
+    }
+
+    const std::string rulesPath = ResolveRulesPath(m_config.rulesFile, workspaceRoots, effectivePredef, fallbackStubs);
     if (rulesPath.empty())
     {
         if (!m_config.engineRules.storageRules.empty() || !m_config.engineRules.typeSuggestions.empty() ||

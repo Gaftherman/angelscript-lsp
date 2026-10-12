@@ -563,22 +563,22 @@ bool ShouldSkipIdentifierNode(TSNode node, TSNode parent)
 }
 
 /**
- * @brief Extracts trimmed text from an identifier AST node.
+ * @brief Extracts trimmed text view from an identifier AST node without heap allocation.
  *
  * @param[in] node AST node of the identifier.
  * @param[in] sourceCode Document source text.
- * @return Clean trimmed identifier string.
+ * @return Clean trimmed identifier string_view.
  */
-std::string ExtractCleanIdentifier(TSNode node, std::string_view sourceCode)
+std::string_view ExtractCleanIdentifier(TSNode node, std::string_view sourceCode)
 {
-    std::string idText = NodeText(node, sourceCode);
+    std::string_view idText = GetNodeTextView(node, sourceCode);
     while (!idText.empty() && isspace(static_cast<unsigned char>(idText.front())))
     {
-        idText.erase(idText.begin());
+        idText.remove_prefix(1);
     }
     while (!idText.empty() && isspace(static_cast<unsigned char>(idText.back())))
     {
-        idText.pop_back();
+        idText.remove_suffix(1);
     }
     return idText;
 }
@@ -726,6 +726,28 @@ bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_v
 }
 
 /**
+ * @brief Checks if the lexical scope chain includes a class scope.
+ *
+ * @param[in] scope Lexical scope to inspect.
+ * @return True if scope is null (unknown) or has an enclosing ScopeKind::Class.
+ */
+bool HasEnclosingClassScope(const Scope* scope)
+{
+    if (!scope)
+    {
+        return true;
+    }
+    for (const Scope* s = scope; s != nullptr; s = s->parent)
+    {
+        if (s->kind == ScopeKind::Class)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * @brief Validates implicit member access on an identifier within an enclosing class.
  *
  * @param[in] node AST identifier node.
@@ -735,6 +757,11 @@ bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_v
  */
 void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view idText, DiagnosticContext& ctx)
 {
+    if (!HasEnclosingClassScope(scope))
+    {
+        return;
+    }
+
     const LocalDefinition* localDef = ResolveInScope(scope, idText);
     if (localDef &&
         (localDef->kind == LocalDefinitionKind::Variable || localDef->kind == LocalDefinitionKind::Parameter))
@@ -771,7 +798,7 @@ void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view
     }
 }
 
-void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode parent = ts_node_parent(node);
     if (ShouldSkipIdentifierNode(node, parent))
@@ -779,10 +806,11 @@ void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, const S
         return;
     }
 
-    const std::string idText = ExtractCleanIdentifier(node, request.sourceCode);
+    const std::string_view idText = ExtractCleanIdentifier(node, request.sourceCode);
     if (idText == "this" || idText == "super")
     {
-        CheckClosureDisallowedAccess(node, scope, idText, ctx);
+        const TSPoint start = ts_node_start_point(node);
+        CheckClosureDisallowedAccess(node, FindInnermostScope(request.scopeRoot, start.row, start.column), idText, ctx);
         return;
     }
     if (idText.empty() || IsKeyword(idText) || idText == "value")
@@ -790,6 +818,8 @@ void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, const S
         return;
     }
 
+    const TSPoint start = ts_node_start_point(node);
+    const Scope* scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
     if (CheckClosureDisallowedAccess(node, scope, idText, ctx))
     {
         return;
@@ -818,8 +848,7 @@ void VisitNode(TSNode node, const AccessCheckRequest& request, DiagnosticContext
     }
     else if (nodeType == "scoped_identifier" || nodeType == "identifier")
     {
-        const TSPoint start = ts_node_start_point(node);
-        CheckIdentifierNode(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
+        CheckIdentifierNode(node, request, ctx);
     }
 
     const uint32_t childCount = ts_node_named_child_count(node);
@@ -859,18 +888,12 @@ void CheckMemberAccessIndexed(const AccessCheckRequest& request, DiagnosticConte
         else if (bScopeds <= bIdents)
         {
             TSNode node = scopeds[j++];
-            const TSPoint start = ts_node_start_point(node);
-            CheckIdentifierNode(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
+            CheckIdentifierNode(node, request, ctx);
         }
         else
         {
             TSNode node = idents[k++];
-            TSNode parent = ts_node_parent(node);
-            if (!ShouldSkipIdentifierNode(node, parent))
-            {
-                const TSPoint start = ts_node_start_point(node);
-                CheckIdentifierNode(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
-            }
+            CheckIdentifierNode(node, request, ctx);
         }
     }
 }

@@ -1,3 +1,4 @@
+#include "analysis/DiagnosticCodes.h"
 #include "analysis/DiagnosticSuppression.h"
 #include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
@@ -58,6 +59,56 @@ std::string FormatPrefixedDiagnosticMessage(angel_lsp::analysis::DiagnosticSever
         break;
     }
     return prefix + std::string(rawMessage);
+}
+
+/**
+ * @brief Resolves a VS Code settings URI for a diagnostic code so the code renders as a clickable link.
+ * @param[in] code Canonical or alias diagnostic code.
+ * @return Settings deep-link URI string or empty string when no code is present.
+ */
+std::string_view GetDiagnosticSettingsUri(std::string_view code)
+{
+    if (code.empty())
+    {
+        return {};
+    }
+    namespace codes = angel_lsp::diagnostics::codes;
+    struct CodeSettingPair
+    {
+        std::string_view code;
+        std::string_view uri;
+    };
+    static constexpr CodeSettingPair kCodeUris[] = {
+        {codes::AccessorPortability, "vscode://settings/angelscript.diagnostics.reportAccessorPortability"},
+        {"H402", "vscode://settings/angelscript.diagnostics.reportAccessorPortability"},
+        {codes::AccessorDisabled, "vscode://settings/angelscript.diagnostics.reportAccessorDisabled"},
+        {"H403", "vscode://settings/angelscript.diagnostics.reportAccessorDisabled"},
+        {codes::BoolConversion, "vscode://settings/angelscript.diagnostics.reportBoolConversion"},
+        {"H401", "vscode://settings/angelscript.diagnostics.reportBoolConversion"},
+        {codes::FuncdefMissing, "vscode://settings/angelscript.diagnostics.reportMissingFuncdef"},
+        {"H404", "vscode://settings/angelscript.diagnostics.reportMissingFuncdef"},
+        {codes::IntegerDivision, "vscode://settings/angelscript.diagnostics.reportIntegerDivision"},
+        {"H405", "vscode://settings/angelscript.diagnostics.reportIntegerDivision"},
+        {codes::PossibleNullDereference, "vscode://settings/angelscript.diagnostics.reportPossibleNullDereference"},
+        {"W114", "vscode://settings/angelscript.diagnostics.reportPossibleNullDereference"},
+        {codes::HandleComparisonEquality, "vscode://settings/angelscript.diagnostics.reportHandleComparisonEquality"},
+        {"W115", "vscode://settings/angelscript.diagnostics.reportHandleComparisonEquality"},
+        {"W116", "vscode://settings/angelscript.diagnostics.missingAssetPathSeverity"},
+        {codes::UnusedFunction, "vscode://settings/angelscript.diagnostics.reportUnusedFunctions"},
+        {"W107", "vscode://settings/angelscript.diagnostics.reportUnusedFunctions"},
+        {codes::UnusedMethod, "vscode://settings/angelscript.diagnostics.reportUnusedFunctions"},
+        {"W108", "vscode://settings/angelscript.diagnostics.reportUnusedFunctions"},
+        {codes::UnknownType, "vscode://settings/angelscript.diagnostics.reportUnknownTypes"},
+        {"E002", "vscode://settings/angelscript.diagnostics.reportUnknownTypes"},
+    };
+    for (const auto& entry : kCodeUris)
+    {
+        if (entry.code == code)
+        {
+            return entry.uri;
+        }
+    }
+    return "vscode://settings/angelscript.diagnosticSeverity";
 }
 } // namespace
 
@@ -329,6 +380,10 @@ Server::ToProtocolDiagnostics(const std::string& text,
         lspDiag.source = diag.source;
         std::string displayCode = angel_lsp::analysis::FormatDiagnosticDisplayCode(diag.code);
         lspDiag.code = diag.code;
+        if (const std::string_view settingsUri = GetDiagnosticSettingsUri(diag.code); !settingsUri.empty())
+        {
+            lspDiag.codeDescription = lsp::CodeDescription{lsp::Uri::parse(settingsUri)};
+        }
         lspDiag.message =
             FormatPrefixedDiagnosticMessage(diag.severity, displayCode.empty() ? diag.code : displayCode, diag.message);
 

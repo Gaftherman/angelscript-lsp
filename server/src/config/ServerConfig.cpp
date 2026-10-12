@@ -613,6 +613,7 @@ static constexpr DiagnosticFlagMapping kDiagFlags[] = {
      &DiagnosticsConfig::reportPossibleNullDereference},
     {"--report-all-null-dereferences", "--no-report-all-null-dereferences",
      &DiagnosticsConfig::reportAllNullDereferences},
+    {"--report-unused-functions", "--no-report-unused-functions", &DiagnosticsConfig::reportUnusedFunctions},
 };
 
 static int ParseHandleComparisonSeverity(ArgParseContext& ctx)
@@ -634,6 +635,29 @@ static int ParseHandleComparisonSeverity(ArgParseContext& ctx)
     return 1;
 }
 
+static bool TryParseUnusedFunctionExclusion(ServerConfig& config, ArgParseContext& ctx)
+{
+    if (ctx.key == "--ignored-unused-function")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.diagnostics.ignoredUnusedFunctions.insert(std::string(val));
+        }
+        return true;
+    }
+    if (ctx.key == "--ignored-unused-function-regex" || ctx.key == "--ignored-unused-function-pattern")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.diagnostics.ignoredUnusedFunctionPatterns.emplace_back(val);
+        }
+        return true;
+    }
+    return false;
+}
+
 bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
 {
     for (const auto& entry : kDiagFlags)
@@ -641,12 +665,20 @@ bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
         if (ctx.key == entry.enableKey)
         {
             config.diagnostics.*(entry.member) = ctx.GetBoolValue(true);
+            if (entry.member == &DiagnosticsConfig::reportUnusedFunctions)
+            {
+                config.diagnostics.reportUnusedFunctionsExplicit = true;
+            }
             return true;
         }
         if (ctx.key == entry.disableKey)
         {
             config.diagnostics.*(entry.member) =
                 ctx.inlineVal.has_value() ? !ParseBoolValue(*ctx.inlineVal, true) : false;
+            if (entry.member == &DiagnosticsConfig::reportUnusedFunctions)
+            {
+                config.diagnostics.reportUnusedFunctionsExplicit = true;
+            }
             return true;
         }
     }
@@ -674,7 +706,7 @@ bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
         }
         return true;
     }
-    return false;
+    return TryParseUnusedFunctionExclusion(config, ctx);
 }
 
 bool TryParseModuleOption(ServerConfig& config, ArgParseContext& ctx)

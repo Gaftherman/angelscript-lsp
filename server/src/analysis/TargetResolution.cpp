@@ -684,16 +684,7 @@ TSNode FindArgumentListNode(TSNode callNode)
     {
         return argsChild;
     }
-    uint32_t cc = ts_node_child_count(callNode);
-    for (uint32_t ci = 0; ci < cc; ++ci)
-    {
-        TSNode c = ts_node_child(callNode, ci);
-        if (std::string_view(ts_node_type(c)) == "argument_list")
-        {
-            return c;
-        }
-    }
-    return {};
+    return parser::FindFirstChildOfType(callNode, "argument_list");
 }
 
 /**

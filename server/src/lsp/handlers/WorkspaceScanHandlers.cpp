@@ -285,11 +285,12 @@ void Server::BuildIncludeGraphAndModules(const std::vector<std::string>& allScri
     PurgeUnusedClosureFiles();
     IndexConfiguredModules(parser);
 
-    WithdrawStaleModuleDiagnostics();
-    AnalyzeConfiguredModules();
-
     phase.emplace(m_logger.get(), "rule index construction");
     m_symbolTable.EnsureRuleIndex();
+    SyncModuleIndexSymbols();
+
+    WithdrawStaleModuleDiagnostics();
+    AnalyzeConfiguredModules();
 }
 
 bool Server::LoadAndProcessPredefinedStubs(const std::vector<std::string>& discoveredStubPaths,
@@ -385,6 +386,8 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
             EndWorkspaceProgress("Cancelled");
             return;
         }
+        LoadWorkspaceEngineRules(roots);
+        m_symbolTable.EnsureRuleIndex();
         SetPredefinedReady(true);
 
         BuildIncludeGraphAndModules(walkResult.allScriptFiles, roots, stopToken, backgroundParser);

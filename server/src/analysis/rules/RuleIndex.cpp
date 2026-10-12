@@ -335,6 +335,11 @@ void ProcessSharedDeclaration(RuleIndexPartial& partial, const Symbol& sym)
 /** @brief Processes a single symbol and extracts its contributions to the partial index. */
 void ProcessSymbol(RuleIndexPartial& partial, const Symbol& sym)
 {
+    if (sym.type == SymbolType::CallReference)
+    {
+        return;
+    }
+
     ProcessSymbolNames(partial, sym);
     ProcessGlobalNames(partial, sym);
     ProcessEnumSymbol(partial, sym);

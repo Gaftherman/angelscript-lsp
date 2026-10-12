@@ -23,16 +23,7 @@ TSNode FindFunctionBodyBlock(TSNode fnNode)
     {
         return bodyNode;
     }
-    uint32_t cnt = ts_node_child_count(fnNode);
-    for (uint32_t i = 0; i < cnt; ++i)
-    {
-        TSNode ch = ts_node_child(fnNode, i);
-        if (std::string_view(ts_node_type(ch)) == "statement_block")
-        {
-            return ch;
-        }
-    }
-    return bodyNode;
+    return parser::FindFirstChildOfType(fnNode, "statement_block");
 }
 
 /**
@@ -47,16 +38,7 @@ TSNode FindFunctionParametersNode(TSNode fnNode)
     {
         return paramList;
     }
-    uint32_t cnt = ts_node_child_count(fnNode);
-    for (uint32_t c = 0; c < cnt; ++c)
-    {
-        TSNode ch = ts_node_child(fnNode, c);
-        if (std::string_view(ts_node_type(ch)) == "parameter_list")
-        {
-            return ch;
-        }
-    }
-    return paramList;
+    return parser::FindFirstChildOfType(fnNode, "parameter_list");
 }
 
 std::optional<lsp::CodeAction> TryBuildMissingConstFixForSymbol(const CodeActionRequest& request, TSNode rootNode,

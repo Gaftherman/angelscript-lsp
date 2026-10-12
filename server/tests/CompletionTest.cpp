@@ -2262,3 +2262,81 @@ TEST_CASE("Completion - Resolve enclosing class member receiver this.m_field.")
     CHECK(foundGetKeys);
     CHECK(foundGetSize);
 }
+
+TEST_CASE("Completion - Direct-initialized field type does not leak as member and underscore members sort last")
+{
+    const std::string rgbaType = angel_lsp::test::GenerateRandomSymbolName("RGBA");
+    const std::string creditClass = angel_lsp::test::GenerateRandomSymbolName("ASCredit");
+    const std::string colorField = angel_lsp::test::GenerateRandomSymbolName("Color");
+    const std::string speedField = angel_lsp::test::GenerateRandomSymbolName("Speed");
+    const std::string privField = "_" + angel_lsp::test::GenerateRandomSymbolName("internal");
+    const std::string dunderField = "__" + angel_lsp::test::GenerateRandomSymbolName("Size");
+    const std::string instVar = angel_lsp::test::GenerateRandomSymbolName("credit");
+
+    const std::string code = "class " + rgbaType +
+                             " {\n"
+                             "    " +
+                             rgbaType +
+                             "(int r, int g, int b, int a) {}\n"
+                             "}\n"
+                             "final class " +
+                             creditClass +
+                             " {\n"
+                             "    float " +
+                             speedField +
+                             ";\n"
+                             "    int " +
+                             privField +
+                             ";\n"
+                             "    int " +
+                             dunderField +
+                             ";\n"
+                             "    " +
+                             rgbaType + " " + colorField +
+                             "(255, 255, 255, 255);\n"
+                             "}\n"
+                             "void Test() {\n"
+                             "    " +
+                             creditClass + " " + instVar +
+                             ";\n"
+                             "    " +
+                             instVar +
+                             ".\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const uint32_t col = static_cast<uint32_t>(4 + instVar.size() + 1);
+    const auto items = env.CompleteAt(11, col);
+    REQUIRE_FALSE(items.empty());
+
+    CHECK(HasItem(items, colorField));
+    CHECK(HasItem(items, speedField));
+    CHECK(HasItem(items, privField));
+    CHECK(HasItem(items, dunderField));
+    CHECK_FALSE(HasItem(items, rgbaType));
+
+    std::string speedSort;
+    std::string privSort;
+    std::string dunderSort;
+    for (const auto& item : items)
+    {
+        if (item.label == speedField && item.sortText.has_value())
+        {
+            speedSort = *item.sortText;
+        }
+        else if (item.label == privField && item.sortText.has_value())
+        {
+            privSort = *item.sortText;
+        }
+        else if (item.label == dunderField && item.sortText.has_value())
+        {
+            dunderSort = *item.sortText;
+        }
+    }
+
+    REQUIRE_FALSE(speedSort.empty());
+    REQUIRE_FALSE(privSort.empty());
+    REQUIRE_FALSE(dunderSort.empty());
+    CHECK(speedSort < privSort);
+    CHECK(privSort < dunderSort);
+}

@@ -252,10 +252,16 @@ TEST_CASE("HoverHandler - Global Function Hover with Overloads")
     auto hover = env.HoverAt(3, 15); // 'Dist'
     REQUIRE(hover.has_value());
     auto content = std::get<lsp::MarkupContent>(hover->contents);
-    CHECK(content.value.find("float Dist(float x, float y)") != std::string::npos);
-    CHECK(content.value.find("1 more overload") != std::string::npos);
-    CHECK(content.value.find("float Dist(float x, float y, float z)") == std::string::npos);
-    CHECK(content.value.find("Calculates distance.") != std::string::npos);
+    const size_t primaryPos = content.value.find("float Dist(float x, float y)");
+    const size_t detailsPos = content.value.find("<details><summary>1 more overload</summary>");
+    const size_t secondaryPos = content.value.find("float Dist(float x, float y, float z)");
+    REQUIRE(primaryPos != std::string::npos);
+    REQUIRE(detailsPos != std::string::npos);
+    REQUIRE(secondaryPos != std::string::npos);
+    CHECK(primaryPos < detailsPos);
+    CHECK(secondaryPos > detailsPos);
+    CHECK(content.value.find("command:angelscript.peekOverloads") != std::string::npos);
+    CHECK(content.value.find("\n\n---\n\nCalculates distance.") != std::string::npos);
 }
 
 TEST_CASE("HoverHandler - Class and Member Hover")
@@ -483,9 +489,15 @@ TEST_CASE("HoverHandler - Call overload shows resolved signature and summarizes 
     REQUIRE(hover.has_value());
     const std::string rendered = std::get<lsp::MarkupContent>(hover->contents).value;
 
-    CHECK(rendered.find("void Emit(int id)") != std::string::npos);
-    CHECK(rendered.find("1 more overload") != std::string::npos);
-    CHECK(rendered.find("void Emit(const string &in name)") == std::string::npos);
+    const size_t primaryPos = rendered.find("void Emit(int id)");
+    const size_t detailsPos = rendered.find("<details><summary>1 more overload</summary>");
+    const size_t secondaryPos = rendered.find("void Emit(const string &in name)");
+    REQUIRE(primaryPos != std::string::npos);
+    REQUIRE(detailsPos != std::string::npos);
+    REQUIRE(secondaryPos != std::string::npos);
+    CHECK(primaryPos < detailsPos);
+    CHECK(secondaryPos > detailsPos);
+    CHECK(rendered.find("command:angelscript.peekOverloads") != std::string::npos);
 }
 
 TEST_CASE("HoverHandler - Global Variable vs Local Variable Hover")
@@ -949,11 +961,15 @@ TEST_CASE("HoverHandler - Call overload resolution across inheritance hierarchy"
     auto hover = env.HoverAt(6, 9);
     REQUIRE(hover.has_value());
     auto content = std::get<lsp::MarkupContent>(hover->contents);
-    CHECK(content.value.find(
-              "bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)") !=
-          std::string::npos);
-    CHECK(content.value.find("1 more overload") != std::string::npos);
-    CHECK(content.value.find("weapon_ins2l85a2::Deploy") == std::string::npos);
+    const size_t primaryPos = content.value.find(
+        "bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)");
+    const size_t detailsPos = content.value.find("<details><summary>1 more overload</summary>");
+    const size_t secondaryPos = content.value.find("weapon_ins2l85a2::Deploy");
+    REQUIRE(primaryPos != std::string::npos);
+    REQUIRE(detailsPos != std::string::npos);
+    REQUIRE(secondaryPos != std::string::npos);
+    CHECK(primaryPos < detailsPos);
+    CHECK(secondaryPos > detailsPos);
 }
 
 TEST_CASE("HoverHandler - Call overload resolution fallback when argument type mismatches")
@@ -973,11 +989,15 @@ TEST_CASE("HoverHandler - Call overload resolution fallback when argument type m
     auto hover = env.HoverAt(6, 9);
     REQUIRE(hover.has_value());
     auto content = std::get<lsp::MarkupContent>(hover->contents);
-    CHECK(content.value.find(
-              "bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)") !=
-          std::string::npos);
-    CHECK(content.value.find("1 more overload") != std::string::npos);
-    CHECK(content.value.find("weapon_ins2l85a2::Deploy") == std::string::npos);
+    const size_t primaryPos = content.value.find(
+        "bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)");
+    const size_t detailsPos = content.value.find("<details><summary>1 more overload</summary>");
+    const size_t secondaryPos = content.value.find("weapon_ins2l85a2::Deploy");
+    REQUIRE(primaryPos != std::string::npos);
+    REQUIRE(detailsPos != std::string::npos);
+    REQUIRE(secondaryPos != std::string::npos);
+    CHECK(primaryPos < detailsPos);
+    CHECK(secondaryPos > detailsPos);
 }
 
 TEST_CASE("HoverHandler - Predefined Stub Parameter AST Fallback")
@@ -1369,4 +1389,82 @@ TEST_CASE("Hover - Wildcard variable type ? returns descriptive documentation")
     REQUIRE(hoverOut.has_value());
     auto contentOut = std::get<lsp::MarkupContent>(hoverOut->contents);
     CHECK(contentOut.value.find("(variable type) ?") != std::string::npos);
+}
+
+TEST_CASE("Hover - This keyword displays (self) ClassName this")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("ASMapConfig");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Apply");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("value");
+
+    const std::string code = "class " + className +
+                             " {\n"
+                             "    int " +
+                             propName +
+                             ";\n"
+                             "    void " +
+                             methodName +
+                             "() {\n"
+                             "        this." +
+                             propName +
+                             " = 1;\n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    // Line 3: "        this.<propName> = 1;" -> column 9 is inside 'this'
+    auto hoverThis = env.HoverAt(3, 9);
+    REQUIRE(hoverThis.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hoverThis->contents).value;
+    CHECK(text.find("(self) " + className + " this") != std::string::npos);
+}
+
+TEST_CASE("Hover - Overloads render collapsible details, peekOverloads command link, and horizontal rule before doc")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("Logger");
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("ASLogger");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("print");
+    const std::string docComment = "Prints a formatted message to the server console.";
+
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    class " +
+                             className +
+                             " {\n"
+                             "        /** " +
+                             docComment +
+                             " */\n"
+                             "        void " +
+                             methodName +
+                             "(const string &in message, array<string>@ arguments = null) const {}\n"
+                             "        void " +
+                             methodName +
+                             "(int code) const {}\n"
+                             "    }\n"
+                             "}\n"
+                             "void main() {\n"
+                             "    " +
+                             nsName + "::" + className +
+                             " log;\n"
+                             "    log." +
+                             methodName +
+                             "(\"hello\");\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    // Line 9: "    log.<methodName>(\"hello\");"
+    auto hoverEn = env.HoverAt(9, 9);
+    REQUIRE(hoverEn.has_value());
+    const std::string textEn = std::get<lsp::MarkupContent>(hoverEn->contents).value;
+    CHECK(textEn.find("<details><summary>1 more overload</summary>") != std::string::npos);
+    CHECK(textEn.find("[Peek overloads](command:angelscript.peekOverloads?") != std::string::npos);
+    CHECK(textEn.find("\n\n---\n\n" + docComment) != std::string::npos);
+
+    const angel_lsp::i18n::I18n spanish("es");
+    auto hoverEs = env.HoverAt(9, 9, nullptr, &spanish);
+    REQUIRE(hoverEs.has_value());
+    const std::string textEs = std::get<lsp::MarkupContent>(hoverEs->contents).value;
+    CHECK(textEs.find("<details><summary>1 sobrecarga m\xC3\xA1s</summary>") != std::string::npos);
+    CHECK(textEs.find("[Ver sobrecargas](command:angelscript.peekOverloads?") != std::string::npos);
+    CHECK(textEs.find("\n\n---\n\n" + docComment) != std::string::npos);
 }

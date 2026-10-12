@@ -72,5 +72,7 @@
   "Reload Window": "Recargar ventana",
   "Clear Local Session Overrides": "Limpiar anulaciones de sesión local",
   "Clears locally remembered module and stub overrides, reverting to workspace settings.": "Limpia los módulos y stubs recordados localmente, volviendo a la configuración del espacio de trabajo.",
-  "Cleared local session overrides. Reverted to workspace configuration.": "Se limpiaron las anulaciones de sesión local. Se volvió a la configuración del espacio de trabajo."
+  "Cleared local session overrides. Reverted to workspace configuration.": "Se limpiaron las anulaciones de sesión local. Se volvió a la configuración del espacio de trabajo.",
+  "Re-enable": "Volver a habilitar",
+  "Open Settings": "Abrir configuración"
 }

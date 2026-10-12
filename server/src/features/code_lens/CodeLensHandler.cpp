@@ -1164,68 +1164,6 @@ DeclRangeSet CollectAllDeclRanges(const std::string& symName, const std::vector<
 }
 
 /**
- * @brief Searches base class list for a mixin usage range.
- * @param[in] hostNode Class declaration AST node.
- * @param[in] mixinName Target mixin name.
- * @param[in] sourceCode Source text.
- * @return Optional matching Range.
- */
-std::optional<lsp::Range> FindMixinInBaseList(TSNode hostNode, const std::string& mixinName,
-                                              const std::string& sourceCode)
-{
-    uint32_t childCount = ts_node_child_count(hostNode);
-    for (uint32_t c = 0; c < childCount; ++c)
-    {
-        TSNode child = ts_node_child(hostNode, c);
-        if (std::string_view(ts_node_type(child)) == "base_class_list")
-        {
-            uint32_t bCount = ts_node_named_child_count(child);
-            for (uint32_t b = 0; b < bCount; ++b)
-            {
-                TSNode baseChild = ts_node_named_child(child, b);
-                std::string bText = std::string(parser::AngelScriptParser::GetNodeText(baseChild, sourceCode));
-                if (analysis::CleanBaseType(bText) == mixinName || bText == mixinName ||
-                    bText.ends_with("::" + mixinName))
-                {
-                    TSPoint sp = ts_node_start_point(baseChild);
-                    TSPoint ep = ts_node_end_point(baseChild);
-                    return lsp::Range{lsp::Position{sp.row, sp.column}, lsp::Position{ep.row, ep.column}};
-                }
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Searches class body for a mixin inclusion statement range.
- * @param[in] hostNode Class declaration AST node.
- * @param[in] mixinName Target mixin name.
- * @param[in] sourceCode Source text.
- * @return Optional matching Range.
- */
-std::optional<lsp::Range> FindMixinInBody(TSNode hostNode, const std::string& mixinName, const std::string& sourceCode)
-{
-    TSNode bodyNode = parser::GetChildByField(hostNode, parser::fields::Body);
-    if (!ts_node_is_null(bodyNode))
-    {
-        uint32_t mCount = ts_node_child_count(bodyNode);
-        for (uint32_t m = 0; m < mCount; ++m)
-        {
-            TSNode mNode = ts_node_child(bodyNode, m);
-            std::string mText = std::string(parser::AngelScriptParser::GetNodeText(mNode, sourceCode));
-            if (mText.find(mixinName) != std::string::npos)
-            {
-                TSPoint sp = ts_node_start_point(mNode);
-                TSPoint ep = ts_node_end_point(mNode);
-                return lsp::Range{lsp::Position{sp.row, sp.column}, lsp::Position{ep.row, ep.column}};
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-/**
  * @brief Locates the AST range corresponding to a mixin inclusion within a host class.
  * @param[in] sym Host class symbol.
  * @param[in] mixinName Included mixin name.
@@ -1250,20 +1188,14 @@ lsp::Range FindMixinRangeInAst(const analysis::Symbol& sym, const std::string& m
     {
         hostNode = ts_node_parent(hostNode);
     }
-    if (ts_node_is_null(hostNode))
-    {
-        return fallbackRange;
-    }
 
-    if (auto baseRange = FindMixinInBaseList(hostNode, mixinName, request.sourceCode))
+    TSNode incNode = analysis::FindMixinInclusionNode(hostNode, mixinName, mixinName, request.sourceCode);
+    if (!ts_node_is_null(incNode))
     {
-        return *baseRange;
+        TSPoint sp = ts_node_start_point(incNode);
+        TSPoint ep = ts_node_end_point(incNode);
+        return lsp::Range{lsp::Position{sp.row, sp.column}, lsp::Position{ep.row, ep.column}};
     }
-    if (auto bodyRange = FindMixinInBody(hostNode, mixinName, request.sourceCode))
-    {
-        return *bodyRange;
-    }
-
     return fallbackRange;
 }
 

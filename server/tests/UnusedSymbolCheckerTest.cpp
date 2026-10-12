@@ -7,6 +7,7 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "config/EngineRuleConfig.h"
+#include "config/ServerConfig.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
@@ -30,7 +31,8 @@ bool HasDiag(const std::vector<Diagnostic>& diags, std::string_view code, const 
 
 std::vector<Diagnostic> AnalyzeSnippet(const std::string& code,
                                        const angel_lsp::config::EngineRuleConfig* engineRules = nullptr,
-                                       const std::string& fileUri = "file:///test.as")
+                                       const std::string& fileUri = "file:///test.as",
+                                       const angel_lsp::config::DiagnosticsConfig* diagConfig = nullptr)
 {
     AngelScriptParser parser;
     SymbolCollector collector(nullptr);
@@ -45,6 +47,7 @@ std::vector<Diagnostic> AnalyzeSnippet(const std::string& code,
     request.sourceCode = code;
     request.tree = parser.Parse(code);
     request.engineRules = engineRules;
+    request.diagnostics = diagConfig;
 
     SemanticAnalyzer analyzer(nullptr);
     auto semDiags = analyzer.Analyze(request);
@@ -422,4 +425,77 @@ TEST_CASE("UnusedSymbolChecker - predefined files are ignored")
     auto diags = AnalyzeSnippet(code, &rules, "file:///sven.as.predefined");
     CHECK_FALSE(HasDiag(diags, codes::UnusedGlobalVariable, unusedVar));
     CHECK_FALSE(HasDiag(diags, codes::UnusedClass, unusedCls));
+}
+
+TEST_CASE("UnusedSymbolChecker - functions inside namespace, property accessors, and customizable entry points")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("WeaponUtils");
+    const std::string unusedNsFunc = angel_lsp::test::GenerateRandomSymbolName("UnusedHelper");
+    const std::string usedNsFunc = angel_lsp::test::GenerateRandomSymbolName("UsedHelper");
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("ASCredit");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("Params");
+    const std::string entryFunc = angel_lsp::test::GenerateRandomSymbolName("CustomEntry");
+    const std::string patternPrefix = angel_lsp::test::GenerateRandomSymbolName("HookPrefix");
+    const std::string regexEntryFunc = patternPrefix + "_" + angel_lsp::test::GenerateRandomSymbolName("Callback");
+
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    void " +
+                             unusedNsFunc +
+                             "() {}\n"
+                             "    void " +
+                             usedNsFunc +
+                             "() {}\n"
+                             "}\n"
+                             "class " +
+                             className +
+                             " {\n"
+                             "    private int get_" +
+                             propName +
+                             "() const { return 1; }\n"
+                             "}\n"
+                             "void " +
+                             regexEntryFunc +
+                             "() {}\n"
+                             "void " +
+                             entryFunc +
+                             "() {\n"
+                             "    " +
+                             nsName + "::" + usedNsFunc +
+                             "();\n"
+                             "    " +
+                             className +
+                             " c;\n"
+                             "    int x = c." +
+                             propName +
+                             ";\n"
+                             "    x = x + 1;\n"
+                             "}\n";
+
+    // Without custom exclusions, unreferenced global entry points are reported as unused
+    angel_lsp::config::DiagnosticsConfig bareDiagCfg;
+    bareDiagCfg.reportUnusedFunctions = true;
+    auto bareDiags = AnalyzeSnippet(code, nullptr, "file:///test.as", &bareDiagCfg);
+    CHECK(HasDiag(bareDiags, codes::UnusedFunction, entryFunc));
+    CHECK(HasDiag(bareDiags, codes::UnusedFunction, regexEntryFunc));
+
+    // With customizable ignoredUnusedFunctions and ignoredUnusedFunctionPatterns, they are exempted
+    angel_lsp::config::DiagnosticsConfig customDiagCfg;
+    customDiagCfg.reportUnusedFunctions = true;
+    customDiagCfg.ignoredUnusedFunctions.insert(entryFunc);
+    customDiagCfg.ignoredUnusedFunctionPatterns.push_back("^" + patternPrefix + "_.*");
+    auto diags = AnalyzeSnippet(code, nullptr, "file:///test.as", &customDiagCfg);
+    CHECK(HasDiag(diags, codes::UnusedFunction, unusedNsFunc));
+    CHECK_FALSE(HasDiag(diags, codes::UnusedFunction, usedNsFunc));
+    CHECK_FALSE(HasDiag(diags, codes::UnusedFunction, entryFunc));
+    CHECK_FALSE(HasDiag(diags, codes::UnusedFunction, regexEntryFunc));
+    CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, "get_" + propName));
+
+    angel_lsp::config::DiagnosticsConfig disabledDiagCfg;
+    disabledDiagCfg.reportUnusedFunctions = false;
+    disabledDiagCfg.reportUnusedFunctionsExplicit = true;
+    angel_lsp::config::EngineRuleConfig rules;
+    rules.unusedRules.enabled = true;
+    auto diagsDisabled = AnalyzeSnippet(code, &rules, "file:///test.as", &disabledDiagCfg);
+    CHECK_FALSE(HasDiag(diagsDisabled, codes::UnusedFunction, unusedNsFunc));
 }

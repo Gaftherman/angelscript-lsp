@@ -282,6 +282,24 @@ struct SemanticAnalysisRequest
     }
 
     /**
+     * @brief Checks whether a template name matches the configured array type or an array-like template.
+     * @param[in] templateName Template identifier to check.
+     * @return True if templateName is an array or array-like template.
+     */
+    bool IsArrayLikeTemplate(std::string_view templateName) const
+    {
+        if (templateName.empty())
+        {
+            return false;
+        }
+        if (templateName == GetEffectiveArrayTypeName())
+        {
+            return true;
+        }
+        return typeConfig && typeConfig->arrayLikeTemplates.contains(std::string(templateName));
+    }
+
+    /**
      * @brief True when the host built its engine with asEP_ALLOW_UNSAFE_REFERENCES.
      */
     bool AllowsUnsafeReferences() const

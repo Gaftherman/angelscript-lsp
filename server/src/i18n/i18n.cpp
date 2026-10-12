@@ -164,7 +164,7 @@ void PopulateEnglishMessages2(MessageMap& m_messages)
     m_messages["as-err-interface-impl-missing"] =
         "Class '{}' does not implement interface method '{}' from interface '{}'.";
     m_messages["as-err-attribute-repeated"] = "Attribute '{}' is informed multiple times.";
-    m_messages["as-err-reserved-keyword-name"] = "Instead found reserved keyword '{}'.";
+    m_messages["as-err-reserved-keyword-name"] = "Reserved keyword '{}' cannot be used as an identifier.";
     m_messages["as-err-reserved-word-as-parameter-name"] =
         "Reserved keyword '{}' cannot be used as an identifier here.";
     m_messages["as-err-name-conflict"] = "Name conflict. '{}' is already declared as a {}.";
@@ -413,18 +413,16 @@ void PopulateEnglishMessages7(MessageMap& m_messages)
     m_messages["as-err-positional-after-named-arg"] = "Positional argument cannot follow a named argument.";
     m_messages["as-err-cannot-return-local-ref"] = "Cannot return reference to local variable '{}'.";
     m_messages["as-err-cannot-return-param-ref"] = "Cannot return reference to parameter '{}'.";
-    m_messages["as-err-lambda-closure-disallowed"] = "Anonymous functions cannot capture outer local variable '{}' (no "
-                                                     "closure support). Tip: Pass required values as parameters.";
-    m_messages["as-err-lambda-this-disallowed"] = "Keyword 'this' is not available in anonymous functions (no closure "
-                                                  "support). Anonymous functions are treated as free functions.";
+    m_messages["as-err-lambda-closure-disallowed"] =
+        "Anonymous functions cannot capture outer local variable '{}' (no closure support).";
+    m_messages["as-err-lambda-this-disallowed"] = "Keyword 'this' is not available in anonymous functions.";
     m_messages["as-err-lambda-member-access"] =
-        "Anonymous functions cannot access enclosing class member '{}' without an object reference (no closure "
-        "support). Tip: Pass the class instance as a lambda parameter.";
+        "Anonymous functions cannot access enclosing class member '{}' without an object reference.";
     m_messages["as-err-standalone-anonymous-function"] =
         "An anonymous function is an expression and cannot be used as a stand-alone statement. Pass it where a funcdef "
         "is expected or assign it to a funcdef handle.";
     m_messages["as-err-readonly-handle"] = "Cannot reassign read-only handle '{}'.";
-    m_messages["as-err-expression-is-data-type"] = "Expression '{}' is a data type.";
+    m_messages["as-err-expression-is-data-type"] = "Type '{}' cannot be used as a value expression.";
     m_messages["as-warn-handle-comparison-equality"] =
         "Handle comparison with '{}' causes implicit conversion; use '{}' for reference identity.";
     m_messages["as-err-illegal-operation"] = "Illegal operation on this datatype.";
@@ -432,6 +430,12 @@ void PopulateEnglishMessages7(MessageMap& m_messages)
     m_messages["as-hint-engine-type-suggestion"] = "{}";
     m_messages["as-warn-engine-scheduler-safety"] = "{}";
     m_messages["as-warn-engine-scheduled-enum-discriminant"] = "{}";
+    m_messages["engine-rule-storage-default"] = "Variable '{}' violates storage rule '{}'. Consider using '{}'.";
+    m_messages["engine-rule-scheduler-safety-default"] = "Passing raw handle '{}' to '{}' is unsafe.";
+    m_messages["engine-rule-scheduler-enum-discriminant"] =
+        "Passing discriminant to enum type '{}' in scheduled call; explicitly construct or typecast first (e.g. "
+        "{}({})).";
+    m_messages["engine-rule-type-suggestion-default"] = "Variable '{}' uses '{}'. Consider using '{}'.";
 }
 
 /**
@@ -465,6 +469,8 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
     m_messages["note-in-mixin-member"] = "In mixin '{}': Member '{}'";
     m_messages["hover-more-overloads-singular"] = "1 more overload";
     m_messages["hover-more-overloads-plural"] = "{} more overloads";
+    m_messages["hover-peek-overloads"] = "Peek overloads";
+    m_messages["inlay-go-to-definition"] = "Go to Definition";
     m_messages["hover-wildcard-type-desc"] =
         "The variable type `?` represents any type. It is used in parameter declarations "
         "to accept arguments of any type by reference (`?& in`, `?& out`, `?& inout`).";
@@ -554,7 +560,7 @@ void PopulateSpanishMessages2(MessageMap& m_messages)
     m_messages["as-err-interface-impl-missing"] =
         "La clase '{}' no implementa el método de interfaz '{}' de la interfaz '{}'.";
     m_messages["as-err-attribute-repeated"] = "El atributo '{}' se informa múltiples veces.";
-    m_messages["as-err-reserved-keyword-name"] = "Se encontró la palabra reservada '{}' en lugar de un identificador.";
+    m_messages["as-err-reserved-keyword-name"] = "La palabra reservada '{}' no se puede usar como identificador.";
     m_messages["as-err-reserved-word-as-parameter-name"] =
         "La palabra reservada '{}' no se puede usar como un identificador aquí.";
     m_messages["as-err-name-conflict"] = "Conflicto de nombre. '{}' ya está declarado como {}.";
@@ -822,19 +828,15 @@ void PopulateSpanishMessages7(MessageMap& m_messages)
     m_messages["as-err-cannot-return-local-ref"] = "No se puede devolver una referencia a la variable local '{}'.";
     m_messages["as-err-cannot-return-param-ref"] = "No se puede devolver una referencia al parámetro '{}'.";
     m_messages["as-err-lambda-closure-disallowed"] =
-        "Las funciones anónimas no pueden acceder a la variable local externa '{}' (no soportan clausuras). Consejo: "
-        "Pasa los valores requeridos como parámetros.";
-    m_messages["as-err-lambda-this-disallowed"] =
-        "La palabra clave 'this' no está disponible en funciones anónimas (no soportan clausuras). Las funciones "
-        "anónimas se tratan como funciones libres.";
+        "Las funciones anónimas no pueden capturar la variable local externa '{}' (sin soporte de clausuras).";
+    m_messages["as-err-lambda-this-disallowed"] = "La palabra clave 'this' no está disponible en funciones anónimas.";
     m_messages["as-err-lambda-member-access"] =
-        "Las funciones anónimas no pueden acceder al miembro de clase externa '{}' sin una referencia de objeto (no "
-        "soportan clausuras). Consejo: Pasa la instancia de la clase como parámetro de la lambda.";
+        "Las funciones anónimas no pueden acceder al miembro de clase externa '{}' sin una referencia de objeto.";
     m_messages["as-err-standalone-anonymous-function"] =
         "Una función anónima es una expresión y no puede usarse como una sentencia independiente. Pásala donde se "
         "espere un funcdef o asígnala a un handle de funcdef.";
     m_messages["as-err-readonly-handle"] = "No se puede reasignar el handle de solo lectura '{}'.";
-    m_messages["as-err-expression-is-data-type"] = "La expresión '{}' es un tipo de datos.";
+    m_messages["as-err-expression-is-data-type"] = "El tipo '{}' no puede usarse como expresión de valor.";
     m_messages["as-warn-handle-comparison-equality"] =
         "La comparación de handle con '{}' provoca una conversión implícita; use '{}' para identidad de referencia.";
     m_messages["as-err-illegal-operation"] = "Operación no válida en este tipo de datos.";
@@ -842,6 +844,13 @@ void PopulateSpanishMessages7(MessageMap& m_messages)
     m_messages["as-hint-engine-type-suggestion"] = "{}";
     m_messages["as-warn-engine-scheduler-safety"] = "{}";
     m_messages["as-warn-engine-scheduled-enum-discriminant"] = "{}";
+    m_messages["engine-rule-storage-default"] =
+        "La variable '{}' infringe la regla de almacenamiento '{}'. Considere usar '{}'.";
+    m_messages["engine-rule-scheduler-safety-default"] = "Pasar el handle directo '{}' a '{}' no es seguro.";
+    m_messages["engine-rule-scheduler-enum-discriminant"] =
+        "Paso de discriminante al tipo enum '{}' en llamada programada; construya o convierta explícitamente primero "
+        "(ej. {}({})).";
+    m_messages["engine-rule-type-suggestion-default"] = "La variable '{}' usa '{}'. Considere usar '{}'.";
 }
 
 /**
@@ -876,6 +885,8 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["note-in-mixin-member"] = "En el mixin '{}': Miembro '{}'";
     m_messages["hover-more-overloads-singular"] = "1 sobrecarga más";
     m_messages["hover-more-overloads-plural"] = "{} sobrecargas más";
+    m_messages["hover-peek-overloads"] = "Ver sobrecargas";
+    m_messages["inlay-go-to-definition"] = "Ir a Definición";
     m_messages["hover-wildcard-type-desc"] =
         "El tipo variable `?` representa cualquier tipo. Se utiliza en declaraciones de parámetros "
         "para aceptar argumentos de cualquier tipo por referencia (`?& in`, `?& out`, `?& inout`).";

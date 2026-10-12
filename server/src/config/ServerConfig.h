@@ -471,6 +471,28 @@ struct DiagnosticsConfig
      * Values can be "off", "hint", "warning", or "error".
      */
     std::string missingAssetPathSeverity = "off";
+
+    /**
+     * @brief Warn on unused global/namespace functions and private methods (default: off in bare config, on in VS
+     * Code).
+     */
+    bool reportUnusedFunctions = false;
+
+    /**
+     * @brief True when reportUnusedFunctions was explicitly set via CLI or workspace configuration.
+     */
+    bool reportUnusedFunctionsExplicit = false;
+
+    /**
+     * @brief User-configured function names (short or qualified) exempt from unused-function warnings.
+     */
+    std::unordered_set<std::string> ignoredUnusedFunctions;
+
+    /**
+     * @brief User-configured regular expression patterns exempting matching function names from unused-function
+     * warnings.
+     */
+    std::vector<std::string> ignoredUnusedFunctionPatterns;
 };
 
 /**

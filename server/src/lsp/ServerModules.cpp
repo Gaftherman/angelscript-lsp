@@ -598,6 +598,7 @@ void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser
             }
         }
     }
+    m_symbolTable.EnsureRuleIndex();
     SyncModuleIndexSymbols();
 }
 
@@ -873,6 +874,21 @@ void Server::PurgeClosureFile(const std::string& uriStr)
 
 std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPath) const
 {
+    const ModuleClaim claim = ClaimFor(openPath);
+    if (claim.owner != nullptr && claim.owner->closurePaths.contains(openPath))
+    {
+        std::vector<std::string> closure;
+        closure.reserve(claim.owner->memberPaths.size());
+        for (const auto& member : claim.owner->memberPaths)
+        {
+            if (!NormalizedPathsEqual(member, openPath))
+            {
+                closure.push_back(member);
+            }
+        }
+        return closure;
+    }
+
     std::vector<std::string> closure;
     if (!m_config.moduleEntryPoint.empty())
     {
@@ -893,14 +909,8 @@ std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPat
         closure = m_includeGraph.GetModuleClosure(openPath);
     }
 
-    const ModuleClaim claim = ClaimFor(openPath);
     if (claim.owner != nullptr)
     {
-        for (const auto& member : claim.owner->closurePaths)
-        {
-            if (!NormalizedPathsEqual(member, openPath))
-                closure.push_back(member);
-        }
         for (const auto& member : claim.owner->memberPaths)
         {
             if (!NormalizedPathsEqual(member, openPath))

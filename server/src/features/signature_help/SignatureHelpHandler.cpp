@@ -194,14 +194,10 @@ TSNode ExtractFunctionNode(TSNode callNode)
             {
                 return typeNode;
             }
-            uint32_t dCount = ts_node_child_count(declNode);
-            for (uint32_t i = 0; i < dCount; ++i)
+            TSNode foundType = parser::FindFirstChildOfType(declNode, "type");
+            if (!ts_node_is_null(foundType))
             {
-                TSNode child = ts_node_child(declNode, i);
-                if (std::string_view(ts_node_type(child)) == "type")
-                {
-                    return child;
-                }
+                return foundType;
             }
         }
     }

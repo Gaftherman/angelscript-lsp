@@ -405,6 +405,10 @@ static bool IsMemberAccessNode(TSNode node, TSNode parent, TSSymbol memberExprSy
     }
     if (ts_node_symbol(parent) == scopedIdSym)
     {
+        if (ts_node_child_count(parent) >= 3)
+        {
+            return true;
+        }
         TSNode firstChild = ts_node_named_child(parent, 0);
         return !ts_node_is_null(firstChild) && !ts_node_eq(firstChild, node) &&
                ts_node_start_byte(firstChild) != ts_node_start_byte(node);
@@ -428,7 +432,8 @@ static bool IsKeywordDeclarationContext(TSNode node)
     return parentType == "accessor" || parentType == "func_declaration" || parentType == "class_declaration" ||
            parentType == "interface_declaration" || parentType == "enum_declaration" ||
            parentType == "funcdef_declaration" || parentType == "mixin_declaration" ||
-           parentType == "lambda_expression";
+           parentType == "lambda_expression" || parentType == "declaration_modifier" ||
+           parentType == "shared_external_modifier";
 }
 
 static bool IsNamedArgumentNode(TSNode node, TSNode parent)
@@ -448,7 +453,10 @@ static bool IsNamedArgumentNode(TSNode node, TSNode parent)
 void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Scope* current,
                                                   const std::string& sourceCode) const
 {
-    if (ts_node_has_error(capture.node))
+    TSNode parent = ts_node_parent(capture.node);
+    const bool isDeclarationScope = current->kind == ScopeKind::Global || current->kind == ScopeKind::Namespace ||
+                                    current->kind == ScopeKind::Class;
+    if (ts_node_has_error(capture.node) || (isDeclarationScope && !ts_node_is_null(parent) && ts_node_is_error(parent)))
     {
         return;
     }
@@ -470,7 +478,6 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
 
     LocalReference ref{GetNodeText(capture.node, sourceCode), startPt.row, startPt.column, endPt.row, endPt.column};
 
-    TSNode parent = ts_node_parent(capture.node);
     if (!ts_node_is_null(parent))
     {
         ref.isNamedArgument = IsNamedArgumentNode(capture.node, parent);

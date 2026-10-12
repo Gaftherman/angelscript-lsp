@@ -273,6 +273,37 @@ template <typename Callback> void ForEachNamedChildNode(TSNode parent, Callback&
 }
 
 /**
+ * @brief Iterates over direct child nodes until predicate returns false.
+ * @tparam Predicate Callable with signature bool(TSNode) returning false to stop traversal.
+ * @param[in] parent Parent AST node.
+ * @param[in] predicate Visitor invoked for each direct child node.
+ * @return True if iteration completed without early interruption; false if stopped early.
+ */
+template <typename Predicate> bool ForEachChildNodeUntil(TSNode parent, Predicate&& predicate)
+{
+    if (ts_node_is_null(parent))
+    {
+        return true;
+    }
+    TSTreeCursor cursor = ts_tree_cursor_new(parent);
+    bool completed = true;
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode node = ts_tree_cursor_current_node(&cursor);
+            if (!predicate(node))
+            {
+                completed = false;
+                break;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+    return completed;
+}
+
+/**
  * @brief Iterates over direct named child nodes until predicate returns false.
  * @tparam Predicate Callable with signature bool(TSNode) returning false to stop traversal.
  * @param[in] parent Parent AST node.
@@ -304,6 +335,28 @@ template <typename Predicate> bool ForEachNamedChildNodeUntil(TSNode parent, Pre
     }
     ts_tree_cursor_delete(&cursor);
     return completed;
+}
+
+/**
+ * @brief Finds the first direct child node matching a specific Tree-Sitter node type.
+ * @param[in] parent Parent AST node.
+ * @param[in] typeName Target node type string.
+ * @return Matching child TSNode or null TSNode if not found.
+ */
+inline TSNode FindFirstChildOfType(TSNode parent, std::string_view typeName)
+{
+    TSNode found{};
+    ForEachChildNodeUntil(parent,
+                          [&](TSNode child)
+                          {
+                              if (!ts_node_is_null(child) && std::string_view(ts_node_type(child)) == typeName)
+                              {
+                                  found = child;
+                                  return false;
+                              }
+                              return true;
+                          });
+    return found;
 }
 
 } // namespace angel_lsp::parser

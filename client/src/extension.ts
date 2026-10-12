@@ -147,6 +147,9 @@ const OPEN_PHYSICAL_SOURCE_COMMAND = 'angelscript.openPhysicalSource';
 /** @brief Command that disables a configurable diagnostic rule in workspace settings. */
 const DISABLE_DIAGNOSTIC_COMMAND = 'angelscript.disableDiagnostic';
 
+/** @brief Command that opens VS Code Peek Locations on all callable overloads from a hover link. */
+const PEEK_OVERLOADS_COMMAND = 'angelscript.peekOverloads';
+
 /** @brief Command that clears local session state overrides for modules and stubs. */
 const CLEAR_LOCAL_STATE_COMMAND = 'angelscript.clearLocalState';
 
@@ -1143,6 +1146,19 @@ export function buildServerArgs(): string[] {
     if (config.get<boolean>('diagnostics.reportPossibleNullDereference', true) === false) {
         args.push('--no-report-possible-null-dereference');
     }
+    if (config.get<boolean>('diagnostics.reportUnusedFunctions', true) === false) {
+        args.push('--no-report-unused-functions');
+    }
+    for (const fnName of config.get<string[]>('diagnostics.ignoredUnusedFunctions', [])) {
+        if (typeof fnName === 'string' && fnName.trim().length > 0) {
+            args.push(`--ignored-unused-function=${fnName.trim()}`);
+        }
+    }
+    for (const pattern of config.get<string[]>('diagnostics.ignoredUnusedFunctionPatterns', [])) {
+        if (typeof pattern === 'string' && pattern.trim().length > 0) {
+            args.push(`--ignored-unused-function-regex=${pattern.trim()}`);
+        }
+    }
     const reportHandleComparison = config.get<number>('diagnostics.reportHandleComparisonEquality', 1);
     if (reportHandleComparison === 0) {
         args.push('--no-report-handle-comparison-equality');
@@ -1585,8 +1601,55 @@ export async function activate(context: ExtensionContext) {
                 const settingKey = args.settingKey.startsWith('angelscript.')
                     ? args.settingKey.substring('angelscript.'.length)
                     : args.settingKey;
+                const fullKey = `angelscript.${settingKey}`;
                 await workspace.getConfiguration('angelscript').update(settingKey, false, ConfigurationTarget.Workspace);
-                void window.showInformationMessage(l10n.t('Disabled diagnostic "{0}" in workspace settings.', args.settingKey));
+                const reenableAction = l10n.t('Re-enable');
+                const openSettingsAction = l10n.t('Open Settings');
+                void window.showInformationMessage(
+                    l10n.t('Disabled diagnostic "{0}" in workspace settings.', fullKey),
+                    reenableAction,
+                    openSettingsAction
+                ).then(async choice => {
+                    if (choice === reenableAction) {
+                        await workspace.getConfiguration('angelscript').update(settingKey, true, ConfigurationTarget.Workspace);
+                    } else if (choice === openSettingsAction) {
+                        await commands.executeCommand('workbench.action.openSettings', fullKey);
+                    }
+                });
+            }));
+
+        context.subscriptions.push(
+            commands.registerCommand(PEEK_OVERLOADS_COMMAND, async (rawArgs?: {
+                uri?: string;
+                line?: number;
+                character?: number;
+                locations?: { uri: string; startLine: number; startChar: number; endLine: number; endChar: number }[];
+            } | {
+                uri?: string;
+                line?: number;
+                character?: number;
+                locations?: { uri: string; startLine: number; startChar: number; endLine: number; endChar: number }[];
+            }[]) => {
+                const payload = Array.isArray(rawArgs) ? rawArgs[0] : rawArgs;
+                const editor = window.activeTextEditor;
+                const targetUri = payload?.uri ? Uri.parse(payload.uri) : editor?.document.uri;
+                if (!targetUri) {
+                    return;
+                }
+                const anchorPos = new Position(
+                    payload?.line ?? editor?.selection.active.line ?? 0,
+                    payload?.character ?? editor?.selection.active.character ?? 0
+                );
+                const locs = (payload?.locations ?? []).map(loc =>
+                    new Location(
+                        Uri.parse(loc.uri),
+                        new Range(loc.startLine, loc.startChar, loc.endLine, loc.endChar)
+                    ));
+                if (locs.length > 0) {
+                    await commands.executeCommand('editor.action.peekLocations', targetUri, anchorPos, locs, 'peek');
+                } else {
+                    await commands.executeCommand('editor.action.triggerParameterHints');
+                }
             }));
     });
 

@@ -15,6 +15,11 @@ namespace angel_lsp::utils
 class LspLogger;
 }
 
+namespace angel_lsp::i18n
+{
+class I18n;
+}
+
 namespace angel_lsp::features
 {
 /**
@@ -34,6 +39,7 @@ struct InlayHintRequest
     size_t maxLength = 0;
     config::OmittedDefaultArgumentsMode omittedDefaultArguments = config::OmittedDefaultArgumentsMode::Off;
     const config::ServerConfig* config = nullptr;
+    const angel_lsp::i18n::I18n* i18n = nullptr;
 };
 
 /**
