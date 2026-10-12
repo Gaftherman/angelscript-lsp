@@ -1111,6 +1111,72 @@ TEST_CASE("CallChecker - A bracket-array size is not an element conversion")
     CHECK(flagged("void main() { bool b(33); }\n"));
 }
 
+TEST_CASE("CallChecker - Direct array initialization accepts enum value and rejects incompatible object")
+{
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("Classification");
+    const std::string sizeConst = angel_lsp::test::GenerateRandomSymbolName("Size");
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("CCharacter");
+    const std::string varName1 = angel_lsp::test::GenerateRandomSymbolName("g_Array1");
+    const std::string varName2 = angel_lsp::test::GenerateRandomSymbolName("g_Array2");
+    const std::string arrayStub = "class array<T> {\n"
+                                  "    array();\n"
+                                  "    array(uint initial_size);\n"
+                                  "    array(uint initial_size, const T &in value);\n"
+                                  "}\n";
+
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    LocalScopeCollector scopes(nullptr);
+    SymbolTable table;
+    static angel_lsp::i18n::I18n i18n;
+
+    collector.CollectSymbols("file:///engine.as.predefined", arrayStub, parser, table);
+
+    const std::string validSnippet = "enum " + enumName + " { Unset = -1, " + sizeConst +
+                                     " = 5 };\n"
+                                     "array<uint> " +
+                                     varName1 + "(" + enumName + "::" + sizeConst + ");\n";
+
+    collector.CollectSymbols("file:///calls.as", validSnippet, parser, table);
+
+    SemanticAnalysisRequest req1{table, "file:///calls.as", ".as.predefined", &i18n};
+    req1.scopeRoot = scopes.CollectScopes(validSnippet, parser);
+    req1.sourceCode = validSnippet;
+    req1.tree = parser.Parse(validSnippet);
+
+    SemanticAnalyzer analyzer(nullptr);
+    auto diags1 = analyzer.Analyze(req1);
+    CHECK_FALSE(HasCode(diags1, "as-err-no-matching-constructor"));
+    if (req1.tree)
+        ts_tree_delete(const_cast<TSTree*>(req1.tree));
+
+    SymbolTable table2;
+    collector.CollectSymbols("file:///engine.as.predefined", arrayStub, parser, table2);
+
+    const std::string invalidSnippet = "class " + className +
+                                       " {}\n"
+                                       "void main() {\n"
+                                       "    " +
+                                       className +
+                                       "@ obj;\n"
+                                       "    array<uint> " +
+                                       varName2 +
+                                       "(obj);\n"
+                                       "}\n";
+
+    collector.CollectSymbols("file:///calls.as", invalidSnippet, parser, table2);
+
+    SemanticAnalysisRequest req2{table2, "file:///calls.as", ".as.predefined", &i18n};
+    req2.scopeRoot = scopes.CollectScopes(invalidSnippet, parser);
+    req2.sourceCode = invalidSnippet;
+    req2.tree = parser.Parse(invalidSnippet);
+
+    auto diags2 = analyzer.Analyze(req2);
+    CHECK(HasCode(diags2, "as-err-no-matching-constructor"));
+    if (req2.tree)
+        ts_tree_delete(const_cast<TSTree*>(req2.tree));
+}
+
 TEST_CASE("CallChecker - A method redeclared in a subclass overrides, it does not overload")
 {
     // A member lookup walks the hierarchy and finds the base's declaration alongside the derived

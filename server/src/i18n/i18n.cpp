@@ -223,6 +223,8 @@ void PopulateEnglishMessages3(MessageMap& m_messages)
         "Illegal access to protected member '{}', declared in class '{}'. A protected member is reachable from a "
         "derived class, and only through an object of that class's own type.";
     m_messages["as-err-member-not-found"] = "Class '{}' has no member '{}'.";
+    m_messages["as-err-virtual-property-outside-class"] =
+        "Virtual property '{}' can only be declared within a class or interface.";
     m_messages["as-err-virtual-property-signature"] =
         "Invalid signature for virtual property '{}'. A 'get_' accessor returns a value and takes at most an index; a "
         "'set_' accessor returns void and takes the value, optionally preceded by an index.";
@@ -411,7 +413,13 @@ void PopulateEnglishMessages7(MessageMap& m_messages)
     m_messages["as-err-positional-after-named-arg"] = "Positional argument cannot follow a named argument.";
     m_messages["as-err-cannot-return-local-ref"] = "Cannot return reference to local variable '{}'.";
     m_messages["as-err-cannot-return-param-ref"] = "Cannot return reference to parameter '{}'.";
-    m_messages["as-err-lambda-closure-disallowed"] = "Lambdas cannot access outer local variables (no closures).";
+    m_messages["as-err-lambda-closure-disallowed"] = "Anonymous functions cannot capture outer local variable '{}' (no "
+                                                     "closure support). Tip: Pass required values as parameters.";
+    m_messages["as-err-lambda-this-disallowed"] = "Keyword 'this' is not available in anonymous functions (no closure "
+                                                  "support). Anonymous functions are treated as free functions.";
+    m_messages["as-err-lambda-member-access"] =
+        "Anonymous functions cannot access enclosing class member '{}' without an object reference (no closure "
+        "support). Tip: Pass the class instance as a lambda parameter.";
     m_messages["as-err-standalone-anonymous-function"] =
         "An anonymous function is an expression and cannot be used as a stand-alone statement. Pass it where a funcdef "
         "is expected or assign it to a funcdef handle.";
@@ -608,6 +616,8 @@ void PopulateSpanishMessages3(MessageMap& m_messages)
         "Acceso ilegal al miembro protegido '{}', declarado en la clase '{}'. Un miembro protegido es accesible "
         "desde una clase derivada, y únicamente a través de un objeto del tipo de esa misma clase.";
     m_messages["as-err-member-not-found"] = "La clase '{}' no tiene ningún miembro '{}'.";
+    m_messages["as-err-virtual-property-outside-class"] =
+        "La propiedad virtual '{}' solo puede declararse dentro de una clase o interfaz.";
     m_messages["as-err-virtual-property-signature"] =
         "Firma no válida para la propiedad virtual '{}'. Un accesor 'get_' devuelve un valor y toma como mucho un "
         "índice; un accesor 'set_' devuelve void y toma el valor, precedido opcionalmente por un índice.";
@@ -812,7 +822,14 @@ void PopulateSpanishMessages7(MessageMap& m_messages)
     m_messages["as-err-cannot-return-local-ref"] = "No se puede devolver una referencia a la variable local '{}'.";
     m_messages["as-err-cannot-return-param-ref"] = "No se puede devolver una referencia al parámetro '{}'.";
     m_messages["as-err-lambda-closure-disallowed"] =
-        "Las lambdas no pueden acceder a variables locales externas (sin clausuras).";
+        "Las funciones anónimas no pueden acceder a la variable local externa '{}' (no soportan clausuras). Consejo: "
+        "Pasa los valores requeridos como parámetros.";
+    m_messages["as-err-lambda-this-disallowed"] =
+        "La palabra clave 'this' no está disponible en funciones anónimas (no soportan clausuras). Las funciones "
+        "anónimas se tratan como funciones libres.";
+    m_messages["as-err-lambda-member-access"] =
+        "Las funciones anónimas no pueden acceder al miembro de clase externa '{}' sin una referencia de objeto (no "
+        "soportan clausuras). Consejo: Pasa la instancia de la clase como parámetro de la lambda.";
     m_messages["as-err-standalone-anonymous-function"] =
         "Una función anónima es una expresión y no puede usarse como una sentencia independiente. Pásala donde se "
         "espere un funcdef o asígnala a un handle de funcdef.";

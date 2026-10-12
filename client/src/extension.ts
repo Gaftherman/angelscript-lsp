@@ -335,9 +335,9 @@ function setStatus(state: 'starting' | 'running' | 'failed', tooltip: string): v
     }
 
     const label = {
-        starting: '$(sync~spin) AngelScript',
-        running: '$(symbol-namespace) AngelScript',
-        failed: '$(error) AngelScript'
+        starting: '$(sync~spin) AngelLSP',
+        running: '$(server-process) AngelLSP',
+        failed: '$(error) AngelLSP'
     };
 
     const showStub = config.get<boolean>('statusBar.showStub', false);

@@ -21,6 +21,8 @@ inline constexpr std::string_view PrivateMemberAccess = "as-err-private-member-a
 inline constexpr std::string_view ProtectedMemberAccess = "as-err-protected-member-access";
 inline constexpr std::string_view MemberNotFound = "as-err-member-not-found";
 inline constexpr std::string_view LambdaClosureDisallowed = "as-err-lambda-closure-disallowed";
+inline constexpr std::string_view LambdaThisDisallowed = "as-err-lambda-this-disallowed";
+inline constexpr std::string_view LambdaMemberAccess = "as-err-lambda-member-access";
 
 // Call and Overload Errors
 inline constexpr std::string_view CallArgumentCount = "as-err-call-argument-count";
@@ -203,6 +205,7 @@ inline constexpr std::string_view SignatureMismatchFuncHandle = "as-err-signatur
 inline constexpr std::string_view StandaloneAnonymousFunction = "as-err-standalone-anonymous-function";
 inline constexpr std::string_view TemplateClassNotSupported = "as-err-template-class-not-supported";
 inline constexpr std::string_view ValueAssignForRef = "as-err-value-assign-for-ref";
+inline constexpr std::string_view VirtualPropertyOutsideClass = "as-err-virtual-property-outside-class";
 inline constexpr std::string_view VirtualPropertySignature = "as-err-virtual-property-signature";
 inline constexpr std::string_view VoidParameter = "as-err-void-parameter";
 inline constexpr std::string_view VoidReference = "as-err-void-reference";

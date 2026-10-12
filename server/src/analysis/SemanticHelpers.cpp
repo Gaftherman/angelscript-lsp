@@ -1723,6 +1723,38 @@ void ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)
     }
 }
 
+static void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view sourceCode,
+                                std::vector<ContainerInfo>& rawContainers)
+{
+    if (ts_node_is_null(nameNode))
+    {
+        return;
+    }
+    const uint32_t start = ts_node_start_byte(nameNode);
+    const uint32_t end = ts_node_end_byte(nameNode);
+    if (start >= end || end > sourceCode.size())
+    {
+        return;
+    }
+
+    std::string text(sourceCode.substr(start, end - start));
+    if (kind == ContainerKind::Namespace && text.find("::") != std::string::npos)
+    {
+        auto segs = SplitScopeSegments(text);
+        for (auto it = segs.rbegin(); it != segs.rend(); ++it)
+        {
+            if (!it->empty())
+            {
+                rawContainers.push_back({*it, "", kind});
+            }
+        }
+    }
+    else
+    {
+        rawContainers.push_back({std::move(text), "", kind});
+    }
+}
+
 std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode)
 {
     std::vector<ContainerInfo> rawContainers;
@@ -1733,35 +1765,25 @@ std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view 
 
     TSNode current = ts_node_parent(AdjustStartNodeIfDeclarationName(node));
     size_t depth = 0;
+    bool crossedLambda = false;
     while (!ts_node_is_null(current) && ++depth <= kMaxScopeDepth)
     {
-        if (const auto kind = ClassifyContainerKind(ts_node_type(current)))
+        const std::string_view nodeType = ts_node_type(current);
+        if (nodeType == "lambda_expression")
         {
-            const TSNode nameNode = parser::GetChildByField(current, parser::fields::Name);
-            if (!ts_node_is_null(nameNode))
+            crossedLambda = true;
+        }
+
+        if (const auto kind = ClassifyContainerKind(nodeType))
+        {
+            if (crossedLambda && (*kind == ContainerKind::Class || *kind == ContainerKind::Interface))
             {
-                const uint32_t start = ts_node_start_byte(nameNode);
-                const uint32_t end = ts_node_end_byte(nameNode);
-                if (start < end && end <= sourceCode.size())
-                {
-                    std::string text(sourceCode.substr(start, end - start));
-                    if (*kind == ContainerKind::Namespace && text.find("::") != std::string::npos)
-                    {
-                        auto segs = SplitScopeSegments(text);
-                        for (auto it = segs.rbegin(); it != segs.rend(); ++it)
-                        {
-                            if (!it->empty())
-                            {
-                                rawContainers.push_back({*it, "", *kind});
-                            }
-                        }
-                    }
-                    else
-                    {
-                        rawContainers.push_back({std::move(text), "", *kind});
-                    }
-                }
+                current = ts_node_parent(current);
+                continue;
             }
+
+            AppendRawContainers(parser::GetChildByField(current, parser::fields::Name), *kind, sourceCode,
+                                rawContainers);
         }
         current = ts_node_parent(current);
     }

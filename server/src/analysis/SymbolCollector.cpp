@@ -289,6 +289,11 @@ SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, st
             TSNode parentDecl = ts_node_parent(current);
             TSNode nameNode = GetChildByFieldName(parentDecl, "name");
             std::string name = GetNodeText(nameNode, sourceCode);
+            const size_t angleInName = name.find('<');
+            if (angleInName != std::string::npos)
+            {
+                name = name.substr(0, angleInName);
+            }
             if (ctx.containerPath.empty())
             {
                 ctx.containerPath = std::move(name);

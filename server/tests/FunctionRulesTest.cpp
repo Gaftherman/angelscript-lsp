@@ -1009,6 +1009,42 @@ TEST_CASE("FunctionRules - The implementing class's accessor is still hinted")
     CHECK(hints == 1);
 }
 
+TEST_CASE("FunctionRules - Accessor portability hint is not emitted for a namespace function")
+{
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("Math");
+    const std::string fnName = "get_" + angel_lsp::test::GenerateRandomSymbolName("Value");
+    const std::string code = "namespace " + ns +
+                             "\n"
+                             "{\n"
+                             "    int " +
+                             fnName +
+                             "() { return 42; }\n"
+                             "}\n";
+
+    angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+    diagnosticsConfig.reportAccessorPortability = true;
+
+    const auto diagnostics = AnalyzeFunctionSnippet(code, "file:///funcs.as", nullptr, &diagnosticsConfig);
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic& d) { return d.code == "as-hint-accessor-portability"; }));
+}
+
+TEST_CASE("FunctionRules - Virtual property declared outside a class emits as-err-virtual-property-outside-class")
+{
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("GlobalScope");
+    const std::string propName = "get_" + angel_lsp::test::GenerateRandomSymbolName("Prop");
+    const std::string code = "namespace " + ns +
+                             "\n"
+                             "{\n"
+                             "    property int " +
+                             propName +
+                             "() { return 1; }\n"
+                             "}\n";
+
+    const auto diagnostics = AnalyzeFunctionSnippet(code);
+    CHECK(HasCode(diagnostics, "as-err-virtual-property-outside-class"));
+}
+
 TEST_CASE("FunctionRules - Reports standalone anonymous function")
 {
     const auto analyzeWithTree = [](const std::string& code)

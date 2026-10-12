@@ -372,10 +372,18 @@ void CheckAttributes(const Symbol& sym, const FunctionSignature& sig, const Func
         ctx.Emit(sym, "as-err-explicit-not-member", sym.name);
     }
 
-    if (sig.modifiers.isProperty && !IsValidAccessorSignature(sym.name, sig))
+    if (sig.modifiers.isProperty)
     {
-        ctx.LogRule("CheckAttributes", "as-err-virtual-property-signature", sym);
-        ctx.Emit(sym, "as-err-virtual-property-signature", sym.name);
+        if (fctx.containerIsKnown && !fctx.isMember)
+        {
+            ctx.LogRule("CheckAttributes", diagnostics::codes::VirtualPropertyOutsideClass, sym);
+            ctx.Emit(sym, diagnostics::codes::VirtualPropertyOutsideClass, sym.name);
+        }
+        else if (!IsValidAccessorSignature(sym.name, sig))
+        {
+            ctx.LogRule("CheckAttributes", "as-err-virtual-property-signature", sym);
+            ctx.Emit(sym, "as-err-virtual-property-signature", sym.name);
+        }
     }
 
     // A destructor carrying `delete` is already reported, with a message that says so; this
@@ -753,7 +761,7 @@ void ValidateFunction(const Symbol& sym, const DiagnosticContext& ctx)
     // outright ("Expected ';'", verified against angelscript_oracle), so hinting there would be
     // advice whose only fix does not compile. The mode-3 rejection such an interface produces
     // lands on the IMPLEMENTING class's accessor, which this rule reaches on its own.
-    if (ctx.request.diagnostics && ctx.request.diagnostics->reportAccessorPortability && !sym.containerName.empty() &&
+    if (ctx.request.diagnostics && ctx.request.diagnostics->reportAccessorPortability && fctx.isMember &&
         !sig.isInterfaceMethod && !sig.modifiers.isProperty)
     {
         std::string_view accessor = sym.name;
