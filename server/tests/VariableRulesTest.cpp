@@ -218,6 +218,18 @@ TEST_CASE("VariableRules - Reports an access modifier on a global")
     CHECK(HasCode(AnalyzeVariableSnippet("private int g_count;\n"), "as-err-global-variable-access-modifier"));
 }
 
+TEST_CASE("VariableRules - Reports access modifiers in a namespace")
+{
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("NS");
+    const std::string var1 = angel_lsp::test::GenerateRandomSymbolName("VarPriv");
+    const std::string var2 = angel_lsp::test::GenerateRandomSymbolName("VarProt");
+    const std::string code =
+        "namespace " + ns + "\n{\n    private int " + var1 + ";\n    protected float " + var2 + ";\n}\n";
+
+    const auto diags = AnalyzeVariableSnippet(code);
+    CHECK(HasCode(diags, "as-err-global-variable-access-modifier"));
+}
+
 TEST_CASE("VariableRules - An access modifier on a class field is accepted")
 {
     const std::string code = "class Entity\n"

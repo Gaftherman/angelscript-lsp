@@ -846,6 +846,38 @@ TEST_CASE("CodeActionHandler - Adds the 'property' keyword to a bare accessor")
     CHECK(edits[0].range.start.character == 15);
 }
 
+TEST_CASE("CodeActionHandler - Adds the 'property' keyword after const qualifier on a const accessor")
+{
+    const std::string className = test::GenerateRandomSymbolName("Cls");
+    const std::string varName = test::GenerateRandomSymbolName("m_Locked");
+    const std::string code = "class " + className +
+                             " {\n"
+                             "    bool " +
+                             varName +
+                             ";\n"
+                             "    bool get_Locked() const { return this." +
+                             varName +
+                             "; }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{{2, 4}, {2, 21}};
+    auto actions = env.CodeActions(at, AccessorHintAt(at));
+
+    const auto* fix = ActionTitled(actions, "Add the 'property' keyword");
+    REQUIRE(fix != nullptr);
+    REQUIRE(fix->edit.has_value());
+    REQUIRE(fix->edit->changes.has_value());
+
+    const auto& edits = fix->edit->changes->begin()->second;
+    REQUIRE(edits.size() == 1);
+
+    CHECK(edits[0].newText == " property");
+    CHECK(edits[0].range.start.line == 2);
+    CHECK(edits[0].range.start.character == 27);
+    CHECK(edits[0].range.start.character == edits[0].range.end.character);
+}
+
 TEST_CASE("CodeActionHandler - Offers to disable the accessor portability hint")
 {
     const std::string className = test::GenerateRandomSymbolName("Cls");

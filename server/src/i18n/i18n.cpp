@@ -169,6 +169,8 @@ void PopulateEnglishMessages2(MessageMap& m_messages)
         "Reserved keyword '{}' cannot be used as an identifier here.";
     m_messages["as-err-name-conflict"] = "Name conflict. '{}' is already declared as a {}.";
     m_messages["as-err-const-void-return"] = "Return type can't be 'const void'.";
+    m_messages["as-err-global-function-access-modifier"] =
+        "Global or namespace function '{}' cannot have access modifiers (private/protected).";
     m_messages["as-err-global-function-qualifiers"] = "Global function '{}' cannot be declared 'const'.";
     m_messages["as-err-override-no-base"] =
         "Method '{}' marked as override but class '{}' does not replace any base class or interface method.";
@@ -549,6 +551,8 @@ void PopulateSpanishMessages2(MessageMap& m_messages)
         "La palabra reservada '{}' no se puede usar como un identificador aquí.";
     m_messages["as-err-name-conflict"] = "Conflicto de nombre. '{}' ya está declarado como {}.";
     m_messages["as-err-const-void-return"] = "El tipo de retorno no puede ser 'const void'.";
+    m_messages["as-err-global-function-access-modifier"] =
+        "La función global o de namespace '{}' no puede tener modificadores de acceso (private/protected).";
     m_messages["as-err-global-function-qualifiers"] = "La función global '{}' no puede declararse 'const'.";
     m_messages["as-err-override-no-base"] = "El método '{}' marcado como override no reemplaza ningún método de "
                                             "clase base o interfaz en la clase '{}'.";

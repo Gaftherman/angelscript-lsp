@@ -242,6 +242,33 @@ void EmitGetterSetterActionsForField(const CodeActionRequest& request, const Get
     }
 }
 
+/**
+ * @brief Finds the insertion point for the 'property' keyword, placing it after 'const' if present.
+ * @param[in] funcNode The func_declaration AST node.
+ * @param[in] parametersNode The parameter list AST node.
+ * @param[in] sourceCode Source text of the document.
+ * @return Insertion point coordinates.
+ */
+TSPoint FindAccessorPropertyInsertionPoint(TSNode funcNode, TSNode parametersNode, std::string_view sourceCode)
+{
+    TSPoint insertAt = ts_node_end_point(parametersNode);
+    const uint32_t paramsEndByte = ts_node_end_byte(parametersNode);
+    const uint32_t childCount = ts_node_child_count(funcNode);
+    for (uint32_t i = 0; i < childCount; ++i)
+    {
+        TSNode child = ts_node_child(funcNode, i);
+        if (ts_node_start_byte(child) >= paramsEndByte)
+        {
+            std::string_view childType = ts_node_type(child);
+            if (childType == "const" || GetNodeText(child, sourceCode) == "const")
+            {
+                return ts_node_end_point(child);
+            }
+        }
+    }
+    return insertAt;
+}
+
 } // namespace
 
 void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
@@ -306,7 +333,7 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
             continue;
         }
 
-        const TSPoint insertAt = ts_node_end_point(parameters);
+        const TSPoint insertAt = FindAccessorPropertyInsertionPoint(node, parameters, request.sourceCode);
 
         lsp::TextEdit edit;
         edit.range.start.line = insertAt.row;

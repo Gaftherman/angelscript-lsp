@@ -30,33 +30,36 @@ struct FunctionContext
 FunctionContext BuildFunctionContext(const Symbol& sym, const DiagnosticContext& ctx)
 {
     FunctionContext fctx;
-    if (sym.containerName.empty())
+    if (sym.containerName.empty() || sym.containerKind == ContainerKind::Namespace)
     {
-        // No container at all is itself knowledge: this is a global function.
+        // No container or namespace container: this is a non-member (global or namespace function).
         fctx.containerIsKnown = true;
         return fctx;
     }
 
-    const auto container = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
-    if (!container)
+    if (sym.containerKind == ContainerKind::Class || sym.containerKind == ContainerKind::Interface)
     {
-        // The container did not resolve, so nothing is known about it - not even whether it
-        // is a class. Treated as a non-member so no rule that presumes a class body fires.
-        return fctx;
+        fctx.containerIsKnown = true;
+        fctx.isMember = true;
+        fctx.isInterface = (sym.containerKind == ContainerKind::Interface);
     }
-    fctx.containerIsKnown = true;
 
-    for (const auto& owner : *container)
+    const auto container = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
+    if (container)
     {
-        if (owner.type == SymbolType::Interface)
+        fctx.containerIsKnown = true;
+        for (const auto& owner : *container)
         {
-            fctx.isMember = true;
-            fctx.isInterface = true;
-        }
-        else if (owner.type == SymbolType::Class)
-        {
-            fctx.isMember = true;
-            fctx.isMixin = fctx.isMixin || owner.GetClass().modifiers.isMixin;
+            if (owner.type == SymbolType::Interface)
+            {
+                fctx.isMember = true;
+                fctx.isInterface = true;
+            }
+            else if (owner.type == SymbolType::Class)
+            {
+                fctx.isMember = true;
+                fctx.isMixin = fctx.isMixin || owner.GetClass().modifiers.isMixin;
+            }
         }
     }
 
@@ -259,6 +262,13 @@ void CheckModifiers(const Symbol& sym, const FunctionSignature& sig, const Funct
     if (!fctx.containerIsKnown || fctx.isMember)
     {
         return;
+    }
+
+    // Access modifiers outside a class:
+    if (sig.modifiers.access != AccessModifier::Public)
+    {
+        ctx.LogRule("CheckModifiers", diagnostics::codes::GlobalFunctionAccessModifier, sym);
+        ctx.Emit(sym, diagnostics::codes::GlobalFunctionAccessModifier, sym.name);
     }
 
     // `const` on a global function is a hard error - the engine's parser refuses the token

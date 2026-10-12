@@ -141,6 +141,7 @@ inline constexpr std::string_view ExpressionIsDataType = "as-err-expression-is-d
 inline constexpr std::string_view ForeachUnsupported = "as-err-foreach-unsupported";
 inline constexpr std::string_view FuncdefAttribute = "as-err-funcdef-attribute";
 inline constexpr std::string_view FuncdefNotHandle = "as-err-funcdef-not-handle";
+inline constexpr std::string_view GlobalFunctionAccessModifier = "as-err-global-function-access-modifier";
 inline constexpr std::string_view GlobalFunctionQualifiers = "as-err-global-function-qualifiers";
 inline constexpr std::string_view GlobalVariableAccessModifier = "as-err-global-variable-access-modifier";
 inline constexpr std::string_view ImportHasBody = "as-err-import-has-body";
