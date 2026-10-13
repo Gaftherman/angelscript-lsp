@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <latch>
 #include <random>
 #include <string>
 #include <thread>
@@ -45,9 +46,23 @@ struct WriterContext
 {
     DocumentStore& store;
     std::string uri;
+    std::latch& startLatch;
+    std::latch& readersActiveLatch;
     std::atomic<bool>& stopFlag;
     std::atomic<uint32_t>& totalWrites;
     uint32_t targetWrites = 1000;
+};
+
+struct ReaderContext
+{
+    const DocumentStore& store;
+    std::string uri;
+    std::latch& startLatch;
+    std::latch& readersActiveLatch;
+    std::atomic<bool>& stopFlag;
+    std::atomic<uint32_t>& successfulReads;
+    std::atomic<uint32_t>& failedReads;
+    uint32_t targetReads = 200;
 };
 
 /**
@@ -57,10 +72,17 @@ void RunWriterWorker(WriterContext ctx)
 {
     std::mt19937_64 rng(std::random_device{}());
     parser::AngelScriptParser parser;
+    const uint32_t maxWrites = ctx.targetWrites * 4;
 
-    while (!ctx.stopFlag.load(std::memory_order_relaxed) &&
-           ctx.totalWrites.fetch_add(1, std::memory_order_relaxed) < ctx.targetWrites)
+    ctx.startLatch.arrive_and_wait();
+
+    while (!ctx.stopFlag.load(std::memory_order_acquire))
     {
+        const uint32_t prevWrites = ctx.totalWrites.fetch_add(1, std::memory_order_relaxed);
+        if (prevWrites >= ctx.targetWrites && (ctx.readersActiveLatch.try_wait() || prevWrites >= maxWrites))
+        {
+            break;
+        }
         std::string code = GenerateRandomCode(rng);
         TSTree* rawTree = parser.Parse(code);
         ctx.store.UpdateDocument(ctx.uri, std::move(code), 1, document::MakeTreePtr(rawTree));
@@ -70,22 +92,38 @@ void RunWriterWorker(WriterContext ctx)
 /**
  * @brief Reader worker routine that snapshots documents, copies ASTs, and inspects nodes.
  */
-void RunReaderWorker(const DocumentStore& store, const std::string& uri, std::atomic<bool>& stopFlag,
-                     std::atomic<uint32_t>& successfulReads)
+void RunReaderWorker(ReaderContext ctx)
 {
-    while (!stopFlag.load(std::memory_order_relaxed))
+    bool countedDown = false;
+    ctx.startLatch.arrive_and_wait();
+
+    while (!ctx.stopFlag.load(std::memory_order_acquire) ||
+           ctx.successfulReads.load(std::memory_order_relaxed) < ctx.targetReads)
     {
-        auto doc = store.GetDocument(uri);
-        if (doc && doc->tree)
+        auto doc = ctx.store.GetDocument(ctx.uri);
+        if (!doc || !doc->tree)
         {
-            TSTree* copied = ts_tree_copy(doc->tree.get());
-            if (copied)
+            continue;
+        }
+        TSTree* copied = ts_tree_copy(doc->tree.get());
+        if (!copied)
+        {
+            continue;
+        }
+        auto managedCopy = document::MakeTreePtr(copied);
+        TSNode root = ts_tree_root_node(managedCopy.get());
+        const char* type = ts_node_type(root);
+        if (type == nullptr)
+        {
+            ctx.failedReads.fetch_add(1, std::memory_order_relaxed);
+        }
+        else
+        {
+            ctx.successfulReads.fetch_add(1, std::memory_order_relaxed);
+            if (!countedDown)
             {
-                auto managedCopy = document::MakeTreePtr(copied);
-                TSNode root = ts_tree_root_node(managedCopy.get());
-                const char* type = ts_node_type(root);
-                CHECK(type != nullptr);
-                successfulReads.fetch_add(1, std::memory_order_relaxed);
+                countedDown = true;
+                ctx.readersActiveLatch.count_down();
             }
         }
     }
@@ -103,23 +141,32 @@ TEST_CASE("Concurrency - SEC-04 Randomized Concurrent Mutation vs AST Analysis I
     TSTree* initTree = initParser.Parse(initialCode);
     store.OpenDocument(uri, initialCode, 0, document::MakeTreePtr(initTree));
 
+    constexpr int k_numWriters = 10;
+    constexpr int k_numReaders = 5;
+    constexpr uint32_t k_targetWrites = 1000;
+    constexpr uint32_t k_targetReads = 200;
+
+    std::latch startLatch(k_numWriters + k_numReaders);
+    std::latch readersActiveLatch(k_numReaders);
     std::atomic<bool> stopFlag{false};
     std::atomic<uint32_t> totalWrites{0};
     std::atomic<uint32_t> successfulReads{0};
-    constexpr uint32_t k_targetWrites = 1000;
-
-    std::vector<std::thread> writers;
-    writers.reserve(10);
-    for (int i = 0; i < 10; ++i)
-    {
-        writers.emplace_back(RunWriterWorker, WriterContext{store, uri, stopFlag, totalWrites, k_targetWrites});
-    }
+    std::atomic<uint32_t> failedReads{0};
 
     std::vector<std::thread> readers;
-    readers.reserve(5);
-    for (int i = 0; i < 5; ++i)
+    readers.reserve(k_numReaders);
+    for (int i = 0; i < k_numReaders; ++i)
     {
-        readers.emplace_back(RunReaderWorker, std::cref(store), uri, std::ref(stopFlag), std::ref(successfulReads));
+        readers.emplace_back(RunReaderWorker, ReaderContext{store, uri, startLatch, readersActiveLatch, stopFlag,
+                                                            successfulReads, failedReads, k_targetReads});
+    }
+
+    std::vector<std::thread> writers;
+    writers.reserve(k_numWriters);
+    for (int i = 0; i < k_numWriters; ++i)
+    {
+        writers.emplace_back(RunWriterWorker, WriterContext{store, uri, startLatch, readersActiveLatch, stopFlag,
+                                                            totalWrites, k_targetWrites});
     }
 
     for (auto& w : writers)
@@ -128,7 +175,7 @@ TEST_CASE("Concurrency - SEC-04 Randomized Concurrent Mutation vs AST Analysis I
             w.join();
     }
 
-    stopFlag.store(true, std::memory_order_relaxed);
+    stopFlag.store(true, std::memory_order_release);
 
     for (auto& r : readers)
     {
@@ -137,5 +184,6 @@ TEST_CASE("Concurrency - SEC-04 Randomized Concurrent Mutation vs AST Analysis I
     }
 
     CHECK(totalWrites.load() >= k_targetWrites);
-    CHECK(successfulReads.load() > 0);
+    CHECK(successfulReads.load() >= k_targetReads);
+    CHECK(failedReads.load() == 0);
 }

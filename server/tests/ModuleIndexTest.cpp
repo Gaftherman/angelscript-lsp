@@ -1,6 +1,8 @@
 #include "lsp/ModuleIndex.h"
 #include "helpers/TestUtils.h"
+#include <atomic>
 #include <doctest/doctest.h>
+#include <latch>
 #include <thread>
 #include <vector>
 
@@ -143,16 +145,20 @@ TEST_CASE("ModuleIndex - Indexed URI mappings and purge")
 TEST_CASE("ModuleIndex - Concurrent access")
 {
     ModuleIndex index;
+    constexpr int kThreads = 4;
     constexpr int kIterations = 100;
 
+    std::latch startLatch(kThreads);
+    std::atomic<uint32_t> failedChecks{0};
     std::vector<std::thread> threads;
-    threads.reserve(4);
+    threads.reserve(kThreads);
 
-    for (int t = 0; t < 4; ++t)
+    for (int t = 0; t < kThreads; ++t)
     {
         threads.emplace_back(
-            [&index, t]()
+            [&index, &startLatch, &failedChecks, t]()
             {
+                startLatch.arrive_and_wait();
                 for (int i = 0; i < kIterations; ++i)
                 {
                     std::string path = "C:/project/file_" + std::to_string(t) + "_" + std::to_string(i) + ".as";
@@ -160,7 +166,10 @@ TEST_CASE("ModuleIndex - Concurrent access")
                     index.SetIndexedUri(path, uri);
                     index.SetClosureDocument(uri, "void f() {}");
                     auto res = index.GetIndexedUri(path);
-                    CHECK(res.has_value());
+                    if (!res.has_value())
+                    {
+                        failedChecks.fetch_add(1, std::memory_order_relaxed);
+                    }
                     index.PurgeClosureDocument(uri);
                 }
             });
@@ -170,6 +179,8 @@ TEST_CASE("ModuleIndex - Concurrent access")
     {
         th.join();
     }
+
+    CHECK(failedChecks.load() == 0);
 }
 
 TEST_CASE("ModuleIndex - Exported symbols binary prefix lookup")

@@ -14,6 +14,7 @@
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <latch>
 #include <random>
 #include <string>
 #include <thread>
@@ -30,9 +31,26 @@ struct WriterStressContext
 {
     DocumentStore& store;
     const std::vector<std::string>& uris;
+    std::latch& startLatch;
+    std::latch& readersActiveLatch;
     std::atomic<bool>& stopFlag;
     std::atomic<uint32_t>& totalWrites;
     uint32_t targetWrites = 1000;
+};
+
+/**
+ * @brief Context passed to reader worker threads.
+ */
+struct ReaderStressContext
+{
+    const DocumentStore& store;
+    const std::vector<std::string>& uris;
+    std::latch& startLatch;
+    std::latch& readersActiveLatch;
+    std::atomic<bool>& stopFlag;
+    std::atomic<uint32_t>& successReads;
+    std::atomic<uint32_t>& failedReads;
+    uint32_t targetReads = 200;
 };
 
 /**
@@ -67,10 +85,17 @@ void ExecuteWriterStress(WriterStressContext ctx)
     std::mt19937_64 rng(std::random_device{}());
     parser::AngelScriptParser parser;
     std::uniform_int_distribution<size_t> uriDist(0, ctx.uris.size() - 1);
+    const uint32_t maxWrites = ctx.targetWrites * 4;
 
-    while (!ctx.stopFlag.load(std::memory_order_relaxed) &&
-           ctx.totalWrites.fetch_add(1, std::memory_order_relaxed) < ctx.targetWrites)
+    ctx.startLatch.arrive_and_wait();
+
+    while (!ctx.stopFlag.load(std::memory_order_acquire))
     {
+        const uint32_t prevWrites = ctx.totalWrites.fetch_add(1, std::memory_order_relaxed);
+        if (prevWrites >= ctx.targetWrites && (ctx.readersActiveLatch.try_wait() || prevWrites >= maxWrites))
+        {
+            break;
+        }
         const std::string& uri = ctx.uris[uriDist(rng)];
         std::string code = GenerateRandomStressCode(rng);
         TSTree* rawTree = parser.Parse(code);
@@ -80,33 +105,46 @@ void ExecuteWriterStress(WriterStressContext ctx)
 
 /**
  * @brief Executes concurrent document reads and thread-safe AST copies.
- * @param[in] store Document store under test.
- * @param[in] uris Target URIs to poll.
- * @param[in] stopFlag Termination atomic flag.
- * @param[in,out] successReads Counter for valid inspected ASTs.
+ * @param[in] ctx Stress context containing store, URIs, and synchronization primitives.
  */
-void ExecuteReaderStress(const DocumentStore& store, const std::vector<std::string>& uris, std::atomic<bool>& stopFlag,
-                         std::atomic<uint32_t>& successReads)
+void ExecuteReaderStress(ReaderStressContext ctx)
 {
     std::mt19937_64 rng(std::random_device{}());
-    std::uniform_int_distribution<size_t> uriDist(0, uris.size() - 1);
+    std::uniform_int_distribution<size_t> uriDist(0, ctx.uris.size() - 1);
+    bool countedDown = false;
 
-    while (!stopFlag.load(std::memory_order_relaxed))
+    ctx.startLatch.arrive_and_wait();
+
+    while (!ctx.stopFlag.load(std::memory_order_acquire) ||
+           ctx.successReads.load(std::memory_order_relaxed) < ctx.targetReads)
     {
-        const std::string& uri = uris[uriDist(rng)];
-        auto docHandle = store.GetDocument(uri);
-        if (docHandle && docHandle->tree)
+        const std::string& uri = ctx.uris[uriDist(rng)];
+        auto docHandle = ctx.store.GetDocument(uri);
+        if (!docHandle || !docHandle->tree)
         {
-            TSTree* copied = ts_tree_copy(docHandle->tree.get());
-            if (copied != nullptr)
+            continue;
+        }
+        TSTree* copied = ts_tree_copy(docHandle->tree.get());
+        if (copied == nullptr)
+        {
+            continue;
+        }
+        auto managed = document::MakeTreePtr(copied);
+        TSNode root = ts_tree_root_node(managed.get());
+        if (!ts_node_is_null(root))
+        {
+            const char* type = ts_node_type(root);
+            if (type == nullptr)
             {
-                auto managed = document::MakeTreePtr(copied);
-                TSNode root = ts_tree_root_node(managed.get());
-                if (!ts_node_is_null(root))
+                ctx.failedReads.fetch_add(1, std::memory_order_relaxed);
+            }
+            else
+            {
+                ctx.successReads.fetch_add(1, std::memory_order_relaxed);
+                if (!countedDown)
                 {
-                    const char* type = ts_node_type(root);
-                    CHECK(type != nullptr);
-                    successReads.fetch_add(1, std::memory_order_relaxed);
+                    countedDown = true;
+                    ctx.readersActiveLatch.count_down();
                 }
             }
         }
@@ -174,25 +212,33 @@ TEST_CASE("ConcurrencySafety - Simultaneous Document Mutation and AST Reading In
         uris.push_back(std::move(uri));
     }
 
+    constexpr int k_numWriters = 2;
+    constexpr int k_numReaders = 4;
+    constexpr uint32_t k_targetWrites = 1000;
+    constexpr uint32_t k_targetReads = 200;
+
+    std::latch startLatch(k_numWriters + k_numReaders);
+    std::latch readersActiveLatch(k_numReaders);
     std::atomic<bool> stopFlag{false};
     std::atomic<uint32_t> totalWrites{0};
     std::atomic<uint32_t> successReads{0};
-    constexpr uint32_t k_targetWrites = 1000;
-
-    std::vector<std::thread> writers;
-    writers.reserve(2);
-    for (int i = 0; i < 2; ++i)
-    {
-        writers.emplace_back(ExecuteWriterStress,
-                             WriterStressContext{store, uris, stopFlag, totalWrites, k_targetWrites});
-    }
+    std::atomic<uint32_t> failedReads{0};
 
     std::vector<std::thread> readers;
-    readers.reserve(4);
-    for (int i = 0; i < 4; ++i)
+    readers.reserve(k_numReaders);
+    for (int i = 0; i < k_numReaders; ++i)
     {
-        readers.emplace_back(ExecuteReaderStress, std::cref(store), std::cref(uris), std::ref(stopFlag),
-                             std::ref(successReads));
+        readers.emplace_back(ExecuteReaderStress,
+                             ReaderStressContext{store, uris, startLatch, readersActiveLatch, stopFlag, successReads,
+                                                 failedReads, k_targetReads});
+    }
+
+    std::vector<std::thread> writers;
+    writers.reserve(k_numWriters);
+    for (int i = 0; i < k_numWriters; ++i)
+    {
+        writers.emplace_back(ExecuteWriterStress, WriterStressContext{store, uris, startLatch, readersActiveLatch,
+                                                                      stopFlag, totalWrites, k_targetWrites});
     }
 
     for (auto& w : writers)
@@ -200,7 +246,7 @@ TEST_CASE("ConcurrencySafety - Simultaneous Document Mutation and AST Reading In
         if (w.joinable())
             w.join();
     }
-    stopFlag.store(true, std::memory_order_relaxed);
+    stopFlag.store(true, std::memory_order_release);
 
     for (auto& r : readers)
     {
@@ -209,7 +255,8 @@ TEST_CASE("ConcurrencySafety - Simultaneous Document Mutation and AST Reading In
     }
 
     CHECK(totalWrites.load() >= k_targetWrites);
-    CHECK(successReads.load() > 0);
+    CHECK(successReads.load() >= k_targetReads);
+    CHECK(failedReads.load() == 0);
 }
 
 TEST_CASE("ConcurrencySafety - Secondary Thread Exception Containment Invariant")
