@@ -671,3 +671,133 @@ TEST_CASE("ClassRules - Missing opening brace before else-if does not synthesize
     }
     CHECK(hasSyntaxError);
 }
+
+TEST_CASE("ClassRules - Mixin with final method does not report final override on host class")
+{
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("MixFinal");
+    const std::string hostName = angel_lsp::test::GenerateRandomSymbolName("HostClass");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("FinalMethod");
+
+    const std::string code = "mixin class " + mixinName +
+                             " {\n"
+                             "    void " +
+                             methodName +
+                             "() final {}\n"
+                             "}\n"
+                             "class " +
+                             hostName + " : " + mixinName + " {}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-override-final-method"));
+}
+
+TEST_CASE("ClassRules - Host class can override mixin final method without error")
+{
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("MixFinal");
+    const std::string hostName = angel_lsp::test::GenerateRandomSymbolName("HostClass");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("FinalMethod");
+
+    const std::string code = "mixin class " + mixinName +
+                             " {\n"
+                             "    void " +
+                             methodName +
+                             "() final {}\n"
+                             "}\n"
+                             "class " +
+                             hostName + " : " + mixinName +
+                             " {\n"
+                             "    void " +
+                             methodName +
+                             "() {}\n"
+                             "}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-override-final-method"));
+}
+
+TEST_CASE("ClassRules - Subclass deriving from host class cannot override final method from mixin")
+{
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("MixFinal");
+    const std::string hostName = angel_lsp::test::GenerateRandomSymbolName("HostClass");
+    const std::string subName = angel_lsp::test::GenerateRandomSymbolName("SubClass");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("FinalMethod");
+
+    const std::string code = "mixin class " + mixinName +
+                             " {\n"
+                             "    void " +
+                             methodName +
+                             "() final {}\n"
+                             "}\n"
+                             "class " +
+                             hostName + " : " + mixinName +
+                             " {}\n"
+                             "class " +
+                             subName + " : " + hostName +
+                             " {\n"
+                             "    void " +
+                             methodName +
+                             "() {}\n"
+                             "}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK(HasCode(diags, "as-err-override-final-method"));
+}
+
+TEST_CASE("ClassRules - Mixin property accessor allows this.prop access without error")
+{
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("MixProps");
+    const std::string hostName = angel_lsp::test::GenerateRandomSymbolName("HostProps");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("flare_classname");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("flare_create");
+
+    const std::string code = "mixin class " + mixinName +
+                             " {\n"
+                             "    const string& get_" +
+                             propName +
+                             "() const property {\n"
+                             "        return \"test\";\n"
+                             "    }\n"
+                             "    void " +
+                             funcName +
+                             "() {\n"
+                             "        string s = this." +
+                             propName +
+                             ";\n"
+                             "    }\n"
+                             "}\n"
+                             "class " +
+                             hostName + " : " + mixinName + " {}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-mixin-instantiation-member-not-found"));
+}
+
+TEST_CASE("ClassRules - Mixin referencing undeclared identifier emits as-err-mixin-instantiation-member-not-found")
+{
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("MixMissing");
+    const std::string hostName = angel_lsp::test::GenerateRandomSymbolName("HostMissing");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("DoInit");
+    const std::string undeclaredSelf = angel_lsp::test::GenerateRandomSymbolName("self");
+    const std::string undeclaredConfig = angel_lsp::test::GenerateRandomSymbolName("config");
+
+    const std::string code = "mixin class " + mixinName +
+                             " {\n"
+                             "    void " +
+                             funcName +
+                             "() {\n"
+                             "        " +
+                             undeclaredSelf +
+                             ".DoSomething();\n"
+                             "        " +
+                             undeclaredConfig +
+                             " = 42;\n"
+                             "    }\n"
+                             "}\n"
+                             "class " +
+                             hostName + " : " + mixinName + " {}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK(HasCode(diags, "as-err-mixin-instantiation-member-not-found"));
+    size_t count = CountCode(diags, "as-err-mixin-instantiation-member-not-found");
+    CHECK(count >= 2);
+}

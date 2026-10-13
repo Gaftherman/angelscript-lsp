@@ -227,6 +227,28 @@ void CheckInterfaceImplementation(const Symbol& sym, const ClassSignature& sig, 
     ReportMissingInterfaceMethods(sym, interfacesToCheck, implemented, ctx);
 }
 
+/** @brief Reports methods overriding final methods of a base class or its mixins. */
+void ReportFinalMethodOverrides(const std::string& container, const std::string& cleanBase,
+                                const std::string& reportingBase, const DiagnosticContext& ctx)
+{
+    const SymbolTable& table = ctx.request.symbolTable;
+    for (const auto& methodName : ctx.request.GetRuleIndex().Members(cleanBase).finalMethodNames)
+    {
+        const std::string derivedName = container.empty() ? methodName : container + "::" + methodName;
+        if (auto methodsPtr = table.FindSymbolsPtr(derivedName))
+        {
+            for (const auto& mSym : *methodsPtr)
+            {
+                if (mSym.type == SymbolType::Function)
+                {
+                    ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", mSym);
+                    ctx.Emit(mSym, "as-err-override-final-method", methodName, reportingBase);
+                }
+            }
+        }
+    }
+}
+
 /** @brief Reports a method that replaces one a visible base class declared final. */
 void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
@@ -236,22 +258,22 @@ void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, const Dia
     for (const auto& baseName : sig.bases)
     {
         const std::string cleanBase = CleanBaseType(baseName);
-        if (cleanBase.empty() || !table.HasSymbolAnywhere(cleanBase))
+        if (cleanBase.empty() || !table.HasSymbolAnywhere(cleanBase) || IsMixinClass(cleanBase, table))
         {
             continue;
         }
 
-        for (const auto& methodName : ctx.request.GetRuleIndex().Members(cleanBase).finalMethodNames)
+        ReportFinalMethodOverrides(container, cleanBase, cleanBase, ctx);
+
+        if (auto baseSyms = table.FindSymbolsPtr(cleanBase))
         {
-            const std::string derivedName = container.empty() ? methodName : container + "::" + methodName;
-            if (auto methodsPtr = table.FindSymbolsPtr(derivedName))
+            for (const auto& bSym : *baseSyms)
             {
-                for (const auto& mSym : *methodsPtr)
+                if (bSym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(bSym.signature))
                 {
-                    if (mSym.type == SymbolType::Function)
+                    for (const auto& mixinName : bSym.GetClass().includedMixins)
                     {
-                        ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", mSym);
-                        ctx.Emit(mSym, "as-err-override-final-method", methodName, cleanBase);
+                        ReportFinalMethodOverrides(container, mixinName, cleanBase, ctx);
                     }
                 }
             }
@@ -469,13 +491,17 @@ std::vector<std::string> CollectIncludedMixins(const ClassSignature& sig, const 
 void CollectContainerMembers(const std::string& containerName, const RuleIndex& ruleIndex,
                              ankerl::unordered_dense::set<std::string>& outMembers)
 {
-    const auto& cm = ruleIndex.Members(containerName);
-    outMembers.insert(cm.allMemberNames.begin(), cm.allMemberNames.end());
+    const auto insertMembers = [&](const auto& members)
+    {
+        outMembers.insert(members.allMemberNames.begin(), members.allMemberNames.end());
+        outMembers.insert(members.accessorPropertyNames.begin(), members.accessorPropertyNames.end());
+    };
+
+    insertMembers(ruleIndex.Members(containerName));
 
     if (HasScopeQualifier(containerName))
     {
-        const auto& cmShort = ruleIndex.Members(LastScopeSegment(containerName));
-        outMembers.insert(cmShort.allMemberNames.begin(), cmShort.allMemberNames.end());
+        insertMembers(ruleIndex.Members(LastScopeSegment(containerName)));
     }
 
     auto it = ruleIndex.qualifiedTypesByShortName.find(containerName);
@@ -483,8 +509,7 @@ void CollectContainerMembers(const std::string& containerName, const RuleIndex& 
     {
         for (const auto& qName : it->second)
         {
-            const auto& cmQ = ruleIndex.Members(qName);
-            outMembers.insert(cmQ.allMemberNames.begin(), cmQ.allMemberNames.end());
+            insertMembers(ruleIndex.Members(qName));
         }
     }
 }
@@ -632,6 +657,8 @@ void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheckContext
 
     std::string propName = GetNodeText(propNode, mixinSource);
     if (!propName.empty() && !mctx.hostMembers.contains(propName) && !mctx.mixinSelfMembers.contains(propName) &&
+        !mctx.hostMembers.contains("get_" + propName) && !mctx.mixinSelfMembers.contains("get_" + propName) &&
+        !mctx.hostMembers.contains("set_" + propName) && !mctx.mixinSelfMembers.contains("set_" + propName) &&
         !mctx.reported.contains(propName))
     {
         mctx.reported.insert(propName);
@@ -662,6 +689,115 @@ void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckStat
     {
         state.mctx.reported.insert(fnName);
         EmitMixinMemberNotFound(state.mctx, fnName, fnNode, ctx);
+    }
+}
+
+/** @brief Checks if a child node matches a named field of the parent by byte offset. */
+bool IsNamedChildMatch(TSNode parent, const char* fieldName, TSNode cur)
+{
+    TSNode child = GetChildByField(parent, fieldName);
+    return !ts_node_is_null(child) && ts_node_start_byte(child) == ts_node_start_byte(cur);
+}
+
+/** @brief Checks if an identifier is a declaration name or member field name. */
+bool IsDeclarationOrFieldChild(TSNode cur, TSNode parent, std::string_view pType)
+{
+    if (pType == "member_expression")
+    {
+        return IsNamedChildMatch(parent, "member", cur);
+    }
+    if (pType == "call_expression")
+    {
+        return IsNamedChildMatch(parent, "function", cur);
+    }
+    if (pType == "scoped_identifier" || pType == "variable_declarator" || pType == "parameter" ||
+        pType == "func_declaration")
+    {
+        return IsNamedChildMatch(parent, "name", cur);
+    }
+    return false;
+}
+
+/** @brief Determines if an identifier node is in a non-reference AST context. */
+bool ShouldIgnoreMixinIdentifier(TSNode cur)
+{
+    TSNode parent = ts_node_parent(cur);
+    if (ts_node_is_null(parent))
+    {
+        return true;
+    }
+
+    std::string_view pType = NodeType(parent);
+    if (IsDeclarationOrFieldChild(cur, parent, pType))
+    {
+        return true;
+    }
+
+    if (pType == "variable_declaration")
+    {
+        return IsNamedChildMatch(parent, "var_type", cur);
+    }
+
+    if (pType == "parameter")
+    {
+        return IsNamedChildMatch(parent, "type", cur);
+    }
+
+    return pType == "type" || pType == "primitive_type" || pType == "cast_expression";
+}
+
+/** @brief Checks if a name is a built-in symbol, keyword, or primitive type. */
+bool IsBuiltinOrKeyword(std::string_view name)
+{
+    if (name.empty() || name == "this" || name == "super" || name == "cast" || name == "null" || name == "true" ||
+        name == "false" || name == "string")
+    {
+        return true;
+    }
+    return IsKeyword(name) || IsPrimitiveTypeName(name);
+}
+
+/** @brief Checks if a name matches getter/setter property accessors in mixin or host. */
+bool HasPropertyAccessorMatch(const std::string& name, const FunctionCheckState& state)
+{
+    const std::string getProp = "get_" + name;
+    const std::string setProp = "set_" + name;
+    return state.mctx.mixinSelfMembers.contains(getProp) || state.mctx.mixinSelfMembers.contains(setProp) ||
+           state.mctx.hostMembers.contains(getProp) || state.mctx.hostMembers.contains(setProp);
+}
+
+/** @brief Checks if an identifier resolves in local, mixin, host, or global scopes. */
+bool IsValidMixinIdentifier(const std::string& name, const FunctionCheckState& state, const DiagnosticContext& ctx)
+{
+    if (IsBuiltinOrKeyword(name))
+    {
+        return true;
+    }
+
+    if (state.localNames.contains(name) || state.mctx.mixinSelfMembers.contains(name) ||
+        state.mctx.hostMembers.contains(name) || HasPropertyAccessorMatch(name, state))
+    {
+        return true;
+    }
+
+    const auto& ruleIndex = ctx.request.GetRuleIndex();
+    return ruleIndex.allNames.contains(name) || ctx.request.symbolTable.HasSymbolAnywhere(name);
+}
+
+/** @brief Checks bare identifier references inside mixin function bodies. */
+void CheckIdentifierMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state,
+                           const DiagnosticContext& ctx)
+{
+    if (ShouldIgnoreMixinIdentifier(cur))
+    {
+        return;
+    }
+
+    std::string name = GetNodeText(cur, mixinSource);
+    if (!IsValidMixinIdentifier(name, state, ctx) && !state.mctx.reported.contains(name))
+    {
+        state.mctx.reported.insert(name);
+        EmitMixinMemberNotFound(state.mctx, name, cur, ctx);
     }
 }
 
@@ -714,6 +850,10 @@ void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, Func
                                       else if (curType == "call_expression")
                                       {
                                           CheckCallMember(cur, mixinSource, state, ctx);
+                                      }
+                                      else if (curType == "identifier")
+                                      {
+                                          CheckIdentifierMember(cur, mixinSource, state, ctx);
                                       }
                                   });
 }
