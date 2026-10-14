@@ -31,6 +31,123 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
   - Reached **2,326 passing unit tests** (33,857 assertions) with zero failures and **0 unexplained false positives across all 256 scripts in `ParityAuditTest`**.
   - All 11 static quality gates passing (`jscpd` at 1.13%, 0 Lizard CCN > 15, 0 NLOC > 70, 0 unreferenced parameters `/we4100`, 100% Clang-Format, 100% layer boundary compliance).
 
+## [1.0.3-exp.13] - 2026-10-13
+
+### Mixin Final Overrides, Virtual Property Resolution, and Identifier Validation
+
+- Class & Mixin Final Overrides:
+  - Fixed mixin class method overrides where methods in mixins overriding inherited base methods were incorrectly flagged with `as-err-final-override`.
+  - Allowed host classes to supply required implementations for interfaces declared by included mixins.
+- Virtual Property Resolution:
+  - Resolved `get_X` / `set_X` accessor resolution when accessed as virtual property fields without explicit `property` keyword under engine accessor mode 2.
+- Identifier & Parameter Validation:
+  - Strengthened identifier node checks in scoped member accesses, preventing false undeclared identifier warnings on valid member chains.
+
+## [1.0.3-exp.12] - 2026-10-13
+
+### Deterministic Concurrency Synchronization for AST & Store Suites on Windows CI
+
+- Concurrency Testing & CI Stability:
+  - Replaced timing-dependent test synchronization with deterministic `std::latch` coordination across multi-threaded AST mutation and DocumentStore suites.
+  - Eliminated thread races on Win32 runners when stress-testing concurrent reads and rapid buffer updates.
+
+## [1.0.3-exp.11] - 2026-10-12
+
+### Hover Command Links, InlayHint Parts, Unused Function Diagnostics, & Exclusion Rules
+
+- Hover Navigation & Command Links:
+  - Added interactive markdown command links (`[View Symbol](...)`) inside hover tooltips for direct symbol inspection.
+- InlayHint Interactive Parts:
+  - Structured InlayHint labels with discrete label parts linking directly to parameter definition locations.
+- Unused Function Diagnostics & Exclusion Rules:
+  - Added data-driven unused function analysis with configurable symbol exclusions via `angelscript.rules.json` (`excludeSymbols`, `reflectionRoots`).
+  - Remediated AST inspection antipatterns across Layer 2 and Layer 3 rules.
+
+## [1.0.3-exp.10] - 2026-10-12
+
+### Lambda Scope Isolation, Direct Variable Initialization Parity, & Status Bar Branding
+
+- Lambda Scope Isolation:
+  - Enforced lexical scope isolation on anonymous functions and lambdas, preventing illegal captures of outer local variables.
+- Direct Variable Initialization Parity:
+  - Aligned direct variable initializations (`Type var = expr;` and constructor forms) with native AngelScript compiler semantics.
+- Pedagogical Diagnostics & UI:
+  - Enhanced error explanations for common syntax and type misconceptions.
+  - Updated status bar branding to reflect active module status and engine profile.
+
+## [1.0.3-exp.09] - 2026-10-12
+
+### Scoped Enum Member Classification in Direct Variable Initializations
+
+- Semantic Highlighting & Scope Resolution:
+  - Fixed classification of scoped enum members in direct variable initialization statements, ensuring tokens are categorized as `enumMember` rather than value variables.
+
+## [1.0.3-exp.08] - 2026-10-12
+
+### Namespace Access Modifiers & Property Quick-Fix Placement
+
+- Namespace Access Modifiers:
+  - Diagnosed illegal access modifiers (`private`, `protected`) declared on top-level namespace declarations and functions.
+- Code Action Quick-Fix Placement:
+  - Fixed insertion placement for property accessor quick-fixes to maintain correct indentation and class layout.
+
+## [1.0.3-exp.07] - 2026-10-06
+
+### Flat AST Traversal Cursors & DRY Cleanup in Document Symbols
+
+- Tree-Sitter Flat Cursor Traversal:
+  - Replaced index-based child loops with flat `TSTreeCursor` iteration across document symbol extraction.
+  - Consolidated duplicated symbol classification logic across classes, interfaces, and namespaces.
+
+## [1.0.3-exp.06] - 2026-10-06
+
+### Switch-Case Variable Declarations & Rules Schema Trust Fix
+
+- Switch-Case Scope Analysis:
+  - Flagged naked variable declarations in switch cases outside explicit statement blocks `{}` as compiler errors (`as-err-switch-case-var-decl`).
+- Rules Schema Trust Fix:
+  - Resolved JSON schema trust validation for workspace-level `angelscript.rules.json` files.
+
+## [1.0.3-exp.05] - 2026-10-05
+
+### Data-Driven Unused Symbol Detection & Engine Reflection Rules
+
+- Engine Reflection Rules:
+  - Integrated `angelscript.rules.json` reflection rules to mark engine-invoked callbacks and hook methods as used.
+  - Eliminated false-positive unused warnings for engine lifecycle hooks.
+
+## [1.0.3-exp.04] - 2026-10-05
+
+### JSON Schema Definition & Validation for angelscript.rules.json
+
+- Schema Contribution:
+  - Registered official JSON schema for `angelscript.rules.json` in VS Code extension package manifest.
+  - Provided autocompletion, hover documentation, and structural validation for rule configuration files.
+
+## [1.0.3-exp.03] - 2026-10-05
+
+### Data-Driven Engine Safety Rules & Heuristics
+
+- Safety Heuristics:
+  - Added data-driven safety checks for Sven Co-op engine patterns and script idioms via configurable rule sets.
+
+## [1.0.3-exp.02] - 2026-10-05
+
+### Lambda Types, Member Completion, Shutdown Hang, & Interface Stubs
+
+- Lambda Type Evaluation:
+  - Resolved return and parameter type evaluation for anonymous functions matching `funcdef` signatures.
+- Member Completion & Autoparens:
+  - Refined member autocompletion and parenthesis insertion logic.
+- Server Shutdown:
+  - Eliminated main thread hang on LSP shutdown by coordinating background thread joins.
+
+## [1.0.3-exp.01] - 2026-10-05
+
+### Initial 1.0.3 Experimental Release
+
+- Baseline synchronization for the 1.0.3 experimental development branch.
+
 ## [1.0.3] - 2026-10-05
 
 ### Single Resolved Overload Hover Display & Localized Overload Summary
@@ -41,6 +158,16 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
   - Added localized overload summary lines below the code block (e.g. `2 sobrecargas más` / `8 sobrecargas más` in Spanish, `2 more overloads` / `8 more overloads` in English) indicating the count of additional callable routines.
   - Plumbed `i18n` localization provider into `HoverRequest` and `TextDocumentHandlers` to automatically sync tooltip messages with the editor's display language.
   - Unified member method and scoped symbol formatting into a single cohesive, non-duplicated implementation.
+
+## [1.0.2-exp.01] - 2026-10-04
+
+### Unqualified Member Resolution, Scoped Constructors, & Language Configuration Alignment
+
+- Member & Constructor Disambiguation:
+  - Resolved unqualified member method calls inside classes before falling back to global variables or enum members.
+  - Disambiguated scoped constructor calls from function local variables sharing the same identifier.
+- Editor Language Configuration:
+  - Added official C-family `indentationRules` and `onEnterRules` to prevent extra indentation tabs when pasting formatted code.
 
 ## [1.0.2] - 2026-10-04
 
@@ -54,6 +181,63 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
 - Editor & VS Code Client Polish:
   - Added standard C-family `indentationRules` (`increaseIndentPattern`, `decreaseIndentPattern`, `indentNextLinePattern`, `unIndentedLinePattern`) and `onEnterRules` (Doxygen/Javadoc expansion, `if/else/for/while` outdent, `//` comment continuation) to `language-configuration.json`, resolving the extra tab issue when pasting indented code.
   - Aligned declarative language configuration with official VS Code Language Configuration Guide and samples, including `colorizedBracketPairs`, refined `autoCloseBefore`, and `#region` / `//#region` code folding markers.
+
+## [1.0.1-exp.06] - 2026-10-04
+
+### Negative Expression Diagnostics: Bare Data Types, Functions, & Void Operands
+
+- Negative Syntax Diagnostics:
+  - Diagnosed bare data types in value expression positions (`as-err-expression-is-data-type`).
+  - Diagnosed bare function identifiers used without call parentheses or `@` handle-of operator.
+  - Diagnosed void operands in binary and relational expressions.
+
+## [1.0.1-exp.05] - 2026-10-04
+
+### Bare Function Identifier Resolution in Expressions & Statements
+
+- Function Expression Checks:
+  - Refined resolution of bare function identifiers in arithmetic, assignment, and comparison contexts, cleanly preserving handle-of `@fn` funcdef assignments.
+
+## [1.0.1-exp.04] - 2026-10-04
+
+### Namespace & Class Container Scope Disambiguation & Strict Type Reachability
+
+- Scope Disambiguation:
+  - Disambiguated identifier collisions where namespaces, classes, and members share identifiers across lexical scopes.
+  - Enforced strict type reachability rules preventing outer variables from leaking into container type lookups.
+
+## [1.0.1-exp.03] - 2026-10-04
+
+### Case-Insensitive Completion Lookup, Closure Concurrency Safety, & Trace Demotion
+
+- Autocompletion:
+  - Added case-insensitive prefix matching for code completion items.
+- Concurrency Safety:
+  - Added mutex protection around closure maps and background analysis state during concurrent workspace edits.
+- Logging:
+  - Demoted high-volume tracing messages to debug level to reduce log file sizes.
+
+## [1.0.1-exp.02] - 2026-10-04
+
+### Windows Build Optimization, Enum Reference Isolation, & Inlay Hint Ergonomics
+
+- Build System:
+  - Optimized MSVC compiler flags and precompiled header usage for faster Windows builds.
+- Symbol Resolution:
+  - Isolated enum member reference counting from global variables with colliding identifiers.
+  - Inlay Hints:
+  - Improved inlay hint click target hitboxes and parameter range navigation.
+
+## [1.0.1-exp.01] - 2026-10-04
+
+### Syntax Error Recovery, Single-Line Diagnostic Ranges, Metadata Support, & Namespace Enum Completion
+
+- Parser & Error Recovery:
+  - Constrained unclosed braces and missing token cascading syntax errors in `ParserUtils` and `LocalScopeCollector`.
+  - Tightened multi-line error underline spans into single-line ranges on opening tokens.
+- Language Features:
+  - Added Tree-Sitter support for native metadata blocks (`[Property, Category="..."]`).
+  - Fixed enum member autocompletion across nested namespaces and `using namespace` scopes.
 
 ## [1.0.1] - 2026-10-04
 
@@ -81,6 +265,146 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
   - Hardened thread safety with mutex protection around closure maps and background analysis state during rapid workspace edits.
   - Enforced zero-copy `std::string_view` lookups and table-driven locale overlays (`GetMessageView`), achieving $O(1)$ symbol indexing and faster module load times.
   - Resolved const-reference (`const Type& in`) vs output-reference (`Type& out`) overload resolution priority according to official AngelScript rules.
+
+## [0.9.28-exp.18] - 2026-10-03
+
+### Clang-Format Style Engine, C++ Interoperability, & Modular Formatting Architecture
+
+- Clang-Format Engine:
+  - Implemented full LLVM Clang-Format style option support adapted to AngelScript.
+  - Added upward discovery for `.clang-format` and multi-language document separation.
+  - Decomposed monolithic formatting implementation into 8 modular Layer 3 components.
+
+## [0.9.28-exp.17] - 2026-10-02
+
+### Real-Time Latency, Sub-10MB RAM, DRY Consolidation, & Zero-Allocation Hot Paths
+
+- Performance & Memory Optimization:
+  - Implemented contiguous sorted-key prefix indexing in `SymbolTable` for sub-5ms completions.
+  - Evicted background ASTs after extraction to guarantee <10MB peak working set RAM.
+  - Replaced string allocations and linear vector searches across hot paths with `std::string_view` and `ankerl::unordered_dense`.
+
+## [0.9.28-exp.16] - 2026-10-02
+
+### Predefined Stubs Compatibility Suite & Bilingual Documentation
+
+- Predefined Stubs:
+  - Verified compatibility and test coverage for third-party stubs (`sven.as.predefined`, Trackmania, OpenSiv3D).
+  - Synchronized settings catalogs across English and Spanish READMEs.
+
+## [0.9.28-exp.15] - 2026-10-02
+
+### Code Action Dictionary FormatMessage Refactoring
+
+- Localization Governance:
+  - Refactored code action titles and messages to use parameterized dictionary formatting (`FormatMessage`), eliminating hardcoded language branching antipatterns.
+
+## [0.9.28-exp.14] - 2026-10-02
+
+### Full Dual-Language Localization in Client UI & Server Quick Fixes
+
+- Internationalization:
+  - Added complete English (`en`) and Spanish (`es`) localization across client UI (`bundle.l10n.json`, `bundle.l10n.es.json`) and server quick-fix descriptions.
+
+## [0.9.28-exp.13] - 2026-10-02
+
+### Doxygen Option List Formatting & Clean Hover Link Tags
+
+- Doc Comments & Hover:
+  - Preserved comment line breaks in Doxygen option lists (`@param`, `@note`).
+  - Formatted markdown link tags cleanly in hover tooltips without stray punctuation.
+
+## [0.9.28-exp.12] - 2026-10-01
+
+### Unary Handle Operator & Null Ternary Branch Compatibility
+
+- Expression Evaluation:
+  - Resolved unary `@` handle-of operator typing and verified `null` compatibility in ternary branches.
+
+## [0.9.28-exp.11] - 2026-10-01
+
+### Funcdef Variable Call Evaluation & Hover Presentation
+
+- Semantic Analysis:
+  - Evaluated calls on variables with `funcdef` delegate types and polished signature hover presentations.
+
+## [0.9.28-exp.10] - 2026-10-01
+
+### Status Bar & Stubs UI Refinement, Diagnostic Suppression Quick Fixes, LineIndex Optimization
+
+- UI & Code Actions:
+  - Refined status bar item and stubs selector UI.
+  - Added quick-fix code actions for comment-based diagnostic suppressions (`// disable <CODE>`).
+  - Optimized UTF-16/UTF-8 position encoding via `LineIndex` binary search.
+
+## [0.9.28-exp.09] - 2026-10-01
+
+### Scoped Constructor Inlay Hints & Argument Syntax Error Refinements
+
+- Inlay Hints & Diagnostics:
+  - Added inlay hints for scoped constructors (`Namespace::Class()`).
+  - Improved argument syntax error reporting and disabled on-type formatting by default.
+
+## [0.9.28-exp.08] - 2026-10-01
+
+### Cross-Version Clang-Format Compatibility & Style Reporting
+
+- Formatting:
+  - Ensured compatibility across LLVM Clang-Format versions and refined formatting style error reporting.
+
+## [0.9.28-exp.07] - 2026-10-01
+
+### CI Linux Layer Includes Fix & Client Integration Tests
+
+- CI & Tooling:
+  - Fixed multiline regex in `check-layer-includes.py` on Linux and resolved client integration test flags.
+
+## [0.9.28-exp.06] - 2026-10-01
+
+### Scoped Enum Completion Deduplication, Constructor Inlay Hints, & Concatenated Path Hover
+
+- LSP Features:
+  - Deduplicated scoped enum completion entries.
+  - Supported constructor call inlay hints and concatenated string literal path hovers.
+
+## [0.9.28-exp.05] - 2026-10-01
+
+### Compiler Portability Warnings: Forward Declarations & TSNode Initialization
+
+- Portability:
+  - Resolved forward declarations and MSVC/GCC `TSNode` initialization warnings across compilers.
+
+## [0.9.28-exp.04] - 2026-10-01
+
+### Const Method & Modifier Error Parity with Reference Compiler
+
+- Parity:
+  - Enforced `const` method and modifier error parity with the official AngelScript compiler (`as-err-const-violation`).
+
+## [0.9.28-exp.03] - 2026-09-30
+
+### Scope & File Proximity Priority Sorting for Autocompletion
+
+- Completion Ranking:
+  - Added scope- and file-proximity priority scoring to completion items, prioritizing local and current-file symbols.
+
+## [0.9.28-exp.02] - 2026-09-30
+
+### Constructor Signature Help, Enum Qualification, & Suppression Fixes
+
+- Features:
+  - Added signature help for constructor instantiations.
+  - Added option to qualify enum values (`EnumName::Value`).
+  - Fixed diagnostic suppression comment parsing.
+
+## [0.9.28-exp.01] - 2026-09-30
+
+### File Lifecycle Telemetry, Binary Operator Validation, & Inlay Hint Navigation
+
+- Diagnostics & Telemetry:
+  - Implemented structured file lifecycle telemetry with adaptive duration formatting.
+  - Added binary operator compatibility checks for arithmetic and bitwise expressions.
+  - Enabled precise parameter token navigation in markdown inlay hint tooltips.
 
 ## [1.0.0] - 2026-10-03
 
@@ -641,6 +965,62 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
   - Added `TryHoverParameterAst` in `HoverHandler`, ensuring parameter hover signatures (`(parameter) <decl>`) display reliably in `.as.predefined` stub declarations and files without local scope indexes.
 - Reference Counter & Invariant Coverage:
   - Added unit test cases verifying reference tracking for function parameter default argument values and variable initializers.
+
+## [0.8.6-rc.7] - 2026-09-25
+
+### Release Candidate 7: Final Develop Branch Consolidation
+
+- Packaging:
+  - Final integration merge of develop branch into release candidate pipeline.
+
+## [0.8.6-rc.6] - 2026-09-25
+
+### Release Candidate 6: Mainline Integration
+
+- Packaging:
+  - Branch synchronization and integration verification for candidate release.
+
+## [0.8.6-rc.5] - 2026-09-25
+
+### Release Candidate 5: Main Branch Verification
+
+- Packaging:
+  - Candidate validation pass against main branch build artifacts.
+
+## [0.8.6-rc.4] - 2026-09-25
+
+### Release Candidate 4: Client Extension ID Resolution Fix
+
+- Packaging:
+  - Resolved extension ID test resolution issue during packaged client validation.
+
+## [0.8.6-rc.3] - 2026-09-25
+
+### Release Candidate 3: Release Packaging Bloat Remediation
+
+- Packaging:
+  - Excluded unnecessary build and test artifacts from client VSIX bundle.
+
+## [0.8.6-rc.2] - 2026-09-25
+
+### Release Candidate 2: Extension Marketplace Metadata Update
+
+- Packaging:
+  - Updated extension name to `angelscript-gaftherman` in package manifest for marketplace compliance.
+
+## [0.8.6-rc.1] - 2026-09-25
+
+### Release Candidate 1: Integration Merge
+
+- Packaging:
+  - Initial develop branch merge for 0.8.6 release candidate staging.
+
+## [0.8.6-rc] - 2026-09-25
+
+### Release Candidate Baseline
+
+- Packaging:
+  - Release candidate baseline for 0.8.6 publication.
 
 ## [0.8.6] - 2026-09-25
 
