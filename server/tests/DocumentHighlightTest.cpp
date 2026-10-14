@@ -7,12 +7,14 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "features/document_highlight/DocumentHighlightHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
+using angel_lsp::test::GenerateRandomSymbolName;
 
 namespace
 {
@@ -479,4 +481,32 @@ void run()
     }
 
     CHECK(highlights->size() == 2);
+}
+
+TEST_CASE("DocumentHighlight - GAP-VISIBILITY-01: Local variable does not highlight pre-declaration occurrences")
+{
+    const std::string varName = GenerateRandomSymbolName("localVar");
+
+    const std::string code = "int " + varName +
+                             " = 0;\n"
+                             "void test() {\n"
+                             "    " +
+                             varName +
+                             " = 10;\n"
+                             "    int " +
+                             varName +
+                             " = 20;\n"
+                             "    " +
+                             varName +
+                             " = 30;\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto highlights = env.HighlightsAt(3, 9);
+    REQUIRE(highlights.has_value());
+    CHECK(highlights->size() == 2);
+    for (const auto& h : *highlights)
+    {
+        CHECK(h.range.start.line >= 3);
+    }
 }

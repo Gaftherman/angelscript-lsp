@@ -29,6 +29,17 @@ template <typename T> void ReadOptionalField(const nlohmann::json& j, const std:
     }
 }
 
+template <typename T>
+void ReadPropertyWithFallback(const nlohmann::json& j, const std::string& camelKey, const std::string& epKey,
+                              std::optional<T>& target)
+{
+    ReadOptionalField(j, camelKey, target);
+    if (!target.has_value())
+    {
+        ReadOptionalField(j, epKey, target);
+    }
+}
+
 void ParseNativeProperties(const nlohmann::json& j, NativeEngineProperties& props)
 {
     if (!j.contains("engineProperties") || !j["engineProperties"].is_object())
@@ -37,13 +48,37 @@ void ParseNativeProperties(const nlohmann::json& j, NativeEngineProperties& prop
     }
 
     const auto& ep = j["engineProperties"];
-    ReadOptionalField(ep, "propertyAccessorMode", props.propertyAccessorMode);
-    ReadOptionalField(ep, "disallowGlobalVars", props.disallowGlobalVars);
-    ReadOptionalField(ep, "requireEnumScope", props.requireEnumScope);
-    ReadOptionalField(ep, "boolConversionMode", props.boolConversionMode);
-    ReadOptionalField(ep, "allowUnsafeReferences", props.allowUnsafeReferences);
-    ReadOptionalField(ep, "allowMultilineStrings", props.allowMultilineStrings);
-    ReadOptionalField(ep, "disableIntegerDivision", props.disableIntegerDivision);
+    ReadPropertyWithFallback(ep, "propertyAccessorMode", "asEP_PROPERTY_ACCESSOR_MODE", props.propertyAccessorMode);
+    ReadPropertyWithFallback(ep, "disallowGlobalVars", "asEP_DISALLOW_GLOBAL_VARS", props.disallowGlobalVars);
+    ReadPropertyWithFallback(ep, "requireEnumScope", "asEP_REQUIRE_ENUM_SCOPE", props.requireEnumScope);
+    ReadPropertyWithFallback(ep, "boolConversionMode", "asEP_BOOL_CONVERSION_MODE", props.boolConversionMode);
+    ReadPropertyWithFallback(ep, "allowUnsafeReferences", "asEP_ALLOW_UNSAFE_REFERENCES", props.allowUnsafeReferences);
+    ReadPropertyWithFallback(ep, "allowMultilineStrings", "asEP_ALLOW_MULTILINE_STRINGS", props.allowMultilineStrings);
+    ReadPropertyWithFallback(ep, "disableIntegerDivision", "asEP_DISABLE_INTEGER_DIVISION",
+                             props.disableIntegerDivision);
+    ReadPropertyWithFallback(ep, "privatePropAsProtected", "asEP_PRIVATE_PROP_AS_PROTECTED",
+                             props.privatePropAsProtected);
+    ReadPropertyWithFallback(ep, "useCharacterLiterals", "asEP_USE_CHARACTER_LITERALS", props.useCharacterLiterals);
+    ReadPropertyWithFallback(ep, "disallowValueAssignForRef", "asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE",
+                             props.disallowValueAssignForRef);
+    if (!props.disallowValueAssignForRef.has_value())
+    {
+        ReadPropertyWithFallback(ep, "disallowValueAssignForRef", "asEP_DISALLOW_VALUE_ASSIGN_FOR_REF",
+                                 props.disallowValueAssignForRef);
+    }
+    ReadPropertyWithFallback(ep, "alterSyntaxNamedArgs", "asEP_ALTER_SYNTAX_NAMED_ARGS", props.alterSyntaxNamedArgs);
+    ReadPropertyWithFallback(ep, "disallowEmptyListElements", "asEP_DISALLOW_EMPTY_LIST_ELEMENTS",
+                             props.disallowEmptyListElements);
+    ReadPropertyWithFallback(ep, "foreachSupport", "asEP_FOREACH_SUPPORT", props.foreachSupport);
+    ReadPropertyWithFallback(ep, "alwaysImplDefaultConstruct", "asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT",
+                             props.alwaysImplDefaultConstruct);
+    ReadPropertyWithFallback(ep, "allowUnicodeIdentifiers", "asEP_ALLOW_UNICODE_IDENTIFIERS",
+                             props.allowUnicodeIdentifiers);
+    ReadPropertyWithFallback(ep, "ignoreDuplicateSharedIntf", "asEP_IGNORE_DUPLICATE_SHARED_INTF",
+                             props.ignoreDuplicateSharedIntf);
+    ReadPropertyWithFallback(ep, "compilerWarnings", "asEP_COMPILER_WARNINGS", props.compilerWarnings);
+    ReadPropertyWithFallback(ep, "memberInitMode", "asEP_MEMBER_INIT_MODE", props.memberInitMode);
+    ReadPropertyWithFallback(ep, "heredocTrimMode", "asEP_HEREDOC_TRIM_MODE", props.heredocTrimMode);
 }
 
 /**

@@ -648,6 +648,7 @@ struct ExpressionTypeContext
     std::string_view arrayTypeName = "array";
     bool disableIntegerDivision = false;
     ExpressionTypeCache* cache = nullptr;
+    const NodeIndex* nodeIndex = nullptr;
 
     ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "")
         : scope(sc), symbolTable(st), sourceCode(src), uri(u)
@@ -658,7 +659,8 @@ struct ExpressionTypeContext
         : scope(sc), symbolTable(diagCtx.request.symbolTable), sourceCode(diagCtx.request.sourceCode),
           uri(diagCtx.request.fileUri), stringTypeName(diagCtx.request.GetEffectiveStringTypeName()),
           arrayTypeName(diagCtx.request.GetEffectiveArrayTypeName()),
-          disableIntegerDivision(diagCtx.request.DisablesIntegerDivision()), cache(diagCtx.request.exprCache)
+          disableIntegerDivision(diagCtx.request.DisablesIntegerDivision()), cache(diagCtx.request.exprCache),
+          nodeIndex(diagCtx.request.nodeIndex)
     {
     }
 };
@@ -925,12 +927,11 @@ Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callNa
 
 /**
  * @brief Checks if an identifier resolves to a callable local or parameter funcdef in scope.
- * @param[in] name Identifier name.
- * @param[in] scope Enclosing lexical scope.
- * @param[in] table Symbol table.
+ * @param[in] refByte Optional reference byte position for sequential lexical visibility.
  * @return Synthesized function Symbol if callee is a funcdef variable, nullopt otherwise.
  */
-std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const Scope* scope, const SymbolTable& table);
+std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const Scope* scope, const SymbolTable& table,
+                                                uint32_t refByte = UINT32_MAX);
 
 /**
  * @brief Checks whether a text expression represents a simple literal constant value.

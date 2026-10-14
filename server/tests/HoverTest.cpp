@@ -1468,3 +1468,40 @@ TEST_CASE("Hover - Overloads render collapsible details, peekOverloads command l
     CHECK(textEs.find("[Ver sobrecargas](command:angelscript.peekOverloads?") != std::string::npos);
     CHECK(textEs.find("\n\n---\n\n" + docComment) != std::string::npos);
 }
+
+TEST_CASE("Hover - GAP-VISIBILITY-01: Sequential local variable visibility falls back to global before declaration")
+{
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("varTarget");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Func");
+
+    const std::string code = "string " + varName +
+                             " = \"global\";\n"
+                             "void " +
+                             fnName +
+                             "() {\n"
+                             "    " +
+                             varName +
+                             ";\n"
+                             "    int " +
+                             varName +
+                             " = 42;\n"
+                             "    " +
+                             varName +
+                             ";\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // Line 2: "<varName>;" before local int declaration -> should resolve to global string
+    auto hoverBefore = env.HoverAt(2, 4);
+    REQUIRE(hoverBefore.has_value());
+    const std::string textBefore = std::get<lsp::MarkupContent>(hoverBefore->contents).value;
+    CHECK(textBefore.find("string " + varName) != std::string::npos);
+    CHECK(textBefore.find("int " + varName) == std::string::npos);
+
+    // Line 4: "<varName>;" after local int declaration -> should resolve to local int
+    auto hoverAfter = env.HoverAt(4, 4);
+    REQUIRE(hoverAfter.has_value());
+    const std::string textAfter = std::get<lsp::MarkupContent>(hoverAfter->contents).value;
+    CHECK(textAfter.find("int " + varName) != std::string::npos);
+}

@@ -81,37 +81,6 @@ std::string ResolveRulesPath(const std::string& configuredPath, const std::vecto
     return {};
 }
 
-void ApplyEngineProperties(const config::NativeEngineProperties& props, config::EngineProperties& engine)
-{
-    if (props.propertyAccessorMode.has_value())
-    {
-        engine.propertyAccessorMode = *props.propertyAccessorMode;
-    }
-    if (props.disallowGlobalVars.has_value())
-    {
-        engine.disallowGlobalVars = *props.disallowGlobalVars;
-    }
-    if (props.requireEnumScope.has_value())
-    {
-        engine.requireEnumScope = *props.requireEnumScope;
-    }
-    if (props.boolConversionMode.has_value())
-    {
-        engine.boolConversionMode = *props.boolConversionMode;
-    }
-    if (props.allowUnsafeReferences.has_value())
-    {
-        engine.allowUnsafeReferences = *props.allowUnsafeReferences;
-    }
-    if (props.allowMultilineStrings.has_value())
-    {
-        engine.allowMultilineStrings = *props.allowMultilineStrings;
-    }
-    if (props.disableIntegerDivision.has_value())
-    {
-        engine.disableIntegerDivision = *props.disableIntegerDivision;
-    }
-}
 } // namespace
 
 void Server::LoadWorkspaceEngineRules(const std::vector<std::string>& workspaceRoots)

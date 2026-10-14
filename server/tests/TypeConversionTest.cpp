@@ -2373,7 +2373,7 @@ TEST_CASE("TypeConversion - SEC-03 Recursion Depth Guard & Cycle Breaker")
     CHECK(canConvertImplicitly(typeA, typeA));
 
     // Direct cycle detection
-    std::unordered_set<std::string> visited;
+    ankerl::unordered_dense::set<std::string> visited;
     visited.insert(nameA + "->" + nameB);
     CHECK_FALSE(canConvertImplicitly(typeA, typeB, 0, visited));
 
@@ -2975,4 +2975,33 @@ TEST_CASE("TypeConversion - Bare namespace identifier in assignment emits Undefi
         const bool oracleAccepted = fixture.VerifyWithNativeOracle(code, oracleError);
         CHECK_FALSE(oracleAccepted);
     }
+}
+
+TEST_CASE("TypeConversion - Implicit downcast from base handle to derived handle is rejected (doc_r13 parity)")
+{
+    const std::string baseName = angel_lsp::test::GenerateRandomSymbolName("Base");
+    const std::string derivedName = angel_lsp::test::GenerateRandomSymbolName("Derived");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("test");
+
+    const std::string code = "class " + baseName + " {}\n" + "class " + derivedName + " : " + baseName + " {}\n" +
+                             derivedName + "@ " + fnName + "(" + baseName + "@ b) {\n" + "    return b;\n" + "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    CHECK(HasConversionDiagnostic(diags, "as-err-no-implicit-conversion", baseName, derivedName));
+}
+
+TEST_CASE("TypeConversion - Explicit cast and handle identity between base and derived succeed (doc_r13 parity)")
+{
+    const std::string baseName = angel_lsp::test::GenerateRandomSymbolName("Base");
+    const std::string derivedName = angel_lsp::test::GenerateRandomSymbolName("Derived");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("test");
+
+    const std::string code = "class " + baseName + " {}\n" + "class " + derivedName + " : " + baseName + " {}\n" +
+                             "void " + fnName + "(" + baseName + "@ b, " + derivedName + "@ d) {\n" + "    " +
+                             derivedName + "@ casted = cast<" + derivedName + ">(b);\n" +
+                             "    bool same = (b is d);\n" + "    bool diff = (b !is d);\n" + "}\n";
+
+    auto convDiags = ConversionDiagnostics(code);
+    CHECK(convDiags.empty());
 }

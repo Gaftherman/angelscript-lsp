@@ -3,6 +3,7 @@
 #include "analysis/BinaryOperatorChecker.h"
 #include "analysis/ComparisonOperatorChecker.h"
 #include "analysis/DiagnosticCodes.h"
+#include "analysis/ExpressionTypeCache.h"
 #include "analysis/HandleComparisonChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/RepeatedConversionChecker.h"
@@ -15,6 +16,7 @@
 #include "utils/Utils.h"
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
+#include <array>
 #include <functional>
 #include <spdlog/fmt/fmt.h>
 #include <string_view>
@@ -67,6 +69,25 @@ void ForEachSymbolNamed(std::string_view qualifiedName, const SymbolTable& table
                         const std::function<bool(const Symbol&)>& visitor)
 {
     const auto bucket = table.FindSymbolsPtr(qualifiedName);
+    if (!bucket)
+    {
+        return;
+    }
+    for (const auto& sym : *bucket)
+    {
+        if (visitor(sym))
+        {
+            return;
+        }
+    }
+}
+
+/** @brief Visits every symbol registered under a member of a scope without copying the bucket.
+ *  @param visitor Returns true to stop the walk. */
+void ForEachMemberSymbolNamed(std::string_view scope, std::string_view member, const SymbolTable& table,
+                              const std::function<bool(const Symbol&)>& visitor)
+{
+    const auto bucket = table.FindMemberSymbolPtr(scope, member);
     if (!bucket)
     {
         return;
@@ -241,16 +262,16 @@ void ForEachMethod(const std::string& typeName, const std::string& memberName, c
     bool stopped = false;
     for (const auto& cls : GetInheritedTypeHierarchy(typeName, table))
     {
-        ForEachSymbolNamed(cls + "::" + memberName, table,
-                           [&](const Symbol& sym)
-                           {
-                               if (sym.type != SymbolType::Function)
-                               {
-                                   return false;
-                               }
-                               stopped = visitor(sym);
-                               return stopped;
-                           });
+        ForEachMemberSymbolNamed(cls, memberName, table,
+                                 [&](const Symbol& sym)
+                                 {
+                                     if (sym.type != SymbolType::Function)
+                                     {
+                                         return false;
+                                     }
+                                     stopped = visitor(sym);
+                                     return stopped;
+                                 });
 
         if (stopped)
         {
@@ -287,10 +308,10 @@ void ForEachConstructor(const std::string& typeName, const SymbolTable& table,
         return stopped;
     };
 
-    ForEachSymbolNamed(unparameterized + "::" + bare, table, visit);
+    ForEachMemberSymbolNamed(unparameterized, bare, table, visit);
     if (!stopped && !sawAny && bare != unparameterized)
     {
-        ForEachSymbolNamed(bare + "::" + bare, table, visit);
+        ForEachMemberSymbolNamed(bare, bare, table, visit);
     }
 
     // A class declared inside a namespace is keyed by its qualified name, so `Hook`'s
@@ -310,8 +331,8 @@ void ForEachConstructor(const std::string& typeName, const SymbolTable& table,
         {
             if (cSym.type == SymbolType::Class)
             {
-                const std::string qCls = cSym.qualifiedName.empty() ? cSym.name : cSym.qualifiedName;
-                ForEachSymbolNamed(qCls + "::" + bare, table, visit);
+                const std::string_view qCls = cSym.qualifiedName.empty() ? cSym.name : cSym.qualifiedName;
+                ForEachMemberSymbolNamed(qCls, bare, table, visit);
                 if (stopped || sawAny)
                 {
                     break;
@@ -390,7 +411,7 @@ bool DeclaresOperatorMethod(const std::string& typeName, std::string_view method
     {
         return false;
     }
-    return table.FindSymbolsPtr(typeName + "::" + std::string(methodName)) != nullptr;
+    return table.FindMemberSymbolPtr(typeName, methodName) != nullptr;
 }
 
 /**
@@ -468,6 +489,21 @@ bool DeclaresConversionTo(const std::string& fromType, const std::string& toType
     {
         ForEachMethod(fromType, opName, table, matches);
         if (found)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @brief True when derived is derived from base (valid implicit upcast). */
+bool IsDerivedFrom(const std::string& derived, const std::string& base, const SymbolTable& table)
+{
+    const std::string cleanDerived = CleanBaseType(derived);
+    const std::string cleanBase = CleanBaseType(base);
+    for (const auto& ancestor : GetInheritedTypeHierarchy(cleanDerived, table))
+    {
+        if (IsSameType(ancestor, cleanBase))
         {
             return true;
         }
@@ -608,7 +644,7 @@ bool CanConvertEnumTarget(const std::string& from, const std::string& to, const 
 struct ConversionState
 {
     size_t depth = 0;
-    std::unordered_set<std::string> visitedEdges;
+    ankerl::unordered_dense::set<std::string> visitedEdges;
 };
 
 bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
@@ -686,7 +722,7 @@ bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& 
     const bool toBuiltIn = IsBuiltInValueType(types.to, ctx);
     const SymbolTable& table = ctx.request.symbolTable;
 
-    if (!fromBuiltIn && !toBuiltIn && AreHierarchyRelated(types.from, types.to, table))
+    if (!fromBuiltIn && !toBuiltIn && IsDerivedFrom(types.from, types.to, table))
     {
         return true;
     }
@@ -719,7 +755,7 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
 
     struct EdgeGuard
     {
-        std::unordered_set<std::string>& edges;
+        ankerl::unordered_dense::set<std::string>& edges;
         std::string key;
         ~EdgeGuard()
         {
@@ -809,7 +845,8 @@ ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const
 
     if (scope)
     {
-        if (const LocalDefinition* def = ResolveInScope(scope, name); def && !def->typeName.empty())
+        if (const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(node));
+            def && !def->typeName.empty())
         {
             return ExpressionType{CleanBaseType(def->typeName), true, false};
         }
@@ -899,7 +936,27 @@ static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, con
     {
         return ExpressionType{"bool", true, false};
     }
-    return ResolveValueType(parser::GetChildByField(node, parser::fields::Operand), scope, ctx, depth + 1);
+    auto val = ResolveValueType(parser::GetChildByField(node, parser::fields::Operand), scope, ctx, depth + 1);
+    if (op == "-")
+    {
+        if (val.baseName == "uint" || val.baseName == "uint32")
+        {
+            val.baseName = "int";
+        }
+        else if (val.baseName == "uint8")
+        {
+            val.baseName = "int8";
+        }
+        else if (val.baseName == "uint16")
+        {
+            val.baseName = "int16";
+        }
+        else if (val.baseName == "uint64")
+        {
+            val.baseName = "int64";
+        }
+    }
+    return val;
 }
 
 static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext& ctx)
@@ -956,6 +1013,11 @@ ExpressionType ResolveValueType(TSNode node, const Scope* scope, const Diagnosti
     {
         return ExpressionType{};
     }
+    if (ts_node_is_error(node) || ts_node_is_missing(node) ||
+        (ctx.request.nodeIndex && ctx.request.nodeIndex->NodeHasSyntaxError(node)))
+    {
+        return ExpressionType{std::string(ExpressionTypeCache::k_poisonType), false, false};
+    }
 
     const std::string_view nodeType = NodeType(node);
     if (nodeType == node_types::NumberLiteral || nodeType == node_types::StringLiteral ||
@@ -985,7 +1047,7 @@ struct PropertyAccessInfo
 bool CheckVirtualPropertySymbol(const std::string& typeName, const std::string& propName, const SymbolTable& table,
                                 PropertyAccessInfo& info)
 {
-    if (auto propSyms = table.FindSymbolsPtr(typeName + "::" + propName))
+    if (auto propSyms = table.FindMemberSymbolPtr(typeName, propName))
     {
         for (const auto& s : *propSyms)
         {
@@ -1008,7 +1070,7 @@ bool CheckVirtualPropertySymbol(const std::string& typeName, const std::string& 
 void CheckAccessorMethods(const std::string& typeName, const std::string& propName, const SymbolTable& table,
                           PropertyAccessInfo& info)
 {
-    if (auto getSyms = table.FindSymbolsPtr(typeName + "::get_" + propName); getSyms && !getSyms->empty())
+    if (auto getSyms = table.FindMemberSymbolPtr(typeName, "get_" + propName); getSyms && !getSyms->empty())
     {
         info.isProperty = true;
         info.hasGet = true;
@@ -1020,7 +1082,7 @@ void CheckAccessorMethods(const std::string& typeName, const std::string& propNa
             }
         }
     }
-    if (auto setSyms = table.FindSymbolsPtr(typeName + "::set_" + propName); setSyms && !setSyms->empty())
+    if (auto setSyms = table.FindMemberSymbolPtr(typeName, "set_" + propName); setSyms && !setSyms->empty())
     {
         info.isProperty = true;
         info.hasSet = true;
@@ -1261,7 +1323,7 @@ bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticCo
     const std::string name = NodeText(node, ctx.request.sourceCode);
     if (scope)
     {
-        if (const LocalDefinition* def = ResolveInScope(scope, LastScopeSegment(name)))
+        if (const LocalDefinition* def = ResolveInScopeAt(scope, LastScopeSegment(name), ts_node_start_byte(node)))
         {
             return def->typeName.starts_with("const ");
         }
@@ -1499,6 +1561,10 @@ void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const
     }
 
     const ExpressionType source = ResolveValueType(valueNode, scope, ctx);
+    if (ExpressionTypeCache::IsPoisonType(source.baseName))
+    {
+        return;
+    }
     if (!source.known || source.baseName.empty())
     {
         CheckUnknownInitializerSource(valueNode, declared, scope, ctx);
@@ -1550,7 +1616,7 @@ std::string ForeachValueType(const std::string& containerType, uint32_t variable
 
     for (const std::string& candidate : GetInheritedTypeHierarchy(bare, ctx.request.symbolTable))
     {
-        const auto overloads = ctx.request.symbolTable.FindSymbolsPtr(candidate + "::" + method);
+        const auto overloads = ctx.request.symbolTable.FindMemberSymbolPtr(candidate, method);
         if (!overloads)
         {
             continue;
@@ -2080,7 +2146,7 @@ void CheckCast(TSNode castNode, const Scope* scope, DiagnosticContext& ctx)
 
 bool ClassDeclaresMethodReturningBool(const std::string& cls, const std::string& method, const SymbolTable& table)
 {
-    if (auto ptr = table.FindSymbolsPtr(cls + "::" + method))
+    if (auto ptr = table.FindMemberSymbolPtr(cls, method))
     {
         for (const auto& sym : *ptr)
         {
@@ -2319,7 +2385,7 @@ void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, DiagnosticC
     if (scope)
     {
         const std::string name = NodeText(current, ctx.request.sourceCode);
-        const LocalDefinition* def = ResolveInScope(scope, name);
+        const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(current));
         if (def)
         {
             isHandle = def->typeName.find('@') != std::string::npos;
@@ -2333,7 +2399,7 @@ void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, DiagnosticC
     }
 
     const std::string baseClass = CleanBaseType(condType);
-    auto opSyms = ctx.request.symbolTable.FindSymbolsPtr(baseClass + "::opImplConv");
+    auto opSyms = ctx.request.symbolTable.FindMemberSymbolPtr(baseClass, "opImplConv");
     if (!opSyms)
     {
         return;
@@ -3008,7 +3074,7 @@ std::string GetVariableOrPropertyType(TSNode node, const Scope* scope, const Dia
     const std::string name = NodeText(node, ctx.request.sourceCode);
     if (scope)
     {
-        if (const auto* def = ResolveInScope(scope, LastScopeSegment(name)))
+        if (const auto* def = ResolveInScopeAt(scope, LastScopeSegment(name), ts_node_start_byte(node)))
         {
             return def->typeName;
         }
@@ -3094,7 +3160,7 @@ void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const Conversi
         return;
     }
 
-    auto opSyms = ctx.request.symbolTable.FindSymbolsPtr(types.to + "::opAssign");
+    auto opSyms = ctx.request.symbolTable.FindMemberSymbolPtr(types.to, "opAssign");
     if (opSyms)
     {
         for (const auto& sym : *opSyms)
@@ -3176,6 +3242,10 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
 
     const std::string leftType = ResolveExpressionType(left, ExpressionTypeContext(scope, ctx));
     const std::string rightType = ResolveExpressionType(right, ExpressionTypeContext(scope, ctx));
+    if (ExpressionTypeCache::IsPoisonType(leftType) || ExpressionTypeCache::IsPoisonType(rightType))
+    {
+        return;
+    }
     const ConversionTypes types{CleanBaseType(rightType), CleanBaseType(leftType)};
 
     CheckFloatTruncation(right, types, scope, ctx);
@@ -3447,7 +3517,7 @@ void CheckReturnReference(TSNode expr, TSNode funcNode, const Scope* scope, Diag
         exprText.pop_back();
     }
 
-    const LocalDefinition* def = ResolveInScope(scope, exprText);
+    const LocalDefinition* def = ResolveInScopeAt(scope, exprText, ts_node_start_byte(expr));
     if (!def)
     {
         return;
@@ -3518,7 +3588,12 @@ void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Sco
             return;
         }
 
-        const std::string actual = CleanBaseType(ResolveExpressionType(expr, ExpressionTypeContext(scope, ctx)));
+        const std::string rawActual = ResolveExpressionType(expr, ExpressionTypeContext(scope, ctx));
+        if (ExpressionTypeCache::IsPoisonType(rawActual))
+        {
+            return;
+        }
+        const std::string actual = CleanBaseType(rawActual);
         CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
         if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
         {
@@ -3822,13 +3897,14 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
 
     if (request.nodeIndex)
     {
-        for (TSNode node : request.nodeIndex->AllNodes())
-        {
-            if (ts_node_is_named(node))
-            {
-                ProcessNode(node, request, ctx);
-            }
-        }
+        static constexpr std::array<std::string_view, 18> kConversionTypes = {
+            "if_statement",       "while_statement",          "do_while_statement",    "for_statement",
+            "ternary_expression", "expression_statement",     "foreach_statement",     "variable_declaration",
+            "return_statement",   "func_declaration",         "assignment_expression", "binary_expression",
+            "unary_expression",   "postfix_expression",       "member_expression",     "cast_expression",
+            "call_expression",    "construct_call_expression"};
+
+        request.nodeIndex->ForEachNodeOrdered(kConversionTypes, [&](TSNode node) { ProcessNode(node, request, ctx); });
     }
     else
     {
@@ -3845,7 +3921,7 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
 namespace TypeConversionChecker
 {
 bool evaluateUserConversions(const TypeInfo& source, const TypeInfo& target, size_t depth,
-                             std::unordered_set<std::string>& visitedEdges)
+                             ankerl::unordered_dense::set<std::string>& visitedEdges)
 {
     if (depth >= MAX_CONVERSION_DEPTH)
     {
@@ -3860,7 +3936,7 @@ bool evaluateUserConversions(const TypeInfo& source, const TypeInfo& target, siz
 }
 
 bool canConvertImplicitly(const TypeInfo& source, const TypeInfo& target, size_t depth,
-                          std::unordered_set<std::string>& visitedEdges)
+                          ankerl::unordered_dense::set<std::string>& visitedEdges)
 {
     if (depth >= MAX_CONVERSION_DEPTH)
     {

@@ -65,13 +65,25 @@ struct SchedulerRule
  */
 struct NativeEngineProperties
 {
-    std::optional<int> propertyAccessorMode;    ///< asEP_PROPERTY_ACCESSOR_MODE (0, 1, 2, 3).
-    std::optional<bool> disallowGlobalVars;     ///< asEP_DISALLOW_GLOBAL_VARS.
-    std::optional<bool> requireEnumScope;       ///< asEP_REQUIRE_ENUM_SCOPE.
-    std::optional<int> boolConversionMode;      ///< asEP_BOOL_CONVERSION_MODE (0, 1).
-    std::optional<bool> allowUnsafeReferences;  ///< asEP_ALLOW_UNSAFE_REFERENCES.
-    std::optional<bool> allowMultilineStrings;  ///< asEP_ALLOW_MULTILINE_STRINGS.
-    std::optional<bool> disableIntegerDivision; ///< asEP_DISABLE_INTEGER_DIVISION.
+    std::optional<int> propertyAccessorMode;        ///< asEP_PROPERTY_ACCESSOR_MODE (0, 1, 2, 3).
+    std::optional<bool> disallowGlobalVars;         ///< asEP_DISALLOW_GLOBAL_VARS.
+    std::optional<bool> requireEnumScope;           ///< asEP_REQUIRE_ENUM_SCOPE.
+    std::optional<int> boolConversionMode;          ///< asEP_BOOL_CONVERSION_MODE (0, 1).
+    std::optional<bool> allowUnsafeReferences;      ///< asEP_ALLOW_UNSAFE_REFERENCES.
+    std::optional<bool> allowMultilineStrings;      ///< asEP_ALLOW_MULTILINE_STRINGS.
+    std::optional<bool> disableIntegerDivision;     ///< asEP_DISABLE_INTEGER_DIVISION.
+    std::optional<bool> privatePropAsProtected;     ///< asEP_PRIVATE_PROP_AS_PROTECTED.
+    std::optional<int> useCharacterLiterals;        ///< asEP_USE_CHARACTER_LITERALS (0, 1, 2).
+    std::optional<bool> disallowValueAssignForRef;  ///< asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE.
+    std::optional<int> alterSyntaxNamedArgs;        ///< asEP_ALTER_SYNTAX_NAMED_ARGS (0, 1, 2).
+    std::optional<bool> disallowEmptyListElements;  ///< asEP_DISALLOW_EMPTY_LIST_ELEMENTS.
+    std::optional<bool> foreachSupport;             ///< asEP_FOREACH_SUPPORT.
+    std::optional<bool> alwaysImplDefaultConstruct; ///< asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT.
+    std::optional<bool> allowUnicodeIdentifiers;    ///< asEP_ALLOW_UNICODE_IDENTIFIERS.
+    std::optional<bool> ignoreDuplicateSharedIntf;  ///< asEP_IGNORE_DUPLICATE_SHARED_INTF.
+    std::optional<int> compilerWarnings;            ///< asEP_COMPILER_WARNINGS (0, 1, 2).
+    std::optional<int> memberInitMode;              ///< asEP_MEMBER_INIT_MODE (0, 1).
+    std::optional<int> heredocTrimMode;             ///< asEP_HEREDOC_TRIM_MODE (0, 1, 2).
 };
 
 /**

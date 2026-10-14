@@ -106,6 +106,9 @@ struct LocalDefinition
     uint32_t fullStartCharacter = 0;
     uint32_t fullEndLine = 0;
     uint32_t fullEndCharacter = 0;
+
+    /** @brief Byte offset where this definition becomes sequentially visible. */
+    uint32_t visibleFromByte = 0;
 };
 
 /** @brief A single identifier occurrence inside a Scope, not yet resolved to a definition. */
@@ -117,6 +120,9 @@ struct LocalReference
     uint32_t startCharacter = 0;
     uint32_t endLine = 0;
     uint32_t endCharacter = 0;
+
+    uint32_t startByte = 0;
+    uint32_t endByte = 0;
 
     /**
      * @brief True when this identifier is the member field of a member_expression (the "y" in
@@ -271,6 +277,23 @@ class ScopeTraversalGuard
     std::array<const Scope*, kMaxScopeDepth> m_visited{};
     size_t m_count = 0;
 };
+
+/**
+ * @brief Resolves name to the nearest enclosing definition starting from scope and walking up
+ *        through Scope::parent, enforcing sequential byte-offset visibility for local variables.
+ * @param scope Scope to start resolution from.
+ * @param name Name of symbol to resolve.
+ * @param refByte Byte offset of reference token.
+ * @param owner Optional out-parameter receiving the Scope declaring the definition.
+ * @param respectClosureBarrier When true (default), closure scopes cannot capture outer local
+ *                              variables or parameters from enclosing functions/closures.
+ * @return The matching definition, or nullptr if no enclosing scope declares name visible at refByte.
+ */
+const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view name, uint32_t refByte,
+                                        const Scope** owner = nullptr, bool respectClosureBarrier = true);
+
+const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view name, uint32_t refByte,
+                                        bool respectClosureBarrier);
 
 /**
  * @brief Resolves name to the nearest enclosing definition starting from scope and walking up

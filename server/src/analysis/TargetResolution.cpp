@@ -5,6 +5,7 @@
 #include "utils/LspLogger.h"
 
 #include <algorithm>
+#include <ankerl/unordered_dense.h>
 #include <cctype>
 #include <map>
 #include <set>
@@ -232,7 +233,9 @@ std::string ResolveExplicitReceiverType(const std::string& objText, const Resolv
             FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
         if (scope)
         {
-            const analysis::LocalDefinition* objDef = analysis::ResolveInScope(scope, objText);
+            const uint32_t cursorByte =
+                ts_node_is_null(request.outNode) ? UINT32_MAX : ts_node_start_byte(request.outNode);
+            const analysis::LocalDefinition* objDef = analysis::ResolveInScopeAt(scope, objText, cursorByte);
             if (objDef && !objDef->typeName.empty())
             {
                 return analysis::CleanBaseType(objDef->typeName);
@@ -332,6 +335,32 @@ const analysis::LocalDefinition* FindLocalDefinitionAtLine(const analysis::Scope
  * @param[in] request Resolution request.
  * @param[out] target Target descriptor to populate.
  */
+static void PopulateLocalTargetDescriptor(const analysis::LocalDefinition& matchedDef, const analysis::Scope* declScope,
+                                          const ResolveTargetRequest& request, TargetDescriptor& target)
+{
+    if (matchedDef.kind == analysis::LocalDefinitionKind::Parameter ||
+        matchedDef.kind == analysis::LocalDefinitionKind::Variable)
+    {
+        if (IsDeclaredInFunctionScope(declScope) || matchedDef.kind == analysis::LocalDefinitionKind::Parameter)
+        {
+            target.kind = TargetKind::Local;
+            target.definingScope = declScope;
+            target.localDef = matchedDef;
+            target.localUri = request.uri;
+        }
+    }
+    else if (matchedDef.kind == analysis::LocalDefinitionKind::Field ||
+             matchedDef.kind == analysis::LocalDefinitionKind::Method)
+    {
+        std::string enclosingClass = GetEnclosingClassName(request.symbolTable, request.uri, request.position.line);
+        if (!enclosingClass.empty())
+        {
+            target.kind = TargetKind::ClassMember;
+            target.declaringClass = enclosingClass;
+        }
+    }
+}
+
 void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& rootScope, const std::string& nodeText,
                         const ResolveTargetRequest& request, TargetDescriptor& target)
 {
@@ -350,8 +379,10 @@ void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& rootScope,
         FindLocalDefinitionAtLine(innerScope, nodeText, request.position.line, declScope);
     if (!matchedDef)
     {
-        matchedDef = analysis::ResolveInScope(innerScope, nodeText, nullptr, false);
-        if (matchedDef)
+        const uint32_t cursorByte =
+            !ts_node_is_null(request.outNode) ? ts_node_start_byte(request.outNode) : UINT32_MAX;
+        matchedDef = analysis::ResolveInScopeAt(innerScope, nodeText, cursorByte, &declScope, false);
+        if (matchedDef && !declScope)
         {
             declScope = analysis::FindScopeDeclaringDefinition(rootScope.get(), *matchedDef);
         }
@@ -360,27 +391,7 @@ void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& rootScope,
     {
         return;
     }
-    if (matchedDef->kind == analysis::LocalDefinitionKind::Parameter ||
-        matchedDef->kind == analysis::LocalDefinitionKind::Variable)
-    {
-        if (IsDeclaredInFunctionScope(declScope) || matchedDef->kind == analysis::LocalDefinitionKind::Parameter)
-        {
-            target.kind = TargetKind::Local;
-            target.definingScope = declScope;
-            target.localDef = *matchedDef;
-            target.localUri = request.uri;
-        }
-    }
-    else if (matchedDef->kind == analysis::LocalDefinitionKind::Field ||
-             matchedDef->kind == analysis::LocalDefinitionKind::Method)
-    {
-        std::string enclosingClass = GetEnclosingClassName(request.symbolTable, request.uri, request.position.line);
-        if (!enclosingClass.empty())
-        {
-            target.kind = TargetKind::ClassMember;
-            target.declaringClass = enclosingClass;
-        }
-    }
+    PopulateLocalTargetDescriptor(*matchedDef, declScope, request, target);
 }
 
 /**
@@ -436,7 +447,7 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
             auto hierarchy = analysis::GetInheritedTypeHierarchy(container.qualifiedName, request.symbolTable);
             for (const auto& cls : hierarchy)
             {
-                auto syms = request.symbolTable.FindSymbols(cls + "::" + nodeText);
+                auto syms = request.symbolTable.FindMemberSymbols(cls, nodeText);
                 if (HasClassMemberSymbol(syms))
                 {
                     target.kind = TargetKind::ClassMember;
@@ -447,13 +458,13 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
         }
         else if (container.kind == analysis::ContainerKind::Namespace)
         {
-            std::string qName = container.qualifiedName + "::" + nodeText;
-            auto syms = request.symbolTable.FindSymbols(qName);
+            auto syms = request.symbolTable.FindMemberSymbols(container.qualifiedName, nodeText);
             if (HasNamespaceSymbol(syms))
             {
                 target.kind = TargetKind::NamespaceSymbol;
                 target.declaringNamespace = container.qualifiedName;
-                target.qualifiedName = qName;
+                target.qualifiedName =
+                    container.qualifiedName.empty() ? nodeText : container.qualifiedName + "::" + nodeText;
                 return;
             }
         }
@@ -848,7 +859,7 @@ void ResolveInheritedClassMember(TargetDescriptor& target, const ResolveTargetRe
     auto hier = analysis::GetInheritedTypeHierarchy(target.declaringClass, request.symbolTable);
     for (const auto& owner : hier)
     {
-        auto symsPtr = request.symbolTable.FindSymbolsPtr(owner + "::" + target.name);
+        auto symsPtr = request.symbolTable.FindMemberSymbolPtr(owner, target.name);
         if (!symsPtr)
         {
             continue;
@@ -1067,6 +1078,46 @@ bool FunctionMatchesTarget(const analysis::Symbol& sym, const TargetDescriptor& 
 }
 
 /**
+ * @brief Checks if a symbol name is shadowed by a definition in the specified scope.
+ * @param[in] scope Scope to inspect.
+ * @param[in] name Symbol name.
+ * @return True if shadowed.
+ */
+bool IsSymbolShadowedInScope(const analysis::Scope* scope, std::string_view name)
+{
+    return std::any_of(scope->definitions.begin(), scope->definitions.end(),
+                       [name](const auto& def) { return def.name == name; });
+}
+
+/**
+ * @brief Collects references matching target in a single scope.
+ * @param[in] scope Scope to inspect.
+ * @param[in] target Target descriptor.
+ * @param[in] includeDeclaration True to include declaration site.
+ * @param[in,out] collector Occurrence accumulator.
+ */
+void CollectScopeReferences(const analysis::Scope* scope, const TargetDescriptor& target, bool includeDeclaration,
+                            OccurrenceCollector& collector)
+{
+    for (const auto& ref : scope->references)
+    {
+        if (ref.name != target.name || ref.isMemberAccess)
+        {
+            continue;
+        }
+        if (target.localDef.kind == LocalDefinitionKind::Variable && ref.startByte < target.localDef.visibleFromByte)
+        {
+            continue;
+        }
+        if (!includeDeclaration && collector.declRanges.contains({target.localUri, ref.startLine, ref.startCharacter}))
+        {
+            continue;
+        }
+        collector.Add(target.localUri, ref);
+    }
+}
+
+/**
  * @brief Collects all occurrences for a local variable or parameter target.
  * @param[in] target Target descriptor.
  * @param[in] includeDeclaration True to include declaration site.
@@ -1092,35 +1143,12 @@ void CollectLocalOccurrences(const TargetDescriptor& target, bool includeDeclara
         auto [scope, isRoot] = stack.back();
         stack.pop_back();
 
-        if (!isRoot)
+        if (!isRoot && IsSymbolShadowedInScope(scope, target.name))
         {
-            bool shadowed = false;
-            for (const auto& def : scope->definitions)
-            {
-                if (def.name == target.name)
-                {
-                    shadowed = true;
-                    break;
-                }
-            }
-            if (shadowed)
-            {
-                continue;
-            }
+            continue;
         }
 
-        for (const auto& ref : scope->references)
-        {
-            if (ref.name == target.name && !ref.isMemberAccess)
-            {
-                if (!includeDeclaration &&
-                    collector.declRanges.contains({target.localUri, ref.startLine, ref.startCharacter}))
-                {
-                    continue;
-                }
-                collector.Add(target.localUri, ref);
-            }
-        }
+        CollectScopeReferences(scope, target, includeDeclaration, collector);
 
         for (const auto& child : scope->children)
         {
@@ -1259,7 +1287,8 @@ std::string ResolveReceiverType(const analysis::LocalReference& ref, const analy
  * @return True if implicit member access is a valid match.
  */
 bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                               const std::unordered_set<std::string>& relatedSet, const OccurrenceScanContext& ctx)
+                               const ankerl::unordered_dense::set<std::string>& relatedSet,
+                               const OccurrenceScanContext& ctx)
 {
     std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
     if (encClass.empty() ||
@@ -1332,7 +1361,7 @@ bool ShouldIncludeClassDecl(const std::string& clsName, const std::string& decla
  * @param[out] allDeclRanges Set of all declaration coordinate tuples.
  * @param[in,out] collector Occurrence accumulator.
  */
-void CollectClassMemberDeclarations(const std::unordered_set<std::string>& relatedSet,
+void CollectClassMemberDeclarations(const ankerl::unordered_dense::set<std::string>& relatedSet,
                                     const CollectOccurrencesRequest& request,
                                     std::set<std::tuple<std::string, uint32_t, uint32_t>>& allDeclRanges,
                                     OccurrenceCollector& collector)
@@ -1389,7 +1418,8 @@ bool MatchesCallArguments(const analysis::LocalReference& ref, const TargetDescr
  * @return True if reference is a match.
  */
 bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                 const std::unordered_set<std::string>& relatedSet, const OccurrenceScanContext& ctx)
+                                 const ankerl::unordered_dense::set<std::string>& relatedSet,
+                                 const OccurrenceScanContext& ctx)
 {
     if (ref.isMemberAccess)
     {
@@ -1415,8 +1445,8 @@ bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const anal
  * @param[in] relatedSet Set of related class names.
  * @param[in,out] ctx Occurrence scan context.
  */
-void ScanDocumentForClassMember(const analysis::Scope* root, const std::unordered_set<std::string>& relatedSet,
-                                OccurrenceScanContext& ctx)
+void ScanDocumentForClassMember(const analysis::Scope* root,
+                                const ankerl::unordered_dense::set<std::string>& relatedSet, OccurrenceScanContext& ctx)
 {
     if (!root)
     {
@@ -1472,8 +1502,8 @@ void ScanDocumentForClassMember(const analysis::Scope* root, const std::unordere
  */
 void CollectClassMemberOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
 {
-    std::unordered_set<std::string> relatedSet(request.target.relatedClasses.begin(),
-                                               request.target.relatedClasses.end());
+    ankerl::unordered_dense::set<std::string> relatedSet(request.target.relatedClasses.begin(),
+                                                         request.target.relatedClasses.end());
     if (!request.target.declaringClass.empty())
     {
         relatedSet.insert(request.target.declaringClass);

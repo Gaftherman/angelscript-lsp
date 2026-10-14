@@ -501,6 +501,16 @@ class SymbolTable
     void InsertSymbol(const std::string& name, SymbolKind kind, const std::string& type = "");
     void ClearDocumentSymbols(const std::string& fileUri);
 
+    /**
+     * @brief Pre-allocates bucket capacity in the underlying symbol map.
+     * @param[in] capacity Estimated number of distinct symbol keys.
+     */
+    void Reserve(size_t capacity)
+    {
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        m_symbols.reserve(capacity);
+    }
+
     /** @brief Atomically swaps every symbol belonging to fileUri for the ones collected in staging.
      *  @param fileUri Document whose symbols are being replaced.
      *  @param staging Table the fresh symbols were collected into.
@@ -645,6 +655,15 @@ class SymbolTable
      */
     [[nodiscard]] std::shared_ptr<const std::vector<Symbol>> FindMemberSymbolPtr(std::string_view scope,
                                                                                  std::string_view member) const;
+
+    /**
+     * @brief Returns a copy of all member symbols for the given scope and member name.
+     *        Constructs composite lookup key on stack without heap allocation for typical identifier lengths.
+     * @param[in] scope Qualified or bare container scope name (e.g. "MyClass").
+     * @param[in] member Member or operator name (e.g. "opCmp").
+     * @return Vector of symbols (empty if not found).
+     */
+    [[nodiscard]] std::vector<Symbol> FindMemberSymbols(std::string_view scope, std::string_view member) const;
 
     /** @brief Returns a copy of all symbols matching qualifiedName. Safe across mutations. */
     std::vector<Symbol> FindSymbols(std::string_view qualifiedName) const;

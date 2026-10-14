@@ -1,6 +1,7 @@
 #include "analysis/ControlFlowChecker.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/RuleIndex.h"
@@ -566,7 +567,7 @@ bool CheckLocalCaseConstantness(TSNode value, const std::string& idText, Diagnos
     }
 
     const Scope* owner = nullptr;
-    const LocalDefinition* def = ResolveInScope(scope, idText, &owner);
+    const LocalDefinition* def = ResolveInScopeAt(scope, idText, ts_node_start_byte(value), &owner);
 
     bool insideFunction = false;
     for (const Scope* current = owner; current != nullptr; current = current->parent)
@@ -901,10 +902,14 @@ class ControlFlowVisitor
             }
         }
 
-        if (!ts_node_is_null(body) && !requiredReturn.empty() && requiredReturn != "void" &&
-            !DefinitelyReturns(body, m_sourceCode))
+        if (!ts_node_is_null(body) && !requiredReturn.empty() && requiredReturn != "void")
         {
-            EmitAtNode(ts_node_is_null(name) ? node : name, m_ctx, "as-err-not-all-paths-return", reportedName);
+            const bool hasSyntaxError = ts_node_has_error(body) ||
+                                        (m_ctx.request.nodeIndex && m_ctx.request.nodeIndex->NodeHasSyntaxError(body));
+            if (!hasSyntaxError && !DefinitelyReturns(body, m_sourceCode))
+            {
+                EmitAtNode(ts_node_is_null(name) ? node : name, m_ctx, "as-err-not-all-paths-return", reportedName);
+            }
         }
 
         // Carried into the body, so every `return` inside it knows what it owes. A lambda

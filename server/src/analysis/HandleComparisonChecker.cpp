@@ -100,7 +100,7 @@ void CheckRelationalComparison(TSNode opNode, const RelationalCheckOperands& ops
         const std::string baseClass = MemberOwnerType(ops.leftType);
         if (!baseClass.empty() && ctx.request.symbolTable.FindSymbolsPtr(baseClass))
         {
-            const auto opSyms = ctx.request.symbolTable.FindSymbolsPtr(baseClass + "::opCmp");
+            const auto opSyms = ctx.request.symbolTable.FindMemberSymbolPtr(baseClass, "opCmp");
             if (!opSyms || opSyms->empty())
             {
                 ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::IllegalOperation,

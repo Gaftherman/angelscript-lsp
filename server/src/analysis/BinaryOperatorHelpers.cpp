@@ -1,5 +1,6 @@
 #include "analysis/BinaryOperatorHelpers.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/ExpressionTypeCache.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
 #include "parser/GrammarNames.h"
@@ -104,6 +105,10 @@ std::optional<BinaryOperandTypes> ResolveCleanBinaryOperandTypes(TSNode left, TS
     const std::string rawLeft = ResolveExpressionType(left, exprCtx);
     const std::string rawRight = ResolveExpressionType(right, exprCtx);
     if (rawLeft.empty() || rawRight.empty() || IsNullOperand(left, rawLeft) || IsNullOperand(right, rawRight))
+    {
+        return std::nullopt;
+    }
+    if (ExpressionTypeCache::IsPoisonType(rawLeft) || ExpressionTypeCache::IsPoisonType(rawRight))
     {
         return std::nullopt;
     }

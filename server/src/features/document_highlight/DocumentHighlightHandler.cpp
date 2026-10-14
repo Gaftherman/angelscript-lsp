@@ -569,6 +569,11 @@ void CollectLocalHighlightRanges(const TargetDescriptor& target, HighlightRangeC
         {
             if (ref.name == target.name && !ref.isMemberAccess)
             {
+                if (target.localDef.kind == analysis::LocalDefinitionKind::Variable &&
+                    ref.startByte < target.localDef.visibleFromByte)
+                {
+                    continue;
+                }
                 collector.Add(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter);
             }
         }

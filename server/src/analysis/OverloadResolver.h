@@ -11,6 +11,30 @@
 namespace angel_lsp::analysis
 {
 /**
+ * @brief Discrete match tiers matching official AngelScript compiler conversion categories (asCC_*).
+ */
+enum class MatchTier : uint8_t
+{
+    Exact = 0,              ///< Identity type match (or void to &out) (asCC_NO_CONV)
+    ConstQualification = 1, ///< Const/reference qualification adjustment (asCC_CONST_CONV)
+    SameSizeEnum = 2,       ///< Enum conversion of same size (asCC_ENUM_SAME_SIZE_CONV)
+    DiffSizeEnum = 3,       ///< Enum conversion of different size (asCC_ENUM_DIFF_SIZE_CONV)
+    PrimitiveWidening = 4,  ///< Primitive size-up promotion (asCC_PRIMITIVE_SIZE_UP_CONV)
+    PrimitiveNarrowing = 5, ///< Primitive size-down truncation (asCC_PRIMITIVE_SIZE_DOWN_CONV)
+    SignedToUnsigned = 6,   ///< Signed to unsigned integer (asCC_SIGNED_TO_UNSIGNED_CONV)
+    UnsignedToSigned = 7,   ///< Unsigned to signed integer (asCC_UNSIGNED_TO_SIGNED_CONV)
+    IntToFloat = 8,         ///< Integer to float conversion (asCC_INT_TO_FLOAT_CONV)
+    FloatToInt = 9,         ///< Float to integer conversion (asCC_FLOAT_TO_INT_CONV)
+    InheritanceRef = 10,    ///< Derived@ -> Base@ / Interface conversion (asCC_REF_CONV)
+    ObjectToPrimitive = 12, ///< opConv to primitive (asCC_OBJ_TO_PRIMITIVE_CONV)
+    ToObject = 14,          ///< Converting constructor or opImplConv to object (asCC_TO_OBJECT_CONV)
+    VariableAny = 16,       ///< Wildcard / var type (?) (asCC_VARIABLE_CONV)
+    UnknownTypes = 20,      ///< Fallback for unknown / unregistered host types
+    RValueToOutParam = 30,  ///< R-value passed to an &out or mutable reference parameter
+    Incompatible = 255      ///< No viable conversion exists
+};
+
+/**
  * @brief Formal conversion rank hierarchy according to standard compiler design.
  */
 enum class ConversionRank : uint8_t
@@ -23,10 +47,62 @@ enum class ConversionRank : uint8_t
 };
 
 /**
+ * @brief Maps standard conversion subranks to canonical MatchTier.
+ * @param[in] subRank Secondary subrank.
+ * @param[in] isLossy True if lossy narrowing conversion.
+ * @return Canonical MatchTier.
+ */
+[[nodiscard]] constexpr MatchTier StandardConvToTier(uint8_t subRank, bool isLossy) noexcept
+{
+    if (subRank == 220)
+        return MatchTier::VariableAny;
+    if (subRank == 100)
+        return MatchTier::UnknownTypes;
+    if (subRank == 200)
+        return MatchTier::RValueToOutParam;
+    if (subRank == 30)
+        return MatchTier::IntToFloat;
+    if (subRank == 40 || subRank == 50)
+        return MatchTier::FloatToInt;
+    if (subRank == 20 || subRank == 22)
+        return MatchTier::SignedToUnsigned;
+    if (isLossy)
+        return MatchTier::PrimitiveNarrowing;
+    return MatchTier::InheritanceRef;
+}
+
+/**
+ * @brief Maps legacy ConversionRank and subRank to formal MatchTier.
+ * @param[in] rank Legacy ConversionRank.
+ * @param[in] subRank Secondary subrank.
+ * @param[in] isConst True if const qualification adjustment.
+ * @param[in] isLossy True if lossy narrowing conversion.
+ * @return Canonical MatchTier.
+ */
+[[nodiscard]] constexpr MatchTier RankToTier(ConversionRank rank, uint8_t subRank, bool isConst, bool isLossy) noexcept
+{
+    switch (rank)
+    {
+    case ConversionRank::Exact:
+        return isConst ? MatchTier::ConstQualification : MatchTier::Exact;
+    case ConversionRank::Promotion:
+        return MatchTier::PrimitiveWidening;
+    case ConversionRank::StandardConv:
+        return StandardConvToTier(subRank, isLossy);
+    case ConversionRank::UserDefined:
+        return MatchTier::ToObject;
+    case ConversionRank::Incompatible:
+    default:
+        return MatchTier::Incompatible;
+    }
+}
+
+/**
  * @brief Formal argument-to-parameter type conversion representation.
  */
 struct ArgumentConversion
 {
+    MatchTier tier = MatchTier::Incompatible;
     ConversionRank rank = ConversionRank::Incompatible;
     uint8_t subRank = 0;             ///< Secondary ordering within rank
     uint8_t inheritanceDistance = 0; ///< Distance in inheritance hierarchy (0 = exact / same class)
@@ -34,13 +110,29 @@ struct ArgumentConversion
     int legacyScore = 999;           ///< Legacy scalar score for backwards compatibility
     bool isLossy = false;            ///< Conversion loses precision (narrowing / truncation)
 
+    constexpr ArgumentConversion() noexcept = default;
+
+    constexpr ArgumentConversion(MatchTier t, ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool isConst = false,
+                                 int score = 999, bool lossy = false) noexcept
+        : tier(t), rank(r), subRank(sub), inheritanceDistance(dist), isConstAdjustment(isConst), legacyScore(score),
+          isLossy(lossy)
+    {
+    }
+
+    constexpr ArgumentConversion(ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool isConst = false,
+                                 int score = 999, bool lossy = false) noexcept
+        : tier(RankToTier(r, sub, isConst, lossy)), rank(r), subRank(sub), inheritanceDistance(dist),
+          isConstAdjustment(isConst), legacyScore(score), isLossy(lossy)
+    {
+    }
+
     /**
      * @brief Checks if conversion is viable for candidate invocation.
      * @return True if conversion rank is not Incompatible.
      */
     [[nodiscard]] constexpr bool IsViable() const noexcept
     {
-        return rank != ConversionRank::Incompatible;
+        return tier != MatchTier::Incompatible && rank != ConversionRank::Incompatible;
     }
 
     /**
@@ -50,6 +142,10 @@ struct ArgumentConversion
      */
     [[nodiscard]] auto operator<=>(const ArgumentConversion& other) const noexcept
     {
+        if (auto cmp = tier <=> other.tier; cmp != 0)
+        {
+            return cmp;
+        }
         if (auto cmp = rank <=> other.rank; cmp != 0)
         {
             return cmp;
@@ -189,19 +285,22 @@ class OverloadResolver
      */
     [[nodiscard]] std::span<const FunctionSymbol> findCandidates(std::string_view name, size_t argCount) const;
 
+    using ArityMap = ankerl::unordered_dense::map<size_t, std::vector<FunctionSymbol>>;
+    using FunctionIndexMap =
+        ankerl::unordered_dense::map<std::string, ArityMap, TransparentStringHash, std::equal_to<>>;
+
     /**
      * @brief Direct accessor to the internal function index map.
      * @return Const reference to internal map.
      */
-    [[nodiscard]] const std::unordered_map<std::string, std::unordered_map<size_t, std::vector<FunctionSymbol>>>&
-    getFunctionIndex() const
+    [[nodiscard]] const FunctionIndexMap& getFunctionIndex() const
     {
         return functionIndex_;
     }
 
   private:
     // Key: Function Identifier -> Map: Parameter Arity -> List of Candidates
-    std::unordered_map<std::string, std::unordered_map<size_t, std::vector<FunctionSymbol>>> functionIndex_;
+    FunctionIndexMap functionIndex_;
 };
 
 /**

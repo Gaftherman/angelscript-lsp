@@ -431,7 +431,7 @@ void ValidateInterfaceMembers(const Symbol& sym, const DiagnosticContext& ctx)
 
     const std::string qualified = sym.containerName.empty() ? sym.name : sym.containerName + "::" + sym.name;
 
-    const auto members = ctx.request.symbolTable.FindSymbolsPtr(qualified + "::" + sym.name);
+    const auto members = ctx.request.symbolTable.FindMemberSymbolPtr(qualified, sym.name);
     if (!members)
     {
         return;

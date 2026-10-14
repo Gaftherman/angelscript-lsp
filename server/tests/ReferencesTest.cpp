@@ -769,3 +769,33 @@ TEST_CASE("ReferencesHandler - Enum Member Cross-Enum Isolation (No False Matche
         }
     }
 }
+
+TEST_CASE("ReferencesHandler - GAP-VISIBILITY-01: Sequential local variable does not bind pre-declaration references")
+{
+    MultiFileTestEnv env;
+    const std::string varName = test::GenerateRandomSymbolName("localVar");
+
+    std::string code = "int " + varName +
+                       " = 0;\n"
+                       "void test() {\n"
+                       "    " +
+                       varName +
+                       " = 10;\n"
+                       "    int " +
+                       varName +
+                       " = 20;\n"
+                       "    " +
+                       varName +
+                       " = 30;\n"
+                       "}\n";
+
+    env.AddFile("file:///test.as", code);
+
+    auto refs = env.RefsAt("file:///test.as", 3, 9, true);
+    REQUIRE(refs.has_value());
+    CHECK(refs->size() == 2);
+    for (const auto& ref : *refs)
+    {
+        CHECK(ref.range.start.line >= 3);
+    }
+}

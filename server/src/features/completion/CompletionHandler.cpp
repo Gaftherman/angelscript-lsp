@@ -2000,14 +2000,33 @@ void CollectScopeDefinitions(const analysis::Scope* innermostScope, CompletionCo
     {
         return;
     }
+    const uint32_t cursorByte = static_cast<uint32_t>(
+        utils::PositionToOffset(collector.request.sourceCode, collector.request.position.line,
+                                collector.request.position.character, utils::PositionEncoding::Utf16));
+
+    bool crossedClosure = false;
     for (const analysis::Scope* cur = innermostScope; cur != nullptr; cur = cur->parent)
     {
+        if (cur->kind == analysis::ScopeKind::Closure)
+        {
+            crossedClosure = true;
+        }
         const bool isLocal = (cur->kind == analysis::ScopeKind::Block || cur->kind == analysis::ScopeKind::Function ||
                               cur->kind == analysis::ScopeKind::Closure);
         const SymbolProximity prox = isLocal ? SymbolProximity::Local : SymbolProximity::CurrentFile;
         const std::string scopeNs = BuildScopeNamespacePath(cur, collector.request);
         for (const auto& def : cur->definitions)
         {
+            if (def.kind == analysis::LocalDefinitionKind::Variable && cursorByte < def.visibleFromByte)
+            {
+                continue;
+            }
+            if (crossedClosure && cur->kind != analysis::ScopeKind::Closure &&
+                (def.kind == analysis::LocalDefinitionKind::Variable ||
+                 def.kind == analysis::LocalDefinitionKind::Parameter))
+            {
+                continue;
+            }
             ProcessScopeDefinition(def, scopeNs, collector, prox);
         }
     }

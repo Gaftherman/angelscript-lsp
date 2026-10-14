@@ -45,8 +45,8 @@ bool IsForbiddenClosureCapture(const LocalDefinition& def, const Scope* defScope
 }
 } // namespace
 
-const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name, const Scope** owner,
-                                      bool respectClosureBarrier)
+const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view name, uint32_t refByte,
+                                        const Scope** owner, bool respectClosureBarrier)
 {
     bool crossedClosure = false;
     ScopeTraversalGuard cycleGuard;
@@ -60,6 +60,11 @@ const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name,
         {
             if (def.name == name)
             {
+                if (def.kind == LocalDefinitionKind::Variable && refByte < def.visibleFromByte)
+                {
+                    continue;
+                }
+
                 if (crossedClosure && respectClosureBarrier && IsForbiddenClosureCapture(def, current))
                 {
                     continue;
@@ -82,9 +87,21 @@ const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name,
     return nullptr;
 }
 
+const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view name, uint32_t refByte,
+                                        bool respectClosureBarrier)
+{
+    return ResolveInScopeAt(scope, name, refByte, nullptr, respectClosureBarrier);
+}
+
+const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name, const Scope** owner,
+                                      bool respectClosureBarrier)
+{
+    return ResolveInScopeAt(scope, name, UINT32_MAX, owner, respectClosureBarrier);
+}
+
 const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name, bool respectClosureBarrier)
 {
-    return ResolveInScope(scope, name, nullptr, respectClosureBarrier);
+    return ResolveInScopeAt(scope, name, UINT32_MAX, nullptr, respectClosureBarrier);
 }
 
 const Scope* FindScopeDeclaringDefinition(const Scope* root, const LocalDefinition& def)

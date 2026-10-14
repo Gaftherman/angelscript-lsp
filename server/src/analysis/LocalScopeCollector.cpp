@@ -285,6 +285,7 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
     def.fullStartCharacter = startPt.column;
     def.fullEndLine = endPt.row;
     def.fullEndCharacter = endPt.column;
+    def.visibleFromByte = (capture.definitionKind == LocalDefinitionKind::Variable) ? defStartByte : 0;
 
     if (capture.definitionKind == LocalDefinitionKind::Variable ||
         capture.definitionKind == LocalDefinitionKind::Parameter)
@@ -450,33 +451,59 @@ static bool IsNamedArgumentNode(TSNode node, TSNode parent)
     return !ts_node_is_null(next) && std::string_view(ts_node_type(next)) == ":";
 }
 
+static bool ShouldSkipReferenceCapture(TSNode node, TSNode parent, ScopeKind scopeKind)
+{
+    const bool isDeclarationScope =
+        scopeKind == ScopeKind::Global || scopeKind == ScopeKind::Namespace || scopeKind == ScopeKind::Class;
+    if (ts_node_has_error(node))
+    {
+        return true;
+    }
+    if (isDeclarationScope)
+    {
+        TSNode curr = parent;
+        for (int depth = 0; depth < 8 && !ts_node_is_null(curr); ++depth)
+        {
+            const std::string_view t = ts_node_type(curr);
+            if (ts_node_is_error(curr) || t == "metadata")
+            {
+                return true;
+            }
+            curr = ts_node_parent(curr);
+        }
+    }
+    return false;
+}
+
+static bool IsAllowedKeywordReference(TSNode node)
+{
+    if (ts_node_is_named(node))
+    {
+        return true;
+    }
+    const std::string_view nodeType = ts_node_type(node);
+    if (nodeType != "function" && nodeType != "get" && nodeType != "set" && nodeType != "shared")
+    {
+        return false;
+    }
+    return !IsKeywordDeclarationContext(node);
+}
+
 void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Scope* current,
                                                   const std::string& sourceCode) const
 {
     TSNode parent = ts_node_parent(capture.node);
-    const bool isDeclarationScope = current->kind == ScopeKind::Global || current->kind == ScopeKind::Namespace ||
-                                    current->kind == ScopeKind::Class;
-    if (ts_node_has_error(capture.node) || (isDeclarationScope && !ts_node_is_null(parent) && ts_node_is_error(parent)))
+    if (ShouldSkipReferenceCapture(capture.node, parent, current->kind) || !IsAllowedKeywordReference(capture.node))
     {
         return;
-    }
-    if (!ts_node_is_named(capture.node))
-    {
-        const std::string_view nodeType = ts_node_type(capture.node);
-        if (nodeType != "function" && nodeType != "get" && nodeType != "set" && nodeType != "shared")
-        {
-            return;
-        }
-        if (IsKeywordDeclarationContext(capture.node))
-        {
-            return;
-        }
     }
 
     TSPoint startPt = ts_node_start_point(capture.node);
     TSPoint endPt = ts_node_end_point(capture.node);
 
     LocalReference ref{GetNodeText(capture.node, sourceCode), startPt.row, startPt.column, endPt.row, endPt.column};
+    ref.startByte = ts_node_start_byte(capture.node);
+    ref.endByte = ts_node_end_byte(capture.node);
 
     if (!ts_node_is_null(parent))
     {

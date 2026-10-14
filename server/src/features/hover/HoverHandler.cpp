@@ -1696,7 +1696,8 @@ std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
     const analysis::LocalDefinition* def = DefinitionAtPosition(ctx.scope, queryPos);
     if (!def)
     {
-        def = analysis::ResolveInScope(ctx.scope, ctx.nodeText);
+        uint32_t cursorByte = ts_node_start_byte(ctx.node);
+        def = analysis::ResolveInScopeAt(ctx.scope, ctx.nodeText, cursorByte);
     }
 
     if (!def ||
@@ -2015,7 +2016,8 @@ std::optional<lsp::Hover> TryHoverScopeFallback(const HoverQueryContext& ctx)
         return std::nullopt;
     }
 
-    const analysis::LocalDefinition* def = analysis::ResolveInScope(ctx.scope, ctx.nodeText);
+    uint32_t cursorByte = ts_node_start_byte(ctx.node);
+    const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(ctx.scope, ctx.nodeText, cursorByte);
     if (!def)
     {
         return std::nullopt;
@@ -2692,7 +2694,7 @@ std::optional<std::string> ResolveIdentifierDefaultValue(const std::string& name
 {
     if (scope)
     {
-        const analysis::LocalDefinition* def = analysis::ResolveInScope(scope, name);
+        const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, name, ts_node_start_byte(node));
         if (def && !def->defaultValue.empty())
         {
             return std::string(UnquoteStringLiteral(def->defaultValue));

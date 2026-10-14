@@ -2378,3 +2378,164 @@ TEST_CASE("SemanticAnalyzer - Untyped and valid lambda parameters emit no unreso
                                  [](const Diagnostic& d) { return d.code == "as-err-unresolved-type"; });
     CHECK(it == diags.end());
 }
+
+TEST_CASE("SemanticAnalyzer - Metadata syntax errors do not emit undeclared identifier warnings (doc_g02 parity)")
+{
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("Property");
+    const std::string catName = angel_lsp::test::GenerateRandomSymbolName("Category");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("Health");
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("WeaponType");
+
+    SymbolTable table;
+    const angel_lsp::i18n::I18n i18n("en");
+
+    const std::string code = "[" + propName + ", " + catName +
+                             "=\"Weapons\"]\n"
+                             "int " +
+                             varName +
+                             " = 100;\n\n"
+                             "[" +
+                             catName +
+                             "(\"Armas\")]\n"
+                             "enum " +
+                             enumName + " { Pistol, Rifle }\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, propName));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, catName));
+}
+
+TEST_CASE("SemanticAnalyzer - Local variable can shadow class, enum, and function names (doc_p15 parity)")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("MyClass");
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("MyEnum");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("MyHelper");
+    const std::string testFuncName = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+
+    SymbolTable table;
+    const angel_lsp::i18n::I18n i18n("en");
+
+    const std::string code = "class " + className +
+                             " {}\n"
+                             "enum " +
+                             enumName +
+                             " { ValA, ValB }\n"
+                             "void " +
+                             funcName +
+                             "() {}\n\n"
+                             "void " +
+                             testFuncName +
+                             "() {\n"
+                             "    int " +
+                             className +
+                             " = 1;\n"
+                             "    int " +
+                             enumName +
+                             " = 2;\n"
+                             "    int " +
+                             funcName +
+                             " = 3;\n"
+                             "    int res = " +
+                             className + " + " + enumName + " + " + funcName +
+                             ";\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    for (const auto& diag : diags)
+    {
+        CHECK(diag.code != "as-err-name-conflict");
+    }
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, className));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, enumName));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, funcName));
+}
+
+TEST_CASE("SemanticAnalyzer - GAP-VISIBILITY-01: Sequential local variable visibility (vecOrigin bug)")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("vecOrigin");
+    const std::string helperFn = angel_lsp::test::GenerateRandomSymbolName("ConsumeVec");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "void " + helperFn +
+                             "(int val) {}\n"
+                             "void " +
+                             fnName +
+                             "() {\n"
+                             "    if (true) {\n"
+                             "        " +
+                             helperFn + "(" + varName +
+                             ");\n"
+                             "    }\n"
+                             "    int " +
+                             varName +
+                             " = 100;\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    CHECK(HasUndefinedIdentifierDiagnostic(diags, varName));
+}
+
+TEST_CASE("SemanticAnalyzer - GAP-VISIBILITY-01: Sequential local variable falls back to outer shadowed symbol")
+{
+    const std::string outerFn = angel_lsp::test::GenerateRandomSymbolName("TestOuter");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("shadowedVar");
+    const std::string helperFn = angel_lsp::test::GenerateRandomSymbolName("UseInt");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "int " + varName +
+                             " = 42;\n"
+                             "void " +
+                             helperFn +
+                             "(int val) {}\n"
+                             "void " +
+                             outerFn +
+                             "() {\n"
+                             "    " +
+                             helperFn + "(" + varName +
+                             ");\n"
+                             "    int " +
+                             varName +
+                             " = 99;\n"
+                             "    " +
+                             helperFn + "(" + varName +
+                             ");\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, varName));
+}
+
+TEST_CASE("SemanticAnalyzer - GAP-VISIBILITY-01: Lambda closure barrier prevents access to enclosing function locals")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("EnclosingFunc");
+    const std::string localVar = angel_lsp::test::GenerateRandomSymbolName("outerLocal");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "void " + fnName +
+                             "() {\n"
+                             "    int " +
+                             localVar +
+                             " = 10;\n"
+                             "    auto l = function() {\n"
+                             "        int captured = " +
+                             localVar +
+                             ";\n"
+                             "    };\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    bool hasClosureDiag = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-lambda-closure-disallowed")
+            hasClosureDiag = true;
+    }
+    CHECK(hasClosureDiag);
+}

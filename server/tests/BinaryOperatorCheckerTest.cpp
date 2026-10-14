@@ -177,5 +177,72 @@ TEST_SUITE("BinaryOperatorChecker")
         auto diags = AnalyzeScriptWithStandardProfile(code);
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
     }
+
+    TEST_CASE(
+        "BinaryOperator - Reverse operator overload exact match takes precedence over forward conversion (Probe A)")
+    {
+        const std::string leftClass = GenerateRandomSymbolName("LeftClass");
+        const std::string rightClass = GenerateRandomSymbolName("RightClass");
+        const std::string fnName = GenerateRandomSymbolName("TestProbeA1");
+        const std::string code = "class " + rightClass + " {}\n" + "class " + leftClass + " {\n" +
+                                 "    int opAdd(double d) const { return 1; }\n" + "}\n" + "class " + rightClass +
+                                 "_WithRev {\n" + "    int opAdd_r(const " + leftClass +
+                                 " &in l) const { return 2; }\n" + "}\n" + "void " + fnName + "() {\n" + "    " +
+                                 leftClass + " l;\n" + "    " + rightClass + "_WithRev r;\n" +
+                                 "    int res = l + r;\n" + "}\n";
+        auto diags = AnalyzeScriptWithStandardProfile(code);
+        CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
+    }
+
+    TEST_CASE(
+        "BinaryOperator - Left operator takes precedence when both forward and reverse are exact matches (Probe A)")
+    {
+        const std::string leftClass = GenerateRandomSymbolName("LeftExact");
+        const std::string rightClass = GenerateRandomSymbolName("RightExact");
+        const std::string fnName = GenerateRandomSymbolName("TestProbeA2");
+        const std::string code = "class " + rightClass + ";\n" + "class " + leftClass + " {\n" +
+                                 "    int opAdd(const " + rightClass + " &in r) const { return 1; }\n" + "}\n" +
+                                 "class " + rightClass + " {\n" + "    int opAdd_r(const " + leftClass +
+                                 " &in l) const { return 2; }\n" + "}\n" + "void " + fnName + "() {\n" + "    " +
+                                 leftClass + " l;\n" + "    " + rightClass + " r;\n" + "    int res = l + r;\n" + "}\n";
+        auto diags = AnalyzeScriptWithStandardProfile(code);
+        CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
+    }
+
+    TEST_CASE("BinaryOperator - Single-side opImplConv with primitive operand succeeds (Probe B)")
+    {
+        const std::string clsName = GenerateRandomSymbolName("ConvClass");
+        const std::string fnName = GenerateRandomSymbolName("TestProbeB1");
+        const std::string code = "class " + clsName + " {\n" + "    int opImplConv() const { return 42; }\n" + "}\n" +
+                                 "void " + fnName + "() {\n" + "    " + clsName + " a;\n" + "    int x = a + 10;\n" +
+                                 "    int y = 10 + a;\n" + "}\n";
+        auto diags = AnalyzeScriptWithStandardProfile(code);
+        CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
+    }
+
+    TEST_CASE("BinaryOperator - Dual-class opImplConv without primitive operand is rejected (Probe B)")
+    {
+        const std::string clsA = GenerateRandomSymbolName("ClassA");
+        const std::string clsB = GenerateRandomSymbolName("ClassB");
+        const std::string fnName = GenerateRandomSymbolName("TestProbeB2");
+        const std::string code = "class " + clsA + " {\n" + "    int opImplConv() const { return 1; }\n" + "}\n" +
+                                 "class " + clsB + " {\n" + "    int opImplConv() const { return 2; }\n" + "}\n" +
+                                 "void " + fnName + "() {\n" + "    " + clsA + " a;\n" + "    " + clsB + " b;\n" +
+                                 "    int x = a + b;\n" + "}\n";
+        auto diags = AnalyzeScriptWithStandardProfile(code);
+        CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
+    }
+
+    TEST_CASE("BinaryOperator - Enum bitwise operations evaluate to int")
+    {
+        const std::string enumName = GenerateRandomSymbolName("TestFlags");
+        const std::string fnName = GenerateRandomSymbolName("TestEnumBitwise");
+        const std::string code = "enum " + enumName + " { A = 1, B = 2 }\n" + "void " + fnName + "() {\n" +
+                                 "    int x = " + enumName + "::A | " + enumName + "::B;\n" +
+                                 "    int y = " + enumName + "::A & " + enumName + "::B;\n" + "}\n";
+        auto diags = AnalyzeScriptWithStandardProfile(code);
+        CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
+        CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoImplicitConversion));
+    }
 }
 } // namespace angel_lsp::test

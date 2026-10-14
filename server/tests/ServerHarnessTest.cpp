@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "helpers/LspSemanticHarnessFixture.h"
 #include "helpers/ScriptedStream.h"
 #include "helpers/TestUtils.h"
 #include "lsp/Server.h"
@@ -6665,4 +6666,28 @@ TEST_CASE("Server - Formatting and OnTypeFormatting capabilities disabled when e
     CHECK(foundInitResp);
     CHECK(foundResp10);
     CHECK(foundResp11);
+}
+
+TEST_CASE("ServerHarness - MasterHarnessTelemetrySmokeTest")
+{
+    test::LspSemanticHarnessFixture fixture;
+    fixture.LoadPredefinedStub("predefined/sven.as.predefined");
+
+    // 1. Valid script analysis telemetry
+    const std::string validUri = fixture.SandboxUri(test::GenerateRandomSymbolName("smoke_valid") + ".as");
+    const std::string validCode = "void main()\n{\n    int x = 1 + 2;\n}\n";
+    auto validResult = fixture.analyzeWithTelemetry(validUri, validCode);
+
+    CHECK(validResult.elapsedMs >= 0.0);
+    CHECK_FALSE(validResult.hadSyntaxErrorNodes);
+    CHECK(validResult.cascadingSemanticErrorsOnBrokenLine == 0);
+
+    // 2. Broken script analysis telemetry and syntax error resilience
+    const std::string brokenUri = fixture.SandboxUri(test::GenerateRandomSymbolName("smoke_broken") + ".as");
+    const std::string brokenCode = "void main()\n{\n    int x = 1 + ;\n}\n";
+    auto brokenResult = fixture.analyzeWithTelemetry(brokenUri, brokenCode);
+
+    CHECK(brokenResult.elapsedMs >= 0.0);
+    CHECK(brokenResult.hadSyntaxErrorNodes);
+    CHECK(brokenResult.cascadingSemanticErrorsOnBrokenLine == 0);
 }

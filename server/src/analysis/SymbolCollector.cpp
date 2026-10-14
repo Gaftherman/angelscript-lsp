@@ -8,6 +8,7 @@
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
+#include "utils/Utils.h"
 #include <ankerl/unordered_dense.h>
 #include <cctype>
 #include <cstring>
@@ -198,6 +199,11 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbols(const SymbolCollectReque
     if (!tree)
         return diagnostics;
 
+    if (request.sourceCode.size() > 16384)
+    {
+        symbolTable.Reserve(request.sourceCode.size() / 128);
+    }
+
     TSNode rootNode = ts_tree_root_node(tree.get());
     SymbolCollectContext sCtx{request, symbolTable, diagnostics};
     CollectFromTree(rootNode, sCtx);
@@ -219,6 +225,11 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const SymbolColl
     std::vector<Diagnostic> diagnostics;
     if (!tree)
         return diagnostics;
+
+    if (request.sourceCode.size() > 16384)
+    {
+        symbolTable.Reserve(request.sourceCode.size() / 128);
+    }
 
     TSNode rootNode = ts_tree_root_node(tree);
     SymbolCollectContext sCtx{request, symbolTable, diagnostics};
@@ -647,7 +658,8 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     TSNode nameNode = GetChildByFieldName(funcNode, "name");
     TSNode typeNode = GetChildByFieldName(funcNode, "return_type");
     TSNode paramsNode = GetChildByFieldName(funcNode, "parameters");
-    TSNode bodyNode = FindFunctionBody(funcNode);
+    const bool isPredefined = angel_lsp::utils::IsPredefinedFile(sCtx.request.fileUri, ".as.predefined");
+    TSNode bodyNode = isPredefined ? TSNode{} : FindFunctionBody(funcNode);
 
     TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
     SymbolModifiers modifiers = ExtractModifiers(funcNode, sCtx.request.sourceCode);

@@ -1136,6 +1136,31 @@ struct UndefinedIdentifierContext
     DiagnosticContext& ctx;
 };
 
+static bool IsReferenceInSyntaxErrorOrMetadata(TSNode root, const LocalReference& ref, const NodeIndex* nodeIndex)
+{
+    const TSPoint atStart{ref.startLine, ref.startCharacter};
+    const TSPoint atEnd{ref.endLine, ref.endCharacter};
+    const TSNode node = ts_node_descendant_for_point_range(root, atStart, atEnd);
+    if (ts_node_is_null(node))
+    {
+        return false;
+    }
+    if (nodeIndex && nodeIndex->NodeHasSyntaxError(node))
+    {
+        return true;
+    }
+    TSNode walk = node;
+    for (int d = 0; d < 8 && !ts_node_is_null(walk); ++d)
+    {
+        if (ts_node_is_error(walk) || std::string_view(ts_node_type(walk)) == "metadata")
+        {
+            return true;
+        }
+        walk = ts_node_parent(walk);
+    }
+    return false;
+}
+
 void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& uCtx)
 {
     for (const auto& ref : scope->references)
@@ -1143,11 +1168,11 @@ void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& 
         if (ShouldIgnoreReference(ref, uCtx.ctx) || IsReferenceInMixin(ref, uCtx.mixinRanges))
             continue;
 
-        const LocalDefinition* resolved = ResolveInScope(scope, ref.name);
+        const LocalDefinition* resolved = ResolveInScopeAt(scope, ref.name, ref.startByte);
         if (CheckEnumScopeDiagnostic(ref, resolved, uCtx.ctx))
             continue;
 
-        if (resolved != nullptr || ResolveInScope(scope, ref.name, nullptr, false) != nullptr ||
+        if (resolved != nullptr || ResolveInScopeAt(scope, ref.name, ref.startByte, nullptr, false) != nullptr ||
             uCtx.knownGlobalNames.contains(ref.name))
             continue;
 
@@ -1156,8 +1181,11 @@ void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& 
 
         if (uCtx.ctx.request.tree)
         {
+            const TSNode root = ts_tree_root_node(uCtx.ctx.request.tree);
+            if (IsReferenceInSyntaxErrorOrMetadata(root, ref, uCtx.ctx.request.nodeIndex))
+                continue;
             const TSPoint at{ref.startLine, ref.startCharacter};
-            const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(uCtx.ctx.request.tree), at, at);
+            const TSNode node = ts_node_descendant_for_point_range(root, at, at);
             if (IsEnclosingScopeMember(node, ref.name, uCtx.usingNamespaces, uCtx.ctx))
                 continue;
         }
@@ -1196,8 +1224,10 @@ void SemanticAnalyzer::CheckUndefinedIdentifiers(
 
     const MixinRanges mixinRanges = CollectMixinRanges(ctx.request.symbolTable, ctx.request.fileUri);
     const std::vector<std::string> usingNamespaces =
-        ctx.request.tree ? CollectUsingNamespaces(ts_tree_root_node(ctx.request.tree), ctx.request.sourceCode)
-                         : std::vector<std::string>{};
+        ctx.request.nodeIndex
+            ? CollectUsingNamespaces(*ctx.request.nodeIndex, ctx.request.sourceCode)
+            : (ctx.request.tree ? CollectUsingNamespaces(ts_tree_root_node(ctx.request.tree), ctx.request.sourceCode)
+                                : std::vector<std::string>{});
     const UndefinedIdentifierContext uCtx{knownGlobalNames, mixinRanges, usingNamespaces, ctx};
     CheckUndefinedIdentifiersRecursive(scope, uCtx, depth);
 }

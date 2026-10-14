@@ -311,6 +311,23 @@ struct EngineProperties
      */
     int compilerWarnings = 1;
 
+    /**
+     * @brief asEP_MEMBER_INIT_MODE (engine default: 0).
+     *
+     * 0 = Member variables are initialized before base class constructor.
+     * 1 = Member variables are initialized after base class constructor.
+     */
+    int memberInitMode = 0;
+
+    /**
+     * @brief asEP_HEREDOC_TRIM_MODE (engine default: 1).
+     *
+     * 0 = Never trim heredoc strings.
+     * 1 = Trim leading and trailing empty lines.
+     * 2 = Always trim heredoc strings.
+     */
+    int heredocTrimMode = 1;
+
     bool RequiresEnumScope() const
     {
         return requireEnumScope;
@@ -804,6 +821,13 @@ struct ServerConfig
      */
     std::unordered_map<std::string, std::string> diagnosticSeverities;
 };
+
+/**
+ * @brief Applies populated native engine properties from engine rules config to Server EngineProperties.
+ * @param[in] props Native engine properties parsed from rules JSON.
+ * @param[in,out] engine Engine properties to update with present values.
+ */
+void ApplyEngineProperties(const NativeEngineProperties& props, EngineProperties& engine);
 
 /**
  * @brief Parses CLI arguments into a ServerConfig instance.

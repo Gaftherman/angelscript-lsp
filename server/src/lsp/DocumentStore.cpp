@@ -222,16 +222,6 @@ std::shared_ptr<const std::string> DocumentStore::GetTextShared(const std::strin
     return nullptr;
 }
 
-const std::string* DocumentStore::GetTextPtr(const std::string& uri) const
-{
-    std::shared_lock<std::shared_mutex> lock(m_mutex);
-    if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
-    {
-        return &it->second->text;
-    }
-    return nullptr;
-}
-
 std::vector<std::shared_ptr<const document::Document>> DocumentStore::GetAllDocuments() const
 {
     std::shared_lock<std::shared_mutex> lock(m_mutex);

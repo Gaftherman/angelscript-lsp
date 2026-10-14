@@ -2340,3 +2340,49 @@ TEST_CASE("Completion - Direct-initialized field type does not leak as member an
     CHECK(speedSort < privSort);
     CHECK(privSort < dunderSort);
 }
+
+TEST_CASE("Completion - GAP-VISIBILITY-01: Sequential local variable visibility does not offer variable declared later")
+{
+    const std::string varEarly = test::GenerateRandomSymbolName("earlyVar");
+    const std::string varLate = test::GenerateRandomSymbolName("lateVar");
+
+    const std::string code = "void test()\n"
+                             "{\n"
+                             "    int " +
+                             varEarly +
+                             " = 1;\n"
+                             "    \n"
+                             "    int " +
+                             varLate +
+                             " = 2;\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(3, 4);
+    CHECK(HasItem(items, varEarly));
+    CHECK_FALSE(HasItem(items, varLate));
+}
+
+TEST_CASE("Completion - GAP-VISIBILITY-01: Lambda closure barrier prevents offering outer function locals")
+{
+    const std::string outerVar = test::GenerateRandomSymbolName("outerVar");
+    const std::string innerVar = test::GenerateRandomSymbolName("innerVar");
+
+    const std::string code = "void test()\n"
+                             "{\n"
+                             "    int " +
+                             outerVar +
+                             " = 1;\n"
+                             "    auto fn = function() {\n"
+                             "        int " +
+                             innerVar +
+                             " = 2;\n"
+                             "        \n"
+                             "    };\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(5, 8);
+    CHECK(HasItem(items, innerVar));
+    CHECK_FALSE(HasItem(items, outerVar));
+}

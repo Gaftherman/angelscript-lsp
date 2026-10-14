@@ -141,13 +141,6 @@ class PredefinedStubManager
     [[nodiscard]] std::shared_ptr<const std::string> GetDocumentTextShared(const std::string& uri) const;
 
     /**
-     * @brief Borrows raw pointer to source text for a predefined stub URI.
-     * @param uri Stub URI.
-     * @return Raw pointer to text string or nullptr if not registered.
-     */
-    [[nodiscard]] const std::string* GetDocumentTextPtr(const std::string& uri) const;
-
-    /**
      * @brief Computes weakly canonical and normalized path for predefined stubs.
      * @param path Filesystem path.
      * @return Canonical normalized path string, or empty if input is empty.

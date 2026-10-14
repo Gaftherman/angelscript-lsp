@@ -28,7 +28,7 @@ const Symbol* FindTypeDeclaration(std::string_view typeName, const SymbolTable& 
         std::string current(enclosingNs);
         while (!current.empty())
         {
-            keepAlive = table.FindSymbolsPtr(current + "::" + std::string(typeName));
+            keepAlive = table.FindMemberSymbolPtr(current, typeName);
             if (keepAlive)
             {
                 break;

@@ -773,3 +773,40 @@ TEST_CASE("DefinitionHandler - Go to Definition on Enum Member Declaration stays
     CHECK((*defs)[0].range.start.line == 2);
     CHECK((*defs)[0].range.start.character == 4);
 }
+
+TEST_CASE("DefinitionHandler - GAP-VISIBILITY-01: Sequential local variable visibility falls back to global before "
+          "declaration")
+{
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("varTarget");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Func");
+
+    const std::string code = "string " + varName +
+                             " = \"global\";\n"
+                             "void " +
+                             fnName +
+                             "() {\n"
+                             "    " +
+                             varName +
+                             ";\n"
+                             "    int " +
+                             varName +
+                             " = 42;\n"
+                             "    " +
+                             varName +
+                             ";\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // Line 2: "<varName>;" before local int declaration -> should resolve to global string at line 0
+    auto defBefore = env.DefAt(2, 4);
+    REQUIRE(defBefore.has_value());
+    REQUIRE(defBefore->size() == 1);
+    CHECK((*defBefore)[0].range.start.line == 0);
+
+    // Line 4: "<varName>;" after local int declaration -> should resolve to local int at line 3
+    auto defAfter = env.DefAt(4, 4);
+    REQUIRE(defAfter.has_value());
+    REQUIRE(defAfter->size() == 1);
+    CHECK((*defAfter)[0].range.start.line == 3);
+}

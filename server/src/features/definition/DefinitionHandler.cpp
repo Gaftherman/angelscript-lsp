@@ -730,7 +730,7 @@ bool IsDefinitionInsideFunction(const analysis::Scope* rootScope, const analysis
  * @param[in] ctx Definition context.
  * @return Resolved local definition location, or nullopt.
  */
-std::optional<std::vector<lsp::Location>> TryResolveLocalDefinition(const std::string& nodeText,
+std::optional<std::vector<lsp::Location>> TryResolveLocalDefinition(TSNode node, const std::string& nodeText,
                                                                     const DefinitionContext& ctx)
 {
     if (!ctx.rootScope)
@@ -743,7 +743,8 @@ std::optional<std::vector<lsp::Location>> TryResolveLocalDefinition(const std::s
     {
         return std::nullopt;
     }
-    const analysis::LocalDefinition* def = analysis::ResolveInScope(scope, nodeText);
+    uint32_t cursorByte = !ts_node_is_null(node) ? ts_node_start_byte(node) : UINT32_MAX;
+    const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte);
     if (def &&
         (def->kind == analysis::LocalDefinitionKind::Parameter || def->kind == analysis::LocalDefinitionKind::Variable))
     {
@@ -773,7 +774,7 @@ std::optional<std::vector<lsp::Location>> TryResolveContextualDefinition(TSNode 
             return memberLocs;
         }
     }
-    if (auto localLoc = TryResolveLocalDefinition(nodeText, ctx))
+    if (auto localLoc = TryResolveLocalDefinition(node, nodeText, ctx))
     {
         return localLoc;
     }
@@ -967,7 +968,7 @@ std::vector<analysis::Symbol> ResolveCandidateSymbols(TSNode node, const std::st
  * @param[in] ctx Definition context.
  * @return Resolved definition locations, or nullopt.
  */
-std::optional<std::vector<lsp::Location>> TryResolveLocalDefinitionFallback(const std::string& nodeText,
+std::optional<std::vector<lsp::Location>> TryResolveLocalDefinitionFallback(TSNode node, const std::string& nodeText,
                                                                             const DefinitionContext& ctx)
 {
     if (!ctx.rootScope)
@@ -980,7 +981,8 @@ std::optional<std::vector<lsp::Location>> TryResolveLocalDefinitionFallback(cons
     {
         return std::nullopt;
     }
-    if (const analysis::LocalDefinition* def = analysis::ResolveInScope(scope, nodeText))
+    uint32_t cursorByte = !ts_node_is_null(node) ? ts_node_start_byte(node) : UINT32_MAX;
+    if (const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte))
     {
         return std::vector<lsp::Location>{MakeLocalDefinitionLocation(*def, ctx)};
     }
@@ -1105,7 +1107,7 @@ std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(TSNode n
  * @param[in] request Definition request context.
  * @return Clean base type name, or empty string if not found.
  */
-std::string ResolveLocalScopeTypeName(const std::string& nodeText, const DefinitionRequest& request)
+std::string ResolveLocalScopeTypeName(TSNode node, const std::string& nodeText, const DefinitionRequest& request)
 {
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     if (!rootScope)
@@ -1118,7 +1120,8 @@ std::string ResolveLocalScopeTypeName(const std::string& nodeText, const Definit
     {
         return "";
     }
-    const analysis::LocalDefinition* def = analysis::ResolveInScope(scope, nodeText);
+    uint32_t cursorByte = !ts_node_is_null(node) ? ts_node_start_byte(node) : UINT32_MAX;
+    const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte);
     if (def && !def->typeName.empty())
     {
         return analysis::CleanBaseType(def->typeName);
@@ -1271,7 +1274,7 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
     std::vector<analysis::Symbol> symbols = ResolveCandidateSymbols(node, nodeText, ctx);
     if (symbols.empty())
     {
-        if (auto localFallback = TryResolveLocalDefinitionFallback(nodeText, ctx))
+        if (auto localFallback = TryResolveLocalDefinitionFallback(node, nodeText, ctx))
         {
             return localFallback;
         }
@@ -1319,7 +1322,7 @@ std::optional<std::vector<lsp::Location>> GetTypeDefinition(const DefinitionRequ
         return std::nullopt;
     }
 
-    std::string typeNameToFind = ResolveLocalScopeTypeName(nodeText, request);
+    std::string typeNameToFind = ResolveLocalScopeTypeName(node, nodeText, request);
     if (typeNameToFind.empty())
     {
         typeNameToFind = ResolveGlobalSymbolTypeName(node, nodeText, request);

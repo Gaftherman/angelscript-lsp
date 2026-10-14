@@ -801,3 +801,43 @@ TEST_CASE("ClassRules - Mixin referencing undeclared identifier emits as-err-mix
     size_t count = CountCode(diags, "as-err-mixin-instantiation-member-not-found");
     CHECK(count >= 2);
 }
+
+TEST_CASE("ClassRules - Mixin class cannot inherit from regular class (Probe C-i)")
+{
+    const std::string regularBase = angel_lsp::test::GenerateRandomSymbolName("RegularBase");
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("InvalidMixin");
+
+    const std::string code =
+        "class " + regularBase + " {}\n" + "mixin class " + mixinName + " : " + regularBase + " {}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    const auto errors = FilterErrors(diags);
+    CHECK(HasCode(errors, "as-err-mixin-inherit-class"));
+}
+
+TEST_CASE("ClassRules - Mixin can omit interface method and concrete class must implement it (Probe C-ii)")
+{
+    const std::string ifaceName = angel_lsp::test::GenerateRandomSymbolName("IService");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Serve");
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("ServiceMixin");
+    const std::string incompleteHost = angel_lsp::test::GenerateRandomSymbolName("IncompleteHost");
+    const std::string completeHost = angel_lsp::test::GenerateRandomSymbolName("CompleteHost");
+
+    const std::string mixinCode = "interface " + ifaceName + " { void " + methodName + "(); }\n" + "mixin class " +
+                                  mixinName + " : " + ifaceName + " {}\n";
+
+    const auto mixinDiags = AnalyzeClassSnippet(mixinCode);
+    const auto mixinErrors = FilterErrors(mixinDiags);
+    CHECK_FALSE(HasCode(mixinErrors, "as-err-interface-impl-missing"));
+
+    const std::string incompleteCode = mixinCode + "class " + incompleteHost + " : " + mixinName + " {}\n";
+    const auto incompleteDiags = AnalyzeClassSnippet(incompleteCode);
+    const auto incompleteErrors = FilterErrors(incompleteDiags);
+    CHECK(HasCode(incompleteErrors, "as-err-interface-impl-missing"));
+
+    const std::string completeCode =
+        mixinCode + "class " + completeHost + " : " + mixinName + " {\n" + "    void " + methodName + "() {}\n" + "}\n";
+    const auto completeDiags = AnalyzeClassSnippet(completeCode);
+    const auto completeErrors = FilterErrors(completeDiags);
+    CHECK_FALSE(HasCode(completeErrors, "as-err-interface-impl-missing"));
+}

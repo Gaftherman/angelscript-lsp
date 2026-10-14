@@ -9,6 +9,7 @@
 #include "analysis/DiagnosticCodes.h"
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
+#include "utils/StopFlag.h"
 #include <algorithm>
 #include <string>
 #include <string_view>
@@ -133,7 +134,7 @@ std::vector<Symbol> CollectDirectCandidates(const std::string& owner, const std:
                                             const MemberLookupContext& ctx, bool& viaAccessor)
 {
     std::vector<Symbol> candidates;
-    auto candidatesPtr = ctx.table.FindSymbolsPtr(owner + "::" + memberName);
+    auto candidatesPtr = ctx.table.FindMemberSymbolPtr(owner, memberName);
     if (candidatesPtr && !candidatesPtr->empty())
     {
         candidates.insert(candidates.end(), candidatesPtr->begin(), candidatesPtr->end());
@@ -157,9 +158,9 @@ std::vector<Symbol> CollectDirectCandidates(const std::string& owner, const std:
         }
     }
 
-    for (const auto& accessor : {owner + "::get_" + memberName, owner + "::set_" + memberName})
+    for (const auto& accessorPrefix : {"get_", "set_"})
     {
-        auto accSyms = ctx.table.FindSymbolsPtr(accessor);
+        auto accSyms = ctx.table.FindMemberSymbolPtr(owner, std::string(accessorPrefix) + memberName);
         if (!accSyms)
         {
             continue;
@@ -762,7 +763,7 @@ void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view
         return;
     }
 
-    const LocalDefinition* localDef = ResolveInScope(scope, idText);
+    const LocalDefinition* localDef = ResolveInScopeAt(scope, idText, ts_node_start_byte(node));
     if (localDef &&
         (localDef->kind == LocalDefinitionKind::Variable || localDef->kind == LocalDefinitionKind::Parameter))
     {
@@ -828,74 +829,44 @@ void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, Diagnos
     CheckImplicitMemberAccess(node, scope, idText, ctx);
 }
 
-void VisitNode(TSNode node, const AccessCheckRequest& request, DiagnosticContext& ctx, int depth = 0)
-{
-    // Pathologically nested source would otherwise recurse until the stack gives out; see
-    // k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
-        return;
-
-    const std::string_view nodeType = ts_node_type(node);
-    if (nodeType == "member_expression")
-    {
-        const TSPoint start = ts_node_start_point(node);
-        CheckMemberExpression(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
-    }
-    else if (nodeType == parser::nodes::ThisExpression)
-    {
-        const TSPoint start = ts_node_start_point(node);
-        CheckClosureDisallowedAccess(node, FindInnermostScope(request.scopeRoot, start.row, start.column), "this", ctx);
-    }
-    else if (nodeType == "scoped_identifier" || nodeType == "identifier")
-    {
-        CheckIdentifierNode(node, request, ctx);
-    }
-
-    const uint32_t childCount = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < childCount; ++i)
-    {
-        VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
-    }
-}
-
 void CheckMemberAccessIndexed(const AccessCheckRequest& request, DiagnosticContext& ctx)
 {
+    if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+    {
+        return;
+    }
+
     for (TSNode thisNode : request.nodeIndex->Nodes(parser::nodes::ThisExpression))
     {
+        if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+        {
+            return;
+        }
         const TSPoint start = ts_node_start_point(thisNode);
         CheckClosureDisallowedAccess(thisNode, FindInnermostScope(request.scopeRoot, start.row, start.column), "this",
                                      ctx);
     }
-    auto members = request.nodeIndex->Nodes(parser::nodes::MemberExpression);
-    auto scopeds = request.nodeIndex->Nodes(parser::nodes::ScopedIdentifier);
-    auto idents = request.nodeIndex->Nodes(parser::nodes::Identifier);
 
-    size_t i = 0;
-    size_t j = 0;
-    size_t k = 0;
-    while (i < members.size() || j < scopeds.size() || k < idents.size())
-    {
-        uint32_t bMembers = (i < members.size()) ? ts_node_start_byte(members[i]) : UINT32_MAX;
-        uint32_t bScopeds = (j < scopeds.size()) ? ts_node_start_byte(scopeds[j]) : UINT32_MAX;
-        uint32_t bIdents = (k < idents.size()) ? ts_node_start_byte(idents[k]) : UINT32_MAX;
-
-        if (bMembers <= bScopeds && bMembers <= bIdents)
+    request.nodeIndex->ForEachNodeOrdered(
+        {parser::nodes::MemberExpression, parser::nodes::ScopedIdentifier, parser::nodes::Identifier},
+        [&](TSNode node)
         {
-            TSNode node = members[i++];
-            const TSPoint start = ts_node_start_point(node);
-            CheckMemberExpression(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
-        }
-        else if (bScopeds <= bIdents)
-        {
-            TSNode node = scopeds[j++];
-            CheckIdentifierNode(node, request, ctx);
-        }
-        else
-        {
-            TSNode node = idents[k++];
-            CheckIdentifierNode(node, request, ctx);
-        }
-    }
+            if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+            {
+                return;
+            }
+            const std::string_view nodeType = ts_node_type(node);
+            if (nodeType == parser::nodes::MemberExpression)
+            {
+                const TSPoint start = ts_node_start_point(node);
+                CheckMemberExpression(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column),
+                                      ctx);
+            }
+            else
+            {
+                CheckIdentifierNode(node, request, ctx);
+            }
+        });
 }
 } // namespace
 
@@ -917,6 +888,9 @@ void CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx
         return;
     }
 
-    VisitNode(request.root, request, ctx);
+    NodeIndex localIndex(request.root);
+    AccessCheckRequest indexedRequest = request;
+    indexedRequest.nodeIndex = &localIndex;
+    CheckMemberAccessIndexed(indexedRequest, ctx);
 }
 } // namespace angel_lsp::analysis

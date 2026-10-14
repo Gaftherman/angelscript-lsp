@@ -4,6 +4,7 @@
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/GrammarNames.h"
+#include "utils/StopFlag.h"
 #include "utils/Utils.h"
 #include <string>
 #include <string_view>
@@ -51,7 +52,7 @@ void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext& cctx, 
     }
     for (const auto& typeName : GetInheritedTypeHierarchy(cleanObj, cctx.ctx.request.symbolTable))
     {
-        if (auto found = cctx.ctx.request.symbolTable.FindSymbolsPtr(typeName + "::" + memName))
+        if (auto found = cctx.ctx.request.symbolTable.FindMemberSymbolPtr(typeName, memName))
         {
             for (const auto& sym : *found)
             {
@@ -101,7 +102,7 @@ void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateContext& cc
                                                        cctx.ctx.request.symbolTable);
             for (const auto& cls : hierarchy)
             {
-                if (auto found = cctx.ctx.request.symbolTable.FindSymbolsPtr(cls + "::" + name))
+                if (auto found = cctx.ctx.request.symbolTable.FindMemberSymbolPtr(cls, name))
                 {
                     for (const auto& sym : *found)
                     {
@@ -217,7 +218,8 @@ TSNode UnwrapParentheses(TSNode node)
     return current;
 }
 
-bool IsIdentifierAssignable(std::string_view name, const Scope* scope, const SymbolTable& table)
+bool IsIdentifierAssignable(std::string_view name, const Scope* scope, const SymbolTable& table,
+                            uint32_t refByte = UINT32_MAX)
 {
     if (IsPrimitiveTypeName(name))
     {
@@ -226,7 +228,7 @@ bool IsIdentifierAssignable(std::string_view name, const Scope* scope, const Sym
 
     if (scope)
     {
-        const LocalDefinition* localDef = ResolveInScope(scope, name);
+        const LocalDefinition* localDef = ResolveInScopeAt(scope, name, refByte);
         if (localDef)
         {
             return localDef->kind != LocalDefinitionKind::Function && localDef->kind != LocalDefinitionKind::Method;
@@ -269,7 +271,7 @@ bool IsAssignableMember(TSNode node, const Scope* scope, const SymbolTable& tabl
     }
     for (const auto& typeName : GetInheritedTypeHierarchy(cleanObj, table))
     {
-        if (auto found = table.FindSymbolsPtr(typeName + "::" + memName))
+        if (auto found = table.FindMemberSymbolPtr(typeName, memName))
         {
             bool hasAssignable = false;
             for (const auto& sym : *found)
@@ -307,8 +309,18 @@ bool IsTernaryAssignable(TSNode node, const Scope* scope, const SymbolTable& tab
             alternative = ts_node_named_child(node, 2);
         }
     }
-    return IsAssignableLValueNode(consequence, scope, table, sourceCode) &&
-           IsAssignableLValueNode(alternative, scope, table, sourceCode);
+    if (!IsAssignableLValueNode(consequence, scope, table, sourceCode) ||
+        !IsAssignableLValueNode(alternative, scope, table, sourceCode))
+    {
+        return false;
+    }
+    const std::string type1 = ResolveExpressionType(consequence, {scope, table, sourceCode});
+    const std::string type2 = ResolveExpressionType(alternative, {scope, table, sourceCode});
+    if (!type1.empty() && !type2.empty() && CleanBaseType(type1) != CleanBaseType(type2))
+    {
+        return false;
+    }
+    return true;
 }
 
 bool IsUnaryAssignable(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
@@ -354,7 +366,7 @@ bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const SymbolTabl
     }
     if (nodeType == "identifier" || nodeType == "scoped_identifier" || nodeType == "function")
     {
-        return IsIdentifierAssignable(NodeText(node, sourceCode), scope, table);
+        return IsIdentifierAssignable(NodeText(node, sourceCode), scope, table, ts_node_start_byte(node));
     }
     return false;
 }
@@ -400,25 +412,22 @@ void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request, const
     }
 }
 
-void VisitNode(TSNode node, const LValueCheckRequest& request, DiagnosticContext& ctx, int depth = 0)
+void CheckLValuesIndexed(const LValueCheckRequest& request, DiagnosticContext& ctx)
 {
-    // Pathologically nested source would otherwise recurse until the stack gives out; see
-    // k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
-        return;
-
-    std::string_view nodeType = ts_node_type(node);
-    if (nodeType == "assignment_expression")
+    if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
     {
+        return;
+    }
+
+    for (const TSNode& node : request.nodeIndex->Nodes(parser::nodes::AssignmentExpression))
+    {
+        if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+        {
+            return;
+        }
         const TSPoint start = ts_node_start_point(node);
         const Scope* scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
         CheckAssignmentTarget(node, request, scope, ctx);
-    }
-
-    uint32_t childCount = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < childCount; ++i)
-    {
-        VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
     }
 }
 } // namespace
@@ -437,15 +446,13 @@ void CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx)
 
     if (request.nodeIndex)
     {
-        for (const TSNode& node : request.nodeIndex->Nodes(parser::nodes::AssignmentExpression))
-        {
-            const TSPoint start = ts_node_start_point(node);
-            const Scope* scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
-            CheckAssignmentTarget(node, request, scope, ctx);
-        }
+        CheckLValuesIndexed(request, ctx);
         return;
     }
 
-    VisitNode(request.root, request, ctx);
+    NodeIndex localIndex(request.root);
+    LValueCheckRequest indexedRequest = request;
+    indexedRequest.nodeIndex = &localIndex;
+    CheckLValuesIndexed(indexedRequest, ctx);
 }
 } // namespace angel_lsp::analysis

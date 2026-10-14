@@ -16,6 +16,11 @@
 #include <string_view>
 #include <tree_sitter/api.h>
 
+namespace angel_lsp::utils
+{
+class StopFlag;
+}
+
 namespace angel_lsp::analysis
 {
 class NodeIndex;
@@ -125,6 +130,9 @@ struct SemanticAnalysisRequest
 
     /** @brief Optional traversal budget to enforce bounded AST node visits across checkers. */
     TraversalBudget* traversalBudget = nullptr;
+
+    /** @brief Optional cancellation flag to abort long-running semantic passes early. */
+    const utils::StopFlag* stopFlag = nullptr;
 
     /** @brief Optional memoization cache for resolved expression types across analysis passes. */
     mutable ExpressionTypeCache* exprCache = nullptr;

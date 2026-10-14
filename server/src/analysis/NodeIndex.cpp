@@ -2,6 +2,8 @@
 #include "analysis/ASTUtils.h"
 #include "parser/GrammarNames.h"
 
+#include <algorithm>
+
 extern "C" const TSLanguage* tree_sitter_angelscript();
 
 namespace angel_lsp::analysis
@@ -35,6 +37,11 @@ void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget)
     }
 
     m_allNodes.push_back(node);
+
+    if (ts_node_is_error(node) || ts_node_is_missing(node))
+    {
+        m_errorRanges.push_back(ErrorRange{ts_node_start_byte(node), ts_node_end_byte(node)});
+    }
 
     const TSSymbol sym = ts_node_symbol(node);
     if (sym >= m_nodesBySymbol.size())
@@ -104,6 +111,7 @@ void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budg
     m_language = lang ? lang : tree_sitter_angelscript();
     PopulatePredefinedSymbols(m_language);
     TraverseTree(root, budget);
+    PostProcessErrorRanges();
 }
 
 std::span<const TSNode> NodeIndex::Nodes(TSSymbol symbol) const noexcept
@@ -155,12 +163,72 @@ bool NodeIndex::Empty() const noexcept
     return m_allNodes.empty();
 }
 
+void NodeIndex::PostProcessErrorRanges()
+{
+    if (m_errorRanges.size() <= 1)
+    {
+        return;
+    }
+    std::sort(m_errorRanges.begin(), m_errorRanges.end(),
+              [](const ErrorRange& a, const ErrorRange& b) { return a.startByte < b.startByte; });
+    std::vector<ErrorRange> merged;
+    merged.reserve(m_errorRanges.size());
+    merged.push_back(m_errorRanges.front());
+    for (size_t i = 1; i < m_errorRanges.size(); ++i)
+    {
+        auto& last = merged.back();
+        if (m_errorRanges[i].startByte <= last.endByte)
+        {
+            if (m_errorRanges[i].endByte > last.endByte)
+            {
+                last.endByte = m_errorRanges[i].endByte;
+            }
+        }
+        else
+        {
+            merged.push_back(m_errorRanges[i]);
+        }
+    }
+    m_errorRanges = std::move(merged);
+}
+
+bool NodeIndex::IsInsideError(uint32_t byteOffset) const noexcept
+{
+    if (m_errorRanges.empty())
+    {
+        return false;
+    }
+    auto it = std::upper_bound(m_errorRanges.begin(), m_errorRanges.end(), byteOffset,
+                               [](uint32_t val, const ErrorRange& r) { return val < r.startByte; });
+    if (it == m_errorRanges.begin())
+    {
+        return false;
+    }
+    --it;
+    return byteOffset >= it->startByte && byteOffset < it->endByte;
+}
+
+bool NodeIndex::NodeHasSyntaxError(TSNode node) const noexcept
+{
+    if (ts_node_is_null(node))
+    {
+        return false;
+    }
+    return ts_node_has_error(node) || IsInsideError(ts_node_start_byte(node));
+}
+
+std::span<const NodeIndex::ErrorRange> NodeIndex::ErrorRanges() const noexcept
+{
+    return m_errorRanges;
+}
+
 void NodeIndex::Clear() noexcept
 {
     m_root = TSNode{};
     m_language = nullptr;
     m_allNodes.clear();
     m_nodesBySymbol.clear();
+    m_errorRanges.clear();
     m_symbolByName.clear();
 }
 } // namespace angel_lsp::analysis

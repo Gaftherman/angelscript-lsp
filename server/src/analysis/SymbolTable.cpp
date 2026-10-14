@@ -950,6 +950,12 @@ std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindMemberSymbolPtr(std:
     return FindSymbolsPtr(std::string_view(key));
 }
 
+std::vector<Symbol> SymbolTable::FindMemberSymbols(std::string_view scope, std::string_view member) const
+{
+    auto ptr = FindMemberSymbolPtr(scope, member);
+    return ptr ? *ptr : std::vector<Symbol>{};
+}
+
 std::vector<Symbol> SymbolTable::FindSymbols(std::string_view qualifiedName) const
 {
     std::shared_lock<std::shared_mutex> lock(m_mutex);

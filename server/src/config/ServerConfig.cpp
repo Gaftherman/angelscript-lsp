@@ -1151,4 +1151,38 @@ ServerConfig FromArgs(int argc, char** argv)
 
     return config;
 }
+
+namespace
+{
+template <typename T> void AssignIfPresent(const std::optional<T>& opt, T& target)
+{
+    if (opt.has_value())
+    {
+        target = *opt;
+    }
+}
+} // namespace
+
+void ApplyEngineProperties(const NativeEngineProperties& props, EngineProperties& engine)
+{
+    AssignIfPresent(props.propertyAccessorMode, engine.propertyAccessorMode);
+    AssignIfPresent(props.disallowGlobalVars, engine.disallowGlobalVars);
+    AssignIfPresent(props.requireEnumScope, engine.requireEnumScope);
+    AssignIfPresent(props.boolConversionMode, engine.boolConversionMode);
+    AssignIfPresent(props.allowUnsafeReferences, engine.allowUnsafeReferences);
+    AssignIfPresent(props.allowMultilineStrings, engine.allowMultilineStrings);
+    AssignIfPresent(props.disableIntegerDivision, engine.disableIntegerDivision);
+    AssignIfPresent(props.privatePropAsProtected, engine.privatePropAsProtected);
+    AssignIfPresent(props.useCharacterLiterals, engine.useCharacterLiterals);
+    AssignIfPresent(props.disallowValueAssignForRef, engine.disallowValueAssignForRef);
+    AssignIfPresent(props.alterSyntaxNamedArgs, engine.alterSyntaxNamedArgs);
+    AssignIfPresent(props.disallowEmptyListElements, engine.disallowEmptyListElements);
+    AssignIfPresent(props.foreachSupport, engine.foreachSupport);
+    AssignIfPresent(props.alwaysImplDefaultConstruct, engine.alwaysImplDefaultConstruct);
+    AssignIfPresent(props.allowUnicodeIdentifiers, engine.allowUnicodeIdentifiers);
+    AssignIfPresent(props.ignoreDuplicateSharedIntf, engine.ignoreDuplicateSharedIntf);
+    AssignIfPresent(props.compilerWarnings, engine.compilerWarnings);
+    AssignIfPresent(props.memberInitMode, engine.memberInitMode);
+    AssignIfPresent(props.heredocTrimMode, engine.heredocTrimMode);
+}
 } // namespace angel_lsp::config

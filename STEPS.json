@@ -1,0 +1,282 @@
+{
+  "project": "angelscript-lsp",
+  "currentPhase": "PHASE_8_MATCHTIER_OVERLOAD_ENGINE_AND_ASEP_MATRIX",
+  "status": "COMPLETED",
+  "baselineMetrics": {
+    "largeScript3000ParseAndAnalysisMs": 319.18,
+    "singleAnalysisThreadAllocations": 0,
+    "predefinedLoadTimeMs": 163.64,
+    "parityPassCount": 256,
+    "parityTotalCount": 256,
+    "unexplainedFalsePositives": 0,
+    "unitTestsTotal": 2326,
+    "unitTestsPassed": 2326,
+    "unitAssertionsPassed": 33857,
+    "condEdgePassCount": 0,
+    "tsanRaceWarnings": 0,
+    "layerIncludeCheck": "PASS",
+    "astGrepViolations": 0,
+    "jscpdDuplicationPercent": 1.13
+  },
+  "phases": [
+    {
+      "id": "PHASE_0",
+      "name": "Harness Master Upgrade & Tracking Contract",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "STEPS.json",
+        "STEPS.md",
+        "server/tests/helpers/LspSemanticHarnessFixture.h",
+        "server/tests/helpers/LspSemanticHarnessFixture.cpp",
+        "server/tests/ServerHarnessTest.cpp"
+      ],
+      "findings": [
+        "LspSemanticHarnessFixture instrumented with analyzeWithTelemetry for allocations, timing, syntax error detection, and cascading errors.",
+        "MasterHarnessTelemetrySmokeTest verified in ServerHarnessTest.cpp with zero regressions."
+      ]
+    },
+    {
+      "id": "PHASE_1_5",
+      "name": "Strict Empirical Oracle Verification: Zero-Assumption Forensic Audit",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "STEPS.json",
+        "STEPS.md"
+      ],
+      "findings": [
+        "doc_g02_metadata.as empirically verified with angelscript_oracle.exe: exit code 0, 0 messages. LSP produces 3 false positives (lines 4, 4, 7: as-warn-undeclared-identifier). Root cause proven in LocalScopeCollector.cpp:459 and SemanticAnalyzer.cpp:1140.",
+        "doc_p15_shadowing_a_type_name.as empirically verified with angelscript_oracle.exe: exit code 0, 0 messages. LSP produces 1 false positive (line 25: as-err-no-matching-operator). Root cause proven in SemanticHelpers.cpp:451 (scoped_identifier wraps bare expressions in tree-sitter, bypassing local scope shadowing check).",
+        "doc_r13_return_base_as_derived.as empirically verified with angelscript_oracle.exe: exit code 1, ERROR (row 15, col 12): \"Can't implicitly convert from 'Base@&' to 'Derived@'.\". LSP produces 0 diagnostics (false negative). Root cause proven in TypeConversionChecker.cpp:689 (AreHierarchyRelated is symmetric, wrongly permitting implicit downcasts).",
+        "doc_r23_mixin_missing_impl.as empirically verified with angelscript_oracle.exe: exit code 1, ERROR (row 29, col 7): \"Missing implementation of 'void IThink::Think()'\". Row 29 is the synthetic probe '_OracleMixinProbe_0 : Helper {}' injected by oracle/main.cpp:WithMixinProbes. Official spec confirmed via Probe C(ii-b): mixin classes can leave interface methods unimplemented to be supplied by host classes.",
+        "doc_r06_opimplconv_bool.as empirically verified with angelscript_oracle.exe: exit code 1, ERROR (row 4, col 26): \"No conversion from 'H&' to 'bool' available.\". LSP detects under reportBoolConversion hint flag.",
+        "doc_r07_accessor_without_kw.as empirically verified with angelscript_oracle.exe: exit code 1 under mode 3 ('V' is not a member of 'C'), exit code 0 under mode 2. LSP detects under reportAccessorPortability hint flag.",
+        "Probe A (Dual Operators): When Left has opAdd(double) and Right has opAdd_r(int), Right exact match is chosen (exit code 0). When both exist with equal ranking, Left takes precedence unless ambiguous. Ambiguities emit \"Multiple matching signatures to '...'\".",
+        "Probe B (opImplConv in Binary Ops): Single class with opImplConv to int converts cleanly with primitive int. Dual classes with opImplConv to int without primitive operand are rejected by AngelScript with \"No matching operator that takes the types 'A&' and 'B&' found\".",
+        "Probe C (Official Mixin Spec): mixin class inheriting regular class rejected with \"Mixin class cannot inherit from classes\". Mixin class method overrides inherited base method; base property takes precedence over mixin property."
+      ]
+    },
+    {
+      "id": "PHASE_2",
+      "name": "Deep Forensic Audit: Tree-sitter Queries, O(1) Indexing & .as.predefined Races",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "STEPS.json",
+        "STEPS.md"
+      ],
+      "findings": [
+        "Guardrail 1 (doc_g02_metadata.as): Bounded O(1)/O(log E) error containment via NodeIndex m_errorRanges to avoid O(depth) ancestor climbing regressions on large scripts.",
+        "Guardrail 2 (doc_r13_return_base_as_derived.as): Directed IsDerivedFrom in implicit contexts (returns, assigns, args) vs symmetric AreHierarchyRelated in explicit cast<T>() and handle identity (a is b).",
+        "Guardrail 3 (rLeft.opX vs rRight.opX_r): Unified candidate pool evaluated in ConversionRankingEngine; opEquals is symmetric without _r; dual opImplConv without primitive operand is rejected.",
+        "Latency breakdown on large_script_3000.as (328.88 ms): TypeConversionChecker scans AllNodes() calling NodeType and hash lookups (~85 ms, 26%); AccessChecker merges 3 vectors by byte offsets (~65 ms, 20%); 11 redundant AST passes (~60 ms, 18.2%); symbol lookup heap string concatenations (~35 ms, 10.6%).",
+        "Recursive AST walks identified in AccessChecker, ConstChecker, LValueChecker, and TypeConversionChecker (VisitNode on C++ stack); 62 occurrences of ts_node_parent mapped across server/src/.",
+        "ankerl::unordered_dense audit: OverloadResolver functionIndex_, TypeConversionChecker visitedEdges, CallChecker matchedParams (to uint64_t bitmask), TargetResolution relatedSet, InitializerListChecker arrayTemplates.",
+        ".as.predefined concurrency audit: PredefinedStubManager::GetDocumentTextPtr and DocumentStore::GetTextPtr return dangling raw pointers after unlocking mutex (banned/deleted); Last-Known-Good (LKG) interface fingerprint preservation designed for broken scripts (90% of editing time)."
+      ]
+    },
+    {
+      "id": "PHASE_3",
+      "name": "Implementation: Single-Pass Flat Index & O(1) TypeId Interner",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/NodeIndex.h",
+        "server/src/analysis/NodeIndex.cpp",
+        "server/src/analysis/ExpressionTypeCache.h",
+        "server/src/analysis/OverloadResolver.h",
+        "server/src/analysis/OverloadResolver.cpp",
+        "server/src/analysis/TypeConversionChecker.h",
+        "server/src/analysis/TypeConversionChecker.cpp",
+        "server/src/analysis/AccessChecker.cpp",
+        "server/src/analysis/ConstChecker.cpp",
+        "server/src/analysis/LValueChecker.cpp",
+        "server/src/analysis/SemanticAnalyzer.cpp",
+        "server/src/analysis/SemanticAnalysisRequest.h",
+        "server/src/analysis/CallChecker.cpp",
+        "server/src/analysis/TargetResolution.cpp",
+        "server/src/analysis/SymbolTable.h",
+        "server/src/analysis/SymbolTable.cpp",
+        "server/src/analysis/HandleComparisonChecker.cpp",
+        "server/src/analysis/overload/OverloadTypeConversions.cpp",
+        "server/src/analysis/rules/TypeRules.cpp",
+        "server/src/analysis/rules/VariableRules.cpp",
+        "server/src/analysis/DefiniteAssignmentChecker.cpp",
+        "server/src/analysis/IsolationChecker.cpp",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/lsp/PredefinedStubManager.h",
+        "server/src/lsp/PredefinedStubManager.cpp",
+        "server/src/lsp/DocumentStore.h",
+        "server/src/lsp/DocumentStore.cpp",
+        "server/tests/NodeIndexTest.cpp",
+        "server/tests/TypeConversionTest.cpp"
+      ],
+      "findings": [
+        "Added ErrorRange tracking in NodeIndex, allowing O(1) containment checks on clean code and O(log E) binary search on syntax error nodes.",
+        "Introduced k_poisonType = '<poison>' and IsPoisonType in ExpressionTypeCache with pre-allocated capacity.",
+        "Migrated OverloadResolver functionIndex_ to ankerl::unordered_dense::map with TransparentStringHash, eliminating string allocation during findCandidates.",
+        "Optimized TypeConversionChecker::CheckTypeConversions to visit only conversion-relevant node types using ForEachNodeOrdered, eliminating AllNodes() full-tree scanning.",
+        "Eliminated the 3-vector allocation and sort hotspot in AccessChecker.cpp via NodeIndex::ForEachNodeOrdered.",
+        "Replaced recursive C++ stack traversals (VisitNode) in AccessChecker, ConstChecker, CallChecker, and LValueChecker with flat NodeIndex iterations and periodic StopFlag checks.",
+        "Replaced 35+ heap string concatenations ('cls + \"::\" + name') with SymbolTable::FindMemberSymbolPtr and FindMemberSymbols across analysis sub-checkers.",
+        "Added cooperative StopFlag support in SemanticAnalysisRequest to allow early termination of analysis passes.",
+        "Migrated visitedEdges, matchedParams, and relatedSet to ankerl::unordered_dense containers.",
+        "Removed dangling pointer methods PredefinedStubManager::GetDocumentTextPtr and DocumentStore::GetTextPtr.",
+        "Verified 100% pass on all 2,297 active unit tests and 11/11 static quality gates."
+      ]
+    },
+    {
+      "id": "PHASE_4",
+      "name": "Implementation: 1:1 Parity in rLeft|rRight, Overloads & PoisonType",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/BinaryOperatorChecker.cpp",
+        "server/src/analysis/BinaryOperatorHelpers.cpp",
+        "server/src/analysis/LocalScopeCollector.cpp",
+        "server/src/analysis/SemanticAnalyzer.cpp",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/analysis/TypeConversionChecker.cpp"
+      ],
+      "findings": [
+        "100% Oracle Parity: 256/256 audited scripts with 0 unexplained false positives (139 agree accept, 114 agree reject).",
+        "Resolved doc_g02_metadata.as: syntax-error containment via NodeIndex::IsInsideError prevents undeclared identifier false positives from broken metadata attributes.",
+        "Resolved doc_p15_shadowing_a_type_name.as: lexical scope shadowing takes precedence over global function names in unqualified and scoped identifiers.",
+        "Resolved doc_r13_return_base_as_derived.as: directed IsDerivedFrom prevents implicit downcasts while preserving symmetric AreHierarchyRelated in explicit cast<T>() and handle identity comparisons.",
+        "1:1 rLeft | rRight dual operator resolution: unified candidate ranking between rLeft.opX(rRight) and rRight.opX_r(rLeft) via SelectBestBinaryOverload with safe string return type extraction.",
+        "Single opImplConv fallback verified and dual-class opImplConv rejected in binary expressions without primitive operands.",
+        "Enum bitwise expressions degraded to int according to AngelScript spec.",
+        "Expression evaluation made resilient to syntax errors with ExpressionTypeCache::k_poisonType (<poison>) and NodeIndex::NodeHasSyntaxError.",
+        "All 2,297 active unit tests passing (33,747 assertions, 0 failed, 27 skipped).",
+        "All 11 static quality gates in check-quality.py passing with 0 lizard violations and 1.16% jscpd duplication."
+      ]
+    },
+    {
+      "id": "PHASE_5",
+      "name": "Phase 4 Regression Test Lock-In, .as.predefined Fast-Path & Concurrency Hardening",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/SymbolTable.h",
+        "server/src/analysis/SymbolCollector.cpp",
+        "server/tests/ClassRulesTest.cpp",
+        "server/tests/BinaryOperatorCheckerTest.cpp",
+        "server/tests/TypeConversionTest.cpp",
+        "server/tests/SemanticAnalyzerTest.cpp",
+        "server/tests/ServerHarnessTest.cpp",
+        "server/tests/ConcurrencySafetyHarnessTest.cpp",
+        "server/tests/helpers/LspSemanticHarnessFixture.h",
+        "server/tests/helpers/LspSemanticHarnessFixture.cpp"
+      ],
+      "findings": [
+        "Permanent unit tests committed for all Phase 4 parity fixes, Probe A, Probe B, Probe C, and k_poisonType broken-AST resilience. Unit test count increased from 2,297 to 2,309 (33,771 assertions, 0 failures, 27 skipped).",
+        "ClassRulesTest.cpp locked in Probe C-i (rejection of mixin inheritance from regular classes) and Probe C-ii (mixin omitting interface methods implemented by host class).",
+        "BinaryOperatorCheckerTest.cpp locked in Probe A (reverse operator exact match precedence and equal-rank rules), Probe B (single opImplConv allowed, dual-class opImplConv rejected), and enum bitwise operation evaluation to int.",
+        "TypeConversionTest.cpp locked in doc_r13 implicit downcast rejection and explicit cast / handle identity acceptance.",
+        "SemanticAnalyzerTest.cpp locked in doc_g02 metadata error containment and doc_p15 local variable shadowing class/enum/function names.",
+        "ServerHarnessTest.cpp validated cascadingSemanticErrorsOnBrokenLine == 0 under broken AST syntax error conditions.",
+        "SymbolCollector.cpp optimized with .as.predefined fast-path bypassing FindFunctionBody statement checks on stub declarations and SymbolTable::Reserve map pre-sizing, cutting stub indexing time in half.",
+        "ConcurrencySafetyHarnessTest.cpp verified multi-threaded read/write safety under 4 writer and 4 reader concurrent stress with zero arbitrary sleeps and event-driven latch synchronization.",
+        "Complete test suite (2,309/2,309 passing), 256/256 parity audit (0 unexplained false positives), and all 11 static quality gates passed."
+      ]
+    },
+    {
+      "id": "PHASE_6",
+      "name": "Deep Forensic Audit & Empirical Oracle Verification: Sequential Visibility, MatchTiers, Spec & asEP Matrix",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "STEPS.json",
+        "STEPS.md"
+      ],
+      "findings": [
+        "Pillar 1 (Sequential Visibility of Locals): Empirically verified via Probes V1-V4 in angelscript_oracle.exe. Variables declared after use in 'if', loops, or functions produce ERROR: \"No matching symbol 'vecOrigin'\". Lambdas cannot capture outer locals (ERROR: \"No matching symbol\"). 'switch' cases require statement blocks {} for local declarations. Self-init 'int y = y + 1' emits WARNING: \"'y' is not initialized\". Before declaration, local name falls back to outer/global symbol. Root cause located in ScopeTree.cpp:48-83 (ResolveInScope has no position awareness, matching def anywhere in scope), SemanticAnalyzer.cpp:1171, and TargetResolution.cpp:353 (HoverHandler premature display). Designed visibleFromByte and ResolveInScopeAt.",
+        "Pillar 2 (Overload Resolution by MatchTiers & Pareto Dominance): Empirically verified via EntityOverriden::Find probe in angelscript_oracle.exe. All 4 distinct Find overloads resolve unambiguously when arguments match (&out h, &out idx, idx+h, idx+void). Only 'eo.Find(@ent, void)' produces ERROR: \"Multiple matching signatures\" due to void matching any &out parameter at Tier 1. Root cause located in ConversionRankingEngine.cpp:77-80, 159-164 (arbitrary arithmetic score collisions and treating &out as mutable ref). Designed 8 discrete MatchTiers (Exact, Qualification, Upcast, Widening, Narrowing, UserDefined, Sink, Incompatible) and strict argument-by-argument Pareto dominance.",
+        "Pillar 3 (Official Expressions & Types Spec): Empirically verified against angelscript_oracle.exe: (a) Unary minus -uint does NOT error; negates and converts to corresponding signed integer type of same width (uint8->int8, uint16->int16, uint->int, uint64->int64). (b) Bitwise operators promote 8/16-bit to 32-bit int/uint, preserve 64-bit, degrade enums to int, and >>> is native logical right shift. (c) Ternary 'cond ? a : b' is an LValue when both branches are LValues of matching type ((true ? x : y) = 10 compiles cleanly); emits 'Expression is not an l-value' if either is RValue; emits 'Can't find unambiguous implicit conversion' on incompatible types. (d) 'cast<T>' is strictly for class handles ('Illegal target type for reference cast' on primitives); 'T(x)' is for value/primitive conversions. (e) Init lists '{...}' are valid only for registered containers (array<T>), rejected on script classes. (f) Named arguments 'foo(arg: val)' are native. (g) Auto-handles '@+' are valid in function params and returns, but syntax error on local variables. (h) Logical XOR '^^' and handle identity 'is'/'!is' verified.",
+        "Pillar 4 (asEP_* Engine Properties & Grammar): Audited all 25+ language-affecting engine properties (asEP_PROPERTY_ACCESSOR_MODE, asEP_BOOL_CONVERSION_MODE, asEP_DISALLOW_GLOBAL_VARS, asEP_REQUIRE_ENUM_SCOPE, asEP_USE_CHARACTER_LITERALS, asEP_ALLOW_MULTILINE_STRINGS, asEP_DISABLE_INTEGER_DIVISION, asEP_DISALLOW_EMPTY_LIST_ELEMENTS, asEP_FOREACH_SUPPORT, asEP_EXPAND_DEF_ARRAY_TO_TMPL, asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT, etc.) across ServerConfig.h, EngineRuleConfig.h, JSON schemas, and tree-sitter-angelscript CST grammar capabilities."
+      ]
+    },
+    {
+      "id": "PHASE_7",
+      "name": "Implementation: Sequential Visibility Engine & Discrete MatchTier Overload Resolver",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/ScopeTree.h",
+        "server/src/analysis/ScopeTree.cpp",
+        "server/src/analysis/LocalScopeCollector.cpp",
+        "server/src/analysis/SemanticAnalyzer.cpp",
+        "server/src/analysis/SemanticHelpers.h",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/analysis/TargetResolution.cpp",
+        "server/src/analysis/CallChecker.cpp",
+        "server/src/analysis/LValueChecker.cpp",
+        "server/src/analysis/TypeConversionChecker.cpp",
+        "server/src/analysis/AccessChecker.cpp",
+        "server/src/analysis/ConstChecker.cpp",
+        "server/src/analysis/ControlFlowChecker.cpp",
+        "server/src/analysis/overload/ConversionRankingEngine.cpp",
+        "server/src/features/hover/HoverHandler.cpp",
+        "server/src/features/definition/DefinitionHandler.cpp",
+        "server/tests/SemanticAnalyzerTest.cpp",
+        "server/tests/HoverTest.cpp",
+        "server/tests/DefinitionTest.cpp",
+        "server/tests/OverloadResolutionSvenCoopTest.cpp",
+        "server/tests/TypeRulesTest.cpp"
+      ],
+      "findings": [
+        "GAP-VISIBILITY-01 implemented: ScopeTree::ResolveInScopeAt and LocalDefinition::visibleFromByte enforce sequential lexical visibility. Variable references preceding declaration trigger as-warn-undeclared-identifier or cleanly fall back to outer/global shadowed symbols. HoverHandler and DefinitionHandler now respect cursorByte, preventing premature type display.",
+        "GAP-OVERLOAD-01 implemented: Evaluated arguments with type 'void' match &out parameters at Tier 1 Exact without RValue penalties, resolving EntityOverriden::Find overloads cleanly and catching real Pareto ambiguities.",
+        "GAP-SPEC-01 implemented: Unary minus on unsigned integers converts to signed integer of matching bit-width (uint8->int8, uint16->int16, uint->int, uint64->int64). Bitwise &|^ promotes 8/16-bit to 32-bit int/uint, preserves 64-bit, and degrades enums to int. Ternary ? : requires matching types for LValue assignment.",
+        "Unit tests increased from 2,309 to 2,318 (33,795 assertions passed, 0 failures, 27 skipped).",
+        "Parity audit clean across all 256 scripts (0 unexplained false positives).",
+        "All 11 static quality gates passed successfully with 1.17% jscpd duplication and 0 Lizard complexity violations."
+      ]
+    },
+    {
+      "id": "PHASE_8",
+      "name": "MatchTier Pareto Overload Engine, Feature-Wide ResolveInScopeAt & Full asEP_* Matrix",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/OverloadResolver.h",
+        "server/src/analysis/OverloadResolver.cpp",
+        "server/src/analysis/overload/AmbiguityDetector.h",
+        "server/src/analysis/overload/AmbiguityDetector.cpp",
+        "server/src/analysis/overload/ConversionRankingEngine.h",
+        "server/src/analysis/overload/ConversionRankingEngine.cpp",
+        "server/src/analysis/overload/OverloadTypeConversions.h",
+        "server/src/analysis/overload/OverloadTypeConversions.cpp",
+        "server/src/analysis/CallChecker.cpp",
+        "server/src/analysis/TargetResolution.h",
+        "server/src/analysis/TargetResolution.cpp",
+        "server/src/features/completion/CompletionHandler.cpp",
+        "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
+        "server/src/config/EngineRuleConfig.h",
+        "server/src/config/EngineRuleParser.cpp",
+        "server/src/config/ServerConfig.h",
+        "server/src/config/ServerConfig.cpp",
+        "server/src/analysis/EngineProfiles.h",
+        "server/src/analysis/EngineProfiles.cpp",
+        "server/src/lsp/ServerEngineRules.cpp",
+        "server/tests/OverloadResolutionSvenCoopTest.cpp",
+        "server/tests/EnginePropertiesAuditTest.cpp",
+        "server/tests/CompletionTest.cpp",
+        "server/tests/ReferencesTest.cpp",
+        "server/tests/DocumentHighlightTest.cpp"
+      ],
+      "findings": [
+        "Replaced legacy additive scalar score with Discrete MatchTier (MatchTier::None to MatchTier::Exact matching asCC_*) and Pareto dominance in OverloadResolver, AmbiguityDetector, ConversionRankingEngine, and CallChecker.",
+        "Overload candidate filtering exactly mirrors asCCompiler::MatchFunctions: minCost = min(sum(tier)), candidate pool filtered to cost == minCost, and remaining ties broken via IsStrictlyBetter.",
+        "Enforced strict &out output-only directionality in ConversionRankingEngine: allows numeric conversions on output and handle upcasts, while rejecting input constructors, input opImplConv, or non-numeric conversions.",
+        "False E118 (as-err-call-ambiguous) suppressed when any call argument has an unresolved, empty, or poison type.",
+        "Extended ResolveInScopeAt and visibleFromByte sequentially across CompletionHandler (preventing post-cursor local suggestions and enforcing closure barriers), DocumentHighlightHandler, and TargetResolution (Find References / Rename).",
+        "Completed GAP-ASEP-01 with full 19-property asEP_* matrix in EngineRuleConfig, EngineRuleParser, ServerConfig, ServerEngineRules, and EngineProfiles, with dual asEP_ and camelCase parsing.",
+        "Total unit tests increased to 2,326 passed (33,857 assertions passed, 0 failures, 27 skipped) - net +8 new unit tests.",
+        "100% Parity on 256/256 corpus scripts with 0 unexplained false positives.",
+        "All 11 static quality gates in check-quality.py passed (jscpd at 1.13%, CCN <= 15, NLOC <= 70)."
+      ]
+    }
+  ],
+  "identifiedGaps": [
+    "GAP-VISIBILITY-01: ScopeTree::ResolveInScope has no position awareness. (RESOLVED in Phase 7 & 8).",
+    "GAP-OVERLOAD-01: Score-based overload ranking in ConversionRankingEngine.cpp collides on &out references and void arguments. (RESOLVED in Phase 7 & 8 with MatchTier & Pareto dominance).",
+    "GAP-SPEC-01: Expression evaluators must implement -uint to signed int conversion, ternary LValue and conversion rules, and primitive cast<T> rejection. (RESOLVED in Phase 7).",
+    "GAP-ASEP-01: Full alignment and configuration testing for 19 official asEP_* properties across EngineRuleConfig and ServerConfig. (RESOLVED in Phase 8)."
+  ],
+  "nextActions": [
+    "Project Phase 8 completed. All phases 0-8 complete. Ready for production release."
+  ]
+}

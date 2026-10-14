@@ -4,12 +4,15 @@
 #include "features/completion/CompletionHandler.h"
 #include "features/definition/DefinitionHandler.h"
 #include "features/hover/HoverHandler.h"
+#include "utils/AllocationCounter.h"
+#include "utils/Timer.h"
 #include "utils/Utils.h"
 
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
+#include <unordered_set>
 
 #if defined(_WIN32)
 #define POP_ENV(var, val)                                                                                              \
@@ -33,8 +36,113 @@
     } while (0)
 #endif
 
+namespace angel_lsp::utils
+{
+namespace
+{
+thread_local std::optional<ScopedAllocationCounter> t_harnessThreadAllocCounter;
+} // namespace
+
+void AllocationCounter::resetThreadCounts() noexcept
+{
+    t_harnessThreadAllocCounter.emplace(true);
+    t_harnessThreadAllocCounter->Reset();
+}
+
+std::size_t AllocationCounter::getThreadAllocationCount() noexcept
+{
+    return t_harnessThreadAllocCounter.has_value() ? t_harnessThreadAllocCounter->GetAllocationCount() : 0;
+}
+} // namespace angel_lsp::utils
+
 namespace angel_lsp::test
 {
+namespace
+{
+#ifndef EXPECT_LE
+#define EXPECT_LE(a, b) CHECK_LE((a), (b))
+#endif
+
+lsp::DiagnosticSeverity ToLspSeverity(analysis::DiagnosticSeverity severity) noexcept
+{
+    switch (severity)
+    {
+    case analysis::DiagnosticSeverity::Error:
+        return lsp::DiagnosticSeverity::Error;
+    case analysis::DiagnosticSeverity::Warning:
+        return lsp::DiagnosticSeverity::Warning;
+    case analysis::DiagnosticSeverity::Information:
+        return lsp::DiagnosticSeverity::Information;
+    case analysis::DiagnosticSeverity::Hint:
+        return lsp::DiagnosticSeverity::Hint;
+    }
+    return lsp::DiagnosticSeverity::Error;
+}
+
+void CollectSyntaxErrorLines(TSNode root, std::unordered_set<uint32_t>& errorLines)
+{
+    if (ts_node_is_null(root) || !ts_node_has_error(root))
+    {
+        return;
+    }
+
+    TSTreeCursor cursor = ts_tree_cursor_new(root);
+    bool hasChild = true;
+
+    while (hasChild)
+    {
+        const TSNode current = ts_tree_cursor_current_node(&cursor);
+        if (ts_node_is_missing(current) || ts_node_is_error(current))
+        {
+            errorLines.insert(ts_node_start_point(current).row);
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                continue;
+            }
+            bool ascended = false;
+            while (ts_tree_cursor_goto_parent(&cursor))
+            {
+                if (ts_tree_cursor_goto_next_sibling(&cursor))
+                {
+                    ascended = true;
+                    break;
+                }
+            }
+            if (!ascended)
+            {
+                break;
+            }
+            continue;
+        }
+
+        if (ts_node_has_error(current) && ts_tree_cursor_goto_first_child(&cursor))
+        {
+            continue;
+        }
+
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            continue;
+        }
+
+        bool ascended = false;
+        while (ts_tree_cursor_goto_parent(&cursor))
+        {
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                ascended = true;
+                break;
+            }
+        }
+        if (!ascended)
+        {
+            break;
+        }
+    }
+
+    ts_tree_cursor_delete(&cursor);
+}
+} // namespace
 
 LspSemanticHarnessFixture::LspSemanticHarnessFixture()
 {
@@ -206,6 +314,61 @@ void LspSemanticHarnessFixture::AddVirtualDocument(const std::string& uri, const
 void LspSemanticHarnessFixture::UpdateVirtualDocument(const std::string& uri, const std::string& newContent)
 {
     AddVirtualDocument(uri, newContent);
+}
+
+HarnessAuditResult LspSemanticHarnessFixture::analyzeWithTelemetry(std::string_view uri, std::string_view sourceText,
+                                                                   std::size_t maxAllowedAllocations)
+{
+    HarnessAuditResult result;
+    const std::string uriStr(uri);
+    const std::string contentStr(sourceText);
+
+    utils::AllocationCounter::resetThreadCounts();
+    utils::HighResTimer timer;
+
+    AddVirtualDocument(uriStr, contentStr);
+
+    result.elapsedMs = timer.ElapsedMs();
+    result.threadAllocations = utils::AllocationCounter::getThreadAllocationCount();
+
+    std::unordered_set<uint32_t> errorLines;
+    const auto treeIt = m_trees.find(uriStr);
+    if (treeIt != m_trees.end() && treeIt->second)
+    {
+        const TSNode root = ts_tree_root_node(treeIt->second.get());
+        CollectSyntaxErrorLines(root, errorLines);
+    }
+    result.hadSyntaxErrorNodes = !errorLines.empty();
+
+    const auto& diags = GetDiagnostics(uriStr);
+    result.diagnostics.reserve(diags.size());
+
+    for (const auto& diag : diags)
+    {
+        if (result.hadSyntaxErrorNodes && !diag.code.starts_with("as-syntax-") &&
+            diag.severity == analysis::DiagnosticSeverity::Error && errorLines.contains(diag.range.start.line))
+        {
+            ++result.cascadingSemanticErrorsOnBrokenLine;
+        }
+
+        lsp::Diagnostic lspDiag;
+        lspDiag.range.start.line = diag.range.start.line;
+        lspDiag.range.start.character = diag.range.start.character;
+        lspDiag.range.end.line = diag.range.end.line;
+        lspDiag.range.end.character = diag.range.end.character;
+        lspDiag.severity = ToLspSeverity(diag.severity);
+        lspDiag.source = diag.source;
+        lspDiag.code = diag.code;
+        lspDiag.message = diag.message;
+        result.diagnostics.push_back(std::move(lspDiag));
+    }
+
+    if (maxAllowedAllocations > 0)
+    {
+        EXPECT_LE(result.threadAllocations, maxAllowedAllocations);
+    }
+
+    return result;
 }
 
 const std::vector<analysis::Diagnostic>& LspSemanticHarnessFixture::GetDiagnostics(const std::string& uri) const
