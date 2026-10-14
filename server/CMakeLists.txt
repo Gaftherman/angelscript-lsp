@@ -295,7 +295,7 @@ if(TEST_SOURCES)
     else()
         target_compile_options(angel_lsp_tests PRIVATE ${ANGELLSP_WARNING_FLAGS})
     endif()
-    add_test(NAME angel_lsp_tests COMMAND angel_lsp_tests)
+    add_test(NAME angel_lsp_tests COMMAND angel_lsp_tests --duration=true)
     set_tests_properties(angel_lsp_tests PROPERTIES TIMEOUT 180)
 
     add_custom_command(TARGET angel_lsp_tests POST_BUILD

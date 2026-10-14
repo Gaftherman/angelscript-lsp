@@ -114,68 +114,10 @@ std::unique_ptr<Scope> LocalScopeCollector::CollectScopes(const std::string& sou
     return CollectScopesFromTree(rootNode, sourceCode);
 }
 
-static void BuildParentMap(TSNode root, LocalScopeCollector::ParentMap& parentMap)
-{
-    if (ts_node_is_null(root))
-        return;
-
-    constexpr int kMaxDepth = 64;
-    TSNode parentStack[kMaxDepth];
-    TSTreeCursor cursor = ts_tree_cursor_new(root);
-    int depth = 0;
-    bool visiting = true;
-
-    while (visiting)
-    {
-        TSNode node = ts_tree_cursor_current_node(&cursor);
-        if (depth > 0 && ts_node_is_named(node))
-        {
-            parentMap.emplace(node.id, parentStack[depth - 1]);
-        }
-
-        if (depth < kMaxDepth && ts_tree_cursor_goto_first_child(&cursor))
-        {
-            parentStack[depth] = node;
-            depth++;
-            continue;
-        }
-
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            continue;
-        }
-
-        bool backtracked = false;
-        while (ts_tree_cursor_goto_parent(&cursor))
-        {
-            depth--;
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                backtracked = true;
-                break;
-            }
-        }
-
-        if (!backtracked)
-        {
-            visiting = false;
-        }
-    }
-
-    ts_tree_cursor_delete(&cursor);
-}
-
 std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNode, const std::string& sourceCode) const
 {
     if (!m_localsQuery)
         return nullptr;
-
-    ParentMap parentMap;
-    if (sourceCode.size() > 10000)
-    {
-        parentMap.reserve(sourceCode.size() / 16);
-    }
-    BuildParentMap(rootNode, parentMap);
 
     std::vector<RawCapture> captures;
     if (sourceCode.size() > 10000)
@@ -206,7 +148,7 @@ std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNod
         }
     }
 
-    return BuildScopeTree(captures, sourceCode, parentMap);
+    return BuildScopeTree(captures, sourceCode);
 }
 
 void LocalScopeCollector::DeduplicateCaptures(std::vector<RawCapture>& captures)
@@ -321,7 +263,7 @@ void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::ve
 }
 
 void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, const std::vector<OpenScope>& stack,
-                                                   const std::string& sourceCode, const ParentMap& parents) const
+                                                   const std::string& sourceCode) const
 {
     if (ts_node_has_error(capture.node) || !ts_node_is_named(capture.node))
     {
@@ -350,7 +292,7 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
     if (capture.definitionKind == LocalDefinitionKind::Variable ||
         capture.definitionKind == LocalDefinitionKind::Parameter)
     {
-        ReadVariableTypeInfo(capture.node, sourceCode, def, parents);
+        ReadVariableTypeInfo(capture.node, sourceCode, def);
         const std::string baseType = CleanBaseType(def.typeName);
         if (capture.definitionKind == LocalDefinitionKind::Variable && IsReservedKeyword(baseType) &&
             !IsPrimitiveTypeName(baseType) && baseType != "auto")
@@ -387,8 +329,7 @@ static TSNode FindArgumentList(TSNode callNode)
     return argsChild;
 }
 
-void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode parent, LocalReference& ref,
-                                                     const ParentMap& parents)
+void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode parent, LocalReference& ref)
 {
     TSNode walk = refNode;
     TSNode walkParent = parent;
@@ -422,7 +363,7 @@ void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode pare
         if (wpType == "member_expression" || wpType == "scoped_identifier")
         {
             walk = walkParent;
-            walkParent = GetParent(walkParent, parents);
+            walkParent = GetParent(walkParent);
         }
         else
         {
@@ -437,7 +378,7 @@ static bool IsTypeSpecifierNodeType(std::string_view nodeType)
            nodeType == "type";
 }
 
-static bool IsTypeSpecifierContext(TSNode parent, const LocalScopeCollector::ParentMap& parents)
+static bool IsTypeSpecifierContext(TSNode parent)
 {
     TSNode cur = parent;
     while (!ts_node_is_null(cur))
@@ -449,7 +390,7 @@ static bool IsTypeSpecifierContext(TSNode parent, const LocalScopeCollector::Par
         }
         if (t == "scoped_identifier" || t == "scope")
         {
-            cur = LocalScopeCollector::GetParent(cur, parents);
+            cur = LocalScopeCollector::GetParent(cur);
             continue;
         }
         break;
@@ -511,8 +452,7 @@ static bool IsNamedArgumentNode(TSNode node, TSNode parent)
     return !ts_node_is_null(next) && std::string_view(ts_node_type(next)) == ":";
 }
 
-static bool ShouldSkipReferenceCapture(TSNode parent, ScopeKind scopeKind, bool hasMetadataInDoc,
-                                       const LocalScopeCollector::ParentMap& parents)
+static bool ShouldSkipReferenceCapture(TSNode parent, ScopeKind scopeKind, bool hasMetadataInDoc)
 {
     const bool isDeclarationScope =
         scopeKind == ScopeKind::Global || scopeKind == ScopeKind::Namespace || scopeKind == ScopeKind::Class;
@@ -526,7 +466,7 @@ static bool ShouldSkipReferenceCapture(TSNode parent, ScopeKind scopeKind, bool 
             {
                 return true;
             }
-            curr = LocalScopeCollector::GetParent(curr, parents);
+            curr = LocalScopeCollector::GetParent(curr);
         }
     }
     return false;
@@ -547,16 +487,16 @@ static bool IsAllowedKeywordReference(TSNode node, TSNode parent)
 }
 
 void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Scope* current,
-                                                  const std::string& sourceCode, const ParentMap& parents) const
+                                                  const std::string& sourceCode) const
 {
     if (ts_node_has_error(capture.node))
     {
         return;
     }
 
-    TSNode parent = GetParent(capture.node, parents);
+    TSNode parent = GetParent(capture.node);
     const bool hasMetadataInDoc = (sourceCode.find('[') != std::string::npos);
-    if (ShouldSkipReferenceCapture(parent, current->kind, hasMetadataInDoc, parents) ||
+    if (ShouldSkipReferenceCapture(parent, current->kind, hasMetadataInDoc) ||
         !IsAllowedKeywordReference(capture.node, parent))
     {
         return;
@@ -572,17 +512,16 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
     if (!ts_node_is_null(parent))
     {
         ref.isNamedArgument = IsNamedArgumentNode(capture.node, parent);
-        ref.isTypeSpecifier = IsTypeSpecifierContext(parent, parents);
+        ref.isTypeSpecifier = IsTypeSpecifierContext(parent);
         ref.isMemberAccess = IsMemberAccessNode(capture.node, parent, m_symMemberExpression, m_symScopedIdentifier);
-        DetermineCallReferenceInfo(capture.node, parent, ref, parents);
+        DetermineCallReferenceInfo(capture.node, parent, ref);
     }
 
     current->references.push_back(std::move(ref));
 }
 
 std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCapture>& captures,
-                                                           const std::string& sourceCode,
-                                                           const ParentMap& parents) const
+                                                           const std::string& sourceCode) const
 {
     DeduplicateCaptures(captures);
 
@@ -611,11 +550,11 @@ std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCaptur
 
         if (capture.kind == CaptureKind::Definition)
         {
-            ProcessDefinitionCapture(capture, stack, sourceCode, parents);
+            ProcessDefinitionCapture(capture, stack, sourceCode);
         }
         else if (capture.kind == CaptureKind::Reference)
         {
-            ProcessReferenceCapture(capture, stack.back().scope, sourceCode, parents);
+            ProcessReferenceCapture(capture, stack.back().scope, sourceCode);
         }
     }
 
@@ -856,9 +795,9 @@ static TSNode FindDeclaratorValueNode(TSNode declaratorNode, const std::string& 
 }
 
 void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, const std::string& sourceCode,
-                                                         LocalDefinition& def, const ParentMap& parents) const
+                                                         LocalDefinition& def) const
 {
-    TSNode declarationNode = GetParent(declaratorNode, parents);
+    TSNode declarationNode = GetParent(declaratorNode);
     if (ts_node_is_null(declarationNode))
         return;
 
@@ -889,10 +828,10 @@ void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, 
     def.hasNullInitializer = IsNullInitializer(valueNode);
 }
 
-void LocalScopeCollector::ReadVariableTypeInfo(TSNode nameNode, const std::string& sourceCode, LocalDefinition& def,
-                                               const ParentMap& parents) const
+void LocalScopeCollector::ReadVariableTypeInfo(TSNode nameNode, const std::string& sourceCode,
+                                               LocalDefinition& def) const
 {
-    TSNode declaratorNode = GetParent(nameNode, parents);
+    TSNode declaratorNode = GetParent(nameNode);
     if (ts_node_is_null(declaratorNode))
         return;
 
@@ -908,7 +847,7 @@ void LocalScopeCollector::ReadVariableTypeInfo(TSNode nameNode, const std::strin
     }
     if (ts_node_symbol(declaratorNode) == m_symVariableDeclarator)
     {
-        ReadVariableDeclaratorTypeInfo(declaratorNode, sourceCode, def, parents);
+        ReadVariableDeclaratorTypeInfo(declaratorNode, sourceCode, def);
         return;
     }
     if (ts_node_symbol(declaratorNode) == m_symLambdaParameterList)
