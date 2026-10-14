@@ -227,14 +227,9 @@ const Scope* FindInnermostScope(const Scope* root, uint32_t line, uint32_t chara
     }
 
     const Scope* current = root;
-    size_t depth = 0;
-    for (bool descended = true; descended;)
+    for (size_t depth = 0; depth < kMaxScopeDepth; ++depth)
     {
-        if (++depth > kMaxScopeDepth)
-        {
-            break;
-        }
-        descended = false;
+        bool descended = false;
         for (const auto& child : current->children)
         {
             if (child && contains(*child))
@@ -243,6 +238,10 @@ const Scope* FindInnermostScope(const Scope* root, uint32_t line, uint32_t chara
                 descended = true;
                 break;
             }
+        }
+        if (!descended)
+        {
+            break;
         }
     }
     return current;

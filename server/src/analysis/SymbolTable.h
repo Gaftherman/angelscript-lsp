@@ -261,6 +261,7 @@ struct VariableSignature
     bool hasSemicolon = true;
     bool isLocal = false;
     bool isEnumConstant = false;
+    bool hasCallInitializer = false;
 };
 
 struct EnumMemberInformation
@@ -498,6 +499,8 @@ class SymbolTable
     SymbolTable& operator=(SymbolTable&&) = delete;
 
     void AddSymbol(const Symbol& symbol);
+    /** @brief Adds multiple symbols in a single batch with a single lock acquisition. */
+    void AddSymbols(std::vector<Symbol>&& symbols);
     void InsertSymbol(const std::string& name, SymbolKind kind, const std::string& type = "");
     void ClearDocumentSymbols(const std::string& fileUri);
 
@@ -848,6 +851,13 @@ class SymbolTable
     /** @brief Cleans up previously synthesized symbols for host classes. Caller holds write lock. */
     void CleanSynthesizedSymbolsForClassesLocked(const std::vector<std::string>& classKeys);
 
+    /** @brief Cleans up synthesized members belonging to a single class. Caller holds write lock. */
+    void CleanSynthesizedMembersForClassLocked(const Symbol& sym, ankerl::unordered_dense::set<std::string>& fileKeys);
+
+    /** @brief Inserts symbols into buckets and tracks classes/mixins. Caller holds write lock. */
+    void InsertSymbolsLocked(std::vector<Symbol>& symbols, std::vector<std::string>& freshClassKeys, bool& addedMixin,
+                             std::string& fileUri);
+
     /** @brief Updates included mixins on class signatures and collects needed mixin names. Caller holds write lock. */
     ankerl::unordered_dense::set<std::string>
     UpdateIncludedMixinsForClassesLocked(const std::vector<std::string>& classKeys,
@@ -882,6 +892,10 @@ class SymbolTable
     void EnsureGlobalTypesLocked() const;
 
     bool m_virtualMixinDocumentsEnabled = false;
+    /** @brief Number of mixin classes currently stored in the table. Guarded by m_mutex. */
+    uint32_t m_mixinClassCount = 0;
+    /** @brief Set of class qualified names that currently have synthesized mixin members. Guarded by m_mutex. */
+    ankerl::unordered_dense::set<std::string> m_classesWithSynthesizedMixins;
     inline static std::atomic<uint64_t> s_tableCloneCount{0};
 };
 

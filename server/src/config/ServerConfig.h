@@ -510,6 +510,11 @@ struct DiagnosticsConfig
      * warnings.
      */
     std::vector<std::string> ignoredUnusedFunctionPatterns;
+
+    /**
+     * @brief Ignore unused global variables initialized with a call or constructor (default: false).
+     */
+    bool ignoreUnusedGlobalsWithCallInitializer = false;
 };
 
 /**

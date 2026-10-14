@@ -532,5 +532,8 @@ struct SemanticAnalysisRequest
 
     /** @brief Cache behind GetRuleIndex(). Never set by a caller; see that accessor. */
     mutable std::shared_ptr<const rules::RuleIndex> ruleIndex;
+
+    /** @brief Lazily populated cache for using namespace strings in this document. */
+    mutable std::optional<std::vector<std::string>> usingNamespacesCache;
 };
 } // namespace angel_lsp::analysis

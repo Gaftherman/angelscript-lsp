@@ -8,6 +8,7 @@
 #include "parser/Primitives.h"
 #include <ankerl/unordered_dense.h>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
@@ -555,14 +556,23 @@ std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std:
 std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode);
 
 /**
+ * @brief Retrieves cached using namespace names for the request, computing them at most once.
+ * @param request The semantic analysis request.
+ * @return Reference to the vector of using namespace names.
+ */
+[[nodiscard]] const std::vector<std::string>& GetUsingNamespaces(const SemanticAnalysisRequest& request);
+
+/**
  * @brief Checks if a scope prefix is a known namespace, class, interface, enum, or typedef.
  * @param prefix Scope prefix string (e.g. "Geometry", "Parent", "UnknownSpace").
  * @param node AST node for lexical context.
  * @param sourceCode Document source text.
  * @param table Symbol table.
+ * @param precomputedUsings Optional pre-collected using namespaces to avoid tree traversals.
  * @return True if prefix is a valid known scope.
  */
-bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourceCode, const SymbolTable& table);
+bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourceCode, const SymbolTable& table,
+                  std::span<const std::string> precomputedUsings = {});
 
 /**
  * @brief Resolves an unqualified or qualified name within a container chain and active using namespaces.
@@ -950,5 +960,13 @@ bool IsSimpleLiteralExpression(std::string_view expr);
  */
 TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::string_view mixinShortName,
                               std::string_view sourceCode);
+
+/**
+ * @brief Extracts the preceding scope qualifier for a datatype node, if any.
+ * @param[in] datatypeNode AST datatype node.
+ * @param[in] sourceCode Document source text.
+ * @return Scope prefix string ending in "::", or empty if unqualified.
+ */
+std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode);
 
 } // namespace angel_lsp::analysis

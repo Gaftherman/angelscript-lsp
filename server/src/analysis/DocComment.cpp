@@ -3,36 +3,49 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
 namespace
 {
-/** @brief Splits text into lines, dropping a trailing carriage return from each. */
-std::vector<std::string> SplitLines(const std::string& str)
+/** @brief Splits text into line views up to maxLines, dropping a trailing carriage return from each. */
+std::vector<std::string_view> SplitLinesUpTo(std::string_view str, size_t maxLines)
 {
-    std::vector<std::string> lines;
-    std::string line;
-    std::istringstream stream(str);
-    while (std::getline(stream, line))
+    std::vector<std::string_view> lines;
+    lines.reserve(std::min(maxLines, size_t{256}));
+    size_t start = 0;
+    while (start < str.size() && lines.size() < maxLines)
     {
+        size_t end = str.find('\n', start);
+        if (end == std::string_view::npos)
+        {
+            std::string_view line = str.substr(start);
+            if (!line.empty() && line.back() == '\r')
+            {
+                line.remove_suffix(1);
+            }
+            lines.push_back(line);
+            break;
+        }
+        std::string_view line = str.substr(start, end - start);
         if (!line.empty() && line.back() == '\r')
         {
-            line.pop_back();
+            line.remove_suffix(1);
         }
         lines.push_back(line);
+        start = end + 1;
     }
     return lines;
 }
 
 /** @brief Strips leading and trailing whitespace. */
-std::string Trim(const std::string& str)
+std::string_view Trim(std::string_view str)
 {
     size_t first = str.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos)
+    if (first == std::string_view::npos)
     {
         return "";
     }
@@ -58,14 +71,14 @@ std::string ExtractLineComment(std::string_view rem)
     return std::string(rem);
 }
 
-std::string ExtractBlockComment(const std::string& line, size_t startPos)
+std::string ExtractBlockComment(std::string_view line, size_t startPos)
 {
     const size_t close = line.find("*/", startPos + 2);
-    if (close != std::string::npos)
+    if (close != std::string_view::npos)
     {
-        return line.substr(startPos, close + 2 - startPos);
+        return std::string(line.substr(startPos, close + 2 - startPos));
     }
-    return line.substr(startPos);
+    return std::string(line.substr(startPos));
 }
 
 bool UpdateQuoteState(char c, bool& inString, bool& inChar)
@@ -88,7 +101,7 @@ bool UpdateQuoteState(char c, bool& inString, bool& inChar)
  *
  * Skips string and character literals. Ignores synthetic internal `//@listpattern`.
  */
-std::string ExtractTrailingComment(const std::string& line)
+std::string ExtractTrailingComment(std::string_view line)
 {
     bool inString = false;
     bool inChar = false;
@@ -108,7 +121,7 @@ std::string ExtractTrailingComment(const std::string& line)
         {
             if (line[i + 1] == '/')
             {
-                return ExtractLineComment(std::string_view(line).substr(i));
+                return ExtractLineComment(line.substr(i));
             }
             if (line[i + 1] == '*')
             {
@@ -119,14 +132,14 @@ std::string ExtractTrailingComment(const std::string& line)
     return "";
 }
 
-std::vector<std::string> CollectBlockComment(const std::vector<std::string>& lines, int endLine)
+std::vector<std::string_view> CollectBlockComment(const std::vector<std::string_view>& lines, int endLine)
 {
-    std::vector<std::string> commentLines;
+    std::vector<std::string_view> commentLines;
     for (int line = endLine; line >= 0; --line)
     {
-        const std::string& l = lines[line];
+        std::string_view l = lines[line];
         commentLines.push_back(l);
-        if (l.find("/*") != std::string::npos)
+        if (l.find("/*") != std::string_view::npos)
         {
             break;
         }
@@ -135,9 +148,9 @@ std::vector<std::string> CollectBlockComment(const std::vector<std::string>& lin
     return commentLines;
 }
 
-std::vector<std::string> CollectLineComments(const std::vector<std::string>& lines, int endLine)
+std::vector<std::string_view> CollectLineComments(const std::vector<std::string_view>& lines, int endLine)
 {
-    std::vector<std::string> commentLines;
+    std::vector<std::string_view> commentLines;
     for (int line = endLine; line >= 0; --line)
     {
         if (Trim(lines[line]).starts_with("//"))
@@ -158,7 +171,7 @@ bool IsMetadataBlockLine(std::string_view trimmed)
     return trimmed.size() >= 2 && trimmed.front() == '[' && trimmed.back() == ']';
 }
 
-int FindPrecedingCommentLine(const std::vector<std::string>& lines, int startLine)
+int FindPrecedingCommentLine(const std::vector<std::string_view>& lines, int startLine)
 {
     int line = startLine;
     while (line >= 0 && IsMetadataBlockLine(Trim(lines[line])))
@@ -172,7 +185,8 @@ int FindPrecedingCommentLine(const std::vector<std::string>& lines, int startLin
     return line;
 }
 
-std::vector<std::string> CollectPrecedingDocComments(const std::vector<std::string>& lines, uint32_t declStartLine)
+std::vector<std::string_view> CollectPrecedingDocComments(const std::vector<std::string_view>& lines,
+                                                          uint32_t declStartLine)
 {
     if (declStartLine == 0)
     {
@@ -183,7 +197,7 @@ std::vector<std::string> CollectPrecedingDocComments(const std::vector<std::stri
     {
         return {};
     }
-    const std::string trimmed = Trim(lines[candidateLine]);
+    const std::string_view trimmed = Trim(lines[candidateLine]);
     if (trimmed.ends_with("*/"))
     {
         return CollectBlockComment(lines, candidateLine);
@@ -204,23 +218,24 @@ std::string ExtractDocComment(const std::string& sourceCode, uint32_t declStartL
         return "";
     }
 
-    const auto lines = SplitLines(sourceCode);
+    const auto lines = SplitLinesUpTo(sourceCode, static_cast<size_t>(declStartLine) + 1);
     if (declStartLine >= lines.size())
     {
         return "";
     }
 
-    std::vector<std::string> commentLines = CollectPrecedingDocComments(lines, declStartLine);
-    if (commentLines.empty())
+    auto commentViews = CollectPrecedingDocComments(lines, declStartLine);
+    std::string trailing;
+    if (commentViews.empty())
     {
-        std::string trailing = ExtractTrailingComment(lines[declStartLine]);
+        trailing = ExtractTrailingComment(lines[declStartLine]);
         if (!trailing.empty())
         {
-            commentLines.push_back(std::move(trailing));
+            commentViews.push_back(trailing);
         }
     }
 
-    if (commentLines.empty())
+    if (commentViews.empty())
     {
         return "";
     }
@@ -228,37 +243,81 @@ std::string ExtractDocComment(const std::string& sourceCode, uint32_t declStartL
     // Return the RAW comment text: do not strip comment delimiters or leading stars here,
     // because tree-sitter-doxygen grammar matches the openers and handles leading stars.
     std::string rawComment;
-    for (size_t i = 0; i < commentLines.size(); ++i)
+    for (size_t i = 0; i < commentViews.size(); ++i)
     {
         if (i > 0)
         {
             rawComment += "\n";
         }
-        rawComment += commentLines[i];
+        rawComment += commentViews[i];
     }
 
     return RenderDoxygenMarkdown(rawComment);
 }
 
-bool HasPrecedingDocTag(std::string_view sourceCode, uint32_t declStartLine, std::string_view tag)
+bool HasPrecedingDocTagAtByte(std::string_view sourceCode, uint32_t declStartByte, std::string_view tag)
 {
-    if (sourceCode.empty() || tag.empty() || sourceCode.find(tag) == std::string_view::npos)
+    if (sourceCode.empty() || tag.empty() || declStartByte >= sourceCode.size())
     {
         return false;
     }
-    const auto lines = SplitLines(std::string(sourceCode));
-    if (declStartLine >= lines.size())
+    if (sourceCode.find(tag) == std::string_view::npos)
     {
         return false;
     }
-    const auto commentLines = CollectPrecedingDocComments(lines, declStartLine);
-    for (const auto& line : commentLines)
+
+    size_t pos = declStartByte;
+    while (pos > 0)
     {
-        if (line.find(tag) != std::string::npos)
+        size_t lineEnd = sourceCode.rfind('\n', pos - 1);
+        size_t lineStart = (lineEnd == std::string_view::npos) ? 0 : lineEnd + 1;
+        std::string_view line = sourceCode.substr(lineStart, pos - lineStart);
+        std::string_view trimmed = Trim(line);
+        if (trimmed.empty())
         {
-            return true;
+            if (lineEnd == std::string_view::npos)
+                break;
+            pos = lineEnd;
+            continue;
         }
+        if (trimmed.starts_with("//") || trimmed.ends_with("*/") || trimmed.starts_with("/*") ||
+            trimmed.starts_with("*"))
+        {
+            if (trimmed.find(tag) != std::string_view::npos)
+            {
+                return true;
+            }
+            if (lineEnd == std::string_view::npos)
+                break;
+            pos = lineEnd;
+            continue;
+        }
+        break;
     }
     return false;
+}
+
+bool HasPrecedingDocTag(std::string_view sourceCode, uint32_t declStartLine, std::string_view tag)
+{
+    if (sourceCode.empty() || tag.empty() || declStartLine == 0)
+    {
+        return false;
+    }
+    if (sourceCode.find(tag) == std::string_view::npos)
+    {
+        return false;
+    }
+
+    size_t pos = 0;
+    for (uint32_t line = 0; line < declStartLine && pos < sourceCode.size(); ++line)
+    {
+        size_t nextNl = sourceCode.find('\n', pos);
+        if (nextNl == std::string_view::npos)
+        {
+            return false;
+        }
+        pos = nextNl + 1;
+    }
+    return HasPrecedingDocTagAtByte(sourceCode, static_cast<uint32_t>(pos), tag);
 }
 } // namespace angel_lsp::analysis

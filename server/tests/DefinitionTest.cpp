@@ -810,3 +810,104 @@ TEST_CASE("DefinitionHandler - GAP-VISIBILITY-01: Sequential local variable visi
     REQUIRE(defAfter->size() == 1);
     CHECK((*defAfter)[0].range.start.line == 3);
 }
+
+TEST_CASE("Definition - External predefined class symbol when user file has call reference")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("CClientCommand");
+    const std::string predefUri = "file:///predefined/sven.as.predefined";
+    const std::string predefCode = "class " + className +
+                                   " {\n"
+                                   "    " +
+                                   className +
+                                   "();\n"
+                                   "}\n";
+
+    const std::string userCode = "void OnCmd(const " + className +
+                                 "@ args) {\n"
+                                 "    " +
+                                 className +
+                                 "(args);\n"
+                                 "}\n";
+
+    TestEnvironment env(userCode, "file:///scripts/main.as");
+    env.AddFile(predefUri, predefCode);
+
+    // Click on className in "const className@ args" (Line 0)
+    auto pos1 = FindPos(userCode, className);
+    auto def1 = env.DefAt(pos1.line, pos1.character);
+    REQUIRE(def1.has_value());
+    REQUIRE(!def1->empty());
+    CHECK((*def1)[0].uri.toString() == predefUri);
+
+    // Click on className in "className(args);" (Line 1)
+    auto pos2 = FindPos(userCode, className, userCode.find('\n'));
+    auto def2 = env.DefAt(pos2.line, pos2.character);
+    REQUIRE(def2.has_value());
+    REQUIRE(!def2->empty());
+    CHECK((*def2)[0].uri.toString() == predefUri);
+}
+
+TEST_CASE("Definition - Qualified funcdef shadowed by class method with identical name")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("NsMenu");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("MenuOptionSelect");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("InfoSection");
+
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    funcdef void " +
+                             fnName +
+                             "(int a);\n"
+                             "}\n"
+                             "class " +
+                             clsName +
+                             " {\n"
+                             "    void " +
+                             fnName +
+                             "() {}\n"
+                             "    " +
+                             nsName + "::" + fnName +
+                             "@ m_cb;\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // Find "fnName" in "nsName::fnName@ m_cb;"
+    const size_t posInDecl = code.find(nsName + "::" + fnName) + nsName.length() + 2;
+    auto pos = FindPos(code, fnName, posInDecl);
+
+    auto def = env.DefAt(pos.line, pos.character);
+    REQUIRE(def.has_value());
+    REQUIRE(!def->empty());
+    // Should point to line 1 (the funcdef), not line 4 (the class method)
+    CHECK((*def)[0].range.start.line == 1);
+}
+
+TEST_CASE("Definition - Delegate member pointer this.Method jumps to class method")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("OnClick");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Button");
+
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    void " +
+                             fnName +
+                             "() {}\n"
+                             "    void Init() {\n"
+                             "        this." +
+                             fnName +
+                             ";\n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // Find "fnName" in "this.fnName;"
+    const size_t thisPos = code.find("this." + fnName) + 5;
+    auto pos = FindPos(code, fnName, thisPos);
+
+    auto def = env.DefAt(pos.line, pos.character);
+    REQUIRE(def.has_value());
+    REQUIRE(!def->empty());
+    CHECK((*def)[0].range.start.line == 1);
+}

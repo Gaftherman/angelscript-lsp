@@ -189,6 +189,7 @@ class NodeIndex
     TSNode m_root{};
     const TSLanguage* m_language = nullptr;
     std::vector<TSNode> m_allNodes;
+    std::vector<TSNode> m_errorNodes;
     std::vector<std::vector<TSNode>> m_nodesBySymbol;
     std::vector<ErrorRange> m_errorRanges;
     ankerl::unordered_dense::map<std::string_view, TSSymbol> m_symbolByName;

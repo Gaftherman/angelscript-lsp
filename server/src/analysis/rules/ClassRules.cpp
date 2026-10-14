@@ -1,6 +1,7 @@
 #include "analysis/rules/ClassRules.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
+#include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "document/Document.h"
 #include "parser/AngelScriptParser.h"
@@ -227,6 +228,111 @@ void CheckInterfaceImplementation(const Symbol& sym, const ClassSignature& sig, 
     ReportMissingInterfaceMethods(sym, interfacesToCheck, implemented, ctx);
 }
 
+/** @brief Checks if a method symbol matches a final base function. */
+bool MatchesFinalBaseFunction(const Symbol& mSym, const std::string& cleanBase, const std::string& methodName,
+                              const SymbolTable& table)
+{
+    const std::string baseKey = cleanBase.empty() ? methodName : cleanBase + "::" + methodName;
+    auto basePtr = table.FindSymbolsPtr(baseKey);
+    if (!basePtr)
+    {
+        return false;
+    }
+    for (const auto& baseSym : *basePtr)
+    {
+        if (baseSym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(baseSym.signature))
+        {
+            continue;
+        }
+        if (baseSym.GetFunction().modifiers.isFinal && HasSameParameterList(mSym, baseSym))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @brief Checks if an accessor matches a final base property accessor. */
+bool MatchesFinalBaseProperty(const std::string& cleanBase, const std::string& methodName, const SymbolTable& table)
+{
+    if (methodName.size() <= 4)
+    {
+        return false;
+    }
+    const bool isGet = methodName.starts_with("get_");
+    const bool isSet = methodName.starts_with("set_");
+    if (!isGet && !isSet)
+    {
+        return false;
+    }
+
+    const std::string propName = methodName.substr(4);
+    const std::string basePropKey = cleanBase.empty() ? propName : cleanBase + "::" + propName;
+    auto basePropPtr = table.FindSymbolsPtr(basePropKey);
+    if (!basePropPtr)
+    {
+        return false;
+    }
+
+    for (const auto& bp : *basePropPtr)
+    {
+        if (bp.type != SymbolType::Property || !std::holds_alternative<VariableSignature>(bp.signature))
+        {
+            continue;
+        }
+        const auto& varSig = std::get<VariableSignature>(bp.signature);
+        if ((isGet && varSig.isGetFinal) || (isSet && varSig.isSetFinal))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @brief Checks if a method symbol matches any final base method or property accessor candidate. */
+bool MatchesFinalBaseMethod(const Symbol& mSym, const std::string& cleanBase, const std::string& methodName,
+                            const SymbolTable& table)
+{
+    return MatchesFinalBaseFunction(mSym, cleanBase, methodName, table) ||
+           MatchesFinalBaseProperty(cleanBase, methodName, table);
+}
+
+/** @brief Checks if a container declares a property matching a final accessor. */
+void CheckFinalPropertyOverride(const std::string& container, const std::string& methodName,
+                                const std::string& reportingBase, const DiagnosticContext& ctx)
+{
+    if (methodName.size() <= 4 || (!methodName.starts_with("get_") && !methodName.starts_with("set_")))
+    {
+        return;
+    }
+
+    const std::string propName = methodName.substr(4);
+    const std::string propKey = container.empty() ? propName : container + "::" + propName;
+    auto propPtr = ctx.request.symbolTable.FindSymbolsPtr(propKey);
+    if (!propPtr)
+    {
+        return;
+    }
+
+    const bool isGet = methodName.starts_with("get_");
+    for (const auto& pSym : *propPtr)
+    {
+        if (pSym.fileUri != ctx.request.fileUri || pSym.isSynthesized || pSym.type != SymbolType::Property)
+        {
+            continue;
+        }
+        if (std::holds_alternative<VariableSignature>(pSym.signature))
+        {
+            const auto& varSig = std::get<VariableSignature>(pSym.signature);
+            if ((isGet && varSig.hasGet) || (!isGet && varSig.hasSet))
+            {
+                ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", pSym);
+                ctx.Emit(pSym, "as-err-override-final-method", methodName, reportingBase);
+            }
+        }
+    }
+}
+
 /** @brief Reports methods overriding final methods of a base class or its mixins. */
 void ReportFinalMethodOverrides(const std::string& container, const std::string& cleanBase,
                                 const std::string& reportingBase, const DiagnosticContext& ctx)
@@ -239,13 +345,19 @@ void ReportFinalMethodOverrides(const std::string& container, const std::string&
         {
             for (const auto& mSym : *methodsPtr)
             {
-                if (mSym.type == SymbolType::Function)
+                if (mSym.fileUri != ctx.request.fileUri || mSym.isSynthesized || mSym.type != SymbolType::Function)
+                {
+                    continue;
+                }
+                if (MatchesFinalBaseMethod(mSym, cleanBase, methodName, table))
                 {
                     ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", mSym);
                     ctx.Emit(mSym, "as-err-override-final-method", methodName, reportingBase);
                 }
             }
         }
+
+        CheckFinalPropertyOverride(container, methodName, reportingBase, ctx);
     }
 }
 
@@ -255,25 +367,47 @@ void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, const Dia
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string container = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
 
+    ankerl::unordered_dense::set<std::string> visited;
+    std::vector<std::string> queue;
     for (const auto& baseName : sig.bases)
     {
         const std::string cleanBase = CleanBaseType(baseName);
-        if (cleanBase.empty() || !table.HasSymbolAnywhere(cleanBase) || IsMixinClass(cleanBase, table))
+        if (!cleanBase.empty() && !IsMixinClass(cleanBase, table))
+        {
+            queue.push_back(cleanBase);
+        }
+    }
+
+    while (!queue.empty())
+    {
+        std::string currentBase = std::move(queue.back());
+        queue.pop_back();
+
+        if (!visited.insert(currentBase).second)
         {
             continue;
         }
 
-        ReportFinalMethodOverrides(container, cleanBase, cleanBase, ctx);
+        ReportFinalMethodOverrides(container, currentBase, currentBase, ctx);
 
-        if (auto baseSyms = table.FindSymbolsPtr(cleanBase))
+        if (auto baseSyms = table.FindSymbolsPtr(currentBase))
         {
             for (const auto& bSym : *baseSyms)
             {
                 if (bSym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(bSym.signature))
                 {
-                    for (const auto& mixinName : bSym.GetClass().includedMixins)
+                    const auto& bClass = bSym.GetClass();
+                    for (const auto& mixinName : bClass.includedMixins)
                     {
-                        ReportFinalMethodOverrides(container, mixinName, cleanBase, ctx);
+                        ReportFinalMethodOverrides(container, mixinName, currentBase, ctx);
+                    }
+                    for (const auto& nextBase : bClass.bases)
+                    {
+                        const std::string cleanNext = CleanBaseType(nextBase);
+                        if (!cleanNext.empty() && !IsMixinClass(cleanNext, table))
+                        {
+                            queue.push_back(cleanNext);
+                        }
                     }
                 }
             }

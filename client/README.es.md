@@ -283,6 +283,7 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 | `angelscript.diagnostics.reportUnusedFunctions` | `true` | Advertir cuando una función global, función en espacio de nombres o método privado de clase se declara en el script pero nunca se llama ni se referencia. Los puntos de entrada del host se pueden personalizar mediante `#angelscript.diagnostics.ignoredUnusedFunctions#` o reglas del motor (`.angelscript.rules.json`). |
 | `angelscript.diagnostics.ignoredUnusedFunctions` | `[]` | Nombres de funciones (cortos o calificados) exentos de advertencias de funciones sin usar (ej. `["main", "MapInit", "PluginInit"]`). |
 | `angelscript.diagnostics.ignoredUnusedFunctionPatterns` | `[]` | Patrones de expresiones regulares que eximen a las funciones coincidentes de advertencias de funciones sin usar (ej. `["^On.*", "^Hook_.*"]`). |
+| `angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer` | `false` | Indica si se deben ignorar las variables globales no utilizadas inicializadas con una llamada o constructor. |
 | `angelscript.diagnostics.reportHandleComparisonEquality` | `1` | Configurar la severidad para comparaciones de igualdad de handle con null (`== null`, `!= null`) en lugar de identidad de handle (`is null`, `!is null`). 0: desactivado, 1: advertencia (por defecto del compilador), 2: error. |
 | `angelscript.diagnostics.missingAssetPathSeverity` | `"off"` | Severidad del diagnostico para cadenas literales que hacen referencia a archivos de recursos no encontrados. Desactivado por defecto. |
 

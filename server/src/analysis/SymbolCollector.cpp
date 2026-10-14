@@ -118,6 +118,24 @@ void SymbolCollector::ResolveGrammarSymbols(const TSLanguage* lang)
     m_tokExternal = ts_language_symbol_for_name(lang, SYM_NAME("external"), false);
     m_tokImport = ts_language_symbol_for_name(lang, SYM_NAME("import"), false);
     m_tokOpenBrace = ts_language_symbol_for_name(lang, SYM_NAME("{"), false);
+
+    m_fieldIdName = ts_language_field_id_for_name(lang, "name", 4);
+    m_fieldIdReturnType = ts_language_field_id_for_name(lang, "return_type", 11);
+    m_fieldIdParameters = ts_language_field_id_for_name(lang, "parameters", 10);
+    m_fieldIdBody = ts_language_field_id_for_name(lang, "body", 4);
+    m_fieldIdVarType = ts_language_field_id_for_name(lang, "var_type", 8);
+    m_fieldIdType = ts_language_field_id_for_name(lang, "type", 4);
+    m_fieldIdKind = ts_language_field_id_for_name(lang, "kind", 4);
+    m_fieldIdSource = ts_language_field_id_for_name(lang, "source", 6);
+    m_fieldIdPropType = ts_language_field_id_for_name(lang, "prop_type", 9);
+    m_fieldIdParamType = ts_language_field_id_for_name(lang, "param_type", 10);
+    m_fieldIdDefaultValue = ts_language_field_id_for_name(lang, "default_value", 13);
+    m_fieldIdValue = ts_language_field_id_for_name(lang, "value", 5);
+    m_fieldIdBaseType = ts_language_field_id_for_name(lang, "base_type", 9);
+    m_fieldIdTemplateParams = ts_language_field_id_for_name(lang, "template_params", 15);
+    m_fieldIdFunction = ts_language_field_id_for_name(lang, "function", 8);
+    m_fieldIdMember = ts_language_field_id_for_name(lang, "member", 6);
+    m_fieldIdObject = ts_language_field_id_for_name(lang, "object", 6);
 }
 
 void SymbolCollector::InitQueryDispatch()
@@ -206,6 +224,7 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbols(const SymbolCollectReque
 
     TSNode rootNode = ts_tree_root_node(tree.get());
     SymbolCollectContext sCtx{request, symbolTable, diagnostics};
+    sCtx.isPredefined = angel_lsp::utils::IsPredefinedFile(request.fileUri, ".as.predefined");
     CollectFromTree(rootNode, sCtx);
     symbolTable.ResolveIncludedMixins();
 
@@ -228,11 +247,12 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const SymbolColl
 
     if (request.sourceCode.size() > 16384)
     {
-        symbolTable.Reserve(request.sourceCode.size() / 128);
+        symbolTable.Reserve(request.sourceCode.size() / 100);
     }
 
     TSNode rootNode = ts_tree_root_node(tree);
     SymbolCollectContext sCtx{request, symbolTable, diagnostics};
+    sCtx.isPredefined = angel_lsp::utils::IsPredefinedFile(request.fileUri, ".as.predefined");
     CollectFromTree(rootNode, sCtx);
     symbolTable.ResolveIncludedMixins();
 
@@ -250,12 +270,164 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const std::strin
 // AST Traversal & Scope Helpers
 // =========================================================================================
 
+void SymbolCollector::PushClassContainer(TSNode node, const SymbolCollectContext& sCtx,
+                                         std::vector<ActiveContainer>& stack) const
+{
+    TSNode bodyNode = GetChildByFieldName(node, "body");
+    if (ts_node_is_null(bodyNode))
+    {
+        return;
+    }
+    TSNode nameNode = GetChildByFieldName(node, "name");
+    std::string className = GetNodeText(nameNode, sCtx.request.sourceCode);
+    const size_t angle = className.find('<');
+    if (angle != std::string::npos)
+    {
+        className = className.substr(0, angle);
+    }
+    if (className.empty())
+    {
+        return;
+    }
+
+    CollectionContext classCtx;
+    classCtx.containerKind = ContainerKind::Class;
+    classCtx.isInsideClass = true;
+    if (!stack.empty())
+    {
+        classCtx.isInsideNamespace = stack.back().ctx.isInsideNamespace;
+        classCtx.containerPath =
+            stack.back().ctx.containerPath.empty() ? className : stack.back().ctx.containerPath + "::" + className;
+    }
+    else
+    {
+        classCtx.containerPath = className;
+    }
+    stack.push_back({ts_node_end_byte(bodyNode), std::move(classCtx)});
+}
+
+void SymbolCollector::PushInterfaceContainer(TSNode node, const SymbolCollectContext& sCtx,
+                                             std::vector<ActiveContainer>& stack) const
+{
+    TSNode bodyNode = GetChildByFieldName(node, "body");
+    if (ts_node_is_null(bodyNode))
+    {
+        return;
+    }
+    TSNode nameNode = GetChildByFieldName(node, "name");
+    std::string ifaceName = GetNodeText(nameNode, sCtx.request.sourceCode);
+    if (ifaceName.empty())
+    {
+        return;
+    }
+
+    CollectionContext ifaceCtx;
+    ifaceCtx.containerKind = ContainerKind::Interface;
+    ifaceCtx.isInsideClass = true;
+    if (!stack.empty())
+    {
+        ifaceCtx.isInsideNamespace = stack.back().ctx.isInsideNamespace;
+        ifaceCtx.containerPath =
+            stack.back().ctx.containerPath.empty() ? ifaceName : stack.back().ctx.containerPath + "::" + ifaceName;
+    }
+    else
+    {
+        ifaceCtx.containerPath = ifaceName;
+    }
+    stack.push_back({ts_node_end_byte(bodyNode), std::move(ifaceCtx)});
+}
+
+void SymbolCollector::PushNamespaceContainer(TSNode node, const SymbolCollectContext& sCtx,
+                                             std::vector<ActiveContainer>& stack) const
+{
+    TSNode bodyNode = GetChildByFieldName(node, "body");
+    if (ts_node_is_null(bodyNode))
+    {
+        return;
+    }
+    TSNode nameNode = GetChildByFieldName(node, "name");
+    std::string nsName = GetNodeText(nameNode, sCtx.request.sourceCode);
+    if (nsName.empty())
+    {
+        return;
+    }
+
+    CollectionContext nsCtx;
+    nsCtx.containerKind = ContainerKind::Namespace;
+    nsCtx.isInsideNamespace = true;
+    if (!stack.empty() && !stack.back().ctx.containerPath.empty())
+    {
+        nsCtx.containerPath = stack.back().ctx.containerPath + "::" + nsName;
+    }
+    else
+    {
+        nsCtx.containerPath = nsName;
+    }
+    stack.push_back({ts_node_end_byte(bodyNode), std::move(nsCtx)});
+}
+
+void SymbolCollector::PushFunctionContainer(TSNode node, const SymbolCollectContext& sCtx,
+                                            std::vector<ActiveContainer>& stack) const
+{
+    if (sCtx.isPredefined)
+    {
+        return;
+    }
+    TSNode bodyNode = GetChildByFieldName(node, "body");
+    if (ts_node_is_null(bodyNode))
+    {
+        std::string_view text = GetNodeTextView(node, sCtx.request.sourceCode);
+        if (text.find('{') == std::string_view::npos)
+        {
+            return;
+        }
+        bodyNode = FindFunctionBody(node);
+    }
+    if (ts_node_is_null(bodyNode))
+    {
+        return;
+    }
+    CollectionContext funcCtx = stack.empty() ? CollectionContext{} : stack.back().ctx;
+    funcCtx.isInsideFunction = true;
+    stack.push_back({ts_node_end_byte(bodyNode), std::move(funcCtx)});
+}
+
+void SymbolCollector::PushContainerIfApplicable(uint32_t captureIdx, TSNode node, const SymbolCollectContext& sCtx,
+                                                std::vector<ActiveContainer>& stack) const
+{
+    ProcessFn fn = (captureIdx < m_captureDispatch.size()) ? m_captureDispatch[captureIdx] : nullptr;
+    if (fn == &SymbolCollector::ProcessClass)
+    {
+        PushClassContainer(node, sCtx, stack);
+    }
+    else if (fn == &SymbolCollector::ProcessInterface)
+    {
+        PushInterfaceContainer(node, sCtx, stack);
+    }
+    else if (fn == &SymbolCollector::ProcessNamespace)
+    {
+        PushNamespaceContainer(node, sCtx, stack);
+    }
+    else if (fn == &SymbolCollector::ProcessFunction)
+    {
+        PushFunctionContainer(node, sCtx, stack);
+    }
+}
+
 void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCtx)
 {
+    m_scopeContextCache.clear();
+    sCtx.sourceHasBrackets = !sCtx.isPredefined && (sCtx.request.sourceCode.find('[') != std::string_view::npos);
+    const size_t estimatedCapacity =
+        sCtx.request.sourceCode.size() > 16384 ? (sCtx.request.sourceCode.size() / 128) : 256;
+    sCtx.collectedSymbols.reserve(estimatedCapacity);
     ReportParseErrors(rootNode, sCtx);
 
     TSQueryCursor* cursor = angel_lsp::parser::QueryRegistry::GetThreadLocalCursor();
     ts_query_cursor_exec(cursor, m_tagsQuery, rootNode);
+
+    std::vector<ActiveContainer> containerStack;
+    containerStack.reserve(16);
 
     TSQueryMatch match;
     while (ts_query_cursor_next_match(cursor, &match))
@@ -265,8 +437,16 @@ void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCt
             uint32_t captureIdx = match.captures[i].index;
             if (captureIdx < m_captureDispatch.size() && m_captureDispatch[captureIdx])
             {
-                CollectionContext ctx = BuildContext(match.captures[i].node, sCtx.request.sourceCode);
-                (this->*m_captureDispatch[captureIdx])(match.captures[i].node, sCtx, ctx);
+                TSNode node = match.captures[i].node;
+                uint32_t nodeStart = ts_node_start_byte(node);
+                while (!containerStack.empty() && containerStack.back().endByte <= nodeStart)
+                {
+                    containerStack.pop_back();
+                }
+
+                CollectionContext ctx = containerStack.empty() ? CollectionContext{} : containerStack.back().ctx;
+                (this->*m_captureDispatch[captureIdx])(node, sCtx, ctx);
+                PushContainerIfApplicable(captureIdx, node, sCtx, containerStack);
             }
             else if (captureIdx < m_validationDispatch.size() && m_validationDispatch[captureIdx])
             {
@@ -274,73 +454,123 @@ void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCt
             }
         }
     }
+
+    sCtx.symbolTable.AddSymbols(std::move(sCtx.collectedSymbols));
+}
+
+void SymbolCollector::ExtractContainerInfo(TSNode current, std::string_view sourceCode, CollectionContext& ctx) const
+{
+    TSSymbol sym = ts_node_symbol(current);
+    if (!ctx.isInsideFunction && (sym == m_symFuncDeclaration || sym == m_symStatementBlock))
+    {
+        ctx.isInsideFunction = true;
+    }
+
+    if (sym == m_symClassBody || sym == m_symInterfaceBody)
+    {
+        if (ctx.containerKind == ContainerKind::None)
+        {
+            ctx.containerKind = (sym == m_symClassBody) ? ContainerKind::Class : ContainerKind::Interface;
+        }
+        ctx.isInsideClass = true;
+        TSNode parentDecl = ts_node_parent(current);
+        TSNode nameNode = GetChildByFieldName(parentDecl, "name");
+        std::string name = GetNodeText(nameNode, sourceCode);
+        const size_t angleInName = name.find('<');
+        if (angleInName != std::string::npos)
+        {
+            name = name.substr(0, angleInName);
+        }
+        if (ctx.containerPath.empty())
+        {
+            ctx.containerPath = std::move(name);
+        }
+        else
+        {
+            std::string tmp;
+            appendQualifiedName(tmp, name, ctx.containerPath);
+            ctx.containerPath = std::move(tmp);
+        }
+    }
+    else if (sym == m_symNamespaceBody)
+    {
+        if (ctx.containerKind == ContainerKind::None)
+        {
+            ctx.containerKind = ContainerKind::Namespace;
+        }
+        ctx.isInsideNamespace = true;
+        TSNode parentDecl = ts_node_parent(current);
+        TSNode nameNode = GetChildByFieldName(parentDecl, "name");
+        std::string name = GetNodeText(nameNode, sourceCode);
+        if (ctx.containerPath.empty())
+        {
+            ctx.containerPath = std::move(name);
+        }
+        else
+        {
+            std::string tmp;
+            appendQualifiedName(tmp, name, ctx.containerPath);
+            ctx.containerPath = std::move(tmp);
+        }
+    }
+}
+
+SymbolCollector::CollectionContext SymbolCollector::DetermineScopeAndAccess(TSNode node,
+                                                                            std::string_view sourceCode) const
+{
+    TSNode parent = ts_node_parent(node);
+    if (ts_node_is_null(parent))
+    {
+        return CollectionContext{};
+    }
+
+    const void* parentId = parent.id;
+    auto cacheIt = m_scopeContextCache.find(parentId);
+    if (cacheIt != m_scopeContextCache.end())
+    {
+        return cacheIt->second;
+    }
+
+    CollectionContext ctx;
+    TSNode current = parent;
+
+    while (!ts_node_is_null(current))
+    {
+        const void* curId = current.id;
+        auto curIt = m_scopeContextCache.find(curId);
+        if (curIt != m_scopeContextCache.end())
+        {
+            if (ctx.containerPath.empty())
+            {
+                ctx.containerPath = curIt->second.containerPath;
+            }
+            else if (!curIt->second.containerPath.empty())
+            {
+                std::string tmp;
+                appendQualifiedName(tmp, curIt->second.containerPath, ctx.containerPath);
+                ctx.containerPath = std::move(tmp);
+            }
+            if (ctx.containerKind == ContainerKind::None)
+            {
+                ctx.containerKind = curIt->second.containerKind;
+            }
+            ctx.isInsideClass = ctx.isInsideClass || curIt->second.isInsideClass;
+            ctx.isInsideNamespace = ctx.isInsideNamespace || curIt->second.isInsideNamespace;
+            ctx.isInsideFunction = ctx.isInsideFunction || curIt->second.isInsideFunction;
+            break;
+        }
+
+        ExtractContainerInfo(current, sourceCode, ctx);
+        current = ts_node_parent(current);
+    }
+
+    m_scopeContextCache[parentId] = ctx;
+    return ctx;
 }
 
 SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, std::string_view sourceCode) const
 {
-    CollectionContext ctx;
-    TSNode current = ts_node_parent(node);
-
-    while (!ts_node_is_null(current))
-    {
-        TSSymbol sym = ts_node_symbol(current);
-
-        if (!ctx.isInsideFunction && (sym == m_symFuncDeclaration || sym == m_symStatementBlock))
-        {
-            ctx.isInsideFunction = true;
-        }
-
-        if (sym == m_symClassBody || sym == m_symInterfaceBody)
-        {
-            if (ctx.containerKind == ContainerKind::None)
-            {
-                ctx.containerKind = (sym == m_symClassBody) ? ContainerKind::Class : ContainerKind::Interface;
-            }
-            ctx.isInsideClass = true;
-            TSNode parentDecl = ts_node_parent(current);
-            TSNode nameNode = GetChildByFieldName(parentDecl, "name");
-            std::string name = GetNodeText(nameNode, sourceCode);
-            const size_t angleInName = name.find('<');
-            if (angleInName != std::string::npos)
-            {
-                name = name.substr(0, angleInName);
-            }
-            if (ctx.containerPath.empty())
-            {
-                ctx.containerPath = std::move(name);
-            }
-            else
-            {
-                std::string tmp;
-                appendQualifiedName(tmp, name, ctx.containerPath);
-                ctx.containerPath = std::move(tmp);
-            }
-        }
-        else if (sym == m_symNamespaceBody)
-        {
-            if (ctx.containerKind == ContainerKind::None)
-            {
-                ctx.containerKind = ContainerKind::Namespace;
-            }
-            ctx.isInsideNamespace = true;
-            TSNode parentDecl = ts_node_parent(current);
-            TSNode nameNode = GetChildByFieldName(parentDecl, "name");
-            std::string name = GetNodeText(nameNode, sourceCode);
-            if (ctx.containerPath.empty())
-            {
-                ctx.containerPath = std::move(name);
-            }
-            else
-            {
-                std::string tmp;
-                appendQualifiedName(tmp, name, ctx.containerPath);
-                ctx.containerPath = std::move(tmp);
-            }
-        }
-
-        current = ts_node_parent(current);
-    }
-    return ctx;
+    return DetermineScopeAndAccess(node, sourceCode);
 }
 
 // =========================================================================================
@@ -373,6 +603,38 @@ void SymbolCollector::ApplyAccessorTokens(TSNode accNode, bool isGet, bool isSet
                     varSig.isGetFinal = true;
                 else if (isSet)
                     varSig.isSetFinal = true;
+            }
+            else if (cSym == m_symFuncAttributes)
+            {
+                ApplyFuncAttributeTokens(child, isGet, isSet, varSig);
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+}
+
+void SymbolCollector::ApplyFuncAttributeTokens(TSNode attrNode, bool isGet, bool isSet, VariableSignature& varSig) const
+{
+    TSTreeCursor cursor = ts_tree_cursor_new(attrNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            TSSymbol cSym = ts_node_symbol(child);
+            if (cSym == m_tokFinal)
+            {
+                if (isGet)
+                    varSig.isGetFinal = true;
+                else if (isSet)
+                    varSig.isSetFinal = true;
+            }
+            else if (cSym == m_tokOverride)
+            {
+                if (isGet)
+                    varSig.isGetOverride = true;
+                else if (isSet)
+                    varSig.isSetOverride = true;
             }
         } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
@@ -435,7 +697,7 @@ void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC
     SymbolModifiers modifiers = ExtractModifiers(varDeclNode, sCtx.request.sourceCode);
     modifiers.isHandle = typeInfo.isHandle || modifiers.isHandle;
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
+    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Property, varDeclNode, nameNode, loc);
 
     VariableSignature varSig;
@@ -453,7 +715,7 @@ void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC
     ParseAccessorNodes(varDeclNode, varSig);
 
     sym.signature = varSig;
-    sCtx.symbolTable.AddSymbol(sym);
+    sCtx.collectedSymbols.push_back(std::move(sym));
 }
 
 static TSNode FindDeclaratorValueNode(TSNode declaratorNode, std::string_view sourceCode)
@@ -498,11 +760,11 @@ static TSNode FindDeclaratorValueNode(TSNode declaratorNode, std::string_view so
 void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const VariableHeaderInfo& header,
                                               SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
-    TSNode varDeclNode = ts_node_parent(declaratorNode);
+    TSNode varDeclNode = header.varDeclNode;
     TSNode nameNode = GetChildByFieldName(declaratorNode, "name");
     TSNode valueNode = FindDeclaratorValueNode(declaratorNode, sCtx.request.sourceCode);
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
+    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Variable, varDeclNode, nameNode, loc);
 
     VariableSignature varSig;
@@ -526,22 +788,32 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
         varSig.modifiers.isConst = true;
     }
 
-    sym.signature = varSig;
-    sCtx.symbolTable.AddSymbol(sym);
-
     TSNode argsNode = GetChildByFieldName(declaratorNode, "arguments");
+    bool hasCallInit = !ts_node_is_null(argsNode);
+    if (!hasCallInit && !ts_node_is_null(valueNode))
+    {
+        std::string_view vType = ts_node_type(valueNode);
+        if (vType == parser::nodes::CallExpression || vType == parser::nodes::ConstructCallExpression)
+        {
+            hasCallInit = true;
+        }
+    }
+    varSig.hasCallInitializer = hasCallInit;
+
+    sym.signature = varSig;
+    sCtx.collectedSymbols.push_back(std::move(sym));
+
     if (!ts_node_is_null(argsNode) && !header.typeStr.empty())
     {
         CallReferenceSignature callSig;
         callSig.calleeName = header.typeStr;
-        SymbolLocationContext callLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath,
-                                      ctx.containerKind};
+        SymbolLocationContext callLoc{sCtx, ctx.containerPath, ctx.containerKind};
         TSNode varTypeNode = GetChildByFieldName(varDeclNode, "var_type");
         TSNode refNode = ts_node_is_null(varTypeNode) ? declaratorNode : varTypeNode;
         Symbol callSym = CreateSymbol(SymbolType::CallReference, declaratorNode, refNode, callLoc);
         callSym.name = header.typeStr;
         callSym.signature = callSig;
-        sCtx.symbolTable.AddSymbol(callSym);
+        sCtx.collectedSymbols.push_back(std::move(callSym));
     }
 }
 
@@ -563,7 +835,7 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
     std::string_view rawVarText = TrimView(GetNodeView(varDeclNode, sCtx.request.sourceCode));
     bool hasSemicolon = (!rawVarText.empty() && rawVarText.back() == ';');
 
-    VariableHeaderInfo header{std::move(typeStr), std::move(typeInfo), modifiers, hasSemicolon};
+    VariableHeaderInfo header{varDeclNode, std::move(typeStr), std::move(typeInfo), modifiers, hasSemicolon};
 
     TSTreeCursor cursor = ts_tree_cursor_new(varDeclNode);
     if (ts_tree_cursor_goto_first_child(&cursor))
@@ -597,7 +869,7 @@ void SymbolCollector::ProcessVariable(TSNode varDeclNode, SymbolCollectContext& 
 
 TSNode SymbolCollector::FindFunctionBody(TSNode funcNode) const
 {
-    TSNode bodyNode = GetChildByFieldName(funcNode, "body");
+    TSNode bodyNode = GetChildByFieldId(funcNode, m_fieldIdBody);
     if (!ts_node_is_null(bodyNode))
         return bodyNode;
 
@@ -618,73 +890,44 @@ TSNode SymbolCollector::FindFunctionBody(TSNode funcNode) const
     return bodyNode;
 }
 
-bool SymbolCollector::IsExternalFunction(TSNode funcNode) const
+bool SymbolCollector::IsExternalFunction(TSNode funcNode, [[maybe_unused]] std::string_view sourceCode) const
 {
     TSSymbol funcNodeSym = ts_node_symbol(funcNode);
-    if (funcNodeSym == m_symImportDeclaration || funcNodeSym == m_tokImport)
-        return true;
-
-    TSNode p2 = ts_node_parent(funcNode);
-    TSSymbol p2Sym = !ts_node_is_null(p2) ? ts_node_symbol(p2) : 0;
-    return (p2Sym == m_symImportDeclaration || p2Sym == m_tokImport);
+    return (funcNodeSym == m_symImportDeclaration || funcNodeSym == m_tokImport);
 }
 
 std::string SymbolCollector::ExtractOriginModule(TSNode funcNode, std::string_view sourceCode) const
 {
-    TSTreeCursor cursor = ts_tree_cursor_new(funcNode);
-    if (ts_tree_cursor_goto_first_child(&cursor))
+    TSNode srcNode = GetChildByFieldId(funcNode, m_fieldIdSource);
+    if (!ts_node_is_null(srcNode))
     {
-        do
+        std::string modStr = GetNodeText(srcNode, sourceCode);
+        if (modStr.size() >= 2 && modStr.front() == '"' && modStr.back() == '"')
         {
-            TSNode ch = ts_tree_cursor_current_node(&cursor);
-            if (std::string_view(ts_node_type(ch)) == "string_literal")
-            {
-                std::string modStr = GetNodeText(ch, sourceCode);
-                ts_tree_cursor_delete(&cursor);
-                if (modStr.size() >= 2 && modStr.front() == '"' && modStr.back() == '"')
-                {
-                    return modStr.substr(1, modStr.size() - 2);
-                }
-                return modStr;
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+            return modStr.substr(1, modStr.size() - 2);
+        }
+        return modStr;
     }
-    ts_tree_cursor_delete(&cursor);
     return "";
 }
 
 void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
-    TSNode nameNode = GetChildByFieldName(funcNode, "name");
-    TSNode typeNode = GetChildByFieldName(funcNode, "return_type");
-    TSNode paramsNode = GetChildByFieldName(funcNode, "parameters");
-    const bool isPredefined = angel_lsp::utils::IsPredefinedFile(sCtx.request.fileUri, ".as.predefined");
-    TSNode bodyNode = isPredefined ? TSNode{} : FindFunctionBody(funcNode);
+    TSNode nameNode = GetChildByFieldId(funcNode, m_fieldIdName);
+    TSNode typeNode = GetChildByFieldId(funcNode, m_fieldIdReturnType);
+    TSNode paramsNode = GetChildByFieldId(funcNode, m_fieldIdParameters);
+    TSNode bodyNode = sCtx.isPredefined ? TSNode{} : FindFunctionBody(funcNode);
 
     TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
     SymbolModifiers modifiers = ExtractModifiers(funcNode, sCtx.request.sourceCode);
 
-    if (IsExternalFunction(funcNode))
+    if (IsExternalFunction(funcNode, sCtx.request.sourceCode))
         modifiers.isExternal = true;
 
     modifiers.isHandle = retInfo.isHandle || modifiers.isHandle;
     modifiers.isReturnReference = retInfo.isReference || modifiers.isReturnReference;
 
-    TSTreeCursor delCursor = ts_tree_cursor_new(funcNode);
-    if (ts_tree_cursor_goto_first_child(&delCursor))
-    {
-        do
-        {
-            if (ts_node_symbol(ts_tree_cursor_current_node(&delCursor)) == m_tokDelete)
-            {
-                modifiers.isDelete = true;
-                break;
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&delCursor));
-    }
-    ts_tree_cursor_delete(&delCursor);
-
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
+    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Function, funcNode, nameNode, loc);
 
     FunctionSignature funcSig;
@@ -698,18 +941,17 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     funcSig.returnArrayDepth = retInfo.arrayDepth;
     funcSig.modifiers = modifiers;
     funcSig.parameters = ExtractParameters(paramsNode, sCtx.request.sourceCode);
+
     funcSig.hasBody = !ts_node_is_null(bodyNode);
     funcSig.isInterfaceMethod = (ts_node_symbol(funcNode) == m_symInterfaceMethod);
-    funcSig.isImported = (ts_node_symbol(funcNode) == m_symImportDeclaration ||
-                          std::string_view(ts_node_type(funcNode)) == "import_declaration");
+    funcSig.isImported = (ts_node_symbol(funcNode) == m_symImportDeclaration);
     if (funcSig.isImported)
     {
         funcSig.originModule = ExtractOriginModule(funcNode, sCtx.request.sourceCode);
     }
 
     sym.signature = std::move(funcSig);
-    sym.GetFunction().displaySignature = FormatFunctionDeclaration(sym, true);
-    sCtx.symbolTable.AddSymbol(sym);
+    sCtx.collectedSymbols.push_back(std::move(sym));
 }
 
 /**
@@ -753,9 +995,9 @@ static bool ClassHasExplicitConstructor(TSNode bodyNode, std::string_view classN
 /**
  * @brief Synthesizes an implicit default constructor when a non-abstract class declares none.
  * @param[in] sym Class symbol.
- * @param[in,out] table Symbol table to register synthesized constructor into.
+ * @param[in,out] sCtx Symbol collection context receiving the synthesized constructor.
  */
-static void SynthesizeDefaultConstructor(const Symbol& sym, SymbolTable& table)
+void SymbolCollector::SynthesizeDefaultConstructor(const Symbol& sym, SymbolCollectContext& sCtx) const
 {
     Symbol ctorSym;
     ctorSym.type = SymbolType::Function;
@@ -766,6 +1008,10 @@ static void SynthesizeDefaultConstructor(const Symbol& sym, SymbolTable& table)
     ctorSym.fileUri = sym.fileUri;
     ctorSym.fullRange = sym.fullRange;
     ctorSym.selectionRange = sym.selectionRange;
+    ctorSym.startLine = sym.startLine;
+    ctorSym.startCharacter = sym.startCharacter;
+    ctorSym.endLine = sym.endLine;
+    ctorSym.endCharacter = sym.endCharacter;
     ctorSym.isSynthesized = true;
 
     FunctionSignature ctorSig;
@@ -775,13 +1021,13 @@ static void SynthesizeDefaultConstructor(const Symbol& sym, SymbolTable& table)
     ctorSig.hasBody = true;
     ctorSym.signature = std::move(ctorSig);
     ctorSym.GetFunction().displaySignature = FormatFunctionDeclaration(ctorSym, true);
-    table.AddSymbol(ctorSym);
+    sCtx.collectedSymbols.push_back(std::move(ctorSym));
 }
 
 void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldName(classNode, "name");
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
+    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Class, classNode, nameNode, loc);
 
     ClassSignature classSig;
@@ -824,15 +1070,18 @@ void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx,
 
     TSNode bodyNode = GetChildByFieldName(classNode, "body");
     classSig.hasBraces = !ts_node_is_null(bodyNode);
-    classSig.hasListPattern = HasPrecedingDocTag(sCtx.request.sourceCode, sym.startLine, "@listpattern");
+    classSig.hasListPattern =
+        HasPrecedingDocTagAtByte(sCtx.request.sourceCode, ts_node_start_byte(classNode), "@listpattern");
 
     sym.signature = classSig;
-    sCtx.symbolTable.AddSymbol(sym);
+    const bool needsDefaultCtor =
+        !sCtx.isPredefined && classSig.hasBraces && !classSig.modifiers.isAbstract && !classSig.modifiers.isMixin &&
+        !ClassHasExplicitConstructor(bodyNode, sym.name, sCtx.request.sourceCode, m_symFuncDeclaration);
 
-    if (classSig.hasBraces && !classSig.modifiers.isAbstract &&
-        !ClassHasExplicitConstructor(bodyNode, sym.name, sCtx.request.sourceCode, m_symFuncDeclaration))
+    sCtx.collectedSymbols.push_back(std::move(sym));
+    if (needsDefaultCtor)
     {
-        SynthesizeDefaultConstructor(sym, sCtx.symbolTable);
+        SynthesizeDefaultConstructor(sCtx.collectedSymbols.back(), sCtx);
     }
 }
 
@@ -855,18 +1104,17 @@ void SymbolCollector::ProcessNamespace(TSNode namespaceNode, SymbolCollectContex
             {
                 continue;
             }
-            SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, currentPath,
-                                      ContainerKind::Namespace};
+            SymbolLocationContext loc{sCtx, currentPath, ContainerKind::Namespace};
             Symbol subSym = CreateSymbol(SymbolType::Namespace, namespaceNode, segNode, loc);
-            sCtx.symbolTable.AddSymbol(subSym);
+            sCtx.collectedSymbols.push_back(subSym);
             currentPath = subSym.qualifiedName;
         }
     }
     else
     {
-        SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
+        SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
         Symbol sym = CreateSymbol(SymbolType::Namespace, namespaceNode, nameNode, loc);
-        sCtx.symbolTable.AddSymbol(sym);
+        sCtx.collectedSymbols.push_back(std::move(sym));
     }
 }
 
@@ -879,7 +1127,7 @@ void SymbolCollector::ProcessTypedef(TSNode node, SymbolCollectContext& sCtx, co
         baseTypeNode = GetChildByFieldName(node, "type");
     }
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
+    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Typedef, node, nameNode, loc);
     TypedefSignature typedefSig;
 
@@ -901,7 +1149,7 @@ void SymbolCollector::ProcessTypedef(TSNode node, SymbolCollectContext& sCtx, co
     typedefSig.hasSemicolon = (!rawNodeText.empty() && rawNodeText.back() == ';');
 
     sym.signature = typedefSig;
-    sCtx.symbolTable.AddSymbol(sym);
+    sCtx.collectedSymbols.push_back(std::move(sym));
 }
 
 void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
@@ -916,7 +1164,7 @@ void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, co
     modifiers.isReturnReference = retInfo.isReference || modifiers.isReturnReference;
     modifiers.isConst = retInfo.isConst || modifiers.isConst;
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
+    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Funcdef, node, nameNode, loc);
 
     FuncdefSignature funcdefSig;
@@ -940,7 +1188,7 @@ void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, co
     }
 
     sym.signature = funcdefSig;
-    sCtx.symbolTable.AddSymbol(sym);
+    sCtx.collectedSymbols.push_back(std::move(sym));
 }
 
 bool SymbolCollector::EnumHasBraces(TSNode node) const
@@ -1036,30 +1284,28 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
             memberNameNode = it->second.nameNode;
         }
 
-        SymbolLocationContext contLoc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath,
-                                      ctx.containerKind};
+        SymbolLocationContext contLoc{sCtx, ctx.containerPath, ctx.containerKind};
         Symbol mSym = CreateSymbol(SymbolType::Variable, memberDeclNode, memberNameNode, contLoc);
         mSym.name = m.name;
         appendQualifiedName(mSym.qualifiedName, ctx.containerPath, m.name);
         mSym.containerName = ctx.containerPath;
         mSym.signature = varSig;
-        sCtx.symbolTable.AddSymbol(mSym);
+        sCtx.collectedSymbols.push_back(std::move(mSym));
 
-        SymbolLocationContext enumLoc{sCtx.request.sourceCode, sCtx.request.fileUri, enumContainer,
-                                      ContainerKind::Enum};
+        SymbolLocationContext enumLoc{sCtx, enumContainer, ContainerKind::Enum};
         Symbol mSymScoped = CreateSymbol(SymbolType::Variable, memberDeclNode, memberNameNode, enumLoc);
         mSymScoped.name = m.name;
         appendQualifiedName(mSymScoped.qualifiedName, enumContainer, m.name);
         mSymScoped.containerName = enumContainer;
         mSymScoped.signature = varSig;
-        sCtx.symbolTable.AddSymbol(mSymScoped);
+        sCtx.collectedSymbols.push_back(std::move(mSymScoped));
     }
 }
 
 void SymbolCollector::ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldName(node, "name");
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
+    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Enum, node, nameNode, loc);
 
     EnumSignature enumSig;
@@ -1069,7 +1315,7 @@ void SymbolCollector::ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const
     CollectEnumMembers(node, sCtx.request.sourceCode, enumSig);
 
     sym.signature = enumSig;
-    sCtx.symbolTable.AddSymbol(sym);
+    sCtx.collectedSymbols.push_back(std::move(sym));
 
     PublishEnumMembers(node, enumSig, sCtx, ctx);
 }
@@ -1082,7 +1328,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
     TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
     SymbolModifiers modifiers = ExtractModifiers(node, sCtx.request.sourceCode);
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
+    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Property, node, nameNode, loc);
 
     VariableSignature varSig;
@@ -1100,13 +1346,13 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
     ParseAccessorNodes(node, varSig);
 
     sym.signature = varSig;
-    sCtx.symbolTable.AddSymbol(sym);
+    sCtx.collectedSymbols.push_back(std::move(sym));
 }
 
 void SymbolCollector::ProcessInterface(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldName(node, "name");
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
+    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Interface, node, nameNode, loc);
 
     InterfaceSignature ifaceSig;
@@ -1114,7 +1360,7 @@ void SymbolCollector::ProcessInterface(TSNode node, SymbolCollectContext& sCtx, 
     ifaceSig.inheritedInterfaces = ExtractBases(node, sCtx.request.sourceCode);
 
     sym.signature = ifaceSig;
-    sCtx.symbolTable.AddSymbol(sym);
+    sCtx.collectedSymbols.push_back(std::move(sym));
 }
 
 // =========================================================================================
@@ -1154,10 +1400,10 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
     if (callSig.calleeName.empty())
         return;
 
-    SymbolLocationContext loc{sCtx.request.sourceCode, sCtx.request.fileUri, ctx.containerPath, ctx.containerKind};
+    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::CallReference, callNode, nameNode, loc);
     sym.signature = callSig;
-    sCtx.symbolTable.AddSymbol(sym);
+    sCtx.collectedSymbols.push_back(std::move(sym));
 }
 
 // =========================================================================================
@@ -1660,46 +1906,29 @@ void SymbolCollector::ExtractParamModifierTokens(TSNode paramNode, std::string_v
     ts_tree_cursor_delete(&cursor);
 }
 
-ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std::string_view sourceCode) const
+static std::string ExtractFallbackDefaultValue(std::string_view rawText)
 {
-    TSNode pNameNode = GetChildByFieldName(paramNode, "name");
-    TSNode pTypeNode = GetChildByFieldName(paramNode, "param_type");
-    TSNode pDefaultNode = GetChildByFieldName(paramNode, "default_value");
+    const size_t eqPos = rawText.find('=');
+    if (eqPos == std::string_view::npos)
+    {
+        return {};
+    }
+    std::string_view defVal = rawText.substr(eqPos + 1);
+    while (!defVal.empty() && (defVal.front() == ' ' || defVal.front() == '\t'))
+    {
+        defVal.remove_prefix(1);
+    }
+    while (!defVal.empty() && (defVal.back() == ' ' || defVal.back() == '\t'))
+    {
+        defVal.remove_suffix(1);
+    }
+    return std::string(defVal);
+}
 
-    TypeExtractionResult pInfo = ExtractTypeInfoFromAST(pTypeNode, sourceCode);
-
+static void AssignParamLocations(ParameterInformation& paramInfo, TSNode paramNode, TSNode pNameNode)
+{
     TSPoint startPt = ts_node_start_point(paramNode);
     TSPoint endPt = ts_node_end_point(paramNode);
-
-    ParameterInformation paramInfo;
-    paramInfo.name = GetNodeText(pNameNode, sourceCode);
-    paramInfo.typeName = GetNodeText(pTypeNode, sourceCode);
-    paramInfo.rawText = GetNodeText(paramNode, sourceCode);
-    paramInfo.baseTypeName = pInfo.baseTypeName;
-    paramInfo.templateName = pInfo.templateName;
-    paramInfo.typeKind = pInfo.kind;
-    paramInfo.isArray = pInfo.isArray;
-    paramInfo.hasPrimitiveHandle = pInfo.hasPrimitiveHandle;
-    paramInfo.arrayDepth = pInfo.arrayDepth;
-    paramInfo.defaultValue = GetNodeText(pDefaultNode, sourceCode);
-    if (paramInfo.defaultValue.empty())
-    {
-        const size_t eqPos = paramInfo.rawText.find('=');
-        if (eqPos != std::string::npos)
-        {
-            std::string_view defVal = std::string_view(paramInfo.rawText).substr(eqPos + 1);
-            while (!defVal.empty() && (defVal.front() == ' ' || defVal.front() == '\t'))
-            {
-                defVal.remove_prefix(1);
-            }
-            while (!defVal.empty() && (defVal.back() == ' ' || defVal.back() == '\t'))
-            {
-                defVal.remove_suffix(1);
-            }
-            paramInfo.defaultValue = std::string(defVal);
-        }
-    }
-    paramInfo.isHandle = pInfo.isHandle;
     paramInfo.startLine = startPt.row;
     paramInfo.startCharacter = startPt.column;
     paramInfo.endLine = endPt.row;
@@ -1714,10 +1943,44 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std
         paramInfo.nameEndLine = nameEnd.row;
         paramInfo.nameEndCharacter = nameEnd.column;
     }
+}
+
+ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std::string_view sourceCode) const
+{
+    TSNode pNameNode = GetChildByFieldId(paramNode, m_fieldIdName);
+    TSNode pTypeNode = GetChildByFieldId(paramNode, m_fieldIdParamType);
+    TSNode pDefaultNode = GetChildByFieldId(paramNode, m_fieldIdDefaultValue);
+
+    TypeExtractionResult pInfo = ExtractTypeInfoFromAST(pTypeNode, sourceCode);
+
+    ParameterInformation paramInfo;
+    paramInfo.name = GetNodeText(pNameNode, sourceCode);
+    paramInfo.typeName = GetNodeText(pTypeNode, sourceCode);
+    paramInfo.rawText = GetNodeText(paramNode, sourceCode);
+    paramInfo.baseTypeName = pInfo.baseTypeName;
+    paramInfo.templateName = pInfo.templateName;
+    paramInfo.typeKind = pInfo.kind;
+    paramInfo.isArray = pInfo.isArray;
+    paramInfo.hasPrimitiveHandle = pInfo.hasPrimitiveHandle;
+    paramInfo.arrayDepth = pInfo.arrayDepth;
+    paramInfo.defaultValue = GetNodeText(pDefaultNode, sourceCode);
+    if (paramInfo.defaultValue.empty())
+    {
+        paramInfo.defaultValue = ExtractFallbackDefaultValue(paramInfo.rawText);
+    }
+    paramInfo.isHandle = pInfo.isHandle;
+    AssignParamLocations(paramInfo, paramNode, pNameNode);
 
     uint32_t refCount = 0;
-    ExtractParamTypeRefAndConst(pTypeNode, sourceCode, paramInfo, refCount);
-    ExtractParamModifierTokens(paramNode, sourceCode, paramInfo, refCount);
+    if (paramInfo.rawText.find('&') != std::string::npos || paramInfo.rawText.find("const") != std::string::npos)
+    {
+        ExtractParamTypeRefAndConst(pTypeNode, sourceCode, paramInfo, refCount);
+    }
+    if (paramInfo.rawText.find('&') != std::string::npos || paramInfo.rawText.find("in") != std::string::npos ||
+        paramInfo.rawText.find("out") != std::string::npos)
+    {
+        ExtractParamModifierTokens(paramNode, sourceCode, paramInfo, refCount);
+    }
 
     paramInfo.hasDoubleReference = (refCount > 1);
     paramInfo.isStandaloneRef = (paramInfo.isReference && paramInfo.modifier == ParameterModifier::None);
@@ -1730,6 +1993,9 @@ std::vector<ParameterInformation> SymbolCollector::ExtractParameters(TSNode para
     std::vector<ParameterInformation> parameters;
     if (ts_node_is_null(paramsNode))
         return parameters;
+
+    uint32_t count = ts_node_named_child_count(paramsNode);
+    parameters.reserve(count);
 
     TSTreeCursor cursor = ts_tree_cursor_new(paramsNode);
     if (ts_tree_cursor_goto_first_child(&cursor))
@@ -1763,6 +2029,26 @@ void SymbolCollector::appendQualifiedName(std::string& outBuffer, std::string_vi
     outBuffer.append(name);
 }
 
+static bool PrecedingByteCouldBeMetadata(std::string_view sourceCode, uint32_t startByte) noexcept
+{
+    if (startByte == 0 || startByte > sourceCode.size())
+    {
+        return false;
+    }
+    size_t pos = startByte;
+    while (pos > 0)
+    {
+        --pos;
+        char c = sourceCode[pos];
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
+        {
+            continue;
+        }
+        return (c == ']' || c == '/');
+    }
+    return false;
+}
+
 Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNode,
                                      const SymbolLocationContext& loc) const
 {
@@ -1786,23 +2072,33 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
     sym.fullRange = {startPt.row, startPt.column, endPt.row, endPt.column};
     sym.selectionRange = {nameStartPt.row, nameStartPt.column, nameEndPt.row, nameEndPt.column};
 
-    TSNode declNode = node;
-    TSNode parentNode = ts_node_parent(node);
-    if (!ts_node_is_null(parentNode) && ts_node_symbol(node) == m_symVariableDeclarator)
+    if (loc.sourceHasBrackets && type != SymbolType::CallReference && type != SymbolType::Namespace)
     {
-        declNode = parentNode;
-    }
-    TSNode prev = ts_node_prev_named_sibling(declNode);
-    std::vector<std::string> metaBlocks;
-    while (!ts_node_is_null(prev) && ts_node_symbol(prev) == m_symMetadata)
-    {
-        metaBlocks.push_back(GetNodeText(prev, loc.sourceCode));
-        prev = ts_node_prev_named_sibling(prev);
-    }
-    if (!metaBlocks.empty())
-    {
-        std::reverse(metaBlocks.begin(), metaBlocks.end());
-        sym.metadata = std::move(metaBlocks);
+        TSNode declNode = node;
+        if (ts_node_symbol(node) == m_symVariableDeclarator)
+        {
+            TSNode parentNode = ts_node_parent(node);
+            if (!ts_node_is_null(parentNode))
+            {
+                declNode = parentNode;
+            }
+        }
+        uint32_t startByte = ts_node_start_byte(declNode);
+        if (PrecedingByteCouldBeMetadata(loc.sourceCode, startByte))
+        {
+            TSNode prev = ts_node_prev_named_sibling(declNode);
+            std::vector<std::string> metaBlocks;
+            while (!ts_node_is_null(prev) && ts_node_symbol(prev) == m_symMetadata)
+            {
+                metaBlocks.push_back(GetNodeText(prev, loc.sourceCode));
+                prev = ts_node_prev_named_sibling(prev);
+            }
+            if (!metaBlocks.empty())
+            {
+                std::reverse(metaBlocks.begin(), metaBlocks.end());
+                sym.metadata = std::move(metaBlocks);
+            }
+        }
     }
 
     return sym;

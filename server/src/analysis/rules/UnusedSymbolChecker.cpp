@@ -7,6 +7,7 @@
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
@@ -336,10 +337,30 @@ void CheckLocalsAndFields(const Scope* scope, const UnusedCheckContext& uCtx, Di
         CheckLocalsAndFields(child.get(), uCtx, ctx, depth + 1);
 }
 
+static bool IsExemptGlobalType(const VariableSignature& var, const std::vector<std::string>& exemptTypes)
+{
+    if (exemptTypes.empty())
+    {
+        return false;
+    }
+    const std::string_view cleanType = CleanBaseTypeView(var.typeName);
+    for (const auto& exempt : exemptTypes)
+    {
+        if (cleanType == exempt || var.baseTypeName == exempt)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 void CheckUnusedGlobals(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
 {
     if (!uCtx.rules.checkGlobals)
         return;
+
+    const bool ignoreCallInit = uCtx.rules.ignoreUnusedGlobalsWithCallInitializer ||
+                                (req.diagnostics && req.diagnostics->ignoreUnusedGlobalsWithCallInitializer);
 
     req.symbolTable.ForEachSymbolInFile(
         req.fileUri,
@@ -347,8 +368,21 @@ void CheckUnusedGlobals(const SemanticAnalysisRequest& req, const UnusedCheckCon
         {
             for (const auto& sym : syms)
             {
-                if (sym.type == SymbolType::Variable && sym.containerName.empty() &&
-                    !uCtx.refNames.contains(sym.name) && !uCtx.reflections.contains(sym.name) &&
+                if (sym.type != SymbolType::Variable || !sym.containerName.empty() ||
+                    !std::holds_alternative<VariableSignature>(sym.signature))
+                {
+                    continue;
+                }
+                const auto& var = sym.GetVariable();
+                if (var.isEnumConstant || (ignoreCallInit && var.hasCallInitializer))
+                {
+                    continue;
+                }
+                if (IsExemptGlobalType(var, uCtx.rules.unusedGlobalExemptTypes))
+                {
+                    continue;
+                }
+                if (!uCtx.refNames.contains(sym.name) && !uCtx.reflections.contains(sym.name) &&
                     !uCtx.reflections.contains(sym.qualifiedName))
                 {
                     ctx.Emit(sym, diagnostics::codes::UnusedGlobalVariable, sym.name, DiagnosticSeverity::Warning);

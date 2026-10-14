@@ -48,6 +48,35 @@ std::vector<Diagnostic> AnalyzeClassSnippet(const std::string& code, const std::
     return diagnostics;
 }
 
+/** @brief Runs the analyzer over two files sharing a symbol table and returns diagnostics for the second file. */
+std::vector<Diagnostic> AnalyzeTwoFiles(const std::string& file1Uri, const std::string& file1Code,
+                                        const std::string& file2Uri, const std::string& file2Code)
+{
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    LocalScopeCollector scopes(nullptr);
+    SymbolTable table;
+    static angel_lsp::i18n::I18n i18n;
+
+    collector.CollectSymbols({file1Uri, file1Code, &i18n}, parser, table);
+    auto diagnostics2 = collector.CollectSymbols({file2Uri, file2Code, &i18n}, parser, table);
+
+    SemanticAnalysisRequest request{table, file2Uri, ".as.predefined", &i18n};
+    request.scopeRoot = scopes.CollectScopes(file2Code, parser);
+    request.sourceCode = file2Code;
+    request.tree = parser.Parse(file2Code);
+
+    SemanticAnalyzer analyzer(nullptr);
+    auto semDiags = analyzer.Analyze(request);
+    diagnostics2.insert(diagnostics2.end(), semDiags.begin(), semDiags.end());
+
+    if (request.tree)
+    {
+        ts_tree_delete(const_cast<TSTree*>(request.tree));
+    }
+    return diagnostics2;
+}
+
 std::vector<Diagnostic> FilterErrors(const std::vector<Diagnostic>& diagnostics)
 {
     std::vector<Diagnostic> errors;
@@ -840,4 +869,148 @@ TEST_CASE("ClassRules - Mixin can omit interface method and concrete class must 
     const auto completeDiags = AnalyzeClassSnippet(completeCode);
     const auto completeErrors = FilterErrors(completeDiags);
     CHECK_FALSE(HasCode(completeErrors, "as-err-interface-impl-missing"));
+}
+
+TEST_CASE("ClassRules - Overloaded method with different parameters is allowed when base method is final")
+{
+    const std::string baseName = angel_lsp::test::GenerateRandomSymbolName("BaseOverload");
+    const std::string derivedName = angel_lsp::test::GenerateRandomSymbolName("DerivedOverload");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("FinalMethod");
+
+    const std::string codeLegal = "class " + baseName +
+                                  " {\n"
+                                  "    void " +
+                                  methodName +
+                                  "(int a) final {}\n"
+                                  "}\n"
+                                  "class " +
+                                  derivedName + " : " + baseName +
+                                  " {\n"
+                                  "    void " +
+                                  methodName +
+                                  "(string s) {}\n"
+                                  "}\n";
+
+    const auto diagsLegal = AnalyzeClassSnippet(codeLegal);
+    CHECK_FALSE(HasCode(FilterErrors(diagsLegal), "as-err-override-final-method"));
+
+    const std::string codeIllegal = "class " + baseName +
+                                    "2 {\n"
+                                    "    void " +
+                                    methodName +
+                                    "(int a) final {}\n"
+                                    "}\n"
+                                    "class " +
+                                    derivedName + "2 : " + baseName +
+                                    "2 {\n"
+                                    "    void " +
+                                    methodName +
+                                    "(int a) {}\n"
+                                    "}\n";
+
+    const auto diagsIllegal = AnalyzeClassSnippet(codeIllegal);
+    CHECK(HasCode(FilterErrors(diagsIllegal), "as-err-override-final-method"));
+}
+
+TEST_CASE("ClassRules - Virtual property block with get final flags override on derived property")
+{
+    const std::string baseName = angel_lsp::test::GenerateRandomSymbolName("BaseProp");
+    const std::string derivedName = angel_lsp::test::GenerateRandomSymbolName("DerivedProp");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("prop_val");
+
+    const std::string code = "class " + baseName +
+                             " {\n"
+                             "    string " +
+                             propName +
+                             " { get final { return \"base\"; } }\n"
+                             "}\n"
+                             "class " +
+                             derivedName + " : " + baseName +
+                             " {\n"
+                             "    string " +
+                             propName +
+                             " { get { return \"derived\"; } }\n"
+                             "}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK(HasCode(FilterErrors(diags), "as-err-override-final-method"));
+}
+
+TEST_CASE("ClassRules - Multi-level inheritance cites exact grand-base declaring final method")
+{
+    const std::string grandName = angel_lsp::test::GenerateRandomSymbolName("GrandBase");
+    const std::string baseName = angel_lsp::test::GenerateRandomSymbolName("MidBase");
+    const std::string derivedName = angel_lsp::test::GenerateRandomSymbolName("SubDerived");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("DoWork");
+
+    const std::string code = "class " + grandName +
+                             " {\n"
+                             "    void " +
+                             methodName +
+                             "() final {}\n"
+                             "}\n"
+                             "class " +
+                             baseName + " : " + grandName +
+                             " {}\n"
+                             "class " +
+                             derivedName + " : " + baseName +
+                             " {\n"
+                             "    void " +
+                             methodName +
+                             "() {}\n"
+                             "}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    const auto errors = FilterErrors(diags);
+    CHECK(HasCode(errors, "as-err-override-final-method"));
+    bool citedGrand = false;
+    for (const auto& err : errors)
+    {
+        if (err.code == "as-err-override-final-method" && err.message.find(grandName) != std::string::npos)
+        {
+            citedGrand = true;
+            break;
+        }
+    }
+    CHECK(citedGrand);
+}
+
+TEST_CASE("ClassRules - Multi-file cross-#include does not leak final method override diagnostics to foreign file")
+{
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("ASWFlareConfig");
+    const std::string hostName = angel_lsp::test::GenerateRandomSymbolName("weapon_bts_flare");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("flare_classname");
+
+    // Generate schemaCode with padding lines so the final method sits on line 180
+    std::string schemaCode = "// Schema file\n";
+    for (int i = 0; i < 178; ++i)
+    {
+        schemaCode += "// padding line\n";
+    }
+    schemaCode += "mixin class " + mixinName +
+                  " {\n"
+                  "    const string& get_" +
+                  propName +
+                  "() const property final { return \"test\"; }\n"
+                  "}\n";
+
+    // Generate flareCode with code on line 180
+    std::string flareCode = "class " + hostName + " : " + mixinName + " {\n";
+    for (int i = 0; i < 178; ++i)
+    {
+        flareCode += "    int pad_" + std::to_string(i) + " = 0;\n";
+    }
+    flareCode += "    void Holster() {\n"
+                 "        int m_iAmmoSave = 100;\n"
+                 "        m_iAmmoSave++;\n"
+                 "    }\n"
+                 "}\n";
+
+    const auto diags = AnalyzeTwoFiles("file:///schema.as", schemaCode, "file:///flare.as", flareCode);
+    CHECK_FALSE(HasCode(diags, "as-err-override-final-method"));
+    for (const auto& d : diags)
+    {
+        CHECK(d.fileUri == "file:///flare.as");
+        CHECK_FALSE(d.code == "as-err-override-final-method");
+    }
 }

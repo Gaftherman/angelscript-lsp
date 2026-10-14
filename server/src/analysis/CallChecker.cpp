@@ -238,13 +238,14 @@ bool IsConstructorOrDestructorName(const std::string& memberName, const std::str
  * @param[in] typeName Name of the class type.
  * @param[in] methodName Name of the method.
  * @param[in] table Symbol table.
+ * @param[in] cache Optional expression type cache for memoizing type hierarchies.
  * @return Candidate symbols matching the method name.
  */
 std::vector<Symbol> FindMethodCandidates(const std::string& typeName, const std::string& methodName,
-                                         const SymbolTable& table)
+                                         const SymbolTable& table, ExpressionTypeCache* cache = nullptr)
 {
     std::vector<Symbol> candidates;
-    for (const auto& owner : GetInheritedTypeHierarchy(typeName, table))
+    for (const auto& owner : GetInheritedTypeHierarchy(typeName, table, cache))
     {
         const auto found = table.FindMemberSymbolPtr(owner, methodName);
         if (!found)
@@ -357,6 +358,11 @@ void CollectScopeCandidates(const std::string& scopeName, const std::string& nam
 void CollectUsingNamespaceCandidates(const std::string& name, const std::vector<std::string>& reachableScopes,
                                      const FreeLookupContext& ctx, std::vector<Symbol>& candidates)
 {
+    if (ctx.sourceCode.find("using") == std::string_view::npos)
+    {
+        return;
+    }
+
     const auto usings = ctx.nodeIndex ? CollectUsingNamespaces(*ctx.nodeIndex, ctx.sourceCode) : [&]()
     {
         TSNode documentRoot = ctx.callNode;
@@ -827,9 +833,9 @@ bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
  * @return Optional synthesized function symbol.
  */
 std::optional<Symbol> TryResolveMemberCallableFuncdef(const std::string& objectType, const std::string& memberName,
-                                                      const SymbolTable& table)
+                                                      const SymbolTable& table, ExpressionTypeCache* cache = nullptr)
 {
-    const auto hierarchy = GetInheritedTypeHierarchy(objectType, table);
+    const auto hierarchy = GetInheritedTypeHierarchy(objectType, table, cache);
     for (const auto& typeName : hierarchy)
     {
         if (const auto found = table.FindMemberSymbolPtr(typeName, memberName))
@@ -858,7 +864,8 @@ static bool CheckNonCallableVariable(const std::string& name, const std::string&
                                      const CallValidationContext& valCtx, CalleeResolution& res)
 {
     std::string cleanType = CleanBaseType(typeName);
-    auto opCallSyms = FindMethodCandidates(cleanType, "opCall", valCtx.ctx.request.symbolTable);
+    auto opCallSyms =
+        FindMethodCandidates(cleanType, "opCall", valCtx.ctx.request.symbolTable, valCtx.ctx.request.exprCache);
     if (!opCallSyms.empty())
     {
         res.reportedName = name;
@@ -878,7 +885,8 @@ static bool CheckNonCallableVariable(const std::string& name, const std::string&
 static bool CheckMemberNonCallableVariable(const std::string& objType, const std::string& memberName,
                                            const CallValidationContext& valCtx, CalleeResolution& res)
 {
-    for (const auto& cls : GetInheritedTypeHierarchy(objType, valCtx.ctx.request.symbolTable))
+    for (const auto& cls :
+         GetInheritedTypeHierarchy(objType, valCtx.ctx.request.symbolTable, valCtx.ctx.request.exprCache))
     {
         if (auto found = valCtx.ctx.request.symbolTable.FindMemberSymbolPtr(cls, memberName))
         {
@@ -932,14 +940,15 @@ CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
     }
 
     res.isReceiverConst = objInfo.isConst;
-    res.candidates = FindMethodCandidates(objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable);
+    res.candidates = FindMethodCandidates(objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable,
+                                          valCtx.ctx.request.exprCache);
     FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
     ApplyTemplateSubstitutions(res.candidates, objInfo.objectType, objInfo.templateArgs,
                                valCtx.ctx.request.symbolTable);
     if (res.candidates.empty())
     {
-        if (auto callableSym =
-                TryResolveMemberCallableFuncdef(objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable))
+        if (auto callableSym = TryResolveMemberCallableFuncdef(
+                objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable, valCtx.ctx.request.exprCache))
         {
             res.candidates.push_back(std::move(*callableSym));
         }
@@ -1074,7 +1083,8 @@ static bool ResolveEnclosingClassCallee(std::string_view written, const CallVali
     {
         return false;
     }
-    res.candidates = FindMethodCandidates(enclosingClass, std::string(written), valCtx.ctx.request.symbolTable);
+    res.candidates = FindMethodCandidates(enclosingClass, std::string(written), valCtx.ctx.request.symbolTable,
+                                          valCtx.ctx.request.exprCache);
     if (!res.candidates.empty())
     {
         res.candidatesAreFreeFunctions = false;

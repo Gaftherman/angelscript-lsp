@@ -114,6 +114,9 @@ struct UnusedSymbolRules
     std::unordered_map<std::string, std::vector<std::string>>
         baseClassLifecycleMethods;                               ///< Per-base-class lifecycle methods.
     std::vector<StringReflectionCallee> stringReflectionCallees; ///< Reflection callees taking string symbols.
+    bool ignoreUnusedGlobalsWithCallInitializer =
+        false; ///< Ignore unused global variables initialized with a call or constructor.
+    std::vector<std::string> unusedGlobalExemptTypes; ///< Type names exempted from unused global variable warnings.
 
     /**
      * @brief Checks if unused symbol rules or exemptions are configured.
@@ -123,7 +126,8 @@ struct UnusedSymbolRules
     {
         return enabled || !ignoredBaseClasses.empty() || !lifecycleMethods.empty() ||
                !baseClassLifecycleMethods.empty() || !ignoredGlobalFunctions.empty() ||
-               !stringReflectionCallees.empty();
+               !stringReflectionCallees.empty() || ignoreUnusedGlobalsWithCallInitializer ||
+               !unusedGlobalExemptTypes.empty();
     }
 };
 

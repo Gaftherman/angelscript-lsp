@@ -2386,3 +2386,85 @@ TEST_CASE("Completion - GAP-VISIBILITY-01: Lambda closure barrier prevents offer
     CHECK(HasItem(items, innerVar));
     CHECK_FALSE(HasItem(items, outerVar));
 }
+
+TEST_CASE("Completion - Inherited property and member completion in derived class without this.")
+{
+    const std::string baseName = test::GenerateRandomSymbolName("BaseEntity");
+    const std::string derivedName = test::GenerateRandomSymbolName("DerivedEntity");
+    const std::string propName = test::GenerateRandomSymbolName("selfProp");
+    const std::string fieldName = test::GenerateRandomSymbolName("m_baseVal");
+
+    const std::string code = "class " + baseName +
+                             " {\n"
+                             "    int " +
+                             fieldName +
+                             ";\n"
+                             "    int " +
+                             propName +
+                             " { get { return 1; } }\n"
+                             "}\n"
+                             "class " +
+                             derivedName + " : " + baseName +
+                             " {\n"
+                             "    void Spawn() {\n"
+                             "        \n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(6, 8);
+    CHECK(HasItem(items, propName));
+    CHECK(HasItem(items, fieldName));
+}
+
+TEST_CASE("Completion - Suppress this and super in global functions")
+{
+    const std::string fnName = test::GenerateRandomSymbolName("GlobalFn");
+    const std::string code = "void " + fnName +
+                             "() {\n"
+                             "    \n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(1, 4);
+    CHECK_FALSE(HasItem(items, "this"));
+    CHECK_FALSE(HasItem(items, "super"));
+}
+
+TEST_CASE("Completion - Suppress super in standalone class without base class, allow this")
+{
+    const std::string clsName = test::GenerateRandomSymbolName("StandaloneClass");
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    void Method() {\n"
+                             "        \n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(2, 8);
+    CHECK(HasItem(items, "this"));
+    CHECK_FALSE(HasItem(items, "super"));
+}
+
+TEST_CASE("Completion - Allow both this and super in derived class")
+{
+    const std::string baseName = test::GenerateRandomSymbolName("BaseClass");
+    const std::string derivedName = test::GenerateRandomSymbolName("DerivedClass");
+    const std::string code = "class " + baseName +
+                             " {\n"
+                             "    void BaseMethod() {}\n"
+                             "}\n"
+                             "class " +
+                             derivedName + " : " + baseName +
+                             " {\n"
+                             "    void Method() {\n"
+                             "        \n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(5, 8);
+    CHECK(HasItem(items, "this"));
+    CHECK(HasItem(items, "super"));
+}

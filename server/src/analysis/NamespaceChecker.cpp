@@ -52,7 +52,8 @@ void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const Symbo
     {
         prefix.pop_back();
     }
-    if (!prefix.empty() && !IsKnownScope(prefix, node, sourceCode, table))
+    const auto& usings = GetUsingNamespaces(ctx.request);
+    if (!prefix.empty() && !IsKnownScope(prefix, node, sourceCode, table, usings))
     {
         TSPoint startPt = ts_node_start_point(firstChild);
         TSPoint endPt = ts_node_end_point(firstChild);

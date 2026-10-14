@@ -876,6 +876,11 @@
             "default": [],
             "markdownDescription": "%config.diagnostics.ignoredUnusedFunctionPatterns.description%"
           },
+          "angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.diagnostics.ignoreUnusedGlobalsWithCallInitializer.description%"
+          },
           "angelscript.diagnostics.reportHandleComparisonEquality": {
             "type": "integer",
             "enum": [

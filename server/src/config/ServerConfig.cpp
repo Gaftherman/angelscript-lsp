@@ -614,6 +614,8 @@ static constexpr DiagnosticFlagMapping kDiagFlags[] = {
     {"--report-all-null-dereferences", "--no-report-all-null-dereferences",
      &DiagnosticsConfig::reportAllNullDereferences},
     {"--report-unused-functions", "--no-report-unused-functions", &DiagnosticsConfig::reportUnusedFunctions},
+    {"--ignore-unused-globals-with-call-initializer", "--no-ignore-unused-globals-with-call-initializer",
+     &DiagnosticsConfig::ignoreUnusedGlobalsWithCallInitializer},
 };
 
 static int ParseHandleComparisonSeverity(ArgParseContext& ctx)

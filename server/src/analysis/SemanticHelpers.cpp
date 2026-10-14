@@ -629,12 +629,7 @@ bool MatchesParentNamespaceType(std::string_view clean, const SymbolTable& table
 
 bool IsReachableViaUsingDirectives(std::string_view clean, const DiagnosticContext& ctx)
 {
-    if (!ctx.request.tree)
-    {
-        return false;
-    }
-    TSNode root = ts_tree_root_node(ctx.request.tree);
-    auto usings = CollectUsingNamespaces(root, ctx.request.sourceCode);
+    const auto& usings = GetUsingNamespaces(ctx.request);
     for (const auto& ns : usings)
     {
         std::string q = ns + "::" + std::string(clean);
@@ -1840,7 +1835,7 @@ std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std:
 std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode)
 {
     std::vector<std::string> usings;
-    if (ts_node_is_null(root))
+    if (ts_node_is_null(root) || sourceCode.find("using") == std::string_view::npos)
     {
         return usings;
     }
@@ -1871,6 +1866,30 @@ std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view so
         }
     }
     return usings;
+}
+
+const std::vector<std::string>& GetUsingNamespaces(const SemanticAnalysisRequest& request)
+{
+    if (!request.usingNamespacesCache.has_value())
+    {
+        if (request.sourceCode.find("using") == std::string_view::npos)
+        {
+            request.usingNamespacesCache = std::vector<std::string>{};
+        }
+        else if (request.nodeIndex)
+        {
+            request.usingNamespacesCache = CollectUsingNamespaces(*request.nodeIndex, request.sourceCode);
+        }
+        else if (request.tree)
+        {
+            request.usingNamespacesCache = CollectUsingNamespaces(ts_tree_root_node(request.tree), request.sourceCode);
+        }
+        else
+        {
+            request.usingNamespacesCache = std::vector<std::string>{};
+        }
+    }
+    return *request.usingNamespacesCache;
 }
 
 /**
@@ -1921,8 +1940,26 @@ static bool IsKnownInEnclosingContainers(const SymbolTable& table, const std::st
  * @brief Checks if the prefix is known relative to using namespaces.
  */
 static bool IsKnownInUsingNamespaces(const SymbolTable& table, const std::string& prefix, TSNode node,
-                                     std::string_view sourceCode)
+                                     std::string_view sourceCode, std::span<const std::string> precomputedUsings)
 {
+    if (!precomputedUsings.empty())
+    {
+        for (const auto& ns : precomputedUsings)
+        {
+            std::string q = ns + "::" + prefix;
+            if (table.HasSymbol(q) || table.HasSymbolAnywhere(q))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    if (sourceCode.find("using") == std::string_view::npos)
+    {
+        return false;
+    }
+
     TSNode root = node;
     while (!ts_node_is_null(ts_node_parent(root)))
     {
@@ -1940,7 +1977,8 @@ static bool IsKnownInUsingNamespaces(const SymbolTable& table, const std::string
     return false;
 }
 
-bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourceCode, const SymbolTable& table)
+bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourceCode, const SymbolTable& table,
+                  std::span<const std::string> precomputedUsings)
 {
     if (prefix.empty() || table.HasSymbol(prefix) || table.HasSymbolAnywhere(prefix))
     {
@@ -1957,7 +1995,7 @@ bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourc
         return true;
     }
 
-    return IsKnownInUsingNamespaces(table, prefix, node, sourceCode);
+    return IsKnownInUsingNamespaces(table, prefix, node, sourceCode, precomputedUsings);
 }
 
 /**
@@ -2108,17 +2146,14 @@ std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std
     return FindSymbolEnumOrTypeFallback(symbolTable, name);
 }
 
-std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std::string_view sourceCode,
-                                       const SymbolTable& symbolTable)
+static void CollectUsingsFromAncestor(TSNode p, std::string_view sourceCode, std::vector<std::string>& usings)
 {
-    std::vector<std::string> usings;
-    TSNode p = node;
-    while (!ts_node_is_null(p))
+    TSTreeCursor cursor = ts_tree_cursor_new(p);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        uint32_t count = ts_node_child_count(p);
-        for (uint32_t i = 0; i < count; ++i)
+        do
         {
-            TSNode ch = ts_node_child(p, i);
+            TSNode ch = ts_tree_cursor_current_node(&cursor);
             if (std::string_view(ts_node_type(ch)) == "using_declaration")
             {
                 TSNode nameNode = parser::GetChildByField(ch, parser::fields::Name);
@@ -2135,8 +2170,23 @@ std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std
                     }
                 }
             }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+}
+
+std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std::string_view sourceCode,
+                                       const SymbolTable& symbolTable)
+{
+    std::vector<std::string> usings;
+    if (sourceCode.find("using") != std::string_view::npos)
+    {
+        TSNode p = node;
+        while (!ts_node_is_null(p))
+        {
+            CollectUsingsFromAncestor(p, sourceCode, usings);
+            p = ts_node_parent(p);
         }
-        p = ts_node_parent(p);
     }
 
     std::vector<ContainerInfo> containers = GetEnclosingContainers(node, sourceCode);
@@ -4030,6 +4080,26 @@ static std::string ResolveExpressionTypeUncached(std::string_view nodeType, TSNo
     return ResolveCompositeExpr(nodeType, exprNode, ctx, depth);
 }
 
+static std::string_view GetTrimmedNodeTextView(TSNode node, std::string_view sourceCode) noexcept
+{
+    const uint32_t start = ts_node_start_byte(node);
+    const uint32_t end = ts_node_end_byte(node);
+    if (start >= end || end > sourceCode.size())
+    {
+        return {};
+    }
+    std::string_view sv = sourceCode.substr(start, end - start);
+    while (!sv.empty() && isspace(static_cast<unsigned char>(sv.front())))
+    {
+        sv.remove_prefix(1);
+    }
+    while (!sv.empty() && isspace(static_cast<unsigned char>(sv.back())))
+    {
+        sv.remove_suffix(1);
+    }
+    return sv;
+}
+
 std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
     // This resolver recurses on operands and member chains with nothing else bounding it, so a
@@ -4047,12 +4117,6 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
         return std::string(ExpressionTypeCache::k_poisonType);
     }
 
-    std::string rawText = GetTrimmedNodeText(exprNode, ctx.sourceCode);
-    if (rawText == "void")
-    {
-        return "void";
-    }
-
     if (ctx.cache)
     {
         const ExpressionCacheKey key{ts_node_start_byte(exprNode), ts_node_end_byte(exprNode),
@@ -4063,10 +4127,22 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
             return it->second;
         }
 
+        std::string_view rawText = GetTrimmedNodeTextView(exprNode, ctx.sourceCode);
+        if (rawText == "void")
+        {
+            return "void";
+        }
+
         std::string_view nodeType = ts_node_type(exprNode);
         std::string resolved = ResolveExpressionTypeUncached(nodeType, exprNode, ctx, depth);
         ctx.cache->types.emplace(key, resolved);
         return resolved;
+    }
+
+    std::string_view rawText = GetTrimmedNodeTextView(exprNode, ctx.sourceCode);
+    if (rawText == "void")
+    {
+        return "void";
     }
 
     std::string_view nodeType = ts_node_type(exprNode);
@@ -5501,6 +5577,41 @@ TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::
                                       });
     }
     return found;
+}
+
+std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode)
+{
+    TSNode typeNode = ts_node_parent(datatypeNode);
+    if (ts_node_is_null(typeNode) || std::string_view(ts_node_type(typeNode)) != parser::nodes::Type)
+    {
+        return {};
+    }
+    TSTreeCursor cursor = ts_tree_cursor_new(typeNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode c = ts_tree_cursor_current_node(&cursor);
+            if (std::string_view(ts_node_type(c)) == parser::nodes::Scope)
+            {
+                const uint32_t sStart = ts_node_start_byte(c);
+                const uint32_t sEnd = ts_node_end_byte(c);
+                ts_tree_cursor_delete(&cursor);
+                if (sStart < sourceCode.size() && sEnd <= sourceCode.size() && sStart < sEnd)
+                {
+                    std::string scopeText(sourceCode.substr(sStart, sEnd - sStart));
+                    if (!scopeText.ends_with("::"))
+                    {
+                        scopeText += "::";
+                    }
+                    return scopeText;
+                }
+                return {};
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+        ts_tree_cursor_delete(&cursor);
+    }
+    return {};
 }
 
 } // namespace angel_lsp::analysis

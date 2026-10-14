@@ -148,6 +148,11 @@ size_t ColumnOfTypeName(std::string_view sourceCode, uint32_t line, uint32_t fro
 
 void DiagnosticContext::Append(Diagnostic&& diag) const
 {
+    if (!diag.fileUri.empty() && diag.fileUri != request.fileUri)
+    {
+        return;
+    }
+
     // Only warnings move. An error stays an error at every mode - asEP_COMPILER_WARNINGS
     // decides what the compiler does with a warning, not whether it still refuses the file -
     // and a hint is this analyzer's own idea rather than anything the engine emits, so neither

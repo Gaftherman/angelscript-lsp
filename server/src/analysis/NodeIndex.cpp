@@ -19,12 +19,25 @@ void NodeIndex::PopulatePredefinedSymbols(const TSLanguage* lang)
     {
         return;
     }
+    const uint32_t symCount = ts_language_symbol_count(lang);
+    if (m_nodesBySymbol.size() < symCount)
+    {
+        m_nodesBySymbol.resize(symCount);
+    }
     for (const std::string_view name : parser::k_allNodeTypes)
     {
         const TSSymbol sym = ts_language_symbol_for_name(lang, name.data(), static_cast<uint32_t>(name.length()), true);
         if (sym != 0)
         {
             m_symbolByName[name] = sym;
+        }
+    }
+    for (uint32_t s = 0; s < symCount; ++s)
+    {
+        const char* name = ts_language_symbol_name(lang, static_cast<TSSymbol>(s));
+        if (name)
+        {
+            m_symbolByName.try_emplace(std::string_view(name), static_cast<TSSymbol>(s));
         }
     }
 }
@@ -41,19 +54,18 @@ void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget)
     if (ts_node_is_error(node) || ts_node_is_missing(node))
     {
         m_errorRanges.push_back(ErrorRange{ts_node_start_byte(node), ts_node_end_byte(node)});
+        m_errorNodes.push_back(node);
     }
 
     const TSSymbol sym = ts_node_symbol(node);
-    if (sym >= m_nodesBySymbol.size())
+    if (sym < m_nodesBySymbol.size())
+    {
+        m_nodesBySymbol[sym].push_back(node);
+    }
+    else
     {
         m_nodesBySymbol.resize(static_cast<size_t>(sym) + 1);
-    }
-    m_nodesBySymbol[sym].push_back(node);
-
-    const char* typeStr = ts_node_type(node);
-    if (typeStr)
-    {
-        m_symbolByName.try_emplace(std::string_view(typeStr), sym);
+        m_nodesBySymbol[sym].push_back(node);
     }
 }
 
@@ -110,6 +122,7 @@ void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budg
 
     m_language = lang ? lang : tree_sitter_angelscript();
     PopulatePredefinedSymbols(m_language);
+    m_allNodes.reserve(4096);
     TraverseTree(root, budget);
     PostProcessErrorRanges();
 }
@@ -125,6 +138,10 @@ std::span<const TSNode> NodeIndex::Nodes(TSSymbol symbol) const noexcept
 
 std::span<const TSNode> NodeIndex::Nodes(std::string_view typeName) const noexcept
 {
+    if (typeName == "ERROR")
+    {
+        return m_errorNodes;
+    }
     const auto it = m_symbolByName.find(typeName);
     if (it != m_symbolByName.end())
     {
@@ -227,6 +244,7 @@ void NodeIndex::Clear() noexcept
     m_root = TSNode{};
     m_language = nullptr;
     m_allNodes.clear();
+    m_errorNodes.clear();
     m_nodesBySymbol.clear();
     m_errorRanges.clear();
     m_symbolByName.clear();

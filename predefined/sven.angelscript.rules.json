@@ -57,6 +57,13 @@
     "checkLocals": true,
     "checkMembers": true,
     "checkGlobals": true,
+    "ignoreUnusedGlobalsWithCallInitializer": false,
+    "unusedGlobalExemptTypes": [
+      "CClientCommand",
+      "CConCommand",
+      "CCVar",
+      "CScheduledFunction"
+    ],
     "checkFunctions": true,
     "checkClasses": true,
     "ignoredGlobalFunctions": [

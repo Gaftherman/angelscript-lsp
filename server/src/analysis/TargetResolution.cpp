@@ -403,6 +403,10 @@ static bool HasClassMemberSymbol(const std::vector<Symbol>& syms)
 {
     for (const auto& s : syms)
     {
+        if (s.isSynthesized)
+        {
+            continue;
+        }
         if (s.containerKind != analysis::ContainerKind::Namespace && s.containerKind != analysis::ContainerKind::Enum)
         {
             return true;
@@ -439,6 +443,20 @@ static bool HasNamespaceSymbol(const std::vector<Symbol>& syms)
 void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const ResolveTargetRequest& request,
                             TargetDescriptor& target)
 {
+    TSNode parent = ts_node_parent(outNode);
+    if (!ts_node_is_null(parent))
+    {
+        std::string_view pType = ts_node_type(parent);
+        if (pType == "class_declaration" || pType == "interface_declaration" || pType == "enum_declaration")
+        {
+            TSNode nameChild = parser::GetChildByField(parent, parser::fields::Name);
+            if (!ts_node_is_null(nameChild) && ts_node_start_byte(nameChild) == ts_node_start_byte(outNode))
+            {
+                return;
+            }
+        }
+    }
+
     auto containers = analysis::GetEnclosingContainers(outNode, request.sourceCode);
     for (const auto& container : containers)
     {
@@ -656,6 +674,10 @@ void ResolveGlobalFallbackTarget(const std::string& nodeText, const ResolveTarge
         {
             for (const auto& sym : symbols)
             {
+                if (sym.isSynthesized)
+                {
+                    continue;
+                }
                 if (sym.fileUri == request.uri && request.position.line >= sym.startLine &&
                     request.position.line <= sym.endLine && sym.name == nodeText)
                 {

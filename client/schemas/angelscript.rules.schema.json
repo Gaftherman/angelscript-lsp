@@ -269,6 +269,16 @@
           "default": true,
           "description": "Whether to check unused global variables."
         },
+        "ignoreUnusedGlobalsWithCallInitializer": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to ignore unused global variables initialized with a call or constructor expression."
+        },
+        "unusedGlobalExemptTypes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Type names exempted from unused global variable warnings (e.g. ['CClientCommand', 'CConCommand', 'CCVar', 'CScheduledFunction'])."
+        },
         "checkFunctions": {
           "type": "boolean",
           "default": true,

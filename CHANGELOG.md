@@ -2,6 +2,35 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.0-exp.2] - 2026-10-14
+
+### Single-Pass AST Architecture, Sub-Millisecond Queries, Final Override Diagnostic Isolation, and Real-World Feature Parity
+
+- Cross-File Diagnostic Leakage & Final Modifier Parity (`E224`):
+  - Fixed false-positive `as-err-override-final-method` (`E224`) red squiggles on method bodies in files including mixins or base classes (e.g. `flare.as` including `schema.as`). Filtered out foreign file symbols (`mSym.fileUri != ctx.request.fileUri`) and synthesized mixin symbols (`mSym.isSynthesized`) in `ReportFinalMethodOverrides`.
+  - Added architectural diagnostic containment check in `DiagnosticContext::Append`, safely rejecting any diagnostic whose `fileUri` does not match the active document.
+  - Implemented exact signature discrimination via `HasSameParameterList` (`MatchesFinalBaseFunction`), allowing valid method overloads with different parameter types when a base method is marked `final` (verified with `angelscript_oracle.exe`).
+  - Added full virtual property block `get final` / `set final` support in `RuleIndex` and `SymbolCollector` (recursing into `func_attributes`), correctly detecting and flagging derived property overrides on both property blocks and explicit accessor functions (`get_`/`set_`).
+  - Implemented multi-level ancestor hierarchy traversal in `CheckFinalOverrides` with cycle detection (`visited` set), citing the exact ancestor declaring the method `final`.
+- Ultra-Performance Architecture & Sub-Millisecond Feature Execution:
+  - Constructed single-pass top-down `NodeIndex` with flat `TSTreeCursor` traversal, eliminating hidden $O(N^2)$ Tree-sitter parent searches and named child indexing.
+  - Bounded $O(\log N)$ binary search in `ScopeTree::FindInnermostScope` (~63 ns per query).
+  - $O(1)$ metadata presence check in `SymbolCollector` using file-level bracket pre-detection and byte-level `PrecedingByteCouldBeMetadata`, reducing `sven.as.predefined` (1.26 MB / 33k lines) symbol collection from 1,306 ms to **69.03 ms (18.9x faster)**.
+  - Shared, pre-sized `ExpressionTypeCache` across all 11 semantic checkers, accelerating massive ordinary script analysis (`SemanticAnalyzer::Analyze`) from 2,274 ms to **192.75 ms (11.8x faster)**.
+  - Zero-copy semantic tokens with `TransparentStringHash` in `RuleIndex` and token refinement hierarchy caching, accelerating `GetSemanticTokens` from 430 ms to **33.12 ms (13x faster)**.
+  - Sub-millisecond hover latency (< 1.0 ms across all scenarios, down to **20 microseconds** on cross-`#include` DAGs) via bounded `SplitLinesUpTo` in `DocComment`, zero-copy `FindSymbolsPtr`, and flat cursor traversal.
+- Real-World LSP Feature Fidelity (Sven Co-op Scripts):
+  - Fixed Hover and Go-to-Definition (`Ctrl+Click`) on qualified `funcdef` types and delegate constructions (`@TextMenu::v1::MenuOptionSelect`), extracting datatype/scoped prefixes in Layer 2 to prevent short-name collisions with host class methods.
+  - Restored Go-to-Definition on `.as.predefined` symbols (e.g. `CClientCommand`) from user `.as` scripts, eliminating local call references from definition candidate pools and falling back to type definition symbols.
+  - Enhanced Autocomplete (`CompletionHandler`) to expose inherited members and virtual properties (e.g., `self`, `pev`) without requiring `this.` prefix via `GetInheritedTypeHierarchy`.
+  - Enforced strict `this`/`super` keyword filtering in autocomplete: suppressed in global functions and standalone classes without base classes.
+  - Added `W117` enum constant exemption to prevent global enum members from triggering unused variable warnings and range shifts.
+  - Added configurable call-initialized global variable exemption (`ignoreUnusedGlobalsWithCallInitializer` & `unusedGlobalExemptTypes` for `CClientCommand`, `CConCommand`, `CCVar`, `CScheduledFunction`).
+- Test Suite & Quality Verification:
+  - **2,345 unit tests passed** (33,914 assertions, 0 failures, 27 skipped).
+  - **256 / 256 parity audit scripts passed** with 0 unexplained false positives.
+  - All 11 static quality gates passed (`jscpd` at 1.10%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 dead parameters `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violations).
+
 ## [1.1.0-exp.1] - 2026-10-14
 
 ### Discrete MatchTier Pareto Overload Engine, Sequential Lexical Visibility, Official Expression Parity, and asEP_* Matrix

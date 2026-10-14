@@ -274,6 +274,20 @@ void ProcessContainerMember(RuleIndexPartial& partial, const Symbol& sym)
         }
         RecordAccessorProperty(partial, sym);
         break;
+    case SymbolType::Property:
+        if (std::holds_alternative<VariableSignature>(sym.signature))
+        {
+            const auto& varSig = std::get<VariableSignature>(sym.signature);
+            if (varSig.isGetFinal)
+            {
+                members.finalMethodNames.push_back("get_" + sym.name);
+            }
+            if (varSig.isSetFinal)
+            {
+                members.finalMethodNames.push_back("set_" + sym.name);
+            }
+        }
+        break;
     case SymbolType::Class:
     case SymbolType::Interface:
     case SymbolType::Enum:

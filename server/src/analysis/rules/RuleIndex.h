@@ -22,9 +22,9 @@ struct DerivedType
 /** @brief What the declaration rules need to know about one container's members. */
 struct ContainerMembers
 {
-    ankerl::unordered_dense::set<std::string> methodNames;
-    ankerl::unordered_dense::set<std::string> finalMethodNames;
-    ankerl::unordered_dense::set<std::string> allMemberNames;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> methodNames;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> finalMethodNames;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> allMemberNames;
     bool hasNestedType = false;
 
     /**
@@ -87,7 +87,7 @@ struct RuleIndex
     using DerivedType = angel_lsp::analysis::rules::DerivedType;
 
     ankerl::unordered_dense::map<std::string, ContainerMembers, TransparentStringHash, std::equal_to<>> byContainer;
-    ankerl::unordered_dense::set<std::string> enumMemberNames;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> enumMemberNames;
     ankerl::unordered_dense::map<std::string, uint32_t> enumMemberCounts;
 
     /**
@@ -100,7 +100,8 @@ struct RuleIndex
      * @brief Qualified names of types (classes, interfaces, enums, typedefs, funcdefs) keyed by short name.
      * Allows fast lookup of types when referenced without their enclosing namespace.
      */
-    ankerl::unordered_dense::map<std::string, std::vector<std::string>> qualifiedTypesByShortName;
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>
+        qualifiedTypesByShortName;
     ankerl::unordered_dense::map<std::string, ankerl::unordered_dense::map<std::string, uint32_t>> qualifiedTypeCounts;
 
     ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> globalAccessorPropertyNames;

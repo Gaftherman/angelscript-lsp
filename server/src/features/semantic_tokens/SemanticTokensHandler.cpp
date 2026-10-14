@@ -915,6 +915,7 @@ struct TokenRefinementContext
     const ankerl::unordered_dense::map<uint32_t, uint32_t>& scopedEnumUpgrades;
     const ClassSpanIndex& classSpans;
     std::shared_ptr<const analysis::rules::RuleIndex> ruleIndex;
+    mutable ankerl::unordered_dense::map<std::string_view, std::vector<std::string>> classHierarchyCache;
 };
 
 /**
@@ -934,15 +935,21 @@ uint32_t RefineEnclosingClassMember(std::string_view tokenText, uint32_t startBy
         return tokenType;
     }
 
-    const std::string nameStr(tokenText);
-    for (const auto& owner : analysis::GetInheritedTypeHierarchy(std::string(className), ctx.request.symbolTable))
+    auto hit = ctx.classHierarchyCache.find(className);
+    if (hit == ctx.classHierarchyCache.end())
+    {
+        auto hierarchy = analysis::GetInheritedTypeHierarchy(std::string(className), ctx.request.symbolTable);
+        hit = ctx.classHierarchyCache.emplace(className, std::move(hierarchy)).first;
+    }
+
+    for (const auto& owner : hit->second)
     {
         const auto& ownerMembers = ctx.ruleIndex->Members(owner);
-        if (tokenType == Type_Function && ownerMembers.methodNames.contains(nameStr))
+        if (tokenType == Type_Function && ownerMembers.methodNames.contains(tokenText))
         {
             return Type_Method;
         }
-        if (tokenType == Type_Variable && ownerMembers.allMemberNames.contains(nameStr))
+        if (tokenType == Type_Variable && ownerMembers.allMemberNames.contains(tokenText))
         {
             return Type_Property;
         }
@@ -1045,14 +1052,13 @@ uint32_t RefineRuleIndexFallback(std::string_view tokenText, uint32_t tokenType,
     {
         return tokenType;
     }
-    if ((tokenType == Type_Variable || tokenType == Type_Type) &&
-        ctx.ruleIndex->enumMemberNames.contains(std::string(tokenText)))
+    if ((tokenType == Type_Variable || tokenType == Type_Type) && ctx.ruleIndex->enumMemberNames.contains(tokenText))
     {
         return Type_EnumMember;
     }
     if (tokenType == Type_Type)
     {
-        auto it = ctx.ruleIndex->qualifiedTypesByShortName.find(std::string(tokenText));
+        auto it = ctx.ruleIndex->qualifiedTypesByShortName.find(tokenText);
         if (it != ctx.ruleIndex->qualifiedTypesByShortName.end() && !it->second.empty())
         {
             const auto syms = ctx.request.symbolTable.FindSymbolsPtr(it->second.front());

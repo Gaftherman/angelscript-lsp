@@ -259,49 +259,45 @@ static void FilterSuppressedDiagnostics(std::vector<Diagnostic>& diagnostics, co
     }
 }
 
+struct AnalysisContextGuards
+{
+    const SemanticAnalysisRequest& req;
+    ExpressionTypeCache* prevCache;
+    const NodeIndex* prevIndex;
+    ExpressionTypeCache localCache;
+    std::unique_ptr<NodeIndex> localNodeIndex;
+
+    explicit AnalysisContextGuards(const SemanticAnalysisRequest& request)
+        : req(request), prevCache(request.exprCache), prevIndex(request.nodeIndex)
+    {
+        if (!req.exprCache)
+        {
+            const size_t typeCapacity = req.sourceCode.size() > 10000 ? (req.sourceCode.size() / 32) : 512;
+            localCache.types.reserve(typeCapacity);
+            localCache.hierarchies.reserve(256);
+            req.exprCache = &localCache;
+        }
+        if (!req.nodeIndex && req.tree)
+        {
+            localNodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(req.tree), nullptr, req.traversalBudget);
+            req.nodeIndex = localNodeIndex.get();
+        }
+    }
+
+    ~AnalysisContextGuards()
+    {
+        req.exprCache = prevCache;
+        req.nodeIndex = prevIndex;
+    }
+};
+
 std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest& request) const
 {
     std::vector<Diagnostic> diagnostics;
     LogSymbolDump(request);
 
-    ExpressionTypeCache localCache;
-    struct CacheGuard
-    {
-        const SemanticAnalysisRequest& req;
-        ExpressionTypeCache* prev;
-        ~CacheGuard()
-        {
-            req.exprCache = prev;
-        }
-    } guard{request, request.exprCache};
-
-    if (!request.exprCache)
-    {
-        request.exprCache = &localCache;
-    }
-
-    std::unique_ptr<NodeIndex> localNodeIndex;
+    AnalysisContextGuards guards(request);
     const NodeIndex* indexPtr = request.nodeIndex;
-    if (!indexPtr && request.tree)
-    {
-        localNodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(request.tree), nullptr, request.traversalBudget);
-        indexPtr = localNodeIndex.get();
-    }
-
-    struct NodeIndexGuard
-    {
-        const SemanticAnalysisRequest& req;
-        const NodeIndex* prev;
-        ~NodeIndexGuard()
-        {
-            req.nodeIndex = prev;
-        }
-    } nodeGuard{request, request.nodeIndex};
-
-    if (!request.nodeIndex && indexPtr)
-    {
-        request.nodeIndex = indexPtr;
-    }
 
     {
         DiagnosticContext ctx{request, diagnostics, m_logger};

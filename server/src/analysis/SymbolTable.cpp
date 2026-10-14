@@ -143,6 +143,17 @@ void SymbolTable::EraseDocumentSymbolsOnlyLocked(const std::string& fileUri)
         }
 
         auto& vec = MutableBucket(bucket->second);
+        for (const auto& sym : vec)
+        {
+            if (sym.fileUri == fileUri && sym.type == SymbolType::Class &&
+                std::holds_alternative<ClassSignature>(sym.signature) && sym.GetClass().modifiers.isMixin)
+            {
+                if (m_mixinClassCount > 0)
+                {
+                    --m_mixinClassCount;
+                }
+            }
+        }
         std::erase_if(vec, [&fileUri](const Symbol& sym) { return sym.fileUri == fileUri || sym.isSynthesized; });
 
         if (vec.empty())
@@ -207,6 +218,11 @@ void SymbolTable::EraseDocumentLocked(const std::string& fileUri)
 
 bool SymbolTable::HasMixinSymbolLocked(const std::string& fileUri) const
 {
+    if (m_mixinClassCount == 0)
+    {
+        return false;
+    }
+
     const auto fileEntry = m_keysByFile.find(fileUri);
     if (fileEntry == m_keysByFile.end())
     {
@@ -366,6 +382,7 @@ void SymbolTable::AddSymbol(const Symbol& symbol)
     std::vector<std::string> affectedFiles;
     if (isMixin)
     {
+        ++m_mixinClassCount;
         ResolveIncludedMixinsLocked(&affectedFiles);
     }
     else if (isClass)
@@ -390,6 +407,87 @@ void SymbolTable::AddSymbol(const Symbol& symbol)
     auto freshPartial = rules::RuleIndex::BuildPartial(symbol.fileUri, freshPtrs);
     auto affectedPartials = BuildAffectedPartialsLocked(affectedFiles, symbol.fileUri);
     ApplyRuleIndexPartialsLocked(symbol.fileUri, std::move(freshPartial), std::move(affectedPartials));
+
+    ++m_version;
+}
+
+void SymbolTable::InsertSymbolsLocked(std::vector<Symbol>& symbols, std::vector<std::string>& freshClassKeys,
+                                      bool& addedMixin, std::string& fileUri)
+{
+    for (auto& symbol : symbols)
+    {
+        if (fileUri.empty() && !symbol.fileUri.empty())
+        {
+            fileUri = symbol.fileUri;
+        }
+
+        const std::string& lookupKey = symbol.qualifiedName.empty() ? symbol.name : symbol.qualifiedName;
+        auto& bucket = MutableBucket(m_symbols[lookupKey]);
+        bucket.push_back(std::move(symbol));
+        Symbol& stored = bucket.back();
+        const std::string& key = stored.qualifiedName.empty() ? stored.name : stored.qualifiedName;
+
+        if (stored.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(stored.signature) &&
+            stored.GetFunction().displaySignature.empty())
+        {
+            stored.GetFunction().displaySignature = FormatFunctionDeclaration(stored, true);
+        }
+        IndexKeyForFileLocked(stored.fileUri, key);
+
+        const bool isClass =
+            (stored.type == SymbolType::Class && std::holds_alternative<ClassSignature>(stored.signature));
+        if (isClass)
+        {
+            if (stored.GetClass().modifiers.isMixin)
+            {
+                addedMixin = true;
+                ++m_mixinClassCount;
+            }
+            freshClassKeys.push_back(key);
+        }
+    }
+}
+
+void SymbolTable::AddSymbols(std::vector<Symbol>&& symbols)
+{
+    if (symbols.empty())
+    {
+        return;
+    }
+
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    bool addedMixin = false;
+    std::vector<std::string> freshClassKeys;
+    std::string fileUri;
+
+    InsertSymbolsLocked(symbols, freshClassKeys, addedMixin, fileUri);
+
+    std::vector<std::string> affectedFiles;
+    if (addedMixin)
+    {
+        ResolveIncludedMixinsLocked(&affectedFiles);
+    }
+    else if (!freshClassKeys.empty())
+    {
+        ResolveIncludedMixinsForKeysLocked(freshClassKeys, &affectedFiles);
+    }
+
+    {
+        std::lock_guard<std::mutex> guard(m_ruleIndexMutex);
+        if (!m_ruleIndex && !m_ruleIndexPartials)
+        {
+            ++m_version;
+            return;
+        }
+    }
+
+    if (!fileUri.empty())
+    {
+        auto freshPtrs = GetDocumentSymbolPointersLocked(fileUri);
+        auto freshPartial = rules::RuleIndex::BuildPartial(fileUri, freshPtrs);
+        auto affectedPartials = BuildAffectedPartialsLocked(affectedFiles, fileUri);
+        ApplyRuleIndexPartialsLocked(fileUri, std::move(freshPartial), std::move(affectedPartials));
+    }
 
     ++m_version;
 }
@@ -456,6 +554,8 @@ std::unique_ptr<SymbolTable> SymbolTable::CreateAnalysisSnapshot(const std::stri
         snapshot->m_keysByFile = m_keysByFile;
         snapshot->m_version = m_version;
         snapshot->m_virtualMixinDocumentsEnabled = m_virtualMixinDocumentsEnabled;
+        snapshot->m_mixinClassCount = m_mixinClassCount;
+        snapshot->m_classesWithSynthesizedMixins = m_classesWithSynthesizedMixins;
 
         std::lock_guard<std::mutex> ruleGuard(m_ruleIndexMutex);
         snapshot->m_ruleIndex = m_ruleIndex;
@@ -489,6 +589,7 @@ void SymbolTable::PublishDocumentSymbols(const std::string& fileUri, std::vector
             if (symbol.GetClass().modifiers.isMixin)
             {
                 addedMixin = true;
+                ++m_mixinClassCount;
             }
             freshClassKeys.push_back(key);
         }
@@ -600,51 +701,65 @@ SymbolTable::UpdateIncludedMixinsForClassesLocked(const std::vector<std::string>
     return neededMixins;
 }
 
+void SymbolTable::CleanSynthesizedMembersForClassLocked(const Symbol& sym,
+                                                        ankerl::unordered_dense::set<std::string>& fileKeys)
+{
+    const std::string hostQName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+    const std::string prefix = hostQName + "::";
+    std::vector<std::string> keysToClean;
+    for (const auto& k : fileKeys)
+    {
+        if (k.starts_with(prefix))
+        {
+            auto bIt = m_symbols.find(k);
+            if (bIt != m_symbols.end() && bIt->second)
+            {
+                auto& vec = MutableBucket(bIt->second);
+                std::erase_if(vec, [](const Symbol& s) { return s.isSynthesized; });
+                if (vec.empty())
+                {
+                    m_symbols.erase(bIt);
+                    keysToClean.push_back(k);
+                }
+            }
+        }
+    }
+    for (const auto& k : keysToClean)
+    {
+        fileKeys.erase(k);
+    }
+}
+
 void SymbolTable::CleanSynthesizedSymbolsForClassesLocked(const std::vector<std::string>& classKeys)
 {
+    if (m_classesWithSynthesizedMixins.empty())
+    {
+        return;
+    }
     for (const auto& key : classKeys)
     {
+        if (!m_classesWithSynthesizedMixins.contains(key))
+        {
+            continue;
+        }
         auto it = m_symbols.find(key);
         if (it == m_symbols.end() || !it->second)
         {
+            m_classesWithSynthesizedMixins.erase(key);
             continue;
         }
         for (const auto& sym : *it->second)
         {
-            if (sym.type != SymbolType::Class)
+            if (sym.type == SymbolType::Class)
             {
-                continue;
-            }
-            const std::string hostQName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-            const auto fileIt = m_keysByFile.find(sym.fileUri);
-            if (fileIt == m_keysByFile.end())
-            {
-                continue;
-            }
-            const std::string prefix = hostQName + "::";
-            std::vector<std::string> keysToClean;
-            for (const auto& k : fileIt->second)
-            {
-                if (k.starts_with(prefix))
+                auto fileIt = m_keysByFile.find(sym.fileUri);
+                if (fileIt != m_keysByFile.end())
                 {
-                    auto bIt = m_symbols.find(k);
-                    if (bIt != m_symbols.end() && bIt->second)
-                    {
-                        auto& vec = MutableBucket(bIt->second);
-                        std::erase_if(vec, [](const Symbol& s) { return s.isSynthesized; });
-                        if (vec.empty())
-                        {
-                            m_symbols.erase(bIt);
-                            keysToClean.push_back(k);
-                        }
-                    }
+                    CleanSynthesizedMembersForClassLocked(sym, fileIt->second);
                 }
             }
-            for (const auto& k : keysToClean)
-            {
-                fileIt->second.erase(k);
-            }
         }
+        m_classesWithSynthesizedMixins.erase(key);
     }
 }
 
@@ -720,6 +835,7 @@ void SymbolTable::SynthesizeSingleMixinMemberLocked(const std::string& hostQName
     }
 
     MutableBucket(m_symbols[synthKey]).push_back(std::move(synth));
+    m_classesWithSynthesizedMixins.insert(hostQName);
     IndexKeyForFileLocked(hostFileUri, synthKey);
 }
 
@@ -771,7 +887,7 @@ void SymbolTable::SynthesizeMixinMembersIntoClassesLocked(
 void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::string>& classKeys,
                                                      std::vector<std::string>* outAffectedFiles)
 {
-    if (classKeys.empty())
+    if (classKeys.empty() || (m_mixinClassCount == 0 && m_classesWithSynthesizedMixins.empty()))
     {
         return;
     }
@@ -790,6 +906,10 @@ void SymbolTable::ResolveIncludedMixinsForKeysLocked(const std::vector<std::stri
 
 void SymbolTable::ResolveIncludedMixinsLocked(std::vector<std::string>* outAffectedFiles)
 {
+    if (m_mixinClassCount == 0 && m_classesWithSynthesizedMixins.empty())
+    {
+        return;
+    }
     std::vector<std::string> classKeys;
     for (const auto& [name, bucket] : m_symbols)
     {

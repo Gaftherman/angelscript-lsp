@@ -313,6 +313,8 @@ void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& rules)
     ParseStringArray(u, "lifecycleMethods", rules.lifecycleMethods);
     ParseBaseClassLifecycleMethods(u, rules.baseClassLifecycleMethods);
     ParseReflectionCallees(u, rules.stringReflectionCallees);
+    rules.ignoreUnusedGlobalsWithCallInitializer = u.value("ignoreUnusedGlobalsWithCallInitializer", false);
+    ParseStringArray(u, "unusedGlobalExemptTypes", rules.unusedGlobalExemptTypes);
 }
 
 } // namespace

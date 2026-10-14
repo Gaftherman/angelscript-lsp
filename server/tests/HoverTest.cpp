@@ -1505,3 +1505,77 @@ TEST_CASE("Hover - GAP-VISIBILITY-01: Sequential local variable visibility falls
     const std::string textAfter = std::get<lsp::MarkupContent>(hoverAfter->contents).value;
     CHECK(textAfter.find("int " + varName) != std::string::npos);
 }
+
+TEST_CASE("Hover - Qualified funcdef shadowed by class method with identical name")
+{
+    const std::string nsName = test::GenerateRandomSymbolName("Ns");
+    const std::string fnName = test::GenerateRandomSymbolName("Callback");
+    const std::string clsName = test::GenerateRandomSymbolName("MyClass");
+    const std::string varName = test::GenerateRandomSymbolName("m_cb");
+
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    funcdef void " +
+                             fnName +
+                             "(int val);\n"
+                             "}\n"
+                             "class " +
+                             clsName +
+                             " {\n"
+                             "    void " +
+                             fnName +
+                             "() {}\n"
+                             "    " +
+                             nsName + "::" + fnName + "@ " + varName +
+                             ";\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // Hover over fnName in "nsName::fnName@ m_cb;" (Line 5, offset of fnName)
+    const uint32_t charOffset = static_cast<uint32_t>(4 + nsName.length() + 2);
+    auto hover = env.HoverAt(5, charOffset);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("funcdef") != std::string::npos);
+    CHECK(text.find("int val") != std::string::npos);
+}
+
+TEST_CASE("Hover - Delegate constructor instantiation with @Namespace::Funcdef(this.Method)")
+{
+    const std::string nsName = test::GenerateRandomSymbolName("NsMenu");
+    const std::string fnName = test::GenerateRandomSymbolName("MenuSelect");
+    const std::string clsName = test::GenerateRandomSymbolName("MenuClass");
+
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    funcdef void " +
+                             fnName +
+                             "();\n"
+                             "}\n"
+                             "class " +
+                             clsName +
+                             " {\n"
+                             "    void " +
+                             fnName +
+                             "() {}\n"
+                             "    void Init() {\n"
+                             "        " +
+                             nsName + "::" + fnName + "@ cb = @" + nsName + "::" + fnName + "( this." + fnName +
+                             " );\n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // In Line 6: "@nsName::fnName( this.fnName );"
+    // Find column of second fnName
+    const std::string line6 =
+        "        " + nsName + "::" + fnName + "@ cb = @" + nsName + "::" + fnName + "( this." + fnName + " );";
+    const size_t secondPos = line6.find("@" + nsName + "::" + fnName) + 1 + nsName.length() + 2;
+    auto hover = env.HoverAt(6, static_cast<uint32_t>(secondPos));
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("funcdef") != std::string::npos);
+    CHECK(text.find(fnName) != std::string::npos);
+}

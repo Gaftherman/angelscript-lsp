@@ -521,6 +521,7 @@ std::vector<analysis::Symbol> FindMemberSymbolsInHierarchy(const std::string& re
     {
         std::string qualifiedMember = typeName + "::" + nodeText;
         auto found = symbolTable.FindSymbols(qualifiedMember);
+        std::erase_if(found, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
         if (!found.empty())
         {
             std::stable_partition(found.begin(), found.end(),
@@ -789,47 +790,6 @@ std::optional<std::vector<lsp::Location>> TryResolveContextualDefinition(TSNode 
 }
 
 /**
- * @brief Extracts the preceding scope qualifier for a datatype node, if any.
- * @param[in] datatypeNode AST datatype node.
- * @param[in] sourceCode Document source text.
- * @return Scope prefix string ending in "::", or empty if unqualified.
- */
-std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode)
-{
-    TSNode typeNode = ts_node_parent(datatypeNode);
-    if (ts_node_is_null(typeNode) || std::string_view(ts_node_type(typeNode)) != parser::nodes::Type)
-    {
-        return {};
-    }
-    TSTreeCursor cursor = ts_tree_cursor_new(typeNode);
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        do
-        {
-            TSNode c = ts_tree_cursor_current_node(&cursor);
-            if (std::string_view(ts_node_type(c)) == parser::nodes::Scope)
-            {
-                const uint32_t sStart = ts_node_start_byte(c);
-                const uint32_t sEnd = ts_node_end_byte(c);
-                ts_tree_cursor_delete(&cursor);
-                if (sStart < sourceCode.size() && sEnd <= sourceCode.size() && sStart < sEnd)
-                {
-                    std::string scopeText(sourceCode.substr(sStart, sEnd - sStart));
-                    if (!scopeText.ends_with("::"))
-                    {
-                        scopeText += "::";
-                    }
-                    return scopeText;
-                }
-                return {};
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-        ts_tree_cursor_delete(&cursor);
-    }
-    return {};
-}
-
-/**
  * @brief Finds symbols in scope or global property accessors for an identifier node.
  * @param[in] node Cursor node.
  * @param[in] nodeText Symbol text.
@@ -856,7 +816,7 @@ std::vector<analysis::Symbol> FindSymbolsForNode(TSNode node, const std::string&
         }
         else if (pType == parser::nodes::Datatype)
         {
-            const std::string prefix = ExtractDatatypeScopePrefix(parent, request.sourceCode);
+            const std::string prefix = analysis::ExtractDatatypeScopePrefix(parent, request.sourceCode);
             if (!prefix.empty())
             {
                 symbols =
@@ -864,6 +824,7 @@ std::vector<analysis::Symbol> FindSymbolsForNode(TSNode node, const std::string&
             }
         }
     }
+
     if (symbols.empty())
     {
         symbols = analysis::FindSymbolsInScope(nodeText, node, request.sourceCode, request.symbolTable);
@@ -959,7 +920,9 @@ std::vector<analysis::Symbol> ResolveCandidateSymbols(TSNode node, const std::st
     const analysis::Scope* scope =
         ctx.rootScope ? FindInnermostScope(ctx.rootScope.get(), ctx.queryLine, ctx.request.position.character)
                       : nullptr;
-    return FilterOverloadsForCall(node, symbols, ctx.request, scope);
+    symbols = FilterOverloadsForCall(node, symbols, ctx.request, scope);
+    std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
+    return symbols;
 }
 
 /**
@@ -1244,6 +1207,40 @@ std::vector<analysis::Symbol> CollectTypeDefinitionSymbols(TSNode node, const st
     return typeSymbols;
 }
 
+/**
+ * @brief Filters CallReference symbols and prioritizes matching symbols from the local file.
+ * @param[in,out] symbols Candidate symbol vector to refine.
+ * @param[in] node AST identifier node under cursor.
+ * @param[in] nodeText Text of the AST node.
+ * @param[in] request Definition request context.
+ */
+void FilterAndPrioritizeLocalSymbols(std::vector<analysis::Symbol>& symbols, TSNode node, const std::string& nodeText,
+                                     const DefinitionRequest& request)
+{
+    std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
+    if (symbols.empty())
+    {
+        symbols = CollectTypeDefinitionSymbols(node, nodeText, request);
+        std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
+    }
+
+    if (symbols.size() > 1)
+    {
+        std::vector<analysis::Symbol> localSymbols;
+        for (const auto& s : symbols)
+        {
+            if (s.fileUri == request.uri)
+            {
+                localSymbols.push_back(s);
+            }
+        }
+        if (!localSymbols.empty())
+        {
+            symbols = std::move(localSymbols);
+        }
+    }
+}
+
 } // namespace
 
 std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest& request)
@@ -1288,21 +1285,7 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
         }
     }
 
-    if (symbols.size() > 1)
-    {
-        std::vector<analysis::Symbol> localSymbols;
-        for (const auto& s : symbols)
-        {
-            if (s.fileUri == request.uri)
-            {
-                localSymbols.push_back(s);
-            }
-        }
-        if (!localSymbols.empty())
-        {
-            symbols = std::move(localSymbols);
-        }
-    }
+    FilterAndPrioritizeLocalSymbols(symbols, node, nodeText, request);
 
     auto locations = ConvertSymbolsToLocations(symbols, request);
     if (!locations.empty())

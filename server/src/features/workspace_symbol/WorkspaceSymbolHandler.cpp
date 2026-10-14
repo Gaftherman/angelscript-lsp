@@ -150,7 +150,7 @@ std::optional<WorkspaceSymbolResult> GetWorkspaceSymbols(const WorkspaceSymbolRe
         {
             for (const auto& sym : symbols)
             {
-                if (sym.type == analysis::SymbolType::CallReference)
+                if (sym.isSynthesized || sym.type == analysis::SymbolType::CallReference)
                 {
                     continue;
                 }

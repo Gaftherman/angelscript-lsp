@@ -863,7 +863,7 @@ SymbolGroups CollectSymbolGroups(const CodeLensRequest& request)
         {
             for (const auto& sym : symbols)
             {
-                if (sym.fileUri != request.uri)
+                if (sym.fileUri != request.uri || sym.isSynthesized)
                 {
                     continue;
                 }

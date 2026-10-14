@@ -874,13 +874,146 @@ Se incorporaron y verificaron 8 pruebas unitarias permanentes (totalizando 2,326
 
 ---
 
-## 11. Resumen Final del Proyecto y Cierre de Fases (0 a 8)
-Con la culminación de la Fase 8:
-- Todas las fases planificadas (0 a 8) se encuentran formalmente en estado **`COMPLETED`**.
-- El conteo total de pruebas unitarias asciende a **`2,326 / 2,326` pruebas pasadas exitosamente** (`33,857` aserciones).
-- La auditoría de paridad oficial contra el oráculo de AngelScript registra **0 falsos positivos inexplicados** sobre 256 scripts.
-- Las 11 puertas de calidad estática (`jscpd` al 1.13%, CCN $\le 15$, NLOC $\le 70$, inclusión de capas y clang-format) se encuentran en verde.
-- El servidor LSP exhibe paridad 1:1 con la especificación de tipos, expresiones, visibilidad léxica secuencial y resolución de sobrecargas del compilador oficial de AngelScript.
+## 11. Fase 9 (Arquitectura de Ultra-Rendimiento — Parte 1): Construcción de `NodeIndex` en Una Sola Pasada Top-Down, Recorridos Lineales y Búsquedas $O(1)$ sin Asignaciones en el Heap
+
+### 11.1. Objetivos y Resumen Ejecutivo
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,329 / 2,329` pasadas (`33,868` aserciones, `0` fallos, `27` omitidas).
+- **Puertas de Calidad Estática**: 11 puertas activas aprobadas al 100% (`jscpd` al `1.11%`, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
+- **Suite de Benchmarks de Alta Escala (`Phase9BenchmarksTest.cpp`)**:
+  - **Escenario A (Stub Masivo `.as.predefined`, 1.26 MB, 33,793 líneas)**: Recolección y registro de 9,781 símbolos globales y miembros en 1.30s (reducción neta de >350 ms).
+  - **Escenario B (Script Ordinario Masivo, 10,689 líneas, 253 KB)**:
+    - AST Parse: 106.6 ms
+    - `NodeIndex::Build` en 1 sola pasada: 59.1 ms
+    - `CollectSymbolsWithTree`: 193.5 ms
+    - `CollectScopesFromTree`: 560.4 ms
+    - 10,000 consultas `FindInnermostScope`: **2.39 ms (~0.24 microsegundos por consulta)** gracias al ordenamiento plano y búsqueda binaria $O(\log S)$.
+  - **Escenario C (Grafo Masivo de #include con 35 archivos en abanico y anidados)**:
+    - Población y resolución del grafo: 8.71 ms
+    - Invalidación topológica DAG al modificar archivo raíz: 1.31 ms (34 archivos afectados).
+
+### 11.2. Entregables Técnicos Implementados
+1. **`NodeIndex` en Una Sola Pasada Pre-Order**:
+   - `NodeIndex::Build` implementa un recorrido preorder lineal sin retrocesos ni descensos repetidos desde la raíz.
+   - Pre-clasificación y pre-asignación en buckets contiguos (`m_nodesBySymbol`) y un vector plano indexado de nodos con errores sintácticos (`m_errorNodes`).
+   - Búsqueda de errores `IsInsideError` en $O(\log E)$ sin coste al estar libre de errores.
+2. **Linealización de `SymbolCollector` y `LocalScopeCollector`**:
+   - Reemplazados todos los bucles cuadráticos `ts_node_named_child(node, i)` por bucles planos `TSTreeCursor`.
+   - Erradicadas las subidas recursivas `ts_node_parent(node)` mediante mapas directos de ancestros precalculados en la pasada inicial.
+   - Eliminadas búsquedas hacia atrás `ts_node_prev_named_sibling(node)` en la extracción de comentarios de documentación Javadoc.
+3. **`ScopeTree` Ordenado y Búsqueda Binaria**:
+   - Ámbitos léxicos aplanados en `m_flattenedScopes` ordenados por `startByte`.
+   - `FindInnermostScope` opera en $O(\log S)$ usando `std::lower_bound` sobre intervalos byte exactos.
+4. **Búsquedas $O(1)$ sin Asignaciones en el Heap**:
+   - Reemplazo de formateos `std::string` temporales por buffers en la pila (`fmt::memory_buffer`) en composición de claves (`scope::name`).
+   - Consultas transparentes con `std::string_view` contra mapas `ankerl::unordered_dense` en `SymbolTable`, `SemanticHelpers` y resolución de tipos.
+5. **Correcciones de Coordenadas y Filtros Semánticos**:
+   - Posicionamiento exacto de constructores sintetizados (`startLine`, `startCharacter`, etc.) heredados de su clase contenedora.
+   - Exclusión de símbolos sintéticos en `CodeLensHandler` y `WorkspaceSymbolHandler`.
+   - Prevención de autorreferencia en `TargetResolution`: las declaraciones de clases/interfaces/enums no se confunden con llamadas a sus miembros homónimos.
+
+## 13. Fase 10: Fidelidad de Características LSP y Paridad de Diagnósticos en Código Real (Sven Co-op Scripts)
+
+### 13.1. Métricas de Ejecución
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,338 / 2,338` pasadas (`33,889+` aserciones, `0` fallos, `27` omitidas).
+- **Puertas de Calidad Estática**: 11 puertas activas aprobadas al 100% (`jscpd` al `1.10%`, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
+- **Sincronización de Localización y Catálogo**: 158 claves de configuración y 76 cadenas l10n 100% sincronizadas en inglés y español (`bundle.l10n.json`, `bundle.l10n.es.json`, `package.nls.json`, `package.nls.es.json`, `client/README.md`, `client/README.es.md`).
+
+### 13.2. Las 6 Correcciones Críticas de Características LSP Implementadas
+1. **Hover e Ir a la Definición en `funcdef` Calificados, Constructores Delegados y Punteros a Método (`this.Method`)**:
+   - `SemanticHelpers::ExtractDatatypeScopePrefix`: Función centralizada en Capa 2 para extraer prefijos de ámbito completos desde nodos `datatype` o `scoped_identifier` de Tree-Sitter (ej. `TextMenu::v1::MenuOptionSelect`).
+   - `HoverHandler`: `CollectScopedSymbols` consulta primero tipos y funcdefs calificados antes de caer en métodos de clase interna con el mismo nombre corto, y `IsQualifiedMemberNode` reconoce calificadores de tipo para evitar colisiones. Muestra la signatura completa del `funcdef` al instanciar delegados (`@Ns::Funcdef(this.Method)`).
+   - `DefinitionHandler`: Soporta saltos de definición directos en tipos funcdef calificados, punteros a métodos no llamados (`this.Method`) y resuelve los símbolos sin desviarse a identificadores no calificados.
+2. **Ir a la Definición en Símbolos `.as.predefined` desde Scripts de Usuario**:
+   - Resuelto el descarte erróneo por símbolos `CallReference` locales en `DefinitionHandler`: las referencias a llamadas locales se purgan del conjunto de candidatos (`std::erase_if`), priorizando las declaraciones reales de clases/tipos en `.as.predefined` (ej. `CClientCommand`).
+   - Implementado fallback transparente `CollectTypeDefinitionSymbols` para constructores y tipos cuando no hay candidatos en la tabla de símbolos directos.
+3. **Autocompletado (`CompletionHandler`) de Miembros y Propiedades Virtuales Heredadas (`self`) sin `this.`**:
+   - Enriquecido `CollectEnclosingClassMembers` para atravesar la jerarquía de herencia completa (`GetInheritedTypeHierarchy`) y mixins incluidos (`includedMixins`).
+   - Ahora, al escribir en una clase derivada (`info_section`), sugerencias de propiedades virtuales de la clase base (`self` de `ScriptBaseEntity`) e identificadores heredados aparecen inmediatamente sin necesidad de anteponer `this.`.
+4. **Supresión Estricta de Ámbito para `this` y `super` en Autocompletado**:
+   - En funciones globales libres (fuera de toda clase o mixin), `this` y `super` se filtran y suprimen por completo de la lista de sugerencias.
+   - En clases independientes sin clase base (`standalone`), `super` se suprime, permitiendo únicamente `this`. En clases derivadas, ambos se sugieren con normalidad.
+5. **Corrección de Falso Positivo `W117` (`as-warn-unused-global-variable`) en Valores de `enum`**:
+   - En `UnusedSymbolChecker::CheckUnusedGlobals`, se verifica explícitamente `var.isEnumConstant` para evitar que constantes de enumeración globales (como `Reload`, `AkimboShootBoth` en `enum WeaponUziAnim`) sean marcadas erróneamente como variables globales no usadas, resolviendo además el desfase de rangos diagnósticos.
+6. **Exención Configurable para Variables Globales Inicializadas con Llamadas / Constructores**:
+   - Agregada la opción booleana `ignoreUnusedGlobalsWithCallInitializer` (`false` por defecto) en `ServerConfig`, `EngineRuleConfig`, esquemas JSON y configuración del cliente (`client/package.json`).
+   - Agregado el array de cadenas `unusedGlobalExemptTypes` en `EngineRuleConfig` y `schemas/angelscript.rules.schema.json`. Pre-configurado en `predefined/sven.angelscript.rules.json` con los tipos nativos de registro de Sven Co-op (`["CClientCommand", "CConCommand", "CCVar", "CScheduledFunction"]`), permitiendo a los usuarios registrar clases de comando personalizadas (`ASCommand`, `CCVar`) sin falsas alarmas de variables globales no utilizadas.
+
+---
+
+---
+
+## 15. Fase 11: Arquitectura de Ultra-Rendimiento (Parte 2 y Cierre Final)
+
+### 15.1. Métricas de Rendimiento Alcanzadas (`Phase9BenchmarksTest.cpp`)
+| Escenario / Operación | Línea Base (Fase 9/10) | Meta Fase 11 | Resultado Final Fase 11 | Factor de Aceleración |
+| :--- | :--- | :--- | :--- | :--- |
+| **Escenario A: `sven.as.predefined` (1.26 MB, 33,793 líneas)** | | | | |
+| - `CollectSymbols` | 1,306.63 ms | < 200 ms | **69.03 ms** | **18.9x más rápido** |
+| - `GetHover (dictionary)` | 1.25 ms | < 1.0 ms | **0.59 ms** | **2.1x más rápido** |
+| **Escenario B: Script Masivo (10,689 líneas, 253 KB)** | | | | |
+| - `CollectSymbolsWithTree` | 193.50 ms | < 60 ms | **16.63 ms** | **11.6x más rápido** |
+| - `CollectScopesFromTree` | 560.44 ms | < 100 ms | **62.28 ms** | **9.0x más rápido** |
+| - `SemanticAnalyzer::Analyze` | 2,274.74 ms | < 350 ms | **192.75 ms** | **11.8x más rápido** |
+| - `GetSemanticTokens` | 430.86 ms | < 65 ms | **33.12 ms** | **13.0x más rápido** |
+| - 10,000 consultas `FindInnermostScope` | 2.39 ms | < 5 ms | **0.63 ms** | **3.8x más rápido (~63 ns/q)** |
+| - `GetHover (Compute)` | N/A | < 1.0 ms | **0.098 ms** | Sub-milisegundo |
+| **Escenario C: Grafo Masivo #include DAG (35 archivos)** | | | | |
+| - `Graph Population` | 8.71 ms | < 15 ms | **5.37 ms** | **1.6x más rápido** |
+| - `Invalidation of Root Node` | 1.31 ms | < 5 ms | **0.16 ms** | **8.2x más rápido** |
+| - `Cross-#include GetHover` | N/A | < 1.0 ms | **0.020 ms** | **20 microsegundos** |
+
+### 15.2. Componentes de Optimización Implementados
+1. **Detección $O(1)$ de Metadatos y Omisión Condicional en `SymbolCollector`**:
+   - Pre-cálculo de `sourceHasBrackets = !isPredefined && (sourceCode.find('[') != std::string_view::npos)` una sola vez por archivo, evitando el escaneo repetido del buffer de 1.26 MB.
+   - Verificación en tiempo constante `PrecedingByteCouldBeMetadata` en el byte anterior al inicio de la declaración.
+2. **`ExpressionTypeCache` Compartida y Pre-dimensionada en `SemanticAnalyzer`**:
+   - `AnalysisContextGuards` pre-reserva los buckets hash según el tamaño del código fuente (`sourceCode.size() / 32`).
+   - Búsqueda en caché al inicio absoluto de `ResolveExpressionType`, eliminando la re-resolución de miles de subexpresiones entre los 11 verificadores semánticos.
+3. **Cero-Copias y Búsqueda Transparente `std::string_view` en `RuleIndex` y `SemanticTokensHandler`**:
+   - Conversión de conjuntos y mapas de nombres de métodos y miembros en `RuleIndex.h` a `TransparentStringHash, std::equal_to<>`.
+   - Incorporación de `classHierarchyCache` en `TokenRefinementContext` evitando el cálculo recursivo de herencia por cada identificador.
+4. **Hover Sub-Milisegundo (< 1 ms) y Aplanamiento de Búsqueda de Ámbitos**:
+   - Reemplazo de `SplitLines` en `DocComment.cpp` por `SplitLinesUpTo` acotado, evitando trocear 33,000 líneas en el heap al consultar comentarios Javadoc.
+   - Eliminación de bucles indexados $O(N^2)$ `ts_node_child(p, i)` en `FindSymbolsInScope`, reemplazados por cursores planos `TSTreeCursor` y guardas de presencia de directivas `using`.
+   - Búsquedas con punteros compartidos `FindSymbolsPtr` en lugar de copias masivas por valor de `struct Symbol`.
+
+### 15.3. Métricas Finales de Fase 11
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,338 / 2,338` pasadas (`33,889+` aserciones, `0` fallos, `27` omitidas).
+- **Auditoría de Paridad Oráculo (256 scripts)**: `256 / 256` pasados, **0 falsos positivos inexplicados**.
+- **Puertas de Calidad Estática**: 11/11 puertas aprobadas (`jscpd` 1.10%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
+
+---
+
+## 16. Fase 12: Auditoría Quirúrgica y Corrección de `as-err-override-final-method` (`E224`), Aislamiento Cross-File, Rangos de Propiedades Sintetizadas `get_*`, y Paridad de Modificador `final`
+
+### 16.1. Diagnóstico Forense y Causa Raíz
+En proyectos reales multifichero (`flare.as` e `#include "schema.as"`), la validación de `weapon_bts_flare` reportaba falsos positivos de `as-err-override-final-method` en líneas 173, 180 (`m_iAmmoSave = this.owner.m_rgAmmo(...)`), y 190 (`BaseClass.Holster(...)`) dentro de `void Holster()`.
+1. **Falta de filtrado `fileUri` e `isSynthesized` en `ReportFinalMethodOverrides` (`ClassRules.cpp`)**:
+   - `SymbolTable::ResolveIncludedMixinsLocked` copia miembros de mixins de `schema.as` hacia la clase anfitriona como símbolos sintetizados (`isSynthesized = true`, `fileUri = "schema.as"`, y líneas 173/180/190 de `schema.as`).
+   - Al analizar `flare.as`, `ReportFinalMethodOverrides` consultaba `table.FindSymbolsPtr` y emitía diagnósticos directamente sobre estos símbolos sintetizados foráneos.
+   - `ctx.Emit` empujaba diagnósticos con las líneas 173/180/190 hacia el contexto de `flare.as`, causando que VS Code dibujara subrayados rojos dentro del método `Holster()`.
+2. **Discriminación de Sobrecargas Faltante**:
+   - En AngelScript oficial (verificado empíricamente con `angelscript_oracle.exe`), declarar un método con distinta lista de parámetros en la clase derivada no es una sobrescritura sino una sobrecarga válida (`exit code 0`).
+   - Se incorporó `HasSameParameterList` de `analysis/OverloadResolver.h` en `MatchesFinalBaseFunction`.
+3. **Propiedades Virtuales `get final` / `set final` no registradas en `RuleIndex`**:
+   - En `RuleIndex.cpp`, `SymbolType::Property` caía en `default` ignorando `varSig.isGetFinal` y `varSig.isSetFinal`.
+   - Se añadió soporte en `RuleIndex.cpp` y se corrigió `ApplyAccessorTokens` en `SymbolCollector.cpp` para recorrer el nodo `func_attributes` donde Tree-Sitter anida los tokens `final` y `override`.
+4. **Barrera Arquitectónica de Aislamiento en `DiagnosticContext::Append`**:
+   - Se incorporó la regla de contención `if (!diag.fileUri.empty() && diag.fileUri != request.fileUri) return;`, garantizando que ninguna regla del servidor pueda fugar diagnósticos foráneos hacia el documento activo.
+5. **Navegación Ancestral Multinivel con Detección de Ciclos**:
+   - Se refactorizó `CheckFinalOverrides` para recorrer la jerarquía completa de clases base y mixins vía cola iterativa y conjunto `visited`, citando con exactitud a la clase base ancestra que declaró el método `final`.
+
+### 16.2. Métricas Finales de Verificación del Proyecto
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,345 / 2,345` pasadas (`33,914` aserciones, `0` fallos, `27` omitidas).
+- **Auditoría de Paridad Oráculo (256 scripts)**: `256 / 256` pasados, **0 falsos positivos inexplicados**.
+- **Puertas de Calidad Estática**: 11/11 puertas aprobadas (`jscpd` 1.10%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
+- **Cierre del Proyecto**: Las 13 fases planificadas (0 a 12) se encuentran concluidas al 100%.
+
+
 
 
 

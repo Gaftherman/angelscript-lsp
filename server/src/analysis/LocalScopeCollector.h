@@ -3,6 +3,7 @@
 #include "analysis/ScopeTree.h"
 #include "parser/AngelScriptParser.h"
 
+#include <ankerl/unordered_dense.h>
 #include <memory>
 #include <string>
 #include <tree_sitter/api.h>
@@ -51,6 +52,24 @@ class LocalScopeCollector
      */
     std::unique_ptr<Scope> CollectScopesFromTree(TSNode rootNode, const std::string& sourceCode) const;
 
+    using ParentMap = ankerl::unordered_dense::map<const void*, TSNode>;
+
+    /**
+     * @brief Resolves parent of node in O(1) via pre-built parent map, with ts_node_parent fallback.
+     * @param node Child AST node.
+     * @param parents Pre-built parent map.
+     * @return Parent AST node or null node if at root.
+     */
+    [[nodiscard]] static TSNode GetParent(TSNode node, const ParentMap& parents) noexcept
+    {
+        if (ts_node_is_null(node))
+            return TSNode{};
+        auto it = parents.find(node.id);
+        if (it != parents.end())
+            return it->second;
+        return ts_node_parent(node);
+    }
+
   private:
     utils::LspLogger* m_logger;
     const TSQuery* m_localsQuery;
@@ -97,17 +116,21 @@ class LocalScopeCollector
     struct RawCapture
     {
         TSNode node;
-        CaptureKind kind;
-        LocalDefinitionKind definitionKind;
+        uint32_t startByte = 0;
+        uint32_t endByte = 0;
+        CaptureKind kind = CaptureKind::None;
+        LocalDefinitionKind definitionKind = LocalDefinitionKind::Variable;
     };
 
     /**
      * @brief Nests a byte-order-sorted capture list into a Scope tree.
      * @param captures Raw captures extracted by LOCALS_QUERY.
      * @param sourceCode Source text of the document.
+     * @param parents Pre-built parent map for O(1) ancestor lookups.
      * @return Unique pointer to the constructed root Scope, or nullptr on failure.
      */
-    std::unique_ptr<Scope> BuildScopeTree(std::vector<RawCapture>& captures, const std::string& sourceCode) const;
+    std::unique_ptr<Scope> BuildScopeTree(std::vector<RawCapture>& captures, const std::string& sourceCode,
+                                          const ParentMap& parents) const;
 
     /** @brief Returns the source text spanned by node, or an empty string for a null/degenerate node. */
     std::string GetNodeText(TSNode node, const std::string& sourceCode) const;
@@ -117,8 +140,10 @@ class LocalScopeCollector
      * @param nameNode AST node representing the definition name.
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving extracted type info.
+     * @param parents Pre-built parent map for O(1) ancestor lookups.
      */
-    void ReadVariableTypeInfo(TSNode nameNode, const std::string& sourceCode, LocalDefinition& def) const;
+    void ReadVariableTypeInfo(TSNode nameNode, const std::string& sourceCode, LocalDefinition& def,
+                              const ParentMap& parents) const;
 
     /**
      * @brief Initializes capture classifications from the compiled LOCALS_QUERY.
@@ -149,25 +174,30 @@ class LocalScopeCollector
      * @param capture Raw capture representing the definition.
      * @param[in,out] stack Open scope tracking stack.
      * @param sourceCode Source text of the document.
+     * @param parents Pre-built parent map for O(1) ancestor lookups.
      */
     void ProcessDefinitionCapture(const RawCapture& capture, const std::vector<OpenScope>& stack,
-                                  const std::string& sourceCode) const;
+                                  const std::string& sourceCode, const ParentMap& parents) const;
 
     /**
      * @brief Processes a reference capture node.
      * @param capture Raw capture representing the reference.
      * @param[in,out] current Innermost open scope receiving the reference.
      * @param sourceCode Source text of the document.
+     * @param parents Pre-built parent map for O(1) ancestor lookups.
      */
-    void ProcessReferenceCapture(const RawCapture& capture, Scope* current, const std::string& sourceCode) const;
+    void ProcessReferenceCapture(const RawCapture& capture, Scope* current, const std::string& sourceCode,
+                                 const ParentMap& parents) const;
 
     /**
      * @brief Resolves call expression and argument details for a reference using a flat cursor.
      * @param refNode AST node of the reference.
      * @param parent AST parent node.
      * @param[out] ref Reference struct to update.
+     * @param parents Pre-built parent map for O(1) ancestor lookups.
      */
-    static void DetermineCallReferenceInfo(TSNode refNode, TSNode parent, LocalReference& ref);
+    static void DetermineCallReferenceInfo(TSNode refNode, TSNode parent, LocalReference& ref,
+                                           const ParentMap& parents);
 
     /**
      * @brief Reads type information and ranges for a parameter AST node.
@@ -200,9 +230,10 @@ class LocalScopeCollector
      * @param declaratorNode Variable declarator AST node.
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving type info.
+     * @param parents Pre-built parent map for O(1) ancestor lookups.
      */
-    void ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, const std::string& sourceCode,
-                                        LocalDefinition& def) const;
+    void ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, const std::string& sourceCode, LocalDefinition& def,
+                                        const ParentMap& parents) const;
 
     /**
      * @brief Populates type span coordinates and template argument positions.

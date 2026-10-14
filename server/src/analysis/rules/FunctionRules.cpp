@@ -405,7 +405,7 @@ void CheckAttributes(const Symbol& sym, const FunctionSignature& sig, const Func
 void CheckConstructorDestructor(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
                                 const DiagnosticContext& ctx)
 {
-    if (fctx.isMixin && fctx.isConstructor)
+    if (fctx.isMixin && fctx.isConstructor && !sym.isSynthesized)
     {
         ctx.LogRule("CheckConstructorDestructor", diagnostics::codes::MixinConstructor, sym);
         ctx.Emit(sym, diagnostics::codes::MixinConstructor, sym.containerName);

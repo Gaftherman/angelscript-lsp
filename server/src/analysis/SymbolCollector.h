@@ -8,6 +8,7 @@
 
 #include "config/ServerConfig.h"
 #include "parser/GrammarNames.h"
+#include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -143,6 +144,21 @@ class SymbolCollector
     }
 
     /**
+     * @brief Returns the child of node bound to fieldId, or a null TSNode if absent.
+     * @param[in] node Parent tree-sitter node.
+     * @param[in] fieldId Tree-sitter field identifier.
+     * @return Child tree-sitter node.
+     */
+    [[nodiscard]] static TSNode GetChildByFieldId(TSNode node, TSFieldId fieldId) noexcept
+    {
+        if (ts_node_is_null(node) || fieldId == 0)
+        {
+            return TSNode{};
+        }
+        return ts_node_child_by_field_id(node, fieldId);
+    }
+
+    /**
      * @brief Appends a qualified symbol name into outBuffer with zero intermediate heap allocations.
      * @param[in,out] outBuffer String buffer to append into.
      * @param[in] scope Enclosing scope or namespace prefix.
@@ -203,6 +219,25 @@ class SymbolCollector
     TSSymbol m_tokImport = 0;
     TSSymbol m_tokOpenBrace = 0;
 
+    // Pre-resolved tree-sitter TSFieldId table
+    TSFieldId m_fieldIdName = 0;
+    TSFieldId m_fieldIdReturnType = 0;
+    TSFieldId m_fieldIdParameters = 0;
+    TSFieldId m_fieldIdBody = 0;
+    TSFieldId m_fieldIdVarType = 0;
+    TSFieldId m_fieldIdType = 0;
+    TSFieldId m_fieldIdKind = 0;
+    TSFieldId m_fieldIdSource = 0;
+    TSFieldId m_fieldIdPropType = 0;
+    TSFieldId m_fieldIdParamType = 0;
+    TSFieldId m_fieldIdDefaultValue = 0;
+    TSFieldId m_fieldIdValue = 0;
+    TSFieldId m_fieldIdBaseType = 0;
+    TSFieldId m_fieldIdTemplateParams = 0;
+    TSFieldId m_fieldIdFunction = 0;
+    TSFieldId m_fieldIdMember = 0;
+    TSFieldId m_fieldIdObject = 0;
+
     // =====================================================================================
     // Internal Bundled Contexts
     // =====================================================================================
@@ -223,6 +258,9 @@ class SymbolCollector
         const SymbolCollectRequest& request;
         SymbolTable& symbolTable;
         std::vector<Diagnostic>& diagnostics;
+        std::vector<Symbol> collectedSymbols;
+        bool isPredefined = false;
+        bool sourceHasBrackets = false;
     };
 
     /** @brief Bundles URI and source context for symbol creation. */
@@ -232,10 +270,31 @@ class SymbolCollector
         const std::string& fileUri;
         const std::string& containerPath;
         ContainerKind containerKind = ContainerKind::None;
+        bool sourceHasBrackets = false;
+
+        SymbolLocationContext(std::string_view src, const std::string& uri, const std::string& path,
+                              ContainerKind kind = ContainerKind::None, bool hasBrackets = false)
+            : sourceCode(src), fileUri(uri), containerPath(path), containerKind(kind), sourceHasBrackets(hasBrackets)
+        {
+        }
+
+        SymbolLocationContext(const SymbolCollectContext& sCtx, const std::string& path,
+                              ContainerKind kind = ContainerKind::None)
+            : sourceCode(sCtx.request.sourceCode), fileUri(sCtx.request.fileUri), containerPath(path),
+              containerKind(kind), sourceHasBrackets(sCtx.sourceHasBrackets)
+        {
+        }
+    };
+
+    struct ActiveContainer
+    {
+        uint32_t endByte = 0;
+        CollectionContext ctx;
     };
 
     struct VariableHeaderInfo
     {
+        TSNode varDeclNode{};
         std::string typeStr;
         TypeExtractionResult typeInfo;
         SymbolModifiers modifiers;
@@ -277,6 +336,18 @@ class SymbolCollector
 
     /** @brief Walks node's ancestors to derive the enclosing container path and nesting flags. */
     CollectionContext BuildContext(TSNode node, std::string_view sourceCode) const;
+    CollectionContext DetermineScopeAndAccess(TSNode node, std::string_view sourceCode) const;
+    void ExtractContainerInfo(TSNode current, std::string_view sourceCode, CollectionContext& ctx) const;
+
+    void PushContainerIfApplicable(uint32_t captureIdx, TSNode node, const SymbolCollectContext& sCtx,
+                                   std::vector<ActiveContainer>& stack) const;
+    void PushClassContainer(TSNode node, const SymbolCollectContext& sCtx, std::vector<ActiveContainer>& stack) const;
+    void PushInterfaceContainer(TSNode node, const SymbolCollectContext& sCtx,
+                                std::vector<ActiveContainer>& stack) const;
+    void PushNamespaceContainer(TSNode node, const SymbolCollectContext& sCtx,
+                                std::vector<ActiveContainer>& stack) const;
+    void PushFunctionContainer(TSNode node, const SymbolCollectContext& sCtx,
+                               std::vector<ActiveContainer>& stack) const;
 
     // =====================================================================================
     // Declaration Collectors (TAGS_QUERY @definition.* handlers)
@@ -290,13 +361,15 @@ class SymbolCollector
     void ParseAccessorNodes(TSNode node, VariableSignature& varSig) const;
     void ParseSingleAccessor(TSNode accNode, VariableSignature& varSig) const;
     void ApplyAccessorTokens(TSNode accNode, bool isGet, bool isSet, VariableSignature& varSig) const;
+    void ApplyFuncAttributeTokens(TSNode attrNode, bool isGet, bool isSet, VariableSignature& varSig) const;
 
     void ProcessFunction(TSNode funcNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
     TSNode FindFunctionBody(TSNode funcNode) const;
-    bool IsExternalFunction(TSNode funcNode) const;
+    bool IsExternalFunction(TSNode funcNode, std::string_view sourceCode) const;
     std::string ExtractOriginModule(TSNode funcNode, std::string_view sourceCode) const;
 
     void ProcessClass(TSNode classNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    void SynthesizeDefaultConstructor(const Symbol& sym, SymbolCollectContext& sCtx) const;
     void ProcessNamespace(TSNode namespaceNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
     void ProcessTypedef(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
     void ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
@@ -357,5 +430,6 @@ class SymbolCollector
     Symbol CreateSymbol(SymbolType type, TSNode node, TSNode nameNode, const SymbolLocationContext& loc) const;
 
     std::vector<std::string> ExtractBases(TSNode classNode, std::string_view sourceCode) const;
+    mutable ankerl::unordered_dense::map<const void*, CollectionContext> m_scopeContextCache;
 };
 } // namespace angel_lsp::analysis

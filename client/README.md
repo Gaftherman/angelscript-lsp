@@ -283,6 +283,7 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.diagnostics.reportUnusedFunctions` | `true` | Warn when a global function, namespaced function, or private class method is declared in the script but never called or referenced. Host entry points can be configured via `#angelscript.diagnostics.ignoredUnusedFunctions#` or engine rules (`.angelscript.rules.json`). |
 | `angelscript.diagnostics.ignoredUnusedFunctions` | `[]` | Function names (short or qualified) exempt from unused-function warnings (e.g., `["main", "MapInit", "PluginInit"]`). |
 | `angelscript.diagnostics.ignoredUnusedFunctionPatterns` | `[]` | Regular expression patterns exempting matching function names from unused-function warnings (e.g., `["^On.*", "^Hook_.*"]`). |
+| `angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer` | `false` | Whether to ignore unused global variables initialized with a call or constructor expression. |
 | `angelscript.diagnostics.reportHandleComparisonEquality` | `1` | Configure severity for handle equality comparisons with null (`== null`, `!= null`) instead of handle identity (`is null`, `!is null`). 0: disabled, 1: warning (compiler default), 2: error. |
 | `angelscript.diagnostics.missingAssetPathSeverity` | `"off"` | Diagnostic severity for string literals referencing missing asset files. Off by default. |
 

@@ -586,6 +586,11 @@ std::optional<IncludeDirectiveInfo> ParseIncludeDirective(std::string_view line,
  */
 std::optional<lsp::Hover> HoverIncludeDirective(const HoverRequest& request)
 {
+    if (request.sourceCode.find('#') == std::string::npos)
+    {
+        return std::nullopt;
+    }
+
     const auto [lineStart, lineEnd] = FindLineSpan(request.sourceCode, request.position.line);
     if (lineStart == std::string::npos)
     {
@@ -1826,7 +1831,10 @@ static std::vector<analysis::Symbol> ResolveNamedArgCalleeCandidates(TSNode call
     else
     {
         std::string funcName = analysis::GetNodeText(funcNode, ctx.request.sourceCode);
-        return ctx.request.symbolTable.FindSymbols(funcName);
+        if (const auto found = ctx.request.symbolTable.FindSymbolsPtr(funcName))
+        {
+            return *found;
+        }
     }
     return {};
 }
@@ -2092,19 +2100,36 @@ void FilterEnumMemberSymbols(std::vector<analysis::Symbol>& symbols, const Hover
 std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
 {
     std::vector<analysis::Symbol> symbols;
-    if (!ts_node_is_null(ctx.parent) && std::string_view(ts_node_type(ctx.parent)) == "scoped_identifier")
+    if (!ts_node_is_null(ctx.parent))
     {
-        const uint32_t pStart = ts_node_start_byte(ctx.parent);
-        const uint32_t nEnd = ts_node_end_byte(ctx.node);
-        if (pStart < ctx.request.sourceCode.size() && nEnd <= ctx.request.sourceCode.size() && pStart < nEnd)
+        const std::string_view pType = ts_node_type(ctx.parent);
+        if (pType == "scoped_identifier")
         {
-            const std::string scopedPrefix = ctx.request.sourceCode.substr(pStart, nEnd - pStart);
-            if (ctx.profiler.IsActive())
+            const uint32_t pStart = ts_node_start_byte(ctx.parent);
+            const uint32_t nEnd = ts_node_end_byte(ctx.node);
+            if (pStart < ctx.request.sourceCode.size() && nEnd <= ctx.request.sourceCode.size() && pStart < nEnd)
             {
-                ctx.profiler.pathText = scopedPrefix;
+                const std::string scopedPrefix = ctx.request.sourceCode.substr(pStart, nEnd - pStart);
+                if (ctx.profiler.IsActive())
+                {
+                    ctx.profiler.pathText = scopedPrefix;
+                }
+                symbols = analysis::FindSymbolsInScope(scopedPrefix, ctx.node, ctx.request.sourceCode,
+                                                       ctx.request.symbolTable);
             }
-            symbols =
-                analysis::FindSymbolsInScope(scopedPrefix, ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
+        }
+        else if (pType == parser::nodes::Datatype)
+        {
+            const std::string prefix = analysis::ExtractDatatypeScopePrefix(ctx.parent, ctx.request.sourceCode);
+            if (!prefix.empty())
+            {
+                if (ctx.profiler.IsActive())
+                {
+                    ctx.profiler.pathText = prefix + ctx.nodeText;
+                }
+                symbols = analysis::FindSymbolsInScope(prefix + ctx.nodeText, ctx.node, ctx.request.sourceCode,
+                                                       ctx.request.symbolTable);
+            }
         }
     }
     if (symbols.empty())
@@ -2259,7 +2284,7 @@ std::optional<lsp::Hover> TryHoverExpressionOrLocal(const HoverQueryContext& ctx
  * @param[in] node AST node to test.
  * @return True if node is the member part of a scoped_identifier or member_expression.
  */
-static bool IsQualifiedMemberNode(TSNode node)
+static bool IsQualifiedMemberNode(TSNode node, std::string_view sourceCode = {})
 {
     TSNode parent = ts_node_parent(node);
     if (ts_node_is_null(parent))
@@ -2278,6 +2303,10 @@ static bool IsQualifiedMemberNode(TSNode node)
         TSNode memberField = parser::GetChildByField(parent, parser::fields::Member);
         return ts_node_eq(memberField, node) ||
                (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(node));
+    }
+    if (pType == parser::nodes::Datatype && !sourceCode.empty())
+    {
+        return !analysis::ExtractDatatypeScopePrefix(parent, sourceCode).empty();
     }
     return false;
 }
@@ -2479,12 +2508,15 @@ static void AppendConstructorSymbolsIfCall(const HoverQueryContext& ctx, std::ve
         if (sym.type == analysis::SymbolType::Class)
         {
             const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-            auto ctors = ctx.request.symbolTable.FindSymbols(qName + "::" + sym.name);
-            if (ctors.empty() && qName != sym.name)
+            auto ctors = ctx.request.symbolTable.FindSymbolsPtr(qName + "::" + sym.name);
+            if ((!ctors || ctors->empty()) && qName != sym.name)
             {
-                ctors = ctx.request.symbolTable.FindSymbols(sym.name + "::" + sym.name);
+                ctors = ctx.request.symbolTable.FindSymbolsPtr(sym.name + "::" + sym.name);
             }
-            ctorSymbols.insert(ctorSymbols.end(), ctors.begin(), ctors.end());
+            if (ctors)
+            {
+                ctorSymbols.insert(ctorSymbols.end(), ctors->begin(), ctors->end());
+            }
         }
     }
     if (!ctorSymbols.empty())
@@ -2497,7 +2529,7 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
 {
     utils::HighResTimer symTimer;
     std::vector<analysis::Symbol> symbols = CollectScopedSymbols(ctx);
-    if (!IsQualifiedMemberNode(ctx.node))
+    if (!IsQualifiedMemberNode(ctx.node, ctx.request.sourceCode))
     {
         AppendEnclosingClassMethods(ctx.node, ctx.nodeText, ctx.request, symbols);
     }
@@ -2708,12 +2740,14 @@ std::optional<std::string> ResolveIdentifierDefaultValue(const std::string& name
             return std::string(UnquoteStringLiteral(sym.GetVariable().defaultValue));
         }
     }
-    auto globals = request.symbolTable.FindSymbols(name);
-    for (const auto& sym : globals)
+    if (const auto globals = request.symbolTable.FindSymbolsPtr(name))
     {
-        if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().defaultValue.empty())
+        for (const auto& sym : *globals)
         {
-            return std::string(UnquoteStringLiteral(sym.GetVariable().defaultValue));
+            if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().defaultValue.empty())
+            {
+                return std::string(UnquoteStringLiteral(sym.GetVariable().defaultValue));
+            }
         }
     }
     return std::nullopt;

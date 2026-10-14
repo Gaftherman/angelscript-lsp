@@ -499,3 +499,66 @@ TEST_CASE("UnusedSymbolChecker - functions inside namespace, property accessors,
     auto diagsDisabled = AnalyzeSnippet(code, &rules, "file:///test.as", &disabledDiagCfg);
     CHECK_FALSE(HasDiag(diagsDisabled, codes::UnusedFunction, unusedNsFunc));
 }
+
+TEST_CASE("UnusedSymbolChecker - Global enum constants are not reported as unused global variables")
+{
+    angel_lsp::config::EngineRuleConfig rules;
+    rules.unusedRules.enabled = true;
+
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("WeaponAnim");
+    const std::string valA = angel_lsp::test::GenerateRandomSymbolName("Reload");
+    const std::string valB = angel_lsp::test::GenerateRandomSymbolName("Shoot");
+
+    const std::string code = "enum " + enumName +
+                             " {\n"
+                             "    " +
+                             valA +
+                             ",\n"
+                             "    " +
+                             valB +
+                             "\n"
+                             "};\n";
+
+    auto diags = AnalyzeSnippet(code, &rules);
+    CHECK_FALSE(HasDiag(diags, codes::UnusedGlobalVariable, valA));
+    CHECK_FALSE(HasDiag(diags, codes::UnusedGlobalVariable, valB));
+}
+
+TEST_CASE("UnusedSymbolChecker - Call initialized globals with ignoreUnusedGlobalsWithCallInitializer")
+{
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("g_reg");
+    const std::string typeName = angel_lsp::test::GenerateRandomSymbolName("RegistryObj");
+
+    const std::string code =
+        "class " + typeName + " { " + typeName + "(string a) {} }\n" + typeName + " " + varName + "(\"init\");\n";
+
+    // Case A: default / false -> reports unused global
+    angel_lsp::config::EngineRuleConfig rulesDisabled;
+    rulesDisabled.unusedRules.enabled = true;
+    rulesDisabled.unusedRules.ignoreUnusedGlobalsWithCallInitializer = false;
+    auto diagsDisabled = AnalyzeSnippet(code, &rulesDisabled);
+    CHECK(HasDiag(diagsDisabled, codes::UnusedGlobalVariable, varName));
+
+    // Case B: enabled -> exempts call initialized global
+    angel_lsp::config::EngineRuleConfig rulesEnabled;
+    rulesEnabled.unusedRules.enabled = true;
+    rulesEnabled.unusedRules.ignoreUnusedGlobalsWithCallInitializer = true;
+    auto diagsEnabled = AnalyzeSnippet(code, &rulesEnabled);
+    CHECK_FALSE(HasDiag(diagsEnabled, codes::UnusedGlobalVariable, varName));
+}
+
+TEST_CASE("UnusedSymbolChecker - Global variable exempt types via unusedGlobalExemptTypes")
+{
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("g_cmd");
+    const std::string exemptType = "CClientCommand";
+
+    const std::string code = "class " + exemptType + " {}\n" + exemptType + " " + varName + ";\n";
+
+    angel_lsp::config::EngineRuleConfig rules;
+    rules.unusedRules.enabled = true;
+    rules.unusedRules.ignoreUnusedGlobalsWithCallInitializer = false;
+    rules.unusedRules.unusedGlobalExemptTypes.push_back(exemptType);
+
+    auto diags = AnalyzeSnippet(code, &rules);
+    CHECK_FALSE(HasDiag(diags, codes::UnusedGlobalVariable, varName));
+}
