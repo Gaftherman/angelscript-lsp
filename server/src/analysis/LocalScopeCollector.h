@@ -109,6 +109,8 @@ class LocalScopeCollector
     struct RawCapture
     {
         TSNode node;
+        TSNode parent;
+        TSNode grandparent;
         uint32_t startByte = 0;
         uint32_t endByte = 0;
         CaptureKind kind = CaptureKind::None;
@@ -128,11 +130,11 @@ class LocalScopeCollector
 
     /**
      * @brief Reads declared type and initializer information for variable-like definitions.
-     * @param nameNode AST node representing the definition name.
+     * @param capture Raw capture containing node, parent, and grandparent AST nodes.
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving extracted type info.
      */
-    void ReadVariableTypeInfo(TSNode nameNode, const std::string& sourceCode, LocalDefinition& def) const;
+    void ReadVariableTypeInfo(const RawCapture& capture, const std::string& sourceCode, LocalDefinition& def) const;
 
     /**
      * @brief Initializes capture classifications from the compiled LOCALS_QUERY.
@@ -212,10 +214,11 @@ class LocalScopeCollector
     /**
      * @brief Reads type and initializer details for a variable declarator AST node.
      * @param declaratorNode Variable declarator AST node.
+     * @param declarationNode Enclosing variable declaration AST node.
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving type info.
      */
-    void ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, const std::string& sourceCode,
+    void ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNode declarationNode, const std::string& sourceCode,
                                         LocalDefinition& def) const;
 
     /**

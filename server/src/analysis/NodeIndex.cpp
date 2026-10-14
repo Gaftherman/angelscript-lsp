@@ -58,14 +58,17 @@ void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget)
     }
 
     const TSSymbol sym = ts_node_symbol(node);
-    if (sym < m_nodesBySymbol.size())
+    if (sym != static_cast<TSSymbol>(-1) && !ts_node_is_error(node) && sym < 4096)
     {
-        m_nodesBySymbol[sym].push_back(node);
-    }
-    else
-    {
-        m_nodesBySymbol.resize(static_cast<size_t>(sym) + 1);
-        m_nodesBySymbol[sym].push_back(node);
+        if (sym < m_nodesBySymbol.size())
+        {
+            m_nodesBySymbol[sym].push_back(node);
+        }
+        else
+        {
+            m_nodesBySymbol.resize(static_cast<size_t>(sym) + 1);
+            m_nodesBySymbol[sym].push_back(node);
+        }
     }
 }
 
@@ -129,7 +132,7 @@ void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budg
 
 std::span<const TSNode> NodeIndex::Nodes(TSSymbol symbol) const noexcept
 {
-    if (static_cast<size_t>(symbol) < m_nodesBySymbol.size())
+    if (symbol != static_cast<TSSymbol>(-1) && static_cast<size_t>(symbol) < m_nodesBySymbol.size())
     {
         return m_nodesBySymbol[symbol];
     }

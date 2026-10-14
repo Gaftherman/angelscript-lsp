@@ -142,9 +142,11 @@ std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNod
                 continue;
 
             TSNode node = match.captures[i].node;
-            captures.push_back(RawCapture{node, ts_node_start_byte(node), ts_node_end_byte(node), kind,
-                                          kind == CaptureKind::Definition ? m_definitionKinds[captureIdx]
-                                                                          : LocalDefinitionKind::Variable});
+            TSNode parent = GetParent(node);
+            TSNode grandparent = GetParent(parent);
+            captures.push_back(RawCapture{
+                node, parent, grandparent, ts_node_start_byte(node), ts_node_end_byte(node), kind,
+                kind == CaptureKind::Definition ? m_definitionKinds[captureIdx] : LocalDefinitionKind::Variable});
         }
     }
 
@@ -292,7 +294,7 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
     if (capture.definitionKind == LocalDefinitionKind::Variable ||
         capture.definitionKind == LocalDefinitionKind::Parameter)
     {
-        ReadVariableTypeInfo(capture.node, sourceCode, def);
+        ReadVariableTypeInfo(capture, sourceCode, def);
         const std::string baseType = CleanBaseType(def.typeName);
         if (capture.definitionKind == LocalDefinitionKind::Variable && IsReservedKeyword(baseType) &&
             !IsPrimitiveTypeName(baseType) && baseType != "auto")
@@ -494,7 +496,11 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
         return;
     }
 
-    TSNode parent = GetParent(capture.node);
+    TSNode parent = capture.parent;
+    if (ts_node_is_null(parent))
+    {
+        parent = GetParent(capture.node);
+    }
     const bool hasMetadataInDoc = (sourceCode.find('[') != std::string::npos);
     if (ShouldSkipReferenceCapture(parent, current->kind, hasMetadataInDoc) ||
         !IsAllowedKeywordReference(capture.node, parent))
@@ -794,10 +800,13 @@ static TSNode FindDeclaratorValueNode(TSNode declaratorNode, const std::string& 
     return valueNode;
 }
 
-void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, const std::string& sourceCode,
-                                                         LocalDefinition& def) const
+void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNode declarationNode,
+                                                         const std::string& sourceCode, LocalDefinition& def) const
 {
-    TSNode declarationNode = GetParent(declaratorNode);
+    if (ts_node_is_null(declarationNode))
+    {
+        declarationNode = GetParent(declaratorNode);
+    }
     if (ts_node_is_null(declarationNode))
         return;
 
@@ -828,10 +837,14 @@ void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, 
     def.hasNullInitializer = IsNullInitializer(valueNode);
 }
 
-void LocalScopeCollector::ReadVariableTypeInfo(TSNode nameNode, const std::string& sourceCode,
+void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const std::string& sourceCode,
                                                LocalDefinition& def) const
 {
-    TSNode declaratorNode = GetParent(nameNode);
+    TSNode declaratorNode = capture.parent;
+    if (ts_node_is_null(declaratorNode))
+    {
+        declaratorNode = GetParent(capture.node);
+    }
     if (ts_node_is_null(declaratorNode))
         return;
 
@@ -847,12 +860,17 @@ void LocalScopeCollector::ReadVariableTypeInfo(TSNode nameNode, const std::strin
     }
     if (ts_node_symbol(declaratorNode) == m_symVariableDeclarator)
     {
-        ReadVariableDeclaratorTypeInfo(declaratorNode, sourceCode, def);
+        TSNode declarationNode = capture.grandparent;
+        if (ts_node_is_null(declarationNode))
+        {
+            declarationNode = GetParent(declaratorNode);
+        }
+        ReadVariableDeclaratorTypeInfo(declaratorNode, declarationNode, sourceCode, def);
         return;
     }
     if (ts_node_symbol(declaratorNode) == m_symLambdaParameterList)
     {
-        ReadLambdaParameterTypeInfo(nameNode, declaratorNode, sourceCode, def);
+        ReadLambdaParameterTypeInfo(capture.node, declaratorNode, sourceCode, def);
     }
 }
 } // namespace angel_lsp::analysis

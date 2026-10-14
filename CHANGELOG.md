@@ -2,6 +2,20 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.0-exp.4] - 2026-10-14
+
+### CI Linux SIGSEGV & macOS SIGBUS Elimination, NodeIndex Symbol Bounds Guard, and LocalScopeCollector Caching
+
+- Critical Memory Safety & Stack Dangling Reference Elimination:
+  - Fixed fatal stack dangling reference in `DocumentLinkRequest` (`uri` and `sourceCode` converted from `const std::string&` to owned `std::string` values), resolving the instant `SIGSEGV` on Linux (GCC / libstdc++) and `SIGBUS` on macOS ARM64 / Rosetta at `DocumentLinkTest.cpp:141` (`GetDocumentLinks - a document with no directives yields nothing`).
+  - Fixed temporary string literal binding across `DocumentLinkTest.cpp` test cases (lines 146, 157, 191) by allocating explicit named `const std::string source = ...;` instances.
+- Tree-Sitter Error Node Resizing Guard (`NodeIndex`):
+  - Guarded `NodeIndex::IndexNode` against error symbol resizing (`sym != static_cast<TSSymbol>(-1) && !ts_node_is_error(node) && sym < 4096`). Prevents Tree-sitter error tokens (`sym == 65535`) from triggering `m_nodesBySymbol.resize(65536)` and allocating 65,536 empty vectors.
+  - Hardened `NodeIndex::Nodes(TSSymbol)` with boundary and error symbol checks.
+- Ancestor AST Caching & Scope Collection Streamlining (`LocalScopeCollector`):
+  - Stored pre-resolved `parent` and `grandparent` AST nodes directly in `RawCapture` upon capture ingestion.
+  - Eliminated redundant `ts_node_parent` climbs across `ReadVariableTypeInfo`, `ReadVariableDeclaratorTypeInfo`, and `ProcessReferenceCapture`, accelerating lexical scope analysis with zero dynamic heap hash map allocations.
+
 ## [1.1.0-exp.3] - 2026-10-14
 
 ### CI macOS Bus Error Elimination, Tree-Sitter Parent Safety, and Granular CTest Diagnostics

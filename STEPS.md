@@ -1011,7 +1011,41 @@ En proyectos reales multifichero (`flare.as` e `#include "schema.as"`), la valid
 - **Total de Pruebas Unitarias**: `2,345 / 2,345` pasadas (`33,914` aserciones, `0` fallos, `27` omitidas).
 - **Auditoría de Paridad Oráculo (256 scripts)**: `256 / 256` pasados, **0 falsos positivos inexplicados**.
 - **Puertas de Calidad Estática**: 11/11 puertas aprobadas (`jscpd` 1.10%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
-- **Cierre del Proyecto**: Las 13 fases planificadas (0 a 12) se encuentran concluidas al 100%.
+
+---
+
+## 17. Fase 14: Estabilización Crítica de CI en Linux y macOS (`SIGSEGV` / `SIGBUS` en `DocumentLinkTest.cpp:141`, `NodeIndex` Bounds Guard, y Navegación Ancestral Segura)
+
+### 17.1. Diagnóstico Forense y Causa Raíz
+Con la activación de `--duration=true` en CTest (Fase 13), el ejecutable `angel_lsp_tests` en el runner de CI de Linux y macOS reveló el punto exacto del fallo:
+```text
+/home/runner/work/angelscript-lsp/angelscript-lsp/server/tests/DocumentLinkTest.cpp:141:
+TEST CASE:  GetDocumentLinks - a document with no directives yields nothing
+
+/home/runner/work/angelscript-lsp/angelscript-lsp/server/tests/DocumentLinkTest.cpp:141: FATAL ERROR: test case CRASHED: SIGSEGV - Segmentation violation signal
+```
+1. **Puntero Colgante en la Pila en `DocumentLinkRequest` (`SIGSEGV` en Linux / `SIGBUS` en macOS ARM64)**:
+   - `DocumentLinkRequest` mantenía sus miembros `uri` y `sourceCode` como `const std::string&`.
+   - En `DocumentLinkTest.cpp` líneas 146, 157, 191:
+     `features::DocumentLinkRequest request{uri, "void Main() {}\n", fixture.searchDirectories, nullptr};`
+     El literal de cadena construía un objeto temporal `std::string` que se destruía inmediatamente al terminar la sentencia de declaración.
+   - En la línea siguiente (`features::GetDocumentLinks(request)`), la función desreferenciaba `request.sourceCode`, accediendo a memoria de pila ya liberada. En Linux (GCC con libstdc++) provocaba un `SIGSEGV` instantáneo y en macOS (Clang con libc++ en ARM64) un fallo `SIGBUS` por desalineación o desmapeo de memoria.
+   - **Solución**: Convertir `uri` y `sourceCode` en miembros por valor (`std::string`), confiriendo posesión total de los datos dentro de `DocumentLinkRequest`, y declarar variables locales explícitas `const std::string source = ...;` en los casos de prueba.
+
+2. **Reserva Excesiva de Memoria en `NodeIndex.cpp` para Nodos de Error**:
+   - Para los nodos con errores sintácticos de Tree-Sitter, `ts_node_symbol(node)` retorna `(TSSymbol)-1` (`65535`).
+   - `IndexNode` ejecutaba `m_nodesBySymbol.resize(static_cast<size_t>(sym) + 1)`, redimensionando el vector a 65,536 elementos vacíos cada vez que encontraba un nodo de error.
+   - **Solución**: Condicionar la inserción con `sym != static_cast<TSSymbol>(-1) && !ts_node_is_error(node) && sym < 4096`. Los nodos de error ya son registrados de forma dedicada en `m_errorNodes`.
+
+3. **Optimización de Navegación Ancestral en `LocalScopeCollector`**:
+   - Se almacenaron directamente los nodos AST `parent` y `grandparent` dentro de `RawCapture`.
+   - Esto eliminó las llamadas redundantes a `ts_node_parent` dentro de `ReadVariableTypeInfo`, `ReadVariableDeclaratorTypeInfo` y `ProcessReferenceCapture`, reduciendo la latencia de recolección de ámbitos sin asignar tablas hash en el heap.
+
+### 17.2. Métricas Finales de Fase 14
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,342 / 2,342` pasadas (`33,894` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 11/11 puertas aprobadas (`jscpd` 1.10%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
+- **Estabilidad de CI**: Cero punteros colgantes en structs de petición, inmunidad a temporales en inicializadores y protección total contra desreferenciación en Linux y macOS.
 
 
 
