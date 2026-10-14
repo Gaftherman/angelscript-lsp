@@ -4,6 +4,86 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.0-exp.1] - 2026-10-14
+
+### Discrete MatchTier Pareto Overload Engine, Sequential Lexical Visibility, Official Expression Parity, and asEP_* Matrix
+
+- Discrete MatchTier & Pareto Overload Resolution (`GAP-OVERLOAD-01`):
+  - Replaced legacy scalar score rankings with official 16-level discrete conversion tiers (`MatchTier::None` through `MatchTier::Exact`), matching the reference AngelScript SDK compiler (`asCC_*`).
+  - Implemented exact `asCCompiler::MatchFunctions` two-phase resolution: global conversion cost minimization (`minCost = min(sum(tier))`) followed by strict Pareto dominance tie-breaking (`IsStrictlyBetter`) on inheritance distance, lossy conversions, and numeric sub-ranks.
+  - Enforced strict output-only directionality on `&out` parameters (`ParamType -> ArgLValueType`), supporting numeric output conversions and handle upcasts while rejecting input constructors, input `opImplConv`, and incompatible non-numeric types.
+  - Suppressed false `as-err-call-ambiguous` (`E118`) diagnostics when any call argument has an unresolved, empty, or `<poison>` type.
+- Sequential Lexical Visibility for Local Variables (`GAP-VISIBILITY-01`):
+  - Enforced byte-offset lexical visibility (`visibleFromByte`) in `ScopeTree::ResolveInScopeAt`, preventing local variables from resolving before their declaration point inside functions, `if`/`else` branches, loops, and `switch-case` blocks.
+  - Added automatic fallback to outer/global shadowed symbols when an identifier is referenced prior to its local declaration.
+  - Enforced lambda closure capture barriers (`crossedClosure`), ensuring lambdas cannot access outer local variables without explicit mechanisms.
+  - Extended sequential visibility filtering across all LSP features: autocompletion (`CompletionHandler`), hover (`HoverHandler`), definition navigation (`DefinitionHandler`), document highlight (`DocumentHighlightHandler`), and find references / rename (`TargetResolution`).
+- Official Expression & Statement Parity (`GAP-SPEC-01`):
+  - Implemented signed conversion on unary minus applied to unsigned integers (`uint8 -> int8`, `uint16 -> int16`, `uint -> int`, `uint64 -> int64`).
+  - Implemented bitwise promotion to 32-bit `int`/`uint` for 8-bit and 16-bit operands, 64-bit width preservation, and automatic enum-to-int degradation.
+  - Enforced ternary conditional operator (`? :`) LValue assignability rules: valid LValue only when both branches are LValues of matching base types.
+- Official Engine Properties Matrix (`GAP-ASEP-01`):
+  - Mapped, parsed, and verified all 19 official AngelScript engine properties (`asEP_*`) across `EngineRuleConfig`, `EngineRuleParser`, `ServerConfig`, `ServerEngineRules`, and `EngineProfiles`.
+  - Added case-insensitive dual-format parsing supporting both canonical `asEP_*` constants and camelCase configuration properties.
+  - Synchronized engine profiles (`standard`, `svencoop`) with official engine configurations.
+- Performance, Concurrency & Quality Harness Hardening:
+  - Added single-pass flat AST indexing with error-range bounding in `NodeIndex` for O(1) syntax error containment.
+  - Added `.as.predefined` fast-path indexing in `SymbolCollector` with pre-sized container reservation, cutting stub load times in half.
+  - Hardened concurrent reader/writer thread safety across `DocumentStore`, `PredefinedStubManager`, and `SymbolTable` using event-driven `std::latch` synchronization without arbitrary sleeps or busy loops.
+  - Reached **2,326 passing unit tests** (33,857 assertions) with zero failures and **0 unexplained false positives across all 256 scripts in `ParityAuditTest`**.
+  - All 11 static quality gates passing (`jscpd` at 1.13%, 0 Lizard CCN > 15, 0 NLOC > 70, 0 unreferenced parameters `/we4100`, 100% Clang-Format, 100% layer boundary compliance).
+
+## [1.0.3] - 2026-10-05
+
+### Single Resolved Overload Hover Display & Localized Overload Summary
+
+- Hover Tooltip & Overload Resolution:
+  - Streamlined function and method hover tooltips to render only the single winning/resolved overload signature inside the code block instead of dumping entire overload sets (up to 16 declarations).
+  - Added declaration-site cursor awareness to match and display the specific overload being hovered at its declaration.
+  - Added localized overload summary lines below the code block (e.g. `2 sobrecargas más` / `8 sobrecargas más` in Spanish, `2 more overloads` / `8 more overloads` in English) indicating the count of additional callable routines.
+  - Plumbed `i18n` localization provider into `HoverRequest` and `TextDocumentHandlers` to automatically sync tooltip messages with the editor's display language.
+  - Unified member method and scoped symbol formatting into a single cohesive, non-duplicated implementation.
+
+## [1.0.2] - 2026-10-04
+
+### Unqualified Member Call Disambiguation, Scoped Constructor Resolution, and Auto-Indentation on Paste
+
+- Semantic Analysis & Scope Disambiguation:
+  - Resolved unqualified class member calls (e.g. `Use(...)`, `Idle()`, `Fire()`) within member functions against the enclosing class methods and inheritance hierarchy before checking outer global variables, eliminating false-positive `as-err-call-no-matching-signature` errors caused by colliding global enum members.
+  - Isolated scoped constructor calls (`Server::chrono()`) from local function variables with matching short names (`chrono`), prioritizing qualified type constructors over function local scopes.
+  - Fixed semantic tokens classification for unqualified member calls, ensuring method tokens are not coerced into `enumMember` when names collide with global enum definitions.
+  - Enhanced class span indexing to record fully-qualified class names for classes nested inside namespaces.
+- Editor & VS Code Client Polish:
+  - Added standard C-family `indentationRules` (`increaseIndentPattern`, `decreaseIndentPattern`, `indentNextLinePattern`, `unIndentedLinePattern`) and `onEnterRules` (Doxygen/Javadoc expansion, `if/else/for/while` outdent, `//` comment continuation) to `language-configuration.json`, resolving the extra tab issue when pasting indented code.
+  - Aligned declarative language configuration with official VS Code Language Configuration Guide and samples, including `colorizedBracketPairs`, refined `autoCloseBefore`, and `#region` / `//#region` code folding markers.
+
+## [1.0.1] - 2026-10-04
+
+### Native Compiler Parity, Negative Syntax/Semantics Hardening, Scope Disambiguation, and Case-Insensitive Completion
+
+- Native AngelScript Compiler Parity & Negative Expression Diagnostics:
+  - Diagnosed bare data types (classes, interfaces, typedefs, enums, structs) in invalid value expression contexts: variable initializers (`int a = MyClass;`), binary arithmetic (`1 + MyClass`), ternary branches, and assignment targets (`MyClass = 5;`), issuing `as-err-expression-is-data-type` (`Expression '<type>' is a data type`).
+  - Diagnosed bare function identifiers without call parentheses in expressions and statements (`int i = fn + 1;`), emitting `as-err-no-matching-operator`, `as-err-illegal-operation`, or `as-err-no-implicit-conversion`, while cleanly preserving the handle-of operator `@fn` for `funcdef` bindings.
+  - Diagnosed non-callable variables, parameters, and properties invoked as functions (`int x; x();`), emitting `as-err-call-no-matching-signature`.
+  - Diagnosed `void` operands in arithmetic and comparison expressions (`voidFn() + 1`, `voidFn() == 0`), preventing invalid promotion or false compatibility.
+  - Diagnosed isolated namespace references in expressions (`int i = Ns;`), emitting `as-err-undefined-identifier`.
+  - Validated all negative semantic patterns against the native AngelScript Compiler oracle (`angelscript_oracle.exe`) with 1:1 behavioral agreement.
+- Namespace & Container Scope Disambiguation:
+  - Disambiguated collisions where namespaces, classes, and members share identifiers across lexical scopes (e.g. `Namespace::Class` vs class methods/fields sharing names).
+  - Enforced strict type reachability and container lookup isolation without leaking outer identifiers.
+- Language Server Protocol (LSP) Features & Editor Polish:
+  - Added case-insensitive prefix matching for autocompletion, improving typing speed and fuzzy discovery.
+  - Resolved enum reference lookup and completion across nested namespaces and `using namespace` directives.
+  - Unified semantic tokens for declaration modifiers and fixed CodeLens reference counters inside namespaces.
+  - Cleaned up blank doc comment formatting and enabled hover documentation for `#include` directives.
+  - Improved inlay hint hitboxes and interactive navigation (`Ctrl+Click` to parameter definition).
+  - Added native metadata extraction (`[Meta(...)]`) and eliminated Tree-Sitter AST child index loops.
+- Concurrency, Resilience & Performance:
+  - Constrained unclosed control flow and missing closing brace cascading syntax errors in `ParserUtils` and `LocalScopeCollector` to prevent diagnostic floods.
+  - Hardened thread safety with mutex protection around closure maps and background analysis state during rapid workspace edits.
+  - Enforced zero-copy `std::string_view` lookups and table-driven locale overlays (`GetMessageView`), achieving $O(1)$ symbol indexing and faster module load times.
+  - Resolved const-reference (`const Type& in`) vs output-reference (`Type& out`) overload resolution priority according to official AngelScript rules.
+
 ## [1.0.0] - 2026-10-03
 
 ### Native Clang-Format Style Engine, Hot-Path Performance Hardening, Full Bilingual Localization (EN/ES), and Compiler Parity

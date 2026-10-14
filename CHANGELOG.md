@@ -2,6 +2,35 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.0-exp.1] - 2026-10-14
+
+### Discrete MatchTier Pareto Overload Engine, Sequential Lexical Visibility, Official Expression Parity, and asEP_* Matrix
+
+- Discrete MatchTier & Pareto Overload Resolution (`GAP-OVERLOAD-01`):
+  - Replaced legacy scalar score rankings with official 16-level discrete conversion tiers (`MatchTier::None` through `MatchTier::Exact`), matching the reference AngelScript SDK compiler (`asCC_*`).
+  - Implemented exact `asCCompiler::MatchFunctions` two-phase resolution: global conversion cost minimization (`minCost = min(sum(tier))`) followed by strict Pareto dominance tie-breaking (`IsStrictlyBetter`) on inheritance distance, lossy conversions, and numeric sub-ranks.
+  - Enforced strict output-only directionality on `&out` parameters (`ParamType -> ArgLValueType`), supporting numeric output conversions and handle upcasts while rejecting input constructors, input `opImplConv`, and incompatible non-numeric types.
+  - Suppressed false `as-err-call-ambiguous` (`E118`) diagnostics when any call argument has an unresolved, empty, or `<poison>` type.
+- Sequential Lexical Visibility for Local Variables (`GAP-VISIBILITY-01`):
+  - Enforced byte-offset lexical visibility (`visibleFromByte`) in `ScopeTree::ResolveInScopeAt`, preventing local variables from resolving before their declaration point inside functions, `if`/`else` branches, loops, and `switch-case` blocks.
+  - Added automatic fallback to outer/global shadowed symbols when an identifier is referenced prior to its local declaration.
+  - Enforced lambda closure capture barriers (`crossedClosure`), ensuring lambdas cannot access outer local variables without explicit mechanisms.
+  - Extended sequential visibility filtering across all LSP features: autocompletion (`CompletionHandler`), hover (`HoverHandler`), definition navigation (`DefinitionHandler`), document highlight (`DocumentHighlightHandler`), and find references / rename (`TargetResolution`).
+- Official Expression & Statement Parity (`GAP-SPEC-01`):
+  - Implemented signed conversion on unary minus applied to unsigned integers (`uint8 -> int8`, `uint16 -> int16`, `uint -> int`, `uint64 -> int64`).
+  - Implemented bitwise promotion to 32-bit `int`/`uint` for 8-bit and 16-bit operands, 64-bit width preservation, and automatic enum-to-int degradation.
+  - Enforced ternary conditional operator (`? :`) LValue assignability rules: valid LValue only when both branches are LValues of matching base types.
+- Official Engine Properties Matrix (`GAP-ASEP-01`):
+  - Mapped, parsed, and verified all 19 official AngelScript engine properties (`asEP_*`) across `EngineRuleConfig`, `EngineRuleParser`, `ServerConfig`, `ServerEngineRules`, and `EngineProfiles`.
+  - Added case-insensitive dual-format parsing supporting both canonical `asEP_*` constants and camelCase configuration properties.
+  - Synchronized engine profiles (`standard`, `svencoop`) with official engine configurations.
+- Performance, Concurrency & Quality Harness Hardening:
+  - Added single-pass flat AST indexing with error-range bounding in `NodeIndex` for O(1) syntax error containment.
+  - Added `.as.predefined` fast-path indexing in `SymbolCollector` with pre-sized container reservation, cutting stub load times in half.
+  - Hardened concurrent reader/writer thread safety across `DocumentStore`, `PredefinedStubManager`, and `SymbolTable` using event-driven `std::latch` synchronization without arbitrary sleeps or busy loops.
+  - Reached **2,326 passing unit tests** (33,857 assertions) with zero failures and **0 unexplained false positives across all 256 scripts in `ParityAuditTest`**.
+  - All 11 static quality gates passing (`jscpd` at 1.13%, 0 Lizard CCN > 15, 0 NLOC > 70, 0 unreferenced parameters `/we4100`, 100% Clang-Format, 100% layer boundary compliance).
+
 ## [1.0.3] - 2026-10-05
 
 ### Single Resolved Overload Hover Display & Localized Overload Summary
