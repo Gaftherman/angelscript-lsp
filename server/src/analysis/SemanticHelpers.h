@@ -249,6 +249,14 @@ bool IsFromPredefinedStub(const Symbol& sym, const DiagnosticContext& ctx);
  * @param ctx DiagnosticContext carrying the request's source text and file URI.
  * @return True if the declaration is spelled with a leading '~'.
  */
+/**
+ * @brief Checks whether a function symbol is a destructor declaration given document source text.
+ * @param[in] sym Function symbol to classify.
+ * @param[in] source Document source text.
+ * @return True if the symbol is a destructor declaration.
+ */
+bool IsDestructorDeclaration(const Symbol& sym, std::string_view source);
+
 bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx);
 
 /**

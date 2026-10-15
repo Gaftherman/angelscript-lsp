@@ -1195,6 +1195,100 @@ Settings declared in package.json but not passed to the server:
 - **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`check-ast-traversal.py` limpio, `jscpd` 1.14%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
 - **Rendimiento de Referencia**: Script de 10k líneas analizado en 349 ms, 299k tokens semánticos en 81 ms.
 
+---
+
+## 22. Fase 19: Diagnósticos del Mundo Real, Sincronización sin Parpadeo, Conteo de Referencias y Carga Instantánea de `.as.predefined`
+
+### 22.1. Diagnóstico Forense y Causa Raíz
+1. **Variable Global No Usada (`int unused;`) no Emitía `W117` (`as-warn-unused-global-variable`)**:
+   - `reportUnusedGlobalVariables` no existía como opción configurable independiente en `DiagnosticsConfig` ni en el cliente de VS Code.
+   - En `UnusedSymbolChecker.cpp`, cuando `rules.enabled` era falso (o por defecto sin flags `--check-all`), `rules.checkGlobals` se desactivaba forzosamente.
+   - Además, `LocalScopeCollector.cpp` registraba los nodos de nombre de declaraciones (`variable_declarator` y `foreach_variable`) como referencias hacia sí mismos en `ProcessReferenceCapture`.
+2. **Parpadeo de Diagnósticos al Escribir / Deshacer (`Ctrl + Z`)**:
+   - Cada solicitud de `textDocument/diagnostic` con texto aún en proceso de análisis cancelaba y reprogramaba el análisis con `ScheduleAnalysis(uriStr, *text)`, retrasando artificialmente la finalización del debounce.
+3. **Mixin Classes y Símbolos de Espacios de Nombres (`AmmoBase`, `ShouldUseCustomAmmo`) con 0 Referencias**:
+   - `CreateClassTarget` en `CodeLensHandler.cpp` inicializaba `.targetNamespace` vacío para clases/mixins, provocando que inclusiones calificadas (`INS2BASE::AmmoBase`) fueran descartadas como accesos inválidos.
+   - En `TargetResolution.cpp`, `IsRefInsideNamespace` restringía la verificación de referencias locales exclusivamente al URI activo, ignorando referencias calificadas entre documentos del espacio de trabajo.
+4. **Congelamiento de CodeLens en `.as.predefined` y Resolución de Miembros Encadenados (`self.pev.body`)**:
+   - `BatchCountReferencesAcrossScopes` escaneaba el árbol de ámbitos masivo de `.as.predefined` (33,793 líneas / 9,781 símbolos) a pesar de ser un archivo inmutable de solo lectura.
+   - Búsquedas repetitivas de `FindEnclosingClassName` realizaban escaneos $O(N^2)$ en cada línea de referencia.
+   - Las expresiones de acceso encadenado (`self.pev.body`) no resolvían tipos intermedios más allá del primer nivel.
+   - Las sobrecargas de operadores (`opAssign`, `opIndex`) mostraban lentes inútiles de `0 references` en todas las clases.
+
+### 22.2. Implementación de la Solución
+1. **Configuración Extremo a Extremo de `reportUnusedGlobalVariables`**:
+   - Se añadieron `reportUnusedGlobalVariables` y `reportUnusedGlobalVariablesExplicit` a `DiagnosticsConfig`.
+   - Se mapeó `codes::UnusedGlobalVariable` (`W117`) al ajuste en `ServerDiagnostics.cpp`.
+   - Se incorporó la configuración en `client/package.json` y los catálogos bilingües (`package.nls.json` y `package.nls.es.json`).
+   - Se conectó en `client/src/extension.ts` (`buildServerArgs`) y se sincronizaron los READMEs (103 ajustes conectados, 0 faltantes).
+2. **Corrección de Auto-referencias en Declaradores**:
+   - En `LocalScopeCollector.cpp` (`ProcessReferenceCapture`), se añadieron comprobaciones para excluir `m_symVariableDeclarator` y `m_symForeachVariable` de ser auto-referenciados.
+3. **Eliminación del Parpadeo en Diagnósticos Pull**:
+   - En `TextDocumentHandlers.cpp` (`HandleRequestsTextDocument_Diagnostic`), se preservó la validación estricta de `isCurrent` y se eliminó la llamada redundante a `ScheduleAnalysis`, permitiendo que el trabajador de fondo complete su ejecución sin aplazamientos artificiales.
+4. **Soporte Bidireccional de Espacios de Nombres y Mixins**:
+   - En `CodeLensHandler.cpp`, `CreateClassTarget` ahora extrae y preserva `sym.containerName` como `targetNamespace`.
+   - Se implementó coincidencia bidireccional de sufijos (`ends_with`) tanto en `MatchesTargetNamespaceQualifier` como en `TargetResolution.cpp` (`IsRefInsideNamespace`).
+5. **Caché $O(1)$ de Clases Envolventes y Resolución Encadenada**:
+   - Se introdujo `EnclosingClassCache` en `CodeLensHandler.cpp`, reutilizado a lo largo del lote de evaluación de ámbitos.
+   - Se ignoró `.as.predefined` en `BatchCountReferencesAcrossScopes`.
+   - Se mejoró `ResolveReceiverFromAst` y `ResolveReceiverFromScope` para descender por cadenas de miembros (`self` -> `pev` -> `entvars_t` -> `body`).
+   - Se suprimió la emisión de CodeLens de `0 references` para sobrecargas de operadores (`op*`).
+
+### 22.3. Métricas Finales de Fase 19
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,350 / 2,350` pasadas (`33,901` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.17%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `ast-grep` 0 violaciones).
+- **Pruebas del Cliente**: `npm run pretest` aprobado al 100% (compilación, bundle, lint y verificación de 103 ajustes sincronizados).
+
+---
+
+## 23. Fase 20: Precisión de CodeLens y Referencias, Validación con Oráculo de `BaseClass` & `op*`, y Gobernanza de Miembros No Usados
+
+### 23.1. Diagnóstico Forense y Causa Raíz
+1. **Antipatrones en `ResolveReceiverFromAst` (`CodeLensHandler.cpp` & `TargetResolution.cpp`)**:
+   - `ResolveReceiverFromAst` ejecutaba comparaciones de cadenas `ts_node_type(exprParent) != "member_expression"` y asignaba memoria en el montículo mediante `substr()`.
+   - `MatchesAstScopedIdentifier` comparaba tipos con `std::string_view(ts_node_type(node))` en lugar de símbolos de gramática enteros.
+2. **Ausencia de CodeLens en Bloques de Propiedades Virtuales (`SymbolType::Property`)**:
+   - `CollectReferenceTargets` solo registraba funciones y variables, omitiendo los símbolos de propiedades con accesores sintéticos (`get`/`set`).
+3. **`0 references` en Clases y Constructores, y CodeLens Innecesario en Destructores**:
+   - Las clases y sus constructores no se agrupaban con las referencias a tipos (`ref.isTypeSpecifier`) ni las llamadas de instanciación.
+   - En Tree-Sitter AngelScript, los destructores `~CCharacter()` se registran con `sym.name = "CCharacter"` sin la virgulilla inicial, por lo que la comprobación `sym.name.starts_with('~')` fallaba y generaba CodeLenses innecesarios.
+4. **Fuga de Referencias entre Espacios de Nombres en Métodos de Clase**:
+   - `IsClassMemberReferenceMatch` en `TargetResolution.cpp` admitía coincidencias de métodos sin verificar que la clase envolvente coincidiera o perteneciera a la jerarquía de herencia correspondiente.
+5. **Comportamiento Empírico de `( BaseClass.ObjectCaps() | null )` y `( BaseClass.ObjectCaps() | array<int>() )`**:
+   - En Sven Co-op, `BaseClass` es una propiedad virtual legítima en `ScriptBaseEntity` que retorna un handle `BaseEntity@`. NO es una palabra clave nativa de AngelScript (confirmado con `angelscript_oracle.exe`).
+   - La función `CleanBaseTypeView` desarmaba tipos plantilla (`array<int>` -> `int`), provocando que `1 | array<int>()` se evaluara erróneamente como un bitwise OR válido entre enteros.
+6. **Configuración de Detección de Clases y Miembros No Usados (`reportUnusedClasses` y `reportUnusedMembers`)**:
+   - Por defecto, estas opciones no estaban expuestas de forma atómica en el cliente de VS Code ni sincronizadas en el catálogo de ajustes.
+
+### 23.2. Implementación de la Solución
+1. **Caché Global de Símbolos de Gramática en Capa 1 (`GrammarSymbols.h/cpp`)**:
+   - Se crearon `server/src/parser/GrammarSymbols.h` y `server/src/parser/GrammarSymbols.cpp` proveyendo `parser::GetGrammarSymbols()` en $O(1)$ con `symMemberAccess`, `symScopedIdentifier`, etc.
+   - Se eliminaron las asignaciones de memoria dinámica en `ResolveReceiverFromAst` sustituyéndolas por `std::string_view` y comparaciones enteras de `TSSymbol`.
+2. **Soporte de CodeLens para Propiedades Virtuales**:
+   - Se incluyó `SymbolType::Property` en `CollectReferenceTargets` y `AppendLensesForGroup`, contando accesos no calificados, accesos miembros y llamadas explícitas a `get_*` y `set_*`.
+3. **Agrupación de Clases, Constructores y Supresión de Destructores**:
+   - Se introdujo `analysis::IsDestructorDeclaration(sym, source)` en `SemanticHelpers.h/cpp`, detectando la virgulilla anterior al nombre en el código fuente.
+   - Se suprimió la emisión de CodeLens para destructores en `CollectReferenceTargets` y `AppendFunctionLens`.
+   - Se integraron las referencias de tipos (`ref.isTypeSpecifier`) para constructores y clases en `IsValidConstructorAccess`.
+4. **Aislamiento Estricto de Métodos de Clase en Espacios de Nombres**:
+   - `IsClassMemberReferenceMatch` ahora valida que la clase envolvente no esté vacía y que pertenezca al conjunto de clases compatibles (`relatedSet.contains(encClass)`), erradicando colisiones cruzadas.
+5. **Paridad con el Oráculo en Operadores Binarios con `StripModifiers`**:
+   - Se reemplazó el desenrollado indebido de plantillas por `StripModifiers`, preservando tipos contenedores como `array<int>` y evaluando correctamente operandos nulos e incompatibles en operaciones binarias.
+6. **Ajustes y Paridad de Reglas de Símbolos No Usados**:
+   - Se agregaron `reportUnusedClasses` y `reportUnusedMembers` en `ServerConfig` (por defecto `false` en binario puro C++, `true` en VS Code).
+   - Se agregaron las banderas CLI correspondientes y se conectaron en `client/package.json`, catálogos i18n y `extension.ts`.
+   - Se actualizaron los métodos del ciclo de vida de Sven Co-op en `predefined/sven.angelscript.rules.json` (`TakeDamage`, `TraceAttack`, `Killed`, `IsAlive`, `IRelationship`, `OnCreate`, `OnDestroy`, `Initialize`).
+7. **Pruebas de Espacios de Nombres Anidados**:
+   - Se implementó la suite completa `server/tests/NestedNamespaceTest.cpp` validando resoluciones jerárquicas multinivel `A { B { C { ... } } }`, compuestas `A::B::C` y relativas entre hermanos `Root::Branch::WorkerA` vs `WorkerB`.
+
+### 23.3. Métricas Finales de Fase 20
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,360 / 2,360` pasadas (`33,947` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.15%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `ast-grep` 0 violaciones).
+
+
+
 
 
 

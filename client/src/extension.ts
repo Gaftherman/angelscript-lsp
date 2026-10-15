@@ -1149,6 +1149,15 @@ export function buildServerArgs(): string[] {
     if (config.get<boolean>('diagnostics.reportUnusedFunctions', true) === false) {
         args.push('--no-report-unused-functions');
     }
+    if (config.get<boolean>('diagnostics.reportUnusedGlobalVariables', true) === false) {
+        args.push('--no-report-unused-globals');
+    }
+    if (config.get<boolean>('diagnostics.reportUnusedClasses', true) === false) {
+        args.push('--no-report-unused-classes');
+    }
+    if (config.get<boolean>('diagnostics.reportUnusedMembers', true) === false) {
+        args.push('--no-report-unused-members');
+    }
     if (config.get<boolean>('diagnostics.ignoreUnusedGlobalsWithCallInitializer', false) === true) {
         args.push('--ignore-unused-globals-with-call-initializer');
     }

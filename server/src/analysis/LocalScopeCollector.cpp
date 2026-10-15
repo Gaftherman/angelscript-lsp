@@ -561,7 +561,8 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
     if (!ts_node_is_null(parent))
     {
         TSSymbol pSym = ts_node_symbol(parent);
-        if (pSym == m_symParameter || pSym == m_symLambdaParameterList)
+        if (pSym == m_symParameter || pSym == m_symLambdaParameterList || pSym == m_symVariableDeclarator ||
+            pSym == m_symForeachVariable)
         {
             TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
             if (ts_node_eq(nameNode, capture.node) ||

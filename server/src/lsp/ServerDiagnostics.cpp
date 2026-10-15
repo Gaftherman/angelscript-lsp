@@ -98,6 +98,12 @@ std::string_view GetDiagnosticSettingsUri(std::string_view code)
         {"W107", "vscode://settings/angelscript.diagnostics.reportUnusedFunctions"},
         {codes::UnusedMethod, "vscode://settings/angelscript.diagnostics.reportUnusedFunctions"},
         {"W108", "vscode://settings/angelscript.diagnostics.reportUnusedFunctions"},
+        {codes::UnusedGlobalVariable, "vscode://settings/angelscript.diagnostics.reportUnusedGlobalVariables"},
+        {"W117", "vscode://settings/angelscript.diagnostics.reportUnusedGlobalVariables"},
+        {codes::UnusedClass, "vscode://settings/angelscript.diagnostics.reportUnusedClasses"},
+        {"W109", "vscode://settings/angelscript.diagnostics.reportUnusedClasses"},
+        {codes::UnusedField, "vscode://settings/angelscript.diagnostics.reportUnusedMembers"},
+        {"W104", "vscode://settings/angelscript.diagnostics.reportUnusedMembers"},
         {codes::UnknownType, "vscode://settings/angelscript.diagnostics.reportUnknownTypes"},
         {"E002", "vscode://settings/angelscript.diagnostics.reportUnknownTypes"},
     };

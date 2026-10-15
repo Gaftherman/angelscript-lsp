@@ -47,6 +47,16 @@ struct CodeLensFixture
         }
     }
 
+    void AddDocument(const std::string& fileUri, const std::string& code)
+    {
+        symbolCollector.CollectSymbols(fileUri, code, parser, symbolTable);
+        auto scopeRoot = scopeCollector.CollectScopes(code, parser);
+        if (scopeRoot)
+        {
+            scopeIndex.SetScopeTree(fileUri, std::move(scopeRoot));
+        }
+    }
+
     std::optional<std::vector<lsp::CodeLens>> GetLenses()
     {
         CodeLensRequest req{uri, sourceCode, tree, symbolTable, scopeIndex};
@@ -723,4 +733,303 @@ TEST_CASE("CodeLens - Enum Member Reference Count and Isolation from Method Call
     CHECK(checkedSemi);
     CHECK(checkedFull);
     CHECK(checkedReload);
+}
+
+TEST_CASE("CodeLens - Mixin class reference count across namespaces")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("INS2BASE");
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("AmmoBase");
+    const std::string hostClassName = angel_lsp::test::GenerateRandomSymbolName("Ins2Weapon");
+
+    std::string mixinDoc = "namespace " + nsName +
+                           "\n"
+                           "{\n"
+                           "    mixin class " +
+                           mixinName +
+                           "\n"
+                           "    {\n"
+                           "        int maxAmmo;\n"
+                           "    }\n"
+                           "}\n";
+
+    CodeLensFixture fixture(std::move(mixinDoc));
+
+    std::string hostDoc = "class " + hostClassName + " : " + nsName + "::" + mixinName +
+                          "\n"
+                          "{\n"
+                          "}\n";
+    fixture.AddDocument("file:///weapon.as", hostDoc);
+
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool foundMixinLens = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.range.start.line == 2 && lens.command.has_value())
+        {
+            CHECK(lens.command->title == "1 reference");
+            foundMixinLens = true;
+        }
+    }
+    CHECK(foundMixinLens);
+}
+
+TEST_CASE("CodeLens - Chained member access reference counting")
+{
+    const std::string entvarsClass = angel_lsp::test::GenerateRandomSymbolName("entvars_t");
+    const std::string bodyProp = angel_lsp::test::GenerateRandomSymbolName("body");
+    const std::string entityClass = angel_lsp::test::GenerateRandomSymbolName("CBaseEntity");
+    const std::string pevProp = angel_lsp::test::GenerateRandomSymbolName("pev");
+
+    std::string code = "class " + entvarsClass +
+                       "\n"
+                       "{\n"
+                       "    int " +
+                       bodyProp +
+                       ";\n"
+                       "}\n"
+                       "class " +
+                       entityClass +
+                       "\n"
+                       "{\n"
+                       "    " +
+                       entvarsClass + " " + pevProp +
+                       ";\n"
+                       "}\n"
+                       "void WeaponFunc()\n"
+                       "{\n"
+                       "    " +
+                       entityClass +
+                       " self;\n"
+                       "    self." +
+                       pevProp + "." + bodyProp +
+                       " = 1;\n"
+                       "}\n";
+
+    CodeLensFixture fixture(std::move(code));
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool foundBodyLens = false;
+    for (const auto& lens : *lenses)
+    {
+        // Line 2 is `int body;`
+        if (lens.range.start.line == 2 && lens.command.has_value())
+        {
+            CHECK(lens.command->title == "1 reference");
+            foundBodyLens = true;
+        }
+    }
+    CHECK(foundBodyLens);
+}
+
+TEST_CASE("CodeLens - Operator overloads without call sites are suppressed")
+{
+    const std::string mathClass = angel_lsp::test::GenerateRandomSymbolName("VectorMath");
+    const std::string normalMethod = angel_lsp::test::GenerateRandomSymbolName("NormalMethod");
+
+    std::string code = "class " + mathClass +
+                       "\n"
+                       "{\n"
+                       "    void opAssign(const " +
+                       mathClass +
+                       "& in other) {}\n"
+                       "    void " +
+                       normalMethod +
+                       "() {}\n"
+                       "}\n"
+                       "void UseIt()\n"
+                       "{\n"
+                       "    " +
+                       mathClass +
+                       " v;\n"
+                       "    v." +
+                       normalMethod +
+                       "();\n"
+                       "}\n";
+
+    CodeLensFixture fixture(std::move(code));
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool foundOpAssignLens = false;
+    bool foundNormalLens = false;
+    for (const auto& lens : *lenses)
+    {
+        // Line 2 is `void opAssign...`
+        if (lens.range.start.line == 2 && lens.command.has_value())
+        {
+            foundOpAssignLens = true;
+        }
+        // Line 3 is `void NormalMethod...`
+        if (lens.range.start.line == 3 && lens.command.has_value())
+        {
+            CHECK(lens.command->title == "1 reference");
+            foundNormalLens = true;
+        }
+    }
+    CHECK_FALSE(foundOpAssignLens);
+    CHECK(foundNormalLens);
+}
+
+TEST_CASE("CodeLens - Virtual property blocks report references")
+{
+    const std::string charClass = angel_lsp::test::GenerateRandomSymbolName("CCharacter");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("IsHEV");
+
+    std::string code = "class " + charClass +
+                       "\n"
+                       "{\n"
+                       "    bool " +
+                       propName +
+                       " {\n"
+                       "        get const { return true; }\n"
+                       "    }\n"
+                       "}\n"
+                       "void CheckHEV(" +
+                       charClass +
+                       "@ c)\n"
+                       "{\n"
+                       "    if (c." +
+                       propName +
+                       ")\n"
+                       "    {}\n"
+                       "}\n";
+
+    CodeLensFixture fixture(std::move(code));
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool foundPropLens = false;
+    for (const auto& lens : *lenses)
+    {
+        // Line 2 is `bool <propName> {`
+        if (lens.range.start.line == 2 && lens.command.has_value())
+        {
+            CHECK(lens.command->title == "1 reference");
+            foundPropLens = true;
+        }
+    }
+    CHECK(foundPropLens);
+}
+
+TEST_CASE("CodeLens - Class and constructor reference counting and destructor suppression")
+{
+    const std::string charClass = angel_lsp::test::GenerateRandomSymbolName("CCharacter");
+
+    std::string code = "final class " + charClass +
+                       "\n"
+                       "{\n"
+                       "    " +
+                       charClass +
+                       "() {}\n"
+                       "    ~" +
+                       charClass +
+                       "() {}\n"
+                       "}\n"
+                       "void Init()\n"
+                       "{\n"
+                       "    " +
+                       charClass +
+                       " c;\n"
+                       "    " +
+                       charClass +
+                       "@ handle = @c;\n"
+                       "}\n";
+
+    CodeLensFixture fixture(std::move(code));
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool foundClassLens = false;
+    bool foundCtorLens = false;
+    bool foundDtorLens = false;
+
+    for (const auto& lens : *lenses)
+    {
+        if (lens.range.start.line == 0 && lens.command.has_value())
+        {
+            // Class declaration
+            foundClassLens = true;
+            CHECK(lens.command->title != "0 references");
+        }
+        else if (lens.range.start.line == 2 && lens.command.has_value())
+        {
+            // Constructor
+            foundCtorLens = true;
+            CHECK(lens.command->title != "0 references");
+        }
+        else if (lens.range.start.line == 3 && lens.command.has_value())
+        {
+            // Destructor - should be suppressed
+            foundDtorLens = true;
+        }
+    }
+    CHECK(foundClassLens);
+    CHECK(foundCtorLens);
+    CHECK_FALSE(foundDtorLens);
+}
+
+TEST_CASE("CodeLens - Cross-namespace class method reference isolation")
+{
+    const std::string nsA = angel_lsp::test::GenerateRandomSymbolName("ASWallRechargerConfig");
+    const std::string nsB = angel_lsp::test::GenerateRandomSymbolName("CustomKeyValues");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Register");
+
+    std::string code = "namespace " + nsA +
+                       "\n"
+                       "{\n"
+                       "    class Config\n"
+                       "    {\n"
+                       "        void " +
+                       methodName +
+                       "() {}\n"
+                       "    }\n"
+                       "}\n"
+                       "namespace " +
+                       nsB +
+                       "\n"
+                       "{\n"
+                       "    class Manager\n"
+                       "    {\n"
+                       "        void " +
+                       methodName +
+                       "() {}\n"
+                       "    }\n"
+                       "}\n"
+                       "void Setup()\n"
+                       "{\n"
+                       "    " +
+                       nsA +
+                       "::Config cfg;\n"
+                       "    cfg." +
+                       methodName +
+                       "();\n"
+                       "}\n";
+
+    CodeLensFixture fixture(std::move(code));
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool foundALens = false;
+    bool foundBLens = false;
+
+    for (const auto& lens : *lenses)
+    {
+        // Line 4 is `void Register() {}` in Config
+        if (lens.range.start.line == 4 && lens.command.has_value())
+        {
+            foundALens = true;
+            CHECK(lens.command->title == "1 reference");
+        }
+        // Line 11 is `void Register() {}` in Manager
+        if (lens.range.start.line == 11 && lens.command.has_value())
+        {
+            foundBLens = true;
+            CHECK(lens.command->title == "0 references");
+        }
+    }
+    CHECK(foundALens);
+    CHECK(foundBLens);
 }

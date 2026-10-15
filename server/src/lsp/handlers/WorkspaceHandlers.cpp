@@ -433,15 +433,27 @@ bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
     applyBool("reportIntegerDivision", m_config.diagnostics.reportIntegerDivision);
     applyBool("reportPossibleNullDereference", m_config.diagnostics.reportPossibleNullDereference);
     applyBool("reportAllNullDereferences", m_config.diagnostics.reportAllNullDereferences);
-    if (auto v = FindSectionBool(section, diagObj, "reportUnusedFunctions", "diagnostics"))
+    auto applyExplicitBool = [&](std::string_view name, bool& target, bool& explicitFlag)
     {
-        m_config.diagnostics.reportUnusedFunctionsExplicit = true;
-        if (m_config.diagnostics.reportUnusedFunctions != *v)
+        if (auto v = FindSectionBool(section, diagObj, name, "diagnostics"))
         {
-            m_config.diagnostics.reportUnusedFunctions = *v;
-            diagnosticsChanged = true;
+            explicitFlag = true;
+            if (target != *v)
+            {
+                target = *v;
+                diagnosticsChanged = true;
+            }
         }
-    }
+    };
+
+    applyExplicitBool("reportUnusedFunctions", m_config.diagnostics.reportUnusedFunctions,
+                      m_config.diagnostics.reportUnusedFunctionsExplicit);
+    applyExplicitBool("reportUnusedGlobalVariables", m_config.diagnostics.reportUnusedGlobalVariables,
+                      m_config.diagnostics.reportUnusedGlobalVariablesExplicit);
+    applyExplicitBool("reportUnusedClasses", m_config.diagnostics.reportUnusedClasses,
+                      m_config.diagnostics.reportUnusedClassesExplicit);
+    applyExplicitBool("reportUnusedMembers", m_config.diagnostics.reportUnusedMembers,
+                      m_config.diagnostics.reportUnusedMembersExplicit);
 
     if (auto v = FindSectionInt(section, diagObj, "reportHandleComparisonEquality", "diagnostics");
         v && m_config.diagnostics.reportHandleComparisonEquality != *v)

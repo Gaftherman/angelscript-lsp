@@ -4,6 +4,7 @@
 #include "analysis/rules/RuleIndex.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
 #include <algorithm>
@@ -157,55 +158,8 @@ std::vector<std::string_view> SplitLinesView(std::string_view str)
     return lines;
 }
 
-/**
- * @brief Cached Tree-Sitter grammar symbols used across tokenization passes.
- */
-struct GrammarSymbols
-{
-    TSSymbol symTemplateTypeList = 0;
-    TSSymbol symCastExpression = 0;
-    TSSymbol symTemplateParameterList = 0;
-    TSSymbol symBinaryExpression = 0;
-    TSSymbol symAssignmentExpression = 0;
-    TSSymbol symUnaryExpression = 0;
-    TSSymbol symPostfixExpression = 0;
-    TSSymbol symParameter = 0;
-    TSSymbol symScopedIdentifier = 0;
-    TSSymbol symClassDeclaration = 0;
-    TSSymbol symType = 0;
-    TSSymbol symDatatype = 0;
-    TSSymbol symScope = 0;
-};
-
-/**
- * @brief Initializes and returns statically cached Tree-Sitter grammar symbols.
- * @return Reference to cached grammar symbols.
- */
-const GrammarSymbols& GetGrammarSymbols()
-{
-    static const GrammarSymbols s_symbols = []()
-    {
-        const TSLanguage* lang = tree_sitter_angelscript();
-        auto symFor = [lang](std::string_view name) -> TSSymbol
-        { return ts_language_symbol_for_name(lang, name.data(), static_cast<uint32_t>(name.size()), true); };
-        GrammarSymbols gs;
-        gs.symTemplateTypeList = symFor(parser::nodes::TemplateTypeList);
-        gs.symCastExpression = symFor(parser::nodes::CastExpression);
-        gs.symTemplateParameterList = symFor(parser::nodes::TemplateParameterList);
-        gs.symBinaryExpression = symFor(parser::nodes::BinaryExpression);
-        gs.symAssignmentExpression = symFor(parser::nodes::AssignmentExpression);
-        gs.symUnaryExpression = symFor(parser::nodes::UnaryExpression);
-        gs.symPostfixExpression = symFor(parser::nodes::PostfixExpression);
-        gs.symParameter = symFor(parser::nodes::Parameter);
-        gs.symScopedIdentifier = symFor(parser::nodes::ScopedIdentifier);
-        gs.symClassDeclaration = symFor(parser::nodes::ClassDeclaration);
-        gs.symType = symFor(parser::nodes::Type);
-        gs.symDatatype = symFor(parser::nodes::Datatype);
-        gs.symScope = symFor(parser::nodes::Scope);
-        return gs;
-    }();
-    return s_symbols;
-}
+using parser::GetGrammarSymbols;
+using parser::GrammarSymbols;
 
 /**
  * @brief Fast-path check using pre-resolved TSSymbols for template brackets.

@@ -29,6 +29,7 @@ struct CodeLensRequest
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
     angel_lsp::utils::LspLogger* logger = nullptr;
+    std::string predefinedExtension = ".as.predefined";
 };
 
 /**

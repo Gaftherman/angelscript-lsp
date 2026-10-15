@@ -281,6 +281,9 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.diagnostics.reportIntegerDivision` | `false` | Hint on `1 / 2`, which truncates to 0 under the engine's default. Off by default because a codebase that means integer division writes exactly this. |
 | `angelscript.diagnostics.reportPossibleNullDereference` | `true` | Warn when a handle parameter, handle cast result, or uninitialized handle is dereferenced without a preceding null check (`!is null`, early guard return, etc.). Enabled by default. |
 | `angelscript.diagnostics.reportUnusedFunctions` | `true` | Warn when a global function, namespaced function, or private class method is declared in the script but never called or referenced. Host entry points can be configured via `#angelscript.diagnostics.ignoredUnusedFunctions#` or engine rules (`.angelscript.rules.json`). |
+| `angelscript.diagnostics.reportUnusedGlobalVariables` | `true` | Warn when a global or namespace-level variable is declared but never referenced in any script. Enabled by default. |
+| `angelscript.diagnostics.reportUnusedClasses` | `true` | Warn when a class is declared in the script but never instantiated, inherited, or referenced. Enabled by default. |
+| `angelscript.diagnostics.reportUnusedMembers` | `true` | Warn when a class member variable or method is declared but never accessed or called in any script. Enabled by default. |
 | `angelscript.diagnostics.ignoredUnusedFunctions` | `[]` | Function names (short or qualified) exempt from unused-function warnings (e.g., `["main", "MapInit", "PluginInit"]`). |
 | `angelscript.diagnostics.ignoredUnusedFunctionPatterns` | `[]` | Regular expression patterns exempting matching function names from unused-function warnings (e.g., `["^On.*", "^Hook_.*"]`). |
 | `angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer` | `false` | Whether to ignore unused global variables initialized with a call or constructor expression. |

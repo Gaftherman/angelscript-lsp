@@ -860,6 +860,21 @@
             "default": true,
             "markdownDescription": "%config.diagnostics.reportUnusedFunctions.description%"
           },
+          "angelscript.diagnostics.reportUnusedGlobalVariables": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.diagnostics.reportUnusedGlobalVariables.description%"
+          },
+          "angelscript.diagnostics.reportUnusedClasses": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.diagnostics.reportUnusedClasses.description%"
+          },
+          "angelscript.diagnostics.reportUnusedMembers": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.diagnostics.reportUnusedMembers.description%"
+          },
           "angelscript.diagnostics.ignoredUnusedFunctions": {
             "type": "array",
             "items": {

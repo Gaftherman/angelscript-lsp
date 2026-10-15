@@ -614,6 +614,9 @@ static constexpr DiagnosticFlagMapping kDiagFlags[] = {
     {"--report-all-null-dereferences", "--no-report-all-null-dereferences",
      &DiagnosticsConfig::reportAllNullDereferences},
     {"--report-unused-functions", "--no-report-unused-functions", &DiagnosticsConfig::reportUnusedFunctions},
+    {"--report-unused-globals", "--no-report-unused-globals", &DiagnosticsConfig::reportUnusedGlobalVariables},
+    {"--report-unused-classes", "--no-report-unused-classes", &DiagnosticsConfig::reportUnusedClasses},
+    {"--report-unused-members", "--no-report-unused-members", &DiagnosticsConfig::reportUnusedMembers},
     {"--ignore-unused-globals-with-call-initializer", "--no-ignore-unused-globals-with-call-initializer",
      &DiagnosticsConfig::ignoreUnusedGlobalsWithCallInitializer},
 };
@@ -660,29 +663,52 @@ static bool TryParseUnusedFunctionExclusion(ServerConfig& config, ArgParseContex
     return false;
 }
 
-bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
+void MarkExplicitDiagnosticFlag(DiagnosticsConfig& diag, bool DiagnosticsConfig::* member)
+{
+    if (member == &DiagnosticsConfig::reportUnusedFunctions)
+    {
+        diag.reportUnusedFunctionsExplicit = true;
+    }
+    else if (member == &DiagnosticsConfig::reportUnusedGlobalVariables)
+    {
+        diag.reportUnusedGlobalVariablesExplicit = true;
+    }
+    else if (member == &DiagnosticsConfig::reportUnusedClasses)
+    {
+        diag.reportUnusedClassesExplicit = true;
+    }
+    else if (member == &DiagnosticsConfig::reportUnusedMembers)
+    {
+        diag.reportUnusedMembersExplicit = true;
+    }
+}
+
+bool TryParseTableDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
 {
     for (const auto& entry : kDiagFlags)
     {
         if (ctx.key == entry.enableKey)
         {
             config.diagnostics.*(entry.member) = ctx.GetBoolValue(true);
-            if (entry.member == &DiagnosticsConfig::reportUnusedFunctions)
-            {
-                config.diagnostics.reportUnusedFunctionsExplicit = true;
-            }
+            MarkExplicitDiagnosticFlag(config.diagnostics, entry.member);
             return true;
         }
         if (ctx.key == entry.disableKey)
         {
             config.diagnostics.*(entry.member) =
                 ctx.inlineVal.has_value() ? !ParseBoolValue(*ctx.inlineVal, true) : false;
-            if (entry.member == &DiagnosticsConfig::reportUnusedFunctions)
-            {
-                config.diagnostics.reportUnusedFunctionsExplicit = true;
-            }
+            MarkExplicitDiagnosticFlag(config.diagnostics, entry.member);
             return true;
         }
+    }
+    return false;
+}
+
+bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
+{
+    if (TryParseTableDiagnosticFlag(config, ctx))
+    {
+        return true;
     }
     if (ctx.key == "--report-accessor-disabled")
     {

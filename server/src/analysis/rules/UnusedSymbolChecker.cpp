@@ -409,7 +409,7 @@ bool ShouldSkipFunction(const Symbol& sym, const SemanticAnalysisRequest& req, c
 
 void CheckUnusedFunctions(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
 {
-    if (!uCtx.rules.checkFunctions)
+    if (!uCtx.rules.checkFunctions && !uCtx.rules.checkMembers)
         return;
 
     req.symbolTable.ForEachSymbolInFile(
@@ -423,9 +423,19 @@ void CheckUnusedFunctions(const SemanticAnalysisRequest& req, const UnusedCheckC
                     continue;
 
                 if (sym.containerName.empty() || sym.containerKind == ContainerKind::Namespace)
-                    ctx.Emit(sym, diagnostics::codes::UnusedFunction, sym.name, DiagnosticSeverity::Warning);
+                {
+                    if (uCtx.rules.checkFunctions)
+                    {
+                        ctx.Emit(sym, diagnostics::codes::UnusedFunction, sym.name, DiagnosticSeverity::Warning);
+                    }
+                }
                 else if (sym.GetFunction().modifiers.access == AccessModifier::Private)
-                    ctx.Emit(sym, diagnostics::codes::UnusedMethod, sym.name, DiagnosticSeverity::Warning);
+                {
+                    if (uCtx.rules.checkFunctions || uCtx.rules.checkMembers)
+                    {
+                        ctx.Emit(sym, diagnostics::codes::UnusedMethod, sym.name, DiagnosticSeverity::Warning);
+                    }
+                }
             }
         });
 }
@@ -477,6 +487,41 @@ void CheckUnusedClasses(const SemanticAnalysisRequest& req, const UnusedCheckCon
         });
 }
 
+config::UnusedSymbolRules ResolveEffectiveRules(const SemanticAnalysisRequest& request)
+{
+    config::UnusedSymbolRules rules =
+        request.engineRules ? request.engineRules->unusedRules : config::UnusedSymbolRules{};
+    if (!rules.enabled)
+    {
+        rules.checkMembers = request.diagnostics && request.diagnostics->reportUnusedMembers;
+        rules.checkGlobals = request.diagnostics && request.diagnostics->reportUnusedGlobalVariables;
+        rules.checkFunctions = request.diagnostics && request.diagnostics->reportUnusedFunctions;
+        rules.checkClasses = request.diagnostics && request.diagnostics->reportUnusedClasses;
+        return rules;
+    }
+    if (request.diagnostics)
+    {
+        const auto& diag = *request.diagnostics;
+        if (diag.reportUnusedGlobalVariablesExplicit)
+        {
+            rules.checkGlobals = diag.reportUnusedGlobalVariables;
+        }
+        if (diag.reportUnusedFunctionsExplicit)
+        {
+            rules.checkFunctions = diag.reportUnusedFunctions;
+        }
+        if (diag.reportUnusedClassesExplicit)
+        {
+            rules.checkClasses = diag.reportUnusedClasses;
+        }
+        if (diag.reportUnusedMembersExplicit)
+        {
+            rules.checkMembers = diag.reportUnusedMembers;
+        }
+    }
+    return rules;
+}
+
 } // namespace
 
 void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContext& ctx)
@@ -484,19 +529,7 @@ void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContex
     if (!request.scopeRoot || utils::IsPredefinedFile(request.fileUri, request.predefinedFileExtension))
         return;
 
-    config::UnusedSymbolRules rules =
-        request.engineRules ? request.engineRules->unusedRules : config::UnusedSymbolRules{};
-    if (!rules.enabled)
-    {
-        rules.checkMembers = false;
-        rules.checkGlobals = false;
-        rules.checkFunctions = request.diagnostics && request.diagnostics->reportUnusedFunctions;
-        rules.checkClasses = false;
-    }
-    else if (request.diagnostics && request.diagnostics->reportUnusedFunctionsExplicit)
-    {
-        rules.checkFunctions = request.diagnostics->reportUnusedFunctions;
-    }
+    config::UnusedSymbolRules rules = ResolveEffectiveRules(request);
 
     ankerl::unordered_dense::set<uint64_t> defLocs;
     CollectDefLocations(request.scopeRoot.get(), defLocs);

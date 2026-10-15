@@ -562,3 +562,105 @@ TEST_CASE("UnusedSymbolChecker - Global variable exempt types via unusedGlobalEx
     auto diags = AnalyzeSnippet(code, &rules);
     CHECK_FALSE(HasDiag(diags, codes::UnusedGlobalVariable, varName));
 }
+
+TEST_CASE("UnusedSymbolChecker - Global unused variable with reportUnusedGlobalVariables setting")
+{
+    const std::string unusedVar = angel_lsp::test::GenerateRandomSymbolName("g_unusedVar");
+    const std::string code = "int " + unusedVar + ";\n";
+
+    // Case 1: reportUnusedGlobalVariables = true via DiagnosticsConfig -> emits W117
+    angel_lsp::config::DiagnosticsConfig diagEnabled;
+    diagEnabled.reportUnusedGlobalVariables = true;
+    diagEnabled.reportUnusedGlobalVariablesExplicit = true;
+    auto diagsEnabled = AnalyzeSnippet(code, nullptr, "file:///test.as", &diagEnabled);
+    CHECK(HasDiag(diagsEnabled, codes::UnusedGlobalVariable, unusedVar));
+
+    // Case 2: reportUnusedGlobalVariables = false via DiagnosticsConfig -> does not emit W117
+    angel_lsp::config::DiagnosticsConfig diagDisabled;
+    diagDisabled.reportUnusedGlobalVariables = false;
+    diagDisabled.reportUnusedGlobalVariablesExplicit = true;
+    auto diagsDisabled = AnalyzeSnippet(code, nullptr, "file:///test.as", &diagDisabled);
+    CHECK_FALSE(HasDiag(diagsDisabled, codes::UnusedGlobalVariable, unusedVar));
+}
+
+TEST_CASE("UnusedSymbolChecker - Multi-variable declarator does not self-reference")
+{
+    const std::string varA = angel_lsp::test::GenerateRandomSymbolName("g_firstVar");
+    const std::string varB = angel_lsp::test::GenerateRandomSymbolName("g_secondVar");
+    const std::string code = "int " + varA + " = 1, " + varB + " = 2;\n";
+
+    angel_lsp::config::DiagnosticsConfig diagConfig;
+    diagConfig.reportUnusedGlobalVariables = true;
+    diagConfig.reportUnusedGlobalVariablesExplicit = true;
+    auto diags = AnalyzeSnippet(code, nullptr, "file:///test.as", &diagConfig);
+    CHECK(HasDiag(diags, codes::UnusedGlobalVariable, varA));
+    CHECK(HasDiag(diags, codes::UnusedGlobalVariable, varB));
+}
+
+TEST_CASE("UnusedSymbolChecker - reportUnusedClasses via DiagnosticsConfig")
+{
+    const std::string deadClass = angel_lsp::test::GenerateRandomSymbolName("DeadClass");
+    const std::string code = "class " + deadClass + " {}\n";
+
+    // Enabled: emits W109
+    angel_lsp::config::DiagnosticsConfig diagEnabled;
+    diagEnabled.reportUnusedClasses = true;
+    diagEnabled.reportUnusedClassesExplicit = true;
+    auto diagsEnabled = AnalyzeSnippet(code, nullptr, "file:///test.as", &diagEnabled);
+    CHECK(HasDiag(diagsEnabled, codes::UnusedClass, deadClass));
+
+    // Disabled: does not emit W109
+    angel_lsp::config::DiagnosticsConfig diagDisabled;
+    diagDisabled.reportUnusedClasses = false;
+    diagDisabled.reportUnusedClassesExplicit = true;
+    auto diagsDisabled = AnalyzeSnippet(code, nullptr, "file:///test.as", &diagDisabled);
+    CHECK_FALSE(HasDiag(diagsDisabled, codes::UnusedClass, deadClass));
+}
+
+TEST_CASE("UnusedSymbolChecker - reportUnusedMembers and exemptions via DiagnosticsConfig")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("EntityHandler");
+    const std::string deadField = angel_lsp::test::GenerateRandomSymbolName("m_deadField");
+    const std::string deadPrivateMethod = angel_lsp::test::GenerateRandomSymbolName("DeadHelper");
+
+    const std::string code = "class " + clsName +
+                             "\n"
+                             "{\n"
+                             "    " +
+                             clsName +
+                             "() {}\n"
+                             "    ~" +
+                             clsName +
+                             "() {}\n"
+                             "    int " +
+                             deadField +
+                             ";\n"
+                             "    private void " +
+                             deadPrivateMethod +
+                             "() {}\n"
+                             "    void opAssign(const " +
+                             clsName +
+                             "& in other) {}\n"
+                             "    int get_Value() { return 1; }\n"
+                             "}\n"
+                             "void UseClass()\n"
+                             "{\n"
+                             "    " +
+                             clsName +
+                             " inst;\n"
+                             "    int v = inst.Value;\n"
+                             "}\n";
+
+    angel_lsp::config::DiagnosticsConfig diagEnabled;
+    diagEnabled.reportUnusedMembers = true;
+    diagEnabled.reportUnusedMembersExplicit = true;
+    auto diags = AnalyzeSnippet(code, nullptr, "file:///test.as", &diagEnabled);
+
+    CHECK(HasDiag(diags, codes::UnusedField, deadField));
+    CHECK(HasDiag(diags, codes::UnusedMethod, deadPrivateMethod));
+    // Exemptions must not be reported
+    CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, clsName));
+    CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, "~" + clsName));
+    CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, "opAssign"));
+    CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, "get_Value"));
+}

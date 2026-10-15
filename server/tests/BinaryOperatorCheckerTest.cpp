@@ -244,5 +244,21 @@ TEST_SUITE("BinaryOperatorChecker")
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
         CHECK_FALSE(HasDiagnostic(diags, diagnostics::codes::NoImplicitConversion));
     }
+
+    TEST_CASE("BinaryOperator - Bitwise OR with null literal emits as-err-no-matching-operator")
+    {
+        const std::string fnName = GenerateRandomSymbolName("TestBitwiseNull");
+        const std::string code = "void " + fnName + "() {\n" + "    int x = 1 | null;\n" + "}\n";
+        auto diags = AnalyzeScriptWithStandardProfile(code);
+        CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
+    }
+
+    TEST_CASE("BinaryOperator - Bitwise OR with array type emits as-err-no-matching-operator")
+    {
+        const std::string fnName = GenerateRandomSymbolName("TestBitwiseArray");
+        const std::string code = "void " + fnName + "() {\n" + "    int x = 1 | array<int>();\n" + "}\n";
+        auto diags = AnalyzeScriptWithStandardProfile(code);
+        CHECK(HasDiagnostic(diags, diagnostics::codes::NoMatchingOperator));
+    }
 }
 } // namespace angel_lsp::test

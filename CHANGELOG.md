@@ -2,6 +2,34 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.0-exp.9] - 2026-10-15
+
+### Precision CodeLens for Properties & Classes, Bitwise Operator Parity, Flicker-Free Diagnostics, and Unused Member Governance
+
+- Layer-1 Grammar Symbols Cache & Zero-Allocation AST Traversal:
+  - Added `parser::GetGrammarSymbols()` in `server/src/parser/GrammarSymbols.h/cpp` providing cached integer `TSSymbol` IDs (`symMemberAccess`, `symScopedIdentifier`, `symScopeResolution`, etc.).
+  - Replaced heap-allocating `std::string::substr` and `ts_node_type` string comparisons in `TargetResolution.cpp` and `CodeLensHandler.cpp` with zero-copy `std::string_view` and `TSSymbol` comparisons.
+- Precision CodeLens Reference Counting & Destructor Suppression:
+  - Enabled CodeLens reference counting on virtual property blocks (`SymbolType::Property`), accurately counting member accesses (`.Prop`), unqualified hierarchy accesses, and explicit getter/setter calls (`.get_Prop()` / `.set_Prop(...)`).
+  - Unified class and constructor reference counting by matching type specifier references (`ref.isTypeSpecifier`) in `IsValidConstructorAccess`.
+  - Added `analysis::IsDestructorDeclaration` in `SemanticHelpers.h/cpp` to detect leading tilde (`~`) in source code, suppressing redundant `0 references` CodeLens on destructor declarations.
+- Cross-Namespace Class Method Reference Isolation:
+  - Enforced enclosing class hierarchy checks in `TargetResolution.cpp:IsClassMemberReferenceMatch` (`relatedSet.contains(encClass)`), eliminating false-positive reference cross-contamination between identical method names in different classes/namespaces (e.g. `ASWallRechargerConfig::Register` vs `CustomKeyValues::Register`).
+- Strict Oracle-First Bitwise Operator & Container Type Parity:
+  - Replaced `CleanBaseTypeView` with `StripModifiers` in `BinaryOperatorHelpers.cpp`, preserving container types like `array<int>` (which previously unwrapped to `int`, masking invalid bitwise OR operations).
+  - Empirically verified against `angelscript_oracle.exe` that `1 | null` and `1 | array<int>()` are rejected with `as-err-no-matching-operator`, and that `BaseClass` is an engine virtual property rather than a hardcoded language keyword.
+- Flicker-Free Pull Diagnostics & Instant `.as.predefined` CodeLens:
+  - Preserved active diagnostics in `TextDocumentHandlers.cpp` during rapid keystrokes/undo (`Ctrl + Z`) without redundant analysis re-scheduling.
+  - Introduced `EnclosingClassCache` in `CodeLensHandler.cpp` and bypassed immutable `.as.predefined` scanning in `BatchCountReferencesAcrossScopes`, reducing CodeLens processing latency from 15s to under 100ms.
+- Unused Symbol Governance (Classes, Members, and Globals):
+  - Added `reportUnusedClasses` and `reportUnusedMembers` to `ServerConfig`, exposed CLI options (`--report-unused-classes`, `--report-unused-members`), and wired them end-to-end through `client/package.json` (defaults: `true` in VS Code) and `extension.ts` (105 settings wired).
+  - Expanded Sven Co-op lifecycle callbacks in `predefined/sven.angelscript.rules.json` (`TakeDamage`, `TraceAttack`, `Killed`, `IsAlive`, `IRelationship`, `OnCreate`, `OnDestroy`, `Initialize`).
+  - Added comprehensive test suite `server/tests/NestedNamespaceTest.cpp` validating multi-level hierarchical, compound, and sibling namespaces.
+- Quality Gates & Invariants:
+  - Validated 100% test pass rate: 2,360 / 2,360 unit tests passed (33,947 assertions, 0 failures, 30 skipped).
+  - All 12 active static quality gates passed successfully at 100% (`jscpd` at 1.15%, Lizard CCN <= 15, NLOC <= 70, 0 dead parameters `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` clean, `ast-grep` 0 violations).
+  - Client pretest passed: compile, bundle, lint, and all 105 settings verified.
+
 ## [1.1.0-exp.8] - 2026-10-15
 
 ### AST Traversal & Parent-Climb Optimizations, Hot-Path Collector Fast-Paths & Governance Quality Gate

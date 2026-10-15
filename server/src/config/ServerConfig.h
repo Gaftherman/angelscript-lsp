@@ -490,6 +490,16 @@ struct DiagnosticsConfig
     std::string missingAssetPathSeverity = "off";
 
     /**
+     * @brief Warn on unused global variables (default: off in bare config, on in VS Code).
+     */
+    bool reportUnusedGlobalVariables = false;
+
+    /**
+     * @brief True when reportUnusedGlobalVariables was explicitly set via CLI or workspace configuration.
+     */
+    bool reportUnusedGlobalVariablesExplicit = false;
+
+    /**
      * @brief Warn on unused global/namespace functions and private methods (default: off in bare config, on in VS
      * Code).
      */
@@ -515,6 +525,26 @@ struct DiagnosticsConfig
      * @brief Ignore unused global variables initialized with a call or constructor (default: false).
      */
     bool ignoreUnusedGlobalsWithCallInitializer = false;
+
+    /**
+     * @brief Warn on unused classes (default: off in bare config, on in VS Code).
+     */
+    bool reportUnusedClasses = false;
+
+    /**
+     * @brief True when reportUnusedClasses was explicitly set via CLI or workspace configuration.
+     */
+    bool reportUnusedClassesExplicit = false;
+
+    /**
+     * @brief Warn on unused class members (fields & private methods) (default: off in bare config, on in VS Code).
+     */
+    bool reportUnusedMembers = false;
+
+    /**
+     * @brief True when reportUnusedMembers was explicitly set via CLI or workspace configuration.
+     */
+    bool reportUnusedMembersExplicit = false;
 };
 
 /**

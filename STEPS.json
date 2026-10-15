@@ -559,6 +559,95 @@
         "Validated 100% test pass rate: 2,344 / 2,344 unit tests passed (33,883 assertions, 0 failures, 30 skipped).",
         "All 12 active static quality gates passed successfully at 100% (check-ast-traversal.py clean, jscpd at 1.14%, Lizard CCN <= 15, NLOC <= 70, 0 dead parameters /we4100)."
       ]
+    },
+    {
+      "id": "PHASE_19",
+      "name": "Real-World Diagnostics, Flicker-Free Sync, Reference Counting & .as.predefined Instant Load",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "client/README.es.md",
+        "client/README.md",
+        "client/package.json",
+        "client/package.nls.es.json",
+        "client/package.nls.json",
+        "client/src/extension.ts",
+        "server/src/analysis/LocalScopeCollector.cpp",
+        "server/src/analysis/TargetResolution.cpp",
+        "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+        "server/src/config/ServerConfig.cpp",
+        "server/src/config/ServerConfig.h",
+        "server/src/features/code_lens/CodeLensHandler.cpp",
+        "server/src/features/code_lens/CodeLensHandler.h",
+        "server/src/lsp/ServerDiagnostics.cpp",
+        "server/src/lsp/handlers/TextDocumentHandlers.cpp",
+        "server/src/lsp/handlers/WorkspaceHandlers.cpp",
+        "server/tests/CodeLensTest.cpp",
+        "server/tests/ReferencesTest.cpp",
+        "server/tests/UnusedSymbolCheckerTest.cpp",
+        "STEPS.json",
+        "STEPS.md"
+      ],
+      "findings": [
+        "Added reportUnusedGlobalVariables and reportUnusedGlobalVariablesExplicit to DiagnosticsConfig, wired --report-unused-globals / --no-report-unused-globals in ServerConfig CLI parser and workspace didChangeConfiguration.",
+        "Mapped codes::UnusedGlobalVariable (W117) to angelscript.diagnostics.reportUnusedGlobalVariables in ServerDiagnostics.cpp, and added setting with dual-language descriptions across client/package.json, package.nls.json, and package.nls.es.json.",
+        "Wired reportUnusedGlobalVariables in client/src/extension.ts buildServerArgs and synced documentation via sync-readme-settings.py (103 settings wired, 0 missing).",
+        "Fixed UnusedSymbolChecker.cpp CheckUnusedSymbols to honor reportUnusedGlobalVariables when rules.enabled is false or explicitly overridden.",
+        "Prevented variable and foreach declarator name nodes from being recorded as self-references in LocalScopeCollector.cpp ProcessReferenceCapture.",
+        "Eliminated diagnostic flickering on edit / undo (Ctrl+Z) in TextDocumentHandlers.cpp HandleRequestsTextDocument_Diagnostic by caching pull diagnostics with isCurrent validation without redundant ScheduleAnalysis cancellations.",
+        "Fixed 0 references for mixin classes included across namespaces (e.g. INS2BASE::AmmoBase) in CodeLensHandler.cpp CreateClassTarget by recording sym.containerName as targetNamespace and supporting bidirectional suffix matching.",
+        "Enhanced TargetResolution.cpp and CodeLensHandler.cpp with chained member access resolution (self.pev.body -> entvars_t.body) across AST expressions and scope scans.",
+        "Optimized CodeLens symbol scanning with EnclosingClassCache, zero-copy FindSymbolsPtr, and bypassed .as.predefined scanning in BatchCountReferencesAcrossScopes, eliminating freeze.",
+        "Suppressed 0 references CodeLens on operator overloads (opAssign, opIndex, etc.) when explicit identifier calls are 0.",
+        "Created unit tests verifying global unused W117, multi-variable declarator independence, mixin references across namespaces, chained member accesses, operator overload suppression, and cross-file namespace references.",
+        "All 2,350 unit tests passed (33,901 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100% (jscpd at 1.17%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100)."
+      ]
+    },
+    {
+      "id": "PHASE_20",
+      "name": "CodeLens & Reference Precision, Oracle-First Validation, and Unused Member Governance",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "client/README.es.md",
+        "client/README.md",
+        "client/package.json",
+        "client/package.nls.es.json",
+        "client/package.nls.json",
+        "client/src/extension.ts",
+        "predefined/sven.angelscript.rules.json",
+        "server/src/analysis/BinaryOperatorHelpers.cpp",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/analysis/SemanticHelpers.h",
+        "server/src/analysis/TargetResolution.cpp",
+        "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+        "server/src/config/ServerConfig.cpp",
+        "server/src/config/ServerConfig.h",
+        "server/src/features/code_lens/CodeLensHandler.cpp",
+        "server/src/features/code_lens/CodeLensHandler.h",
+        "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
+        "server/src/lsp/ServerDiagnostics.cpp",
+        "server/src/lsp/handlers/WorkspaceHandlers.cpp",
+        "server/src/parser/GrammarSymbols.cpp",
+        "server/src/parser/GrammarSymbols.h",
+        "server/tests/BinaryOperatorCheckerTest.cpp",
+        "server/tests/CodeLensTest.cpp",
+        "server/tests/NestedNamespaceTest.cpp",
+        "server/tests/UnusedSymbolCheckerTest.cpp",
+        "STEPS.json",
+        "STEPS.md"
+      ],
+      "findings": [
+        "Added GrammarSymbols.h/cpp in Layer 1 providing parser::GetGrammarSymbols() for O(1) TSSymbol lookups (symMemberAccess, symScopedIdentifier), eliminating heap allocations and ts_node_type string comparisons in TargetResolution and SemanticTokensHandler.",
+        "Emitted CodeLens reference counters for SymbolType::Property, counting member accesses, unqualified hierarchy accesses, and explicit get_/set_ calls.",
+        "Grouped class and constructor references with ref.isTypeSpecifier in IsValidConstructorAccess, and suppressed CodeLens on destructor declarations via SemanticHelpers::IsDestructorDeclaration.",
+        "Isolated class method matches in TargetResolution.cpp IsClassMemberReferenceMatch to ensure enclosing classes belong to the expected inheritance hierarchy, preventing false-positive cross-namespace reference leakage.",
+        "Verified with angelscript_oracle.exe that BaseClass is a virtual property returning BaseEntity@ in Sven Co-op rather than a native language keyword. Preserved array types with StripModifiers so 1 | array<int>() correctly emits as-err-no-matching-operator.",
+        "Added reportUnusedClasses and reportUnusedMembers in ServerConfig, wired to CLI, workspace didChangeConfiguration, client/package.json (defaults true in VS Code), and synchronized documentation.",
+        "Updated predefined/sven.angelscript.rules.json with Sven Co-op lifecycle callbacks (TakeDamage, TraceAttack, Killed, IsAlive, IRelationship, OnCreate, OnDestroy, Initialize).",
+        "Created server/tests/NestedNamespaceTest.cpp validating multi-level nested namespaces A { B { C { ... } } }, compound namespaces A::B::C, and sibling namespaces.",
+        "All 2,360 unit tests passed (33,947 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100% (jscpd at 1.15%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100)."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -573,9 +662,14 @@
     "GAP-CI-01: Linux SIGSEGV and macOS SIGBUS crash at DocumentLinkTest.cpp:141 due to dangling reference in DocumentLinkRequest. (RESOLVED in Phase 14).",
     "GAP-CI-02: Linux SIGSEGV crash at SemanticTokensTest.cpp:79 due to dangling temporary reference in SemanticTokensRequest. (RESOLVED in Phase 15).",
     "GAP-CI-03: Client CI pretest failure in check-settings-wired.mjs due to unread ignoreUnusedGlobalsWithCallInitializer in buildServerArgs. (RESOLVED in Phase 16).",
-    "GAP-PERF-03: Upward ts_node_parent loops and root-climbing in CallChecker, SemanticHelpers, LocalScopeCollector, and SymbolCollector. (RESOLVED in Phase 18 with GetRootNode, RawCapture callable symbol caching, TAGS_QUERY lambda tracking, and check-ast-traversal.py quality gate)."
+    "GAP-PERF-03: Upward ts_node_parent loops and root-climbing in CallChecker, SemanticHelpers, LocalScopeCollector, and SymbolCollector. (RESOLVED in Phase 18 with GetRootNode, RawCapture callable symbol caching, TAGS_QUERY lambda tracking, and check-ast-traversal.py quality gate).",
+    "GAP-DIAG-01: Global unused variable W117 missing, and diagnostic flicker on typing/undo in pull diagnostics. (RESOLVED in Phase 19).",
+    "GAP-REF-01: Mixin class 0 references across namespaces, chained member resolution self.pev.body, and redundant operator overload CodeLens. (RESOLVED in Phase 19).",
+    "GAP-PERF-04: O(N^2) symbol iteration and scanning of .as.predefined in CodeLensHandler. (RESOLVED in Phase 19 with EnclosingClassCache, zero-copy FindSymbolsPtr, and predefined bypass).",
+    "GAP-CODELENS-01: Virtual properties missing CodeLens, destructors showing 0 references, and constructor/class references uncounted. (RESOLVED in Phase 20).",
+    "GAP-REF-02: Cross-namespace class method reference leakage. (RESOLVED in Phase 20)."
   ],
   "nextActions": [
-    "Phase 18 completed with 100% test pass rate, O(1) GetRootNode, 0 raw ts_node_parent calls on hot-path collectors, and all static quality gates green."
+    "Phase 20 completed with 100% test pass rate (2,360 tests, 33,947 assertions), all 12 quality gates green, and 105 client settings wired."
   ]
 }

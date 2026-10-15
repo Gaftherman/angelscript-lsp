@@ -95,7 +95,15 @@
       "Use",
       "Blocked",
       "ObjectCaps",
-      "SetObjectCollisionBox"
+      "SetObjectCollisionBox",
+      "TakeDamage",
+      "TraceAttack",
+      "Killed",
+      "IsAlive",
+      "IRelationship",
+      "OnCreate",
+      "OnDestroy",
+      "Initialize"
     ],
     "baseClassLifecycleMethods": {
       "ScriptBasePlayerWeaponEntity": [

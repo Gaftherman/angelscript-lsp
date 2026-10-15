@@ -81,9 +81,24 @@ bool TypeHasOpImplConvTo(const std::string& typeName, const std::string& targetT
 
 bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_view stringTypeName)
 {
-    if (parser::primitives::IsPrimitive(type) || type == stringTypeName || ResolvesToEnum(type, table))
+    if (type == "null" || parser::primitives::IsPrimitive(type) || type == stringTypeName ||
+        ResolvesToEnum(type, table))
     {
         return true;
+    }
+    if (type.ends_with("[]"))
+    {
+        return true;
+    }
+    const auto templatePos = type.find('<');
+    if (templatePos != std::string_view::npos)
+    {
+        const std::string_view baseTemplate = type.substr(0, templatePos);
+        const auto symbols = table.FindSymbolsPtr(baseTemplate);
+        if (symbols && !symbols->empty())
+        {
+            return true;
+        }
     }
     const auto symbols = table.FindSymbolsPtr(type);
     return symbols && !symbols->empty();
@@ -98,13 +113,34 @@ bool IsNullOperand(TSNode node, std::string_view type)
     return !ts_node_is_null(node) && std::string_view(ts_node_type(node)) == parser::nodes::NullLiteral;
 }
 
+static std::string StripModifiers(std::string_view type)
+{
+    while (!type.empty() && (type.front() == ' ' || type.front() == '\t'))
+    {
+        type.remove_prefix(1);
+    }
+    if (type.starts_with("const "))
+    {
+        type.remove_prefix(6);
+    }
+    while (!type.empty() && (type.front() == ' ' || type.front() == '\t'))
+    {
+        type.remove_prefix(1);
+    }
+    while (!type.empty() && (type.back() == '@' || type.back() == '&' || type.back() == ' ' || type.back() == '\t'))
+    {
+        type.remove_suffix(1);
+    }
+    return std::string(type);
+}
+
 std::optional<BinaryOperandTypes> ResolveCleanBinaryOperandTypes(TSNode left, TSNode right, const Scope* scope,
                                                                  const DiagnosticContext& ctx)
 {
     const ExpressionTypeContext exprCtx(scope, ctx);
     const std::string rawLeft = ResolveExpressionType(left, exprCtx);
     const std::string rawRight = ResolveExpressionType(right, exprCtx);
-    if (rawLeft.empty() || rawRight.empty() || IsNullOperand(left, rawLeft) || IsNullOperand(right, rawRight))
+    if (rawLeft.empty() || rawRight.empty())
     {
         return std::nullopt;
     }
@@ -112,8 +148,8 @@ std::optional<BinaryOperandTypes> ResolveCleanBinaryOperandTypes(TSNode left, TS
     {
         return std::nullopt;
     }
-    std::string cleanLeft = CleanBaseType(rawLeft, ctx.request.GetEffectiveArrayTypeName());
-    std::string cleanRight = CleanBaseType(rawRight, ctx.request.GetEffectiveArrayTypeName());
+    std::string cleanLeft = IsNullOperand(left, rawLeft) ? "null" : StripModifiers(rawLeft);
+    std::string cleanRight = IsNullOperand(right, rawRight) ? "null" : StripModifiers(rawRight);
     if (cleanLeft.empty() || cleanRight.empty())
     {
         return std::nullopt;

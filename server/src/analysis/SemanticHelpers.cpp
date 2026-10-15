@@ -120,10 +120,17 @@ bool IsDestructorSymbol(const Symbol& sym)
     return sym.name.starts_with("~");
 }
 
-bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx)
+bool IsDestructorDeclaration(const Symbol& sym, std::string_view source)
 {
-    const std::string_view source = ctx.request.sourceCode;
-    if (source.empty() || sym.fileUri != ctx.request.fileUri)
+    if (sym.type != SymbolType::Function)
+    {
+        return false;
+    }
+    if (sym.name.starts_with('~'))
+    {
+        return true;
+    }
+    if (source.empty())
     {
         return false;
     }
@@ -152,6 +159,15 @@ bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx)
         --back;
     }
     return back > 0 && source[back - 1] == '~';
+}
+
+bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx)
+{
+    if (sym.fileUri != ctx.request.fileUri)
+    {
+        return false;
+    }
+    return IsDestructorDeclaration(sym, ctx.request.sourceCode);
 }
 
 namespace

@@ -799,3 +799,43 @@ TEST_CASE("ReferencesHandler - GAP-VISIBILITY-01: Sequential local variable does
         CHECK(ref.range.start.line >= 3);
     }
 }
+
+TEST_CASE("ReferencesHandler - Cross-file namespace member references match declaration")
+{
+    MultiFileTestEnv env;
+    const std::string nsName = test::GenerateRandomSymbolName("INS2BASE");
+    const std::string varName = test::GenerateRandomSymbolName("ShouldUseCustomAmmo");
+
+    std::string nsFile = "namespace " + nsName +
+                         " {\n"
+                         "    bool " +
+                         varName +
+                         " = true;\n"
+                         "}\n";
+
+    std::string usageFile = "void WeaponCheck() {\n"
+                            "    if (" +
+                            nsName + "::" + varName +
+                            ") {\n"
+                            "    }\n"
+                            "}\n";
+
+    env.AddFile("file:///namespace_def.as", nsFile);
+    env.AddFile("file:///weapon_usage.as", usageFile);
+
+    // References on declaration at line 1, col 9 of file:///namespace_def.as
+    auto refs = env.RefsAt("file:///namespace_def.as", 1, 9, true);
+    REQUIRE(refs.has_value());
+    CHECK(refs->size() == 2);
+
+    bool foundUsage = false;
+    for (const auto& ref : *refs)
+    {
+        if (ref.uri.toString() == "file:///weapon_usage.as")
+        {
+            foundUsage = true;
+            CHECK(ref.range.start.line == 1);
+        }
+    }
+    CHECK(foundUsage);
+}

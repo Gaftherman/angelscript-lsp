@@ -2,6 +2,7 @@
 
 #include "analysis/SemanticHelpers.h"
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include "utils/LspLogger.h"
 
 #include <algorithm>
@@ -1190,12 +1191,14 @@ void CollectLocalOccurrences(const TargetDescriptor& target, bool includeDeclara
  * @param[in] line Source line number.
  * @return Cleaned base type name or empty string.
  */
-std::string ResolveNamedIdentifierType(const std::string& name, const analysis::Scope* scope,
-                                       const CollectOccurrencesRequest& request, uint32_t line)
+std::string ResolveNamedIdentifierType(std::string_view name, const analysis::Scope* scope,
+                                       const CollectOccurrencesRequest& request, uint32_t line,
+                                       std::string_view fileUri = {})
 {
     if (name == "this")
     {
-        return GetEnclosingClassName(request.symbolTable, request.currentUri, line);
+        std::string targetUri = fileUri.empty() ? request.currentUri : std::string(fileUri);
+        return GetEnclosingClassName(request.symbolTable, targetUri, line);
     }
     const analysis::LocalDefinition* oDef = analysis::ResolveInScope(scope, name);
     if (oDef && !oDef->typeName.empty())
@@ -1212,6 +1215,10 @@ std::string ResolveNamedIdentifierType(const std::string& name, const analysis::
         if (gs.type == analysis::SymbolType::Function && !gs.GetFunction().returnType.empty())
         {
             return analysis::CleanBaseType(gs.GetFunction().returnType);
+        }
+        if (gs.type == analysis::SymbolType::Class || gs.type == analysis::SymbolType::Interface)
+        {
+            return gs.name;
         }
     }
     return "";
@@ -1239,7 +1246,8 @@ std::string ResolveReceiverFromAst(const analysis::LocalReference& ref, const an
         return "";
     }
     TSNode exprParent = ts_node_parent(refNode);
-    if (ts_node_is_null(exprParent) || std::string_view(ts_node_type(exprParent)) != "member_expression")
+    const auto& syms = parser::GetGrammarSymbols();
+    if (ts_node_is_null(exprParent) || ts_node_symbol(exprParent) != syms.symMemberAccess)
     {
         return "";
     }
@@ -1248,14 +1256,21 @@ std::string ResolveReceiverFromAst(const analysis::LocalReference& ref, const an
     {
         return "";
     }
+    std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
+    std::string resolved = analysis::ResolveReceiverType(objNode, ctx.request.sourceCode, ctx.request.symbolTable,
+                                                         {scope, encClass, ctx.fileUri});
+    if (!resolved.empty())
+    {
+        return analysis::CleanBaseType(resolved);
+    }
     uint32_t oStart = ts_node_start_byte(objNode);
     uint32_t oEnd = ts_node_end_byte(objNode);
-    if (oStart >= ctx.request.sourceCode.size() || oEnd > ctx.request.sourceCode.size())
+    if (oStart >= ctx.request.sourceCode.size() || oEnd > ctx.request.sourceCode.size() || oStart >= oEnd)
     {
         return "";
     }
-    std::string oText = ctx.request.sourceCode.substr(oStart, oEnd - oStart);
-    return ResolveNamedIdentifierType(oText, scope, ctx.request, ref.startLine);
+    std::string_view oText = std::string_view(ctx.request.sourceCode).substr(oStart, oEnd - oStart);
+    return ResolveNamedIdentifierType(oText, scope, ctx.request, ref.startLine, ctx.fileUri);
 }
 
 /**
@@ -1268,18 +1283,44 @@ std::string ResolveReceiverFromAst(const analysis::LocalReference& ref, const an
 std::string ResolveReceiverFromScope(const analysis::LocalReference& ref, const analysis::Scope* scope,
                                      const OccurrenceScanContext& ctx)
 {
+    std::string currentReceiverType;
     for (const auto& candRef : scope->references)
     {
         if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
         {
-            std::string t = ResolveNamedIdentifierType(candRef.name, scope, ctx.request, ref.startLine);
-            if (!t.empty())
+            if (currentReceiverType.empty())
             {
-                return t;
+                currentReceiverType =
+                    ResolveNamedIdentifierType(candRef.name, scope, ctx.request, ref.startLine, ctx.fileUri);
+            }
+            else
+            {
+                auto memberSyms = ctx.request.symbolTable.FindMemberSymbolPtr(currentReceiverType, candRef.name);
+                if (memberSyms && !memberSyms->empty())
+                {
+                    const auto& m = memberSyms->front();
+                    if (m.type == analysis::SymbolType::Variable && !m.GetVariable().typeName.empty())
+                    {
+                        currentReceiverType = analysis::CleanBaseType(m.GetVariable().typeName);
+                    }
+                    else if (m.type == analysis::SymbolType::Function && !m.GetFunction().returnType.empty())
+                    {
+                        currentReceiverType = analysis::CleanBaseType(m.GetFunction().returnType);
+                    }
+                }
+                else
+                {
+                    std::string t =
+                        ResolveNamedIdentifierType(candRef.name, scope, ctx.request, ref.startLine, ctx.fileUri);
+                    if (!t.empty())
+                    {
+                        currentReceiverType = t;
+                    }
+                }
             }
         }
     }
-    return "";
+    return currentReceiverType;
 }
 
 /**
@@ -1453,8 +1494,8 @@ bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const anal
         if (ctx.fileUri != ctx.request.currentUri)
         {
             std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
-            return encClass.empty() || relatedSet.contains(encClass) ||
-                   relatedSet.contains(std::string(analysis::LastScopeSegment(encClass)));
+            return !encClass.empty() && (relatedSet.contains(encClass) ||
+                                         relatedSet.contains(std::string(analysis::LastScopeSegment(encClass))));
         }
         return false;
     }
@@ -1610,52 +1651,90 @@ void CollectDeclarations(const std::string& symQuery, const CollectOccurrencesRe
 }
 
 /**
- * @brief Checks whether a reference is enclosed within a namespace region or explicitly scoped.
- * @param[in] fileUri Document URI.
+ * @brief Checks if a scope reference is preceded by a matching target namespace qualifier.
  * @param[in] ref Reference to check.
- * @param[in] nsRanges Line ranges of declaring namespace.
- * @param[in] request Occurrences request.
- * @return True if reference is inside declaring namespace.
+ * @param[in] scope Lexical scope.
+ * @param[in] targetNs Declaring namespace name.
+ * @return True if qualified by target namespace.
  */
-bool IsRefInsideNamespace(const std::string& fileUri, const analysis::LocalReference& ref,
-                          const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges,
-                          const CollectOccurrencesRequest& request)
+bool MatchesScopeNamespaceQualifier(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                    std::string_view targetNs)
 {
-    for (const auto& nr : nsRanges)
+    if (!scope || targetNs.empty())
     {
-        if (ref.startLine >= nr.first && ref.startLine <= nr.second)
+        return false;
+    }
+    for (const auto& candRef : scope->references)
+    {
+        if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
         {
-            if (!ref.isMemberAccess)
+            if (candRef.name == targetNs || candRef.name.ends_with("::" + std::string(targetNs)) ||
+                targetNs.ends_with("::" + candRef.name))
             {
                 return true;
             }
         }
     }
+    return false;
+}
 
-    if (fileUri == request.currentUri && request.tree)
+/**
+ * @brief Checks if an AST reference node is enclosed in a matching scoped_identifier.
+ * @param[in] ref Reference to check.
+ * @param[in] ctx Occurrence scan context.
+ * @return True if qualified name matches target.
+ */
+bool MatchesAstScopedIdentifier(const analysis::LocalReference& ref, const OccurrenceScanContext& ctx)
+{
+    if (ctx.fileUri != ctx.request.currentUri || !ctx.request.tree)
     {
-        TSNode rootNode = ts_tree_root_node(request.tree);
-        TSPoint pt = {ref.startLine, ref.startCharacter};
-        TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-        if (!ts_node_is_null(refNode))
+        return false;
+    }
+    TSNode rootNode = ts_tree_root_node(ctx.request.tree);
+    TSPoint pt = {ref.startLine, ref.startCharacter};
+    TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+    if (ts_node_is_null(refNode))
+    {
+        return false;
+    }
+    TSNode pNode = ts_node_parent(refNode);
+    if (ts_node_is_null(pNode) || ts_node_symbol(pNode) != parser::GetGrammarSymbols().symScopedIdentifier)
+    {
+        return false;
+    }
+    uint32_t pStart = ts_node_start_byte(pNode);
+    uint32_t pEnd = ts_node_end_byte(pNode);
+    if (pStart >= ctx.request.sourceCode.size() || pEnd > ctx.request.sourceCode.size() || pStart >= pEnd)
+    {
+        return false;
+    }
+    return std::string_view(ctx.request.sourceCode).substr(pStart, pEnd - pStart) == ctx.request.target.qualifiedName;
+}
+
+/**
+ * @brief Checks whether a reference is enclosed within a namespace region or explicitly scoped.
+ * @param[in] ref Reference to check.
+ * @param[in] nsRanges Line ranges of declaring namespace.
+ * @param[in] ctx Occurrence scan context.
+ * @param[in] scope Lexical scope.
+ * @return True if reference is inside declaring namespace.
+ */
+bool IsRefInsideNamespace(const analysis::LocalReference& ref,
+                          const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges, const OccurrenceScanContext& ctx,
+                          const analysis::Scope* scope)
+{
+    for (const auto& nr : nsRanges)
+    {
+        if (ref.startLine >= nr.first && ref.startLine <= nr.second && !ref.isMemberAccess)
         {
-            TSNode pNode = ts_node_parent(refNode);
-            if (!ts_node_is_null(pNode) && std::string_view(ts_node_type(pNode)) == "scoped_identifier")
-            {
-                uint32_t pStart = ts_node_start_byte(pNode);
-                uint32_t pEnd = ts_node_end_byte(pNode);
-                if (pStart < request.sourceCode.size() && pEnd <= request.sourceCode.size())
-                {
-                    std::string scoped = request.sourceCode.substr(pStart, pEnd - pStart);
-                    if (scoped == request.target.qualifiedName)
-                    {
-                        return true;
-                    }
-                }
-            }
+            return true;
         }
     }
-    return false;
+    if (MatchesScopeNamespaceQualifier(ref, scope, ctx.request.target.declaringNamespace))
+    {
+        return true;
+    }
+    return MatchesAstScopedIdentifier(ref, ctx);
 }
 
 /**
@@ -1688,7 +1767,7 @@ void ScanDocumentForNamespace(const analysis::Scope* root, const std::vector<std
             {
                 continue;
             }
-            if (!IsRefInsideNamespace(ctx.fileUri, ref, nsRanges, ctx.request))
+            if (!IsRefInsideNamespace(ref, nsRanges, ctx, s))
             {
                 continue;
             }
