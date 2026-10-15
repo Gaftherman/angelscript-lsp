@@ -663,7 +663,7 @@ static bool TryParseUnusedFunctionExclusion(ServerConfig& config, ArgParseContex
     return false;
 }
 
-void MarkExplicitDiagnosticFlag(DiagnosticsConfig& diag, bool DiagnosticsConfig::* member)
+void MarkExplicitDiagnosticFlag(DiagnosticsConfig& diag, DiagnosticFlagMapping::DiagMember member)
 {
     if (member == &DiagnosticsConfig::reportUnusedFunctions)
     {
