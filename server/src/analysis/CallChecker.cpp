@@ -284,8 +284,8 @@ struct FreeLookupContext
 {
     TSNode callNode;
     std::string_view sourceCode;
-    const std::string& fileUri;
-    const std::string& predefinedExtension;
+    std::string fileUri;
+    std::string predefinedExtension;
     const SymbolTable& table;
     const rules::RuleIndex& index;
     const ankerl::unordered_dense::set<std::string>& moduleFileUris;

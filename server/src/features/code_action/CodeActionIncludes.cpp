@@ -170,7 +170,7 @@ void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<Incl
 
 struct IncludeRefCheckContext
 {
-    const std::string& currentUri;
+    std::string currentUri;
     const analysis::SymbolTable& table;
     const ankerl::unordered_dense::set<std::string>& docReferences;
     const std::vector<std::string>& allowedRoots;

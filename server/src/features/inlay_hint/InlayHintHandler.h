@@ -27,8 +27,8 @@ namespace angel_lsp::features
  */
 struct InlayHintRequest
 {
-    const std::string& uri;
-    const std::string& sourceCode;
+    std::string uri;
+    std::string sourceCode;
     TSTree* tree = nullptr;
     lsp::Range range;
     const analysis::SymbolTable& symbolTable;

@@ -1525,10 +1525,10 @@ class Server
      */
     struct DidOpenPredefinedRequest
     {
-        const std::string& uriStr;
-        const std::string& text;
+        std::string uriStr;
+        std::string text;
         int version = 0;
-        const std::string& clientUri;
+        std::string clientUri;
         const utils::HighResTimer& totalTimer;
     };
 

@@ -16,8 +16,8 @@ namespace angel_lsp::features
  */
 struct DocumentHighlightRequest
 {
-    const std::string& uri;
-    const std::string& sourceCode;
+    std::string uri;
+    std::string sourceCode;
     TSTree* tree = nullptr;
     lsp::Position position;
     const analysis::SymbolTable& symbolTable;

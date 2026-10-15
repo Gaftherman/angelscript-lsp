@@ -21,8 +21,8 @@ namespace angel_lsp::features
  */
 struct ReferencesRequest
 {
-    const std::string& uri;
-    const std::string& sourceCode;
+    std::string uri;
+    std::string sourceCode;
     TSTree* tree = nullptr;
     lsp::Position position;
     bool includeDeclaration = true;

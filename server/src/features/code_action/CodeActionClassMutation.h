@@ -15,7 +15,7 @@ struct ClassMutationContext
     TSNode classNode;
     std::string_view sourceCode;
     const analysis::SymbolTable& table;
-    const std::string& className;
+    std::string className;
     const analysis::Scope* scope = nullptr;
 };
 

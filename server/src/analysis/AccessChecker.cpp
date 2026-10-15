@@ -116,7 +116,7 @@ bool AccessorStandsForProperty(const Symbol& sym, bool keywordRequired)
  */
 struct MemberLookupContext
 {
-    const std::string& typeName;
+    std::string typeName;
     const SymbolTable& table;
     bool accessorKeywordRequired = false;
 };

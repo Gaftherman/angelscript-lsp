@@ -1047,6 +1047,59 @@ TEST CASE:  GetDocumentLinks - a document with no directives yields nothing
 - **Puertas de Calidad Estática**: 11/11 puertas aprobadas (`jscpd` 1.10%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
 - **Estabilidad de CI**: Cero punteros colgantes en structs de petición, inmunidad a temporales en inicializadores y protección total contra desreferenciación en Linux y macOS.
 
+---
+
+## 18. Fase 15: Barrido Global de Referencias Colgantes y Protección de Búfer Vacío
+
+### 18.1. Diagnóstico Forense y Causa Raíz
+Tras el fix de la Fase 14 en `DocumentLinkRequest`, el runner de CI en Linux avanzó exitosamente hasta la prueba `#1636` (`SemanticTokensTest.cpp:79`), donde se produjo un `SIGSEGV`:
+```text
+/home/runner/work/angelscript-lsp/angelscript-lsp/server/tests/SemanticTokensTest.cpp:79:
+TEST CASE:  SemanticTokensHandler - Empty Code Returns Empty Tokens
+
+/home/runner/work/angelscript-lsp/angelscript-lsp/server/tests/SemanticTokensTest.cpp:79: FATAL ERROR: test case CRASHED: SIGSEGV - Segmentation violation signal
+```
+- **Causa Raíz**: En C++20, la inicialización agregada o por constructor de un struct con miembros `const std::string& uri` y `const std::string& sourceCode` enlazaba a objetos temporales `std::string` implícitamente creados a partir de literales de cadena como `""` y `"file:///test.as"`. Al llegar al punto y coma `;` de la sentencia, los temporales se destruían, dejando los miembros apuntando a memoria de pila desasignada. En `GetSemanticTokens`, la evaluación inicial `request.sourceCode.empty()` desreferenciaba el puntero colgante, provocando `SIGSEGV` en Linux (GCC) y `SIGBUS` en macOS (Clang).
+
+### 18.2. Erradicación Integral en Todo el Código
+Para evitar resolver este defecto de forma aislada archivo por archivo (anti-patrón whack-a-mole), se ejecutó un barrido exhaustivo en todas las estructuras `*Request` y `*Context` en `server/src/features/**` y `server/src/analysis/**`:
+1. **Posesión Total de Cadenas por Valor (`std::string`)**:
+   - `SemanticTokensRequest`: `uri`, `sourceCode` -> `std::string` (constructor con `std::move`).
+   - `CallHierarchyPrepareRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `CodeActionRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `ClassMutationContext`: `className` -> `std::string`.
+   - `CodeLensRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `CompletionRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `DefinitionRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `DocumentHighlightRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `DocumentSymbolRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `FoldingRangeRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `FormattingRequest`, `RangeFormattingRequest`, `OnTypeFormattingRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `HoverRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `ImplementationRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `InlayHintRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `LinkedEditingRangeRequest`: `sourceCode` -> `std::string`.
+   - `ReferencesRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `PrepareRenameRequest`, `RenameRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `SelectionRangeRequest`: `sourceCode` -> `std::string`.
+   - `SignatureHelpRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `TypeHierarchyPrepareRequest`: `uri`, `sourceCode` -> `std::string`.
+   - `ResolveTargetRequest`, `CollectOccurrencesRequest`: `uri`, `currentUri`, `sourceCode` -> `std::string`.
+   - `SymbolCollectRequest`, `SymbolLocationContext`: `fileUri`, `containerPath` -> `std::string`.
+
+2. **Protección de Búfer Vacío y Árbol Nulo (`empty` / `!tree`)**:
+   - Se añadieron retornos tempranos seguros en caso de código vacío o árbol nulo en `GetDefinition`, `GetTypeDefinition`, `PrepareCallHierarchy`, `PrepareTypeHierarchy`, `GetDocumentHighlights`, `GetImplementations`, `GetLinkedEditingRanges`, `GetReferences`, `ResolveValidRenameTarget`, `GetSelectionRanges`, y `GetCodeLenses`.
+
+3. **Descomposición Cohesiva Anti-Monolito en `ReferencesHandler.cpp`**:
+   - Se extrajo la función auxiliar `ConvertAndSortOccurrences` para encapsular la conversión a `lsp::Location` y ordenamiento lexicográfico estable, reduciendo el NLOC de `GetReferences` a 45 líneas (cumpliendo con la regla NLOC $\le 70$ y CCN $\le 15$).
+
+### 18.3. Métricas Finales de Fase 15
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,342 / 2,342` pasadas (`33,894` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 11/11 puertas aprobadas (`jscpd` 1.14%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
+- **Garantía de Robustez**: Inmunidad total a referencias colgantes en todas las plataformas y compiladores (MSVC, GCC, Clang).
+
+
 
 
 

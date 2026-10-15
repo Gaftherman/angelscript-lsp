@@ -79,9 +79,10 @@ TEST_CASE("SemanticTokensHandler - Delta Encoding for Simple Script")
 TEST_CASE("SemanticTokensHandler - Empty Code Returns Empty Tokens")
 {
     AngelScriptParser parser;
-    TSTree* tree = parser.Parse("");
+    const std::string code = "";
+    TSTree* tree = parser.Parse(code);
     SymbolTable table;
-    SemanticTokensRequest req{"file:///test.as", "", tree, table};
+    SemanticTokensRequest req{"file:///test.as", code, tree, table};
     auto tokens = GetSemanticTokens(req);
     CHECK(tokens.data.empty());
     if (tree)

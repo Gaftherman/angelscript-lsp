@@ -18,13 +18,13 @@ namespace angel_lsp::features
  */
 struct SemanticTokensRequest
 {
-    SemanticTokensRequest(const std::string& u, const std::string& sc, TSTree* t, const analysis::SymbolTable& st)
-        : uri(u), sourceCode(sc), tree(t), symbolTable(st)
+    SemanticTokensRequest(std::string u, std::string sc, TSTree* t, const analysis::SymbolTable& st)
+        : uri(std::move(u)), sourceCode(std::move(sc)), tree(t), symbolTable(st)
     {
     }
 
-    const std::string& uri;
-    const std::string& sourceCode;
+    std::string uri;
+    std::string sourceCode;
     TSTree* tree = nullptr;
     const analysis::SymbolTable& symbolTable;
     const analysis::NodeIndex* nodeIndex = nullptr;

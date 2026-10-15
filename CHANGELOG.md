@@ -2,6 +2,22 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.0-exp.5] - 2026-10-14
+
+### Codebase-Wide Dangling Reference Elimination across All Request Structs, Empty-Buffer Guards, and Monolith Refactoring
+
+- Codebase-Wide Dangling Reference Eradication (`SIGSEGV` / `SIGBUS`):
+  - Diagnosed fatal segmentation fault on Linux (`GCC` / `libstdc++`) at `SemanticTokensTest.cpp:79` (`SemanticTokensHandler - Empty Code Returns Empty Tokens`) caused by C++20 aggregate initialization binding temporary string literals to `const std::string&` members in `SemanticTokensRequest`.
+  - Executed a comprehensive codebase-wide sweep converting reference members (`const std::string&`) to owned values (`std::string`) across all 22 feature `*Request` and analysis `*Context` structs (`SemanticTokensRequest`, `CallHierarchyPrepareRequest`, `CodeActionRequest`, `ClassMutationContext`, `CodeLensRequest`, `CompletionRequest`, `DefinitionRequest`, `DocumentHighlightRequest`, `DocumentSymbolRequest`, `FoldingRangeRequest`, `FormattingRequest`, `RangeFormattingRequest`, `OnTypeFormattingRequest`, `HoverRequest`, `ImplementationRequest`, `InlayHintRequest`, `LinkedEditingRangeRequest`, `ReferencesRequest`, `PrepareRenameRequest`, `RenameRequest`, `SelectionRangeRequest`, `SignatureHelpRequest`, `TypeHierarchyPrepareRequest`, `ResolveTargetRequest`, `CollectOccurrencesRequest`, `SymbolCollectRequest`, `SymbolLocationContext`, `DidOpenPredefinedRequest`, etc.).
+  - Verified 0 remaining struct reference members across `server/src/`.
+- Defensive Empty-Buffer & Null-Tree Guards:
+  - Added robust empty source text (`sourceCode.empty()`) and null AST (`!tree`) early returns across 11 feature handlers (`GetDefinition`, `GetTypeDefinition`, `PrepareCallHierarchy`, `PrepareTypeHierarchy`, `GetDocumentHighlights`, `GetImplementations`, `GetLinkedEditingRanges`, `GetReferences`, `ResolveValidRenameTarget`, `GetSelectionRanges`, `GetCodeLenses`), preventing out-of-bounds AST node searches on empty documents.
+- Function Complexity & Anti-Monolith Refactoring (`ReferencesHandler`):
+  - Decomposed `GetReferences` into an extracted helper `ConvertAndSortOccurrences` for occurrence conversion and lexicographical sorting, ensuring strict compliance with Lizard NLOC <= 70 and CCN <= 15 rules.
+- Quality Gates & Invariants:
+  - Validated 100% test pass rate: 2,342 / 2,342 unit tests passed (33,894 assertions, 0 failures, 30 skipped).
+  - All 11 active static quality gates passed successfully (`check-quality.py`, `format-code.py --check`, `check-layer-includes.py`, `check-clean-signatures.py`, `check-diagnostic-codes.py`, `jscpd` at 1.14%).
+
 ## [1.1.0-exp.4] - 2026-10-14
 
 ### CI Linux SIGSEGV & macOS SIGBUS Elimination, NodeIndex Symbol Bounds Guard, and LocalScopeCollector Caching

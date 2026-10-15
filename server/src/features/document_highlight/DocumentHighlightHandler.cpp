@@ -1387,6 +1387,11 @@ DocumentHighlightResult BuildSortedHighlights(const HighlightRangeCollector& col
 
 std::optional<DocumentHighlightResult> GetDocumentHighlights(const DocumentHighlightRequest& request)
 {
+    if (!request.tree || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+
     TSNode node{};
     analysis::ResolveTargetRequest resolveReq{
         .uri = request.uri,

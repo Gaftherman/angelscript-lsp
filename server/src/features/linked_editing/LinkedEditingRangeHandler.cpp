@@ -192,6 +192,11 @@ void CollectIn(const Scope& scope, const std::string& name, std::vector<lsp::Ran
 
 std::optional<lsp::LinkedEditingRanges> GetLinkedEditingRanges(const LinkedEditingRangeRequest& request)
 {
+    if (request.sourceCode.empty() || !request.scopeRoot)
+    {
+        return std::nullopt;
+    }
+
     const Scope* innermost = InnermostScope(request.scopeRoot, request.position);
     if (!innermost)
     {

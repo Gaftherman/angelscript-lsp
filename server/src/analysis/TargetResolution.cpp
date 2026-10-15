@@ -1048,7 +1048,7 @@ struct SymbolSpan
  */
 struct OccurrenceScanContext
 {
-    const std::string& fileUri;
+    std::string fileUri;
     const CollectOccurrencesRequest& request;
     const std::set<std::tuple<std::string, uint32_t, uint32_t>>& declRanges;
     OccurrenceCollector& collector;

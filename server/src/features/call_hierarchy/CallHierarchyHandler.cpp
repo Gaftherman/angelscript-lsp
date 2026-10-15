@@ -287,6 +287,11 @@ bool SameDeclarationLocation(const Symbol& a, const Symbol& b)
 
 std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const CallHierarchyPrepareRequest& request)
 {
+    if (!request.tree || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+
     TSNode node{};
     const std::string name = IdentifierAt(request, node);
 

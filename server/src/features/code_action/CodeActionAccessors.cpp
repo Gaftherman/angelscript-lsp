@@ -138,7 +138,7 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TS
 
 struct GetterSetterContext
 {
-    const std::string& className;
+    std::string className;
     const std::pair<std::string, std::string>& field;
     TSPoint insertPt;
 };

@@ -26,8 +26,8 @@ namespace angel_lsp::features
  */
 struct CodeActionRequest
 {
-    const std::string& uri;
-    const std::string& sourceCode;
+    std::string uri;
+    std::string sourceCode;
     TSTree* tree = nullptr;
     lsp::Range range;
     lsp::CodeActionContext context;

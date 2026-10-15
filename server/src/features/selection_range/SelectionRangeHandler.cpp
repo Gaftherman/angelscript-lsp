@@ -65,7 +65,7 @@ lsp::SelectionRange BuildChain(TSNode root, const lsp::Position& position)
 std::vector<lsp::SelectionRange> GetSelectionRanges(const SelectionRangeRequest& request)
 {
     std::vector<lsp::SelectionRange> result;
-    if (!request.tree)
+    if (!request.tree || request.sourceCode.empty())
     {
         return result;
     }

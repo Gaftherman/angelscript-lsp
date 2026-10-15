@@ -6,8 +6,55 @@
 
 namespace angel_lsp::features
 {
+namespace
+{
+/**
+ * @brief Converts occurrences into sorted LSP location objects.
+ * @param[in] occurrences Raw occurrences collected across documents.
+ * @return Stable sorted list of LSP locations.
+ */
+std::vector<lsp::Location> ConvertAndSortOccurrences(const std::vector<analysis::OccurrenceLocation>& occurrences)
+{
+    std::vector<lsp::Location> results;
+    results.reserve(occurrences.size());
+    for (const auto& occ : occurrences)
+    {
+        results.push_back(lsp::Location{
+            lsp::DocumentUri::parse(occ.fileUri),
+            lsp::Range{
+                lsp::Position{occ.range.startLine, occ.range.startCharacter},
+                lsp::Position{occ.range.endLine, occ.range.endCharacter},
+            },
+        });
+    }
+
+    // Sorted so the answer is stable across runs: CollectOccurrences walks documents in
+    // whatever order the symbol table hands them over, which is a hash order.
+    std::sort(results.begin(), results.end(),
+              [](const lsp::Location& a, const lsp::Location& b)
+              {
+                  if (a.uri.toString() != b.uri.toString())
+                  {
+                      return a.uri.toString() < b.uri.toString();
+                  }
+                  if (a.range.start.line != b.range.start.line)
+                  {
+                      return a.range.start.line < b.range.start.line;
+                  }
+                  return a.range.start.character < b.range.start.character;
+              });
+
+    return results;
+}
+} // namespace
+
 std::optional<ReferencesResult> GetReferences(const ReferencesRequest& request)
 {
+    if (!request.tree || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+
     TSNode node{};
     analysis::ResolveTargetRequest resolveReq{
         .uri = request.uri,
@@ -43,35 +90,6 @@ std::optional<ReferencesResult> GetReferences(const ReferencesRequest& request)
         return std::nullopt;
     }
 
-    std::vector<lsp::Location> results;
-    results.reserve(occurrences.size());
-    for (const auto& occ : occurrences)
-    {
-        results.push_back(lsp::Location{
-            lsp::DocumentUri::parse(occ.fileUri),
-            lsp::Range{
-                lsp::Position{occ.range.startLine, occ.range.startCharacter},
-                lsp::Position{occ.range.endLine, occ.range.endCharacter},
-            },
-        });
-    }
-
-    // Sorted so the answer is stable across runs: CollectOccurrences walks documents in
-    // whatever order the symbol table hands them over, which is a hash order.
-    std::sort(results.begin(), results.end(),
-              [](const lsp::Location& a, const lsp::Location& b)
-              {
-                  if (a.uri.toString() != b.uri.toString())
-                  {
-                      return a.uri.toString() < b.uri.toString();
-                  }
-                  if (a.range.start.line != b.range.start.line)
-                  {
-                      return a.range.start.line < b.range.start.line;
-                  }
-                  return a.range.start.character < b.range.start.character;
-              });
-
-    return results;
+    return ConvertAndSortOccurrences(occurrences);
 }
 } // namespace angel_lsp::features

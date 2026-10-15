@@ -515,7 +515,7 @@ struct LocationCollector
  */
 struct MemberImplementationContext
 {
-    const std::string& name;
+    std::string name;
     bool isMixinOwner;
     const SymbolTable& table;
     LocationCollector& collector;
@@ -617,6 +617,11 @@ std::optional<std::vector<lsp::Location>> ResolveFunctionImplementations(const s
 
 std::optional<std::vector<lsp::Location>> GetImplementations(const ImplementationRequest& request)
 {
+    if (!request.tree || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+
     TSNode node{};
     const std::string name = IdentifierAt(request, node);
     if (name.empty())

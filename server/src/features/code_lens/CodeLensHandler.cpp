@@ -118,12 +118,12 @@ bool IsInsideNamespace(const std::string& fileUri, uint32_t line, const std::str
  */
 struct ReferenceCollectionCriteria
 {
-    const std::string& targetName;
+    std::string targetName;
     const std::vector<analysis::Symbol>& group;
     const ankerl::unordered_dense::set<std::string>& compatibleClasses;
     const DeclRangeSet& allDeclRanges;
-    const std::string& targetNamespace;
-    const std::string& targetEnumContainer;
+    std::string targetNamespace;
+    std::string targetEnumContainer;
     bool isEnumConstant = false;
     analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
     bool isFunction = false;
@@ -1546,7 +1546,7 @@ std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest& r
         return virtualLenses;
     }
 
-    if (request.sourceCode.empty())
+    if (request.sourceCode.empty() || !request.tree)
     {
         return std::nullopt;
     }

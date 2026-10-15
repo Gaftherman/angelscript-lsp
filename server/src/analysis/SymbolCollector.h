@@ -30,7 +30,7 @@ namespace angel_lsp::analysis
 struct SymbolCollectRequest
 {
     /** @brief Document URI used to tag every collected symbol and diagnostic. */
-    const std::string& fileUri;
+    std::string fileUri;
     /** @brief Full text of the document. */
     std::string_view sourceCode;
     /** @brief Optional localizer for diagnostic messages; English is used when null. */
@@ -42,8 +42,8 @@ struct SymbolCollectRequest
      * @param[in] code Full text of the document.
      * @param[in] loc Optional localizer pointer.
      */
-    SymbolCollectRequest(const std::string& uri, std::string_view code, const angel_lsp::i18n::I18n* loc = nullptr)
-        : fileUri(uri), sourceCode(code), i18n(loc)
+    SymbolCollectRequest(std::string uri, std::string_view code, const angel_lsp::i18n::I18n* loc = nullptr)
+        : fileUri(std::move(uri)), sourceCode(code), i18n(loc)
     {
     }
 
@@ -54,9 +54,9 @@ struct SymbolCollectRequest
      * @param[in] length Number of bytes in source buffer.
      * @param[in] loc Optional localizer pointer.
      */
-    SymbolCollectRequest(const std::string& uri, const char* sourceBuffer, size_t length,
+    SymbolCollectRequest(std::string uri, const char* sourceBuffer, size_t length,
                          const angel_lsp::i18n::I18n* loc = nullptr)
-        : fileUri(uri), sourceCode(sourceBuffer, length), i18n(loc)
+        : fileUri(std::move(uri)), sourceCode(sourceBuffer, length), i18n(loc)
     {
     }
 };
@@ -267,20 +267,21 @@ class SymbolCollector
     struct SymbolLocationContext
     {
         std::string_view sourceCode;
-        const std::string& fileUri;
-        const std::string& containerPath;
+        std::string fileUri;
+        std::string containerPath;
         ContainerKind containerKind = ContainerKind::None;
         bool sourceHasBrackets = false;
 
-        SymbolLocationContext(std::string_view src, const std::string& uri, const std::string& path,
+        SymbolLocationContext(std::string_view src, std::string uri, std::string path,
                               ContainerKind kind = ContainerKind::None, bool hasBrackets = false)
-            : sourceCode(src), fileUri(uri), containerPath(path), containerKind(kind), sourceHasBrackets(hasBrackets)
+            : sourceCode(src), fileUri(std::move(uri)), containerPath(std::move(path)), containerKind(kind),
+              sourceHasBrackets(hasBrackets)
         {
         }
 
-        SymbolLocationContext(const SymbolCollectContext& sCtx, const std::string& path,
+        SymbolLocationContext(const SymbolCollectContext& sCtx, std::string path,
                               ContainerKind kind = ContainerKind::None)
-            : sourceCode(sCtx.request.sourceCode), fileUri(sCtx.request.fileUri), containerPath(path),
+            : sourceCode(sCtx.request.sourceCode), fileUri(sCtx.request.fileUri), containerPath(std::move(path)),
               containerKind(kind), sourceHasBrackets(sCtx.sourceHasBrackets)
         {
         }

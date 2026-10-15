@@ -1245,6 +1245,11 @@ void FilterAndPrioritizeLocalSymbols(std::vector<analysis::Symbol>& symbols, TSN
 
 std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest& request)
 {
+    if (!request.tree || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+
     if (auto includeLoc = TryResolveIncludeDirective(request))
     {
         return includeLoc;
@@ -1298,6 +1303,11 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
 
 std::optional<std::vector<lsp::Location>> GetTypeDefinition(const DefinitionRequest& request)
 {
+    if (!request.tree || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+
     TSNode node{};
     std::string nodeText = GetNodeTextAt(request, node);
     if (nodeText.empty() || ts_node_is_null(node))
