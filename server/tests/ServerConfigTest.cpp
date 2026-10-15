@@ -1260,6 +1260,19 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             CHECK(FromArgs(backOn.argc(), backOn.data()).diagnostics.reportUnknownTypes == true);
         }
 
+        SUBCASE("ignoreUnusedGlobalsWithCallInitializer is off by default, and can be toggled via CLI")
+        {
+            ArgvHelper plain{"angel_lsp"};
+            CHECK(FromArgs(plain.argc(), plain.data()).diagnostics.ignoreUnusedGlobalsWithCallInitializer == false);
+
+            ArgvHelper on{"angel_lsp", "--ignore-unused-globals-with-call-initializer"};
+            CHECK(FromArgs(on.argc(), on.data()).diagnostics.ignoreUnusedGlobalsWithCallInitializer == true);
+
+            ArgvHelper backOff{"angel_lsp", "--ignore-unused-globals-with-call-initializer",
+                               "--no-ignore-unused-globals-with-call-initializer"};
+            CHECK(FromArgs(backOff.argc(), backOff.data()).diagnostics.ignoreUnusedGlobalsWithCallInitializer == false);
+        }
+
         SUBCASE("propertyAccessorMode is an integer, not a bool")
         {
             // asEP_PROPERTY_ACCESSOR_MODE is the one property here whose value is not true/false,

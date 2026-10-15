@@ -1149,6 +1149,9 @@ export function buildServerArgs(): string[] {
     if (config.get<boolean>('diagnostics.reportUnusedFunctions', true) === false) {
         args.push('--no-report-unused-functions');
     }
+    if (config.get<boolean>('diagnostics.ignoreUnusedGlobalsWithCallInitializer', false) === true) {
+        args.push('--ignore-unused-globals-with-call-initializer');
+    }
     for (const fnName of config.get<string[]>('diagnostics.ignoredUnusedFunctions', [])) {
         if (typeof fnName === 'string' && fnName.trim().length > 0) {
             args.push(`--ignored-unused-function=${fnName.trim()}`);

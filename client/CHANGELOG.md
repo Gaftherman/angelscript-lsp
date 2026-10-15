@@ -4,6 +4,20 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.0-exp.6] - 2026-10-14
+
+### Client Settings Wiring Fix (`ignoreUnusedGlobalsWithCallInitializer`) and CLI Configuration Coverage
+
+- End-to-End Client Configuration Wiring:
+  - Wired `angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer` in `client/src/extension.ts` (`buildServerArgs()`), ensuring the setting declared in `package.json` is passed as `--ignore-unused-globals-with-call-initializer` to the language server executable.
+  - Resolves client CI pretest failure (`node scripts/check-settings-wired.mjs`) where undeclared client settings caused build failure.
+- CLI Argument Parsing Test Coverage (`ServerConfigTest`):
+  - Added test case validating `--ignore-unused-globals-with-call-initializer` and `--no-ignore-unused-globals-with-call-initializer` CLI argument parsing and default state in `server/tests/ServerConfigTest.cpp`.
+- Quality Gates & Invariants:
+  - Validated 100% test pass rate: 2,342 / 2,342 unit tests passed (33,897 assertions, 0 failures, 30 skipped).
+  - Validated client checks: `npm run pretest` (compile, bundle, lint, and check-settings) passed with 0 errors.
+  - All 11 static quality gates passed successfully at 100%.
+
 ## [1.1.0-exp.5] - 2026-10-14
 
 ### Codebase-Wide Dangling Reference Elimination across All Request Structs, Empty-Buffer Guards, and Monolith Refactoring

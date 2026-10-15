@@ -1099,6 +1099,37 @@ Para evitar resolver este defecto de forma aislada archivo por archivo (anti-pat
 - **Puertas de Calidad Estática**: 11/11 puertas aprobadas (`jscpd` 1.14%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
 - **Garantía de Robustez**: Inmunidad total a referencias colgantes en todas las plataformas y compiladores (MSVC, GCC, Clang).
 
+---
+
+## 19. Fase 16: Conexión Integral de Ajustes del Cliente (`ignoreUnusedGlobalsWithCallInitializer`) y Cobertura CLI en `ServerConfig`
+
+### 19.1. Diagnóstico Forense y Causa Raíz
+Durante la ejecución de CI en el cliente, el script `node scripts/check-settings-wired.mjs` falló durante el paso `npm run pretest` con:
+```text
+Settings declared in package.json but not passed to the server:
+  - angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer is never read by buildServerArgs
+```
+- **Causa Raíz**: La opción de configuración `angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer` había sido declarada en `client/package.json` y soportada en el servidor C++ a través de `ServerConfig.cpp` (`--ignore-unused-globals-with-call-initializer`) y `UnusedSymbolChecker.cpp`, pero omitida en `buildServerArgs()` dentro de `client/src/extension.ts`.
+
+### 19.2. Implementación de la Solución
+1. **Conexión en `client/src/extension.ts`**:
+   - Se añadió la lectura de `diagnostics.ignoreUnusedGlobalsWithCallInitializer` en `buildServerArgs()`:
+     ```typescript
+     if (config.get<boolean>('diagnostics.ignoreUnusedGlobalsWithCallInitializer', false) === true) {
+         args.push('--ignore-unused-globals-with-call-initializer');
+     }
+     ```
+   - El script `check-settings-wired.mjs` valida ahora que las 102 configuraciones declaradas en `package.json` llegan efectivamente al servidor.
+2. **Cobertura de Pruebas CLI en `ServerConfigTest.cpp`**:
+   - Se añadió el subcaso `ignoreUnusedGlobalsWithCallInitializer is off by default, and can be toggled via CLI` en `server/tests/ServerConfigTest.cpp`, verificando el valor por defecto (`false`), la activación con `--ignore-unused-globals-with-call-initializer` (`true`), y la desactivación con `--no-ignore-unused-globals-with-call-initializer` (`false`).
+
+### 19.3. Métricas Finales de Fase 16
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,342 / 2,342` pasadas (`33,897` aserciones, `0` fallos, `30` omitidas).
+- **Verificación de Cliente**: `npm run pretest` (compile, bundle, lint y check-settings) exitoso con código 0.
+- **Puertas de Calidad Estática**: 11/11 puertas aprobadas (`jscpd` 1.14%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
+
+
 
 
 

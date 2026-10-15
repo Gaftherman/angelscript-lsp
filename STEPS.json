@@ -472,6 +472,28 @@
         "Validated 100% test pass rate: 2,342 / 2,342 unit tests passed (33,894 assertions, 0 failures, 30 skipped).",
         "All 11 active static quality gates passed successfully at 100% (jscpd at 1.14%, Lizard CCN <= 15, NLOC <= 70, 0 dead parameters /we4100, Clang-Format 100%, Layer Matrix 100%, ast-grep 0 violations)."
       ]
+    },
+    {
+      "id": "PHASE_16",
+      "name": "Client Settings Wiring Fix (ignoreUnusedGlobalsWithCallInitializer) and ServerConfig CLI Coverage",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "client/src/extension.ts",
+        "server/tests/ServerConfigTest.cpp",
+        "CHANGELOG.md",
+        "client/CHANGELOG.md",
+        "STEPS.json",
+        "STEPS.md"
+      ],
+      "findings": [
+        "Diagnosed CI failure in client npm run pretest (node scripts/check-settings-wired.mjs) where angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer was declared in package.json but not read by buildServerArgs.",
+        "Wired diagnostics.ignoreUnusedGlobalsWithCallInitializer in client/src/extension.ts buildServerArgs(), appending --ignore-unused-globals-with-call-initializer when enabled.",
+        "Verified all 102 declared settings reach the server, with 158 manifest and 76 runtime strings fully aligned across translations.",
+        "Added unit test subcase in server/tests/ServerConfigTest.cpp validating --ignore-unused-globals-with-call-initializer and --no-ignore-unused-globals-with-call-initializer CLI parsing and default state.",
+        "Validated 100% test pass rate: 2,342 / 2,342 unit tests passed (33,897 assertions, 0 failures, 30 skipped).",
+        "Validated client pretest suite: compile (tsc), bundle (esbuild), lint (eslint), and check-settings all passed with 0 errors.",
+        "All 11 static quality gates passed successfully at 100% (check-quality.py, format-code.py --check, check-layer-includes.py, check-client-l10n.py, sync-readme-settings.py --check, jscpd at 1.14%)."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -484,9 +506,10 @@
     "GAP-PERF-02: Expression type resolution redundancy, full-file line splitting on hover, and O(N^2) using declaration traversal. (RESOLVED in Phase 11 Part 2).",
     "GAP-LEAK-01: Cross-file diagnostic range leakage from synthesized mixin symbols and missing property final accessors in RuleIndex. (RESOLVED in Phase 12).",
     "GAP-CI-01: Linux SIGSEGV and macOS SIGBUS crash at DocumentLinkTest.cpp:141 due to dangling reference in DocumentLinkRequest. (RESOLVED in Phase 14).",
-    "GAP-CI-02: Linux SIGSEGV crash at SemanticTokensTest.cpp:79 due to dangling temporary reference in SemanticTokensRequest. (RESOLVED in Phase 15)."
+    "GAP-CI-02: Linux SIGSEGV crash at SemanticTokensTest.cpp:79 due to dangling temporary reference in SemanticTokensRequest. (RESOLVED in Phase 15).",
+    "GAP-CI-03: Client CI pretest failure in check-settings-wired.mjs due to unread ignoreUnusedGlobalsWithCallInitializer in buildServerArgs. (RESOLVED in Phase 16)."
   ],
   "nextActions": [
-    "Phase 15 completed with 100% test pass rate, memory safety validated across all Request/Context structs, and all static quality gates green."
+    "Phase 16 completed with 100% test pass rate, end-to-end client configuration wiring, and all static quality gates green."
   ]
 }
