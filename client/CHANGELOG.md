@@ -4,6 +4,28 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.0-exp.8] - 2026-10-15
+
+### AST Traversal & Parent-Climb Optimizations, Hot-Path Collector Fast-Paths & Governance Quality Gate
+
+- $O(1)$ Document Root Node Extraction:
+  - Introduced `parser::GetRootNode(node)` in `server/src/parser/ASTUtils.h` and `server/src/analysis/ASTUtils.h` utilizing `ts_tree_root_node(node.tree)` for constant-time root resolution.
+  - Eradicated all unbounded `while (!ts_node_is_null(ts_node_parent(node)))` climb loops across `CallChecker.cpp` and `SemanticHelpers.cpp`.
+  - Enforced a 16-hop upper bound on upward searches in `CompletionHandler.cpp` and `HoverHandler.cpp` via `parser::GetParent`.
+- Zero Raw `ts_node_parent` Calls on Hot-Path Symbol & Scope Collectors:
+  - `LocalScopeCollector`: Extended `RawCapture` with `TSSymbol enclosingCallableSym`, caching callable ownership during S-expression query extraction; deleted `FindOwningCallable` and eliminated raw `ts_node_parent` calls (strictly 0).
+  - `SymbolCollector`: Added `(lambda_expression) @definition.lambda` to `TAGS_QUERY` in `BuiltQueries.h` and tracked lambda containment via the container stack in `PushContainerIfApplicable`; deleted `IsEnclosedInLambda` and dead scope context helpers; eliminated raw `ts_node_parent` calls (strictly 0).
+  - `SemanticTokensHandler`: Replaced string-based AST comparisons in `IsTemplatePunctuationNode` and `IsReferenceModifierNode` with pre-resolved `TSSymbol` comparisons; eliminated raw `ts_node_parent` calls (strictly 0).
+- Static Quality Gates & Governance Harness:
+  - Added `server/rules/ast-grep/no-root-climb-loop.yml` detecting unbounded AST root-climb loops.
+  - Implemented `server/scripts/check-ast-traversal.py` and integrated as Gate 9 in `server/scripts/check-quality.py`.
+  - Formalized Rule 7 (AST Traversal & Parent-Climb Invariants) and Prohibition 12 (No Unbounded Parent-Climb Loops or Hot-Path `ts_node_parent` Iteration) in `AGENTS.md` and `.agents/AGENTS.md`.
+  - Added comprehensive test suite in `server/tests/AstStructuralTraversalParityTest.cpp`.
+- Quality Gates & Invariants:
+  - Validated 100% test pass rate: 2,344 / 2,344 unit tests passed (33,883 assertions, 0 failures, 30 skipped).
+  - All 12 active static quality gates passed successfully at 100% (`check-ast-traversal.py` clean, `jscpd` at 1.14%, Lizard CCN <= 15, NLOC <= 70, 0 dead parameters `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violations).
+  - Client pretest passed: compile, bundle, lint, and 102 settings wired.
+
 ## [1.1.0-exp.7] - 2026-10-15
 
 ### Scope Isolation & Parameter Leakage Elimination, False E104 (`as-err-duplicate-symbol`) Fix for Lambdas & Sequential Loops

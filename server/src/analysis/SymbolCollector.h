@@ -337,11 +337,6 @@ class SymbolCollector
     /** @brief Runs diagnostics and the TAGS_QUERY dispatch loop over a parsed root node. */
     void CollectFromTree(TSNode rootNode, SymbolCollectContext& sCtx);
 
-    /** @brief Walks node's ancestors to derive the enclosing container path and nesting flags. */
-    CollectionContext BuildContext(TSNode node, std::string_view sourceCode) const;
-    CollectionContext DetermineScopeAndAccess(TSNode node, std::string_view sourceCode) const;
-    void ExtractContainerInfo(TSNode current, std::string_view sourceCode, CollectionContext& ctx) const;
-
     void PushContainerIfApplicable(uint32_t captureIdx, TSNode node, const SymbolCollectContext& sCtx,
                                    std::vector<ActiveContainer>& stack) const;
     void PushClassContainer(TSNode node, const SymbolCollectContext& sCtx, std::vector<ActiveContainer>& stack) const;
@@ -385,6 +380,7 @@ class SymbolCollector
 
     void ProcessProperty(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
     void ProcessInterface(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    void ProcessLambda(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
 
     // =====================================================================================
     // Reference & Out-of-Body Call Collectors
@@ -433,6 +429,5 @@ class SymbolCollector
     Symbol CreateSymbol(SymbolType type, TSNode node, TSNode nameNode, const SymbolLocationContext& loc) const;
 
     std::vector<std::string> ExtractBases(TSNode classNode, std::string_view sourceCode) const;
-    mutable ankerl::unordered_dense::map<const void*, CollectionContext> m_scopeContextCache;
 };
 } // namespace angel_lsp::analysis

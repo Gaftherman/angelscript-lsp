@@ -178,6 +178,8 @@ SymbolCollector::ProcessFn SymbolCollector::ResolveCaptureHandler(std::string_vi
         return &SymbolCollector::ProcessProperty;
     if (captureName == "reference.call")
         return &SymbolCollector::ProcessCallReference;
+    if (captureName == "definition.lambda")
+        return &SymbolCollector::ProcessLambda;
     return nullptr;
 }
 
@@ -414,11 +416,16 @@ void SymbolCollector::PushContainerIfApplicable(uint32_t captureIdx, TSNode node
     {
         PushFunctionContainer(node, sCtx, stack);
     }
+    else if (fn == &SymbolCollector::ProcessLambda)
+    {
+        CollectionContext lambdaCtx = stack.empty() ? CollectionContext{} : stack.back().ctx;
+        lambdaCtx.isInsideFunction = true;
+        stack.push_back({ts_node_end_byte(node), std::move(lambdaCtx)});
+    }
 }
 
 void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCtx)
 {
-    m_scopeContextCache.clear();
     sCtx.sourceHasBrackets = !sCtx.isPredefined && (sCtx.request.sourceCode.find('[') != std::string_view::npos);
     const size_t estimatedCapacity =
         sCtx.request.sourceCode.size() > 16384 ? (sCtx.request.sourceCode.size() / 128) : 256;
@@ -460,120 +467,9 @@ void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCt
     sCtx.symbolTable.AddSymbols(std::move(sCtx.collectedSymbols));
 }
 
-void SymbolCollector::ExtractContainerInfo(TSNode current, std::string_view sourceCode, CollectionContext& ctx) const
+void SymbolCollector::ProcessLambda([[maybe_unused]] TSNode node, [[maybe_unused]] SymbolCollectContext& sCtx,
+                                    [[maybe_unused]] const CollectionContext& ctx)
 {
-    TSSymbol sym = ts_node_symbol(current);
-    if (!ctx.isInsideFunction &&
-        (sym == m_symFuncDeclaration || sym == m_symStatementBlock || sym == m_symLambdaExpression))
-    {
-        ctx.isInsideFunction = true;
-    }
-
-    if (sym == m_symClassBody || sym == m_symInterfaceBody)
-    {
-        if (ctx.containerKind == ContainerKind::None)
-        {
-            ctx.containerKind = (sym == m_symClassBody) ? ContainerKind::Class : ContainerKind::Interface;
-        }
-        ctx.isInsideClass = true;
-        TSNode parentDecl = ts_node_parent(current);
-        TSNode nameNode = GetChildByFieldName(parentDecl, "name");
-        std::string name = GetNodeText(nameNode, sourceCode);
-        const size_t angleInName = name.find('<');
-        if (angleInName != std::string::npos)
-        {
-            name = name.substr(0, angleInName);
-        }
-        if (ctx.containerPath.empty())
-        {
-            ctx.containerPath = std::move(name);
-        }
-        else
-        {
-            std::string tmp;
-            appendQualifiedName(tmp, name, ctx.containerPath);
-            ctx.containerPath = std::move(tmp);
-        }
-    }
-    else if (sym == m_symNamespaceBody)
-    {
-        if (ctx.containerKind == ContainerKind::None)
-        {
-            ctx.containerKind = ContainerKind::Namespace;
-        }
-        ctx.isInsideNamespace = true;
-        TSNode parentDecl = ts_node_parent(current);
-        TSNode nameNode = GetChildByFieldName(parentDecl, "name");
-        std::string name = GetNodeText(nameNode, sourceCode);
-        if (ctx.containerPath.empty())
-        {
-            ctx.containerPath = std::move(name);
-        }
-        else
-        {
-            std::string tmp;
-            appendQualifiedName(tmp, name, ctx.containerPath);
-            ctx.containerPath = std::move(tmp);
-        }
-    }
-}
-
-SymbolCollector::CollectionContext SymbolCollector::DetermineScopeAndAccess(TSNode node,
-                                                                            std::string_view sourceCode) const
-{
-    TSNode parent = ts_node_parent(node);
-    if (ts_node_is_null(parent))
-    {
-        return CollectionContext{};
-    }
-
-    const void* parentId = parent.id;
-    auto cacheIt = m_scopeContextCache.find(parentId);
-    if (cacheIt != m_scopeContextCache.end())
-    {
-        return cacheIt->second;
-    }
-
-    CollectionContext ctx;
-    TSNode current = parent;
-
-    while (!ts_node_is_null(current))
-    {
-        const void* curId = current.id;
-        auto curIt = m_scopeContextCache.find(curId);
-        if (curIt != m_scopeContextCache.end())
-        {
-            if (ctx.containerPath.empty())
-            {
-                ctx.containerPath = curIt->second.containerPath;
-            }
-            else if (!curIt->second.containerPath.empty())
-            {
-                std::string tmp;
-                appendQualifiedName(tmp, curIt->second.containerPath, ctx.containerPath);
-                ctx.containerPath = std::move(tmp);
-            }
-            if (ctx.containerKind == ContainerKind::None)
-            {
-                ctx.containerKind = curIt->second.containerKind;
-            }
-            ctx.isInsideClass = ctx.isInsideClass || curIt->second.isInsideClass;
-            ctx.isInsideNamespace = ctx.isInsideNamespace || curIt->second.isInsideNamespace;
-            ctx.isInsideFunction = ctx.isInsideFunction || curIt->second.isInsideFunction;
-            break;
-        }
-
-        ExtractContainerInfo(current, sourceCode, ctx);
-        current = ts_node_parent(current);
-    }
-
-    m_scopeContextCache[parentId] = ctx;
-    return ctx;
-}
-
-SymbolCollector::CollectionContext SymbolCollector::BuildContext(TSNode node, std::string_view sourceCode) const
-{
-    return DetermineScopeAndAccess(node, sourceCode);
 }
 
 // =========================================================================================
@@ -855,33 +751,9 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
     ts_tree_cursor_delete(&cursor);
 }
 
-/**
- * @brief Traverses up the AST from a variable declaration to determine if it resides inside a lambda.
- * @param[in] node AST variable declaration node.
- * @return True if enclosed within a lambda expression, false otherwise.
- */
-static bool IsEnclosedInLambda(TSNode node)
-{
-    TSNode curr = ts_node_parent(node);
-    for (size_t depth = 0; depth < 64 && !ts_node_is_null(curr); ++depth, curr = ts_node_parent(curr))
-    {
-        std::string_view type(ts_node_type(curr));
-        if (type == "lambda_expression")
-        {
-            return true;
-        }
-        if (type == "class_declaration" || type == "interface_declaration" || type == "namespace_declaration" ||
-            type == "script")
-        {
-            return false;
-        }
-    }
-    return false;
-}
-
 void SymbolCollector::ProcessVariable(TSNode varDeclNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
-    if (ctx.isInsideFunction || IsEnclosedInLambda(varDeclNode))
+    if (ctx.isInsideFunction)
         return;
 
     if (ts_node_symbol(varDeclNode) == m_symVirtualProperty)
@@ -1590,7 +1462,7 @@ namespace
 bool TryFormatArgumentListSyntaxError(TSNode node, std::string_view sourceCode, const angel_lsp::i18n::I18n* i18n,
                                       Diagnostic& diag)
 {
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "argument_list")
     {
         return false;
@@ -2104,7 +1976,7 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
         TSNode declNode = node;
         if (ts_node_symbol(node) == m_symVariableDeclarator)
         {
-            TSNode parentNode = ts_node_parent(node);
+            TSNode parentNode = parser::GetParent(node);
             if (!ts_node_is_null(parentNode))
             {
                 declNode = parentNode;

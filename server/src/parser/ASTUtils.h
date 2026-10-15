@@ -23,6 +23,26 @@ namespace angel_lsp::parser
 }
 
 /**
+ * @brief Returns the root AST node of the document containing the given node in O(1).
+ * @param[in] node Any AST node within a parsed tree.
+ * @return Root TSNode of the tree, or a null node if node is null or unassociated.
+ */
+[[nodiscard]] inline TSNode GetRootNode(TSNode node) noexcept
+{
+    return (ts_node_is_null(node) || node.tree == nullptr) ? TSNode{} : ts_tree_root_node(node.tree);
+}
+
+/**
+ * @brief Returns the immediate parent AST node safely via ts_node_parent.
+ * @param[in] node Child AST node.
+ * @return Parent AST node or null node if node is null or at root.
+ */
+[[nodiscard]] inline TSNode GetParent(TSNode node) noexcept
+{
+    return ts_node_is_null(node) ? TSNode{} : ts_node_parent(node);
+}
+
+/**
  * @brief Convertible string slice of an AST node that converts to both std::string_view and std::string.
  *
  * Resolves the conversion barrier where callers needing an owning std::string had to either

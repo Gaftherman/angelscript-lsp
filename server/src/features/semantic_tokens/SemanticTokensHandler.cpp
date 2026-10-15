@@ -2,6 +2,7 @@
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
@@ -207,38 +208,28 @@ const GrammarSymbols& GetGrammarSymbols()
 }
 
 /**
- * @brief Checks if an AST node is a `<` or `>` bracket in a template type list or cast.
- * @param[in] node AST node to check.
- * @return True if node is template punctuation.
+ * @brief Fast-path check using pre-resolved TSSymbols for template brackets.
+ * @param[in] parentSym Grammar symbol of parent node.
+ * @param[in] grandParentSym Grammar symbol of grandparent node.
+ * @param[in] syms Cached grammar symbols.
+ * @return True if symbols match template punctuation patterns.
  */
-[[nodiscard]] inline bool IsTemplatePunctuationNode(TSNode node) noexcept
+[[nodiscard]] inline bool IsTemplatePunctuation(TSSymbol parentSym, TSSymbol grandParentSym,
+                                                const GrammarSymbols& syms) noexcept
 {
-    TSNode parent = ts_node_parent(node);
-    if (ts_node_is_null(parent))
-    {
-        return false;
-    }
-
-    const auto& syms = GetGrammarSymbols();
-    const TSSymbol parentSym = ts_node_symbol(parent);
     if (parentSym == syms.symTemplateTypeList || parentSym == syms.symCastExpression ||
         parentSym == syms.symTemplateParameterList)
     {
         return true;
     }
 
-    TSNode grandParent = ts_node_parent(parent);
-    if (!ts_node_is_null(grandParent))
+    if (grandParentSym == syms.symTemplateTypeList || grandParentSym == syms.symCastExpression ||
+        grandParentSym == syms.symTemplateParameterList)
     {
-        const TSSymbol grandParentSym = ts_node_symbol(grandParent);
-        if (grandParentSym == syms.symTemplateTypeList || grandParentSym == syms.symCastExpression ||
-            grandParentSym == syms.symTemplateParameterList)
+        if (parentSym != syms.symBinaryExpression && parentSym != syms.symAssignmentExpression &&
+            parentSym != syms.symUnaryExpression && parentSym != syms.symPostfixExpression)
         {
-            if (parentSym != syms.symBinaryExpression && parentSym != syms.symAssignmentExpression &&
-                parentSym != syms.symUnaryExpression && parentSym != syms.symPostfixExpression)
-            {
-                return true;
-            }
+            return true;
         }
     }
 
@@ -296,6 +287,24 @@ const GrammarSymbols& GetGrammarSymbols()
 }
 
 /**
+ * @brief Fast-path check using pre-resolved TSSymbols for reference modifier '&'.
+ * @param[in] parentSym Grammar symbol of parent node.
+ * @param[in] grandParentSym Grammar symbol of grandparent node.
+ * @param[in] syms Cached grammar symbols.
+ * @return True if symbols match reference modifier patterns.
+ */
+[[nodiscard]] inline bool IsReferenceModifier(TSSymbol parentSym, TSSymbol grandParentSym,
+                                              const GrammarSymbols& syms) noexcept
+{
+    if (parentSym == syms.symParameter || parentSym == syms.symType || parentSym == syms.symDatatype ||
+        parentSym == syms.symTemplateTypeList || parentSym == syms.symCastExpression)
+    {
+        return true;
+    }
+    return grandParentSym == syms.symParameter || grandParentSym == syms.symType || grandParentSym == syms.symDatatype;
+}
+
+/**
  * @brief Checks if a node is an '&' used as a type or parameter reference modifier.
  * @param[in] node AST node for '&'.
  * @param[in] syms Cached grammar symbols.
@@ -303,24 +312,15 @@ const GrammarSymbols& GetGrammarSymbols()
  */
 [[nodiscard]] inline bool IsReferenceModifierNode(TSNode node, const GrammarSymbols& syms) noexcept
 {
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     if (ts_node_is_null(parent))
     {
         return false;
     }
-    const TSSymbol parentSym = ts_node_symbol(parent);
-    if (parentSym == syms.symParameter || parentSym == syms.symType || parentSym == syms.symDatatype ||
-        parentSym == syms.symTemplateTypeList || parentSym == syms.symCastExpression)
-    {
-        return true;
-    }
-    TSNode grandParent = ts_node_parent(parent);
-    if (!ts_node_is_null(grandParent))
-    {
-        const TSSymbol gpSym = ts_node_symbol(grandParent);
-        return gpSym == syms.symParameter || gpSym == syms.symType || gpSym == syms.symDatatype;
-    }
-    return false;
+    TSNode grandParent = parser::GetParent(parent);
+    TSSymbol parentSym = ts_node_symbol(parent);
+    TSSymbol grandParentSym = !ts_node_is_null(grandParent) ? ts_node_symbol(grandParent) : 0;
+    return IsReferenceModifier(parentSym, grandParentSym, syms);
 }
 
 /**
@@ -896,7 +896,7 @@ PrecalculateScopedEnumUpgrades(const analysis::NodeIndex* nodeIndex, std::string
     }
     for (TSNode scopeNode : nodeIndex->Nodes(syms.symScope))
     {
-        TSNode parentNode = ts_node_parent(scopeNode);
+        TSNode parentNode = parser::GetParent(scopeNode);
         if (!ts_node_is_null(parentNode) && ts_node_symbol(parentNode) == syms.symType)
         {
             UpgradeScopedTypeEnumTokens(parentNode, sourceCode, symbolTable, upgrades);
@@ -1459,6 +1459,19 @@ lsp::SemanticTokens DeltaEncodeTokens(const std::vector<RawToken>& tokens)
     return lsp::SemanticTokens{std::move(data)};
 }
 } // namespace
+
+bool IsTemplatePunctuationNode(TSNode node) noexcept
+{
+    TSNode parent = parser::GetParent(node);
+    if (ts_node_is_null(parent))
+    {
+        return false;
+    }
+    TSNode grandParent = parser::GetParent(parent);
+    TSSymbol parentSym = ts_node_symbol(parent);
+    TSSymbol grandParentSym = !ts_node_is_null(grandParent) ? ts_node_symbol(grandParent) : 0;
+    return IsTemplatePunctuation(parentSym, grandParentSym, GetGrammarSymbols());
+}
 
 const lsp::SemanticTokensLegend& GetSemanticTokensLegend()
 {

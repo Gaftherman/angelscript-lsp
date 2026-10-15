@@ -14,6 +14,8 @@ using parser::ForEachDescendantNode;
 using parser::ForEachNamedChildNode;
 using parser::ForEachNamedChildNodeUntil;
 using parser::GetNodeText;
+using parser::GetParent;
+using parser::GetRootNode;
 using parser::NodeText;
 using parser::NodeTextResult;
 using parser::NodeTextString;

@@ -363,15 +363,8 @@ void CollectUsingNamespaceCandidates(const std::string& name, const std::vector<
         return;
     }
 
-    const auto usings = ctx.nodeIndex ? CollectUsingNamespaces(*ctx.nodeIndex, ctx.sourceCode) : [&]()
-    {
-        TSNode documentRoot = ctx.callNode;
-        while (!ts_node_is_null(ts_node_parent(documentRoot)))
-        {
-            documentRoot = ts_node_parent(documentRoot);
-        }
-        return CollectUsingNamespaces(documentRoot, ctx.sourceCode);
-    }();
+    const auto usings = ctx.nodeIndex ? CollectUsingNamespaces(*ctx.nodeIndex, ctx.sourceCode)
+                                      : CollectUsingNamespaces(GetRootNode(ctx.callNode), ctx.sourceCode);
 
     for (const auto& imported : usings)
     {

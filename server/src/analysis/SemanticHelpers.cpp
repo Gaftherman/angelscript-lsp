@@ -1960,12 +1960,7 @@ static bool IsKnownInUsingNamespaces(const SymbolTable& table, const std::string
         return false;
     }
 
-    TSNode root = node;
-    while (!ts_node_is_null(ts_node_parent(root)))
-    {
-        root = ts_node_parent(root);
-    }
-    auto usings = CollectUsingNamespaces(root, sourceCode);
+    auto usings = CollectUsingNamespaces(GetRootNode(node), sourceCode);
     for (const auto& ns : usings)
     {
         std::string q = ns + "::" + prefix;

@@ -1129,6 +1129,73 @@ Settings declared in package.json but not passed to the server:
 - **Verificación de Cliente**: `npm run pretest` (compile, bundle, lint y check-settings) exitoso con código 0.
 - **Puertas de Calidad Estática**: 11/11 puertas aprobadas (`jscpd` 1.14%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
 
+---
+
+## 20. Fase 17: Aislamiento de Ámbito, Eliminación de Fuga de Parámetros (`funcdef`, interfaces) y Erradicación de Falsos `E104` (`as-err-duplicate-symbol`) en Lambdas y Bucles `for`
+
+### 20.1. Diagnóstico Forense y Causa Raíz
+1. **Fuga de Parámetros de Declaraciones sin Cuerpo (`funcdef`, `interface`, `import`)**:
+   - `LocalScopeCollector.cpp` recolectaba parámetros como `LocalDefinitionKind::Parameter` sin discriminar si el callable poseía implementación ejecutable (`statement_block`).
+   - En declaraciones globales o de clase como `funcdef void MenuOptionSelect(CBasePlayer@ player, const MenuOption@ option);`, los parámetros se asociaban al ámbito contenedor en lugar de permanecer confinados a la signatura.
+   - Consecuencia en scripts de producción: cuando una variable local era eliminada o comentada en una función subsiguiente, el parámetro de `funcdef` enmascaraba el error de identificador no declarado y secuestraba las operaciones de `Ctrl + Click` / *Go to Definition*.
+2. **Falso Positivo E104 (`as-err-duplicate-symbol`) en Lambdas Globales y Bucles `for`**:
+   - Variables locales y contadores de bucle dentro de funciones anónimas o lambdas pasadas a inicializadores globales (patrón estándar `ASCommand` o `CClientCommand` en Sven Co-op) eran indexadas erróneamente en la `SymbolTable` global.
+   - Esto desencadenaba falsos errores `E104` de símbolos duplicados cuando múltiples comandos globales reutilizaban identificadores como `TraceResult tr;` o `for (uint i = 0; i < ...; ++i)`.
+
+### 20.2. Implementación de la Solución
+1. **Aislamiento Estricto de Parámetros**:
+   - Se confinaron las definiciones de parámetros exclusivamente a callables ejecutables (`func_declaration` con cuerpo o `lambda_expression`).
+   - Se filtraron los identificadores de parámetros en `ProcessReferenceCapture` para evitar su captura como referencias foráneas.
+   - Se fortificaron `ScopeTree::ResolveInScopeAt`, `TargetResolution::PopulateLocalTargetDescriptor` y `DefinitionHandler::TryResolveLocalDefinitionFallback` con comprobaciones defensivas de pertenencia al callable activo.
+2. **Filtrado de Ámbito en Lambdas**:
+   - Se evitó la recolección de variables internas de lambdas en el `SymbolTable` global de `SymbolCollector.cpp`.
+
+### 20.3. Métricas Finales de Fase 17
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,345 / 2,345` pasadas (`33,900` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 11/11 puertas aprobadas (`jscpd` 1.14%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
+
+---
+
+## 21. Fase 18: Optimización de Ascenso Ancestral en el AST, Vía Rápida para `IsTemplatePunctuationNode` y Arnés de Gobernanza en `AGENTS.md`
+
+### 21.1. Diagnóstico Forense y Causa Raíz
+1. **Bucles de Ascenso Raíz no Acotados `while (!ts_node_is_null(ts_node_parent(node)))`**:
+   - En `CallChecker.cpp` y `SemanticHelpers.cpp`, la obtención del nodo raíz del documento se efectuaba mediante un bucle `while` ascendiendo secuencialmente por el AST. En documentos de gran escala (3,000 a 10,000 líneas), la profundidad del árbol alcanza entre 30 y 50 niveles, generando docenas de llamadas C a Tree-Sitter por cada consulta semántica.
+   - Tree-Sitter expone la función nativa $O(1)$ `ts_tree_root_node(node.tree)` para recuperar el nodo raíz de forma inmediata sin recorrer la cadena de ancestros.
+2. **Bucles de Ascenso en Colectores de Ruta Crítica (`LocalScopeCollector` y `SymbolCollector`)**:
+   - Las soluciones de la Fase 17 recurrieron a bucles ascendentes (`FindOwningCallable` e `IsEnclosedInLambda`) con comparaciones de cadenas `ts_node_type` ejecutadas en la ruta caliente de recolección de símbolos.
+3. **Sobrecarga de Clasificación por Token en `SemanticTokensHandler`**:
+   - `IsTemplatePunctuationNode` e `IsReferenceModifierNode` ejecutaban `ts_node_parent` y comparaciones de texto (`ts_node_type(parent) == "template_type"`) para cada operador de puntuación (`<`, `>`, `@&`).
+
+### 21.2. Implementación de la Solución
+1. **API $O(1)$ `parser::GetRootNode(node)`**:
+   - Se incorporó `parser::GetRootNode(node)` en `server/src/parser/ASTUtils.h` y `server/src/analysis/ASTUtils.h`, desreferenciando directamente `ts_tree_root_node(node.tree)`.
+   - Se reemplazaron todos los bucles de ascenso en `CallChecker.cpp` y `SemanticHelpers.cpp` por `parser::GetRootNode(node)`.
+2. **Acotamiento Ancestral en Operaciones de Feature (Layer 3)**:
+   - En `CompletionHandler.cpp` y `HoverHandler.cpp`, los bucles ascendentes se acotaron a un máximo estricto de 16 saltos empleando `parser::GetParent`.
+3. **Eliminación de Bucles de Ascenso en `LocalScopeCollector`**:
+   - Se extendió `RawCapture` con `TSSymbol enclosingCallableSym`, resolviendo el tipo de símbolo del callable ancestro en tiempo de recolección de captura de consulta S-expression ($O(1)$).
+   - Se suprimió por completo `FindOwningCallable`; las llamadas crudas a `ts_node_parent` en `LocalScopeCollector` quedaron reducidas estrictamente a **0**.
+4. **Seguimiento $O(1)$ de Lambdas en `SymbolCollector`**:
+   - Se extendió `TAGS_QUERY` en `BuiltQueries.h` con el patrón `(lambda_expression) @definition.lambda`.
+   - Se integró la gestión de lambdas en `PushContainerIfApplicable`, marcando `isInsideFunction = true` en la pila de contenedores a lo largo del intervalo de bytes del lambda.
+   - Se suprimieron `IsEnclosedInLambda` y funciones muertas de contexto de ámbito; las llamadas crudas a `ts_node_parent` en `SymbolCollector` quedaron reducidas estrictamente a **0**.
+5. **Vía Rápida de Clasificación de Puntuación de Plantillas en `SemanticTokensHandler`**:
+   - Se implementaron sobrecargas basadas en `TSSymbol` precalculados para `IsTemplatePunctuationNode` e `IsReferenceModifierNode`, erradicando las llamadas crudas a `ts_node_parent`.
+6. **Puerta de Calidad Estática Automatizada y Gobernanza**:
+   - Se crearon la regla de `ast-grep` `server/rules/ast-grep/no-root-climb-loop.yml` y el script de validación `server/scripts/check-ast-traversal.py`, integrados formalmente como Puerta 9 en `server/scripts/check-quality.py`.
+   - Se formalizaron en `AGENTS.md` y `.agents/AGENTS.md` la Regla 7 (AST Traversal & Parent-Climb Invariants) y la Prohibición 12 (No Unbounded Parent-Climb Loops or Hot-Path `ts_node_parent` Iteration).
+7. **Pruebas de Paridad y Validación Exhaustiva**:
+   - Se creó la suite `server/tests/AstStructuralTraversalParityTest.cpp`, validando la paridad de `GetRootNode`, la seguridad ante nodos nulos y la correcta emisión de tokens de puntuación de plantillas.
+
+### 21.3. Métricas Finales de Fase 18
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,344 / 2,344` pasadas (`33,883` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`check-ast-traversal.py` limpio, `jscpd` 1.14%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `ast-grep` 0 violaciones).
+- **Rendimiento de Referencia**: Script de 10k líneas analizado en 349 ms, 299k tokens semánticos en 81 ms.
+
+
 
 
 

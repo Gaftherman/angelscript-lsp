@@ -41,6 +41,9 @@ def main():
     run_step("Tree-Sitter Grammar Names", "python server/scripts/check-grammar-names.py")
     run_step("Tree-Sitter Grammar Pin", "python server/scripts/check-grammar-pin.py")
 
+    # 6. AST Traversal & Parent-Climb Invariants
+    run_step("AST Traversal Invariants", "python server/scripts/check-ast-traversal.py")
+
     # 6. Code Duplication Gate (jscpd threshold <= 3%)
     if shutil.which("npx"):
         run_step("Code Duplication (jscpd)", "npx jscpd server/src/")

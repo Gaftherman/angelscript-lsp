@@ -393,6 +393,9 @@ namespace angel_lsp::parser::queries
 ; Variables
 (variable_declaration) @definition.variable
 
+; Lambda expressions (tracked as containers for local variable isolation)
+(lambda_expression) @definition.lambda
+
 ; Function calls (references), including namespace-qualified calls (e.g. NS::Func()).
 ; The grammar always parses a call target without a member access as scoped_identifier,
 ; even for a plain unqualified call like Foo() - there is no bare (identifier) call target.

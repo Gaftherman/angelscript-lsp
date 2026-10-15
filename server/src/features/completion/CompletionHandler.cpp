@@ -1575,9 +1575,9 @@ static TSNode FindReceiverPrecedingDot(TSNode rootNode, std::string_view sourceC
         return TSNode{};
     }
     TSNode curr = leaf;
-    while (!ts_node_is_null(ts_node_parent(curr)))
+    for (size_t depth = 0; depth < 16 && !ts_node_is_null(parser::GetParent(curr)); ++depth)
     {
-        TSNode p = ts_node_parent(curr);
+        TSNode p = parser::GetParent(curr);
         std::string_view pType = ts_node_type(p);
         if (IsExpressionBoundaryType(pType) || ts_node_end_byte(p) > dotByteOffset)
         {

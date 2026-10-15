@@ -142,11 +142,28 @@ std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNod
                 continue;
 
             TSNode node = match.captures[i].node;
-            TSNode parent = GetParent(node);
-            TSNode grandparent = GetParent(parent);
-            captures.push_back(RawCapture{
-                node, parent, grandparent, ts_node_start_byte(node), ts_node_end_byte(node), kind,
-                kind == CaptureKind::Definition ? m_definitionKinds[captureIdx] : LocalDefinitionKind::Variable});
+            TSNode parent = parser::GetParent(node);
+            TSNode grandparent = parser::GetParent(parent);
+            LocalDefinitionKind defKind =
+                kind == CaptureKind::Definition ? m_definitionKinds[captureIdx] : LocalDefinitionKind::Variable;
+
+            TSSymbol enclosingCallableSym = 0;
+            if (defKind == LocalDefinitionKind::Parameter)
+            {
+                TSSymbol parentSym = !ts_node_is_null(parent) ? ts_node_symbol(parent) : 0;
+                if (parentSym == m_symLambdaParameterList)
+                {
+                    enclosingCallableSym = m_symLambdaExpression;
+                }
+                else if (!ts_node_is_null(grandparent))
+                {
+                    TSNode callable = parser::GetParent(grandparent);
+                    enclosingCallableSym = !ts_node_is_null(callable) ? ts_node_symbol(callable) : 0;
+                }
+            }
+
+            captures.push_back(RawCapture{node, parent, grandparent, ts_node_start_byte(node), ts_node_end_byte(node),
+                                          kind, defKind, enclosingCallableSym});
         }
     }
 
@@ -265,44 +282,32 @@ void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::ve
 }
 
 /**
- * @brief Traverses up the AST from a parameter node to find its enclosing callable declaration.
- * @param[in] paramNode Parameter AST node.
- * @return Enclosing callable declaration node, or null node if none found.
+ * @brief Checks whether a parameter capture belongs to an executable callable scope.
+ * @param kind Active lexical scope kind.
+ * @param enclosingSym Pre-resolved symbol of enclosing callable declaration.
+ * @param symFunc Function declaration symbol.
+ * @param symLambda Lambda expression symbol.
+ * @return True if valid parameter definition, false if leaked from signature-only callable.
  */
-static TSNode FindOwningCallable(TSNode paramNode)
+static bool IsValidParameterCapture(ScopeKind kind, TSSymbol enclosingSym, TSSymbol symFunc,
+                                    TSSymbol symLambda) noexcept
 {
-    TSNode curr = paramNode;
-    for (size_t depth = 0; depth < 64 && !ts_node_is_null(curr); ++depth, curr = ts_node_parent(curr))
+    if (kind != ScopeKind::Function && kind != ScopeKind::Closure)
     {
-        std::string_view type(ts_node_type(curr));
-        if (type == "func_declaration" || type == "lambda_expression" || type == "funcdef_declaration" ||
-            type == "interface_method" || type == "import_declaration")
-        {
-            return curr;
-        }
+        return false;
     }
-    return TSNode{};
+    return enclosingSym == symFunc || enclosingSym == symLambda;
 }
 
 /**
- * @brief Checks whether a parameter capture belongs to an executable callable scope.
- * @param[in] current Active lexical scope.
- * @param[in] paramNode Parameter AST node.
- * @return True if valid parameter definition, false if leaked from signature-only callable.
+ * @brief Checks if a declared variable type name resolves to a disallowed reserved keyword.
+ * @param typeName Type string to inspect.
+ * @return True if type name is a disallowed keyword.
  */
-static bool IsValidParameterDefinition(const Scope* current, TSNode paramNode)
+static bool IsDisallowedVariableType(std::string_view typeName)
 {
-    if (current->kind != ScopeKind::Function && current->kind != ScopeKind::Closure)
-    {
-        return false;
-    }
-    TSNode owningCallable = FindOwningCallable(paramNode);
-    if (ts_node_is_null(owningCallable))
-    {
-        return false;
-    }
-    std::string_view callableType(ts_node_type(owningCallable));
-    return callableType == "func_declaration" || callableType == "lambda_expression";
+    const std::string baseType = CleanBaseType(typeName);
+    return IsReservedKeyword(baseType) && !IsPrimitiveTypeName(baseType) && baseType != "auto";
 }
 
 void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, const std::vector<OpenScope>& stack,
@@ -314,7 +319,9 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
     }
 
     Scope* current = stack.back().scope;
-    if (capture.definitionKind == LocalDefinitionKind::Parameter && !IsValidParameterDefinition(current, capture.node))
+    if (capture.definitionKind == LocalDefinitionKind::Parameter &&
+        !IsValidParameterCapture(current->kind, capture.enclosingCallableSym, m_symFuncDeclaration,
+                                 m_symLambdaExpression))
     {
         return;
     }
@@ -340,9 +347,7 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
         capture.definitionKind == LocalDefinitionKind::Parameter)
     {
         ReadVariableTypeInfo(capture, sourceCode, def);
-        const std::string baseType = CleanBaseType(def.typeName);
-        if (capture.definitionKind == LocalDefinitionKind::Variable && IsReservedKeyword(baseType) &&
-            !IsPrimitiveTypeName(baseType) && baseType != "auto")
+        if (capture.definitionKind == LocalDefinitionKind::Variable && IsDisallowedVariableType(def.typeName))
         {
             return;
         }
@@ -410,7 +415,7 @@ void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode pare
         if (wpType == "member_expression" || wpType == "scoped_identifier")
         {
             walk = walkParent;
-            walkParent = GetParent(walkParent);
+            walkParent = parser::GetParent(walkParent);
         }
         else
         {
@@ -437,7 +442,7 @@ static bool IsTypeSpecifierContext(TSNode parent)
         }
         if (t == "scoped_identifier" || t == "scope")
         {
-            cur = LocalScopeCollector::GetParent(cur);
+            cur = parser::GetParent(cur);
             continue;
         }
         break;
@@ -513,7 +518,7 @@ static bool ShouldSkipReferenceCapture(TSNode parent, ScopeKind scopeKind, bool 
             {
                 return true;
             }
-            curr = LocalScopeCollector::GetParent(curr);
+            curr = parser::GetParent(curr);
         }
     }
     return false;
@@ -544,7 +549,7 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
     TSNode parent = capture.parent;
     if (ts_node_is_null(parent))
     {
-        parent = GetParent(capture.node);
+        parent = parser::GetParent(capture.node);
     }
     const bool hasMetadataInDoc = (sourceCode.find('[') != std::string::npos);
     if (ShouldSkipReferenceCapture(parent, current->kind, hasMetadataInDoc) ||
@@ -555,8 +560,8 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
 
     if (!ts_node_is_null(parent))
     {
-        std::string_view pType(ts_node_type(parent));
-        if (pType == "parameter" || pType == "lambda_parameter_list")
+        TSSymbol pSym = ts_node_symbol(parent);
+        if (pSym == m_symParameter || pSym == m_symLambdaParameterList)
         {
             TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
             if (ts_node_eq(nameNode, capture.node) ||
@@ -864,7 +869,7 @@ void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, 
 {
     if (ts_node_is_null(declarationNode))
     {
-        declarationNode = GetParent(declaratorNode);
+        declarationNode = parser::GetParent(declaratorNode);
     }
     if (ts_node_is_null(declarationNode))
         return;
@@ -902,7 +907,7 @@ void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const 
     TSNode declaratorNode = capture.parent;
     if (ts_node_is_null(declaratorNode))
     {
-        declaratorNode = GetParent(capture.node);
+        declaratorNode = parser::GetParent(capture.node);
     }
     if (ts_node_is_null(declaratorNode))
         return;
@@ -922,7 +927,7 @@ void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const 
         TSNode declarationNode = capture.grandparent;
         if (ts_node_is_null(declarationNode))
         {
-            declarationNode = GetParent(declaratorNode);
+            declarationNode = parser::GetParent(declaratorNode);
         }
         ReadVariableDeclaratorTypeInfo(declaratorNode, declarationNode, sourceCode, def);
         return;

@@ -2696,9 +2696,9 @@ static std::string FormatResolvedAssetMarkdown(std::string_view unquoted, const 
 TSNode FindTopmostBinaryPlus(TSNode node, std::string_view sourceCode)
 {
     TSNode current = node;
-    while (!ts_node_is_null(ts_node_parent(current)))
+    for (size_t depth = 0; depth < 16 && !ts_node_is_null(parser::GetParent(current)); ++depth)
     {
-        TSNode parent = ts_node_parent(current);
+        TSNode parent = parser::GetParent(current);
         if (std::string_view(ts_node_type(parent)) == "binary_expression")
         {
             TSNode opNode = parser::GetChildByField(parent, parser::fields::Operator);

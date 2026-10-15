@@ -68,6 +68,13 @@ struct SemanticTokensRequest
 lsp::SemanticTokens GetSemanticTokens(const SemanticTokensRequest& request);
 
 /**
+ * @brief Checks if an AST node is a `<` or `>` bracket in a template type list or cast.
+ * @param node AST node to check.
+ * @return True if node is template punctuation.
+ */
+[[nodiscard]] bool IsTemplatePunctuationNode(TSNode node) noexcept;
+
+/**
  * @brief Returns server SemanticTokensLegend with token types and modifiers.
  */
 const lsp::SemanticTokensLegend& GetSemanticTokensLegend();

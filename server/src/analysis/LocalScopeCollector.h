@@ -51,18 +51,6 @@ class LocalScopeCollector
      */
     std::unique_ptr<Scope> CollectScopesFromTree(TSNode rootNode, const std::string& sourceCode) const;
 
-    /**
-     * @brief Resolves parent of node safely via ts_node_parent.
-     * @param node Child AST node.
-     * @return Parent AST node or null node if at root.
-     */
-    [[nodiscard]] static inline TSNode GetParent(TSNode node) noexcept
-    {
-        if (ts_node_is_null(node))
-            return TSNode{};
-        return ts_node_parent(node);
-    }
-
   private:
     utils::LspLogger* m_logger;
     const TSQuery* m_localsQuery;
@@ -115,6 +103,7 @@ class LocalScopeCollector
         uint32_t endByte = 0;
         CaptureKind kind = CaptureKind::None;
         LocalDefinitionKind definitionKind = LocalDefinitionKind::Variable;
+        TSSymbol enclosingCallableSym = 0;
     };
 
     /**

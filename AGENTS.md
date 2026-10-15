@@ -46,6 +46,7 @@ Layer isolation is strict and enforced by `server/scripts/check-layer-includes.p
 4. **Complexity Ceiling:** Functions must not exceed 15 Cyclomatic Complexity points or 70 net lines of code (enforced by `lizard`).
 5. **Anti-Monolith & 300-Line Limit:** Production source files (`.cpp`) must target $\le 300$ net lines of code. Monolithic files exceeding this ceiling must be decomposed into cohesive, single-responsibility sub-units.
 6. **No Root-Cause Bypass:** Never patch edge cases using string comparison hardcoding (`if (name == "...")`). Fixes must reside in grammar queries, symbol resolution passes, or type rules.
+7. **AST Traversal & Parent-Climb Invariants:** Upward AST traversal must never use unbounded `while (!ts_node_is_null(ts_node_parent(node)))` loops to climb to the root; always use `parser::GetRootNode(node)` in $O(1)$ via `ts_tree_root_node(node.tree)`. Hot-path collectors and query passes (`LocalScopeCollector`, `SymbolCollector`, token classification) must never perform iterative `ts_node_parent` climb loops or string comparisons (`ts_node_type`); use $O(1)$ stack/byte-range containment, pre-cached `TSSymbol` comparisons, or bounded hops (`depth < 16`). Zero `ts_node_parent` calls are permitted in hot-path collectors.
 
 ---
 
@@ -93,7 +94,7 @@ Format: `<type>(<scope>): <short imperative description>`
 
 ---
 
-## 8. The 11 Absolute Prohibitions
+## 8. The 12 Absolute Prohibitions
 
 1. **PROHIBITION 1: No Unprotected Raw AST Pointer Escaping:** Never return or store raw `TSTree*` pointers without an enclosing reader lock or owning `std::shared_ptr<const document::Document>`.
 2. **PROHIBITION 2: No Uncaught Exceptions Escaping Secondary Threads:** Never allow an exception to escape a `std::thread` boundary; unhandled exceptions that invoke `std::terminate()` are classified as critical severity bugs.
@@ -106,6 +107,7 @@ Format: `<type>(<scope>): <short imperative description>`
 9. **PROHIBITION 9: No Dead or Unnamed Parameters (`/we4100`):** In owned signatures, every formal parameter must be named and referenced, or cleanly removed. In contract-mandated signatures (virtual overrides, external callbacks), unused parameters must be named and explicitly silenced with `[[maybe_unused]] Type name`. Nameless (`Type`) or commented-out (`Type /*name*/`) parameters are strictly banned.
 10. **PROHIBITION 10: No Static or Hardcoded Test Fixtures:** Tests must use dynamic randomized generators and sandboxes to verify semantic invariants rather than overfitting to fixed strings.
 11. **PROHIBITION 11: No Hardcoded User-Facing Text or Ad-Hoc Bilingual Conditionals:** Every string displayed to the end user (hover markdown tooltips, diagnostics, code action titles, document link titles, notifications) must be externalized in `server/src/i18n/i18n.cpp` and resolved via `angel_lsp::i18n::FormatMessage(i18n, key, fallback, ...)` (or `bundle.l10n.json` via `l10n.t()` in the client). Hardcoding raw user-facing natural language strings directly in C++ feature handlers or writing ad-hoc language branching (`if (locale == "es")`) is strictly prohibited.
+12. **PROHIBITION 12: No Unbounded Parent-Climb Loops or Hot-Path `ts_node_parent` Iteration:** Never write `while (!ts_node_is_null(ts_node_parent(node)))` or unbounded climb loops. Always obtain the root node via `parser::GetRootNode(node)` in $O(1)$ time. In hot-path collectors (`LocalScopeCollector`, `SymbolCollector`), upward parent climbing is strictly prohibited; rely on downward query cursor matching, container stacks, and pre-resolved `TSSymbol` IDs.
 
 ---
 
