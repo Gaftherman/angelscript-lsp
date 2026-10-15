@@ -911,3 +911,27 @@ TEST_CASE("Definition - Delegate member pointer this.Method jumps to class metho
     REQUIRE(!def->empty());
     CHECK((*def)[0].range.start.line == 1);
 }
+
+TEST_CASE("Definition - Go To Definition does not jump to funcdef parameter from unrelated function")
+{
+    const std::string funcdefName = angel_lsp::test::GenerateRandomSymbolName("OptionCallback");
+    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("selectedOption");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("UnrelatedFunc");
+
+    const std::string code = "funcdef void " + funcdefName + "(int " + paramName +
+                             ");\n"
+                             "void " +
+                             funcName +
+                             "() {\n"
+                             "    " +
+                             paramName +
+                             ";\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const size_t posIdx = code.find("    " + paramName) + 4;
+    auto pos = FindPos(code, paramName, posIdx);
+
+    auto def = env.DefAt(pos.line, pos.character);
+    CHECK((!def.has_value() || def->empty()));
+}

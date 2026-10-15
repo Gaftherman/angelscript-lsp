@@ -98,6 +98,8 @@ void SymbolCollector::ResolveGrammarSymbols(const TSLanguage* lang)
     m_symParameter = ts_language_symbol_for_name(lang, SYM_NAME("parameter"), true);
     m_symMemberExpression = ts_language_symbol_for_name(lang, SYM_NAME("member_expression"), true);
     m_symMetadata = ts_language_symbol_for_name(lang, SYM_NAME("metadata"), true);
+    m_symScript = ts_language_symbol_for_name(lang, SYM_NAME("script"), true);
+    m_symLambdaExpression = ts_language_symbol_for_name(lang, SYM_NAME("lambda_expression"), true);
 
     m_tokConst = ts_language_symbol_for_name(lang, SYM_NAME("const"), false);
     m_tokIn = ts_language_symbol_for_name(lang, SYM_NAME("in"), false);
@@ -461,7 +463,8 @@ void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCt
 void SymbolCollector::ExtractContainerInfo(TSNode current, std::string_view sourceCode, CollectionContext& ctx) const
 {
     TSSymbol sym = ts_node_symbol(current);
-    if (!ctx.isInsideFunction && (sym == m_symFuncDeclaration || sym == m_symStatementBlock))
+    if (!ctx.isInsideFunction &&
+        (sym == m_symFuncDeclaration || sym == m_symStatementBlock || sym == m_symLambdaExpression))
     {
         ctx.isInsideFunction = true;
     }
@@ -852,9 +855,33 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
     ts_tree_cursor_delete(&cursor);
 }
 
+/**
+ * @brief Traverses up the AST from a variable declaration to determine if it resides inside a lambda.
+ * @param[in] node AST variable declaration node.
+ * @return True if enclosed within a lambda expression, false otherwise.
+ */
+static bool IsEnclosedInLambda(TSNode node)
+{
+    TSNode curr = ts_node_parent(node);
+    for (size_t depth = 0; depth < 64 && !ts_node_is_null(curr); ++depth, curr = ts_node_parent(curr))
+    {
+        std::string_view type(ts_node_type(curr));
+        if (type == "lambda_expression")
+        {
+            return true;
+        }
+        if (type == "class_declaration" || type == "interface_declaration" || type == "namespace_declaration" ||
+            type == "script")
+        {
+            return false;
+        }
+    }
+    return false;
+}
+
 void SymbolCollector::ProcessVariable(TSNode varDeclNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
-    if (ctx.isInsideFunction)
+    if (ctx.isInsideFunction || IsEnclosedInLambda(varDeclNode))
         return;
 
     if (ts_node_symbol(varDeclNode) == m_symVirtualProperty)

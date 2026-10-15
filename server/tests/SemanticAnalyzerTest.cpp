@@ -2539,3 +2539,90 @@ TEST_CASE("SemanticAnalyzer - GAP-VISIBILITY-01: Lambda closure barrier prevents
     }
     CHECK(hasClosureDiag);
 }
+
+TEST_CASE("SemanticAnalyzer - Funcdef and interface parameters do not leak into enclosing scope")
+{
+    const std::string funcdefName = angel_lsp::test::GenerateRandomSymbolName("MenuSelectCallback");
+    const std::string ifaceName = angel_lsp::test::GenerateRandomSymbolName("IMenuHandler");
+    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("leakedOption");
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("SomeHandler");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("ProcessEvent");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "funcdef void " + funcdefName + "(int " + paramName +
+                             ");\n"
+                             "interface " +
+                             ifaceName + " { void Execute(float " + paramName +
+                             "); }\n"
+                             "class " +
+                             className +
+                             " {\n"
+                             "    void " +
+                             methodName +
+                             "() {\n"
+                             "        " +
+                             paramName +
+                             " = 100;\n"
+                             "    }\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    CHECK(HasUndefinedIdentifierDiagnostic(diags, paramName));
+}
+
+TEST_CASE("SemanticAnalyzer - Global constructor lambdas do not emit false duplicate symbol errors on local variables")
+{
+    const std::string cmdClass = angel_lsp::test::GenerateRandomSymbolName("ASCommand");
+    const std::string cmdVar1 = angel_lsp::test::GenerateRandomSymbolName("g_cmd1");
+    const std::string cmdVar2 = angel_lsp::test::GenerateRandomSymbolName("g_cmd2");
+    const std::string localVar = angel_lsp::test::GenerateRandomSymbolName("traceResult");
+    const std::string loopVar = angel_lsp::test::GenerateRandomSymbolName("loopIndex");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "funcdef void CommandCallback();\n"
+                             "class " +
+                             cmdClass +
+                             " {\n"
+                             "    " +
+                             cmdClass +
+                             "(string name, CommandCallback@ cb) {}\n"
+                             "}\n"
+                             "" +
+                             cmdClass + " " + cmdVar1 +
+                             "(\"cmd1\", function() {\n"
+                             "    int " +
+                             localVar +
+                             " = 1;\n"
+                             "    for (int " +
+                             loopVar + " = 0; " + loopVar + " < 10; ++" + loopVar +
+                             ") {}\n"
+                             "    for (int " +
+                             loopVar + " = 0; " + loopVar + " < 10; ++" + loopVar +
+                             ") {}\n"
+                             "});\n"
+                             "" +
+                             cmdClass + " " + cmdVar2 +
+                             "(\"cmd2\", function() {\n"
+                             "    int " +
+                             localVar +
+                             " = 2;\n"
+                             "    for (int " +
+                             loopVar + " = 0; " + loopVar + " < 10; ++" + loopVar +
+                             ") {}\n"
+                             "});\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    bool hasDuplicateDiag = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-duplicate-symbol")
+        {
+            hasDuplicateDiag = true;
+        }
+    }
+    CHECK_FALSE(hasDuplicateDiag);
+}

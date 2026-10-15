@@ -43,12 +43,51 @@ bool IsForbiddenClosureCapture(const LocalDefinition& def, const Scope* defScope
     }
     return false;
 }
+
+/**
+ * @brief Context data bundled for lexical definition resolution.
+ */
+struct ResolutionContext
+{
+    uint32_t refByte = 0;
+    bool crossedClosure = false;
+    bool respectClosureBarrier = false;
+};
+
+/**
+ * @brief Evaluates whether a local definition is visible at the current resolution point.
+ * @param[in] def Local definition candidate.
+ * @param[in] current Scope containing the definition.
+ * @param[in] ctx Context containing reference byte and closure traversal status.
+ * @return True if definition is visible and accessible, false otherwise.
+ */
+static bool IsVisibleDefinition(const LocalDefinition& def, const Scope* current, const ResolutionContext& ctx)
+{
+    if (def.kind == LocalDefinitionKind::Variable && ctx.refByte < def.visibleFromByte)
+    {
+        return false;
+    }
+
+    if (def.kind == LocalDefinitionKind::Parameter &&
+        (current->kind == ScopeKind::Global || current->kind == ScopeKind::Namespace ||
+         current->kind == ScopeKind::Class))
+    {
+        return false;
+    }
+
+    if (ctx.crossedClosure && ctx.respectClosureBarrier && IsForbiddenClosureCapture(def, current))
+    {
+        return false;
+    }
+
+    return true;
+}
 } // namespace
 
 const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view name, uint32_t refByte,
                                         const Scope** owner, bool respectClosureBarrier)
 {
-    bool crossedClosure = false;
+    ResolutionContext ctx{refByte, false, respectClosureBarrier};
     ScopeTraversalGuard cycleGuard;
     for (const Scope* current = scope; current != nullptr; current = current->parent)
     {
@@ -60,12 +99,7 @@ const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view nam
         {
             if (def.name == name)
             {
-                if (def.kind == LocalDefinitionKind::Variable && refByte < def.visibleFromByte)
-                {
-                    continue;
-                }
-
-                if (crossedClosure && respectClosureBarrier && IsForbiddenClosureCapture(def, current))
+                if (!IsVisibleDefinition(def, current, ctx))
                 {
                     continue;
                 }
@@ -80,7 +114,7 @@ const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view nam
 
         if (current->kind == ScopeKind::Closure)
         {
-            crossedClosure = true;
+            ctx.crossedClosure = true;
         }
     }
 

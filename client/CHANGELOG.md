@@ -4,6 +4,25 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.0-exp.7] - 2026-10-15
+
+### Scope Isolation & Parameter Leakage Elimination, False E104 (`as-err-duplicate-symbol`) Fix for Lambdas & Sequential Loops
+
+- Scope Isolation & Parameter Leakage Elimination:
+  - Eliminated parameter leakage from bodyless callables (`funcdef` declarations, `interface` methods, `import` declarations) into enclosing global, namespace, or class scopes.
+  - Added `FindOwningCallable` and `IsValidParameterDefinition` in `LocalScopeCollector.cpp` to ensure `LocalDefinitionKind::Parameter` is only recorded for executable callables (`func_declaration` and `lambda_expression`).
+  - Filtered parameter declaration names in `ProcessReferenceCapture` so they are not captured as references.
+  - Hardened `ScopeTree::ResolveInScopeAt`, `TargetResolution::PopulateLocalTargetDescriptor`, and `DefinitionHandler::TryResolveLocalDefinitionFallback` with defensive enclosing-function checks for parameters.
+  - Resolves issue where `funcdef` parameters shadowed undeclared variables and hijacked `Ctrl + Click` / Go to Definition.
+- False Positive E104 (`as-err-duplicate-symbol`) Elimination on Lambdas & For Loops:
+  - Added `IsEnclosedInLambda` AST inspection and `ExtractContainerInfo` lambda detection in `SymbolCollector.cpp`.
+  - Local variables declared inside anonymous functions / lambdas passed to global constructors (e.g. `ASCommand` or `CClientCommand` in Sven Co-op scripts) are no longer harvested into `SymbolTable` as global variables.
+  - Eliminates false `as-err-duplicate-symbol` errors on local variables (`TraceResult tr;`, sequential `for` loop counters) across global commands.
+- Quality Gates & Invariants:
+  - 100% test pass rate: 2,345 / 2,345 tests passed (33,900 assertions, 0 failures, 30 skipped).
+  - All 11 static quality gates passed (`check-quality.py`, `format-code.py --check`, `check-layer-includes.py`, `check-clean-signatures.py`, `check-diagnostic-codes.py`, Lizard CCN <= 15, jscpd at 1.14%).
+  - Client pretest passed: compile, bundle, lint, and settings validation (`check-settings-wired.mjs`) all clean.
+
 ## [1.1.0-exp.6] - 2026-10-14
 
 ### Client Settings Wiring Fix (`ignoreUnusedGlobalsWithCallInitializer`) and CLI Configuration Coverage

@@ -947,6 +947,11 @@ std::optional<std::vector<lsp::Location>> TryResolveLocalDefinitionFallback(TSNo
     uint32_t cursorByte = !ts_node_is_null(node) ? ts_node_start_byte(node) : UINT32_MAX;
     if (const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte))
     {
+        if (def->kind == analysis::LocalDefinitionKind::Parameter &&
+            !IsDefinitionInsideFunction(ctx.rootScope.get(), *def))
+        {
+            return std::nullopt;
+        }
         return std::vector<lsp::Location>{MakeLocalDefinitionLocation(*def, ctx)};
     }
     return std::nullopt;

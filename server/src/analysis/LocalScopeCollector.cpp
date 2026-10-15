@@ -264,6 +264,47 @@ void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::ve
     stack.push_back(openScope);
 }
 
+/**
+ * @brief Traverses up the AST from a parameter node to find its enclosing callable declaration.
+ * @param[in] paramNode Parameter AST node.
+ * @return Enclosing callable declaration node, or null node if none found.
+ */
+static TSNode FindOwningCallable(TSNode paramNode)
+{
+    TSNode curr = paramNode;
+    for (size_t depth = 0; depth < 64 && !ts_node_is_null(curr); ++depth, curr = ts_node_parent(curr))
+    {
+        std::string_view type(ts_node_type(curr));
+        if (type == "func_declaration" || type == "lambda_expression" || type == "funcdef_declaration" ||
+            type == "interface_method" || type == "import_declaration")
+        {
+            return curr;
+        }
+    }
+    return TSNode{};
+}
+
+/**
+ * @brief Checks whether a parameter capture belongs to an executable callable scope.
+ * @param[in] current Active lexical scope.
+ * @param[in] paramNode Parameter AST node.
+ * @return True if valid parameter definition, false if leaked from signature-only callable.
+ */
+static bool IsValidParameterDefinition(const Scope* current, TSNode paramNode)
+{
+    if (current->kind != ScopeKind::Function && current->kind != ScopeKind::Closure)
+    {
+        return false;
+    }
+    TSNode owningCallable = FindOwningCallable(paramNode);
+    if (ts_node_is_null(owningCallable))
+    {
+        return false;
+    }
+    std::string_view callableType(ts_node_type(owningCallable));
+    return callableType == "func_declaration" || callableType == "lambda_expression";
+}
+
 void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, const std::vector<OpenScope>& stack,
                                                    const std::string& sourceCode) const
 {
@@ -273,6 +314,10 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
     }
 
     Scope* current = stack.back().scope;
+    if (capture.definitionKind == LocalDefinitionKind::Parameter && !IsValidParameterDefinition(current, capture.node))
+    {
+        return;
+    }
     TSPoint startPt = ts_node_start_point(capture.node);
     TSPoint endPt = ts_node_end_point(capture.node);
 
@@ -506,6 +551,20 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
         !IsAllowedKeywordReference(capture.node, parent))
     {
         return;
+    }
+
+    if (!ts_node_is_null(parent))
+    {
+        std::string_view pType(ts_node_type(parent));
+        if (pType == "parameter" || pType == "lambda_parameter_list")
+        {
+            TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
+            if (ts_node_eq(nameNode, capture.node) ||
+                (!ts_node_is_null(nameNode) && ts_node_start_byte(nameNode) == capture.startByte))
+            {
+                return;
+            }
+        }
     }
 
     TSPoint startPt = ts_node_start_point(capture.node);

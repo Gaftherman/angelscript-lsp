@@ -341,7 +341,7 @@ static void PopulateLocalTargetDescriptor(const analysis::LocalDefinition& match
     if (matchedDef.kind == analysis::LocalDefinitionKind::Parameter ||
         matchedDef.kind == analysis::LocalDefinitionKind::Variable)
     {
-        if (IsDeclaredInFunctionScope(declScope) || matchedDef.kind == analysis::LocalDefinitionKind::Parameter)
+        if (IsDeclaredInFunctionScope(declScope))
         {
             target.kind = TargetKind::Local;
             target.definingScope = declScope;
