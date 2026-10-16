@@ -4,6 +4,31 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.0-exp.12] - 2026-10-16
+
+### Global Scope Resolution (`::`), Non-Handle `null` Assignment Diagnostics, Delegate Construction Parity, and Parameter Type Enforcement
+
+- Strict Root-Global Scope Resolution (`::`):
+  - In `TargetResolution`, `HoverHandler`, `DefinitionHandler`, and `SemanticHelpers`: leading `::Ident` resolves strictly in root global scope (`containerName.empty()`), completely skipping enclosing classes, mixins, or base class hierarchy methods.
+  - Implemented $O(1)$ `GetGlobalScopeQualifier` in `ASTUtils.h` and registered `tokColonColon` in `GrammarSymbols.h/.cpp`.
+  - In `NamespaceChecker`, explicit global calls (`::Deploy()`) without matching symbols emit `as-err-undefined-identifier`, and invalid namespace qualifiers (`::UnknownNS::Foo()`) emit `as-err-undefined-namespace`.
+- Non-Handle `null` Assignment Diagnostics (`TypeConversionChecker`):
+  - Implemented `TypeAcceptsNullHandle` to flag `null` assignments to non-handle variables with `as-err-null-non-handle` (`Cannot assign 'null' to non-handle type '{}'`), while cleanly accepting handles, `?`/`any`, `funcdef` types, and types with converting constructors or `opAssign` from handle (e.g., `EHandle`).
+  - Added `TypeKind::Float` and `TypeKind::UInt8` to non-nullable primitives.
+- Reference Parameter Type Checking for `null` Arguments (`ConversionRankingEngine`):
+  - Ranked `null` arguments as incompatible with non-handle reference parameters (`const HUDTextParams &in`), emitting `as-err-call-no-matching-signature`.
+- Precise Delegate Construction Detection vs Call Argument Count Limit (`CallChecker`):
+  - Replaced blanket `argumentCount <= 1` suppression with `IsDelegateConstructionPattern` (checking `fieldObject` and `fieldMember`) and `HasFuncdefSymbol`.
+  - Cleanly permits single-argument delegate constructions (`VoteBlocked(this.VoteBlocked)`) while strictly enforcing argument count limits on calls with too few arguments (e.g. `Deploy()`).
+  - Evaluates `null_literal` as type `"null"` in `ResolveCallArguments` without invalidating argument resolution.
+- Zero-Allocation String Views:
+  - Replaced allocating `CleanBaseType` with `CleanBaseTypeView` in `TypeConversionChecker.cpp` and `ConversionRankingEngine.cpp`.
+  - Streamlined `NamespaceChecker.cpp` callee extraction and lookup to use zero-allocation `std::string_view`.
+- Verification & Test Metrics:
+  - 2,393 / 2,393 unit tests passed (34,224 assertions, 0 failures, 30 skipped).
+  - 12/12 static quality gates passing at 100% (`jscpd` 1.12%, Lizard CCN <= 15, NLOC <= 70, 0 dead parameters `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` clean).
+  - Client pretest passing: compile, bundle, lint, and all 107 settings wired.
+
 ## [1.1.0-exp.11] - 2026-10-16
 
 ### Reference Parity (Enum Members, Mixins), GrammarSymbols Centralization, and Engine Rules Documentation

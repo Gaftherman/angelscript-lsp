@@ -1,4 +1,5 @@
 #include "features/hover/HoverHandler.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/DocComment.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
@@ -7,6 +8,7 @@
 #include "analysis/overload/ConversionRankingEngine.h"
 #include "i18n/i18n.h"
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include "parser/Primitives.h"
 #include "utils/IncludeResolver.h"
 #include "utils/LspLogger.h"
@@ -2124,10 +2126,12 @@ void FilterEnumMemberSymbols(std::vector<analysis::Symbol>& symbols, const Hover
 std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
 {
     std::vector<analysis::Symbol> symbols;
+    bool isExplicitlyScoped = false;
     if (!ts_node_is_null(ctx.parent))
     {
-        const std::string_view pType = ts_node_type(ctx.parent);
-        if (pType == "scoped_identifier")
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol pSym = ts_node_symbol(ctx.parent);
+        if (pSym == gs.symScopedIdentifier)
         {
             const uint32_t pStart = ts_node_start_byte(ctx.parent);
             const uint32_t nEnd = ts_node_end_byte(ctx.node);
@@ -2140,9 +2144,10 @@ std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
                 }
                 symbols = analysis::FindSymbolsInScope(scopedPrefix, ctx.node, ctx.request.sourceCode,
                                                        ctx.request.symbolTable);
+                isExplicitlyScoped = (scopedPrefix.find("::") != std::string::npos);
             }
         }
-        else if (pType == parser::nodes::Datatype)
+        else if (pSym == gs.symDatatype)
         {
             const std::string prefix = analysis::ExtractDatatypeScopePrefix(ctx.parent, ctx.request.sourceCode);
             if (!prefix.empty())
@@ -2153,10 +2158,11 @@ std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
                 }
                 symbols = analysis::FindSymbolsInScope(prefix + ctx.nodeText, ctx.node, ctx.request.sourceCode,
                                                        ctx.request.symbolTable);
+                isExplicitlyScoped = true;
             }
         }
     }
-    if (symbols.empty())
+    if (symbols.empty() && !isExplicitlyScoped)
     {
         symbols = analysis::FindSymbolsInScope(ctx.nodeText, ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
     }
@@ -2549,11 +2555,33 @@ static void AppendConstructorSymbolsIfCall(const HoverQueryContext& ctx, std::ve
     }
 }
 
+static void PopulateGlobalPropertyAccessors(std::vector<analysis::Symbol>& symbols, std::string& accessorPropertyType,
+                                            const HoverQueryContext& ctx)
+{
+    const int accessorMode = ctx.request.config ? ctx.request.config->engine.propertyAccessorMode : 2;
+    if (accessorMode >= 2)
+    {
+        symbols = analysis::FindGlobalPropertyAccessors(ctx.nodeText, ctx.request.symbolTable, accessorMode == 3);
+        accessorPropertyType = analysis::PropertyTypeFromAccessors(symbols);
+    }
+}
+
+static void FilterDirectRootGlobalSymbols(std::vector<analysis::Symbol>& symbols,
+                                          const analysis::GlobalScopeQualifier& gsq)
+{
+    if (gsq.isGlobal && gsq.isDirectRoot)
+    {
+        std::erase_if(symbols, [](const analysis::Symbol& s)
+                      { return !s.containerName.empty() || s.type == analysis::SymbolType::CallReference; });
+    }
+}
+
 std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
 {
     utils::HighResTimer symTimer;
+    const auto gsq = analysis::GetGlobalScopeQualifier(ctx.node, ctx.request.sourceCode);
     std::vector<analysis::Symbol> symbols = CollectScopedSymbols(ctx);
-    if (!IsQualifiedMemberNode(ctx.node, ctx.request.sourceCode))
+    if (!gsq.isGlobal && !IsQualifiedMemberNode(ctx.node, ctx.request.sourceCode))
     {
         AppendEnclosingClassMethods(ctx.node, ctx.nodeText, ctx.request, symbols);
     }
@@ -2561,9 +2589,14 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
     AppendConstructorSymbolsIfCall(ctx, symbols);
 
     std::string accessorPropertyType;
-    AppendVirtualHostSymbols(ctx, symbols, accessorPropertyType);
+    if (!gsq.isGlobal)
+    {
+        AppendVirtualHostSymbols(ctx, symbols, accessorPropertyType);
+    }
 
-    if (symbols.empty() && ctx.rootScope)
+    FilterDirectRootGlobalSymbols(symbols, gsq);
+
+    if (symbols.empty() && ctx.rootScope && !gsq.isGlobal)
     {
         if (auto fallbackHover = TryHoverScopeFallback(ctx))
         {
@@ -2572,14 +2605,9 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
         }
     }
 
-    if (symbols.empty() && accessorPropertyType.empty())
+    if (symbols.empty() && accessorPropertyType.empty() && !gsq.isGlobal)
     {
-        const int accessorMode = ctx.request.config ? ctx.request.config->engine.propertyAccessorMode : 2;
-        if (accessorMode >= 2)
-        {
-            symbols = analysis::FindGlobalPropertyAccessors(ctx.nodeText, ctx.request.symbolTable, accessorMode == 3);
-            accessorPropertyType = analysis::PropertyTypeFromAccessors(symbols);
-        }
+        PopulateGlobalPropertyAccessors(symbols, accessorPropertyType, ctx);
     }
 
     ctx.profiler.symMs += symTimer.ElapsedMs();

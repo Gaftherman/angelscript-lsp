@@ -131,6 +131,7 @@ void PopulateTokensAndFields(const TSLanguage* lang, GrammarSymbols& gs) noexcep
     gs.tokOpenBrace = SymAnon(lang, "{");
     gs.tokGet = SymAnon(lang, "get");
     gs.tokSet = SymAnon(lang, "set");
+    gs.tokColonColon = SymAnon(lang, "::");
 
     gs.fieldName = FieldId(lang, parser::fields::Name);
     gs.fieldType = FieldId(lang, parser::fields::Type);

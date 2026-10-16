@@ -1,4 +1,5 @@
 #include "features/definition/DefinitionHandler.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/VirtualMixinContext.h"
@@ -802,11 +803,13 @@ std::vector<analysis::Symbol> FindSymbolsForNode(TSNode node, const std::string&
                                                  const DefinitionRequest& request)
 {
     std::vector<analysis::Symbol> symbols;
+    bool isExplicitlyScoped = false;
     TSNode parent = ts_node_parent(node);
     if (!ts_node_is_null(parent))
     {
-        const std::string_view pType(ts_node_type(parent));
-        if (pType == parser::nodes::ScopedIdentifier || pType == parser::nodes::Scope)
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol pSym = ts_node_symbol(parent);
+        if (pSym == gs.symScopedIdentifier || pSym == gs.symScope)
         {
             const uint32_t pStart = ts_node_start_byte(parent);
             const uint32_t pEnd = ts_node_end_byte(node);
@@ -814,24 +817,26 @@ std::vector<analysis::Symbol> FindSymbolsForNode(TSNode node, const std::string&
             {
                 const std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
                 symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);
+                isExplicitlyScoped = (scopedText.find("::") != std::string::npos);
             }
         }
-        else if (pType == parser::nodes::Datatype)
+        else if (pSym == gs.symDatatype)
         {
             const std::string prefix = analysis::ExtractDatatypeScopePrefix(parent, request.sourceCode);
             if (!prefix.empty())
             {
                 symbols =
                     analysis::FindSymbolsInScope(prefix + nodeText, node, request.sourceCode, request.symbolTable);
+                isExplicitlyScoped = true;
             }
         }
     }
 
-    if (symbols.empty())
+    if (symbols.empty() && !isExplicitlyScoped)
     {
         symbols = analysis::FindSymbolsInScope(nodeText, node, request.sourceCode, request.symbolTable);
     }
-    if (symbols.empty())
+    if (symbols.empty() && !isExplicitlyScoped)
     {
         symbols = analysis::FindGlobalPropertyAccessors(nodeText, request.symbolTable, false);
     }
@@ -917,13 +922,21 @@ void AppendHostClassHierarchySymbols(std::vector<analysis::Symbol>& symbols, con
 std::vector<analysis::Symbol> ResolveCandidateSymbols(TSNode node, const std::string& nodeText,
                                                       const DefinitionContext& ctx)
 {
+    const auto gsq = analysis::GetGlobalScopeQualifier(node, ctx.request.sourceCode);
     std::vector<analysis::Symbol> symbols = FindSymbolsForNode(node, nodeText, ctx.request);
-    AppendHostClassHierarchySymbols(symbols, nodeText, ctx);
+    if (!gsq.isGlobal)
+    {
+        AppendHostClassHierarchySymbols(symbols, nodeText, ctx);
+    }
     const analysis::Scope* scope =
         ctx.rootScope ? FindInnermostScope(ctx.rootScope.get(), ctx.queryLine, ctx.request.position.character)
                       : nullptr;
     symbols = FilterOverloadsForCall(node, symbols, ctx.request, scope);
     std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
+    if (gsq.isGlobal && gsq.isDirectRoot)
+    {
+        std::erase_if(symbols, [](const analysis::Symbol& s) { return !s.containerName.empty(); });
+    }
     return symbols;
 }
 
@@ -1375,8 +1388,9 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
         return declFallback;
     }
 
+    const auto gsq = analysis::GetGlobalScopeQualifier(node, request.sourceCode);
     std::vector<analysis::Symbol> symbols = ResolveCandidateSymbols(node, nodeText, ctx);
-    if (symbols.empty())
+    if (symbols.empty() && !gsq.isGlobal)
     {
         if (auto localFallback = TryResolveLocalDefinitionFallback(node, nodeText, ctx))
         {
@@ -1392,7 +1406,10 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
         }
     }
 
-    FilterAndPrioritizeLocalSymbols(symbols, node, nodeText, request);
+    if (!gsq.isGlobal)
+    {
+        FilterAndPrioritizeLocalSymbols(symbols, node, nodeText, request);
+    }
 
     auto locations = ConvertSymbolsToLocations(symbols, request);
     if (!locations.empty())

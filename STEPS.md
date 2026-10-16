@@ -1470,4 +1470,84 @@ Settings declared in package.json but not passed to the server:
 - **Total de Pruebas Unitarias**: `2,372 / 2,372` pasadas (`34,057` aserciones, `0` fallos, `30` omitidas).
 - **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.14%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
 
+---
+
+## 29. Fase 29: Resolución Estricta de Ámbito Global `::`, Límite de Argumentos de Llamada, Asignación de `null` a Tipos No-Handle y Conversión de Argumentos `null`
+
+### 29.1. Diagnóstico Forense y Causas Raíz
+1. **Resolución Errónea de `::Deploy()` hacia Métodos de Clase Envolvente**:
+   - En AngelScript, un identificador con prefijo global raíz `::Ident` resuelve estrictamente en el ámbito global raíz (`containerName.empty()`), jamás en la clase o mixin envolvente ni en sus clases base (`ERROR: No matching symbol '::Deploy'`).
+   - `HoverHandler`, `DefinitionHandler` y `TargetResolution` caían hacia los métodos de clase envolvente (`AppendEnclosingClassMethods`, `AppendHostClassHierarchySymbols`, `FindSymbols`) debido a que `IsQualifiedMemberNode` no detectaba el calificador `::` de `scoped_identifier` y `FindSymbolsInScope("::Deploy")` invocaba `FindSymbols("Deploy")` sin filtrar `containerName.empty()`.
+2. **Falso Recuento / Falta de Diagnóstico de Límite de Argumentos de Llamada**:
+   - Cuando se invocaba una función no calificada con más argumentos que el máximo permitido (`args > maxAllowed`), si algún argumento era `null` o no se resolvía completamente, la verificación de recuento de argumentos era saltada.
+3. **Falta de Detección de Asignación de `null` a Tipos No-Handle (`WeaponGLMode = null;`)**:
+   - El compilador de AngelScript prohíbe asignar `null` a tipos que no sean handles (`Cannot assign 'null' to non-handle type 'int'`). `TypeConversionChecker` no comprobaba asignaciones literales de `null` a variables primitivas o tipos de valor sin operadores `opAssign` o constructores convertidores desde handle.
+4. **Paso de `null` a Parámetros por Referencia No-Handle (`HudMessage(null, null, "E + R")`)**:
+   - En AngelScript, un parámetro `const HUDTextParams &in` rechaza `null` con error de conversión (`as-err-no-implicit-conversion` o `as-err-call-no-matching-signature`). `ConversionRankingEngine` no trataba `null` como incompatible contra referencias no-handle (`HUDTextParams`).
+
+### 29.2. Implementación de la Solución (Conforme a las 5 Correcciones Mandatarias)
+1. **GrammarSymbols y Calificador Global de Ámbito**:
+   - Se añadió `tokColonColon` (`"::"`) en `GrammarSymbols.h/.cpp` y `GrammarSymbolsTest.cpp`.
+   - Se implementó `GetGlobalScopeQualifier` e `IsGlobalScopedNode` en `ASTUtils.h` mediante comparaciones $O(1)$ de `TSSymbol` de Tree-Sitter sin comparaciones de cadenas (`gs.symScopedIdentifier`, `gs.tokColonColon`).
+2. **Aislamiento Estricto de Ámbito Global en Features y Análisis**:
+   - En `TargetResolution.cpp`, `ResolveGlobalScopedTarget` resuelve directamente símbolos con `containerName.empty()`.
+   - En `HoverHandler.cpp` y `DefinitionHandler.cpp`, se aislaron las búsquedas de `gsq.isGlobal`, omitiendo `AppendEnclosingClassMethods`, `AppendHostClassHierarchySymbols`, `TryHoverScopeFallback`, y filtrando símbolos hacia la raíz global.
+   - En `SemanticHelpers.cpp` (`FindSymbolsInScope`), si `name` comienza con `"::"`, se filtran estrictamente símbolos con `sym.containerName.empty()` para búsquedas raíz directas.
+   - En `NamespaceChecker.cpp`, `CheckCallExpression` emite `as-err-undefined-identifier` para llamadas `::Callee` si el callee no existe a nivel global.
+3. **Validación de Asignación de `null` a Tipos No-Handle**:
+   - En `SemanticAnalyzer.cpp`, se incluyeron `TypeKind::Float` y `TypeKind::UInt8` en `IsUnconditionallyNonNullablePrimitive`.
+   - En `TypeConversionChecker.cpp`, se agregaron `TypeAcceptsNullHandle` y `CheckNullAssignmentToNonHandle`, emitiendo `as-err-null-non-handle` si el receptor no es handle, comodín (`?`/`any`), o tipo con ctor/opAssign desde handle (como `EHandle`).
+4. **Verificación de Tipos de Parámetros y Límites de Argumentos**:
+   - En `ConversionRankingEngine.cpp`, los argumentos de tipo `"null"` se evalúan como compatibles únicamente con handles, `?`/`any`, `funcdef` y tipos con conversión desde handle; rechazando referencias no-handle (`const HUDTextParams &in`).
+   - En `CallChecker.cpp`, `ResolveCallArguments` resuelve literales `null` a tipo `"null"` sin anular `allArgsResolved`, y `CheckArgumentCount` fuerza la emisión de `as-err-call-argument-count` cuando `argumentCount > maxAllowed`.
+5. **Calidad y Descomposición Modular**:
+   - Se descompuso `TypeAcceptsNullHandle`, `ProcessAssignmentNode` y `TryHoverSymbolCandidates` cumpliendo estrictamente con Lizard CCN $\le 15$ y NLOC $\le 70$.
+
+### 29.3. Métricas Finales de Fase 29
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,389 / 2,389` pasadas (`34,220` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.12%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
+
+---
+
+## 30. Fase 29.1: Pulido Post-Revisión de Código (Detección de Construcción de Delegados, Soporte de `funcdef` para `null`, y Verificación de Espacios de Nombres Cero-Asignación)
+
+### 30.1. Diagnóstico Forense y Causas Raíz
+1. **Supresión Falsa de Pocos Argumentos por `argumentCount <= 1` en Métodos de Clase**:
+   - En `CallChecker.cpp`, la condición `argumentCount <= maxAllowed && argumentCount <= 1` suprimía incondicionalmente el error `as-err-call-argument-count` para cualquier llamada no calificada a un método que requiere 2 o más parámetros cuando se invocaba con 0 o 1 argumento (ej. `Deploy()` requiriendo 6 parámetros).
+   - La justificación original para no juzgar llamadas de 1 argumento era la construcción delegada `VoteBlocked(this.VoteBlocked)`, donde el argumento es un puntero a método y coincide con un `funcdef`.
+2. **`TypeAcceptsNullHandle` Omitía Tipos `SymbolType::Funcdef`**:
+   - En AngelScript, los identificadores funcdef son referencias/handles válidos para callbacks que admiten la asignación de `null` (`CallbackFunc@ cb = null;`). Al omitir `Funcdef`, asignar `null` a una variable funcdef emitía falsamente `as-err-null-non-handle`.
+3. **Asignaciones en el Heap de `std::string` en `CleanBaseType` y `NamespaceChecker`**:
+   - `TypeConversionChecker.cpp` y `ConversionRankingEngine.cpp` invocaban `CleanBaseType` que retornaba un `std::string` por valor, cuando `CleanBaseTypeView` ya existía para retornar `std::string_view` en tiempo constante sin asignación en el heap.
+   - En `NamespaceChecker.cpp`, `ExtractCalleeName`, `IsKnownCallee` e `IsKnownDirectGlobalCallee` generaban objetos `std::string` temporales para consultar `SymbolTable`, y llamadas con rutas de espacios de nombres inexistentes como `::UnknownNS::Foo()` eludían la validación de espacio de nombres.
+4. **Filtro Incompleto de `CallReference` en `TargetResolution.cpp`**:
+   - En `ResolveGlobalScopedTarget`, las ramas que no eran raíz directa (`!gsq.isDirectRoot`) no comprobaban si los símbolos recuperados contenían definiciones reales antes de descartar fallbacks.
+
+### 30.2. Implementación de la Solución
+1. **Detección Quirúrgica de Construcción de Delegados (`IsDelegateConstructionPattern`)**:
+   - Se reemplazó la guarda laxa `argumentCount <= 1` en `CallChecker.cpp` por `IsDelegateConstructionPattern` y `HasFuncdefSymbol`.
+   - Se utilizan los IDs de campo de Tree-Sitter `fieldObject` y `fieldMember` sobre `gs.symMemberExpression` para verificar si el argumento solitario es una referencia a método de instancia (`this.Method`), y se valida que exista un símbolo `SymbolType::Funcdef` homónimo. Si no es un patrón de delegado, cualquier llamada con menos argumentos que los requeridos emite estrictamente `as-err-call-argument-count`.
+2. **Soporte de `Funcdef` y Vistas Cero-Asignación en Conversión de Tipos**:
+   - `TypeAcceptsNullHandle` en `TypeConversionChecker.cpp` ahora toma `std::string_view`, emplea `CleanBaseTypeView`, y retorna `true` cuando el símbolo resuelto es `SymbolType::Funcdef`.
+   - En `ConversionRankingEngine.cpp`, `IsFuncdefParam` y `ParamAcceptsHandleConversion` migraron a `CleanBaseTypeView`.
+3. **Ruta Rápida Cero-Asignación y Verificación de Espacios de Nombres en `NamespaceChecker`**:
+   - `ExtractCalleeName` retorna `std::string_view` limpio mediante `Trim(GetNodeTextView(...))`.
+   - `IsKnownCallee` e `IsKnownDirectGlobalCallee` reciben `std::string_view` y consultan directamente `table.IsRegisteredSymbol` y `table.ResolveInScope` sin alojar `std::string` en el montículo.
+   - `CheckCallExpression` despoja el prefijo `::` inicial cuando la llamada contiene separadores de espacio de nombres subsiguientes (`calleeName.find("::", 2) != std::string_view::npos`), permitiendo que `::UnknownNS::Foo()` sea diagnosticado correctamente con `as-err-undefined-namespace`.
+4. **Purga de `CallReference` y Limpieza de Expresiones Redundantes**:
+   - En `TargetResolution.cpp` (`ResolveGlobalScopedTarget`), se verificó `hasRealSymbol` en ramas `!gsq.isDirectRoot` descartando símbolos de tipo `CallReference`.
+   - Se simplificó la condición `isExplicitlyScoped` en `HoverHandler.cpp` y `DefinitionHandler.cpp`, y se eliminó la comprobación redundante de `<poison>` en `CallChecker.cpp`.
+5. **Pruebas Unitarias de Regresión**:
+   - `CallCheckerTest.cpp`: Pruebas específicas para `VoteBlocked(this.VoteBlocked)` sin error, llamadas con 0 argumentos emitiendo `as-err-call-argument-count`, y llamadas con 1 argumento no delegado emitiendo `as-err-call-argument-count`.
+   - `TypeConversionTest.cpp`: Prueba para asignación de `null` a tipo `funcdef` sin `as-err-null-non-handle`.
+   - `ClassRulesTest.cpp`: Prueba para llamada a `::UnknownNS::Foo()` emitiendo `as-err-undefined-namespace`.
+
+### 30.3. Métricas Finales de Fase 29.1
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,393 / 2,393` pasadas (`34,224` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.12%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
+
+
+
 

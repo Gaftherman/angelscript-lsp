@@ -9,6 +9,7 @@
 #include "analysis/RepeatedConversionChecker.h"
 
 #include "analysis/SemanticHelpers.h"
+#include "analysis/TypeSanitization.h"
 
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
@@ -3190,6 +3191,148 @@ void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const Conversi
 }
 
 /**
+ * @brief Checks if a custom class/value type accepts handle assignment via constructor or opAssign.
+ * @param[in] typeName Name of target data type.
+ * @param[in] table Symbol table.
+ * @return True if type declares converting constructor or opAssign taking a handle.
+ */
+static bool HasHandleOpAssign(std::string_view clean, const SymbolTable& table)
+{
+    if (auto opSyms = table.FindMemberSymbolPtr(clean, "opAssign"))
+    {
+        for (const auto& sym : *opSyms)
+        {
+            if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+            {
+                const auto& fn = sym.GetFunction();
+                if (!fn.parameters.empty() &&
+                    (fn.parameters[0].isHandle || fn.parameters[0].typeName.find('@') != std::string::npos))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return table.FindMemberSymbolPtr(clean, "opHndlAssign") != nullptr;
+}
+
+static bool HasHandleConvertingCtor(std::string_view clean, const SymbolTable& table)
+{
+    if (auto ctorSyms = table.FindMemberSymbolPtr(clean, clean))
+    {
+        for (const auto& sym : *ctorSyms)
+        {
+            if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+            {
+                const auto& fn = sym.GetFunction();
+                if (!fn.modifiers.isExplicit && fn.parameters.size() == 1 &&
+                    (fn.parameters[0].isHandle || fn.parameters[0].typeName.find('@') != std::string::npos))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+static bool TypeAcceptsNullHandle(std::string_view typeName, const SymbolTable& table)
+{
+    const std::string_view clean = CleanBaseTypeView(typeName);
+    if (clean.empty() || IsCorePrimitive(clean))
+    {
+        return false;
+    }
+    if (const auto syms = table.FindSymbolsPtr(clean))
+    {
+        if (std::any_of(syms->begin(), syms->end(), [](const Symbol& s) { return s.type == SymbolType::Funcdef; }))
+        {
+            return true;
+        }
+    }
+    return HasHandleOpAssign(clean, table) || HasHandleConvertingCtor(clean, table);
+}
+
+static TSNode UnwrapParentheses(TSNode node)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression &&
+           ts_node_named_child_count(node) > 0)
+    {
+        node = ts_node_named_child(node, 0);
+    }
+    return node;
+}
+
+/**
+ * @brief Validates assignment of null literal to non-handle types.
+ * @param[in] node Assignment expression AST node.
+ * @param[in] right Right-hand side expression node.
+ * @param[in] rawLeftType Unstripped expression type of left-hand side.
+ * @param[in,out] ctx Diagnostic context.
+ * @return True if right-hand side is null literal and was processed.
+ */
+static bool CheckNullAssignmentToNonHandle(TSNode node, TSNode right, const std::string& rawLeftType,
+                                           DiagnosticContext& ctx)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode unwrappedRight = UnwrapParentheses(right);
+    if (ts_node_symbol(unwrappedRight) != gs.symNullLiteral)
+    {
+        return false;
+    }
+
+    const TSNode assignOp = ts_node_child_by_field_id(node, gs.fieldOperator);
+    const std::string_view opText = ts_node_is_null(assignOp)
+                                        ? std::string_view("=")
+                                        : std::string_view(NodeText(assignOp, ctx.request.sourceCode));
+    if (opText != "=")
+    {
+        return false;
+    }
+
+    if (rawLeftType.empty() || ExpressionTypeCache::IsPoisonType(rawLeftType))
+    {
+        return false;
+    }
+
+    if (rawLeftType.find('@') != std::string::npos || rawLeftType == "auto" || rawLeftType == "?" ||
+        rawLeftType == "any")
+    {
+        return true;
+    }
+
+    if (!TypeAcceptsNullHandle(rawLeftType, ctx.request.symbolTable))
+    {
+        EmitAtNode(right, ctx, "as-err-null-non-handle", rawLeftType);
+        return true;
+    }
+    return true;
+}
+
+static bool CheckRightSideNamespaceOnly(TSNode right, DiagnosticContext& ctx)
+{
+    const std::string rightIdent = TrimString(NodeText(right, ctx.request.sourceCode));
+    if (rightIdent.empty())
+    {
+        return false;
+    }
+    if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(rightIdent))
+    {
+        for (const auto& s : *syms)
+        {
+            if (s.type != SymbolType::Namespace)
+            {
+                return false;
+            }
+        }
+        EmitAtNode(right, ctx, "as-err-undefined-identifier", rightIdent);
+        return true;
+    }
+    return false;
+}
+
+/**
  * @brief Validates assignment expression semantics and type compatibility.
  * @param[in] node Assignment expression syntax node.
  * @param[in] request Analysis request details.
@@ -3216,31 +3359,19 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
         return;
     }
 
-    const std::string rightIdent = TrimString(NodeText(right, ctx.request.sourceCode));
-    if (!rightIdent.empty())
+    if (CheckRightSideNamespaceOnly(right, ctx))
     {
-        if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(rightIdent))
-        {
-            bool onlyNs = true;
-            for (const auto& s : *syms)
-            {
-                if (s.type != SymbolType::Namespace)
-                {
-                    onlyNs = false;
-                    break;
-                }
-            }
-            if (onlyNs)
-            {
-                EmitAtNode(right, ctx, "as-err-undefined-identifier", rightIdent);
-                return;
-            }
-        }
+        return;
     }
 
     CheckAssignmentPropertyAccess(node, scope, ctx);
 
     const std::string leftType = ResolveExpressionType(left, ExpressionTypeContext(scope, ctx));
+    if (CheckNullAssignmentToNonHandle(node, right, leftType, ctx))
+    {
+        return;
+    }
+
     const std::string rightType = ResolveExpressionType(right, ExpressionTypeContext(scope, ctx));
     if (ExpressionTypeCache::IsPoisonType(leftType) || ExpressionTypeCache::IsPoisonType(rightType))
     {

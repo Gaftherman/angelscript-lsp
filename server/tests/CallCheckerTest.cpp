@@ -155,7 +155,7 @@ TEST_CASE("CallChecker - A qualified call is judged wherever it was declared")
     CHECK_FALSE(Reports(declared + "void main() { Logger::Log('a'); }\n"));
 }
 
-TEST_CASE("CallChecker - An unqualified call inside a class body is not judged")
+TEST_CASE("CallChecker - An unqualified delegate construction inside a class body is not judged")
 {
     // Narrowed by the corpus audit. An unqualified name can be a construction of a type this
     // analyzer cannot see: `VoteBlocked(this.VoteBlocked)` builds a delegate from an
@@ -164,8 +164,8 @@ TEST_CASE("CallChecker - An unqualified call inside a class body is not judged")
     // corpus files were reported on exactly that shape.
     const std::string code = "class Entity\n"
                              "{\n"
-                             "    void Helper(int a) { }\n"
-                             "    void Think() { Helper(); }\n"
+                             "    void VoteBlocked(int a, float b) { }\n"
+                             "    void Think() { VoteBlocked(this.VoteBlocked); }\n"
                              "}\n";
 
     CHECK_FALSE(Reports(code));
@@ -1731,4 +1731,72 @@ TEST_CASE("CallChecker - Invariant: Scoped constructor call is not shadowed by l
 
     auto diags = AnalyzeCallSnippet(code);
     CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("CallChecker - Passing null to non-handle reference parameter is rejected")
+{
+    const std::string hudParamsCls = angel_lsp::test::GenerateRandomSymbolName("HUDTextParams");
+    const std::string playerCls = angel_lsp::test::GenerateRandomSymbolName("CBasePlayer");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("HudMessage");
+
+    const std::string code = "class " + hudParamsCls + " {}\n" + "class " + playerCls + " {}\n" + "void " + fnName +
+                             "(" + playerCls + "@ p, const " + hudParamsCls +
+                             " &in textParams, const string &in msg) {}\n" + "void Test(" + playerCls + "@ p) {\n" +
+                             "    " + fnName + "(null, null, \"E + R\");\n" + "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK((HasCode(diags, "as-err-call-no-matching-signature") || HasCode(diags, "as-err-no-implicit-conversion")));
+}
+
+TEST_CASE("CallChecker - Exceeding maximum parameter count emits as-err-call-argument-count")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Deploy");
+
+    const std::string code =
+        "void " + fnName + "(int a, int b) {}\n" + "void Test() {\n" + "    " + fnName + "(1, 2, 3, 4);\n" + "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-call-argument-count"));
+}
+
+TEST_CASE("CallChecker - Calling unqualified method with too few arguments emits as-err-call-argument-count")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Weapon");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Deploy");
+
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    void " +
+                             fnName +
+                             "(string a, string b) {}\n"
+                             "    void Test() {\n"
+                             "        " +
+                             fnName +
+                             "();\n"
+                             "    }\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-call-argument-count"));
+}
+
+TEST_CASE("CallChecker - Calling unqualified method with 1 non-delegate argument emits as-err-call-argument-count")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Weapon");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Deploy");
+
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    void " +
+                             fnName +
+                             "(string a, string b) {}\n"
+                             "    void Test() {\n"
+                             "        " +
+                             fnName +
+                             "(\"v\");\n"
+                             "    }\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-call-argument-count"));
 }

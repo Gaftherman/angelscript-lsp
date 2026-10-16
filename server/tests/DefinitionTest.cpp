@@ -966,3 +966,21 @@ TEST_CASE("Definition - Go To Definition on overriding method declaration naviga
     CHECK((*def)[0].uri.toString().find("base.as") != std::string::npos);
     CHECK((*def)[0].range.start.line == 1);
 }
+
+TEST_CASE("Definition - Global ::Deploy inside namespace and mixin does not navigate to enclosing class method")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("INS2BASE");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("WeaponBase");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Deploy");
+
+    const std::string code = "namespace " + nsName + " {\n" + "    mixin class " + clsName + " {\n" + "        bool " +
+                             methodName + "(string a, int b) { return true; }\n" +
+                             "        void KickBack() { ::" + methodName + "(); }\n" + "    }\n" + "}\n";
+
+    TestEnvironment env(code);
+    const size_t callPos = code.find("::" + methodName);
+    auto pos = FindPos(code, methodName, callPos + 2);
+
+    auto def = env.DefAt(pos.line, pos.character);
+    CHECK((!def.has_value() || def->empty()));
+}

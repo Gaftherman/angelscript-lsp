@@ -2399,7 +2399,23 @@ std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std
 
     if (name.rfind("::", 0) == 0)
     {
-        return symbolTable.FindSymbols(name.substr(2));
+        const std::string rest = name.substr(2);
+        if (rest.find("::") == std::string::npos)
+        {
+            std::vector<Symbol> filtered;
+            if (auto symsPtr = symbolTable.FindSymbolsPtr(rest))
+            {
+                for (const auto& sym : *symsPtr)
+                {
+                    if (sym.containerName.empty() && sym.type != SymbolType::CallReference)
+                    {
+                        filtered.push_back(sym);
+                    }
+                }
+            }
+            return filtered;
+        }
+        return symbolTable.FindSymbols(rest);
     }
 
     if (auto found = FindSymbolInContainerHierarchy(symbolTable, containers, name); !found.empty())

@@ -1608,3 +1608,63 @@ TEST_CASE("Hover - Inherit doc comment from base class discovered via BaseClass 
     const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
     CHECK(text.find("Reloads primary ammo reserve into the weapon clip.") != std::string::npos);
 }
+
+TEST_CASE("Hover - Global ::Deploy inside namespace and mixin strictly targets root global scope")
+{
+    const std::string nsName = test::GenerateRandomSymbolName("INS2BASE");
+    const std::string clsName = test::GenerateRandomSymbolName("WeaponBase");
+    const std::string methodName = test::GenerateRandomSymbolName("Deploy");
+
+    // Case 1: When no root global Deploy exists, hovering ::Deploy() must NOT return WeaponBase::Deploy
+    const std::string codeNoGlobal = "namespace " + nsName + " {\n" + "    mixin class " + clsName + " {\n" +
+                                     "        bool " + methodName + "(string a, int b) { return true; }\n" +
+                                     "        void KickBack() { ::" + methodName + "(); }\n" + "    }\n" + "}\n";
+
+    TestEnvironment envNoGlobal(codeNoGlobal);
+    const std::string needle = "::" + methodName;
+    const size_t posIdx = codeNoGlobal.find(needle) + 2;
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < posIdx; ++i)
+    {
+        if (codeNoGlobal[i] == '\n')
+        {
+            ++line;
+            lineStart = i + 1;
+        }
+    }
+    auto hoverNoGlobal = envNoGlobal.HoverAt(line, static_cast<uint32_t>(posIdx - lineStart));
+    if (hoverNoGlobal.has_value())
+    {
+        const std::string val = std::get<lsp::MarkupContent>(hoverNoGlobal->contents).value;
+        CHECK(val.find(clsName) == std::string::npos);
+    }
+    else
+    {
+        CHECK(true);
+    }
+
+    // Case 2: When root global Deploy exists, hovering ::Deploy() resolves to root global
+    const std::string codeWithGlobal = "void " + methodName + "() {}\n" + "namespace " + nsName + " {\n" +
+                                       "    mixin class " + clsName + " {\n" + "        bool " + methodName +
+                                       "(string a, int b) { return true; }\n" +
+                                       "        void KickBack() { ::" + methodName + "(); }\n" + "    }\n" + "}\n";
+
+    TestEnvironment envWithGlobal(codeWithGlobal);
+    const size_t posIdx2 = codeWithGlobal.find(needle) + 2;
+    uint32_t line2 = 0;
+    size_t lineStart2 = 0;
+    for (size_t i = 0; i < posIdx2; ++i)
+    {
+        if (codeWithGlobal[i] == '\n')
+        {
+            ++line2;
+            lineStart2 = i + 1;
+        }
+    }
+    auto hoverWithGlobal = envWithGlobal.HoverAt(line2, static_cast<uint32_t>(posIdx2 - lineStart2));
+    REQUIRE(hoverWithGlobal.has_value());
+    const std::string val2 = std::get<lsp::MarkupContent>(hoverWithGlobal->contents).value;
+    CHECK(val2.find(clsName) == std::string::npos);
+    CHECK(val2.find("void " + methodName + "()") != std::string::npos);
+}

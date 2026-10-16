@@ -1,6 +1,6 @@
 {
   "project": "angelscript-lsp",
-  "currentPhase": "PHASE_25_AUDIT_REMEDIATION_AND_PERF_POLISH",
+  "currentPhase": "PHASE_29_1_CODE_REVIEW_POLISH",
   "status": "COMPLETED",
   "baselineMetrics": {
     "largeScript3000ParseAndAnalysisMs": 192.75,
@@ -9,14 +9,14 @@
     "parityPassCount": 256,
     "parityTotalCount": 256,
     "unexplainedFalsePositives": 0,
-    "unitTestsTotal": 2372,
-    "unitTestsPassed": 2372,
-    "unitAssertionsPassed": 34057,
+    "unitTestsTotal": 2393,
+    "unitTestsPassed": 2393,
+    "unitAssertionsPassed": 34224,
     "condEdgePassCount": 0,
     "tsanRaceWarnings": 0,
     "layerIncludeCheck": "PASS",
     "astGrepViolations": 0,
-    "jscpdDuplicationPercent": 1.14
+    "jscpdDuplicationPercent": 1.12
   },
   "phases": [
     {
@@ -816,6 +816,72 @@
         "All 2,372 unit tests passed (34,057 assertions, 0 failures, 30 skipped).",
         "All 12 static quality gates passed successfully at 100% (jscpd 1.14%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100, check-ast-traversal clean, npm pretest clean)."
       ]
+    },
+    {
+      "id": "PHASE_29",
+      "name": "Global Scope :: Resolution, Call Argument Limits, Non-Handle Null Assignment, and Reference Null Conversion",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/parser/GrammarSymbols.h",
+        "server/src/parser/GrammarSymbols.cpp",
+        "server/src/analysis/ASTUtils.h",
+        "server/src/analysis/TargetResolution.cpp",
+        "server/src/analysis/CallChecker.cpp",
+        "server/src/analysis/NamespaceChecker.cpp",
+        "server/src/analysis/SemanticAnalyzer.cpp",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/analysis/TypeConversionChecker.cpp",
+        "server/src/analysis/overload/ConversionRankingEngine.cpp",
+        "server/src/features/hover/HoverHandler.cpp",
+        "server/src/features/definition/DefinitionHandler.cpp",
+        "server/tests/GrammarSymbolsTest.cpp",
+        "server/tests/CallCheckerTest.cpp",
+        "server/tests/ClassRulesTest.cpp",
+        "server/tests/DefinitionTest.cpp",
+        "server/tests/HoverTest.cpp",
+        "server/tests/TypeConversionTest.cpp",
+        "STEPS.md",
+        "STEPS.json"
+      ],
+      "findings": [
+        "Added tokColonColon (SymAnon(lang, '::')) in GrammarSymbols and implemented GetGlobalScopeQualifier / IsGlobalScopedNode in ASTUtils.h using O(1) TSSymbol comparisons, strictly isolating leading '::' root-global scope lookups from '::NS::Symbol' qualified paths.",
+        "Strictly isolated global scope lookup in TargetResolution.cpp, HoverHandler.cpp, DefinitionHandler.cpp, and SemanticHelpers.cpp: direct root global '::Deploy' resolves only to symbols with containerName.empty(), preventing fallback or leakage into enclosing class/mixin methods or base class hierarchies.",
+        "Updated NamespaceChecker.cpp to emit as-err-undefined-identifier when an explicit root-global call '::Deploy()' has no matching global symbol in the document or predefined symbol table.",
+        "Included TypeKind::Float and TypeKind::UInt8 in IsUnconditionallyNonNullablePrimitive and implemented TypeAcceptsNullHandle in TypeConversionChecker.cpp to flag assignments of 'null' to non-handle variables with as-err-null-non-handle ('Cannot assign 'null' to non-handle type '{}'.'), while cleanly allowing handles, ?/any, funcdefs, and types with converting constructors or opAssign from handle (e.g. EHandle).",
+        "Updated ConversionRankingEngine.cpp to rank argument 'null' as incompatible with non-handle reference parameters (e.g. const HUDTextParams &in), cleanly matching AngelScript compiler semantics.",
+        "Updated CallChecker.cpp: ResolveCallArguments evaluates null_literal as 'null' without invalidating allArgsResolved, and CheckArgumentCount enforces maximum parameter limits even on null arguments or unqualified class calls.",
+        "Decomposed TypeAcceptsNullHandle, ProcessAssignmentNode, and TryHoverSymbolCandidates to strictly satisfy Lizard CCN <= 15 and NLOC <= 70.",
+        "All 2,389 unit tests passed (34,220 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100% (jscpd 1.12%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100, check-ast-traversal clean, npm pretest clean)."
+      ]
+    },
+    {
+      "id": "PHASE_29_1",
+      "name": "Post-Phase 29 Code Review Polish: Delegate Construction Detection, Funcdef Null Parity & Zero-Allocation Namespace Verification",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/CallChecker.cpp",
+        "server/src/analysis/TypeConversionChecker.cpp",
+        "server/src/analysis/overload/ConversionRankingEngine.cpp",
+        "server/src/analysis/NamespaceChecker.cpp",
+        "server/src/analysis/TargetResolution.cpp",
+        "server/src/features/hover/HoverHandler.cpp",
+        "server/src/features/definition/DefinitionHandler.cpp",
+        "server/tests/CallCheckerTest.cpp",
+        "server/tests/TypeConversionTest.cpp",
+        "server/tests/ClassRulesTest.cpp",
+        "STEPS.md",
+        "STEPS.json"
+      ],
+      "findings": [
+        "Fixed CallChecker argumentCount <= 1 suppression: replaced blanket 0-or-1 argument suppression with IsDelegateConstructionPattern using TSSymbol field IDs (fieldObject, fieldMember) and HasFuncdefSymbol, accurately distinguishing delegate constructions (Callee(this.Callee)) while cleanly flagging unqualified calls with too few arguments.",
+        "Extended TypeAcceptsNullHandle in TypeConversionChecker.cpp to recognize SymbolType::Funcdef targets, allowing assigning null to funcdef handle variables, and replaced allocating CleanBaseType with string_view CleanBaseTypeView.",
+        "Replaced allocating CleanBaseType with CleanBaseTypeView in ConversionRankingEngine.cpp IsFuncdefParam and ParamAcceptsHandleConversion.",
+        "Eliminated heap allocations in NamespaceChecker.cpp: ExtractCalleeName returns std::string_view, IsKnownCallee and IsKnownDirectGlobalCallee accept std::string_view and query SymbolTable without temporary std::string allocation; added namespace qualification checks for ::UnknownNS::Foo().",
+        "Filtered SymbolType::CallReference from TargetResolution.cpp ResolveGlobalScopedTarget on non-direct root branches via hasRealSymbol check, and simplified isExplicitlyScoped conditions in HoverHandler.cpp and DefinitionHandler.cpp.",
+        "All 2,393 unit tests passed (34,224 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100% (jscpd 1.12%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100, check-ast-traversal clean, npm pretest clean)."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -844,9 +910,14 @@
     "GAP-UX-01: Overload hover rendering collapsible HTML details/summary elements instead of clean Markdown text. (RESOLVED in Phase 22).",
     "GAP-UX-02: Hover showing file location footer by default and emitting 'File: Not found' on unresolved strings. (RESOLVED in Phase 22 with hoverShowFileLocation = false default).",
     "GAP-UX-03: Rules and predefined file modification without restart notification prompt. (RESOLVED in Phase 22 with onDidSaveTextDocument listener in extension.ts).",
-    "GAP-ARCH-01: Engine callbacks hardcoded in C++ core, O(N^2) symbol scans in inheritance checks, and string concatenation in scope matchers. (RESOLVED in Phase 23)."
+    "GAP-ARCH-01: Engine callbacks hardcoded in C++ core, O(N^2) symbol scans in inheritance checks, and string concatenation in scope matchers. (RESOLVED in Phase 23).",
+    "GAP-GLOBAL-01: Global scope ::Deploy inside namespace/mixin falling back to enclosing class/mixin method. (RESOLVED in Phase 29 with GetGlobalScopeQualifier, tokColonColon, and root container filtering).",
+    "GAP-CALL-01: Call argument count limit bypassed when null arguments or unqualified class calls present. (RESOLVED in Phase 29 with CheckArgumentCount limit enforcement).",
+    "GAP-CALL-02: argumentCount <= 1 blanket check suppressing too-few-arguments errors on 2+ parameter methods. (RESOLVED in Phase 29.1 with IsDelegateConstructionPattern).",
+    "GAP-NULL-01: Assigning null to non-handle members/variables unflagged. (RESOLVED in Phase 29 with TypeAcceptsNullHandle and as-err-null-non-handle).",
+    "GAP-CONV-01: Passing null to non-handle reference parameters (&in) falsely ranked as compatible. (RESOLVED in Phase 29 in ConversionRankingEngine)."
   ],
   "nextActions": [
-    "Phase 23 completed with 100% test pass rate (2,368 tests, 33,996 assertions), all 12 quality gates green, and 106 client settings wired."
+    "Phase 29.1 code review polish completed with 100% test pass rate (2,393 tests, 34,224 assertions), all 12 quality gates green, and 107 client settings wired."
   ]
 }

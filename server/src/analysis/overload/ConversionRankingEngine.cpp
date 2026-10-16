@@ -1,5 +1,6 @@
 #include "analysis/overload/ConversionRankingEngine.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/TypeSanitization.h"
 #include "analysis/overload/OverloadTypeConversions.h"
 
 #include <algorithm>
@@ -11,6 +12,51 @@ namespace angel_lsp::analysis
 {
 namespace
 {
+static bool IsFuncdefParam(const ParameterInformation& param, const SymbolTable& symbolTable)
+{
+    const std::string_view clean = CleanBaseTypeView(param.typeName);
+    if (auto syms = symbolTable.FindSymbolsPtr(clean))
+    {
+        for (const auto& sym : *syms)
+        {
+            if (sym.type == SymbolType::Funcdef)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static bool ParamAcceptsHandleConversion(const ParameterInformation& param, const SymbolTable& symbolTable)
+{
+    if (param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut)
+    {
+        return false;
+    }
+    const std::string_view clean = CleanBaseTypeView(param.typeName);
+    if (clean.empty() || IsCorePrimitive(clean))
+    {
+        return false;
+    }
+    if (auto ctorSyms = symbolTable.FindMemberSymbolPtr(clean, clean))
+    {
+        for (const auto& sym : *ctorSyms)
+        {
+            if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+            {
+                const auto& fn = sym.GetFunction();
+                if (!fn.modifiers.isExplicit && fn.parameters.size() == 1 &&
+                    HasHandleModifier(fn.parameters[0].typeName))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string& argType,
                                                                const ParameterInformation& param,
                                                                const SymbolTable& symbolTable)
@@ -25,11 +71,17 @@ std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string
     }
     if (argType == "null")
     {
-        const bool paramIsHandle = param.isHandle || HasHandleModifier(param.typeName);
-        if (paramIsHandle)
+        const bool paramIsHandle =
+            param.isHandle || HasHandleModifier(param.typeName) || param.typeName.find('@') != std::string::npos;
+        if (paramIsHandle || IsWildcardParameter(param) || IsFuncdefParam(param, symbolTable))
         {
             return ArgumentConversion{ConversionRank::Exact, 0, 0, false,
                                       static_cast<int>(OverloadMatchPenalty::Exact)};
+        }
+        if (ParamAcceptsHandleConversion(param, symbolTable))
+        {
+            return ArgumentConversion{ConversionRank::UserDefined, 20, 0, false,
+                                      static_cast<int>(OverloadMatchPenalty::UserDefined)};
         }
         return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
                                   static_cast<int>(OverloadMatchPenalty::Incompatible)};

@@ -1014,3 +1014,29 @@ TEST_CASE("ClassRules - Multi-file cross-#include does not leak final method ove
         CHECK_FALSE(d.code == "as-err-override-final-method");
     }
 }
+
+TEST_CASE("ClassRules - Global ::Deploy inside a mixin is undefined if not declared at global scope")
+{
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("MixShared");
+    const std::string hostName = angel_lsp::test::GenerateRandomSymbolName("MixUser");
+    const std::string calleeName = angel_lsp::test::GenerateRandomSymbolName("Deploy");
+
+    const std::string code = "mixin class " + mixinName + " { void Go() { ::" + calleeName + "(); } }\n" + "class " +
+                             hostName + " : " + mixinName + " {}\n";
+
+    CHECK(HasCode(AnalyzeClassSnippet(code), "as-err-undefined-identifier"));
+}
+
+TEST_CASE("ClassRules - Calling ::UnknownNS::Foo emits as-err-undefined-namespace")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("UnknownNS");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Foo");
+
+    const std::string code = "void main() {\n"
+                             "    ::" +
+                             nsName + "::" + fnName +
+                             "();\n"
+                             "}\n";
+
+    CHECK(HasCode(AnalyzeClassSnippet(code), "as-err-undefined-namespace"));
+}

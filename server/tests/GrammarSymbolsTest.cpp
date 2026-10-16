@@ -111,6 +111,7 @@ TEST_CASE("GrammarSymbols - all cached named symbols, anonymous tokens, and fiel
     CHECK(gs.tokOpenBrace != 0);
     CHECK(gs.tokGet != 0);
     CHECK(gs.tokSet != 0);
+    CHECK(gs.tokColonColon != 0);
 
     // Field IDs
     CHECK(gs.fieldName != 0);

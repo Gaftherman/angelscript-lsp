@@ -1,5 +1,6 @@
 #include "analysis/TargetResolution.h"
 
+#include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
@@ -951,6 +952,50 @@ void ResolveTargetSignature(TargetDescriptor& target, const ResolveTargetRequest
     }
 }
 
+bool ResolveGlobalScopedTarget(const ResolveTargetRequest& request, const GlobalScopeQualifier& gsq,
+                               TargetDescriptor& target)
+{
+    if (gsq.isDirectRoot)
+    {
+        if (auto symsPtr = request.symbolTable.FindSymbolsPtr(gsq.rootPath))
+        {
+            for (const auto& sym : *symsPtr)
+            {
+                if (sym.containerName.empty() && sym.type != analysis::SymbolType::CallReference)
+                {
+                    target.kind = TargetKind::GlobalSymbol;
+                    target.name = std::string(gsq.rootPath);
+                    FunctionArgConstraints callInfo = GetCallArgumentConstraints(request.outNode);
+                    ResolveTargetSignature(target, request, callInfo);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    if (auto symsPtr = request.symbolTable.FindSymbolsPtr(gsq.rootPath))
+    {
+        const bool hasRealSymbol = std::any_of(symsPtr->begin(), symsPtr->end(), [](const Symbol& sym)
+                                               { return sym.type != analysis::SymbolType::CallReference; });
+        if (hasRealSymbol)
+        {
+            target.kind = TargetKind::NamespaceSymbol;
+            target.qualifiedName = std::string(gsq.rootPath);
+            const size_t lastSep = gsq.rootPath.rfind("::");
+            if (lastSep != std::string_view::npos)
+            {
+                target.declaringNamespace = std::string(gsq.rootPath.substr(0, lastSep));
+                target.name = std::string(gsq.rootPath.substr(lastSep + 2));
+            }
+            FunctionArgConstraints callInfo = GetCallArgumentConstraints(request.outNode);
+            ResolveTargetSignature(target, request, callInfo);
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& request)
@@ -971,6 +1016,16 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
 
     TargetDescriptor target;
     target.name = nodeText;
+
+    const auto gsq = analysis::GetGlobalScopeQualifier(request.outNode, request.sourceCode);
+    if (gsq.isGlobal)
+    {
+        if (ResolveGlobalScopedTarget(request, gsq, target))
+        {
+            return target;
+        }
+        return std::nullopt;
+    }
 
     if (ResolveEnumTarget(request.outNode, nodeText, request, target))
     {

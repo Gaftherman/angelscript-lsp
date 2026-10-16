@@ -1,6 +1,7 @@
 #pragma once
 
 #include "parser/ASTUtils.h"
+#include "parser/GrammarSymbols.h"
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -65,6 +66,81 @@ inline constexpr int k_maxAstDepth = 64;
         text.remove_suffix(1);
     }
     return text;
+}
+
+/**
+ * @brief Represents the global scope qualification of an AST node.
+ */
+struct GlobalScopeQualifier
+{
+    bool isGlobal = false;       ///< True if prefixed with leading "::"
+    bool isDirectRoot = false;   ///< True if direct root-global (::Ident with no namespace path)
+    std::string_view rootPath{}; ///< Path after leading "::", e.g. "Deploy" or "NS::Deploy"
+};
+
+/**
+ * @brief Analyzes whether an AST node is globally qualified (starts with leading "::").
+ * @param[in] node AST node (identifier, scoped_identifier, etc.).
+ * @param[in] sourceCode Source text.
+ * @return GlobalScopeQualifier structure.
+ */
+[[nodiscard]] inline GlobalScopeQualifier GetGlobalScopeQualifier(TSNode node, std::string_view sourceCode) noexcept
+{
+    if (ts_node_is_null(node))
+    {
+        return {};
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode target = node;
+    const TSSymbol nSym = ts_node_symbol(node);
+    if (nSym != gs.symScopedIdentifier)
+    {
+        TSNode parent = ts_node_parent(node);
+        if (!ts_node_is_null(parent) && ts_node_symbol(parent) == gs.symScopedIdentifier)
+        {
+            target = parent;
+        }
+        else
+        {
+            return {};
+        }
+    }
+
+    if (ts_node_child_count(target) == 0)
+    {
+        return {};
+    }
+
+    TSNode firstChild = ts_node_child(target, 0);
+    if (ts_node_symbol(firstChild) != gs.tokColonColon)
+    {
+        return {};
+    }
+
+    GlobalScopeQualifier res;
+    res.isGlobal = true;
+
+    const uint32_t start = ts_node_start_byte(target);
+    const uint32_t end = ts_node_end_byte(target);
+    if (start < end && end <= sourceCode.size() && (start + 2) <= end)
+    {
+        res.rootPath = sourceCode.substr(start + 2, end - (start + 2));
+    }
+
+    const uint32_t namedCount = ts_node_named_child_count(target);
+    res.isDirectRoot = (namedCount == 1);
+    return res;
+}
+
+/**
+ * @brief Checks if an identifier or scoped identifier has leading global scope qualifier ("::").
+ * @param[in] node AST node.
+ * @param[in] sourceCode Document source text.
+ * @return True if qualified strictly by leading global "::".
+ */
+[[nodiscard]] inline bool IsGlobalScopedNode(TSNode node, std::string_view sourceCode) noexcept
+{
+    return GetGlobalScopeQualifier(node, sourceCode).isGlobal;
 }
 
 /**

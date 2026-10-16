@@ -3005,3 +3005,45 @@ TEST_CASE("TypeConversion - Explicit cast and handle identity between base and d
     auto convDiags = ConversionDiagnostics(code);
     CHECK(convDiags.empty());
 }
+
+TEST_CASE("TypeConversion - Assigning null to non-handle variables emits as-err-null-non-handle")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Weapon");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("WeaponGLMode");
+
+    const std::string code = "class " + clsName + " {\n" + "    protected int " + propName + ";\n" +
+                             "    void Reset() {\n" + "        " + propName + " = null;\n" + "    }\n" + "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    CHECK(std::any_of(diags.begin(), diags.end(),
+                      [](const Diagnostic& d) { return d.code == "as-err-null-non-handle"; }));
+}
+
+TEST_CASE("TypeConversion - Assigning null to handle and converting types does not emit as-err-null-non-handle")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Entity");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("ent");
+
+    const std::string code = "class " + clsName + " {}\n" + "void Test() {\n" + "    " + clsName + "@ " + varName +
+                             " = null;\n" + "    " + varName + " = null;\n" + "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    CHECK_FALSE(std::any_of(diags.begin(), diags.end(),
+                            [](const Diagnostic& d) { return d.code == "as-err-null-non-handle"; }));
+}
+
+TEST_CASE("TypeConversion - Assigning null to funcdef type does not emit as-err-null-non-handle")
+{
+    const std::string funcdefName = angel_lsp::test::GenerateRandomSymbolName("CallbackFunc");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("cb");
+
+    const std::string code = "funcdef void " + funcdefName + "(int a);\n" + "void Test() {\n" + "    " + funcdefName +
+                             "@ " + varName + " = null;\n" + "    " + varName + " = null;\n" + "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    CHECK_FALSE(std::any_of(diags.begin(), diags.end(),
+                            [](const Diagnostic& d) { return d.code == "as-err-null-non-handle"; }));
+}

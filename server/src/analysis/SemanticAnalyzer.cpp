@@ -1321,9 +1321,11 @@ bool IsUnconditionallyNonNullablePrimitive(TypeKind kind)
     case TypeKind::Int16:
     case TypeKind::Int32:
     case TypeKind::Int64:
+    case TypeKind::UInt8:
     case TypeKind::UInt16:
     case TypeKind::UInt32:
     case TypeKind::UInt64:
+    case TypeKind::Float:
     case TypeKind::Double:
     case TypeKind::Bool:
         return true;

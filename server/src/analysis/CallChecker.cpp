@@ -1200,6 +1200,26 @@ struct CallArgTypes
 };
 
 /**
+ * @brief Unwraps a parenthesized expression AST node to its inner child.
+ *
+ * @param[in] node Input AST node.
+ * @return Inner node if parenthesized, otherwise the node itself.
+ */
+static TSNode UnwrapParenNode(TSNode node)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(node) == gs.symParenthesizedExpression)
+    {
+        TSNode child = ts_node_named_child(node, 0);
+        if (!ts_node_is_null(child))
+        {
+            return child;
+        }
+    }
+    return node;
+}
+
+/**
  * @brief Resolves expression types for each call argument and flags bare types.
  *
  * @param[in] valCtx Call validation context.
@@ -1237,9 +1257,18 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
         }
 
         std::string argType = ResolveExpressionType(argNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
-        if (argType.empty() || ExpressionTypeCache::IsPoisonType(argType) || argType == "<poison>")
+        if (argType.empty() || ExpressionTypeCache::IsPoisonType(argType))
         {
-            result.allArgsResolved = false;
+            const auto& gs = parser::GetGrammarSymbols();
+            TSNode unwrapped = UnwrapParenNode(argNode);
+            if (ts_node_symbol(unwrapped) == gs.symNullLiteral)
+            {
+                argType = "null";
+            }
+            else
+            {
+                result.allArgsResolved = false;
+            }
         }
         else if (!HasConstModifier(argType) && IsObjectNodeConst(argNode, valCtx))
         {
@@ -1313,25 +1342,6 @@ void CheckInitializerListArgs(const CallArgTypes& args, const FunctionSignature&
                                             {valCtx.request.sourceCode, valCtx.scope}, valCtx.ctx);
         }
     }
-}
-
-/**
- * @brief Unwraps a parenthesized expression AST node to its inner child.
- *
- * @param[in] node Input AST node.
- * @return Inner node if parenthesized, otherwise the node itself.
- */
-TSNode UnwrapParenNode(TSNode node)
-{
-    if (std::string_view(ts_node_type(node)) == parser::nodes::ParenthesizedExpression)
-    {
-        TSNode child = ts_node_named_child(node, 0);
-        if (!ts_node_is_null(child))
-        {
-            return child;
-        }
-    }
-    return node;
 }
 
 /**
@@ -1811,6 +1821,44 @@ CalleeResolution ResolveCalleeCandidates(const CallValidationContext& valCtx)
     return res;
 }
 
+static bool IsDelegateConstructionPattern(TSNode argumentList, std::string_view calleeName, std::string_view sourceCode)
+{
+    const auto argNodes = GetArgumentNodes(argumentList);
+    if (argNodes.size() != 1)
+    {
+        return false;
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode arg = UnwrapParenNode(argNodes[0]);
+    if (ts_node_symbol(arg) != gs.symMemberExpression)
+    {
+        return false;
+    }
+    TSNode objNode = ts_node_child_by_field_id(arg, gs.fieldObject);
+    TSNode memberNode = ts_node_child_by_field_id(arg, gs.fieldMember);
+    if (ts_node_is_null(objNode) || ts_node_is_null(memberNode))
+    {
+        return false;
+    }
+    const std::string_view objText = GetNodeTextView(objNode, sourceCode);
+    const std::string_view memberText = GetNodeTextView(memberNode, sourceCode);
+    return objText == "this" && memberText == calleeName;
+}
+
+static bool HasFuncdefSymbol(std::string_view name, const SymbolTable& table)
+{
+    if (const auto syms = table.FindSymbolsPtr(name))
+    {
+        if (std::any_of(syms->begin(), syms->end(), [](const Symbol& s) { return s.type == SymbolType::Funcdef; }))
+        {
+            return true;
+        }
+    }
+    const auto shortName = LastScopeSegment(name);
+    const auto matches = table.FindTypeSymbolsByShortName(shortName);
+    return std::any_of(matches.begin(), matches.end(), [](const Symbol& s) { return s.type == SymbolType::Funcdef; });
+}
+
 /**
  * @brief Validates argument count against candidate arities and emits diagnostics on failure.
  *
@@ -1824,7 +1872,17 @@ bool CheckArgumentCount(const CalleeResolution& calleeRes, uint32_t argumentCoun
     const CandidateSet judged = JudgeAgainst(calleeRes.candidates, argumentCount);
     if (!judged.decided || !judged.accepts)
     {
-        if (judged.decided && !judged.accepts && !calleeRes.isUnqualifiedClassCall)
+        bool emit = judged.decided && !judged.accepts;
+        if (emit && calleeRes.isUnqualifiedClassCall)
+        {
+            if (argumentCount == 1 &&
+                (IsDelegateConstructionPattern(valCtx.arguments, calleeRes.reportedName, valCtx.request.sourceCode) ||
+                 HasFuncdefSymbol(calleeRes.reportedName, valCtx.ctx.request.symbolTable)))
+            {
+                emit = false;
+            }
+        }
+        if (emit)
         {
             const TSPoint start = ts_node_start_point(valCtx.callee);
             const TSPoint end = ts_node_end_point(valCtx.arguments);
