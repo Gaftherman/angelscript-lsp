@@ -138,6 +138,24 @@ static std::string InheritedDocComment(const HoverRequest& request, const analys
         }
     }
 
+    analysis::LinkedBaseOptions linkedOpts;
+    if (request.config)
+    {
+        linkedOpts.proxyMap = &request.config->engineRules.unusedRules.baseClassProxyMap;
+        linkedOpts.delegateProps = request.config->engineRules.unusedRules.baseClassDelegateProperties;
+    }
+
+    const auto linkedSymbols =
+        analysis::FindOverriddenBaseMethodSymbols(symbol.containerName, symbol.name, request.symbolTable, linkedOpts);
+    for (const auto& candidate : linkedSymbols)
+    {
+        std::string doc = OwnDocComment(request, candidate);
+        if (!doc.empty())
+        {
+            return doc;
+        }
+    }
+
     return "";
 }
 

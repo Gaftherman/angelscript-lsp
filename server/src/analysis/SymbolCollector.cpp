@@ -65,79 +65,10 @@ struct MemberNodes
 // Public API & Lifecycle
 // =========================================================================================
 
-SymbolCollector::SymbolCollector(angel_lsp::utils::LspLogger* logger) : m_logger(logger)
+SymbolCollector::SymbolCollector(angel_lsp::utils::LspLogger* logger)
+    : m_logger(logger), m_gs(parser::GetGrammarSymbols())
 {
-    const TSLanguage* lang = tree_sitter_angelscript();
-    ResolveGrammarSymbols(lang);
     InitQueryDispatch();
-}
-
-void SymbolCollector::ResolveGrammarSymbols(const TSLanguage* lang)
-{
-    m_symDeclarationModifier = ts_language_symbol_for_name(lang, SYM_NAME("declaration_modifier"), true);
-    m_symClassBody = ts_language_symbol_for_name(lang, SYM_NAME("class_body"), true);
-    m_symNamespaceBody = ts_language_symbol_for_name(lang, SYM_NAME("namespace_body"), true);
-    m_symInterfaceBody = ts_language_symbol_for_name(lang, SYM_NAME("interface_body"), true);
-    m_symEnumMember = ts_language_symbol_for_name(lang, SYM_NAME("enum_member"), true);
-    m_symFuncDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("func_declaration"), true);
-    m_symStatementBlock = ts_language_symbol_for_name(lang, SYM_NAME("statement_block"), true);
-    m_symInterfaceMethod = ts_language_symbol_for_name(lang, SYM_NAME("interface_method"), true);
-    m_symFuncAttributes = ts_language_symbol_for_name(lang, SYM_NAME("func_attributes"), true);
-    m_symGet = ts_language_symbol_for_name(lang, SYM_NAME("get"), false);
-    m_symSet = ts_language_symbol_for_name(lang, SYM_NAME("set"), false);
-
-    m_symVariableDeclarator = ts_language_symbol_for_name(lang, SYM_NAME("variable_declarator"), true);
-    m_symAccessor = ts_language_symbol_for_name(lang, SYM_NAME("accessor"), true);
-    m_symImportDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("import_declaration"), true);
-
-    m_symScopedIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("scoped_identifier"), true);
-    m_symMixinDeclaration = ts_language_symbol_for_name(lang, SYM_NAME("mixin_declaration"), true);
-    m_symSharedExternalModifier = ts_language_symbol_for_name(lang, SYM_NAME("shared_external_modifier"), true);
-    m_symVirtualProperty = ts_language_symbol_for_name(lang, SYM_NAME("virtual_property"), true);
-    m_symBaseClassList = ts_language_symbol_for_name(lang, SYM_NAME("base_class_list"), true);
-    m_symParameter = ts_language_symbol_for_name(lang, SYM_NAME("parameter"), true);
-    m_symMemberExpression = ts_language_symbol_for_name(lang, SYM_NAME("member_expression"), true);
-    m_symMetadata = ts_language_symbol_for_name(lang, SYM_NAME("metadata"), true);
-    m_symScript = ts_language_symbol_for_name(lang, SYM_NAME("script"), true);
-    m_symLambdaExpression = ts_language_symbol_for_name(lang, SYM_NAME("lambda_expression"), true);
-
-    m_tokConst = ts_language_symbol_for_name(lang, SYM_NAME("const"), false);
-    m_tokIn = ts_language_symbol_for_name(lang, SYM_NAME("in"), false);
-    m_tokOut = ts_language_symbol_for_name(lang, SYM_NAME("out"), false);
-    m_tokInout = ts_language_symbol_for_name(lang, SYM_NAME("inout"), false);
-    m_tokAmp = ts_language_symbol_for_name(lang, SYM_NAME("&"), false);
-    m_tokAt = ts_language_symbol_for_name(lang, SYM_NAME("@"), false);
-    m_tokPrivate = ts_language_symbol_for_name(lang, SYM_NAME("private"), false);
-    m_tokProtected = ts_language_symbol_for_name(lang, SYM_NAME("protected"), false);
-    m_tokShared = ts_language_symbol_for_name(lang, SYM_NAME("shared"), false);
-    m_tokMixin = ts_language_symbol_for_name(lang, SYM_NAME("mixin"), false);
-    m_tokAbstract = ts_language_symbol_for_name(lang, SYM_NAME("abstract"), false);
-    m_tokFinal = ts_language_symbol_for_name(lang, SYM_NAME("final"), false);
-    m_tokOverride = ts_language_symbol_for_name(lang, SYM_NAME("override"), false);
-    m_tokExplicit = ts_language_symbol_for_name(lang, SYM_NAME("explicit"), false);
-    m_tokProperty = ts_language_symbol_for_name(lang, SYM_NAME("property"), false);
-    m_tokDelete = ts_language_symbol_for_name(lang, SYM_NAME("delete"), false);
-    m_tokExternal = ts_language_symbol_for_name(lang, SYM_NAME("external"), false);
-    m_tokImport = ts_language_symbol_for_name(lang, SYM_NAME("import"), false);
-    m_tokOpenBrace = ts_language_symbol_for_name(lang, SYM_NAME("{"), false);
-
-    m_fieldIdName = ts_language_field_id_for_name(lang, "name", 4);
-    m_fieldIdReturnType = ts_language_field_id_for_name(lang, "return_type", 11);
-    m_fieldIdParameters = ts_language_field_id_for_name(lang, "parameters", 10);
-    m_fieldIdBody = ts_language_field_id_for_name(lang, "body", 4);
-    m_fieldIdVarType = ts_language_field_id_for_name(lang, "var_type", 8);
-    m_fieldIdType = ts_language_field_id_for_name(lang, "type", 4);
-    m_fieldIdKind = ts_language_field_id_for_name(lang, "kind", 4);
-    m_fieldIdSource = ts_language_field_id_for_name(lang, "source", 6);
-    m_fieldIdPropType = ts_language_field_id_for_name(lang, "prop_type", 9);
-    m_fieldIdParamType = ts_language_field_id_for_name(lang, "param_type", 10);
-    m_fieldIdDefaultValue = ts_language_field_id_for_name(lang, "default_value", 13);
-    m_fieldIdValue = ts_language_field_id_for_name(lang, "value", 5);
-    m_fieldIdBaseType = ts_language_field_id_for_name(lang, "base_type", 9);
-    m_fieldIdTemplateParams = ts_language_field_id_for_name(lang, "template_params", 15);
-    m_fieldIdFunction = ts_language_field_id_for_name(lang, "function", 8);
-    m_fieldIdMember = ts_language_field_id_for_name(lang, "member", 6);
-    m_fieldIdObject = ts_language_field_id_for_name(lang, "object", 6);
 }
 
 void SymbolCollector::InitQueryDispatch()
@@ -485,25 +416,25 @@ void SymbolCollector::ApplyAccessorTokens(TSNode accNode, bool isGet, bool isSet
         {
             TSNode child = ts_tree_cursor_current_node(&cursor);
             TSSymbol cSym = ts_node_symbol(child);
-            if (cSym == m_tokConst && isGet)
+            if (cSym == m_gs.tokConst && isGet)
             {
                 varSig.isGetConst = true;
             }
-            else if (cSym == m_tokOverride)
+            else if (cSym == m_gs.tokOverride)
             {
                 if (isGet)
                     varSig.isGetOverride = true;
                 else if (isSet)
                     varSig.isSetOverride = true;
             }
-            else if (cSym == m_tokFinal)
+            else if (cSym == m_gs.tokFinal)
             {
                 if (isGet)
                     varSig.isGetFinal = true;
                 else if (isSet)
                     varSig.isSetFinal = true;
             }
-            else if (cSym == m_symFuncAttributes)
+            else if (cSym == m_gs.symFuncAttributes)
             {
                 ApplyFuncAttributeTokens(child, isGet, isSet, varSig);
             }
@@ -521,14 +452,14 @@ void SymbolCollector::ApplyFuncAttributeTokens(TSNode attrNode, bool isGet, bool
         {
             TSNode child = ts_tree_cursor_current_node(&cursor);
             TSSymbol cSym = ts_node_symbol(child);
-            if (cSym == m_tokFinal)
+            if (cSym == m_gs.tokFinal)
             {
                 if (isGet)
                     varSig.isGetFinal = true;
                 else if (isSet)
                     varSig.isSetFinal = true;
             }
-            else if (cSym == m_tokOverride)
+            else if (cSym == m_gs.tokOverride)
             {
                 if (isGet)
                     varSig.isGetOverride = true;
@@ -545,8 +476,8 @@ void SymbolCollector::ParseSingleAccessor(TSNode accNode, VariableSignature& var
     TSNode kindNode = GetChildByFieldName(accNode, "kind");
     TSNode bodyNode = GetChildByFieldName(accNode, "body");
     TSSymbol kindSym = !ts_node_is_null(kindNode) ? ts_node_symbol(kindNode) : 0;
-    bool isGet = (kindSym == m_symGet);
-    bool isSet = (kindSym == m_symSet);
+    bool isGet = (kindSym == m_gs.tokGet);
+    bool isSet = (kindSym == m_gs.tokSet);
     bool hasBody = !ts_node_is_null(bodyNode);
 
     if (isGet)
@@ -577,7 +508,7 @@ void SymbolCollector::ParseAccessorNodes(TSNode node, VariableSignature& varSig)
         do
         {
             TSNode accNode = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_is_named(accNode) && ts_node_symbol(accNode) == m_symAccessor)
+            if (ts_node_is_named(accNode) && ts_node_symbol(accNode) == m_gs.symAccessor)
             {
                 ParseSingleAccessor(accNode, varSig);
             }
@@ -742,7 +673,7 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
         do
         {
             TSNode declaratorNode = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_is_named(declaratorNode) && ts_node_symbol(declaratorNode) == m_symVariableDeclarator)
+            if (ts_node_is_named(declaratorNode) && ts_node_symbol(declaratorNode) == m_gs.symVariableDeclarator)
             {
                 CollectDeclaratorSymbol(declaratorNode, header, sCtx, ctx);
             }
@@ -756,7 +687,7 @@ void SymbolCollector::ProcessVariable(TSNode varDeclNode, SymbolCollectContext& 
     if (ctx.isInsideFunction)
         return;
 
-    if (ts_node_symbol(varDeclNode) == m_symVirtualProperty)
+    if (ts_node_symbol(varDeclNode) == m_gs.symVirtualProperty)
     {
         ProcessVirtualPropertyVariable(varDeclNode, sCtx, ctx);
     }
@@ -768,7 +699,7 @@ void SymbolCollector::ProcessVariable(TSNode varDeclNode, SymbolCollectContext& 
 
 TSNode SymbolCollector::FindFunctionBody(TSNode funcNode) const
 {
-    TSNode bodyNode = GetChildByFieldId(funcNode, m_fieldIdBody);
+    TSNode bodyNode = GetChildByFieldId(funcNode, m_gs.fieldBody);
     if (!ts_node_is_null(bodyNode))
         return bodyNode;
 
@@ -778,7 +709,7 @@ TSNode SymbolCollector::FindFunctionBody(TSNode funcNode) const
         do
         {
             TSNode ch = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_symbol(ch) == m_symStatementBlock)
+            if (ts_node_symbol(ch) == m_gs.symStatementBlock)
             {
                 ts_tree_cursor_delete(&cursor);
                 return ch;
@@ -792,12 +723,12 @@ TSNode SymbolCollector::FindFunctionBody(TSNode funcNode) const
 bool SymbolCollector::IsExternalFunction(TSNode funcNode, [[maybe_unused]] std::string_view sourceCode) const
 {
     TSSymbol funcNodeSym = ts_node_symbol(funcNode);
-    return (funcNodeSym == m_symImportDeclaration || funcNodeSym == m_tokImport);
+    return (funcNodeSym == m_gs.symImportDeclaration || funcNodeSym == m_gs.tokImport);
 }
 
 std::string SymbolCollector::ExtractOriginModule(TSNode funcNode, std::string_view sourceCode) const
 {
-    TSNode srcNode = GetChildByFieldId(funcNode, m_fieldIdSource);
+    TSNode srcNode = GetChildByFieldId(funcNode, m_gs.fieldSource);
     if (!ts_node_is_null(srcNode))
     {
         std::string modStr = GetNodeText(srcNode, sourceCode);
@@ -812,9 +743,9 @@ std::string SymbolCollector::ExtractOriginModule(TSNode funcNode, std::string_vi
 
 void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
-    TSNode nameNode = GetChildByFieldId(funcNode, m_fieldIdName);
-    TSNode typeNode = GetChildByFieldId(funcNode, m_fieldIdReturnType);
-    TSNode paramsNode = GetChildByFieldId(funcNode, m_fieldIdParameters);
+    TSNode nameNode = GetChildByFieldId(funcNode, m_gs.fieldName);
+    TSNode typeNode = GetChildByFieldId(funcNode, m_gs.fieldReturnType);
+    TSNode paramsNode = GetChildByFieldId(funcNode, m_gs.fieldParameters);
     TSNode bodyNode = sCtx.isPredefined ? TSNode{} : FindFunctionBody(funcNode);
 
     TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
@@ -842,8 +773,8 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     funcSig.parameters = ExtractParameters(paramsNode, sCtx.request.sourceCode);
 
     funcSig.hasBody = !ts_node_is_null(bodyNode);
-    funcSig.isInterfaceMethod = (ts_node_symbol(funcNode) == m_symInterfaceMethod);
-    funcSig.isImported = (ts_node_symbol(funcNode) == m_symImportDeclaration);
+    funcSig.isInterfaceMethod = (ts_node_symbol(funcNode) == m_gs.symInterfaceMethod);
+    funcSig.isImported = (ts_node_symbol(funcNode) == m_gs.symImportDeclaration);
     if (funcSig.isImported)
     {
         funcSig.originModule = ExtractOriginModule(funcNode, sCtx.request.sourceCode);
@@ -931,7 +862,7 @@ void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx,
 
     ClassSignature classSig;
     classSig.modifiers = ExtractModifiers(classNode, sCtx.request.sourceCode);
-    if (ts_node_symbol(classNode) == m_symMixinDeclaration)
+    if (ts_node_symbol(classNode) == m_gs.symMixinDeclaration)
     {
         classSig.modifiers.isMixin = true;
     }
@@ -975,7 +906,7 @@ void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx,
     sym.signature = classSig;
     const bool needsDefaultCtor =
         !sCtx.isPredefined && classSig.hasBraces && !classSig.modifiers.isAbstract && !classSig.modifiers.isMixin &&
-        !ClassHasExplicitConstructor(bodyNode, sym.name, sCtx.request.sourceCode, m_symFuncDeclaration);
+        !ClassHasExplicitConstructor(bodyNode, sym.name, sCtx.request.sourceCode, m_gs.symFuncDeclaration);
 
     sCtx.collectedSymbols.push_back(std::move(sym));
     if (needsDefaultCtor)
@@ -1097,7 +1028,7 @@ bool SymbolCollector::EnumHasBraces(TSNode node) const
     {
         do
         {
-            if (ts_node_symbol(ts_tree_cursor_current_node(&cursor)) == m_tokOpenBrace)
+            if (ts_node_symbol(ts_tree_cursor_current_node(&cursor)) == m_gs.tokOpenBrace)
             {
                 ts_tree_cursor_delete(&cursor);
                 return true;
@@ -1116,7 +1047,7 @@ void SymbolCollector::CollectEnumMembers(TSNode node, std::string_view sourceCod
         do
         {
             TSNode child = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_is_named(child) && ts_node_symbol(child) == m_symEnumMember)
+            if (ts_node_is_named(child) && ts_node_symbol(child) == m_gs.symEnumMember)
             {
                 TSNode memberName = GetChildByFieldName(child, "name");
                 TSNode memberValue = GetChildByFieldName(child, "value");
@@ -1148,7 +1079,7 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
         do
         {
             TSNode child = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_is_named(child) && ts_node_symbol(child) == m_symEnumMember)
+            if (ts_node_is_named(child) && ts_node_symbol(child) == m_gs.symEnumMember)
             {
                 TSNode mNameNode = GetChildByFieldName(child, "name");
                 std::string mName = GetNodeText(mNameNode, sCtx.request.sourceCode);
@@ -1280,7 +1211,7 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
     CallReferenceSignature callSig;
     TSNode nameNode = functionNode;
 
-    if (functionNodeSym == m_symMemberExpression)
+    if (functionNodeSym == m_gs.symMemberExpression)
     {
         TSNode memberNode = GetChildByFieldName(functionNode, "member");
         if (ts_node_is_null(memberNode))
@@ -1290,7 +1221,7 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
         callSig.objectExpression = GetNodeText(GetChildByFieldName(functionNode, "object"), sCtx.request.sourceCode);
         nameNode = memberNode;
     }
-    else if (functionNodeSym != m_symScopedIdentifier)
+    else if (functionNodeSym != m_gs.symScopedIdentifier)
     {
         return;
     }
@@ -1345,7 +1276,7 @@ void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollect
         {
             TSNode child = ts_tree_cursor_current_node(&cursor);
             TSSymbol childSym = ts_node_symbol(child);
-            if (childSym != m_symDeclarationModifier && childSym != m_symSharedExternalModifier)
+            if (childSym != m_gs.symDeclarationModifier && childSym != m_gs.symSharedExternalModifier)
                 continue;
 
             TSTreeCursor modCursor = ts_tree_cursor_new(child);
@@ -1643,9 +1574,9 @@ void SymbolCollector::ApplyModifierString(std::string_view text, SymbolModifiers
 void SymbolCollector::ProcessModifierChild(TSNode child, std::string_view sourceCode, SymbolModifiers& modifiers) const
 {
     std::string_view childText = TrimView(GetNodeView(child, sourceCode));
-    bool isDeclMod =
-        (ts_node_symbol(child) == m_symDeclarationModifier || ts_node_symbol(child) == m_symSharedExternalModifier);
-    bool isFuncAttr = (ts_node_symbol(child) == m_symFuncAttributes);
+    bool isDeclMod = (ts_node_symbol(child) == m_gs.symDeclarationModifier ||
+                      ts_node_symbol(child) == m_gs.symSharedExternalModifier);
+    bool isFuncAttr = (ts_node_symbol(child) == m_gs.symFuncAttributes);
 
     ApplyModifierString(childText, modifiers, isFuncAttr);
 
@@ -1662,9 +1593,9 @@ void SymbolCollector::ProcessModifierChild(TSNode child, std::string_view source
 
                 TSSymbol tokSym = ts_node_symbol(grandChild);
                 ApplyModifierToken(tokSym, modifiers);
-                if (tokSym == m_tokFinal && !isFuncAttr)
+                if (tokSym == m_gs.tokFinal && !isFuncAttr)
                     modifiers.isDeclarationFinal = true;
-                else if (tokSym == m_tokAbstract && !isFuncAttr)
+                else if (tokSym == m_gs.tokAbstract && !isFuncAttr)
                     modifiers.isDeclarationAbstract = true;
             } while (ts_tree_cursor_goto_next_sibling(&cursor));
         }
@@ -1696,15 +1627,15 @@ SymbolModifiers SymbolCollector::ExtractModifiers(TSNode node, std::string_view 
 
 bool SymbolCollector::ApplyParamModifierToken(TSSymbol tokenSymbol, SymbolModifiers& modifiers) const
 {
-    if (tokenSymbol == m_tokIn)
+    if (tokenSymbol == m_gs.tokIn)
         modifiers.paramModifier = ParameterModifier::In;
-    else if (tokenSymbol == m_tokOut)
+    else if (tokenSymbol == m_gs.tokOut)
         modifiers.paramModifier = ParameterModifier::Out;
-    else if (tokenSymbol == m_tokInout)
+    else if (tokenSymbol == m_gs.tokInout)
         modifiers.paramModifier = ParameterModifier::InOut;
-    else if (tokenSymbol == m_tokAmp)
+    else if (tokenSymbol == m_gs.tokAmp)
         modifiers.isReturnReference = true;
-    else if (tokenSymbol == m_tokAt)
+    else if (tokenSymbol == m_gs.tokAt)
         modifiers.isHandle = true;
     else
         return false;
@@ -1716,29 +1647,29 @@ void SymbolCollector::ApplyModifierToken(TSSymbol tokenSymbol, SymbolModifiers& 
     if (ApplyParamModifierToken(tokenSymbol, modifiers))
         return;
 
-    if (tokenSymbol == m_tokConst)
+    if (tokenSymbol == m_gs.tokConst)
         modifiers.isConst = true;
-    else if (tokenSymbol == m_tokPrivate)
+    else if (tokenSymbol == m_gs.tokPrivate)
         modifiers.access = AccessModifier::Private;
-    else if (tokenSymbol == m_tokProtected)
+    else if (tokenSymbol == m_gs.tokProtected)
         modifiers.access = AccessModifier::Protected;
-    else if (tokenSymbol == m_tokShared)
+    else if (tokenSymbol == m_gs.tokShared)
         modifiers.isShared = true;
-    else if (tokenSymbol == m_tokMixin)
+    else if (tokenSymbol == m_gs.tokMixin)
         modifiers.isMixin = true;
-    else if (tokenSymbol == m_tokAbstract)
+    else if (tokenSymbol == m_gs.tokAbstract)
         modifiers.isAbstract = true;
-    else if (tokenSymbol == m_tokFinal)
+    else if (tokenSymbol == m_gs.tokFinal)
         modifiers.isFinal = true;
-    else if (tokenSymbol == m_tokOverride)
+    else if (tokenSymbol == m_gs.tokOverride)
         modifiers.isOverride = true;
-    else if (tokenSymbol == m_tokExplicit)
+    else if (tokenSymbol == m_gs.tokExplicit)
         modifiers.isExplicit = true;
-    else if (tokenSymbol == m_tokProperty)
+    else if (tokenSymbol == m_gs.tokProperty)
         modifiers.isProperty = true;
-    else if (tokenSymbol == m_tokDelete)
+    else if (tokenSymbol == m_gs.tokDelete)
         modifiers.isDelete = true;
-    else if (tokenSymbol == m_tokExternal || tokenSymbol == m_tokImport)
+    else if (tokenSymbol == m_gs.tokExternal || tokenSymbol == m_gs.tokImport)
         modifiers.isExternal = true;
 }
 
@@ -1846,9 +1777,9 @@ static void AssignParamLocations(ParameterInformation& paramInfo, TSNode paramNo
 
 ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std::string_view sourceCode) const
 {
-    TSNode pNameNode = GetChildByFieldId(paramNode, m_fieldIdName);
-    TSNode pTypeNode = GetChildByFieldId(paramNode, m_fieldIdParamType);
-    TSNode pDefaultNode = GetChildByFieldId(paramNode, m_fieldIdDefaultValue);
+    TSNode pNameNode = GetChildByFieldId(paramNode, m_gs.fieldName);
+    TSNode pTypeNode = GetChildByFieldId(paramNode, m_gs.fieldParamType);
+    TSNode pDefaultNode = GetChildByFieldId(paramNode, m_gs.fieldDefaultValue);
 
     TypeExtractionResult pInfo = ExtractTypeInfoFromAST(pTypeNode, sourceCode);
 
@@ -1902,7 +1833,7 @@ std::vector<ParameterInformation> SymbolCollector::ExtractParameters(TSNode para
         do
         {
             TSNode child = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_is_named(child) && ts_node_symbol(child) == m_symParameter)
+            if (ts_node_is_named(child) && ts_node_symbol(child) == m_gs.symParameter)
             {
                 parameters.push_back(ExtractParameterInfo(child, sourceCode));
             }
@@ -1978,7 +1909,7 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
         {
             TSNode prev = ts_node_prev_named_sibling(node);
             std::vector<std::string> metaBlocks;
-            while (!ts_node_is_null(prev) && ts_node_symbol(prev) == m_symMetadata)
+            while (!ts_node_is_null(prev) && ts_node_symbol(prev) == m_gs.symMetadata)
             {
                 metaBlocks.push_back(GetNodeText(prev, loc.sourceCode));
                 prev = ts_node_prev_named_sibling(prev);
@@ -2004,7 +1935,7 @@ std::vector<std::string> SymbolCollector::ExtractBases(TSNode classNode, std::st
         do
         {
             TSNode child = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_is_named(child) && ts_node_symbol(child) == m_symBaseClassList)
+            if (ts_node_is_named(child) && ts_node_symbol(child) == m_gs.symBaseClassList)
             {
                 TSTreeCursor baseCursor = ts_tree_cursor_new(child);
                 if (ts_tree_cursor_goto_first_child(&baseCursor))

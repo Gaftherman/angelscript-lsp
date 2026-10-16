@@ -10,7 +10,7 @@
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
-#include "analysis/ScopeTree.h"
+#include "config/EngineRuleParser.h"
 #include "features/completion/CompletionHandler.h"
 #include "features/hover/HoverHandler.h"
 
@@ -63,7 +63,8 @@ struct SvenTestContext
      * @return List of generated diagnostics.
      */
     std::vector<Diagnostic> Analyze(const std::string& scriptCode,
-                                    const std::string& fileUri = "file:///IsPluginInstalled.as")
+                                    const std::string& fileUri = "file:///IsPluginInstalled.as",
+                                    const angel_lsp::config::EngineRuleConfig* engineRules = nullptr)
     {
         collector.CollectSymbols(fileUri, scriptCode, parser, table);
 
@@ -71,6 +72,7 @@ struct SvenTestContext
         request.scopeRoot = scopes.CollectScopes(scriptCode, parser);
         request.sourceCode = scriptCode;
         request.tree = parser.Parse(scriptCode);
+        request.engineRules = engineRules;
 
         SemanticAnalyzer analyzer(nullptr);
         auto diags = analyzer.Analyze(request);
@@ -436,6 +438,53 @@ void MapActivate()
     for (const auto& d : diags)
     {
         MESSAGE("User snippet diagnostic: " << d.code << " at line " << d.range.start.line << ": " << d.message);
+    }
+    CHECK(diags.empty());
+}
+
+TEST_CASE("SvenCoopScriptReproduction - Custom entity inheriting ScriptBasePlayerAmmoEntity with sven rules")
+{
+    SvenTestContext ctx;
+    std::filesystem::path repoRoot(ANGELSCRIPT_REPO_ROOT);
+    auto rulesOpt =
+        angel_lsp::config::ParseEngineRuleConfigFile(repoRoot / "predefined" / "sven.angelscript.rules.json");
+    REQUIRE(rulesOpt.has_value());
+
+    const std::string script = R"AS(
+class custom_ammo : ScriptBasePlayerAmmoEntity
+{
+    void Spawn()
+    {
+        Precache();
+        BaseClass.Spawn();
+    }
+
+    void Precache()
+    {
+        BaseClass.Precache();
+    }
+
+    bool AddAmmo( CBaseEntity@ pOther )
+    {
+        return true;
+    }
+
+    void Materialize()
+    {
+        self.Materialize();
+    }
+}
+
+void PluginInit()
+{
+    g_CustomEntityFuncs.RegisterCustomEntity( "custom_ammo", "ammo_custom" );
+}
+)AS";
+
+    auto diags = ctx.Analyze(script, "file:///custom_ammo.as", &*rulesOpt);
+    for (const auto& d : diags)
+    {
+        MESSAGE("custom_ammo diagnostic: " << d.code << " at line " << d.range.start.line << ": " << d.message);
     }
     CHECK(diags.empty());
 }

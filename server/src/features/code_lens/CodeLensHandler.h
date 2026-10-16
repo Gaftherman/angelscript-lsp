@@ -21,6 +21,11 @@ namespace angel_lsp::utils
 class LspLogger;
 }
 
+namespace angel_lsp::i18n
+{
+class I18n;
+}
+
 namespace angel_lsp::features
 {
 /**
@@ -36,6 +41,7 @@ struct CodeLensRequest
     angel_lsp::utils::LspLogger* logger = nullptr;
     std::string predefinedExtension = ".as.predefined";
     const config::UnusedSymbolRules* unusedRules = nullptr;
+    const i18n::I18n* i18n = nullptr;
 };
 
 /**

@@ -132,6 +132,14 @@ Están disponibles los siguientes stubs comunitarios probados:
 > [!TIP]
 > Para configurar un stub activo, añade `"angelscript.predefined.active": "${workspaceFolder}/ruta/al/stub.as.predefined"` o usa `"all"` para fusionar todos los stubs presentes.
 
+### 4. Reglas del Motor y Seguridad del Host (`*.angelscript.rules.json`)
+
+Por defecto, AngelLSP opera como un servidor de lenguaje puro para AngelScript estándar. Sin embargo, en motores reales (como Sven Co-op), el motor C++ invoca funciones y clases de entidades de manera dinámica sin llamadas en el código script. Para eliminar falsos positivos de símbolos sin usar, vincular llamadas proxy `BaseClass` directamente a los encabezados nativos del motor y validar la seguridad de tareas asíncronas, AngelLSP soporta **Reglas del Motor**.
+
+- **Detección Automática**: Coloca cualquier archivo con terminación `*.angelscript.rules.json` en la raíz de tu proyecto (ej. `sven.angelscript.rules.json`).
+- **Reglas de Referencia para Sven Co-op**: [`predefined/sven.angelscript.rules.json`](predefined/sven.angelscript.rules.json)
+- **Documentación Detallada**: Consulta la [**Guía de Reglas del Motor (`docs/rules.es.md`)**](docs/rules.es.md) para una explicación campo por campo, ejemplos prácticos y el comportamiento resultante en el editor.
+
 ---
 
 ## Comandos de la extensión
@@ -140,6 +148,8 @@ Todos los comandos pueden ejecutarse desde la Paleta de comandos (`Ctrl+Shift+P`
 
 | Comando | Título | Descripción |
 | :--- | :--- | :--- |
+| `angelscript.configureHostEnvironment` | **AngelScript: Configurar reglas del motor host** | Crea o configura una plantilla de reglas del motor validada para el espacio de trabajo. |
+| `angelscript.ignoreUnusedSymbol` | **AngelScript: Ignorar símbolo sin usar** | Acción rápida (Quick Fix) para añadir una función, método, variable o clase a las reglas de exención. |
 | `angelscript.selectPredefined` | **AngelScript: Seleccionar stub predefinido** | Alterna el stub activo `.as.predefined` mediante una lista QuickPick. |
 | `angelscript.selectStubs` | **AngelScript: Seleccionar stubs predefinidos** | Diálogo de selección múltiple para habilitar y fusionar varios stubs. |
 | `angelscript.rescanWorkspace` | **AngelScript: Volver a examinar el espacio de trabajo** | Fuerza un reescaneo y reindexado completo de los archivos del espacio. |
@@ -218,6 +228,7 @@ El aislamiento de capas es estrictamente validado por `server/scripts/check-laye
 #### 2. Espacio de trabajo y Módulos
 | Configuración | Por defecto | Descripción |
 | :--- | :--- | :--- |
+| `angelscript.rulesFile` | `""` | Ruta al archivo de reglas del motor (`*.angelscript.rules.json`). Se autodetecta si está en la raíz. |
 | `angelscript.modules` | `[]` | Módulos de scripts especificados por `"entry"` o `"folder"`. |
 | `angelscript.searchDirectories` | `[]` | Directorios adicionales para resolución de directivas `#include`. |
 | `angelscript.include.implicitExtension` | `false` | Resuelve `#include "helper"` a `helper.as` sin requerir extensión. |
@@ -245,11 +256,33 @@ El aislamiento de capas es estrictamente validado por `server/scripts/check-laye
 
 > **Consejo:** Colocar un archivo `.clang-format`, `_clang-format` o `.as-clang-format` en el espacio de trabajo o directorio padre sobrescribe automáticamente los ajustes del editor con soporte completo de opciones YAML de Clang-Format (`BasedOnStyle`, `BraceWrapping`, `PointerAlignment`, `ColumnLimit`, `IndentCaseLabels`, `SortIncludes`, etc.).
 
-#### 5. Diagnósticos y Dialecto del Motor
+#### 5. Diagnósticos y Símbolos sin Usar
 | Configuración | Por defecto | Descripción |
 | :--- | :--- | :--- |
 | `angelscript.diagnosticSeverity` | `{}` | Anulación de severidad por código de diagnóstico. |
 | `angelscript.diagnostics.reportPossibleNullDereference` | `true` | Comprobaciones intraprocedimentales de handles nulos. |
+| `angelscript.diagnostics.reportUnusedFunctions` | `true` | Informa sobre funciones declaradas que nunca se referencian (`W114`). |
+| `angelscript.diagnostics.reportUnusedGlobalVariables` | `true` | Informa sobre variables globales que nunca se referencian (`W115`). |
+| `angelscript.diagnostics.reportUnusedClasses` | `true` | Informa sobre clases que nunca se instancian ni referencian (`W117`). |
+| `angelscript.diagnostics.reportUnusedMembers` | `true` | Informa sobre variables miembro y métodos que nunca se referencian (`W118`). |
+| `angelscript.diagnostics.ignoredUnusedFunctions` | `[]` | Lista de nombres de funciones exentas de advertencias de símbolos sin usar. |
+| `angelscript.diagnostics.ignoredUnusedFunctionPatterns` | `[]` | Patrones regex para eximir funciones de advertencias de símbolos sin usar. |
+| `angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer` | `false` | Ignora variables globales sin usar si están inicializadas mediante llamadas. |
+
+#### 6. Hover y Autocompletado
+| Configuración | Por defecto | Descripción |
+| :--- | :--- | :--- |
+| `angelscript.hover.showFileLocation` | `true` | Muestra el pie de página con la ubicación del archivo fuente en el tooltip de hover. |
+| `angelscript.hover.stringLiteralLength` | `true` | Muestra la longitud de caracteres al pasar el cursor sobre literales de cadena. |
+| `angelscript.hover.stringLiteralPathResolution` | `true` | Resuelve rutas de activos y scripts en hover para mostrar estado y tamaño de archivo. |
+| `angelscript.hover.assetSearchPaths` | `[]` | Directorios base personalizados explorados al resolver rutas de activos. |
+| `angelscript.completion.smartTypeRanking` | `true` | Prioriza elementos de autocompletado cuyo tipo coincide con el tipo esperado. |
+| `angelscript.completion.completeFunctionParens` | `true` | Inserta automáticamente paréntesis `()` y posiciona el cursor en completado de funciones. |
+| `angelscript.completion.qualifyEnumValues` | `false` | Prefija automáticamente las constantes de enumeración con el tipo (`Enum::Valor`). |
+
+#### 7. Opciones de Dialecto del Motor
+| Configuración | Por defecto | Descripción |
+| :--- | :--- | :--- |
 | `angelscript.engine.requireEnumScope` | `false` | Cuando está activo (`asEP_REQUIRE_ENUM_SCOPE`), los enums llevan prefijo `Enum::Miembro`. |
 | `angelscript.engine.alwaysImplDefaultConstruct` | `false` | Cuando está activo (`asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT`), genera constructor por defecto. |
 | `angelscript.engine.allowUnsafeReferences` | `false` | Cuando está activo (`asEP_ALLOW_UNSAFE_REFERENCES`), permite referencias inseguras. |

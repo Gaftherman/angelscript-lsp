@@ -131,22 +131,37 @@ struct StringReflectionCallee
 };
 
 /**
+ * @brief Transparent string hash for unordered_map lookups using string_view without heap allocations.
+ */
+struct ConfigStringHash
+{
+    using is_transparent = void;
+    [[nodiscard]] size_t operator()(std::string_view sv) const noexcept
+    {
+        return std::hash<std::string_view>{}(sv);
+    }
+};
+
+using StringVectorMap = std::unordered_map<std::string, std::vector<std::string>, ConfigStringHash, std::equal_to<>>;
+
+/**
  * @brief Configuration for detecting unused symbols and exempting engine callbacks.
  */
 struct UnusedSymbolRules
 {
-    bool enabled = false;                            ///< Whether extended unused symbol rules are active.
-    bool checkLocals = true;                         ///< Check unused local variables.
-    bool checkMembers = true;                        ///< Check unused class and mixin member variables.
-    bool checkGlobals = true;                        ///< Check unused global variables.
-    bool checkFunctions = true;                      ///< Check unused functions.
-    bool checkClasses = true;                        ///< Check unused classes.
-    std::vector<std::string> ignoredGlobalFunctions; ///< Functions called by engine (e.g. "MapInit").
-    std::string ignoredGlobalFunctionRegex;          ///< Regex pattern for engine hooks (e.g. "^(On|Hook_).*").
-    std::vector<std::string> ignoredBaseClasses;     ///< Entity base classes (e.g. "ScriptBaseEntity").
-    std::vector<std::string> lifecycleMethods;       ///< Lifecycle callback methods (e.g. "Spawn").
-    std::unordered_map<std::string, std::vector<std::string>>
-        baseClassLifecycleMethods;                               ///< Per-base-class lifecycle methods.
+    bool enabled = false;                                 ///< Whether extended unused symbol rules are active.
+    bool checkLocals = true;                              ///< Check unused local variables.
+    bool checkMembers = true;                             ///< Check unused class and mixin member variables.
+    bool checkGlobals = true;                             ///< Check unused global variables.
+    bool checkFunctions = true;                           ///< Check unused functions.
+    bool checkClasses = true;                             ///< Check unused classes.
+    std::vector<std::string> ignoredGlobalFunctions;      ///< Functions called by engine (e.g. "MapInit").
+    std::string ignoredGlobalFunctionRegex;               ///< Regex pattern for engine hooks (e.g. "^(On|Hook_).*").
+    std::vector<std::string> ignoredBaseClasses;          ///< Entity base classes (e.g. "ScriptBaseEntity").
+    std::vector<std::string> lifecycleMethods;            ///< Lifecycle callback methods (e.g. "Spawn").
+    StringVectorMap baseClassLifecycleMethods;            ///< Per-base-class lifecycle methods.
+    std::vector<std::string> baseClassDelegateProperties; ///< Delegate property names (e.g. ["BaseClass", "self"]).
+    StringVectorMap baseClassProxyMap;                    ///< Proxy base class mappings.
     std::vector<StringReflectionCallee> stringReflectionCallees; ///< Reflection callees taking string symbols.
     bool ignoreUnusedGlobalsWithCallInitializer =
         false; ///< Ignore unused global variables initialized with a call or constructor.
@@ -162,9 +177,10 @@ struct UnusedSymbolRules
     [[nodiscard]] bool HasActiveRules() const noexcept
     {
         return enabled || !ignoredBaseClasses.empty() || !lifecycleMethods.empty() ||
-               !baseClassLifecycleMethods.empty() || !ignoredGlobalFunctions.empty() ||
-               !stringReflectionCallees.empty() || ignoreUnusedGlobalsWithCallInitializer ||
-               !unusedGlobalExemptTypes.empty() || !engineCallbackSignatures.empty();
+               !baseClassLifecycleMethods.empty() || !baseClassDelegateProperties.empty() ||
+               !baseClassProxyMap.empty() || !ignoredGlobalFunctions.empty() || !stringReflectionCallees.empty() ||
+               ignoreUnusedGlobalsWithCallInitializer || !unusedGlobalExemptTypes.empty() ||
+               !engineCallbackSignatures.empty();
     }
 };
 

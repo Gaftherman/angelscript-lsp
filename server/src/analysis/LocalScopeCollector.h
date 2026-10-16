@@ -2,6 +2,7 @@
 
 #include "analysis/ScopeTree.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/GrammarSymbols.h"
 
 #include <memory>
 #include <string>
@@ -55,33 +56,7 @@ class LocalScopeCollector
     utils::LspLogger* m_logger;
     const TSQuery* m_localsQuery;
 
-    /** @brief Cached grammar symbol for member_expression, used to flag a reference as a member access (see
-     * ScopeTree.h::LocalReference::isMemberAccess). */
-    TSSymbol m_symMemberExpression = 0;
-    TSSymbol m_symScopedIdentifier = 0;
-
-    /** @brief Cached grammar symbols used to set Scope::kind and Scope::isFunctionScope (see ScopeTree.h). */
-    TSSymbol m_symFuncDeclaration = 0;
-    TSSymbol m_symLambdaExpression = 0;
-    TSSymbol m_symClassBody = 0;
-    TSSymbol m_symInterfaceBody = 0;
-    TSSymbol m_symNamespaceBody = 0;
-    TSSymbol m_symScript = 0;
-
-    /** @brief Cached grammar symbol used to confirm a Variable-kind definition came from a
-     *         variable_declarator (as opposed to a foreach_variable, which shares
-     *         LocalDefinitionKind::Variable but has no declared-type/initializer node),
-     *         before reading LocalDefinition::isHandleType/hasNullInitializer from it. */
-    TSSymbol m_symVariableDeclarator = 0;
-    TSSymbol m_symParameter = 0;
-    TSSymbol m_symForeachVariable = 0;
-    TSSymbol m_symLambdaParameterList = 0;
-    TSSymbol m_symClassDeclaration = 0;
-    TSSymbol m_symInterfaceDeclaration = 0;
-    TSSymbol m_symEnumDeclaration = 0;
-    TSSymbol m_symInterfaceMethod = 0;
-    TSSymbol m_symMixinDeclaration = 0;
-    TSSymbol m_symFuncdefDeclaration = 0;
+    const parser::GrammarSymbols& m_gs;
 
     /** @brief What a LOCALS_QUERY capture index means, resolved once in the constructor by capture name. */
     enum class CaptureKind
@@ -201,11 +176,12 @@ class LocalScopeCollector
     CaptureAncestors ResolveCaptureAncestors(CaptureKind kind, LocalDefinitionKind defKind, TSNode node) const;
 
     /**
-     * @brief Populates qualifier and receiver byte ranges for member or scoped references.
+     * @brief Populates qualifier, receiver byte ranges, and scopeQualifier string for member or scoped references.
      * @param parent AST parent node of the reference.
-     * @param[out] ref LocalReference receiving byte range information.
+     * @param[out] ref LocalReference receiving byte range and qualifier information.
+     * @param sourceCode Source text of the document.
      */
-    void PopulateReceiverQualifierRanges(TSNode parent, LocalReference& ref) const;
+    void PopulateReceiverQualifierRanges(TSNode parent, LocalReference& ref, const std::string& sourceCode) const;
 
     /**
      * @brief Checks if a grammar symbol belongs to a declaration whose name is a definition rather than a reference.

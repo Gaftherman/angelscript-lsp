@@ -2,6 +2,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/UnusedSymbolChecker.h"
 #include "config/EngineRuleConfig.h"
+#include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
@@ -1057,7 +1058,8 @@ std::optional<std::vector<lsp::CodeLens>> HandleVirtualUri(const CodeLensRequest
     lsp::CodeLens lens;
     lens.range = lsp::Range{lsp::Position{0, 0}, lsp::Position{0, 0}};
     lsp::Command cmd;
-    cmd.title = fmt::format("Jump to physical source in {}", filename);
+    cmd.title = i18n::FormatMessage(request.i18n, "codelens.jump-to-physical-source", "Jump to physical source in {}",
+                                    filename);
     cmd.command = "angelscript.openPhysicalSource";
 
     lsp::json::Array args;
@@ -1329,7 +1331,7 @@ ankerl::unordered_dense::set<std::string> CollectCompatibleClasses(const std::ve
         }
     }
 
-    if (!compatibleClasses.empty() && targetAccess != analysis::AccessModifier::Private)
+    if (!compatibleClasses.empty())
     {
         std::vector<std::string> initial(compatibleClasses.begin(), compatibleClasses.end());
         for (const auto& c : initial)
@@ -1473,7 +1475,8 @@ void AppendMixinExpansionLenses(const analysis::Symbol& sym, const CodeLensReque
         lsp::CodeLens mixinLens;
         mixinLens.range = range;
         lsp::Command mixinCmd;
-        mixinCmd.title = fmt::format("View Mixin Expansion: {}", mixinName);
+        mixinCmd.title =
+            i18n::FormatMessage(request.i18n, "codelens.view-mixin-expansion", "View Mixin Expansion: {}", mixinName);
         mixinCmd.command = "angelscript.viewMixinExpansion";
 
         lsp::json::Array args;
@@ -1675,6 +1678,30 @@ struct AssembledLensContext
 };
 
 /**
+ * @brief Formats the localized reference count string for a code lens.
+ * @param[in] refCount Number of references.
+ * @param[in] i18n Optional pointer to I18n translation context.
+ * @return Localized reference count string.
+ */
+std::string FormatReferenceCount(size_t refCount, const i18n::I18n* i18n)
+{
+    return (refCount == 1) ? i18n::FormatMessage(i18n, "codelens.reference", "1 reference")
+                           : i18n::FormatMessage(i18n, "codelens.references", "{} references", refCount);
+}
+
+/**
+ * @brief Formats the localized implementation count string for a code lens.
+ * @param[in] implCount Number of interface implementations.
+ * @param[in] i18n Optional pointer to I18n translation context.
+ * @return Localized implementation count string.
+ */
+std::string FormatImplementationCount(size_t implCount, const i18n::I18n* i18n)
+{
+    return (implCount == 1) ? i18n::FormatMessage(i18n, "codelens.implementation", "1 implementation")
+                            : i18n::FormatMessage(i18n, "codelens.implementations", "{} implementations", implCount);
+}
+
+/**
  * @brief Appends a reference count lens for a mapped symbol target.
  * @param[in] key Declaration range key.
  * @param[in] sym Primary symbol.
@@ -1699,8 +1726,7 @@ void AppendReferenceLens(const RangeKey& key, const analysis::Symbol& sym, const
     {
         return;
     }
-    std::string title = std::to_string(refCount) + (refCount == 1 ? " reference" : " references");
-    lenses.push_back(MakeCommandLens(key, std::move(title)));
+    lenses.push_back(MakeCommandLens(key, FormatReferenceCount(refCount, ctx.request.i18n)));
 }
 
 /**
@@ -1720,8 +1746,7 @@ void AppendFunctionLens(const RangeKey& key, const analysis::Symbol& sym, const 
     if (IsInterfaceMethod(sym, ctx.request.symbolTable))
     {
         size_t implCount = CountInterfaceMethodImplementations(sym, ctx.request.symbolTable);
-        std::string title = std::to_string(implCount) + (implCount == 1 ? " implementation" : " implementations");
-        lenses.push_back(MakeCommandLens(key, std::move(title)));
+        lenses.push_back(MakeCommandLens(key, FormatImplementationCount(implCount, ctx.request.i18n)));
         return;
     }
     AppendReferenceLens(key, sym, ctx, lenses);
@@ -1745,8 +1770,7 @@ void AppendLensesForGroup(const RangeKey& key, const std::vector<analysis::Symbo
     else if (sym.type == analysis::SymbolType::Interface)
     {
         size_t implCount = CountInterfaceImplementations(sym, ctx.request.symbolTable);
-        std::string title = std::to_string(implCount) + (implCount == 1 ? " implementation" : " implementations");
-        lenses.push_back(MakeCommandLens(key, std::move(title)));
+        lenses.push_back(MakeCommandLens(key, FormatImplementationCount(implCount, ctx.request.i18n)));
     }
     else if (sym.type == analysis::SymbolType::Class)
     {

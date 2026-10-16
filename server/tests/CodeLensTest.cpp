@@ -5,6 +5,7 @@
 #include "config/EngineRuleConfig.h"
 #include "features/code_lens/CodeLensHandler.h"
 #include "helpers/TestUtils.h"
+#include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
 #include "spdlog/fmt/fmt.h"
@@ -58,9 +59,11 @@ struct CodeLensFixture
         }
     }
 
-    std::optional<std::vector<lsp::CodeLens>> GetLenses(const config::UnusedSymbolRules* unusedRules = nullptr)
+    std::optional<std::vector<lsp::CodeLens>> GetLenses(const config::UnusedSymbolRules* unusedRules = nullptr,
+                                                        const i18n::I18n* i18n = nullptr)
     {
-        CodeLensRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, nullptr, ".as.predefined", unusedRules};
+        CodeLensRequest req{uri,     sourceCode,       tree,        symbolTable, scopeIndex,
+                            nullptr, ".as.predefined", unusedRules, i18n};
         return GetCodeLenses(req);
     }
 };
@@ -1163,4 +1166,50 @@ TEST_CASE("CodeLens - Reference counting for namespace variables accessed in sam
         }
     }
     CHECK(foundVarLens);
+}
+
+TEST_CASE("CodeLens - Spanish localized titles for references, implementations, and mixin expansion")
+{
+    i18n::I18n i18nEs("es");
+    const std::string mixinName = test::GenerateRandomSymbolName("WeaponMixin");
+    const std::string hostClass = test::GenerateRandomSymbolName("WeaponHost");
+    const std::string ifaceName = test::GenerateRandomSymbolName("IWeapon");
+    const std::string implClass = test::GenerateRandomSymbolName("MyWeapon");
+
+    std::string code = "mixin class " + mixinName +
+                       " {}\n"
+                       "class " +
+                       hostClass + " : " + mixinName +
+                       " {}\n"
+                       "interface " +
+                       ifaceName +
+                       " { void Fire(); }\n"
+                       "class " +
+                       implClass + " : " + ifaceName + " { void Fire() {} }\n";
+
+    CodeLensFixture fixture(code);
+    const auto lenses = fixture.GetLenses(nullptr, &i18nEs);
+    REQUIRE(lenses.has_value());
+
+    bool foundMixinExpansion = false;
+    bool foundImplementation = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.command.has_value())
+        {
+            if (lens.command->command == "angelscript.viewMixinExpansion")
+            {
+                foundMixinExpansion = true;
+                CHECK(lens.command->title == "Ver expansión del mixin: " + mixinName);
+            }
+            else if (lens.command->title.find("implementación") != std::string::npos ||
+                     lens.command->title.find("implementaciones") != std::string::npos)
+            {
+                foundImplementation = true;
+                CHECK(lens.command->title == "1 implementación");
+            }
+        }
+    }
+    CHECK(foundMixinExpansion);
+    CHECK(foundImplementation);
 }

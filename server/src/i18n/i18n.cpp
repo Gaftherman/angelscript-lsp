@@ -481,6 +481,12 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
     m_messages["hover-asset-status-exists"] = "- **Status**: Exists";
     m_messages["hover-asset-size"] = "- **Size**: {}";
     m_messages["hover-asset-path"] = "- **Path**: `{}`";
+    m_messages["codelens.references"] = "{} references";
+    m_messages["codelens.reference"] = "1 reference";
+    m_messages["codelens.implementations"] = "{} implementations";
+    m_messages["codelens.implementation"] = "1 implementation";
+    m_messages["codelens.view-mixin-expansion"] = "View Mixin Expansion: {}";
+    m_messages["codelens.jump-to-physical-source"] = "Jump to physical source in {}";
 }
 
 /**
@@ -900,6 +906,12 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["hover-asset-status-exists"] = "- **Estado**: Existe";
     m_messages["hover-asset-size"] = "- **Tamaño**: {}";
     m_messages["hover-asset-path"] = "- **Ruta**: `{}`";
+    m_messages["codelens.references"] = "{} referencias";
+    m_messages["codelens.reference"] = "1 referencia";
+    m_messages["codelens.implementations"] = "{} implementaciones";
+    m_messages["codelens.implementation"] = "1 implementación";
+    m_messages["codelens.view-mixin-expansion"] = "Ver expansión del mixin: {}";
+    m_messages["codelens.jump-to-physical-source"] = "Ir a la fuente física en {}";
 }
 
 /**

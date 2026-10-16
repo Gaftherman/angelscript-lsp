@@ -132,6 +132,14 @@ The following community and tested host stubs are available:
 > [!TIP]
 > To configure an active stub in your workspace, set `"angelscript.predefined.active": "${workspaceFolder}/path/to/stub.as.predefined"` or set `"all"` to merge multiple stubs. All stubs are benchmarked and verified for fast, error-free parsing.
 
+### 4. Host Engine Rules & Safety (`*.angelscript.rules.json`)
+
+By default, AngelLSP operates as a pure, standard AngelScript language server. However, real-world host engines (such as Sven Co-op) invoke functions and entity classes dynamically from C++ without script-level calls. To eliminate false-positive unused warnings, link `BaseClass` proxy calls directly to native engine headers, and validate scheduler safety, AngelLSP supports data-driven **Engine Rules**.
+
+- **Automatic Discovery**: Drop any file named `*.angelscript.rules.json` into your workspace root (e.g. `sven.angelscript.rules.json`).
+- **Reference Sven Co-op Rules**: [`predefined/sven.angelscript.rules.json`](predefined/sven.angelscript.rules.json)
+- **Detailed Documentation**: See the [**Engine Rules Guide (`docs/rules.md`)**](docs/rules.md) for field-by-field explanations, practical examples, and resulting editor behavior.
+
 ---
 
 ## Contributed Commands
@@ -140,6 +148,8 @@ All commands can be invoked from the Command Palette (`Ctrl+Shift+P` / `Cmd+Shif
 
 | Command | Title | Description |
 | :--- | :--- | :--- |
+| `angelscript.configureHostEnvironment` | **AngelScript: Configure Host Engine Rules** | Creates or configures a validated engine rules template for the active workspace. |
+| `angelscript.ignoreUnusedSymbol` | **AngelScript: Ignore Unused Symbol** | Quick fix action to add an unused function, method, variable, or class to exemption rules. |
 | `angelscript.selectPredefined` | **AngelScript: Select Active Host Stub** | Switches the active `.as.predefined` host stub via a QuickPick list. |
 | `angelscript.selectStubs` | **AngelScript: Select Host Stubs** | Multi-select dialog to select and merge multiple host stubs. |
 | `angelscript.rescanWorkspace` | **AngelScript: Rescan Workspace** | Forces a complete background re-indexing of all workspace files. |
@@ -218,6 +228,7 @@ Layer isolation is strictly enforced by `server/scripts/check-layer-includes.py`
 #### 2. Workspace & Modules
 | Setting | Default | Description |
 | :--- | :--- | :--- |
+| `angelscript.rulesFile` | `""` | Path to engine safety rules file (`*.angelscript.rules.json`). Auto-detected if present in workspace root. |
 | `angelscript.modules` | `[]` | Script module definitions specified as `{"name", "entry"}` or `{"name", "folder"}`. |
 | `angelscript.searchDirectories` | `[]` | Extra directories to scan for `#include "path.as"` resolution. |
 | `angelscript.include.implicitExtension` | `false` | Allows `#include "helper"` to resolve to `helper.as` without requiring the extension. |
@@ -245,11 +256,33 @@ Layer isolation is strictly enforced by `server/scripts/check-layer-includes.py`
 
 > **Tip:** Placing a `.clang-format`, `_clang-format`, or `.as-clang-format` file in your workspace or parent directory automatically overrides editor settings with full Clang-Format YAML options (`BasedOnStyle`, `BraceWrapping`, `PointerAlignment`, `ColumnLimit`, `IndentCaseLabels`, `SortIncludes`, etc.).
 
-#### 5. Diagnostics & Engine Dialect
+#### 5. Diagnostics & Unused Symbols
 | Setting | Default | Description |
 | :--- | :--- | :--- |
 | `angelscript.diagnosticSeverity` | `{}` | Per-code severity overrides (e.g. `{"as-warn-unused-variable": "hint"}`). |
 | `angelscript.diagnostics.reportPossibleNullDereference` | `true` | Intraprocedural null dereference checks. |
+| `angelscript.diagnostics.reportUnusedFunctions` | `true` | Reports functions that are declared but never referenced (`W114`). |
+| `angelscript.diagnostics.reportUnusedGlobalVariables` | `true` | Reports global variables that are never referenced (`W115`). |
+| `angelscript.diagnostics.reportUnusedClasses` | `true` | Reports classes that are never instantiated or referenced (`W117`). |
+| `angelscript.diagnostics.reportUnusedMembers` | `true` | Reports class member variables and methods that are never referenced (`W118`). |
+| `angelscript.diagnostics.ignoredUnusedFunctions` | `[]` | List of function names exempted from unused symbol warnings. |
+| `angelscript.diagnostics.ignoredUnusedFunctionPatterns` | `[]` | Regex patterns matching function names exempted from unused symbol warnings. |
+| `angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer` | `false` | Ignores unused global variables when initialized with a function or constructor call. |
+
+#### 6. Hover & Completion
+| Setting | Default | Description |
+| :--- | :--- | :--- |
+| `angelscript.hover.showFileLocation` | `true` | Shows source file location footer in hover tooltips. |
+| `angelscript.hover.stringLiteralLength` | `true` | Displays character length when hovering over string literals. |
+| `angelscript.hover.stringLiteralPathResolution` | `true` | Resolves asset and script paths on hover to display existence status and file size. |
+| `angelscript.hover.assetSearchPaths` | `[]` | Custom base directories searched when resolving string literal asset paths. |
+| `angelscript.completion.smartTypeRanking` | `true` | Boosts completion items whose type matches the expected expression type. |
+| `angelscript.completion.completeFunctionParens` | `true` | Automatically inserts parentheses `()` and cursor positioning on function completions. |
+| `angelscript.completion.qualifyEnumValues` | `false` | When true, automatically prefixes enum constants with the enum type (`Enum::Value`). |
+
+#### 7. Engine Dialect Options
+| Setting | Default | Description |
+| :--- | :--- | :--- |
 | `angelscript.engine.requireEnumScope` | `false` | When true (`asEP_REQUIRE_ENUM_SCOPE`), enums must be qualified with `Enum::Member`. |
 | `angelscript.engine.alwaysImplDefaultConstruct` | `false` | When true (`asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT`), synthesized default constructor is generated. |
 | `angelscript.engine.allowUnsafeReferences` | `false` | When true (`asEP_ALLOW_UNSAFE_REFERENCES`), permits unsafe references in signatures. |

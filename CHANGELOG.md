@@ -2,6 +2,35 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.0-exp.11] - 2026-10-16
+
+### Reference Parity (Enum Members, Mixins), GrammarSymbols Centralization, and Engine Rules Documentation
+
+- Namespace-Qualified Enum References & Definition Parity (`TargetResolution`, `DocumentHighlight`):
+  - Fixed cross-file reference and document highlight lookup for enum members accessed via declaring namespaces (`NS::MEMBER`, e.g. `INS2BASE::SELECTFIRE_SEMI`), by adding `scopeQualifier` to `LocalReference` and introducing zero-allocation `EnumQualifierMatches` in `SemanticHelpers.h`.
+  - Unified enum reference matching across open and closed files without disk re-reads.
+- Private Mixin Property References & Composition Visibility (`SemanticHelpers`, `CodeLensHandler`, `TargetResolution`):
+  - Aligned mixin member accessibility with official AngelScript compiler behavior (`as_builder.cpp`): private mixin properties are copied into host classes and accessible to the host class and all sibling mixins included in the same host.
+  - Implemented `ExpandMixinHostsAndSiblings` in `SemanticHelpers.cpp` with `RuleIndex` fast-path and `SymbolTable` fallback.
+  - Removed `targetAccess != Private` barrier in `CodeLensHandler.cpp` and integrated `IsInTargetHierarchy` in `TargetResolution.cpp`.
+  - Fixed 0 references and broken Ctrl+Click on `private Vector2D BipodStatePos(...)` across mixins and host weapon classes.
+- Layer-1 Grammar Symbols Centralization (`parser::GrammarSymbols`):
+  - Centralized all 117 Tree-Sitter grammar node symbols (`sym*`), anonymous tokens (`tok*`), and field IDs (`field*`) into `parser::GrammarSymbols`.
+  - Removed 78 duplicate per-instance fields and runtime resolution passes from `SymbolCollector` (60) and `LocalScopeCollector` (18).
+  - Added non-zero integrity test `GrammarSymbolsTest.cpp` asserting every grammar symbol against the active Tree-Sitter grammar.
+- CodeLens Internationalization & Zero Hardcoding (PROHIBITION 11):
+  - Plumbed `const i18n::I18n*` to `CodeLensRequest`.
+  - Externalized all CodeLens titles (`codelens.reference`, `codelens.references`, `codelens.implementation`, `codelens.implementations`, `codelens.view-mixin-expansion`, `codelens.jump-to-physical-source`) with 1:1 English/Spanish dictionary parity.
+  - Added unit test in `CodeLensTest.cpp` validating localized titles.
+- Host Engine Rules User Documentation & README Polish:
+  - Created comprehensive English and Spanish user guides for engine safety rules (`docs/rules.md` and `docs/rules.es.md`) with section-by-section JSON examples and resulting IDE behaviors.
+  - Added direct links to Sven Co-op reference rules (`predefined/sven.angelscript.rules.json`).
+  - Updated `README.md` and `README.es.md` with new settings, contributed commands (`configureHostEnvironment`, `ignoreUnusedSymbol`), and streamlined configuration tables.
+- Verification & Test Metrics:
+  - 2,382 / 2,382 unit tests passed (34,209 assertions, 0 failures, 30 skipped).
+  - 12/12 static quality gates passing at 100% (`jscpd` 1.13%, Lizard CCN <= 15, NLOC <= 70, 0 dead parameters `/we4100`, Clang-Format 100%, Layer Matrix 100%).
+  - Client pretest passing: compile, bundle, lint, and all 107 settings wired.
+
 ## [1.1.0-exp.10] - 2026-10-16
 
 ### Engine-Agnostic Rules, O(1) Symbol Indexing, AST Performance, and Unused Symbol QoL

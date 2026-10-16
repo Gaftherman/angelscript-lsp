@@ -86,6 +86,7 @@ features::DefinitionRequest Server::MakeDefinitionRequest(const OpenDocument& do
 {
     features::DefinitionRequest dr{doc.uri,       *doc.text,    doc.tree,
                                    m_symbolTable, m_scopeIndex, codec::Decode(*doc.text, m_positionEncoding, position)};
+    dr.engineRules = &m_config.engineRules;
     dr.predefinedExtension = m_config.info.predefinedFileExtension;
     dr.resolveInclude = [this, uri = doc.uri](const std::string& rawPath)
     {
@@ -644,7 +645,8 @@ Server::HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens
                                   m_scopeIndex,
                                   m_logger.get(),
                                   m_config.info.predefinedFileExtension,
-                                  &m_config.engineRules.unusedRules};
+                                  &m_config.engineRules.unusedRules,
+                                  m_i18n.get()};
     auto lenses = features::GetCodeLenses(clr);
     if (lenses.has_value())
     {

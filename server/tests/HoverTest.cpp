@@ -1579,3 +1579,32 @@ TEST_CASE("Hover - Delegate constructor instantiation with @Namespace::Funcdef(t
     CHECK(text.find("funcdef") != std::string::npos);
     CHECK(text.find(fnName) != std::string::npos);
 }
+
+TEST_CASE("Hover - Inherit doc comment from base class discovered via BaseClass delegate property")
+{
+    const std::string baseClass = test::GenerateRandomSymbolName("NativeWeapon");
+    const std::string proxyClass = test::GenerateRandomSymbolName("ScriptBaseWeapon");
+    const std::string derivedClass = test::GenerateRandomSymbolName("MyCustomGun");
+    const std::string methodName = test::GenerateRandomSymbolName("ReloadAmmo");
+
+    const std::string code = "class " + baseClass + " {\n" +
+                             "    /** @brief Reloads primary ammo reserve into the weapon clip. */\n" + "    void " +
+                             methodName + "() {}\n" + "}\n" + "class " + proxyClass + " {\n" + "    " + baseClass +
+                             "@ BaseClass { get const { return null; } }\n" + "}\n" + "class " + derivedClass + " : " +
+                             proxyClass + " {\n" + "    void " + methodName + "() {}\n" + "}\n" + "void Entry() {\n" +
+                             "    " + derivedClass + " gun;\n" + "    gun." + methodName + "();\n" + "}\n";
+
+    TestEnvironment env(code);
+
+    config::ServerConfig cfg;
+    cfg.engineRules.unusedRules.baseClassDelegateProperties = {"BaseClass"};
+
+    // Hover over gun.ReloadAmmo() call on line 12
+    const std::string callLine = "    gun." + methodName + "();";
+    const size_t methodPos = callLine.find(methodName);
+    auto hover = env.HoverAt(12, static_cast<uint32_t>(methodPos), &cfg);
+
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("Reloads primary ammo reserve into the weapon clip.") != std::string::npos);
+}

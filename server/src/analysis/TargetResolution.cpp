@@ -1342,7 +1342,33 @@ std::string ResolveReceiverType(const analysis::LocalReference& ref, const analy
 }
 
 /**
- * @brief Checks whether an implicit member access matches target class hierarchy and is not locally shadowed.
+ * @brief Checks if an enclosing class is in the inheritance or mixin hierarchy of the declaring class.
+ * @param[in] cleanEnc Cleaned enclosing class name.
+ * @param[in] cleanDecl Cleaned declaring class name.
+ * @param[in] symbolTable Global symbol table.
+ * @return True if enclosing class is compatible with declaring class hierarchy.
+ */
+bool IsInTargetHierarchy(std::string_view cleanEnc, std::string_view cleanDecl,
+                         const analysis::SymbolTable& symbolTable)
+{
+    if (cleanDecl.empty() || analysis::MatchesDeclOrScope(cleanEnc, cleanDecl) ||
+        analysis::IsMixinClass(cleanEnc, symbolTable) || analysis::IsMixinClass(cleanDecl, symbolTable))
+    {
+        return true;
+    }
+    auto hierarchy = analysis::GetInheritedTypeHierarchy(std::string(cleanEnc), symbolTable);
+    for (const auto& ancestor : hierarchy)
+    {
+        if (analysis::MatchesDeclOrScope(analysis::CleanBaseType(ancestor), cleanDecl))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Evaluates whether an implicit member access matches the target class member.
  * @param[in] ref Reference to test.
  * @param[in] scope Lexical scope.
  * @param[in] relatedSet Set of related class names.
@@ -1360,27 +1386,9 @@ bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const analys
         return false;
     }
 
-    bool inTargetHierarchy = false;
     std::string cleanEnc = analysis::CleanBaseType(encClass);
     std::string cleanDecl = analysis::CleanBaseType(ctx.request.target.declaringClass);
-    if (cleanDecl.empty() || analysis::MatchesDeclOrScope(cleanEnc, cleanDecl))
-    {
-        inTargetHierarchy = true;
-    }
-    else
-    {
-        auto hierarchy = analysis::GetInheritedTypeHierarchy(cleanEnc, ctx.request.symbolTable);
-        for (const auto& ancestor : hierarchy)
-        {
-            if (analysis::MatchesDeclOrScope(analysis::CleanBaseType(ancestor), cleanDecl))
-            {
-                inTargetHierarchy = true;
-                break;
-            }
-        }
-    }
-
-    if (!inTargetHierarchy)
+    if (!IsInTargetHierarchy(cleanEnc, cleanDecl, ctx.request.symbolTable))
     {
         return false;
     }
@@ -1897,8 +1905,23 @@ std::optional<bool> CheckAstEnumMemberMatch(const analysis::LocalReference& ref,
                                       .substr(ref.qualifierStartByte, ref.qualifierEndByte - ref.qualifierStartByte);
         if (scoped.find("::") != std::string_view::npos)
         {
-            return scoped == ctx.request.target.qualifiedName ||
-                   MatchesScopedPair(scoped, ctx.request.target.declaringEnum, ctx.request.target.name);
+            if (scoped == ctx.request.target.qualifiedName ||
+                MatchesScopedPair(scoped, ctx.request.target.declaringEnum, ctx.request.target.name))
+            {
+                return true;
+            }
+            const size_t lastSep = scoped.rfind("::");
+            if (lastSep != std::string_view::npos)
+            {
+                std::string_view qualifier = scoped.substr(0, lastSep);
+                std::string_view name = scoped.substr(lastSep + 2);
+                if (name == ctx.request.target.name &&
+                    EnumQualifierMatches(qualifier, ctx.request.target.declaringEnum))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
     if (ref.isMemberAccess && !ref.isScopedIdentifier)
@@ -1922,7 +1945,7 @@ bool HasPrecedingEnumQualifier(const analysis::LocalReference& ref, const analys
     {
         if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
         {
-            if (candRef.name == declaringEnum || declaringEnum.ends_with("::" + candRef.name))
+            if (EnumQualifierMatches(candRef.name, declaringEnum))
             {
                 return true;
             }
@@ -1978,6 +2001,10 @@ bool IsUnscopedEnumMemberMatch(const analysis::Scope* scope, const OccurrenceSca
 bool IsEnumMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
                                 const OccurrenceScanContext& ctx)
 {
+    if (ref.isScopedIdentifier && !ref.scopeQualifier.empty())
+    {
+        return EnumQualifierMatches(ref.scopeQualifier, ctx.request.target.declaringEnum);
+    }
     auto astMatch = CheckAstEnumMemberMatch(ref, ctx);
     if (astMatch.has_value())
     {

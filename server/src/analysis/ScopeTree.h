@@ -176,6 +176,12 @@ struct LocalReference
      * @brief True if parent node is a scoped_identifier.
      */
     bool isScopedIdentifier = false;
+
+    /**
+     * @brief Text of the leading qualifier if parent node is a scoped_identifier (e.g. "INS2BASE" in
+     * "INS2BASE::SELECTFIRE_SEMI").
+     */
+    std::string scopeQualifier;
 };
 
 /** @brief A string literal call argument occurrence (e.g. SetTimeout("MyFunc", ...), CustomEntity("MyClass", ...)). */

@@ -5,6 +5,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "config/EngineRuleConfig.h"
 #include "features/definition/DefinitionHandler.h"
 #include "parser/AngelScriptParser.h"
 
@@ -84,11 +85,13 @@ struct TestEnvironment
     }
 
     std::function<std::string(const std::string&)> resolveInclude = {};
+    config::EngineRuleConfig engineRules;
 
     std::optional<std::vector<lsp::Location>> DefAt(uint32_t line, uint32_t character)
     {
         DefinitionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
         req.resolveInclude = resolveInclude;
+        req.engineRules = &engineRules;
         return GetDefinition(req);
     }
 
@@ -934,4 +937,32 @@ TEST_CASE("Definition - Go To Definition does not jump to funcdef parameter from
 
     auto def = env.DefAt(pos.line, pos.character);
     CHECK((!def.has_value() || def->empty()));
+}
+
+TEST_CASE("Definition - Go To Definition on overriding method declaration navigates to base method")
+{
+    const std::string baseClass = angel_lsp::test::GenerateRandomSymbolName("BaseWeapon");
+    const std::string proxyClass = angel_lsp::test::GenerateRandomSymbolName("ScriptBaseWeapon");
+    const std::string derivedClass = angel_lsp::test::GenerateRandomSymbolName("CustomPistol");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("DoSpecialAction");
+
+    const std::string baseCode = "class " + baseClass + " {\n" + "    void " + methodName + "() {}\n" + "}\n" +
+                                 "class " + proxyClass + " {\n" + "    " + baseClass +
+                                 "@ BaseClass { get const { return null; } }\n" + "}\n";
+
+    const std::string derivedCode =
+        "class " + derivedClass + " : " + proxyClass + " {\n" + "    void " + methodName + "() {}\n" + "}\n";
+
+    TestEnvironment env(derivedCode, "file:///derived.as");
+    env.engineRules.unusedRules.baseClassDelegateProperties = {"BaseClass"};
+    env.AddFile("file:///base.as", baseCode);
+
+    // Find methodName in derivedCode declaration
+    auto pos = FindPos(derivedCode, methodName);
+    auto def = env.DefAt(pos.line, pos.character);
+
+    REQUIRE(def.has_value());
+    REQUIRE(!def->empty());
+    CHECK((*def)[0].uri.toString().find("base.as") != std::string::npos);
+    CHECK((*def)[0].range.start.line == 1);
 }

@@ -1205,7 +1205,18 @@ bool IsEnumMemberHighlightMatch(const analysis::LocalReference& ref, const Targe
     }
     std::string_view scoped = std::string_view(request.sourceCode)
                                   .substr(ref.qualifierStartByte, ref.qualifierEndByte - ref.qualifierStartByte);
-    return scoped == target.qualifiedName || analysis::MatchesScopedPair(scoped, target.declaringEnum, target.name);
+    if (scoped == target.qualifiedName || analysis::MatchesScopedPair(scoped, target.declaringEnum, target.name))
+    {
+        return true;
+    }
+    const size_t lastSep = scoped.rfind("::");
+    if (lastSep != std::string_view::npos)
+    {
+        std::string_view qualifier = scoped.substr(0, lastSep);
+        std::string_view name = scoped.substr(lastSep + 2);
+        return name == target.name && analysis::EnumQualifierMatches(qualifier, target.declaringEnum);
+    }
+    return false;
 }
 
 /**

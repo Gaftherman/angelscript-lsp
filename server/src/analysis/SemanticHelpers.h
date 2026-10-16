@@ -4,6 +4,7 @@
 #include "analysis/ExpressionTypeCache.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/TypeSanitization.h"
+#include "config/EngineRuleConfig.h"
 #include "parser/ASTUtils.h"
 #include "parser/Primitives.h"
 #include <ankerl/unordered_dense.h>
@@ -214,6 +215,47 @@ bool IsReservedKeyword(const std::string& name);
 {
     return scoped.size() == prefix.size() + 2 + suffix.size() && scoped.starts_with(prefix) &&
            scoped.ends_with(suffix) && scoped.substr(prefix.size(), 2) == "::";
+}
+
+/**
+ * @brief Checks if a qualified symbol target ends with suffix preceded by a scope delimiter "::".
+ * @param[in] target Enclosing qualified string.
+ * @param[in] suffix Candidate trailing qualifier segment.
+ * @return True if target ends with "::" + suffix.
+ */
+[[nodiscard]] constexpr bool SuffixMatchesScoped(std::string_view target, std::string_view suffix) noexcept
+{
+    return target.ends_with(suffix) && target.size() > suffix.size() + 1 &&
+           target.substr(target.size() - suffix.size() - 2, 2) == "::";
+}
+
+/**
+ * @brief Checks if an identifier qualifier matches an enum's declaring type or its enclosing namespace.
+ * @param[in] qualifier Qualifier prefix extracted from scoped reference (e.g. "INS2BASE" or "INS2_SELECTFIRE_OPTIONS").
+ * @param[in] declaringEnum Declaring enum qualified name (e.g. "INS2BASE::INS2_SELECTFIRE_OPTIONS").
+ * @return True if qualifier matches the enum name, full enum path, or enclosing namespace.
+ */
+[[nodiscard]] constexpr bool EnumQualifierMatches(std::string_view qualifier, std::string_view declaringEnum) noexcept
+{
+    while (qualifier.starts_with(':') || qualifier.starts_with(' ') || qualifier.starts_with('\t'))
+    {
+        qualifier.remove_prefix(1);
+    }
+    if (qualifier.empty() || declaringEnum.empty())
+    {
+        return false;
+    }
+    if (qualifier == declaringEnum || SuffixMatchesScoped(declaringEnum, qualifier))
+    {
+        return true;
+    }
+    const size_t lastSep = declaringEnum.rfind("::");
+    if (lastSep != std::string_view::npos)
+    {
+        std::string_view nsPrefix = declaringEnum.substr(0, lastSep);
+        return qualifier == nsPrefix || SuffixMatchesScoped(nsPrefix, qualifier);
+    }
+    return false;
 }
 
 /**
@@ -488,6 +530,51 @@ std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className,
  * @return Name of the direct base class, or empty string if none exists.
  */
 std::string ResolveBaseClass(std::string_view className, const SymbolTable& symbolTable);
+
+/**
+ * @brief Configuration options for resolving delegate or proxy base classes.
+ */
+struct LinkedBaseOptions
+{
+    std::span<const std::string> delegateProps = {};
+    const config::StringVectorMap* proxyMap = nullptr;
+
+    [[nodiscard]] bool HasActiveOptions() const noexcept
+    {
+        return (proxyMap && !proxyMap->empty()) || !delegateProps.empty();
+    }
+};
+
+/**
+ * @brief Resolves linked proxy or delegate base class names for an ancestor class.
+ * @param[in] className Ancestor or wrapper class name to inspect.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in] options Options containing optional custom delegate properties and proxy map.
+ * @return List of clean delegate/proxy base class names without duplicates.
+ */
+std::vector<std::string> ResolveLinkedBaseClasses(std::string_view className, const SymbolTable& symbolTable,
+                                                  const LinkedBaseOptions& options = {});
+
+/**
+ * @brief Locates candidate base or interface method symbols overridden by a derived method.
+ * @param[in] containerClass Qualified or bare container class name.
+ * @param[in] methodName Name of the overriding method.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in] options Options containing optional custom delegate properties and proxy map.
+ * @return List of matching base method symbols across ancestors and linked base types.
+ */
+std::vector<Symbol> FindOverriddenBaseMethodSymbols(std::string_view containerClass, std::string_view methodName,
+                                                    const SymbolTable& symbolTable,
+                                                    const LinkedBaseOptions& options = {});
+
+/**
+ * @brief Expands an inheritance hierarchy by including ancestors of host classes incorporating the mixin.
+ * @param[in] containerClass Class or mixin name to check.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in,out] hierarchy Target hierarchy list to append host class ancestors to.
+ */
+void ExpandMixinHostHierarchies(std::string_view containerClass, const SymbolTable& symbolTable,
+                                std::vector<std::string>& hierarchy);
 
 /**
  * @brief The `get_X`/`set_X` methods, anywhere in a type's hierarchy, that stand for `X`.

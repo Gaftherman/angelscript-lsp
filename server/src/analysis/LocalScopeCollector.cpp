@@ -18,44 +18,9 @@ extern "C" const TSLanguage* tree_sitter_angelscript();
 
 namespace angel_lsp::analysis
 {
-LocalScopeCollector::LocalScopeCollector(angel_lsp::utils::LspLogger* logger) : m_logger(logger), m_localsQuery(nullptr)
+LocalScopeCollector::LocalScopeCollector(angel_lsp::utils::LspLogger* logger)
+    : m_logger(logger), m_localsQuery(nullptr), m_gs(parser::GetGrammarSymbols())
 {
-    const TSLanguage* lang = tree_sitter_angelscript();
-
-    m_symMemberExpression = ts_language_symbol_for_name(lang, "member_expression",
-                                                        static_cast<uint32_t>(strlen("member_expression")), true);
-    m_symScopedIdentifier = ts_language_symbol_for_name(lang, "scoped_identifier",
-                                                        static_cast<uint32_t>(strlen("scoped_identifier")), true);
-    m_symFuncDeclaration =
-        ts_language_symbol_for_name(lang, "func_declaration", static_cast<uint32_t>(strlen("func_declaration")), true);
-    m_symLambdaExpression = ts_language_symbol_for_name(lang, "lambda_expression",
-                                                        static_cast<uint32_t>(strlen("lambda_expression")), true);
-    m_symClassBody = ts_language_symbol_for_name(lang, "class_body", static_cast<uint32_t>(strlen("class_body")), true);
-    m_symInterfaceBody =
-        ts_language_symbol_for_name(lang, "interface_body", static_cast<uint32_t>(strlen("interface_body")), true);
-    m_symNamespaceBody =
-        ts_language_symbol_for_name(lang, "namespace_body", static_cast<uint32_t>(strlen("namespace_body")), true);
-    m_symScript = ts_language_symbol_for_name(lang, "script", static_cast<uint32_t>(strlen("script")), true);
-    m_symVariableDeclarator = ts_language_symbol_for_name(lang, "variable_declarator",
-                                                          static_cast<uint32_t>(strlen("variable_declarator")), true);
-    m_symParameter = ts_language_symbol_for_name(lang, "parameter", static_cast<uint32_t>(strlen("parameter")), true);
-    m_symForeachVariable =
-        ts_language_symbol_for_name(lang, "foreach_variable", static_cast<uint32_t>(strlen("foreach_variable")), true);
-    m_symLambdaParameterList = ts_language_symbol_for_name(
-        lang, "lambda_parameter_list", static_cast<uint32_t>(strlen("lambda_parameter_list")), true);
-    m_symClassDeclaration = ts_language_symbol_for_name(lang, "class_declaration",
-                                                        static_cast<uint32_t>(strlen("class_declaration")), true);
-    m_symInterfaceDeclaration = ts_language_symbol_for_name(
-        lang, "interface_declaration", static_cast<uint32_t>(strlen("interface_declaration")), true);
-    m_symEnumDeclaration =
-        ts_language_symbol_for_name(lang, "enum_declaration", static_cast<uint32_t>(strlen("enum_declaration")), true);
-    m_symInterfaceMethod =
-        ts_language_symbol_for_name(lang, "interface_method", static_cast<uint32_t>(strlen("interface_method")), true);
-    m_symMixinDeclaration = ts_language_symbol_for_name(lang, "mixin_declaration",
-                                                        static_cast<uint32_t>(strlen("mixin_declaration")), true);
-    m_symFuncdefDeclaration = ts_language_symbol_for_name(lang, "funcdef_declaration",
-                                                          static_cast<uint32_t>(strlen("funcdef_declaration")), true);
-
     m_localsQuery = parser::QueryRegistry::GetLocalsQuery();
     if (!m_localsQuery)
     {
@@ -147,9 +112,9 @@ LocalScopeCollector::ResolveCaptureAncestors(CaptureKind kind, LocalDefinitionKi
         if (defKind == LocalDefinitionKind::Parameter)
         {
             TSSymbol parentSym = !ts_node_is_null(result.parent) ? ts_node_symbol(result.parent) : 0;
-            if (parentSym == m_symLambdaParameterList)
+            if (parentSym == m_gs.symLambdaParameterList)
             {
-                result.enclosingCallableSym = m_symLambdaExpression;
+                result.enclosingCallableSym = m_gs.symLambdaExpression;
             }
             else if (!ts_node_is_null(result.grandparent))
             {
@@ -249,27 +214,27 @@ void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::ve
 
     auto newScope = std::make_unique<Scope>();
     TSSymbol scopeNodeSymbol = ts_node_symbol(capture.node);
-    if (scopeNodeSymbol == m_symLambdaExpression)
+    if (scopeNodeSymbol == m_gs.symLambdaExpression)
     {
         newScope->kind = ScopeKind::Closure;
         newScope->isFunctionScope = true;
     }
-    else if (scopeNodeSymbol == m_symFuncDeclaration)
+    else if (scopeNodeSymbol == m_gs.symFuncDeclaration)
     {
         newScope->kind = ScopeKind::Function;
         newScope->isFunctionScope = true;
     }
-    else if (scopeNodeSymbol == m_symClassBody || scopeNodeSymbol == m_symInterfaceBody)
+    else if (scopeNodeSymbol == m_gs.symClassBody || scopeNodeSymbol == m_gs.symInterfaceBody)
     {
         newScope->kind = ScopeKind::Class;
         newScope->isFunctionScope = false;
     }
-    else if (scopeNodeSymbol == m_symNamespaceBody)
+    else if (scopeNodeSymbol == m_gs.symNamespaceBody)
     {
         newScope->kind = ScopeKind::Namespace;
         newScope->isFunctionScope = false;
     }
-    else if (scopeNodeSymbol == m_symScript)
+    else if (scopeNodeSymbol == m_gs.symScript)
     {
         newScope->kind = ScopeKind::Global;
         newScope->isFunctionScope = false;
@@ -300,7 +265,7 @@ void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::ve
     }
 
     OpenScope openScope{scopePtr, endByte};
-    if (scopeNodeSymbol == m_symFuncDeclaration)
+    if (scopeNodeSymbol == m_gs.symFuncDeclaration)
     {
         TSNode ownNameNode = parser::GetChildByField(capture.node, parser::fields::Name);
         if (!ts_node_is_null(ownNameNode))
@@ -351,8 +316,8 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
 
     Scope* current = stack.back().scope;
     if (capture.definitionKind == LocalDefinitionKind::Parameter &&
-        !IsValidParameterCapture(current->kind, capture.enclosingCallableSym, m_symFuncDeclaration,
-                                 m_symLambdaExpression))
+        !IsValidParameterCapture(current->kind, capture.enclosingCallableSym, m_gs.symFuncDeclaration,
+                                 m_gs.symLambdaExpression))
     {
         return;
     }
@@ -575,10 +540,10 @@ static bool IsAllowedKeywordReference(TSNode node, TSNode parent)
 
 bool LocalScopeCollector::IsDeclarationContextSymbol(TSSymbol sym) const noexcept
 {
-    return sym == m_symParameter || sym == m_symLambdaParameterList || sym == m_symVariableDeclarator ||
-           sym == m_symForeachVariable || sym == m_symClassDeclaration || sym == m_symInterfaceDeclaration ||
-           sym == m_symEnumDeclaration || sym == m_symFuncDeclaration || sym == m_symInterfaceMethod ||
-           sym == m_symMixinDeclaration || sym == m_symFuncdefDeclaration;
+    return sym == m_gs.symParameter || sym == m_gs.symLambdaParameterList || sym == m_gs.symVariableDeclarator ||
+           sym == m_gs.symForeachVariable || sym == m_gs.symClassDeclaration || sym == m_gs.symInterfaceDeclaration ||
+           sym == m_gs.symEnumDeclaration || sym == m_gs.symFuncDeclaration || sym == m_gs.symInterfaceMethod ||
+           sym == m_gs.symMixinDeclaration || sym == m_gs.symFuncdefDeclaration;
 }
 
 void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Scope* current,
@@ -622,18 +587,20 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
     {
         ref.isNamedArgument = IsNamedArgumentNode(capture.node, parent);
         ref.isTypeSpecifier = IsTypeSpecifierContext(parent);
-        ref.isMemberAccess = IsMemberAccessNode(capture.node, parent, m_symMemberExpression, m_symScopedIdentifier);
+        ref.isMemberAccess =
+            IsMemberAccessNode(capture.node, parent, m_gs.symMemberExpression, m_gs.symScopedIdentifier);
         DetermineCallReferenceInfo(capture.node, parent, ref);
-        PopulateReceiverQualifierRanges(parent, ref);
+        PopulateReceiverQualifierRanges(parent, ref, sourceCode);
     }
 
     current->references.push_back(std::move(ref));
 }
 
-void LocalScopeCollector::PopulateReceiverQualifierRanges(TSNode parent, LocalReference& ref) const
+void LocalScopeCollector::PopulateReceiverQualifierRanges(TSNode parent, LocalReference& ref,
+                                                          const std::string& sourceCode) const
 {
     const TSSymbol parentSym = ts_node_symbol(parent);
-    if (parentSym == m_symScopedIdentifier)
+    if (parentSym == m_gs.symScopedIdentifier)
     {
         ref.isScopedIdentifier = true;
         ref.qualifierStartByte = ts_node_start_byte(parent);
@@ -644,8 +611,18 @@ void LocalScopeCollector::PopulateReceiverQualifierRanges(TSNode parent, LocalRe
             ref.receiverStartByte = ts_node_start_byte(firstChild);
             ref.receiverEndByte = ts_node_end_byte(firstChild);
         }
+        if (ref.isMemberAccess && ref.qualifierStartByte < ref.startByte && ref.startByte <= sourceCode.size())
+        {
+            std::string_view qualifierView(sourceCode.data() + ref.qualifierStartByte,
+                                           ref.startByte - ref.qualifierStartByte);
+            while (qualifierView.ends_with(':') || qualifierView.ends_with(' ') || qualifierView.ends_with('\t'))
+            {
+                qualifierView.remove_suffix(1);
+            }
+            ref.scopeQualifier = std::string(qualifierView);
+        }
     }
-    else if (parentSym == m_symMemberExpression)
+    else if (parentSym == m_gs.symMemberExpression)
     {
         ref.qualifierStartByte = ts_node_start_byte(parent);
         ref.qualifierEndByte = ts_node_end_byte(parent);
@@ -974,7 +951,7 @@ void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, 
     if (ts_node_is_null(declarationNode))
         return;
 
-    uint32_t varDeclCount = CountVariableDeclarators(declarationNode, m_symVariableDeclarator);
+    uint32_t varDeclCount = CountVariableDeclarators(declarationNode, m_gs.symVariableDeclarator);
     TSNode rangeNode = (varDeclCount <= 1) ? declarationNode : declaratorNode;
     TSPoint rStart = ts_node_start_point(rangeNode);
     TSPoint rEnd = ts_node_end_point(rangeNode);
@@ -1012,17 +989,17 @@ void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const 
     if (ts_node_is_null(declaratorNode))
         return;
 
-    if (ts_node_symbol(declaratorNode) == m_symParameter)
+    if (ts_node_symbol(declaratorNode) == m_gs.symParameter)
     {
         ReadParameterTypeInfo(declaratorNode, sourceCode, def);
         return;
     }
-    if (ts_node_symbol(declaratorNode) == m_symForeachVariable)
+    if (ts_node_symbol(declaratorNode) == m_gs.symForeachVariable)
     {
         ReadForeachVariableTypeInfo(declaratorNode, sourceCode, def);
         return;
     }
-    if (ts_node_symbol(declaratorNode) == m_symVariableDeclarator)
+    if (ts_node_symbol(declaratorNode) == m_gs.symVariableDeclarator)
     {
         TSNode declarationNode = capture.grandparent;
         if (ts_node_is_null(declarationNode))
@@ -1032,7 +1009,7 @@ void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const 
         ReadVariableDeclaratorTypeInfo(declaratorNode, declarationNode, sourceCode, def);
         return;
     }
-    if (ts_node_symbol(declaratorNode) == m_symLambdaParameterList)
+    if (ts_node_symbol(declaratorNode) == m_gs.symLambdaParameterList)
     {
         ReadLambdaParameterTypeInfo(capture.node, declaratorNode, sourceCode, def);
     }

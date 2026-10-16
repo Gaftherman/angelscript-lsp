@@ -132,6 +132,20 @@
         "PlayEmptySound"
       ]
     },
+    "baseClassDelegateProperties": [
+      "BaseClass",
+      "self"
+    ],
+    "baseClassProxyMap": {
+      "ScriptBaseEntity": ["BaseEntity", "CBaseEntity"],
+      "ScriptBaseAnimating": ["BaseEntity", "CBaseAnimating"],
+      "ScriptBaseMonsterEntity": ["BaseMonster", "CBaseMonster"],
+      "ScriptBaseTankEntity": ["BaseTank", "CBaseTank"],
+      "ScriptBasePlayerItemEntity": ["BasePlayerItem", "CBasePlayerItem"],
+      "ScriptBasePlayerWeaponEntity": ["BasePlayerWeapon", "CBasePlayerWeapon"],
+      "ScriptBasePlayerAmmoEntity": ["BasePlayerAmmo", "CBasePlayerAmmo"],
+      "ScriptBaseItemEntity": ["BaseItem", "CItem"]
+    },
     "stringReflectionCallees": [
       {
         "callee": "g_CustomEntityFuncs",

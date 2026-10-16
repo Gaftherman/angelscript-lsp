@@ -8,6 +8,7 @@
 
 #include "config/ServerConfig.h"
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <cstring>
@@ -169,76 +170,7 @@ class SymbolCollector
   private:
     utils::LspLogger* m_logger;
     const TSQuery* m_tagsQuery = nullptr;
-
-    // =====================================================================================
-    // Cached grammar symbols (tree-sitter TSSymbol IDs, resolved once per instance)
-    // =====================================================================================
-
-    TSSymbol m_symDeclarationModifier = 0;
-    TSSymbol m_symClassBody = 0;
-    TSSymbol m_symNamespaceBody = 0;
-    TSSymbol m_symInterfaceBody = 0;
-    TSSymbol m_symEnumMember = 0;
-    TSSymbol m_symFuncDeclaration = 0;
-    TSSymbol m_symStatementBlock = 0;
-    TSSymbol m_symInterfaceMethod = 0;
-    TSSymbol m_symFuncAttributes = 0;
-    TSSymbol m_symGet = 0;
-    TSSymbol m_symSet = 0;
-    TSSymbol m_symVariableDeclarator = 0;
-    TSSymbol m_symAccessor = 0;
-    TSSymbol m_symImportDeclaration = 0;
-
-    TSSymbol m_symScopedIdentifier = 0;
-    TSSymbol m_symMixinDeclaration = 0;
-    TSSymbol m_symSharedExternalModifier = 0;
-    TSSymbol m_symVirtualProperty = 0;
-    TSSymbol m_symBaseClassList = 0;
-    TSSymbol m_symParameter = 0;
-    TSSymbol m_symMemberExpression = 0;
-    TSSymbol m_symMetadata = 0;
-    TSSymbol m_symScript = 0;
-    TSSymbol m_symLambdaExpression = 0;
-
-    // Anonymous token symbols (resolved once, compared via ts_node_symbol)
-    TSSymbol m_tokConst = 0;
-    TSSymbol m_tokIn = 0;
-    TSSymbol m_tokOut = 0;
-    TSSymbol m_tokInout = 0;
-    TSSymbol m_tokAmp = 0;
-    TSSymbol m_tokAt = 0;
-    TSSymbol m_tokPrivate = 0;
-    TSSymbol m_tokProtected = 0;
-    TSSymbol m_tokShared = 0;
-    TSSymbol m_tokMixin = 0;
-    TSSymbol m_tokAbstract = 0;
-    TSSymbol m_tokFinal = 0;
-    TSSymbol m_tokOverride = 0;
-    TSSymbol m_tokExplicit = 0;
-    TSSymbol m_tokProperty = 0;
-    TSSymbol m_tokDelete = 0;
-    TSSymbol m_tokExternal = 0;
-    TSSymbol m_tokImport = 0;
-    TSSymbol m_tokOpenBrace = 0;
-
-    // Pre-resolved tree-sitter TSFieldId table
-    TSFieldId m_fieldIdName = 0;
-    TSFieldId m_fieldIdReturnType = 0;
-    TSFieldId m_fieldIdParameters = 0;
-    TSFieldId m_fieldIdBody = 0;
-    TSFieldId m_fieldIdVarType = 0;
-    TSFieldId m_fieldIdType = 0;
-    TSFieldId m_fieldIdKind = 0;
-    TSFieldId m_fieldIdSource = 0;
-    TSFieldId m_fieldIdPropType = 0;
-    TSFieldId m_fieldIdParamType = 0;
-    TSFieldId m_fieldIdDefaultValue = 0;
-    TSFieldId m_fieldIdValue = 0;
-    TSFieldId m_fieldIdBaseType = 0;
-    TSFieldId m_fieldIdTemplateParams = 0;
-    TSFieldId m_fieldIdFunction = 0;
-    TSFieldId m_fieldIdMember = 0;
-    TSFieldId m_fieldIdObject = 0;
+    const parser::GrammarSymbols& m_gs;
 
     // =====================================================================================
     // Internal Bundled Contexts
@@ -324,7 +256,6 @@ class SymbolCollector
     // Initialization Helpers
     // =====================================================================================
 
-    void ResolveGrammarSymbols(const TSLanguage* lang);
     void InitQueryDispatch();
     void PopulateDispatchTables();
     ProcessFn ResolveCaptureHandler(std::string_view captureName) const;

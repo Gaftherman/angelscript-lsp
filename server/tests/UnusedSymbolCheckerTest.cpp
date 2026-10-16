@@ -58,6 +58,39 @@ std::vector<Diagnostic> AnalyzeSnippet(const std::string& code,
     return diags;
 }
 
+std::vector<Diagnostic> AnalyzeSnippetWithPredefined(const std::string& code,
+                                                     const angel_lsp::config::EngineRuleConfig* engineRules,
+                                                     const std::string& predefinedCode)
+{
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    LocalScopeCollector scopes(nullptr);
+    SymbolTable table;
+    static angel_lsp::i18n::I18n i18n;
+
+    if (!predefinedCode.empty())
+    {
+        collector.CollectSymbols({"file:///engine.as.predefined", predefinedCode, &i18n}, parser, table);
+    }
+
+    const std::string fileUri = "file:///test.as";
+    auto diags = collector.CollectSymbols({fileUri, code, &i18n}, parser, table);
+
+    SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
+    request.scopeRoot = scopes.CollectScopes(code, parser);
+    request.sourceCode = code;
+    request.tree = parser.Parse(code);
+    request.engineRules = engineRules;
+
+    SemanticAnalyzer analyzer(nullptr);
+    auto semDiags = analyzer.Analyze(request);
+    diags.insert(diags.end(), semDiags.begin(), semDiags.end());
+
+    if (request.tree)
+        ts_tree_delete(const_cast<TSTree*>(request.tree));
+    return diags;
+}
+
 } // namespace
 
 TEST_CASE("UnusedSymbolChecker - local variables in function and mixin method")
@@ -831,4 +864,75 @@ TEST_CASE("UnusedSymbolChecker - ignoredUnusedFunctions in DiagnosticsConfig sup
     CHECK_FALSE(HasDiag(diagsIgnored, codes::UnusedMethod, unusedMethod));
     CHECK_FALSE(HasDiag(diagsIgnored, codes::UnusedGlobalVariable, unusedGlobal));
     CHECK_FALSE(HasDiag(diagsIgnored, codes::UnusedClass, unusedClass));
+}
+
+TEST_CASE("UnusedSymbolChecker - baseClassProxyMap suppresses unused warnings for overridden base methods")
+{
+    const std::string baseName = angel_lsp::test::GenerateRandomSymbolName("MockBase");
+    const std::string proxyName = angel_lsp::test::GenerateRandomSymbolName("ScriptProxy");
+    const std::string derivedName = angel_lsp::test::GenerateRandomSymbolName("CustomEntity");
+    const std::string overrideMethod = angel_lsp::test::GenerateRandomSymbolName("ActionMethod");
+    const std::string deadMethod = angel_lsp::test::GenerateRandomSymbolName("DeadMethod");
+
+    const std::string predefCode = "class " + baseName + " { void " + overrideMethod + "() {} }\n";
+    const std::string code = "class " + proxyName + " {}\n" + "class " + derivedName + " : " + proxyName + " {\n" +
+                             "    void " + overrideMethod + "() {}\n" + "    void " + deadMethod + "() {}\n" + "}\n" +
+                             "void Entry() { " + derivedName + " inst; }\n";
+
+    // 1. Without proxy map: both methods are flagged as unused
+    angel_lsp::config::EngineRuleConfig rules;
+    rules.unusedRules.enabled = true;
+    auto diagsNoRules = AnalyzeSnippetWithPredefined(code, &rules, predefCode);
+    CHECK(HasDiag(diagsNoRules, codes::UnusedMethod, overrideMethod));
+    CHECK(HasDiag(diagsNoRules, codes::UnusedMethod, deadMethod));
+
+    // 2. With baseClassProxyMap linking proxyName to baseName: overrideMethod is exempt, deadMethod is still flagged
+    rules.unusedRules.baseClassProxyMap[proxyName] = {baseName};
+    auto diagsWithRules = AnalyzeSnippetWithPredefined(code, &rules, predefCode);
+    CHECK_FALSE(HasDiag(diagsWithRules, codes::UnusedMethod, overrideMethod));
+    CHECK(HasDiag(diagsWithRules, codes::UnusedMethod, deadMethod));
+}
+
+TEST_CASE("UnusedSymbolChecker - baseClassDelegateProperties discovers base methods via property")
+{
+    const std::string nativeClass = angel_lsp::test::GenerateRandomSymbolName("NativeEntity");
+    const std::string scriptBridge = angel_lsp::test::GenerateRandomSymbolName("ScriptBridge");
+    const std::string derivedClass = angel_lsp::test::GenerateRandomSymbolName("MyWeapon");
+    const std::string tickMethod = angel_lsp::test::GenerateRandomSymbolName("OnTick");
+    const std::string deadMethod = angel_lsp::test::GenerateRandomSymbolName("UnusedLocalMethod");
+
+    const std::string predefCode = "class " + nativeClass + " { void " + tickMethod + "() {} }\n";
+    const std::string code = "class " + scriptBridge + " {\n" + "    " + nativeClass +
+                             "@ BaseClass { get const { return null; } }\n" + "}\n" + "class " + derivedClass + " : " +
+                             scriptBridge + " {\n" + "    void " + tickMethod + "() {}\n" + "    void " + deadMethod +
+                             "() {}\n" + "}\n" + "void Main() { " + derivedClass + " w; }\n";
+
+    angel_lsp::config::EngineRuleConfig rules;
+    rules.unusedRules.enabled = true;
+    rules.unusedRules.baseClassDelegateProperties = {"BaseClass"};
+
+    auto diags = AnalyzeSnippetWithPredefined(code, &rules, predefCode);
+    CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, tickMethod));
+    CHECK(HasDiag(diags, codes::UnusedMethod, deadMethod));
+}
+
+TEST_CASE("UnusedSymbolChecker - BaseClass method access does not mask truly unreferenced methods")
+{
+    const std::string baseClass = angel_lsp::test::GenerateRandomSymbolName("ParentClass");
+    const std::string derivedClass = angel_lsp::test::GenerateRandomSymbolName("ChildClass");
+    const std::string deadMethod = angel_lsp::test::GenerateRandomSymbolName("OrphanMethod");
+
+    // deadMethod is called via BaseClass.<deadMethod>() inside its own body, but Base does not have it,
+    // so it should not be considered an external reference
+    const std::string code = "class " + baseClass + " {}\n" + "class " + derivedClass + " : " + baseClass + " {\n" +
+                             "    " + baseClass + "@ BaseClass { get const { return null; } }\n" + "    void " +
+                             deadMethod + "() {\n" + "        BaseClass." + deadMethod + "();\n" + "    }\n" + "}\n" +
+                             "void Entry() { " + derivedClass + " c; }\n";
+
+    angel_lsp::config::EngineRuleConfig rules;
+    rules.unusedRules.enabled = true;
+    rules.unusedRules.baseClassDelegateProperties = {"BaseClass"};
+
+    auto diags = AnalyzeSnippet(code, &rules);
+    CHECK(HasDiag(diags, codes::UnusedMethod, deadMethod));
 }

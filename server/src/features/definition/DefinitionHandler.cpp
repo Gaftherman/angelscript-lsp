@@ -3,7 +3,9 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/VirtualMixinContext.h"
 #include "analysis/overload/ConversionRankingEngine.h"
+#include "config/EngineRuleConfig.h"
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include "utils/IncludeResolver.h"
 #include "utils/Utils.h"
 #include <algorithm>
@@ -1003,19 +1005,106 @@ std::optional<std::vector<lsp::Location>> TryResolveThisKeyword(TSNode node, con
 }
 
 /**
- * @brief Checks if a tree-sitter node type corresponds to an entity declaration.
- * @param[in] nodeType Tree-sitter node type string.
- * @return True if node is a recognized declaration node.
+ * @brief Checks if a tree-sitter node symbol corresponds to an entity declaration.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @return True if symbol is a recognized declaration node.
  */
-bool IsDeclarationNode(std::string_view nodeType)
+bool IsDeclarationNode(TSSymbol sym)
 {
-    static const std::unordered_set<std::string_view> declTypes = {
-        parser::nodes::FuncDeclaration,      parser::nodes::VariableDeclarator,   parser::nodes::Parameter,
-        parser::nodes::ClassDeclaration,     parser::nodes::InterfaceDeclaration, parser::nodes::InterfaceMethod,
-        parser::nodes::EnumDeclaration,      parser::nodes::EnumMember,           parser::nodes::FuncdefDeclaration,
-        parser::nodes::NamespaceDeclaration, parser::nodes::ForeachVariable,      parser::nodes::VirtualProperty,
-        parser::nodes::MixinDeclaration};
-    return declTypes.contains(nodeType);
+    const auto& gs = parser::GetGrammarSymbols();
+    return sym == gs.symFuncDeclaration || sym == gs.symVariableDeclarator || sym == gs.symParameter ||
+           sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration || sym == gs.symInterfaceMethod ||
+           sym == gs.symEnumDeclaration || sym == gs.symEnumMember || sym == gs.symFuncdefDeclaration ||
+           sym == gs.symNamespaceDeclaration || sym == gs.symForeachVariable || sym == gs.symVirtualProperty ||
+           sym == gs.symMixinDeclaration;
+}
+
+/**
+ * @brief Resolves the enclosing class or interface name for overridden method resolution.
+ * @param[in] ctx Definition context.
+ * @return Qualified or bare class/interface name, or empty string.
+ */
+static std::string ResolveTargetContainerClass(const DefinitionContext& ctx)
+{
+    if (ctx.vCtx.isVirtual && !ctx.vCtx.hostClass.empty())
+    {
+        return ctx.vCtx.hostClass;
+    }
+    const std::string physUri = analysis::ResolvePhysicalUri(ctx.vCtx, ctx.request.uri);
+    return ctx.request.symbolTable.FindEnclosingClassName(physUri, ctx.queryLine);
+}
+
+/**
+ * @brief Filters candidate symbols matching parameter count of the declaration.
+ * @param[in] symbols Base method candidates.
+ * @param[in] declNode Enclosing declaration node.
+ * @return Filtered symbols if any match, or original candidates.
+ */
+static std::vector<analysis::Symbol> FilterOverriddenSymbolsByArity(const std::vector<analysis::Symbol>& symbols,
+                                                                    TSNode declNode)
+{
+    TSNode paramsNode = parser::GetChildByField(declNode, parser::fields::Parameters);
+    uint32_t declaredParamCount = !ts_node_is_null(paramsNode) ? ts_node_named_child_count(paramsNode) : 0;
+
+    std::vector<analysis::Symbol> prioritized;
+    for (const auto& s : symbols)
+    {
+        if (s.type == analysis::SymbolType::Function &&
+            std::holds_alternative<analysis::FunctionSignature>(s.signature) &&
+            s.GetFunction().parameters.size() == declaredParamCount)
+        {
+            prioritized.push_back(s);
+        }
+    }
+    return prioritized.empty() ? symbols : prioritized;
+}
+
+/**
+ * @brief Attempts to resolve definition of an overridden method in base classes or interfaces.
+ * @param[in] node AST node at cursor.
+ * @param[in] declNode Enclosing declaration node.
+ * @param[in] ctx Definition context.
+ * @return Resolved base method location(s), or nullopt.
+ */
+std::optional<std::vector<lsp::Location>> TryResolveOverriddenMethodDefinition(TSNode node, TSNode declNode,
+                                                                               const DefinitionContext& ctx)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol declSym = ts_node_symbol(declNode);
+    if (declSym != gs.symFuncDeclaration && declSym != gs.symInterfaceMethod)
+    {
+        return std::nullopt;
+    }
+
+    std::string methodName = analysis::GetNodeText(node, ctx.request.sourceCode);
+    if (methodName.empty())
+    {
+        return std::nullopt;
+    }
+
+    std::string targetClass = ResolveTargetContainerClass(ctx);
+    if (targetClass.empty())
+    {
+        return std::nullopt;
+    }
+
+    analysis::LinkedBaseOptions linkedOpts;
+    if (ctx.request.engineRules)
+    {
+        linkedOpts.proxyMap = &ctx.request.engineRules->unusedRules.baseClassProxyMap;
+        linkedOpts.delegateProps = ctx.request.engineRules->unusedRules.baseClassDelegateProperties;
+    }
+
+    auto overriddenSyms =
+        analysis::FindOverriddenBaseMethodSymbols(targetClass, methodName, ctx.request.symbolTable, linkedOpts);
+    if (overriddenSyms.empty())
+    {
+        return std::nullopt;
+    }
+
+    auto finalCandidates = FilterOverriddenSymbolsByArity(overriddenSyms, declNode);
+    auto locations = ConvertSymbolsToLocations(finalCandidates, ctx.request);
+    return locations.empty() ? std::nullopt : std::make_optional(std::move(locations));
 }
 
 /**
@@ -1035,15 +1124,18 @@ std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(TSNode n
     {
         return std::nullopt;
     }
-    if (std::string_view(ts_node_type(p)) == parser::nodes::ScopedIdentifier)
+    const auto& gs = parser::GetGrammarSymbols();
+    TSSymbol pSym = ts_node_symbol(p);
+    if (pSym == gs.symScopedIdentifier)
     {
         TSNode gp = ts_node_parent(p);
         if (!ts_node_is_null(gp))
         {
             p = gp;
+            pSym = ts_node_symbol(p);
         }
     }
-    if (!IsDeclarationNode(ts_node_type(p)))
+    if (!IsDeclarationNode(pSym))
     {
         return std::nullopt;
     }
@@ -1052,6 +1144,11 @@ std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(TSNode n
         ts_node_start_byte(nameNode) != ts_node_start_byte(node))
     {
         return std::nullopt;
+    }
+
+    if (auto overriddenLocs = TryResolveOverriddenMethodDefinition(node, p, ctx))
+    {
+        return overriddenLocs;
     }
     TSPoint s = ts_node_start_point(node);
     TSPoint e = ts_node_end_point(node);

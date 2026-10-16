@@ -53,17 +53,29 @@ void CollectDefLocations(const Scope* scope, ankerl::unordered_dense::set<uint64
 }
 
 void CollectDocReferences(const Scope* scope, const ankerl::unordered_dense::set<uint64_t>& defLocs,
-                          ankerl::unordered_dense::set<std::string>& refNames, int depth = 0)
+                          ankerl::unordered_dense::set<std::string>& refNames, std::string_view sourceCode,
+                          std::span<const std::string> delegateProps, int depth = 0)
 {
     if (!scope || depth > k_maxAstDepth)
         return;
     for (const auto& ref : scope->references)
     {
-        if (!defLocs.contains(PackLoc(ref.startLine, ref.startCharacter)))
-            refNames.insert(ref.name);
+        if (defLocs.contains(PackLoc(ref.startLine, ref.startCharacter)))
+            continue;
+        if (!delegateProps.empty() && ref.isMemberAccess && ref.receiverEndByte > ref.receiverStartByte &&
+            !sourceCode.empty() && ref.receiverEndByte <= sourceCode.size())
+        {
+            std::string_view recv =
+                sourceCode.substr(ref.receiverStartByte, ref.receiverEndByte - ref.receiverStartByte);
+            if (std::find(delegateProps.begin(), delegateProps.end(), recv) != delegateProps.end())
+            {
+                continue;
+            }
+        }
+        refNames.insert(ref.name);
     }
     for (const auto& child : scope->children)
-        CollectDocReferences(child.get(), defLocs, refNames, depth + 1);
+        CollectDocReferences(child.get(), defLocs, refNames, sourceCode, delegateProps, depth + 1);
 }
 
 void CollectUsedLocals(const Scope* scope, ankerl::unordered_dense::set<const LocalDefinition*>& usedLocals,
@@ -95,7 +107,7 @@ void CollectCrossFileReferences(const SemanticAnalysisRequest& req, ankerl::unor
             {
                 ankerl::unordered_dense::set<uint64_t> defs;
                 CollectDefLocations(root.get(), defs);
-                CollectDocReferences(root.get(), defs, refNames);
+                CollectDocReferences(root.get(), defs, refNames, "", {});
             }
         }
     }
@@ -345,10 +357,40 @@ bool IsEngineEntity(const std::string& className, const SymbolTable& symbolTable
         return false;
     if (std::find(ignored.begin(), ignored.end(), className) != ignored.end())
         return true;
-    const auto hierarchy = GetInheritedTypeHierarchy(className, symbolTable);
+    std::vector<std::string> hierarchy = GetInheritedTypeHierarchy(className, symbolTable);
+    if (const auto ruleIndex = symbolTable.GetRuleIndex())
+    {
+        auto it = ruleIndex->hostClassesByMixin.find(className);
+        if (it != ruleIndex->hostClassesByMixin.end())
+        {
+            for (const auto& host : it->second)
+            {
+                std::string hostKey = host.qualifiedName.empty() ? host.name : host.qualifiedName;
+                auto hostHier = GetInheritedTypeHierarchy(hostKey, symbolTable);
+                hierarchy.insert(hierarchy.end(), hostHier.begin(), hostHier.end());
+            }
+        }
+    }
     return std::any_of(hierarchy.begin(), hierarchy.end(), [&ignored](const std::string& b)
                        { return std::find(ignored.begin(), ignored.end(), b) != ignored.end(); });
 }
+
+namespace
+{
+
+bool CheckBaseClassLifecycleMethods(std::string_view className, std::string_view methodName,
+                                    const config::UnusedSymbolRules& unusedRules)
+{
+    auto it = unusedRules.baseClassLifecycleMethods.find(className);
+    if (it == unusedRules.baseClassLifecycleMethods.end() && className.find("::") != std::string_view::npos)
+    {
+        it = unusedRules.baseClassLifecycleMethods.find(LastScopeSegment(className));
+    }
+    return it != unusedRules.baseClassLifecycleMethods.end() &&
+           std::find(it->second.begin(), it->second.end(), methodName) != it->second.end();
+}
+
+} // namespace
 
 bool IsLifecycleOrOverride(const Symbol& sym, const SymbolTable& symbolTable,
                            const config::UnusedSymbolRules& unusedRules)
@@ -356,26 +398,58 @@ bool IsLifecycleOrOverride(const Symbol& sym, const SymbolTable& symbolTable,
     if (sym.containerName.empty())
         return false;
 
-    const auto hierarchy = GetInheritedTypeHierarchy(sym.containerName, symbolTable);
-    for (const auto& ancestor : hierarchy)
+    LinkedBaseOptions options;
+    options.delegateProps = unusedRules.baseClassDelegateProperties;
+    options.proxyMap = &unusedRules.baseClassProxyMap;
+
+    auto overridden = FindOverriddenBaseMethodSymbols(sym.containerName, sym.name, symbolTable, options);
+    if (!overridden.empty())
     {
-        if (ancestor != sym.containerName && symbolTable.FindMemberSymbolPtr(ancestor, sym.name) != nullptr)
-            return true;
+        return true;
     }
+
+    std::vector<std::string> hierarchy = GetInheritedTypeHierarchy(std::string(sym.containerName), symbolTable);
+    ExpandMixinHostHierarchies(sym.containerName, symbolTable, hierarchy);
+
+    const bool hasIgnoredBases = !unusedRules.ignoredBaseClasses.empty();
+    bool isEntity = !hasIgnoredBases;
+    const bool hasBaseMethods = !unusedRules.baseClassLifecycleMethods.empty();
+    const bool hasOptions = options.HasActiveOptions();
 
     for (const auto& ancestor : hierarchy)
     {
-        auto it = unusedRules.baseClassLifecycleMethods.find(ancestor);
-        if (it != unusedRules.baseClassLifecycleMethods.end() &&
-            std::find(it->second.begin(), it->second.end(), sym.name) != it->second.end())
+        if (hasIgnoredBases && !isEntity)
+        {
+            if (std::find(unusedRules.ignoredBaseClasses.begin(), unusedRules.ignoredBaseClasses.end(), ancestor) !=
+                unusedRules.ignoredBaseClasses.end())
+            {
+                isEntity = true;
+            }
+        }
+        if (hasBaseMethods && CheckBaseClassLifecycleMethods(ancestor, sym.name, unusedRules))
+        {
             return true;
+        }
+        if (hasOptions && hasBaseMethods)
+        {
+            auto linkedBases = ResolveLinkedBaseClasses(ancestor, symbolTable, options);
+            for (const auto& lb : linkedBases)
+            {
+                if (CheckBaseClassLifecycleMethods(lb, sym.name, unusedRules))
+                {
+                    return true;
+                }
+            }
+        }
     }
 
-    if (unusedRules.ignoredBaseClasses.empty() || IsEngineEntity(sym.containerName, symbolTable, unusedRules))
+    if (isEntity)
     {
         const auto& methods = unusedRules.lifecycleMethods;
         if (std::find(methods.begin(), methods.end(), sym.name) != methods.end())
+        {
             return true;
+        }
     }
 
     return false;
@@ -718,7 +792,8 @@ void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContex
     CollectDefLocations(request.scopeRoot.get(), defLocs);
 
     ankerl::unordered_dense::set<std::string> refNames;
-    CollectDocReferences(request.scopeRoot.get(), defLocs, refNames);
+    CollectDocReferences(request.scopeRoot.get(), defLocs, refNames, request.sourceCode,
+                         rules.baseClassDelegateProperties);
     CollectCrossFileReferences(request, refNames);
 
     ankerl::unordered_dense::set<const LocalDefinition*> usedLocals;

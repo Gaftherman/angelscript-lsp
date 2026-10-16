@@ -1340,6 +1340,180 @@ std::string ResolveBaseClass(std::string_view className, const SymbolTable& symb
     return "";
 }
 
+namespace
+{
+
+void ExtractTypesFromMemberSymbols(const std::vector<Symbol>& syms, std::string_view className,
+                                   std::vector<std::string>& result)
+{
+    for (const auto& s : syms)
+    {
+        std::string rawType;
+        if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
+        {
+            if (std::holds_alternative<VariableSignature>(s.signature))
+            {
+                const auto& var = s.GetVariable();
+                rawType = !var.baseTypeName.empty() ? var.baseTypeName : var.typeName;
+            }
+        }
+        else if (s.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(s.signature))
+        {
+            const auto& fn = s.GetFunction();
+            rawType = !fn.returnBaseTypeName.empty() ? fn.returnBaseTypeName : fn.returnType;
+        }
+
+        std::string clean = CleanBaseType(rawType);
+        if (!clean.empty() && clean != className && !IsPrimitiveTypeName(clean))
+        {
+            if (std::find(result.begin(), result.end(), clean) == result.end())
+            {
+                result.push_back(std::move(clean));
+            }
+        }
+    }
+}
+
+void InspectDelegateProperty(std::string_view className, const std::string& prop, const SymbolTable& symbolTable,
+                             std::vector<std::string>& result)
+{
+    if (const auto syms = symbolTable.FindMemberSymbolPtr(className, prop))
+    {
+        ExtractTypesFromMemberSymbols(*syms, className, result);
+    }
+    if (!prop.starts_with("get_"))
+    {
+        if (const auto getterSyms = symbolTable.FindMemberSymbolPtr(className, "get_" + prop))
+        {
+            ExtractTypesFromMemberSymbols(*getterSyms, className, result);
+        }
+    }
+}
+
+} // namespace
+
+void ExpandMixinHostHierarchies(std::string_view containerClass, const SymbolTable& symbolTable,
+                                std::vector<std::string>& hierarchy)
+{
+    const auto ruleIndex = symbolTable.GetRuleIndex();
+    if (!ruleIndex)
+    {
+        return;
+    }
+    auto mixinIt = ruleIndex->hostClassesByMixin.find(containerClass);
+    if (mixinIt == ruleIndex->hostClassesByMixin.end() && containerClass.find("::") != std::string_view::npos)
+    {
+        mixinIt = ruleIndex->hostClassesByMixin.find(LastScopeSegment(containerClass));
+    }
+    if (mixinIt == ruleIndex->hostClassesByMixin.end())
+    {
+        return;
+    }
+    for (const auto& host : mixinIt->second)
+    {
+        std::string hostKey = host.qualifiedName.empty() ? host.name : host.qualifiedName;
+        auto hostHier = GetInheritedTypeHierarchy(hostKey, symbolTable);
+        for (auto& hCls : hostHier)
+        {
+            if (std::find(hierarchy.begin(), hierarchy.end(), hCls) == hierarchy.end())
+            {
+                hierarchy.push_back(std::move(hCls));
+            }
+        }
+    }
+}
+
+std::vector<std::string> ResolveLinkedBaseClasses(std::string_view className, const SymbolTable& symbolTable,
+                                                  const LinkedBaseOptions& options)
+{
+    std::vector<std::string> result;
+    if (className.empty() || !options.HasActiveOptions())
+    {
+        return result;
+    }
+
+    if (options.proxyMap)
+    {
+        auto it = options.proxyMap->find(className);
+        if (it == options.proxyMap->end() && className.find("::") != std::string_view::npos)
+        {
+            it = options.proxyMap->find(LastScopeSegment(className));
+        }
+        if (it != options.proxyMap->end())
+        {
+            for (const auto& target : it->second)
+            {
+                std::string clean = CleanBaseType(target);
+                if (!clean.empty() && clean != className && !IsPrimitiveTypeName(clean) &&
+                    std::find(result.begin(), result.end(), clean) == result.end())
+                {
+                    result.push_back(std::move(clean));
+                }
+            }
+        }
+    }
+
+    for (const auto& prop : options.delegateProps)
+    {
+        InspectDelegateProperty(className, prop, symbolTable, result);
+    }
+
+    return result;
+}
+
+std::vector<Symbol> FindOverriddenBaseMethodSymbols(std::string_view containerClass, std::string_view methodName,
+                                                    const SymbolTable& symbolTable, const LinkedBaseOptions& options)
+{
+    std::vector<Symbol> result;
+    if (containerClass.empty() || methodName.empty())
+    {
+        return result;
+    }
+
+    std::vector<std::string> hierarchy = GetInheritedTypeHierarchy(std::string(containerClass), symbolTable);
+    ExpandMixinHostHierarchies(containerClass, symbolTable, hierarchy);
+
+    auto appendMatchingMethods = [&](std::string_view ownerClass)
+    {
+        const auto syms = symbolTable.FindMemberSymbolPtr(ownerClass, methodName);
+        if (!syms)
+        {
+            return;
+        }
+        for (const auto& s : *syms)
+        {
+            if (s.type == SymbolType::Function)
+            {
+                result.push_back(s);
+            }
+        }
+    };
+
+    const bool hasLinkedOptions = options.HasActiveOptions();
+    ankerl::unordered_dense::set<std::string> visitedOwners;
+    for (const auto& ancestor : hierarchy)
+    {
+        if (ancestor != containerClass && visitedOwners.insert(ancestor).second)
+        {
+            appendMatchingMethods(ancestor);
+        }
+
+        if (hasLinkedOptions)
+        {
+            auto linkedBases = ResolveLinkedBaseClasses(ancestor, symbolTable, options);
+            for (const auto& linkedBase : linkedBases)
+            {
+                if (linkedBase != containerClass && visitedOwners.insert(linkedBase).second)
+                {
+                    appendMatchingMethods(linkedBase);
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
 bool HierarchyIsFullyVisible(const std::string& typeName, const SymbolTable& symbolTable)
 {
     for (const auto& ancestor : GetInheritedTypeHierarchy(typeName, symbolTable))
@@ -1589,6 +1763,92 @@ std::string FindDeclaringRootClass(const std::string& cleanClass, const std::str
     return rootClass;
 }
 
+struct MixinExpansionContext
+{
+    const std::string& cleanClass;
+    const SymbolTable& symbolTable;
+    ankerl::unordered_dense::set<std::string>& visited;
+    std::vector<std::string>& result;
+};
+
+void ExpandMixinFromRuleIndex(const rules::RuleIndex& ruleIndex, const MixinExpansionContext& ctx)
+{
+    auto it = ruleIndex.hostClassesByMixin.find(ctx.cleanClass);
+    if (it == ruleIndex.hostClassesByMixin.end() && ctx.cleanClass.find("::") != std::string::npos)
+    {
+        it = ruleIndex.hostClassesByMixin.find(std::string(LastScopeSegment(ctx.cleanClass)));
+    }
+    if (it == ruleIndex.hostClassesByMixin.end())
+    {
+        return;
+    }
+    for (const auto& host : it->second)
+    {
+        std::string hostKey = host.qualifiedName.empty() ? host.name : host.qualifiedName;
+        AddClassAndShortName(hostKey, ctx.visited, ctx.result);
+        auto hostSyms = ctx.symbolTable.FindSymbols(hostKey);
+        for (const auto& hs : hostSyms)
+        {
+            if (hs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(hs.signature))
+            {
+                for (const auto& sibMixin : hs.GetClass().includedMixins)
+                {
+                    AddClassAndShortName(sibMixin, ctx.visited, ctx.result);
+                }
+            }
+        }
+    }
+}
+
+void ExpandMixinFromSymbolTable(const MixinExpansionContext& ctx)
+{
+    std::string_view shortKey = LastScopeSegment(ctx.cleanClass);
+    ctx.symbolTable.ForEachSymbol(
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+        {
+            for (const auto& hs : symbols)
+            {
+                if (hs.type != SymbolType::Class || !std::holds_alternative<ClassSignature>(hs.signature))
+                {
+                    continue;
+                }
+                const auto& cls = hs.GetClass();
+                bool includes = false;
+                for (const auto& m : cls.includedMixins)
+                {
+                    if (m == ctx.cleanClass || LastScopeSegment(m) == shortKey)
+                    {
+                        includes = true;
+                        break;
+                    }
+                }
+                if (includes)
+                {
+                    std::string hostKey = hs.qualifiedName.empty() ? hs.name : hs.qualifiedName;
+                    AddClassAndShortName(hostKey, ctx.visited, ctx.result);
+                    for (const auto& sibMixin : cls.includedMixins)
+                    {
+                        AddClassAndShortName(sibMixin, ctx.visited, ctx.result);
+                    }
+                }
+            }
+        });
+}
+
+void ExpandMixinHostsAndSiblings(const std::string& cleanClass, const SymbolTable& symbolTable,
+                                 ankerl::unordered_dense::set<std::string>& visited, std::vector<std::string>& result)
+{
+    MixinExpansionContext ctx{cleanClass, symbolTable, visited, result};
+    if (const auto ruleIndex = symbolTable.GetRuleIndex())
+    {
+        ExpandMixinFromRuleIndex(*ruleIndex, ctx);
+    }
+    else
+    {
+        ExpandMixinFromSymbolTable(ctx);
+    }
+}
+
 void CollectPrivateCompatibleClasses(const std::string& cleanClass, const SymbolTable& symbolTable,
                                      ankerl::unordered_dense::set<std::string>& visited,
                                      std::vector<std::string>& result)
@@ -1604,6 +1864,7 @@ void CollectPrivateCompatibleClasses(const std::string& cleanClass, const Symbol
             }
         }
     }
+    ExpandMixinHostsAndSiblings(cleanClass, symbolTable, visited, result);
 }
 
 std::vector<std::string> GetCompatibleMemberClasses(const std::string& className, const std::string& memberName,
@@ -1630,6 +1891,8 @@ std::vector<std::string> GetCompatibleMemberClasses(const std::string& className
     {
         AddClassAndShortName(d, visited, result);
     }
+
+    ExpandMixinHostsAndSiblings(rootClass, symbolTable, visited, result);
 
     if (access == AccessModifier::Public && rootClass != cleanClass)
     {

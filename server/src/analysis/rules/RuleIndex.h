@@ -122,8 +122,10 @@ struct RuleIndex
      */
     ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>> globalNames;
 
-    ankerl::unordered_dense::map<std::string, std::vector<DerivedType>> derivedByBase;
-    ankerl::unordered_dense::map<std::string, std::vector<DerivedType>> hostClassesByMixin;
+    ankerl::unordered_dense::map<std::string, std::vector<DerivedType>, TransparentStringHash, std::equal_to<>>
+        derivedByBase;
+    ankerl::unordered_dense::map<std::string, std::vector<DerivedType>, TransparentStringHash, std::equal_to<>>
+        hostClassesByMixin;
 
     /** @brief SymbolTable bucket key -> file URIs declaring a non-external `shared` class or function body. */
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> sharedDeclarationFilesByKey;

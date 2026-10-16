@@ -274,8 +274,7 @@ void ParseReflectionCallees(const nlohmann::json& obj, std::vector<StringReflect
     }
 }
 
-void ParseBaseClassLifecycleMethods(const nlohmann::json& obj,
-                                    std::unordered_map<std::string, std::vector<std::string>>& map)
+void ParseBaseClassLifecycleMethods(const nlohmann::json& obj, StringVectorMap& map)
 {
     if (!obj.contains("baseClassLifecycleMethods") || !obj["baseClassLifecycleMethods"].is_object())
     {
@@ -290,6 +289,32 @@ void ParseBaseClassLifecycleMethods(const nlohmann::json& obj,
         {
             if (m.is_string())
                 list.push_back(m.get<std::string>());
+        }
+    }
+}
+
+void ParseBaseClassProxyMap(const nlohmann::json& obj, StringVectorMap& map)
+{
+    if (!obj.contains("baseClassProxyMap") || !obj["baseClassProxyMap"].is_object())
+    {
+        return;
+    }
+    for (const auto& [baseClass, target] : obj["baseClassProxyMap"].items())
+    {
+        std::vector<std::string>& list = map[baseClass];
+        if (target.is_string())
+        {
+            list.push_back(target.get<std::string>());
+        }
+        else if (target.is_array())
+        {
+            for (const auto& item : target)
+            {
+                if (item.is_string())
+                {
+                    list.push_back(item.get<std::string>());
+                }
+            }
         }
     }
 }
@@ -335,6 +360,8 @@ void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& rules)
     ParseStringArray(u, "ignoredBaseClasses", rules.ignoredBaseClasses);
     ParseStringArray(u, "lifecycleMethods", rules.lifecycleMethods);
     ParseBaseClassLifecycleMethods(u, rules.baseClassLifecycleMethods);
+    ParseStringArray(u, "baseClassDelegateProperties", rules.baseClassDelegateProperties);
+    ParseBaseClassProxyMap(u, rules.baseClassProxyMap);
     ParseReflectionCallees(u, rules.stringReflectionCallees);
     rules.ignoreUnusedGlobalsWithCallInitializer = u.value("ignoreUnusedGlobalsWithCallInitializer", false);
     ParseStringArray(u, "unusedGlobalExemptTypes", rules.unusedGlobalExemptTypes);
