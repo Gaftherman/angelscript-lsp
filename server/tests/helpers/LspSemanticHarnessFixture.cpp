@@ -170,6 +170,10 @@ void LspSemanticHarnessFixture::SetUp()
     m_symbolTable = std::make_unique<analysis::SymbolTable>();
     m_scopeIndex = std::make_unique<analysis::ScopeIndex>();
     m_config.features.enableTypeConversionChecks = true;
+    m_config.diagnostics.reportUnusedFunctions = false;
+    m_config.diagnostics.reportUnusedGlobalVariables = false;
+    m_config.diagnostics.reportUnusedClasses = false;
+    m_config.diagnostics.reportUnusedMembers = false;
     DiscoverOracleBinary();
 }
 

@@ -1973,19 +1973,10 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
 
     if (loc.sourceHasBrackets && type != SymbolType::CallReference && type != SymbolType::Namespace)
     {
-        TSNode declNode = node;
-        if (ts_node_symbol(node) == m_symVariableDeclarator)
-        {
-            TSNode parentNode = parser::GetParent(node);
-            if (!ts_node_is_null(parentNode))
-            {
-                declNode = parentNode;
-            }
-        }
-        uint32_t startByte = ts_node_start_byte(declNode);
+        uint32_t startByte = ts_node_start_byte(node);
         if (PrecedingByteCouldBeMetadata(loc.sourceCode, startByte))
         {
-            TSNode prev = ts_node_prev_named_sibling(declNode);
+            TSNode prev = ts_node_prev_named_sibling(node);
             std::vector<std::string> metaBlocks;
             while (!ts_node_is_null(prev) && ts_node_symbol(prev) == m_symMetadata)
             {

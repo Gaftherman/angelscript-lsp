@@ -84,6 +84,40 @@ struct NativeEngineProperties
     std::optional<int> compilerWarnings;            ///< asEP_COMPILER_WARNINGS (0, 1, 2).
     std::optional<int> memberInitMode;              ///< asEP_MEMBER_INIT_MODE (0, 1).
     std::optional<int> heredocTrimMode;             ///< asEP_HEREDOC_TRIM_MODE (0, 1, 2).
+
+    /**
+     * @brief Checks if any general engine properties are configured.
+     * @return True if at least one general engine property is present, false otherwise.
+     */
+    [[nodiscard]] bool HasGeneralProperties() const noexcept
+    {
+        return propertyAccessorMode.has_value() || disallowGlobalVars.has_value() || requireEnumScope.has_value() ||
+               boolConversionMode.has_value() || allowUnsafeReferences.has_value() ||
+               allowMultilineStrings.has_value() || disableIntegerDivision.has_value() ||
+               privatePropAsProtected.has_value() || useCharacterLiterals.has_value();
+    }
+
+    /**
+     * @brief Checks if any syntax or compiler properties are configured.
+     * @return True if at least one syntax or compiler property is present, false otherwise.
+     */
+    [[nodiscard]] bool HasSyntaxOrCompilerProperties() const noexcept
+    {
+        return disallowValueAssignForRef.has_value() || alterSyntaxNamedArgs.has_value() ||
+               disallowEmptyListElements.has_value() || foreachSupport.has_value() ||
+               alwaysImplDefaultConstruct.has_value() || allowUnicodeIdentifiers.has_value() ||
+               ignoreDuplicateSharedIntf.has_value() || compilerWarnings.has_value() || memberInitMode.has_value() ||
+               heredocTrimMode.has_value();
+    }
+
+    /**
+     * @brief Checks if any native engine properties are configured.
+     * @return True if at least one engine property is present, false otherwise.
+     */
+    [[nodiscard]] bool HasActiveProperties() const noexcept
+    {
+        return HasGeneralProperties() || HasSyntaxOrCompilerProperties();
+    }
 };
 
 /**
@@ -117,6 +151,9 @@ struct UnusedSymbolRules
     bool ignoreUnusedGlobalsWithCallInitializer =
         false; ///< Ignore unused global variables initialized with a call or constructor.
     std::vector<std::string> unusedGlobalExemptTypes; ///< Type names exempted from unused global variable warnings.
+    std::vector<std::vector<std::string>>
+        engineCallbackSignatures; ///< Callback function signatures called by engine (e.g. [["CBaseEntity@",
+                                  ///< "CBaseEntity@", "USE_TYPE", "float"]]).
 
     /**
      * @brief Checks if unused symbol rules or exemptions are configured.
@@ -127,7 +164,7 @@ struct UnusedSymbolRules
         return enabled || !ignoredBaseClasses.empty() || !lifecycleMethods.empty() ||
                !baseClassLifecycleMethods.empty() || !ignoredGlobalFunctions.empty() ||
                !stringReflectionCallees.empty() || ignoreUnusedGlobalsWithCallInitializer ||
-               !unusedGlobalExemptTypes.empty();
+               !unusedGlobalExemptTypes.empty() || !engineCallbackSignatures.empty();
     }
 };
 
@@ -150,7 +187,7 @@ struct EngineRuleConfig
     [[nodiscard]] bool HasRules() const noexcept
     {
         return !storageRules.empty() || !typeSuggestions.empty() || !schedulerRules.empty() ||
-               unusedRules.HasActiveRules();
+               unusedRules.HasActiveRules() || engineProperties.HasActiveProperties();
     }
 };
 

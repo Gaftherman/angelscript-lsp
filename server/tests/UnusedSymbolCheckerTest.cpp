@@ -164,6 +164,7 @@ TEST_CASE("UnusedSymbolChecker - functions and methods")
     const std::string usedFunc = angel_lsp::test::GenerateRandomSymbolName("UsedFn");
     const std::string className = angel_lsp::test::GenerateRandomSymbolName("WorkerCls");
     const std::string unusedPrivateMethod = angel_lsp::test::GenerateRandomSymbolName("PrivateHelper");
+    const std::string unusedPublicMethod = angel_lsp::test::GenerateRandomSymbolName("DeadPublicApi");
     const std::string publicMethod = angel_lsp::test::GenerateRandomSymbolName("PublicApi");
 
     const std::string code = "void " + unusedFunc +
@@ -178,6 +179,9 @@ TEST_CASE("UnusedSymbolChecker - functions and methods")
                              unusedPrivateMethod +
                              "() {}\n"
                              "    public void " +
+                             unusedPublicMethod +
+                             "() {}\n"
+                             "    public void " +
                              publicMethod +
                              "() {}\n"
                              "}\n"
@@ -188,12 +192,16 @@ TEST_CASE("UnusedSymbolChecker - functions and methods")
                              "    " +
                              className +
                              " inst;\n"
+                             "    inst." +
+                             publicMethod +
+                             "();\n"
                              "}\n";
 
     auto diags = AnalyzeSnippet(code, &rules);
     CHECK(HasDiag(diags, codes::UnusedFunction, unusedFunc));
     CHECK_FALSE(HasDiag(diags, codes::UnusedFunction, usedFunc));
     CHECK(HasDiag(diags, codes::UnusedMethod, unusedPrivateMethod));
+    CHECK(HasDiag(diags, codes::UnusedMethod, unusedPublicMethod));
     CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, publicMethod));
 }
 
@@ -663,4 +671,164 @@ TEST_CASE("UnusedSymbolChecker - reportUnusedMembers and exemptions via Diagnost
     CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, "~" + clsName));
     CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, "opAssign"));
     CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, "get_Value"));
+}
+
+TEST_CASE("UnusedSymbolChecker - Reports unused class and unused public/default method")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("ASCredit");
+    const std::string unusedMethod = angel_lsp::test::GenerateRandomSymbolName("classUnused");
+
+    const std::string code = "final class " + clsName +
+                             "\n"
+                             "{\n"
+                             "    void " +
+                             unusedMethod +
+                             "() {}\n"
+                             "}\n";
+
+    angel_lsp::config::DiagnosticsConfig diag;
+    diag.reportUnusedClasses = true;
+    diag.reportUnusedClassesExplicit = true;
+    diag.reportUnusedMembers = true;
+    diag.reportUnusedMembersExplicit = true;
+
+    auto diags = AnalyzeSnippet(code, nullptr, "file:///test.as", &diag);
+    CHECK(HasDiag(diags, codes::UnusedClass, clsName));
+    CHECK(HasDiag(diags, codes::UnusedMethod, unusedMethod));
+}
+
+TEST_CASE("UnusedSymbolChecker - String-literal callback references suppress unused function warning")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("DestroyThrowableWeapon");
+    const std::string entityName = angel_lsp::test::GenerateRandomSymbolName("env_credits");
+
+    const std::string code = "void " + fnName +
+                             "() {}\n"
+                             "void " +
+                             entityName +
+                             "() {}\n"
+                             "void Init()\n"
+                             "{\n"
+                             "    g_Scheduler.SetTimeout(\"" +
+                             fnName +
+                             "\", 1.0f);\n"
+                             "    CustomEntity(\"" +
+                             entityName +
+                             "\", true);\n"
+                             "}\n";
+
+    angel_lsp::config::DiagnosticsConfig diag;
+    diag.reportUnusedFunctions = true;
+    diag.reportUnusedFunctionsExplicit = true;
+
+    auto diags = AnalyzeSnippet(code, nullptr, "file:///test.as", &diag);
+    CHECK_FALSE(HasDiag(diags, codes::UnusedFunction, fnName));
+    CHECK_FALSE(HasDiag(diags, codes::UnusedFunction, entityName));
+}
+
+TEST_CASE("UnusedSymbolChecker - Engine callback signatures exempt matching functions from W118")
+{
+    const std::string mapBegin = angel_lsp::test::GenerateRandomSymbolName("MapBegin");
+
+    const std::string code =
+        "void " + mapBegin + "(CBaseEntity@ pActivator, CBaseEntity@ pCaller, USE_TYPE useType, float value) {}\n";
+
+    angel_lsp::config::EngineRuleConfig engineRules;
+    engineRules.unusedRules.engineCallbackSignatures = {{"CBaseEntity@", "CBaseEntity@", "USE_TYPE", "float"}};
+
+    angel_lsp::config::DiagnosticsConfig diag;
+    diag.reportUnusedFunctions = true;
+    diag.reportUnusedFunctionsExplicit = true;
+
+    auto diags = AnalyzeSnippet(code, &engineRules, "file:///test.as", &diag);
+    CHECK_FALSE(HasDiag(diags, codes::UnusedFunction, mapBegin));
+}
+
+TEST_CASE("UnusedSymbolChecker - Engine-agnostic defaults without rules.json")
+{
+    const std::string entityClass = angel_lsp::test::GenerateRandomSymbolName("DefaultEntity");
+    const std::string unusedMethod = angel_lsp::test::GenerateRandomSymbolName("DeadMethod");
+    const std::string unusedGlobal = angel_lsp::test::GenerateRandomSymbolName("DeadGlobal");
+
+    const std::string code = "int " + unusedGlobal +
+                             ";\n"
+                             "class " +
+                             entityClass +
+                             " {\n"
+                             "    void Spawn() {}\n"
+                             "    void Precache() {}\n"
+                             "    void " +
+                             unusedMethod +
+                             "() {}\n"
+                             "}\n"
+                             "void PluginInit() {}\n"
+                             "void main() {}\n"
+                             "void UseIt() {\n"
+                             "    " +
+                             entityClass +
+                             " inst;\n"
+                             "}\n";
+
+    // 1. Without rules.json (engine-agnostic default): nothing is hardcoded, so main and PluginInit are reported
+    angel_lsp::config::DiagnosticsConfig diag;
+    auto diags = AnalyzeSnippet(code, nullptr, "file:///test.as", &diag);
+    CHECK(HasDiag(diags, codes::UnusedFunction, "main"));
+    CHECK(HasDiag(diags, codes::UnusedFunction, "PluginInit"));
+    CHECK(HasDiag(diags, codes::UnusedMethod, "Spawn"));
+    CHECK(HasDiag(diags, codes::UnusedMethod, "Precache"));
+    CHECK(HasDiag(diags, codes::UnusedMethod, unusedMethod));
+    CHECK(HasDiag(diags, codes::UnusedGlobalVariable, unusedGlobal));
+
+    // 1b. Configured via ignoredUnusedFunctions in diagnostics: main is exempt
+    diag.ignoredUnusedFunctions.insert("main");
+    auto diagsIgnored = AnalyzeSnippet(code, nullptr, "file:///test.as", &diag);
+    CHECK_FALSE(HasDiag(diagsIgnored, codes::UnusedFunction, "main"));
+    CHECK(HasDiag(diagsIgnored, codes::UnusedFunction, "PluginInit"));
+    diag.ignoredUnusedFunctions.clear();
+
+    // 2. With Sven Co-op engine rules: Spawn, Precache, PluginInit, main are exempt
+    angel_lsp::config::EngineRuleConfig engineRules;
+    engineRules.unusedRules.enabled = true;
+    engineRules.unusedRules.lifecycleMethods = {"Spawn", "Precache"};
+    engineRules.unusedRules.ignoredGlobalFunctions = {"PluginInit", "main"};
+    auto diagsEngine = AnalyzeSnippet(code, &engineRules, "file:///test.as", &diag);
+    CHECK_FALSE(HasDiag(diagsEngine, codes::UnusedFunction, "PluginInit"));
+    CHECK_FALSE(HasDiag(diagsEngine, codes::UnusedFunction, "main"));
+    CHECK_FALSE(HasDiag(diagsEngine, codes::UnusedMethod, "Spawn"));
+    CHECK_FALSE(HasDiag(diagsEngine, codes::UnusedMethod, "Precache"));
+    CHECK(HasDiag(diagsEngine, codes::UnusedMethod, unusedMethod));
+    CHECK(HasDiag(diagsEngine, codes::UnusedGlobalVariable, unusedGlobal));
+}
+
+TEST_CASE("UnusedSymbolChecker - ignoredUnusedFunctions in DiagnosticsConfig suppresses globals, classes, and methods")
+{
+    const std::string unusedFunc = angel_lsp::test::GenerateRandomSymbolName("DeadFunc");
+    const std::string unusedMethod = angel_lsp::test::GenerateRandomSymbolName("DeadMethod");
+    const std::string unusedGlobal = angel_lsp::test::GenerateRandomSymbolName("DeadGlobal");
+    const std::string unusedClass = angel_lsp::test::GenerateRandomSymbolName("DeadClass");
+    const std::string usedClass = angel_lsp::test::GenerateRandomSymbolName("LiveClass");
+
+    const std::string code = "int " + unusedGlobal + ";\n" + "class " + unusedClass + " {}\n" + "class " + usedClass +
+                             " { void " + unusedMethod + "() {} }\n" + "void " + unusedFunc + "() {}\n" +
+                             "void Entry() { " + usedClass + " inst; }\n";
+
+    // Without ignore list: all 4 are reported
+    angel_lsp::config::DiagnosticsConfig diag;
+    auto diags = AnalyzeSnippet(code, nullptr, "file:///test.as", &diag);
+    CHECK(HasDiag(diags, codes::UnusedFunction, unusedFunc));
+    CHECK(HasDiag(diags, codes::UnusedMethod, unusedMethod));
+    CHECK(HasDiag(diags, codes::UnusedGlobalVariable, unusedGlobal));
+    CHECK(HasDiag(diags, codes::UnusedClass, unusedClass));
+
+    // With ignore list: all 4 are suppressed
+    diag.ignoredUnusedFunctions.insert(unusedFunc);
+    diag.ignoredUnusedFunctions.insert(unusedMethod);
+    diag.ignoredUnusedFunctions.insert(unusedGlobal);
+    diag.ignoredUnusedFunctions.insert(unusedClass);
+
+    auto diagsIgnored = AnalyzeSnippet(code, nullptr, "file:///test.as", &diag);
+    CHECK_FALSE(HasDiag(diagsIgnored, codes::UnusedFunction, unusedFunc));
+    CHECK_FALSE(HasDiag(diagsIgnored, codes::UnusedMethod, unusedMethod));
+    CHECK_FALSE(HasDiag(diagsIgnored, codes::UnusedGlobalVariable, unusedGlobal));
+    CHECK_FALSE(HasDiag(diagsIgnored, codes::UnusedClass, unusedClass));
 }

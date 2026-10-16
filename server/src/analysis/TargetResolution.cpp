@@ -1668,8 +1668,8 @@ bool MatchesScopeNamespaceQualifier(const analysis::LocalReference& ref, const a
     {
         if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
         {
-            if (candRef.name == targetNs || candRef.name.ends_with("::" + std::string(targetNs)) ||
-                targetNs.ends_with("::" + candRef.name))
+            if (candRef.name == targetNs || EndsWithScopedSuffix(candRef.name, targetNs) ||
+                EndsWithScopedSuffix(targetNs, candRef.name))
             {
                 return true;
             }
@@ -1686,29 +1686,14 @@ bool MatchesScopeNamespaceQualifier(const analysis::LocalReference& ref, const a
  */
 bool MatchesAstScopedIdentifier(const analysis::LocalReference& ref, const OccurrenceScanContext& ctx)
 {
-    if (ctx.fileUri != ctx.request.currentUri || !ctx.request.tree)
+    if (ctx.fileUri != ctx.request.currentUri || !ref.isScopedIdentifier ||
+        ref.qualifierStartByte >= ref.qualifierEndByte || ref.qualifierEndByte > ctx.request.sourceCode.size())
     {
         return false;
     }
-    TSNode rootNode = ts_tree_root_node(ctx.request.tree);
-    TSPoint pt = {ref.startLine, ref.startCharacter};
-    TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-    if (ts_node_is_null(refNode))
-    {
-        return false;
-    }
-    TSNode pNode = ts_node_parent(refNode);
-    if (ts_node_is_null(pNode) || ts_node_symbol(pNode) != parser::GetGrammarSymbols().symScopedIdentifier)
-    {
-        return false;
-    }
-    uint32_t pStart = ts_node_start_byte(pNode);
-    uint32_t pEnd = ts_node_end_byte(pNode);
-    if (pStart >= ctx.request.sourceCode.size() || pEnd > ctx.request.sourceCode.size() || pStart >= pEnd)
-    {
-        return false;
-    }
-    return std::string_view(ctx.request.sourceCode).substr(pStart, pEnd - pStart) == ctx.request.target.qualifiedName;
+    return std::string_view(ctx.request.sourceCode)
+               .substr(ref.qualifierStartByte, ref.qualifierEndByte - ref.qualifierStartByte) ==
+           ctx.request.target.qualifiedName;
 }
 
 /**
@@ -1807,21 +1792,8 @@ void CollectNamespaceOccurrences(const CollectOccurrencesRequest& request, Occur
             continue;
         }
 
-        std::vector<std::pair<uint32_t, uint32_t>> nsRanges;
-        request.symbolTable.ForEachSymbolInFile(
-            fileUri,
-            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& sList)
-            {
-                for (const auto& s : sList)
-                {
-                    if (s.type == analysis::SymbolType::Namespace && s.fileUri == fileUri &&
-                        (s.name == request.target.declaringNamespace ||
-                         s.qualifiedName == request.target.declaringNamespace))
-                    {
-                        nsRanges.push_back({s.startLine, s.endLine});
-                    }
-                }
-            });
+        auto nsRanges =
+            CollectNamespaceAndContainerLineRanges(request.symbolTable, fileUri, request.target.declaringNamespace);
 
         OccurrenceScanContext ctx{
             .fileUri = fileUri,
@@ -1914,38 +1886,22 @@ void CollectGlobalOccurrences(const CollectOccurrencesRequest& request, Occurren
  */
 std::optional<bool> CheckAstEnumMemberMatch(const analysis::LocalReference& ref, const OccurrenceScanContext& ctx)
 {
-    if (ctx.fileUri != ctx.request.currentUri || !ctx.request.tree)
+    if (ctx.fileUri != ctx.request.currentUri)
     {
         return std::nullopt;
     }
-    TSNode rootNode = ts_tree_root_node(ctx.request.tree);
-    TSPoint pt = {ref.startLine, ref.startCharacter};
-    TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-    if (ts_node_is_null(refNode))
+    if (ref.isScopedIdentifier && ref.qualifierStartByte < ref.qualifierEndByte &&
+        ref.qualifierEndByte <= ctx.request.sourceCode.size())
     {
-        return std::nullopt;
-    }
-    TSNode pNode = ts_node_parent(refNode);
-    if (ts_node_is_null(pNode))
-    {
-        return std::nullopt;
-    }
-    std::string_view pType = ts_node_type(pNode);
-    if (pType == "scoped_identifier")
-    {
-        uint32_t pStart = ts_node_start_byte(pNode);
-        uint32_t pEnd = ts_node_end_byte(pNode);
-        if (pStart < ctx.request.sourceCode.size() && pEnd <= ctx.request.sourceCode.size() && pStart < pEnd)
+        std::string_view scoped = std::string_view(ctx.request.sourceCode)
+                                      .substr(ref.qualifierStartByte, ref.qualifierEndByte - ref.qualifierStartByte);
+        if (scoped.find("::") != std::string_view::npos)
         {
-            std::string scoped = ctx.request.sourceCode.substr(pStart, pEnd - pStart);
-            if (scoped.find("::") != std::string::npos)
-            {
-                return scoped == ctx.request.target.qualifiedName ||
-                       scoped == ctx.request.target.declaringEnum + "::" + ctx.request.target.name;
-            }
+            return scoped == ctx.request.target.qualifiedName ||
+                   MatchesScopedPair(scoped, ctx.request.target.declaringEnum, ctx.request.target.name);
         }
     }
-    if (pType == "member_expression")
+    if (ref.isMemberAccess && !ref.isScopedIdentifier)
     {
         return false;
     }

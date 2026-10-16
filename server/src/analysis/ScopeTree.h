@@ -157,6 +157,33 @@ struct LocalReference
      * @brief Number of arguments passed at the call site when isCall is true.
      */
     uint32_t argumentCount = 0;
+
+    /**
+     * @brief Byte range of the enclosing scoped_identifier or member_expression, if any.
+     *        0 if no enclosing qualifier/member access expression exists.
+     */
+    uint32_t qualifierStartByte = 0;
+    uint32_t qualifierEndByte = 0;
+
+    /**
+     * @brief Byte range of the receiver/object expression (e.g. "obj" in "obj.member" or "NS" in "NS::Symbol").
+     *        0 if no receiver/object exists.
+     */
+    uint32_t receiverStartByte = 0;
+    uint32_t receiverEndByte = 0;
+
+    /**
+     * @brief True if parent node is a scoped_identifier.
+     */
+    bool isScopedIdentifier = false;
+};
+
+/** @brief A string literal call argument occurrence (e.g. SetTimeout("MyFunc", ...), CustomEntity("MyClass", ...)). */
+struct StringLiteralCallRef
+{
+    std::string name;
+    uint32_t line = 0;
+    uint32_t column = 0;
 };
 
 /** @brief What kind of syntactic construct created this lexical scope. */
@@ -200,6 +227,7 @@ struct Scope
     std::vector<std::unique_ptr<Scope>> children;
     std::vector<LocalDefinition> definitions;
     std::vector<LocalReference> references;
+    std::vector<StringLiteralCallRef> stringLiteralCallRefs;
 
     /**
      * @brief Destroys the subtree iteratively rather than by recursive unique_ptr teardown.

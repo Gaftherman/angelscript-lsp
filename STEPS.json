@@ -1,6 +1,6 @@
 {
   "project": "angelscript-lsp",
-  "currentPhase": "PHASE_18_AST_PARENT_CLIMB_OPTIMIZATION_AND_GOVERNANCE_HARNESS",
+  "currentPhase": "PHASE_25_AUDIT_REMEDIATION_AND_PERF_POLISH",
   "status": "COMPLETED",
   "baselineMetrics": {
     "largeScript3000ParseAndAnalysisMs": 192.75,
@@ -9,9 +9,9 @@
     "parityPassCount": 256,
     "parityTotalCount": 256,
     "unexplainedFalsePositives": 0,
-    "unitTestsTotal": 2344,
-    "unitTestsPassed": 2344,
-    "unitAssertionsPassed": 33883,
+    "unitTestsTotal": 2372,
+    "unitTestsPassed": 2372,
+    "unitAssertionsPassed": 34057,
     "condEdgePassCount": 0,
     "tsanRaceWarnings": 0,
     "layerIncludeCheck": "PASS",
@@ -648,6 +648,174 @@
         "All 2,360 unit tests passed (33,947 assertions, 0 failures, 30 skipped).",
         "All 12 static quality gates passed successfully at 100% (jscpd at 1.15%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100)."
       ]
+    },
+    {
+      "id": "PHASE_21",
+      "name": "Unused Classes & Class Methods, String-Literal Callback References SetTimeout, W152 propertyAccessorMode: 2 Fix, engineCallbackSignatures, and +1 Implicit Engine Reference CodeLens",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "STEPS.json",
+        "STEPS.md",
+        "client/package.json",
+        "client/package.nls.json",
+        "client/package.nls.es.json",
+        "client/README.md",
+        "client/README.es.md",
+        "client/schemas/angelscript.rules.schema.json",
+        "predefined/sven.angelscript.rules.json",
+        "schemas/angelscript.rules.schema.json",
+        "server/src/analysis/LocalScopeCollector.h",
+        "server/src/analysis/LocalScopeCollector.cpp",
+        "server/src/analysis/rules/FunctionRules.cpp",
+        "server/src/analysis/rules/UnusedSymbolChecker.h",
+        "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+        "server/src/config/EngineRuleConfig.h",
+        "server/src/config/EngineRuleParser.cpp",
+        "server/src/features/code_lens/CodeLensHandler.h",
+        "server/src/features/code_lens/CodeLensHandler.cpp",
+        "server/src/lsp/handlers/TextDocumentHandlers.cpp",
+        "server/tests/CodeLensTest.cpp",
+        "server/tests/FunctionRulesTest.cpp",
+        "server/tests/UnusedSymbolCheckerTest.cpp"
+      ],
+      "findings": [
+        "Filtered declaration context identifiers in LocalScopeCollector.cpp using cached TSSymbols (m_symClassDeclaration, m_symInterfaceDeclaration, m_symEnumDeclaration, m_symInterfaceMethod, m_symMixinDeclaration, m_symFuncdefDeclaration) to prevent self-referencing declaration tokens from silencing W120.",
+        "Scanned string literal call arguments in UnusedSymbolChecker.cpp (ScanCallStringArguments, CollectStringReflection) so callbacks and registered entities like SetTimeout('DestroyThrowableWeapon') and CustomEntity('env_credits') register as used and suppress W118/W119/W120.",
+        "Added engineCallbackSignatures rule to UnusedSymbolRules, EngineRuleParser.cpp, JSON schemas, and sven.angelscript.rules.json to exempt global functions matching engine callback parameter signatures (e.g. MapBegin).",
+        "Implemented IsMethodOverriddenInDerived in UnusedSymbolChecker.cpp to preserve base class methods overridden in derived classes, and reported unused methods in unused classes (!isContainerUsed || isPrivate).",
+        "Suppressed false W152 (as-hint-accessor-portability) when propertyAccessorMode == 2 or reportAccessorPortability == false. Updated default reportAccessorPortability to false in package.json, i18n bundles, and README documentation.",
+        "Wired unusedRules into CodeLensRequest from TextDocumentHandlers and implemented CountStringLiteralCallReferences in CodeLensHandler.cpp using flat TSTreeCursor loop without stack recursion.",
+        "Added +1 implicit reference count in AppendReferenceLens for all engine-managed functions (IsEngineManagedFunction) so lifecycle methods (Spawn, Think, PrimaryAttack), global hooks (MapActivate), and callback signatures (MapBegin) show at least 1 reference.",
+        "All 2,366 unit tests passed (33,962 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100% (jscpd at 1.14%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100, check-ast-traversal.py clean, npm pretest clean)."
+      ]
+    },
+    {
+      "id": "PHASE_22",
+      "name": "Complete UX & Reference Parity",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "client/package.json",
+        "client/package.nls.json",
+        "client/package.nls.es.json",
+        "client/l10n/bundle.l10n.json",
+        "client/l10n/bundle.l10n.es.json",
+        "client/src/extension.ts",
+        "client/README.md",
+        "client/README.es.md",
+        "server/src/config/ServerConfig.h",
+        "server/src/config/ServerConfig.cpp",
+        "server/src/lsp/handlers/WorkspaceHandlers.cpp",
+        "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+        "server/src/features/code_lens/CodeLensHandler.cpp",
+        "server/src/analysis/TargetResolution.cpp",
+        "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
+        "server/src/features/hover/HoverHandler.cpp",
+        "server/tests/HoverOverloadFormattingTest.cpp",
+        "server/tests/HoverTest.cpp",
+        "server/tests/OverloadTemplateSpecializationTest.cpp",
+        "server/tests/UnusedSymbolCheckerTest.cpp",
+        "server/tests/CodeLensTest.cpp",
+        "server/tests/StatementTest.cpp",
+        "server/tests/ServerHarnessTest.cpp",
+        "server/tests/helpers/LspSemanticHarnessFixture.cpp",
+        "STEPS.json",
+        "STEPS.md"
+      ],
+      "findings": [
+        "Enabled unused symbol reporting by default in DiagnosticsConfig (reportUnusedGlobalVariables, reportUnusedFunctions, reportUnusedClasses, reportUnusedMembers all true). Seeded sensible default lifecycle methods and ignored entry points (Spawn, Precache, Think, Touch, Use, KeyValue, ObjectCaps, PostSpawn, OnCreate, OnDestroy, Initialize, main, Main, PluginInit, MapInit, MapActivate, PluginExit, MapStart).",
+        "Removed (!isContainerUsed || isPrivate) check in UnusedSymbolChecker.cpp so unreferenced non-private methods in instantiated classes emit as-warn-unused-method (W119).",
+        "Added onDidSaveTextDocument listener in extension.ts for *.angelscript.rules.json and .as.predefined files with dual-language localized 'Restart Server' prompt.",
+        "Fixed 0 references CodeLens for same-namespace variables accessed inside same-namespace classes by implementing IsLocalShadowingTarget to bypass declaration ranges in allDeclRanges and group symbols, preventing target definitions from self-shadowing in ResolveInScope.",
+        "Replaced collapsible HTML <details><summary> tags in HoverHandler.cpp with clean Markdown bold text (**N more overloads**:).",
+        "Suppressed 'File: Not found' in string hover when asset resolution fails, and disabled file location footer by default via hoverShowFileLocation (false default) with full CLI, client setting, and README sync.",
+        "All 2,368 unit tests passed (33,973 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100% (jscpd at 1.15%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100, check-ast-traversal.py clean, npm pretest clean)."
+      ]
+    },
+    {
+      "id": "PHASE_23",
+      "name": "Architectural Remediation, Performance Optimization & Engine Callback Decoupling",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/parser/GrammarSymbols.h",
+        "server/src/parser/GrammarSymbols.cpp",
+        "server/src/analysis/SemanticHelpers.h",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/analysis/TargetResolution.cpp",
+        "server/src/analysis/rules/UnusedSymbolChecker.h",
+        "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+        "server/src/features/code_lens/CodeLensHandler.cpp",
+        "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
+        "server/src/features/hover/HoverHandler.cpp",
+        "server/tests/UnusedSymbolCheckerTest.cpp",
+        "server/tests/HoverOverloadFormattingTest.cpp",
+        "STEPS.json",
+        "STEPS.md"
+      ],
+      "findings": [
+        "Removed hardcoded Sven Co-op lifecycle callbacks (Spawn, Precache, Think, PluginInit, MapInit, MapActivate, etc.) from UnusedSymbolChecker.cpp ResolveEffectiveRules, making C++ core 100% engine-agnostic with only 'main' as universal entry point when rules.json is absent.",
+        "Eradicated O(N^2) ForEachSymbol scans in IsClassInherited and IsMethodOverriddenInDerived by constructing precomputed O(1) lookup tables (inheritedOrMixedInClasses and derivedClassesByBase) once per CheckUnusedSymbols pass from request.GetRuleIndex(), checking method overrides in O(1) via ruleIndex.Members(derived).methodNames.",
+        "Introduced constexpr IsSameOrNestedNamespace and EndsWithScopedSuffix in SemanticHelpers.h, eliminating heap allocations for nsName + '::' and '::' + nsName across CodeLensHandler and TargetResolution.",
+        "Deduplicated namespace span collection between TargetResolution.cpp and DocumentHighlightHandler.cpp by extracting CollectNamespaceAndContainerLineRanges into SemanticHelpers.",
+        "Added symStringLiteral, symCallExpression, and symArgumentList to GrammarSymbols. Refactored CollectStringReflection in UnusedSymbolChecker.cpp and CountStringLiteralCallReferences in CodeLensHandler.cpp to scan NodeIndex nodes directly with GetNodeTextView, eliminating ExtractCallArguments overhead on non-reflection calls.",
+        "Implemented TargetIndexMap with TransparentStringHash in CodeLensHandler.cpp for zero-allocation std::string_view lookups, and added thread_local regexCache in MatchesRegexSafe.",
+        "Updated FormatMoreOverloads Doxygen comments and removed duplicate fallback block in TryHoverStringLiteral in HoverHandler.cpp, reducing jscpd duplication to 1.13%.",
+        "All 2,368 unit tests passed (33,996 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100% (jscpd 1.13%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100, check-ast-traversal clean, npm pretest clean)."
+      ]
+    },
+    {
+      "id": "PHASE_24",
+      "name": "Zero-Hardcoding, AST Performance & Config QoL",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+        "server/src/lsp/ServerEngineRules.cpp",
+        "server/src/parser/GrammarSymbols.h",
+        "server/src/parser/GrammarSymbols.cpp",
+        "server/src/analysis/LocalScopeCollector.cpp",
+        "client/src/extension.ts"
+      ],
+      "findings": [
+        "Removed 'main' fallback from default rules.ignoredGlobalFunctions, making default unused rules 100% engine-agnostic.",
+        "Implemented wildcard *.angelscript.rules.json discovery in workspace roots.",
+        "Added symBaseClassList, symMetadata, and symComment to GrammarSymbols, replacing string comparisons with numeric TSSymbol checks in LocalScopeCollector.",
+        "Added interactive configureHostEnvironment command to VS Code client for onboarding."
+      ]
+    },
+    {
+      "id": "PHASE_25",
+      "name": "Audit Remediation & Performance Polish",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "client/src/extension.ts",
+        "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+        "server/src/features/code_action/CodeActionUnusedVariables.cpp",
+        "server/src/parser/GrammarSymbols.h",
+        "server/src/parser/GrammarSymbols.cpp",
+        "server/src/analysis/SemanticHelpers.h",
+        "server/src/analysis/TargetResolution.cpp",
+        "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
+        "server/src/features/code_lens/CodeLensHandler.cpp",
+        "server/src/config/EngineRuleConfig.h",
+        "server/src/lsp/ServerEngineRules.cpp",
+        "server/tests/CodeActionTest.cpp",
+        "server/tests/UnusedSymbolCheckerTest.cpp",
+        "server/tests/ServerHarnessTest.cpp",
+        "STEPS.json",
+        "STEPS.md"
+      ],
+      "findings": [
+        "Fixed client template in extension.ts to generate valid schema conforming to rules.schema.json with name, engineProperties, and unusedSymbolRules.",
+        "Extended preferred Quick Fix angelscript.ignoreUnusedSymbol to globals (W115) and classes (W117) with dual-language EN/ES parity.",
+        "Added NativeEngineProperties::HasActiveProperties() and updated EngineRuleConfig::HasRules() to accurately reset rules when rulesFile is unconfigured.",
+        "Introduced constexpr MatchesScopedPair, eliminating heap string concatenations in TargetResolution and DocumentHighlightHandler.",
+        "Added receiver byte slice fast-path in CodeLensHandler, bypassing full AST navigation on cached slices.",
+        "Decomposed CheckUnusedGlobals, HasActiveProperties, and ResolveReceiverFromAst to ensure Lizard CCN <= 15.",
+        "All 2,372 unit tests passed (34,057 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100% (jscpd 1.14%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100, check-ast-traversal clean, npm pretest clean)."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -667,9 +835,18 @@
     "GAP-REF-01: Mixin class 0 references across namespaces, chained member resolution self.pev.body, and redundant operator overload CodeLens. (RESOLVED in Phase 19).",
     "GAP-PERF-04: O(N^2) symbol iteration and scanning of .as.predefined in CodeLensHandler. (RESOLVED in Phase 19 with EnclosingClassCache, zero-copy FindSymbolsPtr, and predefined bypass).",
     "GAP-CODELENS-01: Virtual properties missing CodeLens, destructors showing 0 references, and constructor/class references uncounted. (RESOLVED in Phase 20).",
-    "GAP-REF-02: Cross-namespace class method reference leakage. (RESOLVED in Phase 20)."
+    "GAP-REF-02: Cross-namespace class method reference leakage. (RESOLVED in Phase 20).",
+    "GAP-UNUSED-02: Unused classes and class methods unflagged due to self-referencing declaration tokens and missing method checks. (RESOLVED in Phase 21).",
+    "GAP-REF-03: String-literal callbacks (SetTimeout) and entity registrations (CustomEntity) showing 0 references. (RESOLVED in Phase 21).",
+    "GAP-HINT-01: False W152 property accessor portability hint on get_/set_ methods under mode 2. (RESOLVED in Phase 21).",
+    "GAP-UNUSED-03: Unused symbol detection inactive without rules.json and public class methods unflagged. (RESOLVED in Phase 22).",
+    "GAP-REF-04: Same-namespace variables accessed inside classes showing 0 references due to local variable self-shadowing in ResolveInScope. (RESOLVED in Phase 22 with IsLocalShadowingTarget).",
+    "GAP-UX-01: Overload hover rendering collapsible HTML details/summary elements instead of clean Markdown text. (RESOLVED in Phase 22).",
+    "GAP-UX-02: Hover showing file location footer by default and emitting 'File: Not found' on unresolved strings. (RESOLVED in Phase 22 with hoverShowFileLocation = false default).",
+    "GAP-UX-03: Rules and predefined file modification without restart notification prompt. (RESOLVED in Phase 22 with onDidSaveTextDocument listener in extension.ts).",
+    "GAP-ARCH-01: Engine callbacks hardcoded in C++ core, O(N^2) symbol scans in inheritance checks, and string concatenation in scope matchers. (RESOLVED in Phase 23)."
   ],
   "nextActions": [
-    "Phase 20 completed with 100% test pass rate (2,360 tests, 33,947 assertions), all 12 quality gates green, and 105 client settings wired."
+    "Phase 23 completed with 100% test pass rate (2,368 tests, 33,996 assertions), all 12 quality gates green, and 106 client settings wired."
   ]
 }

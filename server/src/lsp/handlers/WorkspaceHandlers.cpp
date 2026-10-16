@@ -537,6 +537,10 @@ static void UpdateHoverFeatureConfig(const lsp::LSPObject& section, config::Serv
     {
         cfg.features.hoverStringLiteralPathResolution = *pathRes;
     }
+    if (auto showLoc = FindSectionBool(section, hoverObj, "showFileLocation", "hover"); showLoc.has_value())
+    {
+        cfg.features.hoverShowFileLocation = *showLoc;
+    }
     if (hoverObj)
     {
         if (const auto* paths = hoverObj->find("assetSearchPaths"); paths && paths->isArray())

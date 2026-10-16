@@ -148,7 +148,9 @@ std::optional<lsp::DocumentHighlightKind> ClassifyDeclarationNode(TSNode leaf)
  */
 bool IsTypeAnnotationNode(TSNode leaf)
 {
-    for (TSNode cur = leaf; !ts_node_is_null(cur); cur = ts_node_parent(cur))
+    constexpr int kMaxDepth = 64;
+    int depth = 0;
+    for (TSNode cur = leaf; depth < kMaxDepth && !ts_node_is_null(cur); cur = ts_node_parent(cur), ++depth)
     {
         std::string_view cType = ts_node_type(cur);
         if (cType == "type" || cType == "datatype" || cType == "base_class_list" || cType == "template_type_list")
@@ -440,7 +442,9 @@ CheckCallArgumentMutation(TSNode cur, TSNode leaf, const DocumentHighlightReques
 lsp::DocumentHighlightKind ClassifyAncestorExpressions(TSNode leaf, const DocumentHighlightRequest& request,
                                                        uint32_t line)
 {
-    for (TSNode cur = leaf; !ts_node_is_null(cur); cur = ts_node_parent(cur))
+    constexpr int kMaxDepth = 64;
+    int depth = 0;
+    for (TSNode cur = leaf; depth < kMaxDepth && !ts_node_is_null(cur); cur = ts_node_parent(cur), ++depth)
     {
         if (auto res = CheckUnaryMutation(cur, leaf, request.sourceCode))
         {
@@ -881,25 +885,9 @@ std::string ResolveMemberRefReceiverType(const analysis::LocalReference& ref, co
  * @param[in] tree AST tree.
  * @return True if reference is a member access.
  */
-bool IsMemberAccessNode(const analysis::LocalReference& ref, TSTree* tree) noexcept
+bool IsMemberAccessNode(const analysis::LocalReference& ref, [[maybe_unused]] TSTree* tree) noexcept
 {
-    if (ref.isMemberAccess)
-    {
-        return true;
-    }
-    if (!tree)
-    {
-        return false;
-    }
-    TSNode rootNode = ts_tree_root_node(tree);
-    TSPoint pt = {ref.startLine, ref.startCharacter};
-    TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-    if (ts_node_is_null(refNode))
-    {
-        return false;
-    }
-    TSNode p = ts_node_parent(refNode);
-    return !ts_node_is_null(p) && std::string_view(ts_node_type(p)) == "member_expression";
+    return ref.isMemberAccess;
 }
 
 /**
@@ -1012,27 +1000,14 @@ bool IsRefInsideNamespaceScope(const analysis::LocalReference& ref,
             return true;
         }
     }
-    if (request.tree)
+    if (ref.isScopedIdentifier && ref.qualifierStartByte < ref.qualifierEndByte &&
+        ref.qualifierEndByte <= request.sourceCode.size())
     {
-        TSNode rootNode = ts_tree_root_node(request.tree);
-        TSPoint pt = {ref.startLine, ref.startCharacter};
-        TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-        if (!ts_node_is_null(refNode))
+        std::string_view scoped = std::string_view(request.sourceCode)
+                                      .substr(ref.qualifierStartByte, ref.qualifierEndByte - ref.qualifierStartByte);
+        if (scoped == target.qualifiedName)
         {
-            TSNode pNode = ts_node_parent(refNode);
-            if (!ts_node_is_null(pNode) && std::string_view(ts_node_type(pNode)) == "scoped_identifier")
-            {
-                uint32_t pStart = ts_node_start_byte(pNode);
-                uint32_t pEnd = ts_node_end_byte(pNode);
-                if (pStart < request.sourceCode.size() && pEnd <= request.sourceCode.size())
-                {
-                    std::string scoped = request.sourceCode.substr(pStart, pEnd - pStart);
-                    if (scoped == target.qualifiedName)
-                    {
-                        return true;
-                    }
-                }
-            }
+            return true;
         }
     }
     return false;
@@ -1139,21 +1114,8 @@ void CollectNamespaceDeclarations(const TargetDescriptor& target, const Document
 std::vector<std::pair<uint32_t, uint32_t>> GetNamespaceSpans(const TargetDescriptor& target,
                                                              const DocumentHighlightRequest& request)
 {
-    std::vector<std::pair<uint32_t, uint32_t>> nsRanges;
-    request.symbolTable.ForEachSymbolInFile(
-        request.uri,
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& sList)
-        {
-            for (const auto& s : sList)
-            {
-                if (s.type == analysis::SymbolType::Namespace && s.fileUri == request.uri &&
-                    (s.name == target.declaringNamespace || s.qualifiedName == target.declaringNamespace))
-                {
-                    nsRanges.push_back({s.startLine, s.endLine});
-                }
-            }
-        });
-    return nsRanges;
+    return analysis::CollectNamespaceAndContainerLineRanges(request.symbolTable, request.uri,
+                                                            target.declaringNamespace);
 }
 
 /**
@@ -1236,30 +1198,14 @@ void CollectEnumMemberDeclarations(const TargetDescriptor& target, const Documen
 bool IsEnumMemberHighlightMatch(const analysis::LocalReference& ref, const TargetDescriptor& target,
                                 const DocumentHighlightRequest& request)
 {
-    if (!request.tree)
+    if (!ref.isScopedIdentifier || ref.qualifierStartByte >= ref.qualifierEndByte ||
+        ref.qualifierEndByte > request.sourceCode.size())
     {
         return false;
     }
-    TSNode rootNode = ts_tree_root_node(request.tree);
-    TSPoint pt = {ref.startLine, ref.startCharacter};
-    TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-    if (ts_node_is_null(refNode))
-    {
-        return false;
-    }
-    TSNode pNode = ts_node_parent(refNode);
-    if (ts_node_is_null(pNode) || std::string_view(ts_node_type(pNode)) != "scoped_identifier")
-    {
-        return false;
-    }
-    uint32_t pStart = ts_node_start_byte(pNode);
-    uint32_t pEnd = ts_node_end_byte(pNode);
-    if (pStart >= request.sourceCode.size() || pEnd > request.sourceCode.size() || pStart >= pEnd)
-    {
-        return false;
-    }
-    std::string scoped = request.sourceCode.substr(pStart, pEnd - pStart);
-    return scoped == target.qualifiedName || scoped == target.declaringEnum + "::" + target.name;
+    std::string_view scoped = std::string_view(request.sourceCode)
+                                  .substr(ref.qualifierStartByte, ref.qualifierEndByte - ref.qualifierStartByte);
+    return scoped == target.qualifiedName || analysis::MatchesScopedPair(scoped, target.declaringEnum, target.name);
 }
 
 /**

@@ -1327,3 +1327,113 @@ TEST_CASE(
     }
     CHECK(foundAction);
 }
+
+TEST_CASE("CodeActionHandler - QuickFix ignore unused symbol for functions, methods, globals, and classes")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("UnusedFn");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("UnusedMth");
+    const std::string globalName = angel_lsp::test::GenerateRandomSymbolName("UnusedVar");
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("UnusedCls");
+    const std::string hostClass = angel_lsp::test::GenerateRandomSymbolName("HostCls");
+
+    const std::string code = "int " + globalName + ";\n" + "class " + className + " {}\n" + "class " + hostClass +
+                             " { void " + methodName + "() {} }\n" + "void " + funcName + "() {}\n" +
+                             "void Entry() { " + hostClass + " inst; }\n";
+
+    TestEnvironment env(code);
+
+    struct DiagTestItem
+    {
+        std::string code;
+        std::string symName;
+        std::string settingKey;
+        lsp::Range range;
+    };
+
+    std::vector<DiagTestItem> items = {
+        {"as-warn-unused-function", funcName, "diagnostics.reportUnusedFunctions", {{3, 5}, {3, 5}}},
+        {"as-warn-unused-method", methodName, "diagnostics.reportUnusedMembers", {{2, 26}, {2, 26}}},
+        {"as-warn-unused-global-variable", globalName, "diagnostics.reportUnusedGlobalVariables", {{0, 4}, {0, 4}}},
+        {"as-warn-unused-class", className, "diagnostics.reportUnusedClasses", {{1, 6}, {1, 6}}}};
+
+    for (const auto& item : items)
+    {
+        lsp::Diagnostic diag;
+        diag.range = item.range;
+        diag.code = lsp::String(item.code);
+        diag.message = "Symbol '" + item.symName + "' is unused";
+
+        lsp::CodeActionContext ctx;
+        ctx.diagnostics.push_back(diag);
+
+        auto actions = env.CodeActions(item.range, ctx);
+        REQUIRE(actions.has_value());
+        REQUIRE(!actions->empty());
+
+        const lsp::CodeAction* ignoreFix = nullptr;
+        const lsp::CodeAction* disableFix = nullptr;
+
+        for (const auto& action : *actions)
+        {
+            if (action.command.has_value())
+            {
+                if (action.command->command == "angelscript.ignoreUnusedSymbol")
+                {
+                    ignoreFix = &action;
+                }
+                else if (action.command->command == "angelscript.disableDiagnostic")
+                {
+                    disableFix = &action;
+                }
+            }
+        }
+
+        REQUIRE(ignoreFix != nullptr);
+        CHECK(ignoreFix->kind.value() == lsp::CodeActionKind::QuickFix);
+        CHECK(ignoreFix->isPreferred.value_or(false) == true);
+        REQUIRE(ignoreFix->command->arguments.has_value());
+        CHECK(ignoreFix->command->arguments->size() >= 1);
+
+        REQUIRE(disableFix != nullptr);
+        CHECK(disableFix->kind.value() == lsp::CodeActionKind::QuickFix);
+        REQUIRE(disableFix->command->arguments.has_value());
+        CHECK(disableFix->command->arguments->size() >= 1);
+    }
+}
+
+TEST_CASE("CodeActionHandler - QuickFix ignore unused symbol in Spanish")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("FnEs");
+    const std::string code = "void " + funcName + "() {}\n";
+
+    TestEnvironment env(code);
+    const lsp::Range at{{0, 5}, {0, 5}};
+
+    lsp::Diagnostic diag;
+    diag.range = at;
+    diag.code = lsp::String("as-warn-unused-function");
+    diag.message = "Function '" + funcName + "' is unused";
+
+    lsp::CodeActionContext ctx;
+    ctx.diagnostics.push_back(diag);
+
+    angel_lsp::i18n::I18n spanishI18n("es");
+    CodeActionRequest req{env.uri,         env.sourceCode, env.tree, at,      ctx,
+                          env.symbolTable, env.scopeIndex, {},       nullptr, &spanishI18n};
+    auto actions = GetCodeActions(req);
+    REQUIRE(actions.has_value());
+    REQUIRE(!actions->empty());
+
+    const lsp::CodeAction* ignoreFix = nullptr;
+    for (const auto& action : *actions)
+    {
+        if (action.command.has_value() && action.command->command == "angelscript.ignoreUnusedSymbol")
+        {
+            ignoreFix = &action;
+            break;
+        }
+    }
+    REQUIRE(ignoreFix != nullptr);
+    CHECK(ignoreFix->title.find("Ignorar símbolo no usado") != std::string::npos);
+    CHECK(ignoreFix->command->title == "Ignorar símbolo no usado");
+}

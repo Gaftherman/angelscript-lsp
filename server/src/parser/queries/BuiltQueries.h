@@ -352,6 +352,9 @@ namespace angel_lsp::parser::queries
 
 (identifier) @local.reference
 ["function" "get" "set" "shared"] @local.reference
+
+; String literal call references (e.g. SetTimeout("MyFunc", ...), CustomEntity("MyClass", ...))
+(argument_list (string_literal) @local.string_call_ref)
 )SCM";
 
 [[maybe_unused]] inline constexpr const char* TAGS_QUERY = R"SCM(

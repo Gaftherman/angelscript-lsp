@@ -2,6 +2,7 @@
 
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SymbolCollector.h"
+#include "config/EngineRuleConfig.h"
 #include "features/code_lens/CodeLensHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
@@ -57,9 +58,9 @@ struct CodeLensFixture
         }
     }
 
-    std::optional<std::vector<lsp::CodeLens>> GetLenses()
+    std::optional<std::vector<lsp::CodeLens>> GetLenses(const config::UnusedSymbolRules* unusedRules = nullptr)
     {
-        CodeLensRequest req{uri, sourceCode, tree, symbolTable, scopeIndex};
+        CodeLensRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, nullptr, ".as.predefined", unusedRules};
         return GetCodeLenses(req);
     }
 };
@@ -1032,4 +1033,134 @@ TEST_CASE("CodeLens - Cross-namespace class method reference isolation")
     }
     CHECK(foundALens);
     CHECK(foundBLens);
+}
+
+TEST_CASE("CodeLens - Counts string-literal callback references")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("DestroyThrowableWeapon");
+    const std::string code = "void " + fnName +
+                             "() {}\n"
+                             "void Trigger()\n"
+                             "{\n"
+                             "    g_Scheduler.SetTimeout(\"" +
+                             fnName +
+                             "\", 1.0f);\n"
+                             "}\n";
+
+    CodeLensFixture fixture(code);
+    auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool foundLens = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.range.start.line == 0 && lens.command.has_value())
+        {
+            foundLens = true;
+            CHECK(lens.command->title == "1 reference");
+        }
+    }
+    CHECK(foundLens);
+}
+
+TEST_CASE("CodeLens - Engine managed lifecycle methods and callbacks receive +1 reference")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("WeaponEntity");
+    const std::string code = "class " + clsName +
+                             " : ScriptBasePlayerWeaponEntity\n"
+                             "{\n"
+                             "    void Spawn() {}\n"
+                             "    void PrimaryAttack() {}\n"
+                             "}\n"
+                             "void MapActivate() {}\n"
+                             "void MapBegin(CBaseEntity@ a, CBaseEntity@ b, USE_TYPE c, float d) {}\n";
+
+    angel_lsp::config::UnusedSymbolRules unusedRules;
+    unusedRules.ignoredBaseClasses = {"ScriptBasePlayerWeaponEntity"};
+    unusedRules.lifecycleMethods = {"Spawn"};
+    unusedRules.baseClassLifecycleMethods = {{"ScriptBasePlayerWeaponEntity", {"PrimaryAttack"}}};
+    unusedRules.ignoredGlobalFunctions = {"MapActivate"};
+    unusedRules.engineCallbackSignatures = {{"CBaseEntity@", "CBaseEntity@", "USE_TYPE", "float"}};
+
+    CodeLensFixture fixture(code);
+    auto lenses = fixture.GetLenses(&unusedRules);
+    REQUIRE(lenses.has_value());
+
+    bool foundSpawn = false;
+    bool foundPrimary = false;
+    bool foundActivate = false;
+    bool foundMapBegin = false;
+
+    for (const auto& lens : *lenses)
+    {
+        if (!lens.command.has_value())
+            continue;
+        // line 2: Spawn
+        if (lens.range.start.line == 2)
+        {
+            foundSpawn = true;
+            CHECK(lens.command->title == "1 reference");
+        }
+        // line 3: PrimaryAttack
+        else if (lens.range.start.line == 3)
+        {
+            foundPrimary = true;
+            CHECK(lens.command->title == "1 reference");
+        }
+        // line 5: MapActivate
+        else if (lens.range.start.line == 5)
+        {
+            foundActivate = true;
+            CHECK(lens.command->title == "1 reference");
+        }
+        // line 6: MapBegin
+        else if (lens.range.start.line == 6)
+        {
+            foundMapBegin = true;
+            CHECK(lens.command->title == "1 reference");
+        }
+    }
+    CHECK(foundSpawn);
+    CHECK(foundPrimary);
+    CHECK(foundActivate);
+    CHECK(foundMapBegin);
+}
+
+TEST_CASE("CodeLens - Reference counting for namespace variables accessed in same-namespace class")
+{
+    const std::string nsName = test::GenerateRandomSymbolName("INS2_AKM");
+    const std::string varName = test::GenerateRandomSymbolName("RPM_AIR");
+    const std::string className = test::GenerateRandomSymbolName("weapon_ins2akm");
+
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    const float " +
+                             varName +
+                             " = 600.0f;\n"
+                             "    class " +
+                             className +
+                             " {\n"
+                             "        void Fire() {\n"
+                             "            float r = " +
+                             varName +
+                             ";\n"
+                             "        }\n"
+                             "    }\n"
+                             "}\n";
+
+    CodeLensFixture fixture(code);
+    const auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool foundVarLens = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.range.start.line == 1)
+        {
+            foundVarLens = true;
+            REQUIRE(lens.command.has_value());
+            CHECK(lens.command->title == "1 reference");
+        }
+    }
+    CHECK(foundVarLens);
 }

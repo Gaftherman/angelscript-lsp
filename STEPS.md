@@ -1287,15 +1287,187 @@ Settings declared in package.json but not passed to the server:
 - **Total de Pruebas Unitarias**: `2,360 / 2,360` pasadas (`33,947` aserciones, `0` fallos, `30` omitidas).
 - **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.15%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `ast-grep` 0 violaciones).
 
+---
 
+## 24. Fase 21: Clases y Métodos No Usados, Callbacks Literales (`SetTimeout`), Corrección W152 (`propertyAccessorMode: 2`), `engineCallbackSignatures` y CodeLens con Referencia Implícita (+1)
 
+### 24.1. Diagnóstico Forense y Causas Raíz
+1. **Clases (`final class ASCredit`) y Métodos de Clase (`void classUnused()`) No Reportados**:
+   - `LocalScopeCollector.cpp` capturaba los nombres de identificadores en declaraciones (`class_declaration`, etc.) como `@local.reference`, haciendo que la clase se referenciara a sí misma (1 referencia fantasma) y eludiendo `W120`.
+   - `CheckUnusedFunctions` omitía métodos con acceso por defecto o público en clases que no se instanciaban ni heredaban.
+2. **Callbacks y Nombres de Entidades en Literales de Cadena (`g_Scheduler.SetTimeout("DestroyThrowableWeapon", ...)` / `CustomEntity("env_credits", true)`)**:
+   - `UnusedSymbolChecker.cpp` solo buscaba identificadores directos en el árbol léxico sin inspeccionar argumentos de literales de cadena en llamadas de función generales.
+   - `CodeLensHandler.cpp` no escaneaba literales de cadena en el AST, resultando en un conteo de 0 referencias para funciones globales o entidades registradas mediante strings.
+3. **Falso Positivo W152 (`as-hint-accessor-portability`) con `propertyAccessorMode: 2`**:
+   - `FunctionRules.cpp` emitía `W152` para `get_X` / `set_X` sin palabra clave `property` aun cuando el host estaba en modo 2 (donde la palabra clave `property` no es requerida) o cuando `reportAccessorPortability` estaba en `false`.
+4. **Falta de Reconocimiento de Firmas de Callbacks del Motor (`engineCallbackSignatures`)**:
+   - Funciones globales de callbacks del motor (como `MapBegin(CBaseEntity@, CBaseEntity@, USE_TYPE, float)`) eran marcadas como `W118` porque su nombre no estaba en `ignoredGlobalFunctions`.
+5. **CodeLens con 0 Referencias en Métodos del Ciclo de Vida del Motor**:
+   - Métodos como `Spawn()`, `PrimaryAttack()`, ganchos globales como `MapActivate()` y callbacks mostraban `0 references` al no computar la invocación implícita que el motor realiza sobre ellos.
 
+### 24.2. Implementación de la Solución
+1. **Filtrado de Identificadores de Declaración en `LocalScopeCollector`**:
+   - Se cachearon los símbolos de declaración `m_symClassDeclaration`, `m_symInterfaceDeclaration`, `m_symEnumDeclaration`, `m_symInterfaceMethod`, `m_symMixinDeclaration` y `m_symFuncdefDeclaration`.
+   - Se añadió `IsDeclarationContextSymbol` para evitar registrar referencias a nombres propios en sus declaraciones.
+2. **Escaneo de Literales de Cadena y Extracción de Argumentos**:
+   - `ScanCallStringArguments` y `CollectStringReflection` extraen argumentos de literales de cadena en llamadas de función generales, registrándolos como reflejados (`reflections`).
+   - En `CodeLensHandler.cpp`, se implementó `CountStringLiteralCallReferences` con cursor plano `TSTreeCursor` para contar referencias de literales de cadena hacia símbolos destino con cero recursión de pila.
+3. **Configuración y Validación de `engineCallbackSignatures`**:
+   - Se agregó `engineCallbackSignatures` en `UnusedSymbolRules`, parser de reglas `EngineRuleParser.cpp`, esquemas JSON y en `predefined/sven.angelscript.rules.json`.
+   - Se implementaron `MatchesEngineCallbackSignature`, `IsEngineEntity`, `IsLifecycleOrOverride`, `IsMethodOverriddenInDerived` e `IsEngineManagedFunction` en Capa 2.
+4. **Referencia Implícita del Motor (+1) en CodeLens**:
+   - En `AppendReferenceLens`, se sumó `+1` a `refCount` si la función está gestionada por el motor (`IsEngineManagedFunction`), asegurando que métodos de ciclo de vida y callbacks muestren al menos `1 reference`.
+5. **Corrección de W152 y Ajuste de Predeterminados en Cliente**:
+   - Se suprimió `W152` cuando `propertyAccessorMode == 2` o `reportAccessorPortability == false`.
+   - Se cambió el valor predeterminado de `reportAccessorPortability` a `false` en `client/package.json`, catálogos i18n (`package.nls.json` y `package.nls.es.json`) y documentación (`client/README.md` y `client/README.es.md`).
 
+### 24.3. Métricas Finales de Fase 21
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,366 / 2,366` pasadas (`33,962` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.14%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `npm --prefix client run pretest` 100%).
 
+---
 
+## 25. Fase 22: Paridad Completa de UX, Referencias y Configuración Predeterminada de Símbolos No Usados
 
+### 25.1. Diagnóstico Forense y Causas Raíz
+1. **Detección de Símbolos No Usados Inactiva por Defecto sin Archivo de Reglas**:
+   - En una sesión estándar de VS Code sin archivo `*.angelscript.rules.json` (`rules.enabled == false`), la detección de funciones, variables globales, clases y miembros no usados estaba inactiva o incompleta.
+   - En la Fase 21 se había restringido la advertencia de métodos de clase no usados (`W119` `as-warn-unused-method`) a clases no instanciadas o métodos privados (`(!isContainerUsed || isPrivate)`). En consecuencia, si una clase era instanciada, cualquier método público no utilizado (`void classUnused() {}`) era ignorado silenciosamente.
+2. **Falta de Notificación al Guardar o Modificar Archivos de Reglas o Predefinidos**:
+   - Al editar y guardar un archivo `*.angelscript.rules.json` o `.as.predefined`, el servidor no notificaba al usuario ni ofrecía reiniciar/recargar el servidor para aplicar las nuevas reglas de análisis semántico.
+3. **CodeLens con 0 Referencias en Variables de Espacio de Nombres Usadas Dentro de Clases del Mismo Espacio (`float RPM_AIR = 600;`)**:
+   - Al invocar `IsValidAccess` para una referencia en `weapon_ins2akm::Fire()`, se consultaba `ResolveInScope(scope, ref.name)`.
+   - Cuando el objetivo era una variable del espacio de nombres `INS2_AKM::RPM_AIR`, `ResolveInScope` ascendía al ámbito del espacio de nombres y encontraba la propia declaración del objetivo (`def.kind == LocalDefinitionKind::Variable`).
+   - El manejador comprobaba `if (localShadow && localShadow->kind == Variable) return false;`, tratando la propia declaración del objetivo como una variable local que ensombrecía el símbolo y descartando erróneamente todas las referencias legítimas.
+4. **Formateo HTML Colapsable (`<details><summary>`) en Hover de Sobrecargas**:
+   - `HoverHandler.cpp` utilizaba etiquetas HTML `<details><summary>` para sobrecargas adicionales (`N more overloads`). En clientes de VS Code esto renderizaba triángulos colapsables crudos (`▶` / `>`) en lugar de bloques limpios de Markdown.
+5. **Pie de Página de Ubicación de Archivo en Hover y Mensaje `Archivo: No encontrado`**:
+   - El pie de página con la ruta del archivo (`File: ...` o `Archivo: No encontrado`) se mostraba por defecto en todos los tooltips de hover e informaba fallos en literales de cadena que no correspondían a activos del disco.
 
+### 25.2. Implementación de la Solución
+1. **Activación Predeterminada de Símbolos No Usados con Exenciones de Ciclo de Vida**:
+   - Se establecieron en `true` por defecto `reportUnusedGlobalVariables`, `reportUnusedFunctions`, `reportUnusedClasses` y `reportUnusedMembers` en `DiagnosticsConfig`.
+   - Se sembraron métodos de ciclo de vida esenciales (`Spawn`, `Precache`, `Think`, `Touch`, `Use`, `KeyValue`, `ObjectCaps`, `PostSpawn`, `OnCreate`, `OnDestroy`, `Initialize`) y puntos de entrada (`main`, `Main`, `PluginInit`, `MapInit`, `MapActivate`, `PluginExit`, `MapStart`) en `ResolveEffectiveRules`.
+   - Se eliminó la restricción `(!isContainerUsed || isPrivate)` en `UnusedSymbolChecker.cpp`: cualquier método no referenciado en una clase emite `as-warn-unused-method` (`W119`), salvo que sea constructor, destructor, operador, implementación de interfaz, método virtual o callback de ciclo de vida.
+2. **Notificación de Reinicio en Cliente al Guardar Reglas o Predefinidos**:
+   - Se implementó un escuchador `workspace.onDidSaveTextDocument` en `client/src/extension.ts` para archivos que coincidan con `*.angelscript.rules.json` o `.as.predefined` / `.predefined`.
+   - Muestra un prompt bilingüe interactivo con la acción "Restart Server" / "Reiniciar Servidor" para recargar las reglas inmediatamente.
+3. **Resolución de Referencias en Mismo Espacio de Nombres (`IsLocalShadowingTarget`)**:
+   - Se implementó `IsLocalShadowingTarget` en `CodeLensHandler.cpp`, verificando si el identificador resuelto coincide con el rango de declaración del propio símbolo objetivo (`criteria.allDeclRanges.contains(...)` o `criteria.group`). Si coincide, no se considera un ensombrecimiento espurio y la referencia es contada con precisión.
+   - Se extendió `IsInsideNamespace` en `CodeLensHandler`, `CollectNamespaceOccurrences` en `TargetResolution` y `FindNamespaceRegions` en `DocumentHighlightHandler` para asociar clases y métodos que comparten el espacio de nombres contenedor.
+4. **Hover de Sobrecargas en Markdown Puro**:
+   - Se sustituyeron las etiquetas `<details><summary>` en `HoverHandler.cpp` por texto en negrita formateado en Markdown estándar (`**N more overloads**:`) con bloques de código limpios.
+5. **Configuración y Supresión del Pie de Página de Archivo en Hover**:
+   - Se añadió `hoverShowFileLocation = false` por defecto en `FeatureFlags` y `ServerConfig`, con banderas CLI (`--hover-show-file-location`, `--no-hover-show-file-location`), soporte en `WorkspaceHandlers` y configuración `angelscript.hover.showFileLocation` en `client/package.json` con paridad 1:1 en español e inglés.
+   - Se suprimió la viñeta `hover-string-file-not-found` cuando la resolución de activos falla en hover de cadenas de texto.
+6. **Alineación de Arneses de Pruebas**:
+   - Se configuraron los arneses de pruebas sintácticas (`LspSemanticHarnessFixture` y `StatementTest.cpp`) con `reportUnused* = false` para mantener el aislamiento estricto de pruebas de paridad con el compilador nativo (`asharness.exe`) sin interferencia de advertencias del linter.
 
+### 25.3. Métricas Finales de Fase 22
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,368 / 2,368` pasadas (`33,973` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.15%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
 
+---
+
+## 26. Fase 23: Remediación Arquitectónica, de Rendimiento y Desacoplamiento de Callbacks del Motor
+
+### 26.1. Diagnóstico Forense y Causas Raíz
+1. **Acoplamiento de Callbacks de Sven Co-op en el Núcleo C++ (`UnusedSymbolChecker.cpp`)**:
+   - En la Fase 22, se habían inyectado callbacks específicos de Sven Co-op (`Spawn`, `Precache`, `Think`, `PluginInit`, `MapInit`, `MapActivate`, etc.) en código C++ dentro de `ResolveEffectiveRules`.
+   - El núcleo LSP debe ser 100% agnóstico respecto al motor; tales callbacks pertenecen exclusivamente a `sven.angelscript.rules.json`.
+2. **Escaneos $O(N^2)$ en Tablas de Símbolos (`IsClassInherited` y `IsMethodOverriddenInDerived`)**:
+   - Ambas funciones realizaban llamadas a `table.ForEachSymbol` iterando todos los símbolos del espacio de trabajo (más de 10,000 en `.as.predefined`) por cada método y clase analizados en el archivo actual.
+3. **Asignaciones Dinámicas de Memoria en Concatenaciones de Ámbitos y Espacios de Nombres**:
+   - Múltiples bucles críticos en `CodeLensHandler.cpp` y `TargetResolution.cpp` generaban cadenas intermedias mediante `nsName + "::"` y `"::" + nsName`.
+4. **Falta de Fast-Path con `NodeIndex` para Literales de Cadena y Expresiones Regulares no Cacheadas**:
+   - `CollectStringReflection` y `CountStringLiteralCallReferences` recorrían todas las llamadas del AST extrayendo argumentos completos en vectores intermedios (`ExtractCallArguments`) en vez de aprovechar `NodeIndex` y `TSSymbol` precompilados.
+   - `MatchesRegexSafe` recompilaba `std::regex(pattern)` en cada invocación.
+5. **Duplicación de Código y Doxygen Desactualizado en Hover**:
+   - `TryHoverStringLiteral` en `HoverHandler.cpp` contenía un bloque de fallback idéntico al retorno final que generaba un clon detectado por `jscpd`.
+   - El comentario Doxygen de `FormatMoreOverloads` aún hacía referencia a elementos HTML colapsables `<details><summary>`.
+
+### 26.2. Implementación de la Solución
+1. **Núcleo C++ 100% Agnóstico del Motor**:
+   - Se removieron todas las listas hardcodeadas de Sven Co-op en `UnusedSymbolChecker::ResolveEffectiveRules`. Sin archivo de reglas, únicamente `"main"` se mantiene como punto de entrada universal por defecto, mientras que las reglas de Sven Co-op se cargan estrictamente mediante `sven.angelscript.rules.json` y `EngineRuleConfig`.
+2. **Tablas de Búsqueda Precomputadas $O(1)$ Mediante `RuleIndex`**:
+   - Se eliminaron los bucles `ForEachSymbol` en `IsClassInherited` y `IsMethodOverriddenInDerived`.
+   - Se construyen `inheritedOrMixedInClasses` y `derivedClassesByBase` en $O(1)$ a partir de `request.GetRuleIndex()` (`derivedByBase` y `hostClassesByMixin`), comprobando sobreescrituras en tiempo constante vía `ruleIndex.Members(derived).methodNames.contains(sym.name)`.
+3. **Comparadores de Ámbito sin Asignación de Memoria**:
+   - Se introdujeron `IsSameOrNestedNamespace(std::string_view, std::string_view)` y `EndsWithScopedSuffix(std::string_view, std::string_view)` como funciones `constexpr` en `SemanticHelpers.h`.
+   - Se extrajo `CollectNamespaceAndContainerLineRanges` en `SemanticHelpers.cpp` y se eliminó la duplicación entre `TargetResolution.cpp` y `DocumentHighlightHandler.cpp`.
+   - Se integró `EnclosingClassCache*` en `IsInsideNamespace` dentro de `CodeLensHandler.cpp`.
+4. **Optimización con `GrammarSymbols`, `NodeIndex` y Búsqueda Heterogénea**:
+   - Se agregaron `symStringLiteral`, `symCallExpression` y `symArgumentList` en `GrammarSymbols`.
+   - `CollectStringReflection` escanea directamente `req.nodeIndex->Nodes(symStringLiteral)` con `GetNodeTextView`, reduciendo las invocaciones a `ExtractCallArguments` únicamente a llamadas coincidentes con `callees` configurados.
+   - `CodeLensHandler.cpp` implementa `TargetIndexMap` con `analysis::TransparentStringHash` permitiendo búsquedas heterogéneas con `std::string_view` sin alojar `std::string`.
+   - `MatchesRegexSafe` implementa una caché estática por hilo (`thread_local`) para instancias compiladas de `std::regex`.
+5. **Limpieza de Duplicaciones y Doxygen**:
+   - Se eliminó el bloque de fallback duplicado en `TryHoverStringLiteral`.
+   - Se actualizó la documentación Doxygen de `FormatMoreOverloads`.
+   - Se actualizaron las pruebas unitarias en `UnusedSymbolCheckerTest.cpp` y `HoverOverloadFormattingTest.cpp`.
+
+### 26.3. Métricas Finales de Fase 23
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,368 / 2,368` pasadas (`33,996` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.13%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
+
+---
+
+## 27. Fase 24: Erradicación Absoluta de Hardcoding, Optimización de Recorrido de Nodos y QoL de Configuración
+
+### 27.1. Diagnóstico Forense y Causas Raíz
+1. **Hardcoding Residual de `"main"` en `rules.ignoredGlobalFunctions`**:
+   - `rules.ignoredGlobalFunctions` aún inicializaba por defecto con `{"main"}` en el C++ del servidor.
+   - De acuerdo a los principios de arquitectura agnóstica de motor, la lista por defecto debe estar completamente vacía; cualquier exención debe provenir de archivos `rules.json` o de la configuración del usuario (`angelscript.diagnostics.ignoredUnusedFunctions`).
+2. **Descubrimiento y Usabilidad de `rules.json` y `.as.predefined`**:
+   - Para un usuario final nuevo, la existencia de los archivos de reglas y stubs predefinidos era opaca. Se requiere detección automática por comodín (`*.angelscript.rules.json`) y comandos de inicialización interactivos en el cliente.
+3. **Recorridos Innecesarios del AST en Colectores de Ámbito y Resoluciónde Receptores**:
+   - En `LocalScopeCollector.cpp`, se realizaban subidas innecesarias a `ts_node_parent` y comparaciones de cadenas `ts_node_type` en nodos calientes en lugar de comparar `TSSymbol`.
+
+### 27.2. Implementación de la Solución
+1. **Colecciones de Exención por Defecto 100% Vacías**:
+   - Se vaciaron por completo las listas por defecto de `rules.ignoredGlobalFunctions` y `rules.lifecycleMethods` en `UnusedSymbolChecker.cpp`.
+2. **Auto-descubrimiento de Reglas y Comandos Interactivos QoL**:
+   - `ServerEngineRules.cpp` implementa resolución con comodines para localizar automáticamente cualquier archivo `*.angelscript.rules.json` en las raíces del espacio de trabajo.
+   - En el cliente VS Code, se integró el comando interactivo `angelscript.configureHostEnvironment` que genera plantillas válidas conformes al esquema oficial.
+3. **Eliminación de Comparaciones de Cadenas en Rutas Críticas**:
+   - Se añadieron `symBaseClassList`, `symMetadata` y `symComment` en `GrammarSymbols.h/.cpp`.
+   - Se reemplazaron todas las comparaciones de `ts_node_type` por comparaciones numéricas de `TSSymbol` en `LocalScopeCollector.cpp`.
+
+---
+
+## 28. Fase 25: Auditoría Final, Remediación y Pulido de Rendimiento
+
+### 28.1. Diagnóstico Forense y Causas Raíz
+1. **Incompatibilidad de Esquema en la Plantilla de Inicio del Cliente**:
+   - La plantilla de configuración generada en `client/src/extension.ts` anidaba propiedades en la raíz en lugar de agruparlas bajo `unusedSymbolRules` y `engineProperties`.
+2. **Cobertura Incompleta de la Acción Rápida `angelscript.ignoreUnusedSymbol`**:
+   - La acción rápida para ignorar símbolos sin usar solo aplicaba a funciones y métodos, omitiendo variables globales (`W115`) y clases (`W117`).
+3. **Comprobación Inexacta en el Reajuste de Reglas del Servidor**:
+   - Al remover un archivo de reglas, la condición de reseteo evaluaba miembros puntuales en lugar de delegar en `m_config.engineRules.HasRules()`.
+4. **Asignaciones en Comparaciones de Ámbito y Límites de Complejidad Ciclomática (Lizard)**:
+   - Comparaciones `target.declaringEnum + "::" + target.name` generaban asignaciones en el montículo.
+   - `CheckUnusedGlobals`, `HasActiveProperties` y `ResolveReceiverFromAst` excedían el umbral de 15 CCN de Lizard.
+
+### 28.2. Implementación de la Solución
+1. **Plantilla Conforme al Esquema Oficial en el Cliente**:
+   - Se actualizó `configureHostEnvironment` en `client/src/extension.ts` para estructurar limpiamente `name`, `engineProperties` y `unusedSymbolRules`.
+2. **Acción Rápida Universal para Ignorar Símbolos No Usados**:
+   - `MakeIgnoreUnusedSymbolAction` se emite ahora para `UnusedGlobalVariable` (`W115`) y `UnusedClass` (`W117`), integrando sincronización bilingüe (EN/ES) en `i18n.cpp` y pruebas completas en `CodeActionTest.cpp`.
+3. **Centralización del Estado Activo de Reglas con `HasRules()`**:
+   - Se añadió `NativeEngineProperties::HasActiveProperties()` y se integró en `EngineRuleConfig::HasRules()`.
+   - `ServerEngineRules.cpp` restablece la configuración a vanilla mediante `if (m_config.engineRules.HasRules())`.
+4. **Optimización con `MatchesScopedPair` y Reducción de Complejidad Lizard**:
+   - Se introdujo `MatchesScopedPair` en `SemanticHelpers.h`, eliminando concatenaciones en `TargetResolution.cpp` y `DocumentHighlightHandler.cpp`.
+   - Se descompuso `HasActiveProperties` en `HasGeneralProperties` y `HasSyntaxOrCompilerProperties` (CCN $\le 10$).
+   - Se descompuso `CheckUnusedGlobals` extrayendo `IsCandidateGlobalVariable` e `IsSymbolUnreferenced` (CCN $\le 7$).
+   - Se descompuso `ResolveReceiverFromAst` extrayendo `TryResolveReceiverFastPath` y `TryResolveFromObjNode` (CCN $\le 8$).
+
+### 28.3. Métricas Finales de Fase 25
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,372 / 2,372` pasadas (`34,057` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.14%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
 
 

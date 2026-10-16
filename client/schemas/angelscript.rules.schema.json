@@ -344,6 +344,14 @@
               }
             }
           }
+        },
+        "engineCallbackSignatures": {
+          "type": "array",
+          "description": "Global function parameter-type signatures called directly by the engine (e.g. [['CBaseEntity@', 'CBaseEntity@', 'USE_TYPE', 'float']]).",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
         }
       }
     }

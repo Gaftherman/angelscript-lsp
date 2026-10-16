@@ -5625,4 +5625,83 @@ std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sou
     return {};
 }
 
+std::string_view CleanCandidateIdentifier(std::string_view text) noexcept
+{
+    if (text.starts_with('@'))
+    {
+        text.remove_prefix(1);
+    }
+    if (text.starts_with("this."))
+    {
+        text.remove_prefix(5);
+    }
+    return text;
+}
+
+bool IsValidIdentifierOrQualified(std::string_view text) noexcept
+{
+    text = CleanCandidateIdentifier(text);
+    if (text.empty() || text.size() > 128)
+    {
+        return false;
+    }
+    while (!text.empty())
+    {
+        auto colon = text.find("::");
+        std::string_view part = (colon == std::string_view::npos) ? text : text.substr(0, colon);
+        if (part.empty() || (!std::isalpha(static_cast<unsigned char>(part[0])) && part[0] != '_'))
+        {
+            return false;
+        }
+        for (size_t i = 1; i < part.size(); ++i)
+        {
+            unsigned char c = static_cast<unsigned char>(part[i]);
+            if (!std::isalnum(c) && c != '_')
+            {
+                return false;
+            }
+        }
+        if (colon == std::string_view::npos)
+        {
+            break;
+        }
+        text.remove_prefix(colon + 2);
+    }
+    return true;
+}
+
+std::vector<std::pair<uint32_t, uint32_t>> CollectNamespaceAndContainerLineRanges(const SymbolTable& symbolTable,
+                                                                                  const std::string& fileUri,
+                                                                                  std::string_view declaringNamespace)
+{
+    std::vector<std::pair<uint32_t, uint32_t>> nsRanges;
+    if (declaringNamespace.empty())
+    {
+        return nsRanges;
+    }
+    symbolTable.ForEachSymbolInFile(
+        fileUri,
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& sList)
+        {
+            for (const auto& s : sList)
+            {
+                if (s.fileUri != fileUri)
+                {
+                    continue;
+                }
+                if (s.type == analysis::SymbolType::Namespace &&
+                    (s.name == declaringNamespace || s.qualifiedName == declaringNamespace))
+                {
+                    nsRanges.push_back({s.startLine, s.endLine});
+                }
+                else if ((s.type == analysis::SymbolType::Class || s.type == analysis::SymbolType::Interface) &&
+                         IsSameOrNestedNamespace(s.containerName, declaringNamespace))
+                {
+                    nsRanges.push_back({s.startLine, s.endLine});
+                }
+            }
+        });
+    return nsRanges;
+}
+
 } // namespace angel_lsp::analysis

@@ -76,6 +76,12 @@ class LocalScopeCollector
     TSSymbol m_symParameter = 0;
     TSSymbol m_symForeachVariable = 0;
     TSSymbol m_symLambdaParameterList = 0;
+    TSSymbol m_symClassDeclaration = 0;
+    TSSymbol m_symInterfaceDeclaration = 0;
+    TSSymbol m_symEnumDeclaration = 0;
+    TSSymbol m_symInterfaceMethod = 0;
+    TSSymbol m_symMixinDeclaration = 0;
+    TSSymbol m_symFuncdefDeclaration = 0;
 
     /** @brief What a LOCALS_QUERY capture index means, resolved once in the constructor by capture name. */
     enum class CaptureKind
@@ -83,7 +89,8 @@ class LocalScopeCollector
         None,
         Scope,
         Definition,
-        Reference
+        Reference,
+        StringCallRef
     };
 
     /** @brief Maps each LOCALS_QUERY capture index to its CaptureKind, built once in the constructor. */
@@ -165,6 +172,47 @@ class LocalScopeCollector
      * @param sourceCode Source text of the document.
      */
     void ProcessReferenceCapture(const RawCapture& capture, Scope* current, const std::string& sourceCode) const;
+
+    /**
+     * @brief Processes a string literal call reference capture node.
+     * @param capture Raw capture representing the string literal.
+     * @param[in,out] current Innermost open scope receiving the string call reference.
+     * @param sourceCode Source text of the document.
+     */
+    void ProcessStringCallRefCapture(const RawCapture& capture, Scope* current, const std::string& sourceCode) const;
+
+    /**
+     * @brief Ancestor nodes and enclosing symbol cached during capture processing.
+     */
+    struct CaptureAncestors
+    {
+        TSNode parent = TSNode{};
+        TSNode grandparent = TSNode{};
+        TSSymbol enclosingCallableSym = 0;
+    };
+
+    /**
+     * @brief Resolves parent, grandparent, and callable ancestor context for a captured node.
+     * @param kind CaptureKind classification of the node.
+     * @param defKind LocalDefinitionKind if applicable.
+     * @param node AST node being captured.
+     * @return Resolved CaptureAncestors bundle.
+     */
+    CaptureAncestors ResolveCaptureAncestors(CaptureKind kind, LocalDefinitionKind defKind, TSNode node) const;
+
+    /**
+     * @brief Populates qualifier and receiver byte ranges for member or scoped references.
+     * @param parent AST parent node of the reference.
+     * @param[out] ref LocalReference receiving byte range information.
+     */
+    void PopulateReceiverQualifierRanges(TSNode parent, LocalReference& ref) const;
+
+    /**
+     * @brief Checks if a grammar symbol belongs to a declaration whose name is a definition rather than a reference.
+     * @param sym Grammar symbol of parent node.
+     * @return True if parent node is a declaration.
+     */
+    [[nodiscard]] bool IsDeclarationContextSymbol(TSSymbol sym) const noexcept;
 
     /**
      * @brief Resolves call expression and argument details for a reference using a flat cursor.

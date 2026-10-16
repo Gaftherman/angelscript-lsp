@@ -11,6 +11,11 @@
 #include <string>
 #include <vector>
 
+namespace angel_lsp::config
+{
+struct UnusedSymbolRules;
+}
+
 namespace angel_lsp::utils
 {
 class LspLogger;
@@ -30,6 +35,7 @@ struct CodeLensRequest
     const analysis::ScopeIndex& scopeIndex;
     angel_lsp::utils::LspLogger* logger = nullptr;
     std::string predefinedExtension = ".as.predefined";
+    const config::UnusedSymbolRules* unusedRules = nullptr;
 };
 
 /**

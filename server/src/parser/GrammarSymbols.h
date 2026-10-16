@@ -29,6 +29,12 @@ struct GrammarSymbols
     TSSymbol symVariableDeclarator = 0;      ///< variable_declarator
     TSSymbol symForeachVariable = 0;         ///< foreach_variable
     TSSymbol symLambdaParameterList = 0;     ///< lambda_parameter_list
+    TSSymbol symStringLiteral = 0;           ///< string_literal
+    TSSymbol symCallExpression = 0;          ///< call_expression
+    TSSymbol symArgumentList = 0;            ///< argument_list
+    TSSymbol symBaseClassList = 0;           ///< base_class_list
+    TSSymbol symMetadata = 0;                ///< metadata
+    TSSymbol symComment = 0;                 ///< comment
 };
 
 /**

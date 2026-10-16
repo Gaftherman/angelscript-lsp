@@ -761,7 +761,8 @@ void ValidateFunction(const Symbol& sym, const DiagnosticContext& ctx)
     // outright ("Expected ';'", verified against angelscript_oracle), so hinting there would be
     // advice whose only fix does not compile. The mode-3 rejection such an interface produces
     // lands on the IMPLEMENTING class's accessor, which this rule reaches on its own.
-    if (ctx.request.diagnostics && ctx.request.diagnostics->reportAccessorPortability && fctx.isMember &&
+    if (ctx.request.diagnostics && ctx.request.diagnostics->reportAccessorPortability &&
+        (!ctx.request.engineProperties || ctx.request.engineProperties->propertyAccessorMode != 2) && fctx.isMember &&
         !sig.isInterfaceMethod && !sig.modifiers.isProperty)
     {
         std::string_view accessor = sym.name;

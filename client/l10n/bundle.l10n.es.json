@@ -74,5 +74,22 @@
   "Clears locally remembered module and stub overrides, reverting to workspace settings.": "Limpia los módulos y stubs recordados localmente, volviendo a la configuración del espacio de trabajo.",
   "Cleared local session overrides. Reverted to workspace configuration.": "Se limpiaron las anulaciones de sesión local. Se volvió a la configuración del espacio de trabajo.",
   "Re-enable": "Volver a habilitar",
-  "Open Settings": "Abrir configuración"
+  "Open Settings": "Abrir configuración",
+  "Rules or predefined definitions modified. Restart the AngelScript server to apply changes?": "Reglas o definiciones predefinidas modificadas. ¿Reiniciar el servidor AngelScript para aplicar los cambios?",
+  "Ignored unused symbol \"{0}\" in workspace settings.": "Símbolo no usado \"{0}\" ignorado en la configuración del espacio de trabajo.",
+  "Symbol name to ignore": "Nombre del símbolo a ignorar",
+  "Enter the name of the function, method, or variable to ignore:": "Introduce el nombre de la función, método o variable a ignorar:",
+  "Undo": "Deshacer",
+  "Configure Host Environment": "Configurar entorno del motor",
+  "Configure engine rules, callbacks, and predefined stubs.": "Configurar reglas del motor, callbacks y stubs predefinidos.",
+  "Select a configuration action": "Selecciona una acción de configuración",
+  "Browse for External .as.predefined File...": "Buscar archivo .as.predefined externo...",
+  "Select an .as.predefined file from your disk to register it in workspace settings.": "Selecciona un archivo .as.predefined del disco para registrarlo en la configuración del espacio de trabajo.",
+  "Create Starter angelscript.rules.json in Workspace": "Crear plantilla angelscript.rules.json en el espacio de trabajo",
+  "Creates a template angelscript.rules.json for engine properties, callbacks, and lifecycle exemptions.": "Crea una plantilla angelscript.rules.json para propiedades del motor, callbacks y exenciones de ciclo de vida.",
+  "Open Active Engine Rules File": "Abrir archivo activo de reglas del motor",
+  "Opens the currently active *.angelscript.rules.json file.": "Abre el archivo *.angelscript.rules.json activo actualmente.",
+  "Added \"{0}\" to predefined files.": "Se añadió \"{0}\" a los archivos predefinidos.",
+  "Created starter \"{0}\".": "Se creó la plantilla inicial \"{0}\".",
+  "No engine rules file found in workspace.": "No se encontró ningún archivo de reglas del motor en el espacio de trabajo."
 }

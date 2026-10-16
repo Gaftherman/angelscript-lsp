@@ -74,5 +74,22 @@
   "Clears locally remembered module and stub overrides, reverting to workspace settings.": "Clears locally remembered module and stub overrides, reverting to workspace settings.",
   "Cleared local session overrides. Reverted to workspace configuration.": "Cleared local session overrides. Reverted to workspace configuration.",
   "Re-enable": "Re-enable",
-  "Open Settings": "Open Settings"
+  "Open Settings": "Open Settings",
+  "Rules or predefined definitions modified. Restart the AngelScript server to apply changes?": "Rules or predefined definitions modified. Restart the AngelScript server to apply changes?",
+  "Ignored unused symbol \"{0}\" in workspace settings.": "Ignored unused symbol \"{0}\" in workspace settings.",
+  "Symbol name to ignore": "Symbol name to ignore",
+  "Enter the name of the function, method, or variable to ignore:": "Enter the name of the function, method, or variable to ignore:",
+  "Undo": "Undo",
+  "Configure Host Environment": "Configure Host Environment",
+  "Configure engine rules, callbacks, and predefined stubs.": "Configure engine rules, callbacks, and predefined stubs.",
+  "Select a configuration action": "Select a configuration action",
+  "Browse for External .as.predefined File...": "Browse for External .as.predefined File...",
+  "Select an .as.predefined file from your disk to register it in workspace settings.": "Select an .as.predefined file from your disk to register it in workspace settings.",
+  "Create Starter angelscript.rules.json in Workspace": "Create Starter angelscript.rules.json in Workspace",
+  "Creates a template angelscript.rules.json for engine properties, callbacks, and lifecycle exemptions.": "Creates a template angelscript.rules.json for engine properties, callbacks, and lifecycle exemptions.",
+  "Open Active Engine Rules File": "Open Active Engine Rules File",
+  "Opens the currently active *.angelscript.rules.json file.": "Opens the currently active *.angelscript.rules.json file.",
+  "Added \"{0}\" to predefined files.": "Added \"{0}\" to predefined files.",
+  "Created starter \"{0}\".": "Created starter \"{0}\".",
+  "No engine rules file found in workspace.": "No engine rules file found in workspace."
 }

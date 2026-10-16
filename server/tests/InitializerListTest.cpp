@@ -727,15 +727,22 @@ TEST_CASE("InitializerList - Invariant: Primitives reject initializer lists acro
 
 TEST_CASE("InitializerList - dictionary indexing rejects untyped initializer lists and accepts typed ones")
 {
+    const std::string dictValName = angel_lsp::test::GenerateRandomSymbolName("DictVal");
+    const std::string dictTypeName = angel_lsp::test::GenerateRandomSymbolName("Dict");
     const std::string dictVar = angel_lsp::test::GenerateRandomSymbolName("myDict");
     const std::string keyStr = angel_lsp::test::GenerateRandomSymbolName("key");
-    const std::string code = "class dictionaryValue {};\n"
-                             "class dictionary {\n"
-                             "    dictionaryValue& opIndex(const string &in key);\n"
+    const std::string code = "class " + dictValName +
+                             " {};\n"
+                             "class " +
+                             dictTypeName +
+                             " {\n"
+                             "    " +
+                             dictValName +
+                             "& opIndex(const string &in key);\n"
                              "};\n"
                              "void main() {\n"
-                             "    dictionary " +
-                             dictVar +
+                             "    " +
+                             dictTypeName + " " + dictVar +
                              ";\n"
                              "    " +
                              dictVar + "[\"" + keyStr +
@@ -744,15 +751,20 @@ TEST_CASE("InitializerList - dictionary indexing rejects untyped initializer lis
     const auto diags = DiagnoseAll(code);
     CHECK(HasAnyCode(diags, "as-err-initializer-list-not-supported"));
     CHECK_FALSE(HasAnyCode(diags, "as-hint-list-pattern-unknown"));
-    CHECK(Names(diags, "dictionaryValue"));
+    CHECK(Names(diags, dictValName));
 
-    const std::string typedCode = "class dictionaryValue {};\n"
-                                  "class dictionary {\n"
-                                  "    dictionaryValue& opIndex(const string &in key);\n"
+    const std::string typedCode = "class " + dictValName +
+                                  " {};\n"
+                                  "class " +
+                                  dictTypeName +
+                                  " {\n"
+                                  "    " +
+                                  dictValName +
+                                  "& opIndex(const string &in key);\n"
                                   "};\n"
                                   "void main() {\n"
-                                  "    dictionary " +
-                                  dictVar +
+                                  "    " +
+                                  dictTypeName + " " + dictVar +
                                   ";\n"
                                   "    " +
                                   dictVar + "[\"" + keyStr +

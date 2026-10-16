@@ -3,7 +3,9 @@
  * @brief Quick-fix provider for removing unused local variable declarations.
  */
 
+#include "analysis/TargetResolution.h"
 #include "features/code_action/CodeActionInternal.h"
+#include <variant>
 
 namespace angel_lsp::features
 {
@@ -183,14 +185,22 @@ lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view so
     TSNode leaf = ts_node_descendant_for_point_range(rootNode, pt, pt);
 
     TSNode declarator = leaf;
-    while (!ts_node_is_null(declarator) && std::string_view(ts_node_type(declarator)) != "variable_declarator")
+    for (int depth = 0; depth < 8 && !ts_node_is_null(declarator); ++depth)
     {
+        if (std::string_view(ts_node_type(declarator)) == "variable_declarator")
+        {
+            break;
+        }
         declarator = ts_node_parent(declarator);
     }
 
     TSNode decl = declarator;
-    while (!ts_node_is_null(decl) && std::string_view(ts_node_type(decl)) != "variable_declaration")
+    for (int depth = 0; depth < 8 && !ts_node_is_null(decl); ++depth)
     {
+        if (std::string_view(ts_node_type(decl)) == "variable_declaration")
+        {
+            break;
+        }
         decl = ts_node_parent(decl);
     }
 
@@ -225,21 +235,119 @@ lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view so
     return BuildRemoveMultiDeclaratorItem(declarators, declarator);
 }
 
-void AppendUnusedFunctionDisableActions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+std::string ExtractSymbolNameFromDiag(const lsp::Diagnostic& diag, TSNode rootNode, std::string_view sourceCode)
+{
+    if (!ts_node_is_null(rootNode) && !sourceCode.empty())
+    {
+        TSPoint pt = {diag.range.start.line, diag.range.start.character};
+        TSNode node = ts_node_descendant_for_point_range(rootNode, pt, pt);
+        if (!ts_node_is_null(node))
+        {
+            std::string text = parser::GetNodeText(node, sourceCode);
+            if (analysis::IsValidIdentifier(text))
+            {
+                return text;
+            }
+        }
+    }
+    std::string_view msgStr;
+    if (const auto* s = std::get_if<lsp::String>(&diag.message))
+    {
+        msgStr = *s;
+    }
+    else if (const auto* m = std::get_if<lsp::MarkupContent>(&diag.message))
+    {
+        msgStr = m->value;
+    }
+    auto firstQuote = msgStr.find('\'');
+    if (firstQuote != std::string_view::npos)
+    {
+        auto secondQuote = msgStr.find('\'', firstQuote + 1);
+        if (secondQuote != std::string_view::npos && secondQuote > firstQuote + 1)
+        {
+            return std::string(msgStr.substr(firstQuote + 1, secondQuote - firstQuote - 1));
+        }
+    }
+    return {};
+}
+
+lsp::CodeAction MakeIgnoreUnusedSymbolAction(const lsp::Diagnostic& diag, std::string_view symbolName,
+                                             const i18n::I18n* i18n)
+{
+    std::string title = i18n::FormatMessage(i18n, "action-ignore-unused-symbol",
+                                            "Ignore unused symbol '{}' (mark as entry point / callback)", symbolName);
+    std::string cmdTitle = i18n::FormatMessage(i18n, "action-ignore-unused-symbol-cmd", "Ignore unused symbol");
+
+    lsp::CodeAction action;
+    action.title = std::move(title);
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    action.isPreferred = true;
+    action.diagnostics = std::vector<lsp::Diagnostic>{diag};
+
+    lsp::Command cmd;
+    cmd.title = std::move(cmdTitle);
+    cmd.command = "angelscript.ignoreUnusedSymbol";
+    lsp::json::Array cmdArgs;
+    lsp::json::Object argObj;
+    argObj["symbolName"] = lsp::json::Value(std::string(symbolName));
+    cmdArgs.push_back(std::move(argObj));
+    cmd.arguments = std::move(cmdArgs);
+
+    action.command = std::move(cmd);
+    return action;
+}
+
+void AppendUnusedSymbolActions(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
 {
     for (const auto& diag : request.context.diagnostics)
     {
         if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedFunction))
         {
+            std::string symName = ExtractSymbolNameFromDiag(diag, rootNode, request.sourceCode);
+            if (!symName.empty())
+            {
+                actions.push_back(MakeIgnoreUnusedSymbolAction(diag, symName, request.i18n));
+            }
             actions.push_back(
                 MakeDisableDiagnosticAction({diag, "diagnostics.reportUnusedFunctions",
                                              std::string(diagnostics::codes::UnusedFunction), request.i18n}));
         }
         else if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedMethod))
         {
+            std::string symName = ExtractSymbolNameFromDiag(diag, rootNode, request.sourceCode);
+            if (!symName.empty())
+            {
+                actions.push_back(MakeIgnoreUnusedSymbolAction(diag, symName, request.i18n));
+            }
             actions.push_back(
-                MakeDisableDiagnosticAction({diag, "diagnostics.reportUnusedFunctions",
+                MakeDisableDiagnosticAction({diag, "diagnostics.reportUnusedMembers",
                                              std::string(diagnostics::codes::UnusedMethod), request.i18n}));
+        }
+        else if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedField))
+        {
+            actions.push_back(MakeDisableDiagnosticAction(
+                {diag, "diagnostics.reportUnusedMembers", std::string(diagnostics::codes::UnusedField), request.i18n}));
+        }
+        else if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedGlobalVariable))
+        {
+            std::string symName = ExtractSymbolNameFromDiag(diag, rootNode, request.sourceCode);
+            if (!symName.empty())
+            {
+                actions.push_back(MakeIgnoreUnusedSymbolAction(diag, symName, request.i18n));
+            }
+            actions.push_back(
+                MakeDisableDiagnosticAction({diag, "diagnostics.reportUnusedGlobalVariables",
+                                             std::string(diagnostics::codes::UnusedGlobalVariable), request.i18n}));
+        }
+        else if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedClass))
+        {
+            std::string symName = ExtractSymbolNameFromDiag(diag, rootNode, request.sourceCode);
+            if (!symName.empty())
+            {
+                actions.push_back(MakeIgnoreUnusedSymbolAction(diag, symName, request.i18n));
+            }
+            actions.push_back(MakeDisableDiagnosticAction(
+                {diag, "diagnostics.reportUnusedClasses", std::string(diagnostics::codes::UnusedClass), request.i18n}));
         }
     }
 }
@@ -249,7 +357,7 @@ void AppendUnusedFunctionDisableActions(const CodeActionRequest& request, std::v
 void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode rootNode,
                                      std::vector<lsp::CodeAction>& actions)
 {
-    AppendUnusedFunctionDisableActions(request, actions);
+    AppendUnusedSymbolActions(request, rootNode, actions);
 
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     if (!rootScope)

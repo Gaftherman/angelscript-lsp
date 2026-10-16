@@ -974,7 +974,10 @@ TEST_CASE("Server - An error is published as an error, not as a warning")
     // published had been arriving in the editor as a warning, and every warning as information.
     const std::string source = "void g_nothing;\n";
 
-    const std::string frames = PublishedFrames(DiagnosticsFor(source));
+    config::ServerConfig serverConfig;
+    serverConfig.diagnostics.reportUnusedGlobalVariables = false;
+
+    const std::string frames = PublishedFrames(DiagnosticsFor(source, serverConfig));
     REQUIRE(frames.find("\"as-err-void-variable\"") != std::string::npos);
     CHECK(frames.find("\"severity\":1") != std::string::npos);
     CHECK(frames.find("\"severity\":2") == std::string::npos);
@@ -5804,6 +5807,7 @@ TEST_CASE("Server - Saving document suppresses duplicate background analysis")
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
+    serverConfig.diagnostics.reportUnusedFunctions = false;
     RunScript(serverConfig, stream);
 
     REQUIRE_FALSE(savedPublished.empty());
@@ -6690,4 +6694,36 @@ TEST_CASE("ServerHarness - MasterHarnessTelemetrySmokeTest")
     CHECK(brokenResult.elapsedMs >= 0.0);
     CHECK(brokenResult.hadSyntaxErrorNodes);
     CHECK(brokenResult.cascadingSemanticErrorsOnBrokenLine == 0);
+}
+
+TEST_CASE("ServerHarness - Wildcard rules file auto-discovery")
+{
+    WorkspaceFixture fixture;
+    const std::string wildcardRules = test::GenerateRandomSymbolName("engine") + ".angelscript.rules.json";
+    const std::string customEntry = test::GenerateRandomSymbolName("CustomCallback");
+    fixture.Write(wildcardRules, R"({
+        "name": "Discovered Rules",
+        "unusedSymbolRules": {
+            "enabled": true,
+            "ignoredGlobalFunctions": [")" +
+                                     customEntry + R"("]
+        }
+    })");
+    fixture.Write("main.as", "void " + customEntry + "() {}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), "void " + customEntry + "() {}\n"));
+    stream.PushAction([&stream]() { WaitForCount(stream, "textDocument/publishDiagnostics", 1); });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    CHECK(output.find("textDocument/publishDiagnostics") != std::string::npos);
+    CHECK(output.find(customEntry) == std::string::npos);
 }

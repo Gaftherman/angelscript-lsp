@@ -168,6 +168,71 @@ bool IsReservedKeyword(const std::string& name);
     return a == segB || segA == b || segA == segB;
 }
 
+/**
+ * @brief Checks if container is identical to or nested inside namespace ns without heap allocation.
+ */
+[[nodiscard]] constexpr bool IsSameOrNestedNamespace(std::string_view container, std::string_view ns) noexcept
+{
+    if (ns.empty())
+    {
+        return false;
+    }
+    if (container == ns)
+    {
+        return true;
+    }
+    return container.size() > ns.size() + 2 && container.starts_with(ns) && container[ns.size()] == ':' &&
+           container[ns.size() + 1] == ':';
+}
+
+/**
+ * @brief Checks if full matches suffix or ends with "::" + suffix without heap allocation.
+ */
+[[nodiscard]] constexpr bool EndsWithScopedSuffix(std::string_view full, std::string_view suffix) noexcept
+{
+    if (suffix.empty())
+    {
+        return false;
+    }
+    if (full == suffix)
+    {
+        return true;
+    }
+    return full.size() > suffix.size() + 2 && full.ends_with(suffix) && full[full.size() - suffix.size() - 2] == ':' &&
+           full[full.size() - suffix.size() - 1] == ':';
+}
+
+/**
+ * @brief Checks if a scoped identifier exactly equals prefix::suffix without heap string allocation.
+ * @param[in] scoped The full scoped identifier to test.
+ * @param[in] prefix The expected scope prefix.
+ * @param[in] suffix The expected identifier suffix.
+ * @return True if scoped exactly matches prefix + "::" + suffix.
+ */
+[[nodiscard]] constexpr bool MatchesScopedPair(std::string_view scoped, std::string_view prefix,
+                                               std::string_view suffix) noexcept
+{
+    return scoped.size() == prefix.size() + 2 + suffix.size() && scoped.starts_with(prefix) &&
+           scoped.ends_with(suffix) && scoped.substr(prefix.size(), 2) == "::";
+}
+
+/**
+ * @brief Strips leading '@' or 'this.' from candidate identifier strings.
+ */
+[[nodiscard]] std::string_view CleanCandidateIdentifier(std::string_view text) noexcept;
+
+/**
+ * @brief Validates if string is a valid identifier or qualified scoped identifier (e.g. NS::Class).
+ */
+[[nodiscard]] bool IsValidIdentifierOrQualified(std::string_view text) noexcept;
+
+/**
+ * @brief Collects line ranges of declaring namespace and enclosing containers in fileUri.
+ */
+[[nodiscard]] std::vector<std::pair<uint32_t, uint32_t>>
+CollectNamespaceAndContainerLineRanges(const SymbolTable& symbolTable, const std::string& fileUri,
+                                       std::string_view declaringNamespace);
+
 [[nodiscard]] constexpr bool IsFloatingPointPrimitive(std::string_view typeName) noexcept
 {
     return parser::primitives::IsFloatingPoint(typeName);

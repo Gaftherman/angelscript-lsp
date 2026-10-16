@@ -149,6 +149,16 @@
         "command": "angelscript.clearLocalState",
         "title": "%command.clearLocalState.title%",
         "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.ignoreUnusedSymbol",
+        "title": "%command.ignoreUnusedSymbol.title%",
+        "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.configureHostEnvironment",
+        "title": "%command.configureHostEnvironment.title%",
+        "category": "%command.selectPredefined.category%"
       }
     ],
     "menus": {
@@ -458,6 +468,12 @@
             "default": [],
             "markdownDescription": "%config.stubs.activeFiles.description%"
           },
+          "angelscript.rulesFile": {
+            "type": "string",
+            "scope": "resource",
+            "default": "",
+            "markdownDescription": "%config.rulesFile.description%"
+          },
           "angelscript.include.implicitExtension": {
             "type": "boolean",
             "scope": "resource",
@@ -671,6 +687,12 @@
             "scope": "resource",
             "markdownDescription": "%config.hover.assetSearchPaths.description%"
           },
+          "angelscript.hover.showFileLocation": {
+            "type": "boolean",
+            "default": false,
+            "scope": "resource",
+            "markdownDescription": "%config.hover.showFileLocation.description%"
+          },
           "angelscript.features.completion": {
             "type": "boolean",
             "default": true,
@@ -827,7 +849,7 @@
           },
           "angelscript.diagnostics.reportAccessorPortability": {
             "type": "boolean",
-            "default": true,
+            "default": false,
             "markdownDescription": "%config.diagnostics.reportAccessorPortability.description%"
           },
           "angelscript.diagnostics.reportAccessorDisabled": {

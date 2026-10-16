@@ -294,6 +294,29 @@ void ParseBaseClassLifecycleMethods(const nlohmann::json& obj,
     }
 }
 
+void ParseEngineCallbackSignatures(const nlohmann::json& obj, std::vector<std::vector<std::string>>& signatures)
+{
+    if (!obj.contains("engineCallbackSignatures") || !obj["engineCallbackSignatures"].is_array())
+    {
+        return;
+    }
+    for (const auto& sig : obj["engineCallbackSignatures"])
+    {
+        if (!sig.is_array())
+            continue;
+        std::vector<std::string> paramTypes;
+        for (const auto& param : sig)
+        {
+            if (param.is_string())
+                paramTypes.push_back(param.get<std::string>());
+        }
+        if (!paramTypes.empty())
+        {
+            signatures.push_back(std::move(paramTypes));
+        }
+    }
+}
+
 void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& rules)
 {
     if (!j.contains("unusedSymbolRules") || !j["unusedSymbolRules"].is_object())
@@ -315,6 +338,7 @@ void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& rules)
     ParseReflectionCallees(u, rules.stringReflectionCallees);
     rules.ignoreUnusedGlobalsWithCallInitializer = u.value("ignoreUnusedGlobalsWithCallInitializer", false);
     ParseStringArray(u, "unusedGlobalExemptTypes", rules.unusedGlobalExemptTypes);
+    ParseEngineCallbackSignatures(u, rules.engineCallbackSignatures);
 }
 
 } // namespace

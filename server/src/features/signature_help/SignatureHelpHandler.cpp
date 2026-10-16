@@ -127,7 +127,9 @@ struct CallNodes
 CallNodes FindCallNodes(TSNode node)
 {
     CallNodes result;
-    for (TSNode cur = node; !ts_node_is_null(cur); cur = ts_node_parent(cur))
+    constexpr int kMaxDepth = 64;
+    int depth = 0;
+    for (TSNode cur = node; depth < kMaxDepth && !ts_node_is_null(cur); cur = ts_node_parent(cur), ++depth)
     {
         std::string_view type = ts_node_type(cur);
         if (type == "argument_list")

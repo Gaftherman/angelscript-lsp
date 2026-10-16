@@ -2,6 +2,34 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.0-exp.10] - 2026-10-16
+
+### Engine-Agnostic Rules, O(1) Symbol Indexing, AST Performance, and Unused Symbol QoL
+
+- Engine-Agnostic Core & Zero Hardcoding (`UnusedSymbolChecker`, `ServerEngineRules`):
+  - Eradicated all hardcoded Sven Co-op lifecycle callbacks (`Spawn`, `Precache`, `Think`, `PluginInit`, `MapInit`, `MapActivate`) and default `"main"` entries from C++ server code.
+  - Default unused exemption lists are 100% empty when no rules file is specified; engine-specific callbacks and entry points are configured strictly via `*.angelscript.rules.json` or client settings (`angelscript.diagnostics.ignoredUnusedFunctions`).
+  - Added wildcard auto-discovery for `*.angelscript.rules.json` in workspace roots, with automatic fallback and state reset to vanilla AngelScript safety rules via `EngineRuleConfig::HasRules()`.
+  - Added interactive VS Code command `angelscript.configureHostEnvironment` to generate schema-compliant configuration templates.
+- $O(1)$ Optimization & Elimination of $O(N^2)$ Table Scans:
+  - Eradicated full-table `table.ForEachSymbol` iterations in `IsClassInherited` and `IsMethodOverriddenInDerived`, replacing them with precomputed $O(1)$ hash tables (`inheritedOrMixedInClasses` and `derivedClassesByBase`) built once per document pass from `request.GetRuleIndex()`.
+  - Added zero-allocation `constexpr` helpers `IsSameOrNestedNamespace`, `EndsWithScopedSuffix`, and `MatchesScopedPair` in `SemanticHelpers.h` to replace heap-allocating `+ "::"` concatenations in `CodeLensHandler.cpp`, `TargetResolution.cpp`, and `DocumentHighlightHandler.cpp`.
+  - Integrated direct `NodeIndex` scans for `symStringLiteral` in `CollectStringReflection` and `CountStringLiteralCallReferences`, bypassing full AST navigation on non-reflection calls.
+  - Added cached receiver byte slice fast-path in `CodeLensHandler.cpp` and `thread_local` regex cache in `MatchesRegexSafe`.
+- AST Traversal Hygiene & Grammar Symbol Fast-Paths (`LocalScopeCollector`):
+  - Registered `symBaseClassList`, `symMetadata`, and `symComment` in `GrammarSymbols.h/.cpp`.
+  - Replaced `ts_node_type` string comparisons and redundant upward parent climbs with constant-time `TSSymbol` comparisons across hot-path scope collectors and reference processing.
+- CodeAction Universal Quick Fixes & Dual-Language Parity:
+  - Extended preferred Quick Fix `angelscript.ignoreUnusedSymbol` (`isPreferred = true`) to unused global variables (`W115`) and unused classes (`W117`), alongside functions (`W114`) and methods (`W118`).
+  - Dual-language parity (100% EN/ES) across all diagnostic messages, action titles, and command titles in `i18n.cpp` and client translation bundles.
+- Hover and Overload Markdown Formatting Polish:
+  - Replaced collapsible HTML elements (`<details><summary>`) in hover overloads with clean, standards-compliant GitHub Flavored Markdown tooltips with internationalized headers.
+  - Suppressed redundant file location footers on unresolved symbol strings (`hoverShowFileLocation = false`).
+- Quality & Test Metrics:
+  - 2,372 / 2,372 unit tests passed (34,057 assertions, 0 failures, 30 skipped).
+  - 12/12 static quality gates passing at 100% (`jscpd` 1.14%, Lizard CCN <= 15, NLOC <= 70, 0 dead parameters `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` clean).
+  - Client pretest passing: compile, bundle, lint, and all 107 settings wired.
+
 ## [1.1.0-exp.9] - 2026-10-15
 
 ### Precision CodeLens for Properties & Classes, Bitwise Operator Parity, Flicker-Free Diagnostics, and Unused Member Governance

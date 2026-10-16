@@ -153,6 +153,12 @@ const PEEK_OVERLOADS_COMMAND = 'angelscript.peekOverloads';
 /** @brief Command that clears local session state overrides for modules and stubs. */
 const CLEAR_LOCAL_STATE_COMMAND = 'angelscript.clearLocalState';
 
+/** @brief Command that ignores an unused symbol name by adding it to ignoredUnusedFunctions. */
+const IGNORE_UNUSED_SYMBOL_COMMAND = 'angelscript.ignoreUnusedSymbol';
+
+/** @brief Command that guides the user through setting up engine rules or predefined stubs. */
+const CONFIGURE_HOST_ENVIRONMENT_COMMAND = 'angelscript.configureHostEnvironment';
+
 let extensionContext: ExtensionContext | undefined;
 
 /** @brief Sets or resets the active extension context (exported for unit testing). */
@@ -1345,9 +1351,21 @@ export function buildServerArgs(): string[] {
         args.push('--disable-hover-string-literal-path-resolution');
     }
 
+    if (config.get<boolean>('hover.showFileLocation', false) === true) {
+        args.push('--hover-show-file-location');
+    }
+
     for (const entry of config.get<string[]>('hover.assetSearchPaths', [])) {
         for (const resolved of resolveAgainstWorkspace(entry)) {
             args.push(`--asset-search-path=${resolved}`);
+        }
+    }
+
+    const rulesFile = config.get<string>('rulesFile', '').trim();
+    if (rulesFile.length > 0) {
+        for (const resolved of resolveAgainstWorkspace(rulesFile)) {
+            args.push(`--rules-file=${resolved}`);
+            break;
         }
     }
 
@@ -1663,6 +1681,12 @@ export async function activate(context: ExtensionContext) {
                     await commands.executeCommand('editor.action.triggerParameterHints');
                 }
             }));
+
+        context.subscriptions.push(
+            commands.registerCommand(IGNORE_UNUSED_SYMBOL_COMMAND, (args?: unknown) => ignoreUnusedSymbol(args)));
+
+        context.subscriptions.push(
+            commands.registerCommand(CONFIGURE_HOST_ENVIRONMENT_COMMAND, () => configureHostEnvironment()));
     });
 
     const virtualMixinProvider = new VirtualMixinContentProvider();
@@ -1680,6 +1704,19 @@ export async function activate(context: ExtensionContext) {
     // the server said is replayed onto it.
     context.subscriptions.push(
         window.onDidChangeVisibleTextEditors(editors => editors.forEach(applyInactiveRegions)));
+
+    context.subscriptions.push(
+        workspace.onDidSaveTextDocument(async (doc) => {
+            const fileName = path.basename(doc.fileName);
+            if (fileName === 'angelscript.rules.json' || fileName.endsWith('.angelscript.rules.json') || fileName.endsWith('.as.predefined') || fileName.endsWith('.predefined')) {
+                const restartAction = l10n.t('Restart Server');
+                const message = l10n.t('Rules or predefined definitions modified. Restart the AngelScript server to apply changes?');
+                const choice = await window.showInformationMessage(message, restartAction);
+                if (choice === restartAction) {
+                    void commands.executeCommand(RESTART_COMMAND);
+                }
+            }
+        }));
 
     timed('statusBarItem', () => createStatusBarItem(context));
     timed('languageStatusItem', () => createLanguageStatusItem(context));
@@ -1720,6 +1757,7 @@ export async function activate(context: ExtensionContext) {
                 args.filter(arg => !arg.startsWith('--predefined-active=') &&
                                    !arg.startsWith('--module=') &&
                                    !arg.startsWith('--module-folder=') &&
+                                   !arg.startsWith('--rules-file=') &&
                                    !arg.startsWith('--inlay-hints-'));
 
             // The decoration bakes the opacity in, so a change to either setting has to build a
@@ -1821,6 +1859,11 @@ async function showStatusMenu(context: ExtensionContext): Promise<void> {
             label: '$(refresh) ' + l10n.t('Rescan Workspace'),
             description: l10n.t('Forces an immediate rescan of all search paths and workspace files.'),
             run: () => rescanWorkspace()
+        },
+        {
+            label: '$(gear) ' + l10n.t('Configure Host Environment'),
+            description: l10n.t('Configure engine rules, callbacks, and predefined stubs.'),
+            run: () => configureHostEnvironment()
         }
     ];
 
@@ -2012,6 +2055,7 @@ async function applyLocalStateChanges(): Promise<void> {
         args.filter(arg => !arg.startsWith('--predefined-active=') &&
                            !arg.startsWith('--module=') &&
                            !arg.startsWith('--module-folder=') &&
+                           !arg.startsWith('--rules-file=') &&
                            !arg.startsWith('--inlay-hints-'));
 
     const unchanged =
@@ -2679,6 +2723,184 @@ export async function viewMixinExpansion(args?: {
     const uri = Uri.parse(`angelscript-virtual://${hostClass}/${mixinName}.as`);
     const doc = await workspace.openTextDocument(uri);
     await window.showTextDocument(doc, { preview: true, viewColumn: ViewColumn.Beside });
+}
+
+/**
+ * @brief Command that ignores an unused symbol name by adding it to ignoredUnusedFunctions in settings.
+ * @param args Symbol name or payload from quick fix code action.
+ */
+export async function ignoreUnusedSymbol(args?: unknown): Promise<void> {
+    let symbolName: string | undefined;
+    if (typeof args === 'string') {
+        symbolName = args;
+    } else if (Array.isArray(args) && typeof args[0] === 'string') {
+        symbolName = args[0];
+    } else if (typeof args === 'object' && args !== null && 'symbolName' in args) {
+        symbolName = (args as { symbolName?: string }).symbolName;
+    }
+
+    if (!symbolName || symbolName.trim().length === 0) {
+        symbolName = await window.showInputBox({
+            title: l10n.t('Symbol name to ignore'),
+            prompt: l10n.t('Enter the name of the function, method, or variable to ignore:'),
+            placeHolder: 'e.g. PluginInit, Spawn, main'
+        });
+    }
+
+    if (!symbolName || symbolName.trim().length === 0) {
+        return;
+    }
+
+    const nameToIgnore = symbolName.trim();
+    const config = workspace.getConfiguration('angelscript');
+    const existing = config.get<string[]>('diagnostics.ignoredUnusedFunctions', []);
+    if (!existing.includes(nameToIgnore)) {
+        const updated = [...existing, nameToIgnore];
+        await config.update('diagnostics.ignoredUnusedFunctions', updated, ConfigurationTarget.Workspace);
+        const undoAction = l10n.t('Undo');
+        const openSettingsAction = l10n.t('Open Settings');
+        void window.showInformationMessage(
+            l10n.t('Ignored unused symbol "{0}" in workspace settings.', nameToIgnore),
+            undoAction,
+            openSettingsAction
+        ).then(async choice => {
+            if (choice === undoAction) {
+                const current = config.get<string[]>('diagnostics.ignoredUnusedFunctions', []);
+                await config.update(
+                    'diagnostics.ignoredUnusedFunctions',
+                    current.filter(x => x !== nameToIgnore),
+                    ConfigurationTarget.Workspace
+                );
+            } else if (choice === openSettingsAction) {
+                await commands.executeCommand('workbench.action.openSettings', 'angelscript.diagnostics.ignoredUnusedFunctions');
+            }
+        });
+    }
+}
+
+/**
+ * @brief Interactive wizard to configure host engine rules and predefined stubs.
+ */
+export async function configureHostEnvironment(): Promise<void> {
+    interface WizardOption extends QuickPickItem {
+        action: () => Promise<void>;
+    }
+
+    const options: WizardOption[] = [
+        {
+            label: '$(file-code) ' + l10n.t('Browse for External .as.predefined File...'),
+            description: l10n.t('Select an .as.predefined file from your disk to register it in workspace settings.'),
+            action: async () => {
+                const picked = await window.showOpenDialog({
+                    canSelectFiles: true,
+                    canSelectFolders: false,
+                    canSelectMany: false,
+                    openLabel: l10n.t('Select Predefined Stub'),
+                    filters: {
+                        'AngelScript Predefined Stubs': ['predefined', 'as.predefined']
+                    }
+                });
+                if (!picked || picked.length === 0) {
+                    return;
+                }
+                const selectedPath = picked[0].fsPath;
+                const config = workspace.getConfiguration('angelscript');
+                const existing = config.get<string[]>('predefinedFiles', []);
+                if (!existing.includes(selectedPath)) {
+                    await config.update('predefinedFiles', [...existing, selectedPath], ConfigurationTarget.Workspace);
+                    void window.showInformationMessage(l10n.t('Added "{0}" to predefined files.', selectedPath));
+                }
+            }
+        },
+        {
+            label: '$(json) ' + l10n.t('Create Starter angelscript.rules.json in Workspace'),
+            description: l10n.t('Creates a template angelscript.rules.json for engine properties, callbacks, and lifecycle exemptions.'),
+            action: async () => {
+                const folders = workspace.workspaceFolders;
+                if (!folders || folders.length === 0) {
+                    void window.showWarningMessage(l10n.t('No workspace folder is currently open.'));
+                    return;
+                }
+                const targetFolder = folders[0].uri;
+                const rulesUri = Uri.joinPath(targetFolder, 'angelscript.rules.json');
+                const template = JSON.stringify({
+                    "name": "Custom Host Engine Rules",
+                    "engineProperties": {
+                        "propertyAccessorMode": 2,
+                        "disallowGlobalVars": false,
+                        "requireEnumScope": false
+                    },
+                    "unusedSymbolRules": {
+                        "enabled": true,
+                        "checkLocals": true,
+                        "checkMembers": true,
+                        "checkGlobals": true,
+                        "checkFunctions": true,
+                        "checkClasses": true,
+                        "ignoredGlobalFunctions": [
+                            "main"
+                        ],
+                        "lifecycleMethods": []
+                    }
+                }, null, 2);
+
+                try {
+                    await workspace.fs.writeFile(rulesUri, new TextEncoder().encode(template));
+                    const doc = await workspace.openTextDocument(rulesUri);
+                    await window.showTextDocument(doc);
+                    void window.showInformationMessage(l10n.t('Created starter "{0}".', path.basename(rulesUri.fsPath)));
+                } catch (err) {
+                    void window.showErrorMessage(`Failed to create angelscript.rules.json: ${err instanceof Error ? err.message : String(err)}`);
+                }
+            }
+        },
+        {
+            label: '$(link-external) ' + l10n.t('Open Active Engine Rules File'),
+            description: l10n.t('Opens the currently active *.angelscript.rules.json file.'),
+            action: async () => {
+                const folders = workspace.workspaceFolders;
+                if (!folders || folders.length === 0) {
+                    void window.showWarningMessage(l10n.t('No workspace folder is currently open.'));
+                    return;
+                }
+                const config = workspace.getConfiguration('angelscript');
+                const configuredRules = config.get<string>('rulesFile', '').trim();
+                let foundUri: Uri | undefined;
+                if (configuredRules.length > 0) {
+                    for (const resolved of resolveAgainstWorkspace(configuredRules)) {
+                        const candidate = Uri.file(resolved);
+                        try {
+                            await workspace.fs.stat(candidate);
+                            foundUri = candidate;
+                            break;
+                        } catch {
+                            // try next
+                        }
+                    }
+                }
+                if (!foundUri) {
+                    const matches = await workspace.findFiles('**/*angelscript.rules.json', '**/node_modules/**', 1);
+                    if (matches.length > 0) {
+                        foundUri = matches[0];
+                    }
+                }
+                if (foundUri) {
+                    const doc = await workspace.openTextDocument(foundUri);
+                    await window.showTextDocument(doc);
+                } else {
+                    void window.showInformationMessage(l10n.t('No engine rules file found in workspace.'));
+                }
+            }
+        }
+    ];
+
+    const picked = await window.showQuickPick(options, {
+        title: l10n.t('Configure Host Environment'),
+        placeHolder: l10n.t('Select a configuration action')
+    });
+    if (picked) {
+        await picked.action();
+    }
 }
 
 /**

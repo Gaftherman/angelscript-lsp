@@ -494,6 +494,8 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
     {"--hover-string-literal-path-resolution", "--enable-hover-string-literal-path-resolution",
      "--disable-hover-string-literal-path-resolution", "--no-hover-string-literal-path-resolution",
      &FeatureFlags::hoverStringLiteralPathResolution},
+    {"--hover-show-file-location", "--enable-hover-show-file-location", "--disable-hover-show-file-location",
+     "--no-hover-show-file-location", &FeatureFlags::hoverShowFileLocation},
     {"--enable-comment-suppressions", "--enable-commentsuppressions", "--disable-comment-suppressions",
      "--disable-commentsuppressions", &FeatureFlags::enableCommentSuppressions},
     {"--enable-metadata", "--enable-script-metadata", "--disable-metadata", "--disable-script-metadata",

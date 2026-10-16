@@ -293,7 +293,7 @@ TEST_SUITE("OverloadTemplateSpecialization")
         REQUIRE(hoverFn.has_value());
         const std::string hoverContent = GetHoverText(*hoverFn);
         const size_t primaryPos = hoverContent.find("array<string>@ &out");
-        const size_t detailsPos = hoverContent.find("<details><summary>1 more overload</summary>");
+        const size_t detailsPos = hoverContent.find("**1 more overload**:");
         const size_t secondaryPos = hoverContent.find("array<float>@ &out");
         REQUIRE(primaryPos != std::string::npos);
         REQUIRE(detailsPos != std::string::npos);

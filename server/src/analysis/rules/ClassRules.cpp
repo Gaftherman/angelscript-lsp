@@ -881,10 +881,10 @@ bool ShouldIgnoreMixinIdentifier(TSNode cur)
 }
 
 /** @brief Checks if a name is a built-in symbol, keyword, or primitive type. */
-bool IsBuiltinOrKeyword(std::string_view name)
+bool IsBuiltinOrKeyword(std::string_view name, std::string_view effectiveStringTypeName)
 {
     if (name.empty() || name == "this" || name == "super" || name == "cast" || name == "null" || name == "true" ||
-        name == "false" || name == "string")
+        name == "false" || name == effectiveStringTypeName)
     {
         return true;
     }
@@ -903,7 +903,7 @@ bool HasPropertyAccessorMatch(const std::string& name, const FunctionCheckState&
 /** @brief Checks if an identifier resolves in local, mixin, host, or global scopes. */
 bool IsValidMixinIdentifier(const std::string& name, const FunctionCheckState& state, const DiagnosticContext& ctx)
 {
-    if (IsBuiltinOrKeyword(name))
+    if (IsBuiltinOrKeyword(name, ctx.request.GetEffectiveStringTypeName()))
     {
         return true;
     }

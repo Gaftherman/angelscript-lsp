@@ -1,6 +1,7 @@
 #include "config/EngineRuleParser.h"
 #include "lsp/Server.h"
 #include "utils/IncludeResolver.h"
+#include <algorithm>
 #include <filesystem>
 #include <spdlog/fmt/fmt.h>
 
@@ -8,6 +9,34 @@ namespace angel_lsp
 {
 namespace
 {
+std::string FindWildcardRulesInDir(const std::filesystem::path& dir)
+{
+    std::error_code ec;
+    if (!std::filesystem::is_directory(dir, ec))
+    {
+        return {};
+    }
+    constexpr std::string_view k_rulesSuffix = ".angelscript.rules.json";
+    std::vector<std::string> matches;
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec))
+    {
+        if (entry.is_regular_file(ec))
+        {
+            const std::string filename = entry.path().filename().string();
+            if (filename.ends_with(k_rulesSuffix))
+            {
+                matches.push_back(entry.path().string());
+            }
+        }
+    }
+    if (matches.empty())
+    {
+        return {};
+    }
+    std::sort(matches.begin(), matches.end());
+    return matches.front();
+}
+
 std::string TryResolveSiblingRulesForStub(const std::string& stubFilePath)
 {
     if (stubFilePath.empty())
@@ -31,6 +60,10 @@ std::string TryResolveSiblingRulesForStub(const std::string& stubFilePath)
     if (std::filesystem::is_regular_file(candidate, ec))
     {
         return candidate.string();
+    }
+    if (std::string wildcard = FindWildcardRulesInDir(predefPath.parent_path()); !wildcard.empty())
+    {
+        return wildcard;
     }
     return {};
 }
@@ -78,6 +111,14 @@ std::string ResolveRulesPath(const std::string& configuredPath, const std::vecto
         }
     }
 
+    for (const auto& root : workspaceRoots)
+    {
+        if (std::string wildcard = FindWildcardRulesInDir(std::filesystem::path(root)); !wildcard.empty())
+        {
+            return wildcard;
+        }
+    }
+
     return {};
 }
 
@@ -97,8 +138,7 @@ void Server::LoadWorkspaceEngineRules(const std::vector<std::string>& workspaceR
     const std::string rulesPath = ResolveRulesPath(m_config.rulesFile, workspaceRoots, effectivePredef, fallbackStubs);
     if (rulesPath.empty())
     {
-        if (!m_config.engineRules.storageRules.empty() || !m_config.engineRules.typeSuggestions.empty() ||
-            !m_config.engineRules.schedulerRules.empty())
+        if (m_config.engineRules.HasRules())
         {
             LogInfo("No engine rules file found. Resetting to vanilla AngelScript safety rules.");
             m_config.engineRules = config::EngineRuleConfig{};

@@ -73,6 +73,9 @@
       "MapStart",
       "MapActivate"
     ],
+    "engineCallbackSignatures": [
+      ["CBaseEntity@", "CBaseEntity@", "USE_TYPE", "float"]
+    ],
     "ignoredBaseClasses": [
       "ScriptBaseEntity",
       "ScriptBaseAnimating",

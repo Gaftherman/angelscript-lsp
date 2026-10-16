@@ -446,6 +446,8 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
 {
     m_messages["action-disable-in-workspace-settings"] = "Disable in workspace settings (angelscript.{})";
     m_messages["action-disable-in-settings"] = "Disable in settings";
+    m_messages["action-ignore-unused-symbol"] = "Ignore unused symbol '{}' (mark as entry point / callback)";
+    m_messages["action-ignore-unused-symbol-cmd"] = "Ignore unused symbol";
     m_messages["action-add-property-keyword"] = "Add the 'property' keyword";
     m_messages["action-remove-primitive-handle"] = "Remove '@' - primitive type cannot have a handle";
     m_messages["action-call-explicitly"] = "Call {}() explicitly";
@@ -862,6 +864,9 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["action-disable-in-workspace-settings"] =
         "Deshabilitar en la configuración del espacio de trabajo (angelscript.{})";
     m_messages["action-disable-in-settings"] = "Deshabilitar en la configuración";
+    m_messages["action-ignore-unused-symbol"] =
+        "Ignorar símbolo no usado '{}' (marcar como punto de entrada / callback)";
+    m_messages["action-ignore-unused-symbol-cmd"] = "Ignorar símbolo no usado";
     m_messages["action-add-property-keyword"] = "Añadir la palabra clave 'property'";
     m_messages["action-remove-primitive-handle"] = "Eliminar '@' - un tipo primitivo no admite manejador";
     m_messages["action-call-explicitly"] = "Llamar a {}() explícitamente";

@@ -7,13 +7,15 @@
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolTable.h"
-#include "analysis/TypeSanitization.h"
+#include "analysis/rules/RuleIndex.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
+#include <cctype>
 #include <regex>
 #include <string>
 #include <vector>
@@ -29,6 +31,10 @@ struct UnusedCheckContext
     const ankerl::unordered_dense::set<const LocalDefinition*>& usedLocals;
     const ankerl::unordered_dense::set<std::string>& reflections;
     const config::UnusedSymbolRules& rules;
+    const ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>& inheritedOrMixedInClasses;
+    const ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>&
+        derivedClassesByBase;
+    const RuleIndex& ruleIndex;
 };
 
 inline uint64_t PackLoc(uint32_t line, uint32_t col) noexcept
@@ -141,11 +147,39 @@ bool MatchCallee(std::string_view funcText, const config::StringReflectionCallee
     return std::any_of(c.methods.begin(), c.methods.end(), [&](const std::string& m) { return m == method; });
 }
 
+bool MatchesRegexSafe(const std::string& candidate, const std::string& pattern)
+{
+    if (pattern.empty() || candidate.empty())
+    {
+        return false;
+    }
+    thread_local ankerl::unordered_dense::map<std::string, std::optional<std::regex>> regexCache;
+    auto it = regexCache.find(pattern);
+    if (it == regexCache.end())
+    {
+        try
+        {
+            it = regexCache.emplace(pattern, std::regex(pattern)).first;
+        }
+        catch (const std::regex_error&)
+        {
+            it = regexCache.emplace(pattern, std::nullopt).first;
+        }
+    }
+    if (!it->second.has_value())
+    {
+        return false;
+    }
+    return std::regex_match(candidate, *it->second);
+}
+
 void RegisterReflectedSymbol(const std::string& str, const SemanticAnalysisRequest& req,
                              ankerl::unordered_dense::set<std::string>& outReflections)
 {
     if (str.empty())
         return;
+
+    outReflections.insert(str);
 
     if (const auto sym = req.symbolTable.FindFirstSymbol(str))
     {
@@ -165,69 +199,170 @@ void RegisterReflectedSymbol(const std::string& str, const SemanticAnalysisReque
     }
 }
 
+void MatchConfiguredReflectionCallees(TSNode callNode, const SemanticAnalysisRequest& req,
+                                      const std::vector<config::StringReflectionCallee>& callees,
+                                      ankerl::unordered_dense::set<std::string>& result)
+{
+    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
+    if (ts_node_is_null(funcNode))
+        return;
+
+    std::string_view funcText = analysis::GetNodeTextView(funcNode, req.sourceCode);
+    std::optional<std::vector<analysis::CallArgumentInfo>> callArgs;
+
+    for (const auto& c : callees)
+    {
+        if (!MatchCallee(funcText, c))
+            continue;
+
+        if (!callArgs.has_value())
+        {
+            callArgs = ExtractCallArguments(callNode, req.sourceCode);
+        }
+
+        for (size_t idx : c.argIndices)
+        {
+            if (idx < callArgs->size())
+                RegisterReflectedSymbol(ExtractStringValue((*callArgs)[idx].exprNode, req), req, result);
+        }
+    }
+}
+
+void CollectScopeStringLiteralRefs(const Scope* root, ankerl::unordered_dense::set<std::string>& result)
+{
+    if (!root)
+    {
+        return;
+    }
+    std::vector<const Scope*> stack{root};
+    while (!stack.empty())
+    {
+        const Scope* s = stack.back();
+        stack.pop_back();
+        for (const auto& strRef : s->stringLiteralCallRefs)
+        {
+            result.insert(strRef.name);
+        }
+        for (const auto& child : s->children)
+        {
+            if (child)
+            {
+                stack.push_back(child.get());
+            }
+        }
+    }
+}
+
 ankerl::unordered_dense::set<std::string> CollectStringReflection(const SemanticAnalysisRequest& req)
 {
     ankerl::unordered_dense::set<std::string> result;
-    if (!req.nodeIndex || !req.engineRules)
-        return result;
-
-    const auto& callees = req.engineRules->unusedRules.stringReflectionCallees;
-    if (callees.empty())
-        return result;
-
-    for (TSNode callNode : req.nodeIndex->Nodes(parser::nodes::CallExpression))
+    if (req.scopeRoot)
     {
-        TSNode funcNode = ts_node_child_by_field_name(callNode, "function", 8);
-        if (ts_node_is_null(funcNode))
-            continue;
-
-        std::string funcText = parser::GetNodeText(funcNode, req.sourceCode);
-        for (const auto& c : callees)
-        {
-            if (!MatchCallee(funcText, c))
-                continue;
-
-            auto callArgs = ExtractCallArguments(callNode, req.sourceCode);
-            for (size_t idx : c.argIndices)
+        CollectScopeStringLiteralRefs(req.scopeRoot.get(), result);
+    }
+    if (req.scopeIndex)
+    {
+        req.scopeIndex->ForEachScopeTree(
+            [&](const std::string& uri, const std::shared_ptr<const Scope>& root)
             {
-                if (idx < callArgs.size())
-                    RegisterReflectedSymbol(ExtractStringValue(callArgs[idx].exprNode, req), req, result);
-            }
+                if (root && uri != req.fileUri && !utils::IsPredefinedFile(uri, req.predefinedFileExtension))
+                {
+                    CollectScopeStringLiteralRefs(root.get(), result);
+                }
+            });
+    }
+
+    const std::vector<config::StringReflectionCallee>* callees =
+        req.engineRules ? &req.engineRules->unusedRules.stringReflectionCallees : nullptr;
+
+    if (callees && !callees->empty() && req.nodeIndex)
+    {
+        const auto& syms = parser::GetGrammarSymbols();
+        for (TSNode callNode : req.nodeIndex->Nodes(syms.symCallExpression))
+        {
+            MatchConfiguredReflectionCallees(callNode, req, *callees, result);
         }
     }
     return result;
 }
 
-bool IsEngineEntity(const std::string& className, const SemanticAnalysisRequest& request)
+std::string NormalizeParamType(std::string_view type)
 {
-    if (!request.engineRules)
+    std::string res;
+    res.reserve(type.size());
+    for (char c : type)
+    {
+        if (!std::isspace(static_cast<unsigned char>(c)))
+            res.push_back(c);
+    }
+    std::string_view sv = res;
+    if (sv.starts_with("const"))
+        sv.remove_prefix(5);
+    if (sv.ends_with("&inout"))
+        sv.remove_suffix(6);
+    else if (sv.ends_with("&in") || sv.ends_with("&out"))
+        sv.remove_suffix(3);
+    else if (sv.ends_with('&'))
+        sv.remove_suffix(1);
+
+    return std::string(sv);
+}
+
+} // namespace
+
+bool MatchesEngineCallbackSignature(const Symbol& sym, const std::vector<std::vector<std::string>>& signatures)
+{
+    if (sym.type != SymbolType::Function || signatures.empty() ||
+        !std::holds_alternative<FunctionSignature>(sym.signature))
+    {
         return false;
-    const auto& ignored = request.engineRules->unusedRules.ignoredBaseClasses;
+    }
+    const auto& fn = sym.GetFunction();
+    for (const auto& sig : signatures)
+    {
+        if (fn.parameters.size() != sig.size())
+            continue;
+        bool match = true;
+        for (size_t i = 0; i < sig.size(); ++i)
+        {
+            if (NormalizeParamType(fn.parameters[i].typeName) != NormalizeParamType(sig[i]))
+            {
+                match = false;
+                break;
+            }
+        }
+        if (match)
+            return true;
+    }
+    return false;
+}
+
+bool IsEngineEntity(const std::string& className, const SymbolTable& symbolTable,
+                    const config::UnusedSymbolRules& rules)
+{
+    const auto& ignored = rules.ignoredBaseClasses;
     if (ignored.empty())
         return false;
     if (std::find(ignored.begin(), ignored.end(), className) != ignored.end())
         return true;
-    const auto hierarchy = GetInheritedTypeHierarchy(className, request.symbolTable);
+    const auto hierarchy = GetInheritedTypeHierarchy(className, symbolTable);
     return std::any_of(hierarchy.begin(), hierarchy.end(), [&ignored](const std::string& b)
                        { return std::find(ignored.begin(), ignored.end(), b) != ignored.end(); });
 }
 
-bool IsLifecycleOrOverride(const Symbol& sym, const SemanticAnalysisRequest& req)
+bool IsLifecycleOrOverride(const Symbol& sym, const SymbolTable& symbolTable,
+                           const config::UnusedSymbolRules& unusedRules)
 {
     if (sym.containerName.empty())
         return false;
 
-    const auto hierarchy = GetInheritedTypeHierarchy(sym.containerName, req.symbolTable);
+    const auto hierarchy = GetInheritedTypeHierarchy(sym.containerName, symbolTable);
     for (const auto& ancestor : hierarchy)
     {
-        if (ancestor != sym.containerName && req.symbolTable.FindMemberSymbolPtr(ancestor, sym.name) != nullptr)
+        if (ancestor != sym.containerName && symbolTable.FindMemberSymbolPtr(ancestor, sym.name) != nullptr)
             return true;
     }
 
-    if (!req.engineRules)
-        return false;
-
-    const auto& unusedRules = req.engineRules->unusedRules;
     for (const auto& ancestor : hierarchy)
     {
         auto it = unusedRules.baseClassLifecycleMethods.find(ancestor);
@@ -236,7 +371,7 @@ bool IsLifecycleOrOverride(const Symbol& sym, const SemanticAnalysisRequest& req
             return true;
     }
 
-    if (IsEngineEntity(sym.containerName, req))
+    if (unusedRules.ignoredBaseClasses.empty() || IsEngineEntity(sym.containerName, symbolTable, unusedRules))
     {
         const auto& methods = unusedRules.lifecycleMethods;
         if (std::find(methods.begin(), methods.end(), sym.name) != methods.end())
@@ -246,21 +381,36 @@ bool IsLifecycleOrOverride(const Symbol& sym, const SemanticAnalysisRequest& req
     return false;
 }
 
-bool MatchesRegexSafe(const std::string& candidate, const std::string& pattern)
+bool IsEngineManagedFunction(const Symbol& sym, const SymbolTable& symbolTable,
+                             const config::UnusedSymbolRules& unusedRules)
 {
-    if (pattern.empty() || candidate.empty())
-    {
+    if (sym.type != SymbolType::Function)
         return false;
-    }
-    try
+
+    if (sym.containerName.empty() || sym.containerKind == ContainerKind::Namespace)
     {
-        return std::regex_match(candidate, std::regex(pattern));
+        if (std::find(unusedRules.ignoredGlobalFunctions.begin(), unusedRules.ignoredGlobalFunctions.end(), sym.name) !=
+                unusedRules.ignoredGlobalFunctions.end() ||
+            (!sym.qualifiedName.empty() &&
+             std::find(unusedRules.ignoredGlobalFunctions.begin(), unusedRules.ignoredGlobalFunctions.end(),
+                       sym.qualifiedName) != unusedRules.ignoredGlobalFunctions.end()))
+        {
+            return true;
+        }
+        if (MatchesEngineCallbackSignature(sym, unusedRules.engineCallbackSignatures))
+        {
+            return true;
+        }
+        return MatchesRegexSafe(sym.name, unusedRules.ignoredGlobalFunctionRegex) ||
+               (!sym.qualifiedName.empty() &&
+                MatchesRegexSafe(sym.qualifiedName, unusedRules.ignoredGlobalFunctionRegex));
     }
-    catch (const std::regex_error&)
-    {
-        return false;
-    }
+
+    return IsLifecycleOrOverride(sym, symbolTable, unusedRules);
 }
+
+namespace
+{
 
 bool IsIgnoredByDiagnosticsConfig(const Symbol& sym, const SemanticAnalysisRequest& request)
 {
@@ -285,27 +435,14 @@ bool IsIgnoredByDiagnosticsConfig(const Symbol& sym, const SemanticAnalysisReque
     return false;
 }
 
-bool IsIgnoredFunction(const Symbol& sym, const SemanticAnalysisRequest& request)
+bool IsIgnoredFunction(const Symbol& sym, const SemanticAnalysisRequest& request,
+                       const config::UnusedSymbolRules& rules)
 {
     if (IsIgnoredByDiagnosticsConfig(sym, request))
     {
         return true;
     }
-    if (!request.engineRules)
-    {
-        return false;
-    }
-    const auto& rules = request.engineRules->unusedRules;
-    if (std::find(rules.ignoredGlobalFunctions.begin(), rules.ignoredGlobalFunctions.end(), sym.name) !=
-            rules.ignoredGlobalFunctions.end() ||
-        (!sym.qualifiedName.empty() &&
-         std::find(rules.ignoredGlobalFunctions.begin(), rules.ignoredGlobalFunctions.end(), sym.qualifiedName) !=
-             rules.ignoredGlobalFunctions.end()))
-    {
-        return true;
-    }
-    return MatchesRegexSafe(sym.name, rules.ignoredGlobalFunctionRegex) ||
-           (!sym.qualifiedName.empty() && MatchesRegexSafe(sym.qualifiedName, rules.ignoredGlobalFunctionRegex));
+    return IsEngineManagedFunction(sym, request.symbolTable, rules);
 }
 
 void CheckLocalsAndFields(const Scope* scope, const UnusedCheckContext& uCtx, DiagnosticContext& ctx, int depth = 0)
@@ -354,6 +491,45 @@ static bool IsExemptGlobalType(const VariableSignature& var, const std::vector<s
     return false;
 }
 
+/**
+ * @brief Checks if a symbol represents a candidate global variable for unused checking.
+ * @param[in] sym Symbol under test.
+ * @param[in] ignoreCallInit True to ignore variables initialized with a call.
+ * @param[in] exemptTypes Collection of type names exempted from unused checking.
+ * @param[in] req Analysis request containing diagnostic settings.
+ * @return True if symbol is a candidate global variable, false otherwise.
+ */
+[[nodiscard]] bool IsCandidateGlobalVariable(const Symbol& sym, bool ignoreCallInit,
+                                             const std::vector<std::string>& exemptTypes,
+                                             const SemanticAnalysisRequest& req)
+{
+    if (sym.type != SymbolType::Variable || !sym.containerName.empty() ||
+        !std::holds_alternative<VariableSignature>(sym.signature))
+    {
+        return false;
+    }
+    const auto& var = sym.GetVariable();
+    if (var.isEnumConstant || (ignoreCallInit && var.hasCallInitializer))
+    {
+        return false;
+    }
+    return !IsExemptGlobalType(var, exemptTypes) && !IsIgnoredByDiagnosticsConfig(sym, req);
+}
+
+/**
+ * @brief Checks if a symbol is unreferenced across document references and reflection calls.
+ * @param[in] name Short symbol name.
+ * @param[in] qualifiedName Qualified symbol name.
+ * @param[in] uCtx Context holding reference and reflection sets.
+ * @return True if symbol is unreferenced, false otherwise.
+ */
+[[nodiscard]] bool IsSymbolUnreferenced(const std::string& name, const std::string& qualifiedName,
+                                        const UnusedCheckContext& uCtx)
+{
+    return !uCtx.refNames.contains(name) && !uCtx.reflections.contains(name) &&
+           !uCtx.reflections.contains(qualifiedName);
+}
+
 void CheckUnusedGlobals(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
 {
     if (!uCtx.rules.checkGlobals)
@@ -368,22 +544,11 @@ void CheckUnusedGlobals(const SemanticAnalysisRequest& req, const UnusedCheckCon
         {
             for (const auto& sym : syms)
             {
-                if (sym.type != SymbolType::Variable || !sym.containerName.empty() ||
-                    !std::holds_alternative<VariableSignature>(sym.signature))
+                if (!IsCandidateGlobalVariable(sym, ignoreCallInit, uCtx.rules.unusedGlobalExemptTypes, req))
                 {
                     continue;
                 }
-                const auto& var = sym.GetVariable();
-                if (var.isEnumConstant || (ignoreCallInit && var.hasCallInitializer))
-                {
-                    continue;
-                }
-                if (IsExemptGlobalType(var, uCtx.rules.unusedGlobalExemptTypes))
-                {
-                    continue;
-                }
-                if (!uCtx.refNames.contains(sym.name) && !uCtx.reflections.contains(sym.name) &&
-                    !uCtx.reflections.contains(sym.qualifiedName))
+                if (IsSymbolUnreferenced(sym.name, sym.qualifiedName, uCtx))
                 {
                     ctx.Emit(sym, diagnostics::codes::UnusedGlobalVariable, sym.name, DiagnosticSeverity::Warning);
                 }
@@ -398,13 +563,56 @@ bool IsPropertyAccessorUsed(std::string_view name, const ankerl::unordered_dense
     return refNames.contains(std::string(name.substr(4)));
 }
 
+bool IsExemptMethodName(std::string_view name, std::string_view containerName) noexcept
+{
+    return name == containerName || name.starts_with('~') || name.starts_with("op") || name.starts_with("get_") ||
+           name.starts_with("set_");
+}
+
+bool IsClassInherited(std::string_view className, const UnusedCheckContext& uCtx)
+{
+    return uCtx.inheritedOrMixedInClasses.contains(className);
+}
+
+bool IsMethodOverriddenInDerived(const Symbol& sym, const UnusedCheckContext& uCtx)
+{
+    if (sym.containerName.empty())
+        return false;
+    auto it = uCtx.derivedClassesByBase.find(sym.containerName);
+    if (it == uCtx.derivedClassesByBase.end())
+        return false;
+    for (const auto& derived : it->second)
+    {
+        if (uCtx.ruleIndex.Members(derived).methodNames.contains(sym.name))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool ShouldSkipFunction(const Symbol& sym, const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx)
 {
-    if (IsIgnoredFunction(sym, req) || uCtx.reflections.contains(sym.name) ||
-        uCtx.reflections.contains(sym.qualifiedName) || sym.name == sym.containerName || sym.name.rfind('~', 0) == 0 ||
-        sym.name.rfind("op", 0) == 0 || IsPropertyAccessorUsed(sym.name, uCtx.refNames))
+    if (sym.isSynthesized)
         return true;
-    return IsLifecycleOrOverride(sym, req);
+    if (std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isAbstract)
+        return true;
+    if (!sym.containerName.empty())
+    {
+        if (const auto contSym = req.symbolTable.FindFirstSymbol(sym.containerName))
+        {
+            if (contSym->type == SymbolType::Interface)
+                return true;
+        }
+    }
+    if (IsIgnoredFunction(sym, req, uCtx.rules) || uCtx.reflections.contains(sym.name) ||
+        uCtx.reflections.contains(sym.qualifiedName))
+        return true;
+    if (IsExemptMethodName(sym.name, sym.containerName) || IsPropertyAccessorUsed(sym.name, uCtx.refNames))
+        return true;
+    if (IsLifecycleOrOverride(sym, req.symbolTable, uCtx.rules) || IsMethodOverriddenInDerived(sym, uCtx))
+        return true;
+    return false;
 }
 
 void CheckUnusedFunctions(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
@@ -429,7 +637,7 @@ void CheckUnusedFunctions(const SemanticAnalysisRequest& req, const UnusedCheckC
                         ctx.Emit(sym, diagnostics::codes::UnusedFunction, sym.name, DiagnosticSeverity::Warning);
                     }
                 }
-                else if (sym.GetFunction().modifiers.access == AccessModifier::Private)
+                else
                 {
                     if (uCtx.rules.checkFunctions || uCtx.rules.checkMembers)
                     {
@@ -438,32 +646,6 @@ void CheckUnusedFunctions(const SemanticAnalysisRequest& req, const UnusedCheckC
                 }
             }
         });
-}
-
-bool IsClassInherited(const std::string& className, const SymbolTable& table)
-{
-    bool inherited = false;
-    table.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qName, const std::vector<Symbol>& syms)
-        {
-            if (inherited)
-                return;
-            for (const auto& s : syms)
-            {
-                if (s.type == SymbolType::Class)
-                {
-                    const auto& c = s.GetClass();
-                    if (std::find(c.bases.begin(), c.bases.end(), className) != c.bases.end() ||
-                        std::find(c.includedMixins.begin(), c.includedMixins.end(), className) !=
-                            c.includedMixins.end())
-                    {
-                        inherited = true;
-                        return;
-                    }
-                }
-            }
-        });
-    return inherited;
 }
 
 void CheckUnusedClasses(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
@@ -477,9 +659,10 @@ void CheckUnusedClasses(const SemanticAnalysisRequest& req, const UnusedCheckCon
         {
             for (const auto& sym : syms)
             {
-                if (sym.type == SymbolType::Class && !IsEngineEntity(sym.name, req) &&
-                    !uCtx.reflections.contains(sym.name) && !uCtx.reflections.contains(sym.qualifiedName) &&
-                    !uCtx.refNames.contains(sym.name) && !IsClassInherited(sym.name, req.symbolTable))
+                if (sym.type == SymbolType::Class && !IsEngineEntity(sym.name, req.symbolTable, uCtx.rules) &&
+                    !IsIgnoredByDiagnosticsConfig(sym, req) && !uCtx.reflections.contains(sym.name) &&
+                    !uCtx.reflections.contains(sym.qualifiedName) && !uCtx.refNames.contains(sym.name) &&
+                    !IsClassInherited(sym.name, uCtx))
                 {
                     ctx.Emit(sym, diagnostics::codes::UnusedClass, sym.name, DiagnosticSeverity::Warning);
                 }
@@ -541,8 +724,42 @@ void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContex
     ankerl::unordered_dense::set<const LocalDefinition*> usedLocals;
     CollectUsedLocals(request.scopeRoot.get(), usedLocals);
 
+    const auto& ruleIndex = request.GetRuleIndex();
+
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> inheritedOrMixedInClasses;
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>
+        derivedClassesByBase;
+
+    for (const auto& [base, derivedList] : ruleIndex.derivedByBase)
+    {
+        inheritedOrMixedInClasses.insert(base);
+        auto& targets = derivedClassesByBase[base];
+        for (const auto& d : derivedList)
+        {
+            targets.push_back(d.qualifiedName.empty() ? d.name : d.qualifiedName);
+            if (!d.name.empty() && d.name != d.qualifiedName)
+            {
+                targets.push_back(d.name);
+            }
+        }
+    }
+    for (const auto& [mixin, hostList] : ruleIndex.hostClassesByMixin)
+    {
+        inheritedOrMixedInClasses.insert(mixin);
+        auto& targets = derivedClassesByBase[mixin];
+        for (const auto& h : hostList)
+        {
+            targets.push_back(h.qualifiedName.empty() ? h.name : h.qualifiedName);
+            if (!h.name.empty() && h.name != h.qualifiedName)
+            {
+                targets.push_back(h.name);
+            }
+        }
+    }
+
     const auto reflections = CollectStringReflection(request);
-    const UnusedCheckContext uCtx{refNames, usedLocals, reflections, rules};
+    const UnusedCheckContext uCtx{
+        refNames, usedLocals, reflections, rules, inheritedOrMixedInClasses, derivedClassesByBase, ruleIndex};
 
     CheckLocalsAndFields(request.scopeRoot.get(), uCtx, ctx);
     CheckUnusedGlobals(request, uCtx, ctx);

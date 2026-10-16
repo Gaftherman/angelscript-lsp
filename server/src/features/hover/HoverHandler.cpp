@@ -1169,11 +1169,11 @@ std::string BuildPeekOverloadsLink(const std::vector<analysis::Symbol>& symbols,
 }
 
 /**
- * @brief Formats the collapsible details section and peek command link for additional overloads.
+ * @brief Formats the localized overload section and peek command link for additional overloads.
  * @param[in] symbols Deduplicated candidate symbols list.
  * @param[in] count Number of additional overloads (must be >= 1).
  * @param[in] ctx Hover query context.
- * @return Localized collapsible details block and clickable peek link.
+ * @return Localized overload block and clickable peek link.
  */
 std::string FormatMoreOverloads(const std::vector<analysis::Symbol>& symbols, size_t count,
                                 const HoverQueryContext& ctx)
@@ -1185,7 +1185,7 @@ std::string FormatMoreOverloads(const std::vector<analysis::Symbol>& symbols, si
                                              count);
 
     std::ostringstream oss;
-    oss << "<details><summary>" << summaryText << "</summary>\n\n```angelscript\n";
+    oss << "**" << summaryText << "**:\n\n```angelscript\n";
     const std::string_view primaryName = symbols.front().name;
     bool first = true;
     for (size_t i = 1; i < symbols.size(); ++i)
@@ -1201,7 +1201,7 @@ std::string FormatMoreOverloads(const std::vector<analysis::Symbol>& symbols, si
         first = false;
         oss << FormatDeclarationText(symbols[i], &ctx.request.symbolTable);
     }
-    oss << "\n```\n\n</details>\n\n" << BuildPeekOverloadsLink(symbols, ctx);
+    oss << "\n```\n\n" << BuildPeekOverloadsLink(symbols, ctx);
     return oss.str();
 }
 
@@ -1291,6 +1291,12 @@ lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::strin
         {
             oss << "\n\n" << d;
         }
+    }
+
+    if (ctx.request.config && ctx.request.config->features.hoverShowFileLocation && !symbols.empty() &&
+        !symbols.front().fileUri.empty())
+    {
+        oss << "\n\n---\n*(" << symbols.front().fileUri << ")*";
     }
 
     ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
@@ -2866,16 +2872,6 @@ std::optional<lsp::Hover> TryHoverStringLiteral(const HoverTarget& target, const
             return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
                               target.range};
         }
-        md = "```angelscript\n" + std::string(txt) + "\n```";
-        if (showLength)
-        {
-            md += "\n\n" + angel_lsp::i18n::FormatMessage(request.i18n, "hover-string-length",
-                                                          "- **Length**: {} characters", unquoted.size());
-        }
-        md +=
-            "\n" + angel_lsp::i18n::FormatMessage(request.i18n, "hover-string-file-not-found", "- **File**: Not found");
-        return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
-                          target.range};
     }
 
     md = "```angelscript\n" + std::string(txt) + "\n```";

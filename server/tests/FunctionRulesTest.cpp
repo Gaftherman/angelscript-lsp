@@ -1170,3 +1170,37 @@ TEST_CASE("FunctionRules - Reports a reserved keyword used as a parameter name")
     CHECK_FALSE(hasReservedError(analyze("void ReservedProbeFive(int public)\n{\n}\n")));
     CHECK_FALSE(hasReservedError(analyze("void ReservedProbeSix(int ordinary)\n{\n}\n")));
 }
+
+TEST_CASE("FunctionRules - W152 property accessor portability suppression")
+{
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("Prop");
+    const std::string snippet = "class Host\n{\n    int get_" + propName + "() { return 42; }\n}\n";
+
+    // Case 1: Default diagnostics (reportAccessorPortability = false) -> No W152
+    {
+        angel_lsp::config::DiagnosticsConfig diag;
+        diag.reportAccessorPortability = false;
+        auto diags = AnalyzeFunctionSnippet(snippet, "file:///funcs.as", nullptr, &diag);
+        CHECK_FALSE(HasCode(diags, "as-hint-accessor-portability"));
+    }
+
+    // Case 2: Mode 2 with reportAccessorPortability = true -> No W152
+    {
+        angel_lsp::config::EngineProperties engine;
+        engine.propertyAccessorMode = 2;
+        angel_lsp::config::DiagnosticsConfig diag;
+        diag.reportAccessorPortability = true;
+        auto diags = AnalyzeFunctionSnippet(snippet, "file:///funcs.as", &engine, &diag);
+        CHECK_FALSE(HasCode(diags, "as-hint-accessor-portability"));
+    }
+
+    // Case 3: Mode 3 with reportAccessorPortability = true -> Emits W152
+    {
+        angel_lsp::config::EngineProperties engine;
+        engine.propertyAccessorMode = 3;
+        angel_lsp::config::DiagnosticsConfig diag;
+        diag.reportAccessorPortability = true;
+        auto diags = AnalyzeFunctionSnippet(snippet, "file:///funcs.as", &engine, &diag);
+        CHECK(HasCode(diags, "as-hint-accessor-portability"));
+    }
+}

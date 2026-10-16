@@ -35,6 +35,12 @@ const GrammarSymbols& GetGrammarSymbols() noexcept
         gs.symVariableDeclarator = symFor(parser::nodes::VariableDeclarator);
         gs.symForeachVariable = symFor(parser::nodes::ForeachVariable);
         gs.symLambdaParameterList = symFor(parser::nodes::LambdaParameterList);
+        gs.symStringLiteral = symFor(parser::nodes::StringLiteral);
+        gs.symCallExpression = symFor(parser::nodes::CallExpression);
+        gs.symArgumentList = symFor(parser::nodes::ArgumentList);
+        gs.symBaseClassList = symFor(parser::nodes::BaseClassList);
+        gs.symMetadata = symFor(parser::nodes::Metadata);
+        gs.symComment = symFor(parser::nodes::Comment);
         return gs;
     }();
     return s_symbols;

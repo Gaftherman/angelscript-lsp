@@ -64,6 +64,8 @@ struct FeatureFlags
     bool completionQualifyEnumValues = true;
     bool hoverStringLiteralLength = true;
     bool hoverStringLiteralPathResolution = true;
+    /** @brief Whether to display the declaring file location footer in hover tooltips. */
+    bool hoverShowFileLocation = false;
     bool enableCommentSuppressions = true;
     /** @brief Whether CScriptBuilder metadata blocks '[]' before declarations are supported. */
     bool enableMetadata = false;
@@ -490,9 +492,9 @@ struct DiagnosticsConfig
     std::string missingAssetPathSeverity = "off";
 
     /**
-     * @brief Warn on unused global variables (default: off in bare config, on in VS Code).
+     * @brief Warn on unused global variables (default: true).
      */
-    bool reportUnusedGlobalVariables = false;
+    bool reportUnusedGlobalVariables = true;
 
     /**
      * @brief True when reportUnusedGlobalVariables was explicitly set via CLI or workspace configuration.
@@ -500,10 +502,9 @@ struct DiagnosticsConfig
     bool reportUnusedGlobalVariablesExplicit = false;
 
     /**
-     * @brief Warn on unused global/namespace functions and private methods (default: off in bare config, on in VS
-     * Code).
+     * @brief Warn on unused global/namespace functions and class methods (default: true).
      */
-    bool reportUnusedFunctions = false;
+    bool reportUnusedFunctions = true;
 
     /**
      * @brief True when reportUnusedFunctions was explicitly set via CLI or workspace configuration.
@@ -527,9 +528,9 @@ struct DiagnosticsConfig
     bool ignoreUnusedGlobalsWithCallInitializer = false;
 
     /**
-     * @brief Warn on unused classes (default: off in bare config, on in VS Code).
+     * @brief Warn on unused classes (default: true).
      */
-    bool reportUnusedClasses = false;
+    bool reportUnusedClasses = true;
 
     /**
      * @brief True when reportUnusedClasses was explicitly set via CLI or workspace configuration.
@@ -537,9 +538,9 @@ struct DiagnosticsConfig
     bool reportUnusedClassesExplicit = false;
 
     /**
-     * @brief Warn on unused class members (fields & private methods) (default: off in bare config, on in VS Code).
+     * @brief Warn on unused class members (fields & methods) (default: true).
      */
-    bool reportUnusedMembers = false;
+    bool reportUnusedMembers = true;
 
     /**
      * @brief True when reportUnusedMembers was explicitly set via CLI or workspace configuration.
