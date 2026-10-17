@@ -196,6 +196,17 @@ struct NodeTextResult
 }
 
 /**
+ * @brief Extracts source code substring view corresponding to an AST node.
+ * @param[in] node AST node.
+ * @param[in] sourceCode Document source text.
+ * @return Extracted string_view, or empty view if node is null or out of bounds.
+ */
+[[nodiscard]] inline std::string_view GetNodeTextView(TSNode node, std::string_view sourceCode) noexcept
+{
+    return NodeText(node, sourceCode).view;
+}
+
+/**
  * @brief Performs a flat, non-recursive preorder traversal over all AST descendants.
  * @tparam Callback Callable with signature void(TSNode).
  * @param[in] root Root AST node to traverse.

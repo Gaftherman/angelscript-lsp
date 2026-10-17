@@ -224,26 +224,34 @@ void ParseSingleSchedulerRule(const nlohmann::json& item, SchedulerRule& rule)
 }
 
 /**
- * @brief Parses scheduler rules array from JSON.
- * @param[in] j JSON object containing schedulerRules.
+ * @brief Parses call/scheduler rules array from JSON.
+ * @param[in] j JSON object containing callRules or schedulerRules.
  * @param[out] rules Destination vector for parsed rules.
  */
 void ParseSchedulerRules(const nlohmann::json& j, std::vector<SchedulerRule>& rules)
 {
-    if (!j.contains("schedulerRules") || !j["schedulerRules"].is_array())
+    auto parseArray = [&](const char* key)
     {
-        return;
-    }
-
-    for (const auto& item : j["schedulerRules"])
-    {
-        if (!item.is_object())
+        if (!j.contains(key) || !j[key].is_array())
         {
-            continue;
+            return;
         }
-        SchedulerRule rule;
-        ParseSingleSchedulerRule(item, rule);
-        rules.push_back(std::move(rule));
+        for (const auto& item : j[key])
+        {
+            if (!item.is_object())
+            {
+                continue;
+            }
+            SchedulerRule rule;
+            ParseSingleSchedulerRule(item, rule);
+            rules.push_back(std::move(rule));
+        }
+    };
+
+    parseArray("callRules");
+    if (rules.empty())
+    {
+        parseArray("schedulerRules");
     }
 }
 

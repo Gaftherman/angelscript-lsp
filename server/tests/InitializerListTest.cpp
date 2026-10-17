@@ -802,3 +802,63 @@ TEST_CASE("InitializerList - nested typed dictionary anonymous object in initial
     const auto diags = DiagnoseAll(code);
     CHECK_FALSE(HasAnyCode(diags, "as-err-initializer-list-not-supported"));
 }
+
+TEST_CASE("InitializerList - comments inside dictionary initializer list do not emit syntax or initializer errors")
+{
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("g_Camera");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("CreateCam");
+    const std::string code = "void " + fnName +
+                             "(dictionary@ pDict) {}\n"
+                             "void main() {\n"
+                             "    dictionary " +
+                             varName +
+                             " = {\n"
+                             "        { \"spawnflags\", \"641\" }, // (1 | 128 | 512)\n"
+                             "        { \"max_player_count\", \"1\" }, /* block comment between */\n"
+                             "        { /* k */ \"mouse_reset\", /* v */ \"0.1\" /* end */ },\n"
+                             "        // whole line comment inside dictionary\n"
+                             "        { \"callback\", \"ScreenMouseCallback\" } // trailing\n"
+                             "    };\n"
+                             "    " +
+                             fnName +
+                             "({\n"
+                             "        { \"spawnflags\", \"641\" }, // (1 | 128 | 512)\n"
+                             "        { \"callback\", \"ScreenMouseCallback\" }\n"
+                             "    });\n"
+                             "}\n";
+    const auto diags = Diagnose(code);
+    CHECK(diags.empty());
+}
+
+TEST_CASE("InitializerList - comments inside multi-dimensional array and aggregate struct are ignored")
+{
+    const std::string arrVar = angel_lsp::test::GenerateRandomSymbolName("grid");
+    const std::string code = "void main() {\n"
+                             "    array<array<int>> " +
+                             arrVar +
+                             " = {\n"
+                             "        { 1, 2 }, // row 0\n"
+                             "        // comment between rows\n"
+                             "        { 3, /* middle */ 4 } /* end row 1 */\n"
+                             "    };\n"
+                             "}\n";
+    const auto diags = Diagnose(code);
+    CHECK(diags.empty());
+
+    const std::string structType = angel_lsp::test::GenerateRandomSymbolName("Point");
+    const std::string structVar = angel_lsp::test::GenerateRandomSymbolName("pt");
+    const std::string structStub = "class " + structType + " { " + structType + "(const int &in); int x; int y; };\n";
+    const auto structDiags = DiagnoseAll(structStub +
+                                         "void main() {\n"
+                                         "    " +
+                                         structType + " " + structVar +
+                                         " = {\n"
+                                         "        10, // field x\n"
+                                         "        /* field y */ 20\n"
+                                         "    };\n"
+                                         "}\n");
+    CHECK_FALSE(HasAnyCode(structDiags, "as-err-initializer-list-expected"));
+    CHECK_FALSE(HasAnyCode(structDiags, "as-err-initializer-list-not-supported"));
+    CHECK_FALSE(HasAnyCode(structDiags, "as-err-initializer-list-too-few"));
+    CHECK_FALSE(HasAnyCode(structDiags, "as-err-initializer-list-too-many"));
+}

@@ -702,6 +702,9 @@ class SymbolTable
     /** @brief Returns all type symbols (class, interface, enum, typedef, funcdef) whose short name matches. */
     std::vector<Symbol> FindTypeSymbolsByShortName(std::string_view shortName) const;
 
+    /** @brief Checks whether any funcdef symbol matches the short name without copying Symbol objects. */
+    [[nodiscard]] bool HasFuncdefByShortName(std::string_view shortName) const noexcept;
+
     /** @brief Returns a copy of all symbols currently present in the table. */
     std::vector<Symbol> GetAllSymbols() const;
 

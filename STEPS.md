@@ -1578,6 +1578,112 @@ Settings declared in package.json but not passed to the server:
 - **Total de Pruebas Unitarias**: `2,394 / 2,394` pasadas (`34,230` aserciones, `0` fallos, `30` omitidas).
 - **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.12%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
 
+---
+
+## 32. Fase 31: Acotamiento de Rango de Errores de Sintaxis, Erradicación Total de Fuga de `<poison>` y Recuperación de Bloques Sin Llaves
+
+### 32.1. Diagnóstico Forense y Causas Raíz
+1. **Falta de Llave de Cierre `}` Subrayaba Todo el Archivo y Culpaba al Comentario Inicial**:
+   - En archivos grandes (`BuyMenu.as`, más de 800 líneas), al escribir un método incompleto (`void Function() {`) dentro de una clase, el desbalanceo de llaves provocaba que Tree-Sitter envolviera la clase completa o el script desde la línea 1 hasta el final en un nodo `ERROR`.
+   - `SymbolCollector::ReportParseErrors` emitía `as-syntax-error` (`E100`) cubriendo todo el rango multilínea del nodo `ERROR`, y `ExtractFirstToken` extraía el primer token del archivo (`"//Insurgency's"`, un comentario) como texto del error de sintaxis, pintando cientos de líneas con subrayado ondulado rojo.
+2. **Fuga del Centinela `<poison>` en Diagnósticos de Usuario**:
+   - Cuando una expresión estaba rota sintácticamente o involucraba símbolos inexistentes, el centinela `<poison>` propagado a través de `ExpressionTypeCache` se filtraba en diagnósticos visibles para el usuario (`[ERROR: E121] Cannot implicitly convert '<poison>' to 'string'`).
+3. **Pérdida de Declaraciones Locales tras Bloques `if` Sin Llaves**:
+   - En construcciones como `if (pItem !is null) BuyableItem@ pBuyItem = null;`, Tree-Sitter separa la consecuencia en una sentencia de expresión (`BuyableItem`) con punto y coma faltante (`MISSING ";"`) y la asignación subsiguiente en otra sentencia de expresión.
+   - Como resultado, `TypeConversionChecker` emitía falsamente `as-err-expression-is-data-type` (`E184`) en `BuyableItem`, y `LocalScopeCollector` no registraba `pBuyItem`, provocando cascadas de advertencias `as-warn-undeclared-identifier` (`W108`) en cada uso subsiguiente de la variable.
+
+### 32.2. Implementación de la Solución
+1. **Acotamiento Unilínea Estricto y Anclaje Preciso de Errores de Sintaxis**:
+   - En `SymbolCollector.cpp`, `EmitParseErrorDiagnostic` acota estrictamente el rango a una sola línea (`diag.range.end.line = diag.range.start.line`), recortando espacios en blanco iniciales.
+   - `PinpointOffendingNode` omite comentarios (`symComment`, `//`, `/* */`), respeta nodos de error en listas de argumentos (`argument_list`), y ancla el diagnóstico en la primera declaración rota o llave de apertura tras las declaraciones válidas precedentes.
+   - `ScanRecoverableClasses` y `SyncRecoveredContainers` recuperan símbolos de clases e interfaces envueltas en nodos `ERROR` y sincronizan el `containerStack` en el match pass de `TAGS_QUERY`, preservando el `containerName` (`"BuyMenu"`) de todos los métodos hermanos válidos.
+2. **Erradicación Total del Centinela `<poison>`**:
+   - En `DiagnosticContext.cpp`, `ReportDiagnostic` descarta cualquier diagnóstico cuyo código, mensaje o argumentos contengan la subcadena `"<poison>"`.
+   - En `TypeConversionChecker.cpp`, `CanTriviallyConvert` e `IsConvertible` cortocircuitan inmediatamente a `true` si `from` o `to` es un tipo veneno o contiene `"<poison>"`.
+   - En `ConversionRankingEngine.cpp`, `IsPoisonOrEmptyArg` rechaza argumentos o parámetros que contengan `"<poison>"`.
+   - En `TypeConversionChecker.cpp`, `EmitAtNode` suprime `ExpressionIsDataType` (`E184`) si el nodo se encuentra dentro de estructuras de control (`if_statement`, `while_statement`, `for_statement`) con errores de sintaxis o sentencias rotas usando comparaciones $O(1)$ de `TSSymbol`.
+3. **Recuperación de Declaraciones en Flujos de Control Sin Llaves**:
+   - En `LocalScopeCollector.cpp`, se implementó `RecoverDeclarationsFromErrorNodes`, protegida con `if (!ts_node_has_error(rootNode) || !rootScope) return;` para garantizar un sobrecoste de 0.00 ms en código sintácticamente correcto.
+   - `TryRecoverSplitIfDeclaration` y `TryRecoverErrorIfDeclaration` extraen el identificador, nombre de tipo y cualificador de handle (`@`), registrando la `LocalDefinition` recuperada en el ámbito de la función mediante `RegisterRecoveredVariable`, eliminando `E184` y las advertencias en cascada `W108`.
+4. **Cumplimiento Estricto de Gobernanza y Descomposición Modular**:
+   - Se descompusieron `TryRecoverUnbracedIfDeclaration`, `ExtractFirstToken`, `FindClassHeaderInError`, `SyncRecoveredContainers`, `PinpointOffendingNode` y `ReportParseErrors` cumpliendo con Lizard CCN $\le 15$ y NLOC $\le 70$.
+   - `SymbolCollector::RecoveredClassContainer` se declaró públicamente y `SyncRecoveredContainers` se implementó como método miembro privado de `SymbolCollector`.
+
+### 32.3. Métricas Finales de Fase 31
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,397 / 2,397` pasadas (`34,248` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.11%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
+
+---
+
+## 33. Fase 32: Auditoría y Remediación de Código, Limpieza Arquitectónica de Reglas (`callRules`, Poda de Callbacks Redundantes y Despacho `BaseClass`) y Erradicación de Antipatrones de Rendimiento
+
+### 33.1. Diagnóstico Forense y Causas Raíz
+1. **Antipatrones de Rendimiento en Fases 29–31**:
+   - En `SymbolCollector.cpp`, `ScanOffendingChild`, `PinpointOffendingNode` y `TryFormatArgumentListSyntaxError` realizaban comparaciones de cadenas `ts_node_type(node) == "argument_list"` y `"{"` en vez de usar `TSSymbol` pre-resueltos en `GrammarSymbols`.
+   - En `EmitParseErrorDiagnostic`, `GetNodeText(node, sourceCode)` se llamaba dos veces seguidas, asignando cadenas dinámicas en el heap redundantes; y `FormatSyntaxErrorMessage` recibía `const std::string&` en lugar de `std::string_view`.
+   - En `LocalScopeCollector.cpp`, `ExtractAssignmentLeftVar`, `TryRecoverSplitIfDeclaration` y `TryRecoverErrorIfDeclaration` realizaban copias `std::string` innecesarias para comprobaciones de prefijo `@` y recortes de espacios.
+   - En `CallChecker.cpp:1858`, `HasFuncdefSymbol` llamaba a `table.FindTypeSymbolsByShortName(shortName)` que copiaba vectores enteros de objetos `Symbol` en memoria dinámica solo para verificar si alguno era `SymbolType::Funcdef`.
+   - En `ExpressionTypeCache.h`, `IsPoisonType` ejecutaba escaneos `std::string_view::find("<poison>")` en tipos con tamaño inferior a 8 caracteres o sin caracteres `'<'`.
+2. **Redundancia en `sven.angelscript.rules.json`**:
+   - `"lifecycleMethods"` y `"baseClassLifecycleMethods"` eran 100% redundantes respecto a `sven.as.predefined`, ya que `baseClassProxyMap` vincula las clases de script a sus stubs nativos (`BaseEntity`, `CBaseEntity`, `BasePlayerWeapon`, etc.), permitiendo que `FindOverriddenBaseMethodSymbols` descubra todos los callbacks virtuales directamente de la AST sin necesidad de enumeración estática.
+   - En `"baseClassDelegateProperties"`, la inclusión de `"self"` causaba que llamadas `self.Method()` registraran referencias contra la clase base en lugar del identificador de entidad nativo del motor (`CBaseEntity@ self`), mientras que `BaseClass` es la propiedad delegada de despacho de superclase real.
+3. **Generalización de Reglas de Invocación (`schedulerRules` $\to$ `callRules`)**:
+   - `"schedulerRules"` estaba nombrado de forma demasiado estrecha; la verificación aplica a llamadas genéricas de métodos e invocaciones seguras en el motor (como desautorizar punteros crudos o requerir constructores explícitos de enum). Renombrar a `"callRules"` preservando retrocompatibilidad total como alias permite un modelo de configuración extensible.
+
+### 33.2. Implementación de la Solución
+1. **Optimización de Rendimiento y Cero Asignaciones en el Heap**:
+   - En `SymbolCollector.h` y `SymbolCollector.cpp`, `FormatSyntaxErrorMessage` ahora recibe `std::string_view rawErrText`, eliminando la copia `std::string`.
+   - `EmitParseErrorDiagnostic` extrae `rawErrText` una sola vez mediante `GetNodeView` y lo reutiliza tanto para el formateo como para `ExtractFirstToken`.
+   - `ScanOffendingChild`, `PinpointOffendingNode` y `TryFormatArgumentListSyntaxError` reemplazaron todas las comparaciones de texto con `gs.tokOpenBrace` y `gs.symArgumentList` en tiempo $O(1)$.
+   - `SyncRecoveredContainers` en `SymbolCollector.cpp` se protegió con `if (!recoveredClasses.empty())`, eliminando iteraciones en archivos limpios.
+   - En `LocalScopeCollector.cpp`, se introdujo `parser::GetNodeTextView` en `ASTUtils.h` y se implementó recorte por `std::string_view::remove_suffix` en `TryRecoverSplitIfDeclaration` y `TryRecoverErrorIfDeclaration`.
+   - En `SymbolTable.h` y `SymbolTable.cpp`, se implementó `HasFuncdefByShortName(std::string_view)` usando búsqueda transparente en `qualifiedTypesByShortName` e inspeccionando punteros directos `FindSymbolsPtr` sin copiar ningún objeto `Symbol`.
+   - En `ExpressionTypeCache.h`, `IsPoisonType` cortocircuita en $O(1)$ cuando `type.size() < 8 || type.find('<') == std::string_view::npos`, y delega tanto en `TypeConversionChecker.cpp`, `ConversionRankingEngine.cpp` y `DiagnosticContext.cpp`.
+2. **Limpieza de Reglas de Sven Co-op**:
+   - En `predefined/sven.angelscript.rules.json`, se eliminaron `"lifecycleMethods"` y `"baseClassLifecycleMethods"`, reduciendo el archivo a la información estrictamente necesaria.
+   - `"baseClassDelegateProperties"` se ajustó a `["BaseClass"]`.
+   - Se renombró la clave `"schedulerRules"` a `"callRules"`.
+3. **Soporte de Esquema y Retrocompatibilidad**:
+   - `EngineRuleParser.cpp` analiza `"callRules"` primero y cae hacia `"schedulerRules"` de forma transparente.
+   - `schemas/angelscript.rules.schema.json` define `"callRules"` como primario y `"schedulerRules"` como alias con `$ref`.
+   - `docs/rules.md` y `docs/rules.es.md` se actualizaron reflejando `callRules`, la configuración limpia de `baseClassDelegateProperties` y la autodetección de callbacks vía `baseClassProxyMap`.
+
+### 33.3. Métricas Finales de Fase 32
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,398 / 2,398` pasadas (`34,251` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.11%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
+
+---
+
+## 34. Fase 33: Invocación de Miembros `funcdef`, Comentarios en Listas de Inicialización de `dictionary` y Lanzamiento Oficial v1.1.1
+
+### 34.1. Diagnóstico Forense y Causas Raíz
+1. **Llamadas a Miembros `funcdef` Emitiendo Falsamente `E119`**:
+   - `CallChecker` no resolvía miembros declarados como `funcdef@` (`m_pfnThink();`), tratándolos como variables no llamables sin sobrecarga `opCall`, emitiendo `[ERROR: E119] No matching signatures to call 'm_pfnThink'`.
+   - Invocaciones a través de getters de propiedades virtuales (`get_virtualThink() property`) eran rechazadas por `NamespaceChecker` con `as-err-undefined-identifier`.
+2. **Comentarios en Listas de Inicialización de `dictionary` Emitiendo `E160`**:
+   - `InitializerListChecker` contaba nodos de comentarios dentro de listas anónimas o declaradas de diccionarios y arrays 2D, emitiendo falsamente `[ERROR: E160] Expected an initializer list`.
+
+### 34.2. Implementación de la Solución
+1. **Resolución Completa de Miembros `funcdef` y Getters Virtuales**:
+   - En `CallChecker.cpp`, se amplió `TryResolveMemberCallableFuncdef` y se extrajo `TryResolveGetterCallableFuncdef` para buscar variables y propiedades de tipo `funcdef` a lo largo de la jerarquía de herencia.
+   - En `CheckNonCallableVariable`, se verifica `FindFuncdefSymbol` antes de buscar `opCall`, sintetizando candidatos de función correspondientes.
+   - En `NamespaceChecker.cpp`, `IsKnownCallee` reconoce propiedades virtuales `get_<name>`.
+   - En `SignatureHelpHandler.cpp`, se implementó `TryResolveEnclosingMemberCallableFuncdef` para signature help en miembros `funcdef`.
+2. **Filtrado de Comentarios en Inicializadores**:
+   - Se refactorizaron `ValidateDictionaryList`, `ValidateDictionaryPair`, `ValidateMultiDimensionalContainer` y `ValidateStructAggregateList` en `InitializerListChecker.cpp` para recorrer hijos con `parser::ForEachChildNode`, ignorando `gs.symComment`.
+3. **Lanzamiento v1.1.1**:
+   - Se actualizaron las versiones en `client/package.json` y `client/package-lock.json` a `1.1.1`.
+   - Se actualizó y sincronizó `CHANGELOG.md` y `client/CHANGELOG.md`.
+
+### 34.3. Métricas Finales de Fase 33
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,432 / 2,432` pasadas (`34,420` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.11%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
+
+
+
 
 
 

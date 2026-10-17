@@ -846,3 +846,60 @@ TEST_CASE("SymbolCollector - Argument List Missing Comma Syntax Error")
                      });
     CHECK(it != diagnostics.end());
 }
+
+TEST_CASE("SymbolCollector - Unclosed method void Function() { inside class clamps to single line and does not blame "
+          "leading comment")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("BuyMenu");
+    const std::string m1 = angel_lsp::test::GenerateRandomSymbolName("RemoveItems");
+    const std::string m2 = angel_lsp::test::GenerateRandomSymbolName("RemoveItem");
+    const std::string mIncomplete = angel_lsp::test::GenerateRandomSymbolName("IncompleteMethod");
+
+    const std::string code = "//Insurgency's Weapon Base System\n"
+                             "final class " +
+                             className +
+                             "\n"
+                             "{\n"
+                             "    void " +
+                             m1 +
+                             "() {}\n"
+                             "    void " +
+                             m2 +
+                             "(int a) {}\n"
+                             "    void " +
+                             mIncomplete +
+                             "()\n"
+                             "    {\n";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const auto diagnostics = collector.CollectSymbols("file:///test_unclosed_class.as", code, parser, table);
+
+    // 1. All syntax error diagnostics must be clamped to a single line
+    for (const auto& d : diagnostics)
+    {
+        if (d.code == "as-syntax-error")
+        {
+            CHECK(d.range.start.line == d.range.end.line);
+            CHECK(d.range.start.line > 0);
+            CHECK(d.message.find("Insurgency") == std::string::npos);
+        }
+    }
+
+    // 2. Class symbol must be recovered in the symbol table
+    const auto classSymbols = table.FindSymbols(className);
+    REQUIRE_FALSE(classSymbols.empty());
+    CHECK(classSymbols[0].type == SymbolType::Class);
+    CHECK(classSymbols[0].name == className);
+
+    // 3. Sibling methods must preserve the class container
+    const auto m1Symbols = table.FindMemberSymbols(className, m1);
+    REQUIRE_FALSE(m1Symbols.empty());
+    CHECK(m1Symbols[0].containerName == className);
+
+    const auto m2Symbols = table.FindMemberSymbols(className, m2);
+    REQUIRE_FALSE(m2Symbols.empty());
+    CHECK(m2Symbols[0].containerName == className);
+}

@@ -86,16 +86,17 @@ struct GrammarSymbols
     TSSymbol symPreprocDirective = 0;   ///< preproc_directive
 
     // Statements
-    TSSymbol symStatementBlock = 0;   ///< statement_block
-    TSSymbol symReturnStatement = 0;  ///< return_statement
-    TSSymbol symIfStatement = 0;      ///< if_statement
-    TSSymbol symForStatement = 0;     ///< for_statement
-    TSSymbol symForeachStatement = 0; ///< foreach_statement
-    TSSymbol symWhileStatement = 0;   ///< while_statement
-    TSSymbol symDoWhileStatement = 0; ///< do_while_statement
-    TSSymbol symSwitchStatement = 0;  ///< switch_statement
-    TSSymbol symCaseClause = 0;       ///< case_clause
-    TSSymbol symTryStatement = 0;     ///< try_statement
+    TSSymbol symStatementBlock = 0;      ///< statement_block
+    TSSymbol symReturnStatement = 0;     ///< return_statement
+    TSSymbol symIfStatement = 0;         ///< if_statement
+    TSSymbol symForStatement = 0;        ///< for_statement
+    TSSymbol symForeachStatement = 0;    ///< foreach_statement
+    TSSymbol symWhileStatement = 0;      ///< while_statement
+    TSSymbol symDoWhileStatement = 0;    ///< do_while_statement
+    TSSymbol symSwitchStatement = 0;     ///< switch_statement
+    TSSymbol symCaseClause = 0;          ///< case_clause
+    TSSymbol symTryStatement = 0;        ///< try_statement
+    TSSymbol symExpressionStatement = 0; ///< expression_statement
 
     // =========================================================================
     // Anonymous Token Symbols (tok*)
@@ -123,6 +124,8 @@ struct GrammarSymbols
     TSSymbol tokGet = 0;        ///< "get"
     TSSymbol tokSet = 0;        ///< "set"
     TSSymbol tokColonColon = 0; ///< "::"
+    TSSymbol tokClass = 0;      ///< "class"
+    TSSymbol tokInterface = 0;  ///< "interface"
 
     // =========================================================================
     // Pre-resolved Field IDs (field*)

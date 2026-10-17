@@ -21,9 +21,17 @@ inline constexpr std::string_view k_poisonType = "<poison>";
  * @param[in] type Type name or string view.
  * @return True if the type is poisoned, false otherwise.
  */
-[[nodiscard]] inline bool IsPoisonType(std::string_view type) noexcept
+[[nodiscard]] inline constexpr bool IsPoisonType(std::string_view type) noexcept
 {
-    return type == k_poisonType;
+    if (type.size() < 8)
+    {
+        return false;
+    }
+    if (type.starts_with(k_poisonType))
+    {
+        return true;
+    }
+    return type.find('<') != std::string_view::npos && type.find(k_poisonType) != std::string_view::npos;
 }
 
 /**
@@ -67,9 +75,9 @@ struct ExpressionTypeCache
 {
     static constexpr std::string_view k_poisonType = "<poison>";
 
-    [[nodiscard]] static bool IsPoisonType(std::string_view type) noexcept
+    [[nodiscard]] static constexpr bool IsPoisonType(std::string_view type) noexcept
     {
-        return type == k_poisonType;
+        return angel_lsp::analysis::IsPoisonType(type);
     }
 
     ExpressionTypeCache()

@@ -6,6 +6,7 @@
 #include "analysis/rules/RuleIndex.h"
 
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <cctype>
@@ -773,35 +774,40 @@ void ValidateMultiDimensionalContainer(TSNode node, uint32_t dimension, const st
         return;
     }
 
-    const uint32_t count = ts_node_named_child_count(node);
+    const auto& gs = parser::GetGrammarSymbols();
     const ListValidationContext nextCtx{valCtx.ctx, valCtx.elements, valCtx.arrayLikeTemplates, valCtx.cache,
                                         valCtx.depth + 1};
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_named_child(node, i);
-        if (dimension > 1)
-        {
-            if (NodeType(child) != "initializer_list")
-            {
-                EmitAtNode(child, valCtx.ctx, "as-err-initializer-list-expected", "");
-            }
-            else
-            {
-                ValidateMultiDimensionalContainer(child, dimension - 1, elemType, nextCtx);
-            }
-        }
-        else
-        {
-            if (NodeType(child) == "initializer_list")
-            {
-                ValidateList(child, elemType, nextCtx);
-            }
-            else
-            {
-                CheckElementValue(child, elemType, valCtx.ctx, valCtx.elements);
-            }
-        }
-    }
+    parser::ForEachChildNode(node,
+                             [&](TSNode child)
+                             {
+                                 if (!ts_node_is_named(child) || ts_node_symbol(child) == gs.symComment)
+                                 {
+                                     return;
+                                 }
+                                 const TSSymbol sym = ts_node_symbol(child);
+                                 if (dimension > 1)
+                                 {
+                                     if (sym != gs.symInitializerList)
+                                     {
+                                         EmitAtNode(child, valCtx.ctx, "as-err-initializer-list-expected", "");
+                                     }
+                                     else
+                                     {
+                                         ValidateMultiDimensionalContainer(child, dimension - 1, elemType, nextCtx);
+                                     }
+                                 }
+                                 else
+                                 {
+                                     if (sym == gs.symInitializerList)
+                                     {
+                                         ValidateList(child, elemType, nextCtx);
+                                     }
+                                     else
+                                     {
+                                         CheckElementValue(child, elemType, valCtx.ctx, valCtx.elements);
+                                     }
+                                 }
+                             });
 }
 
 /**
@@ -813,11 +819,32 @@ void ValidateMultiDimensionalContainer(TSNode node, uint32_t dimension, const st
  */
 void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const ListValidationContext& valCtx)
 {
-    const uint32_t pairCount = ts_node_named_child_count(child);
-    if (pairCount > 0)
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode keyNode{};
+    TSNode valNode{};
+    uint32_t pairCount = 0;
+
+    parser::ForEachChildNode(child,
+                             [&](TSNode elem)
+                             {
+                                 if (!ts_node_is_named(elem) || ts_node_symbol(elem) == gs.symComment)
+                                 {
+                                     return;
+                                 }
+                                 if (pairCount == 0)
+                                 {
+                                     keyNode = elem;
+                                 }
+                                 else if (pairCount == 1)
+                                 {
+                                     valNode = elem;
+                                 }
+                                 ++pairCount;
+                             });
+
+    if (!ts_node_is_null(keyNode))
     {
-        TSNode keyNode = ts_node_named_child(child, 0);
-        if (NodeType(keyNode) == "initializer_list")
+        if (ts_node_symbol(keyNode) == gs.symInitializerList)
         {
             EmitAtNode(keyNode, valCtx.ctx, "as-err-initializer-list-not-supported", dictInfo.keyType);
         }
@@ -826,10 +853,9 @@ void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const ListVa
             CheckElementValue(keyNode, dictInfo.keyType, valCtx.ctx, valCtx.elements);
         }
     }
-    if (pairCount > 1)
+    if (!ts_node_is_null(valNode))
     {
-        TSNode valNode = ts_node_named_child(child, 1);
-        if (NodeType(valNode) == "initializer_list")
+        if (ts_node_symbol(valNode) == gs.symInitializerList)
         {
             EmitAtNode(valNode, valCtx.ctx, "as-err-initializer-list-not-supported", dictInfo.valType);
         }
@@ -849,28 +875,32 @@ void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const ListVa
  */
 void ValidateDictionaryList(TSNode listNode, const DictInfo& dictInfo, const ListValidationContext& valCtx)
 {
-    const uint32_t count = ts_node_named_child_count(listNode);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_named_child(listNode, i);
-        if (NodeType(child) != "initializer_list")
-        {
-            EmitAtNode(child, valCtx.ctx, "as-err-initializer-list-expected", "");
-            continue;
-        }
+    const auto& gs = parser::GetGrammarSymbols();
+    parser::ForEachChildNode(listNode,
+                             [&](TSNode child)
+                             {
+                                 if (!ts_node_is_named(child) || ts_node_symbol(child) == gs.symComment)
+                                 {
+                                     return;
+                                 }
+                                 if (ts_node_symbol(child) != gs.symInitializerList)
+                                 {
+                                     EmitAtNode(child, valCtx.ctx, "as-err-initializer-list-expected", "");
+                                     return;
+                                 }
 
-        const uint32_t valuesCount = ListValueCount(child);
-        if (valuesCount < 2)
-        {
-            EmitAtNode(child, valCtx.ctx, "as-err-initializer-list-too-few", "");
-        }
-        else if (valuesCount > 2)
-        {
-            EmitAtNode(child, valCtx.ctx, "as-err-initializer-list-too-many", "");
-        }
+                                 const uint32_t valuesCount = ListValueCount(child);
+                                 if (valuesCount < 2)
+                                 {
+                                     EmitAtNode(child, valCtx.ctx, "as-err-initializer-list-too-few", "");
+                                 }
+                                 else if (valuesCount > 2)
+                                 {
+                                     EmitAtNode(child, valCtx.ctx, "as-err-initializer-list-too-many", "");
+                                 }
 
-        ValidateDictionaryPair(child, dictInfo, valCtx);
-    }
+                                 ValidateDictionaryPair(child, dictInfo, valCtx);
+                             });
 }
 
 /**
@@ -903,21 +933,33 @@ void ValidateStructAggregateList(TSNode listNode, const std::string& type, const
         return;
     }
 
+    const auto& gs = parser::GetGrammarSymbols();
     const ListValidationContext nextCtx{valCtx.ctx, valCtx.elements, valCtx.arrayLikeTemplates, valCtx.cache,
                                         valCtx.depth + 1};
-    const uint32_t childCount = ts_node_named_child_count(listNode);
-    for (uint32_t i = 0; i < childCount && i < structInfo.fields.size(); ++i)
-    {
-        TSNode elem = ts_node_named_child(listNode, i);
-        if (NodeType(elem) == "initializer_list")
-        {
-            ValidateList(elem, structInfo.fields[i].type, nextCtx);
-        }
-        else
-        {
-            CheckElementValue(elem, structInfo.fields[i].type, valCtx.ctx, valCtx.elements);
-        }
-    }
+    size_t fieldIdx = 0;
+    parser::ForEachChildNode(listNode,
+                             [&](TSNode elem)
+                             {
+                                 if (!ts_node_is_named(elem) || ts_node_symbol(elem) == gs.symComment)
+                                 {
+                                     return;
+                                 }
+                                 if (fieldIdx >= structInfo.fields.size())
+                                 {
+                                     return;
+                                 }
+                                 const TSSymbol sym = ts_node_symbol(elem);
+                                 if (sym == gs.symInitializerList)
+                                 {
+                                     ValidateList(elem, structInfo.fields[fieldIdx].type, nextCtx);
+                                 }
+                                 else
+                                 {
+                                     CheckElementValue(elem, structInfo.fields[fieldIdx].type, valCtx.ctx,
+                                                       valCtx.elements);
+                                 }
+                                 ++fieldIdx;
+                             });
 }
 
 /**
@@ -957,14 +999,27 @@ bool IsUniversalProxyClass(const std::string& type, const ListValidationContext&
 static bool HasStringIndex(TSNode left)
 {
     TSNode idx = parser::GetChildByField(left, parser::fields::Index);
-    if (ts_node_is_null(idx) && ts_node_named_child_count(left) > 1)
+    if (ts_node_is_null(idx))
     {
-        idx = ts_node_named_child(left, 1);
+        uint32_t namedCount = 0;
+        parser::ForEachChildNode(left,
+                                 [&](TSNode child)
+                                 {
+                                     if (ts_node_is_named(child))
+                                     {
+                                         if (namedCount == 1)
+                                         {
+                                             idx = child;
+                                         }
+                                         ++namedCount;
+                                     }
+                                 });
     }
     if (!ts_node_is_null(idx))
     {
-        const std::string_view idxType = ts_node_type(idx);
-        return idxType == "string_literal" || idxType == "concatenated_string";
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol sym = ts_node_symbol(idx);
+        return sym == gs.symStringLiteral || sym == gs.symConcatenatedString;
     }
     return false;
 }
@@ -985,9 +1040,16 @@ bool IsAssociativeSubscriptTarget(TSNode listNode, const std::string& type, cons
         return false;
     }
     TSNode obj = parser::GetChildByField(left, parser::fields::Object);
-    if (ts_node_is_null(obj) && ts_node_named_child_count(left) > 0)
+    if (ts_node_is_null(obj))
     {
-        obj = ts_node_named_child(left, 0);
+        parser::ForEachChildNode(left,
+                                 [&](TSNode child)
+                                 {
+                                     if (ts_node_is_null(obj) && ts_node_is_named(child))
+                                     {
+                                         obj = child;
+                                     }
+                                 });
     }
     if (ts_node_is_null(obj))
     {
@@ -1159,13 +1221,18 @@ void ProcessAssignmentExpression(TSNode node, const InitializerListContext& init
  */
 void ProcessReturnStatement(TSNode node, const InitializerListContext& initCtx)
 {
-    if (ts_node_named_child_count(node) == 0)
-    {
-        return;
-    }
-
-    TSNode value = ts_node_named_child(node, 0);
-    if (NodeType(value) != "initializer_list")
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode value{};
+    parser::ForEachChildNode(node,
+                             [&](TSNode child)
+                             {
+                                 if (ts_node_is_null(value) && ts_node_is_named(child) &&
+                                     ts_node_symbol(child) != gs.symComment)
+                                 {
+                                     value = child;
+                                 }
+                             });
+    if (ts_node_is_null(value) || ts_node_symbol(value) != gs.symInitializerList)
     {
         return;
     }
@@ -1197,25 +1264,26 @@ void ProcessVariableDeclaration(TSNode node, const InitializerListContext& initC
         return;
     }
 
+    const auto& gs = parser::GetGrammarSymbols();
     const std::string declaredType = GetNodeText(typeNode, initCtx.request.sourceCode);
-    const uint32_t childCount = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < childCount; ++i)
-    {
-        TSNode declarator = ts_node_named_child(node, i);
-        if (NodeType(declarator) != "variable_declarator")
+    parser::ForEachChildNode(
+        node,
+        [&](TSNode declarator)
         {
-            continue;
-        }
+            if (!ts_node_is_named(declarator) || ts_node_symbol(declarator) != gs.symVariableDeclarator)
+            {
+                return;
+            }
 
-        TSNode valueNode = parser::GetChildByField(declarator, parser::fields::Value);
-        if (!ts_node_is_null(valueNode) && NodeType(valueNode) == "initializer_list")
-        {
-            const ElementContext elements = ElementsAt(valueNode, initCtx.request);
-            const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.arrayLikeTemplates, initCtx.structCache,
-                                               0};
-            ValidateList(valueNode, declaredType, valCtx);
-        }
-    }
+            TSNode valueNode = parser::GetChildByField(declarator, parser::fields::Value);
+            if (!ts_node_is_null(valueNode) && ts_node_symbol(valueNode) == gs.symInitializerList)
+            {
+                const ElementContext elements = ElementsAt(valueNode, initCtx.request);
+                const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.arrayLikeTemplates,
+                                                   initCtx.structCache, 0};
+                ValidateList(valueNode, declaredType, valCtx);
+            }
+        });
 }
 
 /**

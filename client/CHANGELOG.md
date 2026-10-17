@@ -4,6 +4,41 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.1] - 2026-10-16
+
+### Official 1.1.1 Release: Funcdef Member Calls, Dictionary Initializer Comments, Syntax Error Clamping, Poison Eradication, and callRules
+
+- Callable `funcdef` Member and Variable Resolution (`CallChecker`, `NamespaceChecker`, `SignatureHelpHandler`):
+  - Fixed false `[ERROR: E119] No matching signatures to call 'm_pfnThink'` when calling callable `funcdef@` members.
+  - Supports direct unqualified member calls (`m_pfnThink();`), qualified calls (`this.m_pfnThink();`), inherited base class members, calls inside `const` methods, and virtual property getters (`get_virtualThink() property`).
+  - `IsKnownCallee` in `NamespaceChecker` now recognizes virtual property getters (`get_<name>`) in containers and symbol tables, avoiding false `as-err-undefined-identifier`.
+  - Added rich signature help (`SignatureInformation`) for direct calls to enclosing class `funcdef` members via `TryResolveEnclosingMemberCallableFuncdef`.
+- Inline & Block Comments in Anonymous `dictionary` Initializer Lists (`InitializerListChecker`):
+  - Fixed false `[ERROR: E160] Expected an initializer list` when comments appear inside dictionary initializers (e.g. `{ { "spawnflags", "641" }, // (1 | 128 | 512) ... }`).
+  - Rewrote dictionary, multi-dimensional array, and aggregate struct validation to use `parser::ForEachChildNode` with `parser::GetGrammarSymbols()`, cleanly skipping `gs.symComment` tokens.
+- Syntax Error Clamping and Leading Comment Shielding (`SymbolCollector`):
+  - Prevented multi-line `ERROR` nodes caused by unclosed braces (`void Function() {` at EOF) from highlighting entire files or classes in red.
+  - Clamped syntax diagnostics (`as-err-syntax`) strictly to single-line spans (`start.row == end.row`) and pinpointed the offending token after valid siblings.
+  - Skipped leading comments and whitespace in error snippets, ensuring comments like `//Insurgency's` are never blamed as syntax errors.
+- Internal `<poison>` Type Leak Eradication (`DiagnosticContext`, `TypeConversionChecker`, `ExpressionTypeCache`):
+  - Completely suppressed false `as-err-no-implicit-conversion` diagnostics mentioning internal sentinel `<poison>` types (e.g. `Cannot implicitly convert <poison> to string`).
+  - Centralized zero-allocation $O(1)$ `ExpressionTypeCache::IsPoisonType` checks across diagnostic filters and conversion pipelines.
+- Braceless Control-Flow Declaration Recovery (`LocalScopeCollector`):
+  - Recovered local variable declarations placed inside unbraced blocks (e.g. `if (b) CBasePlayer@ pPlayer = ...`), preventing cascading undeclared identifier warnings (`W108`).
+  - Guarded error node traversal with $O(1)$ `!ts_node_has_error(rootNode)` ensuring 0.00 ms overhead on clean files.
+- Performance Architecture and Zero Heap Allocations:
+  - Replaced ad-hoc string comparisons in hot paths with pre-resolved `TSSymbol` comparisons (`gs.tokOpenBrace`, `gs.symArgumentList`).
+  - Added zero-allocation string view helper `parser::GetNodeTextView`.
+  - Optimized `SymbolTable::HasFuncdefByShortName` for $O(1)$ transparent lookup without cloning `Symbol` vectors.
+- Sven Co-op Rules Cleanup and Generalization (`callRules`):
+  - Pruned redundant `lifecycleMethods` and `baseClassLifecycleMethods` from `predefined/sven.angelscript.rules.json`.
+  - Removed `self` from `baseClassDelegateProperties`, retaining only `["BaseClass"]` for superclass virtual dispatch.
+  - Generalized `"schedulerRules"` to `"callRules"` in engine rule parser, schema, and documentation, maintaining 100% backward compatibility as an alias.
+- Verification and Test Metrics:
+  - 2,432 / 2,432 unit tests passed (34,420 assertions, 0 failures, 30 skipped).
+  - 12/12 static quality gates passing at 100% (`jscpd` 1.11%, Lizard CCN <= 15, NLOC <= 70, 0 dead parameters `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` clean).
+  - Client pretest passing: compile, bundle, lint, and all 107 settings wired.
+
 ## [1.1.0] - 2026-10-16
 
 ### Official 1.1.0 Release: Architecture, Precision Semantics, Engine Rules, and Diagnostics Governance

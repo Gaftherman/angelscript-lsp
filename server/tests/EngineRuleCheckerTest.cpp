@@ -109,6 +109,26 @@ TEST_CASE("EngineRuleParser - Parses valid rules JSON and properties")
     CHECK(parsed->schedulerRules[0].id == "sched-safety");
 }
 
+TEST_CASE("EngineRuleParser - Parses callRules with schedulerRules backward compatibility")
+{
+    const std::string jsonText = R"({
+        "name": "Call Rules Test",
+        "callRules": [
+            {
+                "id": "call-safety",
+                "callee": "g_Scheduler",
+                "methods": ["SetTimeout"],
+                "disallowArgRegex": "CBase.*"
+            }
+        ]
+    })";
+
+    auto parsed = angel_lsp::config::ParseEngineRuleConfigJson(jsonText);
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->schedulerRules.size() == 1);
+    CHECK(parsed->schedulerRules[0].id == "call-safety");
+}
+
 TEST_CASE("EngineRuleParser - Handles invalid JSON gracefully")
 {
     CHECK_FALSE(angel_lsp::config::ParseEngineRuleConfigJson("invalid json {").has_value());

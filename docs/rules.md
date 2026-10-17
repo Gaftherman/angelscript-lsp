@@ -137,6 +137,7 @@ Methods that the engine calls dynamically on any entity class when events occur.
 ```
 
 * **What it does**: Exempts these methods from unused method checks whenever they appear inside an entity class derived from `ignoredBaseClasses`.
+* **Note**: When `baseClassProxyMap` is configured with `.as.predefined` stubs, `lifecycleMethods` is optional because the LSP automatically discovers overridden virtual callbacks directly from native stubs.
 * **Resulting Behavior**: Writing `void Spawn() { ... }` or `void Think() { ... }` in your custom monster or weapon class will never trigger "Method 'Spawn' is never used" (`W118`).
 
 ---
@@ -164,21 +165,21 @@ Defines lifecycle methods that are only valid callbacks on specific entity types
 ```
 
 * **What it does**: Only classes inheriting from `ScriptBasePlayerWeaponEntity` treat `PrimaryAttack` and `Reload` as engine callbacks. A generic class declaring `PrimaryAttack` will still be warned if unused.
+* **Note**: Like `lifecycleMethods`, when `baseClassProxyMap` is configured, these methods are automatically discovered from stubs without requiring manual enumeration.
 * **Resulting Behavior**: Weapon scripts stay clean without warnings, while accidental dead code in ordinary utility classes is still accurately caught.
 
 ---
 
 ### 6. `unusedSymbolRules.baseClassProxyMap` & `baseClassDelegateProperties` — Native Engine Base Class Linking
 
-In many script frameworks (like Sven Co-op's `ScriptBasePlayerWeaponEntity`), script entity classes do not inherit directly from the native C++ engine class. Instead, they expose a delegate property (such as `BaseClass` or `self`) pointing to the native class (like `BasePlayerWeapon` or `CBasePlayerWeapon`).
+In many script frameworks (like Sven Co-op's `ScriptBasePlayerWeaponEntity`), script entity classes do not inherit directly from the native C++ engine class. Instead, they expose a delegate property (such as `BaseClass`) pointing to the native class (like `BasePlayerWeapon` or `CBasePlayerWeapon`).
 
 #### Example
 ```json
 {
   "unusedSymbolRules": {
     "baseClassDelegateProperties": [
-      "BaseClass",
-      "self"
+      "BaseClass"
     ],
     "baseClassProxyMap": {
       "ScriptBaseEntity": ["BaseEntity", "CBaseEntity"],
@@ -256,14 +257,14 @@ Detects and prevents unsafe storage patterns that lead to memory leaks, use-afte
 
 ---
 
-### 9. `schedulerRules` — Asynchronous Callback Safety
+### 9. `callRules` (formerly `schedulerRules`) — Call & Asynchronous Safety
 
-Validates scheduler registrations to ensure arguments passed to delayed tasks remain valid when executed.
+Validates function and method call arguments (including scheduler registrations) to ensure arguments passed to delayed tasks or API boundaries remain valid and safe when executed.
 
 #### Example
 ```json
 {
-  "schedulerRules": [
+  "callRules": [
     {
       "id": "scheduler-safety",
       "callee": "g_Scheduler",
@@ -281,6 +282,7 @@ Validates scheduler registrations to ensure arguments passed to delayed tasks re
 ```
 
 * **What it does**: Flags raw entity handle arguments passed to `g_Scheduler.SetTimeout(...)`, ensuring they don't dangle if the entity is destroyed before the timer fires.
+* **Backward Compatibility**: `schedulerRules` is supported as an alias for existing configurations.
 * **Resulting Behavior**: Protects developers from subtle timing crashes before testing in-game.
 
 ---

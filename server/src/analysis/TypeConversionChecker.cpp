@@ -550,6 +550,12 @@ bool IsBuiltInValueType(const std::string& typeName, const DiagnosticContext& ct
     return IsPrimitiveTypeName(typeName) || IsStringType(typeName, ctx);
 }
 
+bool IsPoisonOrEmptyType(std::string_view from, std::string_view to)
+{
+    return from.empty() || to.empty() || ExpressionTypeCache::IsPoisonType(from) ||
+           ExpressionTypeCache::IsPoisonType(to);
+}
+
 /**
  * @brief Decides whether a value of type 'from' can reach type 'to'.
  * @param depth Recursion guard. At depth > 0 only the direct relations are consulted, so
@@ -559,7 +565,7 @@ bool IsBuiltInValueType(const std::string& typeName, const DiagnosticContext& ct
  */
 bool CanTriviallyConvert(const std::string& from, const std::string& to, const DiagnosticContext& ctx)
 {
-    if (from.empty() || to.empty() || IsSameType(from, to))
+    if (IsPoisonOrEmptyType(from, to) || IsSameType(from, to))
     {
         return true;
     }
@@ -736,6 +742,11 @@ bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& 
 
 bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, ConversionState& state)
 {
+    if (IsPoisonOrEmptyType(from, to))
+    {
+        return true;
+    }
+
     if (state.depth >= TypeConversionChecker::MAX_CONVERSION_DEPTH)
     {
         return false;
@@ -1185,6 +1196,28 @@ struct DiagnosticArgs
 /** @brief Emits at the exact source range of a node. */
 void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const DiagnosticArgs& args = {})
 {
+    if (code == diagnostics::codes::ExpressionIsDataType)
+    {
+        if (ctx.request.nodeIndex && ctx.request.nodeIndex->NodeHasSyntaxError(node))
+        {
+            return;
+        }
+        const auto& gs = parser::GetGrammarSymbols();
+        TSNode walk = node;
+        for (int depth = 0; depth < 5 && !ts_node_is_null(walk); ++depth)
+        {
+            if (ts_node_has_error(walk) || ts_node_is_error(walk))
+            {
+                return;
+            }
+            TSSymbol sym = ts_node_symbol(walk);
+            if (sym == gs.symIfStatement || sym == gs.symWhileStatement || sym == gs.symForStatement)
+            {
+                return;
+            }
+            walk = parser::GetParent(walk);
+        }
+    }
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
     ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, {args.first, args.second},

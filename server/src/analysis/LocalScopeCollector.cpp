@@ -163,7 +163,12 @@ std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNod
         }
     }
 
-    return BuildScopeTree(captures, sourceCode);
+    auto root = BuildScopeTree(captures, sourceCode);
+    if (root && ts_node_has_error(rootNode))
+    {
+        RecoverDeclarationsFromErrorNodes(rootNode, root.get(), sourceCode);
+    }
+    return root;
 }
 
 void LocalScopeCollector::DeduplicateCaptures(std::vector<RawCapture>& captures)
@@ -1013,5 +1018,246 @@ void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const 
     {
         ReadLambdaParameterTypeInfo(capture.node, declaratorNode, sourceCode, def);
     }
+}
+
+namespace
+{
+Scope* FindInnermostScopeMut(Scope* root, uint32_t line, uint32_t character)
+{
+    if (!root)
+        return nullptr;
+    for (auto& child : root->children)
+    {
+        if (line > child->startLine || (line == child->startLine && character >= child->startCharacter))
+        {
+            if (line < child->endLine || (line == child->endLine && character <= child->endCharacter))
+            {
+                Scope* inner = FindInnermostScopeMut(child.get(), line, character);
+                return inner ? inner : child.get();
+            }
+        }
+    }
+    return root;
+}
+
+void InsertRecoveredDefinition(Scope* targetScope, LocalDefinition&& def)
+{
+    if (!targetScope)
+        return;
+    for (const auto& existing : targetScope->definitions)
+    {
+        if (existing.name == def.name)
+            return;
+    }
+    targetScope->definitions.push_back(std::move(def));
+}
+
+bool ExtractAssignmentLeftVar(TSNode leftNode, const parser::GrammarSymbols& gs, std::string_view sourceCode,
+                              std::string& outName, bool& outIsHandle, TSNode& outIdentNode)
+{
+    TSSymbol sym = ts_node_symbol(leftNode);
+    if (sym == gs.symIdentifier)
+    {
+        outName = parser::GetNodeText(leftNode, sourceCode);
+        outIdentNode = leftNode;
+        return !outName.empty();
+    }
+    if (sym == gs.symScopedIdentifier)
+    {
+        TSNode id = parser::GetChildByField(leftNode, parser::fields::Name);
+        if (ts_node_is_null(id))
+        {
+            uint32_t count = ts_node_child_count(leftNode);
+            id = (count > 0) ? ts_node_child(leftNode, count - 1) : TSNode{};
+        }
+        outName = parser::GetNodeText(id, sourceCode);
+        outIdentNode = id;
+        return !outName.empty();
+    }
+    if (sym == gs.symUnaryExpression)
+    {
+        std::string_view text = parser::GetNodeTextView(leftNode, sourceCode);
+        if (text.starts_with('@'))
+        {
+            outIsHandle = true;
+            TSNode operand = parser::GetChildByField(leftNode, parser::fields::Operand);
+            if (ts_node_is_null(operand))
+                operand = ts_node_child(leftNode, 1);
+            return ExtractAssignmentLeftVar(operand, gs, sourceCode, outName, outIsHandle, outIdentNode);
+        }
+    }
+    return false;
+}
+
+void RegisterRecoveredVariable(Scope* rootScope, TSNode identNode, std::string varName, std::string typeName,
+                               bool isHandle)
+{
+    if (isHandle && !typeName.ends_with('@'))
+    {
+        typeName += "@";
+    }
+    TSPoint pt = ts_node_start_point(identNode);
+    TSPoint endPt = ts_node_end_point(identNode);
+    LocalDefinition def{
+        std::move(varName), LocalDefinitionKind::Variable, {pt.row, pt.column, endPt.row, endPt.column}};
+    def.fullStartLine = pt.row;
+    def.fullStartCharacter = pt.column;
+    def.fullEndLine = endPt.row;
+    def.fullEndCharacter = endPt.column;
+    def.typeName = std::move(typeName);
+    def.isHandleType = isHandle;
+    def.visibleFromByte = ts_node_start_byte(identNode);
+    Scope* target = FindInnermostScopeMut(rootScope, pt.row, pt.column);
+    InsertRecoveredDefinition(target, std::move(def));
+}
+
+bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
+                                  const parser::GrammarSymbols& gs)
+{
+    TSNode nextStmt = ts_node_next_sibling(node);
+    if (ts_node_is_null(nextStmt) || ts_node_symbol(nextStmt) != gs.symExpressionStatement)
+    {
+        return false;
+    }
+    TSNode cons = parser::GetChildByField(node, parser::fields::Consequence);
+    if (ts_node_is_null(cons))
+    {
+        uint32_t count = ts_node_child_count(node);
+        cons = (count > 0) ? ts_node_child(node, count - 1) : TSNode{};
+    }
+    if (ts_node_is_null(cons) || ts_node_symbol(cons) != gs.symExpressionStatement)
+    {
+        return false;
+    }
+    std::string_view typeView = parser::GetNodeTextView(ts_node_child(cons, 0), sourceCode);
+    while (!typeView.empty() && (typeView.back() == ' ' || typeView.back() == '\t' || typeView.back() == ';'))
+    {
+        typeView.remove_suffix(1);
+    }
+    if (typeView.empty())
+    {
+        return false;
+    }
+    TSNode assignExpr = ts_node_child(nextStmt, 0);
+    if (ts_node_is_null(assignExpr) || ts_node_symbol(assignExpr) != gs.symAssignmentExpression)
+    {
+        return false;
+    }
+    TSNode left = parser::GetChildByField(assignExpr, parser::fields::Left);
+    std::string varName;
+    bool isHandle = false;
+    TSNode identNode = TSNode{};
+    if (ExtractAssignmentLeftVar(left, gs, sourceCode, varName, isHandle, identNode))
+    {
+        RegisterRecoveredVariable(rootScope, identNode, std::move(varName), std::string(typeView), isHandle);
+        return true;
+    }
+    return false;
+}
+
+void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
+                                  const parser::GrammarSymbols& gs)
+{
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (!ts_tree_cursor_goto_first_child(&cursor))
+    {
+        ts_tree_cursor_delete(&cursor);
+        return;
+    }
+    std::string_view errTypeView;
+    do
+    {
+        TSNode child = ts_tree_cursor_current_node(&cursor);
+        if (ts_node_is_error(child))
+        {
+            errTypeView = parser::GetNodeTextView(child, sourceCode);
+            while (!errTypeView.empty() && (errTypeView.back() == ' ' || errTypeView.back() == '\t'))
+            {
+                errTypeView.remove_suffix(1);
+            }
+            break;
+        }
+    } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    ts_tree_cursor_delete(&cursor);
+
+    if (errTypeView.empty())
+    {
+        return;
+    }
+    std::string errTypeName(errTypeView);
+    TSNode cons = parser::GetChildByField(node, parser::fields::Consequence);
+    if (ts_node_is_null(cons) || ts_node_symbol(cons) != gs.symExpressionStatement)
+    {
+        return;
+    }
+    TSNode assignExpr = ts_node_child(cons, 0);
+    if (ts_node_is_null(assignExpr) || ts_node_symbol(assignExpr) != gs.symAssignmentExpression)
+    {
+        return;
+    }
+    TSNode left = parser::GetChildByField(assignExpr, parser::fields::Left);
+    std::string varName;
+    bool isHandle = false;
+    TSNode identNode = TSNode{};
+    if (ExtractAssignmentLeftVar(left, gs, sourceCode, varName, isHandle, identNode))
+    {
+        RegisterRecoveredVariable(rootScope, identNode, std::move(varName), std::move(errTypeName), isHandle);
+    }
+}
+
+void TryRecoverUnbracedIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
+                                     const parser::GrammarSymbols& gs)
+{
+    if (TryRecoverSplitIfDeclaration(node, rootScope, sourceCode, gs))
+    {
+        return;
+    }
+    TryRecoverErrorIfDeclaration(node, rootScope, sourceCode, gs);
+}
+} // namespace
+
+void LocalScopeCollector::RecoverDeclarationsFromErrorNodes(TSNode rootNode, Scope* rootScope,
+                                                            const std::string& sourceCode) const
+{
+    if (!ts_node_has_error(rootNode) || !rootScope)
+        return;
+
+    TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
+    bool hasChild = true;
+
+    while (hasChild)
+    {
+        TSNode current = ts_tree_cursor_current_node(&cursor);
+        TSSymbol sym = ts_node_symbol(current);
+
+        if (sym == m_gs.symIfStatement || sym == m_gs.symWhileStatement || sym == m_gs.symForStatement)
+        {
+            TryRecoverUnbracedIfDeclaration(current, rootScope, sourceCode, m_gs);
+        }
+
+        if (ts_node_has_error(current) && ts_tree_cursor_goto_first_child(&cursor))
+        {
+            continue;
+        }
+
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            continue;
+        }
+
+        bool ascended = false;
+        while (ts_tree_cursor_goto_parent(&cursor))
+        {
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                ascended = true;
+                break;
+            }
+        }
+        if (!ascended)
+            break;
+    }
+
+    ts_tree_cursor_delete(&cursor);
 }
 } // namespace angel_lsp::analysis

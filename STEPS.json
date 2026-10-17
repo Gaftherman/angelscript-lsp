@@ -1,6 +1,7 @@
 {
   "project": "angelscript-lsp",
-  "currentPhase": "PHASE_30_DEFAULT_DIAGNOSTICS_SVEN_RULES_AND_RELEASE_1_1_0",
+  "project": "angelscript-lsp",
+  "currentPhase": "PHASE_31_SYNTAX_CLAMPING_POISON_ERADICATION_AND_BRACELESS_RECOVERY",
   "status": "COMPLETED",
   "baselineMetrics": {
     "largeScript3000ParseAndAnalysisMs": 192.75,
@@ -9,15 +10,16 @@
     "parityPassCount": 256,
     "parityTotalCount": 256,
     "unexplainedFalsePositives": 0,
-    "unitTestsTotal": 2394,
-    "unitTestsPassed": 2394,
-    "unitAssertionsPassed": 34230,
+    "unitTestsTotal": 2397,
+    "unitTestsPassed": 2397,
+    "unitAssertionsPassed": 34248,
     "condEdgePassCount": 0,
     "tsanRaceWarnings": 0,
     "layerIncludeCheck": "PASS",
     "astGrepViolations": 0,
-    "jscpdDuplicationPercent": 1.12
+    "jscpdDuplicationPercent": 1.11
   },
+
   "phases": [
     {
       "id": "PHASE_0",
@@ -913,6 +915,99 @@
         "All 2,394 unit tests passed (34,230 assertions, 0 failures, 30 skipped).",
         "All 12 static quality gates passed successfully at 100% (jscpd 1.12%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100, check-ast-traversal clean, npm pretest clean)."
       ]
+    },
+    {
+      "id": "PHASE_31",
+      "name": "Syntax Error Range Clamping, Poison Leak Eradication, and Braceless Block Recovery",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/parser/GrammarSymbols.h",
+        "server/src/parser/GrammarSymbols.cpp",
+        "server/src/analysis/DiagnosticContext.cpp",
+        "server/src/analysis/TypeConversionChecker.cpp",
+        "server/src/analysis/overload/ConversionRankingEngine.cpp",
+        "server/src/analysis/SymbolCollector.h",
+        "server/src/analysis/SymbolCollector.cpp",
+        "server/src/analysis/LocalScopeCollector.h",
+        "server/src/analysis/LocalScopeCollector.cpp",
+        "server/tests/SymbolCollectorTest.cpp",
+        "server/tests/TypeConversionTest.cpp",
+        "server/tests/SemanticAnalyzerTest.cpp",
+        "STEPS.md",
+        "STEPS.json"
+      ],
+      "findings": [
+        "Syntax error ranges clamped strictly to single-line (start.line == end.line) across EmitParseErrorDiagnostic.",
+        "PinpointOffendingNode anchors diagnostics at the unclosed declaration rather than outer class wrappers or leading comments.",
+        "Recovered class declarations and members from syntax error AST wrappers via ScanRecoverableClasses and SyncRecoveredContainers, preserving containerName on sibling methods.",
+        "Completely eradicated <poison> sentinel string from user-facing diagnostics in DiagnosticContext, TypeConversionChecker, and ConversionRankingEngine.",
+        "RecoverDeclarationsFromErrorNodes added to LocalScopeCollector with 0.00 ms overhead on clean files, recovering local variable declarations from unbraced control flow blocks (if (x) Type@ var = null;) and suppressing false E184 and cascading W108 warnings.",
+        "Refactored all modified functions to adhere strictly to Lizard CCN <= 15 and NLOC <= 70.",
+        "All 2,397 unit tests passed (34,248 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100% (jscpd 1.11%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100, check-ast-traversal clean, npm pretest clean)."
+      ]
+    },
+    {
+      "id": "PHASE_32",
+      "name": "Code Review Audit Remediation, Rules Architecture Cleanup (callRules Generalization, Redundant Lifecycle Pruning, and BaseClass-Only Dispatch), and Anti-Pattern Eradication",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/ExpressionTypeCache.h",
+        "server/src/analysis/TypeConversionChecker.cpp",
+        "server/src/analysis/overload/ConversionRankingEngine.cpp",
+        "server/src/analysis/DiagnosticContext.cpp",
+        "server/src/analysis/SymbolCollector.h",
+        "server/src/analysis/SymbolCollector.cpp",
+        "server/src/parser/ASTUtils.h",
+        "server/src/analysis/LocalScopeCollector.cpp",
+        "server/src/analysis/SymbolTable.h",
+        "server/src/analysis/SymbolTable.cpp",
+        "server/src/analysis/CallChecker.cpp",
+        "predefined/sven.angelscript.rules.json",
+        "server/src/config/EngineRuleParser.cpp",
+        "schemas/angelscript.rules.schema.json",
+        "docs/rules.md",
+        "docs/rules.es.md",
+        "server/tests/EngineRuleCheckerTest.cpp"
+      ],
+      "findings": [
+        "Eliminated ts_node_type string comparisons in SymbolCollector (ScanOffendingChild, PinpointOffendingNode, TryFormatArgumentListSyntaxError) using TSSymbol O(1) checks.",
+        "Eliminated redundant GetNodeText heap allocations in EmitParseErrorDiagnostic and FormatSyntaxErrorMessage via string_view and GetNodeView.",
+        "Optimized IsPoisonType in ExpressionTypeCache.h to O(1) for types under 8 characters without '<', and reused it across checkers.",
+        "Added parser::GetNodeTextView in ASTUtils.h and replaced heap string allocations in LocalScopeCollector with zero-copy string_view trimming.",
+        "Added zero-copy HasFuncdefByShortName in SymbolTable to avoid copying full Symbol vectors in CallChecker.",
+        "Pruned redundant lifecycleMethods and baseClassLifecycleMethods from sven.angelscript.rules.json (automatically handled by baseClassProxyMap and stubs).",
+        "Removed 'self' from baseClassDelegateProperties in sven.angelscript.rules.json, retaining only 'BaseClass' for superclass virtual dispatch.",
+        "Generalized schedulerRules to callRules with 100% backward compatibility in EngineRuleParser, schema, and documentation.",
+        "All 2,398 unit tests passed (34,251 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100%."
+      ]
+    },
+    {
+      "id": "PHASE_33",
+      "name": "Funcdef Member Calls, Dictionary Initializer Comments, and v1.1.1 Release",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "client/CHANGELOG.md",
+        "client/package-lock.json",
+        "client/package.json",
+        "CHANGELOG.md",
+        "server/src/analysis/CallChecker.cpp",
+        "server/src/analysis/InitializerListChecker.cpp",
+        "server/src/analysis/NamespaceChecker.cpp",
+        "server/src/features/signature_help/SignatureHelpHandler.cpp",
+        "server/tests/CallCheckerTest.cpp",
+        "server/tests/InitializerListTest.cpp",
+        "STEPS.json",
+        "STEPS.md"
+      ],
+      "findings": [
+        "Resolved false E119 (as-err-call-no-matching-signature) when calling funcdef member handles unqualified, via this., inherited from base classes, inside const methods, or via virtual property getters.",
+        "Resolved false E160 (as-err-initializer-list-expected) on line, block, and trailing comments inside anonymous dictionary and multi-dimensional array initializer lists.",
+        "Added rich signature help for direct calls to enclosing class funcdef members via TryResolveEnclosingMemberCallableFuncdef.",
+        "All 2,432 unit tests passed (34,420 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100%."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -946,9 +1041,18 @@
     "GAP-CALL-01: Call argument count limit bypassed when null arguments or unqualified class calls present. (RESOLVED in Phase 29 with CheckArgumentCount limit enforcement).",
     "GAP-CALL-02: argumentCount <= 1 blanket check suppressing too-few-arguments errors on 2+ parameter methods. (RESOLVED in Phase 29.1 with IsDelegateConstructionPattern).",
     "GAP-NULL-01: Assigning null to non-handle members/variables unflagged. (RESOLVED in Phase 29 with TypeAcceptsNullHandle and as-err-null-non-handle).",
-    "GAP-CONV-01: Passing null to non-handle reference parameters (&in) falsely ranked as compatible. (RESOLVED in Phase 29 in ConversionRankingEngine)."
+    "GAP-CONV-01: Passing null to non-handle reference parameters (&in) falsely ranked as compatible. (RESOLVED in Phase 29 in ConversionRankingEngine).",
+    "GAP-SYNTAX-01: Missing } inside class wrapping hundreds of lines into as-syntax-error and blaming leading comments. (RESOLVED in Phase 31 with single-line clamping, PinpointOffendingNode, and class container recovery).",
+    "GAP-POISON-01: <poison> sentinel string leaking into user-facing diagnostics. (RESOLVED in Phase 31 with DiagnosticContext filter and TypeConversionChecker poison short-circuit).",
+    "GAP-RECOVERY-01: Local variable declaration lost after unbraced control flow block (if (x) Type@ var = null;) triggering cascading undeclared variable warnings W108. (RESOLVED in Phase 31 with RecoverDeclarationsFromErrorNodes).",
+    "GAP-PERF-05: ts_node_type string comparisons, redundant GetNodeText allocations, and vector copies in HasFuncdefSymbol. (RESOLVED in Phase 32 with GrammarSymbols, GetNodeView/GetNodeTextView, and HasFuncdefByShortName).",
+    "GAP-RULES-01: Redundant lifecycleMethods arrays and non-dispatch 'self' in baseClassDelegateProperties. (RESOLVED in Phase 32).",
+    "GAP-RULES-02: Overly narrow schedulerRules naming. (RESOLVED in Phase 32 with callRules generalization).",
+    "GAP-FUNCDEF-01: False E119 calling funcdef members unqualified or via property getters. (RESOLVED in Phase 33).",
+    "GAP-INITLIST-01: False E160 on comments inside dictionary initializers. (RESOLVED in Phase 33)."
   ],
   "nextActions": [
-    "Phase 30 completed with 100% test pass rate (2,394 tests, 34,230 assertions), all 12 quality gates green, and version 1.1.0 release prepared for develop, main, and tag v1.1.0."
+    "Phase 33 and v1.1.1 release completed with 100% test pass rate (2,432 tests, 34,420 assertions) and all 12 quality gates passed."
   ]
 }
+

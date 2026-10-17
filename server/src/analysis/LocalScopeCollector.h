@@ -157,6 +157,14 @@ class LocalScopeCollector
     void ProcessStringCallRefCapture(const RawCapture& capture, Scope* current, const std::string& sourceCode) const;
 
     /**
+     * @brief Recovers local variable declarations from broken control flow or error nodes.
+     * @param rootNode Pre-parsed Tree-Sitter root node.
+     * @param rootScope Root lexical scope.
+     * @param sourceCode Source text of the document.
+     */
+    void RecoverDeclarationsFromErrorNodes(TSNode rootNode, Scope* rootScope, const std::string& sourceCode) const;
+
+    /**
      * @brief Ancestor nodes and enclosing symbol cached during capture processing.
      */
     struct CaptureAncestors
