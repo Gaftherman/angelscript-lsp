@@ -188,8 +188,8 @@ struct FormatCodeOptions
  */
 struct FormattingRequest
 {
-    const std::string& uri;
-    const std::string& sourceCode;
+    std::string uri;
+    std::string sourceCode;
     TSTree* tree = nullptr;
     lsp::FormattingOptions options;
     BraceStyle braceStyle = BraceStyle::Allman;
@@ -203,8 +203,8 @@ struct FormattingRequest
  */
 struct RangeFormattingRequest
 {
-    const std::string& uri;
-    const std::string& sourceCode;
+    std::string uri;
+    std::string sourceCode;
     TSTree* tree = nullptr;
     lsp::Range range;
     lsp::FormattingOptions options;
@@ -219,8 +219,8 @@ struct RangeFormattingRequest
  */
 struct OnTypeFormattingRequest
 {
-    const std::string& uri;
-    const std::string& sourceCode;
+    std::string uri;
+    std::string sourceCode;
     TSTree* tree = nullptr;
     lsp::Position position;
     std::string ch;

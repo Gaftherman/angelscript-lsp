@@ -1324,6 +1324,53 @@ TEST_SUITE("AngelScript_Expressions_Verification")
         CHECK(diagnostics[0].range.start.line == 10);
     }
 
+    TEST_CASE("GAP-SPEC-01: Ternary Operator requires identical types for lvalue assignment")
+    {
+        const char* script = R"(
+            void Main() {
+                int leftVal = 0;
+                double rightVal = 0.0;
+                bool chooseLeft = true;
+
+                // Mismatched branch types produce a temporary RValue, rejected as LValue
+                (chooseLeft ? leftVal : rightVal) = 42;
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_ternary_mismatch_lvalue.as", script);
+        REQUIRE(doc != nullptr);
+
+        auto diagnostics = doc->GetDiagnostics();
+        REQUIRE_FALSE(diagnostics.empty());
+        CHECK(diagnostics[0].code == "E_EXPRESSION_NOT_AN_LVALUE");
+    }
+
+    TEST_CASE("GAP-SPEC-01: Unary minus on unsigned integer types converts to signed integer")
+    {
+        const char* script = R"(
+            void Main() {
+                uint8 u8 = 10;
+                uint16 u16 = 20;
+                uint u32 = 30;
+                uint64 u64 = 40;
+
+                auto s8 = -u8;
+                auto s16 = -u16;
+                auto s32 = -u32;
+                auto s64 = -u64;
+            }
+        )";
+
+        auto doc = CreateTestDocument("file:///test_unary_minus_unsigned.as", script);
+        REQUIRE(doc != nullptr);
+        CHECK(doc->GetDiagnostics().empty());
+
+        CHECK(doc->GetSymbolTypeAt({7, 21}) == "int8");
+        CHECK(doc->GetSymbolTypeAt({8, 21}) == "int16");
+        CHECK(doc->GetSymbolTypeAt({9, 21}) == "int");
+        CHECK(doc->GetSymbolTypeAt({10, 21}) == "int64");
+    }
+
     TEST_CASE("Logical & Bitwise: Keyword operator aliases and short-circuit evaluation")
     {
         const char* script = R"(
@@ -1342,8 +1389,8 @@ TEST_SUITE("AngelScript_Expressions_Verification")
         REQUIRE(doc != nullptr);
         CHECK(doc->GetDiagnostics().empty());
 
-        // Validate inferred type for bitResult is uint8
-        CHECK(doc->GetSymbolTypeAt({8, 25}) == "uint8");
+        // Validate inferred type for bitResult is uint (promoted from uint8 per official AngelScript spec)
+        CHECK(doc->GetSymbolTypeAt({8, 25}) == "uint");
     }
 
     TEST_CASE("Anonymous Objects & Initialization Lists: Deduction in function calls")

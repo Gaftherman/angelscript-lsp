@@ -14,7 +14,7 @@ namespace angel_lsp::features
  */
 struct SelectionRangeRequest
 {
-    const std::string& sourceCode;
+    std::string sourceCode;
     TSTree* tree = nullptr;
 
     /** @brief Cursor positions, already decoded into UTF-8 line/character pairs. */

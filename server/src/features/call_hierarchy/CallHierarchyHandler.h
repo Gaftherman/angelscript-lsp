@@ -18,8 +18,8 @@ namespace angel_lsp::features
  */
 struct CallHierarchyPrepareRequest
 {
-    const std::string& uri;
-    const std::string& sourceCode;
+    std::string uri;
+    std::string sourceCode;
     TSTree* tree = nullptr;
     const analysis::SymbolTable& symbolTable;
     lsp::Position position;

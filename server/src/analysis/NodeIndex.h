@@ -147,6 +147,35 @@ class NodeIndex
     [[nodiscard]] bool Empty() const noexcept;
 
     /**
+     * @brief Represents a half-open byte range [startByte, endByte) containing a syntax error.
+     */
+    struct ErrorRange
+    {
+        uint32_t startByte = 0;
+        uint32_t endByte = 0;
+    };
+
+    /**
+     * @brief Checks in O(log E) whether the given byte offset falls inside any syntax error node.
+     * @param[in] byteOffset Byte offset to test.
+     * @return True if offset is inside a syntax error range; false otherwise (O(1) if no errors).
+     */
+    [[nodiscard]] bool IsInsideError(uint32_t byteOffset) const noexcept;
+
+    /**
+     * @brief Checks whether the given node is an error, has errors, or is enclosed in a syntax error.
+     * @param[in] node AST node to test.
+     * @return True if node is or is inside an error; false otherwise.
+     */
+    [[nodiscard]] bool NodeHasSyntaxError(TSNode node) const noexcept;
+
+    /**
+     * @brief Returns all tracked disjoint syntax error byte ranges.
+     * @return Span of error ranges.
+     */
+    [[nodiscard]] std::span<const ErrorRange> ErrorRanges() const noexcept;
+
+    /**
      * @brief Clears all indexed nodes and symbol maps.
      */
     void Clear() noexcept;
@@ -155,11 +184,14 @@ class NodeIndex
     void PopulatePredefinedSymbols(const TSLanguage* lang);
     void IndexNode(TSNode node, TraversalBudget* budget = nullptr);
     void TraverseTree(TSNode root, TraversalBudget* budget = nullptr);
+    void PostProcessErrorRanges();
 
     TSNode m_root{};
     const TSLanguage* m_language = nullptr;
     std::vector<TSNode> m_allNodes;
+    std::vector<TSNode> m_errorNodes;
     std::vector<std::vector<TSNode>> m_nodesBySymbol;
+    std::vector<ErrorRange> m_errorRanges;
     ankerl::unordered_dense::map<std::string_view, TSSymbol> m_symbolByName;
 };
 } // namespace angel_lsp::analysis

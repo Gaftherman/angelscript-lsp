@@ -66,7 +66,7 @@ void ApplyAlignmentAndBraceKey(std::string_view key, std::string_view val, Clang
         style.pointerAlignment = ParseClangPointerAlignment(val);
     else if (key == "ReferenceAlignment")
         style.referenceAlignment = ParseClangReferenceAlignment(val);
-    else if (key == "DerivePointerAlignment")
+    else if (key == "DerivePointerAlignment" || key == "DerivePointerBinding")
     {
         // Placeholder for compatibility
     }

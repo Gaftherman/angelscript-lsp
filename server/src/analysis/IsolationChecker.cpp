@@ -335,8 +335,10 @@ struct IsolationVisitor
         std::string funcName = GetNodeText(nameNode, request.sourceCode);
         if (!funcName.empty())
         {
-            std::string searchName = currentClassName.empty() ? funcName : currentClassName + "::" + funcName;
-            if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(searchName))
+            auto syms = currentClassName.empty()
+                            ? ctx.request.symbolTable.FindSymbolsPtr(funcName)
+                            : ctx.request.symbolTable.FindMemberSymbolPtr(currentClassName, funcName);
+            if (syms)
             {
                 for (const auto& s : *syms)
                 {
@@ -392,8 +394,7 @@ struct IsolationVisitor
     {
         if (!currentClassName.empty())
         {
-            std::string methodQual = currentClassName + "::" + std::string(calleeName);
-            if (ctx.request.symbolTable.HasSymbol(methodQual))
+            if (ctx.request.symbolTable.FindMemberSymbolPtr(currentClassName, calleeName) != nullptr)
             {
                 return true;
             }
@@ -477,8 +478,7 @@ struct IsolationVisitor
 
         if (!currentClassName.empty())
         {
-            std::string memberQual = currentClassName + "::" + std::string(varName);
-            if (ctx.request.symbolTable.HasSymbol(memberQual))
+            if (ctx.request.symbolTable.FindMemberSymbolPtr(currentClassName, varName) != nullptr)
             {
                 return true;
             }

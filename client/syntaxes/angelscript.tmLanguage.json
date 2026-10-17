@@ -240,7 +240,7 @@
         },
         {
           "name": "keyword.control.conditional.angelscript",
-          "match": "!is\\b|\\b(is|not|and|or|xor|in)\\b"
+          "match": "!is\\b|\\b(is|not|and|or|xor|in|out|inout)\\b"
         },
         {
           "name": "keyword.operator.new.angelscript",
@@ -279,8 +279,23 @@
     "modifiers": {
       "patterns": [
         {
+          "match": "(&)\\s*(inout|in|out)\\b",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.reference.angelscript"
+            },
+            "2": {
+              "name": "keyword.control.conditional.angelscript storage.modifier.reference.angelscript"
+            }
+          }
+        },
+        {
           "name": "storage.modifier.reference.angelscript",
-          "match": "&inout\\b|&in\\b|&out\\b|&"
+          "match": "&"
+        },
+        {
+          "name": "keyword.control.conditional.angelscript storage.modifier.reference.angelscript",
+          "match": "\\b(inout|out)\\b"
         },
         {
           "name": "storage.modifier.pointer.angelscript storage.modifier.handle.angelscript",

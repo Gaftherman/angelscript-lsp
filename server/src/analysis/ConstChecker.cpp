@@ -5,6 +5,7 @@
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
+#include "utils/StopFlag.h"
 #include <algorithm>
 #include <optional>
 #include <string>
@@ -146,7 +147,7 @@ Constness ResolveNameConstness(std::string_view name, TSNode node, const ConstCo
     // A local or a parameter first, since either shadows a global of the same name.
     if (ctx.scope)
     {
-        if (const LocalDefinition* def = ResolveInScope(ctx.scope, name))
+        if (const LocalDefinition* def = ResolveInScopeAt(ctx.scope, name, ts_node_start_byte(node)))
         {
             if (!def->typeName.empty())
             {
@@ -264,7 +265,7 @@ const VariableSignature* FindClassMemberVariable(const std::string& className, c
     }
     for (const auto& owner : GetInheritedTypeHierarchy(className, table))
     {
-        if (const auto candidates = table.FindSymbolsPtr(owner + "::" + memberName))
+        if (const auto candidates = table.FindMemberSymbolPtr(owner, memberName))
         {
             for (const auto& sym : *candidates)
             {
@@ -515,7 +516,7 @@ MethodLookup FindMethod(const std::string& typeName, const std::string& methodNa
 
     for (const auto& owner : GetInheritedTypeHierarchy(typeName, table))
     {
-        const auto candidates = table.FindSymbolsPtr(owner + "::" + methodName);
+        const auto candidates = table.FindMemberSymbolPtr(owner, methodName);
         if (!candidates)
         {
             continue;
@@ -571,7 +572,8 @@ Constness ResolveHandleConstness(TSNode node, const ConstContext& ctx)
         const std::string name = NodeText(node, ctx.sourceCode);
         if (ctx.scope)
         {
-            if (const LocalDefinition* def = ResolveInScope(ctx.scope, LastScopeSegment(name)))
+            if (const LocalDefinition* def =
+                    ResolveInScopeAt(ctx.scope, LastScopeSegment(name), ts_node_start_byte(node)))
             {
                 if (!def->typeName.empty())
                 {
@@ -688,33 +690,33 @@ void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope*
                {"as-err-const-method-required", std::string(LastScopeSegment(method.declaringClass)), methodName});
 }
 
-void VisitNode(TSNode node, const ConstCheckRequest& request, DiagnosticContext& ctx, int depth = 0)
+void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, DiagnosticContext& ctx)
 {
-    // Pathologically nested source would otherwise recurse until the stack gives out; see
-    // k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
+    if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+    {
         return;
-
-    const std::string_view nodeType = ts_node_type(node);
-    if (nodeType == "assignment_expression" || nodeType == "call_expression")
-    {
-        const TSPoint start = ts_node_start_point(node);
-        const Scope* scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
-        if (nodeType == "assignment_expression")
-        {
-            CheckAssignment(node, request, scope, ctx);
-        }
-        else
-        {
-            CheckMethodCall(node, request, scope, ctx);
-        }
     }
 
-    const uint32_t childCount = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < childCount; ++i)
-    {
-        VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
-    }
+    request.nodeIndex->ForEachNodeOrdered({parser::nodes::AssignmentExpression, parser::nodes::CallExpression},
+                                          [&](TSNode node)
+                                          {
+                                              if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+                                              {
+                                                  return;
+                                              }
+                                              const TSPoint start = ts_node_start_point(node);
+                                              const Scope* scope =
+                                                  FindInnermostScope(request.scopeRoot, start.row, start.column);
+                                              const std::string_view nodeType = ts_node_type(node);
+                                              if (nodeType == parser::nodes::AssignmentExpression)
+                                              {
+                                                  CheckAssignment(node, request, scope, ctx);
+                                              }
+                                              else
+                                              {
+                                                  CheckMethodCall(node, request, scope, ctx);
+                                              }
+                                          });
 }
 } // namespace
 
@@ -734,40 +736,13 @@ void CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& 
 
     if (request.nodeIndex)
     {
-        auto assignNodes = request.nodeIndex->Nodes(parser::nodes::AssignmentExpression);
-        auto callNodes = request.nodeIndex->Nodes(parser::nodes::CallExpression);
-        size_t i = 0;
-        size_t j = 0;
-        while (i < assignNodes.size() || j < callNodes.size())
-        {
-            bool takeAssign = false;
-            if (i < assignNodes.size() && j < callNodes.size())
-            {
-                takeAssign = (ts_node_start_byte(assignNodes[i]) <= ts_node_start_byte(callNodes[j]));
-            }
-            else if (i < assignNodes.size())
-            {
-                takeAssign = true;
-            }
-
-            if (takeAssign)
-            {
-                TSNode node = assignNodes[i++];
-                const TSPoint start = ts_node_start_point(node);
-                const Scope* scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
-                CheckAssignment(node, request, scope, ctx);
-            }
-            else
-            {
-                TSNode node = callNodes[j++];
-                const TSPoint start = ts_node_start_point(node);
-                const Scope* scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
-                CheckMethodCall(node, request, scope, ctx);
-            }
-        }
+        CheckConstCorrectnessIndexed(request, ctx);
         return;
     }
 
-    VisitNode(request.root, request, ctx);
+    NodeIndex localIndex(request.root);
+    ConstCheckRequest indexedRequest = request;
+    indexedRequest.nodeIndex = &localIndex;
+    CheckConstCorrectnessIndexed(indexedRequest, ctx);
 }
 } // namespace angel_lsp::analysis

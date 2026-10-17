@@ -9,6 +9,7 @@
 #include "analysis/DiagnosticCodes.h"
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
+#include "utils/StopFlag.h"
 #include <algorithm>
 #include <string>
 #include <string_view>
@@ -115,7 +116,7 @@ bool AccessorStandsForProperty(const Symbol& sym, bool keywordRequired)
  */
 struct MemberLookupContext
 {
-    const std::string& typeName;
+    std::string typeName;
     const SymbolTable& table;
     bool accessorKeywordRequired = false;
 };
@@ -133,7 +134,7 @@ std::vector<Symbol> CollectDirectCandidates(const std::string& owner, const std:
                                             const MemberLookupContext& ctx, bool& viaAccessor)
 {
     std::vector<Symbol> candidates;
-    auto candidatesPtr = ctx.table.FindSymbolsPtr(owner + "::" + memberName);
+    auto candidatesPtr = ctx.table.FindMemberSymbolPtr(owner, memberName);
     if (candidatesPtr && !candidatesPtr->empty())
     {
         candidates.insert(candidates.end(), candidatesPtr->begin(), candidatesPtr->end());
@@ -157,9 +158,9 @@ std::vector<Symbol> CollectDirectCandidates(const std::string& owner, const std:
         }
     }
 
-    for (const auto& accessor : {owner + "::get_" + memberName, owner + "::set_" + memberName})
+    for (const auto& accessorPrefix : {"get_", "set_"})
     {
-        auto accSyms = ctx.table.FindSymbolsPtr(accessor);
+        auto accSyms = ctx.table.FindMemberSymbolPtr(owner, std::string(accessorPrefix) + memberName);
         if (!accSyms)
         {
             continue;
@@ -330,7 +331,12 @@ std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insid
     size_t depth = 0;
     while (!ts_node_is_null(curr) && ++depth <= kMaxScopeDepth)
     {
-        if (std::string_view(ts_node_type(curr)) == parser::nodes::ClassDeclaration)
+        const std::string_view currType = ts_node_type(curr);
+        if (currType == "lambda_expression")
+        {
+            return "";
+        }
+        if (currType == parser::nodes::ClassDeclaration)
         {
             TSNode nameNode = parser::GetChildByField(curr, parser::fields::Name);
             if (!ts_node_is_null(nameNode))
@@ -558,22 +564,22 @@ bool ShouldSkipIdentifierNode(TSNode node, TSNode parent)
 }
 
 /**
- * @brief Extracts trimmed text from an identifier AST node.
+ * @brief Extracts trimmed text view from an identifier AST node without heap allocation.
  *
  * @param[in] node AST node of the identifier.
  * @param[in] sourceCode Document source text.
- * @return Clean trimmed identifier string.
+ * @return Clean trimmed identifier string_view.
  */
-std::string ExtractCleanIdentifier(TSNode node, std::string_view sourceCode)
+std::string_view ExtractCleanIdentifier(TSNode node, std::string_view sourceCode)
 {
-    std::string idText = NodeText(node, sourceCode);
+    std::string_view idText = GetNodeTextView(node, sourceCode);
     while (!idText.empty() && isspace(static_cast<unsigned char>(idText.front())))
     {
-        idText.erase(idText.begin());
+        idText.remove_prefix(1);
     }
     while (!idText.empty() && isspace(static_cast<unsigned char>(idText.back())))
     {
-        idText.pop_back();
+        idText.remove_suffix(1);
     }
     return idText;
 }
@@ -633,6 +639,38 @@ bool IsOuterLocalOrParameter(const Scope* enclosingClosure, std::string_view idT
 }
 
 /**
+ * @brief Finds the innermost class enclosing the closure containing node, if any.
+ *
+ * @param[in] node AST node inside the closure.
+ * @param[in] sourceCode Document source text.
+ * @return Name of the outer class enclosing the lambda, or empty if none.
+ */
+std::string EnclosingClassOfLambda(TSNode node, std::string_view sourceCode)
+{
+    TSNode curr = ts_node_parent(node);
+    size_t depth = 0;
+    bool foundLambda = false;
+    while (!ts_node_is_null(curr) && ++depth <= kMaxScopeDepth)
+    {
+        const std::string_view currType = ts_node_type(curr);
+        if (currType == "lambda_expression")
+        {
+            foundLambda = true;
+        }
+        else if (foundLambda && currType == parser::nodes::ClassDeclaration)
+        {
+            TSNode nameNode = parser::GetChildByField(curr, parser::fields::Name);
+            if (!ts_node_is_null(nameNode))
+            {
+                return NodeText(nameNode, sourceCode);
+            }
+        }
+        curr = ts_node_parent(curr);
+    }
+    return "";
+}
+
+/**
  * @brief Checks whether an identifier attempts forbidden outer variable capture in a closure.
  *
  * @param[in] node AST identifier node.
@@ -649,6 +687,14 @@ bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_v
         return false;
     }
 
+    if (idText == "this" || idText == "super")
+    {
+        const TSPoint start = ts_node_start_point(node);
+        const TSPoint end = ts_node_end_point(node);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::LambdaThisDisallowed);
+        return true;
+    }
+
     if (IsDeclaredInClosure(scope, enclosingClosure, idText))
     {
         return false;
@@ -658,10 +704,47 @@ bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_v
     {
         const TSPoint start = ts_node_start_point(node);
         const TSPoint end = ts_node_end_point(node);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-lambda-closure-disallowed");
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::LambdaClosureDisallowed,
+                        idText);
         return true;
     }
 
+    const std::string outerClass = EnclosingClassOfLambda(node, ctx.request.sourceCode);
+    if (!outerClass.empty())
+    {
+        const MemberAccess member = FindMember(outerClass, std::string(idText), ctx.request.symbolTable, false);
+        if (member.found)
+        {
+            const TSPoint start = ts_node_start_point(node);
+            const TSPoint end = ts_node_end_point(node);
+            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::LambdaMemberAccess,
+                            idText);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @brief Checks if the lexical scope chain includes a class scope.
+ *
+ * @param[in] scope Lexical scope to inspect.
+ * @return True if scope is null (unknown) or has an enclosing ScopeKind::Class.
+ */
+bool HasEnclosingClassScope(const Scope* scope)
+{
+    if (!scope)
+    {
+        return true;
+    }
+    for (const Scope* s = scope; s != nullptr; s = s->parent)
+    {
+        if (s->kind == ScopeKind::Class)
+        {
+            return true;
+        }
+    }
     return false;
 }
 
@@ -675,7 +758,12 @@ bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_v
  */
 void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view idText, DiagnosticContext& ctx)
 {
-    const LocalDefinition* localDef = ResolveInScope(scope, idText);
+    if (!HasEnclosingClassScope(scope))
+    {
+        return;
+    }
+
+    const LocalDefinition* localDef = ResolveInScopeAt(scope, idText, ts_node_start_byte(node));
     if (localDef &&
         (localDef->kind == LocalDefinitionKind::Variable || localDef->kind == LocalDefinitionKind::Parameter))
     {
@@ -711,7 +799,7 @@ void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view
     }
 }
 
-void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode parent = ts_node_parent(node);
     if (ShouldSkipIdentifierNode(node, parent))
@@ -719,12 +807,20 @@ void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, const S
         return;
     }
 
-    const std::string idText = ExtractCleanIdentifier(node, request.sourceCode);
+    const std::string_view idText = ExtractCleanIdentifier(node, request.sourceCode);
+    if (idText == "this" || idText == "super")
+    {
+        const TSPoint start = ts_node_start_point(node);
+        CheckClosureDisallowedAccess(node, FindInnermostScope(request.scopeRoot, start.row, start.column), idText, ctx);
+        return;
+    }
     if (idText.empty() || IsKeyword(idText) || idText == "value")
     {
         return;
     }
 
+    const TSPoint start = ts_node_start_point(node);
+    const Scope* scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
     if (CheckClosureDisallowedAccess(node, scope, idText, ctx))
     {
         return;
@@ -733,30 +829,44 @@ void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, const S
     CheckImplicitMemberAccess(node, scope, idText, ctx);
 }
 
-void VisitNode(TSNode node, const AccessCheckRequest& request, DiagnosticContext& ctx, int depth = 0)
+void CheckMemberAccessIndexed(const AccessCheckRequest& request, DiagnosticContext& ctx)
 {
-    // Pathologically nested source would otherwise recurse until the stack gives out; see
-    // k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
+    if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+    {
         return;
-
-    const std::string_view nodeType = ts_node_type(node);
-    if (nodeType == "member_expression")
-    {
-        const TSPoint start = ts_node_start_point(node);
-        CheckMemberExpression(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
-    }
-    else if (nodeType == "scoped_identifier" || nodeType == "identifier")
-    {
-        const TSPoint start = ts_node_start_point(node);
-        CheckIdentifierNode(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
     }
 
-    const uint32_t childCount = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < childCount; ++i)
+    for (TSNode thisNode : request.nodeIndex->Nodes(parser::nodes::ThisExpression))
     {
-        VisitNode(ts_node_named_child(node, i), request, ctx, depth + 1);
+        if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+        {
+            return;
+        }
+        const TSPoint start = ts_node_start_point(thisNode);
+        CheckClosureDisallowedAccess(thisNode, FindInnermostScope(request.scopeRoot, start.row, start.column), "this",
+                                     ctx);
     }
+
+    request.nodeIndex->ForEachNodeOrdered(
+        {parser::nodes::MemberExpression, parser::nodes::ScopedIdentifier, parser::nodes::Identifier},
+        [&](TSNode node)
+        {
+            if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+            {
+                return;
+            }
+            const std::string_view nodeType = ts_node_type(node);
+            if (nodeType == parser::nodes::MemberExpression)
+            {
+                const TSPoint start = ts_node_start_point(node);
+                CheckMemberExpression(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column),
+                                      ctx);
+            }
+            else
+            {
+                CheckIdentifierNode(node, request, ctx);
+            }
+        });
 }
 } // namespace
 
@@ -767,9 +877,6 @@ void CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx
         return;
     }
 
-    // A stub describes an API rather than using one, so it has no expressions worth judging -
-    // and reading its declarations as accesses would be the same category error the declaration
-    // rules already exempt it from.
     if (utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
     {
         return;
@@ -777,47 +884,13 @@ void CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx
 
     if (request.nodeIndex)
     {
-        auto members = request.nodeIndex->Nodes(parser::nodes::MemberExpression);
-        auto scopeds = request.nodeIndex->Nodes(parser::nodes::ScopedIdentifier);
-        auto idents = request.nodeIndex->Nodes(parser::nodes::Identifier);
-
-        size_t i = 0;
-        size_t j = 0;
-        size_t k = 0;
-        while (i < members.size() || j < scopeds.size() || k < idents.size())
-        {
-            uint32_t bMembers = (i < members.size()) ? ts_node_start_byte(members[i]) : UINT32_MAX;
-            uint32_t bScopeds = (j < scopeds.size()) ? ts_node_start_byte(scopeds[j]) : UINT32_MAX;
-            uint32_t bIdents = (k < idents.size()) ? ts_node_start_byte(idents[k]) : UINT32_MAX;
-
-            if (bMembers <= bScopeds && bMembers <= bIdents)
-            {
-                TSNode node = members[i++];
-                const TSPoint start = ts_node_start_point(node);
-                CheckMemberExpression(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column),
-                                      ctx);
-            }
-            else if (bScopeds <= bIdents)
-            {
-                TSNode node = scopeds[j++];
-                const TSPoint start = ts_node_start_point(node);
-                CheckIdentifierNode(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
-            }
-            else
-            {
-                TSNode node = idents[k++];
-                TSNode parent = ts_node_parent(node);
-                if (ShouldSkipIdentifierNode(node, parent))
-                {
-                    continue;
-                }
-                const TSPoint start = ts_node_start_point(node);
-                CheckIdentifierNode(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
-            }
-        }
+        CheckMemberAccessIndexed(request, ctx);
         return;
     }
 
-    VisitNode(request.root, request, ctx);
+    NodeIndex localIndex(request.root);
+    AccessCheckRequest indexedRequest = request;
+    indexedRequest.nodeIndex = &localIndex;
+    CheckMemberAccessIndexed(indexedRequest, ctx);
 }
 } // namespace angel_lsp::analysis

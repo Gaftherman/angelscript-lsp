@@ -19,7 +19,7 @@ namespace
 std::string GetDefaultReturnValue(std::string_view returnType, std::string_view stringTypeName)
 {
     std::string cleanRet = analysis::CleanBaseType(returnType);
-    if (returnType.ends_with("@"))
+    if (returnType.ends_with('@'))
     {
         return "null";
     }
@@ -33,11 +33,7 @@ std::string GetDefaultReturnValue(std::string_view returnType, std::string_view 
     }
     static const ankerl::unordered_dense::set<std::string_view> kNumericTypes = {
         "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float", "double"};
-    if (kNumericTypes.contains(cleanRet))
-    {
-        return "0";
-    }
-    return "null";
+    return kNumericTypes.contains(cleanRet) ? "0" : "null";
 }
 
 /**
@@ -54,6 +50,10 @@ std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis::Symbol
     {
         const auto& fn = m.GetFunction();
         std::string ret = fn.returnType.empty() ? "void" : fn.returnType;
+        if (fn.modifiers.isReturnReference && !ret.ends_with('&'))
+        {
+            ret += "&";
+        }
         stubs += "\n    " + ret + " " + m.name + "(";
         for (size_t p = 0; p < fn.parameters.size(); ++p)
         {
@@ -72,11 +72,15 @@ std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis::Symbol
                 stubs += " = " + param.defaultValue;
             }
         }
-        stubs += ")\n    {\n";
+        stubs += ")";
+        if (fn.modifiers.isConst)
+        {
+            stubs += " const";
+        }
+        stubs += " override\n    {\n";
         if (ret != "void")
         {
-            std::string defaultVal = GetDefaultReturnValue(ret, stringTypeName);
-            stubs += "        return " + defaultVal + ";\n";
+            stubs += "        return " + GetDefaultReturnValue(ret, stringTypeName) + ";\n";
         }
         stubs += "    }\n";
     }
@@ -101,28 +105,22 @@ std::vector<analysis::Symbol> CollectMissingInterfaceMethods(const std::string& 
     }
 
     std::vector<analysis::Symbol> ifaceMethods;
-    for (const auto& ifaceName : ifaceHierarchy)
-    {
-        table.ForEachSymbol(
-            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& mSyms)
-            {
-                for (const auto& m : mSyms)
-                {
-                    if (m.type == analysis::SymbolType::Function && m.containerName == ifaceName)
-                    {
-                        ifaceMethods.push_back(m);
-                    }
-                }
-            });
-    }
-
     std::vector<analysis::Symbol> classMethods;
+    const ankerl::unordered_dense::set<std::string> ifaceSet(ifaceHierarchy.begin(), ifaceHierarchy.end());
     table.ForEachSymbol(
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& mSyms)
         {
             for (const auto& m : mSyms)
             {
-                if (m.type == analysis::SymbolType::Function && m.containerName == className)
+                if (m.type != analysis::SymbolType::Function)
+                {
+                    continue;
+                }
+                if (ifaceSet.contains(m.containerName))
+                {
+                    ifaceMethods.push_back(m);
+                }
+                else if (m.containerName == className)
                 {
                     classMethods.push_back(m);
                 }
@@ -151,7 +149,7 @@ std::vector<analysis::Symbol> CollectMissingInterfaceMethods(const std::string& 
 }
 
 /**
- * @brief Locates the insertion position before the closing brace of a class declaration.
+ * @brief Locates the insertion position right after the opening brace of a class declaration.
  * @param[in] rootNode Root AST node.
  * @param[in] clsSym Class symbol.
  * @return LSP position for method stub insertion.
@@ -173,31 +171,39 @@ lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysi
     TSNode bodyNode = parser::GetChildByField(cNode, parser::fields::Body);
     if (ts_node_is_null(bodyNode))
     {
-        uint32_t cnt = ts_node_child_count(cNode);
-        for (uint32_t i = 0; i < cnt; ++i)
+        TSTreeCursor declCursor = ts_tree_cursor_new(cNode);
+        if (ts_tree_cursor_goto_first_child(&declCursor))
         {
-            TSNode ch = ts_node_child(cNode, i);
-            if (std::string_view(ts_node_type(ch)) == "class_body")
+            do
             {
-                bodyNode = ch;
-                break;
-            }
+                TSNode ch = ts_tree_cursor_current_node(&declCursor);
+                if (std::string_view(ts_node_type(ch)) == "class_body")
+                {
+                    bodyNode = ch;
+                    break;
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&declCursor));
         }
+        ts_tree_cursor_delete(&declCursor);
     }
 
     if (!ts_node_is_null(bodyNode))
     {
-        uint32_t bCount = ts_node_child_count(bodyNode);
-        for (int i = static_cast<int>(bCount) - 1; i >= 0; --i)
+        TSTreeCursor cursor = ts_tree_cursor_new(bodyNode);
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            TSNode bChild = ts_node_child(bodyNode, static_cast<uint32_t>(i));
-            if (std::string_view(ts_node_type(bChild)) == "}")
+            do
             {
-                TSPoint pt = ts_node_start_point(bChild);
-                insertPos = lsp::Position{pt.row, pt.column};
-                break;
-            }
+                TSNode bChild = ts_tree_cursor_current_node(&cursor);
+                if (std::string_view(ts_node_type(bChild)) == "{")
+                {
+                    TSPoint pt = ts_node_end_point(bChild);
+                    insertPos = lsp::Position{pt.row, pt.column};
+                    break;
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
         }
+        ts_tree_cursor_delete(&cursor);
     }
     return insertPos;
 }
@@ -265,10 +271,6 @@ void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode root
                     std::string stubs = FormatMissingInterfaceMethodStubs(missingMethods, strType);
                     lsp::Position insertPos = FindClassInterfaceInsertionPosition(rootNode, clsSym);
 
-                    lsp::TextEdit edit;
-                    edit.range = lsp::Range{insertPos, insertPos};
-                    edit.newText = stubs;
-
                     lsp::CodeAction action;
                     action.title = i18n::FormatMessage(request.i18n, "action-implement-interface",
                                                        "Implement missing interface methods for '{}'",
@@ -283,9 +285,9 @@ void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode root
                     }
 
                     lsp::WorkspaceEdit wsEdit;
-                    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-                    changes[lsp::DocumentUri::parse(request.uri)].push_back(std::move(edit));
-                    wsEdit.changes = std::move(changes);
+                    wsEdit.changes = lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>>{
+                        {lsp::DocumentUri::parse(request.uri),
+                         {lsp::TextEdit{lsp::Range{insertPos, insertPos}, std::move(stubs)}}}};
                     action.edit = std::move(wsEdit);
 
                     actions.push_back(std::move(action));

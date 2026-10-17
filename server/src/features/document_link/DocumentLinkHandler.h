@@ -24,14 +24,14 @@ struct DocumentLinkRequest
      * @param[in] sd Ordered list of include search directories.
      * @param[in] i18nPtr Optional localization provider pointer.
      */
-    DocumentLinkRequest(const std::string& u, const std::string& sc, const std::vector<std::string>& sd,
+    DocumentLinkRequest(std::string u, std::string sc, const std::vector<std::string>& sd,
                         const angel_lsp::i18n::I18n* i18nPtr = nullptr)
-        : uri(u), sourceCode(sc), searchDirectories(sd), i18n(i18nPtr)
+        : uri(std::move(u)), sourceCode(std::move(sc)), searchDirectories(sd), i18n(i18nPtr)
     {
     }
 
-    const std::string& uri;
-    const std::string& sourceCode;
+    std::string uri;
+    std::string sourceCode;
     const std::vector<std::string>& searchDirectories;
     const angel_lsp::i18n::I18n* i18n = nullptr;
 

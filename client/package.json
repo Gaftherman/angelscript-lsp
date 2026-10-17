@@ -2,7 +2,7 @@
   "name": "angelscript-gaftherman",
   "displayName": "Angelscript - Language Server for Angelscript",
   "description": "%extension.description%",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "publisher": "Gaftherman",
   "license": "MIT",
   "icon": "assets/icon.png",
@@ -144,6 +144,21 @@
         "command": "angelscript.openPhysicalSource",
         "title": "%command.openPhysicalSource.title%",
         "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.clearLocalState",
+        "title": "%command.clearLocalState.title%",
+        "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.ignoreUnusedSymbol",
+        "title": "%command.ignoreUnusedSymbol.title%",
+        "category": "%command.selectPredefined.category%"
+      },
+      {
+        "command": "angelscript.configureHostEnvironment",
+        "title": "%command.configureHostEnvironment.title%",
+        "category": "%command.selectPredefined.category%"
       }
     ],
     "menus": {
@@ -226,6 +241,10 @@
             "storage.type.built-in.primitive.angelscript",
             "storage.type.built-in",
             "storage.type"
+          ],
+          "modifier": [
+            "keyword.control.conditional.angelscript",
+            "storage.modifier.reference.angelscript"
           ]
         }
       },
@@ -241,6 +260,10 @@
             "storage.type.built-in.primitive.angelscript",
             "storage.type.built-in",
             "storage.type"
+          ],
+          "modifier": [
+            "keyword.control.conditional.angelscript",
+            "storage.modifier.reference.angelscript"
           ]
         }
       }
@@ -269,7 +292,8 @@
         },
         "editor.suggestOnTriggerCharacters": true,
         "editor.wordBasedSuggestions": "off",
-        "editor.semanticHighlighting.enabled": true
+        "editor.semanticHighlighting.enabled": true,
+        "editor.autoIndentOnPaste": false
       },
       "[angelscript-predefined]": {
         "editor.quickSuggestions": {
@@ -279,7 +303,8 @@
         },
         "editor.suggestOnTriggerCharacters": true,
         "editor.wordBasedSuggestions": "off",
-        "editor.semanticHighlighting.enabled": true
+        "editor.semanticHighlighting.enabled": true,
+        "editor.autoIndentOnPaste": false
       }
     },
     "configuration": [
@@ -353,6 +378,22 @@
         "order": 2,
         "title": "%config.category.workspace%",
         "properties": {
+          "angelscript.configurationTarget": {
+            "type": "string",
+            "scope": "resource",
+            "enum": [
+              "workspace",
+              "localState",
+              "user"
+            ],
+            "enumDescriptions": [
+              "%config.configurationTarget.workspace%",
+              "%config.configurationTarget.localState%",
+              "%config.configurationTarget.user%"
+            ],
+            "default": "workspace",
+            "markdownDescription": "%config.configurationTarget.description%"
+          },
           "angelscript.modules": {
             "type": "array",
             "scope": "resource",
@@ -426,6 +467,12 @@
             },
             "default": [],
             "markdownDescription": "%config.stubs.activeFiles.description%"
+          },
+          "angelscript.rulesFile": {
+            "type": "string",
+            "scope": "resource",
+            "default": "",
+            "markdownDescription": "%config.rulesFile.description%"
           },
           "angelscript.include.implicitExtension": {
             "type": "boolean",
@@ -640,6 +687,12 @@
             "scope": "resource",
             "markdownDescription": "%config.hover.assetSearchPaths.description%"
           },
+          "angelscript.hover.showFileLocation": {
+            "type": "boolean",
+            "default": false,
+            "scope": "resource",
+            "markdownDescription": "%config.hover.showFileLocation.description%"
+          },
           "angelscript.features.completion": {
             "type": "boolean",
             "default": true,
@@ -796,7 +849,7 @@
           },
           "angelscript.diagnostics.reportAccessorPortability": {
             "type": "boolean",
-            "default": true,
+            "default": false,
             "markdownDescription": "%config.diagnostics.reportAccessorPortability.description%"
           },
           "angelscript.diagnostics.reportAccessorDisabled": {
@@ -823,6 +876,47 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%config.diagnostics.reportPossibleNullDereference.description%"
+          },
+          "angelscript.diagnostics.reportUnusedFunctions": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.diagnostics.reportUnusedFunctions.description%"
+          },
+          "angelscript.diagnostics.reportUnusedGlobalVariables": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.diagnostics.reportUnusedGlobalVariables.description%"
+          },
+          "angelscript.diagnostics.reportUnusedClasses": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.diagnostics.reportUnusedClasses.description%"
+          },
+          "angelscript.diagnostics.reportUnusedMembers": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.diagnostics.reportUnusedMembers.description%"
+          },
+          "angelscript.diagnostics.ignoredUnusedFunctions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%config.diagnostics.ignoredUnusedFunctions.description%"
+          },
+          "angelscript.diagnostics.ignoredUnusedFunctionPatterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "markdownDescription": "%config.diagnostics.ignoredUnusedFunctionPatterns.description%"
+          },
+          "angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "%config.diagnostics.ignoreUnusedGlobalsWithCallInitializer.description%"
           },
           "angelscript.diagnostics.reportHandleComparisonEquality": {
             "type": "integer",
@@ -1027,6 +1121,15 @@
             "markdownDescription": "%config.metadata.enabled.description%"
           }
         }
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "*angelscript.rules.json",
+          "angelscript.rules.json"
+        ],
+        "url": "./schemas/angelscript.rules.schema.json"
       }
     ]
   },

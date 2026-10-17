@@ -34,4 +34,13 @@ std::string ExtractDocComment(const std::string& sourceCode, uint32_t declStartL
  * @return True if preceding comments contain the specified tag, false otherwise.
  */
 bool HasPrecedingDocTag(std::string_view sourceCode, uint32_t declStartLine, std::string_view tag);
+
+/**
+ * @brief Checks whether the doc comment preceding a declaration byte offset contains a specific tag.
+ * @param[in] sourceCode     Text of the document the declaration is in.
+ * @param[in] declStartByte  Zero-based byte offset where the declaration begins.
+ * @param[in] tag            Tag substring to search for (e.g. "@listpattern").
+ * @return True if preceding comments contain the specified tag, false otherwise.
+ */
+bool HasPrecedingDocTagAtByte(std::string_view sourceCode, uint32_t declStartByte, std::string_view tag);
 } // namespace angel_lsp::analysis

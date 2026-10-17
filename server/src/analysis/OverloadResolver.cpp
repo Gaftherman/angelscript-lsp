@@ -47,7 +47,7 @@ void OverloadResolver::clear()
 
 std::span<const FunctionSymbol> OverloadResolver::findCandidates(std::string_view name, size_t argCount) const
 {
-    const auto itName = functionIndex_.find(std::string(name));
+    const auto itName = functionIndex_.find(name);
     if (itName != functionIndex_.end())
     {
         const auto itArity = itName->second.find(argCount);
@@ -179,22 +179,23 @@ static const Symbol* SelectPriorityCandidate(const std::vector<EvaluatedCandidat
         return nullptr;
     }
     const EvaluatedCandidate* best = &nonDominated.front();
-    int bestScore = 0;
+    uint32_t bestTierScore = 0;
     for (const auto& c : best->conversions)
     {
-        bestScore += c.legacyScore;
+        bestTierScore += static_cast<uint32_t>(c.tier);
     }
     for (size_t i = 1; i < nonDominated.size(); ++i)
     {
-        int score = 0;
+        uint32_t tierScore = 0;
         for (const auto& c : nonDominated[i].conversions)
         {
-            score += c.legacyScore;
+            tierScore += static_cast<uint32_t>(c.tier);
         }
-        if (score < bestScore || (score == bestScore && nonDominated[i].defaultArgs < best->defaultArgs))
+        if (tierScore < bestTierScore ||
+            (tierScore == bestTierScore && nonDominated[i].defaultArgs < best->defaultArgs))
         {
             best = &nonDominated[i];
-            bestScore = score;
+            bestTierScore = tierScore;
         }
     }
     return best->symbol;

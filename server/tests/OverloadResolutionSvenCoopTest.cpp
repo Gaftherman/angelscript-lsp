@@ -492,6 +492,137 @@ TEST_CASE("Case 11 - Ambiguous call emits Warning with root pre-formatted GetDis
     CHECK(i18nEs.GetMessageView("note-call-ambiguous-priority") == "La llamada a '{}' es ambigua (Prioridad: '{}').");
 }
 
+TEST_CASE("Case 8 - GAP-OVERLOAD-01: EntityOverriden::Find overloads with &out directionality and void argument")
+{
+    const std::string entCls = GenerateRandomSymbolName("CBaseEntity");
+    const std::string handleCls = GenerateRandomSymbolName("EHandle");
+    const std::string overCls = GenerateRandomSymbolName("EntityOverriden");
+    const std::string fnName = GenerateRandomSymbolName("Find");
+    const std::string callerFn = GenerateRandomSymbolName("TestFind");
+
+    const std::string script = "class " + entCls +
+                               " {}\n"
+                               "class " +
+                               handleCls +
+                               " {}\n"
+                               "class " +
+                               overCls +
+                               " {\n"
+                               "    " +
+                               entCls + "@ " + fnName + "(" + entCls + "@& in, " + handleCls +
+                               " &out h) { return null; }\n"
+                               "    " +
+                               entCls + "@ " + fnName + "(" + entCls + "@& in, int, " + handleCls +
+                               " &out h) { return null; }\n"
+                               "    " +
+                               entCls + "@ " + fnName + "(" + entCls +
+                               "@& in, int &out idx) { return null; }\n"
+                               "    " +
+                               entCls + "@ " + fnName + "(" + entCls +
+                               "@& in, int, int &out idx) { return null; }\n"
+                               "}\n"
+                               "void " +
+                               callerFn + "(" + overCls + "@ eo, " + entCls +
+                               "@ ent) {\n"
+                               "    " +
+                               handleCls +
+                               " h; int idx = 0;\n"
+                               "    eo." +
+                               fnName +
+                               "(@ent, h);\n"
+                               "    eo." +
+                               fnName +
+                               "(@ent, idx);\n"
+                               "    eo." +
+                               fnName +
+                               "(@ent, idx, h);\n"
+                               "}\n";
+
+    const auto diags = AnalyzeSnippetWithStubs(script);
+    for (const auto& d : diags)
+    {
+        CHECK(d.code != "as-err-call-ambiguous");
+        CHECK(d.code != "as-err-call-no-matching-signature");
+        CHECK(d.code != "as-err-expression-is-data-type");
+    }
+}
+
+TEST_CASE("Case 9 - GAP-OVERLOAD-01: Calling overloads with void argument when ambiguous detects ambiguity")
+{
+    const std::string entCls = GenerateRandomSymbolName("CBaseEntity");
+    const std::string handleCls = GenerateRandomSymbolName("EHandle");
+    const std::string overCls = GenerateRandomSymbolName("EntityOverriden");
+    const std::string fnName = GenerateRandomSymbolName("Find");
+    const std::string callerFn = GenerateRandomSymbolName("TestFindVoid");
+
+    const std::string script = "class " + entCls +
+                               " {}\n"
+                               "class " +
+                               handleCls +
+                               " {}\n"
+                               "class " +
+                               overCls +
+                               " {\n"
+                               "    " +
+                               entCls + "@ " + fnName + "(" + entCls + "@& in, " + handleCls +
+                               " &out h) { return null; }\n"
+                               "    " +
+                               entCls + "@ " + fnName + "(" + entCls +
+                               "@& in, int &out idx) { return null; }\n"
+                               "}\n"
+                               "void " +
+                               callerFn + "(" + overCls + "@ eo, " + entCls +
+                               "@ ent) {\n"
+                               "    eo." +
+                               fnName +
+                               "(@ent, void);\n"
+                               "}\n";
+
+    const auto diags = AnalyzeSnippetWithStubs(script);
+    CHECK(HasDiagCode(diags, "as-err-call-ambiguous"));
+}
+
+TEST_CASE("Case 10 - GAP-OVERLOAD-01: Undeclared argument suppresses call-ambiguous error")
+{
+    const std::string entCls = GenerateRandomSymbolName("CBaseEntity");
+    const std::string handleCls = GenerateRandomSymbolName("EHandle");
+    const std::string overCls = GenerateRandomSymbolName("EntityOverriden");
+    const std::string fnName = GenerateRandomSymbolName("Find");
+    const std::string callerFn = GenerateRandomSymbolName("TestFindPoison");
+
+    const std::string script =
+        "class " + entCls + " {}\n" + "class " + handleCls + " {}\n" + "class " + overCls + " {\n" + "    " + entCls +
+        "@ " + fnName + "(" + entCls + "@& in, " + handleCls + " &out h) { return null; }\n" + "    " + entCls + "@ " +
+        fnName + "(" + entCls + "@& in, int &out idx) { return null; }\n" + "}\n" + "void " + callerFn + "(" + overCls +
+        "@ eo, " + entCls + "@ ent) {\n" + "    eo." + fnName + "(@ent, undeclaredIdentifierVar);\n" + "}\n";
+
+    const auto diags = AnalyzeSnippetWithStubs(script);
+    CHECK(HasDiagCode(diags, "as-warn-undeclared-identifier"));
+    CHECK(!HasDiagCode(diags, "as-err-call-ambiguous"));
+}
+
+TEST_CASE("Case 11 - GAP-OVERLOAD-01: &out parameter rejects converting constructor and numeric mismatch")
+{
+    const std::string entCls = GenerateRandomSymbolName("CBaseEntity");
+    const std::string customCls = GenerateRandomSymbolName("CustomBox");
+    const std::string overCls = GenerateRandomSymbolName("EntityOverriden");
+    const std::string fnName = GenerateRandomSymbolName("Process");
+    const std::string callerFn = GenerateRandomSymbolName("TestOutMismatch");
+
+    const std::string script =
+        "class " + entCls + " {}\n" + "class " + customCls + " {\n" + "    " + customCls +
+        "(int) {}\n" + // Converting constructor
+        "}\n" + "class " + overCls + " {\n" + "    void " + fnName + "(int &out a) {}\n" + "    void " + fnName + "(" +
+        customCls + " &out b) {}\n" + "}\n" + "void " + callerFn + "(" + overCls + "@ eo) {\n" + "    int x = 42;\n" +
+        "    eo." + fnName +
+        "(x);\n" + // Should strictly select int &out, NOT match customCls &out via converting constructor
+        "}\n";
+
+    const auto diags = AnalyzeSnippetWithStubs(script);
+    CHECK(!HasDiagCode(diags, "as-err-call-ambiguous"));
+    CHECK(!HasDiagCode(diags, "as-err-call-no-matching-signature"));
+}
+
 TEST_SUITE_END();
 
 } // namespace angel_lsp::test

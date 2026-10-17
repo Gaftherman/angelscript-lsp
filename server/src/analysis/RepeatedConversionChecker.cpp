@@ -36,8 +36,8 @@ bool IsExtractableCandidate(TSNode node)
 
 struct ConversionTypePair
 {
-    const std::string& fromType;
-    const std::string& toType;
+    std::string fromType;
+    std::string toType;
 };
 
 void TryRecordOccurrence(TSNode operand, const ConversionTypePair& types, const DiagnosticContext& ctx,

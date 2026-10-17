@@ -2,6 +2,7 @@
 
 #include "analysis/ScopeTree.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/GrammarSymbols.h"
 
 #include <memory>
 #include <string>
@@ -55,27 +56,7 @@ class LocalScopeCollector
     utils::LspLogger* m_logger;
     const TSQuery* m_localsQuery;
 
-    /** @brief Cached grammar symbol for member_expression, used to flag a reference as a member access (see
-     * ScopeTree.h::LocalReference::isMemberAccess). */
-    TSSymbol m_symMemberExpression = 0;
-    TSSymbol m_symScopedIdentifier = 0;
-
-    /** @brief Cached grammar symbols used to set Scope::kind and Scope::isFunctionScope (see ScopeTree.h). */
-    TSSymbol m_symFuncDeclaration = 0;
-    TSSymbol m_symLambdaExpression = 0;
-    TSSymbol m_symClassBody = 0;
-    TSSymbol m_symInterfaceBody = 0;
-    TSSymbol m_symNamespaceBody = 0;
-    TSSymbol m_symScript = 0;
-
-    /** @brief Cached grammar symbol used to confirm a Variable-kind definition came from a
-     *         variable_declarator (as opposed to a foreach_variable, which shares
-     *         LocalDefinitionKind::Variable but has no declared-type/initializer node),
-     *         before reading LocalDefinition::isHandleType/hasNullInitializer from it. */
-    TSSymbol m_symVariableDeclarator = 0;
-    TSSymbol m_symParameter = 0;
-    TSSymbol m_symForeachVariable = 0;
-    TSSymbol m_symLambdaParameterList = 0;
+    const parser::GrammarSymbols& m_gs;
 
     /** @brief What a LOCALS_QUERY capture index means, resolved once in the constructor by capture name. */
     enum class CaptureKind
@@ -83,7 +64,8 @@ class LocalScopeCollector
         None,
         Scope,
         Definition,
-        Reference
+        Reference,
+        StringCallRef
     };
 
     /** @brief Maps each LOCALS_QUERY capture index to its CaptureKind, built once in the constructor. */
@@ -97,8 +79,13 @@ class LocalScopeCollector
     struct RawCapture
     {
         TSNode node;
-        CaptureKind kind;
-        LocalDefinitionKind definitionKind;
+        TSNode parent;
+        TSNode grandparent;
+        uint32_t startByte = 0;
+        uint32_t endByte = 0;
+        CaptureKind kind = CaptureKind::None;
+        LocalDefinitionKind definitionKind = LocalDefinitionKind::Variable;
+        TSSymbol enclosingCallableSym = 0;
     };
 
     /**
@@ -114,11 +101,11 @@ class LocalScopeCollector
 
     /**
      * @brief Reads declared type and initializer information for variable-like definitions.
-     * @param nameNode AST node representing the definition name.
+     * @param capture Raw capture containing node, parent, and grandparent AST nodes.
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving extracted type info.
      */
-    void ReadVariableTypeInfo(TSNode nameNode, const std::string& sourceCode, LocalDefinition& def) const;
+    void ReadVariableTypeInfo(const RawCapture& capture, const std::string& sourceCode, LocalDefinition& def) const;
 
     /**
      * @brief Initializes capture classifications from the compiled LOCALS_QUERY.
@@ -162,6 +149,48 @@ class LocalScopeCollector
     void ProcessReferenceCapture(const RawCapture& capture, Scope* current, const std::string& sourceCode) const;
 
     /**
+     * @brief Processes a string literal call reference capture node.
+     * @param capture Raw capture representing the string literal.
+     * @param[in,out] current Innermost open scope receiving the string call reference.
+     * @param sourceCode Source text of the document.
+     */
+    void ProcessStringCallRefCapture(const RawCapture& capture, Scope* current, const std::string& sourceCode) const;
+
+    /**
+     * @brief Ancestor nodes and enclosing symbol cached during capture processing.
+     */
+    struct CaptureAncestors
+    {
+        TSNode parent = TSNode{};
+        TSNode grandparent = TSNode{};
+        TSSymbol enclosingCallableSym = 0;
+    };
+
+    /**
+     * @brief Resolves parent, grandparent, and callable ancestor context for a captured node.
+     * @param kind CaptureKind classification of the node.
+     * @param defKind LocalDefinitionKind if applicable.
+     * @param node AST node being captured.
+     * @return Resolved CaptureAncestors bundle.
+     */
+    CaptureAncestors ResolveCaptureAncestors(CaptureKind kind, LocalDefinitionKind defKind, TSNode node) const;
+
+    /**
+     * @brief Populates qualifier, receiver byte ranges, and scopeQualifier string for member or scoped references.
+     * @param parent AST parent node of the reference.
+     * @param[out] ref LocalReference receiving byte range and qualifier information.
+     * @param sourceCode Source text of the document.
+     */
+    void PopulateReceiverQualifierRanges(TSNode parent, LocalReference& ref, const std::string& sourceCode) const;
+
+    /**
+     * @brief Checks if a grammar symbol belongs to a declaration whose name is a definition rather than a reference.
+     * @param sym Grammar symbol of parent node.
+     * @return True if parent node is a declaration.
+     */
+    [[nodiscard]] bool IsDeclarationContextSymbol(TSSymbol sym) const noexcept;
+
+    /**
      * @brief Resolves call expression and argument details for a reference using a flat cursor.
      * @param refNode AST node of the reference.
      * @param parent AST parent node.
@@ -198,10 +227,11 @@ class LocalScopeCollector
     /**
      * @brief Reads type and initializer details for a variable declarator AST node.
      * @param declaratorNode Variable declarator AST node.
+     * @param declarationNode Enclosing variable declaration AST node.
      * @param sourceCode Source text of the document.
      * @param[out] def LocalDefinition receiving type info.
      */
-    void ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, const std::string& sourceCode,
+    void ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNode declarationNode, const std::string& sourceCode,
                                         LocalDefinition& def) const;
 
     /**

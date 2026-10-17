@@ -155,7 +155,7 @@ struct RenameTargetResult
 
 template <typename RequestT> std::optional<RenameTargetResult> ResolveValidRenameTarget(const RequestT& request)
 {
-    if (request.predefinedUris.contains(request.uri))
+    if (!request.tree || request.sourceCode.empty() || request.predefinedUris.contains(request.uri))
     {
         return std::nullopt;
     }

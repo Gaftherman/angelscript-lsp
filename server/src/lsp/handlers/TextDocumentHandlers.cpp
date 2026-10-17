@@ -67,7 +67,8 @@ Server::HandleRequestsTextDocument_Hover(lsp::requests::TextDocument_Hover::Para
                                           .implicitExtension = ImplicitIncludeExtension(),
                                       });
                               },
-                              m_logger.get()};
+                              m_logger.get(),
+                              m_i18n.get()};
     auto hover = features::GetHover(hr);
     double roundtripMs = roundtripTimer.ElapsedMs();
     LogInfo(fmt::format("[Hover Roundtrip] Total: {:.2f} ms for {} at {}:{}", roundtripMs, doc->uri, req.position.line,
@@ -85,6 +86,7 @@ features::DefinitionRequest Server::MakeDefinitionRequest(const OpenDocument& do
 {
     features::DefinitionRequest dr{doc.uri,       *doc.text,    doc.tree,
                                    m_symbolTable, m_scopeIndex, codec::Decode(*doc.text, m_positionEncoding, position)};
+    dr.engineRules = &m_config.engineRules;
     dr.predefinedExtension = m_config.info.predefinedFileExtension;
     dr.resolveInclude = [this, uri = doc.uri](const std::string& rawPath)
     {
@@ -636,7 +638,15 @@ Server::HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens
         return lsp::Null{};
     }
 
-    features::CodeLensRequest clr{doc->uri, *doc->text, doc->tree, m_symbolTable, m_scopeIndex, m_logger.get()};
+    features::CodeLensRequest clr{doc->uri,
+                                  *doc->text,
+                                  doc->tree,
+                                  m_symbolTable,
+                                  m_scopeIndex,
+                                  m_logger.get(),
+                                  m_config.info.predefinedFileExtension,
+                                  &m_config.engineRules.unusedRules,
+                                  m_i18n.get()};
     auto lenses = features::GetCodeLenses(clr);
     if (lenses.has_value())
     {
@@ -827,11 +837,6 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
                 return full;
             }
         }
-    }
-
-    if (const auto text = FindDocumentText(uriStr))
-    {
-        ScheduleAnalysis(uriStr, *text);
     }
 
     lsp::json::Object retrigger;

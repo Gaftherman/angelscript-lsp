@@ -37,6 +37,10 @@ std::vector<Diagnostic> AnalyzeStatementSnippet(const std::string& sourceCode)
 
     SemanticAnalysisRequest req{table, fileUri, "", &i18n};
     angel_lsp::config::DiagnosticsConfig diagConfig;
+    diagConfig.reportUnusedFunctions = false;
+    diagConfig.reportUnusedGlobalVariables = false;
+    diagConfig.reportUnusedClasses = false;
+    diagConfig.reportUnusedMembers = false;
     req.diagnostics = &diagConfig;
     req.scopeRoot = scopeCollector.CollectScopes(sourceCode, scopeParser);
 

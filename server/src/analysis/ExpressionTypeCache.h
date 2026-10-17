@@ -3,10 +3,29 @@
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
+/**
+ * @brief Sentinel type representing a poisoned / broken expression type.
+ *
+ * When an expression is broken or has syntax errors, it is mapped to k_poisonType
+ * so downstream checkers can short-circuit without cascading diagnostics.
+ */
+inline constexpr std::string_view k_poisonType = "<poison>";
+
+/**
+ * @brief Checks whether the given type is the poisoned sentinel type.
+ * @param[in] type Type name or string view.
+ * @return True if the type is poisoned, false otherwise.
+ */
+[[nodiscard]] inline bool IsPoisonType(std::string_view type) noexcept
+{
+    return type == k_poisonType;
+}
+
 /**
  * @brief Cache key uniquely identifying an expression AST node for memoization.
  */
@@ -46,6 +65,19 @@ struct ExpressionCacheKeyHash
  */
 struct ExpressionTypeCache
 {
+    static constexpr std::string_view k_poisonType = "<poison>";
+
+    [[nodiscard]] static bool IsPoisonType(std::string_view type) noexcept
+    {
+        return type == k_poisonType;
+    }
+
+    ExpressionTypeCache()
+    {
+        types.reserve(512);
+        hierarchies.reserve(64);
+    }
+
     /** @brief Map of AST node keys to evaluated type strings. */
     ankerl::unordered_dense::map<ExpressionCacheKey, std::string, ExpressionCacheKeyHash> types;
 

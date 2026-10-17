@@ -1,4 +1,5 @@
 #include "analysis/overload/AmbiguityDetector.h"
+#include "analysis/ExpressionTypeCache.h"
 #include "analysis/overload/ConversionRankingEngine.h"
 #include "analysis/overload/OverloadTypeConversions.h"
 
@@ -195,38 +196,62 @@ bool IsStrictlyBetter(const EvaluatedCandidate& a, const EvaluatedCandidate& b)
 
 std::vector<EvaluatedCandidate> FilterNonDominatedCandidates(const std::vector<EvaluatedCandidate>& evaluated)
 {
-    const bool hasLosslessStandardCandidate =
-        std::any_of(evaluated.begin(), evaluated.end(),
-                    [](const auto& cand)
-                    {
-                        return std::none_of(cand.conversions.begin(), cand.conversions.end(), [](const auto& c)
-                                            { return c.isLossy || c.rank >= ConversionRank::UserDefined; });
-                    });
+    if (evaluated.empty())
+    {
+        return {};
+    }
 
-    std::vector<EvaluatedCandidate> nonDominated;
+    uint32_t minCost = std::numeric_limits<uint32_t>::max();
     for (const auto& cand : evaluated)
     {
-        if (hasLosslessStandardCandidate &&
-            std::any_of(cand.conversions.begin(), cand.conversions.end(),
-                        [](const auto& c) { return c.isLossy || c.rank >= ConversionRank::UserDefined; }))
+        uint32_t cost = 0;
+        for (const auto& c : cand.conversions)
         {
-            continue;
+            cost += static_cast<uint32_t>(c.tier);
         }
-        bool dominated = false;
-        for (const auto& other : evaluated)
+        if (cost < minCost)
         {
-            if (&cand != &other && IsStrictlyBetter(other, cand))
-            {
-                dominated = true;
-                break;
-            }
-        }
-        if (!dominated)
-        {
-            nonDominated.push_back(cand);
+            minCost = cost;
         }
     }
-    return nonDominated;
+
+    std::vector<EvaluatedCandidate> bestCandidates;
+    for (const auto& cand : evaluated)
+    {
+        uint32_t cost = 0;
+        for (const auto& c : cand.conversions)
+        {
+            cost += static_cast<uint32_t>(c.tier);
+        }
+        if (cost == minCost)
+        {
+            bestCandidates.push_back(cand);
+        }
+    }
+
+    if (bestCandidates.size() > 1)
+    {
+        std::vector<EvaluatedCandidate> nonDominated;
+        for (const auto& cand : bestCandidates)
+        {
+            bool dominated = false;
+            for (const auto& other : bestCandidates)
+            {
+                if (&cand != &other && IsStrictlyBetter(other, cand))
+                {
+                    dominated = true;
+                    break;
+                }
+            }
+            if (!dominated)
+            {
+                nonDominated.push_back(cand);
+            }
+        }
+        bestCandidates = std::move(nonDominated);
+    }
+
+    return bestCandidates;
 }
 
 bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
@@ -241,7 +266,8 @@ bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
                                                 [](const std::string& argType)
                                                 {
                                                     const std::string bare = NormalizeType(argType);
-                                                    return bare.empty() || bare == "auto";
+                                                    return bare.empty() || bare == "auto" || bare == "<poison>" ||
+                                                           ExpressionTypeCache::IsPoisonType(argType);
                                                 });
     if (anyArgumentUnknown)
     {

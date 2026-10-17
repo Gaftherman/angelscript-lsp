@@ -119,6 +119,21 @@ bool IsStringConcatenationCompatible(const BinaryOperandTypes& types, const Symb
     return other == stringTypeName || parser::primitives::IsPrimitive(other) || ResolvesToEnum(other, table);
 }
 
+static bool HasClassNumericOpImplConv(const std::string& classType, const std::string& otherType,
+                                      const SymbolTable& table)
+{
+    if (TypeHasOpImplConvTo(classType, otherType, table))
+    {
+        return true;
+    }
+    if (!parser::primitives::IsNumeric(otherType))
+    {
+        return false;
+    }
+    return TypeHasOpImplConvTo(classType, "int", table) || TypeHasOpImplConvTo(classType, "double", table) ||
+           TypeHasOpImplConvTo(classType, "float", table);
+}
+
 bool HasOverloadedArithmeticOperator(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table)
 {
     auto [opName, revOpName] = GetOpMethods(op);
@@ -129,6 +144,16 @@ bool HasOverloadedArithmeticOperator(std::string_view op, const BinaryOperandTyp
     if (!revOpName.empty() && TypeHasOperator(types.right, std::string(revOpName), types.left, table))
     {
         return true;
+    }
+    const bool leftIsClass = !parser::primitives::IsPrimitive(types.left) && !ResolvesToEnum(types.left, table);
+    const bool rightIsClass = !parser::primitives::IsPrimitive(types.right) && !ResolvesToEnum(types.right, table);
+    if (leftIsClass && !rightIsClass)
+    {
+        return HasClassNumericOpImplConv(types.left, types.right, table);
+    }
+    if (!leftIsClass && rightIsClass)
+    {
+        return HasClassNumericOpImplConv(types.right, types.left, table);
     }
     return TypeHasOpImplConvTo(types.left, types.right, table) || TypeHasOpImplConvTo(types.right, types.left, table);
 }

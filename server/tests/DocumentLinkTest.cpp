@@ -143,7 +143,8 @@ TEST_CASE("GetDocumentLinks - a document with no directives yields nothing")
     LinkFixture fixture;
 
     const std::string uri = fixture.Uri("main.as");
-    features::DocumentLinkRequest request{uri, "void Main() {}\n", fixture.searchDirectories, nullptr};
+    const std::string source = "void Main() {}\n";
+    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
 
     CHECK_FALSE(features::GetDocumentLinks(request).has_value());
 }
@@ -154,7 +155,8 @@ TEST_CASE("GetDocumentLinks - a directive inside a comment is not a link")
     fixture.Write("base.as", "void Base() {}\n");
 
     const std::string uri = fixture.Uri("main.as");
-    features::DocumentLinkRequest request{uri, "// #include \"base.as\"\n", fixture.searchDirectories, nullptr};
+    const std::string source = "// #include \"base.as\"\n";
+    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
 
     CHECK_FALSE(features::GetDocumentLinks(request).has_value());
 }
@@ -187,7 +189,8 @@ TEST_CASE("GetUnresolvedIncludeDiagnostics - says nothing about includes that do
     fixture.Write("base.as", "void Base() {}\n");
 
     const std::string uri = fixture.Uri("main.as");
-    features::DocumentLinkRequest request{uri, "#include \"base.as\"\n", fixture.searchDirectories, nullptr};
+    const std::string source = "#include \"base.as\"\n";
+    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
 
     CHECK(features::GetUnresolvedIncludeDiagnostics(request).empty());
 }

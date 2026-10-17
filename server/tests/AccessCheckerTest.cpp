@@ -8,6 +8,7 @@
 #include "config/ServerConfig.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
+#include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
@@ -795,6 +796,92 @@ TEST_CASE("AccessChecker - a lambda's own local is not an outer local")
                                                   "void Init() { CB@ cb = function() { int mine = 1; mine = 2; }; }\n");
 
     CHECK_FALSE(HasCode(diagnostics, "as-err-lambda-closure-disallowed"));
+}
+
+TEST_CASE("AccessChecker - a lambda inside a class method may not access outer class members")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Entity");
+    const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("m_speed");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Spawn");
+
+    const std::string code = "funcdef void Action();\n"
+                             "class " +
+                             clsName +
+                             "\n"
+                             "{\n"
+                             "    int " +
+                             memberName +
+                             ";\n"
+                             "    void " +
+                             fnName +
+                             "()\n"
+                             "    {\n"
+                             "        Action@ act = function() {\n"
+                             "            " +
+                             memberName +
+                             " = 100;\n"
+                             "        };\n"
+                             "    }\n"
+                             "}\n";
+
+    const auto diagnostics = AnalyzeAccessSnippet(code);
+    CHECK(HasCode(diagnostics, "as-err-lambda-member-access"));
+}
+
+TEST_CASE("AccessChecker - a lambda inside a class method may not use this or super")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Target");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Init");
+
+    const std::string code = "funcdef void Action();\n"
+                             "class " +
+                             clsName +
+                             "\n"
+                             "{\n"
+                             "    void " +
+                             fnName +
+                             "()\n"
+                             "    {\n"
+                             "        Action@ act = function() {\n"
+                             "            this;\n"
+                             "        };\n"
+                             "    }\n"
+                             "}\n";
+
+    const auto diagnostics = AnalyzeAccessSnippet(code);
+    CHECK(HasCode(diagnostics, "as-err-lambda-this-disallowed"));
+}
+
+TEST_CASE("AccessChecker - a lambda inside a class method may access its own parameters")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Worker");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("DoWork");
+    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("item");
+
+    const std::string code = "funcdef void Handler(int " + paramName +
+                             ");\n"
+                             "class " +
+                             clsName +
+                             "\n"
+                             "{\n"
+                             "    void " +
+                             fnName +
+                             "()\n"
+                             "    {\n"
+                             "        Handler@ h = function(int " +
+                             paramName +
+                             ") {\n"
+                             "            int localVal = " +
+                             paramName +
+                             ";\n"
+                             "        };\n"
+                             "    }\n"
+                             "}\n";
+
+    const auto diagnostics = AnalyzeAccessSnippet(code);
+    CHECK_FALSE(HasCode(diagnostics, "as-err-lambda-member-access"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-lambda-closure-disallowed"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-lambda-this-disallowed"));
 }
 
 // =====================================================================================

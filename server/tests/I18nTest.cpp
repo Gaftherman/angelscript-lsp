@@ -121,6 +121,32 @@ TEST_CASE("I18n - Action message codes exist in both English and Spanish")
     }
 }
 
+TEST_CASE("I18n - Hover message codes exist in both English and Spanish")
+{
+    static const std::vector<std::string> k_hoverCodes = {"hover-more-overloads-singular",
+                                                          "hover-more-overloads-plural",
+                                                          "hover-wildcard-type-desc",
+                                                          "hover-string-length",
+                                                          "hover-string-file-not-found",
+                                                          "hover-asset-status-exists",
+                                                          "hover-asset-size",
+                                                          "hover-asset-path"};
+
+    const I18n english("en");
+    const I18n spanish("es");
+
+    for (const auto& code : k_hoverCodes)
+    {
+        CAPTURE(code);
+        const std::string en = english.GetMessage(code);
+        const std::string es = spanish.GetMessage(code);
+
+        CHECK_FALSE(en.empty());
+        CHECK_FALSE(es.empty());
+        CHECK(en != es);
+    }
+}
+
 TEST_CASE("I18n - FormatMessage formats patterns and handles fallbacks dynamically")
 {
     const std::string randomKey = angel_lsp::test::GenerateRandomSymbolName("settingKey");

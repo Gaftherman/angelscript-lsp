@@ -12,6 +12,7 @@
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
+#include <cstddef>
 #include <doctest/doctest.h>
 #include <filesystem>
 #include <lsp/messages.h>
@@ -20,10 +21,39 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
+
+namespace angel_lsp::utils
+{
+/**
+ * @brief Thread-local allocation telemetry facade for LSP harness benchmarks.
+ */
+class AllocationCounter
+{
+  public:
+    /** @brief Resets allocation telemetry metrics on the calling thread. */
+    static void resetThreadCounts() noexcept;
+
+    /** @brief Returns heap allocation count observed on the calling thread since reset. */
+    static std::size_t getThreadAllocationCount() noexcept;
+};
+} // namespace angel_lsp::utils
 
 namespace angel_lsp::test
 {
+
+/**
+ * @brief Telemetry and diagnostic audit payload produced by analyzeWithTelemetry.
+ */
+struct HarnessAuditResult
+{
+    std::vector<lsp::Diagnostic> diagnostics;
+    std::size_t threadAllocations = 0;
+    double elapsedMs = 0.0;
+    bool hadSyntaxErrorNodes = false;
+    std::size_t cascadingSemanticErrorsOnBrokenLine = 0;
+};
 
 /**
  * @brief High-level test harness fixture providing synchronous multi-file workspace
@@ -61,6 +91,16 @@ class LspSemanticHarnessFixture
      * @param[in] newContent Updated AngelScript source code content.
      */
     void UpdateVirtualDocument(const std::string& uri, const std::string& newContent);
+
+    /**
+     * @brief Analyzes source text and returns diagnostic telemetry including allocations and timing.
+     * @param[in] uri Virtual document URI key.
+     * @param[in] sourceText AngelScript source code content.
+     * @param[in] maxAllowedAllocations Optional ceiling for thread heap allocations.
+     * @return HarnessAuditResult containing diagnostics and measured telemetry.
+     */
+    HarnessAuditResult analyzeWithTelemetry(std::string_view uri, std::string_view sourceText,
+                                            std::size_t maxAllowedAllocations = 0);
 
     /**
      * @brief Asserts that the specified document emits zero semantic diagnostics.

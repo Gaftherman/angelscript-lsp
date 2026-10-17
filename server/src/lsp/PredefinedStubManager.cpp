@@ -279,16 +279,6 @@ std::shared_ptr<const std::string> PredefinedStubManager::GetDocumentTextShared(
     return nullptr;
 }
 
-const std::string* PredefinedStubManager::GetDocumentTextPtr(const std::string& uri) const
-{
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (auto it = m_predefinedDocuments.find(uri); it != m_predefinedDocuments.end() && it->second)
-    {
-        return it->second.get();
-    }
-    return nullptr;
-}
-
 size_t PredefinedStubManager::Size() const
 {
     std::lock_guard<std::mutex> lock(m_mutex);

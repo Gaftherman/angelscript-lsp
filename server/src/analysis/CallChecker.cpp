@@ -1,17 +1,21 @@
 #include "analysis/CallChecker.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
+#include "analysis/ExpressionTypeCache.h"
 #include "analysis/InitializerListChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/ast/SemanticNodes.h"
 #include "analysis/overload/OverloadTypeConversions.h"
+#include "analysis/rules/EngineRuleChecker.h"
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
+#include "utils/StopFlag.h"
 #include <algorithm>
+#include <ankerl/unordered_dense.h>
 #include <cctype>
 #include <optional>
 #include <span>
@@ -234,15 +238,16 @@ bool IsConstructorOrDestructorName(const std::string& memberName, const std::str
  * @param[in] typeName Name of the class type.
  * @param[in] methodName Name of the method.
  * @param[in] table Symbol table.
+ * @param[in] cache Optional expression type cache for memoizing type hierarchies.
  * @return Candidate symbols matching the method name.
  */
 std::vector<Symbol> FindMethodCandidates(const std::string& typeName, const std::string& methodName,
-                                         const SymbolTable& table)
+                                         const SymbolTable& table, ExpressionTypeCache* cache = nullptr)
 {
     std::vector<Symbol> candidates;
-    for (const auto& owner : GetInheritedTypeHierarchy(typeName, table))
+    for (const auto& owner : GetInheritedTypeHierarchy(typeName, table, cache))
     {
-        const auto found = table.FindSymbolsPtr(owner + "::" + methodName);
+        const auto found = table.FindMemberSymbolPtr(owner, methodName);
         if (!found)
         {
             continue;
@@ -279,11 +284,12 @@ struct FreeLookupContext
 {
     TSNode callNode;
     std::string_view sourceCode;
-    const std::string& fileUri;
-    const std::string& predefinedExtension;
+    std::string fileUri;
+    std::string predefinedExtension;
     const SymbolTable& table;
     const rules::RuleIndex& index;
     const ankerl::unordered_dense::set<std::string>& moduleFileUris;
+    const NodeIndex* nodeIndex = nullptr;
 };
 
 /**
@@ -322,8 +328,8 @@ std::vector<std::string> CollectReachableScopes(TSNode callNode, std::string_vie
 void CollectScopeCandidates(const std::string& scopeName, const std::string& name, const FreeLookupContext& ctx,
                             std::vector<Symbol>& candidates)
 {
-    const std::string key = scopeName.empty() ? name : scopeName + "::" + name;
-    const auto found = ctx.table.FindSymbolsPtr(key);
+    const auto found =
+        scopeName.empty() ? ctx.table.FindSymbolsPtr(name) : ctx.table.FindMemberSymbolPtr(scopeName, name);
     if (!found)
     {
         return;
@@ -352,13 +358,15 @@ void CollectScopeCandidates(const std::string& scopeName, const std::string& nam
 void CollectUsingNamespaceCandidates(const std::string& name, const std::vector<std::string>& reachableScopes,
                                      const FreeLookupContext& ctx, std::vector<Symbol>& candidates)
 {
-    TSNode documentRoot = ctx.callNode;
-    while (!ts_node_is_null(ts_node_parent(documentRoot)))
+    if (ctx.sourceCode.find("using") == std::string_view::npos)
     {
-        documentRoot = ts_node_parent(documentRoot);
+        return;
     }
 
-    for (const auto& imported : CollectUsingNamespaces(documentRoot, ctx.sourceCode))
+    const auto usings = ctx.nodeIndex ? CollectUsingNamespaces(*ctx.nodeIndex, ctx.sourceCode)
+                                      : CollectUsingNamespaces(GetRootNode(ctx.callNode), ctx.sourceCode);
+
+    for (const auto& imported : usings)
     {
         if (!imported.empty() &&
             std::find(reachableScopes.begin(), reachableScopes.end(), imported) == reachableScopes.end())
@@ -592,7 +600,7 @@ bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& valCtx)
     const std::string name = NodeText(objectNode, valCtx.request.sourceCode);
     if (valCtx.scope)
     {
-        if (const auto* def = ResolveInScope(valCtx.scope, name))
+        if (const auto* def = ResolveInScopeAt(valCtx.scope, name, ts_node_start_byte(objectNode)))
         {
             if (!def->typeName.empty() && HasConstModifier(def->typeName))
             {
@@ -628,6 +636,11 @@ ObjectTypeInfo ResolveMemberObjectType(TSNode objectNode, const CallValidationCo
     const std::string rawObjType =
         CanonicalizeArrayType(ResolveExpressionType(objectNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx)),
                               valCtx.ctx.request.GetEffectiveArrayTypeName());
+    if (ExpressionTypeCache::IsPoisonType(rawObjType))
+    {
+        info.objectType = std::string(ExpressionTypeCache::k_poisonType);
+        return info;
+    }
     info.objectType = CleanBaseType(rawObjType);
     info.isConst = rawObjType.starts_with("const ") || rawObjType.ends_with("const") || HasConstModifier(rawObjType) ||
                    IsObjectNodeConst(objectNode, valCtx);
@@ -813,9 +826,9 @@ bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
  * @return Optional synthesized function symbol.
  */
 std::optional<Symbol> TryResolveMemberCallableFuncdef(const std::string& objectType, const std::string& memberName,
-                                                      const SymbolTable& table)
+                                                      const SymbolTable& table, ExpressionTypeCache* cache = nullptr)
 {
-    const auto hierarchy = GetInheritedTypeHierarchy(objectType, table);
+    const auto hierarchy = GetInheritedTypeHierarchy(objectType, table, cache);
     for (const auto& typeName : hierarchy)
     {
         if (const auto found = table.FindMemberSymbolPtr(typeName, memberName))
@@ -844,7 +857,8 @@ static bool CheckNonCallableVariable(const std::string& name, const std::string&
                                      const CallValidationContext& valCtx, CalleeResolution& res)
 {
     std::string cleanType = CleanBaseType(typeName);
-    auto opCallSyms = FindMethodCandidates(cleanType, "opCall", valCtx.ctx.request.symbolTable);
+    auto opCallSyms =
+        FindMethodCandidates(cleanType, "opCall", valCtx.ctx.request.symbolTable, valCtx.ctx.request.exprCache);
     if (!opCallSyms.empty())
     {
         res.reportedName = name;
@@ -864,9 +878,10 @@ static bool CheckNonCallableVariable(const std::string& name, const std::string&
 static bool CheckMemberNonCallableVariable(const std::string& objType, const std::string& memberName,
                                            const CallValidationContext& valCtx, CalleeResolution& res)
 {
-    for (const auto& cls : GetInheritedTypeHierarchy(objType, valCtx.ctx.request.symbolTable))
+    for (const auto& cls :
+         GetInheritedTypeHierarchy(objType, valCtx.ctx.request.symbolTable, valCtx.ctx.request.exprCache))
     {
-        if (auto found = valCtx.ctx.request.symbolTable.FindSymbolsPtr(cls + "::" + memberName))
+        if (auto found = valCtx.ctx.request.symbolTable.FindMemberSymbolPtr(cls, memberName))
         {
             for (const auto& sym : *found)
             {
@@ -899,7 +914,8 @@ CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
     }
 
     const auto objInfo = ResolveMemberObjectType(objectNode, valCtx);
-    if (objInfo.objectType.empty() || !HierarchyIsFullyVisible(objInfo.objectType, valCtx.ctx.request.symbolTable))
+    if (objInfo.objectType.empty() || ExpressionTypeCache::IsPoisonType(objInfo.objectType) ||
+        !HierarchyIsFullyVisible(objInfo.objectType, valCtx.ctx.request.symbolTable))
     {
         res.shouldCheck = false;
         return res;
@@ -917,14 +933,15 @@ CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
     }
 
     res.isReceiverConst = objInfo.isConst;
-    res.candidates = FindMethodCandidates(objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable);
+    res.candidates = FindMethodCandidates(objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable,
+                                          valCtx.ctx.request.exprCache);
     FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
     ApplyTemplateSubstitutions(res.candidates, objInfo.objectType, objInfo.templateArgs,
                                valCtx.ctx.request.symbolTable);
     if (res.candidates.empty())
     {
-        if (auto callableSym =
-                TryResolveMemberCallableFuncdef(objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable))
+        if (auto callableSym = TryResolveMemberCallableFuncdef(
+                objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable, valCtx.ctx.request.exprCache))
         {
             res.candidates.push_back(std::move(*callableSym));
         }
@@ -941,7 +958,8 @@ static bool CheckLocalNonCallable(const std::string& shortName, const CallValida
 {
     if (valCtx.scope)
     {
-        if (const LocalDefinition* shadow = ResolveInScope(valCtx.scope, shortName))
+        if (const LocalDefinition* shadow =
+                ResolveInScopeAt(valCtx.scope, shortName, ts_node_start_byte(valCtx.callee)))
         {
             if (shadow->kind == LocalDefinitionKind::Variable || shadow->kind == LocalDefinitionKind::Parameter)
             {
@@ -1058,7 +1076,8 @@ static bool ResolveEnclosingClassCallee(std::string_view written, const CallVali
     {
         return false;
     }
-    res.candidates = FindMethodCandidates(enclosingClass, std::string(written), valCtx.ctx.request.symbolTable);
+    res.candidates = FindMethodCandidates(enclosingClass, std::string(written), valCtx.ctx.request.symbolTable,
+                                          valCtx.ctx.request.exprCache);
     if (!res.candidates.empty())
     {
         res.candidatesAreFreeFunctions = false;
@@ -1096,7 +1115,8 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
         return res;
     }
 
-    if (auto callableSym = TryResolveCallableFuncdef(shortName, valCtx.scope, valCtx.ctx.request.symbolTable))
+    if (auto callableSym = TryResolveCallableFuncdef(shortName, valCtx.scope, valCtx.ctx.request.symbolTable,
+                                                     ts_node_start_byte(valCtx.callee)))
     {
         res.candidates = {std::move(*callableSym)};
         res.candidatesAreFreeFunctions = true;
@@ -1122,7 +1142,8 @@ CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
                                     valCtx.ctx.request.predefinedFileExtension,
                                     valCtx.ctx.request.symbolTable,
                                     valCtx.ctx.request.GetRuleIndex(),
-                                    valCtx.ctx.request.moduleFileUris};
+                                    valCtx.ctx.request.moduleFileUris,
+                                    valCtx.request.nodeIndex};
     res.candidates = FindFreeCandidates(written, freeCtx);
     if (!res.candidates.empty() || CheckGlobalNonCallableVariable(written, shortName, valCtx, res))
     {
@@ -1179,6 +1200,26 @@ struct CallArgTypes
 };
 
 /**
+ * @brief Unwraps a parenthesized expression AST node to its inner child.
+ *
+ * @param[in] node Input AST node.
+ * @return Inner node if parenthesized, otherwise the node itself.
+ */
+static TSNode UnwrapParenNode(TSNode node)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(node) == gs.symParenthesizedExpression)
+    {
+        TSNode child = ts_node_named_child(node, 0);
+        if (!ts_node_is_null(child))
+        {
+            return child;
+        }
+    }
+    return node;
+}
+
+/**
  * @brief Resolves expression types for each call argument and flags bare types.
  *
  * @param[in] valCtx Call validation context.
@@ -1201,6 +1242,11 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
         if (auto dataTypeName =
                 IsBareDataType(argNode, valCtx.scope, valCtx.ctx.request.symbolTable, valCtx.request.sourceCode))
         {
+            if (*dataTypeName == "void")
+            {
+                result.argTypes.push_back("void");
+                continue;
+            }
             const TSPoint aStart = ts_node_start_point(argNode);
             const TSPoint aEnd = ts_node_end_point(argNode);
             valCtx.ctx.EmitAtRange({aStart.row, aStart.column, aEnd.row, aEnd.column},
@@ -1211,9 +1257,18 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
         }
 
         std::string argType = ResolveExpressionType(argNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
-        if (argType.empty())
+        if (argType.empty() || ExpressionTypeCache::IsPoisonType(argType))
         {
-            result.allArgsResolved = false;
+            const auto& gs = parser::GetGrammarSymbols();
+            TSNode unwrapped = UnwrapParenNode(argNode);
+            if (ts_node_symbol(unwrapped) == gs.symNullLiteral)
+            {
+                argType = "null";
+            }
+            else
+            {
+                result.allArgsResolved = false;
+            }
         }
         else if (!HasConstModifier(argType) && IsObjectNodeConst(argNode, valCtx))
         {
@@ -1287,25 +1342,6 @@ void CheckInitializerListArgs(const CallArgTypes& args, const FunctionSignature&
                                             {valCtx.request.sourceCode, valCtx.scope}, valCtx.ctx);
         }
     }
-}
-
-/**
- * @brief Unwraps a parenthesized expression AST node to its inner child.
- *
- * @param[in] node Input AST node.
- * @return Inner node if parenthesized, otherwise the node itself.
- */
-TSNode UnwrapParenNode(TSNode node)
-{
-    if (std::string_view(ts_node_type(node)) == parser::nodes::ParenthesizedExpression)
-    {
-        TSNode child = ts_node_named_child(node, 0);
-        if (!ts_node_is_null(child))
-        {
-            return child;
-        }
-    }
-    return node;
 }
 
 /**
@@ -1505,11 +1541,12 @@ void ReportOverloadResolutionFailure(std::span<const Symbol* const> candidates, 
  * @param[in] table Symbol table.
  * @return True if assignable variable.
  */
-bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, const SymbolTable& table)
+bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, const SymbolTable& table,
+                              uint32_t refByte = UINT32_MAX)
 {
     if (scope)
     {
-        const auto* def = ResolveInScope(scope, name);
+        const auto* def = ResolveInScopeAt(scope, name, refByte);
         if (def && (def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter ||
                     def->kind == LocalDefinitionKind::Field))
         {
@@ -1564,7 +1601,7 @@ bool CheckArgIsLValue(TSNode argNode, std::string_view sourceCode, const Scope* 
 
     if (aType == "identifier" || aType == "scoped_identifier")
     {
-        return IsAssignableLValueSymbol(aText, scope, table);
+        return IsAssignableLValueSymbol(aText, scope, table, ts_node_start_byte(argNode));
     }
     return (aType == "member_expression" || aType == "index_expression");
 }
@@ -1615,7 +1652,7 @@ void ValidateOutArguments(const Symbol& candidate, const std::vector<TSNode>& ar
  * @return True if candidate matches the named arguments call.
  */
 static size_t ResolveParameterIndexForArgument(const FunctionSignature& sig, size_t argIdx, std::string_view argName,
-                                               const std::unordered_set<size_t>& matchedParams)
+                                               const ankerl::unordered_dense::set<size_t>& matchedParams)
 {
     if (!argName.empty())
     {
@@ -1637,7 +1674,7 @@ static size_t ResolveParameterIndexForArgument(const FunctionSignature& sig, siz
 }
 
 static bool CheckUnmatchedDefaultParameters(const FunctionSignature& sig,
-                                            const std::unordered_set<size_t>& matchedParams)
+                                            const ankerl::unordered_dense::set<size_t>& matchedParams)
 {
     for (size_t p = 0; p < sig.parameters.size(); ++p)
     {
@@ -1653,7 +1690,7 @@ static bool CheckUnmatchedDefaultParameters(const FunctionSignature& sig,
 bool CheckCandidateNamedArgs(const FunctionSignature& sig, const std::vector<std::string>& argNames,
                              const std::vector<std::string>& argTypes, const SymbolTable& symbolTable)
 {
-    std::unordered_set<size_t> matchedParams;
+    ankerl::unordered_dense::set<size_t> matchedParams;
     for (size_t i = 0; i < argNames.size(); ++i)
     {
         size_t paramIdx = ResolveParameterIndexForArgument(sig, i, argNames[i], matchedParams);
@@ -1784,6 +1821,44 @@ CalleeResolution ResolveCalleeCandidates(const CallValidationContext& valCtx)
     return res;
 }
 
+static bool IsDelegateConstructionPattern(TSNode argumentList, std::string_view calleeName, std::string_view sourceCode)
+{
+    const auto argNodes = GetArgumentNodes(argumentList);
+    if (argNodes.size() != 1)
+    {
+        return false;
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode arg = UnwrapParenNode(argNodes[0]);
+    if (ts_node_symbol(arg) != gs.symMemberExpression)
+    {
+        return false;
+    }
+    TSNode objNode = ts_node_child_by_field_id(arg, gs.fieldObject);
+    TSNode memberNode = ts_node_child_by_field_id(arg, gs.fieldMember);
+    if (ts_node_is_null(objNode) || ts_node_is_null(memberNode))
+    {
+        return false;
+    }
+    const std::string_view objText = GetNodeTextView(objNode, sourceCode);
+    const std::string_view memberText = GetNodeTextView(memberNode, sourceCode);
+    return objText == "this" && memberText == calleeName;
+}
+
+static bool HasFuncdefSymbol(std::string_view name, const SymbolTable& table)
+{
+    if (const auto syms = table.FindSymbolsPtr(name))
+    {
+        if (std::any_of(syms->begin(), syms->end(), [](const Symbol& s) { return s.type == SymbolType::Funcdef; }))
+        {
+            return true;
+        }
+    }
+    const auto shortName = LastScopeSegment(name);
+    const auto matches = table.FindTypeSymbolsByShortName(shortName);
+    return std::any_of(matches.begin(), matches.end(), [](const Symbol& s) { return s.type == SymbolType::Funcdef; });
+}
+
 /**
  * @brief Validates argument count against candidate arities and emits diagnostics on failure.
  *
@@ -1797,7 +1872,17 @@ bool CheckArgumentCount(const CalleeResolution& calleeRes, uint32_t argumentCoun
     const CandidateSet judged = JudgeAgainst(calleeRes.candidates, argumentCount);
     if (!judged.decided || !judged.accepts)
     {
-        if (judged.decided && !judged.accepts && !calleeRes.isUnqualifiedClassCall)
+        bool emit = judged.decided && !judged.accepts;
+        if (emit && calleeRes.isUnqualifiedClassCall)
+        {
+            if (argumentCount == 1 &&
+                (IsDelegateConstructionPattern(valCtx.arguments, calleeRes.reportedName, valCtx.request.sourceCode) ||
+                 HasFuncdefSymbol(calleeRes.reportedName, valCtx.ctx.request.symbolTable)))
+            {
+                emit = false;
+            }
+        }
+        if (emit)
         {
             const TSPoint start = ts_node_start_point(valCtx.callee);
             const TSPoint end = ts_node_end_point(valCtx.arguments);
@@ -1847,6 +1932,11 @@ void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope,
     }
 
     const CallArgTypes args = ResolveCallArguments(valCtx);
+    if (std::any_of(args.argTypes.begin(), args.argTypes.end(),
+                    [](const std::string& t) { return ExpressionTypeCache::IsPoisonType(t); }))
+    {
+        return;
+    }
     const std::vector<const Symbol*> matchingArity = FilterMatchingArityCandidates(calleeRes.candidates, argumentCount);
 
     if (matchingArity.size() == 1 && matchingArity.front())
@@ -1868,6 +1958,8 @@ void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope,
 
     CheckMalformedTernaryArgs(args.argNodes, args.argTypes, matchingArity, valCtx);
     CheckCallOverloads(matchingArity, args, calleeRes, valCtx);
+    rules::CheckEngineSchedulerCall(
+        rules::SchedulerCallRequest{node, calleeRes.reportedName, args.argNodes, args.argTypes, matchingArity}, ctx);
 }
 
 /**
@@ -1972,7 +2064,20 @@ void CheckPrimitiveDirectInit(TSNode argListNode, const std::vector<std::string>
 std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const SymbolTable& table)
 {
     std::vector<Symbol> rawConstructors;
-    auto collectFunctions = [&](const std::string& key)
+    auto collectMemberFunctions = [&](std::string_view scope, std::string_view member)
+    {
+        if (const auto found = table.FindMemberSymbolPtr(scope, member))
+        {
+            for (const auto& s : *found)
+            {
+                if (s.type == SymbolType::Function)
+                {
+                    rawConstructors.push_back(s);
+                }
+            }
+        }
+    };
+    auto collectFunctions = [&](std::string_view key)
     {
         if (const auto found = table.FindSymbolsPtr(key))
         {
@@ -1986,11 +2091,11 @@ std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const Sym
         }
     };
 
-    const std::string shortName = std::string(LastScopeSegment(baseName));
-    collectFunctions(baseName + "::" + shortName);
+    const std::string_view shortName = LastScopeSegment(baseName);
+    collectMemberFunctions(baseName, shortName);
     if (shortName != baseName)
     {
-        collectFunctions(baseName + "::" + baseName);
+        collectMemberFunctions(baseName, baseName);
     }
     if (rawConstructors.empty())
     {
@@ -2002,11 +2107,11 @@ std::vector<Symbol> LookupRawConstructors(const std::string& baseName, const Sym
         {
             if (sym.type == SymbolType::Class)
             {
-                const std::string fullPrefix = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                collectFunctions(fullPrefix + "::" + shortName);
+                const std::string_view fullPrefix = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                collectMemberFunctions(fullPrefix, shortName);
                 if (fullPrefix != sym.name)
                 {
-                    collectFunctions(sym.name + "::" + shortName);
+                    collectMemberFunctions(sym.name, shortName);
                 }
             }
         }
@@ -2215,6 +2320,11 @@ void CheckDeclaratorDirectInit(TSNode declarator, const VarInitContext& vctx)
     {
         argTypes.push_back(ResolveExpressionType(argNode, ExpressionTypeContext(scope, vctx.ctx)));
     }
+    if (std::any_of(argTypes.begin(), argTypes.end(),
+                    [](const std::string& t) { return ExpressionTypeCache::IsPoisonType(t); }))
+    {
+        return;
+    }
 
     if (IsCorePrimitive(vctx.baseName))
     {
@@ -2290,38 +2400,32 @@ void CheckVariableDirectInitialization(TSNode varDeclNode, const CallCheckReques
  * @param[in] request Analysis call request.
  * @param[in,out] ctx Diagnostic context.
  */
-void TraverseAstNodes(TSNode root, const CallCheckRequest& request, DiagnosticContext& ctx)
+void CheckCallArgumentsIndexed(const CallCheckRequest& request, DiagnosticContext& ctx)
 {
-    std::vector<TSNode> stack;
-    stack.push_back(root);
-
-    while (!stack.empty())
+    if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
     {
-        TSNode node = stack.back();
-        stack.pop_back();
-
-        if (ts_node_is_null(node))
-        {
-            continue;
-        }
-
-        const std::string_view nodeType = ts_node_type(node);
-        if (nodeType == "call_expression")
-        {
-            const TSPoint start = ts_node_start_point(node);
-            CheckCall(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
-        }
-        else if (nodeType == "variable_declaration")
-        {
-            CheckVariableDirectInitialization(node, request, ctx);
-        }
-
-        const uint32_t childCount = ts_node_named_child_count(node);
-        for (uint32_t i = childCount; i > 0; --i)
-        {
-            stack.push_back(ts_node_named_child(node, i - 1));
-        }
+        return;
     }
+
+    request.nodeIndex->ForEachNodeOrdered(
+        {parser::nodes::CallExpression, parser::nodes::VariableDeclaration},
+        [&](TSNode node)
+        {
+            if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+            {
+                return;
+            }
+            const std::string_view nodeType = ts_node_type(node);
+            if (nodeType == parser::nodes::CallExpression)
+            {
+                const TSPoint start = ts_node_start_point(node);
+                CheckCall(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
+            }
+            else
+            {
+                CheckVariableDirectInitialization(node, request, ctx);
+            }
+        });
 }
 } // namespace
 
@@ -2339,37 +2443,13 @@ void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)
 
     if (request.nodeIndex)
     {
-        auto callNodes = request.nodeIndex->Nodes(parser::nodes::CallExpression);
-        auto varNodes = request.nodeIndex->Nodes(parser::nodes::VariableDeclaration);
-        size_t i = 0;
-        size_t j = 0;
-        while (i < callNodes.size() || j < varNodes.size())
-        {
-            bool takeCall = false;
-            if (i < callNodes.size() && j < varNodes.size())
-            {
-                takeCall = (ts_node_start_byte(callNodes[i]) <= ts_node_start_byte(varNodes[j]));
-            }
-            else if (i < callNodes.size())
-            {
-                takeCall = true;
-            }
-
-            if (takeCall)
-            {
-                TSNode node = callNodes[i++];
-                const TSPoint start = ts_node_start_point(node);
-                CheckCall(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);
-            }
-            else
-            {
-                TSNode node = varNodes[j++];
-                CheckVariableDirectInitialization(node, request, ctx);
-            }
-        }
+        CheckCallArgumentsIndexed(request, ctx);
         return;
     }
 
-    TraverseAstNodes(request.root, request, ctx);
+    NodeIndex localIndex(request.root);
+    CallCheckRequest indexedRequest = request;
+    indexedRequest.nodeIndex = &localIndex;
+    CheckCallArgumentsIndexed(indexedRequest, ctx);
 }
 } // namespace angel_lsp::analysis

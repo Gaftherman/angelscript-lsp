@@ -30,33 +30,36 @@ struct FunctionContext
 FunctionContext BuildFunctionContext(const Symbol& sym, const DiagnosticContext& ctx)
 {
     FunctionContext fctx;
-    if (sym.containerName.empty())
+    if (sym.containerName.empty() || sym.containerKind == ContainerKind::Namespace)
     {
-        // No container at all is itself knowledge: this is a global function.
+        // No container or namespace container: this is a non-member (global or namespace function).
         fctx.containerIsKnown = true;
         return fctx;
     }
 
-    const auto container = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
-    if (!container)
+    if (sym.containerKind == ContainerKind::Class || sym.containerKind == ContainerKind::Interface)
     {
-        // The container did not resolve, so nothing is known about it - not even whether it
-        // is a class. Treated as a non-member so no rule that presumes a class body fires.
-        return fctx;
+        fctx.containerIsKnown = true;
+        fctx.isMember = true;
+        fctx.isInterface = (sym.containerKind == ContainerKind::Interface);
     }
-    fctx.containerIsKnown = true;
 
-    for (const auto& owner : *container)
+    const auto container = ctx.request.symbolTable.FindSymbolsPtr(sym.containerName);
+    if (container)
     {
-        if (owner.type == SymbolType::Interface)
+        fctx.containerIsKnown = true;
+        for (const auto& owner : *container)
         {
-            fctx.isMember = true;
-            fctx.isInterface = true;
-        }
-        else if (owner.type == SymbolType::Class)
-        {
-            fctx.isMember = true;
-            fctx.isMixin = fctx.isMixin || owner.GetClass().modifiers.isMixin;
+            if (owner.type == SymbolType::Interface)
+            {
+                fctx.isMember = true;
+                fctx.isInterface = true;
+            }
+            else if (owner.type == SymbolType::Class)
+            {
+                fctx.isMember = true;
+                fctx.isMixin = fctx.isMixin || owner.GetClass().modifiers.isMixin;
+            }
         }
     }
 
@@ -261,6 +264,13 @@ void CheckModifiers(const Symbol& sym, const FunctionSignature& sig, const Funct
         return;
     }
 
+    // Access modifiers outside a class:
+    if (sig.modifiers.access != AccessModifier::Public)
+    {
+        ctx.LogRule("CheckModifiers", diagnostics::codes::GlobalFunctionAccessModifier, sym);
+        ctx.Emit(sym, diagnostics::codes::GlobalFunctionAccessModifier, sym.name);
+    }
+
     // `const` on a global function is a hard error - the engine's parser refuses the token
     // outright, answering "Instead found reserved keyword 'const'".
     if (sig.modifiers.isConst)
@@ -362,10 +372,18 @@ void CheckAttributes(const Symbol& sym, const FunctionSignature& sig, const Func
         ctx.Emit(sym, "as-err-explicit-not-member", sym.name);
     }
 
-    if (sig.modifiers.isProperty && !IsValidAccessorSignature(sym.name, sig))
+    if (sig.modifiers.isProperty)
     {
-        ctx.LogRule("CheckAttributes", "as-err-virtual-property-signature", sym);
-        ctx.Emit(sym, "as-err-virtual-property-signature", sym.name);
+        if (fctx.containerIsKnown && !fctx.isMember)
+        {
+            ctx.LogRule("CheckAttributes", diagnostics::codes::VirtualPropertyOutsideClass, sym);
+            ctx.Emit(sym, diagnostics::codes::VirtualPropertyOutsideClass, sym.name);
+        }
+        else if (!IsValidAccessorSignature(sym.name, sig))
+        {
+            ctx.LogRule("CheckAttributes", "as-err-virtual-property-signature", sym);
+            ctx.Emit(sym, "as-err-virtual-property-signature", sym.name);
+        }
     }
 
     // A destructor carrying `delete` is already reported, with a message that says so; this
@@ -387,7 +405,7 @@ void CheckAttributes(const Symbol& sym, const FunctionSignature& sig, const Func
 void CheckConstructorDestructor(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
                                 const DiagnosticContext& ctx)
 {
-    if (fctx.isMixin && fctx.isConstructor)
+    if (fctx.isMixin && fctx.isConstructor && !sym.isSynthesized)
     {
         ctx.LogRule("CheckConstructorDestructor", diagnostics::codes::MixinConstructor, sym);
         ctx.Emit(sym, diagnostics::codes::MixinConstructor, sym.containerName);
@@ -743,7 +761,8 @@ void ValidateFunction(const Symbol& sym, const DiagnosticContext& ctx)
     // outright ("Expected ';'", verified against angelscript_oracle), so hinting there would be
     // advice whose only fix does not compile. The mode-3 rejection such an interface produces
     // lands on the IMPLEMENTING class's accessor, which this rule reaches on its own.
-    if (ctx.request.diagnostics && ctx.request.diagnostics->reportAccessorPortability && !sym.containerName.empty() &&
+    if (ctx.request.diagnostics && ctx.request.diagnostics->reportAccessorPortability &&
+        (!ctx.request.engineProperties || ctx.request.engineProperties->propertyAccessorMode != 2) && fctx.isMember &&
         !sig.isInterfaceMethod && !sig.modifiers.isProperty)
     {
         std::string_view accessor = sym.name;

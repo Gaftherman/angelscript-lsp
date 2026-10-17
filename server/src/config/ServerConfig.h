@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config/EngineRuleConfig.h"
 #include "utils/PreprocessorRegions.h"
 
 #include <string>
@@ -63,6 +64,8 @@ struct FeatureFlags
     bool completionQualifyEnumValues = true;
     bool hoverStringLiteralLength = true;
     bool hoverStringLiteralPathResolution = true;
+    /** @brief Whether to display the declaring file location footer in hover tooltips. */
+    bool hoverShowFileLocation = false;
     bool enableCommentSuppressions = true;
     /** @brief Whether CScriptBuilder metadata blocks '[]' before declarations are supported. */
     bool enableMetadata = false;
@@ -310,6 +313,23 @@ struct EngineProperties
      */
     int compilerWarnings = 1;
 
+    /**
+     * @brief asEP_MEMBER_INIT_MODE (engine default: 0).
+     *
+     * 0 = Member variables are initialized before base class constructor.
+     * 1 = Member variables are initialized after base class constructor.
+     */
+    int memberInitMode = 0;
+
+    /**
+     * @brief asEP_HEREDOC_TRIM_MODE (engine default: 1).
+     *
+     * 0 = Never trim heredoc strings.
+     * 1 = Trim leading and trailing empty lines.
+     * 2 = Always trim heredoc strings.
+     */
+    int heredocTrimMode = 1;
+
     bool RequiresEnumScope() const
     {
         return requireEnumScope;
@@ -470,6 +490,62 @@ struct DiagnosticsConfig
      * Values can be "off", "hint", "warning", or "error".
      */
     std::string missingAssetPathSeverity = "off";
+
+    /**
+     * @brief Warn on unused global variables (default: true).
+     */
+    bool reportUnusedGlobalVariables = true;
+
+    /**
+     * @brief True when reportUnusedGlobalVariables was explicitly set via CLI or workspace configuration.
+     */
+    bool reportUnusedGlobalVariablesExplicit = false;
+
+    /**
+     * @brief Warn on unused global/namespace functions and class methods (default: false).
+     */
+    bool reportUnusedFunctions = false;
+
+    /**
+     * @brief True when reportUnusedFunctions was explicitly set via CLI or workspace configuration.
+     */
+    bool reportUnusedFunctionsExplicit = false;
+
+    /**
+     * @brief User-configured function names (short or qualified) exempt from unused-function warnings.
+     */
+    std::unordered_set<std::string> ignoredUnusedFunctions;
+
+    /**
+     * @brief User-configured regular expression patterns exempting matching function names from unused-function
+     * warnings.
+     */
+    std::vector<std::string> ignoredUnusedFunctionPatterns;
+
+    /**
+     * @brief Ignore unused global variables initialized with a call or constructor (default: false).
+     */
+    bool ignoreUnusedGlobalsWithCallInitializer = false;
+
+    /**
+     * @brief Warn on unused classes (default: true).
+     */
+    bool reportUnusedClasses = true;
+
+    /**
+     * @brief True when reportUnusedClasses was explicitly set via CLI or workspace configuration.
+     */
+    bool reportUnusedClassesExplicit = false;
+
+    /**
+     * @brief Warn on unused class members (fields & methods) (default: false).
+     */
+    bool reportUnusedMembers = false;
+
+    /**
+     * @brief True when reportUnusedMembers was explicitly set via CLI or workspace configuration.
+     */
+    bool reportUnusedMembersExplicit = false;
 };
 
 /**
@@ -763,6 +839,16 @@ struct ServerConfig
     std::string engineProfile = "none";
 
     /**
+     * @brief Path to the engine rules configuration file (default: "angelscript.rules.json").
+     */
+    std::string rulesFile;
+
+    /**
+     * @brief Active data-driven engine rules loaded from angelscript.rules.json.
+     */
+    EngineRuleConfig engineRules;
+
+    /**
      * @brief Per-rule diagnostic severity overrides, keyed by diagnostic code.
      *
      * Values are the LSP severity names ("error", "warning", "information", "hint"). Kept as
@@ -771,6 +857,13 @@ struct ServerConfig
      */
     std::unordered_map<std::string, std::string> diagnosticSeverities;
 };
+
+/**
+ * @brief Applies populated native engine properties from engine rules config to Server EngineProperties.
+ * @param[in] props Native engine properties parsed from rules JSON.
+ * @param[in,out] engine Engine properties to update with present values.
+ */
+void ApplyEngineProperties(const NativeEngineProperties& props, EngineProperties& engine);
 
 /**
  * @brief Parses CLI arguments into a ServerConfig instance.

@@ -1,0 +1,419 @@
+#include "config/EngineRuleParser.h"
+
+#include <fstream>
+#include <nlohmann/json.hpp>
+#include <sstream>
+
+namespace angel_lsp::config
+{
+
+namespace
+{
+
+/**
+ * @brief Safely parses native engine properties from JSON.
+ * @param[in] j JSON object containing engineProperties.
+ * @param[out] props Output structure to populate.
+ */
+template <typename T> void ReadOptionalField(const nlohmann::json& j, const std::string& key, std::optional<T>& target)
+{
+    if (j.contains(key) && !j[key].is_null())
+    {
+        try
+        {
+            target = j[key].get<T>();
+        }
+        catch (const nlohmann::json::exception&)
+        {
+        }
+    }
+}
+
+template <typename T>
+void ReadPropertyWithFallback(const nlohmann::json& j, const std::string& camelKey, const std::string& epKey,
+                              std::optional<T>& target)
+{
+    ReadOptionalField(j, camelKey, target);
+    if (!target.has_value())
+    {
+        ReadOptionalField(j, epKey, target);
+    }
+}
+
+void ParseNativeProperties(const nlohmann::json& j, NativeEngineProperties& props)
+{
+    if (!j.contains("engineProperties") || !j["engineProperties"].is_object())
+    {
+        return;
+    }
+
+    const auto& ep = j["engineProperties"];
+    ReadPropertyWithFallback(ep, "propertyAccessorMode", "asEP_PROPERTY_ACCESSOR_MODE", props.propertyAccessorMode);
+    ReadPropertyWithFallback(ep, "disallowGlobalVars", "asEP_DISALLOW_GLOBAL_VARS", props.disallowGlobalVars);
+    ReadPropertyWithFallback(ep, "requireEnumScope", "asEP_REQUIRE_ENUM_SCOPE", props.requireEnumScope);
+    ReadPropertyWithFallback(ep, "boolConversionMode", "asEP_BOOL_CONVERSION_MODE", props.boolConversionMode);
+    ReadPropertyWithFallback(ep, "allowUnsafeReferences", "asEP_ALLOW_UNSAFE_REFERENCES", props.allowUnsafeReferences);
+    ReadPropertyWithFallback(ep, "allowMultilineStrings", "asEP_ALLOW_MULTILINE_STRINGS", props.allowMultilineStrings);
+    ReadPropertyWithFallback(ep, "disableIntegerDivision", "asEP_DISABLE_INTEGER_DIVISION",
+                             props.disableIntegerDivision);
+    ReadPropertyWithFallback(ep, "privatePropAsProtected", "asEP_PRIVATE_PROP_AS_PROTECTED",
+                             props.privatePropAsProtected);
+    ReadPropertyWithFallback(ep, "useCharacterLiterals", "asEP_USE_CHARACTER_LITERALS", props.useCharacterLiterals);
+    ReadPropertyWithFallback(ep, "disallowValueAssignForRef", "asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE",
+                             props.disallowValueAssignForRef);
+    if (!props.disallowValueAssignForRef.has_value())
+    {
+        ReadPropertyWithFallback(ep, "disallowValueAssignForRef", "asEP_DISALLOW_VALUE_ASSIGN_FOR_REF",
+                                 props.disallowValueAssignForRef);
+    }
+    ReadPropertyWithFallback(ep, "alterSyntaxNamedArgs", "asEP_ALTER_SYNTAX_NAMED_ARGS", props.alterSyntaxNamedArgs);
+    ReadPropertyWithFallback(ep, "disallowEmptyListElements", "asEP_DISALLOW_EMPTY_LIST_ELEMENTS",
+                             props.disallowEmptyListElements);
+    ReadPropertyWithFallback(ep, "foreachSupport", "asEP_FOREACH_SUPPORT", props.foreachSupport);
+    ReadPropertyWithFallback(ep, "alwaysImplDefaultConstruct", "asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT",
+                             props.alwaysImplDefaultConstruct);
+    ReadPropertyWithFallback(ep, "allowUnicodeIdentifiers", "asEP_ALLOW_UNICODE_IDENTIFIERS",
+                             props.allowUnicodeIdentifiers);
+    ReadPropertyWithFallback(ep, "ignoreDuplicateSharedIntf", "asEP_IGNORE_DUPLICATE_SHARED_INTF",
+                             props.ignoreDuplicateSharedIntf);
+    ReadPropertyWithFallback(ep, "compilerWarnings", "asEP_COMPILER_WARNINGS", props.compilerWarnings);
+    ReadPropertyWithFallback(ep, "memberInitMode", "asEP_MEMBER_INIT_MODE", props.memberInitMode);
+    ReadPropertyWithFallback(ep, "heredocTrimMode", "asEP_HEREDOC_TRIM_MODE", props.heredocTrimMode);
+}
+
+/**
+ * @brief Parses a single StorageRule item from JSON.
+ * @param[in] item JSON object representing one rule.
+ * @param[out] rule Output StorageRule structure.
+ */
+void ParseSingleStorageRule(const nlohmann::json& item, StorageRule& rule)
+{
+    rule.id = item.value("id", "");
+    rule.inheritsFrom = item.value("inheritsFrom", "");
+    rule.typeRegex = item.value("typeRegex", "");
+    rule.handleOnly = item.value("handleOnly", false);
+    rule.disallowInMembers = item.value("disallowInMembers", false);
+    rule.disallowInGlobals = item.value("disallowInGlobals", false);
+    rule.disallowInArrays = item.value("disallowInArrays", false);
+    rule.suggestReplacement = item.value("suggestReplacement", "");
+    rule.message = item.value("message", "");
+    rule.severity = item.value("severity", "warning");
+
+    if (item.contains("types") && item["types"].is_array())
+    {
+        for (const auto& t : item["types"])
+        {
+            if (t.is_string())
+            {
+                rule.types.push_back(t.get<std::string>());
+            }
+        }
+    }
+}
+
+/**
+ * @brief Parses storage rules array from JSON.
+ * @param[in] j JSON object containing storageRules.
+ * @param[out] rules Destination vector for parsed rules.
+ */
+void ParseStorageRules(const nlohmann::json& j, std::vector<StorageRule>& rules)
+{
+    if (!j.contains("storageRules") || !j["storageRules"].is_array())
+    {
+        return;
+    }
+
+    for (const auto& item : j["storageRules"])
+    {
+        if (!item.is_object())
+        {
+            continue;
+        }
+        StorageRule rule;
+        ParseSingleStorageRule(item, rule);
+        rules.push_back(std::move(rule));
+    }
+}
+
+/**
+ * @brief Parses type suggestions array from JSON.
+ * @param[in] j JSON object containing typeSuggestions.
+ * @param[out] suggestions Destination vector for parsed suggestions.
+ */
+void ParseTypeSuggestions(const nlohmann::json& j, std::vector<TypeSuggestionRule>& suggestions)
+{
+    if (!j.contains("typeSuggestions") || !j["typeSuggestions"].is_array())
+    {
+        return;
+    }
+
+    for (const auto& item : j["typeSuggestions"])
+    {
+        if (!item.is_object())
+        {
+            continue;
+        }
+        TypeSuggestionRule rule;
+        rule.id = item.value("id", "");
+        rule.fromType = item.value("fromType", "");
+        rule.toType = item.value("toType", "");
+        rule.message = item.value("message", "");
+        rule.severity = item.value("severity", "hint");
+
+        if (item.contains("appliesTo") && item["appliesTo"].is_array())
+        {
+            for (const auto& s : item["appliesTo"])
+            {
+                if (s.is_string())
+                {
+                    rule.appliesTo.push_back(s.get<std::string>());
+                }
+            }
+        }
+        suggestions.push_back(std::move(rule));
+    }
+}
+
+/**
+ * @brief Parses string arrays from JSON into a string vector.
+ * @param[in] item JSON object.
+ * @param[in] key Key name to look up.
+ * @param[out] target Destination vector.
+ */
+void ParseStringArray(const nlohmann::json& item, const std::string& key, std::vector<std::string>& target)
+{
+    if (item.contains(key) && item[key].is_array())
+    {
+        for (const auto& entry : item[key])
+        {
+            if (entry.is_string())
+            {
+                target.push_back(entry.get<std::string>());
+            }
+        }
+    }
+}
+
+/**
+ * @brief Parses a single SchedulerRule item from JSON.
+ * @param[in] item JSON object representing one scheduler rule.
+ * @param[out] rule Output SchedulerRule structure.
+ */
+void ParseSingleSchedulerRule(const nlohmann::json& item, SchedulerRule& rule)
+{
+    rule.id = item.value("id", "");
+    rule.disallowParamInheritsFrom = item.value("disallowParamInheritsFrom", "");
+    rule.disallowParamRegex = item.value("disallowParamRegex", "");
+    rule.disallowParamHandleOnly = item.value("disallowParamHandleOnly", true);
+    rule.paramSuggestReplacement = item.value("paramSuggestReplacement", "");
+    rule.disallowArgInheritsFrom = item.value("disallowArgInheritsFrom", "");
+    rule.disallowArgRegex = item.value("disallowArgRegex", "");
+    rule.disallowArgHandleOnly = item.value("disallowArgHandleOnly", true);
+    rule.argSuggestReplacement = item.value("argSuggestReplacement", "");
+    rule.requireExplicitEnumConstruct = item.value("requireExplicitEnumConstruct", false);
+    rule.message = item.value("message", "");
+    rule.severity = item.value("severity", "warning");
+
+    ParseStringArray(item, "receiverTypes", rule.receiverTypes);
+    if (item.contains("callee") && item["callee"].is_string())
+    {
+        rule.receiverTypes.push_back(item["callee"].get<std::string>());
+    }
+    ParseStringArray(item, "methodNames", rule.methodNames);
+    ParseStringArray(item, "methods", rule.methodNames);
+}
+
+/**
+ * @brief Parses scheduler rules array from JSON.
+ * @param[in] j JSON object containing schedulerRules.
+ * @param[out] rules Destination vector for parsed rules.
+ */
+void ParseSchedulerRules(const nlohmann::json& j, std::vector<SchedulerRule>& rules)
+{
+    if (!j.contains("schedulerRules") || !j["schedulerRules"].is_array())
+    {
+        return;
+    }
+
+    for (const auto& item : j["schedulerRules"])
+    {
+        if (!item.is_object())
+        {
+            continue;
+        }
+        SchedulerRule rule;
+        ParseSingleSchedulerRule(item, rule);
+        rules.push_back(std::move(rule));
+    }
+}
+
+void ParseReflectionCallees(const nlohmann::json& obj, std::vector<StringReflectionCallee>& callees)
+{
+    if (!obj.contains("stringReflectionCallees") || !obj["stringReflectionCallees"].is_array())
+    {
+        return;
+    }
+    for (const auto& item : obj["stringReflectionCallees"])
+    {
+        if (!item.is_object())
+            continue;
+        StringReflectionCallee c;
+        c.callee = item.value("callee", "");
+        ParseStringArray(item, "methods", c.methods);
+        if (item.contains("argIndices") && item["argIndices"].is_array())
+        {
+            for (const auto& idx : item["argIndices"])
+                if (idx.is_number_unsigned())
+                    c.argIndices.push_back(idx.get<size_t>());
+        }
+        else if (item.contains("argIndex") && item["argIndex"].is_number_unsigned())
+        {
+            c.argIndices.push_back(item["argIndex"].get<size_t>());
+        }
+        callees.push_back(std::move(c));
+    }
+}
+
+void ParseBaseClassLifecycleMethods(const nlohmann::json& obj, StringVectorMap& map)
+{
+    if (!obj.contains("baseClassLifecycleMethods") || !obj["baseClassLifecycleMethods"].is_object())
+    {
+        return;
+    }
+    for (const auto& [baseClass, methods] : obj["baseClassLifecycleMethods"].items())
+    {
+        if (!methods.is_array())
+            continue;
+        std::vector<std::string>& list = map[baseClass];
+        for (const auto& m : methods)
+        {
+            if (m.is_string())
+                list.push_back(m.get<std::string>());
+        }
+    }
+}
+
+void ParseBaseClassProxyMap(const nlohmann::json& obj, StringVectorMap& map)
+{
+    if (!obj.contains("baseClassProxyMap") || !obj["baseClassProxyMap"].is_object())
+    {
+        return;
+    }
+    for (const auto& [baseClass, target] : obj["baseClassProxyMap"].items())
+    {
+        std::vector<std::string>& list = map[baseClass];
+        if (target.is_string())
+        {
+            list.push_back(target.get<std::string>());
+        }
+        else if (target.is_array())
+        {
+            for (const auto& item : target)
+            {
+                if (item.is_string())
+                {
+                    list.push_back(item.get<std::string>());
+                }
+            }
+        }
+    }
+}
+
+void ParseEngineCallbackSignatures(const nlohmann::json& obj, std::vector<std::vector<std::string>>& signatures)
+{
+    if (!obj.contains("engineCallbackSignatures") || !obj["engineCallbackSignatures"].is_array())
+    {
+        return;
+    }
+    for (const auto& sig : obj["engineCallbackSignatures"])
+    {
+        if (!sig.is_array())
+            continue;
+        std::vector<std::string> paramTypes;
+        for (const auto& param : sig)
+        {
+            if (param.is_string())
+                paramTypes.push_back(param.get<std::string>());
+        }
+        if (!paramTypes.empty())
+        {
+            signatures.push_back(std::move(paramTypes));
+        }
+    }
+}
+
+void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& rules)
+{
+    if (!j.contains("unusedSymbolRules") || !j["unusedSymbolRules"].is_object())
+    {
+        return;
+    }
+    const auto& u = j["unusedSymbolRules"];
+    rules.enabled = u.value("enabled", true);
+    rules.checkLocals = u.value("checkLocals", true);
+    rules.checkMembers = u.value("checkMembers", true);
+    rules.checkGlobals = u.value("checkGlobals", true);
+    rules.checkFunctions = u.value("checkFunctions", true);
+    rules.checkClasses = u.value("checkClasses", true);
+    rules.ignoredGlobalFunctionRegex = u.value("ignoredGlobalFunctionRegex", "");
+    ParseStringArray(u, "ignoredGlobalFunctions", rules.ignoredGlobalFunctions);
+    ParseStringArray(u, "ignoredBaseClasses", rules.ignoredBaseClasses);
+    ParseStringArray(u, "lifecycleMethods", rules.lifecycleMethods);
+    ParseBaseClassLifecycleMethods(u, rules.baseClassLifecycleMethods);
+    ParseStringArray(u, "baseClassDelegateProperties", rules.baseClassDelegateProperties);
+    ParseBaseClassProxyMap(u, rules.baseClassProxyMap);
+    ParseReflectionCallees(u, rules.stringReflectionCallees);
+    rules.ignoreUnusedGlobalsWithCallInitializer = u.value("ignoreUnusedGlobalsWithCallInitializer", false);
+    ParseStringArray(u, "unusedGlobalExemptTypes", rules.unusedGlobalExemptTypes);
+    ParseEngineCallbackSignatures(u, rules.engineCallbackSignatures);
+}
+
+} // namespace
+
+std::optional<EngineRuleConfig> ParseEngineRuleConfigJson(std::string_view jsonText)
+{
+    try
+    {
+        const auto parsed = nlohmann::json::parse(jsonText);
+        if (!parsed.is_object())
+        {
+            return std::nullopt;
+        }
+
+        EngineRuleConfig config;
+        config.name = parsed.value("name", "");
+
+        ParseNativeProperties(parsed, config.engineProperties);
+        ParseStorageRules(parsed, config.storageRules);
+        ParseTypeSuggestions(parsed, config.typeSuggestions);
+        ParseSchedulerRules(parsed, config.schedulerRules);
+        ParseUnusedSymbolRules(parsed, config.unusedRules);
+
+        return config;
+    }
+    catch (const nlohmann::json::exception&)
+    {
+        return std::nullopt;
+    }
+}
+
+std::optional<EngineRuleConfig> ParseEngineRuleConfigFile(const std::filesystem::path& filePath)
+{
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(filePath, ec))
+    {
+        return std::nullopt;
+    }
+
+    std::ifstream file(filePath, std::ios::in | std::ios::binary);
+    if (!file.is_open())
+    {
+        return std::nullopt;
+    }
+
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    return ParseEngineRuleConfigJson(ss.str());
+}
+
+} // namespace angel_lsp::config

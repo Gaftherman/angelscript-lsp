@@ -1,7 +1,11 @@
 #include "features/code_lens/CodeLensHandler.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/rules/UnusedSymbolChecker.h"
+#include "config/EngineRuleConfig.h"
+#include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include "utils/LspLogger.h"
 #include "utils/Utils.h"
 
@@ -52,14 +56,66 @@ struct RangeKeyHash
 };
 
 /**
- * @brief Finds the name of the class enclosing the given document line.
+ * @brief Enclosing class span data.
+ */
+struct EnclosingClassSpan
+{
+    uint32_t startLine = 0;
+    uint32_t endLine = 0;
+    std::string className;
+};
+
+using EnclosingClassCache = ankerl::unordered_dense::map<std::string, std::vector<EnclosingClassSpan>>;
+
+/**
+ * @brief Finds the name of the class enclosing the given document line, with optional caching.
  * @param[in] symbolTable Symbol table to search.
  * @param[in] uri File URI.
  * @param[in] line Document line index.
+ * @param[in,out] cache Optional per-file class span cache.
  * @return Enclosing class name, or empty string if not within a class.
  */
-std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, const std::string& uri, uint32_t line)
+std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, const std::string& uri, uint32_t line,
+                                  EnclosingClassCache* cache = nullptr)
 {
+    if (cache)
+    {
+        auto it = cache->find(uri);
+        if (it == cache->end())
+        {
+            std::vector<EnclosingClassSpan> spans;
+            symbolTable.ForEachSymbolInFile(
+                uri,
+                [&]([[maybe_unused]] const std::string& name, const std::vector<analysis::Symbol>& syms)
+                {
+                    for (const auto& s : syms)
+                    {
+                        if ((s.type == analysis::SymbolType::Class || s.type == analysis::SymbolType::Interface) &&
+                            s.fileUri == uri)
+                        {
+                            spans.push_back(
+                                {s.startLine, s.endLine, s.qualifiedName.empty() ? s.name : s.qualifiedName});
+                        }
+                    }
+                });
+            it = cache->emplace(uri, std::move(spans)).first;
+        }
+        uint32_t bestSpan = UINT32_MAX;
+        std::string bestClass;
+        for (const auto& cs : it->second)
+        {
+            if (line >= cs.startLine && line <= cs.endLine)
+            {
+                uint32_t span = cs.endLine - cs.startLine;
+                if (span <= bestSpan)
+                {
+                    bestSpan = span;
+                    bestClass = cs.className;
+                }
+            }
+        }
+        return bestClass;
+    }
     return symbolTable.FindEnclosingClassName(uri, line);
 }
 
@@ -97,16 +153,36 @@ bool IsContainerClass(std::string_view container, const analysis::SymbolTable& s
  * @return True if inside namespace block.
  */
 bool IsInsideNamespace(const std::string& fileUri, uint32_t line, const std::string& nsName,
-                       const analysis::SymbolTable& symbolTable)
+                       const analysis::SymbolTable& symbolTable, EnclosingClassCache* classCache = nullptr)
 {
-    auto syms = symbolTable.FindSymbols(nsName);
-    for (const auto& s : syms)
+    if (auto syms = symbolTable.FindSymbolsPtr(nsName))
     {
-        if (s.type == analysis::SymbolType::Namespace && s.fileUri == fileUri)
+        for (const auto& s : *syms)
         {
-            if (line >= s.startLine && line <= s.endLine)
+            if (s.type == analysis::SymbolType::Namespace && s.fileUri == fileUri)
             {
-                return true;
+                if (line >= s.startLine && line <= s.endLine)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    const std::string_view encClass = GetEnclosingClassName(symbolTable, fileUri, line, classCache);
+    if (!encClass.empty())
+    {
+        if (analysis::IsSameOrNestedNamespace(encClass, nsName))
+        {
+            return true;
+        }
+        if (auto clsSyms = symbolTable.FindSymbolsPtr(encClass))
+        {
+            for (const auto& cs : *clsSyms)
+            {
+                if (analysis::IsSameOrNestedNamespace(cs.containerName, nsName))
+                {
+                    return true;
+                }
             }
         }
     }
@@ -118,12 +194,12 @@ bool IsInsideNamespace(const std::string& fileUri, uint32_t line, const std::str
  */
 struct ReferenceCollectionCriteria
 {
-    const std::string& targetName;
+    std::string targetName;
     const std::vector<analysis::Symbol>& group;
     const ankerl::unordered_dense::set<std::string>& compatibleClasses;
     const DeclRangeSet& allDeclRanges;
-    const std::string& targetNamespace;
-    const std::string& targetEnumContainer;
+    std::string targetNamespace;
+    std::string targetEnumContainer;
     bool isEnumConstant = false;
     analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
     bool isFunction = false;
@@ -131,6 +207,7 @@ struct ReferenceCollectionCriteria
     size_t maxArgs = 0;
     const analysis::SymbolTable& symbolTable;
     const CodeLensRequest& request;
+    EnclosingClassCache* classCache = nullptr;
 };
 
 /**
@@ -207,6 +284,42 @@ bool IsInTargetHierarchy(const std::string& encClass, const std::vector<analysis
 }
 
 /**
+ * @brief Checks if a local definition shadows the target symbol within the given scope.
+ * @param[in] scope Lexical scope.
+ * @param[in] name Reference identifier name.
+ * @param[in] fileUri Document URI.
+ * @param[in] criteria Active search criteria.
+ * @return True if a local variable or parameter shadows the target symbol.
+ */
+bool IsLocalShadowingTarget(const analysis::Scope* scope, std::string_view name, const std::string& fileUri,
+                            const ReferenceCollectionCriteria& criteria)
+{
+    const analysis::LocalDefinition* localShadow = analysis::ResolveInScope(scope, name);
+    if (!localShadow)
+    {
+        return false;
+    }
+    if (localShadow->kind != analysis::LocalDefinitionKind::Parameter &&
+        localShadow->kind != analysis::LocalDefinitionKind::Variable)
+    {
+        return false;
+    }
+    if (criteria.allDeclRanges.contains({fileUri, localShadow->startLine, localShadow->startCharacter}))
+    {
+        return false;
+    }
+    for (const auto& sym : criteria.group)
+    {
+        if (fileUri == sym.fileUri && localShadow->startLine == sym.selectionRange.startLine &&
+            localShadow->startCharacter == sym.selectionRange.startCharacter)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
  * @brief Verifies whether a non-member reference is a valid access to an inherited or enclosed symbol.
  * @param[in] fileUri URI of document owning scope.
  * @param[in] ref Reference to check.
@@ -217,7 +330,7 @@ bool IsInTargetHierarchy(const std::string& encClass, const std::vector<analysis
 bool IsCompatibleNonMemberAccess(const std::string& fileUri, const analysis::LocalReference& ref,
                                  const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
 {
-    std::string encClass = GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine);
+    std::string encClass = GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine, criteria.classCache);
     if (encClass.empty() || (!criteria.compatibleClasses.contains(encClass) &&
                              !criteria.compatibleClasses.contains(std::string(analysis::LastScopeSegment(encClass)))))
     {
@@ -227,9 +340,7 @@ bool IsCompatibleNonMemberAccess(const std::string& fileUri, const analysis::Loc
     {
         return false;
     }
-    const analysis::LocalDefinition* localShadow = analysis::ResolveInScope(scope, criteria.targetName);
-    return !(localShadow && (localShadow->kind == analysis::LocalDefinitionKind::Parameter ||
-                             localShadow->kind == analysis::LocalDefinitionKind::Variable));
+    return !IsLocalShadowingTarget(scope, criteria.targetName, fileUri, criteria);
 }
 
 /**
@@ -248,7 +359,7 @@ bool IsCompatibleNonMemberAccess(const std::string& fileUri, const analysis::Loc
  * @param[in] enclosingClass Enclosing class name if identifier is "this".
  * @return Cleaned type name, or empty string if unresolvable.
  */
-std::string ResolveObjectTextType(const std::string& oText, const analysis::Scope* scope,
+std::string ResolveObjectTextType(std::string_view oText, const analysis::Scope* scope,
                                   const analysis::SymbolTable& symbolTable, const std::string& enclosingClass)
 {
     if (oText == "this")
@@ -279,43 +390,62 @@ std::string ResolveObjectTextType(const std::string& oText, const analysis::Scop
  */
 std::string GetMemberObjectText(const CodeLensRequest& request, const analysis::LocalReference& ref)
 {
-    if (!request.tree || request.sourceCode.empty())
+    if (ref.receiverStartByte >= ref.receiverEndByte || ref.receiverEndByte > request.sourceCode.size())
     {
         return "";
     }
-    TSNode rootNode = ts_tree_root_node(request.tree);
-    TSPoint pt = {ref.startLine, ref.startCharacter};
-    TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-    if (ts_node_is_null(refNode))
+    return std::string(std::string_view(request.sourceCode)
+                           .substr(ref.receiverStartByte, ref.receiverEndByte - ref.receiverStartByte));
+}
+
+/**
+ * @brief Attempts fast-path receiver type resolution using pre-indexed slice bounds.
+ * @param[in] ref Reference containing receiver byte slice.
+ * @param[in] criteria Active search criteria.
+ * @param[in] scope Lexical scope.
+ * @param[in] encClass Enclosing class name if applicable.
+ * @return Resolved receiver type name, or empty string.
+ */
+std::string TryResolveReceiverFastPath(const analysis::LocalReference& ref, const ReferenceCollectionCriteria& criteria,
+                                       const analysis::Scope* scope, const std::string& encClass)
+{
+    if (ref.receiverStartByte < ref.receiverEndByte && ref.receiverEndByte <= criteria.request.sourceCode.size() &&
+        !ref.isScopedIdentifier)
     {
-        return "";
+        std::string_view oText = std::string_view(criteria.request.sourceCode)
+                                     .substr(ref.receiverStartByte, ref.receiverEndByte - ref.receiverStartByte);
+        std::string enc = (oText == "this") ? encClass : "";
+        return ResolveObjectTextType(oText, scope, criteria.symbolTable, enc);
     }
-    TSNode exprParent = ts_node_parent(refNode);
-    if (ts_node_is_null(exprParent))
+    return "";
+}
+
+/**
+ * @brief Resolves receiver type name from AST member access object node.
+ * @param[in] objNode Tree-Sitter AST object node.
+ * @param[in] criteria Active search criteria.
+ * @param[in] scope Lexical scope.
+ * @param[in] encClass Enclosing class name if applicable.
+ * @return Resolved receiver type name, or empty string.
+ */
+std::string TryResolveFromObjNode(TSNode objNode, const ReferenceCollectionCriteria& criteria,
+                                  const analysis::Scope* scope, const std::string& encClass)
+{
+    std::string resolved = analysis::ResolveReceiverType(objNode, criteria.request.sourceCode, criteria.symbolTable,
+                                                         {scope, encClass, criteria.request.uri});
+    if (!resolved.empty())
     {
-        return "";
-    }
-    TSNode objNode{};
-    std::string_view parentType = ts_node_type(exprParent);
-    if (parentType == "member_expression")
-    {
-        objNode = parser::GetChildByField(exprParent, parser::fields::Object);
-    }
-    else if (parentType == "scoped_identifier")
-    {
-        objNode = ts_node_named_child(exprParent, 0);
-    }
-    if (ts_node_is_null(objNode))
-    {
-        return "";
+        return analysis::CleanBaseType(resolved);
     }
     uint32_t oStart = ts_node_start_byte(objNode);
     uint32_t oEnd = ts_node_end_byte(objNode);
-    if (oStart >= request.sourceCode.size() || oEnd > request.sourceCode.size() || oStart >= oEnd)
+    if (oStart >= criteria.request.sourceCode.size() || oEnd > criteria.request.sourceCode.size() || oStart >= oEnd)
     {
         return "";
     }
-    return request.sourceCode.substr(oStart, oEnd - oStart);
+    std::string_view oText = std::string_view(criteria.request.sourceCode).substr(oStart, oEnd - oStart);
+    std::string enc = (oText == "this") ? encClass : "";
+    return ResolveObjectTextType(oText, scope, criteria.symbolTable, enc);
 }
 
 /**
@@ -323,23 +453,41 @@ std::string GetMemberObjectText(const CodeLensRequest& request, const analysis::
  * @param[in] fileUri Document URI.
  * @param[in] ref Reference under test.
  * @param[in] scope Lexical scope.
- * @param[in] request Active CodeLens request.
+ * @param[in] criteria Active search criteria.
  * @return Cleaned receiver type name, or empty string if not resolvable.
  */
 std::string ResolveReceiverFromAst(const std::string& fileUri, const analysis::LocalReference& ref,
-                                   const analysis::Scope* scope, const CodeLensRequest& request)
+                                   const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
 {
-    if (fileUri != request.uri || !request.tree || request.sourceCode.empty())
+    if (fileUri != criteria.request.uri || !criteria.request.tree || criteria.request.sourceCode.empty())
     {
         return "";
     }
-    std::string oText = GetMemberObjectText(request, ref);
-    if (oText.empty())
+    std::string encClass = GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine, criteria.classCache);
+    std::string fastType = TryResolveReceiverFastPath(ref, criteria, scope, encClass);
+    if (!fastType.empty())
+    {
+        return fastType;
+    }
+    TSNode rootNode = ts_tree_root_node(criteria.request.tree);
+    TSPoint pt = {ref.startLine, ref.startCharacter};
+    TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+    if (ts_node_is_null(refNode))
     {
         return "";
     }
-    std::string enc = (oText == "this") ? GetEnclosingClassName(request.symbolTable, fileUri, ref.startLine) : "";
-    return ResolveObjectTextType(oText, scope, request.symbolTable, enc);
+    TSNode exprParent = ts_node_parent(refNode);
+    const auto& syms = parser::GetGrammarSymbols();
+    if (ts_node_is_null(exprParent) || ts_node_symbol(exprParent) != syms.symMemberAccess)
+    {
+        return "";
+    }
+    TSNode objNode = parser::GetChildByField(exprParent, parser::fields::Object);
+    if (ts_node_is_null(objNode))
+    {
+        return "";
+    }
+    return TryResolveFromObjNode(objNode, criteria, scope, encClass);
 }
 
 /**
@@ -347,26 +495,55 @@ std::string ResolveReceiverFromAst(const std::string& fileUri, const analysis::L
  * @param[in] fileUri Document URI.
  * @param[in] ref Reference under test.
  * @param[in] scope Lexical scope.
- * @param[in] symbolTable Symbol table.
+ * @param[in] criteria Active search criteria.
  * @return Cleaned receiver type name, or empty string if not resolvable.
  */
 std::string ResolveReceiverFromScope(const std::string& fileUri, const analysis::LocalReference& ref,
-                                     const analysis::Scope* scope, const analysis::SymbolTable& symbolTable)
+                                     const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
 {
+    std::string currentReceiverType;
     for (const auto& candRef : scope->references)
     {
         if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
         {
-            std::string enc =
-                (candRef.name == "this") ? GetEnclosingClassName(symbolTable, fileUri, ref.startLine) : "";
-            std::string rType = ResolveObjectTextType(candRef.name, scope, symbolTable, enc);
-            if (!rType.empty())
+            if (currentReceiverType.empty())
             {
-                return rType;
+                std::string enc = (candRef.name == "this") ? GetEnclosingClassName(criteria.symbolTable, fileUri,
+                                                                                   ref.startLine, criteria.classCache)
+                                                           : "";
+                currentReceiverType = ResolveObjectTextType(candRef.name, scope, criteria.symbolTable, enc);
+            }
+            else
+            {
+                auto memberSyms = criteria.symbolTable.FindMemberSymbolPtr(currentReceiverType, candRef.name);
+                if (memberSyms && !memberSyms->empty())
+                {
+                    const auto& m = memberSyms->front();
+                    if (m.type == analysis::SymbolType::Variable && !m.GetVariable().typeName.empty())
+                    {
+                        currentReceiverType = analysis::CleanBaseType(m.GetVariable().typeName);
+                    }
+                    else if (m.type == analysis::SymbolType::Function && !m.GetFunction().returnType.empty())
+                    {
+                        currentReceiverType = analysis::CleanBaseType(m.GetFunction().returnType);
+                    }
+                }
+                else
+                {
+                    std::string enc =
+                        (candRef.name == "this")
+                            ? GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine, criteria.classCache)
+                            : "";
+                    std::string t = ResolveObjectTextType(candRef.name, scope, criteria.symbolTable, enc);
+                    if (!t.empty())
+                    {
+                        currentReceiverType = t;
+                    }
+                }
             }
         }
     }
-    return "";
+    return currentReceiverType;
 }
 
 /**
@@ -380,10 +557,10 @@ std::string ResolveReceiverFromScope(const std::string& fileUri, const analysis:
 bool IsCompatibleMemberAccess(const std::string& fileUri, const analysis::LocalReference& ref,
                               const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
 {
-    std::string rType = ResolveReceiverFromAst(fileUri, ref, scope, criteria.request);
+    std::string rType = ResolveReceiverFromAst(fileUri, ref, scope, criteria);
     if (rType.empty())
     {
-        rType = ResolveReceiverFromScope(fileUri, ref, scope, criteria.symbolTable);
+        rType = ResolveReceiverFromScope(fileUri, ref, scope, criteria);
     }
     return !rType.empty() && criteria.compatibleClasses.contains(rType);
 }
@@ -421,7 +598,8 @@ bool MatchesTargetNamespaceQualifier(const std::string& fileUri, const analysis:
     if (fileUri == criteria.request.uri)
     {
         std::string q = GetMemberObjectText(criteria.request, ref);
-        if (q == criteria.targetNamespace || q.ends_with("::" + criteria.targetNamespace))
+        if (q == criteria.targetNamespace || analysis::EndsWithScopedSuffix(q, criteria.targetNamespace) ||
+            analysis::EndsWithScopedSuffix(criteria.targetNamespace, q))
         {
             return true;
         }
@@ -432,7 +610,9 @@ bool MatchesTargetNamespaceQualifier(const std::string& fileUri, const analysis:
         {
             if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
             {
-                if (candRef.name == criteria.targetNamespace || candRef.name.ends_with("::" + criteria.targetNamespace))
+                if (candRef.name == criteria.targetNamespace ||
+                    analysis::EndsWithScopedSuffix(candRef.name, criteria.targetNamespace) ||
+                    analysis::EndsWithScopedSuffix(criteria.targetNamespace, candRef.name))
                 {
                     return true;
                 }
@@ -456,12 +636,12 @@ bool QualifierMatchesEnumContainer(std::string_view q, std::string_view targetEn
     {
         return false;
     }
-    if (q == targetEnumContainer || q.ends_with("::" + std::string(targetEnumContainer)) ||
-        targetEnumContainer.ends_with("::" + std::string(q)))
+    if (q == targetEnumContainer || analysis::EndsWithScopedSuffix(q, targetEnumContainer) ||
+        analysis::EndsWithScopedSuffix(targetEnumContainer, q))
     {
         return true;
     }
-    return !targetNamespace.empty() && (q == targetNamespace || q.ends_with("::" + std::string(targetNamespace)));
+    return !targetNamespace.empty() && (q == targetNamespace || analysis::EndsWithScopedSuffix(q, targetNamespace));
 }
 
 /**
@@ -521,7 +701,8 @@ bool IsValidEnumAccess(const std::string& fileUri, const analysis::LocalReferenc
 
     if (!criteria.targetNamespace.empty())
     {
-        if (!IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable))
+        if (!IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable,
+                               criteria.classCache))
         {
             return false;
         }
@@ -544,6 +725,46 @@ bool IsValidEnumAccess(const std::string& fileUri, const analysis::LocalReferenc
  * @param[in] criteria Active search criteria.
  * @return True if access is valid.
  */
+bool IsEnclosingClassIncompatible(const std::string& fileUri, uint32_t line,
+                                  const ReferenceCollectionCriteria& criteria)
+{
+    if (criteria.targetAccess == analysis::AccessModifier::Private ||
+        criteria.targetAccess == analysis::AccessModifier::Protected)
+    {
+        std::string encClass = GetEnclosingClassName(criteria.symbolTable, fileUri, line, criteria.classCache);
+        if (encClass.empty() ||
+            (!criteria.compatibleClasses.contains(encClass) &&
+             !criteria.compatibleClasses.contains(std::string(analysis::LastScopeSegment(encClass)))))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IsValidConstructorAccess(const std::string& fileUri, const analysis::LocalReference& ref,
+                              const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
+{
+    if (IsEnclosingClassIncompatible(fileUri, ref.startLine, criteria))
+    {
+        return false;
+    }
+    if (ref.isMemberAccess)
+    {
+        return MatchesTargetNamespaceQualifier(fileUri, ref, scope, criteria);
+    }
+    if (!criteria.targetNamespace.empty() &&
+        !IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable, criteria.classCache))
+    {
+        return false;
+    }
+    if (IsLocalShadowingTarget(scope, ref.name, fileUri, criteria))
+    {
+        return false;
+    }
+    return (ref.isCall && MatchesCallArguments(ref, criteria)) || (ref.isTypeSpecifier && criteria.minArgs == 0);
+}
+
 bool IsValidAccess(const std::string& fileUri, const analysis::LocalReference& ref, const analysis::Scope* scope,
                    const ReferenceCollectionCriteria& criteria)
 {
@@ -551,18 +772,17 @@ bool IsValidAccess(const std::string& fileUri, const analysis::LocalReference& r
     {
         return IsValidEnumAccess(fileUri, ref, scope, criteria);
     }
+    const bool isConstructor = criteria.isFunction && !criteria.group.empty() &&
+                               criteria.group.front().name == criteria.group.front().containerName;
+    if (isConstructor)
+    {
+        return IsValidConstructorAccess(fileUri, ref, scope, criteria);
+    }
     if (!criteria.compatibleClasses.empty())
     {
-        if (criteria.targetAccess == analysis::AccessModifier::Private ||
-            criteria.targetAccess == analysis::AccessModifier::Protected)
+        if (IsEnclosingClassIncompatible(fileUri, ref.startLine, criteria))
         {
-            std::string encClass = GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine);
-            if (encClass.empty() ||
-                (!criteria.compatibleClasses.contains(encClass) &&
-                 !criteria.compatibleClasses.contains(std::string(analysis::LastScopeSegment(encClass)))))
-            {
-                return false;
-            }
+            return false;
         }
         return ref.isMemberAccess ? IsCompatibleMemberAccess(fileUri, ref, scope, criteria)
                                   : IsCompatibleNonMemberAccess(fileUri, ref, scope, criteria);
@@ -575,15 +795,14 @@ bool IsValidAccess(const std::string& fileUri, const analysis::LocalReference& r
 
     if (!criteria.targetNamespace.empty())
     {
-        if (!IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable))
+        if (!IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable,
+                               criteria.classCache))
         {
             return false;
         }
     }
 
-    const analysis::LocalDefinition* localShadow = analysis::ResolveInScope(scope, ref.name);
-    return !(localShadow && (localShadow->kind == analysis::LocalDefinitionKind::Parameter ||
-                             localShadow->kind == analysis::LocalDefinitionKind::Variable));
+    return !IsLocalShadowingTarget(scope, ref.name, fileUri, criteria);
 }
 
 /**
@@ -606,14 +825,18 @@ struct SymbolLensTarget
     ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenRefs;
 };
 
+using TargetIndexMap =
+    ankerl::unordered_dense::map<std::string, std::vector<size_t>, analysis::TransparentStringHash, std::equal_to<>>;
+
 /**
  * @brief Context bundle for batched reference counting across scope trees.
  */
 struct BatchReferenceContext
 {
     std::span<SymbolLensTarget> targets;
-    const ankerl::unordered_dense::map<std::string, std::vector<size_t>>& targetsByName;
+    const TargetIndexMap& targetsByName;
     const CodeLensRequest& request;
+    mutable EnclosingClassCache classCache;
 };
 
 /**
@@ -655,6 +878,7 @@ void ProcessScopeReferencesBatch(const std::string& fileUri, const analysis::Sco
                 .maxArgs = target.maxArgs,
                 .symbolTable = ctx.request.symbolTable,
                 .request = ctx.request,
+                .classCache = &ctx.classCache,
             };
             if (IsDeclarationOrDefinition(fileUri, ref, scope, criteria))
             {
@@ -669,6 +893,18 @@ void ProcessScopeReferencesBatch(const std::string& fileUri, const analysis::Sco
                 continue;
             }
             target.seenRefs.insert({fileUri, pos});
+        }
+    }
+    for (const auto& strRef : scope->stringLiteralCallRefs)
+    {
+        auto it = ctx.targetsByName.find(strRef.name);
+        if (it != ctx.targetsByName.end())
+        {
+            const uint64_t pos = (static_cast<uint64_t>(strRef.line) << 32) | strRef.column;
+            for (size_t targetIdx : it->second)
+            {
+                ctx.targets[targetIdx].seenRefs.insert({fileUri, pos});
+            }
         }
     }
 }
@@ -708,15 +944,14 @@ void CollectReferencesInScopeTreeBatch(const std::string& fileUri, const analysi
  * @param[in] targetsByName Mapping from symbol name to target indices.
  * @param[in] request Active CodeLens request.
  */
-void BatchCountReferencesAcrossScopes(
-    std::span<SymbolLensTarget> targets,
-    const ankerl::unordered_dense::map<std::string, std::vector<size_t>>& targetsByName, const CodeLensRequest& request)
+void BatchCountReferencesAcrossScopes(std::span<SymbolLensTarget> targets, const TargetIndexMap& targetsByName,
+                                      const CodeLensRequest& request)
 {
     BatchReferenceContext ctx{targets, targetsByName, request};
     request.scopeIndex.ForEachScopeTree(
         [&](const std::string& fileUri, const std::shared_ptr<const analysis::Scope>& root)
         {
-            if (root)
+            if (root && !angel_lsp::utils::IsPredefinedFile(fileUri, request.predefinedExtension))
             {
                 CollectReferencesInScopeTreeBatch(fileUri, root.get(), ctx);
             }
@@ -823,7 +1058,8 @@ std::optional<std::vector<lsp::CodeLens>> HandleVirtualUri(const CodeLensRequest
     lsp::CodeLens lens;
     lens.range = lsp::Range{lsp::Position{0, 0}, lsp::Position{0, 0}};
     lsp::Command cmd;
-    cmd.title = fmt::format("Jump to physical source in {}", filename);
+    cmd.title = i18n::FormatMessage(request.i18n, "codelens.jump-to-physical-source", "Jump to physical source in {}",
+                                    filename);
     cmd.command = "angelscript.openPhysicalSource";
 
     lsp::json::Array args;
@@ -863,7 +1099,7 @@ SymbolGroups CollectSymbolGroups(const CodeLensRequest& request)
         {
             for (const auto& sym : symbols)
             {
-                if (sym.fileUri != request.uri)
+                if (sym.fileUri != request.uri || sym.isSynthesized)
                 {
                     continue;
                 }
@@ -1027,6 +1263,7 @@ struct CompatibleClassContext
 {
     const MixinInclusionMap& mixinMap;
     const analysis::SymbolTable& symbolTable;
+    std::string_view sourceCode{};
 };
 
 /**
@@ -1094,7 +1331,7 @@ ankerl::unordered_dense::set<std::string> CollectCompatibleClasses(const std::ve
         }
     }
 
-    if (!compatibleClasses.empty() && targetAccess != analysis::AccessModifier::Private)
+    if (!compatibleClasses.empty())
     {
         std::vector<std::string> initial(compatibleClasses.begin(), compatibleClasses.end());
         for (const auto& c : initial)
@@ -1164,68 +1401,6 @@ DeclRangeSet CollectAllDeclRanges(const std::string& symName, const std::vector<
 }
 
 /**
- * @brief Searches base class list for a mixin usage range.
- * @param[in] hostNode Class declaration AST node.
- * @param[in] mixinName Target mixin name.
- * @param[in] sourceCode Source text.
- * @return Optional matching Range.
- */
-std::optional<lsp::Range> FindMixinInBaseList(TSNode hostNode, const std::string& mixinName,
-                                              const std::string& sourceCode)
-{
-    uint32_t childCount = ts_node_child_count(hostNode);
-    for (uint32_t c = 0; c < childCount; ++c)
-    {
-        TSNode child = ts_node_child(hostNode, c);
-        if (std::string_view(ts_node_type(child)) == "base_class_list")
-        {
-            uint32_t bCount = ts_node_named_child_count(child);
-            for (uint32_t b = 0; b < bCount; ++b)
-            {
-                TSNode baseChild = ts_node_named_child(child, b);
-                std::string bText = std::string(parser::AngelScriptParser::GetNodeText(baseChild, sourceCode));
-                if (analysis::CleanBaseType(bText) == mixinName || bText == mixinName ||
-                    bText.ends_with("::" + mixinName))
-                {
-                    TSPoint sp = ts_node_start_point(baseChild);
-                    TSPoint ep = ts_node_end_point(baseChild);
-                    return lsp::Range{lsp::Position{sp.row, sp.column}, lsp::Position{ep.row, ep.column}};
-                }
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Searches class body for a mixin inclusion statement range.
- * @param[in] hostNode Class declaration AST node.
- * @param[in] mixinName Target mixin name.
- * @param[in] sourceCode Source text.
- * @return Optional matching Range.
- */
-std::optional<lsp::Range> FindMixinInBody(TSNode hostNode, const std::string& mixinName, const std::string& sourceCode)
-{
-    TSNode bodyNode = parser::GetChildByField(hostNode, parser::fields::Body);
-    if (!ts_node_is_null(bodyNode))
-    {
-        uint32_t mCount = ts_node_child_count(bodyNode);
-        for (uint32_t m = 0; m < mCount; ++m)
-        {
-            TSNode mNode = ts_node_child(bodyNode, m);
-            std::string mText = std::string(parser::AngelScriptParser::GetNodeText(mNode, sourceCode));
-            if (mText.find(mixinName) != std::string::npos)
-            {
-                TSPoint sp = ts_node_start_point(mNode);
-                TSPoint ep = ts_node_end_point(mNode);
-                return lsp::Range{lsp::Position{sp.row, sp.column}, lsp::Position{ep.row, ep.column}};
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-/**
  * @brief Locates the AST range corresponding to a mixin inclusion within a host class.
  * @param[in] sym Host class symbol.
  * @param[in] mixinName Included mixin name.
@@ -1250,20 +1425,14 @@ lsp::Range FindMixinRangeInAst(const analysis::Symbol& sym, const std::string& m
     {
         hostNode = ts_node_parent(hostNode);
     }
-    if (ts_node_is_null(hostNode))
-    {
-        return fallbackRange;
-    }
 
-    if (auto baseRange = FindMixinInBaseList(hostNode, mixinName, request.sourceCode))
+    TSNode incNode = analysis::FindMixinInclusionNode(hostNode, mixinName, mixinName, request.sourceCode);
+    if (!ts_node_is_null(incNode))
     {
-        return *baseRange;
+        TSPoint sp = ts_node_start_point(incNode);
+        TSPoint ep = ts_node_end_point(incNode);
+        return lsp::Range{lsp::Position{sp.row, sp.column}, lsp::Position{ep.row, ep.column}};
     }
-    if (auto bodyRange = FindMixinInBody(hostNode, mixinName, request.sourceCode))
-    {
-        return *bodyRange;
-    }
-
     return fallbackRange;
 }
 
@@ -1306,7 +1475,8 @@ void AppendMixinExpansionLenses(const analysis::Symbol& sym, const CodeLensReque
         lsp::CodeLens mixinLens;
         mixinLens.range = range;
         lsp::Command mixinCmd;
-        mixinCmd.title = fmt::format("View Mixin Expansion: {}", mixinName);
+        mixinCmd.title =
+            i18n::FormatMessage(request.i18n, "codelens.view-mixin-expansion", "View Mixin Expansion: {}", mixinName);
         mixinCmd.command = "angelscript.viewMixinExpansion";
 
         lsp::json::Array args;
@@ -1420,13 +1590,20 @@ SymbolLensTarget CreateFunctionOrVariableTarget(const RangeKey& key, const analy
  * @param[in] key Range covering class declaration.
  * @param[in] sym Class symbol.
  * @param[in] symGroup Symbol group sharing declaration range.
+ * @param[in] ctx Context bundling mixin map and symbol table.
  * @return Constructed SymbolLensTarget.
  */
 SymbolLensTarget CreateClassTarget(const RangeKey& key, const analysis::Symbol& sym,
-                                   const std::vector<analysis::Symbol>& symGroup)
+                                   const std::vector<analysis::Symbol>& symGroup, const CompatibleClassContext& ctx)
 {
     DeclRangeSet allDeclRanges;
     AddSymbolDeclRanges(symGroup, allDeclRanges);
+
+    std::string targetNamespace;
+    if (!sym.containerName.empty() && !IsContainerClass(sym.containerName, ctx.symbolTable))
+    {
+        targetNamespace = sym.containerName;
+    }
 
     return SymbolLensTarget{
         .key = key,
@@ -1434,7 +1611,7 @@ SymbolLensTarget CreateClassTarget(const RangeKey& key, const analysis::Symbol& 
         .group = symGroup,
         .compatibleClasses = {},
         .allDeclRanges = std::move(allDeclRanges),
-        .targetNamespace = {},
+        .targetNamespace = std::move(targetNamespace),
         .targetEnumContainer = {},
         .isEnumConstant = false,
         .targetAccess = analysis::AccessModifier::Public,
@@ -1470,14 +1647,14 @@ void CollectReferenceTargets(const SymbolGroups& symGroups, const CompatibleClas
 
         if (sym.type == analysis::SymbolType::Function)
         {
-            if (IsInterfaceMethod(sym, ctx.symbolTable))
+            if (IsInterfaceMethod(sym, ctx.symbolTable) || analysis::IsDestructorDeclaration(sym, ctx.sourceCode))
             {
                 continue;
             }
             keyToTarget[key] = targets.size();
             targets.push_back(CreateFunctionOrVariableTarget(key, sym, symGroup, ctx));
         }
-        else if (sym.type == analysis::SymbolType::Variable)
+        else if (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property)
         {
             keyToTarget[key] = targets.size();
             targets.push_back(CreateFunctionOrVariableTarget(key, sym, symGroup, ctx));
@@ -1485,7 +1662,7 @@ void CollectReferenceTargets(const SymbolGroups& symGroups, const CompatibleClas
         else if (sym.type == analysis::SymbolType::Class)
         {
             keyToTarget[key] = targets.size();
-            targets.push_back(CreateClassTarget(key, sym, symGroup));
+            targets.push_back(CreateClassTarget(key, sym, symGroup, ctx));
         }
     }
 }
@@ -1501,6 +1678,81 @@ struct AssembledLensContext
 };
 
 /**
+ * @brief Formats the localized reference count string for a code lens.
+ * @param[in] refCount Number of references.
+ * @param[in] i18n Optional pointer to I18n translation context.
+ * @return Localized reference count string.
+ */
+std::string FormatReferenceCount(size_t refCount, const i18n::I18n* i18n)
+{
+    return (refCount == 1) ? i18n::FormatMessage(i18n, "codelens.reference", "1 reference")
+                           : i18n::FormatMessage(i18n, "codelens.references", "{} references", refCount);
+}
+
+/**
+ * @brief Formats the localized implementation count string for a code lens.
+ * @param[in] implCount Number of interface implementations.
+ * @param[in] i18n Optional pointer to I18n translation context.
+ * @return Localized implementation count string.
+ */
+std::string FormatImplementationCount(size_t implCount, const i18n::I18n* i18n)
+{
+    return (implCount == 1) ? i18n::FormatMessage(i18n, "codelens.implementation", "1 implementation")
+                            : i18n::FormatMessage(i18n, "codelens.implementations", "{} implementations", implCount);
+}
+
+/**
+ * @brief Appends a reference count lens for a mapped symbol target.
+ * @param[in] key Declaration range key.
+ * @param[in] sym Primary symbol.
+ * @param[in] ctx Assembled CodeLens context.
+ * @param[in,out] lenses Output list of code lenses.
+ */
+void AppendReferenceLens(const RangeKey& key, const analysis::Symbol& sym, const AssembledLensContext& ctx,
+                         std::vector<lsp::CodeLens>& lenses)
+{
+    auto it = ctx.keyToTarget.find(key);
+    if (it == ctx.keyToTarget.end())
+    {
+        return;
+    }
+    size_t refCount = ctx.targets[it->second].seenRefs.size();
+    if (ctx.request.unusedRules &&
+        analysis::rules::IsEngineManagedFunction(sym, ctx.request.symbolTable, *ctx.request.unusedRules))
+    {
+        refCount += 1;
+    }
+    if (refCount == 0 && sym.name.starts_with("op") && sym.name.size() > 2)
+    {
+        return;
+    }
+    lenses.push_back(MakeCommandLens(key, FormatReferenceCount(refCount, ctx.request.i18n)));
+}
+
+/**
+ * @brief Appends lenses for a function symbol, checking for interface implementations first.
+ * @param[in] key Declaration range key.
+ * @param[in] sym Function symbol.
+ * @param[in] ctx Assembled CodeLens context.
+ * @param[in,out] lenses Output list of code lenses.
+ */
+void AppendFunctionLens(const RangeKey& key, const analysis::Symbol& sym, const AssembledLensContext& ctx,
+                        std::vector<lsp::CodeLens>& lenses)
+{
+    if (analysis::IsDestructorDeclaration(sym, ctx.request.sourceCode))
+    {
+        return;
+    }
+    if (IsInterfaceMethod(sym, ctx.request.symbolTable))
+    {
+        size_t implCount = CountInterfaceMethodImplementations(sym, ctx.request.symbolTable);
+        lenses.push_back(MakeCommandLens(key, FormatImplementationCount(implCount, ctx.request.i18n)));
+        return;
+    }
+    AppendReferenceLens(key, sym, ctx, lenses);
+}
+
+/**
  * @brief Appends CodeLens for an individual symbol group.
  * @param[in] key Declaration range key.
  * @param[in] symGroup Symbols sharing the declaration range.
@@ -1511,51 +1763,23 @@ void AppendLensesForGroup(const RangeKey& key, const std::vector<analysis::Symbo
                           const AssembledLensContext& ctx, std::vector<lsp::CodeLens>& lenses)
 {
     const auto& sym = SelectPrimarySymbol(symGroup);
-
     if (sym.type == analysis::SymbolType::Function)
     {
-        if (IsInterfaceMethod(sym, ctx.request.symbolTable))
-        {
-            size_t implCount = CountInterfaceMethodImplementations(sym, ctx.request.symbolTable);
-            std::string title = std::to_string(implCount) + (implCount == 1 ? " implementation" : " implementations");
-            lenses.push_back(MakeCommandLens(key, std::move(title)));
-            return;
-        }
-
-        auto it = ctx.keyToTarget.find(key);
-        if (it != ctx.keyToTarget.end())
-        {
-            size_t refCount = ctx.targets[it->second].seenRefs.size();
-            std::string title = std::to_string(refCount) + (refCount == 1 ? " reference" : " references");
-            lenses.push_back(MakeCommandLens(key, std::move(title)));
-        }
+        AppendFunctionLens(key, sym, ctx, lenses);
     }
     else if (sym.type == analysis::SymbolType::Interface)
     {
         size_t implCount = CountInterfaceImplementations(sym, ctx.request.symbolTable);
-        std::string title = std::to_string(implCount) + (implCount == 1 ? " implementation" : " implementations");
-        lenses.push_back(MakeCommandLens(key, std::move(title)));
+        lenses.push_back(MakeCommandLens(key, FormatImplementationCount(implCount, ctx.request.i18n)));
     }
     else if (sym.type == analysis::SymbolType::Class)
     {
-        auto it = ctx.keyToTarget.find(key);
-        if (it != ctx.keyToTarget.end())
-        {
-            size_t refCount = ctx.targets[it->second].seenRefs.size();
-            std::string title = std::to_string(refCount) + (refCount == 1 ? " reference" : " references");
-            lenses.push_back(MakeCommandLens(key, std::move(title)));
-        }
+        AppendReferenceLens(key, sym, ctx, lenses);
         AppendMixinExpansionLenses(sym, ctx.request, lenses);
     }
-    else if (sym.type == analysis::SymbolType::Variable)
+    else if (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property)
     {
-        auto it = ctx.keyToTarget.find(key);
-        if (it != ctx.keyToTarget.end())
-        {
-            size_t refCount = ctx.targets[it->second].seenRefs.size();
-            std::string title = std::to_string(refCount) + (refCount == 1 ? " reference" : " references");
-            lenses.push_back(MakeCommandLens(key, std::move(title)));
-        }
+        AppendReferenceLens(key, sym, ctx, lenses);
     }
 }
 
@@ -1567,7 +1791,8 @@ void AppendLensesForGroup(const RangeKey& key, const std::vector<analysis::Symbo
  */
 std::vector<lsp::CodeLens> BuildSymbolGroupLenses(const SymbolGroups& symGroups, const CodeLensRequest& request)
 {
-    CompatibleClassContext classCtx{BuildMixinInclusionMap(request.symbolTable), request.symbolTable};
+    CompatibleClassContext classCtx{BuildMixinInclusionMap(request.symbolTable), request.symbolTable,
+                                    request.sourceCode};
 
     std::vector<SymbolLensTarget> targets;
     KeyTargetMap keyToTarget;
@@ -1575,7 +1800,7 @@ std::vector<lsp::CodeLens> BuildSymbolGroupLenses(const SymbolGroups& symGroups,
 
     if (!targets.empty())
     {
-        ankerl::unordered_dense::map<std::string, std::vector<size_t>> targetsByName;
+        TargetIndexMap targetsByName;
         for (size_t i = 0; i < targets.size(); ++i)
         {
             targetsByName[targets[i].targetName].push_back(i);
@@ -1614,7 +1839,7 @@ std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest& r
         return virtualLenses;
     }
 
-    if (request.sourceCode.empty())
+    if (request.sourceCode.empty() || !request.tree)
     {
         return std::nullopt;
     }

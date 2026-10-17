@@ -1,198 +1,103 @@
+#include "analysis/NodeIndex.h"
+#include "document/Document.h"
+#include "features/semantic_tokens/SemanticTokensHandler.h"
+#include "helpers/TestUtils.h"
+#include "parser/ASTUtils.h"
+#include "parser/AngelScriptParser.h"
+#include "parser/GrammarNames.h"
+#include <algorithm>
 #include <doctest/doctest.h>
 
-#include "analysis/SemanticHelpers.h"
-#include "helpers/TestUtils.h"
-#include "parser/AngelScriptParser.h"
+using namespace angel_lsp;
+using namespace angel_lsp::analysis;
+using namespace angel_lsp::parser;
 
-#include <string>
-#include <vector>
-
-namespace
+TEST_CASE("AstStructuralTraversal - Null node safety")
 {
+    TSNode nullNode{};
+    CHECK(ts_node_is_null(parser::GetRootNode(nullNode)));
+    CHECK(ts_node_is_null(parser::GetParent(nullNode)));
+}
 
-/**
- * @brief Traverses AST using a single flat cursor to locate the first argument_list node.
- * @param[in] tree Owning Tree-sitter tree.
- * @return argument_list TSNode or null node if not found.
- */
-TSNode FindFirstArgumentList(TSTree* tree)
+TEST_CASE("AstStructuralTraversal - GetRootNode O(1) parity with upward parent climb")
 {
-    if (!tree)
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Cls");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Method");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("myVar");
+
+    const std::string code = std::string("class ") + clsName + "\n{\n" + "    void " + fnName + "()\n    {\n" +
+                             "        int " + varName + " = 42;\n" + "    }\n}\n";
+
+    auto doc = angel_lsp::test::CreateTestDocument("file:///parity_ast_traversal.as", code);
+    REQUIRE(doc->GetTree() != nullptr);
+
+    TSNode expectedRoot = ts_tree_root_node(doc->GetTree());
+    REQUIRE(!ts_node_is_null(expectedRoot));
+
+    NodeIndex index(expectedRoot);
+    auto varDeclarators = index.Nodes(nodes::VariableDeclarator);
+    REQUIRE(!varDeclarators.empty());
+
+    TSNode leaf = varDeclarators.front();
+    REQUIRE(!ts_node_is_null(leaf));
+
+    // O(1) GetRootNode
+    TSNode fastRoot = parser::GetRootNode(leaf);
+    CHECK(!ts_node_is_null(fastRoot));
+    CHECK(ts_node_eq(fastRoot, expectedRoot));
+
+    // Iterative climb
+    TSNode climbRoot = leaf;
+    while (!ts_node_is_null(parser::GetParent(climbRoot)))
     {
-        return TSNode{};
+        climbRoot = parser::GetParent(climbRoot);
     }
 
-    TSNode root = ts_tree_root_node(tree);
-    TSTreeCursor cursor = ts_tree_cursor_new(root);
+    CHECK(ts_node_eq(fastRoot, climbRoot));
+}
 
-    while (true)
+TEST_CASE("AstStructuralTraversal - Template brackets get templatePunctuation token type")
+{
+    const auto& legend = features::GetSemanticTokensLegend();
+    const auto it = std::find(legend.tokenTypes.begin(), legend.tokenTypes.end(), "templatePunctuation");
+    REQUIRE(it != legend.tokenTypes.end());
+    const uint32_t templatePunctuation = static_cast<uint32_t>(std::distance(legend.tokenTypes.begin(), it));
+
+    const auto opIt = std::find(legend.tokenTypes.begin(), legend.tokenTypes.end(), "operator");
+    REQUIRE(opIt != legend.tokenTypes.end());
+    const uint32_t operatorType = static_cast<uint32_t>(std::distance(legend.tokenTypes.begin(), opIt));
+
+    const std::string varArr = angel_lsp::test::GenerateRandomSymbolName("arr");
+    const std::string varA = angel_lsp::test::GenerateRandomSymbolName("a");
+    const std::string varB = angel_lsp::test::GenerateRandomSymbolName("b");
+
+    const std::string code = std::string("void test()\n{\n") + "    array<int> " + varArr + ";\n" +
+                             "    bool cmp = " + varA + " < " + varB + ";\n" + "}\n";
+
+    AngelScriptParser parser;
+    document::TreePtr tree = document::MakeTreePtr(parser.Parse(code));
+    REQUIRE(tree != nullptr);
+
+    SymbolTable table;
+    features::SemanticTokensRequest req{"file:///template_punct.as", code, tree.get(), table};
+    const auto tokens = features::GetSemanticTokens(req);
+
+    REQUIRE(tokens.data.size() % 5 == 0);
+
+    bool hasTemplatePunctuation = false;
+    bool hasOperator = false;
+    for (size_t i = 0; i + 4 < tokens.data.size(); i += 5)
     {
-        TSNode node = ts_tree_cursor_current_node(&cursor);
-        if (std::string_view(ts_node_type(node)) == "argument_list")
+        const uint32_t type = tokens.data[i + 3];
+        if (type == templatePunctuation)
         {
-            ts_tree_cursor_delete(&cursor);
-            return node;
+            hasTemplatePunctuation = true;
         }
-
-        if (ts_tree_cursor_goto_first_child(&cursor))
+        else if (type == operatorType)
         {
-            continue;
-        }
-
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            continue;
-        }
-
-        bool climbed = false;
-        while (ts_tree_cursor_goto_parent(&cursor))
-        {
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                climbed = true;
-                break;
-            }
-        }
-
-        if (!climbed)
-        {
-            break;
+            hasOperator = true;
         }
     }
-
-    ts_tree_cursor_delete(&cursor);
-    return TSNode{};
-}
-
-} // namespace
-
-TEST_CASE("AST Structural Traversal - Multi-Argument Template Types")
-{
-    angel_lsp::parser::AngelScriptParser parser;
-    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("func");
-    const std::string keyType = angel_lsp::test::GenerateRandomSymbolName("Key");
-    const std::string valType = angel_lsp::test::GenerateRandomSymbolName("Val");
-
-    const std::string code = "void " + fnName + "(dictionary<" + keyType + ", " + valType +
-                             "> dict, int val) {}\n"
-                             "void Run() {\n"
-                             "    " +
-                             fnName + "(dictionary<" + keyType + ", " + valType +
-                             ">(), 42);\n"
-                             "}\n";
-
-    TSTree* tree = parser.Parse(code);
-    REQUIRE(tree != nullptr);
-    TSNode argList = FindFirstArgumentList(tree);
-    REQUIRE(!ts_node_is_null(argList));
-
-    size_t count = angel_lsp::analysis::CountCallArguments(argList);
-    CHECK(count == 2);
-
-    auto args = angel_lsp::analysis::ExtractCallArguments(argList, code);
-    REQUIRE(args.size() == 2);
-    CHECK(args[0].index == 0);
-    CHECK(args[1].index == 1);
-    CHECK(args[0].name.empty());
-    CHECK(args[1].name.empty());
-
-    ts_tree_delete(tree);
-}
-
-TEST_CASE("AST Structural Traversal - Default Arguments with Nested Calls and Strings")
-{
-    angel_lsp::parser::AngelScriptParser parser;
-    const std::string outerFn = angel_lsp::test::GenerateRandomSymbolName("Outer");
-    const std::string innerFn = angel_lsp::test::GenerateRandomSymbolName("Inner");
-
-    const std::string code = "void Run() {\n"
-                             "    " +
-                             outerFn + "(" + innerFn +
-                             "(\"arg1, with, commas\", 10, 20), /* comment, 1 */ 99);\n"
-                             "}\n";
-
-    TSTree* tree = parser.Parse(code);
-    REQUIRE(tree != nullptr);
-    TSNode argList = FindFirstArgumentList(tree);
-    REQUIRE(!ts_node_is_null(argList));
-
-    // Outer call should have exactly 2 arguments
-    size_t count = angel_lsp::analysis::CountCallArguments(argList);
-    CHECK(count == 2);
-
-    auto args = angel_lsp::analysis::ExtractCallArguments(argList, code);
-    REQUIRE(args.size() == 2);
-    CHECK(args[0].index == 0);
-    CHECK(args[1].index == 1);
-
-    ts_tree_delete(tree);
-}
-
-TEST_CASE("AST Structural Traversal - Named Arguments Mapping")
-{
-    angel_lsp::parser::AngelScriptParser parser;
-    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Process");
-    const std::string arg1Name = angel_lsp::test::GenerateRandomSymbolName("first");
-    const std::string arg2Name = angel_lsp::test::GenerateRandomSymbolName("second");
-
-    const std::string code = "void Run() {\n"
-                             "    " +
-                             fnName + "(" + arg1Name + ": 100, " + arg2Name +
-                             ": 200);\n"
-                             "}\n";
-
-    TSTree* tree = parser.Parse(code);
-    REQUIRE(tree != nullptr);
-    TSNode argList = FindFirstArgumentList(tree);
-    REQUIRE(!ts_node_is_null(argList));
-
-    size_t count = angel_lsp::analysis::CountCallArguments(argList);
-    CHECK(count == 2);
-
-    auto args = angel_lsp::analysis::ExtractCallArguments(argList, code);
-    REQUIRE(args.size() == 2);
-    CHECK(args[0].index == 0);
-    CHECK(args[0].name == arg1Name);
-    CHECK(!ts_node_is_null(args[0].nameNode));
-    CHECK(!ts_node_is_null(args[0].exprNode));
-
-    CHECK(args[1].index == 1);
-    CHECK(args[1].name == arg2Name);
-    CHECK(!ts_node_is_null(args[1].nameNode));
-    CHECK(!ts_node_is_null(args[1].exprNode));
-
-    ts_tree_delete(tree);
-}
-
-TEST_CASE("AST Structural Traversal - Malformed or Incomplete Argument Lists")
-{
-    angel_lsp::parser::AngelScriptParser parser;
-    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Incomplete");
-
-    // Syntax error with double comma
-    const std::string code = "void Run() {\n"
-                             "    " +
-                             fnName +
-                             "(10, , 20);\n"
-                             "}\n";
-
-    TSTree* tree = parser.Parse(code);
-    REQUIRE(tree != nullptr);
-    TSNode argList = FindFirstArgumentList(tree);
-    REQUIRE(!ts_node_is_null(argList));
-
-    // Safe extraction without crash or out-of-bounds
-    auto args = angel_lsp::analysis::ExtractCallArguments(argList, code);
-    CHECK(!args.empty());
-
-    // Active parameter resolution during live typing
-    const size_t posBeforeFirstComma = code.find(fnName) + fnName.size() + 2; // right after "10"
-    const size_t posAfterFirstComma = code.find(',') + 1;
-    const size_t posAfterSecondComma = code.rfind(',') + 1;
-
-    CHECK(angel_lsp::analysis::CalculateActiveCallParameter(argList, posBeforeFirstComma, code) == 0);
-    CHECK(angel_lsp::analysis::CalculateActiveCallParameter(argList, posAfterFirstComma, code) == 1);
-    CHECK(angel_lsp::analysis::CalculateActiveCallParameter(argList, posAfterSecondComma, code) == 2);
-
-    ts_tree_delete(tree);
+    CHECK(hasTemplatePunctuation);
+    CHECK(hasOperator);
 }

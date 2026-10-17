@@ -2185,3 +2185,286 @@ TEST_CASE("Completion - Case-insensitive prefix matching for symbols, types, and
     }
     CHECK(foundEnumMember);
 }
+
+TEST_CASE("Completion - Suppress duplicate parentheses snippet when '(' follows cursor")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("ColorGray");
+    std::string code = "class Renderer {\n"
+                       "    void " +
+                       fnName +
+                       "() {}\n"
+                       "}\n"
+                       "void main() {\n"
+                       "    Renderer r;\n"
+                       "    r." +
+                       fnName.substr(0, 5) +
+                       "();\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    // Position cursor at r.Color|() -> line 5, col 11
+    auto items = env.CompleteAt(5, 11);
+    bool found = false;
+    for (const auto& item : items)
+    {
+        if (item.label == fnName)
+        {
+            found = true;
+            // When '(' follows cursor, insertText must NOT contain snippet parens
+            if (item.insertText.has_value())
+            {
+                CHECK(item.insertText->find("(") == std::string::npos);
+            }
+            break;
+        }
+    }
+    CHECK(found);
+}
+
+TEST_CASE("Completion - Resolve enclosing class member receiver this.m_field.")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("EnvCredits");
+    const std::string memberDict = angel_lsp::test::GenerateRandomSymbolName("m_PlayersVoting");
+
+    std::string code = "class DictHelper {\n"
+                       "    void getKeys() {}\n"
+                       "    int getSize() { return 0; }\n"
+                       "}\n"
+                       "class " +
+                       className +
+                       " {\n"
+                       "    DictHelper " +
+                       memberDict +
+                       ";\n"
+                       "    void OnTick() {\n"
+                       "        this." +
+                       memberDict +
+                       ".\n"
+                       "    }\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    size_t col = 8 + 5 + memberDict.size() + 1;
+    auto items = env.CompleteAt(7, static_cast<uint32_t>(col));
+    bool foundGetKeys = false;
+    bool foundGetSize = false;
+    for (const auto& item : items)
+    {
+        if (item.label == "getKeys")
+        {
+            foundGetKeys = true;
+        }
+        if (item.label == "getSize")
+        {
+            foundGetSize = true;
+        }
+    }
+    CHECK(foundGetKeys);
+    CHECK(foundGetSize);
+}
+
+TEST_CASE("Completion - Direct-initialized field type does not leak as member and underscore members sort last")
+{
+    const std::string rgbaType = angel_lsp::test::GenerateRandomSymbolName("RGBA");
+    const std::string creditClass = angel_lsp::test::GenerateRandomSymbolName("ASCredit");
+    const std::string colorField = angel_lsp::test::GenerateRandomSymbolName("Color");
+    const std::string speedField = angel_lsp::test::GenerateRandomSymbolName("Speed");
+    const std::string privField = "_" + angel_lsp::test::GenerateRandomSymbolName("internal");
+    const std::string dunderField = "__" + angel_lsp::test::GenerateRandomSymbolName("Size");
+    const std::string instVar = angel_lsp::test::GenerateRandomSymbolName("credit");
+
+    const std::string code = "class " + rgbaType +
+                             " {\n"
+                             "    " +
+                             rgbaType +
+                             "(int r, int g, int b, int a) {}\n"
+                             "}\n"
+                             "final class " +
+                             creditClass +
+                             " {\n"
+                             "    float " +
+                             speedField +
+                             ";\n"
+                             "    int " +
+                             privField +
+                             ";\n"
+                             "    int " +
+                             dunderField +
+                             ";\n"
+                             "    " +
+                             rgbaType + " " + colorField +
+                             "(255, 255, 255, 255);\n"
+                             "}\n"
+                             "void Test() {\n"
+                             "    " +
+                             creditClass + " " + instVar +
+                             ";\n"
+                             "    " +
+                             instVar +
+                             ".\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const uint32_t col = static_cast<uint32_t>(4 + instVar.size() + 1);
+    const auto items = env.CompleteAt(11, col);
+    REQUIRE_FALSE(items.empty());
+
+    CHECK(HasItem(items, colorField));
+    CHECK(HasItem(items, speedField));
+    CHECK(HasItem(items, privField));
+    CHECK(HasItem(items, dunderField));
+    CHECK_FALSE(HasItem(items, rgbaType));
+
+    std::string speedSort;
+    std::string privSort;
+    std::string dunderSort;
+    for (const auto& item : items)
+    {
+        if (item.label == speedField && item.sortText.has_value())
+        {
+            speedSort = *item.sortText;
+        }
+        else if (item.label == privField && item.sortText.has_value())
+        {
+            privSort = *item.sortText;
+        }
+        else if (item.label == dunderField && item.sortText.has_value())
+        {
+            dunderSort = *item.sortText;
+        }
+    }
+
+    REQUIRE_FALSE(speedSort.empty());
+    REQUIRE_FALSE(privSort.empty());
+    REQUIRE_FALSE(dunderSort.empty());
+    CHECK(speedSort < privSort);
+    CHECK(privSort < dunderSort);
+}
+
+TEST_CASE("Completion - GAP-VISIBILITY-01: Sequential local variable visibility does not offer variable declared later")
+{
+    const std::string varEarly = test::GenerateRandomSymbolName("earlyVar");
+    const std::string varLate = test::GenerateRandomSymbolName("lateVar");
+
+    const std::string code = "void test()\n"
+                             "{\n"
+                             "    int " +
+                             varEarly +
+                             " = 1;\n"
+                             "    \n"
+                             "    int " +
+                             varLate +
+                             " = 2;\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(3, 4);
+    CHECK(HasItem(items, varEarly));
+    CHECK_FALSE(HasItem(items, varLate));
+}
+
+TEST_CASE("Completion - GAP-VISIBILITY-01: Lambda closure barrier prevents offering outer function locals")
+{
+    const std::string outerVar = test::GenerateRandomSymbolName("outerVar");
+    const std::string innerVar = test::GenerateRandomSymbolName("innerVar");
+
+    const std::string code = "void test()\n"
+                             "{\n"
+                             "    int " +
+                             outerVar +
+                             " = 1;\n"
+                             "    auto fn = function() {\n"
+                             "        int " +
+                             innerVar +
+                             " = 2;\n"
+                             "        \n"
+                             "    };\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(5, 8);
+    CHECK(HasItem(items, innerVar));
+    CHECK_FALSE(HasItem(items, outerVar));
+}
+
+TEST_CASE("Completion - Inherited property and member completion in derived class without this.")
+{
+    const std::string baseName = test::GenerateRandomSymbolName("BaseEntity");
+    const std::string derivedName = test::GenerateRandomSymbolName("DerivedEntity");
+    const std::string propName = test::GenerateRandomSymbolName("selfProp");
+    const std::string fieldName = test::GenerateRandomSymbolName("m_baseVal");
+
+    const std::string code = "class " + baseName +
+                             " {\n"
+                             "    int " +
+                             fieldName +
+                             ";\n"
+                             "    int " +
+                             propName +
+                             " { get { return 1; } }\n"
+                             "}\n"
+                             "class " +
+                             derivedName + " : " + baseName +
+                             " {\n"
+                             "    void Spawn() {\n"
+                             "        \n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(6, 8);
+    CHECK(HasItem(items, propName));
+    CHECK(HasItem(items, fieldName));
+}
+
+TEST_CASE("Completion - Suppress this and super in global functions")
+{
+    const std::string fnName = test::GenerateRandomSymbolName("GlobalFn");
+    const std::string code = "void " + fnName +
+                             "() {\n"
+                             "    \n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(1, 4);
+    CHECK_FALSE(HasItem(items, "this"));
+    CHECK_FALSE(HasItem(items, "super"));
+}
+
+TEST_CASE("Completion - Suppress super in standalone class without base class, allow this")
+{
+    const std::string clsName = test::GenerateRandomSymbolName("StandaloneClass");
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    void Method() {\n"
+                             "        \n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(2, 8);
+    CHECK(HasItem(items, "this"));
+    CHECK_FALSE(HasItem(items, "super"));
+}
+
+TEST_CASE("Completion - Allow both this and super in derived class")
+{
+    const std::string baseName = test::GenerateRandomSymbolName("BaseClass");
+    const std::string derivedName = test::GenerateRandomSymbolName("DerivedClass");
+    const std::string code = "class " + baseName +
+                             " {\n"
+                             "    void BaseMethod() {}\n"
+                             "}\n"
+                             "class " +
+                             derivedName + " : " + baseName +
+                             " {\n"
+                             "    void Method() {\n"
+                             "        \n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(5, 8);
+    CHECK(HasItem(items, "this"));
+    CHECK(HasItem(items, "super"));
+}

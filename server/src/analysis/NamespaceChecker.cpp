@@ -1,4 +1,5 @@
 #include "analysis/NamespaceChecker.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 
@@ -52,7 +53,8 @@ void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const Symbo
     {
         prefix.pop_back();
     }
-    if (!prefix.empty() && !IsKnownScope(prefix, node, sourceCode, table))
+    const auto& usings = GetUsingNamespaces(ctx.request);
+    if (!prefix.empty() && !IsKnownScope(prefix, node, sourceCode, table, usings))
     {
         TSPoint startPt = ts_node_start_point(firstChild);
         TSPoint endPt = ts_node_end_point(firstChild);
@@ -64,29 +66,20 @@ void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const Symbo
 /**
  * @brief Extracts and trims the callee name from a call expression node.
  */
-std::string ExtractCalleeName(TSNode node, std::string_view sourceCode)
+std::string_view ExtractCalleeName(TSNode node, std::string_view sourceCode)
 {
     TSNode funcNode = parser::GetCallCallee(node);
     if (ts_node_is_null(funcNode))
     {
         return {};
     }
-    std::string name = GetNodeText(funcNode, sourceCode);
-    while (!name.empty() && isspace(static_cast<unsigned char>(name.front())))
-    {
-        name.erase(name.begin());
-    }
-    while (!name.empty() && isspace(static_cast<unsigned char>(name.back())))
-    {
-        name.pop_back();
-    }
-    return name;
+    return Trim(GetNodeTextView(funcNode, sourceCode));
 }
 
 /**
  * @brief Checks if a callee name is known in scope, registered, or excused by context.
  */
-bool IsKnownCallee(const std::string& name, TSNode node, const NamespaceCheckRequest& request,
+bool IsKnownCallee(std::string_view name, TSNode node, const NamespaceCheckRequest& request,
                    const DiagnosticContext& ctx)
 {
     if (name == "super")
@@ -107,7 +100,7 @@ bool IsKnownCallee(const std::string& name, TSNode node, const NamespaceCheckReq
         return true;
     }
 
-    if (!FindSymbolsInScope(name, node, request.sourceCode, ctx.request.symbolTable).empty())
+    if (!FindSymbolsInScope(std::string(name), node, request.sourceCode, ctx.request.symbolTable).empty())
     {
         return true;
     }
@@ -120,13 +113,62 @@ bool IsKnownCallee(const std::string& name, TSNode node, const NamespaceCheckReq
     return IsInsideMixinBody(node);
 }
 
+static bool IsKnownDirectGlobalCallee(std::string_view identView, const DiagnosticContext& ctx)
+{
+    if (ctx.request.IsRegisteredSymbol(identView))
+    {
+        return true;
+    }
+    if (auto symsPtr = ctx.request.symbolTable.FindSymbolsPtr(identView))
+    {
+        for (const auto& sym : *symsPtr)
+        {
+            if (sym.containerName.empty() && sym.type != SymbolType::CallReference)
+            {
+                return true;
+            }
+        }
+    }
+    if (ctx.request.scopeRoot)
+    {
+        if (ResolveInScope(ctx.request.scopeRoot.get(), identView) != nullptr)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * @brief Checks if an unqualified function call resolves to an in-scope symbol.
  */
 void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
 {
-    const std::string calleeName = ExtractCalleeName(node, request.sourceCode);
-    if (calleeName.empty() || calleeName.find("::") != std::string::npos || calleeName.find('.') != std::string::npos)
+    std::string_view calleeName = ExtractCalleeName(node, request.sourceCode);
+    if (calleeName.empty() || calleeName.find('.') != std::string_view::npos)
+    {
+        return;
+    }
+
+    if (calleeName.starts_with("::"))
+    {
+        if (calleeName.find("::", 2) == std::string_view::npos)
+        {
+            const std::string_view identView = calleeName.substr(2);
+            if (!identView.empty() && !IsKnownDirectGlobalCallee(identView, ctx))
+            {
+                TSNode funcNode = parser::GetCallCallee(node);
+                const TSPoint startPt = ts_node_start_point(funcNode);
+                const TSPoint endPt = ts_node_end_point(funcNode);
+                ctx.EmitAtRange({startPt.row, startPt.column, endPt.row, endPt.column}, "as-err-undefined-identifier",
+                                calleeName, DiagnosticSeverity::Error);
+            }
+            return;
+        }
+        calleeName = calleeName.substr(2);
+    }
+
+    if (calleeName.find("::") != std::string_view::npos)
     {
         return;
     }

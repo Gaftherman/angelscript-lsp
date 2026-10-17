@@ -37,7 +37,10 @@ lsp::SelectionRange BuildChain(TSNode root, const lsp::Position& position)
     }
 
     std::vector<lsp::Range> ranges;
-    for (TSNode current = node; !ts_node_is_null(current); current = ts_node_parent(current))
+    constexpr int kMaxDepth = 64;
+    int depth = 0;
+    for (TSNode current = node; depth < kMaxDepth && !ts_node_is_null(current);
+         current = ts_node_parent(current), ++depth)
     {
         const lsp::Range range = ToRange(current);
         if (ranges.empty() || !SameRange(ranges.back(), range))
@@ -65,7 +68,7 @@ lsp::SelectionRange BuildChain(TSNode root, const lsp::Position& position)
 std::vector<lsp::SelectionRange> GetSelectionRanges(const SelectionRangeRequest& request)
 {
     std::vector<lsp::SelectionRange> result;
-    if (!request.tree)
+    if (!request.tree || request.sourceCode.empty())
     {
         return result;
     }

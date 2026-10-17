@@ -120,10 +120,17 @@ bool IsDestructorSymbol(const Symbol& sym)
     return sym.name.starts_with("~");
 }
 
-bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx)
+bool IsDestructorDeclaration(const Symbol& sym, std::string_view source)
 {
-    const std::string_view source = ctx.request.sourceCode;
-    if (source.empty() || sym.fileUri != ctx.request.fileUri)
+    if (sym.type != SymbolType::Function)
+    {
+        return false;
+    }
+    if (sym.name.starts_with('~'))
+    {
+        return true;
+    }
+    if (source.empty())
     {
         return false;
     }
@@ -152,6 +159,15 @@ bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx)
         --back;
     }
     return back > 0 && source[back - 1] == '~';
+}
+
+bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx)
+{
+    if (sym.fileUri != ctx.request.fileUri)
+    {
+        return false;
+    }
+    return IsDestructorDeclaration(sym, ctx.request.sourceCode);
 }
 
 namespace
@@ -356,7 +372,7 @@ std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const
 
     if (scope)
     {
-        if (const LocalDefinition* def = ResolveInScope(scope, name))
+        if (const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(node)))
         {
             return def->kind == LocalDefinitionKind::Type ? std::optional<std::string>(name) : std::nullopt;
         }
@@ -389,7 +405,7 @@ static bool IsMemberMethodSymbol(TSNode node, const Scope* scope, const SymbolTa
     }
     for (const auto& cls : GetInheritedTypeHierarchy(cleanObj, symbolTable))
     {
-        if (const auto syms = symbolTable.FindSymbolsPtr(cls + "::" + memName))
+        if (const auto syms = symbolTable.FindMemberSymbolPtr(cls, memName))
         {
             bool hasFunc = false;
             bool hasVarOrProp = false;
@@ -431,27 +447,24 @@ static bool HasFunctionSymbolOnly(const std::vector<Symbol>& syms)
     return hasFunc && !hasVarOrProp;
 }
 
-static bool IsIdentifierFunctionSymbol(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
-                                       std::string_view sourceCode)
+static bool IsLocalVariableOrFieldInScope(const Scope* scope, std::string_view nodeType, const std::string& name,
+                                          uint32_t refByte = UINT32_MAX)
 {
-    const std::string_view nodeType = ts_node_type(node);
-    std::string name = NodeText(node, sourceCode);
-    while (!name.empty() && isspace(static_cast<unsigned char>(name.front())))
+    const bool isUnqualified = (nodeType == parser::nodes::Identifier ||
+                                (nodeType == parser::nodes::ScopedIdentifier && name.find("::") == std::string::npos));
+    if (isUnqualified && scope)
     {
-        name.erase(name.begin());
+        if (const auto def = ResolveInScopeAt(scope, name, refByte))
+        {
+            return def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter ||
+                   def->kind == LocalDefinitionKind::Field;
+        }
     }
-    while (!name.empty() && isspace(static_cast<unsigned char>(name.back())))
-    {
-        name.pop_back();
-    }
-    if (name.empty())
-    {
-        return false;
-    }
-    if (nodeType == parser::nodes::Identifier && scope && ResolveInScope(scope, name))
-    {
-        return false;
-    }
+    return false;
+}
+
+static bool HasGlobalFunctionSymbol(std::string_view name, const SymbolTable& symbolTable)
+{
     if (const auto found = symbolTable.FindSymbolsPtr(name))
     {
         return HasFunctionSymbolOnly(*found);
@@ -465,6 +478,21 @@ static bool IsIdentifierFunctionSymbol(TSNode node, const Scope* scope, const Sy
         }
     }
     return false;
+}
+
+static bool IsIdentifierFunctionSymbol(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
+                                       std::string_view sourceCode)
+{
+    std::string name = GetNodeText(node, sourceCode);
+    if (name.empty())
+    {
+        return false;
+    }
+    if (IsLocalVariableOrFieldInScope(scope, ts_node_type(node), name, ts_node_start_byte(node)))
+    {
+        return false;
+    }
+    return HasGlobalFunctionSymbol(name, symbolTable);
 }
 
 bool IsFunctionReference(TSNode node, const Scope* scope, const SymbolTable& symbolTable, std::string_view sourceCode)
@@ -617,12 +645,7 @@ bool MatchesParentNamespaceType(std::string_view clean, const SymbolTable& table
 
 bool IsReachableViaUsingDirectives(std::string_view clean, const DiagnosticContext& ctx)
 {
-    if (!ctx.request.tree)
-    {
-        return false;
-    }
-    TSNode root = ts_tree_root_node(ctx.request.tree);
-    auto usings = CollectUsingNamespaces(root, ctx.request.sourceCode);
+    const auto& usings = GetUsingNamespaces(ctx.request);
     for (const auto& ns : usings)
     {
         std::string q = ns + "::" + std::string(clean);
@@ -1084,14 +1107,17 @@ std::vector<Symbol> FindPropertyAccessors(const std::string& typeName, const std
     {
         for (const auto& owner : GetInheritedTypeHierarchy(typeName, symbolTable))
         {
-            for (const auto& sym : symbolTable.FindSymbols(owner + "::" + std::string(prefix) + propertyName))
+            if (const auto syms = symbolTable.FindMemberSymbolPtr(owner, std::string(prefix) + propertyName))
             {
-                if (!std::holds_alternative<FunctionSignature>(sym.signature))
-                    continue;
-                if (keywordRequired && !sym.GetFunction().modifiers.isProperty)
-                    continue;
+                for (const auto& sym : *syms)
+                {
+                    if (!std::holds_alternative<FunctionSignature>(sym.signature))
+                        continue;
+                    if (keywordRequired && !sym.GetFunction().modifiers.isProperty)
+                        continue;
 
-                accessors.push_back(sym);
+                    accessors.push_back(sym);
+                }
             }
 
             // A derived class overriding the accessor answers for it; the base's copy would only
@@ -1314,6 +1340,180 @@ std::string ResolveBaseClass(std::string_view className, const SymbolTable& symb
     return "";
 }
 
+namespace
+{
+
+void ExtractTypesFromMemberSymbols(const std::vector<Symbol>& syms, std::string_view className,
+                                   std::vector<std::string>& result)
+{
+    for (const auto& s : syms)
+    {
+        std::string rawType;
+        if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
+        {
+            if (std::holds_alternative<VariableSignature>(s.signature))
+            {
+                const auto& var = s.GetVariable();
+                rawType = !var.baseTypeName.empty() ? var.baseTypeName : var.typeName;
+            }
+        }
+        else if (s.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(s.signature))
+        {
+            const auto& fn = s.GetFunction();
+            rawType = !fn.returnBaseTypeName.empty() ? fn.returnBaseTypeName : fn.returnType;
+        }
+
+        std::string clean = CleanBaseType(rawType);
+        if (!clean.empty() && clean != className && !IsPrimitiveTypeName(clean))
+        {
+            if (std::find(result.begin(), result.end(), clean) == result.end())
+            {
+                result.push_back(std::move(clean));
+            }
+        }
+    }
+}
+
+void InspectDelegateProperty(std::string_view className, const std::string& prop, const SymbolTable& symbolTable,
+                             std::vector<std::string>& result)
+{
+    if (const auto syms = symbolTable.FindMemberSymbolPtr(className, prop))
+    {
+        ExtractTypesFromMemberSymbols(*syms, className, result);
+    }
+    if (!prop.starts_with("get_"))
+    {
+        if (const auto getterSyms = symbolTable.FindMemberSymbolPtr(className, "get_" + prop))
+        {
+            ExtractTypesFromMemberSymbols(*getterSyms, className, result);
+        }
+    }
+}
+
+} // namespace
+
+void ExpandMixinHostHierarchies(std::string_view containerClass, const SymbolTable& symbolTable,
+                                std::vector<std::string>& hierarchy)
+{
+    const auto ruleIndex = symbolTable.GetRuleIndex();
+    if (!ruleIndex)
+    {
+        return;
+    }
+    auto mixinIt = ruleIndex->hostClassesByMixin.find(containerClass);
+    if (mixinIt == ruleIndex->hostClassesByMixin.end() && containerClass.find("::") != std::string_view::npos)
+    {
+        mixinIt = ruleIndex->hostClassesByMixin.find(LastScopeSegment(containerClass));
+    }
+    if (mixinIt == ruleIndex->hostClassesByMixin.end())
+    {
+        return;
+    }
+    for (const auto& host : mixinIt->second)
+    {
+        std::string hostKey = host.qualifiedName.empty() ? host.name : host.qualifiedName;
+        auto hostHier = GetInheritedTypeHierarchy(hostKey, symbolTable);
+        for (auto& hCls : hostHier)
+        {
+            if (std::find(hierarchy.begin(), hierarchy.end(), hCls) == hierarchy.end())
+            {
+                hierarchy.push_back(std::move(hCls));
+            }
+        }
+    }
+}
+
+std::vector<std::string> ResolveLinkedBaseClasses(std::string_view className, const SymbolTable& symbolTable,
+                                                  const LinkedBaseOptions& options)
+{
+    std::vector<std::string> result;
+    if (className.empty() || !options.HasActiveOptions())
+    {
+        return result;
+    }
+
+    if (options.proxyMap)
+    {
+        auto it = options.proxyMap->find(className);
+        if (it == options.proxyMap->end() && className.find("::") != std::string_view::npos)
+        {
+            it = options.proxyMap->find(LastScopeSegment(className));
+        }
+        if (it != options.proxyMap->end())
+        {
+            for (const auto& target : it->second)
+            {
+                std::string clean = CleanBaseType(target);
+                if (!clean.empty() && clean != className && !IsPrimitiveTypeName(clean) &&
+                    std::find(result.begin(), result.end(), clean) == result.end())
+                {
+                    result.push_back(std::move(clean));
+                }
+            }
+        }
+    }
+
+    for (const auto& prop : options.delegateProps)
+    {
+        InspectDelegateProperty(className, prop, symbolTable, result);
+    }
+
+    return result;
+}
+
+std::vector<Symbol> FindOverriddenBaseMethodSymbols(std::string_view containerClass, std::string_view methodName,
+                                                    const SymbolTable& symbolTable, const LinkedBaseOptions& options)
+{
+    std::vector<Symbol> result;
+    if (containerClass.empty() || methodName.empty())
+    {
+        return result;
+    }
+
+    std::vector<std::string> hierarchy = GetInheritedTypeHierarchy(std::string(containerClass), symbolTable);
+    ExpandMixinHostHierarchies(containerClass, symbolTable, hierarchy);
+
+    auto appendMatchingMethods = [&](std::string_view ownerClass)
+    {
+        const auto syms = symbolTable.FindMemberSymbolPtr(ownerClass, methodName);
+        if (!syms)
+        {
+            return;
+        }
+        for (const auto& s : *syms)
+        {
+            if (s.type == SymbolType::Function)
+            {
+                result.push_back(s);
+            }
+        }
+    };
+
+    const bool hasLinkedOptions = options.HasActiveOptions();
+    ankerl::unordered_dense::set<std::string> visitedOwners;
+    for (const auto& ancestor : hierarchy)
+    {
+        if (ancestor != containerClass && visitedOwners.insert(ancestor).second)
+        {
+            appendMatchingMethods(ancestor);
+        }
+
+        if (hasLinkedOptions)
+        {
+            auto linkedBases = ResolveLinkedBaseClasses(ancestor, symbolTable, options);
+            for (const auto& linkedBase : linkedBases)
+            {
+                if (linkedBase != containerClass && visitedOwners.insert(linkedBase).second)
+                {
+                    appendMatchingMethods(linkedBase);
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
 bool HierarchyIsFullyVisible(const std::string& typeName, const SymbolTable& symbolTable)
 {
     for (const auto& ancestor : GetInheritedTypeHierarchy(typeName, symbolTable))
@@ -1524,8 +1724,12 @@ void AddClassAndShortName(const std::string& c, ankerl::unordered_dense::set<std
 
 bool HasNonPrivateMember(const std::string& typeName, const std::string& memberName, const SymbolTable& symbolTable)
 {
-    const auto syms = symbolTable.FindSymbols(typeName + "::" + memberName);
-    for (const auto& s : syms)
+    const auto syms = symbolTable.FindMemberSymbolPtr(typeName, memberName);
+    if (!syms)
+    {
+        return false;
+    }
+    for (const auto& s : *syms)
     {
         AccessModifier a = AccessModifier::Public;
         if (std::holds_alternative<FunctionSignature>(s.signature))
@@ -1559,6 +1763,92 @@ std::string FindDeclaringRootClass(const std::string& cleanClass, const std::str
     return rootClass;
 }
 
+struct MixinExpansionContext
+{
+    const std::string& cleanClass;
+    const SymbolTable& symbolTable;
+    ankerl::unordered_dense::set<std::string>& visited;
+    std::vector<std::string>& result;
+};
+
+void ExpandMixinFromRuleIndex(const rules::RuleIndex& ruleIndex, const MixinExpansionContext& ctx)
+{
+    auto it = ruleIndex.hostClassesByMixin.find(ctx.cleanClass);
+    if (it == ruleIndex.hostClassesByMixin.end() && ctx.cleanClass.find("::") != std::string::npos)
+    {
+        it = ruleIndex.hostClassesByMixin.find(std::string(LastScopeSegment(ctx.cleanClass)));
+    }
+    if (it == ruleIndex.hostClassesByMixin.end())
+    {
+        return;
+    }
+    for (const auto& host : it->second)
+    {
+        std::string hostKey = host.qualifiedName.empty() ? host.name : host.qualifiedName;
+        AddClassAndShortName(hostKey, ctx.visited, ctx.result);
+        auto hostSyms = ctx.symbolTable.FindSymbols(hostKey);
+        for (const auto& hs : hostSyms)
+        {
+            if (hs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(hs.signature))
+            {
+                for (const auto& sibMixin : hs.GetClass().includedMixins)
+                {
+                    AddClassAndShortName(sibMixin, ctx.visited, ctx.result);
+                }
+            }
+        }
+    }
+}
+
+void ExpandMixinFromSymbolTable(const MixinExpansionContext& ctx)
+{
+    std::string_view shortKey = LastScopeSegment(ctx.cleanClass);
+    ctx.symbolTable.ForEachSymbol(
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+        {
+            for (const auto& hs : symbols)
+            {
+                if (hs.type != SymbolType::Class || !std::holds_alternative<ClassSignature>(hs.signature))
+                {
+                    continue;
+                }
+                const auto& cls = hs.GetClass();
+                bool includes = false;
+                for (const auto& m : cls.includedMixins)
+                {
+                    if (m == ctx.cleanClass || LastScopeSegment(m) == shortKey)
+                    {
+                        includes = true;
+                        break;
+                    }
+                }
+                if (includes)
+                {
+                    std::string hostKey = hs.qualifiedName.empty() ? hs.name : hs.qualifiedName;
+                    AddClassAndShortName(hostKey, ctx.visited, ctx.result);
+                    for (const auto& sibMixin : cls.includedMixins)
+                    {
+                        AddClassAndShortName(sibMixin, ctx.visited, ctx.result);
+                    }
+                }
+            }
+        });
+}
+
+void ExpandMixinHostsAndSiblings(const std::string& cleanClass, const SymbolTable& symbolTable,
+                                 ankerl::unordered_dense::set<std::string>& visited, std::vector<std::string>& result)
+{
+    MixinExpansionContext ctx{cleanClass, symbolTable, visited, result};
+    if (const auto ruleIndex = symbolTable.GetRuleIndex())
+    {
+        ExpandMixinFromRuleIndex(*ruleIndex, ctx);
+    }
+    else
+    {
+        ExpandMixinFromSymbolTable(ctx);
+    }
+}
+
 void CollectPrivateCompatibleClasses(const std::string& cleanClass, const SymbolTable& symbolTable,
                                      ankerl::unordered_dense::set<std::string>& visited,
                                      std::vector<std::string>& result)
@@ -1574,6 +1864,7 @@ void CollectPrivateCompatibleClasses(const std::string& cleanClass, const Symbol
             }
         }
     }
+    ExpandMixinHostsAndSiblings(cleanClass, symbolTable, visited, result);
 }
 
 std::vector<std::string> GetCompatibleMemberClasses(const std::string& className, const std::string& memberName,
@@ -1600,6 +1891,8 @@ std::vector<std::string> GetCompatibleMemberClasses(const std::string& className
     {
         AddClassAndShortName(d, visited, result);
     }
+
+    ExpandMixinHostsAndSiblings(rootClass, symbolTable, visited, result);
 
     if (access == AccessModifier::Public && rootClass != cleanClass)
     {
@@ -1723,6 +2016,38 @@ void ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)
     }
 }
 
+static void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view sourceCode,
+                                std::vector<ContainerInfo>& rawContainers)
+{
+    if (ts_node_is_null(nameNode))
+    {
+        return;
+    }
+    const uint32_t start = ts_node_start_byte(nameNode);
+    const uint32_t end = ts_node_end_byte(nameNode);
+    if (start >= end || end > sourceCode.size())
+    {
+        return;
+    }
+
+    std::string text(sourceCode.substr(start, end - start));
+    if (kind == ContainerKind::Namespace && text.find("::") != std::string::npos)
+    {
+        auto segs = SplitScopeSegments(text);
+        for (auto it = segs.rbegin(); it != segs.rend(); ++it)
+        {
+            if (!it->empty())
+            {
+                rawContainers.push_back({*it, "", kind});
+            }
+        }
+    }
+    else
+    {
+        rawContainers.push_back({std::move(text), "", kind});
+    }
+}
+
 std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode)
 {
     std::vector<ContainerInfo> rawContainers;
@@ -1733,35 +2058,25 @@ std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view 
 
     TSNode current = ts_node_parent(AdjustStartNodeIfDeclarationName(node));
     size_t depth = 0;
+    bool crossedLambda = false;
     while (!ts_node_is_null(current) && ++depth <= kMaxScopeDepth)
     {
-        if (const auto kind = ClassifyContainerKind(ts_node_type(current)))
+        const std::string_view nodeType = ts_node_type(current);
+        if (nodeType == "lambda_expression")
         {
-            const TSNode nameNode = parser::GetChildByField(current, parser::fields::Name);
-            if (!ts_node_is_null(nameNode))
+            crossedLambda = true;
+        }
+
+        if (const auto kind = ClassifyContainerKind(nodeType))
+        {
+            if (crossedLambda && (*kind == ContainerKind::Class || *kind == ContainerKind::Interface))
             {
-                const uint32_t start = ts_node_start_byte(nameNode);
-                const uint32_t end = ts_node_end_byte(nameNode);
-                if (start < end && end <= sourceCode.size())
-                {
-                    std::string text(sourceCode.substr(start, end - start));
-                    if (*kind == ContainerKind::Namespace && text.find("::") != std::string::npos)
-                    {
-                        auto segs = SplitScopeSegments(text);
-                        for (auto it = segs.rbegin(); it != segs.rend(); ++it)
-                        {
-                            if (!it->empty())
-                            {
-                                rawContainers.push_back({*it, "", *kind});
-                            }
-                        }
-                    }
-                    else
-                    {
-                        rawContainers.push_back({std::move(text), "", *kind});
-                    }
-                }
+                current = ts_node_parent(current);
+                continue;
             }
+
+            AppendRawContainers(parser::GetChildByField(current, parser::fields::Name), *kind, sourceCode,
+                                rawContainers);
         }
         current = ts_node_parent(current);
     }
@@ -1799,7 +2114,7 @@ std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std:
 std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode)
 {
     std::vector<std::string> usings;
-    if (ts_node_is_null(root))
+    if (ts_node_is_null(root) || sourceCode.find("using") == std::string_view::npos)
     {
         return usings;
     }
@@ -1830,6 +2145,30 @@ std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view so
         }
     }
     return usings;
+}
+
+const std::vector<std::string>& GetUsingNamespaces(const SemanticAnalysisRequest& request)
+{
+    if (!request.usingNamespacesCache.has_value())
+    {
+        if (request.sourceCode.find("using") == std::string_view::npos)
+        {
+            request.usingNamespacesCache = std::vector<std::string>{};
+        }
+        else if (request.nodeIndex)
+        {
+            request.usingNamespacesCache = CollectUsingNamespaces(*request.nodeIndex, request.sourceCode);
+        }
+        else if (request.tree)
+        {
+            request.usingNamespacesCache = CollectUsingNamespaces(ts_tree_root_node(request.tree), request.sourceCode);
+        }
+        else
+        {
+            request.usingNamespacesCache = std::vector<std::string>{};
+        }
+    }
+    return *request.usingNamespacesCache;
 }
 
 /**
@@ -1880,14 +2219,27 @@ static bool IsKnownInEnclosingContainers(const SymbolTable& table, const std::st
  * @brief Checks if the prefix is known relative to using namespaces.
  */
 static bool IsKnownInUsingNamespaces(const SymbolTable& table, const std::string& prefix, TSNode node,
-                                     std::string_view sourceCode)
+                                     std::string_view sourceCode, std::span<const std::string> precomputedUsings)
 {
-    TSNode root = node;
-    while (!ts_node_is_null(ts_node_parent(root)))
+    if (!precomputedUsings.empty())
     {
-        root = ts_node_parent(root);
+        for (const auto& ns : precomputedUsings)
+        {
+            std::string q = ns + "::" + prefix;
+            if (table.HasSymbol(q) || table.HasSymbolAnywhere(q))
+            {
+                return true;
+            }
+        }
+        return false;
     }
-    auto usings = CollectUsingNamespaces(root, sourceCode);
+
+    if (sourceCode.find("using") == std::string_view::npos)
+    {
+        return false;
+    }
+
+    auto usings = CollectUsingNamespaces(GetRootNode(node), sourceCode);
     for (const auto& ns : usings)
     {
         std::string q = ns + "::" + prefix;
@@ -1899,7 +2251,8 @@ static bool IsKnownInUsingNamespaces(const SymbolTable& table, const std::string
     return false;
 }
 
-bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourceCode, const SymbolTable& table)
+bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourceCode, const SymbolTable& table,
+                  std::span<const std::string> precomputedUsings)
 {
     if (prefix.empty() || table.HasSymbol(prefix) || table.HasSymbolAnywhere(prefix))
     {
@@ -1916,7 +2269,7 @@ bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourc
         return true;
     }
 
-    return IsKnownInUsingNamespaces(table, prefix, node, sourceCode);
+    return IsKnownInUsingNamespaces(table, prefix, node, sourceCode, precomputedUsings);
 }
 
 /**
@@ -1969,7 +2322,7 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
             auto hierarchy = GetInheritedTypeHierarchy(container.qualifiedName, symbolTable);
             for (const auto& cls : hierarchy)
             {
-                auto found = FilterSymbolsByContainerKind(symbolTable.FindSymbols(cls + "::" + name), container.kind);
+                auto found = FilterSymbolsByContainerKind(symbolTable.FindMemberSymbols(cls, name), container.kind);
                 if (!found.empty())
                 {
                     return found;
@@ -1981,8 +2334,7 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
                 auto bareHierarchy = GetInheritedTypeHierarchy(container.name, symbolTable);
                 for (const auto& cls : bareHierarchy)
                 {
-                    auto found =
-                        FilterSymbolsByContainerKind(symbolTable.FindSymbols(cls + "::" + name), container.kind);
+                    auto found = FilterSymbolsByContainerKind(symbolTable.FindMemberSymbols(cls, name), container.kind);
                     if (!found.empty())
                     {
                         return found;
@@ -1992,7 +2344,7 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
         }
         else if (container.kind == ContainerKind::Namespace)
         {
-            auto found = FilterSymbolsByContainerKind(symbolTable.FindSymbols(container.qualifiedName + "::" + name),
+            auto found = FilterSymbolsByContainerKind(symbolTable.FindMemberSymbols(container.qualifiedName, name),
                                                       container.kind);
             if (!found.empty())
             {
@@ -2012,7 +2364,7 @@ static std::vector<Symbol> FindSymbolInUsingNamespaces(const SymbolTable& symbol
 {
     for (const auto& ns : usingNamespaces)
     {
-        auto found = symbolTable.FindSymbols(ns + "::" + name);
+        auto found = symbolTable.FindMemberSymbols(ns, name);
         if (!found.empty())
         {
             return found;
@@ -2047,7 +2399,23 @@ std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std
 
     if (name.rfind("::", 0) == 0)
     {
-        return symbolTable.FindSymbols(name.substr(2));
+        const std::string rest = name.substr(2);
+        if (rest.find("::") == std::string::npos)
+        {
+            std::vector<Symbol> filtered;
+            if (auto symsPtr = symbolTable.FindSymbolsPtr(rest))
+            {
+                for (const auto& sym : *symsPtr)
+                {
+                    if (sym.containerName.empty() && sym.type != SymbolType::CallReference)
+                    {
+                        filtered.push_back(sym);
+                    }
+                }
+            }
+            return filtered;
+        }
+        return symbolTable.FindSymbols(rest);
     }
 
     if (auto found = FindSymbolInContainerHierarchy(symbolTable, containers, name); !found.empty())
@@ -2068,17 +2436,14 @@ std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std
     return FindSymbolEnumOrTypeFallback(symbolTable, name);
 }
 
-std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std::string_view sourceCode,
-                                       const SymbolTable& symbolTable)
+static void CollectUsingsFromAncestor(TSNode p, std::string_view sourceCode, std::vector<std::string>& usings)
 {
-    std::vector<std::string> usings;
-    TSNode p = node;
-    while (!ts_node_is_null(p))
+    TSTreeCursor cursor = ts_tree_cursor_new(p);
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        uint32_t count = ts_node_child_count(p);
-        for (uint32_t i = 0; i < count; ++i)
+        do
         {
-            TSNode ch = ts_node_child(p, i);
+            TSNode ch = ts_tree_cursor_current_node(&cursor);
             if (std::string_view(ts_node_type(ch)) == "using_declaration")
             {
                 TSNode nameNode = parser::GetChildByField(ch, parser::fields::Name);
@@ -2095,8 +2460,23 @@ std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std
                     }
                 }
             }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+}
+
+std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std::string_view sourceCode,
+                                       const SymbolTable& symbolTable)
+{
+    std::vector<std::string> usings;
+    if (sourceCode.find("using") != std::string_view::npos)
+    {
+        TSNode p = node;
+        while (!ts_node_is_null(p))
+        {
+            CollectUsingsFromAncestor(p, sourceCode, usings);
+            p = ts_node_parent(p);
         }
-        p = ts_node_parent(p);
     }
 
     std::vector<ContainerInfo> containers = GetEnclosingContainers(node, sourceCode);
@@ -2357,7 +2737,7 @@ static std::vector<Symbol> ResolveIdentifierSymbols(const std::string& name, TSN
                     GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, ctx.symbolTable);
                 for (const auto& cls : hierarchy)
                 {
-                    auto found = ctx.symbolTable.FindSymbols(cls + "::" + name);
+                    auto found = ctx.symbolTable.FindMemberSymbols(cls, name);
                     if (!found.empty())
                     {
                         syms = std::move(found);
@@ -2388,7 +2768,7 @@ static std::string ResolveIdentifierVirtualFallback(const std::string& name, con
     auto hierarchy = GetInheritedTypeHierarchy(hostClass, ctx.symbolTable);
     for (const auto& cls : hierarchy)
     {
-        auto found = ctx.symbolTable.FindSymbols(cls + "::" + name);
+        auto found = ctx.symbolTable.FindMemberSymbols(cls, name);
         if (!found.empty())
         {
             for (const auto& sym : found)
@@ -2455,7 +2835,7 @@ static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeCo
     }
     if (ctx.scope)
     {
-        const LocalDefinition* def = ResolveInScope(ctx.scope, name);
+        const LocalDefinition* def = ResolveInScopeAt(ctx.scope, name, ts_node_start_byte(exprNode));
         if (def && !def->typeName.empty())
         {
             return CleanExpressionType(def->typeName);
@@ -2512,38 +2892,87 @@ static std::pair<std::string_view, std::string_view> GetBinaryOpMethods(std::str
     return {"", ""};
 }
 
+namespace
+{
+struct BinaryOverloadResult
+{
+    bool hasMatch = false;
+    std::vector<ArgumentConversion> bestConversions;
+    std::string returnType;
+};
+} // namespace
+
 /**
- * @brief Searches for binary operator overloads on a operand type.
+ * @brief Searches for binary operator overloads on an operand type.
+ * @param[in] typeName Base type name of the receiver.
+ * @param[in] opMethod Operator method name (e.g. opAdd or opAdd_r).
+ * @param[in] argType Type of the operand argument.
+ * @param[in] symbolTable Symbol table to look up candidate methods.
+ * @return Overload resolution result with conversions and return type.
  */
-static std::string ResolveBinaryOverloadMethod(const std::string& typeName, std::string_view opMethod,
-                                               const std::string& argType, const SymbolTable& symbolTable)
+static BinaryOverloadResult ResolveBinaryOverloadMatch(const std::string& typeName, std::string_view opMethod,
+                                                       const std::string& argType, const SymbolTable& symbolTable)
 {
     if (opMethod.empty() || typeName.empty() || parser::primitives::IsPrimitive(typeName))
     {
-        return "";
+        return {};
     }
     std::vector<Symbol> candidates;
     auto hierarchy = GetInheritedTypeHierarchy(typeName, symbolTable);
     for (const auto& t : hierarchy)
     {
-        auto found = symbolTable.FindSymbols(t + "::" + std::string(opMethod));
-        for (const auto& sym : found)
+        if (const auto found = symbolTable.FindMemberSymbolPtr(t, opMethod))
         {
-            if (sym.type == SymbolType::Function)
+            for (const auto& sym : *found)
             {
-                candidates.push_back(sym);
+                if (sym.type == SymbolType::Function)
+                {
+                    candidates.push_back(sym);
+                }
             }
         }
     }
     if (!candidates.empty())
     {
         auto match = ResolveBestOverload(candidates, {argType}, symbolTable);
-        if (match.bestCandidate && std::holds_alternative<FunctionSignature>(match.bestCandidate->signature))
+        const Symbol* best = match.bestCandidate ? match.bestCandidate : match.priorityCandidate;
+        if (best && std::holds_alternative<FunctionSignature>(best->signature))
         {
-            return CleanExpressionType(match.bestCandidate->GetFunction().returnType);
+            return {true, std::move(match.bestConversions), CleanExpressionType(best->GetFunction().returnType)};
         }
     }
-    return "";
+    return {};
+}
+
+static std::string FindSingleOpImplConvPrimitive(const std::string& typeName, const SymbolTable& symbolTable)
+{
+    if (typeName.empty() || parser::primitives::IsPrimitive(typeName))
+    {
+        return "";
+    }
+    std::string matchedPrim;
+    for (const auto& t : GetInheritedTypeHierarchy(typeName, symbolTable))
+    {
+        if (const auto found = symbolTable.FindMemberSymbolPtr(t, "opImplConv"))
+        {
+            for (const auto& sym : *found)
+            {
+                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+                {
+                    std::string ret = CleanBaseType(sym.GetFunction().returnType);
+                    if (parser::primitives::IsNumeric(ret) || ret == "bool")
+                    {
+                        if (!matchedPrim.empty() && matchedPrim != ret)
+                        {
+                            return "";
+                        }
+                        matchedPrim = std::move(ret);
+                    }
+                }
+            }
+        }
+    }
+    return matchedPrim;
 }
 
 static bool IsFloatOrIntPrimitive(std::string_view type)
@@ -2551,16 +2980,59 @@ static bool IsFloatOrIntPrimitive(std::string_view type)
     return type == "float" || type == "double" || type == "int" || type == "uint";
 }
 
+static std::string ResolveBinaryShift(const std::string& cleanLeft)
+{
+    if (cleanLeft == "int64" || cleanLeft == "uint64")
+    {
+        return cleanLeft;
+    }
+    return IsUnsignedInteger(cleanLeft) ? "uint" : "int";
+}
+
+static std::string ResolveBinaryBitwiseLogic(const std::string& cleanLeft, const std::string& cleanRight,
+                                             const SymbolTable* symbolTable)
+{
+    if (symbolTable && (ResolvesToEnum(cleanLeft, *symbolTable) || ResolvesToEnum(cleanRight, *symbolTable)))
+    {
+        return "int";
+    }
+    if (cleanLeft == "int64" || cleanRight == "int64")
+    {
+        return "int64";
+    }
+    if (cleanLeft == "uint64" || cleanRight == "uint64")
+    {
+        return "uint64";
+    }
+    if (cleanLeft == "uint8" || cleanLeft == "uint16")
+    {
+        return "uint";
+    }
+    if (cleanLeft == "int8" || cleanLeft == "int16")
+    {
+        return "int";
+    }
+    if (cleanLeft == cleanRight)
+    {
+        return cleanLeft;
+    }
+    if (IsUnsignedInteger(cleanLeft) || IsUnsignedInteger(cleanRight))
+    {
+        return "uint";
+    }
+    return "int";
+}
+
 static std::string ResolveBinaryShiftBitwise(std::string_view op, const std::string& cleanLeft,
-                                             const std::string& cleanRight)
+                                             const std::string& cleanRight, const SymbolTable* symbolTable = nullptr)
 {
     if (op == "<<" || op == ">>" || op == ">>>")
     {
-        return IsUnsignedInteger(cleanLeft) ? "uint" : "int";
+        return ResolveBinaryShift(cleanLeft);
     }
-    if ((op == "|" || op == "&" || op == "^") && cleanLeft == cleanRight)
+    if (op == "|" || op == "&" || op == "^")
     {
-        return cleanLeft;
+        return ResolveBinaryBitwiseLogic(cleanLeft, cleanRight, symbolTable);
     }
     return "";
 }
@@ -2649,7 +3121,8 @@ static std::string ResolveBinaryDivisionPromotion(const std::string& cleanLeft, 
  * @return Promoted type name, or empty string.
  */
 static std::string ResolveBinaryPrimitivePromotion(std::string_view op, const std::string& cleanLeft,
-                                                   const std::string& cleanRight, bool disableIntegerDivision = false)
+                                                   const std::string& cleanRight, bool disableIntegerDivision = false,
+                                                   const SymbolTable* symbolTable = nullptr)
 {
     if (cleanLeft.empty() || cleanRight.empty() || cleanLeft == "void" || cleanRight == "void")
     {
@@ -2663,7 +3136,7 @@ static std::string ResolveBinaryPrimitivePromotion(std::string_view op, const st
     {
         return wide;
     }
-    if (auto shiftRes = ResolveBinaryShiftBitwise(op, cleanLeft, cleanRight); !shiftRes.empty())
+    if (auto shiftRes = ResolveBinaryShiftBitwise(op, cleanLeft, cleanRight, symbolTable); !shiftRes.empty())
     {
         return shiftRes;
     }
@@ -2678,7 +3151,130 @@ static bool IsBooleanBinaryOp(std::string_view op)
 }
 
 /**
+ * @brief Selects the return type between forward and reverse operator overloads.
+ * @param[in] forwardMatch Forward operator overload resolution result.
+ * @param[in] reverseMatch Reverse operator overload resolution result.
+ * @return Resolved return type, or empty string if neither candidate matched.
+ */
+static std::string SelectBestBinaryOverload(const BinaryOverloadResult& forwardMatch,
+                                            const BinaryOverloadResult& reverseMatch)
+{
+    if (forwardMatch.hasMatch && reverseMatch.hasMatch)
+    {
+        if (!forwardMatch.bestConversions.empty() && !reverseMatch.bestConversions.empty())
+        {
+            if (reverseMatch.bestConversions[0] < forwardMatch.bestConversions[0])
+            {
+                return reverseMatch.returnType;
+            }
+            return forwardMatch.returnType;
+        }
+        return forwardMatch.returnType;
+    }
+    if (forwardMatch.hasMatch)
+    {
+        return forwardMatch.returnType;
+    }
+    if (reverseMatch.hasMatch)
+    {
+        return reverseMatch.returnType;
+    }
+    return {};
+}
+
+/**
+ * @brief Resolves fallback implicit conversion for binary expression with one non-primitive operand.
+ * @param[in] op Operator symbol.
+ * @param[in] cleanLeft Left clean base type.
+ * @param[in] cleanRight Right clean base type.
+ * @param[in] ctx Expression typing context.
+ * @return Promoted return type or empty string if no single conversion exists.
+ */
+static std::string ResolveBinaryFallbackConv(std::string_view op, const std::string& cleanLeft,
+                                             const std::string& cleanRight, const ExpressionTypeContext& ctx)
+{
+    const bool leftIsPrim = parser::primitives::IsPrimitive(cleanLeft);
+    const bool rightIsPrim = parser::primitives::IsPrimitive(cleanRight);
+    if (!leftIsPrim && rightIsPrim)
+    {
+        if (auto conv = FindSingleOpImplConvPrimitive(cleanLeft, ctx.symbolTable); !conv.empty())
+        {
+            return ResolveBinaryPrimitivePromotion(op, conv, cleanRight, ctx.disableIntegerDivision, &ctx.symbolTable);
+        }
+    }
+    else if (leftIsPrim && !rightIsPrim)
+    {
+        if (auto conv = FindSingleOpImplConvPrimitive(cleanRight, ctx.symbolTable); !conv.empty())
+        {
+            return ResolveBinaryPrimitivePromotion(op, cleanLeft, conv, ctx.disableIntegerDivision, &ctx.symbolTable);
+        }
+    }
+    return {};
+}
+
+/**
+ * @brief Resolves string concatenation result type if applicable.
+ * @param[in] op Operator symbol.
+ * @param[in] leftType Left operand type.
+ * @param[in] rightType Right operand type.
+ * @param[in] ctx Expression typing context.
+ * @return Effective string type name if concatenation, or empty string.
+ */
+static std::string ResolveStringConcatenation(std::string_view op, const std::string& leftType,
+                                              const std::string& rightType, const ExpressionTypeContext& ctx)
+{
+    if (op != "+")
+    {
+        return {};
+    }
+    const std::string_view effectiveStr = ctx.stringTypeName.empty() ? "string" : ctx.stringTypeName;
+    if (CleanBaseType(leftType, ctx.arrayTypeName) == effectiveStr ||
+        CleanBaseType(rightType, ctx.arrayTypeName) == effectiveStr)
+    {
+        return std::string(effectiveStr);
+    }
+    return {};
+}
+
+/**
+ * @brief Resolves user-defined operator overloads for a binary expression.
+ * @param[in] op Operator string.
+ * @param[in] leftType Left operand type.
+ * @param[in] rightType Right operand type.
+ * @param[in] symbolTable Symbol table for member lookup.
+ * @return Resolved return type, or empty string if no overload matches.
+ */
+static std::string ResolveBinaryOverload(std::string_view op, const std::string& leftType, const std::string& rightType,
+                                         const SymbolTable& symbolTable)
+{
+    const std::string cleanLeft = CleanBaseType(leftType);
+    const std::string cleanRight = CleanBaseType(rightType);
+    const bool leftIsPrim = parser::primitives::IsPrimitive(cleanLeft);
+    const bool rightIsPrim = parser::primitives::IsPrimitive(cleanRight);
+
+    auto [opMethod, revOpMethod] = GetBinaryOpMethods(op);
+
+    BinaryOverloadResult forwardMatch;
+    if (!leftIsPrim)
+    {
+        forwardMatch = ResolveBinaryOverloadMatch(cleanLeft, opMethod, rightType, symbolTable);
+    }
+
+    BinaryOverloadResult reverseMatch;
+    if (!rightIsPrim)
+    {
+        reverseMatch = ResolveBinaryOverloadMatch(cleanRight, revOpMethod, leftType, symbolTable);
+    }
+
+    return SelectBestBinaryOverload(forwardMatch, reverseMatch);
+}
+
+/**
  * @brief Resolves binary expression type.
+ * @param[in] exprNode Binary expression AST node.
+ * @param[in] ctx Expression typing context.
+ * @param[in] depth Current recursion depth.
+ * @return Resolved expression type string or poison type.
  */
 static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
@@ -2687,52 +3283,46 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
     TSNode right = parser::GetChildByField(exprNode, parser::fields::Right);
     if (ts_node_is_null(left) || ts_node_is_null(right))
     {
-        return "";
+        return std::string(ExpressionTypeCache::k_poisonType);
+    }
+
+    std::string leftType = ResolveExpressionType(left, ctx, depth + 1);
+    std::string rightType = ResolveExpressionType(right, ctx, depth + 1);
+    if (ExpressionTypeCache::IsPoisonType(leftType) || ExpressionTypeCache::IsPoisonType(rightType))
+    {
+        return std::string(ExpressionTypeCache::k_poisonType);
     }
 
     std::string op = GetNodeText(opNode, ctx.sourceCode);
-    std::string leftType = ResolveExpressionType(left, ctx, depth + 1);
-    std::string rightType = ResolveExpressionType(right, ctx, depth + 1);
-
     if (IsBooleanBinaryOp(op))
     {
         return "bool";
     }
-    const std::string_view effectiveStr = ctx.stringTypeName.empty() ? "string" : ctx.stringTypeName;
-    if (op == "+" && (CleanBaseType(leftType, ctx.arrayTypeName) == effectiveStr ||
-                      CleanBaseType(rightType, ctx.arrayTypeName) == effectiveStr))
+    if (std::string strType = ResolveStringConcatenation(op, leftType, rightType, ctx); !strType.empty())
     {
-        return std::string(effectiveStr);
+        return strType;
     }
 
     std::string cleanLeft = CleanBaseType(leftType);
     std::string cleanRight = CleanBaseType(rightType);
 
-    const bool leftIsPrim = parser::primitives::IsPrimitive(cleanLeft);
-    const bool rightIsPrim = parser::primitives::IsPrimitive(cleanRight);
-
-    if (leftIsPrim && rightIsPrim)
+    if (parser::primitives::IsPrimitive(cleanLeft) && parser::primitives::IsPrimitive(cleanRight))
     {
-        return ResolveBinaryPrimitivePromotion(op, cleanLeft, cleanRight, ctx.disableIntegerDivision);
+        return ResolveBinaryPrimitivePromotion(op, cleanLeft, cleanRight, ctx.disableIntegerDivision, &ctx.symbolTable);
     }
 
-    auto [opMethod, revOpMethod] = GetBinaryOpMethods(op);
+    if (std::string overloadType = ResolveBinaryOverload(op, leftType, rightType, ctx.symbolTable);
+        !overloadType.empty())
+    {
+        return overloadType;
+    }
 
-    if (!leftIsPrim)
+    if (std::string fallbackType = ResolveBinaryFallbackConv(op, cleanLeft, cleanRight, ctx); !fallbackType.empty())
     {
-        if (auto res = ResolveBinaryOverloadMethod(cleanLeft, opMethod, rightType, ctx.symbolTable); !res.empty())
-        {
-            return res;
-        }
+        return fallbackType;
     }
-    if (!rightIsPrim)
-    {
-        if (auto res = ResolveBinaryOverloadMethod(cleanRight, revOpMethod, leftType, ctx.symbolTable); !res.empty())
-        {
-            return res;
-        }
-    }
-    return ResolveBinaryPrimitivePromotion(op, cleanLeft, cleanRight, ctx.disableIntegerDivision);
+
+    return ResolveBinaryPrimitivePromotion(op, cleanLeft, cleanRight, ctx.disableIntegerDivision, &ctx.symbolTable);
 }
 
 namespace
@@ -2867,10 +3457,14 @@ static std::string ResolveTernaryExpr(TSNode exprNode, const ExpressionTypeConte
     TSNode alternative = parser::GetChildByField(exprNode, parser::fields::Alternative);
     if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
     {
-        return "";
+        return std::string(ExpressionTypeCache::k_poisonType);
     }
     std::string t1 = ResolveExpressionType(consequence, ctx, depth + 1);
     std::string t2 = ResolveExpressionType(alternative, ctx, depth + 1);
+    if (ExpressionTypeCache::IsPoisonType(t1) || ExpressionTypeCache::IsPoisonType(t2))
+    {
+        return std::string(ExpressionTypeCache::k_poisonType);
+    }
     if (t1.empty())
         return t2;
     if (t2.empty())
@@ -2932,12 +3526,12 @@ static bool IsNonEnumSymbol(const Symbol& s)
 static std::vector<Symbol> FindMemberSymbolsInType(const std::string& typeName, const std::string& memName,
                                                    const SymbolTable& symbolTable)
 {
-    auto found = symbolTable.FindSymbols(typeName + "::" + memName);
+    auto found = symbolTable.FindMemberSymbols(typeName, memName);
     const bool hasInstance = std::any_of(found.begin(), found.end(), IsNonEnumSymbol);
     if (!hasInstance)
     {
-        auto getters = symbolTable.FindSymbols(typeName + "::get_" + memName);
-        auto setters = symbolTable.FindSymbols(typeName + "::set_" + memName);
+        auto getters = symbolTable.FindMemberSymbols(typeName, "get_" + memName);
+        auto setters = symbolTable.FindMemberSymbols(typeName, "set_" + memName);
         if (!getters.empty() || !setters.empty())
         {
             found.insert(found.begin(), setters.begin(), setters.end());
@@ -3027,6 +3621,10 @@ static std::string ResolveMemberExpr(TSNode exprNode, const ExpressionTypeContex
     }
 
     std::string objType = ResolveExpressionType(objNode, ctx, depth + 1);
+    if (ExpressionTypeCache::IsPoisonType(objType))
+    {
+        return std::string(ExpressionTypeCache::k_poisonType);
+    }
     std::string cleanObj = CleanBaseType(objType);
     if (cleanObj.empty())
     {
@@ -3061,9 +3659,11 @@ static std::string ResolveMemberExpr(TSNode exprNode, const ExpressionTypeContex
  * @return Fallback method return type, or empty string.
  */
 static std::string ResolveContainerMethodFallback(std::string_view memName, const TemplateTypeInfo& templateInfo,
-                                                  std::string_view objType)
+                                                  std::string_view objType, std::string_view arrayTypeName)
 {
-    if (!templateInfo.templateArgs.empty() || objType.ends_with("[]"))
+    const std::string_view effectiveArrayName = arrayTypeName.empty() ? "array" : arrayTypeName;
+    if ((templateInfo.containerName == effectiveArrayName && !templateInfo.templateArgs.empty()) ||
+        objType.ends_with("[]"))
     {
         if (memName == "length" || memName == "size")
         {
@@ -3151,7 +3751,7 @@ static std::vector<Symbol> CollectMemberMethodCandidates(const std::string& owne
     }
     for (const auto& typeName : hierarchy)
     {
-        auto found = symbolTable.FindSymbols(typeName + "::" + std::string(memName));
+        auto found = symbolTable.FindMemberSymbols(typeName, memName);
         for (const auto& sym : found)
         {
             AppendCandidateIfUnique(candidates, sym);
@@ -3178,10 +3778,10 @@ static std::string ResolveMemberCallExpr(TSNode funcNode, const std::vector<std:
         return "";
     }
 
-    std::string objType = CanonicalizeArrayType(ResolveExpressionType(objNode, ctx, depth + 1));
+    std::string objType = CanonicalizeArrayType(ResolveExpressionType(objNode, ctx, depth + 1), ctx.arrayTypeName);
     std::string memName = GetTrimmedNodeText(memNode, ctx.sourceCode);
 
-    std::string ownerType = MemberOwnerType(objType);
+    std::string ownerType = MemberOwnerType(objType, ctx.arrayTypeName);
     if (ownerType.empty())
     {
         ownerType = CleanExpressionType(objType);
@@ -3198,7 +3798,7 @@ static std::string ResolveMemberCallExpr(TSNode funcNode, const std::vector<std:
     }
 
     auto templateInfo = ParseTemplateType(objType);
-    return ResolveContainerMethodFallback(memName, templateInfo, objType);
+    return ResolveContainerMethodFallback(memName, templateInfo, objType, ctx.arrayTypeName);
 }
 
 /**
@@ -3218,7 +3818,7 @@ static void CollectMixinCallCandidates(std::string_view containerName, const std
         {
             for (const auto& mixin : cs.GetClass().includedMixins)
             {
-                auto mixinFound = symbolTable.FindSymbols(mixin + "::" + funcName);
+                auto mixinFound = symbolTable.FindMemberSymbols(mixin, funcName);
                 for (const auto& sym : mixinFound)
                 {
                     AppendCandidateIfUnique(candidates, sym);
@@ -3248,7 +3848,7 @@ static std::vector<Symbol> CollectEnclosingCallCandidates(TSNode exprNode, const
             auto hierarchy = GetInheritedTypeHierarchy(containerName, ctx.symbolTable);
             for (const auto& cls : hierarchy)
             {
-                auto found = ctx.symbolTable.FindSymbols(cls + "::" + funcName);
+                auto found = ctx.symbolTable.FindMemberSymbols(cls, funcName);
                 for (const auto& sym : found)
                 {
                     AppendCandidateIfUnique(candidates, sym);
@@ -3467,40 +4067,81 @@ static bool IsFunctionHandleTarget(TSNode target, TSNode exprNode, const Express
     return false;
 }
 
+static std::string ResolveUnaryHandle(TSNode operandNode, TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+{
+    if (IsFunctionHandleTarget(operandNode, exprNode, ctx))
+    {
+        return {};
+    }
+    std::string operandType = ResolveExpressionType(operandNode, ctx, depth + 1);
+    if (ExpressionTypeCache::IsPoisonType(operandType))
+    {
+        return std::string(ExpressionTypeCache::k_poisonType);
+    }
+    if (operandType.empty())
+    {
+        return {};
+    }
+    std::string clean = CleanExpressionType(operandType);
+    return clean.ends_with("@") ? clean : clean + "@";
+}
+
+static std::string ResolveUnaryMinus(const std::string& operandType)
+{
+    std::string clean = CleanExpressionType(operandType);
+    if (clean == "uint" || clean == "uint32")
+    {
+        return "int";
+    }
+    if (clean == "uint8")
+    {
+        return "int8";
+    }
+    if (clean == "uint16")
+    {
+        return "int16";
+    }
+    if (clean == "uint64")
+    {
+        return "int64";
+    }
+    return operandType;
+}
+
 /**
  * @brief Resolves unary expression type.
  */
 static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
     TSNode operandNode = parser::GetChildByField(exprNode, parser::fields::Operand);
-    if (ts_node_is_null(operandNode))
+    if (ts_node_is_null(operandNode) || ts_node_is_error(operandNode) || ts_node_is_missing(operandNode))
     {
-        return {};
+        return std::string(ExpressionTypeCache::k_poisonType);
     }
     TSNode operatorNode = parser::GetChildByField(exprNode, parser::fields::Operator);
+    std::string op;
     if (!ts_node_is_null(operatorNode))
     {
-        const std::string op = GetNodeText(operatorNode, ctx.sourceCode);
+        op = GetNodeText(operatorNode, ctx.sourceCode);
         if (op == "!" || op == "not")
         {
             return "bool";
         }
         if (op == "@")
         {
-            if (IsFunctionHandleTarget(operandNode, exprNode, ctx))
-            {
-                return {};
-            }
-            std::string operandType = ResolveExpressionType(operandNode, ctx, depth + 1);
-            if (operandType.empty())
-            {
-                return {};
-            }
-            std::string clean = CleanExpressionType(operandType);
-            return clean.ends_with("@") ? clean : clean + "@";
+            return ResolveUnaryHandle(operandNode, exprNode, ctx, depth);
         }
     }
-    return ResolveExpressionType(operandNode, ctx, depth + 1);
+    std::string operandType = ResolveExpressionType(operandNode, ctx, depth + 1);
+    if (ExpressionTypeCache::IsPoisonType(operandType))
+    {
+        return std::string(ExpressionTypeCache::k_poisonType);
+    }
+    if (op == "-")
+    {
+        return ResolveUnaryMinus(operandType);
+    }
+    return operandType;
 }
 
 /**
@@ -3729,6 +4370,26 @@ static std::string ResolveExpressionTypeUncached(std::string_view nodeType, TSNo
     return ResolveCompositeExpr(nodeType, exprNode, ctx, depth);
 }
 
+static std::string_view GetTrimmedNodeTextView(TSNode node, std::string_view sourceCode) noexcept
+{
+    const uint32_t start = ts_node_start_byte(node);
+    const uint32_t end = ts_node_end_byte(node);
+    if (start >= end || end > sourceCode.size())
+    {
+        return {};
+    }
+    std::string_view sv = sourceCode.substr(start, end - start);
+    while (!sv.empty() && isspace(static_cast<unsigned char>(sv.front())))
+    {
+        sv.remove_prefix(1);
+    }
+    while (!sv.empty() && isspace(static_cast<unsigned char>(sv.back())))
+    {
+        sv.remove_suffix(1);
+    }
+    return sv;
+}
+
 std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
     // This resolver recurses on operands and member chains with nothing else bounding it, so a
@@ -3740,11 +4401,10 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
     {
         return "";
     }
-
-    std::string rawText = GetTrimmedNodeText(exprNode, ctx.sourceCode);
-    if (rawText == "void")
+    if (ts_node_is_error(exprNode) || ts_node_is_missing(exprNode) ||
+        (ctx.nodeIndex && ctx.nodeIndex->NodeHasSyntaxError(exprNode)))
     {
-        return "void";
+        return std::string(ExpressionTypeCache::k_poisonType);
     }
 
     if (ctx.cache)
@@ -3757,10 +4417,22 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
             return it->second;
         }
 
+        std::string_view rawText = GetTrimmedNodeTextView(exprNode, ctx.sourceCode);
+        if (rawText == "void")
+        {
+            return "void";
+        }
+
         std::string_view nodeType = ts_node_type(exprNode);
         std::string resolved = ResolveExpressionTypeUncached(nodeType, exprNode, ctx, depth);
         ctx.cache->types.emplace(key, resolved);
         return resolved;
+    }
+
+    std::string_view rawText = GetTrimmedNodeTextView(exprNode, ctx.sourceCode);
+    if (rawText == "void")
+    {
+        return "void";
     }
 
     std::string_view nodeType = ts_node_type(exprNode);
@@ -3801,7 +4473,7 @@ static std::string ResolveMemberInHierarchy(const std::string& hostClass, const 
     auto hier = GetInheritedTypeHierarchy(hostClass, symbolTable);
     for (const auto& cls : hier)
     {
-        auto memberSyms = symbolTable.FindSymbols(cls + "::" + memberName);
+        auto memberSyms = symbolTable.FindMemberSymbols(cls, memberName);
         for (const auto& sym : memberSyms)
         {
             if (auto owner = ExtractMemberSymbolOwner(sym); !owner.empty())
@@ -3907,11 +4579,11 @@ static std::string GetEffectiveHostClass(std::string_view virtualHostClass, std:
     return "";
 }
 
-static std::string ResolveReceiverScope(const Scope* scope, const std::string& objText)
+static std::string ResolveReceiverScope(const Scope* scope, const std::string& objText, uint32_t refByte = UINT32_MAX)
 {
     if (scope)
     {
-        const LocalDefinition* objDef = ResolveInScope(scope, objText);
+        const LocalDefinition* objDef = ResolveInScopeAt(scope, objText, refByte);
         if (objDef && !objDef->typeName.empty())
         {
             return MemberOwnerType(objDef->typeName);
@@ -3941,7 +4613,7 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
         return ResolveThisReceiver(objNode, sourceCode, effectiveHostClass);
     }
 
-    if (auto scopeRes = ResolveReceiverScope(ctx.scope, objText); !scopeRes.empty())
+    if (auto scopeRes = ResolveReceiverScope(ctx.scope, objText, ts_node_start_byte(objNode)); !scopeRes.empty())
     {
         return scopeRes;
     }
@@ -4147,7 +4819,7 @@ static bool IsConstArgumentNode(TSNode exprNode, const ExpressionTypeContext& ct
     const std::string name = GetTrimmedNodeText(exprNode, ctx.sourceCode);
     if (ctx.scope)
     {
-        if (const auto* def = ResolveInScope(ctx.scope, name))
+        if (const auto* def = ResolveInScopeAt(ctx.scope, name, ts_node_start_byte(exprNode)))
         {
             if (!def->typeName.empty() && HasConstModifier(def->typeName))
             {
@@ -4197,9 +4869,7 @@ std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TS
                                                  std::string_view sourceCode, const SymbolTable& symbolTable)
 {
     std::vector<Symbol> candidateSymbols;
-    const std::string ctorName = baseName + "::" + std::string(LastScopeSegment(baseName));
-
-    auto ctorSyms = symbolTable.FindSymbols(ctorName);
+    auto ctorSyms = symbolTable.FindMemberSymbols(baseName, LastScopeSegment(baseName));
     for (const auto& s : ctorSyms)
     {
         if (s.type == SymbolType::Function)
@@ -4216,7 +4886,7 @@ std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TS
             if (s.type == SymbolType::Class)
             {
                 std::string qName = s.qualifiedName.empty() ? s.name : s.qualifiedName;
-                auto qCtors = symbolTable.FindSymbols(qName + "::" + s.name);
+                auto qCtors = symbolTable.FindMemberSymbols(qName, s.name);
                 for (const auto& cs : qCtors)
                 {
                     if (cs.type == SymbolType::Function)
@@ -5076,13 +5746,14 @@ Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callNa
     return sym;
 }
 
-std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const Scope* scope, const SymbolTable& table)
+std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const Scope* scope, const SymbolTable& table,
+                                                uint32_t refByte)
 {
     if (!scope || name.empty())
     {
         return std::nullopt;
     }
-    const LocalDefinition* def = ResolveInScope(scope, name);
+    const LocalDefinition* def = ResolveInScopeAt(scope, name, refByte);
     if (!def || (def->kind != LocalDefinitionKind::Variable && def->kind != LocalDefinitionKind::Parameter))
     {
         return std::nullopt;
@@ -5146,6 +5817,170 @@ bool IsSimpleLiteralExpression(std::string_view expr)
         return true;
     }
     return IsValidNumberLiteral(expr);
+}
+
+TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::string_view mixinShortName,
+                              std::string_view sourceCode)
+{
+    if (ts_node_is_null(hostNode))
+    {
+        return {};
+    }
+
+    TSNode found{};
+    const std::string shortSuffix = "::" + std::string(mixinShortName);
+    TSNode baseList = parser::FindFirstChildOfType(hostNode, "base_class_list");
+    if (!ts_node_is_null(baseList))
+    {
+        parser::ForEachNamedChildNodeUntil(baseList,
+                                           [&](TSNode baseChild)
+                                           {
+                                               const std::string bText = GetNodeText(baseChild, sourceCode);
+                                               if (CleanBaseType(bText) == mixinName || bText == mixinShortName ||
+                                                   bText.ends_with(shortSuffix))
+                                               {
+                                                   found = baseChild;
+                                                   return false;
+                                               }
+                                               return true;
+                                           });
+        if (!ts_node_is_null(found))
+        {
+            return found;
+        }
+    }
+
+    TSNode bodyNode = parser::GetChildByField(hostNode, parser::fields::Body);
+    if (!ts_node_is_null(bodyNode))
+    {
+        parser::ForEachChildNodeUntil(bodyNode,
+                                      [&](TSNode mNode)
+                                      {
+                                          const std::string mText = GetNodeText(mNode, sourceCode);
+                                          if (!mixinShortName.empty() &&
+                                              mText.find(mixinShortName) != std::string::npos)
+                                          {
+                                              found = mNode;
+                                              return false;
+                                          }
+                                          return true;
+                                      });
+    }
+    return found;
+}
+
+std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode)
+{
+    TSNode typeNode = ts_node_parent(datatypeNode);
+    if (ts_node_is_null(typeNode) || std::string_view(ts_node_type(typeNode)) != parser::nodes::Type)
+    {
+        return {};
+    }
+    TSTreeCursor cursor = ts_tree_cursor_new(typeNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode c = ts_tree_cursor_current_node(&cursor);
+            if (std::string_view(ts_node_type(c)) == parser::nodes::Scope)
+            {
+                const uint32_t sStart = ts_node_start_byte(c);
+                const uint32_t sEnd = ts_node_end_byte(c);
+                ts_tree_cursor_delete(&cursor);
+                if (sStart < sourceCode.size() && sEnd <= sourceCode.size() && sStart < sEnd)
+                {
+                    std::string scopeText(sourceCode.substr(sStart, sEnd - sStart));
+                    if (!scopeText.ends_with("::"))
+                    {
+                        scopeText += "::";
+                    }
+                    return scopeText;
+                }
+                return {};
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+        ts_tree_cursor_delete(&cursor);
+    }
+    return {};
+}
+
+std::string_view CleanCandidateIdentifier(std::string_view text) noexcept
+{
+    if (text.starts_with('@'))
+    {
+        text.remove_prefix(1);
+    }
+    if (text.starts_with("this."))
+    {
+        text.remove_prefix(5);
+    }
+    return text;
+}
+
+bool IsValidIdentifierOrQualified(std::string_view text) noexcept
+{
+    text = CleanCandidateIdentifier(text);
+    if (text.empty() || text.size() > 128)
+    {
+        return false;
+    }
+    while (!text.empty())
+    {
+        auto colon = text.find("::");
+        std::string_view part = (colon == std::string_view::npos) ? text : text.substr(0, colon);
+        if (part.empty() || (!std::isalpha(static_cast<unsigned char>(part[0])) && part[0] != '_'))
+        {
+            return false;
+        }
+        for (size_t i = 1; i < part.size(); ++i)
+        {
+            unsigned char c = static_cast<unsigned char>(part[i]);
+            if (!std::isalnum(c) && c != '_')
+            {
+                return false;
+            }
+        }
+        if (colon == std::string_view::npos)
+        {
+            break;
+        }
+        text.remove_prefix(colon + 2);
+    }
+    return true;
+}
+
+std::vector<std::pair<uint32_t, uint32_t>> CollectNamespaceAndContainerLineRanges(const SymbolTable& symbolTable,
+                                                                                  const std::string& fileUri,
+                                                                                  std::string_view declaringNamespace)
+{
+    std::vector<std::pair<uint32_t, uint32_t>> nsRanges;
+    if (declaringNamespace.empty())
+    {
+        return nsRanges;
+    }
+    symbolTable.ForEachSymbolInFile(
+        fileUri,
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& sList)
+        {
+            for (const auto& s : sList)
+            {
+                if (s.fileUri != fileUri)
+                {
+                    continue;
+                }
+                if (s.type == analysis::SymbolType::Namespace &&
+                    (s.name == declaringNamespace || s.qualifiedName == declaringNamespace))
+                {
+                    nsRanges.push_back({s.startLine, s.endLine});
+                }
+                else if ((s.type == analysis::SymbolType::Class || s.type == analysis::SymbolType::Interface) &&
+                         IsSameOrNestedNamespace(s.containerName, declaringNamespace))
+                {
+                    nsRanges.push_back({s.startLine, s.endLine});
+                }
+            }
+        });
+    return nsRanges;
 }
 
 } // namespace angel_lsp::analysis

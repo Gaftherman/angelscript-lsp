@@ -138,7 +138,7 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TS
 
 struct GetterSetterContext
 {
-    const std::string& className;
+    std::string className;
     const std::pair<std::string, std::string>& field;
     TSPoint insertPt;
 };
@@ -242,6 +242,38 @@ void EmitGetterSetterActionsForField(const CodeActionRequest& request, const Get
     }
 }
 
+/**
+ * @brief Finds the insertion point for the 'property' keyword, placing it after 'const' if present.
+ * @param[in] funcNode The func_declaration AST node.
+ * @param[in] parametersNode The parameter list AST node.
+ * @param[in] sourceCode Source text of the document.
+ * @return Insertion point coordinates.
+ */
+TSPoint FindAccessorPropertyInsertionPoint(TSNode funcNode, TSNode parametersNode, std::string_view sourceCode)
+{
+    TSPoint insertAt = ts_node_end_point(parametersNode);
+    const uint32_t paramsEndByte = ts_node_end_byte(parametersNode);
+    TSTreeCursor cursor = ts_tree_cursor_new(funcNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (!ts_node_is_null(child) && ts_node_start_byte(child) >= paramsEndByte)
+            {
+                std::string_view childType = ts_node_type(child);
+                if (childType == "const" || GetNodeText(child, sourceCode) == "const")
+                {
+                    insertAt = ts_node_end_point(child);
+                    break;
+                }
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+    return insertAt;
+}
+
 } // namespace
 
 void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
@@ -306,7 +338,7 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
             continue;
         }
 
-        const TSPoint insertAt = ts_node_end_point(parameters);
+        const TSPoint insertAt = FindAccessorPropertyInsertionPoint(node, parameters, request.sourceCode);
 
         lsp::TextEdit edit;
         edit.range.start.line = insertAt.row;

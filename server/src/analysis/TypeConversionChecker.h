@@ -2,9 +2,9 @@
 
 #include "analysis/DiagnosticContext.h"
 
+#include <ankerl/unordered_dense.h>
 #include <string>
 #include <tree_sitter/api.h>
-#include <unordered_set>
 
 namespace angel_lsp::analysis
 {
@@ -121,7 +121,7 @@ struct TypeInfo
  * @return True if a conversion path exists; false on cycle or depth limit.
  */
 bool evaluateUserConversions(const TypeInfo& source, const TypeInfo& target, size_t depth,
-                             std::unordered_set<std::string>& visitedEdges);
+                             ankerl::unordered_dense::set<std::string>& visitedEdges);
 
 /**
  * @brief Checks implicit type conversion with recursion depth guard and cycle tracking.
@@ -132,7 +132,7 @@ bool evaluateUserConversions(const TypeInfo& source, const TypeInfo& target, siz
  * @return True if implicitly convertible; false otherwise.
  */
 bool canConvertImplicitly(const TypeInfo& source, const TypeInfo& target, size_t depth,
-                          std::unordered_set<std::string>& visitedEdges);
+                          ankerl::unordered_dense::set<std::string>& visitedEdges);
 
 /**
  * @brief Checks implicit type conversion with default parameters (depth = 0, empty visited set).
@@ -143,7 +143,7 @@ bool canConvertImplicitly(const TypeInfo& source, const TypeInfo& target, size_t
  */
 inline bool canConvertImplicitly(const TypeInfo& source, const TypeInfo& target, size_t depth = 0)
 {
-    std::unordered_set<std::string> visitedEdges;
+    ankerl::unordered_dense::set<std::string> visitedEdges;
     return canConvertImplicitly(source, target, depth, visitedEdges);
 }
 

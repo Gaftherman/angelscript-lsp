@@ -43,12 +43,51 @@ bool IsForbiddenClosureCapture(const LocalDefinition& def, const Scope* defScope
     }
     return false;
 }
+
+/**
+ * @brief Context data bundled for lexical definition resolution.
+ */
+struct ResolutionContext
+{
+    uint32_t refByte = 0;
+    bool crossedClosure = false;
+    bool respectClosureBarrier = false;
+};
+
+/**
+ * @brief Evaluates whether a local definition is visible at the current resolution point.
+ * @param[in] def Local definition candidate.
+ * @param[in] current Scope containing the definition.
+ * @param[in] ctx Context containing reference byte and closure traversal status.
+ * @return True if definition is visible and accessible, false otherwise.
+ */
+static bool IsVisibleDefinition(const LocalDefinition& def, const Scope* current, const ResolutionContext& ctx)
+{
+    if (def.kind == LocalDefinitionKind::Variable && ctx.refByte < def.visibleFromByte)
+    {
+        return false;
+    }
+
+    if (def.kind == LocalDefinitionKind::Parameter &&
+        (current->kind == ScopeKind::Global || current->kind == ScopeKind::Namespace ||
+         current->kind == ScopeKind::Class))
+    {
+        return false;
+    }
+
+    if (ctx.crossedClosure && ctx.respectClosureBarrier && IsForbiddenClosureCapture(def, current))
+    {
+        return false;
+    }
+
+    return true;
+}
 } // namespace
 
-const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name, const Scope** owner,
-                                      bool respectClosureBarrier)
+const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view name, uint32_t refByte,
+                                        const Scope** owner, bool respectClosureBarrier)
 {
-    bool crossedClosure = false;
+    ResolutionContext ctx{refByte, false, respectClosureBarrier};
     ScopeTraversalGuard cycleGuard;
     for (const Scope* current = scope; current != nullptr; current = current->parent)
     {
@@ -60,7 +99,7 @@ const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name,
         {
             if (def.name == name)
             {
-                if (crossedClosure && respectClosureBarrier && IsForbiddenClosureCapture(def, current))
+                if (!IsVisibleDefinition(def, current, ctx))
                 {
                     continue;
                 }
@@ -75,16 +114,28 @@ const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name,
 
         if (current->kind == ScopeKind::Closure)
         {
-            crossedClosure = true;
+            ctx.crossedClosure = true;
         }
     }
 
     return nullptr;
 }
 
+const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view name, uint32_t refByte,
+                                        bool respectClosureBarrier)
+{
+    return ResolveInScopeAt(scope, name, refByte, nullptr, respectClosureBarrier);
+}
+
+const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name, const Scope** owner,
+                                      bool respectClosureBarrier)
+{
+    return ResolveInScopeAt(scope, name, UINT32_MAX, owner, respectClosureBarrier);
+}
+
 const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name, bool respectClosureBarrier)
 {
-    return ResolveInScope(scope, name, nullptr, respectClosureBarrier);
+    return ResolveInScopeAt(scope, name, UINT32_MAX, nullptr, respectClosureBarrier);
 }
 
 const Scope* FindScopeDeclaringDefinition(const Scope* root, const LocalDefinition& def)
@@ -210,14 +261,9 @@ const Scope* FindInnermostScope(const Scope* root, uint32_t line, uint32_t chara
     }
 
     const Scope* current = root;
-    size_t depth = 0;
-    for (bool descended = true; descended;)
+    for (size_t depth = 0; depth < kMaxScopeDepth; ++depth)
     {
-        if (++depth > kMaxScopeDepth)
-        {
-            break;
-        }
-        descended = false;
+        bool descended = false;
         for (const auto& child : current->children)
         {
             if (child && contains(*child))
@@ -226,6 +272,10 @@ const Scope* FindInnermostScope(const Scope* root, uint32_t line, uint32_t chara
                 descended = true;
                 break;
             }
+        }
+        if (!descended)
+        {
+            break;
         }
     }
     return current;

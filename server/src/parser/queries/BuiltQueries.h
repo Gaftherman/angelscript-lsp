@@ -35,13 +35,15 @@ namespace angel_lsp::parser::queries
 ; Enum members
 (enum_member name: (identifier) @constant)
 
-; Function names
+; Function and method names
 (func_declaration name: (identifier) @function)
-(interface_method name: (identifier) @function)
+(class_body (func_declaration name: (identifier) @function.method))
+(interface_method name: (identifier) @function.method)
 (import_declaration name: (identifier) @function)
 
 ; Property names
 (virtual_property name: (identifier) @property)
+(member_expression member: (identifier) @property.access)
 
 ; Variable names
 (variable_declarator name: (identifier) @variable)
@@ -55,6 +57,7 @@ namespace angel_lsp::parser::queries
 
 ; Parameter names
 (parameter name: (identifier) @variable.parameter)
+(lambda_parameter_list (identifier) @variable.parameter.declaration)
 
 ; Foreach variable names
 (foreach_variable name: (identifier) @variable)
@@ -349,6 +352,9 @@ namespace angel_lsp::parser::queries
 
 (identifier) @local.reference
 ["function" "get" "set" "shared"] @local.reference
+
+; String literal call references (e.g. SetTimeout("MyFunc", ...), CustomEntity("MyClass", ...))
+(argument_list (string_literal) @local.string_call_ref)
 )SCM";
 
 [[maybe_unused]] inline constexpr const char* TAGS_QUERY = R"SCM(
@@ -389,6 +395,9 @@ namespace angel_lsp::parser::queries
 
 ; Variables
 (variable_declaration) @definition.variable
+
+; Lambda expressions (tracked as containers for local variable isolation)
+(lambda_expression) @definition.lambda
 
 ; Function calls (references), including namespace-qualified calls (e.g. NS::Func()).
 ; The grammar always parses a call target without a member access as scoped_identifier,

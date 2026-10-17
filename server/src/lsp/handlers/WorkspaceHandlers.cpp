@@ -89,6 +89,48 @@ std::optional<std::string> FindSectionString(const lsp::LSPObject& section, cons
     }
     return std::nullopt;
 }
+
+std::optional<std::vector<std::string>> FindSectionStringArray(const lsp::LSPObject& section, const lsp::LSPObject* obj,
+                                                               std::string_view name, std::string_view prefix)
+{
+    const lsp::json::Value* arrayVal = nullptr;
+    if (obj)
+    {
+        if (const auto* val = obj->find(std::string(name)); val && val->isArray())
+        {
+            arrayVal = val;
+        }
+    }
+    if (!arrayVal)
+    {
+        const std::string dotKey = std::string(prefix) + "." + std::string(name);
+        if (const auto* val = section.find(dotKey); val && val->isArray())
+        {
+            arrayVal = val;
+        }
+    }
+    if (!arrayVal)
+    {
+        const std::string fullKey = "angelscript." + std::string(prefix) + "." + std::string(name);
+        if (const auto* val = section.find(fullKey); val && val->isArray())
+        {
+            arrayVal = val;
+        }
+    }
+    if (!arrayVal)
+    {
+        return std::nullopt;
+    }
+    std::vector<std::string> items;
+    for (const auto& entry : arrayVal->array())
+    {
+        if (entry.isString() && !entry.string().empty())
+        {
+            items.push_back(entry.string());
+        }
+    }
+    return items;
+}
 } // namespace
 
 lsp::requests::Workspace_TextDocumentContent::Result
@@ -341,6 +383,30 @@ bool Server::UpdateEngineConfiguration(const lsp::LSPObject& section)
     return engineChanged;
 }
 
+static bool UpdateUnusedFunctionExclusions(const lsp::LSPObject& section, const lsp::LSPObject* diagObj,
+                                           config::DiagnosticsConfig& diag)
+{
+    bool changed = false;
+    if (auto ignored = FindSectionStringArray(section, diagObj, "ignoredUnusedFunctions", "diagnostics"))
+    {
+        std::unordered_set<std::string> next(ignored->begin(), ignored->end());
+        if (diag.ignoredUnusedFunctions != next)
+        {
+            diag.ignoredUnusedFunctions = std::move(next);
+            changed = true;
+        }
+    }
+    if (auto patterns = FindSectionStringArray(section, diagObj, "ignoredUnusedFunctionPatterns", "diagnostics"))
+    {
+        if (diag.ignoredUnusedFunctionPatterns != *patterns)
+        {
+            diag.ignoredUnusedFunctionPatterns = std::move(*patterns);
+            changed = true;
+        }
+    }
+    return changed;
+}
+
 bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
 {
     bool diagnosticsChanged = false;
@@ -367,6 +433,27 @@ bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
     applyBool("reportIntegerDivision", m_config.diagnostics.reportIntegerDivision);
     applyBool("reportPossibleNullDereference", m_config.diagnostics.reportPossibleNullDereference);
     applyBool("reportAllNullDereferences", m_config.diagnostics.reportAllNullDereferences);
+    auto applyExplicitBool = [&](std::string_view name, bool& target, bool& explicitFlag)
+    {
+        if (auto v = FindSectionBool(section, diagObj, name, "diagnostics"))
+        {
+            explicitFlag = true;
+            if (target != *v)
+            {
+                target = *v;
+                diagnosticsChanged = true;
+            }
+        }
+    };
+
+    applyExplicitBool("reportUnusedFunctions", m_config.diagnostics.reportUnusedFunctions,
+                      m_config.diagnostics.reportUnusedFunctionsExplicit);
+    applyExplicitBool("reportUnusedGlobalVariables", m_config.diagnostics.reportUnusedGlobalVariables,
+                      m_config.diagnostics.reportUnusedGlobalVariablesExplicit);
+    applyExplicitBool("reportUnusedClasses", m_config.diagnostics.reportUnusedClasses,
+                      m_config.diagnostics.reportUnusedClassesExplicit);
+    applyExplicitBool("reportUnusedMembers", m_config.diagnostics.reportUnusedMembers,
+                      m_config.diagnostics.reportUnusedMembersExplicit);
 
     if (auto v = FindSectionInt(section, diagObj, "reportHandleComparisonEquality", "diagnostics");
         v && m_config.diagnostics.reportHandleComparisonEquality != *v)
@@ -379,6 +466,11 @@ bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
         v && m_config.diagnostics.missingAssetPathSeverity != *v)
     {
         m_config.diagnostics.missingAssetPathSeverity = *v;
+        diagnosticsChanged = true;
+    }
+
+    if (UpdateUnusedFunctionExclusions(section, diagObj, m_config.diagnostics))
+    {
         diagnosticsChanged = true;
     }
 
@@ -444,6 +536,10 @@ static void UpdateHoverFeatureConfig(const lsp::LSPObject& section, config::Serv
     if (auto pathRes = FindSectionBool(section, hoverObj, "stringLiteralPathResolution", "hover"); pathRes.has_value())
     {
         cfg.features.hoverStringLiteralPathResolution = *pathRes;
+    }
+    if (auto showLoc = FindSectionBool(section, hoverObj, "showFileLocation", "hover"); showLoc.has_value())
+    {
+        cfg.features.hoverShowFileLocation = *showLoc;
     }
     if (hoverObj)
     {
@@ -690,6 +786,16 @@ bool Server::UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& secti
                 m_engineProfile = profileVal->string();
             }
             LogInfo(fmt::format("Engine profile changed to '{}'; reloading predefineds", profileVal->string()));
+            shouldRescan = true;
+        }
+    }
+
+    if (const auto* rulesFileVal = section.find("rulesFile"); rulesFileVal && rulesFileVal->isString())
+    {
+        if (rulesFileVal->string() != m_config.rulesFile)
+        {
+            m_config.rulesFile = rulesFileVal->string();
+            LogInfo(fmt::format("Rules file changed to '{}'; reloading engine rules", m_config.rulesFile));
             shouldRescan = true;
         }
     }

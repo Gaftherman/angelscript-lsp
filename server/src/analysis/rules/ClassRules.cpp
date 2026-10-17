@@ -1,6 +1,7 @@
 #include "analysis/rules/ClassRules.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
+#include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "document/Document.h"
 #include "parser/AngelScriptParser.h"
@@ -227,31 +228,186 @@ void CheckInterfaceImplementation(const Symbol& sym, const ClassSignature& sig, 
     ReportMissingInterfaceMethods(sym, interfacesToCheck, implemented, ctx);
 }
 
+/** @brief Checks if a method symbol matches a final base function. */
+bool MatchesFinalBaseFunction(const Symbol& mSym, const std::string& cleanBase, const std::string& methodName,
+                              const SymbolTable& table)
+{
+    const std::string baseKey = cleanBase.empty() ? methodName : cleanBase + "::" + methodName;
+    auto basePtr = table.FindSymbolsPtr(baseKey);
+    if (!basePtr)
+    {
+        return false;
+    }
+    for (const auto& baseSym : *basePtr)
+    {
+        if (baseSym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(baseSym.signature))
+        {
+            continue;
+        }
+        if (baseSym.GetFunction().modifiers.isFinal && HasSameParameterList(mSym, baseSym))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @brief Checks if an accessor matches a final base property accessor. */
+bool MatchesFinalBaseProperty(const std::string& cleanBase, const std::string& methodName, const SymbolTable& table)
+{
+    if (methodName.size() <= 4)
+    {
+        return false;
+    }
+    const bool isGet = methodName.starts_with("get_");
+    const bool isSet = methodName.starts_with("set_");
+    if (!isGet && !isSet)
+    {
+        return false;
+    }
+
+    const std::string propName = methodName.substr(4);
+    const std::string basePropKey = cleanBase.empty() ? propName : cleanBase + "::" + propName;
+    auto basePropPtr = table.FindSymbolsPtr(basePropKey);
+    if (!basePropPtr)
+    {
+        return false;
+    }
+
+    for (const auto& bp : *basePropPtr)
+    {
+        if (bp.type != SymbolType::Property || !std::holds_alternative<VariableSignature>(bp.signature))
+        {
+            continue;
+        }
+        const auto& varSig = std::get<VariableSignature>(bp.signature);
+        if ((isGet && varSig.isGetFinal) || (isSet && varSig.isSetFinal))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @brief Checks if a method symbol matches any final base method or property accessor candidate. */
+bool MatchesFinalBaseMethod(const Symbol& mSym, const std::string& cleanBase, const std::string& methodName,
+                            const SymbolTable& table)
+{
+    return MatchesFinalBaseFunction(mSym, cleanBase, methodName, table) ||
+           MatchesFinalBaseProperty(cleanBase, methodName, table);
+}
+
+/** @brief Checks if a container declares a property matching a final accessor. */
+void CheckFinalPropertyOverride(const std::string& container, const std::string& methodName,
+                                const std::string& reportingBase, const DiagnosticContext& ctx)
+{
+    if (methodName.size() <= 4 || (!methodName.starts_with("get_") && !methodName.starts_with("set_")))
+    {
+        return;
+    }
+
+    const std::string propName = methodName.substr(4);
+    const std::string propKey = container.empty() ? propName : container + "::" + propName;
+    auto propPtr = ctx.request.symbolTable.FindSymbolsPtr(propKey);
+    if (!propPtr)
+    {
+        return;
+    }
+
+    const bool isGet = methodName.starts_with("get_");
+    for (const auto& pSym : *propPtr)
+    {
+        if (pSym.fileUri != ctx.request.fileUri || pSym.isSynthesized || pSym.type != SymbolType::Property)
+        {
+            continue;
+        }
+        if (std::holds_alternative<VariableSignature>(pSym.signature))
+        {
+            const auto& varSig = std::get<VariableSignature>(pSym.signature);
+            if ((isGet && varSig.hasGet) || (!isGet && varSig.hasSet))
+            {
+                ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", pSym);
+                ctx.Emit(pSym, "as-err-override-final-method", methodName, reportingBase);
+            }
+        }
+    }
+}
+
+/** @brief Reports methods overriding final methods of a base class or its mixins. */
+void ReportFinalMethodOverrides(const std::string& container, const std::string& cleanBase,
+                                const std::string& reportingBase, const DiagnosticContext& ctx)
+{
+    const SymbolTable& table = ctx.request.symbolTable;
+    for (const auto& methodName : ctx.request.GetRuleIndex().Members(cleanBase).finalMethodNames)
+    {
+        const std::string derivedName = container.empty() ? methodName : container + "::" + methodName;
+        if (auto methodsPtr = table.FindSymbolsPtr(derivedName))
+        {
+            for (const auto& mSym : *methodsPtr)
+            {
+                if (mSym.fileUri != ctx.request.fileUri || mSym.isSynthesized || mSym.type != SymbolType::Function)
+                {
+                    continue;
+                }
+                if (MatchesFinalBaseMethod(mSym, cleanBase, methodName, table))
+                {
+                    ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", mSym);
+                    ctx.Emit(mSym, "as-err-override-final-method", methodName, reportingBase);
+                }
+            }
+        }
+
+        CheckFinalPropertyOverride(container, methodName, reportingBase, ctx);
+    }
+}
+
 /** @brief Reports a method that replaces one a visible base class declared final. */
 void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string container = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
 
+    ankerl::unordered_dense::set<std::string> visited;
+    std::vector<std::string> queue;
     for (const auto& baseName : sig.bases)
     {
         const std::string cleanBase = CleanBaseType(baseName);
-        if (cleanBase.empty() || !table.HasSymbolAnywhere(cleanBase))
+        if (!cleanBase.empty() && !IsMixinClass(cleanBase, table))
+        {
+            queue.push_back(cleanBase);
+        }
+    }
+
+    while (!queue.empty())
+    {
+        std::string currentBase = std::move(queue.back());
+        queue.pop_back();
+
+        if (!visited.insert(currentBase).second)
         {
             continue;
         }
 
-        for (const auto& methodName : ctx.request.GetRuleIndex().Members(cleanBase).finalMethodNames)
+        ReportFinalMethodOverrides(container, currentBase, currentBase, ctx);
+
+        if (auto baseSyms = table.FindSymbolsPtr(currentBase))
         {
-            const std::string derivedName = container.empty() ? methodName : container + "::" + methodName;
-            if (auto methodsPtr = table.FindSymbolsPtr(derivedName))
+            for (const auto& bSym : *baseSyms)
             {
-                for (const auto& mSym : *methodsPtr)
+                if (bSym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(bSym.signature))
                 {
-                    if (mSym.type == SymbolType::Function)
+                    const auto& bClass = bSym.GetClass();
+                    for (const auto& mixinName : bClass.includedMixins)
                     {
-                        ctx.LogRule("CheckFinalOverrides", "as-err-override-final-method", mSym);
-                        ctx.Emit(mSym, "as-err-override-final-method", methodName, cleanBase);
+                        ReportFinalMethodOverrides(container, mixinName, currentBase, ctx);
+                    }
+                    for (const auto& nextBase : bClass.bases)
+                    {
+                        const std::string cleanNext = CleanBaseType(nextBase);
+                        if (!cleanNext.empty() && !IsMixinClass(cleanNext, table))
+                        {
+                            queue.push_back(cleanNext);
+                        }
                     }
                 }
             }
@@ -469,13 +625,17 @@ std::vector<std::string> CollectIncludedMixins(const ClassSignature& sig, const 
 void CollectContainerMembers(const std::string& containerName, const RuleIndex& ruleIndex,
                              ankerl::unordered_dense::set<std::string>& outMembers)
 {
-    const auto& cm = ruleIndex.Members(containerName);
-    outMembers.insert(cm.allMemberNames.begin(), cm.allMemberNames.end());
+    const auto insertMembers = [&](const auto& members)
+    {
+        outMembers.insert(members.allMemberNames.begin(), members.allMemberNames.end());
+        outMembers.insert(members.accessorPropertyNames.begin(), members.accessorPropertyNames.end());
+    };
+
+    insertMembers(ruleIndex.Members(containerName));
 
     if (HasScopeQualifier(containerName))
     {
-        const auto& cmShort = ruleIndex.Members(LastScopeSegment(containerName));
-        outMembers.insert(cmShort.allMemberNames.begin(), cmShort.allMemberNames.end());
+        insertMembers(ruleIndex.Members(LastScopeSegment(containerName)));
     }
 
     auto it = ruleIndex.qualifiedTypesByShortName.find(containerName);
@@ -483,8 +643,7 @@ void CollectContainerMembers(const std::string& containerName, const RuleIndex& 
     {
         for (const auto& qName : it->second)
         {
-            const auto& cmQ = ruleIndex.Members(qName);
-            outMembers.insert(cmQ.allMemberNames.begin(), cmQ.allMemberNames.end());
+            insertMembers(ruleIndex.Members(qName));
         }
     }
 }
@@ -564,59 +723,6 @@ TSNode FindMixinAstNode(const TSTree* mixinTree, const Symbol& mixinSym)
     return mixinNode;
 }
 
-/** @brief Searches the base_class_list node for the mixin inclusion range. */
-std::optional<InstantiationRange> FindMixinRangeInBases(TSNode hostNode, const Symbol& mixinSym,
-                                                        const std::string& mixinName, std::string_view sourceCode)
-{
-    const uint32_t childCount = ts_node_child_count(hostNode);
-    for (uint32_t c = 0; c < childCount; ++c)
-    {
-        TSNode child = ts_node_child(hostNode, c);
-        if (NodeType(child) == "base_class_list")
-        {
-            const uint32_t bCount = ts_node_named_child_count(child);
-            for (uint32_t b = 0; b < bCount; ++b)
-            {
-                TSNode baseChild = ts_node_named_child(child, b);
-                std::string bText = GetNodeText(baseChild, sourceCode);
-                if (CleanBaseType(bText) == mixinName || bText == mixinSym.name ||
-                    bText.ends_with("::" + mixinSym.name))
-                {
-                    TSPoint sp = ts_node_start_point(baseChild);
-                    TSPoint ep = ts_node_end_point(baseChild);
-                    return InstantiationRange{sp.row, sp.column, ep.row, ep.column};
-                }
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-/** @brief Searches the class body node for the mixin inclusion range. */
-std::optional<InstantiationRange> FindMixinRangeInBody(TSNode hostNode, const Symbol& mixinSym,
-                                                       std::string_view sourceCode)
-{
-    TSNode bodyNode = GetChildByField(hostNode, "body");
-    if (ts_node_is_null(bodyNode))
-    {
-        return std::nullopt;
-    }
-
-    const uint32_t mCount = ts_node_child_count(bodyNode);
-    for (uint32_t m = 0; m < mCount; ++m)
-    {
-        TSNode mNode = ts_node_child(bodyNode, m);
-        std::string mText = GetNodeText(mNode, sourceCode);
-        if (mText.find(mixinSym.name) != std::string::npos)
-        {
-            TSPoint sp = ts_node_start_point(mNode);
-            TSPoint ep = ts_node_end_point(mNode);
-            return InstantiationRange{sp.row, sp.column, ep.row, ep.column};
-        }
-    }
-    return std::nullopt;
-}
-
 /** @brief Locates the point range where a mixin is included in the host class. */
 InstantiationRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym, const std::string& mixinName,
                                       const DiagnosticContext& ctx)
@@ -635,21 +741,13 @@ InstantiationRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym,
         hostNode = ts_node_parent(hostNode);
     }
 
-    if (ts_node_is_null(hostNode))
+    TSNode incNode = FindMixinInclusionNode(hostNode, mixinName, mixinSym.name, ctx.request.sourceCode);
+    if (!ts_node_is_null(incNode))
     {
-        return range;
+        TSPoint sp = ts_node_start_point(incNode);
+        TSPoint ep = ts_node_end_point(incNode);
+        return InstantiationRange{sp.row, sp.column, ep.row, ep.column};
     }
-
-    if (auto r = FindMixinRangeInBases(hostNode, mixinSym, mixinName, ctx.request.sourceCode))
-    {
-        return *r;
-    }
-
-    if (auto r = FindMixinRangeInBody(hostNode, mixinSym, ctx.request.sourceCode))
-    {
-        return *r;
-    }
-
     return range;
 }
 
@@ -693,6 +791,8 @@ void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheckContext
 
     std::string propName = GetNodeText(propNode, mixinSource);
     if (!propName.empty() && !mctx.hostMembers.contains(propName) && !mctx.mixinSelfMembers.contains(propName) &&
+        !mctx.hostMembers.contains("get_" + propName) && !mctx.mixinSelfMembers.contains("get_" + propName) &&
+        !mctx.hostMembers.contains("set_" + propName) && !mctx.mixinSelfMembers.contains("set_" + propName) &&
         !mctx.reported.contains(propName))
     {
         mctx.reported.insert(propName);
@@ -723,6 +823,115 @@ void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckStat
     {
         state.mctx.reported.insert(fnName);
         EmitMixinMemberNotFound(state.mctx, fnName, fnNode, ctx);
+    }
+}
+
+/** @brief Checks if a child node matches a named field of the parent by byte offset. */
+bool IsNamedChildMatch(TSNode parent, const char* fieldName, TSNode cur)
+{
+    TSNode child = GetChildByField(parent, fieldName);
+    return !ts_node_is_null(child) && ts_node_start_byte(child) == ts_node_start_byte(cur);
+}
+
+/** @brief Checks if an identifier is a declaration name or member field name. */
+bool IsDeclarationOrFieldChild(TSNode cur, TSNode parent, std::string_view pType)
+{
+    if (pType == "member_expression")
+    {
+        return IsNamedChildMatch(parent, "member", cur);
+    }
+    if (pType == "call_expression")
+    {
+        return IsNamedChildMatch(parent, "function", cur);
+    }
+    if (pType == "scoped_identifier" || pType == "variable_declarator" || pType == "parameter" ||
+        pType == "func_declaration")
+    {
+        return IsNamedChildMatch(parent, "name", cur);
+    }
+    return false;
+}
+
+/** @brief Determines if an identifier node is in a non-reference AST context. */
+bool ShouldIgnoreMixinIdentifier(TSNode cur)
+{
+    TSNode parent = ts_node_parent(cur);
+    if (ts_node_is_null(parent))
+    {
+        return true;
+    }
+
+    std::string_view pType = NodeType(parent);
+    if (IsDeclarationOrFieldChild(cur, parent, pType))
+    {
+        return true;
+    }
+
+    if (pType == "variable_declaration")
+    {
+        return IsNamedChildMatch(parent, "var_type", cur);
+    }
+
+    if (pType == "parameter")
+    {
+        return IsNamedChildMatch(parent, "type", cur);
+    }
+
+    return pType == "type" || pType == "primitive_type" || pType == "cast_expression";
+}
+
+/** @brief Checks if a name is a built-in symbol, keyword, or primitive type. */
+bool IsBuiltinOrKeyword(std::string_view name, std::string_view effectiveStringTypeName)
+{
+    if (name.empty() || name == "this" || name == "super" || name == "cast" || name == "null" || name == "true" ||
+        name == "false" || name == effectiveStringTypeName)
+    {
+        return true;
+    }
+    return IsKeyword(name) || IsPrimitiveTypeName(name);
+}
+
+/** @brief Checks if a name matches getter/setter property accessors in mixin or host. */
+bool HasPropertyAccessorMatch(const std::string& name, const FunctionCheckState& state)
+{
+    const std::string getProp = "get_" + name;
+    const std::string setProp = "set_" + name;
+    return state.mctx.mixinSelfMembers.contains(getProp) || state.mctx.mixinSelfMembers.contains(setProp) ||
+           state.mctx.hostMembers.contains(getProp) || state.mctx.hostMembers.contains(setProp);
+}
+
+/** @brief Checks if an identifier resolves in local, mixin, host, or global scopes. */
+bool IsValidMixinIdentifier(const std::string& name, const FunctionCheckState& state, const DiagnosticContext& ctx)
+{
+    if (IsBuiltinOrKeyword(name, ctx.request.GetEffectiveStringTypeName()))
+    {
+        return true;
+    }
+
+    if (state.localNames.contains(name) || state.mctx.mixinSelfMembers.contains(name) ||
+        state.mctx.hostMembers.contains(name) || HasPropertyAccessorMatch(name, state))
+    {
+        return true;
+    }
+
+    const auto& ruleIndex = ctx.request.GetRuleIndex();
+    return ruleIndex.allNames.contains(name) || ctx.request.symbolTable.HasSymbolAnywhere(name);
+}
+
+/** @brief Checks bare identifier references inside mixin function bodies. */
+void CheckIdentifierMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state,
+                           const DiagnosticContext& ctx)
+{
+    if (ShouldIgnoreMixinIdentifier(cur))
+    {
+        return;
+    }
+
+    std::string name = GetNodeText(cur, mixinSource);
+    if (!IsValidMixinIdentifier(name, state, ctx) && !state.mctx.reported.contains(name))
+    {
+        state.mctx.reported.insert(name);
+        EmitMixinMemberNotFound(state.mctx, name, cur, ctx);
     }
 }
 
@@ -776,6 +985,10 @@ void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, Func
                                       {
                                           CheckCallMember(cur, mixinSource, state, ctx);
                                       }
+                                      else if (curType == "identifier")
+                                      {
+                                          CheckIdentifierMember(cur, mixinSource, state, ctx);
+                                      }
                                   });
 }
 
@@ -783,26 +996,25 @@ void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, Func
 void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinCheckContext& mctx,
                     const DiagnosticContext& ctx)
 {
-    const uint32_t memberCount = ts_node_child_count(bodyNode);
-    for (uint32_t m = 0; m < memberCount; ++m)
-    {
-        TSNode mem = ts_node_child(bodyNode, m);
-        if (NodeType(mem) != "func_declaration")
-        {
-            continue;
-        }
+    parser::ForEachChildNode(bodyNode,
+                             [&](TSNode mem)
+                             {
+                                 if (NodeType(mem) != "func_declaration")
+                                 {
+                                     return;
+                                 }
 
-        TSNode funcBody = GetChildByField(mem, "body");
-        if (ts_node_is_null(funcBody))
-        {
-            continue;
-        }
+                                 TSNode funcBody = GetChildByField(mem, "body");
+                                 if (ts_node_is_null(funcBody))
+                                 {
+                                     return;
+                                 }
 
-        ankerl::unordered_dense::set<std::string> localNames;
-        CollectLocalNames(mem, funcBody, mixinSource, localNames);
-        FunctionCheckState state{localNames, mctx};
-        CheckFuncBodyStatements(funcBody, mixinSource, state, ctx);
-    }
+                                 ankerl::unordered_dense::set<std::string> localNames;
+                                 CollectLocalNames(mem, funcBody, mixinSource, localNames);
+                                 FunctionCheckState state{localNames, mctx};
+                                 CheckFuncBodyStatements(funcBody, mixinSource, state, ctx);
+                             });
 }
 
 /** @brief RAII holder for parsed mixin tree. */

@@ -1,7 +1,9 @@
 #include "lsp/DocumentStore.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+#include <atomic>
 #include <doctest/doctest.h>
+#include <latch>
 #include <thread>
 #include <vector>
 
@@ -66,24 +68,27 @@ TEST_CASE("DocumentStore - Concurrent read/write stress")
     constexpr int kThreads = 8;
     constexpr int kIterations = 100;
 
+    std::latch startLatch(kThreads);
+    std::atomic<uint32_t> failedChecks{0};
     std::vector<std::thread> workers;
     workers.reserve(kThreads);
 
     for (int t = 0; t < kThreads; ++t)
     {
         workers.emplace_back(
-            [&store, t]()
+            [&store, &startLatch, &failedChecks, t]()
             {
                 const std::string uri = "file:///worker_" + std::to_string(t) + ".as";
+                startLatch.arrive_and_wait();
                 for (int i = 0; i < kIterations; ++i)
                 {
                     store.OpenDocument(uri, "int x = " + std::to_string(i) + ";", i, document::MakeTreePtr(nullptr));
                     store.SetVersion(uri, i + 1);
                     auto text = store.GetText(uri);
-                    CHECK(text.has_value());
-                    CHECK(store.GetVersion(uri) >= i);
-                    auto snapshot = store.GetSnapshot();
-                    CHECK_FALSE(snapshot.empty());
+                    if (!text.has_value() || store.GetVersion(uri) < i || store.GetSnapshot().empty())
+                    {
+                        failedChecks.fetch_add(1, std::memory_order_relaxed);
+                    }
                     store.CloseDocument(uri);
                 }
             });
@@ -94,6 +99,7 @@ TEST_CASE("DocumentStore - Concurrent read/write stress")
         w.join();
     }
 
+    CHECK(failedChecks.load() == 0);
     CHECK(store.Size() == 0);
 }
 

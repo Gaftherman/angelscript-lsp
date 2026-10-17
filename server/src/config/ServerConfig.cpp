@@ -301,6 +301,7 @@ void PrintOptionsHelp()
            "(repeatable)\n"
         << "  --predefined-active=<path>              Select the single predefined stub workspace scan will\n"
         << "                                          load (leaving it empty loads all discovered stubs)\n"
+        << "  --rules-file=<path>                     Path to angelscript.rules.json custom rules configuration\n"
         << "  --module=<name>=<path>                  Name one script module and the .as it is built from\n"
         << "  --module-folder=<name>=<dir>            Name one script module and a directory whose scripts\n"
         << "                                          all belong to it (repeatable). The deepest folder wins.\n"
@@ -493,6 +494,8 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
     {"--hover-string-literal-path-resolution", "--enable-hover-string-literal-path-resolution",
      "--disable-hover-string-literal-path-resolution", "--no-hover-string-literal-path-resolution",
      &FeatureFlags::hoverStringLiteralPathResolution},
+    {"--hover-show-file-location", "--enable-hover-show-file-location", "--disable-hover-show-file-location",
+     "--no-hover-show-file-location", &FeatureFlags::hoverShowFileLocation},
     {"--enable-comment-suppressions", "--enable-commentsuppressions", "--disable-comment-suppressions",
      "--disable-commentsuppressions", &FeatureFlags::enableCommentSuppressions},
     {"--enable-metadata", "--enable-script-metadata", "--disable-metadata", "--disable-script-metadata",
@@ -612,6 +615,12 @@ static constexpr DiagnosticFlagMapping kDiagFlags[] = {
      &DiagnosticsConfig::reportPossibleNullDereference},
     {"--report-all-null-dereferences", "--no-report-all-null-dereferences",
      &DiagnosticsConfig::reportAllNullDereferences},
+    {"--report-unused-functions", "--no-report-unused-functions", &DiagnosticsConfig::reportUnusedFunctions},
+    {"--report-unused-globals", "--no-report-unused-globals", &DiagnosticsConfig::reportUnusedGlobalVariables},
+    {"--report-unused-classes", "--no-report-unused-classes", &DiagnosticsConfig::reportUnusedClasses},
+    {"--report-unused-members", "--no-report-unused-members", &DiagnosticsConfig::reportUnusedMembers},
+    {"--ignore-unused-globals-with-call-initializer", "--no-ignore-unused-globals-with-call-initializer",
+     &DiagnosticsConfig::ignoreUnusedGlobalsWithCallInitializer},
 };
 
 static int ParseHandleComparisonSeverity(ArgParseContext& ctx)
@@ -633,21 +642,75 @@ static int ParseHandleComparisonSeverity(ArgParseContext& ctx)
     return 1;
 }
 
-bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseUnusedFunctionExclusion(ServerConfig& config, ArgParseContext& ctx)
+{
+    if (ctx.key == "--ignored-unused-function")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.diagnostics.ignoredUnusedFunctions.insert(std::string(val));
+        }
+        return true;
+    }
+    if (ctx.key == "--ignored-unused-function-regex" || ctx.key == "--ignored-unused-function-pattern")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.diagnostics.ignoredUnusedFunctionPatterns.emplace_back(val);
+        }
+        return true;
+    }
+    return false;
+}
+
+void MarkExplicitDiagnosticFlag(DiagnosticsConfig& diag, DiagnosticFlagMapping::DiagMember member)
+{
+    if (member == &DiagnosticsConfig::reportUnusedFunctions)
+    {
+        diag.reportUnusedFunctionsExplicit = true;
+    }
+    else if (member == &DiagnosticsConfig::reportUnusedGlobalVariables)
+    {
+        diag.reportUnusedGlobalVariablesExplicit = true;
+    }
+    else if (member == &DiagnosticsConfig::reportUnusedClasses)
+    {
+        diag.reportUnusedClassesExplicit = true;
+    }
+    else if (member == &DiagnosticsConfig::reportUnusedMembers)
+    {
+        diag.reportUnusedMembersExplicit = true;
+    }
+}
+
+bool TryParseTableDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
 {
     for (const auto& entry : kDiagFlags)
     {
         if (ctx.key == entry.enableKey)
         {
             config.diagnostics.*(entry.member) = ctx.GetBoolValue(true);
+            MarkExplicitDiagnosticFlag(config.diagnostics, entry.member);
             return true;
         }
         if (ctx.key == entry.disableKey)
         {
             config.diagnostics.*(entry.member) =
                 ctx.inlineVal.has_value() ? !ParseBoolValue(*ctx.inlineVal, true) : false;
+            MarkExplicitDiagnosticFlag(config.diagnostics, entry.member);
             return true;
         }
+    }
+    return false;
+}
+
+bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
+{
+    if (TryParseTableDiagnosticFlag(config, ctx))
+    {
+        return true;
     }
     if (ctx.key == "--report-accessor-disabled")
     {
@@ -673,7 +736,7 @@ bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
         }
         return true;
     }
-    return false;
+    return TryParseUnusedFunctionExclusion(config, ctx);
 }
 
 bool TryParseModuleOption(ServerConfig& config, ArgParseContext& ctx)
@@ -945,6 +1008,15 @@ bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
         }
         return true;
     }
+    if (ctx.key == "--rules-file" || ctx.key == "--rules")
+    {
+        std::string_view val;
+        if (ctx.GetStringValue(val) && !val.empty())
+        {
+            config.rulesFile = std::string(val);
+        }
+        return true;
+    }
     return false;
 }
 
@@ -1108,5 +1180,39 @@ ServerConfig FromArgs(int argc, char** argv)
     }
 
     return config;
+}
+
+namespace
+{
+template <typename T> void AssignIfPresent(const std::optional<T>& opt, T& target)
+{
+    if (opt.has_value())
+    {
+        target = *opt;
+    }
+}
+} // namespace
+
+void ApplyEngineProperties(const NativeEngineProperties& props, EngineProperties& engine)
+{
+    AssignIfPresent(props.propertyAccessorMode, engine.propertyAccessorMode);
+    AssignIfPresent(props.disallowGlobalVars, engine.disallowGlobalVars);
+    AssignIfPresent(props.requireEnumScope, engine.requireEnumScope);
+    AssignIfPresent(props.boolConversionMode, engine.boolConversionMode);
+    AssignIfPresent(props.allowUnsafeReferences, engine.allowUnsafeReferences);
+    AssignIfPresent(props.allowMultilineStrings, engine.allowMultilineStrings);
+    AssignIfPresent(props.disableIntegerDivision, engine.disableIntegerDivision);
+    AssignIfPresent(props.privatePropAsProtected, engine.privatePropAsProtected);
+    AssignIfPresent(props.useCharacterLiterals, engine.useCharacterLiterals);
+    AssignIfPresent(props.disallowValueAssignForRef, engine.disallowValueAssignForRef);
+    AssignIfPresent(props.alterSyntaxNamedArgs, engine.alterSyntaxNamedArgs);
+    AssignIfPresent(props.disallowEmptyListElements, engine.disallowEmptyListElements);
+    AssignIfPresent(props.foreachSupport, engine.foreachSupport);
+    AssignIfPresent(props.alwaysImplDefaultConstruct, engine.alwaysImplDefaultConstruct);
+    AssignIfPresent(props.allowUnicodeIdentifiers, engine.allowUnicodeIdentifiers);
+    AssignIfPresent(props.ignoreDuplicateSharedIntf, engine.ignoreDuplicateSharedIntf);
+    AssignIfPresent(props.compilerWarnings, engine.compilerWarnings);
+    AssignIfPresent(props.memberInitMode, engine.memberInitMode);
+    AssignIfPresent(props.heredocTrimMode, engine.heredocTrimMode);
 }
 } // namespace angel_lsp::config

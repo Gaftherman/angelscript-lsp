@@ -924,4 +924,22 @@ EngineProfileKind DetectEngineProfileFromWorkspace(const std::vector<std::string
 
     return EngineProfileKind::Standard;
 }
+
+config::EngineProperties GetDefaultEngineProperties(EngineProfileKind kind)
+{
+    config::EngineProperties props;
+    switch (kind)
+    {
+    case EngineProfileKind::SvenCoop:
+        props.propertyAccessorMode = 2;
+        props.allowUnsafeReferences = false;
+        props.disallowGlobalVars = false;
+        props.boolConversionMode = 0;
+        props.foreachSupport = true;
+        break;
+    default:
+        break;
+    }
+    return props;
+}
 } // namespace angel_lsp::analysis

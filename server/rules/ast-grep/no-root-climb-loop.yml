@@ -1,0 +1,12 @@
+id: no-root-climb-loop
+message: "Do not use while (!ts_node_is_null(ts_node_parent(...))) to climb to root. Use parser::GetRootNode(node) in O(1) time."
+severity: error
+language: cpp
+files:
+  - "server/src/**/*.cpp"
+  - "server/src/**/*.h"
+rule:
+  any:
+    - pattern: "while (!ts_node_is_null(ts_node_parent($$$ARGS)))"
+    - pattern: "while (!ts_node_is_null(parser::GetParent($$$ARGS)))"
+    - pattern: "while (!ts_node_is_null(GetParent($$$ARGS)))"

@@ -22,9 +22,9 @@ struct DerivedType
 /** @brief What the declaration rules need to know about one container's members. */
 struct ContainerMembers
 {
-    ankerl::unordered_dense::set<std::string> methodNames;
-    ankerl::unordered_dense::set<std::string> finalMethodNames;
-    ankerl::unordered_dense::set<std::string> allMemberNames;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> methodNames;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> finalMethodNames;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> allMemberNames;
     bool hasNestedType = false;
 
     /**
@@ -71,6 +71,7 @@ struct RuleIndexPartial
     std::vector<std::string> globalAccessorProperties;
     std::vector<std::string> keywordGlobalAccessorProperties;
     std::vector<std::string> allNames;
+    std::vector<std::string> globalNames;
     std::vector<std::pair<std::string, DerivedType>> derivedByBase;
     std::vector<std::pair<std::string, DerivedType>> hostClassesByMixin;
     std::vector<std::pair<std::string, std::string>> sharedDeclarations;
@@ -86,7 +87,7 @@ struct RuleIndex
     using DerivedType = angel_lsp::analysis::rules::DerivedType;
 
     ankerl::unordered_dense::map<std::string, ContainerMembers, TransparentStringHash, std::equal_to<>> byContainer;
-    ankerl::unordered_dense::set<std::string> enumMemberNames;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> enumMemberNames;
     ankerl::unordered_dense::map<std::string, uint32_t> enumMemberCounts;
 
     /**
@@ -99,7 +100,8 @@ struct RuleIndex
      * @brief Qualified names of types (classes, interfaces, enums, typedefs, funcdefs) keyed by short name.
      * Allows fast lookup of types when referenced without their enclosing namespace.
      */
-    ankerl::unordered_dense::map<std::string, std::vector<std::string>> qualifiedTypesByShortName;
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>
+        qualifiedTypesByShortName;
     ankerl::unordered_dense::map<std::string, ankerl::unordered_dense::map<std::string, uint32_t>> qualifiedTypeCounts;
 
     ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> globalAccessorPropertyNames;
@@ -114,8 +116,16 @@ struct RuleIndex
      */
     ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>> allNames;
 
-    ankerl::unordered_dense::map<std::string, std::vector<DerivedType>> derivedByBase;
-    ankerl::unordered_dense::map<std::string, std::vector<DerivedType>> hostClassesByMixin;
+    /**
+     * @brief Declared names accessible at global/unqualified scope (free functions, global variables,
+     * declared types, namespace root segments), with refcounts for incremental updates.
+     */
+    ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>> globalNames;
+
+    ankerl::unordered_dense::map<std::string, std::vector<DerivedType>, TransparentStringHash, std::equal_to<>>
+        derivedByBase;
+    ankerl::unordered_dense::map<std::string, std::vector<DerivedType>, TransparentStringHash, std::equal_to<>>
+        hostClassesByMixin;
 
     /** @brief SymbolTable bucket key -> file URIs declaring a non-external `shared` class or function body. */
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> sharedDeclarationFilesByKey;

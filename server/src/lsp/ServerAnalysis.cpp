@@ -62,11 +62,13 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     request.moduleContext = ModuleContextFor(uriStr);
 
     request.diagnostics = &m_config.diagnostics;
+    request.engineRules = &m_config.engineRules;
     request.severityOverrides = m_diagnosticSeverities.empty() ? nullptr : &m_diagnosticSeverities;
     request.enableTypeConversionChecks = m_config.features.enableTypeConversionChecks;
     request.enableCommentSuppressions = m_config.features.enableCommentSuppressions;
     request.enableMetadata = m_config.features.enableMetadata;
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
+    request.scopeIndex = &m_scopeIndex;
     request.sourceCode = text;
     request.tree = tree;
 
@@ -297,6 +299,7 @@ bool Server::CommitAnalysisResults(CommitAnalysisRequest req)
     if (req.staging)
     {
         m_symbolTable.ReplaceDocumentSymbols(req.uriStr, std::move(*req.staging));
+        m_callGraph.SetDocumentCalls(req.uriStr, std::move(req.calls));
     }
 
     if (req.scopeRoot)
@@ -307,7 +310,6 @@ bool Server::CommitAnalysisResults(CommitAnalysisRequest req)
     {
         m_scopeIndex.ClearDocument(req.uriStr);
     }
-    m_callGraph.SetDocumentCalls(req.uriStr, std::move(req.calls));
 
     PublishDiagnostics(PublishDiagnosticsRequest{
         .uriStr = req.uriStr,
@@ -482,8 +484,6 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
         WaitForPredefinedReady(std::chrono::milliseconds(5000));
     }
 
-    IndexModuleClosure(req.uriStr);
-
     angel_lsp::analysis::SymbolTable staging;
     auto parsed = ParseAndCollectSymbols(req, staging);
     if (!parsed.tree)
@@ -491,11 +491,8 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
         return;
     }
 
-    if (req.generation > 0 && !m_documentStore.IsCurrent(req.uriStr, req.generation, req.version))
-    {
-        return;
-    }
-    if (m_analysisScheduler && m_analysisScheduler->IsCancelled(req.uriStr))
+    if ((req.generation > 0 && !m_documentStore.IsCurrent(req.uriStr, req.generation, req.version)) ||
+        (m_analysisScheduler && m_analysisScheduler->IsCancelled(req.uriStr)))
     {
         return;
     }
@@ -503,6 +500,10 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     const TSNode root = ts_tree_root_node(parsed.tree.get());
     analysis::NodeIndex nodeIndex(root);
     const bool unchangedClosedFile = IsUnchangedClosedDocument(req.uriStr, req.generation, staging);
+    if (!unchangedClosedFile)
+    {
+        IndexModuleClosure(req.uriStr);
+    }
     std::unique_ptr<analysis::SymbolTable> analysisSnapshot =
         unchangedClosedFile ? nullptr : m_symbolTable.CreateAnalysisSnapshot(req.uriStr, staging);
     const analysis::SymbolTable* activeTable = unchangedClosedFile ? &m_symbolTable : analysisSnapshot.get();
@@ -510,7 +511,11 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     utils::HighResTimer scopeTimer;
     std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot =
         m_localScopeCollector->CollectScopesFromTree(root, req.text);
-    std::vector<analysis::CallSite> calls = analysis::CollectCalls(root, req.text);
+    std::vector<analysis::CallSite> calls;
+    if (!unchangedClosedFile)
+    {
+        calls = analysis::CollectCalls(root, req.text);
+    }
     double scopeMs = scopeTimer.ElapsedMs();
 
     utils::HighResTimer checkTimer;

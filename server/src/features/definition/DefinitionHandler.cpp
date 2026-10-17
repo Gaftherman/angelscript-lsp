@@ -1,9 +1,12 @@
 #include "features/definition/DefinitionHandler.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/VirtualMixinContext.h"
 #include "analysis/overload/ConversionRankingEngine.h"
+#include "config/EngineRuleConfig.h"
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include "utils/IncludeResolver.h"
 #include "utils/Utils.h"
 #include <algorithm>
@@ -521,6 +524,7 @@ std::vector<analysis::Symbol> FindMemberSymbolsInHierarchy(const std::string& re
     {
         std::string qualifiedMember = typeName + "::" + nodeText;
         auto found = symbolTable.FindSymbols(qualifiedMember);
+        std::erase_if(found, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
         if (!found.empty())
         {
             std::stable_partition(found.begin(), found.end(),
@@ -730,7 +734,7 @@ bool IsDefinitionInsideFunction(const analysis::Scope* rootScope, const analysis
  * @param[in] ctx Definition context.
  * @return Resolved local definition location, or nullopt.
  */
-std::optional<std::vector<lsp::Location>> TryResolveLocalDefinition(const std::string& nodeText,
+std::optional<std::vector<lsp::Location>> TryResolveLocalDefinition(TSNode node, const std::string& nodeText,
                                                                     const DefinitionContext& ctx)
 {
     if (!ctx.rootScope)
@@ -743,7 +747,8 @@ std::optional<std::vector<lsp::Location>> TryResolveLocalDefinition(const std::s
     {
         return std::nullopt;
     }
-    const analysis::LocalDefinition* def = analysis::ResolveInScope(scope, nodeText);
+    uint32_t cursorByte = !ts_node_is_null(node) ? ts_node_start_byte(node) : UINT32_MAX;
+    const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte);
     if (def &&
         (def->kind == analysis::LocalDefinitionKind::Parameter || def->kind == analysis::LocalDefinitionKind::Variable))
     {
@@ -773,7 +778,7 @@ std::optional<std::vector<lsp::Location>> TryResolveContextualDefinition(TSNode 
             return memberLocs;
         }
     }
-    if (auto localLoc = TryResolveLocalDefinition(nodeText, ctx))
+    if (auto localLoc = TryResolveLocalDefinition(node, nodeText, ctx))
     {
         return localLoc;
     }
@@ -788,47 +793,6 @@ std::optional<std::vector<lsp::Location>> TryResolveContextualDefinition(TSNode 
 }
 
 /**
- * @brief Extracts the preceding scope qualifier for a datatype node, if any.
- * @param[in] datatypeNode AST datatype node.
- * @param[in] sourceCode Document source text.
- * @return Scope prefix string ending in "::", or empty if unqualified.
- */
-std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode)
-{
-    TSNode typeNode = ts_node_parent(datatypeNode);
-    if (ts_node_is_null(typeNode) || std::string_view(ts_node_type(typeNode)) != parser::nodes::Type)
-    {
-        return {};
-    }
-    TSTreeCursor cursor = ts_tree_cursor_new(typeNode);
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        do
-        {
-            TSNode c = ts_tree_cursor_current_node(&cursor);
-            if (std::string_view(ts_node_type(c)) == parser::nodes::Scope)
-            {
-                const uint32_t sStart = ts_node_start_byte(c);
-                const uint32_t sEnd = ts_node_end_byte(c);
-                ts_tree_cursor_delete(&cursor);
-                if (sStart < sourceCode.size() && sEnd <= sourceCode.size() && sStart < sEnd)
-                {
-                    std::string scopeText(sourceCode.substr(sStart, sEnd - sStart));
-                    if (!scopeText.ends_with("::"))
-                    {
-                        scopeText += "::";
-                    }
-                    return scopeText;
-                }
-                return {};
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-        ts_tree_cursor_delete(&cursor);
-    }
-    return {};
-}
-
-/**
  * @brief Finds symbols in scope or global property accessors for an identifier node.
  * @param[in] node Cursor node.
  * @param[in] nodeText Symbol text.
@@ -839,11 +803,13 @@ std::vector<analysis::Symbol> FindSymbolsForNode(TSNode node, const std::string&
                                                  const DefinitionRequest& request)
 {
     std::vector<analysis::Symbol> symbols;
+    bool isExplicitlyScoped = false;
     TSNode parent = ts_node_parent(node);
     if (!ts_node_is_null(parent))
     {
-        const std::string_view pType(ts_node_type(parent));
-        if (pType == parser::nodes::ScopedIdentifier || pType == parser::nodes::Scope)
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol pSym = ts_node_symbol(parent);
+        if (pSym == gs.symScopedIdentifier || pSym == gs.symScope)
         {
             const uint32_t pStart = ts_node_start_byte(parent);
             const uint32_t pEnd = ts_node_end_byte(node);
@@ -851,23 +817,26 @@ std::vector<analysis::Symbol> FindSymbolsForNode(TSNode node, const std::string&
             {
                 const std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
                 symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);
+                isExplicitlyScoped = (scopedText.find("::") != std::string::npos);
             }
         }
-        else if (pType == parser::nodes::Datatype)
+        else if (pSym == gs.symDatatype)
         {
-            const std::string prefix = ExtractDatatypeScopePrefix(parent, request.sourceCode);
+            const std::string prefix = analysis::ExtractDatatypeScopePrefix(parent, request.sourceCode);
             if (!prefix.empty())
             {
                 symbols =
                     analysis::FindSymbolsInScope(prefix + nodeText, node, request.sourceCode, request.symbolTable);
+                isExplicitlyScoped = true;
             }
         }
     }
-    if (symbols.empty())
+
+    if (symbols.empty() && !isExplicitlyScoped)
     {
         symbols = analysis::FindSymbolsInScope(nodeText, node, request.sourceCode, request.symbolTable);
     }
-    if (symbols.empty())
+    if (symbols.empty() && !isExplicitlyScoped)
     {
         symbols = analysis::FindGlobalPropertyAccessors(nodeText, request.symbolTable, false);
     }
@@ -953,12 +922,22 @@ void AppendHostClassHierarchySymbols(std::vector<analysis::Symbol>& symbols, con
 std::vector<analysis::Symbol> ResolveCandidateSymbols(TSNode node, const std::string& nodeText,
                                                       const DefinitionContext& ctx)
 {
+    const auto gsq = analysis::GetGlobalScopeQualifier(node, ctx.request.sourceCode);
     std::vector<analysis::Symbol> symbols = FindSymbolsForNode(node, nodeText, ctx.request);
-    AppendHostClassHierarchySymbols(symbols, nodeText, ctx);
+    if (!gsq.isGlobal)
+    {
+        AppendHostClassHierarchySymbols(symbols, nodeText, ctx);
+    }
     const analysis::Scope* scope =
         ctx.rootScope ? FindInnermostScope(ctx.rootScope.get(), ctx.queryLine, ctx.request.position.character)
                       : nullptr;
-    return FilterOverloadsForCall(node, symbols, ctx.request, scope);
+    symbols = FilterOverloadsForCall(node, symbols, ctx.request, scope);
+    std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
+    if (gsq.isGlobal && gsq.isDirectRoot)
+    {
+        std::erase_if(symbols, [](const analysis::Symbol& s) { return !s.containerName.empty(); });
+    }
+    return symbols;
 }
 
 /**
@@ -967,7 +946,7 @@ std::vector<analysis::Symbol> ResolveCandidateSymbols(TSNode node, const std::st
  * @param[in] ctx Definition context.
  * @return Resolved definition locations, or nullopt.
  */
-std::optional<std::vector<lsp::Location>> TryResolveLocalDefinitionFallback(const std::string& nodeText,
+std::optional<std::vector<lsp::Location>> TryResolveLocalDefinitionFallback(TSNode node, const std::string& nodeText,
                                                                             const DefinitionContext& ctx)
 {
     if (!ctx.rootScope)
@@ -980,8 +959,14 @@ std::optional<std::vector<lsp::Location>> TryResolveLocalDefinitionFallback(cons
     {
         return std::nullopt;
     }
-    if (const analysis::LocalDefinition* def = analysis::ResolveInScope(scope, nodeText))
+    uint32_t cursorByte = !ts_node_is_null(node) ? ts_node_start_byte(node) : UINT32_MAX;
+    if (const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte))
     {
+        if (def->kind == analysis::LocalDefinitionKind::Parameter &&
+            !IsDefinitionInsideFunction(ctx.rootScope.get(), *def))
+        {
+            return std::nullopt;
+        }
         return std::vector<lsp::Location>{MakeLocalDefinitionLocation(*def, ctx)};
     }
     return std::nullopt;
@@ -1033,19 +1018,106 @@ std::optional<std::vector<lsp::Location>> TryResolveThisKeyword(TSNode node, con
 }
 
 /**
- * @brief Checks if a tree-sitter node type corresponds to an entity declaration.
- * @param[in] nodeType Tree-sitter node type string.
- * @return True if node is a recognized declaration node.
+ * @brief Checks if a tree-sitter node symbol corresponds to an entity declaration.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @return True if symbol is a recognized declaration node.
  */
-bool IsDeclarationNode(std::string_view nodeType)
+bool IsDeclarationNode(TSSymbol sym)
 {
-    static const std::unordered_set<std::string_view> declTypes = {
-        parser::nodes::FuncDeclaration,      parser::nodes::VariableDeclarator,   parser::nodes::Parameter,
-        parser::nodes::ClassDeclaration,     parser::nodes::InterfaceDeclaration, parser::nodes::InterfaceMethod,
-        parser::nodes::EnumDeclaration,      parser::nodes::EnumMember,           parser::nodes::FuncdefDeclaration,
-        parser::nodes::NamespaceDeclaration, parser::nodes::ForeachVariable,      parser::nodes::VirtualProperty,
-        parser::nodes::MixinDeclaration};
-    return declTypes.contains(nodeType);
+    const auto& gs = parser::GetGrammarSymbols();
+    return sym == gs.symFuncDeclaration || sym == gs.symVariableDeclarator || sym == gs.symParameter ||
+           sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration || sym == gs.symInterfaceMethod ||
+           sym == gs.symEnumDeclaration || sym == gs.symEnumMember || sym == gs.symFuncdefDeclaration ||
+           sym == gs.symNamespaceDeclaration || sym == gs.symForeachVariable || sym == gs.symVirtualProperty ||
+           sym == gs.symMixinDeclaration;
+}
+
+/**
+ * @brief Resolves the enclosing class or interface name for overridden method resolution.
+ * @param[in] ctx Definition context.
+ * @return Qualified or bare class/interface name, or empty string.
+ */
+static std::string ResolveTargetContainerClass(const DefinitionContext& ctx)
+{
+    if (ctx.vCtx.isVirtual && !ctx.vCtx.hostClass.empty())
+    {
+        return ctx.vCtx.hostClass;
+    }
+    const std::string physUri = analysis::ResolvePhysicalUri(ctx.vCtx, ctx.request.uri);
+    return ctx.request.symbolTable.FindEnclosingClassName(physUri, ctx.queryLine);
+}
+
+/**
+ * @brief Filters candidate symbols matching parameter count of the declaration.
+ * @param[in] symbols Base method candidates.
+ * @param[in] declNode Enclosing declaration node.
+ * @return Filtered symbols if any match, or original candidates.
+ */
+static std::vector<analysis::Symbol> FilterOverriddenSymbolsByArity(const std::vector<analysis::Symbol>& symbols,
+                                                                    TSNode declNode)
+{
+    TSNode paramsNode = parser::GetChildByField(declNode, parser::fields::Parameters);
+    uint32_t declaredParamCount = !ts_node_is_null(paramsNode) ? ts_node_named_child_count(paramsNode) : 0;
+
+    std::vector<analysis::Symbol> prioritized;
+    for (const auto& s : symbols)
+    {
+        if (s.type == analysis::SymbolType::Function &&
+            std::holds_alternative<analysis::FunctionSignature>(s.signature) &&
+            s.GetFunction().parameters.size() == declaredParamCount)
+        {
+            prioritized.push_back(s);
+        }
+    }
+    return prioritized.empty() ? symbols : prioritized;
+}
+
+/**
+ * @brief Attempts to resolve definition of an overridden method in base classes or interfaces.
+ * @param[in] node AST node at cursor.
+ * @param[in] declNode Enclosing declaration node.
+ * @param[in] ctx Definition context.
+ * @return Resolved base method location(s), or nullopt.
+ */
+std::optional<std::vector<lsp::Location>> TryResolveOverriddenMethodDefinition(TSNode node, TSNode declNode,
+                                                                               const DefinitionContext& ctx)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol declSym = ts_node_symbol(declNode);
+    if (declSym != gs.symFuncDeclaration && declSym != gs.symInterfaceMethod)
+    {
+        return std::nullopt;
+    }
+
+    std::string methodName = analysis::GetNodeText(node, ctx.request.sourceCode);
+    if (methodName.empty())
+    {
+        return std::nullopt;
+    }
+
+    std::string targetClass = ResolveTargetContainerClass(ctx);
+    if (targetClass.empty())
+    {
+        return std::nullopt;
+    }
+
+    analysis::LinkedBaseOptions linkedOpts;
+    if (ctx.request.engineRules)
+    {
+        linkedOpts.proxyMap = &ctx.request.engineRules->unusedRules.baseClassProxyMap;
+        linkedOpts.delegateProps = ctx.request.engineRules->unusedRules.baseClassDelegateProperties;
+    }
+
+    auto overriddenSyms =
+        analysis::FindOverriddenBaseMethodSymbols(targetClass, methodName, ctx.request.symbolTable, linkedOpts);
+    if (overriddenSyms.empty())
+    {
+        return std::nullopt;
+    }
+
+    auto finalCandidates = FilterOverriddenSymbolsByArity(overriddenSyms, declNode);
+    auto locations = ConvertSymbolsToLocations(finalCandidates, ctx.request);
+    return locations.empty() ? std::nullopt : std::make_optional(std::move(locations));
 }
 
 /**
@@ -1065,15 +1137,18 @@ std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(TSNode n
     {
         return std::nullopt;
     }
-    if (std::string_view(ts_node_type(p)) == parser::nodes::ScopedIdentifier)
+    const auto& gs = parser::GetGrammarSymbols();
+    TSSymbol pSym = ts_node_symbol(p);
+    if (pSym == gs.symScopedIdentifier)
     {
         TSNode gp = ts_node_parent(p);
         if (!ts_node_is_null(gp))
         {
             p = gp;
+            pSym = ts_node_symbol(p);
         }
     }
-    if (!IsDeclarationNode(ts_node_type(p)))
+    if (!IsDeclarationNode(pSym))
     {
         return std::nullopt;
     }
@@ -1082,6 +1157,11 @@ std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(TSNode n
         ts_node_start_byte(nameNode) != ts_node_start_byte(node))
     {
         return std::nullopt;
+    }
+
+    if (auto overriddenLocs = TryResolveOverriddenMethodDefinition(node, p, ctx))
+    {
+        return overriddenLocs;
     }
     TSPoint s = ts_node_start_point(node);
     TSPoint e = ts_node_end_point(node);
@@ -1105,7 +1185,7 @@ std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(TSNode n
  * @param[in] request Definition request context.
  * @return Clean base type name, or empty string if not found.
  */
-std::string ResolveLocalScopeTypeName(const std::string& nodeText, const DefinitionRequest& request)
+std::string ResolveLocalScopeTypeName(TSNode node, const std::string& nodeText, const DefinitionRequest& request)
 {
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     if (!rootScope)
@@ -1118,7 +1198,8 @@ std::string ResolveLocalScopeTypeName(const std::string& nodeText, const Definit
     {
         return "";
     }
-    const analysis::LocalDefinition* def = analysis::ResolveInScope(scope, nodeText);
+    uint32_t cursorByte = !ts_node_is_null(node) ? ts_node_start_byte(node) : UINT32_MAX;
+    const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte);
     if (def && !def->typeName.empty())
     {
         return analysis::CleanBaseType(def->typeName);
@@ -1241,10 +1322,49 @@ std::vector<analysis::Symbol> CollectTypeDefinitionSymbols(TSNode node, const st
     return typeSymbols;
 }
 
+/**
+ * @brief Filters CallReference symbols and prioritizes matching symbols from the local file.
+ * @param[in,out] symbols Candidate symbol vector to refine.
+ * @param[in] node AST identifier node under cursor.
+ * @param[in] nodeText Text of the AST node.
+ * @param[in] request Definition request context.
+ */
+void FilterAndPrioritizeLocalSymbols(std::vector<analysis::Symbol>& symbols, TSNode node, const std::string& nodeText,
+                                     const DefinitionRequest& request)
+{
+    std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
+    if (symbols.empty())
+    {
+        symbols = CollectTypeDefinitionSymbols(node, nodeText, request);
+        std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
+    }
+
+    if (symbols.size() > 1)
+    {
+        std::vector<analysis::Symbol> localSymbols;
+        for (const auto& s : symbols)
+        {
+            if (s.fileUri == request.uri)
+            {
+                localSymbols.push_back(s);
+            }
+        }
+        if (!localSymbols.empty())
+        {
+            symbols = std::move(localSymbols);
+        }
+    }
+}
+
 } // namespace
 
 std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest& request)
 {
+    if (!request.tree || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+
     if (auto includeLoc = TryResolveIncludeDirective(request))
     {
         return includeLoc;
@@ -1268,10 +1388,11 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
         return declFallback;
     }
 
+    const auto gsq = analysis::GetGlobalScopeQualifier(node, request.sourceCode);
     std::vector<analysis::Symbol> symbols = ResolveCandidateSymbols(node, nodeText, ctx);
-    if (symbols.empty())
+    if (symbols.empty() && !gsq.isGlobal)
     {
-        if (auto localFallback = TryResolveLocalDefinitionFallback(nodeText, ctx))
+        if (auto localFallback = TryResolveLocalDefinitionFallback(node, nodeText, ctx))
         {
             return localFallback;
         }
@@ -1285,20 +1406,9 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
         }
     }
 
-    if (symbols.size() > 1)
+    if (!gsq.isGlobal)
     {
-        std::vector<analysis::Symbol> localSymbols;
-        for (const auto& s : symbols)
-        {
-            if (s.fileUri == request.uri)
-            {
-                localSymbols.push_back(s);
-            }
-        }
-        if (!localSymbols.empty())
-        {
-            symbols = std::move(localSymbols);
-        }
+        FilterAndPrioritizeLocalSymbols(symbols, node, nodeText, request);
     }
 
     auto locations = ConvertSymbolsToLocations(symbols, request);
@@ -1312,6 +1422,11 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
 
 std::optional<std::vector<lsp::Location>> GetTypeDefinition(const DefinitionRequest& request)
 {
+    if (!request.tree || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+
     TSNode node{};
     std::string nodeText = GetNodeTextAt(request, node);
     if (nodeText.empty() || ts_node_is_null(node))
@@ -1319,7 +1434,7 @@ std::optional<std::vector<lsp::Location>> GetTypeDefinition(const DefinitionRequ
         return std::nullopt;
     }
 
-    std::string typeNameToFind = ResolveLocalScopeTypeName(nodeText, request);
+    std::string typeNameToFind = ResolveLocalScopeTypeName(node, nodeText, request);
     if (typeNameToFind.empty())
     {
         typeNameToFind = ResolveGlobalSymbolTypeName(node, nodeText, request);

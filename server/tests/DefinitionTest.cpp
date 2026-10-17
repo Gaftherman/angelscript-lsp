@@ -5,6 +5,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "config/EngineRuleConfig.h"
 #include "features/definition/DefinitionHandler.h"
 #include "parser/AngelScriptParser.h"
 
@@ -84,11 +85,13 @@ struct TestEnvironment
     }
 
     std::function<std::string(const std::string&)> resolveInclude = {};
+    config::EngineRuleConfig engineRules;
 
     std::optional<std::vector<lsp::Location>> DefAt(uint32_t line, uint32_t character)
     {
         DefinitionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
         req.resolveInclude = resolveInclude;
+        req.engineRules = &engineRules;
         return GetDefinition(req);
     }
 
@@ -772,4 +775,212 @@ TEST_CASE("DefinitionHandler - Go to Definition on Enum Member Declaration stays
     REQUIRE(defs->size() == 1);
     CHECK((*defs)[0].range.start.line == 2);
     CHECK((*defs)[0].range.start.character == 4);
+}
+
+TEST_CASE("DefinitionHandler - GAP-VISIBILITY-01: Sequential local variable visibility falls back to global before "
+          "declaration")
+{
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("varTarget");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Func");
+
+    const std::string code = "string " + varName +
+                             " = \"global\";\n"
+                             "void " +
+                             fnName +
+                             "() {\n"
+                             "    " +
+                             varName +
+                             ";\n"
+                             "    int " +
+                             varName +
+                             " = 42;\n"
+                             "    " +
+                             varName +
+                             ";\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // Line 2: "<varName>;" before local int declaration -> should resolve to global string at line 0
+    auto defBefore = env.DefAt(2, 4);
+    REQUIRE(defBefore.has_value());
+    REQUIRE(defBefore->size() == 1);
+    CHECK((*defBefore)[0].range.start.line == 0);
+
+    // Line 4: "<varName>;" after local int declaration -> should resolve to local int at line 3
+    auto defAfter = env.DefAt(4, 4);
+    REQUIRE(defAfter.has_value());
+    REQUIRE(defAfter->size() == 1);
+    CHECK((*defAfter)[0].range.start.line == 3);
+}
+
+TEST_CASE("Definition - External predefined class symbol when user file has call reference")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("CClientCommand");
+    const std::string predefUri = "file:///predefined/sven.as.predefined";
+    const std::string predefCode = "class " + className +
+                                   " {\n"
+                                   "    " +
+                                   className +
+                                   "();\n"
+                                   "}\n";
+
+    const std::string userCode = "void OnCmd(const " + className +
+                                 "@ args) {\n"
+                                 "    " +
+                                 className +
+                                 "(args);\n"
+                                 "}\n";
+
+    TestEnvironment env(userCode, "file:///scripts/main.as");
+    env.AddFile(predefUri, predefCode);
+
+    // Click on className in "const className@ args" (Line 0)
+    auto pos1 = FindPos(userCode, className);
+    auto def1 = env.DefAt(pos1.line, pos1.character);
+    REQUIRE(def1.has_value());
+    REQUIRE(!def1->empty());
+    CHECK((*def1)[0].uri.toString() == predefUri);
+
+    // Click on className in "className(args);" (Line 1)
+    auto pos2 = FindPos(userCode, className, userCode.find('\n'));
+    auto def2 = env.DefAt(pos2.line, pos2.character);
+    REQUIRE(def2.has_value());
+    REQUIRE(!def2->empty());
+    CHECK((*def2)[0].uri.toString() == predefUri);
+}
+
+TEST_CASE("Definition - Qualified funcdef shadowed by class method with identical name")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("NsMenu");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("MenuOptionSelect");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("InfoSection");
+
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    funcdef void " +
+                             fnName +
+                             "(int a);\n"
+                             "}\n"
+                             "class " +
+                             clsName +
+                             " {\n"
+                             "    void " +
+                             fnName +
+                             "() {}\n"
+                             "    " +
+                             nsName + "::" + fnName +
+                             "@ m_cb;\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // Find "fnName" in "nsName::fnName@ m_cb;"
+    const size_t posInDecl = code.find(nsName + "::" + fnName) + nsName.length() + 2;
+    auto pos = FindPos(code, fnName, posInDecl);
+
+    auto def = env.DefAt(pos.line, pos.character);
+    REQUIRE(def.has_value());
+    REQUIRE(!def->empty());
+    // Should point to line 1 (the funcdef), not line 4 (the class method)
+    CHECK((*def)[0].range.start.line == 1);
+}
+
+TEST_CASE("Definition - Delegate member pointer this.Method jumps to class method")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("OnClick");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Button");
+
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    void " +
+                             fnName +
+                             "() {}\n"
+                             "    void Init() {\n"
+                             "        this." +
+                             fnName +
+                             ";\n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // Find "fnName" in "this.fnName;"
+    const size_t thisPos = code.find("this." + fnName) + 5;
+    auto pos = FindPos(code, fnName, thisPos);
+
+    auto def = env.DefAt(pos.line, pos.character);
+    REQUIRE(def.has_value());
+    REQUIRE(!def->empty());
+    CHECK((*def)[0].range.start.line == 1);
+}
+
+TEST_CASE("Definition - Go To Definition does not jump to funcdef parameter from unrelated function")
+{
+    const std::string funcdefName = angel_lsp::test::GenerateRandomSymbolName("OptionCallback");
+    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("selectedOption");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("UnrelatedFunc");
+
+    const std::string code = "funcdef void " + funcdefName + "(int " + paramName +
+                             ");\n"
+                             "void " +
+                             funcName +
+                             "() {\n"
+                             "    " +
+                             paramName +
+                             ";\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const size_t posIdx = code.find("    " + paramName) + 4;
+    auto pos = FindPos(code, paramName, posIdx);
+
+    auto def = env.DefAt(pos.line, pos.character);
+    CHECK((!def.has_value() || def->empty()));
+}
+
+TEST_CASE("Definition - Go To Definition on overriding method declaration navigates to base method")
+{
+    const std::string baseClass = angel_lsp::test::GenerateRandomSymbolName("BaseWeapon");
+    const std::string proxyClass = angel_lsp::test::GenerateRandomSymbolName("ScriptBaseWeapon");
+    const std::string derivedClass = angel_lsp::test::GenerateRandomSymbolName("CustomPistol");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("DoSpecialAction");
+
+    const std::string baseCode = "class " + baseClass + " {\n" + "    void " + methodName + "() {}\n" + "}\n" +
+                                 "class " + proxyClass + " {\n" + "    " + baseClass +
+                                 "@ BaseClass { get const { return null; } }\n" + "}\n";
+
+    const std::string derivedCode =
+        "class " + derivedClass + " : " + proxyClass + " {\n" + "    void " + methodName + "() {}\n" + "}\n";
+
+    TestEnvironment env(derivedCode, "file:///derived.as");
+    env.engineRules.unusedRules.baseClassDelegateProperties = {"BaseClass"};
+    env.AddFile("file:///base.as", baseCode);
+
+    // Find methodName in derivedCode declaration
+    auto pos = FindPos(derivedCode, methodName);
+    auto def = env.DefAt(pos.line, pos.character);
+
+    REQUIRE(def.has_value());
+    REQUIRE(!def->empty());
+    CHECK((*def)[0].uri.toString().find("base.as") != std::string::npos);
+    CHECK((*def)[0].range.start.line == 1);
+}
+
+TEST_CASE("Definition - Global ::Deploy inside namespace and mixin does not navigate to enclosing class method")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("INS2BASE");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("WeaponBase");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Deploy");
+
+    const std::string code = "namespace " + nsName + " {\n" + "    mixin class " + clsName + " {\n" + "        bool " +
+                             methodName + "(string a, int b) { return true; }\n" +
+                             "        void KickBack() { ::" + methodName + "(); }\n" + "    }\n" + "}\n";
+
+    TestEnvironment env(code);
+    const size_t callPos = code.find("::" + methodName);
+    auto pos = FindPos(code, methodName, callPos + 2);
+
+    auto def = env.DefAt(pos.line, pos.character);
+    CHECK((!def.has_value() || def->empty()));
 }

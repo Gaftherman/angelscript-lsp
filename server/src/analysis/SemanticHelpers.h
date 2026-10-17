@@ -4,10 +4,12 @@
 #include "analysis/ExpressionTypeCache.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/TypeSanitization.h"
+#include "config/EngineRuleConfig.h"
 #include "parser/ASTUtils.h"
 #include "parser/Primitives.h"
 #include <ankerl/unordered_dense.h>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
@@ -167,6 +169,112 @@ bool IsReservedKeyword(const std::string& name);
     return a == segB || segA == b || segA == segB;
 }
 
+/**
+ * @brief Checks if container is identical to or nested inside namespace ns without heap allocation.
+ */
+[[nodiscard]] constexpr bool IsSameOrNestedNamespace(std::string_view container, std::string_view ns) noexcept
+{
+    if (ns.empty())
+    {
+        return false;
+    }
+    if (container == ns)
+    {
+        return true;
+    }
+    return container.size() > ns.size() + 2 && container.starts_with(ns) && container[ns.size()] == ':' &&
+           container[ns.size() + 1] == ':';
+}
+
+/**
+ * @brief Checks if full matches suffix or ends with "::" + suffix without heap allocation.
+ */
+[[nodiscard]] constexpr bool EndsWithScopedSuffix(std::string_view full, std::string_view suffix) noexcept
+{
+    if (suffix.empty())
+    {
+        return false;
+    }
+    if (full == suffix)
+    {
+        return true;
+    }
+    return full.size() > suffix.size() + 2 && full.ends_with(suffix) && full[full.size() - suffix.size() - 2] == ':' &&
+           full[full.size() - suffix.size() - 1] == ':';
+}
+
+/**
+ * @brief Checks if a scoped identifier exactly equals prefix::suffix without heap string allocation.
+ * @param[in] scoped The full scoped identifier to test.
+ * @param[in] prefix The expected scope prefix.
+ * @param[in] suffix The expected identifier suffix.
+ * @return True if scoped exactly matches prefix + "::" + suffix.
+ */
+[[nodiscard]] constexpr bool MatchesScopedPair(std::string_view scoped, std::string_view prefix,
+                                               std::string_view suffix) noexcept
+{
+    return scoped.size() == prefix.size() + 2 + suffix.size() && scoped.starts_with(prefix) &&
+           scoped.ends_with(suffix) && scoped.substr(prefix.size(), 2) == "::";
+}
+
+/**
+ * @brief Checks if a qualified symbol target ends with suffix preceded by a scope delimiter "::".
+ * @param[in] target Enclosing qualified string.
+ * @param[in] suffix Candidate trailing qualifier segment.
+ * @return True if target ends with "::" + suffix.
+ */
+[[nodiscard]] constexpr bool SuffixMatchesScoped(std::string_view target, std::string_view suffix) noexcept
+{
+    return target.ends_with(suffix) && target.size() > suffix.size() + 1 &&
+           target.substr(target.size() - suffix.size() - 2, 2) == "::";
+}
+
+/**
+ * @brief Checks if an identifier qualifier matches an enum's declaring type or its enclosing namespace.
+ * @param[in] qualifier Qualifier prefix extracted from scoped reference (e.g. "INS2BASE" or "INS2_SELECTFIRE_OPTIONS").
+ * @param[in] declaringEnum Declaring enum qualified name (e.g. "INS2BASE::INS2_SELECTFIRE_OPTIONS").
+ * @return True if qualifier matches the enum name, full enum path, or enclosing namespace.
+ */
+[[nodiscard]] constexpr bool EnumQualifierMatches(std::string_view qualifier, std::string_view declaringEnum) noexcept
+{
+    while (qualifier.starts_with(':') || qualifier.starts_with(' ') || qualifier.starts_with('\t'))
+    {
+        qualifier.remove_prefix(1);
+    }
+    if (qualifier.empty() || declaringEnum.empty())
+    {
+        return false;
+    }
+    if (qualifier == declaringEnum || SuffixMatchesScoped(declaringEnum, qualifier))
+    {
+        return true;
+    }
+    const size_t lastSep = declaringEnum.rfind("::");
+    if (lastSep != std::string_view::npos)
+    {
+        std::string_view nsPrefix = declaringEnum.substr(0, lastSep);
+        return qualifier == nsPrefix || SuffixMatchesScoped(nsPrefix, qualifier);
+    }
+    return false;
+}
+
+/**
+ * @brief Strips leading '@' or 'this.' from candidate identifier strings.
+ */
+[[nodiscard]] std::string_view CleanCandidateIdentifier(std::string_view text) noexcept;
+
+/**
+ * @brief Validates if string is a valid identifier or qualified scoped identifier (e.g. NS::Class).
+ */
+[[nodiscard]] bool IsValidIdentifierOrQualified(std::string_view text) noexcept;
+
+/**
+ * @brief Collects line ranges of declaring namespace and enclosing containers in fileUri.
+ */
+[[nodiscard]] std::vector<std::pair<uint32_t, uint32_t>>
+CollectNamespaceAndContainerLineRanges(const SymbolTable& symbolTable, const std::string& fileUri,
+                                       std::string_view declaringNamespace);
+
 [[nodiscard]] constexpr bool IsFloatingPointPrimitive(std::string_view typeName) noexcept
 {
     return parser::primitives::IsFloatingPoint(typeName);
@@ -248,6 +356,14 @@ bool IsFromPredefinedStub(const Symbol& sym, const DiagnosticContext& ctx);
  * @param ctx DiagnosticContext carrying the request's source text and file URI.
  * @return True if the declaration is spelled with a leading '~'.
  */
+/**
+ * @brief Checks whether a function symbol is a destructor declaration given document source text.
+ * @param[in] sym Function symbol to classify.
+ * @param[in] source Document source text.
+ * @return True if the symbol is a destructor declaration.
+ */
+bool IsDestructorDeclaration(const Symbol& sym, std::string_view source);
+
 bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx);
 
 /**
@@ -416,6 +532,51 @@ std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className,
 std::string ResolveBaseClass(std::string_view className, const SymbolTable& symbolTable);
 
 /**
+ * @brief Configuration options for resolving delegate or proxy base classes.
+ */
+struct LinkedBaseOptions
+{
+    std::span<const std::string> delegateProps = {};
+    const config::StringVectorMap* proxyMap = nullptr;
+
+    [[nodiscard]] bool HasActiveOptions() const noexcept
+    {
+        return (proxyMap && !proxyMap->empty()) || !delegateProps.empty();
+    }
+};
+
+/**
+ * @brief Resolves linked proxy or delegate base class names for an ancestor class.
+ * @param[in] className Ancestor or wrapper class name to inspect.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in] options Options containing optional custom delegate properties and proxy map.
+ * @return List of clean delegate/proxy base class names without duplicates.
+ */
+std::vector<std::string> ResolveLinkedBaseClasses(std::string_view className, const SymbolTable& symbolTable,
+                                                  const LinkedBaseOptions& options = {});
+
+/**
+ * @brief Locates candidate base or interface method symbols overridden by a derived method.
+ * @param[in] containerClass Qualified or bare container class name.
+ * @param[in] methodName Name of the overriding method.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in] options Options containing optional custom delegate properties and proxy map.
+ * @return List of matching base method symbols across ancestors and linked base types.
+ */
+std::vector<Symbol> FindOverriddenBaseMethodSymbols(std::string_view containerClass, std::string_view methodName,
+                                                    const SymbolTable& symbolTable,
+                                                    const LinkedBaseOptions& options = {});
+
+/**
+ * @brief Expands an inheritance hierarchy by including ancestors of host classes incorporating the mixin.
+ * @param[in] containerClass Class or mixin name to check.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in,out] hierarchy Target hierarchy list to append host class ancestors to.
+ */
+void ExpandMixinHostHierarchies(std::string_view containerClass, const SymbolTable& symbolTable,
+                                std::vector<std::string>& hierarchy);
+
+/**
  * @brief The `get_X`/`set_X` methods, anywhere in a type's hierarchy, that stand for `X`.
  *
  * `class E { int get_Health() const property; void set_Health(int) property; }` gives `e.Health`
@@ -555,14 +716,23 @@ std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std:
 std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode);
 
 /**
+ * @brief Retrieves cached using namespace names for the request, computing them at most once.
+ * @param request The semantic analysis request.
+ * @return Reference to the vector of using namespace names.
+ */
+[[nodiscard]] const std::vector<std::string>& GetUsingNamespaces(const SemanticAnalysisRequest& request);
+
+/**
  * @brief Checks if a scope prefix is a known namespace, class, interface, enum, or typedef.
  * @param prefix Scope prefix string (e.g. "Geometry", "Parent", "UnknownSpace").
  * @param node AST node for lexical context.
  * @param sourceCode Document source text.
  * @param table Symbol table.
+ * @param precomputedUsings Optional pre-collected using namespaces to avoid tree traversals.
  * @return True if prefix is a valid known scope.
  */
-bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourceCode, const SymbolTable& table);
+bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourceCode, const SymbolTable& table,
+                  std::span<const std::string> precomputedUsings = {});
 
 /**
  * @brief Resolves an unqualified or qualified name within a container chain and active using namespaces.
@@ -648,6 +818,7 @@ struct ExpressionTypeContext
     std::string_view arrayTypeName = "array";
     bool disableIntegerDivision = false;
     ExpressionTypeCache* cache = nullptr;
+    const NodeIndex* nodeIndex = nullptr;
 
     ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "")
         : scope(sc), symbolTable(st), sourceCode(src), uri(u)
@@ -658,7 +829,8 @@ struct ExpressionTypeContext
         : scope(sc), symbolTable(diagCtx.request.symbolTable), sourceCode(diagCtx.request.sourceCode),
           uri(diagCtx.request.fileUri), stringTypeName(diagCtx.request.GetEffectiveStringTypeName()),
           arrayTypeName(diagCtx.request.GetEffectiveArrayTypeName()),
-          disableIntegerDivision(diagCtx.request.DisablesIntegerDivision()), cache(diagCtx.request.exprCache)
+          disableIntegerDivision(diagCtx.request.DisablesIntegerDivision()), cache(diagCtx.request.exprCache),
+          nodeIndex(diagCtx.request.nodeIndex)
     {
     }
 };
@@ -925,12 +1097,11 @@ Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callNa
 
 /**
  * @brief Checks if an identifier resolves to a callable local or parameter funcdef in scope.
- * @param[in] name Identifier name.
- * @param[in] scope Enclosing lexical scope.
- * @param[in] table Symbol table.
+ * @param[in] refByte Optional reference byte position for sequential lexical visibility.
  * @return Synthesized function Symbol if callee is a funcdef variable, nullopt otherwise.
  */
-std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const Scope* scope, const SymbolTable& table);
+std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const Scope* scope, const SymbolTable& table,
+                                                uint32_t refByte = UINT32_MAX);
 
 /**
  * @brief Checks whether a text expression represents a simple literal constant value.
@@ -938,5 +1109,24 @@ std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const S
  * @return True if expression is a number, boolean, or string literal.
  */
 bool IsSimpleLiteralExpression(std::string_view expr);
+
+/**
+ * @brief Locates the AST node where a mixin is included inside a host class declaration (base list or body).
+ * @param[in] hostNode Enclosing class_declaration AST node.
+ * @param[in] mixinName Mixin name as listed on the class (qualified or short).
+ * @param[in] mixinShortName Short identifier of the mixin symbol.
+ * @param[in] sourceCode Document source text.
+ * @return Matching AST node inside base_class_list or class body, or null TSNode if not found.
+ */
+TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::string_view mixinShortName,
+                              std::string_view sourceCode);
+
+/**
+ * @brief Extracts the preceding scope qualifier for a datatype node, if any.
+ * @param[in] datatypeNode AST datatype node.
+ * @param[in] sourceCode Document source text.
+ * @return Scope prefix string ending in "::", or empty if unqualified.
+ */
+std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode);
 
 } // namespace angel_lsp::analysis

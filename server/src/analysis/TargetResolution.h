@@ -84,8 +84,8 @@ bool IsValidIdentifier(std::string_view name);
  */
 struct ResolveTargetRequest
 {
-    const std::string& uri;
-    const std::string& sourceCode;
+    std::string uri;
+    std::string sourceCode;
     TSTree* tree = nullptr;
     TargetPosition position;
     const SymbolTable& symbolTable;
@@ -100,8 +100,8 @@ struct ResolveTargetRequest
 struct CollectOccurrencesRequest
 {
     const TargetDescriptor& target;
-    const std::string& currentUri;
-    const std::string& sourceCode;
+    std::string currentUri;
+    std::string sourceCode;
     TSTree* tree = nullptr;
     const SymbolTable& symbolTable;
     const ScopeIndex& scopeIndex;

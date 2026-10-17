@@ -21,6 +21,8 @@ inline constexpr std::string_view PrivateMemberAccess = "as-err-private-member-a
 inline constexpr std::string_view ProtectedMemberAccess = "as-err-protected-member-access";
 inline constexpr std::string_view MemberNotFound = "as-err-member-not-found";
 inline constexpr std::string_view LambdaClosureDisallowed = "as-err-lambda-closure-disallowed";
+inline constexpr std::string_view LambdaThisDisallowed = "as-err-lambda-this-disallowed";
+inline constexpr std::string_view LambdaMemberAccess = "as-err-lambda-member-access";
 
 // Call and Overload Errors
 inline constexpr std::string_view CallArgumentCount = "as-err-call-argument-count";
@@ -141,6 +143,7 @@ inline constexpr std::string_view ExpressionIsDataType = "as-err-expression-is-d
 inline constexpr std::string_view ForeachUnsupported = "as-err-foreach-unsupported";
 inline constexpr std::string_view FuncdefAttribute = "as-err-funcdef-attribute";
 inline constexpr std::string_view FuncdefNotHandle = "as-err-funcdef-not-handle";
+inline constexpr std::string_view GlobalFunctionAccessModifier = "as-err-global-function-access-modifier";
 inline constexpr std::string_view GlobalFunctionQualifiers = "as-err-global-function-qualifiers";
 inline constexpr std::string_view GlobalVariableAccessModifier = "as-err-global-variable-access-modifier";
 inline constexpr std::string_view ImportHasBody = "as-err-import-has-body";
@@ -202,6 +205,7 @@ inline constexpr std::string_view SignatureMismatchFuncHandle = "as-err-signatur
 inline constexpr std::string_view StandaloneAnonymousFunction = "as-err-standalone-anonymous-function";
 inline constexpr std::string_view TemplateClassNotSupported = "as-err-template-class-not-supported";
 inline constexpr std::string_view ValueAssignForRef = "as-err-value-assign-for-ref";
+inline constexpr std::string_view VirtualPropertyOutsideClass = "as-err-virtual-property-outside-class";
 inline constexpr std::string_view VirtualPropertySignature = "as-err-virtual-property-signature";
 inline constexpr std::string_view VoidParameter = "as-err-void-parameter";
 inline constexpr std::string_view VoidReference = "as-err-void-reference";
@@ -224,6 +228,11 @@ inline constexpr std::string_view HandleComparisonEquality = "as-warn-handle-com
 inline constexpr std::string_view IllegalOperation = "as-err-illegal-operation";
 inline constexpr std::string_view UnreachableCode = "as-warn-unreachable-code";
 inline constexpr std::string_view UnusedVariable = "as-warn-unused-variable";
+inline constexpr std::string_view UnusedField = "as-warn-unused-field";
+inline constexpr std::string_view UnusedGlobalVariable = "as-warn-unused-global-variable";
+inline constexpr std::string_view UnusedFunction = "as-warn-unused-function";
+inline constexpr std::string_view UnusedMethod = "as-warn-unused-method";
+inline constexpr std::string_view UnusedClass = "as-warn-unused-class";
 inline constexpr std::string_view ShadowGlobal = "as-warn-shadow-global";
 inline constexpr std::string_view BaseNotFound = "as-err-base-not-found";
 inline constexpr std::string_view InvalidReferenceReturn = "as-err-invalid-reference-return";
@@ -231,4 +240,12 @@ inline constexpr std::string_view ReadonlyHandle = "as-err-readonly-handle";
 inline constexpr std::string_view StandaloneReference = "as-err-standalone-reference";
 inline constexpr std::string_view ReadonlyReference = "as-err-readonly-reference";
 inline constexpr std::string_view MetadataDisabled = "as-warn-metadata-disabled";
+
+// Data-driven Engine Rules (angelscript.rules.json)
+inline constexpr std::string_view EngineStorageRule = "as-warn-engine-storage-rule";
+inline constexpr std::string_view EngineTypeSuggestion = "as-hint-engine-type-suggestion";
+inline constexpr std::string_view EngineSchedulerSafety = "as-warn-engine-scheduler-safety";
+inline constexpr std::string_view EngineScheduledEnumDiscriminant = "as-warn-engine-scheduled-enum-discriminant";
+
+inline constexpr std::string_view VariableInSwitchCase = "as-err-variable-in-switch-case";
 } // namespace angel_lsp::diagnostics::codes

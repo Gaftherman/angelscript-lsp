@@ -378,6 +378,29 @@ TEST_CASE("FunctionRules - Reports const on a global function as an error")
     CHECK(HasCode(AnalyzeFunctionSnippet("void Think() const { }\n"), "as-err-global-function-qualifiers"));
 }
 
+TEST_CASE("FunctionRules - Reports access modifier on a global function")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("GlobalFn");
+    const std::string code = "private void " + funcName + "() { }\n";
+    CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-global-function-access-modifier"));
+}
+
+TEST_CASE("FunctionRules - Reports access modifier on a namespace function")
+{
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("NS");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("NsFn");
+    const std::string code = "namespace " + ns + "\n{\n    protected void " + funcName + "() { }\n}\n";
+    CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-global-function-access-modifier"));
+}
+
+TEST_CASE("FunctionRules - Reports const on a namespace function")
+{
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("NS");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("NsFn");
+    const std::string code = "namespace " + ns + "\n{\n    void " + funcName + "() const { }\n}\n";
+    CHECK(HasCode(AnalyzeFunctionSnippet(code), "as-err-global-function-qualifiers"));
+}
+
 TEST_CASE("FunctionRules - Reports override and final on a global function as an error")
 {
     const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("Think");
@@ -398,10 +421,12 @@ TEST_CASE("FunctionRules - Member qualifiers on a method are accepted")
 {
     const std::string code = "class Entity\n"
                              "{\n"
-                             "    int Health() const { return 0; }\n"
+                             "    private int Health() const { return 0; }\n"
                              "}\n";
 
-    CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code), "as-err-global-function-qualifiers"));
+    const auto diags = AnalyzeFunctionSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-global-function-qualifiers"));
+    CHECK_FALSE(HasCode(diags, "as-err-global-function-access-modifier"));
 }
 
 // =====================================================================================
@@ -984,6 +1009,42 @@ TEST_CASE("FunctionRules - The implementing class's accessor is still hinted")
     CHECK(hints == 1);
 }
 
+TEST_CASE("FunctionRules - Accessor portability hint is not emitted for a namespace function")
+{
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("Math");
+    const std::string fnName = "get_" + angel_lsp::test::GenerateRandomSymbolName("Value");
+    const std::string code = "namespace " + ns +
+                             "\n"
+                             "{\n"
+                             "    int " +
+                             fnName +
+                             "() { return 42; }\n"
+                             "}\n";
+
+    angel_lsp::config::DiagnosticsConfig diagnosticsConfig;
+    diagnosticsConfig.reportAccessorPortability = true;
+
+    const auto diagnostics = AnalyzeFunctionSnippet(code, "file:///funcs.as", nullptr, &diagnosticsConfig);
+    CHECK(std::none_of(diagnostics.begin(), diagnostics.end(),
+                       [](const Diagnostic& d) { return d.code == "as-hint-accessor-portability"; }));
+}
+
+TEST_CASE("FunctionRules - Virtual property declared outside a class emits as-err-virtual-property-outside-class")
+{
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("GlobalScope");
+    const std::string propName = "get_" + angel_lsp::test::GenerateRandomSymbolName("Prop");
+    const std::string code = "namespace " + ns +
+                             "\n"
+                             "{\n"
+                             "    property int " +
+                             propName +
+                             "() { return 1; }\n"
+                             "}\n";
+
+    const auto diagnostics = AnalyzeFunctionSnippet(code);
+    CHECK(HasCode(diagnostics, "as-err-virtual-property-outside-class"));
+}
+
 TEST_CASE("FunctionRules - Reports standalone anonymous function")
 {
     const auto analyzeWithTree = [](const std::string& code)
@@ -1108,4 +1169,38 @@ TEST_CASE("FunctionRules - Reports a reserved keyword used as a parameter name")
     CHECK_FALSE(hasReservedError(analyze("void ReservedProbeFour(float super)\n{\n}\n")));
     CHECK_FALSE(hasReservedError(analyze("void ReservedProbeFive(int public)\n{\n}\n")));
     CHECK_FALSE(hasReservedError(analyze("void ReservedProbeSix(int ordinary)\n{\n}\n")));
+}
+
+TEST_CASE("FunctionRules - W152 property accessor portability suppression")
+{
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("Prop");
+    const std::string snippet = "class Host\n{\n    int get_" + propName + "() { return 42; }\n}\n";
+
+    // Case 1: Default diagnostics (reportAccessorPortability = false) -> No W152
+    {
+        angel_lsp::config::DiagnosticsConfig diag;
+        diag.reportAccessorPortability = false;
+        auto diags = AnalyzeFunctionSnippet(snippet, "file:///funcs.as", nullptr, &diag);
+        CHECK_FALSE(HasCode(diags, "as-hint-accessor-portability"));
+    }
+
+    // Case 2: Mode 2 with reportAccessorPortability = true -> No W152
+    {
+        angel_lsp::config::EngineProperties engine;
+        engine.propertyAccessorMode = 2;
+        angel_lsp::config::DiagnosticsConfig diag;
+        diag.reportAccessorPortability = true;
+        auto diags = AnalyzeFunctionSnippet(snippet, "file:///funcs.as", &engine, &diag);
+        CHECK_FALSE(HasCode(diags, "as-hint-accessor-portability"));
+    }
+
+    // Case 3: Mode 3 with reportAccessorPortability = true -> Emits W152
+    {
+        angel_lsp::config::EngineProperties engine;
+        engine.propertyAccessorMode = 3;
+        angel_lsp::config::DiagnosticsConfig diag;
+        diag.reportAccessorPortability = true;
+        auto diags = AnalyzeFunctionSnippet(snippet, "file:///funcs.as", &engine, &diag);
+        CHECK(HasCode(diags, "as-hint-accessor-portability"));
+    }
 }

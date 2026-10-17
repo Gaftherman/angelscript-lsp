@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config/ServerConfig.h"
 #include <string>
 #include <string_view>
 #include <vector>
@@ -83,4 +84,11 @@ std::string GetProfileSyntheticUri(EngineProfileKind kind);
  * @return Detected EngineProfileKind.
  */
 EngineProfileKind DetectEngineProfileFromWorkspace(const std::vector<std::string>& fileNamesOrSamples);
+
+/**
+ * @brief Retrieves default engine properties associated with a built-in profile.
+ * @param[in] kind Engine profile kind.
+ * @return Default EngineProperties for the profile.
+ */
+config::EngineProperties GetDefaultEngineProperties(EngineProfileKind kind);
 } // namespace angel_lsp::analysis

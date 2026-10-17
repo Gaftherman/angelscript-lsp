@@ -169,20 +169,19 @@ uint32_t ListValueCount(TSNode listNode)
 {
     uint32_t separators = 0;
     uint32_t written = 0;
-    const uint32_t count = ts_node_child_count(listNode);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_child(listNode, i);
-        const std::string_view type = NodeType(child);
-        if (type == ",")
-        {
-            ++separators;
-        }
-        else if (ts_node_is_named(child) && type != "comment")
-        {
-            ++written;
-        }
-    }
+    parser::ForEachChildNode(listNode,
+                             [&](TSNode child)
+                             {
+                                 const std::string_view type = NodeType(child);
+                                 if (type == ",")
+                                 {
+                                     ++separators;
+                                 }
+                                 else if (ts_node_is_named(child) && type != "comment")
+                                 {
+                                     ++written;
+                                 }
+                             });
 
     if (separators > 0)
     {
@@ -928,6 +927,109 @@ void ValidateStructAggregateList(TSNode listNode, const std::string& type, const
  * @param[in] targetType Target type being initialized.
  * @param[in] valCtx     Validation context.
  */
+/**
+ * @brief Checks if a type is a universal variant proxy class with opAssign(?&in) and zero fields.
+ */
+bool IsUniversalProxyClass(const std::string& type, const ListValidationContext& valCtx)
+{
+    const auto opAssignSyms = valCtx.ctx.request.symbolTable.FindMemberSymbolPtr(type, "opAssign");
+    if (!opAssignSyms)
+    {
+        return false;
+    }
+    for (const auto& sym : *opAssignSyms)
+    {
+        if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
+        {
+            continue;
+        }
+        const auto& fn = sym.GetFunction();
+        if (!fn.parameters.empty() && fn.parameters[0].baseTypeName == "?")
+        {
+            const AggregateStructInfo structInfo =
+                InspectAggregateStruct(ReadTemplateSpelling(type), valCtx.ctx, valCtx.cache);
+            return structInfo.fields.empty() && !structInfo.hasListSupport;
+        }
+    }
+    return false;
+}
+
+static bool HasStringIndex(TSNode left)
+{
+    TSNode idx = parser::GetChildByField(left, parser::fields::Index);
+    if (ts_node_is_null(idx) && ts_node_named_child_count(left) > 1)
+    {
+        idx = ts_node_named_child(left, 1);
+    }
+    if (!ts_node_is_null(idx))
+    {
+        const std::string_view idxType = ts_node_type(idx);
+        return idxType == "string_literal" || idxType == "concatenated_string";
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if an initializer list is being assigned to a subscript on an associative container.
+ */
+bool IsAssociativeSubscriptTarget(TSNode listNode, const std::string& type, const ListValidationContext& valCtx)
+{
+    TSNode parent = parser::GetParent(listNode);
+    if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "assignment_expression")
+    {
+        return false;
+    }
+    TSNode left = parser::GetChildByField(parent, parser::fields::Left);
+    if (ts_node_is_null(left) || std::string_view(ts_node_type(left)) != "index_expression")
+    {
+        return false;
+    }
+    TSNode obj = parser::GetChildByField(left, parser::fields::Object);
+    if (ts_node_is_null(obj) && ts_node_named_child_count(left) > 0)
+    {
+        obj = ts_node_named_child(left, 0);
+    }
+    if (ts_node_is_null(obj))
+    {
+        return false;
+    }
+    const std::string objType =
+        ResolveExpressionType(obj, ExpressionTypeContext(valCtx.elements.scopeRoot, valCtx.ctx));
+    if (objType.empty())
+    {
+        return false;
+    }
+    if (InspectDictionary(ReadTemplateSpelling(objType), valCtx.ctx).isDict)
+    {
+        return true;
+    }
+    if (HasStringIndex(left))
+    {
+        const AggregateStructInfo structInfo =
+            InspectAggregateStruct(ReadTemplateSpelling(type), valCtx.ctx, valCtx.cache);
+        return structInfo.fields.empty() && !structInfo.hasListSupport;
+    }
+    return false;
+}
+
+static bool IsUnsupportedTargetType(TSNode listNode, const std::string& type, const ListValidationContext& valCtx)
+{
+    return IsCorePrimitive(type) || type == "?" || IsUniversalProxyClass(type, valCtx) ||
+           IsAssociativeSubscriptTarget(listNode, type, valCtx);
+}
+
+static void CheckUnknownListPattern(TSNode listNode, const std::string& type, const ListValidationContext& valCtx)
+{
+    if (valCtx.depth == 0 && valCtx.ctx.request.symbolTable.HasSymbolAnywhere(type) &&
+        !valCtx.ctx.request.IsRegisteredSymbol(type))
+    {
+        const TSPoint start = ts_node_start_point(listNode);
+        const TSPoint end = ts_node_end_point(listNode);
+        valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-hint-list-pattern-unknown", type,
+                               DiagnosticSeverity::Hint);
+    }
+}
+
 void ValidateList(TSNode listNode, const std::string& targetType, const ListValidationContext& valCtx)
 {
     if (valCtx.depth >= k_maxAstDepth || ts_node_is_null(listNode))
@@ -941,7 +1043,7 @@ void ValidateList(TSNode listNode, const std::string& targetType, const ListVali
         return;
     }
 
-    if (IsCorePrimitive(type) || type == "?" || type == "dictionaryValue")
+    if (IsUnsupportedTargetType(listNode, type, valCtx))
     {
         EmitAtNode(listNode, valCtx.ctx, "as-err-initializer-list-not-supported", type);
         return;
@@ -973,15 +1075,7 @@ void ValidateList(TSNode listNode, const std::string& targetType, const ListVali
         return;
     }
 
-    // A class with no member fields or list pattern
-    if (valCtx.depth == 0 && valCtx.ctx.request.symbolTable.HasSymbolAnywhere(type) &&
-        !valCtx.ctx.request.IsRegisteredSymbol(type))
-    {
-        const TSPoint start = ts_node_start_point(listNode);
-        const TSPoint end = ts_node_end_point(listNode);
-        valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-hint-list-pattern-unknown", type,
-                               DiagnosticSeverity::Hint);
-    }
+    CheckUnknownListPattern(listNode, type, valCtx);
 }
 
 /**

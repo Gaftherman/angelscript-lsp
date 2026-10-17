@@ -473,6 +473,11 @@ void CollectSubtypesByScan(const SubtypeQueryContext& ctx, std::vector<lsp::Type
 
 std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const TypeHierarchyPrepareRequest& request)
 {
+    if (!request.tree || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+
     TSNode node{};
     const std::string name = IdentifierAt(request, node);
 

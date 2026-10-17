@@ -1,11 +1,14 @@
 #include <doctest/doctest.h>
 
+#include "analysis/EngineProfiles.h"
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/TypeConversionChecker.h"
+#include "config/EngineRuleConfig.h"
+#include "config/EngineRuleParser.h"
 #include "config/ServerConfig.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
@@ -220,5 +223,140 @@ TEST_CASE("EngineProperties: CLI flags and boolean value parsing")
         CHECK(config.engine.alwaysImplDefaultConstruct == true);
         CHECK(config.engine.allowMultilineStrings == true);
         CHECK(config.engine.disallowValueAssignForRef == true);
+    }
+}
+
+TEST_CASE("EngineProperties: JSON deserialization with asEP_* and camelCase keys")
+{
+    SUBCASE("asEP_* keys deserialization and ApplyEngineProperties")
+    {
+        const std::string json = R"({
+            "engineProperties": {
+                "asEP_ALLOW_UNSAFE_REFERENCES": true,
+                "asEP_OPTIMIZE_BYTE_CODE": false,
+                "asEP_COPY_SCRIPT_SECTIONS": true,
+                "asEP_MAX_STACK_SIZE": 1024,
+                "asEP_USE_CHARACTER_LITERALS": 1,
+                "asEP_ALLOW_MULTILINE_STRINGS": true,
+                "asEP_ALLOW_IMPLICIT_HANDLE_TYPES": false,
+                "asEP_BUILD_WITHOUT_LINE_CUES": true,
+                "asEP_INIT_GLOBAL_VARS_AFTER_BUILD": false,
+                "asEP_REQUIRE_ENUM_SCOPE": true,
+                "asEP_SCRIPT_SCANNER": 1,
+                "asEP_INCLUDE_JIT_INSTRUCTIONS": false,
+                "asEP_STRING_ENCODING": 0,
+                "asEP_PROPERTY_ACCESSOR_MODE": 2,
+                "asEP_EXPAND_DEF_ARRAY_TO_TMPL": true,
+                "asEP_AUTO_GARBAGE_COLLECT": true,
+                "asEP_DISALLOW_GLOBAL_VARS": false,
+                "asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT": true,
+                "asEP_COMPILER_WARNINGS": 2,
+                "asEP_DISALLOW_VALUE_ASSIGN_FOR_REF": true,
+                "asEP_ALTER_SYNTAX_NAMED_ARGS": 1,
+                "asEP_DISABLE_INTEGER_DIVISION": true,
+                "asEP_DISALLOW_EMPTY_LIST_ELEMENTS": true,
+                "asEP_PRIVATE_PROP_AS_PROTECTED": true,
+                "asEP_ALLOW_UNICODE_IDENTIFIERS": true,
+                "asEP_HEREDOC_TRIM_MODE": 2,
+                "asEP_MAX_NESTED_CALLS": 64,
+                "asEP_GENERIC_CALL_MODE": 1,
+                "asEP_INIT_STACK_SIZE": 256,
+                "asEP_MEMBER_INIT_MODE": 1,
+                "asEP_IGNORE_DUPLICATE_SHARED_INTF": true,
+                "asEP_BOOL_CONVERSION_MODE": 1,
+                "asEP_FOREACH_SUPPORT": true
+            }
+        })";
+
+        const auto parsed = ParseEngineRuleConfigJson(json);
+        REQUIRE(parsed.has_value());
+        const auto& nativeProps = parsed->engineProperties;
+
+        CHECK(nativeProps.allowUnsafeReferences == true);
+        CHECK(nativeProps.privatePropAsProtected == true);
+        CHECK(nativeProps.useCharacterLiterals == 1);
+        CHECK(nativeProps.disallowValueAssignForRef == true);
+        CHECK(nativeProps.alterSyntaxNamedArgs == 1);
+        CHECK(nativeProps.disallowEmptyListElements == true);
+        CHECK(nativeProps.foreachSupport == true);
+        CHECK(nativeProps.alwaysImplDefaultConstruct == true);
+        CHECK(nativeProps.allowUnicodeIdentifiers == true);
+        CHECK(nativeProps.ignoreDuplicateSharedIntf == true);
+        CHECK(nativeProps.compilerWarnings == 2);
+        CHECK(nativeProps.memberInitMode == 1);
+        CHECK(nativeProps.heredocTrimMode == 2);
+
+        EngineProperties engine;
+        ApplyEngineProperties(nativeProps, engine);
+
+        CHECK(engine.allowUnsafeReferences == true);
+        CHECK(engine.privatePropAsProtected == true);
+        CHECK(engine.useCharacterLiterals == 1);
+        CHECK(engine.disallowValueAssignForRef == true);
+        CHECK(engine.alterSyntaxNamedArgs == 1);
+        CHECK(engine.disallowEmptyListElements == true);
+        CHECK(engine.foreachSupport == true);
+        CHECK(engine.alwaysImplDefaultConstruct == true);
+        CHECK(engine.allowUnicodeIdentifiers == true);
+        CHECK(engine.ignoreDuplicateSharedIntf == true);
+        CHECK(engine.compilerWarnings == 2);
+        CHECK(engine.memberInitMode == 1);
+        CHECK(engine.heredocTrimMode == 2);
+    }
+
+    SUBCASE("camelCase keys deserialization")
+    {
+        const std::string json = R"({
+            "engineProperties": {
+                "privatePropAsProtected": true,
+                "useCharacterLiterals": 2,
+                "disallowValueAssignForRef": true,
+                "alterSyntaxNamedArgs": 2,
+                "disallowEmptyListElements": true,
+                "foreachSupport": true,
+                "alwaysImplDefaultConstruct": true,
+                "allowUnicodeIdentifiers": true,
+                "ignoreDuplicateSharedIntf": true,
+                "compilerWarnings": 0,
+                "memberInitMode": 1,
+                "heredocTrimMode": 0
+            }
+        })";
+
+        const auto parsed = ParseEngineRuleConfigJson(json);
+        REQUIRE(parsed.has_value());
+        const auto& nativeProps = parsed->engineProperties;
+
+        CHECK(nativeProps.privatePropAsProtected == true);
+        CHECK(nativeProps.useCharacterLiterals == 2);
+        CHECK(nativeProps.disallowValueAssignForRef == true);
+        CHECK(nativeProps.alterSyntaxNamedArgs == 2);
+        CHECK(nativeProps.disallowEmptyListElements == true);
+        CHECK(nativeProps.foreachSupport == true);
+        CHECK(nativeProps.alwaysImplDefaultConstruct == true);
+        CHECK(nativeProps.allowUnicodeIdentifiers == true);
+        CHECK(nativeProps.ignoreDuplicateSharedIntf == true);
+        CHECK(nativeProps.compilerWarnings == 0);
+        CHECK(nativeProps.memberInitMode == 1);
+        CHECK(nativeProps.heredocTrimMode == 0);
+    }
+}
+
+TEST_CASE("EngineProperties: Profile default configurations")
+{
+    SUBCASE("Sven Co-op profile default properties")
+    {
+        const auto props = GetDefaultEngineProperties(EngineProfileKind::SvenCoop);
+        CHECK(props.propertyAccessorMode == 2);
+        CHECK(props.foreachSupport == true);
+        CHECK(props.allowUnsafeReferences == false);
+        CHECK(props.disallowGlobalVars == false);
+        CHECK(props.boolConversionMode == 0);
+    }
+
+    SUBCASE("Standard profile default properties")
+    {
+        const auto props = GetDefaultEngineProperties(EngineProfileKind::Standard);
+        CHECK(props.propertyAccessorMode == 2);
     }
 }

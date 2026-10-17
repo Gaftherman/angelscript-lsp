@@ -951,6 +951,12 @@ class Server
                                angel_lsp::parser::AngelScriptParser& parser);
 
     /**
+     * @brief Discovers and loads engine safety rules (angelscript.rules.json) from workspace roots or config.
+     * @param[in] workspaceRoots Workspace root filesystem paths.
+     */
+    void LoadWorkspaceEngineRules(const std::vector<std::string>& workspaceRoots);
+
+    /**
      * @brief Converts the configured severity names into the analyzer's enum, once at startup.
      *
      * ServerConfig is Layer 1 and cannot name a Layer 2 type, so the override map is carried
@@ -1519,10 +1525,10 @@ class Server
      */
     struct DidOpenPredefinedRequest
     {
-        const std::string& uriStr;
-        const std::string& text;
+        std::string uriStr;
+        std::string text;
         int version = 0;
-        const std::string& clientUri;
+        std::string clientUri;
         const utils::HighResTimer& totalTimer;
     };
 

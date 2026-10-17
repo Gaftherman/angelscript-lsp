@@ -188,7 +188,7 @@ void Foo()
     for (const auto& diag : diagnostics)
     {
         if (diag.code == "as-warn-undeclared-identifier")
-            CHECK(diag.severity == DiagnosticSeverity::Warning);
+            CHECK(diag.severity == DiagnosticSeverity::Error);
     }
 }
 
@@ -2200,4 +2200,429 @@ TEST_CASE("Metadata - Grammar does not conflict with opIndex, multidimensional a
                                          [](const Diagnostic& d) { return d.code == "as-warn-metadata-disabled"; });
         CHECK(warnIt == diagnostics.end());
     }
+}
+
+TEST_CASE("SemanticAnalyzer - Undeclared variables passed to wildcard parameters emit warning")
+{
+    const std::string varX = angel_lsp::test::GenerateRandomSymbolName("varX");
+    const std::string varY = angel_lsp::test::GenerateRandomSymbolName("varY");
+    const std::string varZ = angel_lsp::test::GenerateRandomSymbolName("varZ");
+    const std::string varColor = angel_lsp::test::GenerateRandomSymbolName("varColor");
+    const std::string vectorClass = angel_lsp::test::GenerateRandomSymbolName("Vector");
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const std::string vectorCode = "class " + vectorClass +
+                                   " {\n"
+                                   "    float " +
+                                   varX + ", " + varY + ", " + varZ +
+                                   ";\n"
+                                   "    int " +
+                                   varColor +
+                                   ";\n"
+                                   "}\n";
+    collector.CollectSymbols("file:///vector.as", vectorCode, parser, table);
+
+    const std::string stubCode =
+        "void SetTimeout(const string& in fn, float delay, ?& in a, ?& in b, ?& in c, ?& in d);\n";
+    collector.CollectSymbols("file:///stubs.as", stubCode, parser, table);
+
+    const std::string mainCode = "void main() {\n"
+                                 "    SetTimeout(\"Effect\", 0.5f, " +
+                                 varX + ", " + varY + ", " + varZ + ", " + varColor +
+                                 ");\n"
+                                 "}\n";
+
+    const angel_lsp::i18n::I18n i18n("en");
+    const auto diags = AnalyzeSource(mainCode, table, i18n, "file:///main.as");
+
+    std::vector<std::string> undeclaredVars;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-warn-undeclared-identifier")
+        {
+            undeclaredVars.push_back(d.message);
+        }
+    }
+
+    CHECK(undeclaredVars.size() == 4);
+    for (const auto& varName : {varX, varY, varZ, varColor})
+    {
+        CHECK(std::any_of(undeclaredVars.begin(), undeclaredVars.end(),
+                          [&](const std::string& msg) { return msg.find(varName) != std::string::npos; }));
+    }
+}
+
+TEST_CASE("SemanticAnalyzer - Inherited base class members accessed unqualified do not emit undeclared identifier")
+{
+    const std::string baseClass = angel_lsp::test::GenerateRandomSymbolName("CBaseWeapon");
+    const std::string derivedClass = angel_lsp::test::GenerateRandomSymbolName("CMyWeapon");
+    const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("m_flTimeIdle");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Idle");
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const std::string baseCode = "class " + baseClass +
+                                 " {\n"
+                                 "    float " +
+                                 memberName +
+                                 ";\n"
+                                 "    float " +
+                                 methodName +
+                                 "() { return 1.0f; }\n"
+                                 "}\n";
+    collector.CollectSymbols("file:///base.as", baseCode, parser, table);
+
+    const std::string derivedCode = "class " + derivedClass + " : " + baseClass +
+                                    " {\n"
+                                    "    void WeaponIdle() {\n"
+                                    "        " +
+                                    memberName + " = " + methodName +
+                                    "();\n"
+                                    "    }\n"
+                                    "}\n";
+
+    const angel_lsp::i18n::I18n i18n("en");
+    const auto diags = AnalyzeSource(derivedCode, table, i18n, "file:///derived.as");
+
+    const auto undeclaredIt = std::find_if(diags.begin(), diags.end(), [](const Diagnostic& d)
+                                           { return d.code == "as-warn-undeclared-identifier"; });
+    CHECK(undeclaredIt == diags.end());
+}
+
+TEST_CASE("SemanticAnalyzer - Unqualified enum member access does not emit undeclared identifier by default")
+{
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("USE_TYPE");
+    const std::string enumMember = angel_lsp::test::GenerateRandomSymbolName("USE_TOGGLE");
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const std::string enumCode = "enum " + enumName + " { " + enumMember + " = 1 };\n";
+    collector.CollectSymbols("file:///enum.as", enumCode, parser, table);
+
+    const std::string callCode = "void Use(int a, int b) {}\n"
+                                 "void main() {\n"
+                                 "    Use(0, " +
+                                 enumMember +
+                                 ");\n"
+                                 "}\n";
+
+    const angel_lsp::i18n::I18n i18n("en");
+    const auto diags = AnalyzeSource(callCode, table, i18n, "file:///main.as");
+
+    const auto undeclaredIt = std::find_if(diags.begin(), diags.end(), [](const Diagnostic& d)
+                                           { return d.code == "as-warn-undeclared-identifier"; });
+    CHECK(undeclaredIt == diags.end());
+}
+
+TEST_CASE("SemanticAnalyzer - Lambda parameter with unresolved type emits as-err-unresolved-type")
+{
+    const std::string unknownTypeName = angel_lsp::test::GenerateRandomSymbolName("MenuOption");
+    const std::string knownClassName = angel_lsp::test::GenerateRandomSymbolName("CBasePlayer");
+    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("option");
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const std::string declCode = "class " + knownClassName +
+                                 " {};\n"
+                                 "funcdef void Callback(" +
+                                 knownClassName + "@, const " + unknownTypeName + "@);\n";
+    collector.CollectSymbols("file:///decl.as", declCode, parser, table);
+
+    const std::string lambdaCode = "void RegisterCallback(Callback@ cb) {}\n"
+                                   "void main() {\n"
+                                   "    RegisterCallback(function(" +
+                                   knownClassName + "@ player, const " + unknownTypeName + "@ " + paramName +
+                                   ") {});\n"
+                                   "}\n";
+
+    const angel_lsp::i18n::I18n i18n("en");
+    const auto diags = AnalyzeSource(lambdaCode, table, i18n, "file:///main.as");
+
+    const auto it = std::find_if(
+        diags.begin(), diags.end(), [&](const Diagnostic& d)
+        { return d.code == "as-err-unresolved-type" && d.message.find(unknownTypeName) != std::string::npos; });
+    CHECK(it != diags.end());
+}
+
+TEST_CASE("SemanticAnalyzer - Untyped and valid lambda parameters emit no unresolved type diagnostics")
+{
+    const std::string knownClassName = angel_lsp::test::GenerateRandomSymbolName("CBasePlayer");
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const std::string declCode = "class " + knownClassName + " {};\n";
+    collector.CollectSymbols("file:///decl.as", declCode, parser, table);
+
+    const std::string lambdaCode = "void main() {\n"
+                                   "    auto f1 = function(a, b) {};\n"
+                                   "    auto f2 = function(" +
+                                   knownClassName +
+                                   "@ player, int count) {};\n"
+                                   "}\n";
+
+    const angel_lsp::i18n::I18n i18n("en");
+    const auto diags = AnalyzeSource(lambdaCode, table, i18n, "file:///main.as");
+
+    const auto it = std::find_if(diags.begin(), diags.end(),
+                                 [](const Diagnostic& d) { return d.code == "as-err-unresolved-type"; });
+    CHECK(it == diags.end());
+}
+
+TEST_CASE("SemanticAnalyzer - Metadata syntax errors do not emit undeclared identifier warnings (doc_g02 parity)")
+{
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("Property");
+    const std::string catName = angel_lsp::test::GenerateRandomSymbolName("Category");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("Health");
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("WeaponType");
+
+    SymbolTable table;
+    const angel_lsp::i18n::I18n i18n("en");
+
+    const std::string code = "[" + propName + ", " + catName +
+                             "=\"Weapons\"]\n"
+                             "int " +
+                             varName +
+                             " = 100;\n\n"
+                             "[" +
+                             catName +
+                             "(\"Armas\")]\n"
+                             "enum " +
+                             enumName + " { Pistol, Rifle }\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, propName));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, catName));
+}
+
+TEST_CASE("SemanticAnalyzer - Local variable can shadow class, enum, and function names (doc_p15 parity)")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("MyClass");
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("MyEnum");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("MyHelper");
+    const std::string testFuncName = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+
+    SymbolTable table;
+    const angel_lsp::i18n::I18n i18n("en");
+
+    const std::string code = "class " + className +
+                             " {}\n"
+                             "enum " +
+                             enumName +
+                             " { ValA, ValB }\n"
+                             "void " +
+                             funcName +
+                             "() {}\n\n"
+                             "void " +
+                             testFuncName +
+                             "() {\n"
+                             "    int " +
+                             className +
+                             " = 1;\n"
+                             "    int " +
+                             enumName +
+                             " = 2;\n"
+                             "    int " +
+                             funcName +
+                             " = 3;\n"
+                             "    int res = " +
+                             className + " + " + enumName + " + " + funcName +
+                             ";\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    for (const auto& diag : diags)
+    {
+        CHECK(diag.code != "as-err-name-conflict");
+    }
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, className));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, enumName));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, funcName));
+}
+
+TEST_CASE("SemanticAnalyzer - GAP-VISIBILITY-01: Sequential local variable visibility (vecOrigin bug)")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("vecOrigin");
+    const std::string helperFn = angel_lsp::test::GenerateRandomSymbolName("ConsumeVec");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "void " + helperFn +
+                             "(int val) {}\n"
+                             "void " +
+                             fnName +
+                             "() {\n"
+                             "    if (true) {\n"
+                             "        " +
+                             helperFn + "(" + varName +
+                             ");\n"
+                             "    }\n"
+                             "    int " +
+                             varName +
+                             " = 100;\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    CHECK(HasUndefinedIdentifierDiagnostic(diags, varName));
+}
+
+TEST_CASE("SemanticAnalyzer - GAP-VISIBILITY-01: Sequential local variable falls back to outer shadowed symbol")
+{
+    const std::string outerFn = angel_lsp::test::GenerateRandomSymbolName("TestOuter");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("shadowedVar");
+    const std::string helperFn = angel_lsp::test::GenerateRandomSymbolName("UseInt");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "int " + varName +
+                             " = 42;\n"
+                             "void " +
+                             helperFn +
+                             "(int val) {}\n"
+                             "void " +
+                             outerFn +
+                             "() {\n"
+                             "    " +
+                             helperFn + "(" + varName +
+                             ");\n"
+                             "    int " +
+                             varName +
+                             " = 99;\n"
+                             "    " +
+                             helperFn + "(" + varName +
+                             ");\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, varName));
+}
+
+TEST_CASE("SemanticAnalyzer - GAP-VISIBILITY-01: Lambda closure barrier prevents access to enclosing function locals")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("EnclosingFunc");
+    const std::string localVar = angel_lsp::test::GenerateRandomSymbolName("outerLocal");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "void " + fnName +
+                             "() {\n"
+                             "    int " +
+                             localVar +
+                             " = 10;\n"
+                             "    auto l = function() {\n"
+                             "        int captured = " +
+                             localVar +
+                             ";\n"
+                             "    };\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    bool hasClosureDiag = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-lambda-closure-disallowed")
+            hasClosureDiag = true;
+    }
+    CHECK(hasClosureDiag);
+}
+
+TEST_CASE("SemanticAnalyzer - Funcdef and interface parameters do not leak into enclosing scope")
+{
+    const std::string funcdefName = angel_lsp::test::GenerateRandomSymbolName("MenuSelectCallback");
+    const std::string ifaceName = angel_lsp::test::GenerateRandomSymbolName("IMenuHandler");
+    const std::string paramName = angel_lsp::test::GenerateRandomSymbolName("leakedOption");
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("SomeHandler");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("ProcessEvent");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "funcdef void " + funcdefName + "(int " + paramName +
+                             ");\n"
+                             "interface " +
+                             ifaceName + " { void Execute(float " + paramName +
+                             "); }\n"
+                             "class " +
+                             className +
+                             " {\n"
+                             "    void " +
+                             methodName +
+                             "() {\n"
+                             "        " +
+                             paramName +
+                             " = 100;\n"
+                             "    }\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    CHECK(HasUndefinedIdentifierDiagnostic(diags, paramName));
+}
+
+TEST_CASE("SemanticAnalyzer - Global constructor lambdas do not emit false duplicate symbol errors on local variables")
+{
+    const std::string cmdClass = angel_lsp::test::GenerateRandomSymbolName("ASCommand");
+    const std::string cmdVar1 = angel_lsp::test::GenerateRandomSymbolName("g_cmd1");
+    const std::string cmdVar2 = angel_lsp::test::GenerateRandomSymbolName("g_cmd2");
+    const std::string localVar = angel_lsp::test::GenerateRandomSymbolName("traceResult");
+    const std::string loopVar = angel_lsp::test::GenerateRandomSymbolName("loopIndex");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "funcdef void CommandCallback();\n"
+                             "class " +
+                             cmdClass +
+                             " {\n"
+                             "    " +
+                             cmdClass +
+                             "(string name, CommandCallback@ cb) {}\n"
+                             "}\n"
+                             "" +
+                             cmdClass + " " + cmdVar1 +
+                             "(\"cmd1\", function() {\n"
+                             "    int " +
+                             localVar +
+                             " = 1;\n"
+                             "    for (int " +
+                             loopVar + " = 0; " + loopVar + " < 10; ++" + loopVar +
+                             ") {}\n"
+                             "    for (int " +
+                             loopVar + " = 0; " + loopVar + " < 10; ++" + loopVar +
+                             ") {}\n"
+                             "});\n"
+                             "" +
+                             cmdClass + " " + cmdVar2 +
+                             "(\"cmd2\", function() {\n"
+                             "    int " +
+                             localVar +
+                             " = 2;\n"
+                             "    for (int " +
+                             loopVar + " = 0; " + loopVar + " < 10; ++" + loopVar +
+                             ") {}\n"
+                             "});\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+    bool hasDuplicateDiag = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-duplicate-symbol")
+        {
+            hasDuplicateDiag = true;
+        }
+    }
+    CHECK_FALSE(hasDuplicateDiag);
 }

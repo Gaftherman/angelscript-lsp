@@ -65,6 +65,18 @@ void AssertRuleIndexEquivalence(const RuleIndex& actual, const RuleIndex& oracle
         }
     }
 
+    // 1b. globalNames
+    CHECK(actual.globalNames.size() == oracle.globalNames.size());
+    for (const auto& [name, count] : oracle.globalNames)
+    {
+        auto it = actual.globalNames.find(name);
+        CHECK(it != actual.globalNames.end());
+        if (it != actual.globalNames.end())
+        {
+            CHECK(it->second == count);
+        }
+    }
+
     // 2. enumMemberNames & enumMemberCounts
     CHECK(actual.enumMemberNames.size() == oracle.enumMemberNames.size());
     for (const auto& name : oracle.enumMemberNames)

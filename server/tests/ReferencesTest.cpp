@@ -769,3 +769,191 @@ TEST_CASE("ReferencesHandler - Enum Member Cross-Enum Isolation (No False Matche
         }
     }
 }
+
+TEST_CASE("ReferencesHandler - GAP-VISIBILITY-01: Sequential local variable does not bind pre-declaration references")
+{
+    MultiFileTestEnv env;
+    const std::string varName = test::GenerateRandomSymbolName("localVar");
+
+    std::string code = "int " + varName +
+                       " = 0;\n"
+                       "void test() {\n"
+                       "    " +
+                       varName +
+                       " = 10;\n"
+                       "    int " +
+                       varName +
+                       " = 20;\n"
+                       "    " +
+                       varName +
+                       " = 30;\n"
+                       "}\n";
+
+    env.AddFile("file:///test.as", code);
+
+    auto refs = env.RefsAt("file:///test.as", 3, 9, true);
+    REQUIRE(refs.has_value());
+    CHECK(refs->size() == 2);
+    for (const auto& ref : *refs)
+    {
+        CHECK(ref.range.start.line >= 3);
+    }
+}
+
+TEST_CASE("ReferencesHandler - Cross-file namespace member references match declaration")
+{
+    MultiFileTestEnv env;
+    const std::string nsName = test::GenerateRandomSymbolName("INS2BASE");
+    const std::string varName = test::GenerateRandomSymbolName("ShouldUseCustomAmmo");
+
+    std::string nsFile = "namespace " + nsName +
+                         " {\n"
+                         "    bool " +
+                         varName +
+                         " = true;\n"
+                         "}\n";
+
+    std::string usageFile = "void WeaponCheck() {\n"
+                            "    if (" +
+                            nsName + "::" + varName +
+                            ") {\n"
+                            "    }\n"
+                            "}\n";
+
+    env.AddFile("file:///namespace_def.as", nsFile);
+    env.AddFile("file:///weapon_usage.as", usageFile);
+
+    // References on declaration at line 1, col 9 of file:///namespace_def.as
+    auto refs = env.RefsAt("file:///namespace_def.as", 1, 9, true);
+    REQUIRE(refs.has_value());
+    CHECK(refs->size() == 2);
+
+    bool foundUsage = false;
+    for (const auto& ref : *refs)
+    {
+        if (ref.uri.toString() == "file:///weapon_usage.as")
+        {
+            foundUsage = true;
+            CHECK(ref.range.start.line == 1);
+        }
+    }
+    CHECK(foundUsage);
+}
+
+TEST_CASE("ReferencesHandler - Cross-file namespace-qualified enum member references match declaration")
+{
+    MultiFileTestEnv env;
+    const std::string nsName = test::GenerateRandomSymbolName("INS2BASE");
+    const std::string enumName = test::GenerateRandomSymbolName("INS2_SELECTFIRE_OPTIONS");
+    const std::string memberName = test::GenerateRandomSymbolName("SELECTFIRE_SEMI");
+
+    std::string nsFile = "namespace " + nsName +
+                         "\n"
+                         "{\n"
+                         "    enum " +
+                         enumName +
+                         "\n"
+                         "    {\n"
+                         "        " +
+                         memberName +
+                         " = 0\n"
+                         "    };\n"
+                         "}\n";
+
+    std::string usageFile = "void TestSelectFire()\n"
+                            "{\n"
+                            "    int mode = " +
+                            nsName + "::" + memberName +
+                            ";\n"
+                            "}\n";
+
+    env.AddFile("file:///enum_def.as", nsFile);
+    env.AddFile("file:///enum_usage.as", usageFile);
+
+    // References on declaration of memberName in file:///enum_def.as (line 4)
+    auto refs = env.RefsAt("file:///enum_def.as", 4, 8, true);
+    REQUIRE(refs.has_value());
+    CHECK(refs->size() == 2);
+
+    bool foundUsage = false;
+    for (const auto& ref : *refs)
+    {
+        if (ref.uri.toString() == "file:///enum_usage.as")
+        {
+            foundUsage = true;
+            CHECK(ref.range.start.line == 2);
+        }
+    }
+    CHECK(foundUsage);
+
+    // References on usage of nsName::memberName in file:///enum_usage.as (line 2)
+    auto refsFromUsage = env.RefsAt("file:///enum_usage.as", 2, static_cast<uint32_t>(17 + nsName.size()), true);
+    REQUIRE(refsFromUsage.has_value());
+    CHECK(refsFromUsage->size() == 2);
+}
+
+TEST_CASE("ReferencesHandler - Private mixin property references match across host and sibling mixin")
+{
+    MultiFileTestEnv env;
+    const std::string baseMixin = test::GenerateRandomSymbolName("WeaponBase");
+    const std::string siblingMixin = test::GenerateRandomSymbolName("BipodWeaponBase");
+    const std::string hostClass = test::GenerateRandomSymbolName("WeaponHost");
+    const std::string propName = test::GenerateRandomSymbolName("BipodStatePos");
+
+    std::string baseCode = "mixin class " + baseMixin +
+                           "\n"
+                           "{\n"
+                           "    private int " +
+                           propName +
+                           ";\n"
+                           "}\n";
+
+    std::string sibCode = "mixin class " + siblingMixin +
+                          "\n"
+                          "{\n"
+                          "    void SiblingMethod()\n"
+                          "    {\n"
+                          "        " +
+                          propName +
+                          " = 42;\n"
+                          "    }\n"
+                          "}\n";
+
+    std::string hostCode = "class " + hostClass + " : " + baseMixin + ", " + siblingMixin +
+                           "\n"
+                           "{\n"
+                           "    void HostMethod()\n"
+                           "    {\n"
+                           "        int val = " +
+                           propName +
+                           ";\n"
+                           "    }\n"
+                           "}\n";
+
+    env.AddFile("file:///base_mixin.as", baseCode);
+    env.AddFile("file:///sibling_mixin.as", sibCode);
+    env.AddFile("file:///host.as", hostCode);
+
+    // References on declaration of propName in base_mixin.as (line 2, col 16)
+    auto refs = env.RefsAt("file:///base_mixin.as", 2, 16, true);
+    REQUIRE(refs.has_value());
+    CHECK(refs->size() == 3);
+
+    bool foundSibling = false;
+    bool foundHost = false;
+    for (const auto& ref : *refs)
+    {
+        if (ref.uri.toString() == "file:///sibling_mixin.as")
+        {
+            foundSibling = true;
+            CHECK(ref.range.start.line == 4);
+        }
+        else if (ref.uri.toString() == "file:///host.as")
+        {
+            foundHost = true;
+            CHECK(ref.range.start.line == 4);
+        }
+    }
+    CHECK(foundSibling);
+    CHECK(foundHost);
+}

@@ -127,7 +127,9 @@ struct CallNodes
 CallNodes FindCallNodes(TSNode node)
 {
     CallNodes result;
-    for (TSNode cur = node; !ts_node_is_null(cur); cur = ts_node_parent(cur))
+    constexpr int kMaxDepth = 64;
+    int depth = 0;
+    for (TSNode cur = node; depth < kMaxDepth && !ts_node_is_null(cur); cur = ts_node_parent(cur), ++depth)
     {
         std::string_view type = ts_node_type(cur);
         if (type == "argument_list")
@@ -194,14 +196,10 @@ TSNode ExtractFunctionNode(TSNode callNode)
             {
                 return typeNode;
             }
-            uint32_t dCount = ts_node_child_count(declNode);
-            for (uint32_t i = 0; i < dCount; ++i)
+            TSNode foundType = parser::FindFirstChildOfType(declNode, "type");
+            if (!ts_node_is_null(foundType))
             {
-                TSNode child = ts_node_child(declNode, i);
-                if (std::string_view(ts_node_type(child)) == "type")
-                {
-                    return child;
-                }
+                return foundType;
             }
         }
     }

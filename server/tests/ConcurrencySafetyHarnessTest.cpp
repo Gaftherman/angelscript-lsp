@@ -8,12 +8,14 @@
 #include "helpers/TestUtils.h"
 #include "lsp/AnalysisScheduler.h"
 #include "lsp/DocumentStore.h"
+#include "lsp/PredefinedStubManager.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/MultiFileLogger.h"
 
 #include <atomic>
 #include <chrono>
 #include <future>
+#include <latch>
 #include <random>
 #include <string>
 #include <thread>
@@ -30,9 +32,26 @@ struct WriterStressContext
 {
     DocumentStore& store;
     const std::vector<std::string>& uris;
+    std::latch& startLatch;
+    std::latch& readersActiveLatch;
     std::atomic<bool>& stopFlag;
     std::atomic<uint32_t>& totalWrites;
     uint32_t targetWrites = 1000;
+};
+
+/**
+ * @brief Context passed to reader worker threads.
+ */
+struct ReaderStressContext
+{
+    const DocumentStore& store;
+    const std::vector<std::string>& uris;
+    std::latch& startLatch;
+    std::latch& readersActiveLatch;
+    std::atomic<bool>& stopFlag;
+    std::atomic<uint32_t>& successReads;
+    std::atomic<uint32_t>& failedReads;
+    uint32_t targetReads = 200;
 };
 
 /**
@@ -67,10 +86,17 @@ void ExecuteWriterStress(WriterStressContext ctx)
     std::mt19937_64 rng(std::random_device{}());
     parser::AngelScriptParser parser;
     std::uniform_int_distribution<size_t> uriDist(0, ctx.uris.size() - 1);
+    const uint32_t maxWrites = ctx.targetWrites * 4;
 
-    while (!ctx.stopFlag.load(std::memory_order_relaxed) &&
-           ctx.totalWrites.fetch_add(1, std::memory_order_relaxed) < ctx.targetWrites)
+    ctx.startLatch.arrive_and_wait();
+
+    while (!ctx.stopFlag.load(std::memory_order_acquire))
     {
+        const uint32_t prevWrites = ctx.totalWrites.fetch_add(1, std::memory_order_relaxed);
+        if (prevWrites >= ctx.targetWrites && (ctx.readersActiveLatch.try_wait() || prevWrites >= maxWrites))
+        {
+            break;
+        }
         const std::string& uri = ctx.uris[uriDist(rng)];
         std::string code = GenerateRandomStressCode(rng);
         TSTree* rawTree = parser.Parse(code);
@@ -80,33 +106,46 @@ void ExecuteWriterStress(WriterStressContext ctx)
 
 /**
  * @brief Executes concurrent document reads and thread-safe AST copies.
- * @param[in] store Document store under test.
- * @param[in] uris Target URIs to poll.
- * @param[in] stopFlag Termination atomic flag.
- * @param[in,out] successReads Counter for valid inspected ASTs.
+ * @param[in] ctx Stress context containing store, URIs, and synchronization primitives.
  */
-void ExecuteReaderStress(const DocumentStore& store, const std::vector<std::string>& uris, std::atomic<bool>& stopFlag,
-                         std::atomic<uint32_t>& successReads)
+void ExecuteReaderStress(ReaderStressContext ctx)
 {
     std::mt19937_64 rng(std::random_device{}());
-    std::uniform_int_distribution<size_t> uriDist(0, uris.size() - 1);
+    std::uniform_int_distribution<size_t> uriDist(0, ctx.uris.size() - 1);
+    bool countedDown = false;
 
-    while (!stopFlag.load(std::memory_order_relaxed))
+    ctx.startLatch.arrive_and_wait();
+
+    while (!ctx.stopFlag.load(std::memory_order_acquire) ||
+           ctx.successReads.load(std::memory_order_relaxed) < ctx.targetReads)
     {
-        const std::string& uri = uris[uriDist(rng)];
-        auto docHandle = store.GetDocument(uri);
-        if (docHandle && docHandle->tree)
+        const std::string& uri = ctx.uris[uriDist(rng)];
+        auto docHandle = ctx.store.GetDocument(uri);
+        if (!docHandle || !docHandle->tree)
         {
-            TSTree* copied = ts_tree_copy(docHandle->tree.get());
-            if (copied != nullptr)
+            continue;
+        }
+        TSTree* copied = ts_tree_copy(docHandle->tree.get());
+        if (copied == nullptr)
+        {
+            continue;
+        }
+        auto managed = document::MakeTreePtr(copied);
+        TSNode root = ts_tree_root_node(managed.get());
+        if (!ts_node_is_null(root))
+        {
+            const char* type = ts_node_type(root);
+            if (type == nullptr)
             {
-                auto managed = document::MakeTreePtr(copied);
-                TSNode root = ts_tree_root_node(managed.get());
-                if (!ts_node_is_null(root))
+                ctx.failedReads.fetch_add(1, std::memory_order_relaxed);
+            }
+            else
+            {
+                ctx.successReads.fetch_add(1, std::memory_order_relaxed);
+                if (!countedDown)
                 {
-                    const char* type = ts_node_type(root);
-                    CHECK(type != nullptr);
-                    successReads.fetch_add(1, std::memory_order_relaxed);
+                    countedDown = true;
+                    ctx.readersActiveLatch.count_down();
                 }
             }
         }
@@ -156,6 +195,110 @@ void AssertMalformedSnippetTolerance(const std::string& malformedCode, uint32_t 
     CHECK(!resResult.has_value());
 }
 
+/**
+ * @brief Context passed to concurrent analysis writer worker threads.
+ */
+struct AnalysisWriterContext
+{
+    analysis::SymbolTable& symTable;
+    DocumentStore& docStore;
+    std::latch& startLatch;
+    std::atomic<bool>& stopFlag;
+    std::atomic<uint32_t>& totalWrites;
+    uint32_t targetWrites = 200;
+};
+
+/**
+ * @brief Context passed to concurrent analysis reader worker threads.
+ */
+struct AnalysisReaderContext
+{
+    const analysis::SymbolTable& symTable;
+    const PredefinedStubManager& stubManager;
+    const std::vector<std::string>& predefinedNames;
+    std::latch& startLatch;
+    std::atomic<bool>& stopFlag;
+    std::atomic<uint32_t>& totalReads;
+    uint32_t targetReads = 500;
+};
+
+/**
+ * @brief Executes rapid symbol insertions, document lifecycle events, and symbol removals.
+ * @param[in] ctx Stress context containing symbol table, document store, and sync primitives.
+ */
+void ExecuteAnalysisWriter(AnalysisWriterContext ctx)
+{
+    parser::AngelScriptParser parser;
+    ctx.startLatch.arrive_and_wait();
+
+    while (!ctx.stopFlag.load(std::memory_order_acquire))
+    {
+        const uint32_t prevWrites = ctx.totalWrites.fetch_add(1, std::memory_order_relaxed);
+        if (prevWrites >= ctx.targetWrites)
+        {
+            break;
+        }
+
+        const std::string docUri = "file:///stress_" + test::GenerateRandomSymbolName("doc") + ".as";
+        const std::string symName = test::GenerateRandomSymbolName("Sym");
+        const std::string clsName = test::GenerateRandomSymbolName("Cls");
+
+        analysis::Symbol sym;
+        sym.type = analysis::SymbolType::Variable;
+        sym.name = symName;
+        sym.containerName = clsName;
+        sym.qualifiedName = clsName + "::" + symName;
+        sym.fileUri = docUri;
+        sym.signature = analysis::VariableSignature{
+            .typeName = "int",
+            .baseTypeName = "int",
+        };
+
+        ctx.symTable.AddSymbol(sym);
+
+        std::string code = "class " + clsName + " { int " + symName + "; };\n";
+        TSTree* rawTree = parser.Parse(code);
+        ctx.docStore.OpenDocument(docUri, code, 1, document::MakeTreePtr(rawTree));
+
+        ctx.symTable.ClearDocumentSymbols(docUri);
+        ctx.symTable.AddSymbol(sym);
+
+        ctx.docStore.CloseDocument(docUri);
+        ctx.symTable.ClearDocumentSymbols(docUri);
+    }
+}
+
+/**
+ * @brief Executes concurrent symbol searches, member lookups, and predefined stub queries.
+ * @param[in] ctx Stress context containing symbol table, stub manager, and sync primitives.
+ */
+void ExecuteAnalysisReader(AnalysisReaderContext ctx)
+{
+    std::mt19937_64 rng(std::random_device{}());
+    std::uniform_int_distribution<size_t> dist(0, ctx.predefinedNames.size() - 1);
+    ctx.startLatch.arrive_and_wait();
+
+    while (!ctx.stopFlag.load(std::memory_order_acquire) ||
+           ctx.totalReads.load(std::memory_order_relaxed) < ctx.targetReads)
+    {
+        ctx.totalReads.fetch_add(1, std::memory_order_relaxed);
+        const std::string& targetName = ctx.predefinedNames[dist(rng)];
+
+        auto foundSyms = ctx.symTable.FindSymbols(targetName);
+        auto optSym = ctx.symTable.FindFirstSymbol(targetName);
+        auto memberSyms = ctx.symTable.FindMemberSymbols("Math", targetName);
+        auto memberPtr = ctx.symTable.FindMemberSymbolPtr("Math", targetName);
+
+        (void)foundSyms;
+        (void)optSym;
+        (void)memberSyms;
+        (void)memberPtr;
+
+        auto stubText = ctx.stubManager.GetDocumentText("predefined/sven.as.predefined");
+        (void)stubText;
+    }
+}
+
 } // namespace
 
 TEST_CASE("ConcurrencySafety - Simultaneous Document Mutation and AST Reading Invariant")
@@ -174,25 +317,33 @@ TEST_CASE("ConcurrencySafety - Simultaneous Document Mutation and AST Reading In
         uris.push_back(std::move(uri));
     }
 
+    constexpr int k_numWriters = 2;
+    constexpr int k_numReaders = 4;
+    constexpr uint32_t k_targetWrites = 1000;
+    constexpr uint32_t k_targetReads = 200;
+
+    std::latch startLatch(k_numWriters + k_numReaders);
+    std::latch readersActiveLatch(k_numReaders);
     std::atomic<bool> stopFlag{false};
     std::atomic<uint32_t> totalWrites{0};
     std::atomic<uint32_t> successReads{0};
-    constexpr uint32_t k_targetWrites = 1000;
-
-    std::vector<std::thread> writers;
-    writers.reserve(2);
-    for (int i = 0; i < 2; ++i)
-    {
-        writers.emplace_back(ExecuteWriterStress,
-                             WriterStressContext{store, uris, stopFlag, totalWrites, k_targetWrites});
-    }
+    std::atomic<uint32_t> failedReads{0};
 
     std::vector<std::thread> readers;
-    readers.reserve(4);
-    for (int i = 0; i < 4; ++i)
+    readers.reserve(k_numReaders);
+    for (int i = 0; i < k_numReaders; ++i)
     {
-        readers.emplace_back(ExecuteReaderStress, std::cref(store), std::cref(uris), std::ref(stopFlag),
-                             std::ref(successReads));
+        readers.emplace_back(ExecuteReaderStress,
+                             ReaderStressContext{store, uris, startLatch, readersActiveLatch, stopFlag, successReads,
+                                                 failedReads, k_targetReads});
+    }
+
+    std::vector<std::thread> writers;
+    writers.reserve(k_numWriters);
+    for (int i = 0; i < k_numWriters; ++i)
+    {
+        writers.emplace_back(ExecuteWriterStress, WriterStressContext{store, uris, startLatch, readersActiveLatch,
+                                                                      stopFlag, totalWrites, k_targetWrites});
     }
 
     for (auto& w : writers)
@@ -200,7 +351,7 @@ TEST_CASE("ConcurrencySafety - Simultaneous Document Mutation and AST Reading In
         if (w.joinable())
             w.join();
     }
-    stopFlag.store(true, std::memory_order_relaxed);
+    stopFlag.store(true, std::memory_order_release);
 
     for (auto& r : readers)
     {
@@ -209,7 +360,8 @@ TEST_CASE("ConcurrencySafety - Simultaneous Document Mutation and AST Reading In
     }
 
     CHECK(totalWrites.load() >= k_targetWrites);
-    CHECK(successReads.load() > 0);
+    CHECK(successReads.load() >= k_targetReads);
+    CHECK(failedReads.load() == 0);
 }
 
 TEST_CASE("ConcurrencySafety - Secondary Thread Exception Containment Invariant")
@@ -278,4 +430,74 @@ TEST_CASE("ConcurrencySafety - Tree-Sitter Error Node and Null Tolerance Invaria
     {
         AssertMalformedSnippetTolerance("", 0, 0);
     }
+}
+
+TEST_CASE("ConcurrencySafety - Concurrent Document Analysis and Predefined Symbol Lookups")
+{
+    analysis::SymbolTable symTable;
+    symTable.Reserve(1024);
+    PredefinedStubManager stubManager;
+    DocumentStore docStore;
+
+    const std::string stubUri = "predefined/sven.as.predefined";
+    stubManager.RegisterStub(stubUri, stubUri, "void Print(const string &in); namespace Math { float Cos(float); }");
+
+    std::vector<std::string> predefinedNames = {"Print", "Vector3", "Math", "Cos", "Sin"};
+    for (const auto& name : predefinedNames)
+    {
+        analysis::Symbol s;
+        s.type = analysis::SymbolType::Function;
+        s.name = name;
+        s.containerName = (name == "Cos" || name == "Sin") ? "Math" : "";
+        s.qualifiedName = s.containerName.empty() ? name : s.containerName + "::" + name;
+        s.fileUri = stubUri;
+        s.signature = analysis::FunctionSignature{.returnType = "void"};
+        symTable.AddSymbol(s);
+    }
+
+    constexpr int k_numWriters = 4;
+    constexpr int k_numReaders = 4;
+    constexpr uint32_t k_targetWrites = 200;
+    constexpr uint32_t k_targetReads = 500;
+
+    std::latch startLatch(k_numWriters + k_numReaders);
+    std::atomic<bool> stopFlag{false};
+    std::atomic<uint32_t> totalWrites{0};
+    std::atomic<uint32_t> totalReads{0};
+
+    std::vector<std::thread> readers;
+    readers.reserve(k_numReaders);
+    for (int i = 0; i < k_numReaders; ++i)
+    {
+        readers.emplace_back(ExecuteAnalysisReader,
+                             AnalysisReaderContext{symTable, stubManager, predefinedNames, startLatch, stopFlag,
+                                                   totalReads, k_targetReads});
+    }
+
+    std::vector<std::thread> writers;
+    writers.reserve(k_numWriters);
+    for (int i = 0; i < k_numWriters; ++i)
+    {
+        writers.emplace_back(ExecuteAnalysisWriter, AnalysisWriterContext{symTable, docStore, startLatch, stopFlag,
+                                                                          totalWrites, k_targetWrites});
+    }
+
+    for (auto& w : writers)
+    {
+        if (w.joinable())
+            w.join();
+    }
+    stopFlag.store(true, std::memory_order_release);
+
+    for (auto& r : readers)
+    {
+        if (r.joinable())
+            r.join();
+    }
+
+    CHECK(totalWrites.load() >= k_targetWrites);
+    CHECK(totalReads.load() >= k_targetReads);
+    CHECK(symTable.HasSymbol("Print"));
+    CHECK(symTable.HasSymbol("Math::Cos"));
+    CHECK(symTable.HasDocumentSymbols(stubUri));
 }

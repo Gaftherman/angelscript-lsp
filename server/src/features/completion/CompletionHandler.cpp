@@ -245,12 +245,25 @@ enum class SymbolProximity : uint8_t
 inline std::string FormatProximitySortText(SymbolProximity prox, std::string_view label)
 {
     static constexpr std::array<std::string_view, 6> k_proxPrefixes = {"0_", "1_", "2_", "3_", "4_", "5_"};
-    const size_t idx = static_cast<size_t>(prox);
-    if (idx < k_proxPrefixes.size())
+    std::string_view underscoreTier = "0_";
+    if (label.starts_with("__"))
     {
-        return std::string(k_proxPrefixes[idx]) + std::string(label);
+        underscoreTier = "2_";
     }
-    return std::string("9_") + std::string(label);
+    else if (label.starts_with('_'))
+    {
+        underscoreTier = "1_";
+    }
+
+    const size_t idx = static_cast<size_t>(prox);
+    const std::string_view proxPrefix = (idx < k_proxPrefixes.size()) ? k_proxPrefixes[idx] : "9_";
+
+    std::string result;
+    result.reserve(proxPrefix.size() + underscoreTier.size() + label.size());
+    result.append(proxPrefix);
+    result.append(underscoreTier);
+    result.append(label);
+    return result;
 }
 
 /**
@@ -1134,6 +1147,10 @@ void AddContainerMembers(const std::string& container, const std::string& qualif
         }
         for (const auto& sym : *symList)
         {
+            if (sym.type == analysis::SymbolType::CallReference)
+            {
+                continue;
+            }
             if (sym.containerName == container || sym.containerName == qualifier)
             {
                 lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
@@ -1301,6 +1318,44 @@ struct MemberTemplateContext
 };
 
 /**
+ * @brief Checks if an open parenthesis immediately follows the cursor position.
+ * @param[in] sourceCode Document source text.
+ * @param[in] position Cursor position.
+ * @return True if '(' follows cursor ignoring inline whitespace, false otherwise.
+ */
+static bool HasTrailingOpenParen(std::string_view sourceCode, const lsp::Position& position)
+{
+    if (sourceCode.empty())
+    {
+        return false;
+    }
+    size_t offset = utils::LineStartOffset(sourceCode, position.line) + position.character;
+    while (offset < sourceCode.size())
+    {
+        char c = sourceCode[offset];
+        if (c == ' ' || c == '\t')
+        {
+            ++offset;
+            continue;
+        }
+        return c == '(';
+    }
+    return false;
+}
+
+/**
+ * @brief Determines whether function/method call parentheses snippet should be generated.
+ * @param[in] collector Completion collector context.
+ * @return True if snippet parentheses should be inserted, false otherwise.
+ */
+static bool ShouldCompleteParens(const CompletionCollector& collector)
+{
+    const bool configEnabled =
+        !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
+    return configEnabled && !HasTrailingOpenParen(collector.request.sourceCode, collector.request.position);
+}
+
+/**
  * @brief Converts a member symbol into a completion candidate item.
  * @param[in] sym Target member symbol.
  * @param[in] typeName Container type name.
@@ -1317,8 +1372,7 @@ void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std::strin
     {
         kind = lsp::CompletionItemKind::Method;
         detail = FormatMethodDetail(sym, tCtx.binding, tCtx.templateArgs);
-        const bool completeParens =
-            !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
+        const bool completeParens = ShouldCompleteParens(collector);
         if (collector.request.snippetSupport && completeParens)
         {
             snippet = sym.GetFunction().parameters.empty() ? (sym.name + "()$0") : (sym.name + "($0)");
@@ -1383,6 +1437,10 @@ void PopulateMembersForType(const std::string& typeName, const analysis::Templat
         }
         for (const auto& sym : *symbols)
         {
+            if (sym.type == analysis::SymbolType::CallReference)
+            {
+                continue;
+            }
             if (sym.containerName == typeName && !IsConstructorOrDestructor(sym, typeName))
             {
                 PopulateMemberSymbolCandidate(sym, typeName, tCtx, collector);
@@ -1517,9 +1575,9 @@ static TSNode FindReceiverPrecedingDot(TSNode rootNode, std::string_view sourceC
         return TSNode{};
     }
     TSNode curr = leaf;
-    while (!ts_node_is_null(ts_node_parent(curr)))
+    for (size_t depth = 0; depth < 16 && !ts_node_is_null(parser::GetParent(curr)); ++depth)
     {
-        TSNode p = ts_node_parent(curr);
+        TSNode p = parser::GetParent(curr);
         std::string_view pType = ts_node_type(p);
         if (IsExpressionBoundaryType(pType) || ts_node_end_byte(p) > dotByteOffset)
         {
@@ -1551,6 +1609,41 @@ TSNode FindReceiverNodeAtDot(TSNode rootNode, std::string_view sourceCode, size_
     return FindReceiverPrecedingDot(rootNode, sourceCode, dotByteOffset);
 }
 
+/**
+ * @brief Resolves member type in class type hierarchy.
+ * @param[in] table Symbol table.
+ * @param[in] parentType Name of parent class/container type.
+ * @param[in] memberName Target member name.
+ * @return Resolved raw type name of variable or return type of function, or empty string.
+ */
+static std::string FindMemberInTypeHierarchy(const analysis::SymbolTable& table, const std::string& parentType,
+                                             std::string_view memberName)
+{
+    if (parentType.empty() || memberName.empty())
+    {
+        return "";
+    }
+    auto hierarchy = GetInheritedTypeHierarchy(table, parentType);
+    for (const auto& cls : hierarchy)
+    {
+        if (auto syms = table.FindSymbolsPtr(cls + "::" + std::string(memberName)))
+        {
+            for (const auto& sym : *syms)
+            {
+                if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().typeName.empty())
+                {
+                    return sym.GetVariable().typeName;
+                }
+                if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().returnType.empty())
+                {
+                    return sym.GetFunction().returnType;
+                }
+            }
+        }
+    }
+    return "";
+}
+
 static std::string ResolveNamedReceiverType(std::string_view nodeText, const CompletionRequest& request,
                                             const analysis::Scope* innermostScope)
 {
@@ -1561,6 +1654,10 @@ static std::string ResolveNamedReceiverType(std::string_view nodeText, const Com
     if (nodeText == "this")
     {
         return FindEnclosingClassName(request);
+    }
+    if (nodeText.starts_with("this."))
+    {
+        return ResolveNamedReceiverType(nodeText.substr(5), request, innermostScope);
     }
     if (innermostScope)
     {
@@ -1580,7 +1677,7 @@ static std::string ResolveNamedReceiverType(std::string_view nodeText, const Com
             }
         }
     }
-    return "";
+    return FindMemberInTypeHierarchy(request.symbolTable, FindEnclosingClassName(request), nodeText);
 }
 
 /**
@@ -1653,6 +1750,25 @@ static size_t PeelIndexBrackets(const std::string& prefix, size_t& s)
     return count;
 }
 
+static size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)
+{
+    while (pos > 0 && (text[pos - 1] == ' ' || text[pos - 1] == '\t'))
+    {
+        --pos;
+    }
+    return pos;
+}
+
+static size_t ExtractIdentifierBackward(const std::string& text, size_t end)
+{
+    size_t s = end;
+    while (s > 0 && (std::isalnum(static_cast<unsigned char>(text[s - 1])) || text[s - 1] == '_'))
+    {
+        --s;
+    }
+    return s;
+}
+
 /**
  * @brief Resolves fallback receiver type when AST node resolution is unavailable or incomplete.
  * @param[in] prefix Prefix text before cursor.
@@ -1665,23 +1781,26 @@ static std::string ResolveFallbackReceiverType(const std::string& prefix, size_t
                                                const CompletionCollector& collector,
                                                const analysis::Scope* innermostScope)
 {
-    size_t s = dotCol;
-    while (s > 0 && (prefix[s - 1] == ' ' || prefix[s - 1] == '\t'))
-    {
-        --s;
-    }
+    size_t s = SkipInlineWhitespaceBackward(prefix, dotCol);
     size_t indexCount = PeelIndexBrackets(prefix, s);
     size_t e = s;
-    while (s > 0 && (std::isalnum(static_cast<unsigned char>(prefix[s - 1])) || prefix[s - 1] == '_'))
-    {
-        --s;
-    }
+    s = ExtractIdentifierBackward(prefix, s);
     if (e <= s)
     {
         return "";
     }
     std::string ident(prefix.substr(s, e - s));
-    std::string rawTypeName = ResolveNamedReceiverType(ident, collector.request, innermostScope);
+    std::string rawTypeName;
+    size_t prevDot = SkipInlineWhitespaceBackward(prefix, s);
+    if (prevDot > 0 && prefix[prevDot - 1] == '.')
+    {
+        std::string parentType = ResolveFallbackReceiverType(prefix, prevDot - 1, collector, innermostScope);
+        rawTypeName = FindMemberInTypeHierarchy(collector.request.symbolTable, parentType, ident);
+    }
+    if (rawTypeName.empty())
+    {
+        rawTypeName = ResolveNamedReceiverType(ident, collector.request, innermostScope);
+    }
     if (!rawTypeName.empty() && indexCount > 0)
     {
         const auto& arrayContainer = ConfiguredArrayTypeName(collector.request);
@@ -1843,8 +1962,7 @@ void ProcessScopeDefinition(const analysis::LocalDefinition& def, const std::str
     {
         kind = lsp::CompletionItemKind::Function;
         isCallable = true;
-        const bool completeParens =
-            !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
+        const bool completeParens = ShouldCompleteParens(collector);
         if (collector.request.snippetSupport && completeParens)
         {
             snippet = CallSnippetForName(symbolKey, collector.request.symbolTable);
@@ -1882,22 +2000,89 @@ void CollectScopeDefinitions(const analysis::Scope* innermostScope, CompletionCo
     {
         return;
     }
+    const uint32_t cursorByte = static_cast<uint32_t>(
+        utils::PositionToOffset(collector.request.sourceCode, collector.request.position.line,
+                                collector.request.position.character, utils::PositionEncoding::Utf16));
+
+    bool crossedClosure = false;
     for (const analysis::Scope* cur = innermostScope; cur != nullptr; cur = cur->parent)
     {
+        if (cur->kind == analysis::ScopeKind::Closure)
+        {
+            crossedClosure = true;
+        }
         const bool isLocal = (cur->kind == analysis::ScopeKind::Block || cur->kind == analysis::ScopeKind::Function ||
                               cur->kind == analysis::ScopeKind::Closure);
         const SymbolProximity prox = isLocal ? SymbolProximity::Local : SymbolProximity::CurrentFile;
         const std::string scopeNs = BuildScopeNamespacePath(cur, collector.request);
         for (const auto& def : cur->definitions)
         {
+            if (def.kind == analysis::LocalDefinitionKind::Variable && cursorByte < def.visibleFromByte)
+            {
+                continue;
+            }
+            if (crossedClosure && cur->kind != analysis::ScopeKind::Closure &&
+                (def.kind == analysis::LocalDefinitionKind::Variable ||
+                 def.kind == analysis::LocalDefinitionKind::Parameter))
+            {
+                continue;
+            }
             ProcessScopeDefinition(def, scopeNs, collector, prox);
         }
+    }
+}
+
+static void FormatEnclosingMemberItem(const analysis::Symbol& sym, CompletionCollector& collector,
+                                      lsp::CompletionItemKind& kind, std::string& detail, std::string& snippet)
+{
+    if (sym.type == analysis::SymbolType::Function)
+    {
+        kind = lsp::CompletionItemKind::Method;
+        detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
+        const bool completeParens = ShouldCompleteParens(collector);
+        if (collector.request.snippetSupport && completeParens)
+        {
+            snippet = sym.GetFunction().parameters.empty() ? (sym.name + "()$0") : (sym.name + "($0)");
+        }
+    }
+    else if (sym.type == analysis::SymbolType::Property || sym.type == analysis::SymbolType::Variable)
+    {
+        kind = (sym.type == analysis::SymbolType::Property) ? lsp::CompletionItemKind::Property
+                                                            : lsp::CompletionItemKind::Field;
+        if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
+        {
+            detail = sym.GetVariable().typeName + " " + sym.name;
+        }
+    }
+}
+
+static void AddAccessorPropertyCandidate(const analysis::Symbol& sym, const std::string& enclosingClassName,
+                                         CompletionCollector& collector, SymbolProximity prox)
+{
+    const int accessorMode = collector.request.config ? collector.request.config->engine.propertyAccessorMode : 2;
+    if (accessorMode < 2 || sym.type != analysis::SymbolType::Function)
+    {
+        return;
+    }
+    const bool accessorKeywordRequired = (accessorMode == 3);
+    const std::string propertyName = analysis::PropertyNameFromAccessor(sym, accessorKeywordRequired);
+    if (!propertyName.empty())
+    {
+        std::string propertyType = analysis::PropertyTypeFromAccessors(analysis::FindPropertyAccessors(
+            enclosingClassName, propertyName, collector.request.symbolTable, accessorKeywordRequired));
+        std::string propSortText = FormatProximitySortText(prox, propertyName);
+        AddItemIfNew(collector, {propertyName, lsp::CompletionItemKind::Property, propertyType, "", sym.qualifiedName,
+                                 "", std::move(propSortText)});
     }
 }
 
 static void CollectEnclosingMemberCandidate(const analysis::Symbol& sym, const std::string& enclosingClassName,
                                             CompletionCollector& collector)
 {
+    if (sym.type == analysis::SymbolType::CallReference)
+    {
+        return;
+    }
     if (sym.containerName != enclosingClassName && sym.containerName != analysis::LastScopeSegment(enclosingClassName))
     {
         return;
@@ -1907,23 +2092,16 @@ static void CollectEnclosingMemberCandidate(const analysis::Symbol& sym, const s
         AddEnumConstantCandidate(collector, sym);
         return;
     }
-    lsp::CompletionItemKind kind =
-        (sym.type == analysis::SymbolType::Function) ? lsp::CompletionItemKind::Method : lsp::CompletionItemKind::Field;
+    lsp::CompletionItemKind kind = lsp::CompletionItemKind::Field;
     std::string snippet;
     std::string detail;
-    if (sym.type == analysis::SymbolType::Function)
-    {
-        detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
-        const bool completeParens =
-            !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
-        if (collector.request.snippetSupport && completeParens)
-        {
-            snippet = sym.GetFunction().parameters.empty() ? (sym.name + "()$0") : (sym.name + "($0)");
-        }
-    }
+    FormatEnclosingMemberItem(sym, collector, kind, detail, snippet);
+
     const auto prox = DetermineSymbolProximity(sym, collector.request.uri, GetPredefinedExtension(collector.request));
     std::string sortText = FormatProximitySortText(prox, sym.name);
     AddItemIfNew(collector, {sym.name, kind, detail, "", sym.qualifiedName, snippet, std::move(sortText)});
+
+    AddAccessorPropertyCandidate(sym, enclosingClassName, collector, prox);
 }
 
 /**
@@ -1942,17 +2120,21 @@ void CollectEnclosingClassMembers(CompletionCollector& collector)
     {
         return;
     }
-    const auto& cm = ruleIndex->Members(enclosingClassName);
-    for (const auto& key : cm.memberKeys)
+    auto hierarchy = analysis::GetInheritedTypeHierarchy(enclosingClassName, collector.request.symbolTable);
+    for (const auto& clsName : hierarchy)
     {
-        const auto symList = collector.request.symbolTable.FindSymbolsPtr(key);
-        if (!symList)
+        const auto& cm = ruleIndex->Members(clsName);
+        for (const auto& key : cm.memberKeys)
         {
-            continue;
-        }
-        for (const auto& sym : *symList)
-        {
-            CollectEnclosingMemberCandidate(sym, enclosingClassName, collector);
+            const auto symList = collector.request.symbolTable.FindSymbolsPtr(key);
+            if (!symList)
+            {
+                continue;
+            }
+            for (const auto& sym : *symList)
+            {
+                CollectEnclosingMemberCandidate(sym, clsName, collector);
+            }
         }
     }
 }
@@ -1962,8 +2144,7 @@ static void CollectGlobalFunctionSymbol(const analysis::Symbol& sym, bool access
 {
     std::string detail = sym.GetFunction().returnType + " " + sym.name + "(...)";
     std::string snippet;
-    const bool completeParens =
-        !collector.request.config || collector.request.config->features.completionCompleteFunctionParens;
+    const bool completeParens = ShouldCompleteParens(collector);
     if (collector.request.snippetSupport && completeParens)
     {
         snippet = CallSnippet(sym.name, sym.GetFunction().parameters);
@@ -2237,8 +2418,36 @@ void CollectDeclarationSnippets(CompletionCollector& collector)
  */
 void CollectKeywords(CompletionCollector& collector)
 {
+    const std::string enclosingClassName = FindEnclosingClassName(collector.request);
+    const bool inClass = !enclosingClassName.empty();
+    bool hasBaseClass = false;
+    if (inClass)
+    {
+        auto classSymbols = collector.request.symbolTable.FindSymbols(enclosingClassName);
+        for (const auto& sym : classSymbols)
+        {
+            if (sym.type == analysis::SymbolType::Class &&
+                std::holds_alternative<analysis::ClassSignature>(sym.signature))
+            {
+                if (!sym.GetClass().bases.empty())
+                {
+                    hasBaseClass = true;
+                    break;
+                }
+            }
+        }
+    }
+
     for (const auto& kw : GetKeywords())
     {
+        if (kw == "this" && !inClass)
+        {
+            continue;
+        }
+        if (kw == "super" && (!inClass || !hasBaseClass))
+        {
+            continue;
+        }
         AddItemIfNew(collector, {kw, lsp::CompletionItemKind::Keyword, "", "", "", "",
                                  FormatProximitySortText(SymbolProximity::Keyword, kw)});
     }

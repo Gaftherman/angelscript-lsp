@@ -164,11 +164,13 @@ void PopulateEnglishMessages2(MessageMap& m_messages)
     m_messages["as-err-interface-impl-missing"] =
         "Class '{}' does not implement interface method '{}' from interface '{}'.";
     m_messages["as-err-attribute-repeated"] = "Attribute '{}' is informed multiple times.";
-    m_messages["as-err-reserved-keyword-name"] = "Instead found reserved keyword '{}'.";
+    m_messages["as-err-reserved-keyword-name"] = "Reserved keyword '{}' cannot be used as an identifier.";
     m_messages["as-err-reserved-word-as-parameter-name"] =
         "Reserved keyword '{}' cannot be used as an identifier here.";
     m_messages["as-err-name-conflict"] = "Name conflict. '{}' is already declared as a {}.";
     m_messages["as-err-const-void-return"] = "Return type can't be 'const void'.";
+    m_messages["as-err-global-function-access-modifier"] =
+        "Global or namespace function '{}' cannot have access modifiers (private/protected).";
     m_messages["as-err-global-function-qualifiers"] = "Global function '{}' cannot be declared 'const'.";
     m_messages["as-err-override-no-base"] =
         "Method '{}' marked as override but class '{}' does not replace any base class or interface method.";
@@ -221,6 +223,8 @@ void PopulateEnglishMessages3(MessageMap& m_messages)
         "Illegal access to protected member '{}', declared in class '{}'. A protected member is reachable from a "
         "derived class, and only through an object of that class's own type.";
     m_messages["as-err-member-not-found"] = "Class '{}' has no member '{}'.";
+    m_messages["as-err-virtual-property-outside-class"] =
+        "Virtual property '{}' can only be declared within a class or interface.";
     m_messages["as-err-virtual-property-signature"] =
         "Invalid signature for virtual property '{}'. A 'get_' accessor returns a value and takes at most an index; a "
         "'set_' accessor returns void and takes the value, optionally preceded by an index.";
@@ -257,6 +261,8 @@ void PopulateEnglishMessages4(MessageMap& m_messages)
     m_messages["as-err-invalid-case-type"] = "Case value must be an integer, char, or enum constant expression.";
     m_messages["as-err-duplicate-case-value"] = "Duplicate case value '{}' in switch statement.";
     m_messages["as-err-default-must-be-last"] = "The default case must be the last one.";
+    m_messages["as-err-variable-in-switch-case"] =
+        "Variables cannot be declared in switch cases, except inside statement blocks.";
     m_messages["as-err-if-empty-statement"] = "If with empty statement.";
     m_messages["as-err-else-empty-statement"] = "Else with empty statement.";
     m_messages["as-err-not-all-paths-return"] = "Not all paths of '{}' return a value.";
@@ -287,6 +293,11 @@ void PopulateEnglishMessages5(MessageMap& m_messages)
     m_messages["as-warn-undeclared-identifier"] = "Undeclared identifier '{}'.";
     m_messages["as-warn-possible-null-dereference"] = "Possible null handle dereference: '{}' may be null.";
     m_messages["as-warn-unused-variable"] = "Local variable '{}' is never used.";
+    m_messages["as-warn-unused-field"] = "Member variable '{}' is never used.";
+    m_messages["as-warn-unused-global-variable"] = "Global variable '{}' is never used.";
+    m_messages["as-warn-unused-function"] = "Function '{}' is never used.";
+    m_messages["as-warn-unused-method"] = "Method '{}' is never used.";
+    m_messages["as-warn-unused-class"] = "Class '{}' is never used.";
     m_messages["as-warn-signed-unsigned-mismatch"] =
         "Signed/Unsigned mismatch: '{}' is compared with '{}'. Half of one range has no counterpart in the other, so "
         "the conversion wraps.";
@@ -402,15 +413,29 @@ void PopulateEnglishMessages7(MessageMap& m_messages)
     m_messages["as-err-positional-after-named-arg"] = "Positional argument cannot follow a named argument.";
     m_messages["as-err-cannot-return-local-ref"] = "Cannot return reference to local variable '{}'.";
     m_messages["as-err-cannot-return-param-ref"] = "Cannot return reference to parameter '{}'.";
-    m_messages["as-err-lambda-closure-disallowed"] = "Lambdas cannot access outer local variables (no closures).";
+    m_messages["as-err-lambda-closure-disallowed"] =
+        "Anonymous functions cannot capture outer local variable '{}' (no closure support).";
+    m_messages["as-err-lambda-this-disallowed"] = "Keyword 'this' is not available in anonymous functions.";
+    m_messages["as-err-lambda-member-access"] =
+        "Anonymous functions cannot access enclosing class member '{}' without an object reference.";
     m_messages["as-err-standalone-anonymous-function"] =
         "An anonymous function is an expression and cannot be used as a stand-alone statement. Pass it where a funcdef "
         "is expected or assign it to a funcdef handle.";
     m_messages["as-err-readonly-handle"] = "Cannot reassign read-only handle '{}'.";
-    m_messages["as-err-expression-is-data-type"] = "Expression '{}' is a data type.";
+    m_messages["as-err-expression-is-data-type"] = "Type '{}' cannot be used as a value expression.";
     m_messages["as-warn-handle-comparison-equality"] =
         "Handle comparison with '{}' causes implicit conversion; use '{}' for reference identity.";
     m_messages["as-err-illegal-operation"] = "Illegal operation on this datatype.";
+    m_messages["as-warn-engine-storage-rule"] = "{}";
+    m_messages["as-hint-engine-type-suggestion"] = "{}";
+    m_messages["as-warn-engine-scheduler-safety"] = "{}";
+    m_messages["as-warn-engine-scheduled-enum-discriminant"] = "{}";
+    m_messages["engine-rule-storage-default"] = "Variable '{}' violates storage rule '{}'. Consider using '{}'.";
+    m_messages["engine-rule-scheduler-safety-default"] = "Passing raw handle '{}' to '{}' is unsafe.";
+    m_messages["engine-rule-scheduler-enum-discriminant"] =
+        "Passing discriminant to enum type '{}' in scheduled call; explicitly construct or typecast first (e.g. "
+        "{}({})).";
+    m_messages["engine-rule-type-suggestion-default"] = "Variable '{}' uses '{}'. Consider using '{}'.";
 }
 
 /**
@@ -421,6 +446,8 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
 {
     m_messages["action-disable-in-workspace-settings"] = "Disable in workspace settings (angelscript.{})";
     m_messages["action-disable-in-settings"] = "Disable in settings";
+    m_messages["action-ignore-unused-symbol"] = "Ignore unused symbol '{}' (mark as entry point / callback)";
+    m_messages["action-ignore-unused-symbol-cmd"] = "Ignore unused symbol";
     m_messages["action-add-property-keyword"] = "Add the 'property' keyword";
     m_messages["action-remove-primitive-handle"] = "Remove '@' - primitive type cannot have a handle";
     m_messages["action-call-explicitly"] = "Call {}() explicitly";
@@ -442,6 +469,24 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
     m_messages["note-call-ambiguous-priority"] = "Call to '{}' is ambiguous (Priority: '{}').";
     m_messages["note-expected-comma-or-paren"] = "Expected ',' or ')' before '{}'";
     m_messages["note-in-mixin-member"] = "In mixin '{}': Member '{}'";
+    m_messages["hover-more-overloads-singular"] = "1 more overload";
+    m_messages["hover-more-overloads-plural"] = "{} more overloads";
+    m_messages["hover-peek-overloads"] = "Peek overloads";
+    m_messages["inlay-go-to-definition"] = "Go to Definition";
+    m_messages["hover-wildcard-type-desc"] =
+        "The variable type `?` represents any type. It is used in parameter declarations "
+        "to accept arguments of any type by reference (`?& in`, `?& out`, `?& inout`).";
+    m_messages["hover-string-length"] = "- **Length**: {} characters";
+    m_messages["hover-string-file-not-found"] = "- **File**: Not found";
+    m_messages["hover-asset-status-exists"] = "- **Status**: Exists";
+    m_messages["hover-asset-size"] = "- **Size**: {}";
+    m_messages["hover-asset-path"] = "- **Path**: `{}`";
+    m_messages["codelens.references"] = "{} references";
+    m_messages["codelens.reference"] = "1 reference";
+    m_messages["codelens.implementations"] = "{} implementations";
+    m_messages["codelens.implementation"] = "1 implementation";
+    m_messages["codelens.view-mixin-expansion"] = "View Mixin Expansion: {}";
+    m_messages["codelens.jump-to-physical-source"] = "Jump to physical source in {}";
 }
 
 /**
@@ -523,11 +568,13 @@ void PopulateSpanishMessages2(MessageMap& m_messages)
     m_messages["as-err-interface-impl-missing"] =
         "La clase '{}' no implementa el método de interfaz '{}' de la interfaz '{}'.";
     m_messages["as-err-attribute-repeated"] = "El atributo '{}' se informa múltiples veces.";
-    m_messages["as-err-reserved-keyword-name"] = "Se encontró la palabra reservada '{}' en lugar de un identificador.";
+    m_messages["as-err-reserved-keyword-name"] = "La palabra reservada '{}' no se puede usar como identificador.";
     m_messages["as-err-reserved-word-as-parameter-name"] =
         "La palabra reservada '{}' no se puede usar como un identificador aquí.";
     m_messages["as-err-name-conflict"] = "Conflicto de nombre. '{}' ya está declarado como {}.";
     m_messages["as-err-const-void-return"] = "El tipo de retorno no puede ser 'const void'.";
+    m_messages["as-err-global-function-access-modifier"] =
+        "La función global o de namespace '{}' no puede tener modificadores de acceso (private/protected).";
     m_messages["as-err-global-function-qualifiers"] = "La función global '{}' no puede declararse 'const'.";
     m_messages["as-err-override-no-base"] = "El método '{}' marcado como override no reemplaza ningún método de "
                                             "clase base o interfaz en la clase '{}'.";
@@ -583,6 +630,8 @@ void PopulateSpanishMessages3(MessageMap& m_messages)
         "Acceso ilegal al miembro protegido '{}', declarado en la clase '{}'. Un miembro protegido es accesible "
         "desde una clase derivada, y únicamente a través de un objeto del tipo de esa misma clase.";
     m_messages["as-err-member-not-found"] = "La clase '{}' no tiene ningún miembro '{}'.";
+    m_messages["as-err-virtual-property-outside-class"] =
+        "La propiedad virtual '{}' solo puede declararse dentro de una clase o interfaz.";
     m_messages["as-err-virtual-property-signature"] =
         "Firma no válida para la propiedad virtual '{}'. Un accesor 'get_' devuelve un valor y toma como mucho un "
         "índice; un accesor 'set_' devuelve void y toma el valor, precedido opcionalmente por un índice.";
@@ -625,6 +674,8 @@ void PopulateSpanishMessages4(MessageMap& m_messages)
         "El valor de 'case' debe ser una expresión constante entera, de carácter o de enumeración.";
     m_messages["as-err-duplicate-case-value"] = "Valor de 'case' duplicado ('{}') en la sentencia 'switch'.";
     m_messages["as-err-default-must-be-last"] = "El caso por defecto (default) debe ser el último.";
+    m_messages["as-err-variable-in-switch-case"] =
+        "No se pueden declarar variables en casos de switch, excepto dentro de bloques de sentencias.";
     m_messages["as-err-if-empty-statement"] = "'if' con sentencia vacía.";
     m_messages["as-err-else-empty-statement"] = "'else' con sentencia vacía.";
     m_messages["as-err-not-all-paths-return"] = "No todos los caminos de '{}' devuelven un valor.";
@@ -655,6 +706,11 @@ void PopulateSpanishMessages5(MessageMap& m_messages)
     m_messages["as-warn-undeclared-identifier"] = "Identificador no declarado '{}'.";
     m_messages["as-warn-possible-null-dereference"] = "Posible desreferencia de handle nulo: '{}' puede ser nulo.";
     m_messages["as-warn-unused-variable"] = "La variable local '{}' nunca se usa.";
+    m_messages["as-warn-unused-field"] = "La variable miembro '{}' nunca se usa.";
+    m_messages["as-warn-unused-global-variable"] = "La variable global '{}' nunca se usa.";
+    m_messages["as-warn-unused-function"] = "La función '{}' nunca se usa.";
+    m_messages["as-warn-unused-method"] = "El método '{}' nunca se usa.";
+    m_messages["as-warn-unused-class"] = "La clase '{}' nunca se usa.";
     m_messages["as-warn-signed-unsigned-mismatch"] =
         "Discrepancia con/sin signo: se compara '{}' con '{}'. La mitad de un rango no tiene equivalente en el "
         "otro, así que la conversión da la vuelta.";
@@ -780,15 +836,29 @@ void PopulateSpanishMessages7(MessageMap& m_messages)
     m_messages["as-err-cannot-return-local-ref"] = "No se puede devolver una referencia a la variable local '{}'.";
     m_messages["as-err-cannot-return-param-ref"] = "No se puede devolver una referencia al parámetro '{}'.";
     m_messages["as-err-lambda-closure-disallowed"] =
-        "Las lambdas no pueden acceder a variables locales externas (sin clausuras).";
+        "Las funciones anónimas no pueden capturar la variable local externa '{}' (sin soporte de clausuras).";
+    m_messages["as-err-lambda-this-disallowed"] = "La palabra clave 'this' no está disponible en funciones anónimas.";
+    m_messages["as-err-lambda-member-access"] =
+        "Las funciones anónimas no pueden acceder al miembro de clase externa '{}' sin una referencia de objeto.";
     m_messages["as-err-standalone-anonymous-function"] =
         "Una función anónima es una expresión y no puede usarse como una sentencia independiente. Pásala donde se "
         "espere un funcdef o asígnala a un handle de funcdef.";
     m_messages["as-err-readonly-handle"] = "No se puede reasignar el handle de solo lectura '{}'.";
-    m_messages["as-err-expression-is-data-type"] = "La expresión '{}' es un tipo de datos.";
+    m_messages["as-err-expression-is-data-type"] = "El tipo '{}' no puede usarse como expresión de valor.";
     m_messages["as-warn-handle-comparison-equality"] =
         "La comparación de handle con '{}' provoca una conversión implícita; use '{}' para identidad de referencia.";
     m_messages["as-err-illegal-operation"] = "Operación no válida en este tipo de datos.";
+    m_messages["as-warn-engine-storage-rule"] = "{}";
+    m_messages["as-hint-engine-type-suggestion"] = "{}";
+    m_messages["as-warn-engine-scheduler-safety"] = "{}";
+    m_messages["as-warn-engine-scheduled-enum-discriminant"] = "{}";
+    m_messages["engine-rule-storage-default"] =
+        "La variable '{}' infringe la regla de almacenamiento '{}'. Considere usar '{}'.";
+    m_messages["engine-rule-scheduler-safety-default"] = "Pasar el handle directo '{}' a '{}' no es seguro.";
+    m_messages["engine-rule-scheduler-enum-discriminant"] =
+        "Paso de discriminante al tipo enum '{}' en llamada programada; construya o convierta explícitamente primero "
+        "(ej. {}({})).";
+    m_messages["engine-rule-type-suggestion-default"] = "La variable '{}' usa '{}'. Considere usar '{}'.";
 }
 
 /**
@@ -800,6 +870,9 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["action-disable-in-workspace-settings"] =
         "Deshabilitar en la configuración del espacio de trabajo (angelscript.{})";
     m_messages["action-disable-in-settings"] = "Deshabilitar en la configuración";
+    m_messages["action-ignore-unused-symbol"] =
+        "Ignorar símbolo no usado '{}' (marcar como punto de entrada / callback)";
+    m_messages["action-ignore-unused-symbol-cmd"] = "Ignorar símbolo no usado";
     m_messages["action-add-property-keyword"] = "Añadir la palabra clave 'property'";
     m_messages["action-remove-primitive-handle"] = "Eliminar '@' - un tipo primitivo no admite manejador";
     m_messages["action-call-explicitly"] = "Llamar a {}() explícitamente";
@@ -821,6 +894,24 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["note-call-ambiguous-priority"] = "La llamada a '{}' es ambigua (Prioridad: '{}').";
     m_messages["note-expected-comma-or-paren"] = "Se esperaba ',' o ')' antes de '{}'";
     m_messages["note-in-mixin-member"] = "En el mixin '{}': Miembro '{}'";
+    m_messages["hover-more-overloads-singular"] = "1 sobrecarga más";
+    m_messages["hover-more-overloads-plural"] = "{} sobrecargas más";
+    m_messages["hover-peek-overloads"] = "Ver sobrecargas";
+    m_messages["inlay-go-to-definition"] = "Ir a Definición";
+    m_messages["hover-wildcard-type-desc"] =
+        "El tipo variable `?` representa cualquier tipo. Se utiliza en declaraciones de parámetros "
+        "para aceptar argumentos de cualquier tipo por referencia (`?& in`, `?& out`, `?& inout`).";
+    m_messages["hover-string-length"] = "- **Longitud**: {} caracteres";
+    m_messages["hover-string-file-not-found"] = "- **Archivo**: No encontrado";
+    m_messages["hover-asset-status-exists"] = "- **Estado**: Existe";
+    m_messages["hover-asset-size"] = "- **Tamaño**: {}";
+    m_messages["hover-asset-path"] = "- **Ruta**: `{}`";
+    m_messages["codelens.references"] = "{} referencias";
+    m_messages["codelens.reference"] = "1 referencia";
+    m_messages["codelens.implementations"] = "{} implementaciones";
+    m_messages["codelens.implementation"] = "1 implementación";
+    m_messages["codelens.view-mixin-expansion"] = "Ver expansión del mixin: {}";
+    m_messages["codelens.jump-to-physical-source"] = "Ir a la fuente física en {}";
 }
 
 /**

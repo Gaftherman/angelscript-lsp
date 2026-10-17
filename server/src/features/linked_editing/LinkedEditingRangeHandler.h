@@ -15,7 +15,7 @@ namespace angel_lsp::features
  */
 struct LinkedEditingRangeRequest
 {
-    const std::string& sourceCode;
+    std::string sourceCode;
 
     /** @brief Root of the document's lexical scope tree, or nullptr when none was collected. */
     const analysis::Scope* scopeRoot = nullptr;

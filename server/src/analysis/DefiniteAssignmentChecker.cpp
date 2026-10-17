@@ -193,7 +193,7 @@ class DefiniteAssignmentVisitor
                 auto hierarchy = GetInheritedTypeHierarchy(cleanObj, m_ctx.request.symbolTable);
                 for (const auto& typeName : hierarchy)
                 {
-                    auto found = m_ctx.request.symbolTable.FindSymbolsPtr(typeName + "::" + memName);
+                    auto found = m_ctx.request.symbolTable.FindMemberSymbolPtr(typeName, memName);
                     if (found)
                     {
                         for (const auto& sym : *found)

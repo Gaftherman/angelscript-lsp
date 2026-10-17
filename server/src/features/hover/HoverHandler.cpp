@@ -1,11 +1,14 @@
 #include "features/hover/HoverHandler.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/DocComment.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SignatureFormatter.h"
 #include "analysis/VirtualMixinContext.h"
 #include "analysis/overload/ConversionRankingEngine.h"
+#include "i18n/i18n.h"
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include "parser/Primitives.h"
 #include "utils/IncludeResolver.h"
 #include "utils/LspLogger.h"
@@ -134,6 +137,24 @@ static std::string InheritedDocComment(const HoverRequest& request, const analys
             {
                 return doc;
             }
+        }
+    }
+
+    analysis::LinkedBaseOptions linkedOpts;
+    if (request.config)
+    {
+        linkedOpts.proxyMap = &request.config->engineRules.unusedRules.baseClassProxyMap;
+        linkedOpts.delegateProps = request.config->engineRules.unusedRules.baseClassDelegateProperties;
+    }
+
+    const auto linkedSymbols =
+        analysis::FindOverriddenBaseMethodSymbols(symbol.containerName, symbol.name, request.symbolTable, linkedOpts);
+    for (const auto& candidate : linkedSymbols)
+    {
+        std::string doc = OwnDocComment(request, candidate);
+        if (!doc.empty())
+        {
+            return doc;
         }
     }
 
@@ -415,8 +436,9 @@ struct HoverTarget
 
 bool IsHoverableIdentifier(std::string_view txt, std::string_view type)
 {
-    if (type == "identifier" || type == "scoped_identifier" || type == "primitive_type" || type == "string_literal" ||
-        analysis::IsPrimitiveTypeName(std::string(txt)) || analysis::IsReservedKeyword(std::string(txt)))
+    if (txt == "?" || type == "datatype" || type == "identifier" || type == "scoped_identifier" ||
+        type == "primitive_type" || type == "string_literal" || analysis::IsPrimitiveTypeName(std::string(txt)) ||
+        analysis::IsReservedKeyword(std::string(txt)))
     {
         return true;
     }
@@ -584,6 +606,11 @@ std::optional<IncludeDirectiveInfo> ParseIncludeDirective(std::string_view line,
  */
 std::optional<lsp::Hover> HoverIncludeDirective(const HoverRequest& request)
 {
+    if (request.sourceCode.find('#') == std::string::npos)
+    {
+        return std::nullopt;
+    }
+
     const auto [lineStart, lineEnd] = FindLineSpan(request.sourceCode, request.position.line);
     if (lineStart == std::string::npos)
     {
@@ -812,6 +839,37 @@ std::optional<lsp::Hover> TryHoverPrimitiveType(std::string_view nodeText, const
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, range};
 }
 
+/**
+ * @brief Attempts to produce hover documentation for the wildcard type '?'.
+ * @param[in] nodeText Text of the hover target.
+ * @param[in] range Target range in the document.
+ * @param[in] i18n Optional localization dictionary pointer.
+ * @param[in,out] profiler Performance profiler.
+ * @return Populated Hover if nodeText is '?', std::nullopt otherwise.
+ */
+std::optional<lsp::Hover> TryHoverWildcardType(std::string_view nodeText, const lsp::Range& range,
+                                               const angel_lsp::i18n::I18n* i18n, HoverProfiler& profiler)
+{
+    if (nodeText != "?")
+    {
+        return std::nullopt;
+    }
+    profiler.nodeType = "wildcard_type";
+    if (profiler.IsActive())
+    {
+        profiler.pathText = "?";
+        profiler.symbolName = "?";
+    }
+    utils::HighResTimer fmtTimer;
+    std::string desc = angel_lsp::i18n::FormatMessage(
+        i18n, "hover-wildcard-type-desc",
+        "The variable type `?` represents any type. It is used in parameter declarations "
+        "to accept arguments of any type by reference (`?& in`, `?& out`, `?& inout`).");
+    std::string md = "```angelscript\n(variable type) ?\n```\n\n" + desc;
+    profiler.fmtMs += fmtTimer.ElapsedMs();
+    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, range};
+}
+
 std::optional<lsp::Hover> TryHoverThis(const HoverQueryContext& ctx)
 {
     if (ctx.nodeText != "this")
@@ -850,7 +908,7 @@ std::optional<lsp::Hover> TryHoverThis(const HoverQueryContext& ctx)
     }
 
     utils::HighResTimer fmtTimer;
-    std::string md = fmt::format("```angelscript\n{} {}\n```", className, ctx.nodeText);
+    std::string md = fmt::format("```angelscript\n(self) {} {}\n```", className, ctx.nodeText);
     ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, ctx.range};
 }
@@ -1028,24 +1086,199 @@ void CollectOverloadDocs(const HoverRequest& request, const std::vector<analysis
     }
 }
 
-std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& memberSymbols,
-                                            std::string_view accessorPropertyType, const HoverQueryContext& ctx)
+/**
+ * @brief Checks whether a symbol represents a callable routine (function, method, constructor).
+ * @param[in] sym Symbol to test.
+ * @return True if callable routine, false otherwise.
+ */
+bool IsCallableSymbol(const analysis::Symbol& sym)
 {
-    auto best = ResolveCallOverload(ctx.node, memberSymbols, ctx.request, ctx.scope);
-    if (best)
+    return sym.type == analysis::SymbolType::Function ||
+           std::holds_alternative<analysis::FunctionSignature>(sym.signature);
+}
+
+/**
+ * @brief Counts additional callable overloads sharing the primary symbol's name.
+ * @param[in] symbols Deduplicated candidate symbols list.
+ * @return Count of other overloads with the same name.
+ */
+size_t CountMoreOverloads(const std::vector<analysis::Symbol>& symbols)
+{
+    if (symbols.size() <= 1 || !IsCallableSymbol(symbols.front()))
     {
-        auto it = std::find_if(memberSymbols.begin(), memberSymbols.end(), [&](const analysis::Symbol& s)
-                               { return s.name == best->name && analysis::HasSameParameterList(s, *best); });
-        if (it != memberSymbols.end())
+        return 0;
+    }
+    size_t count = 0;
+    const std::string_view primaryName = symbols.front().name;
+    for (size_t i = 1; i < symbols.size(); ++i)
+    {
+        if (symbols[i].name == primaryName && IsCallableSymbol(symbols[i]))
         {
-            std::rotate(memberSymbols.begin(), it, it + 1);
+            ++count;
         }
     }
+    return count;
+}
 
-    RemoveDuplicateSymbols(memberSymbols);
-    if (!memberSymbols.empty() && ctx.profiler.IsActive())
+/**
+ * @brief Percent-encodes a JSON string for use inside a VS Code command URI query parameter.
+ * @param[in] input Raw JSON text.
+ * @return Percent-encoded string safe for Markdown command links.
+ */
+std::string UrlEncodeCommandArgs(std::string_view input)
+{
+    static constexpr char k_hexDigits[] = "0123456789ABCDEF";
+    std::string encoded;
+    encoded.reserve(input.size() * 2);
+    for (unsigned char ch : input)
     {
-        ctx.profiler.symbolName = memberSymbols.front().name;
+        const bool isUnreserved = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') ||
+                                  ch == '-' || ch == '_' || ch == '.' || ch == '~';
+        if (isUnreserved)
+        {
+            encoded.push_back(static_cast<char>(ch));
+        }
+        else
+        {
+            encoded.push_back('%');
+            encoded.push_back(k_hexDigits[(ch >> 4) & 0x0F]);
+            encoded.push_back(k_hexDigits[ch & 0x0F]);
+        }
+    }
+    return encoded;
+}
+
+/**
+ * @brief Builds a clickable command link that opens VS Code Peek Locations for all overloads.
+ * @param[in] symbols Candidate overload symbols.
+ * @param[in] ctx Hover query context.
+ * @return Markdown link invoking angelscript.peekOverloads.
+ */
+std::string BuildPeekOverloadsLink(const std::vector<analysis::Symbol>& symbols, const HoverQueryContext& ctx)
+{
+    std::ostringstream json;
+    json << "[{\"uri\":\"" << ctx.request.uri << "\",\"line\":" << ctx.request.position.line
+         << ",\"character\":" << ctx.request.position.character << ",\"locations\":[";
+
+    const std::string_view primaryName = symbols.front().name;
+    bool first = true;
+    for (const auto& sym : symbols)
+    {
+        if (sym.name != primaryName || !IsCallableSymbol(sym))
+        {
+            continue;
+        }
+        if (!first)
+        {
+            json << ",";
+        }
+        first = false;
+        const std::string_view symUri =
+            sym.fileUri.empty() ? std::string_view(ctx.request.uri) : std::string_view(sym.fileUri);
+        const uint32_t sLine = sym.selectionRange.startLine > 0 ? sym.selectionRange.startLine : sym.startLine;
+        const uint32_t eLine = sym.selectionRange.endLine > 0 ? sym.selectionRange.endLine : sLine;
+        json << "{\"uri\":\"" << symUri << "\",\"startLine\":" << sLine
+             << ",\"startChar\":" << sym.selectionRange.startCharacter << ",\"endLine\":" << eLine
+             << ",\"endChar\":" << sym.selectionRange.endCharacter << "}";
+    }
+    json << "]}]";
+
+    const std::string label =
+        angel_lsp::i18n::FormatMessage(ctx.request.i18n, "hover-peek-overloads", "Peek overloads");
+    return "[" + label + "](command:angelscript.peekOverloads?" + UrlEncodeCommandArgs(json.str()) + ")";
+}
+
+/**
+ * @brief Formats the localized overload section and peek command link for additional overloads.
+ * @param[in] symbols Deduplicated candidate symbols list.
+ * @param[in] count Number of additional overloads (must be >= 1).
+ * @param[in] ctx Hover query context.
+ * @return Localized overload block and clickable peek link.
+ */
+std::string FormatMoreOverloads(const std::vector<analysis::Symbol>& symbols, size_t count,
+                                const HoverQueryContext& ctx)
+{
+    const std::string summaryText =
+        (count == 1)
+            ? angel_lsp::i18n::FormatMessage(ctx.request.i18n, "hover-more-overloads-singular", "1 more overload")
+            : angel_lsp::i18n::FormatMessage(ctx.request.i18n, "hover-more-overloads-plural", "{} more overloads",
+                                             count);
+
+    std::ostringstream oss;
+    oss << "**" << summaryText << "**:\n\n```angelscript\n";
+    const std::string_view primaryName = symbols.front().name;
+    bool first = true;
+    for (size_t i = 1; i < symbols.size(); ++i)
+    {
+        if (symbols[i].name != primaryName || !IsCallableSymbol(symbols[i]))
+        {
+            continue;
+        }
+        if (!first)
+        {
+            oss << "\n";
+        }
+        first = false;
+        oss << FormatDeclarationText(symbols[i], &ctx.request.symbolTable);
+    }
+    oss << "\n```\n\n" << BuildPeekOverloadsLink(symbols, ctx);
+    return oss.str();
+}
+
+/**
+ * @brief Resolves best matching call overload, or finds the declaration matching cursor position.
+ * @param[in,out] symbols Candidate symbols list.
+ * @param[in] ctx Hover query context.
+ * @return Best matching symbol if resolved or matched at declaration, std::nullopt otherwise.
+ */
+std::optional<analysis::Symbol> ResolveOrMatchCandidate(std::vector<analysis::Symbol>& symbols,
+                                                        const HoverQueryContext& ctx)
+{
+    auto best = ResolveCallOverload(ctx.node, symbols, ctx.request, ctx.scope);
+    if (!best)
+    {
+        auto it = std::find_if(symbols.begin(), symbols.end(),
+                               [&](const analysis::Symbol& s)
+                               {
+                                   if (s.fileUri != ctx.request.uri)
+                                   {
+                                       return false;
+                                   }
+                                   return s.startLine == ctx.queryLine || s.selectionRange.startLine == ctx.queryLine;
+                               });
+        if (it != symbols.end())
+        {
+            best = *it;
+            std::rotate(symbols.begin(), it, it + 1);
+        }
+    }
+    else
+    {
+        auto it = std::find_if(symbols.begin(), symbols.end(), [&](const analysis::Symbol& s)
+                               { return s.name == best->name && analysis::HasSameParameterList(s, *best); });
+        if (it != symbols.end())
+        {
+            std::rotate(symbols.begin(), it, it + 1);
+        }
+    }
+    return best;
+}
+
+/**
+ * @brief Formats hover information for a resolved set of symbols with single signature and overload summary.
+ * @param[in,out] symbols Candidate symbol list.
+ * @param[in] accessorPropertyType Optional synthesized property accessor type.
+ * @param[in] ctx Hover query context.
+ * @return Formatted LSP hover response.
+ */
+lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::string_view accessorPropertyType,
+                              const HoverQueryContext& ctx)
+{
+    auto best = ResolveOrMatchCandidate(symbols, ctx);
+    RemoveDuplicateSymbols(symbols);
+    if (!symbols.empty() && ctx.profiler.IsActive())
+    {
+        ctx.profiler.symbolName = symbols.front().name;
     }
 
     utils::HighResTimer fmtTimer;
@@ -1056,31 +1289,51 @@ std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& membe
     {
         oss << "(property) " << accessorPropertyType << " " << ctx.nodeText << "\n";
     }
-    constexpr size_t kMaxMemberSymbols = 16;
-    const size_t displayCount = std::min(memberSymbols.size(), kMaxMemberSymbols);
-    for (size_t i = 0; i < displayCount; ++i)
+
+    if (!symbols.empty())
     {
-        if (i > 0)
-        {
-            oss << "\n";
-        }
-        oss << FormatDeclarationText(memberSymbols[i]);
-    }
-    if (memberSymbols.size() > kMaxMemberSymbols)
-    {
-        oss << "\n// ... and " << (memberSymbols.size() - kMaxMemberSymbols) << " more overloads";
+        oss << FormatDeclarationText(symbols.front(), &ctx.request.symbolTable);
     }
     oss << "\n```";
 
-    std::vector<std::string> docs;
-    CollectOverloadDocs(ctx.request, memberSymbols, best, docs);
-    for (const auto& d : docs)
+    const size_t moreCount = CountMoreOverloads(symbols);
+    if (moreCount > 0)
     {
-        oss << "\n\n" << d;
+        oss << "\n\n" << FormatMoreOverloads(symbols, moreCount, ctx);
+    }
+
+    std::vector<std::string> docs;
+    CollectOverloadDocs(ctx.request, symbols, best, docs);
+    if (!docs.empty())
+    {
+        oss << "\n\n---";
+        for (const auto& d : docs)
+        {
+            oss << "\n\n" << d;
+        }
+    }
+
+    if (ctx.request.config && ctx.request.config->features.hoverShowFileLocation && !symbols.empty() &&
+        !symbols.front().fileUri.empty())
+    {
+        oss << "\n\n---\n*(" << symbols.front().fileUri << ")*";
     }
 
     ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
+}
+
+/**
+ * @brief Formats hover information for class member access.
+ * @param[in,out] memberSymbols Candidate member symbols list.
+ * @param[in] accessorPropertyType Optional synthesized property accessor type.
+ * @param[in] ctx Hover query context.
+ * @return Formatted LSP hover response.
+ */
+std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& memberSymbols,
+                                            std::string_view accessorPropertyType, const HoverQueryContext& ctx)
+{
+    return FormatSymbolsHover(memberSymbols, accessorPropertyType, ctx);
 }
 
 std::optional<lsp::Hover> TryHoverMemberAccess(const HoverQueryContext& ctx)
@@ -1457,7 +1710,7 @@ static void AppendLocalDoc(const analysis::LocalDefinition& def, std::string_vie
     }
     if (!doc.empty())
     {
-        md += "\n\n";
+        md += "\n\n---\n\n";
         md += doc;
     }
 }
@@ -1474,7 +1727,8 @@ std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
     const analysis::LocalDefinition* def = DefinitionAtPosition(ctx.scope, queryPos);
     if (!def)
     {
-        def = analysis::ResolveInScope(ctx.scope, ctx.nodeText);
+        uint32_t cursorByte = ts_node_start_byte(ctx.node);
+        def = analysis::ResolveInScopeAt(ctx.scope, ctx.nodeText, cursorByte);
     }
 
     if (!def ||
@@ -1603,7 +1857,10 @@ static std::vector<analysis::Symbol> ResolveNamedArgCalleeCandidates(TSNode call
     else
     {
         std::string funcName = analysis::GetNodeText(funcNode, ctx.request.sourceCode);
-        return ctx.request.symbolTable.FindSymbols(funcName);
+        if (const auto found = ctx.request.symbolTable.FindSymbolsPtr(funcName))
+        {
+            return *found;
+        }
     }
     return {};
 }
@@ -1793,7 +2050,8 @@ std::optional<lsp::Hover> TryHoverScopeFallback(const HoverQueryContext& ctx)
         return std::nullopt;
     }
 
-    const analysis::LocalDefinition* def = analysis::ResolveInScope(ctx.scope, ctx.nodeText);
+    uint32_t cursorByte = ts_node_start_byte(ctx.node);
+    const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(ctx.scope, ctx.nodeText, cursorByte);
     if (!def)
     {
         return std::nullopt;
@@ -1814,7 +2072,7 @@ std::optional<lsp::Hover> TryHoverScopeFallback(const HoverQueryContext& ctx)
     std::string doc = analysis::ExtractDocComment(ctx.request.sourceCode, def->startLine);
     if (!doc.empty())
     {
-        oss << "\n\n" << doc;
+        oss << "\n\n---\n\n" << doc;
     }
     ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
@@ -1868,84 +2126,49 @@ void FilterEnumMemberSymbols(std::vector<analysis::Symbol>& symbols, const Hover
 std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
 {
     std::vector<analysis::Symbol> symbols;
-    if (!ts_node_is_null(ctx.parent) && std::string_view(ts_node_type(ctx.parent)) == "scoped_identifier")
+    bool isExplicitlyScoped = false;
+    if (!ts_node_is_null(ctx.parent))
     {
-        const uint32_t pStart = ts_node_start_byte(ctx.parent);
-        const uint32_t nEnd = ts_node_end_byte(ctx.node);
-        if (pStart < ctx.request.sourceCode.size() && nEnd <= ctx.request.sourceCode.size() && pStart < nEnd)
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol pSym = ts_node_symbol(ctx.parent);
+        if (pSym == gs.symScopedIdentifier)
         {
-            const std::string scopedPrefix = ctx.request.sourceCode.substr(pStart, nEnd - pStart);
-            if (ctx.profiler.IsActive())
+            const uint32_t pStart = ts_node_start_byte(ctx.parent);
+            const uint32_t nEnd = ts_node_end_byte(ctx.node);
+            if (pStart < ctx.request.sourceCode.size() && nEnd <= ctx.request.sourceCode.size() && pStart < nEnd)
             {
-                ctx.profiler.pathText = scopedPrefix;
+                const std::string scopedPrefix = ctx.request.sourceCode.substr(pStart, nEnd - pStart);
+                if (ctx.profiler.IsActive())
+                {
+                    ctx.profiler.pathText = scopedPrefix;
+                }
+                symbols = analysis::FindSymbolsInScope(scopedPrefix, ctx.node, ctx.request.sourceCode,
+                                                       ctx.request.symbolTable);
+                isExplicitlyScoped = (scopedPrefix.find("::") != std::string::npos);
             }
-            symbols =
-                analysis::FindSymbolsInScope(scopedPrefix, ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
+        }
+        else if (pSym == gs.symDatatype)
+        {
+            const std::string prefix = analysis::ExtractDatatypeScopePrefix(ctx.parent, ctx.request.sourceCode);
+            if (!prefix.empty())
+            {
+                if (ctx.profiler.IsActive())
+                {
+                    ctx.profiler.pathText = prefix + ctx.nodeText;
+                }
+                symbols = analysis::FindSymbolsInScope(prefix + ctx.nodeText, ctx.node, ctx.request.sourceCode,
+                                                       ctx.request.symbolTable);
+                isExplicitlyScoped = true;
+            }
         }
     }
-    if (symbols.empty())
+    if (symbols.empty() && !isExplicitlyScoped)
     {
         symbols = analysis::FindSymbolsInScope(ctx.nodeText, ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
     }
     FilterEnumMemberSymbols(symbols, ctx);
     std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
     return symbols;
-}
-
-lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::string_view accessorPropertyType,
-                              const HoverQueryContext& ctx)
-{
-    auto best = ResolveCallOverload(ctx.node, symbols, ctx.request, ctx.scope);
-    if (best)
-    {
-        auto it = std::find_if(symbols.begin(), symbols.end(), [&](const analysis::Symbol& s)
-                               { return s.name == best->name && analysis::HasSameParameterList(s, *best); });
-        if (it != symbols.end())
-        {
-            std::rotate(symbols.begin(), it, it + 1);
-        }
-    }
-
-    RemoveDuplicateSymbols(symbols);
-    if (!symbols.empty() && ctx.profiler.IsActive())
-    {
-        ctx.profiler.symbolName = symbols.front().name;
-    }
-
-    utils::HighResTimer fmtTimer;
-    std::ostringstream oss;
-    oss << "```angelscript\n";
-
-    if (!accessorPropertyType.empty())
-    {
-        oss << "(property) " << accessorPropertyType << " " << ctx.nodeText << "\n";
-    }
-
-    constexpr size_t kMaxHoverSymbols = 16;
-    const size_t displayCount = std::min(symbols.size(), kMaxHoverSymbols);
-    for (size_t i = 0; i < displayCount; ++i)
-    {
-        if (i > 0)
-        {
-            oss << "\n";
-        }
-        oss << FormatDeclarationText(symbols[i], &ctx.request.symbolTable);
-    }
-    if (symbols.size() > kMaxHoverSymbols)
-    {
-        oss << "\n// ... and " << (symbols.size() - kMaxHoverSymbols) << " more overloads";
-    }
-    oss << "\n```";
-
-    std::vector<std::string> docs;
-    CollectOverloadDocs(ctx.request, symbols, best, docs);
-    for (const auto& d : docs)
-    {
-        oss << "\n\n" << d;
-    }
-
-    ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
-    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
 }
 
 /**
@@ -1979,16 +2202,16 @@ void FormatLambdaParameters(TSNode lambdaNode, std::string_view sourceCode, std:
     TSNode paramListNode = ts_node_child_by_field_name(lambdaNode, "parameters", 10);
     if (ts_node_is_null(paramListNode))
     {
-        uint32_t count = ts_node_named_child_count(lambdaNode);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            TSNode child = ts_node_named_child(lambdaNode, i);
-            if (std::string_view(ts_node_type(child)) == "parameter_list")
-            {
-                paramListNode = child;
-                break;
-            }
-        }
+        parser::ForEachNamedChildNodeUntil(lambdaNode,
+                                           [&](TSNode child)
+                                           {
+                                               if (std::string_view(ts_node_type(child)) == "parameter_list")
+                                               {
+                                                   paramListNode = child;
+                                                   return false;
+                                               }
+                                               return true;
+                                           });
     }
     if (!ts_node_is_null(paramListNode))
     {
@@ -2042,7 +2265,7 @@ std::optional<lsp::Hover> TryHoverLambda(const HoverQueryContext& ctx)
         std::string doc = DocCommentForSymbol(ctx.request, *targetFuncdef);
         if (!doc.empty())
         {
-            oss << "\n\n" << doc;
+            oss << "\n\n---\n\n" << doc;
         }
     }
 
@@ -2091,7 +2314,7 @@ std::optional<lsp::Hover> TryHoverExpressionOrLocal(const HoverQueryContext& ctx
  * @param[in] node AST node to test.
  * @return True if node is the member part of a scoped_identifier or member_expression.
  */
-static bool IsQualifiedMemberNode(TSNode node)
+static bool IsQualifiedMemberNode(TSNode node, std::string_view sourceCode = {})
 {
     TSNode parent = ts_node_parent(node);
     if (ts_node_is_null(parent))
@@ -2110,6 +2333,10 @@ static bool IsQualifiedMemberNode(TSNode node)
         TSNode memberField = parser::GetChildByField(parent, parser::fields::Member);
         return ts_node_eq(memberField, node) ||
                (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(node));
+    }
+    if (pType == parser::nodes::Datatype && !sourceCode.empty())
+    {
+        return !analysis::ExtractDatatypeScopePrefix(parent, sourceCode).empty();
     }
     return false;
 }
@@ -2311,12 +2538,15 @@ static void AppendConstructorSymbolsIfCall(const HoverQueryContext& ctx, std::ve
         if (sym.type == analysis::SymbolType::Class)
         {
             const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-            auto ctors = ctx.request.symbolTable.FindSymbols(qName + "::" + sym.name);
-            if (ctors.empty() && qName != sym.name)
+            auto ctors = ctx.request.symbolTable.FindSymbolsPtr(qName + "::" + sym.name);
+            if ((!ctors || ctors->empty()) && qName != sym.name)
             {
-                ctors = ctx.request.symbolTable.FindSymbols(sym.name + "::" + sym.name);
+                ctors = ctx.request.symbolTable.FindSymbolsPtr(sym.name + "::" + sym.name);
             }
-            ctorSymbols.insert(ctorSymbols.end(), ctors.begin(), ctors.end());
+            if (ctors)
+            {
+                ctorSymbols.insert(ctorSymbols.end(), ctors->begin(), ctors->end());
+            }
         }
     }
     if (!ctorSymbols.empty())
@@ -2325,11 +2555,33 @@ static void AppendConstructorSymbolsIfCall(const HoverQueryContext& ctx, std::ve
     }
 }
 
+static void PopulateGlobalPropertyAccessors(std::vector<analysis::Symbol>& symbols, std::string& accessorPropertyType,
+                                            const HoverQueryContext& ctx)
+{
+    const int accessorMode = ctx.request.config ? ctx.request.config->engine.propertyAccessorMode : 2;
+    if (accessorMode >= 2)
+    {
+        symbols = analysis::FindGlobalPropertyAccessors(ctx.nodeText, ctx.request.symbolTable, accessorMode == 3);
+        accessorPropertyType = analysis::PropertyTypeFromAccessors(symbols);
+    }
+}
+
+static void FilterDirectRootGlobalSymbols(std::vector<analysis::Symbol>& symbols,
+                                          const analysis::GlobalScopeQualifier& gsq)
+{
+    if (gsq.isGlobal && gsq.isDirectRoot)
+    {
+        std::erase_if(symbols, [](const analysis::Symbol& s)
+                      { return !s.containerName.empty() || s.type == analysis::SymbolType::CallReference; });
+    }
+}
+
 std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
 {
     utils::HighResTimer symTimer;
+    const auto gsq = analysis::GetGlobalScopeQualifier(ctx.node, ctx.request.sourceCode);
     std::vector<analysis::Symbol> symbols = CollectScopedSymbols(ctx);
-    if (!IsQualifiedMemberNode(ctx.node))
+    if (!gsq.isGlobal && !IsQualifiedMemberNode(ctx.node, ctx.request.sourceCode))
     {
         AppendEnclosingClassMethods(ctx.node, ctx.nodeText, ctx.request, symbols);
     }
@@ -2337,9 +2589,14 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
     AppendConstructorSymbolsIfCall(ctx, symbols);
 
     std::string accessorPropertyType;
-    AppendVirtualHostSymbols(ctx, symbols, accessorPropertyType);
+    if (!gsq.isGlobal)
+    {
+        AppendVirtualHostSymbols(ctx, symbols, accessorPropertyType);
+    }
 
-    if (symbols.empty() && ctx.rootScope)
+    FilterDirectRootGlobalSymbols(symbols, gsq);
+
+    if (symbols.empty() && ctx.rootScope && !gsq.isGlobal)
     {
         if (auto fallbackHover = TryHoverScopeFallback(ctx))
         {
@@ -2348,14 +2605,9 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
         }
     }
 
-    if (symbols.empty() && accessorPropertyType.empty())
+    if (symbols.empty() && accessorPropertyType.empty() && !gsq.isGlobal)
     {
-        const int accessorMode = ctx.request.config ? ctx.request.config->engine.propertyAccessorMode : 2;
-        if (accessorMode >= 2)
-        {
-            symbols = analysis::FindGlobalPropertyAccessors(ctx.nodeText, ctx.request.symbolTable, accessorMode == 3);
-            accessorPropertyType = analysis::PropertyTypeFromAccessors(symbols);
-        }
+        PopulateGlobalPropertyAccessors(symbols, accessorPropertyType, ctx);
     }
 
     ctx.profiler.symMs += symTimer.ElapsedMs();
@@ -2462,7 +2714,8 @@ static std::string_view UnquoteStringLiteral(std::string_view txt)
     return txt;
 }
 
-static std::string FormatResolvedAssetMarkdown(std::string_view unquoted, const std::string& resolved, bool showLength)
+static std::string FormatResolvedAssetMarkdown(std::string_view unquoted, const std::string& resolved, bool showLength,
+                                               const angel_lsp::i18n::I18n* i18n = nullptr)
 {
     std::error_code ec;
     auto fsize = std::filesystem::file_size(resolved, ec);
@@ -2470,17 +2723,18 @@ static std::string FormatResolvedAssetMarkdown(std::string_view unquoted, const 
     std::string normalizedPath = resolved;
     std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
 
-    std::string md = "*(asset)* `" + std::string(unquoted) +
-                     "`\n\n"
-                     "- **Status**: Exists\n"
-                     "- **Size**: " +
-                     sizeStr +
-                     "\n"
-                     "- **Path**: `" +
-                     normalizedPath + "`";
+    std::string statusBullet =
+        angel_lsp::i18n::FormatMessage(i18n, "hover-asset-status-exists", "- **Status**: Exists");
+    std::string sizeBullet = angel_lsp::i18n::FormatMessage(i18n, "hover-asset-size", "- **Size**: {}", sizeStr);
+    std::string pathBullet =
+        angel_lsp::i18n::FormatMessage(i18n, "hover-asset-path", "- **Path**: `{}`", normalizedPath);
+
+    std::string md =
+        "*(asset)* `" + std::string(unquoted) + "`\n\n" + statusBullet + "\n" + sizeBullet + "\n" + pathBullet;
     if (showLength)
     {
-        md += "\n- **Length**: " + std::to_string(unquoted.size()) + " characters";
+        md += "\n" + angel_lsp::i18n::FormatMessage(i18n, "hover-string-length", "- **Length**: {} characters",
+                                                    unquoted.size());
     }
     return md;
 }
@@ -2494,9 +2748,9 @@ static std::string FormatResolvedAssetMarkdown(std::string_view unquoted, const 
 TSNode FindTopmostBinaryPlus(TSNode node, std::string_view sourceCode)
 {
     TSNode current = node;
-    while (!ts_node_is_null(ts_node_parent(current)))
+    for (size_t depth = 0; depth < 16 && !ts_node_is_null(parser::GetParent(current)); ++depth)
     {
-        TSNode parent = ts_node_parent(current);
+        TSNode parent = parser::GetParent(current);
         if (std::string_view(ts_node_type(parent)) == "binary_expression")
         {
             TSNode opNode = parser::GetChildByField(parent, parser::fields::Operator);
@@ -2524,7 +2778,7 @@ std::optional<std::string> ResolveIdentifierDefaultValue(const std::string& name
 {
     if (scope)
     {
-        const analysis::LocalDefinition* def = analysis::ResolveInScope(scope, name);
+        const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, name, ts_node_start_byte(node));
         if (def && !def->defaultValue.empty())
         {
             return std::string(UnquoteStringLiteral(def->defaultValue));
@@ -2538,12 +2792,14 @@ std::optional<std::string> ResolveIdentifierDefaultValue(const std::string& name
             return std::string(UnquoteStringLiteral(sym.GetVariable().defaultValue));
         }
     }
-    auto globals = request.symbolTable.FindSymbols(name);
-    for (const auto& sym : globals)
+    if (const auto globals = request.symbolTable.FindSymbolsPtr(name))
     {
-        if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().defaultValue.empty())
+        for (const auto& sym : *globals)
         {
-            return std::string(UnquoteStringLiteral(sym.GetVariable().defaultValue));
+            if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().defaultValue.empty())
+            {
+                return std::string(UnquoteStringLiteral(sym.GetVariable().defaultValue));
+            }
         }
     }
     return std::nullopt;
@@ -2627,7 +2883,7 @@ std::optional<lsp::Hover> TryHoverConcatenatedString(const HoverTarget& target, 
         return std::nullopt;
     }
 
-    std::string md = FormatResolvedAssetMarkdown(*evalStr, resolved, showLength);
+    std::string md = FormatResolvedAssetMarkdown(*evalStr, resolved, showLength, request.i18n);
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, target.range};
 }
 
@@ -2658,24 +2914,17 @@ std::optional<lsp::Hover> TryHoverStringLiteral(const HoverTarget& target, const
         const std::string resolved = ResolveStringLiteralPath(unquoted, request);
         if (!resolved.empty())
         {
-            md = FormatResolvedAssetMarkdown(unquoted, resolved, showLength);
+            md = FormatResolvedAssetMarkdown(unquoted, resolved, showLength, request.i18n);
             return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
                               target.range};
         }
-        md = "```angelscript\n" + std::string(txt) + "\n```";
-        if (showLength)
-        {
-            md += "\n\n- **Length**: " + std::to_string(unquoted.size()) + " characters";
-        }
-        md += "\n- **File**: Not found";
-        return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
-                          target.range};
     }
 
     md = "```angelscript\n" + std::string(txt) + "\n```";
     if (showLength)
     {
-        md += "\n\n- **Length**: " + std::to_string(unquoted.size()) + " characters";
+        md += "\n\n" + angel_lsp::i18n::FormatMessage(request.i18n, "hover-string-length",
+                                                      "- **Length**: {} characters", unquoted.size());
     }
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, target.range};
 }
@@ -2690,9 +2939,35 @@ static bool IsStringOrBinaryLiteral(const HoverTarget& target)
     std::string_view type = ts_node_type(target.node);
     if (type == "string_literal" || type == "binary_expression")
     {
-        return true;
+        return !target.text.empty() && target.text.front() == '"' && target.text.back() == '"';
     }
-    return !target.text.empty() && target.text.front() == '"' && target.text.back() == '"';
+    return false;
+}
+
+/**
+ * @brief Attempts to produce hover for string/binary literals or primitive/wildcard types.
+ * @param[in] target Extracted hover target.
+ * @param[in] request Original hover request.
+ * @param[in,out] profiler Performance profiler.
+ * @return Populated Hover if matched, std::nullopt otherwise.
+ */
+static std::optional<lsp::Hover> TryHoverLiteralOrType(const HoverTarget& target, const HoverRequest& request,
+                                                       HoverProfiler& profiler)
+{
+    if (IsStringOrBinaryLiteral(target))
+    {
+        if (auto strHover = TryHoverStringLiteral(target, request))
+        {
+            return strHover;
+        }
+    }
+
+    if (auto primHover = TryHoverPrimitiveType(target.text, target.range, profiler))
+    {
+        return primHover;
+    }
+
+    return TryHoverWildcardType(target.text, target.range, request.i18n, profiler);
 }
 } // namespace
 
@@ -2725,14 +3000,6 @@ std::optional<lsp::Hover> GetHover(const HoverRequest& request)
         return std::nullopt;
     }
 
-    if (IsStringOrBinaryLiteral(*target))
-    {
-        if (auto strHover = TryHoverStringLiteral(*target, request))
-        {
-            return strHover;
-        }
-    }
-
     profiler.nodeType = ts_node_type(target->node);
     if (profiler.IsActive())
     {
@@ -2740,9 +3007,9 @@ std::optional<lsp::Hover> GetHover(const HoverRequest& request)
         profiler.symbolName = target->text;
     }
 
-    if (auto primHover = TryHoverPrimitiveType(target->text, target->range, profiler))
+    if (auto earlyHover = TryHoverLiteralOrType(*target, request, profiler))
     {
-        return primHover;
+        return earlyHover;
     }
 
     HoverQueryContext ctx = BuildHoverQueryContext(request, profiler, std::move(*target));

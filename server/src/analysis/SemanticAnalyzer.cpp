@@ -16,9 +16,11 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/ClassRules.h"
+#include "analysis/rules/EngineRuleChecker.h"
 #include "analysis/rules/FunctionRules.h"
 #include "analysis/rules/OperatorRules.h"
 #include "analysis/rules/TypeRules.h"
+#include "analysis/rules/UnusedSymbolChecker.h"
 #include "analysis/rules/VariableRules.h"
 #include "parser/GrammarNames.h"
 #include "spdlog/fmt/fmt.h"
@@ -60,11 +62,9 @@ void SemanticAnalyzer::RunScopeRules(const SemanticAnalysisRequest& request, Dia
     {
         return;
     }
-    CheckUndefinedIdentifiers(request.scopeRoot.get(), request.GetRuleIndex().allNames, ctx);
+    CheckUndefinedIdentifiers(request.scopeRoot.get(), request.GetRuleIndex().globalNames, ctx);
 
-    ankerl::unordered_dense::set<const LocalDefinition*> used;
-    CollectUsedDefinitions(request.scopeRoot.get(), used);
-    CheckUnusedVariables(request.scopeRoot.get(), used, ctx);
+    rules::CheckUnusedSymbols(request, ctx);
 
     CheckNullAssignedToNonHandleInScope(request.scopeRoot.get(), ctx);
     CheckLocalVariableDeclarations(request.scopeRoot.get(), ctx);
@@ -239,34 +239,65 @@ static void CheckMetadataSupport(const SemanticAnalysisRequest& request, const N
     }
 }
 
+static void FilterSuppressedDiagnostics(std::vector<Diagnostic>& diagnostics, const SemanticAnalysisRequest& request,
+                                        const NodeIndex* indexPtr)
+{
+    if (!request.excludedLineRanges.empty())
+    {
+        std::erase_if(diagnostics, [&request](const Diagnostic& d)
+                      { return utils::IsLineExcluded(request.excludedLineRanges, d.range.start.line); });
+    }
+
+    if (request.enableCommentSuppressions && !request.sourceCode.empty())
+    {
+        const auto suppressions = ParseDiagnosticSuppressions(request.sourceCode, indexPtr);
+        if (!suppressions.Empty())
+        {
+            std::erase_if(diagnostics,
+                          [&](const Diagnostic& d) { return suppressions.IsSuppressed(d.code, d.range.start.line); });
+        }
+    }
+}
+
+struct AnalysisContextGuards
+{
+    const SemanticAnalysisRequest& req;
+    ExpressionTypeCache* prevCache;
+    const NodeIndex* prevIndex;
+    ExpressionTypeCache localCache;
+    std::unique_ptr<NodeIndex> localNodeIndex;
+
+    explicit AnalysisContextGuards(const SemanticAnalysisRequest& request)
+        : req(request), prevCache(request.exprCache), prevIndex(request.nodeIndex)
+    {
+        if (!req.exprCache)
+        {
+            const size_t typeCapacity = req.sourceCode.size() > 10000 ? (req.sourceCode.size() / 32) : 512;
+            localCache.types.reserve(typeCapacity);
+            localCache.hierarchies.reserve(256);
+            req.exprCache = &localCache;
+        }
+        if (!req.nodeIndex && req.tree)
+        {
+            localNodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(req.tree), nullptr, req.traversalBudget);
+            req.nodeIndex = localNodeIndex.get();
+        }
+    }
+
+    ~AnalysisContextGuards()
+    {
+        req.exprCache = prevCache;
+        req.nodeIndex = prevIndex;
+    }
+};
+
 std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest& request) const
 {
     std::vector<Diagnostic> diagnostics;
     LogSymbolDump(request);
 
-    ExpressionTypeCache localCache;
-    struct CacheGuard
-    {
-        const SemanticAnalysisRequest& req;
-        ExpressionTypeCache* prev;
-        ~CacheGuard()
-        {
-            req.exprCache = prev;
-        }
-    } guard{request, request.exprCache};
-
-    if (!request.exprCache)
-    {
-        request.exprCache = &localCache;
-    }
-
-    std::unique_ptr<NodeIndex> localNodeIndex;
+    AnalysisContextGuards guards(request);
     const NodeIndex* indexPtr = request.nodeIndex;
-    if (!indexPtr && request.tree)
-    {
-        localNodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(request.tree), nullptr, request.traversalBudget);
-        indexPtr = localNodeIndex.get();
-    }
 
     {
         DiagnosticContext ctx{request, diagnostics, m_logger};
@@ -290,22 +321,7 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         }
     }
 
-    if (!request.excludedLineRanges.empty())
-    {
-        std::erase_if(diagnostics, [&request](const Diagnostic& d)
-                      { return utils::IsLineExcluded(request.excludedLineRanges, d.range.start.line); });
-    }
-
-    if (request.enableCommentSuppressions && !request.sourceCode.empty())
-    {
-        const auto suppressions = ParseDiagnosticSuppressions(request.sourceCode, indexPtr);
-        if (!suppressions.Empty())
-        {
-            std::erase_if(diagnostics,
-                          [&](const Diagnostic& d) { return suppressions.IsSuppressed(d.code, d.range.start.line); });
-        }
-    }
-
+    FilterSuppressedDiagnostics(diagnostics, request, indexPtr);
     return diagnostics;
 }
 
@@ -955,21 +971,28 @@ bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefinition* 
     // enumerator DOES resolve from the scope tree - LOCALS_QUERY captures `enum_member` as
     // a definition - and continuing on that is what made the first attempt at this rule
     // never run.
-    if (!ctx.request.RequiresEnumScope() || resolved == nullptr || resolved->kind != LocalDefinitionKind::Constant ||
-        !ctx.request.GetRuleIndex().enumMemberNames.contains(ref.name))
+    if (resolved != nullptr && resolved->kind != LocalDefinitionKind::Constant)
+    {
+        return false;
+    }
+    if (!ctx.request.GetRuleIndex().enumMemberNames.contains(ref.name))
     {
         return false;
     }
 
     const bool isOwnDeclaration =
-        resolved->startLine == ref.startLine && resolved->startCharacter == ref.startCharacter;
+        resolved != nullptr && resolved->startLine == ref.startLine && resolved->startCharacter == ref.startCharacter;
     if (isOwnDeclaration || IsEnumReferenceQualified(ref, ctx))
     {
         return false;
     }
 
-    ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter}, "as-err-enum-scope-required",
-                    ref.name);
+    if (ctx.request.RequiresEnumScope())
+    {
+        ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
+                        "as-err-enum-scope-required", ref.name);
+        return true;
+    }
     return true;
 }
 
@@ -1014,6 +1037,60 @@ bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, co
     return false;
 }
 
+/**
+ * @brief Checks if an identifier name is declared in an enclosing container or using-namespace.
+ * @param[in] node AST descendant node for the reference.
+ * @param[in] refName Identifier name to check.
+ * @param[in] usingNamespaces Active using-namespace list for the document.
+ * @param[in] ctx Diagnostic context.
+ * @return True if refName is a declared member in the enclosing scope hierarchy.
+ */
+bool IsEnclosingScopeMember(TSNode node, const std::string& refName, const std::vector<std::string>& usingNamespaces,
+                            const DiagnosticContext& ctx)
+{
+    if (ts_node_is_null(node))
+    {
+        return false;
+    }
+    const auto& index = ctx.request.GetRuleIndex();
+    const auto containers = GetEnclosingContainers(node, ctx.request.sourceCode);
+    for (const auto& container : containers)
+    {
+        if (container.kind == ContainerKind::Namespace)
+        {
+            const std::string nsName = container.qualifiedName.empty() ? container.name : container.qualifiedName;
+            if (index.Members(nsName).allMemberNames.contains(refName))
+            {
+                return true;
+            }
+            continue;
+        }
+        if (container.kind != ContainerKind::Class && container.kind != ContainerKind::Interface)
+        {
+            continue;
+        }
+        const auto hierarchy = GetInheritedTypeHierarchy(
+            container.qualifiedName.empty() ? container.name : container.qualifiedName, ctx.request.symbolTable);
+        for (const auto& typeName : hierarchy)
+        {
+            if (index.Members(typeName).allMemberNames.contains(refName))
+            {
+                return true;
+            }
+        }
+    }
+
+    for (const auto& uNs : usingNamespaces)
+    {
+        if (index.Members(uNs).allMemberNames.contains(refName))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticContext& ctx)
 {
     if (IsReservedKeyword(ref.name))
@@ -1047,36 +1124,72 @@ bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticCont
     return false;
 }
 
-void CheckScopeReferences(
-    const Scope* scope,
-    const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames,
-    const MixinRanges& mixinRanges, DiagnosticContext& ctx)
-{
-    for (const auto& ref : scope->references)
-    {
-        if (ShouldIgnoreReference(ref, ctx) || IsReferenceInMixin(ref, mixinRanges))
-            continue;
-
-        const LocalDefinition* resolved = ResolveInScope(scope, ref.name);
-        if (CheckEnumScopeDiagnostic(ref, resolved, ctx))
-            continue;
-
-        if (resolved != nullptr || knownGlobalNames.contains(ref.name))
-            continue;
-
-        if (IsAccessorPropertyOrKeyword(ref, ctx))
-            continue;
-
-        ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
-                        "as-warn-undeclared-identifier", ref.name, DiagnosticSeverity::Warning);
-    }
-}
 struct UndefinedIdentifierContext
 {
     const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames;
     const MixinRanges& mixinRanges;
+    const std::vector<std::string>& usingNamespaces;
     DiagnosticContext& ctx;
 };
+
+static bool IsReferenceInSyntaxErrorOrMetadata(TSNode root, const LocalReference& ref, const NodeIndex* nodeIndex)
+{
+    const TSPoint atStart{ref.startLine, ref.startCharacter};
+    const TSPoint atEnd{ref.endLine, ref.endCharacter};
+    const TSNode node = ts_node_descendant_for_point_range(root, atStart, atEnd);
+    if (ts_node_is_null(node))
+    {
+        return false;
+    }
+    if (nodeIndex && nodeIndex->NodeHasSyntaxError(node))
+    {
+        return true;
+    }
+    TSNode walk = node;
+    for (int d = 0; d < 8 && !ts_node_is_null(walk); ++d)
+    {
+        if (ts_node_is_error(walk) || std::string_view(ts_node_type(walk)) == "metadata")
+        {
+            return true;
+        }
+        walk = ts_node_parent(walk);
+    }
+    return false;
+}
+
+void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& uCtx)
+{
+    for (const auto& ref : scope->references)
+    {
+        if (ShouldIgnoreReference(ref, uCtx.ctx) || IsReferenceInMixin(ref, uCtx.mixinRanges))
+            continue;
+
+        const LocalDefinition* resolved = ResolveInScopeAt(scope, ref.name, ref.startByte);
+        if (CheckEnumScopeDiagnostic(ref, resolved, uCtx.ctx))
+            continue;
+
+        if (resolved != nullptr || ResolveInScopeAt(scope, ref.name, ref.startByte, nullptr, false) != nullptr ||
+            uCtx.knownGlobalNames.contains(ref.name))
+            continue;
+
+        if (IsAccessorPropertyOrKeyword(ref, uCtx.ctx))
+            continue;
+
+        if (uCtx.ctx.request.tree)
+        {
+            const TSNode root = ts_tree_root_node(uCtx.ctx.request.tree);
+            if (IsReferenceInSyntaxErrorOrMetadata(root, ref, uCtx.ctx.request.nodeIndex))
+                continue;
+            const TSPoint at{ref.startLine, ref.startCharacter};
+            const TSNode node = ts_node_descendant_for_point_range(root, at, at);
+            if (IsEnclosingScopeMember(node, ref.name, uCtx.usingNamespaces, uCtx.ctx))
+                continue;
+        }
+
+        uCtx.ctx.EmitAtRange({ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter},
+                             "as-warn-undeclared-identifier", ref.name, DiagnosticSeverity::Error);
+    }
+}
 
 void CheckUndefinedIdentifiersRecursive(const Scope* scope, const UndefinedIdentifierContext& uCtx, int depth)
 {
@@ -1085,7 +1198,7 @@ void CheckUndefinedIdentifiersRecursive(const Scope* scope, const UndefinedIdent
         return;
     }
 
-    CheckScopeReferences(scope, uCtx.knownGlobalNames, uCtx.mixinRanges, uCtx.ctx);
+    CheckScopeReferences(scope, uCtx);
 
     for (const auto& child : scope->children)
     {
@@ -1106,7 +1219,12 @@ void SemanticAnalyzer::CheckUndefinedIdentifiers(
     }
 
     const MixinRanges mixinRanges = CollectMixinRanges(ctx.request.symbolTable, ctx.request.fileUri);
-    const UndefinedIdentifierContext uCtx{knownGlobalNames, mixinRanges, ctx};
+    const std::vector<std::string> usingNamespaces =
+        ctx.request.nodeIndex
+            ? CollectUsingNamespaces(*ctx.request.nodeIndex, ctx.request.sourceCode)
+            : (ctx.request.tree ? CollectUsingNamespaces(ts_tree_root_node(ctx.request.tree), ctx.request.sourceCode)
+                                : std::vector<std::string>{});
+    const UndefinedIdentifierContext uCtx{knownGlobalNames, mixinRanges, usingNamespaces, ctx};
     CheckUndefinedIdentifiersRecursive(scope, uCtx, depth);
 }
 
@@ -1203,9 +1321,11 @@ bool IsUnconditionallyNonNullablePrimitive(TypeKind kind)
     case TypeKind::Int16:
     case TypeKind::Int32:
     case TypeKind::Int64:
+    case TypeKind::UInt8:
     case TypeKind::UInt16:
     case TypeKind::UInt32:
     case TypeKind::UInt64:
+    case TypeKind::Float:
     case TypeKind::Double:
     case TypeKind::Bool:
         return true;
@@ -1380,7 +1500,14 @@ void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
 
     if (def.typeName == "void" || base == "void")
     {
-        ctx.EmitAtRange(range, "as-err-void-variable", def.name, DiagnosticSeverity::Error);
+        if (def.kind == LocalDefinitionKind::Parameter)
+        {
+            ctx.EmitAtRange(range, "as-err-void-parameter", {def.name, "<anonymous>"}, DiagnosticSeverity::Error);
+        }
+        else
+        {
+            ctx.EmitAtRange(range, "as-err-void-variable", def.name, DiagnosticSeverity::Error);
+        }
         return;
     }
     if (IsMixinClass(base, ctx.request.symbolTable))
@@ -1403,6 +1530,8 @@ void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
     {
         ctx.EmitAtRange(range, "as-err-unresolved-type", base, DiagnosticSeverity::Error);
     }
+
+    rules::CheckEngineLocalTypeSuggestions(def, ctx);
 }
 } // namespace
 
@@ -1445,7 +1574,8 @@ void SemanticAnalyzer::CheckLocalTypes(const Scope* scope, DiagnosticContext& ct
 {
     for (const auto& def : scope->definitions)
     {
-        if (def.kind == LocalDefinitionKind::Variable)
+        if (def.kind == LocalDefinitionKind::Variable ||
+            (scope->kind == ScopeKind::Closure && def.kind == LocalDefinitionKind::Parameter))
         {
             ValidateVariableType(def, ctx);
         }

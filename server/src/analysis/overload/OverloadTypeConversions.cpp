@@ -132,7 +132,7 @@ bool HasConvertingConstructor(const std::string& fromType, const std::string& to
     {
         return false;
     }
-    const auto toSyms = symbolTable.FindSymbolsPtr(cleanTo + "::" + cleanTo);
+    const auto toSyms = symbolTable.FindMemberSymbolPtr(cleanTo, cleanTo);
     if (toSyms)
     {
         for (const auto& sym : *toSyms)
@@ -155,7 +155,7 @@ UserConversionMatch CheckConversionMethod(const std::string& fromType, const std
 
     for (const char* opName : {"opImplConv", "opImplCast"})
     {
-        const auto opSyms = symbolTable.FindSymbolsPtr(cleanFrom + "::" + opName);
+        const auto opSyms = symbolTable.FindMemberSymbolPtr(cleanFrom, opName);
         if (!opSyms)
         {
             continue;
@@ -414,7 +414,7 @@ static bool CheckClassSymbolListSupport(const Symbol& sym, const SymbolTable& sy
 
 static bool ClassAcceptsInitializerList(const std::string& cleanType, const SymbolTable& symbolTable)
 {
-    const auto toSyms = symbolTable.FindSymbolsPtr(cleanType + "::" + cleanType);
+    const auto toSyms = symbolTable.FindMemberSymbolPtr(cleanType, cleanType);
     if (toSyms)
     {
         for (const auto& sym : *toSyms)

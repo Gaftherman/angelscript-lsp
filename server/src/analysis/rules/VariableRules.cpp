@@ -1,5 +1,6 @@
 #include "analysis/rules/VariableRules.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/rules/EngineRuleChecker.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/Utils.h"
 
@@ -27,7 +28,7 @@ const Symbol* FindTypeDeclaration(std::string_view typeName, const SymbolTable& 
         std::string current(enclosingNs);
         while (!current.empty())
         {
-            keepAlive = table.FindSymbolsPtr(current + "::" + std::string(typeName));
+            keepAlive = table.FindMemberSymbolPtr(current, typeName);
             if (keepAlive)
             {
                 break;
@@ -54,6 +55,27 @@ const Symbol* FindTypeDeclaration(std::string_view typeName, const SymbolTable& 
         }
     }
     return nullptr;
+}
+
+/**
+ * @brief True when the symbol's container is a class or interface rather than global/namespace.
+ * @param[in] sym Target variable symbol.
+ * @param[in] table Symbol table for container lookup.
+ * @return True if enclosed within a class or interface.
+ */
+bool IsClassOrInterfaceMember(const Symbol& sym, const SymbolTable& table)
+{
+    if (sym.containerKind == ContainerKind::Class || sym.containerKind == ContainerKind::Interface)
+    {
+        return true;
+    }
+    if (sym.containerKind == ContainerKind::Namespace || sym.containerName.empty())
+    {
+        return false;
+    }
+    const auto container = table.FindSymbolsPtr(sym.containerName);
+    return container && std::any_of(container->begin(), container->end(), [](const Symbol& owner)
+                                    { return owner.type == SymbolType::Class || owner.type == SymbolType::Interface; });
 }
 
 /** @brief True when the symbol's container is an interface, where members carry no body. */
@@ -233,10 +255,10 @@ void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const Di
 /** @brief Rules about the modifiers a declaration carries where it sits. */
 void CheckPlacement(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
-    const bool isMember = !sym.containerName.empty();
+    const bool isClassMember = IsClassOrInterfaceMember(sym, ctx.request.symbolTable);
 
     // private/protected mean nothing outside a class body.
-    if (!isMember && sig.modifiers.access != AccessModifier::Public)
+    if (!isClassMember && sig.modifiers.access != AccessModifier::Public)
     {
         ctx.LogRule("CheckPlacement", "as-err-global-variable-access-modifier", sym);
         ctx.Emit(sym, "as-err-global-variable-access-modifier", sym.name);
@@ -244,43 +266,19 @@ void CheckPlacement(const Symbol& sym, const VariableSignature& sig, const Diagn
 
     // A host that gives each script its own isolated state builds its engine with
     // asEP_DISALLOW_GLOBAL_VARS, and then a global is a compile error rather than a style
-    // question. Off by default, because the engine's default is off; a namespace member is
-    // still a global as far as the engine is concerned, and containerName cannot tell a
-    // namespace from a class, so only an unambiguous non-member is judged.
-    if (!isMember && ctx.request.DisallowsGlobalVars())
+    // question. Off by default, because the engine's default is off.
+    if (!isClassMember && ctx.request.DisallowsGlobalVars())
     {
         ctx.LogRule("CheckPlacement", "as-err-global-vars-disallowed", sym);
         ctx.Emit(sym, "as-err-global-vars-disallowed", sym.name);
     }
 
     // A class property has no initialization phase in which a const could be given its
-    // value, so AngelScript does not allow one. Two things it is not:
-    //
-    // - a namespace-scope const, which is ordinary and which the corpus is full of. A
-    //   namespace and a class may carry the same name in one file, and containerName cannot
-    //   tell them apart, so an ambiguous container is left alone;
-    // - `const T@ m`, where the const qualifies what the handle points at rather than the
-    //   member. A read-only handle to an object is legal and idiomatic.
-    if (isMember && sig.modifiers.isConst && !sig.isVirtualProperty && !sig.modifiers.isHandle)
+    // value, so AngelScript does not allow one.
+    if (isClassMember && sig.modifiers.isConst && !sig.isVirtualProperty && !sig.modifiers.isHandle)
     {
-        const SymbolTable& table = ctx.request.symbolTable;
-        const auto container = table.FindSymbolsPtr(sym.containerName);
-        bool inClass = false;
-        bool ambiguous = false;
-        if (container)
-        {
-            for (const auto& owner : *container)
-            {
-                inClass = inClass || owner.type == SymbolType::Class;
-                ambiguous = ambiguous || owner.type == SymbolType::Namespace;
-            }
-        }
-
-        if (inClass && !ambiguous)
-        {
-            ctx.LogRule("CheckPlacement", "as-err-class-member-const", sym);
-            ctx.Emit(sym, "as-err-class-member-const", sym.name);
-        }
+        ctx.LogRule("CheckPlacement", "as-err-class-member-const", sym);
+        ctx.Emit(sym, "as-err-class-member-const", sym.name);
     }
 }
 
@@ -374,5 +372,7 @@ void ValidateVariable(const Symbol& sym, const DiagnosticContext& ctx)
     CheckDeclaredType(sym, sig, ctx);
     CheckPlacement(sym, sig, ctx);
     CheckVirtualProperty(sym, sig, ctx);
+    CheckEngineStorageRules(sym, sig, ctx);
+    CheckEngineTypeSuggestions(sym, sig, ctx);
 }
 } // namespace angel_lsp::analysis::rules

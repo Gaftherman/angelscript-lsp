@@ -10,6 +10,11 @@
 #include <tree_sitter/api.h>
 #include <vector>
 
+namespace angel_lsp::config
+{
+struct EngineRuleConfig;
+}
+
 namespace angel_lsp::features
 {
 /**
@@ -17,14 +22,15 @@ namespace angel_lsp::features
  */
 struct DefinitionRequest
 {
-    const std::string& uri;
-    const std::string& sourceCode;
+    std::string uri;
+    std::string sourceCode;
     TSTree* tree = nullptr;
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
     lsp::Position position;
     std::function<std::string(const std::string& rawPath)> resolveInclude = {};
     std::string predefinedExtension = ".as.predefined";
+    const config::EngineRuleConfig* engineRules = nullptr;
 };
 
 /**

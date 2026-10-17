@@ -106,6 +106,9 @@ struct LocalDefinition
     uint32_t fullStartCharacter = 0;
     uint32_t fullEndLine = 0;
     uint32_t fullEndCharacter = 0;
+
+    /** @brief Byte offset where this definition becomes sequentially visible. */
+    uint32_t visibleFromByte = 0;
 };
 
 /** @brief A single identifier occurrence inside a Scope, not yet resolved to a definition. */
@@ -117,6 +120,9 @@ struct LocalReference
     uint32_t startCharacter = 0;
     uint32_t endLine = 0;
     uint32_t endCharacter = 0;
+
+    uint32_t startByte = 0;
+    uint32_t endByte = 0;
 
     /**
      * @brief True when this identifier is the member field of a member_expression (the "y" in
@@ -151,6 +157,39 @@ struct LocalReference
      * @brief Number of arguments passed at the call site when isCall is true.
      */
     uint32_t argumentCount = 0;
+
+    /**
+     * @brief Byte range of the enclosing scoped_identifier or member_expression, if any.
+     *        0 if no enclosing qualifier/member access expression exists.
+     */
+    uint32_t qualifierStartByte = 0;
+    uint32_t qualifierEndByte = 0;
+
+    /**
+     * @brief Byte range of the receiver/object expression (e.g. "obj" in "obj.member" or "NS" in "NS::Symbol").
+     *        0 if no receiver/object exists.
+     */
+    uint32_t receiverStartByte = 0;
+    uint32_t receiverEndByte = 0;
+
+    /**
+     * @brief True if parent node is a scoped_identifier.
+     */
+    bool isScopedIdentifier = false;
+
+    /**
+     * @brief Text of the leading qualifier if parent node is a scoped_identifier (e.g. "INS2BASE" in
+     * "INS2BASE::SELECTFIRE_SEMI").
+     */
+    std::string scopeQualifier;
+};
+
+/** @brief A string literal call argument occurrence (e.g. SetTimeout("MyFunc", ...), CustomEntity("MyClass", ...)). */
+struct StringLiteralCallRef
+{
+    std::string name;
+    uint32_t line = 0;
+    uint32_t column = 0;
 };
 
 /** @brief What kind of syntactic construct created this lexical scope. */
@@ -194,6 +233,7 @@ struct Scope
     std::vector<std::unique_ptr<Scope>> children;
     std::vector<LocalDefinition> definitions;
     std::vector<LocalReference> references;
+    std::vector<StringLiteralCallRef> stringLiteralCallRefs;
 
     /**
      * @brief Destroys the subtree iteratively rather than by recursive unique_ptr teardown.
@@ -271,6 +311,23 @@ class ScopeTraversalGuard
     std::array<const Scope*, kMaxScopeDepth> m_visited{};
     size_t m_count = 0;
 };
+
+/**
+ * @brief Resolves name to the nearest enclosing definition starting from scope and walking up
+ *        through Scope::parent, enforcing sequential byte-offset visibility for local variables.
+ * @param scope Scope to start resolution from.
+ * @param name Name of symbol to resolve.
+ * @param refByte Byte offset of reference token.
+ * @param owner Optional out-parameter receiving the Scope declaring the definition.
+ * @param respectClosureBarrier When true (default), closure scopes cannot capture outer local
+ *                              variables or parameters from enclosing functions/closures.
+ * @return The matching definition, or nullptr if no enclosing scope declares name visible at refByte.
+ */
+const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view name, uint32_t refByte,
+                                        const Scope** owner = nullptr, bool respectClosureBarrier = true);
+
+const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view name, uint32_t refByte,
+                                        bool respectClosureBarrier);
 
 /**
  * @brief Resolves name to the nearest enclosing definition starting from scope and walking up

@@ -285,11 +285,12 @@ void Server::BuildIncludeGraphAndModules(const std::vector<std::string>& allScri
     PurgeUnusedClosureFiles();
     IndexConfiguredModules(parser);
 
-    WithdrawStaleModuleDiagnostics();
-    AnalyzeConfiguredModules();
-
     phase.emplace(m_logger.get(), "rule index construction");
     m_symbolTable.EnsureRuleIndex();
+    SyncModuleIndexSymbols();
+
+    WithdrawStaleModuleDiagnostics();
+    AnalyzeConfiguredModules();
 }
 
 bool Server::LoadAndProcessPredefinedStubs(const std::vector<std::string>& discoveredStubPaths,
@@ -357,13 +358,19 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
         struct ReanalyseOnExit
         {
             Server* server;
+            const angel_lsp::utils::StopFlag& stopToken;
             ~ReanalyseOnExit()
             {
                 server->SetPredefinedReady(true);
                 server->m_workspaceScanComplete.store(true);
-                server->ScheduleOpenDocumentsForReanalysis();
+                if (!stopToken.stop_requested())
+                {
+                    server->ScheduleOpenDocumentsForReanalysis();
+                }
             }
-        } reanalyseOnExit{this};
+        } reanalyseOnExit{this, stopToken};
+
+        LoadWorkspaceEngineRules(roots);
 
         WorkspaceFilesWalkResult walkResult;
         if (!CollectWorkspaceFiles(roots, stopToken, walkResult))
@@ -379,6 +386,8 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
             EndWorkspaceProgress("Cancelled");
             return;
         }
+        LoadWorkspaceEngineRules(roots);
+        m_symbolTable.EnsureRuleIndex();
         SetPredefinedReady(true);
 
         BuildIncludeGraphAndModules(walkResult.allScriptFiles, roots, stopToken, backgroundParser);
@@ -597,7 +606,14 @@ void Server::HandleNotificationsWorkspace_DidChangeWatchedFiles(
         }
 
         const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
-        if (event.type == lsp::FileChangeType::Deleted)
+        const bool isRulesFile = path.ends_with("angelscript.rules.json") ||
+                                 (!m_config.rulesFile.empty() && PathsAreSameFile(path, m_config.rulesFile));
+        if (isRulesFile)
+        {
+            LoadWorkspaceEngineRules(ConvertWorkspaceRootsToPaths(WorkspaceRoots()));
+            graphChanged = true;
+        }
+        else if (event.type == lsp::FileChangeType::Deleted)
         {
             graphChanged =
                 HandleWatchedFileDeleted(path, uriStr, isPredefined, stubSelectionInvalidated) || graphChanged;

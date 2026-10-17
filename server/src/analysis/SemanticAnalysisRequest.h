@@ -16,6 +16,11 @@
 #include <string_view>
 #include <tree_sitter/api.h>
 
+namespace angel_lsp::utils
+{
+class StopFlag;
+}
+
 namespace angel_lsp::analysis
 {
 class NodeIndex;
@@ -121,9 +126,13 @@ struct SemanticAnalysisRequest
      * above and for the same reason: a test that does not care should not have to build one.
      */
     const config::DiagnosticsConfig* diagnostics = nullptr;
+    const config::EngineRuleConfig* engineRules = nullptr;
 
     /** @brief Optional traversal budget to enforce bounded AST node visits across checkers. */
     TraversalBudget* traversalBudget = nullptr;
+
+    /** @brief Optional cancellation flag to abort long-running semantic passes early. */
+    const utils::StopFlag* stopFlag = nullptr;
 
     /** @brief Optional memoization cache for resolved expression types across analysis passes. */
     mutable ExpressionTypeCache* exprCache = nullptr;
@@ -190,6 +199,9 @@ struct SemanticAnalysisRequest
     /** @brief Root of the document's lexical Scope tree (see ScopeTree.h), or nullptr if none was collected. */
     std::shared_ptr<const Scope> scopeRoot;
 
+    /** @brief Optional scope index of workspace documents for cross-file reference checking. */
+    const ScopeIndex* scopeIndex = nullptr;
+
     /**
      * @brief The same tree as scopeRoot, non-null only while this caller exclusively owns it.
      *
@@ -230,7 +242,7 @@ struct SemanticAnalysisRequest
      *
      * When null, SemanticAnalyzer builds a local NodeIndex from tree on first use.
      */
-    const NodeIndex* nodeIndex = nullptr;
+    mutable const NodeIndex* nodeIndex = nullptr;
 
     /**
      * @brief Gets configured name for the string type or empty if not configured.
@@ -275,6 +287,24 @@ struct SemanticAnalysisRequest
     std::unordered_set<std::string> GetArrayLikeTemplateNames() const
     {
         return typeConfig ? typeConfig->ArrayLikeTemplateNames() : std::unordered_set<std::string>{};
+    }
+
+    /**
+     * @brief Checks whether a template name matches the configured array type or an array-like template.
+     * @param[in] templateName Template identifier to check.
+     * @return True if templateName is an array or array-like template.
+     */
+    bool IsArrayLikeTemplate(std::string_view templateName) const
+    {
+        if (templateName.empty())
+        {
+            return false;
+        }
+        if (templateName == GetEffectiveArrayTypeName())
+        {
+            return true;
+        }
+        return typeConfig && typeConfig->arrayLikeTemplates.contains(std::string(templateName));
     }
 
     /**
@@ -502,5 +532,8 @@ struct SemanticAnalysisRequest
 
     /** @brief Cache behind GetRuleIndex(). Never set by a caller; see that accessor. */
     mutable std::shared_ptr<const rules::RuleIndex> ruleIndex;
+
+    /** @brief Lazily populated cache for using namespace strings in this document. */
+    mutable std::optional<std::vector<std::string>> usingNamespacesCache;
 };
 } // namespace angel_lsp::analysis

@@ -785,6 +785,11 @@ void Server::HandleNotificationsInitialized([[maybe_unused]] lsp::notifications:
 lsp::requests::Shutdown::Result Server::HandleRequestsShutdown()
 {
     m_running = false;
+    m_workspaceStop.Request();
+    if (m_analysisScheduler)
+    {
+        m_analysisScheduler->Stop();
+    }
     return lsp::requests::Shutdown::Result{};
 }
 
