@@ -38,6 +38,7 @@ std::vector<Diagnostic> AnalyzeCallSnippet(const std::string& code, const std::s
     static angel_lsp::i18n::I18n i18n;
 
     collector.CollectSymbols(fileUri, code, parser, table);
+    table.EnsureRuleIndex();
 
     SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
     request.scopeRoot = scopes.CollectScopes(code, parser);
@@ -1799,4 +1800,49 @@ TEST_CASE("CallChecker - Calling unqualified method with 1 non-delegate argument
 
     auto diags = AnalyzeCallSnippet(code);
     CHECK(HasCode(diags, "as-err-call-argument-count"));
+}
+
+TEST_CASE("CallChecker - Invariant: Calling unqualified member funcdef is accepted without error")
+{
+    const std::string funcdefName = angel_lsp::test::GenerateRandomSymbolName("ThinkFunc");
+    const std::string baseCls = angel_lsp::test::GenerateRandomSymbolName("BaseEntity");
+    const std::string derivedCls = angel_lsp::test::GenerateRandomSymbolName("MyWeapon");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("m_pfnThink");
+    const std::string basePropName = angel_lsp::test::GenerateRandomSymbolName("m_pfnBase");
+    const std::string vpropName = angel_lsp::test::GenerateRandomSymbolName("virtualThink");
+    const std::string globalFuncdefVar = angel_lsp::test::GenerateRandomSymbolName("g_pfnGlobal");
+
+    const std::string code = "funcdef void " + funcdefName + "();\n" + funcdefName + "@ " + globalFuncdefVar + ";\n" +
+                             "class " + baseCls + " {\n" + "    protected " + funcdefName + "@ " + basePropName +
+                             ";\n" + "}\n" + "class " + derivedCls + " : " + baseCls + " {\n" + "    protected " +
+                             funcdefName + "@ " + propName + ";\n" + "    " + funcdefName + "@ get_" + vpropName +
+                             "() property { return " + propName + "; }\n" + "    void Think() {\n" + "        if (" +
+                             propName + " is null)\n" + "            return;\n" + "        " + propName + "();\n" +
+                             "        this." + propName + "();\n" + "        " + basePropName + "();\n" + "        " +
+                             vpropName + "();\n" + "        " + globalFuncdefVar + "();\n" + "    }\n" +
+                             "    void ConstThink() const {\n" + "        " + propName + "();\n" + "    }\n" + "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    for (const auto& d : diags)
+    {
+        MESSAGE("Diag: " << d.code << " : " << d.message);
+    }
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diags, "as-err-const-method-call"));
+    CHECK(diags.empty());
+}
+
+TEST_CASE("CallChecker - Invariant: Calling unqualified member funcdef with wrong arguments emits diagnostics")
+{
+    const std::string funcdefName = angel_lsp::test::GenerateRandomSymbolName("CalcFunc");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Calculator");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("m_pfnCalc");
+
+    const std::string code = "funcdef void " + funcdefName + "(int a, int b);\n" + "class " + clsName + " {\n" +
+                             "    " + funcdefName + "@ " + propName + ";\n" + "    void Test() {\n" + "        " +
+                             propName + "(10);\n" + "        " + propName + "(\"wrong\", 20);\n" + "    }\n" + "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK(HasCode(diags, "as-err-call-argument-count"));
+    CHECK(HasCode(diags, "as-err-no-implicit-conversion"));
 }

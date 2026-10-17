@@ -1,4 +1,5 @@
 #include "analysis/DiagnosticContext.h"
+#include "analysis/ExpressionTypeCache.h"
 #include "utils/LspLogger.h"
 #include <cstdint>
 #include <span>
@@ -54,6 +55,15 @@ void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::strin
     if (args.empty())
     {
         return;
+    }
+
+    for (const auto a : args)
+    {
+        if (IsPoisonType(a))
+        {
+            diag.message = "<poison>";
+            return;
+        }
     }
 
     const std::string_view pattern = ResolveDiagnosticTemplate(i18n, code, args);
@@ -149,6 +159,11 @@ size_t ColumnOfTypeName(std::string_view sourceCode, uint32_t line, uint32_t fro
 void DiagnosticContext::Append(Diagnostic&& diag) const
 {
     if (!diag.fileUri.empty() && diag.fileUri != request.fileUri)
+    {
+        return;
+    }
+
+    if (diag.message.find("<poison>") != std::string::npos || diag.code.find("<poison>") != std::string::npos)
     {
         return;
     }

@@ -38,7 +38,7 @@
       "severity": "hint"
     }
   ],
-  "schedulerRules": [
+  "callRules": [
     {
       "id": "scheduler-safety",
       "callee": "g_Scheduler",
@@ -88,53 +88,8 @@
       "ScriptBaseCustomEntity",
       "ScriptClassInterface"
     ],
-    "lifecycleMethods": [
-      "Spawn",
-      "Precache",
-      "KeyValue",
-      "PostSpawn",
-      "Think",
-      "Touch",
-      "Use",
-      "Blocked",
-      "ObjectCaps",
-      "SetObjectCollisionBox",
-      "TakeDamage",
-      "TraceAttack",
-      "Killed",
-      "IsAlive",
-      "IRelationship",
-      "OnCreate",
-      "OnDestroy",
-      "Initialize"
-    ],
-    "baseClassLifecycleMethods": {
-      "ScriptBasePlayerWeaponEntity": [
-        "GetItemInfo",
-        "PrimaryAttack",
-        "SecondaryAttack",
-        "TertiaryAttack",
-        "Reload",
-        "WeaponIdle",
-        "Deploy",
-        "Holster",
-        "ItemSlot",
-        "ItemPosition",
-        "AddToPlayer",
-        "AddDuplicate",
-        "ExtractAmmo",
-        "ExtractClipAmmo",
-        "InactiveItemPreFrame",
-        "InactiveItemPostFrame",
-        "ItemPreFrame",
-        "ItemPostFrame",
-        "ItemBusyFrame",
-        "PlayEmptySound"
-      ]
-    },
     "baseClassDelegateProperties": [
-      "BaseClass",
-      "self"
+      "BaseClass"
     ],
     "baseClassProxyMap": {
       "ScriptBaseEntity": ["BaseEntity", "CBaseEntity"],

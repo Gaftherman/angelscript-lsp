@@ -818,11 +818,46 @@ bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
 }
 
 /**
- * @brief Attempts to resolve a callable funcdef member property or variable.
- *
- * @param[in] objectType Receiver object type.
- * @param[in] memberName Member name being called.
+ * @brief Attempts to resolve a getter returning a callable funcdef handle.
+ * @param[in] typeName Enclosing class name.
+ * @param[in] memberName Base property name.
  * @param[in] table Symbol table.
+ * @return Optional synthesized function symbol.
+ */
+static std::optional<Symbol> TryResolveGetterCallableFuncdef(const std::string& typeName, const std::string& memberName,
+                                                             const SymbolTable& table)
+{
+    const std::string getterName = "get_" + memberName;
+    if (const auto getterFound = table.FindMemberSymbolPtr(typeName, getterName))
+    {
+        for (const auto& sym : *getterFound)
+        {
+            if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+            {
+                const auto& fn = sym.GetFunction();
+                if (fn.parameters.empty())
+                {
+                    std::string clean = CleanBaseType(fn.returnType);
+                    if (!clean.empty())
+                    {
+                        if (auto funcdefSym = FindFuncdefSymbol(clean, table))
+                        {
+                            return FuncdefToFunctionSymbol(*funcdefSym, memberName);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief Attempts to resolve a member variable or property returning a funcdef handle.
+ * @param[in] objectType Enclosing object type name.
+ * @param[in] memberName Member identifier.
+ * @param[in] table Symbol table.
+ * @param[in,out] cache Optional type cache.
  * @return Optional synthesized function symbol.
  */
 std::optional<Symbol> TryResolveMemberCallableFuncdef(const std::string& objectType, const std::string& memberName,
@@ -849,6 +884,10 @@ std::optional<Symbol> TryResolveMemberCallableFuncdef(const std::string& objectT
                 }
             }
         }
+        if (auto getterFunc = TryResolveGetterCallableFuncdef(typeName, memberName, table))
+        {
+            return getterFunc;
+        }
     }
     return std::nullopt;
 }
@@ -857,6 +896,17 @@ static bool CheckNonCallableVariable(const std::string& name, const std::string&
                                      const CallValidationContext& valCtx, CalleeResolution& res)
 {
     std::string cleanType = CleanBaseType(typeName);
+    if (!cleanType.empty())
+    {
+        if (auto funcdefSym = FindFuncdefSymbol(cleanType, valCtx.ctx.request.symbolTable))
+        {
+            res.reportedName = name;
+            res.candidates = {FuncdefToFunctionSymbol(*funcdefSym, name)};
+            res.candidatesAreFreeFunctions = true;
+            res.shouldCheck = true;
+            return true;
+        }
+    }
     auto opCallSyms =
         FindMethodCandidates(cleanType, "opCall", valCtx.ctx.request.symbolTable, valCtx.ctx.request.exprCache);
     if (!opCallSyms.empty())
@@ -990,8 +1040,15 @@ static bool CheckScopedNonCallableVariable(std::string_view written, const std::
 static bool CheckGlobalNonCallableVariable(std::string_view written, const std::string& shortName,
                                            const CallValidationContext& valCtx, CalleeResolution& res)
 {
-    if (const auto found = valCtx.ctx.request.symbolTable.FindSymbolsPtr(written))
+    const auto reachableScopes = CollectReachableScopes(valCtx.callNode, valCtx.request.sourceCode);
+    for (const auto& scopeName : reachableScopes)
     {
+        const auto found = scopeName.empty() ? valCtx.ctx.request.symbolTable.FindSymbolsPtr(written)
+                                             : valCtx.ctx.request.symbolTable.FindMemberSymbolPtr(scopeName, shortName);
+        if (!found)
+        {
+            continue;
+        }
         bool hasVar = false;
         bool hasFunc = false;
         std::string varType;
@@ -1085,6 +1142,15 @@ static bool ResolveEnclosingClassCallee(std::string_view written, const CallVali
         res.isReceiverConst = IsEnclosingMethodConst(valCtx.callNode, valCtx.request.sourceCode);
         FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
         ApplyTemplateSubstitutions(res.candidates, enclosingClass, {}, valCtx.ctx.request.symbolTable);
+        return true;
+    }
+    if (auto callableSym = TryResolveMemberCallableFuncdef(
+            enclosingClass, std::string(written), valCtx.ctx.request.symbolTable, valCtx.ctx.request.exprCache))
+    {
+        res.candidates = {std::move(*callableSym)};
+        res.candidatesAreFreeFunctions = true;
+        res.isUnqualifiedClassCall = true;
+        res.shouldCheck = true;
         return true;
     }
     return CheckMemberNonCallableVariable(enclosingClass, std::string(written), valCtx, res);
@@ -1854,9 +1920,7 @@ static bool HasFuncdefSymbol(std::string_view name, const SymbolTable& table)
             return true;
         }
     }
-    const auto shortName = LastScopeSegment(name);
-    const auto matches = table.FindTypeSymbolsByShortName(shortName);
-    return std::any_of(matches.begin(), matches.end(), [](const Symbol& s) { return s.type == SymbolType::Funcdef; });
+    return table.HasFuncdefByShortName(LastScopeSegment(name));
 }
 
 /**

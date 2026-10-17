@@ -402,6 +402,48 @@ uint32_t SelectActiveSignature(const std::vector<lsp::SignatureInformation>& sig
 }
 
 /**
+ * @brief Attempts to resolve a callable funcdef member in enclosing containers.
+ * @param[in] calleeName Name of the callee.
+ * @param[in] funcNode AST node for the callee.
+ * @param[in] request Signature help request.
+ * @return Optional resolved symbol.
+ */
+static std::optional<analysis::Symbol> TryResolveEnclosingMemberCallableFuncdef(std::string_view calleeName,
+                                                                                TSNode funcNode,
+                                                                                const SignatureHelpRequest& request)
+{
+    for (const auto& container : analysis::GetEnclosingContainers(funcNode, request.sourceCode))
+    {
+        if (container.kind != analysis::ContainerKind::Class && container.kind != analysis::ContainerKind::Interface)
+        {
+            continue;
+        }
+        const std::string className = container.qualifiedName.empty() ? container.name : container.qualifiedName;
+        for (const auto& cls : analysis::GetInheritedTypeHierarchy(className, request.symbolTable))
+        {
+            const auto mSyms = request.symbolTable.FindMemberSymbolPtr(cls, calleeName);
+            if (!mSyms)
+            {
+                continue;
+            }
+            for (const auto& sym : *mSyms)
+            {
+                if ((sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property) &&
+                    std::holds_alternative<analysis::VariableSignature>(sym.signature))
+                {
+                    std::string clean = analysis::CleanBaseType(sym.GetVariable().typeName);
+                    if (auto funcdefSym = analysis::FindFuncdefSymbol(clean, request.symbolTable))
+                    {
+                        return analysis::FuncdefToFunctionSymbol(*funcdefSym, std::string(calleeName));
+                    }
+                }
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+/**
  * @brief Resolves signature information for direct (non-member) callee expressions.
  * @param[in] request Signature help request context.
  * @param[in] funcNode AST node for the callee expression.
@@ -430,6 +472,13 @@ std::vector<lsp::SignatureInformation> ResolveDirectSignatures(const SignatureHe
     if (found && !found->empty())
     {
         signatures = BuildSignatureList(*found);
+    }
+    if (signatures.empty())
+    {
+        if (auto memberCallable = TryResolveEnclosingMemberCallableFuncdef(calleeName, funcNode, request))
+        {
+            return BuildSignatureList(std::vector<analysis::Symbol>{*memberCallable});
+        }
     }
     if (signatures.empty())
     {

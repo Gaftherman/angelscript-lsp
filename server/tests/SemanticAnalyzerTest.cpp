@@ -2626,3 +2626,56 @@ TEST_CASE("SemanticAnalyzer - Global constructor lambdas do not emit false dupli
     }
     CHECK_FALSE(hasDuplicateDiag);
 }
+
+TEST_CASE("SemanticAnalyzer - Unbraced if declaration recovers local variable and suppresses E184 and W108")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("TestFunc");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("BuyableItem");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("pBuyItem");
+    const std::string itemParam = angel_lsp::test::GenerateRandomSymbolName("pItem");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    void DoAction() {}\n"
+                             "}\n"
+                             "void " +
+                             fnName + "(" + clsName + "@ " + itemParam +
+                             ") {\n"
+                             "    if (" +
+                             itemParam +
+                             " !is null)\n"
+                             "        " +
+                             clsName + "@ " + varName +
+                             " = null;\n"
+                             "    if (" +
+                             varName +
+                             " !is null) {\n"
+                             "        " +
+                             varName +
+                             ".DoAction();\n"
+                             "    }\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+
+    bool hasDataTypeErr = false;
+    bool hasUndeclaredVar = false;
+
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-expression-is-data-type")
+        {
+            hasDataTypeErr = true;
+        }
+        if (d.code == "as-warn-undeclared-identifier" && d.message.find(varName) != std::string::npos)
+        {
+            hasUndeclaredVar = true;
+        }
+    }
+
+    CHECK_FALSE(hasDataTypeErr);
+    CHECK_FALSE(hasUndeclaredVar);
+}

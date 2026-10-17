@@ -167,6 +167,14 @@ class SymbolCollector
      */
     static void appendQualifiedName(std::string& outBuffer, std::string_view scope, std::string_view name);
 
+    struct RecoveredClassContainer
+    {
+        uint32_t startByte = 0;
+        uint32_t endByte = 0;
+        std::string className;
+        ContainerKind kind = ContainerKind::Class;
+    };
+
   private:
     utils::LspLogger* m_logger;
     const TSQuery* m_tagsQuery = nullptr;
@@ -228,6 +236,7 @@ class SymbolCollector
     };
 
     struct VariableHeaderInfo
+
     {
         TSNode varDeclNode{};
         std::string typeStr;
@@ -270,7 +279,10 @@ class SymbolCollector
 
     void PushContainerIfApplicable(uint32_t captureIdx, TSNode node, const SymbolCollectContext& sCtx,
                                    std::vector<ActiveContainer>& stack) const;
+    void SyncRecoveredContainers(uint32_t nodeStart, const std::vector<RecoveredClassContainer>& recoveredClasses,
+                                 std::vector<ActiveContainer>& containerStack) const;
     void PushClassContainer(TSNode node, const SymbolCollectContext& sCtx, std::vector<ActiveContainer>& stack) const;
+
     void PushInterfaceContainer(TSNode node, const SymbolCollectContext& sCtx,
                                 std::vector<ActiveContainer>& stack) const;
     void PushNamespaceContainer(TSNode node, const SymbolCollectContext& sCtx,
@@ -332,7 +344,8 @@ class SymbolCollector
 
     void ReportParseErrors(TSNode rootNode, SymbolCollectContext& sCtx) const;
     void EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext& sCtx) const;
-    std::string FormatSyntaxErrorMessage(const std::string& rawErrText, std::string& outCode,
+    bool TryFormatArgumentListSyntaxError(TSNode node, const SymbolCollectContext& sCtx, Diagnostic& diag) const;
+    std::string FormatSyntaxErrorMessage(std::string_view rawErrText, std::string& outCode,
                                          const angel_lsp::i18n::I18n* i18n) const;
 
     // =====================================================================================

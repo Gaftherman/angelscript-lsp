@@ -137,6 +137,7 @@ Métodos que el motor invoca dinámicamente en cualquier clase de entidad cuando
 ```
 
 * **Para qué se usa**: Exime a estos métodos de la comprobación de métodos sin usar cuando se declaran dentro de una clase de entidad derivada de `ignoredBaseClasses`.
+* **Nota**: Cuando `baseClassProxyMap` está configurado con stubs `.as.predefined`, `lifecycleMethods` es opcional ya que el LSP descubre automáticamente los callbacks virtuales sobrescritos directamente de los stubs nativos.
 * **Resultado**: Escribir `void Spawn() { ... }` o `void Think() { ... }` en tu clase de monstruo o arma personalizada nunca generará la advertencia "El método 'Spawn' no se utiliza nunca" (`W118`).
 
 ---
@@ -164,21 +165,21 @@ Define métodos que solo son callbacks válidos en tipos de entidad específicos
 ```
 
 * **Para qué se usa**: Solo las clases que heredan de `ScriptBasePlayerWeaponEntity` considerarán `PrimaryAttack` y `Reload` como callbacks del motor. Una clase común y corriente que declare `PrimaryAttack` seguirá siendo alertada si no se usa.
+* **Nota**: Al igual que `lifecycleMethods`, cuando `baseClassProxyMap` está configurado, estos métodos se descubren automáticamente desde los stubs sin necesidad de enumerarlos manualmente.
 * **Resultado**: Los scripts de armas se mantienen limpios de falsas advertencias, mientras que el código muerto accidental en clases normales se sigue detectando con total fidelidad.
 
 ---
 
 ### 6. `unusedSymbolRules.baseClassProxyMap` y `baseClassDelegateProperties` — Vinculación con Clases Nativas C++
 
-En muchos entornos de script (como `ScriptBasePlayerWeaponEntity` en Sven Co-op), las clases de entidad de script no heredan directamente de la clase C++ nativa. En su lugar, exponen una propiedad delegada (como `BaseClass` o `self`) que apunta a la clase nativa (como `BasePlayerWeapon` o `CBasePlayerWeapon`).
+En muchos entornos de script (como `ScriptBasePlayerWeaponEntity` en Sven Co-op), las clases de entidad de script no heredan directamente de la clase C++ nativa. En su lugar, exponen una propiedad delegada (como `BaseClass`) que apunta a la clase nativa (como `BasePlayerWeapon` o `CBasePlayerWeapon`).
 
 #### Ejemplo
 ```json
 {
   "unusedSymbolRules": {
     "baseClassDelegateProperties": [
-      "BaseClass",
-      "self"
+      "BaseClass"
     ],
     "baseClassProxyMap": {
       "ScriptBaseEntity": ["BaseEntity", "CBaseEntity"],
@@ -256,14 +257,14 @@ Detecta y previene patrones peligrosos de almacenamiento que provocan fugas de m
 
 ---
 
-### 9. `schedulerRules` — Seguridad en Tareas Asíncronas
+### 9. `callRules` (anteriormente `schedulerRules`) — Seguridad en Llamadas y Tareas Asíncronas
 
-Valida las invocaciones al programador de tareas para asegurar que los argumentos pasados sigan siendo válidos cuando se ejecute la tarea retardada.
+Valida argumentos pasados a invocaciones de métodos o funciones (incluyendo registros en el programador de tareas) para asegurar que los argumentos pasados sigan siendo válidos y seguros cuando se ejecuten.
 
 #### Ejemplo
 ```json
 {
-  "schedulerRules": [
+  "callRules": [
     {
       "id": "scheduler-safety",
       "callee": "g_Scheduler",
@@ -281,6 +282,7 @@ Valida las invocaciones al programador de tareas para asegurar que los argumento
 ```
 
 * **Para qué se usa**: Alerta sobre handles de entidad pasados a `g_Scheduler.SetTimeout(...)`, evitando que apunten a memoria liberada si la entidad se destruye antes de dispararse el temporizador.
+* **Compatibilidad Hacia Atrás**: La clave `schedulerRules` se mantiene totalmente soportada como alias para configuraciones existentes.
 * **Resultado**: Protege a los desarrolladores de bloqueos y caídas sutiles del servidor antes de probar en el juego.
 
 ---

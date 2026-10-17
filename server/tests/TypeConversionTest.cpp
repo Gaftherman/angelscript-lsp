@@ -3047,3 +3047,20 @@ TEST_CASE("TypeConversion - Assigning null to funcdef type does not emit as-err-
     CHECK_FALSE(std::any_of(diags.begin(), diags.end(),
                             [](const Diagnostic& d) { return d.code == "as-err-null-non-handle"; }));
 }
+
+TEST_CASE("TypeConversion - Poison sentinel is completely eradicated from diagnostics")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("PoisonFn");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("badVar");
+
+    const std::string code =
+        "void " + funcName + "() {\n" + "    string " + varName + " = undefinedSymbol + 123;\n" + "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    for (const auto& diag : diags)
+    {
+        CHECK(diag.message.find("<poison>") == std::string::npos);
+        CHECK(diag.code.find("<poison>") == std::string::npos);
+    }
+}

@@ -105,7 +105,14 @@ bool IsKnownCallee(std::string_view name, TSNode node, const NamespaceCheckReque
         return true;
     }
 
-    if (ctx.request.IsRegisteredSymbol(name) || ctx.request.symbolTable.HasSymbol(name))
+    std::string getterName = "get_" + std::string(name);
+    if (!FindSymbolsInScope(getterName, node, request.sourceCode, ctx.request.symbolTable).empty())
+    {
+        return true;
+    }
+
+    if (ctx.request.IsRegisteredSymbol(name) || ctx.request.symbolTable.HasSymbol(name) ||
+        ctx.request.IsRegisteredSymbol(getterName) || ctx.request.symbolTable.HasSymbol(getterName))
     {
         return true;
     }

@@ -106,6 +106,7 @@ void PopulateExpressionsAndLiterals(const TSLanguage* lang, GrammarSymbols& gs) 
     gs.symSwitchStatement = SymNamed(lang, parser::nodes::SwitchStatement);
     gs.symCaseClause = SymNamed(lang, parser::nodes::CaseClause);
     gs.symTryStatement = SymNamed(lang, parser::nodes::TryStatement);
+    gs.symExpressionStatement = SymNamed(lang, parser::nodes::ExpressionStatement);
 }
 
 void PopulateTokensAndFields(const TSLanguage* lang, GrammarSymbols& gs) noexcept
@@ -132,6 +133,8 @@ void PopulateTokensAndFields(const TSLanguage* lang, GrammarSymbols& gs) noexcep
     gs.tokGet = SymAnon(lang, "get");
     gs.tokSet = SymAnon(lang, "set");
     gs.tokColonColon = SymAnon(lang, "::");
+    gs.tokClass = SymAnon(lang, "class");
+    gs.tokInterface = SymAnon(lang, "interface");
 
     gs.fieldName = FieldId(lang, parser::fields::Name);
     gs.fieldType = FieldId(lang, parser::fields::Type);

@@ -161,9 +161,9 @@
         }
       }
     },
-    "schedulerRules": {
+    "callRules": {
       "type": "array",
-      "description": "Rules for validating asynchronous callback registrations and scheduler invocations (e.g. g_Scheduler.SetTimeout).",
+      "description": "Rules for validating function and method call arguments, asynchronous callback registrations, and safety constraints (e.g. g_Scheduler.SetTimeout).",
       "items": {
         "type": "object",
         "required": ["id"],
@@ -171,7 +171,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Unique identifier for this scheduler safety rule."
+            "description": "Unique identifier for this call safety rule."
           },
           "callee": {
             "type": "string",
@@ -211,20 +211,20 @@
           },
           "disallowArgInheritsFrom": {
             "type": "string",
-            "description": "Prohibit passing arguments derived from this type to the scheduler."
+            "description": "Prohibit passing arguments derived from this type to the callee."
           },
           "disallowArgRegex": {
             "type": "string",
-            "description": "Regex pattern matching arguments prohibited in scheduled call expressions."
+            "description": "Regex pattern matching arguments prohibited in call expressions."
           },
           "disallowArgHandleOnly": {
             "type": "boolean",
             "default": true,
-            "description": "If true, only disallow raw handle arguments passed to the scheduler."
+            "description": "If true, only disallow raw handle arguments passed to the callee."
           },
           "argSuggestReplacement": {
             "type": "string",
-            "description": "Safe replacement to suggest for scheduler arguments (e.g. 'EHandle')."
+            "description": "Safe replacement to suggest for callee arguments (e.g. 'EHandle')."
           },
           "requireExplicitEnumConstruct": {
             "type": "boolean",
@@ -243,6 +243,10 @@
           }
         }
       }
+    },
+    "schedulerRules": {
+      "$ref": "#/properties/callRules",
+      "description": "Alias for 'callRules' (backward compatibility)."
     },
     "unusedSymbolRules": {
       "type": "object",

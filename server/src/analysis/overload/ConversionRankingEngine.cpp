@@ -455,8 +455,8 @@ ArgumentConversion EvaluateCandidateTypeMatch(const ParameterInformation& param,
 }
 bool IsPoisonOrEmptyArg(std::string_view cleanArg, std::string_view cleanParam)
 {
-    return cleanArg.empty() || cleanParam.empty() || cleanArg == "<poison>" || cleanParam == "<poison>" ||
-           ExpressionTypeCache::IsPoisonType(cleanArg);
+    return cleanArg.empty() || cleanParam.empty() || ExpressionTypeCache::IsPoisonType(cleanArg) ||
+           ExpressionTypeCache::IsPoisonType(cleanParam);
 }
 
 ArgumentConversion AdjustForLValueConstraint(ArgumentConversion conv, bool isOutOrRef, bool argIsLValue)

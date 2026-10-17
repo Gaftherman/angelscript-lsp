@@ -35,17 +35,39 @@ std::string_view TrimView(std::string_view sv)
     return sv;
 }
 
-std::string ExtractFirstToken(const std::string& rawErrText)
+void SkipWhitespaceAndComments(std::string_view text, size_t& i)
 {
-    std::string firstToken;
-    for (char c : rawErrText)
+    while (i < text.size())
     {
-        if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || firstToken.size() >= 20)
+        if (isspace(static_cast<unsigned char>(text[i])))
         {
-            if (!firstToken.empty())
-                break;
+            ++i;
             continue;
         }
+        if (text.substr(i).starts_with("//"))
+        {
+            size_t nl = text.find('\n', i + 2);
+            i = (nl == std::string_view::npos) ? text.size() : (nl + 1);
+            continue;
+        }
+        if (text.substr(i).starts_with("/*"))
+        {
+            size_t end = text.find("*/", i + 2);
+            i = (end == std::string_view::npos) ? text.size() : (end + 2);
+            continue;
+        }
+        break;
+    }
+}
+
+std::string ExtractFirstToken(std::string_view rawErrText)
+{
+    size_t i = 0;
+    SkipWhitespaceAndComments(rawErrText, i);
+    std::string firstToken;
+    while (i < rawErrText.size() && !isspace(static_cast<unsigned char>(rawErrText[i])) && firstToken.size() < 24)
+    {
+        char c = rawErrText[i++];
         if (static_cast<unsigned char>(c) >= 32 && static_cast<unsigned char>(c) != 127)
         {
             firstToken += c;
@@ -59,6 +81,124 @@ struct MemberNodes
     TSNode declNode;
     TSNode nameNode;
 };
+
+using RecoveredClassContainer = SymbolCollector::RecoveredClassContainer;
+
+struct RecoverClassContext
+
+{
+    const parser::GrammarSymbols& gs;
+    std::string_view sourceCode;
+    const std::string& fileUri;
+    std::vector<RecoveredClassContainer>& outContainers;
+    std::vector<Symbol>& outSymbols;
+};
+
+struct ScannedClassHeader
+{
+    TSNode headerStart{TSNode{}};
+    TSNode nameNode{TSNode{}};
+    bool isClass{false};
+    bool isInterface{false};
+};
+
+ScannedClassHeader FindClassHeaderInError(TSNode node, const parser::GrammarSymbols& gs)
+{
+    ScannedClassHeader result;
+    TSTreeCursor inner = ts_tree_cursor_new(node);
+    if (!ts_tree_cursor_goto_first_child(&inner))
+    {
+        ts_tree_cursor_delete(&inner);
+        return result;
+    }
+
+    do
+    {
+        TSNode child = ts_tree_cursor_current_node(&inner);
+        TSSymbol sym = ts_node_symbol(child);
+
+        if (sym == gs.tokClass)
+        {
+            result.isClass = true;
+            if (ts_node_is_null(result.headerStart))
+                result.headerStart = child;
+        }
+        else if (sym == gs.tokInterface)
+        {
+            result.isInterface = true;
+            if (ts_node_is_null(result.headerStart))
+                result.headerStart = child;
+        }
+        else if (sym == gs.symDeclarationModifier && ts_node_is_null(result.headerStart))
+        {
+            result.headerStart = child;
+        }
+        else if ((result.isClass || result.isInterface) && sym == gs.symIdentifier && ts_node_is_null(result.nameNode))
+        {
+            result.nameNode = child;
+            break;
+        }
+    } while (ts_tree_cursor_goto_next_sibling(&inner));
+    ts_tree_cursor_delete(&inner);
+    return result;
+}
+
+static void TryRecoverClassFromErrorNode(TSNode node, RecoverClassContext& ctx)
+{
+    ScannedClassHeader header = FindClassHeaderInError(node, ctx.gs);
+    if (ts_node_is_null(header.nameNode) || ts_node_is_null(header.headerStart))
+    {
+        return;
+    }
+
+    std::string className = parser::GetNodeText(header.nameNode, ctx.sourceCode);
+    if (className.empty())
+    {
+        return;
+    }
+
+    TSPoint startPt = ts_node_start_point(header.headerStart);
+    TSPoint endPt = ts_node_end_point(node);
+    TSPoint nameStartPt = ts_node_start_point(header.nameNode);
+    TSPoint nameEndPt = ts_node_end_point(header.nameNode);
+
+    Symbol sym;
+    sym.type = header.isInterface ? SymbolType::Interface : SymbolType::Class;
+    sym.name = className;
+    sym.qualifiedName = className;
+    sym.fileUri = ctx.fileUri;
+    sym.startLine = startPt.row;
+    sym.startCharacter = startPt.column;
+    sym.endLine = endPt.row;
+    sym.endCharacter = endPt.column;
+    sym.fullRange = {startPt.row, startPt.column, endPt.row, endPt.column};
+    sym.selectionRange = {nameStartPt.row, nameStartPt.column, nameEndPt.row, nameEndPt.column};
+
+    ctx.outSymbols.push_back(std::move(sym));
+    ctx.outContainers.push_back({ts_node_start_byte(header.headerStart), ts_node_end_byte(node), std::move(className),
+                                 header.isInterface ? ContainerKind::Interface : ContainerKind::Class});
+}
+
+static void ScanRecoverableClasses(TSNode rootNode, RecoverClassContext& ctx)
+{
+    TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
+    if (!ts_tree_cursor_goto_first_child(&cursor))
+    {
+        ts_tree_cursor_delete(&cursor);
+        return;
+    }
+
+    do
+    {
+        TSNode node = ts_tree_cursor_current_node(&cursor);
+        if (ts_node_is_error(node))
+        {
+            TryRecoverClassFromErrorNode(node, ctx);
+        }
+    } while (ts_tree_cursor_goto_next_sibling(&cursor));
+
+    ts_tree_cursor_delete(&cursor);
+}
 } // namespace
 
 // =========================================================================================
@@ -355,6 +495,35 @@ void SymbolCollector::PushContainerIfApplicable(uint32_t captureIdx, TSNode node
     }
 }
 
+void SymbolCollector::SyncRecoveredContainers(uint32_t nodeStart,
+                                              const std::vector<RecoveredClassContainer>& recoveredClasses,
+                                              std::vector<ActiveContainer>& containerStack) const
+{
+    for (const auto& rec : recoveredClasses)
+    {
+        if (rec.startByte <= nodeStart && nodeStart < rec.endByte)
+        {
+            bool onStack = false;
+            for (const auto& c : containerStack)
+            {
+                if (c.ctx.containerPath == rec.className)
+                {
+                    onStack = true;
+                    break;
+                }
+            }
+            if (!onStack)
+            {
+                CollectionContext recCtx;
+                recCtx.containerKind = rec.kind;
+                recCtx.isInsideClass = true;
+                recCtx.containerPath = rec.className;
+                containerStack.push_back({rec.endByte, std::move(recCtx)});
+            }
+        }
+    }
+}
+
 void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCtx)
 {
     sCtx.sourceHasBrackets = !sCtx.isPredefined && (sCtx.request.sourceCode.find('[') != std::string_view::npos);
@@ -362,6 +531,14 @@ void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCt
         sCtx.request.sourceCode.size() > 16384 ? (sCtx.request.sourceCode.size() / 128) : 256;
     sCtx.collectedSymbols.reserve(estimatedCapacity);
     ReportParseErrors(rootNode, sCtx);
+
+    std::vector<RecoveredClassContainer> recoveredClasses;
+    if (ts_node_has_error(rootNode))
+    {
+        RecoverClassContext recCtx{m_gs, sCtx.request.sourceCode, sCtx.request.fileUri, recoveredClasses,
+                                   sCtx.collectedSymbols};
+        ScanRecoverableClasses(rootNode, recCtx);
+    }
 
     TSQueryCursor* cursor = angel_lsp::parser::QueryRegistry::GetThreadLocalCursor();
     ts_query_cursor_exec(cursor, m_tagsQuery, rootNode);
@@ -382,6 +559,11 @@ void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCt
                 while (!containerStack.empty() && containerStack.back().endByte <= nodeStart)
                 {
                     containerStack.pop_back();
+                }
+
+                if (!recoveredClasses.empty())
+                {
+                    SyncRecoveredContainers(nodeStart, recoveredClasses, containerStack);
                 }
 
                 CollectionContext ctx = containerStack.empty() ? CollectionContext{} : containerStack.back().ctx;
@@ -1321,35 +1503,183 @@ void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollect
 // Diagnostics & Error Recovery
 // =========================================================================================
 
+namespace
+{
+/**
+ * @brief Checks whether an AST node contains nested ERROR or MISSING child nodes.
+ * @param[in] node Node to inspect.
+ * @return True if any child is missing, error, or has error.
+ */
+bool HasNestedErrorOrMissing(TSNode node)
+{
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (!ts_tree_cursor_goto_first_child(&cursor))
+    {
+        ts_tree_cursor_delete(&cursor);
+        return false;
+    }
+    bool found = false;
+    do
+    {
+        TSNode child = ts_tree_cursor_current_node(&cursor);
+        if (ts_node_is_missing(child) || ts_node_is_error(child) || ts_node_has_error(child))
+        {
+            found = true;
+            break;
+        }
+    } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    ts_tree_cursor_delete(&cursor);
+    return found;
+}
+
+bool IsDeclarationSymbol(TSSymbol sym, const parser::GrammarSymbols& gs)
+{
+    return sym == gs.symFuncDeclaration || sym == gs.symVariableDeclaration || sym == gs.symClassDeclaration ||
+           sym == gs.symInterfaceDeclaration || sym == gs.symEnumDeclaration || sym == gs.symNamespaceDeclaration;
+}
+
+TSNode ResolveOpeningBraceTarget(TSNode classOpeningBrace, const parser::GrammarSymbols& gs)
+{
+    TSNode next = ts_node_next_sibling(classOpeningBrace);
+    while (!ts_node_is_null(next) && ts_node_symbol(next) == gs.symComment)
+    {
+        next = ts_node_next_sibling(next);
+    }
+    return !ts_node_is_null(next) ? next : classOpeningBrace;
+}
+
+struct OffendingScanState
+{
+    TSNode lastValidDecl{TSNode{}};
+    TSNode firstOffendingAfterDecl{TSNode{}};
+    TSNode firstNonComment{TSNode{}};
+    TSNode classOpeningBrace{TSNode{}};
+    bool seenClassOrIface{false};
+};
+
+void ScanOffendingChild(TSNode child, const parser::GrammarSymbols& gs, OffendingScanState& state)
+{
+    TSSymbol sym = ts_node_symbol(child);
+    if (sym == gs.symComment)
+    {
+        return;
+    }
+    if (ts_node_is_null(state.firstNonComment))
+    {
+        state.firstNonComment = child;
+    }
+    if (sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration || sym == gs.tokClass ||
+        sym == gs.tokInterface)
+    {
+        state.seenClassOrIface = true;
+    }
+    if (state.seenClassOrIface && ts_node_is_null(state.classOpeningBrace))
+    {
+        if (sym == gs.tokOpenBrace)
+        {
+            state.classOpeningBrace = child;
+        }
+    }
+    if (IsDeclarationSymbol(sym, gs))
+    {
+        state.lastValidDecl = child;
+        state.firstOffendingAfterDecl = TSNode{};
+    }
+    else if (!ts_node_is_null(state.lastValidDecl) && ts_node_is_null(state.firstOffendingAfterDecl))
+    {
+        state.firstOffendingAfterDecl = child;
+    }
+}
+
+/**
+ * @brief Pinpoints the most specific offending AST node inside an ERROR node.
+ * @param[in] errorNode Outer error node.
+ * @param[in] gs Pre-resolved grammar symbols.
+ * @return Pinpointed node representing the error location.
+ */
+TSNode PinpointOffendingNode(TSNode errorNode, const parser::GrammarSymbols& gs)
+{
+    TSNode parent = parser::GetParent(errorNode);
+    if (!ts_node_is_null(parent) && ts_node_symbol(parent) == gs.symArgumentList)
+    {
+        return errorNode;
+    }
+
+    TSTreeCursor cursor = ts_tree_cursor_new(errorNode);
+    if (!ts_tree_cursor_goto_first_child(&cursor))
+    {
+        ts_tree_cursor_delete(&cursor);
+        return errorNode;
+    }
+
+    OffendingScanState state;
+    do
+    {
+        ScanOffendingChild(ts_tree_cursor_current_node(&cursor), gs, state);
+    } while (ts_tree_cursor_goto_next_sibling(&cursor));
+
+    ts_tree_cursor_delete(&cursor);
+
+    if (!ts_node_is_null(state.firstOffendingAfterDecl))
+    {
+        return state.firstOffendingAfterDecl;
+    }
+    if (!ts_node_is_null(state.classOpeningBrace))
+    {
+        return ResolveOpeningBraceTarget(state.classOpeningBrace, gs);
+    }
+    if (!ts_node_is_null(state.firstNonComment))
+    {
+        return state.firstNonComment;
+    }
+    return errorNode;
+}
+
+bool AdvanceCursorAfterError(TSTreeCursor& cursor)
+{
+    if (ts_tree_cursor_goto_next_sibling(&cursor))
+    {
+        return true;
+    }
+    while (ts_tree_cursor_goto_parent(&cursor))
+    {
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+} // namespace
+
 void SymbolCollector::ReportParseErrors(TSNode rootNode, SymbolCollectContext& sCtx) const
 {
     if (!ts_node_has_error(rootNode))
         return;
 
     TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
-    bool hasChild = true;
 
-    while (hasChild)
+    while (true)
     {
         TSNode current = ts_tree_cursor_current_node(&cursor);
 
-        if (ts_node_is_missing(current) || ts_node_is_error(current))
+        if (ts_node_is_missing(current))
         {
             EmitParseErrorDiagnostic(current, sCtx);
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            if (!AdvanceCursorAfterError(cursor))
+                break;
+            continue;
+        }
+
+        if (ts_node_is_error(current))
+        {
+            if (HasNestedErrorOrMissing(current) && ts_tree_cursor_goto_first_child(&cursor))
             {
                 continue;
             }
-            bool ascended = false;
-            while (ts_tree_cursor_goto_parent(&cursor))
-            {
-                if (ts_tree_cursor_goto_next_sibling(&cursor))
-                {
-                    ascended = true;
-                    break;
-                }
-            }
-            if (!ascended)
+            TSNode target = PinpointOffendingNode(current, m_gs);
+            EmitParseErrorDiagnostic(target, sCtx);
+            if (!AdvanceCursorAfterError(cursor))
                 break;
             continue;
         }
@@ -1359,42 +1689,25 @@ void SymbolCollector::ReportParseErrors(TSNode rootNode, SymbolCollectContext& s
             continue;
         }
 
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            continue;
-        }
-
-        bool ascended = false;
-        while (ts_tree_cursor_goto_parent(&cursor))
-        {
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                ascended = true;
-                break;
-            }
-        }
-        if (!ascended)
+        if (!AdvanceCursorAfterError(cursor))
             break;
     }
 
     ts_tree_cursor_delete(&cursor);
 }
 
-namespace
-{
 /**
  * @brief Formats an argument list syntax error when two arguments appear without a comma.
  * @param[in] node AST error node.
- * @param[in] sourceCode Source text buffer.
- * @param[in] i18n Optional localization instance.
+ * @param[in] sCtx Symbol collection context.
  * @param[in,out] diag Diagnostic to populate.
  * @return True if formatted as an argument list syntax error.
  */
-bool TryFormatArgumentListSyntaxError(TSNode node, std::string_view sourceCode, const angel_lsp::i18n::I18n* i18n,
-                                      Diagnostic& diag)
+bool SymbolCollector::TryFormatArgumentListSyntaxError(TSNode node, const SymbolCollectContext& sCtx,
+                                                       Diagnostic& diag) const
 {
     TSNode parent = parser::GetParent(node);
-    if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "argument_list")
+    if (ts_node_is_null(parent) || ts_node_symbol(parent) != m_gs.symArgumentList)
     {
         return false;
     }
@@ -1411,27 +1724,31 @@ bool TryFormatArgumentListSyntaxError(TSNode node, std::string_view sourceCode, 
         return false;
     }
 
-    std::string nextText = parser::GetNodeText(nextSibling, sourceCode);
-    while (!nextText.empty() && (nextText.front() == ' ' || nextText.front() == '\t'))
+    std::string_view nextView = parser::GetNodeTextView(nextSibling, sCtx.request.sourceCode);
+    while (!nextView.empty() && (nextView.front() == ' ' || nextView.front() == '\t'))
     {
-        nextText.erase(nextText.begin());
+        nextView.remove_prefix(1);
     }
-    while (!nextText.empty() && (nextText.back() == ' ' || nextText.back() == '\t'))
+    while (!nextView.empty() && (nextView.back() == ' ' || nextView.back() == '\t'))
     {
-        nextText.pop_back();
+        nextView.remove_suffix(1);
     }
-    if (nextText.size() > 24)
+    std::string nextText;
+    if (nextView.size() > 24)
     {
-        nextText = nextText.substr(0, 24) + "...";
+        nextText = fmt::format("{}...", nextView.substr(0, 24));
+    }
+    else
+    {
+        nextText = std::string(nextView);
     }
 
     diag.range.end.line = ts_node_end_point(nextSibling).row;
     diag.range.end.character = ts_node_end_point(nextSibling).column;
-    diag.message = i18n::FormatMessage(i18n, "note-expected-comma-or-paren", "Expected ',' or ')' before '{}'",
-                                       std::string_view(nextText));
+    diag.message = i18n::FormatMessage(sCtx.request.i18n, "note-expected-comma-or-paren",
+                                       "Expected ',' or ')' before '{}'", std::string_view(nextText));
     return true;
 }
-} // namespace
 
 void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext& sCtx) const
 {
@@ -1448,6 +1765,7 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
     diag.source = "AngelScript";
     diag.fileUri = sCtx.request.fileUri;
 
+    std::string_view rawErrText = GetNodeView(node, sCtx.request.sourceCode);
     std::string logMsg;
 
     if (ts_node_is_missing(node))
@@ -1459,15 +1777,34 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
         diag.message = fmt::format(fmt::runtime(pattern), missingToken);
         logMsg = diag.message;
     }
-    else if (TryFormatArgumentListSyntaxError(node, sCtx.request.sourceCode, sCtx.request.i18n, diag))
+    else if (TryFormatArgumentListSyntaxError(node, sCtx, diag))
     {
         logMsg = diag.message;
     }
     else
     {
-        std::string rawErrText = GetNodeText(node, sCtx.request.sourceCode);
         diag.message = FormatSyntaxErrorMessage(rawErrText, diag.code, sCtx.request.i18n);
         logMsg = diag.message;
+    }
+
+    uint32_t startByte = ts_node_start_byte(node);
+    while (startByte < sCtx.request.sourceCode.size() &&
+           (sCtx.request.sourceCode[startByte] == ' ' || sCtx.request.sourceCode[startByte] == '\t'))
+    {
+        ++startByte;
+        ++diag.range.start.character;
+    }
+
+    if (diag.range.end.line > diag.range.start.line)
+    {
+        diag.range.end.line = diag.range.start.line;
+        std::string firstTok = ExtractFirstToken(rawErrText);
+        uint32_t len = firstTok.empty() ? 1 : static_cast<uint32_t>(firstTok.size());
+        diag.range.end.character = diag.range.start.character + len;
+    }
+    else if (diag.range.end.character <= diag.range.start.character)
+    {
+        diag.range.end.character = diag.range.start.character + 1;
     }
 
     sCtx.diagnostics.push_back(std::move(diag));
@@ -1479,7 +1816,7 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
     }
 }
 
-std::string SymbolCollector::FormatSyntaxErrorMessage(const std::string& rawErrText, std::string& outCode,
+std::string SymbolCollector::FormatSyntaxErrorMessage(std::string_view rawErrText, std::string& outCode,
                                                       const angel_lsp::i18n::I18n* i18n) const
 {
     std::string firstToken = ExtractFirstToken(rawErrText);

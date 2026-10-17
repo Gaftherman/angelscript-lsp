@@ -1108,7 +1108,7 @@ std::vector<Symbol> SymbolTable::FindTypeSymbolsByShortName(std::string_view sho
         return result;
     }
 
-    const auto it = index->qualifiedTypesByShortName.find(std::string(shortName));
+    const auto it = index->qualifiedTypesByShortName.find(shortName);
     if (it != index->qualifiedTypesByShortName.end())
     {
         for (const auto& qKey : it->second)
@@ -1121,6 +1121,35 @@ std::vector<Symbol> SymbolTable::FindTypeSymbolsByShortName(std::string_view sho
         }
     }
     return result;
+}
+
+bool SymbolTable::HasFuncdefByShortName(std::string_view shortName) const noexcept
+{
+    const auto index = GetRuleIndex();
+    if (!index)
+    {
+        return false;
+    }
+
+    const auto it = index->qualifiedTypesByShortName.find(shortName);
+    if (it != index->qualifiedTypesByShortName.end())
+    {
+        for (const auto& qKey : it->second)
+        {
+            auto ptr = FindSymbolsPtr(qKey);
+            if (ptr)
+            {
+                for (const auto& sym : *ptr)
+                {
+                    if (sym.type == SymbolType::Funcdef)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
 }
 
 void SymbolTable::InsertSymbol(const std::string& name, SymbolKind kind, const std::string& type)
