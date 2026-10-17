@@ -4,6 +4,33 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.0] - 2026-10-16
+
+### Official 1.1.0 Release: Architecture, Precision Semantics, Engine Rules, and Diagnostics Governance
+
+- Default Diagnostics Configuration:
+  - `angelscript.diagnostics.reportUnusedFunctions` and `angelscript.diagnostics.reportUnusedMembers` are now disabled by default (`false`) in vanilla environments, and explicitly enabled (`true`) in Sven Co-op reference engine rules (`predefined/sven.angelscript.rules.json`).
+  - Allows clean out-of-the-box editing in standalone scripts without false-positive unused warnings on uncalled entry points, while providing strict unused symbol detection in projects utilizing host engine rules.
+- Engine Rules JSON Schema:
+  - Switched `$schema` in `predefined/sven.angelscript.rules.json` and starter templates to raw GitHub JSON URL (`https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json`) for seamless schema validation across external workspaces.
+- Global Scope Resolution (`::`):
+  - In `TargetResolution`, `HoverHandler`, `DefinitionHandler`, and `SemanticHelpers`: leading `::Ident` resolves strictly in the root global scope (`containerName.empty()`), completely skipping enclosing classes, mixins, or base class hierarchy methods.
+  - Implemented $O(1)$ `GetGlobalScopeQualifier` in `ASTUtils.h` and registered `tokColonColon` in `GrammarSymbols.h/.cpp`.
+  - In `NamespaceChecker`, explicit global calls (`::Deploy()`) without matching symbols emit `as-err-undefined-identifier`, and invalid namespace qualifiers (`::UnknownNS::Foo()`) emit `as-err-undefined-namespace`.
+- Non-Handle `null` Assignment Diagnostics (`TypeConversionChecker`):
+  - Implemented `TypeAcceptsNullHandle` to flag `null` assignments to non-handle variables with `as-err-null-non-handle` (`Cannot assign 'null' to non-handle type '{}'`), while cleanly accepting handles, `?`/`any`, `funcdef` types, and types with converting constructors or `opAssign` from handle (e.g., `EHandle`).
+- Parameter Type Checking & Call Argument Limits (`CallChecker`, `ConversionRankingEngine`):
+  - Ranked `null` arguments as incompatible with non-handle reference parameters (`const HUDTextParams &in`), emitting `as-err-call-no-matching-signature`.
+  - Replaced blanket `argumentCount <= 1` suppression with `IsDelegateConstructionPattern` (checking `fieldObject` and `fieldMember`) and `HasFuncdefSymbol`.
+  - Cleanly permits single-argument delegate constructions (`VoteBlocked(this.VoteBlocked)`) while strictly enforcing argument count limits on calls with too few arguments (e.g. `Deploy()`).
+- High-Performance Zero-Allocation Views:
+  - Replaced allocating `CleanBaseType` with `CleanBaseTypeView` in `TypeConversionChecker.cpp` and `ConversionRankingEngine.cpp`.
+  - Streamlined `NamespaceChecker.cpp` callee extraction and lookup to use zero-allocation `std::string_view`.
+- Full Test Suite & Static Analysis Parity:
+  - 2,393 / 2,393 unit tests passed (34,224 assertions, 0 failures, 30 skipped).
+  - 12/12 static quality gates passing at 100% (`jscpd` 1.12%, Lizard CCN <= 15, NLOC <= 70, 0 dead parameters `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` clean).
+  - Client pretest passing: compile, bundle, lint, and all 107 settings wired.
+
 ## [1.1.0-exp.12] - 2026-10-16
 
 ### Global Scope Resolution (`::`), Non-Handle `null` Assignment Diagnostics, Delegate Construction Parity, and Parameter Type Enforcement

@@ -802,8 +802,11 @@ TEST_CASE("UnusedSymbolChecker - Engine-agnostic defaults without rules.json")
                              " inst;\n"
                              "}\n";
 
-    // 1. Without rules.json (engine-agnostic default): nothing is hardcoded, so main and PluginInit are reported
+    // 1. Without rules.json (engine-agnostic default): nothing is hardcoded, so main and PluginInit are reported when
+    // functions/members enabled
     angel_lsp::config::DiagnosticsConfig diag;
+    diag.reportUnusedFunctions = true;
+    diag.reportUnusedMembers = true;
     auto diags = AnalyzeSnippet(code, nullptr, "file:///test.as", &diag);
     CHECK(HasDiag(diags, codes::UnusedFunction, "main"));
     CHECK(HasDiag(diags, codes::UnusedFunction, "PluginInit"));
@@ -845,8 +848,10 @@ TEST_CASE("UnusedSymbolChecker - ignoredUnusedFunctions in DiagnosticsConfig sup
                              " { void " + unusedMethod + "() {} }\n" + "void " + unusedFunc + "() {}\n" +
                              "void Entry() { " + usedClass + " inst; }\n";
 
-    // Without ignore list: all 4 are reported
+    // Without ignore list: all 4 are reported when enabled
     angel_lsp::config::DiagnosticsConfig diag;
+    diag.reportUnusedFunctions = true;
+    diag.reportUnusedMembers = true;
     auto diags = AnalyzeSnippet(code, nullptr, "file:///test.as", &diag);
     CHECK(HasDiag(diags, codes::UnusedFunction, unusedFunc));
     CHECK(HasDiag(diags, codes::UnusedMethod, unusedMethod));
@@ -935,4 +940,34 @@ TEST_CASE("UnusedSymbolChecker - BaseClass method access does not mask truly unr
 
     auto diags = AnalyzeSnippet(code, &rules);
     CHECK(HasDiag(diags, codes::UnusedMethod, deadMethod));
+}
+
+TEST_CASE("UnusedSymbolChecker - Default configuration disables unused functions and members until enabled or via Sven "
+          "rules")
+{
+    const std::string unusedFunc = angel_lsp::test::GenerateRandomSymbolName("DeadFunc");
+    const std::string unusedMethod = angel_lsp::test::GenerateRandomSymbolName("DeadMethod");
+    const std::string unusedGlobal = angel_lsp::test::GenerateRandomSymbolName("DeadGlobal");
+    const std::string usedClass = angel_lsp::test::GenerateRandomSymbolName("LiveClass");
+
+    const std::string code = "int " + unusedGlobal + ";\n" + "class " + usedClass + " { void " + unusedMethod +
+                             "() {} }\n" + "void " + unusedFunc + "() {}\n" + "void Entry() { " + usedClass +
+                             " inst; }\n";
+
+    // 1. Pure default DiagnosticsConfig: unused global is reported, but functions and members are suppressed
+    angel_lsp::config::DiagnosticsConfig defaultDiag;
+    auto diagsDefault = AnalyzeSnippet(code, nullptr, "file:///test.as", &defaultDiag);
+    CHECK(HasDiag(diagsDefault, codes::UnusedGlobalVariable, unusedGlobal));
+    CHECK_FALSE(HasDiag(diagsDefault, codes::UnusedFunction, unusedFunc));
+    CHECK_FALSE(HasDiag(diagsDefault, codes::UnusedMethod, unusedMethod));
+
+    // 2. With Sven Co-op engine rules active: checkFunctions and checkMembers are true, so all are reported
+    angel_lsp::config::EngineRuleConfig svenRules;
+    svenRules.unusedRules.enabled = true;
+    svenRules.unusedRules.checkFunctions = true;
+    svenRules.unusedRules.checkMembers = true;
+    auto diagsSven = AnalyzeSnippet(code, &svenRules, "file:///test.as", &defaultDiag);
+    CHECK(HasDiag(diagsSven, codes::UnusedGlobalVariable, unusedGlobal));
+    CHECK(HasDiag(diagsSven, codes::UnusedFunction, unusedFunc));
+    CHECK(HasDiag(diagsSven, codes::UnusedMethod, unusedMethod));
 }

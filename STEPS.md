@@ -1548,6 +1548,37 @@ Settings declared in package.json but not passed to the server:
 - **Total de Pruebas Unitarias**: `2,393 / 2,393` pasadas (`34,224` aserciones, `0` fallos, `30` omitidas).
 - **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.12%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
 
+---
+
+## 31. Fase 30: Ajuste de Valores por Defecto para Diagnósticos No Utilizados, Activación en Reglas Sven y Lanzamiento v1.1.0
+
+### 31.1. Diagnóstico y Requisitos
+1. **Configuración Predeterminada de Funciones y Miembros No Utilizados**:
+   - Por defecto, `angelscript.diagnostics.reportUnusedFunctions` y `angelscript.diagnostics.reportUnusedMembers` deben ser `false` para no saturar con diagnósticos de advertencia proyectos genéricos o scripts con puntos de entrada declarados sin framework.
+2. **Activación Específica en Reglas de Sven Co-op**:
+   - En `predefined/sven.angelscript.rules.json`, se configuró explícitamente `unusedSymbolRules.checkFunctions: true` y `unusedSymbolRules.checkMembers: true` para que los scripts de Sven Co-op continúen recibiendo alertas de código muerto en funciones y métodos no exportados.
+3. **URL del Esquema JSON en GitHub Raw**:
+   - Se actualizó `$schema` en `predefined/sven.angelscript.rules.json` y en la plantilla inicial generada por `extension.ts` a la URL directa de GitHub Raw (`https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json`) evitando que VS Code intente parsear la página HTML de visor de GitHub.
+4. **Sincronización de Documentación y Versión**:
+   - Se actualizaron las tablas de configuración en `README.md`, `README.es.md`, `client/README.md` y `client/README.es.md` con los nuevos valores por defecto (`false`).
+   - Se sincronizaron los changelogs `CHANGELOG.md` y `client/CHANGELOG.md` con la versión `[1.1.0] - 2026-10-16`.
+
+### 31.2. Implementación de la Solución
+1. **Servidor y Cliente**:
+   - `server/src/config/ServerConfig.h`: `reportUnusedFunctions = false;` y `reportUnusedMembers = false;`.
+   - `client/package.json`: Versión `1.1.0`, `default: false` en ambas configuraciones.
+   - `client/src/extension.ts`: Solo pasa `--report-unused-functions` y `--report-unused-members` cuando su valor es explícitamente `=== true`.
+2. **Reglas de Sven Co-op y Esquema**:
+   - `predefined/sven.angelscript.rules.json`: `$schema` configurado a la URL raw; `checkFunctions: true` y `checkMembers: true` en `unusedSymbolRules`.
+3. **Pruebas de Regresión**:
+   - `server/tests/UnusedSymbolCheckerTest.cpp`: Pruebas actualizadas para verificar que la configuración por defecto silencia funciones/miembros no utilizados y que la carga de reglas Sven los activa inmediatamente.
+
+### 31.3. Métricas Finales de Fase 30
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,394 / 2,394` pasadas (`34,230` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.12%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
+
+
 
 
 

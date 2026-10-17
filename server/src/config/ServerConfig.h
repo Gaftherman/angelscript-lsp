@@ -502,9 +502,9 @@ struct DiagnosticsConfig
     bool reportUnusedGlobalVariablesExplicit = false;
 
     /**
-     * @brief Warn on unused global/namespace functions and class methods (default: true).
+     * @brief Warn on unused global/namespace functions and class methods (default: false).
      */
-    bool reportUnusedFunctions = true;
+    bool reportUnusedFunctions = false;
 
     /**
      * @brief True when reportUnusedFunctions was explicitly set via CLI or workspace configuration.
@@ -538,9 +538,9 @@ struct DiagnosticsConfig
     bool reportUnusedClassesExplicit = false;
 
     /**
-     * @brief Warn on unused class members (fields & methods) (default: true).
+     * @brief Warn on unused class members (fields & methods) (default: false).
      */
-    bool reportUnusedMembers = true;
+    bool reportUnusedMembers = false;
 
     /**
      * @brief True when reportUnusedMembers was explicitly set via CLI or workspace configuration.

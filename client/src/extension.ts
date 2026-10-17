@@ -1152,8 +1152,8 @@ export function buildServerArgs(): string[] {
     if (config.get<boolean>('diagnostics.reportPossibleNullDereference', true) === false) {
         args.push('--no-report-possible-null-dereference');
     }
-    if (config.get<boolean>('diagnostics.reportUnusedFunctions', true) === false) {
-        args.push('--no-report-unused-functions');
+    if (config.get<boolean>('diagnostics.reportUnusedFunctions', false) === true) {
+        args.push('--report-unused-functions');
     }
     if (config.get<boolean>('diagnostics.reportUnusedGlobalVariables', true) === false) {
         args.push('--no-report-unused-globals');
@@ -1161,8 +1161,8 @@ export function buildServerArgs(): string[] {
     if (config.get<boolean>('diagnostics.reportUnusedClasses', true) === false) {
         args.push('--no-report-unused-classes');
     }
-    if (config.get<boolean>('diagnostics.reportUnusedMembers', true) === false) {
-        args.push('--no-report-unused-members');
+    if (config.get<boolean>('diagnostics.reportUnusedMembers', false) === true) {
+        args.push('--report-unused-members');
     }
     if (config.get<boolean>('diagnostics.ignoreUnusedGlobalsWithCallInitializer', false) === true) {
         args.push('--ignore-unused-globals-with-call-initializer');
@@ -2824,6 +2824,7 @@ export async function configureHostEnvironment(): Promise<void> {
                 const targetFolder = folders[0].uri;
                 const rulesUri = Uri.joinPath(targetFolder, 'angelscript.rules.json');
                 const template = JSON.stringify({
+                    "$schema": "https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json",
                     "name": "Custom Host Engine Rules",
                     "engineProperties": {
                         "propertyAccessorMode": 2,

@@ -261,10 +261,10 @@ Layer isolation is strictly enforced by `server/scripts/check-layer-includes.py`
 | :--- | :--- | :--- |
 | `angelscript.diagnosticSeverity` | `{}` | Per-code severity overrides (e.g. `{"as-warn-unused-variable": "hint"}`). |
 | `angelscript.diagnostics.reportPossibleNullDereference` | `true` | Intraprocedural null dereference checks. |
-| `angelscript.diagnostics.reportUnusedFunctions` | `true` | Reports functions that are declared but never referenced (`W114`). |
+| `angelscript.diagnostics.reportUnusedFunctions` | `false` | Reports functions that are declared but never referenced (`W114`). |
 | `angelscript.diagnostics.reportUnusedGlobalVariables` | `true` | Reports global variables that are never referenced (`W115`). |
 | `angelscript.diagnostics.reportUnusedClasses` | `true` | Reports classes that are never instantiated or referenced (`W117`). |
-| `angelscript.diagnostics.reportUnusedMembers` | `true` | Reports class member variables and methods that are never referenced (`W118`). |
+| `angelscript.diagnostics.reportUnusedMembers` | `false` | Reports class member variables and methods that are never referenced (`W118`). |
 | `angelscript.diagnostics.ignoredUnusedFunctions` | `[]` | List of function names exempted from unused symbol warnings. |
 | `angelscript.diagnostics.ignoredUnusedFunctionPatterns` | `[]` | Regex patterns matching function names exempted from unused symbol warnings. |
 | `angelscript.diagnostics.ignoreUnusedGlobalsWithCallInitializer` | `false` | Ignores unused global variables when initialized with a function or constructor call. |

@@ -1,6 +1,6 @@
 {
   "project": "angelscript-lsp",
-  "currentPhase": "PHASE_29_1_CODE_REVIEW_POLISH",
+  "currentPhase": "PHASE_30_DEFAULT_DIAGNOSTICS_SVEN_RULES_AND_RELEASE_1_1_0",
   "status": "COMPLETED",
   "baselineMetrics": {
     "largeScript3000ParseAndAnalysisMs": 192.75,
@@ -9,9 +9,9 @@
     "parityPassCount": 256,
     "parityTotalCount": 256,
     "unexplainedFalsePositives": 0,
-    "unitTestsTotal": 2393,
-    "unitTestsPassed": 2393,
-    "unitAssertionsPassed": 34224,
+    "unitTestsTotal": 2394,
+    "unitTestsPassed": 2394,
+    "unitAssertionsPassed": 34230,
     "condEdgePassCount": 0,
     "tsanRaceWarnings": 0,
     "layerIncludeCheck": "PASS",
@@ -882,6 +882,37 @@
         "All 2,393 unit tests passed (34,224 assertions, 0 failures, 30 skipped).",
         "All 12 static quality gates passed successfully at 100% (jscpd 1.12%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100, check-ast-traversal clean, npm pretest clean)."
       ]
+    },
+    {
+      "id": "PHASE_30",
+      "name": "Default Diagnostics Settings, Sven Rules Unused Activation, and Release v1.1.0",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/config/ServerConfig.h",
+        "client/package.json",
+        "client/src/extension.ts",
+        "client/package.nls.json",
+        "client/package.nls.es.json",
+        "predefined/sven.angelscript.rules.json",
+        "README.md",
+        "README.es.md",
+        "client/README.md",
+        "client/README.es.md",
+        "CHANGELOG.md",
+        "client/CHANGELOG.md",
+        "server/tests/UnusedSymbolCheckerTest.cpp",
+        "STEPS.md",
+        "STEPS.json"
+      ],
+      "findings": [
+        "Changed default values for reportUnusedFunctions and reportUnusedMembers from true to false in ServerConfig.h, client package.json, and documentation tables.",
+        "Explicitly activated checkFunctions: true and checkMembers: true in predefined/sven.angelscript.rules.json so Sven Co-op projects report unreferenced functions and members by default.",
+        "Updated $schema in predefined/sven.angelscript.rules.json and extension.ts configureHostEnvironment template to raw GitHub schema URL (https://raw.githubusercontent.com/Gaftherman/angelscript-lsp/main/schemas/angelscript.rules.schema.json) preventing HTML blob parse errors in external IDEs.",
+        "Updated UnusedSymbolCheckerTest.cpp with default-suppression assertions and verified full diagnostic activation when Sven rules.json is loaded.",
+        "Version bumped to 1.1.0 across client package.json, CHANGELOG.md, and client/CHANGELOG.md.",
+        "All 2,394 unit tests passed (34,230 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100% (jscpd 1.12%, Lizard CCN <= 15, Clang-Format 100%, 0 dead parameters /we4100, check-ast-traversal clean, npm pretest clean)."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -918,6 +949,6 @@
     "GAP-CONV-01: Passing null to non-handle reference parameters (&in) falsely ranked as compatible. (RESOLVED in Phase 29 in ConversionRankingEngine)."
   ],
   "nextActions": [
-    "Phase 29.1 code review polish completed with 100% test pass rate (2,393 tests, 34,224 assertions), all 12 quality gates green, and 107 client settings wired."
+    "Phase 30 completed with 100% test pass rate (2,394 tests, 34,230 assertions), all 12 quality gates green, and version 1.1.0 release prepared for develop, main, and tag v1.1.0."
   ]
 }
