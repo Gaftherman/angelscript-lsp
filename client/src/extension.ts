@@ -1158,8 +1158,8 @@ export function buildServerArgs(): string[] {
     if (config.get<boolean>('diagnostics.reportUnusedGlobalVariables', true) === false) {
         args.push('--no-report-unused-globals');
     }
-    if (config.get<boolean>('diagnostics.reportUnusedClasses', true) === false) {
-        args.push('--no-report-unused-classes');
+    if (config.get<boolean>('diagnostics.reportUnusedClasses', false) === true) {
+        args.push('--report-unused-classes');
     }
     if (config.get<boolean>('diagnostics.reportUnusedMembers', false) === true) {
         args.push('--report-unused-members');
@@ -2022,6 +2022,18 @@ export function portableStubPath(stubPath: string): string {
 function getEffectiveAngelscriptConfig(): Record<string, unknown> {
     const raw = (workspace.getConfiguration().get('angelscript') ?? {}) as Record<string, unknown>;
     const copy = { ...raw };
+    const config = workspace.getConfiguration('angelscript');
+    if (typeof copy['diagnostics'] === 'object' && copy['diagnostics'] !== null) {
+        const diagCopy = { ...(copy['diagnostics'] as Record<string, unknown>) };
+        for (const key of ['reportUnusedClasses', 'reportUnusedFunctions', 'reportUnusedMembers', 'reportUnusedGlobalVariables']) {
+            const inspected = config.inspect<boolean>(`diagnostics.${key}`);
+            const isExplicit = inspected && (inspected.globalValue !== undefined || inspected.workspaceValue !== undefined || inspected.workspaceFolderValue !== undefined);
+            if (!isExplicit) {
+                delete diagCopy[key];
+            }
+        }
+        copy['diagnostics'] = diagCopy;
+    }
     if (getConfigurationTarget() === 'localState' && extensionContext) {
         const localPredefinedActive = extensionContext.workspaceState.get<string>('angelscript.local.predefined.active');
         if (localPredefinedActive !== undefined) {

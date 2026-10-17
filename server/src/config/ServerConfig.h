@@ -528,9 +528,9 @@ struct DiagnosticsConfig
     bool ignoreUnusedGlobalsWithCallInitializer = false;
 
     /**
-     * @brief Warn on unused classes (default: true).
+     * @brief Warn on unused classes (default: false).
      */
-    bool reportUnusedClasses = true;
+    bool reportUnusedClasses = false;
 
     /**
      * @brief True when reportUnusedClasses was explicitly set via CLI or workspace configuration.
