@@ -263,7 +263,7 @@ El aislamiento de capas es estrictamente validado por `server/scripts/check-laye
 | `angelscript.diagnostics.reportPossibleNullDereference` | `true` | Comprobaciones intraprocedimentales de handles nulos. |
 | `angelscript.diagnostics.reportUnusedFunctions` | `false` | Informa sobre funciones declaradas que nunca se referencian (`W114`). |
 | `angelscript.diagnostics.reportUnusedGlobalVariables` | `true` | Informa sobre variables globales que nunca se referencian (`W115`). |
-| `angelscript.diagnostics.reportUnusedClasses` | `true` | Informa sobre clases que nunca se instancian ni referencian (`W117`). |
+| `angelscript.diagnostics.reportUnusedClasses` | `false` | Informa sobre clases que nunca se instancian ni referencian (`W120`). |
 | `angelscript.diagnostics.reportUnusedMembers` | `false` | Informa sobre variables miembro y métodos que nunca se referencian (`W118`). |
 | `angelscript.diagnostics.ignoredUnusedFunctions` | `[]` | Lista de nombres de funciones exentas de advertencias de símbolos sin usar. |
 | `angelscript.diagnostics.ignoredUnusedFunctionPatterns` | `[]` | Patrones regex para eximir funciones de advertencias de símbolos sin usar. |

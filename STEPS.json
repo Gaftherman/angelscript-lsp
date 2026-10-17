@@ -1008,6 +1008,36 @@
         "All 2,432 unit tests passed (34,420 assertions, 0 failures, 30 skipped).",
         "All 12 static quality gates passed successfully at 100%."
       ]
+    },
+    {
+      "id": "PHASE_34",
+      "name": "Disable Unused Class Warnings by Default and Release v1.1.2",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/config/ServerConfig.h",
+        "client/package.json",
+        "client/package-lock.json",
+        "client/package.nls.json",
+        "client/package.nls.es.json",
+        "client/src/extension.ts",
+        "README.md",
+        "README.es.md",
+        "client/README.md",
+        "client/README.es.md",
+        "server/tests/UnusedSymbolCheckerTest.cpp",
+        "CHANGELOG.md",
+        "client/CHANGELOG.md",
+        "STEPS.json",
+        "STEPS.md"
+      ],
+      "findings": [
+        "Disabled reportUnusedClasses by default in ServerConfig and package.json to prevent false W120 warnings on uninstantiated engine entity classes.",
+        "Sanitized getEffectiveAngelscriptConfig in client/src/extension.ts to strip unconfigured reportUnused* keys so default extension schema values do not clobber active engine rules.",
+        "Verified sven.angelscript.rules.json retains checkClasses: true with ignoredBaseClasses exempting game entity hierarchies.",
+        "Added randomized unit tests in UnusedSymbolCheckerTest.cpp asserting default suppression and Sven Co-op rule enforcement.",
+        "All 2,433 unit tests passed (34,426 assertions, 0 failures, 30 skipped).",
+        "All 12 static quality gates passed successfully at 100%."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -1049,10 +1079,11 @@
     "GAP-RULES-01: Redundant lifecycleMethods arrays and non-dispatch 'self' in baseClassDelegateProperties. (RESOLVED in Phase 32).",
     "GAP-RULES-02: Overly narrow schedulerRules naming. (RESOLVED in Phase 32 with callRules generalization).",
     "GAP-FUNCDEF-01: False E119 calling funcdef members unqualified or via property getters. (RESOLVED in Phase 33).",
-    "GAP-INITLIST-01: False E160 on comments inside dictionary initializers. (RESOLVED in Phase 33)."
+    "GAP-INITLIST-01: False E160 on comments inside dictionary initializers. (RESOLVED in Phase 33).",
+    "GAP-UNUSED-04: False W120 warnings on uninstantiated engine entity classes without .rules.json. (RESOLVED in Phase 34)."
   ],
   "nextActions": [
-    "Phase 33 and v1.1.1 release completed with 100% test pass rate (2,432 tests, 34,420 assertions) and all 12 quality gates passed."
+    "Phase 34 and v1.1.2 release completed with 100% test pass rate (2,433 tests, 34,426 assertions) and all 12 quality gates passed."
   ]
 }
 

@@ -4,6 +4,23 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.2] - 2026-10-17
+
+### Official 1.1.2 Release: Disable Unused Class Warnings by Default and Configuration Sanitization
+
+- Unused Class Reporting Disabled by Default (`ServerConfig`, `client/package.json`):
+  - Changed `reportUnusedClasses` (`angelscript.diagnostics.reportUnusedClasses`, diagnostic code `W120`) to default to `false`.
+  - Prevents false-positive warnings (e.g. `[WARN: W120] La clase 'weapon_bts_xbow' nunca se usa.`) in projects without custom rule definitions where entity classes are registered or instantiated via host engines.
+  - Active Sven Co-op rules (`sven.angelscript.rules.json`) retain `checkClasses: true` alongside `ignoredBaseClasses` (e.g. `ScriptBasePlayerWeaponEntity`, `ScriptBasePlayerAmmoEntity`), auditing unused dead classes while properly exempting engine entity hierarchies.
+- Configuration Sanitization and Argument Generation (`client/src/extension.ts`):
+  - Updated `buildServerArgs()` to pass `--report-unused-classes` only when explicitly set to `true`.
+  - In `getEffectiveAngelscriptConfig()`, filtered out unconfigured `reportUnused*` keys (`reportUnusedClasses`, `reportUnusedFunctions`, `reportUnusedMembers`, `reportUnusedGlobalVariables`) when they are not explicitly configured by the user, preventing `workspace/didChangeConfiguration` from clobbering engine rule defaults.
+- Synchronized Documentation and Internationalization:
+  - Updated configuration tables across `README.md`, `README.es.md`, `client/README.md`, and `client/README.es.md` reflecting the `false` default and diagnostic code `W120`.
+  - Synchronized localization keys in `client/package.nls.json` and `client/package.nls.es.json`.
+- Test Suites and Invariant Verification:
+  - Added unit test in `server/tests/UnusedSymbolCheckerTest.cpp` asserting that default settings produce zero unused class warnings, while Sven Co-op rules flag dead classes and exempt weapon entity classes.
+
 ## [1.1.1] - 2026-10-16
 
 ### Official 1.1.1 Release: Funcdef Member Calls, Dictionary Initializer Comments, Syntax Error Clamping, Poison Eradication, and callRules

@@ -852,6 +852,7 @@ TEST_CASE("UnusedSymbolChecker - ignoredUnusedFunctions in DiagnosticsConfig sup
     angel_lsp::config::DiagnosticsConfig diag;
     diag.reportUnusedFunctions = true;
     diag.reportUnusedMembers = true;
+    diag.reportUnusedClasses = true;
     auto diags = AnalyzeSnippet(code, nullptr, "file:///test.as", &diag);
     CHECK(HasDiag(diags, codes::UnusedFunction, unusedFunc));
     CHECK(HasDiag(diags, codes::UnusedMethod, unusedMethod));
@@ -970,4 +971,37 @@ TEST_CASE("UnusedSymbolChecker - Default configuration disables unused functions
     CHECK(HasDiag(diagsSven, codes::UnusedGlobalVariable, unusedGlobal));
     CHECK(HasDiag(diagsSven, codes::UnusedFunction, unusedFunc));
     CHECK(HasDiag(diagsSven, codes::UnusedMethod, unusedMethod));
+}
+
+TEST_CASE("UnusedSymbolChecker - Default configuration disables unused classes unless Sven rules or explicit flags are "
+          "active")
+{
+    const std::string deadClass = angel_lsp::test::GenerateRandomSymbolName("DeadClass");
+    const std::string weaponClass = angel_lsp::test::GenerateRandomSymbolName("WeaponClass");
+
+    const std::string code =
+        "class " + deadClass + " {}\n" + "class " + weaponClass + " : ScriptBasePlayerWeaponEntity {}\n";
+
+    // 1. Pure default DiagnosticsConfig: unused class warnings are suppressed by default
+    angel_lsp::config::DiagnosticsConfig defaultDiag;
+    auto diagsDefault = AnalyzeSnippet(code, nullptr, "file:///test.as", &defaultDiag);
+    CHECK_FALSE(HasDiag(diagsDefault, codes::UnusedClass, deadClass));
+    CHECK_FALSE(HasDiag(diagsDefault, codes::UnusedClass, weaponClass));
+
+    // 2. With Sven Co-op engine rules active: checkClasses is true and weapon base class is exempted
+    angel_lsp::config::EngineRuleConfig svenRules;
+    svenRules.unusedRules.enabled = true;
+    svenRules.unusedRules.checkClasses = true;
+    svenRules.unusedRules.ignoredBaseClasses = {"ScriptBasePlayerWeaponEntity"};
+    auto diagsSven = AnalyzeSnippet(code, &svenRules, "file:///test.as", &defaultDiag);
+    CHECK(HasDiag(diagsSven, codes::UnusedClass, deadClass));
+    CHECK_FALSE(HasDiag(diagsSven, codes::UnusedClass, weaponClass));
+
+    // 3. Explicitly enabled via DiagnosticsConfig without engine rules
+    angel_lsp::config::DiagnosticsConfig explicitDiag;
+    explicitDiag.reportUnusedClasses = true;
+    explicitDiag.reportUnusedClassesExplicit = true;
+    auto diagsExplicit = AnalyzeSnippet(code, nullptr, "file:///test.as", &explicitDiag);
+    CHECK(HasDiag(diagsExplicit, codes::UnusedClass, deadClass));
+    CHECK(HasDiag(diagsExplicit, codes::UnusedClass, weaponClass));
 }

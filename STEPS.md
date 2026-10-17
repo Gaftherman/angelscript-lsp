@@ -1682,6 +1682,40 @@ Settings declared in package.json but not passed to the server:
 - **Total de Pruebas Unitarias**: `2,432 / 2,432` pasadas (`34,420` aserciones, `0` fallos, `30` omitidas).
 - **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.11%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
 
+---
+
+## 35. Fase 34: Desactivación por Defecto de Advertencias de Clases Sin Usar (`W120`) y Lanzamiento Oficial v1.1.2
+
+### 35.1. Diagnóstico Forense y Causas Raíz
+1. **Advertencias de Falsos Positivos de Clase No Usada (`as-warn-unused-class` / `W120`)**:
+   - `reportUnusedClasses` tenía como valor predeterminado `true` tanto en `ServerConfig.h` como en `client/package.json`.
+   - En espacios de trabajo sin un archivo `.rules.json` activo (o en proyectos con clases de entidades registradas por el motor como `weapon_bts_xbow`), el checker de símbolos sin usar emitía `[WARN: W120] La clase '...' nunca se usa.`, dado que la clase no se instanciaba textualmente en el script sino que era instanciada por la factoría nativa del host.
+2. **Sobrescritura de Reglas Activas por Valores por Defecto de VS Code**:
+   - Al propagarse `workspace/didChangeConfiguration`, si la extensión enviaba los valores por defecto del esquema de VS Code para configuraciones no establecidas por el usuario, podía sobrescribir las reglas activas del motor (`rules.unusedRules.checkClasses`).
+
+### 35.2. Implementación de la Solución
+1. **Desactivación de `reportUnusedClasses` por Defecto**:
+   - En `server/src/config/ServerConfig.h`, se cambió `bool reportUnusedClasses = false;`.
+   - En `client/package.json`, se cambió el valor predeterminado de `angelscript.diagnostics.reportUnusedClasses` a `false`.
+   - En `client/package.nls.json` y `client/package.nls.es.json`, se actualizaron las descripciones reflejando "Disabled by default." / "Desactivado por defecto.".
+2. **Sanitización de Configuración y Generación de Argumentos CLI**:
+   - En `client/src/extension.ts`:
+     - `buildServerArgs()` genera `--report-unused-classes` únicamente cuando su valor es explícitamente `true`.
+     - `getEffectiveAngelscriptConfig()` filtra las claves `reportUnused*` no configuradas explícitamente por el usuario para proteger las reglas del motor.
+3. **Preservación de Reglas de Sven Co-op**:
+   - `predefined/sven.angelscript.rules.json` conserva `checkClasses: true` junto a `ignoredBaseClasses` (`ScriptBasePlayerWeaponEntity`, `ScriptBaseEntity`, etc.), manteniendo la auditoría de clases muertas mientras exime las entidades del juego.
+4. **Sincronización de Catálogos de Documentación**:
+   - Se actualizaron `README.md`, `README.es.md`, `client/README.md` y `client/README.es.md` con el nuevo valor por defecto `false` y el código `W120`.
+5. **Lanzamiento v1.1.2**:
+   - Se incrementaron las versiones en `client/package.json` y `client/package-lock.json` a `1.1.2`.
+   - Se actualizaron y sincronizaron `CHANGELOG.md` y `client/CHANGELOG.md`.
+
+### 35.3. Métricas Finales de Fase 34
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,433 / 2,433` pasadas (`34,426` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.11%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
+
+
 
 
 
