@@ -350,35 +350,34 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     }
 
     utils::HighResTimer colTimer;
-    auto diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
+    auto syntaxDiagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
     double colMs = colTimer.ElapsedMs();
 
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
 
-    // Before analysis, not after: the module the file belongs to supplies declarations this
-    // file legitimately uses, and without them every one of them would be reported undeclared.
-    IndexModuleClosure(uriStr);
-
     double scopeMs = 0.0;
     double checkMs = 0.0;
-    analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
-    auto semanticDiagnostics = CollectScopesAndAnalyze({.uriStr = uriStr,
-                                                        .text = analysisText,
-                                                        .tree = tree,
-                                                        .outScopeMs = &scopeMs,
-                                                        .outCheckMs = &checkMs,
-                                                        .nodeIndex = &nodeIndex});
-    diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
-
-    AppendIncludeDiagnostics(uriStr, analysisText, diagnostics);
 
     if (m_config.features.enablePredefinedLoader && !IsPredefinedReady())
     {
-        LogInfo(fmt::format("Predefined stubs still indexing; deferring initial diagnostics for {}", uriStr));
+        LogInfo(fmt::format("Predefined stubs/workspace still indexing; publishing syntax diagnostics for {}", uriStr));
+        PublishDiagnostics(uriStr, analysisText, syntaxDiagnostics, version);
     }
     else
     {
+        auto diagnostics = syntaxDiagnostics;
+        IndexModuleClosure(uriStr);
+
+        analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+        auto semanticDiagnostics = CollectScopesAndAnalyze({.uriStr = uriStr,
+                                                            .text = analysisText,
+                                                            .tree = tree,
+                                                            .outScopeMs = &scopeMs,
+                                                            .outCheckMs = &checkMs,
+                                                            .nodeIndex = &nodeIndex});
+        diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
+        AppendIncludeDiagnostics(uriStr, analysisText, diagnostics);
         PublishDiagnostics(uriStr, analysisText, diagnostics, version);
     }
 

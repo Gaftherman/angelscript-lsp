@@ -2679,3 +2679,34 @@ TEST_CASE("SemanticAnalyzer - Unbraced if declaration recovers local variable an
     CHECK_FALSE(hasDataTypeErr);
     CHECK_FALSE(hasUndeclaredVar);
 }
+
+TEST_CASE("SemanticAnalyzer - Missing opening brace in function suppresses cascading errors")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("ZombieEngineerInit");
+    const std::string helperFn = angel_lsp::test::GenerateRandomSymbolName("PrecacheModel");
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "void " + fnName +
+                             "()\n"
+                             "    " +
+                             helperFn +
+                             "();\n"
+                             "    return;\n"
+                             "}\n"
+                             "void AnotherFunc() {\n"
+                             "    int x = 10;\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+
+    size_t syntaxErrCount = 0;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-syntax-error")
+        {
+            ++syntaxErrCount;
+        }
+    }
+    CHECK(syntaxErrCount <= 2);
+}

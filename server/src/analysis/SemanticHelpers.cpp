@@ -2598,90 +2598,6 @@ static std::string ResolveParenthesizedExpr(TSNode exprNode, const ExpressionTyp
 /**
  * @brief Resolves 'this' expression type based on enclosing container hierarchy.
  */
-static std::string ResolveThisExpr(TSNode exprNode, std::string_view sourceCode)
-{
-    std::string qualified;
-    for (const auto& container : GetEnclosingContainers(exprNode, sourceCode))
-    {
-        if (qualified.empty())
-        {
-            if (container.kind == ContainerKind::Class)
-            {
-                qualified = container.name;
-            }
-        }
-        else if (container.kind == ContainerKind::Namespace)
-        {
-            qualified = container.name + "::" + qualified;
-        }
-    }
-    return qualified;
-}
-
-/**
- * @brief Resolves scoped identifier expression type.
- */
-static std::string ResolveScopedEnumMember(std::string_view whole, const SymbolTable& symbolTable)
-{
-    size_t lastSep = whole.rfind("::");
-    if (lastSep == std::string_view::npos)
-    {
-        return "";
-    }
-    std::string qual(whole.substr(0, lastSep));
-    std::string_view mem = whole.substr(lastSep + 2);
-    for (const auto& qSym : symbolTable.FindSymbols(qual))
-    {
-        if (qSym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(qSym.signature))
-        {
-            for (const auto& m : qSym.GetEnum().members)
-            {
-                if (m.name == mem)
-                {
-                    return qual;
-                }
-            }
-        }
-    }
-    return "";
-}
-
-static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
-{
-    TSNode lastIdentifier = {};
-    bool qualified = false;
-    const uint32_t childCount = ts_node_named_child_count(exprNode);
-    for (uint32_t i = 0; i < childCount; ++i)
-    {
-        TSNode child = ts_node_named_child(exprNode, i);
-        if (std::string_view(ts_node_type(child)) == "identifier")
-        {
-            qualified = !ts_node_is_null(lastIdentifier);
-            lastIdentifier = child;
-        }
-    }
-
-    if (qualified)
-    {
-        const std::string whole = GetNodeText(exprNode, ctx.sourceCode);
-        const auto wholeSyms = ctx.symbolTable.FindSymbols(whole);
-        for (const auto& sym : wholeSyms)
-        {
-            if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
-                !sym.GetVariable().typeName.empty())
-            {
-                return CleanExpressionType(sym.GetVariable().typeName);
-            }
-        }
-        if (auto enumType = ResolveScopedEnumMember(whole, ctx.symbolTable); !enumType.empty())
-        {
-            return enumType;
-        }
-    }
-
-    return ts_node_is_null(lastIdentifier) ? std::string() : ResolveExpressionType(lastIdentifier, ctx, depth + 1);
-}
-
 static std::string ResolveThisIdentifier(TSNode exprNode, const ExpressionTypeContext& ctx,
                                          const std::string& hostClass)
 {
@@ -2715,16 +2631,95 @@ static std::string ResolveIdentifierSpecial(std::string_view name, TSNode exprNo
     return "";
 }
 
+static std::string ResolveThisExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
+{
+    return ResolveIdentifierSpecial("this", exprNode, ctx);
+}
+
+/**
+ * @brief Resolves scoped identifier expression type.
+ */
+static std::string ResolveScopedEnumMember(std::string_view whole, TSNode exprNode, const ExpressionTypeContext& ctx)
+{
+    size_t lastSep = whole.rfind("::");
+    if (lastSep == std::string_view::npos)
+    {
+        return "";
+    }
+    std::string qual(whole.substr(0, lastSep));
+    std::string_view mem = whole.substr(lastSep + 2);
+    auto qSyms = ctx.symbolTable.FindSymbols(qual);
+    if (qSyms.empty())
+    {
+        qSyms = FindSymbolsInScope(qual, exprNode, ctx.sourceCode, ctx.symbolTable);
+    }
+    for (const auto& qSym : qSyms)
+    {
+        if (qSym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(qSym.signature))
+        {
+            for (const auto& m : qSym.GetEnum().members)
+            {
+                if (m.name == mem)
+                {
+                    return qSym.qualifiedName.empty() ? qSym.name : qSym.qualifiedName;
+                }
+            }
+        }
+    }
+    return "";
+}
+
+static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+{
+    TSNode lastIdentifier = {};
+    bool qualified = false;
+    const uint32_t childCount = ts_node_named_child_count(exprNode);
+    for (uint32_t i = 0; i < childCount; ++i)
+    {
+        TSNode child = ts_node_named_child(exprNode, i);
+        if (std::string_view(ts_node_type(child)) == "identifier")
+        {
+            qualified = !ts_node_is_null(lastIdentifier);
+            lastIdentifier = child;
+        }
+    }
+
+    if (qualified)
+    {
+        const std::string whole = GetNodeText(exprNode, ctx.sourceCode);
+        auto wholeSyms = ctx.symbolTable.FindSymbols(whole);
+        if (wholeSyms.empty())
+        {
+            wholeSyms = FindSymbolsInScope(whole, exprNode, ctx.sourceCode, ctx.symbolTable);
+        }
+        for (const auto& sym : wholeSyms)
+        {
+            if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                !sym.GetVariable().typeName.empty())
+            {
+                return CleanExpressionType(sym.GetVariable().typeName);
+            }
+        }
+        if (auto enumType = ResolveScopedEnumMember(whole, exprNode, ctx); !enumType.empty())
+        {
+            return enumType;
+        }
+        return "";
+    }
+
+    return ts_node_is_null(lastIdentifier) ? std::string() : ResolveExpressionType(lastIdentifier, ctx, depth + 1);
+}
+
 /**
  * @brief Finds symbol matches for a bare identifier.
  */
 static std::vector<Symbol> ResolveIdentifierSymbols(const std::string& name, TSNode exprNode,
                                                     const ExpressionTypeContext& ctx)
 {
-    auto syms = ctx.symbolTable.FindSymbols(name);
+    auto syms = FindSymbolsInScope(name, exprNode, ctx.sourceCode, ctx.symbolTable);
     if (syms.empty())
     {
-        syms = FindSymbolsInScope(name, exprNode, ctx.sourceCode, ctx.symbolTable);
+        syms = ctx.symbolTable.FindSymbols(name);
     }
     if (syms.empty())
     {
@@ -2826,7 +2821,7 @@ static std::string ResolveIdentifierAccessorFallback(const std::string& name, co
 /**
  * @brief Resolves bare identifier expression type.
  */
-static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
+static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth = 0)
 {
     std::string name = GetNodeText(exprNode, ctx.sourceCode);
     if (auto special = ResolveIdentifierSpecial(name, exprNode, ctx); !special.empty())
@@ -2836,9 +2831,13 @@ static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeCo
     if (ctx.scope)
     {
         const LocalDefinition* def = ResolveInScopeAt(ctx.scope, name, ts_node_start_byte(exprNode));
-        if (def && !def->typeName.empty())
+        if (def)
         {
-            return CleanExpressionType(def->typeName);
+            std::string dType = ResolveLocalDefinitionType(*def, ctx, depth);
+            if (!dType.empty())
+            {
+                return CleanExpressionType(dType);
+            }
         }
     }
     auto syms = ResolveIdentifierSymbols(name, exprNode, ctx);
@@ -4313,7 +4312,7 @@ static std::optional<std::string> ResolvePrimaryExpr(std::string_view nodeType, 
     }
     if (nodeType == "this_expression")
     {
-        return ResolveThisExpr(exprNode, ctx.sourceCode);
+        return ResolveThisExpr(exprNode, ctx);
     }
     if (auto lit = ResolveLiteralExpr(nodeType, exprNode, ctx.sourceCode, ctx.stringTypeName); !lit.empty())
     {
@@ -4325,7 +4324,7 @@ static std::optional<std::string> ResolvePrimaryExpr(std::string_view nodeType, 
     }
     if (nodeType == "identifier" || nodeType == "function" || parser::keywords::IsKeyword(nodeType))
     {
-        return ResolveIdentifierExpr(exprNode, ctx);
+        return ResolveIdentifierExpr(exprNode, ctx, depth);
     }
     return std::nullopt;
 }
@@ -4437,6 +4436,101 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
 
     std::string_view nodeType = ts_node_type(exprNode);
     return ResolveExpressionTypeUncached(nodeType, exprNode, ctx, depth);
+}
+
+namespace
+{
+struct ActiveLocalDefKey
+{
+    std::string_view name;
+    uint32_t line = 0;
+    uint32_t col = 0;
+};
+
+thread_local std::vector<ActiveLocalDefKey> s_activeLocalDefs;
+
+struct ActiveLocalDefGuard
+{
+    bool pushed = false;
+    ~ActiveLocalDefGuard()
+    {
+        if (pushed && !s_activeLocalDefs.empty())
+        {
+            s_activeLocalDefs.pop_back();
+        }
+    }
+};
+
+static bool IsLocalDefActive(const LocalDefinition& def) noexcept
+{
+    return std::any_of(s_activeLocalDefs.begin(), s_activeLocalDefs.end(), [&](const ActiveLocalDefKey& k)
+                       { return k.line == def.startLine && k.col == def.startCharacter && k.name == def.name; });
+}
+
+static TSNode FindLocalDefinitionValueNode(const LocalDefinition& def, const ExpressionTypeContext& ctx)
+{
+    if (!ts_node_is_null(ctx.rootNode))
+    {
+        TSNode idNode =
+            (def.startByte != 0 || def.endByte != 0)
+                ? ts_node_descendant_for_byte_range(ctx.rootNode, def.startByte, def.endByte)
+                : ts_node_descendant_for_point_range(ctx.rootNode, TSPoint{def.startLine, def.startCharacter},
+                                                     TSPoint{def.endLine, def.endCharacter});
+        TSNode decl = idNode;
+        for (int i = 0; i < 4 && !ts_node_is_null(decl); ++i)
+        {
+            if (std::string_view(ts_node_type(decl)) == "variable_declarator")
+            {
+                return FindDeclaratorValueNode(decl, ctx.sourceCode);
+            }
+            decl = parser::GetParent(decl);
+        }
+    }
+    else if (ctx.nodeIndex)
+    {
+        for (TSNode decl : ctx.nodeIndex->Nodes(parser::nodes::VariableDeclarator))
+        {
+            if (ts_node_start_byte(decl) <= def.startByte && def.startByte <= ts_node_end_byte(decl))
+            {
+                return FindDeclaratorValueNode(decl, ctx.sourceCode);
+            }
+        }
+    }
+    return {};
+}
+} // namespace
+
+std::string ResolveLocalDefinitionType(const LocalDefinition& def, const ExpressionTypeContext& ctx, int depth)
+{
+    if (!def.typeName.empty() && CleanBaseType(def.typeName) != "auto")
+    {
+        return def.typeName;
+    }
+    if (depth > 8 || IsLocalDefActive(def))
+    {
+        return "";
+    }
+
+    s_activeLocalDefs.push_back({def.name, def.startLine, def.startCharacter});
+    ActiveLocalDefGuard guard{true};
+
+    TSNode valNode = FindLocalDefinitionValueNode(def, ctx);
+    if (!ts_node_is_null(valNode))
+    {
+        std::string rhsType = ResolveExpressionType(valNode, ctx, depth + 1);
+        if (!rhsType.empty() && rhsType != "void" && rhsType != "null" && !ExpressionTypeCache::IsPoisonType(rhsType))
+        {
+            std::string finalType = rhsType;
+            if ((def.isHandleType || def.typeName.find('@') != std::string::npos) && !finalType.ends_with('@'))
+            {
+                finalType += '@';
+            }
+            const_cast<LocalDefinition&>(def).typeName = finalType;
+            return finalType;
+        }
+    }
+
+    return def.typeName;
 }
 
 /**
@@ -4579,14 +4673,30 @@ static std::string GetEffectiveHostClass(std::string_view virtualHostClass, std:
     return "";
 }
 
-static std::string ResolveReceiverScope(const Scope* scope, const std::string& objText, uint32_t refByte = UINT32_MAX)
+static std::string ResolveReceiverScope(const Scope* scope, const std::string& objText, uint32_t refByte = UINT32_MAX,
+                                        const ExpressionTypeContext* exprCtx = nullptr)
 {
     if (scope)
     {
         const LocalDefinition* objDef = ResolveInScopeAt(scope, objText, refByte);
-        if (objDef && !objDef->typeName.empty())
+        if (objDef)
         {
-            return MemberOwnerType(objDef->typeName);
+            if (!objDef->typeName.empty() && CleanBaseType(objDef->typeName) != "auto")
+            {
+                return MemberOwnerType(objDef->typeName);
+            }
+            if (exprCtx)
+            {
+                std::string deduced = ResolveLocalDefinitionType(*objDef, *exprCtx);
+                if (!deduced.empty())
+                {
+                    return MemberOwnerType(deduced);
+                }
+            }
+            if (!objDef->typeName.empty())
+            {
+                return MemberOwnerType(objDef->typeName);
+            }
         }
     }
     return "";
@@ -4613,7 +4723,9 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
         return ResolveThisReceiver(objNode, sourceCode, effectiveHostClass);
     }
 
-    if (auto scopeRes = ResolveReceiverScope(ctx.scope, objText, ts_node_start_byte(objNode)); !scopeRes.empty())
+    ExpressionTypeContext exprCtx(ctx.scope, symbolTable, sourceCode, ctx.fileUri, parser::GetRootNode(objNode));
+    if (auto scopeRes = ResolveReceiverScope(ctx.scope, objText, ts_node_start_byte(objNode), &exprCtx);
+        !scopeRes.empty())
     {
         return scopeRes;
     }

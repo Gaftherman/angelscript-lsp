@@ -1715,6 +1715,26 @@ static void AppendLocalDoc(const analysis::LocalDefinition& def, std::string_vie
     }
 }
 
+static std::string DeduceLocalDefinitionHoverType(const analysis::LocalDefinition& def, const HoverQueryContext& ctx)
+{
+    if (!def.typeName.empty() && analysis::CleanBaseType(def.typeName) != "auto")
+    {
+        return def.typeName;
+    }
+    analysis::ExpressionTypeContext exprCtx(ctx.scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.uri,
+                                            ctx.request.tree ? ts_tree_root_node(ctx.request.tree) : TSNode{});
+    std::string inferred = analysis::ResolveLocalDefinitionType(def, exprCtx);
+    if (inferred.empty())
+    {
+        inferred = InferTypeFromAst(ctx.node, ctx.request.sourceCode);
+    }
+    if (inferred.empty() && def.kind == analysis::LocalDefinitionKind::Parameter)
+    {
+        inferred = analysis::InferLambdaParamType(ctx.node, def.name, ctx.request.symbolTable, ctx.request.sourceCode);
+    }
+    return !inferred.empty() ? inferred : def.typeName;
+}
+
 std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
 {
     if (!ctx.rootScope || !ctx.scope)
@@ -1738,18 +1758,8 @@ std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
         return std::nullopt;
     }
 
-    std::string inferredType;
-    std::string_view typeName = def->typeName;
-    if (typeName.empty())
-    {
-        inferredType = InferTypeFromAst(ctx.node, ctx.request.sourceCode);
-        if (inferredType.empty() && def->kind == analysis::LocalDefinitionKind::Parameter)
-        {
-            inferredType =
-                analysis::InferLambdaParamType(ctx.node, def->name, ctx.request.symbolTable, ctx.request.sourceCode);
-        }
-        typeName = inferredType;
-    }
+    const std::string deducedType = DeduceLocalDefinitionHoverType(*def, ctx);
+    const std::string_view typeName = deducedType;
 
     if (ctx.profiler.IsActive())
     {

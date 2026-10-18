@@ -1,4 +1,5 @@
 #include "analysis/SymbolCollector.h"
+#include "analysis/ASTUtils.h"
 #include "analysis/DocComment.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SignatureFormatter.h"
@@ -728,45 +729,6 @@ void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC
 
     sym.signature = varSig;
     sCtx.collectedSymbols.push_back(std::move(sym));
-}
-
-static TSNode FindDeclaratorValueNode(TSNode declaratorNode, std::string_view sourceCode)
-{
-    TSNode valueNode = parser::GetChildByField(declaratorNode, parser::fields::Value);
-    if (!ts_node_is_null(valueNode))
-    {
-        return valueNode;
-    }
-    TSTreeCursor cursor = ts_tree_cursor_new(declaratorNode);
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        bool foundEq = false;
-        do
-        {
-            TSNode ch = ts_tree_cursor_current_node(&cursor);
-            const uint32_t start = ts_node_start_byte(ch);
-            const uint32_t end = ts_node_end_byte(ch);
-            if (start < end && end <= sourceCode.size())
-            {
-                std::string_view text = sourceCode.substr(start, end - start);
-                while (!text.empty() && isspace(static_cast<unsigned char>(text.front())))
-                    text.remove_prefix(1);
-                while (!text.empty() && isspace(static_cast<unsigned char>(text.back())))
-                    text.remove_suffix(1);
-                if (text == "=")
-                {
-                    foundEq = true;
-                }
-                else if (foundEq)
-                {
-                    valueNode = ch;
-                    break;
-                }
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-    }
-    ts_tree_cursor_delete(&cursor);
-    return valueNode;
 }
 
 void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const VariableHeaderInfo& header,
@@ -1652,10 +1614,30 @@ bool AdvanceCursorAfterError(TSTreeCursor& cursor)
 }
 } // namespace
 
+void SymbolCollector::HandleParseErrorNode(TSNode node, bool missingOpenBrace, uint32_t& firstErrorLine,
+                                           SymbolCollectContext& sCtx) const
+{
+    TSNode target = ts_node_is_missing(node) ? node : PinpointOffendingNode(node, m_gs);
+    const uint32_t line = ts_node_start_point(target).row;
+    if (missingOpenBrace && firstErrorLine != UINT32_MAX && line > firstErrorLine)
+    {
+        return;
+    }
+    EmitParseErrorDiagnostic(target, sCtx);
+    if (firstErrorLine == UINT32_MAX)
+    {
+        firstErrorLine = line;
+    }
+}
+
 void SymbolCollector::ReportParseErrors(TSNode rootNode, SymbolCollectContext& sCtx) const
 {
     if (!ts_node_has_error(rootNode))
         return;
+
+    const auto braceBalance = ComputeBraceBalance(sCtx.request.sourceCode);
+    const bool missingOpenBrace = braceBalance.HasMissingOpenBrace();
+    uint32_t firstErrorLine = UINT32_MAX;
 
     TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
 
@@ -1665,7 +1647,7 @@ void SymbolCollector::ReportParseErrors(TSNode rootNode, SymbolCollectContext& s
 
         if (ts_node_is_missing(current))
         {
-            EmitParseErrorDiagnostic(current, sCtx);
+            HandleParseErrorNode(current, missingOpenBrace, firstErrorLine, sCtx);
             if (!AdvanceCursorAfterError(cursor))
                 break;
             continue;
@@ -1677,8 +1659,7 @@ void SymbolCollector::ReportParseErrors(TSNode rootNode, SymbolCollectContext& s
             {
                 continue;
             }
-            TSNode target = PinpointOffendingNode(current, m_gs);
-            EmitParseErrorDiagnostic(target, sCtx);
+            HandleParseErrorNode(current, missingOpenBrace, firstErrorLine, sCtx);
             if (!AdvanceCursorAfterError(cursor))
                 break;
             continue;

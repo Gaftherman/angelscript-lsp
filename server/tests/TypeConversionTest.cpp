@@ -3020,13 +3020,17 @@ TEST_CASE("TypeConversion - Assigning null to non-handle variables emits as-err-
                       [](const Diagnostic& d) { return d.code == "as-err-null-non-handle"; }));
 }
 
-TEST_CASE("TypeConversion - Assigning null to handle and converting types does not emit as-err-null-non-handle")
+TEST_CASE("TypeConversion - Assigning null to handle with @ and converting types does not emit as-err-null-non-handle")
 {
     const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Entity");
     const std::string varName = angel_lsp::test::GenerateRandomSymbolName("ent");
+    const std::string handleCls = angel_lsp::test::GenerateRandomSymbolName("EHandle");
+    const std::string handleVar = angel_lsp::test::GenerateRandomSymbolName("hEnt");
 
-    const std::string code = "class " + clsName + " {}\n" + "void Test() {\n" + "    " + clsName + "@ " + varName +
-                             " = null;\n" + "    " + varName + " = null;\n" + "}\n";
+    const std::string code = "class " + clsName + " {}\n" + "class " + handleCls + " {\n" + "    " + handleCls +
+                             "& opAssign(" + clsName + "@ other) { return this; }\n" + "}\n" + "void Test() {\n" +
+                             "    " + clsName + "@ " + varName + " = null;\n" + "    @" + varName + " = null;\n" +
+                             "    " + handleCls + " " + handleVar + ";\n" + "    " + handleVar + " = null;\n" + "}\n";
 
     ConversionEnvironment env(code);
     const auto diags = env.Analyze(true);
@@ -3034,18 +3038,50 @@ TEST_CASE("TypeConversion - Assigning null to handle and converting types does n
                             [](const Diagnostic& d) { return d.code == "as-err-null-non-handle"; }));
 }
 
-TEST_CASE("TypeConversion - Assigning null to funcdef type does not emit as-err-null-non-handle")
+TEST_CASE("TypeConversion - Assigning null to handle without prefix @ emits as-err-null-non-handle")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("PevEntity");
+    const std::string entVar = angel_lsp::test::GenerateRandomSymbolName("ent");
+
+    const std::string code = "class " + clsName + " {\n" + "    " + clsName + "@ owner;\n" + "    void Clear() {\n" +
+                             "        owner = null;\n" + "    }\n" + "}\n" + "void Test() {\n" + "    " + clsName +
+                             "@ " + entVar + " = null;\n" + "    " + entVar + " = null;\n" + "}\n";
+
+    ConversionEnvironment env(code);
+    const auto diags = env.Analyze(true);
+    size_t count = 0;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-null-non-handle")
+        {
+            ++count;
+        }
+    }
+    CHECK(count >= 2);
+}
+
+TEST_CASE("TypeConversion - Assigning null to funcdef type requires @ prefix")
 {
     const std::string funcdefName = angel_lsp::test::GenerateRandomSymbolName("CallbackFunc");
     const std::string varName = angel_lsp::test::GenerateRandomSymbolName("cb");
 
-    const std::string code = "funcdef void " + funcdefName + "(int a);\n" + "void Test() {\n" + "    " + funcdefName +
-                             "@ " + varName + " = null;\n" + "    " + varName + " = null;\n" + "}\n";
+    const std::string codeValid = "funcdef void " + funcdefName + "(int a);\n" + "void Test() {\n" + "    " +
+                                  funcdefName + "@ " + varName + " = null;\n" + "    @" + varName + " = null;\n" +
+                                  "}\n";
 
-    ConversionEnvironment env(code);
-    const auto diags = env.Analyze(true);
-    CHECK_FALSE(std::any_of(diags.begin(), diags.end(),
+    ConversionEnvironment envValid(codeValid);
+    const auto diagsValid = envValid.Analyze(true);
+    CHECK_FALSE(std::any_of(diagsValid.begin(), diagsValid.end(),
                             [](const Diagnostic& d) { return d.code == "as-err-null-non-handle"; }));
+
+    const std::string codeInvalid = "funcdef void " + funcdefName + "(int a);\n" + "void Test() {\n" + "    " +
+                                    funcdefName + "@ " + varName + " = null;\n" + "    " + varName + " = null;\n" +
+                                    "}\n";
+
+    ConversionEnvironment envInvalid(codeInvalid);
+    const auto diagsInvalid = envInvalid.Analyze(true);
+    CHECK(std::any_of(diagsInvalid.begin(), diagsInvalid.end(),
+                      [](const Diagnostic& d) { return d.code == "as-err-null-non-handle"; }));
 }
 
 TEST_CASE("TypeConversion - Poison sentinel is completely eradicated from diagnostics")

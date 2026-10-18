@@ -288,6 +288,7 @@ void Server::BuildIncludeGraphAndModules(const std::vector<std::string>& allScri
     phase.emplace(m_logger.get(), "rule index construction");
     m_symbolTable.EnsureRuleIndex();
     SyncModuleIndexSymbols();
+    SetPredefinedReady(true);
 
     WithdrawStaleModuleDiagnostics();
     AnalyzeConfiguredModules();

@@ -135,6 +135,7 @@ Server::ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& de
 
     ModuleView view;
     view.name = definition.name;
+    view.isImplicitEntryPoint = definition.isImplicitEntryPoint;
 
     if (!definition.folder.empty() && !PopulateModuleFolderMembers(definition.folder, view, workspaceFiles))
     {
@@ -248,6 +249,7 @@ void Server::BuildModuleIndex()
             config::ServerConfig::ModuleDefinition entryDef;
             entryDef.name = "default";
             entryDef.entry = m_config.moduleEntryPoint;
+            entryDef.isImplicitEntryPoint = true;
             allDefs.push_back(std::move(entryDef));
         }
     }
@@ -408,6 +410,11 @@ void Server::AnalyzeConfiguredModules()
 
     for (const auto& view : m_modules)
     {
+        if (view.isImplicitEntryPoint)
+        {
+            continue;
+        }
+
         for (const auto& path : view.memberPaths)
         {
             const std::string uriStr = UriFromPath(path);

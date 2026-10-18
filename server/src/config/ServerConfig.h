@@ -796,6 +796,11 @@ struct ServerConfig
          * fourth case: the folder decides who is in, the entry decides where analysis starts.
          */
         std::string folder = {};
+
+        /**
+         * @brief True if module was implicitly created from moduleEntryPoint rather than explicit user config.
+         */
+        bool isImplicitEntryPoint = false;
     };
 
     /**

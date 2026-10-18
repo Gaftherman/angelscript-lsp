@@ -342,6 +342,8 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
     def.fullStartCharacter = startPt.column;
     def.fullEndLine = endPt.row;
     def.fullEndCharacter = endPt.column;
+    def.startByte = capture.startByte;
+    def.endByte = capture.endByte;
     def.visibleFromByte = (capture.definitionKind == LocalDefinitionKind::Variable) ? defStartByte : 0;
 
     if (capture.definitionKind == LocalDefinitionKind::Variable ||
