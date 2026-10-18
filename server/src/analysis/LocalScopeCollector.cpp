@@ -105,7 +105,8 @@ LocalScopeCollector::ResolveCaptureAncestors(CaptureKind kind, LocalDefinitionKi
         result.parent = parser::GetParent(node);
     }
     else if (kind == CaptureKind::Definition &&
-             (defKind == LocalDefinitionKind::Variable || defKind == LocalDefinitionKind::Parameter))
+             (defKind == LocalDefinitionKind::Variable || defKind == LocalDefinitionKind::Parameter ||
+              defKind == LocalDefinitionKind::Field))
     {
         result.parent = parser::GetParent(node);
         result.grandparent = parser::GetParent(result.parent);
@@ -347,10 +348,13 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
     def.visibleFromByte = (capture.definitionKind == LocalDefinitionKind::Variable) ? defStartByte : 0;
 
     if (capture.definitionKind == LocalDefinitionKind::Variable ||
-        capture.definitionKind == LocalDefinitionKind::Parameter)
+        capture.definitionKind == LocalDefinitionKind::Parameter ||
+        capture.definitionKind == LocalDefinitionKind::Field)
     {
         ReadVariableTypeInfo(capture, sourceCode, def);
-        if (capture.definitionKind == LocalDefinitionKind::Variable && IsDisallowedVariableType(def.typeName))
+        if ((capture.definitionKind == LocalDefinitionKind::Variable ||
+             capture.definitionKind == LocalDefinitionKind::Field) &&
+            IsDisallowedVariableType(def.typeName))
         {
             return;
         }
@@ -1019,6 +1023,36 @@ void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const 
     if (ts_node_symbol(declaratorNode) == m_gs.symLambdaParameterList)
     {
         ReadLambdaParameterTypeInfo(capture.node, declaratorNode, sourceCode, def);
+        return;
+    }
+    if (ts_node_symbol(declaratorNode) == m_gs.symVirtualProperty)
+    {
+        ReadVirtualPropertyTypeInfo(declaratorNode, sourceCode, def);
+    }
+}
+
+void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std::string& sourceCode,
+                                                      LocalDefinition& def) const
+{
+    TSPoint rStart = ts_node_start_point(propertyNode);
+    TSPoint rEnd = ts_node_end_point(propertyNode);
+    def.fullStartLine = rStart.row;
+    def.fullStartCharacter = rStart.column;
+    def.fullEndLine = rEnd.row;
+    def.fullEndCharacter = rEnd.column;
+
+    TSNode typeNode = parser::GetChildByField(propertyNode, parser::fields::PropType);
+    if (ts_node_is_null(typeNode))
+    {
+        typeNode = parser::GetChildByField(propertyNode, parser::fields::Type);
+    }
+    if (!ts_node_is_null(typeNode))
+    {
+        TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
+        def.isHandleType = typeInfo.isHandle;
+        def.typeKind = typeInfo.kind;
+        def.typeName = GetNodeText(typeNode, sourceCode);
+        PopulateTypeRanges(typeNode, sourceCode, def);
     }
 }
 

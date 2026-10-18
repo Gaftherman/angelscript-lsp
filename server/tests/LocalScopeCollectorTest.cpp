@@ -979,3 +979,66 @@ TEST_CASE("LocalScopeCollector - Invariant: Nested namespace type specifiers mar
     CHECK(foundNs2);
     CHECK(foundType);
 }
+
+TEST_CASE("LocalScopeCollector - Field and Virtual Property definitions contain typeName and typeKind")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Weapon");
+    const std::string field1 = angel_lsp::test::GenerateRandomSymbolName("m_reloadTimer");
+    const std::string field2 = angel_lsp::test::GenerateRandomSymbolName("m_useTimer");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("Health");
+
+    const std::string source = "class " + clsName +
+                               " {\n"
+                               "    protected float " +
+                               field1 + " = 0.0f, " + field2 +
+                               " = 1.5f;\n"
+                               "    int " +
+                               propName +
+                               " { get const { return 100; } }\n"
+                               "}\n";
+
+    const auto root = CollectScopesFromSource(source);
+    REQUIRE(root != nullptr);
+
+    const LocalDefinition* def1 = nullptr;
+    const LocalDefinition* def2 = nullptr;
+    const LocalDefinition* defProp = nullptr;
+
+    std::function<void(const Scope*)> walk = [&](const Scope* s)
+    {
+        for (const auto& def : s->definitions)
+        {
+            if (def.name == field1)
+            {
+                def1 = &def;
+            }
+            if (def.name == field2)
+            {
+                def2 = &def;
+            }
+            if (def.name == propName)
+            {
+                defProp = &def;
+            }
+        }
+        for (const auto& child : s->children)
+        {
+            walk(child.get());
+        }
+    };
+    walk(root.get());
+
+    REQUIRE(def1 != nullptr);
+    CHECK(def1->typeName == "float");
+    CHECK(def1->kind == LocalDefinitionKind::Field);
+    CHECK(def1->defaultValue == "0.0f");
+
+    REQUIRE(def2 != nullptr);
+    CHECK(def2->typeName == "float");
+    CHECK(def2->kind == LocalDefinitionKind::Field);
+    CHECK(def2->defaultValue == "1.5f");
+
+    REQUIRE(defProp != nullptr);
+    CHECK(defProp->typeName == "int");
+    CHECK(defProp->kind == LocalDefinitionKind::Field);
+}

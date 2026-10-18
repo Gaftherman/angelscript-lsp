@@ -216,6 +216,8 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | Setting | Default | Description |
 | :--- | :--- | :--- |
 | `angelscript.features.inlayHints` | `true` | Show inline parameter-name and deduced-type hints. |
+| `angelscript.inlayHints.parameters` | `true` | Show parameter name hints for function calls and constructors. |
+| `angelscript.inlayHints.variableTypes` | `true` | Show deduced type hints for variables declared with 'auto' or 'auto@'. |
 | `angelscript.inlayHints.maxParameters` | `0` | Maximum number of parameter inlay hints to display for a call. 0 means unlimited (show all parameters). |
 | `angelscript.inlayHints.maxLength` | `0` | Maximum character length for parameter inlay hint labels before truncating with '...'. 0 means unlimited (never truncate). |
 | `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suppress parameter name hints when the argument expression text matches the parameter name exactly. Default is false. |

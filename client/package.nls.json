@@ -8,6 +8,8 @@
   "config.category.engine": "AngelScript: Engine & Preprocessor Properties",
   "config.forceIncludeFiles.description": "Files to force-include before analyzing any module or script.",
   "config.moduleEntryPoint.description": "Global module entry-point script path. Restricts compilation closure to its forward dependency DAG.",
+  "config.inlayHints.parameters.description": "Show parameter name hints for function calls and constructors.",
+  "config.inlayHints.variableTypes.description": "Show deduced type hints for variables declared with 'auto' or 'auto@'.",
   "config.inlayHints.maxParameters.description": "Maximum number of parameter inlay hints to display for a call. 0 means unlimited (show all parameters).",
   "config.inlayHints.maxLength.description": "Maximum character length for parameter inlay hint labels before truncating with '...'. 0 means unlimited (never truncate).",
   "config.inlayHints.omittedDefaultArguments.description": "Show inlay hints for omitted optional arguments with default values in function calls.",

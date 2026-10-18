@@ -8,6 +8,8 @@
   "config.category.engine": "AngelScript: Propiedades del motor y preprocesador",
   "config.forceIncludeFiles.description": "Archivos a incluir forzosamente antes de analizar cualquier módulo o script.",
   "config.moduleEntryPoint.description": "Ruta del script punto de entrada del módulo global. Restringe el cierre de compilación a su grafo acíclico dirigido (DAG) de dependencias hacia adelante.",
+  "config.inlayHints.parameters.description": "Muestra sugerencias de nombres de parámetros para llamadas a funciones y constructores.",
+  "config.inlayHints.variableTypes.description": "Muestra sugerencias de tipo deducido para variables declaradas con 'auto' o 'auto@'.",
   "config.inlayHints.maxParameters.description": "Número máximo de sugerencias en línea de parámetros a mostrar para una llamada. 0 significa ilimitado (muestra todos los parámetros).",
   "config.inlayHints.maxLength.description": "Longitud máxima de caracteres para las etiquetas de sugerencias en línea de parámetros antes de truncar con '...'. 0 significa ilimitado (nunca truncar).",
   "config.inlayHints.omittedDefaultArguments.description": "Muestra pistas de inserción (inlay hints) para argumentos opcionales omitidos con valores por defecto en llamadas a funciones.",

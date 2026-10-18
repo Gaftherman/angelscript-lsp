@@ -1622,3 +1622,96 @@ TEST_CASE("InlayHintHandler - Predefined stub parameter location preserves URI s
     }
     CHECK(foundPredefinedLocation);
 }
+
+TEST_CASE("InlayHintHandler - Independent configuration flags for parameters and variableTypes")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("CalculateSpeed");
+    const std::string pName = angel_lsp::test::GenerateRandomSymbolName("deltaSeconds");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("speed");
+
+    const std::string code = "void " + fnName + "(float " + pName +
+                             ") {}\n"
+                             "void Main() {\n"
+                             "    " +
+                             fnName +
+                             "(0.5f);\n"
+                             "    auto " +
+                             varName +
+                             " = 100.0f;\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // 1. Both enabled (default)
+    {
+        config::ServerConfig cfg;
+        auto hints = env.InlayHintsWithConfig(cfg);
+        REQUIRE(hints.has_value());
+        bool foundParam = false;
+        bool foundVar = false;
+        for (const auto& h : *hints)
+        {
+            const std::string label = GetHintLabel(h);
+            if (label.find(pName) != std::string::npos)
+            {
+                foundParam = true;
+            }
+            if (label.find("float") != std::string::npos)
+            {
+                foundVar = true;
+            }
+        }
+        CHECK(foundParam);
+        CHECK(foundVar);
+    }
+
+    // 2. Disable parameters, keep variableTypes
+    {
+        config::ServerConfig cfg;
+        cfg.features.inlayHintsParameters = false;
+        cfg.features.inlayHintsVariableTypes = true;
+        auto hints = env.InlayHintsWithConfig(cfg);
+        REQUIRE(hints.has_value());
+        bool foundParam = false;
+        bool foundVar = false;
+        for (const auto& h : *hints)
+        {
+            const std::string label = GetHintLabel(h);
+            if (label.find(pName) != std::string::npos)
+            {
+                foundParam = true;
+            }
+            if (label.find("float") != std::string::npos)
+            {
+                foundVar = true;
+            }
+        }
+        CHECK_FALSE(foundParam);
+        CHECK(foundVar);
+    }
+
+    // 3. Disable variableTypes, keep parameters
+    {
+        config::ServerConfig cfg;
+        cfg.features.inlayHintsParameters = true;
+        cfg.features.inlayHintsVariableTypes = false;
+        auto hints = env.InlayHintsWithConfig(cfg);
+        REQUIRE(hints.has_value());
+        bool foundParam = false;
+        bool foundVar = false;
+        for (const auto& h : *hints)
+        {
+            const std::string label = GetHintLabel(h);
+            if (label.find(pName) != std::string::npos)
+            {
+                foundParam = true;
+            }
+            if (label.find("float") != std::string::npos)
+            {
+                foundVar = true;
+            }
+        }
+        CHECK(foundParam);
+        CHECK_FALSE(foundVar);
+    }
+}

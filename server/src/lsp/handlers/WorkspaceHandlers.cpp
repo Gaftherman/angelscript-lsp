@@ -505,6 +505,18 @@ static void UpdateInlayHintFeatureConfig(const lsp::LSPObject& section, config::
     {
         cfg.features.inlayHintsEnableLocation = *loc;
     }
+    if (auto params = FindSectionBool(section, ihObj, "parameters", "inlayHints"); params.has_value())
+    {
+        cfg.features.inlayHintsParameters = *params;
+    }
+    else if (auto paramNames = FindSectionBool(section, ihObj, "parameterNames", "inlayHints"); paramNames.has_value())
+    {
+        cfg.features.inlayHintsParameters = *paramNames;
+    }
+    if (auto varTypes = FindSectionBool(section, ihObj, "variableTypes", "inlayHints"); varTypes.has_value())
+    {
+        cfg.features.inlayHintsVariableTypes = *varTypes;
+    }
     if (auto omitted = FindSectionString(section, ihObj, "omittedDefaultArguments", "inlayHints"); omitted.has_value())
     {
         if (*omitted == "off" || *omitted == "false")

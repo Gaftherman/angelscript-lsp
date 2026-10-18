@@ -4498,6 +4498,58 @@ static TSNode FindLocalDefinitionValueNode(const LocalDefinition& def, const Exp
     }
     return {};
 }
+
+static std::string FindFallbackSymbolType(std::string_view name, const SymbolTable& table)
+{
+    if (const auto syms = table.FindSymbolsPtr(name))
+    {
+        for (const auto& sym : *syms)
+        {
+            if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
+                std::holds_alternative<VariableSignature>(sym.signature))
+            {
+                const auto& var = sym.GetVariable();
+                if (!var.typeName.empty())
+                {
+                    return var.typeName;
+                }
+            }
+        }
+    }
+    return "";
+}
+
+static bool IsValidDeducedRhsType(std::string_view rhsType)
+{
+    return !rhsType.empty() && rhsType != "void" && rhsType != "null" && rhsType != "init_list" &&
+           !ExpressionTypeCache::IsPoisonType(rhsType);
+}
+
+static std::string FormatDeducedType(const LocalDefinition& def, std::string rhsType)
+{
+    if ((def.isHandleType || def.typeName.find('@') != std::string::npos) && !rhsType.ends_with('@'))
+    {
+        rhsType += '@';
+    }
+    return rhsType;
+}
+
+static std::string TryDeduceAutoDefinition(const LocalDefinition& def, const ExpressionTypeContext& ctx, int depth)
+{
+    TSNode valNode = FindLocalDefinitionValueNode(def, ctx);
+    if (ts_node_is_null(valNode))
+    {
+        return def.typeName;
+    }
+    std::string rhsType = ResolveExpressionType(valNode, ctx, depth + 1);
+    if (!IsValidDeducedRhsType(rhsType))
+    {
+        return def.typeName;
+    }
+    std::string finalType = FormatDeducedType(def, std::move(rhsType));
+    const_cast<LocalDefinition&>(def).typeName = finalType;
+    return finalType;
+}
 } // namespace
 
 std::string ResolveLocalDefinitionType(const LocalDefinition& def, const ExpressionTypeContext& ctx, int depth)
@@ -4506,6 +4558,22 @@ std::string ResolveLocalDefinitionType(const LocalDefinition& def, const Express
     {
         return def.typeName;
     }
+
+    if (def.typeName.empty())
+    {
+        std::string fallback = FindFallbackSymbolType(def.name, ctx.symbolTable);
+        if (!fallback.empty())
+        {
+            const_cast<LocalDefinition&>(def).typeName = fallback;
+            return fallback;
+        }
+    }
+
+    if (CleanBaseType(def.typeName) != "auto" && def.typeKind != TypeKind::Auto)
+    {
+        return def.typeName;
+    }
+
     if (depth > 8 || IsLocalDefActive(def))
     {
         return "";
@@ -4514,23 +4582,7 @@ std::string ResolveLocalDefinitionType(const LocalDefinition& def, const Express
     s_activeLocalDefs.push_back({def.name, def.startLine, def.startCharacter});
     ActiveLocalDefGuard guard{true};
 
-    TSNode valNode = FindLocalDefinitionValueNode(def, ctx);
-    if (!ts_node_is_null(valNode))
-    {
-        std::string rhsType = ResolveExpressionType(valNode, ctx, depth + 1);
-        if (!rhsType.empty() && rhsType != "void" && rhsType != "null" && !ExpressionTypeCache::IsPoisonType(rhsType))
-        {
-            std::string finalType = rhsType;
-            if ((def.isHandleType || def.typeName.find('@') != std::string::npos) && !finalType.ends_with('@'))
-            {
-                finalType += '@';
-            }
-            const_cast<LocalDefinition&>(def).typeName = finalType;
-            return finalType;
-        }
-    }
-
-    return def.typeName;
+    return TryDeduceAutoDefinition(def, ctx, depth);
 }
 
 /**

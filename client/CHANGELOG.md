@@ -4,6 +4,25 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.3-exp.2] - 2026-10-18
+
+### Experimental Release 1.1.3-exp.2: Field Type Extraction, Array Member Resolution, Granular Inlay Hints & Auto Hover
+
+- Class Field Type Extraction & Array Initializer Bugfix (`LocalScopeCollector`, `SemanticHelpers`):
+  - Extracted type information and initialization ranges for class field identifiers and virtual properties in `LocalScopeCollector`.
+  - Prevented false positive `[ERROR: E121]` ("No se puede convertir implícitamente 'init_list' a 'const string'") when accessing indexed members of arrays initialized with list syntax (`m_szBounceSounds[0]`).
+  - Added symbol table fallback in `ResolveLocalDefinitionType` to recover declared member types and banned `"init_list"` from ever being assigned as a deduced type.
+- Comma-Separated Declarations Type Preservation (`LocalScopeCollector`):
+  - Fixed multiple declarators sharing a type specifier (`protected float m_reloadTimer = 0, m_useTimer = 0;`), preventing false positive `[WARN: W106]` float truncation warnings when assigning to later variables.
+- Relational Array Comparison Error Reporting (`ComparisonOperatorChecker`):
+  - Emits `as-err-no-matching-operator` (`E039`) when comparing an indexed array element against the entire array container (`if (secondary_default_ammo[0] > secondary_default_ammo)`).
+- Member Array Completion (`CompletionHandler`):
+  - Full autocompletion support on member array dot access (`secondary_default_ammo.`) and indexed element access (`sounds[0].`).
+- Granular Inlay Hint Settings (`ServerConfig`, `InlayHintHandler`, `client/package.json`):
+  - Added independent configuration flags `angelscript.inlayHints.parameters` and `angelscript.inlayHints.variableTypes`.
+- Dedicated `auto` / `auto@` Type Hover (`HoverHandler`):
+  - Replaced `(primitive type) auto` with deduced type cards (`auto: const array<EHandle>@`, `auto@: CBasePlayer@`), ensuring types are inspectable even when inlay hints are turned off.
+
 ## [1.1.3-exp.1] - 2026-10-18
 
 ### Experimental Release 1.1.3-exp.1: Diagnostics Accuracy, auto@ / opIndex Deduction, Scoped Enum Disambiguation, Member Completion, Startup Performance & Missing-`{` Recovery

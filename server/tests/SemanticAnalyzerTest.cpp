@@ -2710,3 +2710,114 @@ TEST_CASE("SemanticAnalyzer - Missing opening brace in function suppresses casca
     }
     CHECK(syntaxErrCount <= 2);
 }
+
+TEST_CASE("SemanticAnalyzer - Array member indexed access does not produce E121 init_list error")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("WeaponIns2");
+    const std::string arrName = angel_lsp::test::GenerateRandomSymbolName("m_szBounceSounds");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("BounceSound");
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "class array<T> {\n"
+                             "    T& opIndex(uint idx);\n"
+                             "}\n"
+                             "void TakeString(const string& in str) {}\n"
+                             "class " +
+                             clsName +
+                             " {\n"
+                             "    private array<string> " +
+                             arrName +
+                             " = {\n"
+                             "        \"weapons/grenade_hit1.wav\",\n"
+                             "        \"weapons/grenade_hit2.wav\",\n"
+                             "        \"weapons/grenade_hit3.wav\"\n"
+                             "    };\n"
+                             "    void " +
+                             fnName +
+                             "() {\n"
+                             "        TakeString(" +
+                             arrName +
+                             "[0]);\n"
+                             "    }\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+
+    for (const auto& d : diags)
+    {
+        CHECK(d.code != "as-err-no-implicit-conversion");
+    }
+}
+
+TEST_CASE("SemanticAnalyzer - Comma-separated float member preserves float type and avoids W106 truncation warning")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("BaseWeapon");
+    const std::string f1 = angel_lsp::test::GenerateRandomSymbolName("m_reloadTimer");
+    const std::string f2 = angel_lsp::test::GenerateRandomSymbolName("m_useTimer");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("PrimaryAttack");
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    protected float " +
+                             f1 + " = 0, " + f2 +
+                             " = 0;\n"
+                             "    void " +
+                             fnName +
+                             "() {\n"
+                             "        float flTimer = 1.5f;\n"
+                             "        " +
+                             f2 +
+                             " = 10.0f + flTimer;\n"
+                             "    }\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+
+    for (const auto& d : diags)
+    {
+        CHECK(d.code != "as-warn-float-truncation");
+    }
+}
+
+TEST_CASE("SemanticAnalyzer - Relational comparison between array element and array produces E039")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("WeaponAmmo");
+    const std::string arrName = angel_lsp::test::GenerateRandomSymbolName("secondary_default_ammo");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("CheckAmmo");
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "class array<T> {\n"
+                             "    T& opIndex(uint idx);\n"
+                             "}\n"
+                             "class " +
+                             clsName +
+                             " {\n"
+                             "    private array<int> " +
+                             arrName +
+                             " = { 0, 0 };\n"
+                             "    void " +
+                             fnName +
+                             "() {\n"
+                             "        if (" +
+                             arrName + "[0] > " + arrName +
+                             ") {\n"
+                             "        }\n"
+                             "    }\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+
+    bool foundComparisonError = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-no-matching-operator")
+        {
+            foundComparisonError = true;
+        }
+    }
+    CHECK(foundComparisonError);
+}

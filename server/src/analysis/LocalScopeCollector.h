@@ -243,6 +243,14 @@ class LocalScopeCollector
                                         LocalDefinition& def) const;
 
     /**
+     * @brief Reads declared type information for a virtual property AST node.
+     * @param propertyNode Virtual property AST node.
+     * @param sourceCode Source text of the document.
+     * @param[out] def LocalDefinition receiving type info.
+     */
+    void ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std::string& sourceCode, LocalDefinition& def) const;
+
+    /**
      * @brief Populates type span coordinates and template argument positions.
      * @param tNode Type AST node.
      * @param sourceCode Source text of the document.

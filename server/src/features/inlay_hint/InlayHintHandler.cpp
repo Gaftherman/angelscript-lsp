@@ -1694,6 +1694,10 @@ void AddOmittedDefaultArgumentHints(const CalleeResolutionResult& callee, TSNode
  */
 void ProcessCallExpression(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {
+    if (request.config && !request.config->features.inlayHintsParameters)
+    {
+        return;
+    }
     TSNode argListNode = analysis::ResolveArgumentListNode(node);
     if (!ts_node_is_null(argListNode))
     {
@@ -1712,6 +1716,10 @@ void ProcessCallExpression(TSNode node, const InlayHintRequest& request, std::ve
  */
 void ProcessConstructorCallExpression(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {
+    if (request.config && !request.config->features.inlayHintsParameters)
+    {
+        return;
+    }
     std::string typeText = DeduceCastOrConstructType(node, request.sourceCode);
     if (typeText.empty())
     {
@@ -1738,6 +1746,10 @@ void ProcessConstructorCallExpression(TSNode node, const InlayHintRequest& reque
 void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequest& request,
                                    std::vector<lsp::InlayHint>& hints, bool isHandle)
 {
+    if (request.config && !request.config->features.inlayHintsVariableTypes)
+    {
+        return;
+    }
     TSNode nameNode = parser::GetChildByField(declarator, parser::fields::Name);
     if (ts_node_is_null(nameNode))
     {
@@ -1818,6 +1830,10 @@ TSNode FindDeclaratorArgumentList(TSNode declarator)
 void ProcessConstructorInitDeclarator(const std::string& typeText, TSNode declarator, const InlayHintRequest& request,
                                       std::vector<lsp::InlayHint>& hints)
 {
+    if (request.config && !request.config->features.inlayHintsParameters)
+    {
+        return;
+    }
     TSNode argListNode = FindDeclaratorArgumentList(declarator);
     if (!ts_node_is_null(argListNode))
     {

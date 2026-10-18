@@ -548,6 +548,18 @@
             "default": true,
             "markdownDescription": "%config.features.inlayHints.description%"
           },
+          "angelscript.inlayHints.parameters": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.inlayHints.parameters.description%"
+          },
+          "angelscript.inlayHints.variableTypes": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.inlayHints.variableTypes.description%"
+          },
           "angelscript.inlayHints.maxParameters": {
             "type": "integer",
             "scope": "resource",

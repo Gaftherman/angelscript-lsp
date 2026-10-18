@@ -216,6 +216,8 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 | Configuración | Valor por defecto | Descripción |
 | :--- | :--- | :--- |
 | `angelscript.features.inlayHints` | `true` | Mostrar sugerencias en línea de nombres de parámetros y tipos deducidos. |
+| `angelscript.inlayHints.parameters` | `true` | Muestra sugerencias de nombres de parámetros para llamadas a funciones y constructores. |
+| `angelscript.inlayHints.variableTypes` | `true` | Muestra sugerencias de tipo deducido para variables declaradas con 'auto' o 'auto@'. |
 | `angelscript.inlayHints.maxParameters` | `0` | Número máximo de sugerencias en línea de parámetros a mostrar para una llamada. 0 significa ilimitado (muestra todos los parámetros). |
 | `angelscript.inlayHints.maxLength` | `0` | Longitud máxima de caracteres para las etiquetas de sugerencias en línea de parámetros antes de truncar con '...'. 0 significa ilimitado (nunca truncar). |
 | `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suprime las sugerencias de nombres de parámetros cuando el texto del argumento coincide exactamente con el nombre del parámetro. El valor predeterminado es false. |
