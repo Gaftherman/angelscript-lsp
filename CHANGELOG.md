@@ -2,6 +2,34 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.3-exp.1] - 2026-10-18
+
+### Experimental Release 1.1.3-exp.1: Diagnostics Accuracy, auto@ / opIndex Deduction, Scoped Enum Disambiguation, Member Completion, Startup Performance & Missing-`{` Recovery
+
+- Handle Assignment Null Validation (`TypeConversionChecker`, `ASTUtils`):
+  - Enforced strict `@` operator requirements when assigning `null` to object handle targets (`@self.pev.owner = null;`), aligning with official AngelScript specification (verified with AngelScript Oracle 2.38).
+  - Flags non-`@` null assignments to handle variables or members (`self.pev.owner = null;`) with `as-err-null-non-handle` (`E121`), unless the value type explicitly declares an `opAssign` overload accepting handles (e.g. `EHandle::opAssign(CBaseEntity@)`).
+- `auto@` / `auto` Type Deduction with `opIndex` and `this[0]` (`ScopeTree`, `SemanticHelpers`, `HoverHandler`, `CompletionHandler`, `TargetResolution`):
+  - Preserved declaration initialization byte coordinates in `LocalDefinition` to support on-demand type deduction across all LSP consumers.
+  - Implemented `ResolveLocalDefinitionType` with recursion guard (`ActiveLocalDefGuard`) to deduce types for `auto` and `auto@` variables from their initializers (such as `auto@ monster = this[0];`).
+  - Hover displays full deduced type signatures (`CBaseEntity@ monster`) instead of raw `auto@`.
+  - Member autocompletion (`monster.`) provides comprehensive member suggestions from the deduced type.
+  - Go to Definition / Target Resolution resolves member accesses through `auto@` handles.
+- Scoped Enum Resolution and CodeLens Reference Disambiguation (`SemanticHelpers`, `CodeLensHandler`):
+  - Fixed false `E121` conversion errors on qualified enum returns (e.g. `return Version::Undefined;` inside nested namespaces) by resolving scoped identifiers against lexical enclosing scopes instead of falling back to global symbols with colliding names (`DynamicEquipmentType::Undefined`).
+  - Isolated CodeLens reference counts across enums sharing identical member names by strictly matching `ref.scopeQualifier` against `targetEnumContainer`.
+- Member Completion in Binary Expressions and Complex Contexts (`CompletionHandler`):
+  - Fixed autocompletion failure when typing `.` in binary comparisons (e.g. `if(monster.pev.flags == monster.| )`).
+  - Added expression boundary table `k_boundaries` and bounded traversal in `FindReceiverFromParentAtDot` to accurately extract the dot receiver inside binary expressions and error nodes.
+- Startup / Restart Performance & Diagnostic Spam Prevention (`ServerConfig`, `ServerModules`, `WorkspaceScanHandlers`):
+  - Marked synthesized module entry points as `isImplicitEntryPoint = true;` and bypassed batch semantic analysis for unconfigured include closures in `AnalyzeConfiguredModules()`.
+  - Dramatically reduced startup CPU saturation and eliminated false `W108` / `E002` diagnostic spam on lower-end PCs while maintaining full on-demand analysis for opened documents.
+  - Signaled `SetPredefinedReady(true)` immediately after stubs and rules are indexed, keeping document open/change workflows responsive.
+- Syntax and Semantic Recovery on Missing Opening Braces (`ASTUtils`, `SymbolCollector`, `SemanticAnalyzer`):
+  - Implemented comment- and string-aware `ComputeBraceBalance` to detect unclosed blocks when an opening `{` is deleted inside a function body.
+  - Clamped syntax parse errors to the primary unmatched brace location via `HandleParseErrorNode`.
+  - Suppressed cascading downstream semantic diagnostics beyond the unclosed block, replacing 30+ misleading errors with clean, localized diagnostics (`E131` + `E001`).
+
 ## [1.1.2] - 2026-10-17
 
 ### Official 1.1.2 Release: Disable Unused Class Warnings by Default and Configuration Sanitization

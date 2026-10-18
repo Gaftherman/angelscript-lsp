@@ -1080,10 +1080,16 @@
     "GAP-RULES-02: Overly narrow schedulerRules naming. (RESOLVED in Phase 32 with callRules generalization).",
     "GAP-FUNCDEF-01: False E119 calling funcdef members unqualified or via property getters. (RESOLVED in Phase 33).",
     "GAP-INITLIST-01: False E160 on comments inside dictionary initializers. (RESOLVED in Phase 33).",
-    "GAP-UNUSED-04: False W120 warnings on uninstantiated engine entity classes without .rules.json. (RESOLVED in Phase 34)."
+    "GAP-UNUSED-04: False W120 warnings on uninstantiated engine entity classes without .rules.json. (RESOLVED in Phase 34).",
+    "GAP-HANDLE-01: Assigning null to handle target without leading @ unflagged. (RESOLVED in Phase 35 with IsHandleAssignmentTarget and as-err-null-non-handle).",
+    "GAP-AUTO-01: auto@ monster = this[0] not deducing type in hover, completion, or target resolution. (RESOLVED in Phase 35 with ResolveLocalDefinitionType, startByte/endByte retention, and ActiveLocalDefGuard).",
+    "GAP-ENUM-01: Scoped enum return colliding with global enum symbol and merging CodeLens reference counts. (RESOLVED in Phase 35 with lexical scope lookup and targetEnumContainer filtering).",
+    "GAP-COMPL-01: Member autocompletion failing after dot in binary comparisons. (RESOLVED in Phase 35 with k_boundaries and FindReceiverFromParentAtDot).",
+    "GAP-STARTUP-01: CPU saturation and error spam on startup from synthetic module entry closures. (RESOLVED in Phase 35 with isImplicitEntryPoint and immediate SetPredefinedReady).",
+    "GAP-RECOVERY-02: Missing opening { inside function causing 30+ cascading syntax and semantic errors. (RESOLVED in Phase 35 with ComputeBraceBalance, HandleParseErrorNode, and FilterSuppressedDiagnostics)."
   ],
   "nextActions": [
-    "Phase 34 and v1.1.2 release completed with 100% test pass rate (2,433 tests, 34,426 assertions) and all 12 quality gates passed."
+    "Phase 35 and 1.1.3-exp.1 release completed with 100% test pass rate (2,433 tests, 34,426 assertions) and all 12 quality gates passed."
   ]
 }
 
