@@ -2842,37 +2842,6 @@ static bool IsCyclicAutoDependency(TSNode valueNode, TSNode nameNode, const Scop
 }
 
 /**
- * @brief Finds the initializer value node for a variable declarator.
- * @param[in] child Variable declarator syntax node.
- * @param[in] sourceCode Document source text.
- * @return Value expression node, or a null node if none found.
- */
-TSNode FindDeclaratorValueNode(TSNode child, std::string_view sourceCode)
-{
-    TSNode valueNode = parser::GetChildByField(child, parser::fields::Value);
-    if (!ts_node_is_null(valueNode))
-    {
-        return valueNode;
-    }
-
-    const uint32_t childCount = ts_node_child_count(child);
-    bool foundEq = false;
-    for (uint32_t c = 0; c < childCount; ++c)
-    {
-        TSNode ch = ts_node_child(child, c);
-        if (foundEq)
-        {
-            return ch;
-        }
-        if (NodeText(ch, sourceCode) == "=")
-        {
-            foundEq = true;
-        }
-    }
-    return {};
-}
-
-/**
  * @brief Validates an auto variable declarator and writes back deduced types.
  * @param[in] child Variable declarator node.
  * @param[in] request Analysis request details.
@@ -3276,13 +3245,6 @@ static bool TypeAcceptsNullHandle(std::string_view typeName, const SymbolTable& 
     {
         return false;
     }
-    if (const auto syms = table.FindSymbolsPtr(clean))
-    {
-        if (std::any_of(syms->begin(), syms->end(), [](const Symbol& s) { return s.type == SymbolType::Funcdef; }))
-        {
-            return true;
-        }
-    }
     return HasHandleOpAssign(clean, table) || HasHandleConvertingCtor(clean, table);
 }
 
@@ -3329,8 +3291,17 @@ static bool CheckNullAssignmentToNonHandle(TSNode node, TSNode right, const std:
         return false;
     }
 
-    if (rawLeftType.find('@') != std::string::npos || rawLeftType == "auto" || rawLeftType == "?" ||
-        rawLeftType == "any")
+    const TSNode left = ts_node_child_by_field_id(node, gs.fieldLeft);
+    if (IsHandleAssignmentTarget(left))
+    {
+        if (rawLeftType.find('@') != std::string::npos || rawLeftType == "auto" || rawLeftType == "?" ||
+            rawLeftType == "any")
+        {
+            return true;
+        }
+    }
+
+    if (rawLeftType == "auto" || rawLeftType == "?" || rawLeftType == "any")
     {
         return true;
     }

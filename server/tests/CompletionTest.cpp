@@ -2468,3 +2468,144 @@ TEST_CASE("Completion - Allow both this and super in derived class")
     CHECK(HasItem(items, "this"));
     CHECK(HasItem(items, "super"));
 }
+
+TEST_CASE("Completion - Member completion after dot inside binary expression comparison")
+{
+    const std::string entClass = test::GenerateRandomSymbolName("EntityClass");
+    const std::string varName = test::GenerateRandomSymbolName("monster");
+    const std::string memField = test::GenerateRandomSymbolName("pev");
+    const std::string code = "class " + entClass +
+                             " {\n"
+                             "    int " +
+                             memField +
+                             ";\n"
+                             "}\n"
+                             "void TestFn(" +
+                             entClass + "@ " + varName +
+                             ") {\n"
+                             "    if (" +
+                             varName + "." + memField + " == " + varName +
+                             ".)\n"
+                             "    {}\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const size_t dotCol = 4 + 4 + varName.length() + 1 + memField.length() + 4 + varName.length() + 1;
+    const auto items = env.CompleteAt(4, static_cast<uint32_t>(dotCol));
+    CHECK(HasItem(items, memField));
+}
+
+TEST_CASE("Completion - auto@ deduced from this[0] provides member completions")
+{
+    const std::string entClass = test::GenerateRandomSymbolName("BaseEnt");
+    const std::string listClass = test::GenerateRandomSymbolName("EntList");
+    const std::string memName = test::GenerateRandomSymbolName("GetEntityId");
+    const std::string code = "class " + entClass +
+                             " {\n"
+                             "    int " +
+                             memName +
+                             "() { return 1; }\n"
+                             "}\n"
+                             "class " +
+                             listClass +
+                             " {\n"
+                             "    " +
+                             entClass +
+                             "@ opIndex(int idx) { return null; }\n"
+                             "    void Update() {\n"
+                             "        auto@ m = this[0];\n"
+                             "        m.;\n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code, true);
+    const auto items = env.CompleteAt(7, 10);
+    CHECK(HasItem(items, memName));
+}
+
+TEST_CASE("Completion - Member array dot access completes array methods")
+{
+    const std::string clsName = test::GenerateRandomSymbolName("WeaponAmmo");
+    const std::string arrName = test::GenerateRandomSymbolName("secondary_default_ammo");
+    const std::string methodName = test::GenerateRandomSymbolName("resize");
+    const std::string code = "class array<T> {\n"
+                             "    void " +
+                             methodName +
+                             "(uint size);\n"
+                             "}\n"
+                             "class " +
+                             clsName +
+                             " {\n"
+                             "    private array<int> " +
+                             arrName +
+                             " = { 0, 0 };\n"
+                             "    void CheckAmmo() {\n"
+                             "        " +
+                             arrName +
+                             ".;\n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code, true);
+    const size_t pos = code.find(arrName + ".");
+    REQUIRE(pos != std::string::npos);
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < pos; ++i)
+    {
+        if (code[i] == '\n')
+        {
+            ++line;
+            lineStart = i + 1;
+        }
+    }
+    const uint32_t dotCol = static_cast<uint32_t>(pos - lineStart) + static_cast<uint32_t>(arrName.length()) + 1;
+    const auto items = env.CompleteAt(line, dotCol);
+    CHECK(HasItem(items, methodName));
+}
+
+TEST_CASE("Completion - Member array indexed element access completes element methods")
+{
+    const std::string clsName = test::GenerateRandomSymbolName("WeaponSounds");
+    const std::string arrName = test::GenerateRandomSymbolName("m_szBounceSounds");
+    const std::string elemMethod = test::GenerateRandomSymbolName("IsEmpty");
+    const std::string code = "class array<T> {\n"
+                             "    T& opIndex(uint idx);\n"
+                             "}\n"
+                             "class string {\n"
+                             "    bool " +
+                             elemMethod +
+                             "() const;\n"
+                             "}\n"
+                             "class " +
+                             clsName +
+                             " {\n"
+                             "    private array<string> " +
+                             arrName +
+                             " = {\n"
+                             "        \"weapons/bounce1.wav\"\n"
+                             "    };\n"
+                             "    void PlayBounce() {\n"
+                             "        " +
+                             arrName +
+                             "[0].;\n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code, true);
+    const size_t pos = code.find(arrName + "[0].");
+    REQUIRE(pos != std::string::npos);
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < pos; ++i)
+    {
+        if (code[i] == '\n')
+        {
+            ++line;
+            lineStart = i + 1;
+        }
+    }
+    const uint32_t dotCol = static_cast<uint32_t>(pos - lineStart) + static_cast<uint32_t>(arrName.length()) + 4;
+    const auto items = env.CompleteAt(line, dotCol);
+    CHECK(HasItem(items, elemMethod));
+}

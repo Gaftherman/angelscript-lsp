@@ -343,6 +343,8 @@ class SymbolCollector
     // =====================================================================================
 
     void ReportParseErrors(TSNode rootNode, SymbolCollectContext& sCtx) const;
+    void HandleParseErrorNode(TSNode node, bool missingOpenBrace, uint32_t& firstErrorLine,
+                              SymbolCollectContext& sCtx) const;
     void EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext& sCtx) const;
     bool TryFormatArgumentListSyntaxError(TSNode node, const SymbolCollectContext& sCtx, Diagnostic& diag) const;
     std::string FormatSyntaxErrorMessage(std::string_view rawErrText, std::string& outCode,

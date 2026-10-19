@@ -65,6 +65,9 @@ struct LocalDefinition
     uint32_t endLine = 0;
     uint32_t endCharacter = 0;
 
+    uint32_t startByte = 0;
+    uint32_t endByte = 0;
+
     uint32_t typeStartLine = 0;
     uint32_t typeStartCharacter = 0;
     uint32_t typeEndLine = 0;

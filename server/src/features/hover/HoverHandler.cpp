@@ -808,7 +808,7 @@ struct HoverQueryContext
 std::optional<lsp::Hover> TryHoverPrimitiveType(std::string_view nodeText, const lsp::Range& range,
                                                 HoverProfiler& profiler)
 {
-    if (!analysis::IsPrimitiveTypeName(nodeText))
+    if (!analysis::IsPrimitiveTypeName(nodeText) || nodeText == "auto")
     {
         return std::nullopt;
     }
@@ -1715,6 +1715,26 @@ static void AppendLocalDoc(const analysis::LocalDefinition& def, std::string_vie
     }
 }
 
+static std::string DeduceLocalDefinitionHoverType(const analysis::LocalDefinition& def, const HoverQueryContext& ctx)
+{
+    if (!def.typeName.empty() && analysis::CleanBaseType(def.typeName) != "auto")
+    {
+        return def.typeName;
+    }
+    analysis::ExpressionTypeContext exprCtx(ctx.scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.uri,
+                                            ctx.request.tree ? ts_tree_root_node(ctx.request.tree) : TSNode{});
+    std::string inferred = analysis::ResolveLocalDefinitionType(def, exprCtx);
+    if (inferred.empty())
+    {
+        inferred = InferTypeFromAst(ctx.node, ctx.request.sourceCode);
+    }
+    if (inferred.empty() && def.kind == analysis::LocalDefinitionKind::Parameter)
+    {
+        inferred = analysis::InferLambdaParamType(ctx.node, def.name, ctx.request.symbolTable, ctx.request.sourceCode);
+    }
+    return !inferred.empty() ? inferred : def.typeName;
+}
+
 std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
 {
     if (!ctx.rootScope || !ctx.scope)
@@ -1738,18 +1758,8 @@ std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
         return std::nullopt;
     }
 
-    std::string inferredType;
-    std::string_view typeName = def->typeName;
-    if (typeName.empty())
-    {
-        inferredType = InferTypeFromAst(ctx.node, ctx.request.sourceCode);
-        if (inferredType.empty() && def->kind == analysis::LocalDefinitionKind::Parameter)
-        {
-            inferredType =
-                analysis::InferLambdaParamType(ctx.node, def->name, ctx.request.symbolTable, ctx.request.sourceCode);
-        }
-        typeName = inferredType;
-    }
+    const std::string deducedType = DeduceLocalDefinitionHoverType(*def, ctx);
+    const std::string_view typeName = deducedType;
 
     if (ctx.profiler.IsActive())
     {
@@ -2273,8 +2283,122 @@ std::optional<lsp::Hover> TryHoverLambda(const HoverQueryContext& ctx)
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
 }
 
+static TSNode FindEnclosingAutoDeclaration(TSNode node)
+{
+    TSNode curr = node;
+    for (int depth = 0; depth < 8 && !ts_node_is_null(curr); ++depth)
+    {
+        std::string_view nodeType = ts_node_type(curr);
+        if (nodeType == parser::nodes::VariableDeclaration || nodeType == "foreach_statement")
+        {
+            return curr;
+        }
+        curr = parser::GetParent(curr);
+    }
+    return TSNode{};
+}
+
+static std::string DeduceAutoDeclaratorType(TSNode declarator, const HoverQueryContext& ctx)
+{
+    TSNode nameNode = parser::GetChildByField(declarator, parser::fields::Name);
+    if (!ts_node_is_null(nameNode) && ctx.scope)
+    {
+        std::string varName = analysis::GetNodeText(nameNode, ctx.request.sourceCode);
+        if (const auto* def = analysis::ResolveInScopeAt(ctx.scope, varName, ts_node_start_byte(nameNode)))
+        {
+            std::string deduced = DeduceLocalDefinitionHoverType(*def, ctx);
+            if (!deduced.empty() && deduced != "auto")
+            {
+                return deduced;
+            }
+        }
+    }
+
+    TSNode valNode = parser::GetChildByField(declarator, parser::fields::Value);
+    if (ts_node_is_null(valNode))
+    {
+        valNode = parser::GetChildByField(declarator, parser::fields::Arguments);
+    }
+    if (!ts_node_is_null(valNode))
+    {
+        analysis::ExpressionTypeContext exprCtx(ctx.scope, ctx.request.symbolTable, ctx.request.sourceCode,
+                                                ctx.request.uri,
+                                                ctx.request.tree ? ts_tree_root_node(ctx.request.tree) : TSNode{});
+        std::string res = analysis::ResolveExpressionType(valNode, exprCtx);
+        if (!res.empty() && res != "void" && res != "null" && res != "init_list" &&
+            !analysis::ExpressionTypeCache::IsPoisonType(res))
+        {
+            return res;
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Attempts to produce hover documentation for 'auto' keyword showing the deduced type.
+ * @param[in] ctx Hover query context.
+ * @return Populated Hover if node is 'auto' in an auto declaration, std::nullopt otherwise.
+ */
+static std::optional<lsp::Hover> TryHoverAutoType(const HoverQueryContext& ctx)
+{
+    if (ctx.nodeText != "auto" && ctx.nodeText != "auto@")
+    {
+        return std::nullopt;
+    }
+
+    TSNode declNode = FindEnclosingAutoDeclaration(ctx.node);
+    if (ts_node_is_null(declNode))
+    {
+        return std::nullopt;
+    }
+
+    std::string deduced;
+    if (std::string_view(ts_node_type(declNode)) == parser::nodes::VariableDeclaration)
+    {
+        parser::ForEachChildNodeUntil(declNode,
+                                      [&](TSNode child)
+                                      {
+                                          if (std::string_view(ts_node_type(child)) ==
+                                              parser::nodes::VariableDeclarator)
+                                          {
+                                              deduced = DeduceAutoDeclaratorType(child, ctx);
+                                              return false;
+                                          }
+                                          return true;
+                                      });
+    }
+
+    if (!deduced.empty() && deduced != "auto")
+    {
+        TSNode typeNode = parser::GetChildByField(declNode, parser::fields::VarType);
+        if (ts_node_is_null(typeNode))
+        {
+            typeNode = parser::GetChildByField(declNode, parser::fields::Type);
+        }
+        bool isHandle = (ctx.nodeText.find('@') != std::string_view::npos);
+        if (!ts_node_is_null(typeNode) &&
+            analysis::GetNodeText(typeNode, ctx.request.sourceCode).find('@') != std::string::npos)
+        {
+            isHandle = true;
+        }
+        if (isHandle && !deduced.ends_with('@'))
+        {
+            deduced += '@';
+        }
+        std::string md = "```angelscript\n" + std::string(isHandle ? "auto@" : "auto") + ": " + deduced + "\n```";
+        return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, ctx.range};
+    }
+
+    return std::nullopt;
+}
+
 std::optional<lsp::Hover> TryHoverExpressionOrLocal(const HoverQueryContext& ctx)
 {
+    if (auto autoHover = TryHoverAutoType(ctx))
+    {
+        return autoHover;
+    }
+
     bool isMemberChild = IsMemberChildOfExpression(ctx.node, ctx.parent);
     if (isMemberChild)
     {

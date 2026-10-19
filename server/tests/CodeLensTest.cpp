@@ -1213,3 +1213,71 @@ TEST_CASE("CodeLens - Spanish localized titles for references, implementations, 
     CHECK(foundMixinExpansion);
     CHECK(foundImplementation);
 }
+
+TEST_CASE("CodeLens - Separate reference counts for identical enum member names in different enums")
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector(nullptr);
+    LocalScopeCollector scopeCollector(nullptr);
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+
+    const std::string enumValName = test::GenerateRandomSymbolName("Undefined");
+    const std::string enum1Name = test::GenerateRandomSymbolName("Version");
+    const std::string enum2Name = test::GenerateRandomSymbolName("DynamicEquipmentType");
+
+    const std::string uri = "file:///enums.as";
+    const std::string code = "enum " + enum1Name +
+                             " {\n"
+                             "    " +
+                             enumValName +
+                             " = 0\n"
+                             "}\n"
+                             "enum " +
+                             enum2Name +
+                             " {\n"
+                             "    " +
+                             enumValName +
+                             " = 0\n"
+                             "}\n"
+                             "void UseVersion() {\n"
+                             "    " +
+                             enum1Name + " v = " + enum1Name + "::" + enumValName +
+                             ";\n"
+                             "}\n";
+
+    TSTree* tree = parser.Parse(code);
+    symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
+    auto scope = scopeCollector.CollectScopes(code, parser);
+    if (scope)
+    {
+        scopeIndex.SetScopeTree(uri, std::move(scope));
+    }
+
+    CodeLensRequest req{uri, code, tree, symbolTable, scopeIndex};
+    auto lenses = GetCodeLenses(req);
+    REQUIRE(lenses.has_value());
+
+    bool foundEnum1Lens = false;
+    bool foundEnum2Lens = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.range.start.line == 1 && lens.command.has_value())
+        {
+            foundEnum1Lens = true;
+            CHECK(lens.command->title == "1 reference");
+        }
+        else if (lens.range.start.line == 4 && lens.command.has_value())
+        {
+            foundEnum2Lens = true;
+            CHECK(lens.command->title == "0 references");
+        }
+    }
+    CHECK(foundEnum1Lens);
+    CHECK(foundEnum2Lens);
+
+    if (tree)
+    {
+        ts_tree_delete(tree);
+    }
+}

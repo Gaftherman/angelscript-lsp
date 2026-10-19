@@ -1541,7 +1541,12 @@ static TSNode FindReceiverFromParentAtDot(TSNode rootNode, size_t dotByteOffset)
     TSNode prev = ts_node_prev_sibling(dotNode);
     if (!ts_node_is_null(prev))
     {
-        return prev;
+        std::string_view prevType = ts_node_type(prev);
+        if (prevType != "binary_expression" && prevType != "unary_expression" && prevType != "assignment_expression" &&
+            prevType != "conditional_expression" && prevType != "ERROR")
+        {
+            return prev;
+        }
     }
     return TSNode{};
 }
@@ -1551,10 +1556,26 @@ static TSNode FindReceiverFromParentAtDot(TSNode rootNode, size_t dotByteOffset)
  * @param[in] pType Node type identifier string.
  * @return True if the node terminates upward expression traversal.
  */
-static bool IsExpressionBoundaryType(std::string_view pType)
+static bool IsExpressionBoundaryType(std::string_view pType) noexcept
 {
-    return pType == "script" || pType == "statement_block" || pType == "expression_statement" ||
-           pType == "variable_declaration" || pType == "assignment_expression" || pType == "return_statement";
+    static constexpr std::string_view k_boundaries[] = {"script",
+                                                        "statement_block",
+                                                        "expression_statement",
+                                                        "variable_declaration",
+                                                        "assignment_expression",
+                                                        "return_statement",
+                                                        "binary_expression",
+                                                        "unary_expression",
+                                                        "ternary_expression",
+                                                        "parenthesized_expression",
+                                                        "argument_list",
+                                                        "if_statement",
+                                                        "while_statement",
+                                                        "for_statement",
+                                                        "switch_statement",
+                                                        "ERROR"};
+    return std::any_of(std::begin(k_boundaries), std::end(k_boundaries),
+                       [pType](std::string_view b) noexcept { return pType == b; });
 }
 
 static TSNode FindReceiverPrecedingDot(TSNode rootNode, std::string_view sourceCode, size_t dotByteOffset)
@@ -1662,9 +1683,24 @@ static std::string ResolveNamedReceiverType(std::string_view nodeText, const Com
     if (innermostScope)
     {
         const analysis::LocalDefinition* def = analysis::ResolveInScope(innermostScope, nodeText);
-        if (def && !def->typeName.empty())
+        if (def)
         {
-            return def->typeName;
+            if (!def->typeName.empty() && analysis::CleanBaseType(def->typeName) != "auto")
+            {
+                return def->typeName;
+            }
+            analysis::ExpressionTypeContext exprCtx(innermostScope, request.symbolTable, request.sourceCode,
+                                                    request.uri,
+                                                    request.tree ? ts_tree_root_node(request.tree) : TSNode{});
+            std::string deduced = analysis::ResolveLocalDefinitionType(*def, exprCtx);
+            if (!deduced.empty())
+            {
+                return deduced;
+            }
+            if (!def->typeName.empty())
+            {
+                return def->typeName;
+            }
         }
     }
     if (auto syms = request.symbolTable.FindSymbolsPtr(nodeText))

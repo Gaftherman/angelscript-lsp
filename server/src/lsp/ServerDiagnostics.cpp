@@ -423,7 +423,9 @@ Server::ToProtocolDiagnostics(const std::string& text,
 
 void Server::PublishInactiveRegions(const std::string& uriStr, const std::string& text)
 {
-    const auto excluded = ExcludedLineRanges(text);
+    const auto rawTextOpt = m_documentStore.GetText(uriStr);
+    const std::string& effectiveText = rawTextOpt ? *rawTextOpt : text;
+    const auto excluded = ExcludedLineRanges(effectiveText);
 
     lsp::json::Array regions;
     for (const auto& range : excluded)
@@ -521,11 +523,14 @@ void Server::PublishDiagnostics(const PublishDiagnosticsRequest& request)
     const std::string outgoingUri = m_documentStore.GetClientUri(request.uriStr);
     params.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
 
-    params.diagnostics = ToProtocolDiagnostics(request.text, request.diagnostics);
+    const auto rawTextOpt = m_documentStore.GetText(request.uriStr);
+    const std::string& effectiveText = rawTextOpt ? *rawTextOpt : request.text;
+
+    params.diagnostics = ToProtocolDiagnostics(effectiveText, request.diagnostics);
 
     if (m_documentStore.IsOpen(request.uriStr))
     {
-        PublishInactiveRegions(request.uriStr, request.text);
+        PublishInactiveRegions(request.uriStr, effectiveText);
     }
 
     CacheDiagnosticsSnapshot(request, params.diagnostics);

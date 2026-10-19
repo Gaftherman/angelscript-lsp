@@ -135,6 +135,7 @@ Server::ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& de
 
     ModuleView view;
     view.name = definition.name;
+    view.isImplicitEntryPoint = definition.isImplicitEntryPoint;
 
     if (!definition.folder.empty() && !PopulateModuleFolderMembers(definition.folder, view, workspaceFiles))
     {
@@ -248,6 +249,7 @@ void Server::BuildModuleIndex()
             config::ServerConfig::ModuleDefinition entryDef;
             entryDef.name = "default";
             entryDef.entry = m_config.moduleEntryPoint;
+            entryDef.isImplicitEntryPoint = true;
             allDefs.push_back(std::move(entryDef));
         }
     }
@@ -408,6 +410,11 @@ void Server::AnalyzeConfiguredModules()
 
     for (const auto& view : m_modules)
     {
+        if (view.isImplicitEntryPoint)
+        {
+            continue;
+        }
+
         for (const auto& path : view.memberPaths)
         {
             const std::string uriStr = UriFromPath(path);
@@ -810,18 +817,19 @@ void Server::IndexClosureFile(const std::string& path, angel_lsp::parser::AngelS
         return;
 
     const std::string uriStr = UriFromPath(path);
+    const std::string analysisText = AnalysisTextFor(uriStr, content);
 
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(content));
+    document::TreePtr tree = document::MakeTreePtr(parser.Parse(analysisText));
 
-    ReplaceSymbolsFromTree(uriStr, content, tree.get());
+    ReplaceSymbolsFromTree(uriStr, analysisText, tree.get());
 
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
     if (tree)
     {
-        m_scopeIndex.SetScopeTree(uriStr,
-                                  m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree.get()), content));
-        m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree.get()), content));
+        m_scopeIndex.SetScopeTree(
+            uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree.get()), analysisText));
+        m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree.get()), analysisText));
     }
 
     {

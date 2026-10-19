@@ -1,6 +1,7 @@
 #pragma once
 
 #include "parser/ASTUtils.h"
+#include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
 #include <cstdint>
 #include <stdexcept>
@@ -130,6 +131,165 @@ struct GlobalScopeQualifier
     const uint32_t namedCount = ts_node_named_child_count(target);
     res.isDirectRoot = (namedCount == 1);
     return res;
+}
+
+/**
+ * @brief Checks if an expression node is a handle assignment target (e.g. '@target = ...').
+ * @param[in] target Target AST node to test.
+ * @return True if target is a unary expression whose operator is '@'.
+ */
+[[nodiscard]] inline bool IsHandleAssignmentTarget(TSNode target) noexcept
+{
+    if (ts_node_is_null(target) || std::string_view(ts_node_type(target)) != "unary_expression")
+    {
+        return false;
+    }
+    const TSNode prefix = parser::GetChildByField(target, parser::fields::Operator);
+    return !ts_node_is_null(prefix) && std::string_view(ts_node_type(prefix)) == "@";
+}
+
+/**
+ * @brief Finds the initializer value node for a variable declarator.
+ * @param[in] declaratorNode Variable declarator syntax node.
+ * @param[in] sourceCode Document source text.
+ * @return Value expression node, or a null node if none found.
+ */
+[[nodiscard]] inline TSNode FindDeclaratorValueNode(TSNode declaratorNode, std::string_view sourceCode) noexcept
+{
+    if (ts_node_is_null(declaratorNode))
+    {
+        return {};
+    }
+    TSNode valueNode = parser::GetChildByField(declaratorNode, parser::fields::Value);
+    if (!ts_node_is_null(valueNode))
+    {
+        return valueNode;
+    }
+
+    const uint32_t childCount = ts_node_child_count(declaratorNode);
+    bool foundEq = false;
+    for (uint32_t c = 0; c < childCount; ++c)
+    {
+        TSNode ch = ts_node_child(declaratorNode, c);
+        if (foundEq)
+        {
+            return ch;
+        }
+        if (parser::NodeText(ch, sourceCode) == "=")
+        {
+            foundEq = true;
+        }
+    }
+    return {};
+}
+
+/**
+ * @brief Summary of active braces and unmatched positions across a source file.
+ */
+struct BraceBalance
+{
+    int openBraces = 0;
+    int closeBraces = 0;
+    int firstUnmatchedCloseLine = -1;
+    uint32_t firstUnmatchedCloseByte = UINT32_MAX;
+
+    [[nodiscard]] bool HasMissingOpenBrace() const noexcept
+    {
+        return openBraces < closeBraces;
+    }
+};
+
+inline void SkipComment(std::string_view sourceCode, size_t& i, int& currentLine) noexcept
+{
+    const size_t len = sourceCode.size();
+    if (sourceCode[i + 1] == '/')
+    {
+        i += 2;
+        while (i < len && sourceCode[i] != '\n')
+            ++i;
+    }
+    else if (sourceCode[i + 1] == '*')
+    {
+        i += 2;
+        while (i + 1 < len && !(sourceCode[i] == '*' && sourceCode[i + 1] == '/'))
+        {
+            if (sourceCode[i] == '\n')
+                ++currentLine;
+            ++i;
+        }
+        i = (i + 1 < len) ? (i + 2) : len;
+    }
+}
+
+inline void SkipLiteral(std::string_view sourceCode, size_t& i, int& currentLine) noexcept
+{
+    const size_t len = sourceCode.size();
+    const char quote = sourceCode[i++];
+    while (i < len && sourceCode[i] != quote)
+    {
+        if (sourceCode[i] == '\\' && i + 1 < len)
+        {
+            i += 2;
+            continue;
+        }
+        if (sourceCode[i] == '\n')
+            ++currentLine;
+        ++i;
+    }
+    if (i < len)
+        ++i;
+}
+
+/**
+ * @brief Fast single-pass calculation of brace balance outside comments and literals.
+ * @param[in] sourceCode Document source text.
+ * @return Computed BraceBalance metrics.
+ */
+[[nodiscard]] inline BraceBalance ComputeBraceBalance(std::string_view sourceCode) noexcept
+{
+    BraceBalance balance;
+    int currentDepth = 0;
+    int currentLine = 0;
+    const size_t len = sourceCode.size();
+    size_t i = 0;
+
+    while (i < len)
+    {
+        const char c = sourceCode[i];
+        if (c == '\n')
+        {
+            ++currentLine;
+            ++i;
+            continue;
+        }
+        if (c == '/' && i + 1 < len && (sourceCode[i + 1] == '/' || sourceCode[i + 1] == '*'))
+        {
+            SkipComment(sourceCode, i, currentLine);
+            continue;
+        }
+        if (c == '"' || c == '\'')
+        {
+            SkipLiteral(sourceCode, i, currentLine);
+            continue;
+        }
+        if (c == '{')
+        {
+            ++balance.openBraces;
+            ++currentDepth;
+        }
+        else if (c == '}')
+        {
+            ++balance.closeBraces;
+            --currentDepth;
+            if (currentDepth < 0 && balance.firstUnmatchedCloseLine == -1)
+            {
+                balance.firstUnmatchedCloseLine = currentLine;
+                balance.firstUnmatchedCloseByte = static_cast<uint32_t>(i);
+            }
+        }
+        ++i;
+    }
+    return balance;
 }
 
 /**

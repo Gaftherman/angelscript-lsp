@@ -1668,3 +1668,99 @@ TEST_CASE("Hover - Global ::Deploy inside namespace and mixin strictly targets r
     CHECK(val2.find(clsName) == std::string::npos);
     CHECK(val2.find("void " + methodName + "()") != std::string::npos);
 }
+
+TEST_CASE("Hover - auto@ deduced from this[0] shows deduced handle type")
+{
+    const std::string entClass = test::GenerateRandomSymbolName("BaseEnt");
+    const std::string listClass = test::GenerateRandomSymbolName("EntList");
+    const std::string varName = test::GenerateRandomSymbolName("monster");
+    const std::string code = "class " + entClass +
+                             " {}\n"
+                             "class " +
+                             listClass +
+                             " {\n"
+                             "    " +
+                             entClass +
+                             "@ opIndex(int idx) { return null; }\n"
+                             "    void Update() {\n"
+                             "        auto@ " +
+                             varName +
+                             " = this[0];\n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const size_t pos = code.find(varName);
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < pos; ++i)
+    {
+        if (code[i] == '\n')
+        {
+            ++line;
+            lineStart = i + 1;
+        }
+    }
+    auto hover = env.HoverAt(line, static_cast<uint32_t>(pos - lineStart));
+    REQUIRE(hover.has_value());
+    const std::string val = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(val.find(entClass) != std::string::npos);
+}
+
+TEST_CASE("Hover - auto and auto@ tokens show deduced type card")
+{
+    const std::string entClass = test::GenerateRandomSymbolName("CBasePlayer");
+    const std::string varName = test::GenerateRandomSymbolName("plr");
+    const std::string code = "class " + entClass +
+                             " {}\n"
+                             "void Main(" +
+                             entClass +
+                             "@ player) {\n"
+                             "    auto@ " +
+                             varName +
+                             " = player;\n"
+                             "    auto count = 42;\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // 1. Hover on 'auto@'
+    {
+        const size_t pos = code.find("auto@");
+        uint32_t line = 0;
+        size_t lineStart = 0;
+        for (size_t i = 0; i < pos; ++i)
+        {
+            if (code[i] == '\n')
+            {
+                ++line;
+                lineStart = i + 1;
+            }
+        }
+        auto hover = env.HoverAt(line, static_cast<uint32_t>(pos - lineStart));
+        REQUIRE(hover.has_value());
+        const std::string val = std::get<lsp::MarkupContent>(hover->contents).value;
+        CHECK(val.find("auto@: " + entClass + "@") != std::string::npos);
+        CHECK(val.find("(primitive type)") == std::string::npos);
+    }
+
+    // 2. Hover on 'auto'
+    {
+        const size_t pos = code.find("auto count");
+        uint32_t line = 0;
+        size_t lineStart = 0;
+        for (size_t i = 0; i < pos; ++i)
+        {
+            if (code[i] == '\n')
+            {
+                ++line;
+                lineStart = i + 1;
+            }
+        }
+        auto hover = env.HoverAt(line, static_cast<uint32_t>(pos - lineStart));
+        REQUIRE(hover.has_value());
+        const std::string val = std::get<lsp::MarkupContent>(hover->contents).value;
+        CHECK(val.find("auto: int") != std::string::npos);
+        CHECK(val.find("(primitive type)") == std::string::npos);
+    }
+}

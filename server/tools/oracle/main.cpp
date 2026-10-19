@@ -46,6 +46,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -349,6 +350,7 @@ int main(int argc, char **argv)
     // only one of those two answers was reachable.
     std::vector<std::string> defines;
     bool acceptPragmas = false;
+    std::string loadConfigPath;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -364,6 +366,14 @@ int main(int argc, char **argv)
             else if (std::strcmp(argv[i], "--json") == 0)
             {
                 asJson = true;
+            }
+            else if (std::strncmp(argv[i], "--load-config=", 14) == 0)
+            {
+                loadConfigPath = argv[i] + 14;
+            }
+            else if (std::strcmp(argv[i], "--load-config") == 0 && i + 1 < argc)
+            {
+                loadConfigPath = argv[++i];
             }
             else if (std::strncmp(argv[i], "--property-accessor-mode=", 25) == 0)
             {
@@ -654,28 +664,49 @@ int main(int argc, char **argv)
                                   static_cast<asPWORD>(heredocTrimMode));
     }
 
-    // Order matters: the dictionary needs `string` and `array<string>` to already exist, and the
-    // grid and any add-ons assume the array is registered. This mirrors the order the SDK's own
-    // samples use.
-    RegisterStdString(engine);
-    RegisterScriptArray(engine, true);
-    RegisterStdStringUtils(engine);
-    RegisterScriptDictionary(engine);
-    RegisterScriptHandle(engine);
-    RegisterScriptWeakRef(engine);
-    RegisterScriptAny(engine);
-    RegisterScriptGrid(engine);
-    RegisterScriptMath(engine);
-    RegisterScriptMathComplex(engine);
-    RegisterScriptDateTime(engine);
-    RegisterScriptFile(engine);
-    RegisterScriptFileSystem(engine);
-    RegisterExceptionRoutines(engine);
+    if (!loadConfigPath.empty())
+    {
+        std::ifstream cfgFile(loadConfigPath);
+        if (!cfgFile.is_open())
+        {
+            std::fprintf(stderr, "angelscript_oracle: could not open config file '%s'\n", loadConfigPath.c_str());
+            engine->ShutDownAndRelease();
+            return 2;
+        }
+        RegisterStdString(engine);
+        int cfgRes = ConfigEngineFromStream(engine, cfgFile, loadConfigPath.c_str());
+        if (cfgRes < 0)
+        {
+            std::fprintf(stderr, "angelscript_oracle: failed to load config from '%s'\n", loadConfigPath.c_str());
+            engine->ShutDownAndRelease();
+            return 1;
+        }
+    }
+    else
+    {
+        // Order matters: the dictionary needs `string` and `array<string>` to already exist, and the
+        // grid and any add-ons assume the array is registered. This mirrors the order the SDK's own
+        // samples use.
+        RegisterStdString(engine);
+        RegisterScriptArray(engine, true);
+        RegisterStdStringUtils(engine);
+        RegisterScriptDictionary(engine);
+        RegisterScriptHandle(engine);
+        RegisterScriptWeakRef(engine);
+        RegisterScriptAny(engine);
+        RegisterScriptGrid(engine);
+        RegisterScriptMath(engine);
+        RegisterScriptMathComplex(engine);
+        RegisterScriptDateTime(engine);
+        RegisterScriptFile(engine);
+        RegisterScriptFileSystem(engine);
+        RegisterExceptionRoutines(engine);
 
-    engine->RegisterGlobalFunction("void print(const string &in line)",
-                                   asFUNCTION(ScriptPrint), asCALL_CDECL);
-    engine->RegisterGlobalFunction("void println(const string &in line)",
-                                   asFUNCTION(ScriptPrintLine), asCALL_CDECL);
+        engine->RegisterGlobalFunction("void print(const string &in line)",
+                                       asFUNCTION(ScriptPrint), asCALL_CDECL);
+        engine->RegisterGlobalFunction("void println(const string &in line)",
+                                       asFUNCTION(ScriptPrintLine), asCALL_CDECL);
+    }
 
     // Here, and not later: the registration table is complete the moment the add-ons are in, and
     // nothing a module does adds to it. Dumping before CScriptBuilder runs also means a dump never

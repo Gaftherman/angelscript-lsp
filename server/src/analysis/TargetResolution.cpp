@@ -238,9 +238,23 @@ std::string ResolveExplicitReceiverType(const std::string& objText, const Resolv
             const uint32_t cursorByte =
                 ts_node_is_null(request.outNode) ? UINT32_MAX : ts_node_start_byte(request.outNode);
             const analysis::LocalDefinition* objDef = analysis::ResolveInScopeAt(scope, objText, cursorByte);
-            if (objDef && !objDef->typeName.empty())
+            if (objDef)
             {
-                return analysis::CleanBaseType(objDef->typeName);
+                if (!objDef->typeName.empty() && analysis::CleanBaseType(objDef->typeName) != "auto")
+                {
+                    return analysis::CleanBaseType(objDef->typeName);
+                }
+                analysis::ExpressionTypeContext exprCtx(scope, request.symbolTable, request.sourceCode, request.uri,
+                                                        request.tree ? ts_tree_root_node(request.tree) : TSNode{});
+                std::string deduced = analysis::ResolveLocalDefinitionType(*objDef, exprCtx);
+                if (!deduced.empty())
+                {
+                    return analysis::CleanBaseType(deduced);
+                }
+                if (!objDef->typeName.empty())
+                {
+                    return analysis::CleanBaseType(objDef->typeName);
+                }
             }
         }
     }

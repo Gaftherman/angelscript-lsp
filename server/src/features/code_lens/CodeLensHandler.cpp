@@ -655,6 +655,11 @@ bool QualifierMatchesEnumContainer(std::string_view q, std::string_view targetEn
 bool IsValidEnumMemberAccess(const std::string& fileUri, const analysis::LocalReference& ref,
                              const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
 {
+    if (ref.isScopedIdentifier && !ref.scopeQualifier.empty())
+    {
+        return QualifierMatchesEnumContainer(ref.scopeQualifier, criteria.targetEnumContainer,
+                                             criteria.targetNamespace);
+    }
     if (fileUri == criteria.request.uri)
     {
         std::string q = GetMemberObjectText(criteria.request, ref);
@@ -669,7 +674,8 @@ bool IsValidEnumMemberAccess(const std::string& fileUri, const analysis::LocalRe
         {
             if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
             {
-                if (QualifierMatchesEnumContainer(candRef.name, criteria.targetEnumContainer, criteria.targetNamespace))
+                if (candRef.name == criteria.targetEnumContainer ||
+                    analysis::EndsWithScopedSuffix(criteria.targetEnumContainer, candRef.name))
                 {
                     return true;
                 }
@@ -1138,6 +1144,15 @@ const analysis::Symbol& SelectPrimarySymbol(const std::vector<analysis::Symbol>&
     {
         if (s.type == analysis::SymbolType::Variable &&
             std::holds_alternative<analysis::VariableSignature>(s.signature) && s.GetVariable().isEnumConstant &&
+            s.containerKind == analysis::ContainerKind::Enum)
+        {
+            return s;
+        }
+    }
+    for (const auto& s : symGroup)
+    {
+        if (s.type == analysis::SymbolType::Variable &&
+            std::holds_alternative<analysis::VariableSignature>(s.signature) && s.GetVariable().isEnumConstant &&
             !s.containerName.empty())
         {
             return s;
@@ -1547,7 +1562,7 @@ SymbolLensTarget CreateFunctionOrVariableTarget(const RangeKey& key, const analy
         isEnumConstant = var.isEnumConstant;
         if (isEnumConstant)
         {
-            targetEnumContainer = sym.containerName;
+            targetEnumContainer = !var.typeName.empty() ? var.typeName : sym.containerName;
         }
     }
 
@@ -1557,10 +1572,10 @@ SymbolLensTarget CreateFunctionOrVariableTarget(const RangeKey& key, const analy
     std::string targetNamespace;
     if (isEnumConstant)
     {
-        auto sepPos = sym.containerName.rfind("::");
+        auto sepPos = targetEnumContainer.rfind("::");
         if (sepPos != std::string::npos)
         {
-            targetNamespace = sym.containerName.substr(0, sepPos);
+            targetNamespace = targetEnumContainer.substr(0, sepPos);
         }
     }
     else if (!sym.containerName.empty() && !IsContainerClass(sym.containerName, ctx.symbolTable))

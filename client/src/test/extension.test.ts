@@ -401,6 +401,26 @@ suite('inlayHints settings in buildServerArgs', () => {
         const argsOff = await withSetting('inlayHints.omittedDefaultArguments', 'off', buildServerArgs);
         assert.ok(argsOff.includes('--inlay-hints-omitted-defaults=off'), `expected --inlay-hints-omitted-defaults=off, got ${JSON.stringify(argsOff)}`);
     });
+
+    test('parameters == false emits --disable-inlay-hints-parameters flag', async () => {
+        const args = await withSetting('inlayHints.parameters', false, buildServerArgs);
+        assert.ok(args.includes('--disable-inlay-hints-parameters'), `expected --disable-inlay-hints-parameters in ${JSON.stringify(args)}`);
+    });
+
+    test('parameters == true does not emit --disable-inlay-hints-parameters flag', async () => {
+        const args = await withSetting('inlayHints.parameters', true, buildServerArgs);
+        assert.ok(!args.includes('--disable-inlay-hints-parameters'), `unexpected --disable-inlay-hints-parameters in ${JSON.stringify(args)}`);
+    });
+
+    test('variableTypes == false emits --disable-inlay-hints-variable-types flag', async () => {
+        const args = await withSetting('inlayHints.variableTypes', false, buildServerArgs);
+        assert.ok(args.includes('--disable-inlay-hints-variable-types'), `expected --disable-inlay-hints-variable-types in ${JSON.stringify(args)}`);
+    });
+
+    test('variableTypes == true does not emit --disable-inlay-hints-variable-types flag', async () => {
+        const args = await withSetting('inlayHints.variableTypes', true, buildServerArgs);
+        assert.ok(!args.includes('--disable-inlay-hints-variable-types'), `unexpected --disable-inlay-hints-variable-types in ${JSON.stringify(args)}`);
+    });
 });
 
 suite('portableStubPath', () => {

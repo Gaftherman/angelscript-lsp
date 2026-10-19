@@ -731,3 +731,50 @@ TEST_CASE("Preprocessor - A single-quoted include path is a quoted one")
     CHECK(ScanPreprocessor("#include \'helper.as\'\nvoid main() { }\n").unsupported.empty());
     CHECK(ScanPreprocessor("#include \'pcp_misc/misc\'\n").unsupported.empty());
 }
+
+TEST_CASE("Preprocessor - BlankExcludedLines blanks excluded ranges with spaces and preserves newlines")
+{
+    const std::string source = "#if FALSE\n"
+                               "int deadVar = 42;\n"
+                               "#endif\n"
+                               "int liveVar = 100;\n";
+
+    const auto ranges = FindExcludedLineRanges(source);
+    REQUIRE(ranges.size() == 1);
+    CHECK(ranges[0].startLine == 0);
+    CHECK(ranges[0].endLine == 2);
+
+    const std::string blanked = BlankExcludedLines(source, ranges);
+    CHECK(blanked.size() == source.size());
+
+    // Lines 0, 1, 2 should contain only spaces
+    for (size_t i = 0; i < blanked.find("int liveVar"); ++i)
+    {
+        char c = blanked[i];
+        CHECK((c == ' ' || c == '\n' || c == '\r'));
+    }
+
+    // Line 3 must be untouched
+    CHECK(blanked.find("int liveVar = 100;\n") != std::string::npos);
+}
+
+TEST_CASE("Preprocessor - BlankExcludedLines empty ranges returns exact string")
+{
+    const std::string source = "void main() { int a = 1; }\n";
+    CHECK(BlankExcludedLines(source, {}) == source);
+}
+
+TEST_CASE("Preprocessor - BlankExcludedLines preserves byte offsets under CRLF")
+{
+    const std::string source = "#if FALSE\r\n"
+                               "int x = 1;\r\n"
+                               "#endif\r\n"
+                               "int y = 2;\r\n";
+
+    const auto ranges = FindExcludedLineRanges(source);
+    REQUIRE(ranges.size() == 1);
+
+    const std::string blanked = BlankExcludedLines(source, ranges);
+    CHECK(blanked.size() == source.size());
+    CHECK(blanked.find("int y = 2;\r\n") == source.find("int y = 2;\r\n"));
+}

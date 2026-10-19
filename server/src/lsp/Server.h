@@ -505,6 +505,9 @@ class Server
 
         /** @brief The subset reached from the entry point, which a folder does not claim. */
         ankerl::unordered_dense::set<std::string> closurePaths;
+
+        /** @brief True if module was implicitly created from moduleEntryPoint. */
+        bool isImplicitEntryPoint = false;
     };
 
     /**
@@ -2160,6 +2163,13 @@ class Server
      * @param[in] totalTimer High-resolution timer tracking total analysis time.
      */
     void AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
+
+    /**
+     * @brief Commits syntax-only diagnostics when stubs or rules are still indexing.
+     * @param[in] req Analysis request bundle.
+     * @param[in] diags Syntax diagnostics to commit.
+     */
+    void CommitSyntaxOnlyResults(const AnalyzeDocumentRequest& req, std::vector<analysis::Diagnostic> diags);
 
     /**
      * @brief Checks if a closed document's interface hash is identical to its indexed symbols.

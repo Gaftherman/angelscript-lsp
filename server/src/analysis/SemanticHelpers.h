@@ -820,8 +820,11 @@ struct ExpressionTypeContext
     ExpressionTypeCache* cache = nullptr;
     const NodeIndex* nodeIndex = nullptr;
 
-    ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "")
-        : scope(sc), symbolTable(st), sourceCode(src), uri(u)
+    TSNode rootNode = {};
+
+    ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "",
+                          TSNode root = {})
+        : scope(sc), symbolTable(st), sourceCode(src), uri(u), rootNode(root)
     {
     }
 
@@ -830,7 +833,8 @@ struct ExpressionTypeContext
           uri(diagCtx.request.fileUri), stringTypeName(diagCtx.request.GetEffectiveStringTypeName()),
           arrayTypeName(diagCtx.request.GetEffectiveArrayTypeName()),
           disableIntegerDivision(diagCtx.request.DisablesIntegerDivision()), cache(diagCtx.request.exprCache),
-          nodeIndex(diagCtx.request.nodeIndex)
+          nodeIndex(diagCtx.request.nodeIndex),
+          rootNode(diagCtx.request.tree ? ts_tree_root_node(diagCtx.request.tree) : TSNode{})
     {
     }
 };
@@ -965,6 +969,15 @@ inline std::string ResolveExpressionType(TSNode exprNode, const Scope* scope, co
 {
     return ResolveExpressionType(exprNode, ExpressionTypeContext{scope, symbolTable, sourceCode, ""}, 0);
 }
+
+/**
+ * @brief Resolves the effective type of a local definition, deducing auto/auto@ types on demand.
+ * @param[in] def Local definition in scope.
+ * @param[in] ctx Expression type resolution context.
+ * @param[in] depth AST recursion depth guard.
+ * @return Resolved type name with handle modifiers preserved, or empty string.
+ */
+std::string ResolveLocalDefinitionType(const LocalDefinition& def, const ExpressionTypeContext& ctx, int depth = 0);
 
 /**
  * @brief Resolves the type name of a receiver object node in member or call expressions.

@@ -257,6 +257,17 @@ static void FilterSuppressedDiagnostics(std::vector<Diagnostic>& diagnostics, co
                           [&](const Diagnostic& d) { return suppressions.IsSuppressed(d.code, d.range.start.line); });
         }
     }
+
+    if (request.tree && ts_node_has_error(ts_tree_root_node(request.tree)) && !request.sourceCode.empty())
+    {
+        const auto braceBalance = ComputeBraceBalance(request.sourceCode);
+        if (braceBalance.HasMissingOpenBrace() && braceBalance.firstUnmatchedCloseLine >= 0)
+        {
+            const int cutoffLine = braceBalance.firstUnmatchedCloseLine;
+            std::erase_if(diagnostics, [cutoffLine](const Diagnostic& d)
+                          { return static_cast<int>(d.range.start.line) > cutoffLine && d.code != "as-syntax-error"; });
+        }
+    }
 }
 
 struct AnalysisContextGuards
@@ -508,16 +519,6 @@ static void CheckDialectNamedArguments(const NodeIndex& nodeIndex, DiagnosticCon
             }
         }
     }
-}
-
-static bool IsHandleAssignmentTarget(TSNode target)
-{
-    if (std::string_view(ts_node_type(target)) != "unary_expression")
-    {
-        return false;
-    }
-    const TSNode prefix = parser::GetChildByField(target, parser::fields::Operator);
-    return !ts_node_is_null(prefix) && std::string_view(ts_node_type(prefix)) == "@";
 }
 
 static bool IsSymbolTableClass(const SymbolTable& table, const std::string& typeName)

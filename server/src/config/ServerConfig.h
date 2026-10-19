@@ -59,6 +59,8 @@ struct FeatureFlags
     bool enableVirtualMixinDocuments = false;
     bool inlayHintsEnableTooltip = true;
     bool inlayHintsEnableLocation = true;
+    bool inlayHintsParameters = true;
+    bool inlayHintsVariableTypes = true;
     bool completionCompleteFunctionParens = true;
     /** @brief Automatically prefix enum name when completing enum values (e.g. 'Enum::Value'). */
     bool completionQualifyEnumValues = true;
@@ -796,6 +798,11 @@ struct ServerConfig
          * fourth case: the folder decides who is in, the entry decides where analysis starts.
          */
         std::string folder = {};
+
+        /**
+         * @brief True if module was implicitly created from moduleEntryPoint rather than explicit user config.
+         */
+        bool isImplicitEntryPoint = false;
     };
 
     /**

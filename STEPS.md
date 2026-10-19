@@ -1715,6 +1715,58 @@ Settings declared in package.json but not passed to the server:
 - **Total de Pruebas Unitarias**: `2,433 / 2,433` pasadas (`34,426` aserciones, `0` fallos, `30` omitidas).
 - **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.11%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
 
+---
+
+## 36. Fase 35: Corrección de Diagnósticos, Deducción `auto@` / `opIndex`, Resolución de Enums Scoped, Autocompletado, Rendimiento de Inicio y Recuperación de `{` (1.1.3-exp.1)
+
+### 36.1. Diagnóstico Forense y Causas Raíz
+1. **Sincronización Inmediata de Errores de Sintaxis vs Inlay Hints**:
+   - Durante la sincronización de documentos (`TextDocumentSyncHandlers.cpp`), cuando los stubs o reglas predefinidas se estaban indexando, el análisis se bloqueaba o difería, causando que los errores sintácticos (`self..pev.origin`) no se marcaran de inmediato mientras los Inlay Hints continuaban respondiendo.
+2. **Asignación `null` a Handles sin `@` (`self.pev.owner = null;`)**:
+   - En AngelScript (confirmado con el oráculo 2.38), `lhs = null;` sin `@` es una asignación por valor (`opAssign`). Sin `@`, el handle se desreferencia implícitamente a `T&`, lo cual es inválido a menos que la clase implemente `opAssign(cls@)`. En `TypeConversionChecker.cpp`, se omitía la comprobación de `IsHandleAssignmentTarget(left)`.
+3. **Deducción de Tipos `auto@` con Indexación `this[0]` (`opIndex`)**:
+   - `this_expression` se resolvía de forma diferente a los identificadores `this`.
+   - `LocalDefinition` en `ScopeTree.h` no retenía las coordenadas en bytes de la inicialización, reseteándose a `"auto@"` genérico durante `ComputeAndCacheSemanticTokens`.
+   - Hover, Autocompletion y Target Resolution no resolvían dinámicamente el tipo deducido del inicializador cuando el tipo era `auto` / `auto@`.
+4. **Falsa Alarma `E121` en `return Version::Undefined;` y CodeLens en Enums**:
+   - `ResolveScopedIdentifierExpr` no resolvía identificadores cualificados en scopes léxicos anidados (`meta_api::json`), cayendo al identificador global `Undefined` (`DynamicEquipmentType`).
+   - CodeLens seleccionaba el contenedor namespace en vez del enum y no aislaba el conteo de referencias mediante `scopeQualifier`.
+5. **Fallo de Autocompletado tras `.` en Comparaciones Binarias**:
+   - En `if(monster.pev.flags == monster.| )`, Tree-Sitter englobaba la expresión binaria en un nodo `ERROR`, y `FindReceiverFromParentAtDot` tomaba toda la expresión binaria evaluándola como `bool` en lugar de aislar el identificador `monster`.
+6. **Saturación de CPU y Tormenta de Errores en Arranque**:
+   - Puntos de entrada de módulos sintéticos provocaban que `AnalyzeConfiguredModules()` analizara en segundo plano más de 116 archivos cerrados en cada arranque o reinicio, saturando la cola de análisis y emitiendo falsos `W108` / `E002`.
+7. **Cascada de 30+ Errores al Faltar `{` de Apertura**:
+   - La eliminación de `{` tras `if (...)` causaba que `}` cerrara la función prematuramente, desbordando sentencias al ámbito de la clase y generando múltiples errores falsos de análisis.
+
+### 36.2. Implementación de la Solución
+1. **Publicación Temprana de Diagnósticos de Sintaxis**:
+   - En `TextDocumentSyncHandlers.cpp` y `ServerAnalysis.cpp`, se agregó `CommitSyntaxOnlyResults` para publicar errores de sintaxis de inmediato durante la indexación inicial de stubs.
+2. **Validación Estricta de Asignación de Handles**:
+   - En `server/src/analysis/ASTUtils.h`, se agregó `IsHandleAssignmentTarget(TSNode)`.
+   - En `TypeConversionChecker.cpp`, se exige `@` para asignaciones `null` a handles salvo presencia de sobrecarga `opAssign`.
+3. **Deducción de `auto` / `auto@` en Demanda**:
+   - En `ScopeTree.h` y `LocalScopeCollector.cpp`, se registran `startByte` y `endByte`.
+   - En `SemanticHelpers.h` / `SemanticHelpers.cpp`, se implementó `ResolveLocalDefinitionType` con guarda de ciclo `ActiveLocalDefGuard`.
+   - Integrado en `HoverHandler.cpp`, `CompletionHandler.cpp` y `TargetResolution.cpp`.
+4. **Desambiguación de Enums y Aislamiento en CodeLens**:
+   - En `SemanticHelpers.cpp`, búsqueda scoped en `FindSymbolsInScope`.
+   - En `CodeLensHandler.cpp`, preferencia por `ContainerKind::Enum` y filtrado estricto por `targetEnumContainer` contra `ref.scopeQualifier`.
+5. **Autocompletado Robusto en Expresiones Binarias**:
+   - En `CompletionHandler.cpp`, delimitación precisa con `k_boundaries` y extracción correcta del receptor en `FindReceiverFromParentAtDot`.
+6. **Optimización de Inicio y Entrada Implícita**:
+   - En `ServerConfig.h` y `ServerModules.cpp`, puntos de entrada sintéticos marcados con `isImplicitEntryPoint = true;` y omitidos en el análisis en lote.
+   - En `WorkspaceScanHandlers.cpp`, señalización inmediata de `SetPredefinedReady(true)`.
+7. **Supresión de Cascada de Errores por Desbalance de Llaves**:
+   - En `ASTUtils.h`, función `ComputeBraceBalance` insensible a comentarios y cadenas.
+   - En `SymbolCollector.cpp`, acotamiento de errores mediante `HandleParseErrorNode`.
+   - En `SemanticAnalyzer.cpp`, `FilterSuppressedDiagnostics` suprime diagnósticos semánticos derivados aguas abajo.
+
+### 36.3. Métricas Finales de Fase 35 (1.1.3-exp.1)
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,433 / 2,433` pasadas (`34,426` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.11%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
+
+
 
 
 

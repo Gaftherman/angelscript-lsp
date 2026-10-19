@@ -1,6 +1,7 @@
 #include "utils/PreprocessorRegions.h"
 #include "utils/Utils.h"
 
+#include <algorithm>
 #include <cctype>
 #include <optional>
 #include <utility>
@@ -561,5 +562,57 @@ bool IsLineExcluded(const std::vector<ExcludedLineRange>& ranges, uint32_t line)
             return true;
     }
     return false;
+}
+
+std::string BlankExcludedLines(std::string_view sourceCode, const std::vector<ExcludedLineRange>& ranges)
+{
+    if (ranges.empty() || sourceCode.empty())
+    {
+        return std::string(sourceCode);
+    }
+
+    std::vector<ExcludedLineRange> sortedRanges = ranges;
+    std::sort(sortedRanges.begin(), sortedRanges.end(),
+              [](const ExcludedLineRange& a, const ExcludedLineRange& b) { return a.startLine < b.startLine; });
+
+    std::string result(sourceCode);
+    uint32_t currentLine = 0;
+    size_t rangeIdx = 0;
+    const size_t numRanges = sortedRanges.size();
+    const size_t len = result.size();
+
+    for (size_t i = 0; i < len; ++i)
+    {
+        const char c = result[i];
+        if (c == '\r')
+        {
+            if (i + 1 < len && result[i + 1] == '\n')
+            {
+                ++i;
+            }
+            ++currentLine;
+            while (rangeIdx < numRanges && sortedRanges[rangeIdx].endLine < currentLine)
+            {
+                ++rangeIdx;
+            }
+            continue;
+        }
+        if (c == '\n')
+        {
+            ++currentLine;
+            while (rangeIdx < numRanges && sortedRanges[rangeIdx].endLine < currentLine)
+            {
+                ++rangeIdx;
+            }
+            continue;
+        }
+
+        if (rangeIdx < numRanges && currentLine >= sortedRanges[rangeIdx].startLine &&
+            currentLine <= sortedRanges[rangeIdx].endLine)
+        {
+            result[i] = ' ';
+        }
+    }
+    return result;
 }
 } // namespace angel_lsp::utils
