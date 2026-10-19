@@ -1,3 +1,4 @@
+#include "analysis/EngineConfigConverter.h"
 #include "analysis/EngineProfiles.h"
 #include "lsp/Server.h"
 #include "utils/IncludeResolver.h"
@@ -492,6 +493,13 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
         return;
     }
     std::string content = std::move(*contentOpt);
+    if (angel_lsp::analysis::IsOfficialEngineConfig(content))
+    {
+        LogInfo(fmt::format("[Predefined Index] Transpiling official AngelScript engine config: {}", filePath));
+        auto conv = angel_lsp::analysis::ConvertEngineConfigToPredefined(content);
+        content = std::move(conv.predefinedContent);
+        m_config.engine = conv.engineProperties;
+    }
 
     if (!ClaimPredefinedFile(uri, forceReload))
     {

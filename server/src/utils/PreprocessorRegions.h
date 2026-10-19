@@ -176,6 +176,20 @@ PreprocessorScan ScanPreprocessor(std::string_view sourceCode,
 bool IsLineExcluded(const std::vector<ExcludedLineRange>& ranges, uint32_t line);
 
 /**
+ * @brief Blanks out characters in excluded line ranges with spaces, preserving newlines (\\r and \\n).
+ *
+ * Replaces non-newline characters in lines identified by `ranges` with spaces (' ').
+ * This matches the official AngelScript CScriptBuilder::ExcludeCode / OverwriteCode model,
+ * ensuring that inactive conditional blocks produce zero AST nodes while preserving
+ * exact byte offsets, line numbers, and column numbers for active code.
+ *
+ * @param sourceCode Document text.
+ * @param ranges Non-overlapping line intervals to blank (inclusive startLine and endLine).
+ * @return Source code with excluded lines blanked by spaces.
+ */
+std::string BlankExcludedLines(std::string_view sourceCode, const std::vector<ExcludedLineRange>& ranges);
+
+/**
  * @brief Words a predefined stub declares with `#define <word>`, in source order.
  *
  * `#define` is *not* an AngelScript directive and this does not make it one: written in a `.as`

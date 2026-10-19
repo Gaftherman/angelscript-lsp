@@ -817,18 +817,19 @@ void Server::IndexClosureFile(const std::string& path, angel_lsp::parser::AngelS
         return;
 
     const std::string uriStr = UriFromPath(path);
+    const std::string analysisText = AnalysisTextFor(uriStr, content);
 
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(content));
+    document::TreePtr tree = document::MakeTreePtr(parser.Parse(analysisText));
 
-    ReplaceSymbolsFromTree(uriStr, content, tree.get());
+    ReplaceSymbolsFromTree(uriStr, analysisText, tree.get());
 
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
     if (tree)
     {
-        m_scopeIndex.SetScopeTree(uriStr,
-                                  m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree.get()), content));
-        m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree.get()), content));
+        m_scopeIndex.SetScopeTree(
+            uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree.get()), analysisText));
+        m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree.get()), analysisText));
     }
 
     {

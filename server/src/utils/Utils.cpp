@@ -159,6 +159,13 @@ bool IsPredefinedFile(const std::string_view& fileUri, const std::string_view ex
             return true;
     }
 
+    // Official AngelScript engine configuration dump files (scripthelper.cpp)
+    if (fileUri.ends_with("as_config.txt") || fileUri.ends_with("as-config.txt") || fileUri.ends_with(".as.config") ||
+        fileUri.ends_with(".as_config"))
+    {
+        return true;
+    }
+
     if (extension.empty())
         return false;
     return fileUri.ends_with(extension) || fileUri.ends_with(fmt::format("/{}", extension));

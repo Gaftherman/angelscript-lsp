@@ -72,7 +72,10 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     request.sourceCode = text;
     request.tree = tree;
 
-    auto scan = angel_lsp::utils::ScanPreprocessor(text, *DefinedWords(), m_config.preprocessor,
+    const auto rawTextOpt = m_documentStore.GetText(uriStr);
+    const std::string_view preprocessorSource = rawTextOpt ? std::string_view(*rawTextOpt) : std::string_view(text);
+
+    auto scan = angel_lsp::utils::ScanPreprocessor(preprocessorSource, *DefinedWords(), m_config.preprocessor,
                                                    m_config.pragmaMode != config::ServerConfig::PragmaMode::Accept);
 
     request.excludedLineRanges = std::move(scan.excluded);

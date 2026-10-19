@@ -1323,6 +1323,14 @@ export function buildServerArgs(): string[] {
         args.push('--disable-inlay-hints-location');
     }
 
+    if (config.get<boolean>('inlayHints.parameters', true) === false) {
+        args.push('--disable-inlay-hints-parameters');
+    }
+
+    if (config.get<boolean>('inlayHints.variableTypes', true) === false) {
+        args.push('--disable-inlay-hints-variable-types');
+    }
+
     const suppressWhenMatches = config.get<boolean>('inlayHints.suppressWhenArgumentMatchesName', false);
     if (suppressWhenMatches) {
         args.push('--inlay-hints-suppress-when-argument-matches-name');
@@ -1758,7 +1766,8 @@ export async function activate(context: ExtensionContext) {
                                    !arg.startsWith('--module=') &&
                                    !arg.startsWith('--module-folder=') &&
                                    !arg.startsWith('--rules-file=') &&
-                                   !arg.startsWith('--inlay-hints-'));
+                                   !arg.startsWith('--inlay-hints-') &&
+                                   !arg.startsWith('--disable-inlay-hints-'));
 
             // The decoration bakes the opacity in, so a change to either setting has to build a
             // new one. Cheap, and it happens only when the user edits the setting.

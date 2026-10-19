@@ -4469,31 +4469,21 @@ static bool IsLocalDefActive(const LocalDefinition& def) noexcept
 
 static TSNode FindLocalDefinitionValueNode(const LocalDefinition& def, const ExpressionTypeContext& ctx)
 {
-    if (!ts_node_is_null(ctx.rootNode))
+    TSNode root = !ts_node_is_null(ctx.rootNode) ? ctx.rootNode : (ctx.nodeIndex ? ctx.nodeIndex->Root() : TSNode{});
+    if (!ts_node_is_null(root))
     {
-        TSNode idNode =
-            (def.startByte != 0 || def.endByte != 0)
-                ? ts_node_descendant_for_byte_range(ctx.rootNode, def.startByte, def.endByte)
-                : ts_node_descendant_for_point_range(ctx.rootNode, TSPoint{def.startLine, def.startCharacter},
-                                                     TSPoint{def.endLine, def.endCharacter});
+        TSNode idNode = (def.startByte != 0 || def.endByte != 0)
+                            ? ts_node_descendant_for_byte_range(root, def.startByte, def.endByte)
+                            : ts_node_descendant_for_point_range(root, TSPoint{def.startLine, def.startCharacter},
+                                                                 TSPoint{def.endLine, def.endCharacter});
         TSNode decl = idNode;
         for (int i = 0; i < 4 && !ts_node_is_null(decl); ++i)
         {
-            if (std::string_view(ts_node_type(decl)) == "variable_declarator")
+            if (std::string_view(ts_node_type(decl)) == parser::nodes::VariableDeclarator)
             {
                 return FindDeclaratorValueNode(decl, ctx.sourceCode);
             }
             decl = parser::GetParent(decl);
-        }
-    }
-    else if (ctx.nodeIndex)
-    {
-        for (TSNode decl : ctx.nodeIndex->Nodes(parser::nodes::VariableDeclarator))
-        {
-            if (ts_node_start_byte(decl) <= def.startByte && def.startByte <= ts_node_end_byte(decl))
-            {
-                return FindDeclaratorValueNode(decl, ctx.sourceCode);
-            }
         }
     }
     return {};

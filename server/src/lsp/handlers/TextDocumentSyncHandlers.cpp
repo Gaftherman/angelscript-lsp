@@ -1,3 +1,4 @@
+#include "analysis/EngineConfigConverter.h"
 #include "analysis/NodeIndex.h"
 #include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
@@ -246,8 +247,19 @@ std::string Server::AnalysisTextFor(const std::string& uriStr, const std::string
 {
     if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
     {
+        if (angel_lsp::analysis::IsOfficialEngineConfig(text))
+        {
+            return angel_lsp::analysis::ConvertEngineConfigToPredefined(text).predefinedContent;
+        }
         return angel_lsp::utils::SanitizePredefinedContent(text);
     }
+
+    const auto excluded = ExcludedLineRanges(text);
+    if (!excluded.empty())
+    {
+        return angel_lsp::utils::BlankExcludedLines(text, excluded);
+    }
+
     return text;
 }
 
