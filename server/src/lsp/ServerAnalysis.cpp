@@ -96,6 +96,10 @@ std::vector<angel_lsp::analysis::Diagnostic> Server::ReplaceSymbolsFromTree(cons
 {
     angel_lsp::analysis::SymbolTable staging;
     auto diagnostics = m_symbolCollector->CollectSymbolsWithTree({uriStr, text, m_i18n.get()}, tree, staging);
+    if (tree && ts_node_has_error(ts_tree_root_node(tree)))
+    {
+        m_symbolTable.RetainLastKnownGoodTypes(uriStr, staging);
+    }
     if (outInterfaceChanged)
     {
         const uint64_t oldHash = m_symbolTable.ComputeDocumentInterfaceHash(uriStr);
@@ -442,6 +446,11 @@ Server::ParseAndCollectResult Server::ParseAndCollectSymbols(AnalyzeDocumentRequ
     auto diagnostics =
         m_symbolCollector->CollectSymbolsWithTree({req.uriStr, req.text, m_i18n.get()}, tree.get(), staging);
     double colMs = colTimer.ElapsedMs();
+
+    if (tree && ts_node_has_error(ts_tree_root_node(tree.get())))
+    {
+        m_symbolTable.RetainLastKnownGoodTypes(req.uriStr, staging);
+    }
 
     return {std::move(tree), std::move(diagnostics), parseMs, colMs};
 }

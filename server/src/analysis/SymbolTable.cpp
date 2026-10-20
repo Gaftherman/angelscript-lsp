@@ -543,6 +543,70 @@ void SymbolTable::ReplaceDocumentSymbols(const std::string& fileUri, SymbolTable
     PublishDocumentSymbols(fileUri, std::move(fresh));
 }
 
+namespace
+{
+bool ShouldRetainSymbol(const Symbol& sym, const std::string& fileUri,
+                        const ankerl::unordered_dense::set<std::string>& stagingTypeNames)
+{
+    if (sym.fileUri != fileUri)
+        return false;
+
+    const bool isTopLevelType = (sym.type == SymbolType::Class || sym.type == SymbolType::Interface ||
+                                 sym.type == SymbolType::Enum || sym.type == SymbolType::Funcdef);
+    if (isTopLevelType)
+        return !stagingTypeNames.contains(sym.name);
+
+    if (!sym.containerName.empty())
+        return !stagingTypeNames.contains(sym.containerName);
+
+    return false;
+}
+} // namespace
+
+void SymbolTable::RetainLastKnownGoodTypes(const std::string& fileUri, SymbolTable& staging) const
+{
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    const auto fileEntry = m_keysByFile.find(fileUri);
+    if (fileEntry == m_keysByFile.end())
+        return;
+
+    ankerl::unordered_dense::set<std::string> stagingTypeNames;
+    staging.ForEachSymbolInFile(
+        fileUri,
+        [&stagingTypeNames]([[maybe_unused]] const std::string& key, const std::vector<Symbol>& syms)
+        {
+            for (const auto& s : syms)
+            {
+                if (s.type == SymbolType::Class || s.type == SymbolType::Interface || s.type == SymbolType::Enum ||
+                    s.type == SymbolType::Funcdef)
+                {
+                    stagingTypeNames.insert(s.name);
+                }
+            }
+        });
+
+    std::vector<Symbol> toRetain;
+    for (const auto& key : fileEntry->second)
+    {
+        const auto bucket = m_symbols.find(key);
+        if (bucket == m_symbols.end() || !bucket->second)
+            continue;
+
+        for (const auto& sym : *bucket->second)
+        {
+            if (ShouldRetainSymbol(sym, fileUri, stagingTypeNames))
+            {
+                toRetain.push_back(sym);
+            }
+        }
+    }
+
+    if (!toRetain.empty())
+    {
+        staging.AddSymbols(std::move(toRetain));
+    }
+}
+
 std::unique_ptr<SymbolTable> SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr,
                                                                  const SymbolTable& staging) const
 {

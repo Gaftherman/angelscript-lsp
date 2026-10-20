@@ -213,6 +213,7 @@ class SymbolCollector
         std::vector<Symbol> collectedSymbols;
         bool isPredefined = false;
         bool sourceHasBrackets = false;
+        bool isRecoveringSwallowed = false;
     };
 
     /** @brief Bundles URI and source context for symbol creation. */
@@ -286,6 +287,9 @@ class SymbolCollector
 
     /** @brief Runs diagnostics and the TAGS_QUERY dispatch loop over a parsed root node. */
     void CollectFromTree(TSNode rootNode, SymbolCollectContext& sCtx);
+    void DispatchMatchCapture(const TSQueryCapture& capture, SymbolCollectContext& sCtx,
+                              std::vector<ActiveContainer>& containerStack,
+                              const std::vector<RecoveredClassContainer>& recoveredClasses);
 
     void PushContainerIfApplicable(uint32_t captureIdx, TSNode node, const SymbolCollectContext& sCtx,
                                    std::vector<ActiveContainer>& stack) const;
@@ -354,6 +358,7 @@ class SymbolCollector
 
     struct ParseErrorReportContext;
     void ReportParseErrors(TSNode rootNode, SymbolCollectContext& sCtx) const;
+    void RecoverSwallowedDeclarations(SymbolCollectContext& sCtx);
     void EmitMissingColonDiagnostics(std::span<const MissingCaseColon> missingColons, SymbolCollectContext& sCtx) const;
     void HandleParseErrorNode(TSNode node, ParseErrorReportContext& errCtx) const;
     void EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext& sCtx) const;

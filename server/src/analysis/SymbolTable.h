@@ -534,6 +534,23 @@ class SymbolTable
     void ReplaceDocumentSymbols(const std::string& fileUri, SymbolTable&& staging);
 
     /**
+     * @brief Retains top-level type definitions (classes, interfaces, enums, funcdefs) and their member
+     *
+     * symbols from this table for fileUri when staging lost them due to syntax errors.
+     *
+     * Prevents cascading
+     * symbol resolution failures across dependent documents while a user is actively
+     * editing or when an unclosed
+     * string or syntax error temporarily invalidates the primary AST.
+     *
+     * @param[in] fileUri Document URI
+     * whose known types should be evaluated.
+     * @param[in,out] staging Staging symbol table to be augmented with
+     * retained Last-Known-Good types.
+     */
+    void RetainLastKnownGoodTypes(const std::string& fileUri, SymbolTable& staging) const;
+
+    /**
      * @brief Creates an isolated analysis snapshot of this symbol table with staging symbols applied for uriStr.
      *        The global table is read-locked during copy; the returned snapshot is completely private to the caller
      *        and safe for concurrent semantic analysis without contaminating the global symbol table.

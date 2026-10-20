@@ -1,5 +1,6 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/DeclarationRecovery.h"
 #include "analysis/DocComment.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SignatureFormatter.h"
@@ -174,6 +175,10 @@ static void TryRecoverClassFromErrorNode(TSNode node, RecoverClassContext& ctx)
     sym.endCharacter = endPt.column;
     sym.fullRange = {startPt.row, startPt.column, endPt.row, endPt.column};
     sym.selectionRange = {nameStartPt.row, nameStartPt.column, nameEndPt.row, nameEndPt.column};
+    if (header.isInterface)
+        sym.signature = InterfaceSignature{};
+    else
+        sym.signature = ClassSignature{};
 
     ctx.outSymbols.push_back(std::move(sym));
     ctx.outContainers.push_back({ts_node_start_byte(header.headerStart), ts_node_end_byte(node), std::move(className),
@@ -552,33 +557,89 @@ void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCt
     {
         for (uint32_t i = 0; i < match.capture_count; ++i)
         {
-            uint32_t captureIdx = match.captures[i].index;
-            if (captureIdx < m_captureDispatch.size() && m_captureDispatch[captureIdx])
-            {
-                TSNode node = match.captures[i].node;
-                uint32_t nodeStart = ts_node_start_byte(node);
-                while (!containerStack.empty() && containerStack.back().endByte <= nodeStart)
-                {
-                    containerStack.pop_back();
-                }
-
-                if (!recoveredClasses.empty())
-                {
-                    SyncRecoveredContainers(nodeStart, recoveredClasses, containerStack);
-                }
-
-                CollectionContext ctx = containerStack.empty() ? CollectionContext{} : containerStack.back().ctx;
-                (this->*m_captureDispatch[captureIdx])(node, sCtx, ctx);
-                PushContainerIfApplicable(captureIdx, node, sCtx, containerStack);
-            }
-            else if (captureIdx < m_validationDispatch.size() && m_validationDispatch[captureIdx])
-            {
-                (this->*m_validationDispatch[captureIdx])(match.captures[i].node, sCtx);
-            }
+            DispatchMatchCapture(match.captures[i], sCtx, containerStack, recoveredClasses);
         }
     }
 
+    if (ts_node_has_error(rootNode) && !sCtx.isRecoveringSwallowed)
+    {
+        RecoverSwallowedDeclarations(sCtx);
+    }
+
+    if (sCtx.isRecoveringSwallowed)
+    {
+        return;
+    }
+
     sCtx.symbolTable.AddSymbols(std::move(sCtx.collectedSymbols));
+}
+
+void SymbolCollector::DispatchMatchCapture(const TSQueryCapture& capture, SymbolCollectContext& sCtx,
+                                           std::vector<ActiveContainer>& containerStack,
+                                           const std::vector<RecoveredClassContainer>& recoveredClasses)
+{
+    const uint32_t captureIdx = capture.index;
+    if (captureIdx < m_captureDispatch.size() && m_captureDispatch[captureIdx])
+    {
+        const TSNode node = capture.node;
+        const uint32_t nodeStart = ts_node_start_byte(node);
+        while (!containerStack.empty() && containerStack.back().endByte <= nodeStart)
+        {
+            containerStack.pop_back();
+        }
+
+        if (!recoveredClasses.empty())
+        {
+            SyncRecoveredContainers(nodeStart, recoveredClasses, containerStack);
+        }
+
+        CollectionContext ctx = containerStack.empty() ? CollectionContext{} : containerStack.back().ctx;
+        (this->*m_captureDispatch[captureIdx])(node, sCtx, ctx);
+        PushContainerIfApplicable(captureIdx, node, sCtx, containerStack);
+    }
+    else if (captureIdx < m_validationDispatch.size() && m_validationDispatch[captureIdx])
+    {
+        (this->*m_validationDispatch[captureIdx])(capture.node, sCtx);
+    }
+}
+
+void SymbolCollector::RecoverSwallowedDeclarations(SymbolCollectContext& sCtx)
+{
+    ankerl::unordered_dense::set<std::string> knownNames;
+    knownNames.reserve(sCtx.collectedSymbols.size());
+    for (const auto& sym : sCtx.collectedSymbols)
+    {
+        knownNames.insert(sym.name);
+    }
+
+    const auto candidates = FindSwallowedDeclarations(sCtx.request.sourceCode, knownNames);
+    if (candidates.empty())
+    {
+        return;
+    }
+
+    angel_lsp::parser::AngelScriptParser parser;
+    for (const auto& cand : candidates)
+    {
+        document::TreePtr snippetTree = document::MakeTreePtr(parser.Parse(cand.snippet));
+        if (!snippetTree)
+            continue;
+
+        SymbolTable snippetTable;
+        std::vector<Diagnostic> snippetDiags;
+        SymbolCollectRequest snippetReq(sCtx.request.fileUri, cand.snippet);
+        SymbolCollectContext snippetCtx{snippetReq, snippetTable, snippetDiags};
+        snippetCtx.isPredefined = sCtx.isPredefined;
+        snippetCtx.isRecoveringSwallowed = true;
+
+        CollectFromTree(ts_tree_root_node(snippetTree.get()), snippetCtx);
+
+        for (auto& sym : snippetCtx.collectedSymbols)
+        {
+            AdjustRecoveredSymbolOffsets(sym, cand.startLine, cand.startCol);
+            sCtx.collectedSymbols.push_back(std::move(sym));
+        }
+    }
 }
 
 void SymbolCollector::ProcessLambda([[maybe_unused]] TSNode node, [[maybe_unused]] SymbolCollectContext& sCtx,
