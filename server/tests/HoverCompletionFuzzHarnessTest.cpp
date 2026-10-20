@@ -210,4 +210,66 @@ TEST_CASE("Latency & Performance Budget Telemetry")
     VerifyLatencyBudget(fixture, rng);
 }
 
+TEST_CASE("Progressive Quote Deletion & Heredoc Mutation Fuzz - inventory.as")
+{
+    LspSemanticHarnessFixture fixture;
+    const std::string baseScript = "const string GetSchema() const override\n"
+                                   "{\n"
+                                   "    return \"\"\"\n"
+                                   "        \"type\": \"object\",\n"
+                                   "        \"title\": \"Player Equipment\",\n"
+                                   "        \"description\": \"Player equipment kits configuration.\",\n"
+                                   "        \"unevaluatedProperties\": true,\n"
+                                   "        \"allOf\":\n"
+                                   "        [\n"
+                                   "            \"IConfigurable\"\n"
+                                   "        ],\n"
+                                   "        \"additionalProperties\":\n"
+                                   "        {\n"
+                                   "            \"item_id\": { \"type\": \"string\" }\n"
+                                   "        }\n"
+                                   "        \"\"\";\n"
+                                   "}\n"
+                                   "\n"
+                                   "#if FALSE\n"
+                                   "int algo;\n"
+                                   "#endif\n"
+                                   "void Test() { algo++; }\n";
+
+    auto replaceFirst = [](std::string str, const std::string& from, const std::string& to) -> std::string
+    {
+        size_t pos = str.find(from);
+        if (pos != std::string::npos)
+        {
+            str.replace(pos, from.length(), to);
+        }
+        return str;
+    };
+
+    const std::vector<std::string> mutations = {baseScript,
+                                                replaceFirst(baseScript, "\"\"\";", "\"\";"),
+                                                replaceFirst(baseScript, "\"\"\";", "\";"),
+                                                replaceFirst(baseScript, "\"\"\";", ";"),
+                                                replaceFirst(baseScript, "\"\"\";", "\"\"\"\";"),
+                                                replaceFirst(baseScript, "\"\"\";", "\"\"\"\"\"\";"),
+                                                replaceFirst(baseScript, "return \"\"\"", "return \"\""),
+                                                replaceFirst(baseScript, "return \"\"\"", "return \""),
+                                                replaceFirst(baseScript, "return \"\"\"", "return \"\"\"\""),
+                                                replaceFirst(baseScript, "\"type\":", "type:"),
+                                                replaceFirst(baseScript, "\"title\":", "\"title:"),
+                                                baseScript + "\nstring unclosed = \"unclosed at eof;"};
+
+    for (size_t m = 0; m < mutations.size(); ++m)
+    {
+        const std::string uri = fixture.SandboxUri("scripts/heredoc_fuzz_" + std::to_string(m) + ".as");
+        fixture.AddVirtualDocument(uri, mutations[m]);
+
+        for (uint32_t line = 0; line < 25; line += 4)
+        {
+            fixture.RequestHover(uri, line, 4);
+            fixture.RequestCompletion(uri, line, 8);
+        }
+    }
+}
+
 TEST_SUITE_END();

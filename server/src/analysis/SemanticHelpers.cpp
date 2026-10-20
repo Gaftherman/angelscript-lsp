@@ -5962,6 +5962,10 @@ bool IsValidNumberLiteral(std::string_view s) noexcept
 
 bool IsQuotedLiteral(std::string_view s) noexcept
 {
+    if (s.starts_with("\"\"\""))
+    {
+        return s.size() >= 6 && s.ends_with("\"\"\"");
+    }
     if (s.size() < 2)
     {
         return false;

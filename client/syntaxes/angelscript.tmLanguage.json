@@ -145,16 +145,11 @@
           "name": "string.quoted.triple.angelscript",
           "begin": "\"\"\"",
           "end": "\"\"\"",
-          "patterns": [
-            {
-              "name": "constant.character.escape.angelscript",
-              "match": "\\\\."
-            }
-          ]
+          "patterns": []
         },
         {
           "name": "string.quoted.double.angelscript",
-          "begin": "\"",
+          "begin": "\"(?!\"\")",
           "end": "\"",
           "patterns": [
             {

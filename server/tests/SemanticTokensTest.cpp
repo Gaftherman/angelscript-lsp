@@ -1637,3 +1637,45 @@ TEST_CASE("SemanticTokensHandler - Invariant: Direct variable initialization wit
 
     ts_tree_delete(tree);
 }
+
+TEST_CASE("Semantic Tokens - Multiline heredoc bounds within line length")
+{
+    const std::string code = "const string GetSchema()\n"
+                             "{\n"
+                             "    return \"\"\"\n"
+                             "        \"type\": \"object\",\n"
+                             "        \"title\": \"Player Equipment\"\n"
+                             "    \"\"\";\n"
+                             "}\n";
+
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{nullptr};
+    SymbolTable table;
+    collector.CollectSymbols("file:///test_heredoc_bounds.as", code, parser, table);
+
+    SemanticTokensRequest request{"file:///test_heredoc_bounds.as", code, tree, table};
+    const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
+
+    std::vector<std::string> lines;
+    {
+        std::istringstream iss(code);
+        std::string l;
+        while (std::getline(iss, l))
+        {
+            if (!l.empty() && l.back() == '\r')
+                l.pop_back();
+            lines.push_back(l);
+        }
+    }
+
+    for (const auto& tok : tokens)
+    {
+        REQUIRE(tok.line < lines.size());
+        CHECK(tok.character + tok.length <= lines[tok.line].size());
+    }
+
+    ts_tree_delete(tree);
+}

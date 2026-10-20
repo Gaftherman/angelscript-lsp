@@ -1,6 +1,6 @@
 {
   "project": "angelscript-lsp",
-  "currentPhase": "PHASE_36_AST_TRAVERSAL_FORENSIC_REMEDIATION_AND_ZERO_ALLOCATION",
+  "currentPhase": "PHASE_37_UNCLOSED_STRING_HEREDOC_CRASH_AND_INDENTATION_FIX",
   "status": "COMPLETED",
   "baselineMetrics": {
     "largeScript3000ParseAndAnalysisMs": 192.75,
@@ -9,9 +9,9 @@
     "parityPassCount": 256,
     "parityTotalCount": 256,
     "unexplainedFalsePositives": 0,
-    "unitTestsTotal": 2431,
-    "unitTestsPassed": 2431,
-    "unitAssertionsPassed": 34410,
+    "unitTestsTotal": 2435,
+    "unitTestsPassed": 2435,
+    "unitAssertionsPassed": 34434,
     "condEdgePassCount": 0,
     "tsanRaceWarnings": 0,
     "layerIncludeCheck": "PASS",
@@ -1078,6 +1078,41 @@
         "100% of the unit test suite passed (2,431 test cases, 34,410 assertions, 0 failed, 30 skipped).",
         "All 12 active quality gates passed successfully at 100% (jscpd: 1.09%, Lizard CCN <= 15, NLOC <= 70, 0 dead parameters /we4100, Clang-Format 100%, Layer Matrix 100%, check-ast-traversal 100%)."
       ]
+    },
+    {
+      "id": "PHASE_37",
+      "name": "Phase 37: Unclosed String / Heredoc Crash Fix & Multiline Heredoc \"\"\" Bracket/Indentation Fix",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "client/language-configuration.json",
+        "client/syntaxes/angelscript.tmLanguage.json",
+        "server/src/parser/ASTUtils.h",
+        "server/src/analysis/ASTUtils.h",
+        "server/src/utils/Utils.cpp",
+        "server/src/utils/PreprocessorRegions.cpp",
+        "server/src/analysis/LocalScopeCollector.cpp",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/analysis/SymbolCollector.cpp",
+        "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+        "server/src/features/formatting/FormattingHandler.cpp",
+        "server/src/features/hover/HoverHandler.cpp",
+        "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
+        "server/tests/HoverCompletionFuzzHarnessTest.cpp",
+        "server/tests/PreprocessorRegionsTest.cpp",
+        "server/tests/SemanticTokensTest.cpp",
+        "STEPS.json",
+        "STEPS.md"
+      ],
+      "findings": [
+        "Eliminated unsigned underflow crashes (size_t underflow) on single-quote and triple-quote strings by introducing parser::UnquoteStringView with strict length and boundary validation.",
+        "Hardened SkipEscapedStringLiteral in Utils.cpp and added SkipHeredocLiteral in PreprocessorRegions.cpp to properly count lines and ignore embedded '#' directives inside multiline \"\"\" ... \"\"\" heredocs.",
+        "Safely clamped start and end columns in SemanticTokensHandler::EmitTokenOrSplitLines to lineLen, preventing negative delta or out-of-bounds column offsets on unclosed strings.",
+        "Prevented FormatOnType from dedenting '}' inside multiline strings and comments by checking node symbol in FormattingHandler.cpp.",
+        "Fixed TextMate grammar in client/syntaxes/angelscript.tmLanguage.json for triple-quote heredoc strings, preventing empty string tokenization and inappropriate type highlighting.",
+        "Updated client/language-configuration.json to register \"\"\" in autoClosingPairs and surroundingPairs.",
+        "Added regression and progressive quote-deletion mutation fuzz tests in HoverCompletionFuzzHarnessTest.cpp, PreprocessorRegionsTest.cpp, and SemanticTokensTest.cpp.",
+        "All 2,435 unit tests (34,434 assertions) passed with 0 failures and all 12 quality gates passed."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -1126,10 +1161,12 @@
     "GAP-ENUM-01: Scoped enum return colliding with global enum symbol and merging CodeLens reference counts. (RESOLVED in Phase 35 with lexical scope lookup and targetEnumContainer filtering).",
     "GAP-COMPL-01: Member autocompletion failing after dot in binary comparisons. (RESOLVED in Phase 35 with k_boundaries and FindReceiverFromParentAtDot).",
     "GAP-STARTUP-01: CPU saturation and error spam on startup from synthetic module entry closures. (RESOLVED in Phase 35 with isImplicitEntryPoint and immediate SetPredefinedReady).",
-    "GAP-RECOVERY-02: Missing opening { inside function causing 30+ cascading syntax and semantic errors. (RESOLVED in Phase 35 with ComputeBraceBalance, HandleParseErrorNode, and FilterSuppressedDiagnostics)."
+    "GAP-RECOVERY-02: Missing opening { inside function causing 30+ cascading syntax and semantic errors. (RESOLVED in Phase 35 with ComputeBraceBalance, HandleParseErrorNode, and FilterSuppressedDiagnostics).",
+    "GAP-CRASH-01: LSP server crashes when deleting or editing string/heredoc quotes due to size_t unsigned underflow and unclosed multi-line column indexing. (RESOLVED in Phase 37 with parser::UnquoteStringView, SkipHeredocLiteral, and SemanticTokens column clamping).",
+    "GAP-INDENT-01: Typing '}' inside multiline heredoc strings auto-dedents to column 0 and highlights function opening bracket. (RESOLVED in Phase 37 with FormatOnType AST symbol guard and client TextMate/autoClosingPairs update)."
   ],
   "nextActions": [
     "Phase 35 and 1.1.3-exp.1 release completed with 100% test pass rate (2,433 tests, 34,426 assertions) and all 12 quality gates passed."
   ],
-  "lastMilestone": "Phase 36 and 1.1.4-exp.1 release completed with 100% test pass rate (2,431 tests, 34,410 assertions) and all 12 quality gates passed."
+  "lastMilestone": "Phase 37 completed with 100% test pass rate (2,435 tests, 34,434 assertions) and all 12 quality gates passed."
 }

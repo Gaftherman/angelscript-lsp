@@ -207,6 +207,32 @@ struct NodeTextResult
 }
 
 /**
+ * @brief Safely removes enclosing quotes from a single-line or multiline string literal view.
+ * @param[in] raw Raw string literal view.
+ * @return Unquoted string view without enclosing quotes or delimiters.
+ */
+[[nodiscard]] constexpr std::string_view UnquoteStringView(std::string_view raw) noexcept
+{
+    if (raw.starts_with("\"\"\""))
+    {
+        if (raw.size() >= 6 && raw.ends_with("\"\"\""))
+        {
+            return raw.substr(3, raw.size() - 6);
+        }
+        return raw.substr(3);
+    }
+    if (raw.size() >= 2 && ((raw.front() == '"' && raw.back() == '"') || (raw.front() == '\'' && raw.back() == '\'')))
+    {
+        return raw.substr(1, raw.size() - 2);
+    }
+    if (!raw.empty() && (raw.front() == '"' || raw.front() == '\''))
+    {
+        return raw.substr(1);
+    }
+    return raw;
+}
+
+/**
  * @brief Performs a flat, non-recursive preorder traversal over all AST descendants.
  * @tparam Callback Callable with signature void(TSNode).
  * @param[in] root Root AST node to traverse.

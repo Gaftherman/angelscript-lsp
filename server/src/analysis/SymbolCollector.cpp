@@ -875,12 +875,8 @@ std::string SymbolCollector::ExtractOriginModule(TSNode funcNode, std::string_vi
     TSNode srcNode = GetChildByFieldId(funcNode, m_gs.fieldSource);
     if (!ts_node_is_null(srcNode))
     {
-        std::string modStr = GetNodeText(srcNode, sourceCode);
-        if (modStr.size() >= 2 && modStr.front() == '"' && modStr.back() == '"')
-        {
-            return modStr.substr(1, modStr.size() - 2);
-        }
-        return modStr;
+        std::string_view modStr = GetNodeTextView(srcNode, sourceCode);
+        return std::string(parser::UnquoteStringView(modStr));
     }
     return "";
 }

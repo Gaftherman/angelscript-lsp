@@ -509,5 +509,9 @@ void SkipEscapedStringLiteral(std::string_view sourceCode, size_t& index, char q
         }
         ++index;
     }
+    if (index > n)
+    {
+        index = n;
+    }
 }
 } // namespace angel_lsp::utils

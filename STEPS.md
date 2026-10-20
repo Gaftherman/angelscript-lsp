@@ -1823,3 +1823,51 @@ Settings declared in package.json but not passed to the server:
   - `check-client-l10n.py`: 100% de paridad EN/ES.
   - `sync-readme-settings.py`: 100% sincronizado.
   - `npm --prefix client run pretest`: Aprobado con exit code 0.
+
+
+---
+
+## 38. Fase 37: Corrección de Bloqueos por Cadenas/Heredoc No Cerrados y Corrección de Indentación/TextMate de `"""`
+
+### 38.1. Diagnóstico Forense y Causas Raíz
+1. **Underflow en Números Sin Signo (`size_t` / `SIZE_MAX`) al Eliminar Comillas**:
+   - Al editar o borrar una comilla en `"""` o `"`, el AST produce literales de longitud 1 (`"`) o 3 (`"""`), o nodos no cerrados hasta EOF.
+   - Para `"`, `raw.front() == '"' && raw.back() == '"'` evaluaba a `true` sobre el mismo byte; entonces `raw.substr(1, raw.size() - 2)` generaba underflow en `size_t` (`1 - 2 = SIZE_MAX`), provocando `std::out_of_range` o `std::bad_alloc` y derribando el servidor.
+   - De manera análoga, en `"""`, `raw.starts_with("\"\"\"") && raw.ends_with("\"\"\"")` evaluaba a `true` sobre los mismos 3 bytes, produciendo underflow en `3 - 6 = SIZE_MAX`.
+2. **Underflow y Desbordamiento de Columnas en `SemanticTokensHandler`**:
+   - Cuando una cadena multilínea quedaba sin cerrar, las columnas de inicio o fin podían exceder la longitud real de la línea en `sourceLines[r]`, produciendo underflows en `sc > ec` o longitudes inválidas en deltas.
+3. **Omisión de Regiones `#if FALSE`**:
+   - `PreprocessorRegions.cpp` no contaba líneas en literales heredoc `""" ... """` con saltos de línea ni ignoraba directivas `#` embebidas en cadenas multilínea.
+4. **Auto-Dedent de `}` en Cadenas Heredoc**:
+   - Al tipear `}` dentro de un JSON multilínea en `return """ ... """;`, el formateador on-type dedentaba la llave hasta la columna 0 de la función contenedora.
+   - La gramática TextMate de `"""` trataba los primeros dos caracteres como comillas dobles vacías `""` y el tercero como cadena de una sola línea, resaltando identificadores internos como clases C++.
+
+### 38.2. Remediación Implementada
+1. **Helper Seguro `parser::UnquoteStringView`**:
+   - En `server/src/parser/ASTUtils.h`, implementado `UnquoteStringView(std::string_view)` (`constexpr`, `noexcept`, $O(1)$, cero asignaciones en el heap) con validación estricta: requiere `len >= 6` para heredocs `""" ... """` y `len >= 2` para cadenas `"..."` / `'...'`.
+   - Re-exportado en `server/src/analysis/ASTUtils.h` y adoptado en `LocalScopeCollector.cpp`, `SymbolCollector.cpp`, `UnusedSymbolChecker.cpp`, `HoverHandler.cpp`, y `SemanticHelpers.cpp`.
+2. **Soporte Heredoc en Preprocesador**:
+   - En `server/src/utils/PreprocessorRegions.cpp`, añadido `SkipHeredocLiteral` y acoplado a `SkipStringLiteral` para saltar saltos de línea correctamente e ignorar directivas falsas embebidas en heredocs.
+   - En `server/src/utils/Utils.cpp`, protegido `SkipEscapedStringLiteral` con clamping explícito.
+3. **Clamping Estricto en Tokens Semánticos**:
+   - En `SemanticTokensHandler.cpp::EmitTokenOrSplitLines`, acotadas `sc` y `ec` estrictamente contra `lineLen` (`std::min(..., lineLen)`), garantizando `ec >= sc` y descartando tokens con longitud 0 o renglones desbordados.
+4. **Protección de `FormatOnType`**:
+   - En `FormattingHandler.cpp::FormatOnType`, si el nodo en la posición del cursor o sus ancestros inmediatos pertenecen a `symStringLiteral` o `symComment`, se retorna `std::nullopt` inmediatamente, evitando saltos de indentación indeseados.
+5. **Corrección de TextMate y Configuración del Cliente**:
+   - En `client/syntaxes/angelscript.tmLanguage.json`, priorizado el scope `string.quoted.triple.angelscript` con regex estricta `\"(?!\"\")` para cadenas estándar y soporte multilínea `\"\"\"[\\s\\S]*?\"\"\"` sin escapes C.
+   - En `client/language-configuration.json`, añadido `"""` a `autoClosingPairs` y `surroundingPairs`.
+6. **Batería de Pruebas de Fuzzing y Mutación**:
+   - En `HoverCompletionFuzzHarnessTest.cpp`, añadido el test `Progressive Quote Deletion & Heredoc Mutation Fuzz - inventory.as` que muta progresivamente cada comilla de `"`, `"""` y strings unclosed verificando que `RequestHover` y `RequestCompletion` nunca lancen excepciones ni hagan crash.
+   - En `PreprocessorRegionsTest.cpp` y `SemanticTokensTest.cpp`, añadidas pruebas específicas de tokens semánticos multilínea y directivas preprocesador en heredocs.
+
+### 38.3. Métricas Finales de Fase 37
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,435 / 2,435` pasadas (`34,434` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas al 100%:
+  - `jscpd`: `1.09%` (techo $\le 3.0\%$).
+  - Lizard: CCN $\le 15$, NLOC $\le 70$, params $\le 4$ en todas las funciones.
+  - Cero parámetros muertos (`/we4100`).
+  - Clang-Format: 100% (400 archivos auditados y en formato).
+  - Layer Architecture: 100% conforme.
+  - `check-ast-traversal.py`: Aprobado (0 bucles no acotados, 0 `ts_node_parent` en hot-paths, 0 hardcodings).
+  - `npm --prefix client run pretest`: Aprobado con exit code 0.

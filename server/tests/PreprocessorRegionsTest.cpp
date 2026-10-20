@@ -778,3 +778,38 @@ TEST_CASE("Preprocessor - BlankExcludedLines preserves byte offsets under CRLF")
     CHECK(blanked.size() == source.size());
     CHECK(blanked.find("int y = 2;\r\n") == source.find("int y = 2;\r\n"));
 }
+
+TEST_CASE("Preprocessor - Multiline heredoc ignores embedded directives and preserves line counts")
+{
+    const std::string source = "const string schema = \"\"\"\n"
+                               "#if FALSE\n"
+                               "int embedded_inside_heredoc;\n"
+                               "#endif\n"
+                               "\"\"\";\n"
+                               "\n"
+                               "#if FALSE\n"
+                               "int excluded_var = 42;\n"
+                               "#endif\n"
+                               "int live_var = 1;\n";
+
+    const auto ranges = FindExcludedLineRanges(source);
+    // Embedded #if inside heredoc must NOT be counted; only line 6 to 8 (#if FALSE to #endif)
+    REQUIRE(ranges.size() == 1);
+    CHECK(ranges[0].startLine == 6);
+    CHECK(ranges[0].endLine == 8);
+
+    const std::string blanked = BlankExcludedLines(source, ranges);
+    CHECK(blanked.size() == source.size());
+    CHECK(blanked.find("int live_var = 1;\n") == source.find("int live_var = 1;\n"));
+    CHECK(blanked.find("#if FALSE\nint embedded_inside_heredoc;") != std::string::npos);
+}
+
+TEST_CASE("Preprocessor - Unclosed heredoc terminates safely at EOF")
+{
+    const std::string source = "const string s = \"\"\"\n"
+                               "first line\n"
+                               "second line\n";
+
+    const auto ranges = FindExcludedLineRanges(source);
+    CHECK(ranges.empty());
+}

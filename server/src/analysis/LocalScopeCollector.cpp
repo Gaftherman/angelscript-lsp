@@ -654,11 +654,7 @@ void LocalScopeCollector::ProcessStringCallRefCapture(const RawCapture& capture,
         return;
     }
     std::string_view text = analysis::GetNodeTextView(capture.node, sourceCode);
-    if (text.size() >= 2 && text.front() == '"' && text.back() == '"')
-    {
-        text.remove_prefix(1);
-        text.remove_suffix(1);
-    }
+    text = parser::UnquoteStringView(text);
     if (text.empty() || text.size() > 128)
     {
         return;

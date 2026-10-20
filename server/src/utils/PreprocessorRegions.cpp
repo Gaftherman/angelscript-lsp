@@ -170,8 +170,45 @@ bool TrySkipComment(std::string_view sourceCode, LineScanState& state)
  * @param[in] sourceCode Document text.
  * @param[in,out] state Line scanner state.
  */
+void SkipHeredocLiteral(std::string_view sourceCode, LineScanState& state)
+{
+    state.index += 3;
+    const size_t n = sourceCode.size();
+    while (state.index < n)
+    {
+        if (sourceCode[state.index] == '\r')
+        {
+            if (state.index + 1 < n && sourceCode[state.index + 1] == '\n')
+            {
+                ++state.index;
+            }
+            ++state.currentLine;
+            state.lineStart = state.index + 1;
+            state.atLineStart = true;
+        }
+        else if (sourceCode[state.index] == '\n')
+        {
+            ++state.currentLine;
+            state.lineStart = state.index + 1;
+            state.atLineStart = true;
+        }
+        else if (sourceCode.substr(state.index).starts_with("\"\"\""))
+        {
+            state.index += 3;
+            state.atLineStart = false;
+            return;
+        }
+        ++state.index;
+    }
+}
+
 void SkipStringLiteral(std::string_view sourceCode, LineScanState& state)
 {
+    if (sourceCode.substr(state.index).starts_with("\"\"\""))
+    {
+        SkipHeredocLiteral(sourceCode, state);
+        return;
+    }
     const char quote = sourceCode[state.index];
     SkipEscapedStringLiteral(sourceCode, state.index, quote);
 }

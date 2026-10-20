@@ -4,6 +4,26 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.4-exp.2] - 2026-10-20
+
+### Experimental Release 1.1.4-exp.2: Unclosed String & Heredoc Crash Fix, Multiline Heredoc TextMate & On-Type Indentation Protection
+
+- Zero-Allocation & Safe String Unquoting (`parser::UnquoteStringView`, `ASTUtils`):
+  - Introduced `parser::UnquoteStringView(std::string_view)` with strict length bounds checking (requiring length >= 6 for `""" ... """` and length >= 2 for single/double quotes), eradicating unsigned `size_t` underflows (`SIZE_MAX`) when deleting or editing string/heredoc quotes.
+  - Re-exported in Layer 2 `analysis/ASTUtils.h` and integrated across `LocalScopeCollector`, `SymbolCollector`, `UnusedSymbolChecker`, `SemanticHelpers`, and `HoverHandler`.
+- Preprocessor Heredoc & Line Tracking Protection (`PreprocessorRegions`, `Utils`):
+  - Added `SkipHeredocLiteral` and integrated into `SkipStringLiteral` to accurately count multi-line heredoc newlines and safely ignore pseudo-preprocessor directives (e.g. `#if FALSE`) inside heredocs.
+  - Hardened `SkipEscapedStringLiteral` against out-of-bounds index jumps.
+- Semantic Tokens Multi-Line Split Clamping (`SemanticTokensHandler`):
+  - Clamped token column spans (`sc`, `ec`) strictly against line lengths in `EmitTokenOrSplitLines`, preventing invalid column offsets and negative deltas on unclosed strings.
+  - Decomposed `EmitTemplatePunctuationTokens` into a dedicated helper to enforce strict function parameter and complexity limits.
+- On-Type Formatting & TextMate Indentation Fix (`FormattingHandler`, `client/syntaxes`, `client/language-configuration.json`):
+  - Guarded `FormatOnType` against dedenting closing braces (`}`) when cursor is inside strings or comments.
+  - Fixed TextMate triple-quote heredoc regex priority and lookahead (`\"(?!\"\")`) to eliminate empty-string tokenization and false type highlighting.
+  - Added `"""` to `autoClosingPairs` and `surroundingPairs` in client language configuration.
+- Comprehensive Mutation & Fuzz Testing (`HoverCompletionFuzzHarnessTest`, `PreprocessorRegionsTest`, `SemanticTokensTest`):
+  - Added progressive quote deletion and heredoc mutation fuzz tests asserting zero crashes or exceptions across hover and completion on realistic multiline scripts (`inventory.as`).
+
 ## [1.1.4-exp.1] - 2026-10-20
 
 ### Experimental Release 1.1.4-exp.1: AST Traversal Optimization, Zero-Heap Type Comparisons & Engine Independence

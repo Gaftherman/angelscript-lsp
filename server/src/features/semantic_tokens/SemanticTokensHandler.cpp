@@ -1152,6 +1152,32 @@ uint32_t RefineCapturedTokenType(TSNode node, uint32_t tokenType, const TokenRef
 }
 
 /**
+ * @brief Emits boundary tokens for template angle brackets.
+ * @param[in] node AST capture node.
+ * @param[in] meta Token classification metadata.
+ * @param[in] sourceLines Views of source code lines.
+ * @param[in,out] rawTokens Token collection receiving items.
+ */
+void EmitTemplatePunctuationTokens(TSNode node, TokenMeta meta, const std::vector<std::string_view>& sourceLines,
+                                   std::vector<RawToken>& rawTokens)
+{
+    TSPoint startPoint = ts_node_start_point(node);
+    TSPoint endPoint = ts_node_end_point(node);
+
+    if (startPoint.row < sourceLines.size() && startPoint.column < sourceLines[startPoint.row].size())
+    {
+        rawTokens.push_back(
+            RawToken{startPoint.row, startPoint.column, 1, meta.tokenType, meta.tokenMod, meta.priority});
+    }
+    if (endPoint.column > 0 && endPoint.row < sourceLines.size() &&
+        (endPoint.column - 1) < sourceLines[endPoint.row].size())
+    {
+        rawTokens.push_back(
+            RawToken{endPoint.row, endPoint.column - 1, 1, meta.tokenType, meta.tokenMod, meta.priority});
+    }
+}
+
+/**
  * @brief Emits a single token or splits multi-line tokens into line-delimited items.
  * @param[in] node AST capture node.
  * @param[in] meta Token classification metadata (type, modifier, priority).
@@ -1161,27 +1187,27 @@ uint32_t RefineCapturedTokenType(TSNode node, uint32_t tokenType, const TokenRef
 void EmitTokenOrSplitLines(TSNode node, TokenMeta meta, const std::vector<std::string_view>& sourceLines,
                            std::vector<RawToken>& rawTokens)
 {
-    TSPoint startPoint = ts_node_start_point(node);
-    TSPoint endPoint = ts_node_end_point(node);
-
     if (meta.tokenType == Type_TemplatePunctuation)
     {
-        rawTokens.push_back(
-            RawToken{startPoint.row, startPoint.column, 1, meta.tokenType, meta.tokenMod, meta.priority});
-        if (endPoint.column > 0)
-        {
-            rawTokens.push_back(
-                RawToken{endPoint.row, endPoint.column - 1, 1, meta.tokenType, meta.tokenMod, meta.priority});
-        }
+        EmitTemplatePunctuationTokens(node, meta, sourceLines, rawTokens);
         return;
     }
 
+    TSPoint startPoint = ts_node_start_point(node);
+    TSPoint endPoint = ts_node_end_point(node);
+
     if (startPoint.row == endPoint.row)
     {
-        if (endPoint.column > startPoint.column)
+        if (startPoint.row < sourceLines.size())
         {
-            rawTokens.push_back(RawToken{startPoint.row, startPoint.column, endPoint.column - startPoint.column,
-                                         meta.tokenType, meta.tokenMod, meta.priority});
+            uint32_t lineLen = static_cast<uint32_t>(sourceLines[startPoint.row].size());
+            uint32_t sc = std::min(startPoint.column, lineLen);
+            uint32_t ec = std::min(endPoint.column, lineLen);
+            if (ec > sc)
+            {
+                rawTokens.push_back(
+                    RawToken{startPoint.row, sc, ec - sc, meta.tokenType, meta.tokenMod, meta.priority});
+            }
         }
     }
     else if (meta.tokenType != Type_Operator)
@@ -1193,8 +1219,8 @@ void EmitTokenOrSplitLines(TSNode node, TokenMeta meta, const std::vector<std::s
                 break;
             }
             uint32_t lineLen = static_cast<uint32_t>(sourceLines[r].size());
-            uint32_t sc = (r == startPoint.row) ? startPoint.column : 0;
-            uint32_t ec = (r == endPoint.row) ? endPoint.column : lineLen;
+            uint32_t sc = std::min((r == startPoint.row) ? startPoint.column : 0u, lineLen);
+            uint32_t ec = std::min((r == endPoint.row) ? endPoint.column : lineLen, lineLen);
             if (ec > sc)
             {
                 rawTokens.push_back(RawToken{r, sc, ec - sc, meta.tokenType, meta.tokenMod, meta.priority});

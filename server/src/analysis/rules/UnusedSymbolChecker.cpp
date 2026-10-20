@@ -121,10 +121,8 @@ std::string ExtractStringValue(TSNode exprNode, const SemanticAnalysisRequest& r
     const std::string_view type = ts_node_type(exprNode);
     if (type == parser::nodes::StringLiteral)
     {
-        std::string text = parser::GetNodeText(exprNode, req.sourceCode);
-        if (text.size() >= 2 && text.front() == '"' && text.back() == '"')
-            return text.substr(1, text.size() - 2);
-        return text;
+        std::string_view text = parser::GetNodeTextView(exprNode, req.sourceCode);
+        return std::string(parser::UnquoteStringView(text));
     }
     if (type == parser::nodes::BinaryExpression)
     {

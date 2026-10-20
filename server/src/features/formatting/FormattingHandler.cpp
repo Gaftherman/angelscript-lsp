@@ -3,6 +3,8 @@
 #include "features/formatting/FormattingLineBuilder.h"
 #include "features/formatting/FormattingRenderer.h"
 #include "features/formatting/FormattingTokens.h"
+#include "parser/ASTUtils.h"
+#include "parser/GrammarSymbols.h"
 #include <algorithm>
 
 namespace angel_lsp::features
@@ -173,9 +175,36 @@ std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingReq
         return std::nullopt;
     }
 
-    if (request.tree && ts_node_has_error(ts_tree_root_node(request.tree)))
+    if (request.tree)
     {
-        return std::nullopt;
+        TSNode root = ts_tree_root_node(request.tree);
+        if (ts_node_has_error(root))
+        {
+            return std::nullopt;
+        }
+        TSPoint pt{request.position.line, request.position.character};
+        TSNode nodeAtPoint = ts_node_descendant_for_point_range(root, pt, pt);
+        if (!ts_node_is_null(nodeAtPoint))
+        {
+            const auto& gs = parser::GetGrammarSymbols();
+            TSSymbol sym = ts_node_symbol(nodeAtPoint);
+            if (sym == gs.symStringLiteral || sym == gs.symComment)
+            {
+                return std::nullopt;
+            }
+            TSNode p = parser::GetParent(nodeAtPoint);
+            int depth = 0;
+            while (!ts_node_is_null(p) && depth < 8)
+            {
+                TSSymbol pSym = ts_node_symbol(p);
+                if (pSym == gs.symStringLiteral || pSym == gs.symComment)
+                {
+                    return std::nullopt;
+                }
+                p = parser::GetParent(p);
+                ++depth;
+            }
+        }
     }
 
     uint32_t targetLine = request.position.line;

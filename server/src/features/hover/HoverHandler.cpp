@@ -2827,15 +2827,7 @@ std::string ResolveStringLiteralPath(std::string_view unquoted, const HoverReque
 
 static std::string_view UnquoteStringLiteral(std::string_view txt)
 {
-    if (txt.size() >= 2 && ((txt.front() == '"' && txt.back() == '"') || (txt.front() == '\'' && txt.back() == '\'')))
-    {
-        return txt.substr(1, txt.size() - 2);
-    }
-    if (txt.starts_with("\"\"\"") && txt.ends_with("\"\"\"") && txt.size() >= 6)
-    {
-        return txt.substr(3, txt.size() - 6);
-    }
-    return txt;
+    return parser::UnquoteStringView(txt);
 }
 
 static std::string FormatResolvedAssetMarkdown(std::string_view unquoted, const std::string& resolved, bool showLength,
@@ -3063,7 +3055,8 @@ static bool IsStringOrBinaryLiteral(const HoverTarget& target)
     std::string_view type = ts_node_type(target.node);
     if (type == "string_literal" || type == "binary_expression")
     {
-        return !target.text.empty() && target.text.front() == '"' && target.text.back() == '"';
+        return target.text.size() >= 2 && ((target.text.front() == '"' && target.text.back() == '"') ||
+                                           (target.text.front() == '\'' && target.text.back() == '\''));
     }
     return false;
 }

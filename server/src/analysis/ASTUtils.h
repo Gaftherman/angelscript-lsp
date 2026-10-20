@@ -22,6 +22,7 @@ using parser::NodeText;
 using parser::NodeTextResult;
 using parser::NodeTextString;
 using parser::NodeType;
+using parser::UnquoteStringView;
 
 /**
  * @brief Hard ceiling on how deep any recursive walk over a syntax tree may go.
