@@ -2,6 +2,25 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.4-exp.1] - 2026-10-20
+
+### Experimental Release 1.1.4-exp.1: AST Traversal Optimization, Zero-Heap Type Comparisons & Engine Independence
+
+- Numerical Symbol & Field Resolution in Hot Paths (`GrammarSymbols`, `GrammarNames`, `LocalScopeCollector`, `SymbolCollector`, `ClassRules`, `InitializerListChecker`, `CallChecker`, `CompletionHandler`):
+  - Pre-resolved anonymous tokens (`tokFunction`, `tokComma`, `tokCloseParen`, `tokColon`) directly as numerical `TSSymbol` IDs in `GrammarSymbols`.
+  - Added $O(1)$ numerical field lookup overload `parser::GetChildByField(TSNode, TSFieldId)`.
+  - Replaced sequential string comparisons (`ts_node_type`) across analysis and feature passes with direct $O(1)$ `TSSymbol` comparisons.
+  - Eliminated ad-hoc string-based child lookups (`ts_node_child_by_field_name`) in `ClassRules` and `UnusedSymbolChecker`, converting to `TSFieldId`.
+  - Converted `CompletionHandler` boundary checks from text matching to $O(1)$ `IsExpressionBoundarySymbol`.
+- Bounded AST Parent Traversals (`CallChecker`, `ConstChecker`, `NamespaceChecker`, `SemanticHelpers`, `TargetResolution`, `TypeConversionChecker`):
+  - Bounded all upward parent-climb loops (`ts_node_parent`) to strict depth caps (<= 16) using `parser::GetParent` and $O(1)$ symbol checks.
+  - Protected all recovery and error-handling traversals with `ts_node_has_error(rootNode)` to bypass overhead completely on clean files.
+- Zero-Allocation Heap Optimization (`SemanticHelpers`, `CleanBaseTypeView`):
+  - Replaced heap string concatenation (`+ "::opIndex"`) and vector cloning in `FindOpIndexInHierarchy` with zero-allocation `symbolTable.FindMemberSymbolPtr(type, "opIndex")`.
+  - Replaced more than 12 heap-allocating `CleanBaseType(...) ==/!=` checks across Layer 2 and Layer 3 with zero-allocation `CleanBaseTypeView` (`std::string_view`).
+- Quality Gate Expansion (`check-ast-traversal.py`):
+  - Extended static analysis gates to enforce bounded parent-climb loops, ban hot-path upward parent crawling, and assert engine independence by preventing engine-specific identifiers from leaking into core analysis outside `EngineProfiles.cpp`.
+
 ## [1.1.3] - 2026-10-19
 
 ### Official 1.1.3 Release: Inactive Preprocessor Branch Isolation, AST Lookup Optimization, Official Engine Config Transpiler, Field Type Extraction, Array Member Resolution, Granular Inlay Hints & Dedicated Auto Hover

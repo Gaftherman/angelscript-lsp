@@ -335,7 +335,7 @@ std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionReques
 
     std::string varType =
         analysis::ResolveExpressionType(targetNode, {scope, request.symbolTable, request.sourceCode, request.uri});
-    if (analysis::CleanBaseType(varType) == "void")
+    if (analysis::CleanBaseTypeView(varType) == "void")
     {
         return std::nullopt;
     }

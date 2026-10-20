@@ -790,10 +790,11 @@ void FilterMethodCandidatesConstness(std::vector<Symbol>& candidates, bool isRec
  */
 bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode curr = node;
-    while (!ts_node_is_null(curr))
+    for (int depth = 0; depth < 16 && !ts_node_is_null(curr); ++depth, curr = parser::GetParent(curr))
     {
-        if (std::string_view(ts_node_type(curr)) == parser::nodes::FuncDeclaration)
+        if (ts_node_symbol(curr) == gs.symFuncDeclaration)
         {
             TSTreeCursor cursor = ts_tree_cursor_new(curr);
             bool isConst = false;
@@ -802,7 +803,7 @@ bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
                 do
                 {
                     TSNode child = ts_tree_cursor_current_node(&cursor);
-                    if (std::string_view(ts_node_type(child)) == parser::nodes::FuncAttributes)
+                    if (ts_node_symbol(child) == gs.symFuncAttributes)
                     {
                         isConst = (NodeText(child, sourceCode).find("const") != std::string::npos);
                         break;
@@ -812,7 +813,6 @@ bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
             ts_tree_cursor_delete(&cursor);
             return isConst;
         }
-        curr = ts_node_parent(curr);
     }
     return false;
 }
@@ -2044,14 +2044,19 @@ TSNode FindVariableTypeNode(TSNode varDeclNode)
     {
         return varTypeNode;
     }
-    const uint32_t count = ts_node_named_child_count(varDeclNode);
-    for (uint32_t i = 0; i < count; ++i)
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode foundType{};
+    parser::ForEachNamedChildNode(varDeclNode,
+                                  [&](TSNode child)
+                                  {
+                                      if (ts_node_is_null(foundType) && ts_node_symbol(child) == gs.symType)
+                                      {
+                                          foundType = child;
+                                      }
+                                  });
+    if (!ts_node_is_null(foundType))
     {
-        TSNode child = ts_node_named_child(varDeclNode, i);
-        if (std::string_view(ts_node_type(child)) == "type")
-        {
-            return child;
-        }
+        return foundType;
     }
     return varTypeNode;
 }
@@ -2446,15 +2451,15 @@ void CheckVariableDirectInitialization(TSNode varDeclNode, const CallCheckReques
     baseName = CleanBaseType(baseName);
 
     const VarInitContext vctx{declaredType, baseName, tmplInfo, request, ctx};
-    const uint32_t declaratorCount = ts_node_named_child_count(varDeclNode);
-    for (uint32_t d = 0; d < declaratorCount; ++d)
-    {
-        TSNode declarator = ts_node_named_child(varDeclNode, d);
-        if (std::string_view(ts_node_type(declarator)) == "variable_declarator")
-        {
-            CheckDeclaratorDirectInit(declarator, vctx);
-        }
-    }
+    const auto& gs = parser::GetGrammarSymbols();
+    parser::ForEachNamedChildNode(varDeclNode,
+                                  [&](TSNode declarator)
+                                  {
+                                      if (ts_node_symbol(declarator) == gs.symVariableDeclarator)
+                                      {
+                                          CheckDeclaratorDirectInit(declarator, vctx);
+                                      }
+                                  });
 }
 
 /**
@@ -2479,8 +2484,7 @@ void CheckCallArgumentsIndexed(const CallCheckRequest& request, DiagnosticContex
             {
                 return;
             }
-            const std::string_view nodeType = ts_node_type(node);
-            if (nodeType == parser::nodes::CallExpression)
+            if (ts_node_symbol(node) == parser::GetGrammarSymbols().symCallExpression)
             {
                 const TSPoint start = ts_node_start_point(node);
                 CheckCall(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column), ctx);

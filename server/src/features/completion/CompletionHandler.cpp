@@ -5,6 +5,7 @@
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include "parser/Keywords.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
@@ -1530,9 +1531,10 @@ static TSNode FindReceiverFromParentAtDot(TSNode rootNode, size_t dotByteOffset)
     {
         return TSNode{};
     }
-    if (std::string_view(ts_node_type(parent)) == "member_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(parent) == gs.symMemberExpression)
     {
-        TSNode obj = parser::GetChildByField(parent, parser::fields::Object);
+        TSNode obj = parser::GetChildByField(parent, gs.fieldObject);
         if (!ts_node_is_null(obj))
         {
             return obj;
@@ -1541,9 +1543,10 @@ static TSNode FindReceiverFromParentAtDot(TSNode rootNode, size_t dotByteOffset)
     TSNode prev = ts_node_prev_sibling(dotNode);
     if (!ts_node_is_null(prev))
     {
-        std::string_view prevType = ts_node_type(prev);
-        if (prevType != "binary_expression" && prevType != "unary_expression" && prevType != "assignment_expression" &&
-            prevType != "conditional_expression" && prevType != "ERROR")
+        const TSSymbol prevSym = ts_node_symbol(prev);
+        if (prevSym != gs.symBinaryExpression && prevSym != gs.symUnaryExpression &&
+            prevSym != gs.symAssignmentExpression && prevSym != gs.symTernaryExpression && !ts_node_has_error(prev) &&
+            !ts_node_is_error(prev))
         {
             return prev;
         }
@@ -1552,30 +1555,18 @@ static TSNode FindReceiverFromParentAtDot(TSNode rootNode, size_t dotByteOffset)
 }
 
 /**
- * @brief Checks if an AST node type acts as an outer expression boundary.
- * @param[in] pType Node type identifier string.
- * @return True if the node terminates upward expression traversal.
+ * @brief Checks if an AST node acts as an outer expression boundary using O(1) symbols.
+ * @param[in] sym Grammar symbol identifier.
+ * @param[in] gs Pre-resolved grammar symbols cache.
+ * @return True if the symbol terminates upward expression traversal.
  */
-static bool IsExpressionBoundaryType(std::string_view pType) noexcept
+static bool IsExpressionBoundarySymbol(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
-    static constexpr std::string_view k_boundaries[] = {"script",
-                                                        "statement_block",
-                                                        "expression_statement",
-                                                        "variable_declaration",
-                                                        "assignment_expression",
-                                                        "return_statement",
-                                                        "binary_expression",
-                                                        "unary_expression",
-                                                        "ternary_expression",
-                                                        "parenthesized_expression",
-                                                        "argument_list",
-                                                        "if_statement",
-                                                        "while_statement",
-                                                        "for_statement",
-                                                        "switch_statement",
-                                                        "ERROR"};
-    return std::any_of(std::begin(k_boundaries), std::end(k_boundaries),
-                       [pType](std::string_view b) noexcept { return pType == b; });
+    return sym == gs.symScript || sym == gs.symStatementBlock || sym == gs.symExpressionStatement ||
+           sym == gs.symVariableDeclaration || sym == gs.symAssignmentExpression || sym == gs.symReturnStatement ||
+           sym == gs.symBinaryExpression || sym == gs.symUnaryExpression || sym == gs.symTernaryExpression ||
+           sym == gs.symParenthesizedExpression || sym == gs.symArgumentList || sym == gs.symIfStatement ||
+           sym == gs.symWhileStatement || sym == gs.symForStatement || sym == gs.symSwitchStatement;
 }
 
 static TSNode FindReceiverPrecedingDot(TSNode rootNode, std::string_view sourceCode, size_t dotByteOffset)
@@ -1596,11 +1587,12 @@ static TSNode FindReceiverPrecedingDot(TSNode rootNode, std::string_view sourceC
         return TSNode{};
     }
     TSNode curr = leaf;
+    const auto& gs = parser::GetGrammarSymbols();
     for (size_t depth = 0; depth < 16 && !ts_node_is_null(parser::GetParent(curr)); ++depth)
     {
         TSNode p = parser::GetParent(curr);
-        std::string_view pType = ts_node_type(p);
-        if (IsExpressionBoundaryType(pType) || ts_node_end_byte(p) > dotByteOffset)
+        if (ts_node_is_error(p) || IsExpressionBoundarySymbol(ts_node_symbol(p), gs) ||
+            ts_node_end_byte(p) > dotByteOffset)
         {
             break;
         }
@@ -1685,7 +1677,7 @@ static std::string ResolveNamedReceiverType(std::string_view nodeText, const Com
         const analysis::LocalDefinition* def = analysis::ResolveInScope(innermostScope, nodeText);
         if (def)
         {
-            if (!def->typeName.empty() && analysis::CleanBaseType(def->typeName) != "auto")
+            if (!def->typeName.empty() && analysis::CleanBaseTypeView(def->typeName) != "auto")
             {
                 return def->typeName;
             }

@@ -766,8 +766,8 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     bool hasCallInit = !ts_node_is_null(argsNode);
     if (!hasCallInit && !ts_node_is_null(valueNode))
     {
-        std::string_view vType = ts_node_type(valueNode);
-        if (vType == parser::nodes::CallExpression || vType == parser::nodes::ConstructCallExpression)
+        TSSymbol vSym = ts_node_symbol(valueNode);
+        if (vSym == m_gs.symCallExpression || vSym == m_gs.symConstructCallExpression)
         {
             hasCallInit = true;
         }
@@ -1067,14 +1067,14 @@ void SymbolCollector::ProcessNamespace(TSNode namespaceNode, SymbolCollectContex
         return;
     }
 
-    if (std::string_view(ts_node_type(nameNode)) == "scoped_identifier")
+    if (ts_node_symbol(nameNode) == m_gs.symScopedIdentifier)
     {
         std::string currentPath = ctx.containerPath;
         const uint32_t count = ts_node_named_child_count(nameNode);
         for (uint32_t i = 0; i < count; ++i)
         {
             TSNode segNode = ts_node_named_child(nameNode, i);
-            if (std::string_view(ts_node_type(segNode)) != "identifier")
+            if (ts_node_symbol(segNode) != m_gs.symIdentifier)
             {
                 continue;
             }
@@ -1612,44 +1612,547 @@ bool AdvanceCursorAfterError(TSTreeCursor& cursor)
     }
     return false;
 }
-} // namespace
 
-void SymbolCollector::HandleParseErrorNode(TSNode node, bool missingOpenBrace, uint32_t& firstErrorLine,
-                                           SymbolCollectContext& sCtx) const
+TSPoint ComputeLocalPoint(std::string_view sourceCode, TSNode baseNode, size_t targetOffset)
 {
-    TSNode target = ts_node_is_missing(node) ? node : PinpointOffendingNode(node, m_gs);
-    const uint32_t line = ts_node_start_point(target).row;
-    if (missingOpenBrace && firstErrorLine != UINT32_MAX && line > firstErrorLine)
+    TSPoint pt = ts_node_start_point(baseNode);
+    const size_t limit = std::min(targetOffset, sourceCode.size());
+    for (size_t i = ts_node_start_byte(baseNode); i < limit; ++i)
+    {
+        if (sourceCode[i] == '\n')
+        {
+            ++pt.row;
+            pt.column = 0;
+        }
+        else
+        {
+            ++pt.column;
+        }
+    }
+    return pt;
+}
+
+bool IsIdentChar(char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+}
+
+void SkipStringLiteral(std::string_view text, size_t& idx)
+{
+    if (idx >= text.size())
     {
         return;
     }
-    EmitParseErrorDiagnostic(target, sCtx);
-    if (firstErrorLine == UINT32_MAX)
+    if (text.substr(idx).starts_with("\"\"\""))
     {
-        firstErrorLine = line;
+        const size_t end = text.find("\"\"\"", idx + 3);
+        idx = (end == std::string_view::npos) ? text.size() : (end + 3);
+        return;
+    }
+    const char quote = text[idx++];
+    while (idx < text.size())
+    {
+        if (text[idx] == '\\')
+        {
+            idx += 2;
+            continue;
+        }
+        if (text[idx] == quote)
+        {
+            ++idx;
+            break;
+        }
+        if (text[idx] == '\n')
+        {
+            break;
+        }
+        ++idx;
+    }
+}
+
+size_t FindNextClauseBoundary(std::string_view text, size_t start, size_t limit)
+{
+    size_t i = start;
+    while (i < limit)
+    {
+        SkipWhitespaceAndComments(text, i);
+        if (i >= limit)
+        {
+            break;
+        }
+        if (text[i] == '"' || text[i] == '\'')
+        {
+            SkipStringLiteral(text, i);
+            continue;
+        }
+        std::string_view rem = text.substr(i, limit - i);
+        if (rem.starts_with("case") && (rem.size() == 4 || !IsIdentChar(rem[4])))
+        {
+            return i;
+        }
+        if (rem.starts_with("default") && (rem.size() == 7 || !IsIdentChar(rem[7])))
+        {
+            return i;
+        }
+        if (text[i] == '}')
+        {
+            return i;
+        }
+        ++i;
+    }
+    return limit;
+}
+
+bool IsStatementStart(std::string_view word)
+{
+    static constexpr std::string_view k_keywords[] = {
+        "bool",  "break", "case",   "continue", "default", "double", "float",  "for",    "if",    "int",  "int16",
+        "int64", "int8",  "return", "string",   "switch",  "uint",   "uint16", "uint64", "uint8", "void", "while"};
+    return std::binary_search(std::begin(k_keywords), std::end(k_keywords), word);
+}
+
+bool IsContinuationChar(char ch) noexcept
+{
+    constexpr std::string_view k_ops = "+-*/%&|^?:,=";
+    return k_ops.find(ch) != std::string_view::npos;
+}
+
+struct CaseExpressionState
+{
+    uint32_t parenDepth = 0;
+    uint32_t ternaryDepth = 0;
+    size_t exprEnd = 0;
+};
+
+bool HandleCaseContinuation(std::string_view text, size_t idx, CaseExpressionState& state)
+{
+    if (state.parenDepth != 0 || state.ternaryDepth != 0)
+    {
+        return false;
+    }
+
+    std::string_view prefix = text.substr(0, idx);
+    while (!prefix.empty() && (prefix.back() == ' ' || prefix.back() == '\t' || prefix.back() == '\r'))
+    {
+        prefix.remove_suffix(1);
+    }
+
+    if (!prefix.empty() && !IsContinuationChar(prefix.back()))
+    {
+        state.exprEnd = prefix.size();
+        return true;
+    }
+    return false;
+}
+
+void HandleParenToken(char ch, CaseExpressionState& state, size_t& idx)
+{
+    if (ch == '(' || ch == '[')
+    {
+        ++state.parenDepth;
+    }
+    else if ((ch == ')' || ch == ']') && state.parenDepth > 0)
+    {
+        --state.parenDepth;
+    }
+    ++idx;
+    state.exprEnd = idx;
+}
+
+enum class ColonResult
+{
+    ScopeResolution,
+    TernaryMatched,
+    CaseColonFound
+};
+
+ColonResult HandleColonToken(std::string_view text, size_t limit, CaseExpressionState& state, size_t& idx)
+{
+    if (idx + 1 < limit && text[idx + 1] == ':')
+    {
+        idx += 2;
+        state.exprEnd = idx;
+        return ColonResult::ScopeResolution;
+    }
+
+    if (state.parenDepth == 0 && state.ternaryDepth > 0)
+    {
+        --state.ternaryDepth;
+        ++idx;
+        state.exprEnd = idx;
+        return ColonResult::TernaryMatched;
+    }
+
+    if (state.parenDepth == 0)
+    {
+        ++idx;
+        return ColonResult::CaseColonFound;
+    }
+
+    ++idx;
+    state.exprEnd = idx;
+    return ColonResult::TernaryMatched;
+}
+
+bool HandleIdentOrAssignment(std::string_view text, size_t limit, CaseExpressionState& state, size_t& idx)
+{
+    const char ch = text[idx];
+    if (IsIdentChar(ch))
+    {
+        size_t wEnd = idx;
+        while (wEnd < limit && IsIdentChar(text[wEnd]))
+        {
+            ++wEnd;
+        }
+        if (IsStatementStart(text.substr(idx, wEnd - idx)))
+        {
+            return false;
+        }
+    }
+
+    if (ch == '=' && idx + 1 < limit && text[idx + 1] != '=' && text[idx + 1] != '>')
+    {
+        if (idx == 0 || (text[idx - 1] != '=' && text[idx - 1] != '!' && text[idx - 1] != '<' && text[idx - 1] != '>'))
+        {
+            return false;
+        }
+    }
+
+    ++idx;
+    state.exprEnd = idx;
+    return true;
+}
+
+void SkipCaseWhitespace(std::string_view text, size_t& idx, size_t limit)
+{
+    while (idx < limit && (text[idx] == ' ' || text[idx] == '\t' || text[idx] == '\r'))
+    {
+        ++idx;
+    }
+}
+
+enum class CaseTokenAction
+{
+    Continue,
+    Break,
+    CaseColonFound
+};
+
+CaseTokenAction HandleNewlineToken(std::string_view text, size_t& idx, CaseExpressionState& state)
+{
+    if (HandleCaseContinuation(text, idx, state))
+    {
+        return CaseTokenAction::Break;
+    }
+    ++idx;
+    return CaseTokenAction::Continue;
+}
+
+void HandleStringToken(std::string_view text, size_t& idx, CaseExpressionState& state)
+{
+    SkipStringLiteral(text, idx);
+    state.exprEnd = idx;
+}
+
+bool IsParenOrBracket(char ch) noexcept
+{
+    return ch == '(' || ch == '[' || ch == ')' || ch == ']';
+}
+
+bool IsCaseTerminator(char ch, uint32_t parenDepth) noexcept
+{
+    return parenDepth == 0 && (ch == ';' || ch == '}');
+}
+
+CaseTokenAction HandleColonOrQuestion(std::string_view text, size_t limit, CaseExpressionState& state, size_t& idx)
+{
+    const char ch = text[idx];
+    if (ch == '?')
+    {
+        if (state.parenDepth == 0)
+        {
+            ++state.ternaryDepth;
+        }
+        ++idx;
+        state.exprEnd = idx;
+        return CaseTokenAction::Continue;
+    }
+    return (HandleColonToken(text, limit, state, idx) == ColonResult::CaseColonFound) ? CaseTokenAction::CaseColonFound
+                                                                                      : CaseTokenAction::Continue;
+}
+
+CaseTokenAction ProcessCaseExpressionChar(std::string_view text, size_t limit, CaseExpressionState& state, size_t& idx)
+{
+    const char ch = text[idx];
+    if (ch == '\n')
+    {
+        return HandleNewlineToken(text, idx, state);
+    }
+    if (ch == '"' || ch == '\'')
+    {
+        HandleStringToken(text, idx, state);
+        return CaseTokenAction::Continue;
+    }
+    if (IsParenOrBracket(ch))
+    {
+        HandleParenToken(ch, state, idx);
+        return CaseTokenAction::Continue;
+    }
+    if (ch == '?' || ch == ':')
+    {
+        return HandleColonOrQuestion(text, limit, state, idx);
+    }
+    if (IsCaseTerminator(ch, state.parenDepth))
+    {
+        return CaseTokenAction::Break;
+    }
+    return HandleIdentOrAssignment(text, limit, state, idx) ? CaseTokenAction::Continue : CaseTokenAction::Break;
+}
+
+bool ScanCaseExpression(std::string_view text, size_t& idx, size_t limit, size_t& outExprEnd)
+{
+    CaseExpressionState state{0, 0, idx};
+
+    while (idx < limit)
+    {
+        SkipCaseWhitespace(text, idx, limit);
+        if (idx >= limit)
+        {
+            break;
+        }
+
+        const auto action = ProcessCaseExpressionChar(text, limit, state, idx);
+        if (action == CaseTokenAction::Break)
+        {
+            break;
+        }
+        if (action == CaseTokenAction::CaseColonFound)
+        {
+            outExprEnd = state.exprEnd;
+            return true;
+        }
+    }
+
+    outExprEnd = state.exprEnd;
+    return false;
+}
+
+struct SwitchScanContext
+{
+    TSNode switchNode{TSNode{}};
+    std::string_view sourceCode;
+    size_t closeBraceByte = 0;
+};
+
+void ScanDefaultClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vector<MissingCaseColon>& outColons)
+{
+    const size_t defStart = idx;
+    idx += 7;
+    while (idx < sCtx.closeBraceByte &&
+           (sCtx.sourceCode[idx] == ' ' || sCtx.sourceCode[idx] == '\t' || sCtx.sourceCode[idx] == '\r'))
+    {
+        ++idx;
+    }
+    if (idx < sCtx.closeBraceByte && sCtx.sourceCode[idx] == ':')
+    {
+        ++idx;
+        return;
+    }
+
+    MissingCaseColon colon;
+    colon.clauseStartByte = static_cast<uint32_t>(defStart);
+    const TSPoint pt = ComputeLocalPoint(sCtx.sourceCode, sCtx.switchNode, defStart + 7);
+    colon.line = pt.row;
+    colon.character = pt.column;
+    colon.isDefault = true;
+    colon.clauseEndByte = static_cast<uint32_t>(FindNextClauseBoundary(sCtx.sourceCode, idx, sCtx.closeBraceByte));
+    outColons.push_back(colon);
+    idx = colon.clauseEndByte;
+}
+
+void ScanCaseClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vector<MissingCaseColon>& outColons)
+{
+    const size_t caseStart = idx;
+    idx += 4;
+    while (idx < sCtx.closeBraceByte &&
+           (sCtx.sourceCode[idx] == ' ' || sCtx.sourceCode[idx] == '\t' || sCtx.sourceCode[idx] == '\r'))
+    {
+        ++idx;
+    }
+    size_t exprEnd = idx;
+    const bool hasColon = ScanCaseExpression(sCtx.sourceCode, idx, sCtx.closeBraceByte, exprEnd);
+    if (!hasColon)
+    {
+        MissingCaseColon colon;
+        colon.clauseStartByte = static_cast<uint32_t>(caseStart);
+        const TSPoint pt = ComputeLocalPoint(sCtx.sourceCode, sCtx.switchNode, exprEnd);
+        colon.line = pt.row;
+        colon.character = pt.column;
+        colon.isDefault = false;
+        colon.clauseEndByte = static_cast<uint32_t>(FindNextClauseBoundary(sCtx.sourceCode, idx, sCtx.closeBraceByte));
+        outColons.push_back(colon);
+        idx = colon.clauseEndByte;
+    }
+}
+
+bool FindSwitchBraceOffsets(TSNode switchNode, uint32_t& openByte, uint32_t& closeByte,
+                            const parser::GrammarSymbols& gs)
+{
+    openByte = UINT32_MAX;
+    closeByte = ts_node_end_byte(switchNode);
+    TSTreeCursor cur = ts_tree_cursor_new(switchNode);
+    if (ts_tree_cursor_goto_first_child(&cur))
+    {
+        do
+        {
+            TSNode child = ts_tree_cursor_current_node(&cur);
+            const TSSymbol sym = ts_node_symbol(child);
+            if (sym == gs.tokOpenBrace)
+            {
+                openByte = ts_node_end_byte(child);
+            }
+            else if (sym == gs.tokCloseBrace)
+            {
+                closeByte = ts_node_start_byte(child);
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cur));
+    }
+    ts_tree_cursor_delete(&cur);
+    return openByte != UINT32_MAX && openByte < closeByte;
+}
+
+void ScanSwitchStatementCaseColons(TSNode switchNode, std::string_view sourceCode, const parser::GrammarSymbols& gs,
+                                   std::vector<MissingCaseColon>& outColons)
+{
+    uint32_t openByte = 0;
+    uint32_t closeByte = 0;
+    if (!FindSwitchBraceOffsets(switchNode, openByte, closeByte, gs))
+    {
+        return;
+    }
+
+    SwitchScanContext scanCtx{switchNode, sourceCode, closeByte};
+
+    size_t idx = openByte;
+    while (idx < closeByte)
+    {
+        SkipWhitespaceAndComments(sourceCode, idx);
+        if (idx >= closeByte)
+        {
+            break;
+        }
+
+        if (sourceCode[idx] == '"' || sourceCode[idx] == '\'')
+        {
+            SkipStringLiteral(sourceCode, idx);
+            continue;
+        }
+
+        std::string_view rem = sourceCode.substr(idx, closeByte - idx);
+        if (rem.starts_with("default") && (rem.size() == 7 || !IsIdentChar(rem[7])))
+        {
+            ScanDefaultClauseColon(scanCtx, idx, outColons);
+        }
+        else if (rem.starts_with("case") && (rem.size() == 4 || !IsIdentChar(rem[4])))
+        {
+            ScanCaseClauseColon(scanCtx, idx, outColons);
+        }
+        else
+        {
+            ++idx;
+        }
+    }
+}
+
+} // namespace
+
+struct SymbolCollector::ParseErrorReportContext
+{
+    SymbolCollectContext& sCtx;
+    bool missingOpenBrace = false;
+    uint32_t firstErrorLine = UINT32_MAX;
+    std::vector<MissingCaseColon> missingColons;
+};
+
+void SymbolCollector::EmitMissingColonDiagnostics(std::span<const MissingCaseColon> missingColons,
+                                                  SymbolCollectContext& sCtx) const
+{
+    for (const auto& mc : missingColons)
+    {
+        Diagnostic diag;
+        diag.range.start.line = mc.line;
+        diag.range.start.character = mc.character;
+        diag.range.end.line = mc.line;
+        diag.range.end.character = mc.character + 1;
+        diag.severity = DiagnosticSeverity::Error;
+        diag.code = "as-syntax-error";
+        diag.source = "AngelScript";
+        diag.fileUri = sCtx.request.fileUri;
+        const char* key = mc.isDefault ? "note-expected-colon-after-default" : "note-expected-colon-after-case";
+        const char* fallback = mc.isDefault ? "Expected ':' after 'default'" : "Expected ':' after case expression";
+        diag.message = i18n::FormatMessage(sCtx.request.i18n, key, fallback);
+        sCtx.diagnostics.push_back(std::move(diag));
+    }
+}
+
+void SymbolCollector::HandleParseErrorNode(TSNode node, ParseErrorReportContext& errCtx) const
+{
+    const uint32_t startByte = ts_node_start_byte(node);
+    for (const auto& mc : errCtx.missingColons)
+    {
+        if (startByte >= mc.clauseStartByte && startByte < mc.clauseEndByte)
+        {
+            return;
+        }
+    }
+
+    TSNode target = ts_node_is_missing(node) ? node : PinpointOffendingNode(node, m_gs);
+    const uint32_t line = ts_node_start_point(target).row;
+    if (errCtx.missingOpenBrace && errCtx.firstErrorLine != UINT32_MAX && line > errCtx.firstErrorLine)
+    {
+        return;
+    }
+    EmitParseErrorDiagnostic(target, errCtx.sCtx);
+    if (errCtx.firstErrorLine == UINT32_MAX)
+    {
+        errCtx.firstErrorLine = line;
     }
 }
 
 void SymbolCollector::ReportParseErrors(TSNode rootNode, SymbolCollectContext& sCtx) const
 {
     if (!ts_node_has_error(rootNode))
+    {
         return;
+    }
 
     const auto braceBalance = ComputeBraceBalance(sCtx.request.sourceCode);
-    const bool missingOpenBrace = braceBalance.HasMissingOpenBrace();
-    uint32_t firstErrorLine = UINT32_MAX;
+    ParseErrorReportContext errCtx{sCtx, braceBalance.HasMissingOpenBrace(), UINT32_MAX, {}};
 
     TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
-
     while (true)
     {
         TSNode current = ts_tree_cursor_current_node(&cursor);
 
+        if (ts_node_symbol(current) == m_gs.symSwitchStatement && ts_node_has_error(current))
+        {
+            const size_t prevCount = errCtx.missingColons.size();
+            ScanSwitchStatementCaseColons(current, sCtx.request.sourceCode, m_gs, errCtx.missingColons);
+            if (errCtx.missingColons.size() > prevCount)
+            {
+                EmitMissingColonDiagnostics(std::span<const MissingCaseColon>(errCtx.missingColons.data() + prevCount,
+                                                                              errCtx.missingColons.size() - prevCount),
+                                            sCtx);
+            }
+        }
+
         if (ts_node_is_missing(current))
         {
-            HandleParseErrorNode(current, missingOpenBrace, firstErrorLine, sCtx);
+            HandleParseErrorNode(current, errCtx);
             if (!AdvanceCursorAfterError(cursor))
+            {
                 break;
+            }
             continue;
         }
 
@@ -1659,9 +2162,11 @@ void SymbolCollector::ReportParseErrors(TSNode rootNode, SymbolCollectContext& s
             {
                 continue;
             }
-            HandleParseErrorNode(current, missingOpenBrace, firstErrorLine, sCtx);
+            HandleParseErrorNode(current, errCtx);
             if (!AdvanceCursorAfterError(cursor))
+            {
                 break;
+            }
             continue;
         }
 
@@ -1671,9 +2176,10 @@ void SymbolCollector::ReportParseErrors(TSNode rootNode, SymbolCollectContext& s
         }
 
         if (!AdvanceCursorAfterError(cursor))
+        {
             break;
+        }
     }
-
     ts_tree_cursor_delete(&cursor);
 }
 
@@ -1699,8 +2205,8 @@ bool SymbolCollector::TryFormatArgumentListSyntaxError(TSNode node, const Symbol
         return false;
     }
 
-    std::string_view nextType = ts_node_type(nextSibling);
-    if (nextType == "," || nextType == ")")
+    TSSymbol nextSym = ts_node_symbol(nextSibling);
+    if (nextSym == m_gs.tokComma || nextSym == m_gs.tokCloseParen)
     {
         return false;
     }

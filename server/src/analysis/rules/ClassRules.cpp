@@ -564,11 +564,6 @@ void CheckPropertyAccessors(const Symbol& sym, const DiagnosticContext& ctx)
     ValidatePropertyAccessorPairs(getters, setters, ctx);
 }
 
-static TSNode GetChildByField(TSNode node, const char* fieldName)
-{
-    return ts_node_child_by_field_name(node, fieldName, static_cast<uint32_t>(strlen(fieldName)));
-}
-
 /** @brief Range bounds within the host document. */
 struct InstantiationRange
 {
@@ -776,8 +771,9 @@ void EmitMixinMemberNotFound(const MixinCheckContext& mctx, std::string_view mem
 /** @brief Checks member expressions of form this->member. */
 void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheckContext& mctx, const DiagnosticContext& ctx)
 {
-    TSNode objNode = GetChildByField(cur, "object");
-    TSNode propNode = GetChildByField(cur, "member");
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode objNode = parser::GetChildByField(cur, gs.fieldObject);
+    TSNode propNode = parser::GetChildByField(cur, gs.fieldMember);
     if (ts_node_is_null(objNode) || ts_node_is_null(propNode))
     {
         return;
@@ -803,14 +799,15 @@ void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheckContext
 /** @brief Checks bare function calls without qualifiers. */
 void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state, const DiagnosticContext& ctx)
 {
-    TSNode fnNode = GetChildByField(cur, "function");
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode fnNode = parser::GetChildByField(cur, gs.fieldFunction);
     if (ts_node_is_null(fnNode))
     {
         return;
     }
 
-    std::string_view fnType = NodeType(fnNode);
-    if (fnType != "identifier" && fnType != "scoped_identifier")
+    const TSSymbol fnSym = ts_node_symbol(fnNode);
+    if (fnSym != gs.symIdentifier && fnSym != gs.symScopedIdentifier)
     {
         return;
     }
@@ -827,27 +824,27 @@ void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckStat
 }
 
 /** @brief Checks if a child node matches a named field of the parent by byte offset. */
-bool IsNamedChildMatch(TSNode parent, const char* fieldName, TSNode cur)
+bool IsNamedChildMatch(TSNode parent, TSFieldId fieldId, TSNode cur)
 {
-    TSNode child = GetChildByField(parent, fieldName);
+    TSNode child = ts_node_child_by_field_id(parent, fieldId);
     return !ts_node_is_null(child) && ts_node_start_byte(child) == ts_node_start_byte(cur);
 }
 
 /** @brief Checks if an identifier is a declaration name or member field name. */
-bool IsDeclarationOrFieldChild(TSNode cur, TSNode parent, std::string_view pType)
+bool IsDeclarationOrFieldChild(TSNode cur, TSNode parent, TSSymbol pSym, const parser::GrammarSymbols& gs)
 {
-    if (pType == "member_expression")
+    if (pSym == gs.symMemberExpression)
     {
-        return IsNamedChildMatch(parent, "member", cur);
+        return IsNamedChildMatch(parent, gs.fieldMember, cur);
     }
-    if (pType == "call_expression")
+    if (pSym == gs.symCallExpression)
     {
-        return IsNamedChildMatch(parent, "function", cur);
+        return IsNamedChildMatch(parent, gs.fieldFunction, cur);
     }
-    if (pType == "scoped_identifier" || pType == "variable_declarator" || pType == "parameter" ||
-        pType == "func_declaration")
+    if (pSym == gs.symScopedIdentifier || pSym == gs.symVariableDeclarator || pSym == gs.symParameter ||
+        pSym == gs.symFuncDeclaration)
     {
-        return IsNamedChildMatch(parent, "name", cur);
+        return IsNamedChildMatch(parent, gs.fieldName, cur);
     }
     return false;
 }
@@ -861,23 +858,24 @@ bool ShouldIgnoreMixinIdentifier(TSNode cur)
         return true;
     }
 
-    std::string_view pType = NodeType(parent);
-    if (IsDeclarationOrFieldChild(cur, parent, pType))
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol pSym = ts_node_symbol(parent);
+    if (IsDeclarationOrFieldChild(cur, parent, pSym, gs))
     {
         return true;
     }
 
-    if (pType == "variable_declaration")
+    if (pSym == gs.symVariableDeclaration)
     {
-        return IsNamedChildMatch(parent, "var_type", cur);
+        return IsNamedChildMatch(parent, gs.fieldVarType, cur);
     }
 
-    if (pType == "parameter")
+    if (pSym == gs.symParameter)
     {
-        return IsNamedChildMatch(parent, "type", cur);
+        return IsNamedChildMatch(parent, gs.fieldType, cur);
     }
 
-    return pType == "type" || pType == "primitive_type" || pType == "cast_expression";
+    return pSym == gs.symType || pSym == gs.symPrimitiveType || pSym == gs.symCastExpression;
 }
 
 /** @brief Checks if a name is a built-in symbol, keyword, or primitive type. */
@@ -939,27 +937,27 @@ void CheckIdentifierMember(TSNode cur, std::string_view mixinSource, FunctionChe
 void CollectLocalNames(TSNode memNode, TSNode funcBody, std::string_view mixinSource,
                        ankerl::unordered_dense::set<std::string>& localNames)
 {
-    TSNode paramsNode = GetChildByField(memNode, "parameters");
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode paramsNode = parser::GetChildByField(memNode, gs.fieldParameters);
     if (!ts_node_is_null(paramsNode))
     {
-        const uint32_t pCount = ts_node_named_child_count(paramsNode);
-        for (uint32_t p = 0; p < pCount; ++p)
-        {
-            TSNode paramChild = ts_node_named_child(paramsNode, p);
-            TSNode pName = GetChildByField(paramChild, "name");
-            if (!ts_node_is_null(pName))
-            {
-                localNames.insert(GetNodeText(pName, mixinSource));
-            }
-        }
+        parser::ForEachNamedChildNode(paramsNode,
+                                      [&](TSNode paramChild)
+                                      {
+                                          TSNode pName = parser::GetChildByField(paramChild, gs.fieldName);
+                                          if (!ts_node_is_null(pName))
+                                          {
+                                              localNames.insert(GetNodeText(pName, mixinSource));
+                                          }
+                                      });
     }
 
     parser::ForEachDescendantNode(funcBody,
                                   [&](TSNode cur)
                                   {
-                                      if (NodeType(cur) == "variable_declarator")
+                                      if (ts_node_symbol(cur) == gs.symVariableDeclarator)
                                       {
-                                          TSNode vdName = GetChildByField(cur, "name");
+                                          TSNode vdName = parser::GetChildByField(cur, gs.fieldName);
                                           if (!ts_node_is_null(vdName))
                                           {
                                               localNames.insert(GetNodeText(vdName, mixinSource));
@@ -1004,7 +1002,7 @@ void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinCheckCon
                                      return;
                                  }
 
-                                 TSNode funcBody = GetChildByField(mem, "body");
+                                 TSNode funcBody = parser::GetChildByField(mem, parser::GetGrammarSymbols().fieldBody);
                                  if (ts_node_is_null(funcBody))
                                  {
                                      return;
@@ -1092,7 +1090,7 @@ void CheckSingleMixinInstantiation(const std::string& mixinName, const Symbol& s
     }
 
     InstantiationRange hostRange = FindHostMixinRange(sym, *mixinSym, mixinName, ctx);
-    TSNode bodyNode = GetChildByField(mixinNode, "body");
+    TSNode bodyNode = parser::GetChildByField(mixinNode, parser::GetGrammarSymbols().fieldBody);
     if (!ts_node_is_null(bodyNode))
     {
         ankerl::unordered_dense::set<std::string> reportedMissingMembers;

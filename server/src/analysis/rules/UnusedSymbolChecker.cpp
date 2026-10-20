@@ -128,8 +128,9 @@ std::string ExtractStringValue(TSNode exprNode, const SemanticAnalysisRequest& r
     }
     if (type == parser::nodes::BinaryExpression)
     {
-        TSNode left = ts_node_child_by_field_name(exprNode, "left", 4);
-        TSNode right = ts_node_child_by_field_name(exprNode, "right", 5);
+        const auto& gs = parser::GetGrammarSymbols();
+        TSNode left = ts_node_child_by_field_id(exprNode, gs.fieldLeft);
+        TSNode right = ts_node_child_by_field_id(exprNode, gs.fieldRight);
         return ExtractStringValue(left, req, depth + 1) + ExtractStringValue(right, req, depth + 1);
     }
     return {};

@@ -68,16 +68,16 @@ bool TypeTextIsHandleConst(std::string_view typeText)
 std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::string_view sourceCode,
                                      bool checkHandleConst = false)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode owner = node;
-    while (!ts_node_is_null(owner))
+    for (int depth = 0; depth < 16 && !ts_node_is_null(owner); ++depth, owner = parser::GetParent(owner))
     {
-        const std::string_view ownerType = ts_node_type(owner);
-        if (ownerType == "func_declaration" || ownerType == "lambda_expression" || ownerType == "virtual_property" ||
-            ownerType == "accessor")
+        const TSSymbol ownerSym = ts_node_symbol(owner);
+        if (ownerSym == gs.symFuncDeclaration || ownerSym == gs.symLambdaExpression ||
+            ownerSym == gs.symVirtualProperty || ownerSym == gs.symAccessor)
         {
             break;
         }
-        owner = ts_node_parent(owner);
     }
     if (ts_node_is_null(owner))
     {
@@ -204,24 +204,24 @@ EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode
     TSNode curr = node;
     TSNode funcNode{};
 
-    while (!ts_node_is_null(curr))
+    const auto& gs = parser::GetGrammarSymbols();
+    for (int depth = 0; depth < 16 && !ts_node_is_null(curr); ++depth, curr = parser::GetParent(curr))
     {
-        const std::string_view type = ts_node_type(curr);
-        if (ts_node_is_null(funcNode) && (type == parser::nodes::FuncDeclaration || type == parser::nodes::Accessor))
+        const TSSymbol sym = ts_node_symbol(curr);
+        if (ts_node_is_null(funcNode) && (sym == gs.symFuncDeclaration || sym == gs.symAccessor))
         {
             funcNode = curr;
         }
-        else if (type == parser::nodes::ClassDeclaration)
+        else if (sym == gs.symClassDeclaration)
         {
             info.inClass = true;
-            TSNode nameNode = parser::GetChildByField(curr, parser::fields::Name);
+            TSNode nameNode = parser::GetChildByField(curr, gs.fieldName);
             if (!ts_node_is_null(nameNode))
             {
                 info.className = NodeText(nameNode, sourceCode);
             }
             break;
         }
-        curr = ts_node_parent(curr);
     }
 
     if (!info.inClass || ts_node_is_null(funcNode))

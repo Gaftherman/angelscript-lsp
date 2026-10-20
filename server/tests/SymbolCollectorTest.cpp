@@ -903,3 +903,211 @@ TEST_CASE("SymbolCollector - Unclosed method void Function() { inside class clam
     REQUIRE_FALSE(m2Symbols.empty());
     CHECK(m2Symbols[0].containerName == className);
 }
+
+TEST_CASE("SymbolCollector - Switch case missing colon reports pinpointed diagnostic and suppresses cascading errors")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("HandleSwitch");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("state");
+    const std::string outVar = angel_lsp::test::GenerateRandomSymbolName("result");
+
+    const std::string code = "void " + funcName + "(int " + varName +
+                             ") {\n"
+                             "    int " +
+                             outVar +
+                             " = 0;\n"
+                             "    switch (" +
+                             varName +
+                             ") {\n"
+                             "        case 1\n"
+                             "            " +
+                             outVar +
+                             " = 10;\n"
+                             "            break;\n"
+                             "    }\n"
+                             "}\n";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const auto diagnostics = collector.CollectSymbols("file:///test_case_colon.as", code, parser, table);
+
+    // Filter syntax error diagnostics
+    std::vector<Diagnostic> syntaxErrors;
+    for (const auto& d : diagnostics)
+    {
+        if (d.code == "as-syntax-error")
+        {
+            syntaxErrors.push_back(d);
+        }
+    }
+
+    REQUIRE(syntaxErrors.size() == 1);
+    CHECK(syntaxErrors[0].range.start.line == 3);
+    CHECK(syntaxErrors[0].message.find("Expected ':' after case expression") != std::string::npos);
+}
+
+TEST_CASE("SymbolCollector - Switch case identifier missing colon reports pinpointed diagnostic")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("HandleCaseIdent");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("mode");
+    const std::string identName = angel_lsp::test::GenerateRandomSymbolName("STATE_IDLE");
+    const std::string outVar = angel_lsp::test::GenerateRandomSymbolName("res");
+
+    const std::string code = "void " + funcName + "(int " + varName +
+                             ") {\n"
+                             "    int " +
+                             outVar +
+                             " = 0;\n"
+                             "    switch (" +
+                             varName +
+                             ") {\n"
+                             "        case " +
+                             identName +
+                             "\n"
+                             "            " +
+                             outVar +
+                             " = 42;\n"
+                             "            break;\n"
+                             "    }\n"
+                             "}\n";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const auto diagnostics = collector.CollectSymbols("file:///test_case_ident_colon.as", code, parser, table);
+
+    std::vector<Diagnostic> syntaxErrors;
+    for (const auto& d : diagnostics)
+    {
+        if (d.code == "as-syntax-error")
+        {
+            syntaxErrors.push_back(d);
+        }
+    }
+
+    REQUIRE(syntaxErrors.size() == 1);
+    CHECK(syntaxErrors[0].range.start.line == 3);
+    CHECK(syntaxErrors[0].message.find("Expected ':' after case expression") != std::string::npos);
+}
+
+TEST_CASE("SymbolCollector - Switch default missing colon reports pinpointed diagnostic")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("HandleDefault");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("opt");
+    const std::string outVar = angel_lsp::test::GenerateRandomSymbolName("val");
+
+    const std::string code = "void " + funcName + "(int " + varName +
+                             ") {\n"
+                             "    int " +
+                             outVar +
+                             " = 0;\n"
+                             "    switch (" +
+                             varName +
+                             ") {\n"
+                             "        default\n"
+                             "            " +
+                             outVar +
+                             " = -1;\n"
+                             "            break;\n"
+                             "    }\n"
+                             "}\n";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const auto diagnostics = collector.CollectSymbols("file:///test_default_colon.as", code, parser, table);
+
+    std::vector<Diagnostic> syntaxErrors;
+    for (const auto& d : diagnostics)
+    {
+        if (d.code == "as-syntax-error")
+        {
+            syntaxErrors.push_back(d);
+        }
+    }
+
+    REQUIRE(syntaxErrors.size() == 1);
+    CHECK(syntaxErrors[0].range.start.line == 3);
+    CHECK(syntaxErrors[0].message.find("Expected ':' after 'default'") != std::string::npos);
+}
+
+TEST_CASE("SymbolCollector - Switch multiple missing colons report each pinpointed error without statement cascades")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("HandleMulti");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("x");
+    const std::string varA = angel_lsp::test::GenerateRandomSymbolName("a");
+    const std::string varB = angel_lsp::test::GenerateRandomSymbolName("b");
+
+    const std::string code = "void " + funcName + "(int " + varName +
+                             ") {\n"
+                             "    switch (" +
+                             varName +
+                             ") {\n"
+                             "        case 1\n"
+                             "            int " +
+                             varA +
+                             " = 100;\n"
+                             "            break;\n"
+                             "        case 2\n"
+                             "            int " +
+                             varB +
+                             " = 200;\n"
+                             "            break;\n"
+                             "    }\n"
+                             "}\n";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const auto diagnostics = collector.CollectSymbols("file:///test_multi_colon.as", code, parser, table);
+
+    std::vector<Diagnostic> syntaxErrors;
+    for (const auto& d : diagnostics)
+    {
+        if (d.code == "as-syntax-error")
+        {
+            syntaxErrors.push_back(d);
+        }
+    }
+
+    REQUIRE(syntaxErrors.size() == 2);
+    CHECK(syntaxErrors[0].range.start.line == 2);
+    CHECK(syntaxErrors[0].message.find("Expected ':' after case expression") != std::string::npos);
+    CHECK(syntaxErrors[1].range.start.line == 5);
+    CHECK(syntaxErrors[1].message.find("Expected ':' after case expression") != std::string::npos);
+}
+
+TEST_CASE("SymbolCollector - Valid switch statement with colons produces zero syntax errors")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("ValidSwitch");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("val");
+
+    const std::string code = "void " + funcName + "(int " + varName +
+                             ") {\n"
+                             "    switch (" +
+                             varName +
+                             ") {\n"
+                             "        case 1:\n"
+                             "            break;\n"
+                             "        case 2:\n"
+                             "            break;\n"
+                             "        default:\n"
+                             "            break;\n"
+                             "    }\n"
+                             "}\n";
+
+    SymbolTable table;
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+
+    const auto diagnostics = collector.CollectSymbols("file:///test_valid_switch.as", code, parser, table);
+
+    for (const auto& d : diagnostics)
+    {
+        CHECK(d.code != "as-syntax-error");
+    }
+}

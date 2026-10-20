@@ -690,16 +690,18 @@ std::string EnclosingNamespaceForSymbol(const Symbol& sym, const SymbolTable& ta
     }
     if (sym.containerKind == ContainerKind::Class || sym.containerKind == ContainerKind::Interface)
     {
-        auto classSyms = table.FindSymbols(sym.containerName);
-        for (const auto& cs : classSyms)
+        if (auto classSyms = table.FindSymbolsPtr(sym.containerName))
         {
-            if (cs.type == SymbolType::Class || cs.type == SymbolType::Interface)
+            for (const auto& cs : *classSyms)
             {
-                if (cs.containerKind == ContainerKind::Namespace)
+                if (cs.type == SymbolType::Class || cs.type == SymbolType::Interface)
                 {
-                    return cs.containerName;
+                    if (cs.containerKind == ContainerKind::Namespace)
+                    {
+                        return cs.containerName;
+                    }
+                    break;
                 }
-                break;
             }
         }
     }
@@ -712,7 +714,7 @@ bool IsTemplateParameterOfContainer(std::string_view typeName, const Symbol& sym
     {
         return false;
     }
-    const std::string cleanContainer = CleanBaseType(sym.containerName);
+    const std::string_view cleanContainer = CleanBaseTypeView(sym.containerName);
     const auto containerSyms = table.FindSymbolsPtr(cleanContainer.empty() ? sym.containerName : cleanContainer);
     if (!containerSyms)
     {
@@ -897,8 +899,12 @@ std::string FindOpIndexInHierarchy(const std::string& owner, const std::string& 
     auto hierarchy = GetInheritedTypeHierarchy(owner, symbolTable);
     for (const auto& typeInHierarchy : hierarchy)
     {
-        auto found = symbolTable.FindSymbols(typeInHierarchy + "::opIndex");
-        for (const auto& sym : found)
+        auto found = symbolTable.FindMemberSymbolPtr(typeInHierarchy, "opIndex");
+        if (!found)
+        {
+            continue;
+        }
+        for (const auto& sym : *found)
         {
             if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
             {
@@ -1139,9 +1145,24 @@ std::vector<Symbol> FindGlobalPropertyAccessors(const std::string& propertyName,
         return accessors;
     }
 
+    char buf[128];
     for (const std::string_view prefix : {std::string_view("get_"), std::string_view("set_")})
     {
-        for (const auto& sym : symbolTable.FindSymbols(std::string(prefix) + propertyName))
+        if (prefix.size() + propertyName.size() >= sizeof(buf))
+        {
+            continue;
+        }
+        memcpy(buf, prefix.data(), prefix.size());
+        memcpy(buf + prefix.size(), propertyName.data(), propertyName.size());
+        const std::string_view key(buf, prefix.size() + propertyName.size());
+
+        const auto syms = symbolTable.FindSymbolsPtr(key);
+        if (!syms)
+        {
+            continue;
+        }
+
+        for (const auto& sym : *syms)
         {
             if (sym.type != SymbolType::Function || !sym.containerName.empty())
             {
@@ -1786,14 +1807,16 @@ void ExpandMixinFromRuleIndex(const rules::RuleIndex& ruleIndex, const MixinExpa
     {
         std::string hostKey = host.qualifiedName.empty() ? host.name : host.qualifiedName;
         AddClassAndShortName(hostKey, ctx.visited, ctx.result);
-        auto hostSyms = ctx.symbolTable.FindSymbols(hostKey);
-        for (const auto& hs : hostSyms)
+        if (auto hostSyms = ctx.symbolTable.FindSymbolsPtr(hostKey))
         {
-            if (hs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(hs.signature))
+            for (const auto& hs : *hostSyms)
             {
-                for (const auto& sibMixin : hs.GetClass().includedMixins)
+                if (hs.type == SymbolType::Class && std::holds_alternative<ClassSignature>(hs.signature))
                 {
-                    AddClassAndShortName(sibMixin, ctx.visited, ctx.result);
+                    for (const auto& sibMixin : hs.GetClass().includedMixins)
+                    {
+                        AddClassAndShortName(sibMixin, ctx.visited, ctx.result);
+                    }
                 }
             }
         }
@@ -2472,10 +2495,9 @@ std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std
     if (sourceCode.find("using") != std::string_view::npos)
     {
         TSNode p = node;
-        while (!ts_node_is_null(p))
+        for (int depth = 0; depth < 16 && !ts_node_is_null(p); ++depth, p = parser::GetParent(p))
         {
             CollectUsingsFromAncestor(p, sourceCode, usings);
-            p = ts_node_parent(p);
         }
     }
 
@@ -4544,7 +4566,7 @@ static std::string TryDeduceAutoDefinition(const LocalDefinition& def, const Exp
 
 std::string ResolveLocalDefinitionType(const LocalDefinition& def, const ExpressionTypeContext& ctx, int depth)
 {
-    if (!def.typeName.empty() && CleanBaseType(def.typeName) != "auto")
+    if (!def.typeName.empty() && CleanBaseTypeView(def.typeName) != "auto")
     {
         return def.typeName;
     }
@@ -4559,7 +4581,7 @@ std::string ResolveLocalDefinitionType(const LocalDefinition& def, const Express
         }
     }
 
-    if (CleanBaseType(def.typeName) != "auto" && def.typeKind != TypeKind::Auto)
+    if (CleanBaseTypeView(def.typeName) != "auto" && def.typeKind != TypeKind::Auto)
     {
         return def.typeName;
     }
@@ -4723,7 +4745,7 @@ static std::string ResolveReceiverScope(const Scope* scope, const std::string& o
         const LocalDefinition* objDef = ResolveInScopeAt(scope, objText, refByte);
         if (objDef)
         {
-            if (!objDef->typeName.empty() && CleanBaseType(objDef->typeName) != "auto")
+            if (!objDef->typeName.empty() && CleanBaseTypeView(objDef->typeName) != "auto")
             {
                 return MemberOwnerType(objDef->typeName);
             }
@@ -5990,7 +6012,7 @@ TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::
                                            [&](TSNode baseChild)
                                            {
                                                const std::string bText = GetNodeText(baseChild, sourceCode);
-                                               if (CleanBaseType(bText) == mixinName || bText == mixinShortName ||
+                                               if (CleanBaseTypeView(bText) == mixinName || bText == mixinShortName ||
                                                    bText.ends_with(shortSuffix))
                                                {
                                                    found = baseChild;

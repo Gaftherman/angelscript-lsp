@@ -486,18 +486,18 @@ static bool IsMemberAccessNode(TSNode node, TSNode parent, TSSymbol memberExprSy
  * @param[in] parent Parent AST node.
  * @return True if parent is a declaration or modifier construct.
  */
-static bool IsKeywordDeclarationContext(TSNode parent)
+static bool IsKeywordDeclarationContext(TSNode parent, const parser::GrammarSymbols& gs)
 {
     if (ts_node_is_null(parent))
     {
         return true;
     }
-    const std::string_view parentType = ts_node_type(parent);
-    return parentType == "accessor" || parentType == "func_declaration" || parentType == "class_declaration" ||
-           parentType == "interface_declaration" || parentType == "enum_declaration" ||
-           parentType == "funcdef_declaration" || parentType == "mixin_declaration" ||
-           parentType == "lambda_expression" || parentType == "declaration_modifier" ||
-           parentType == "shared_external_modifier";
+    const TSSymbol parentSym = ts_node_symbol(parent);
+    return parentSym == gs.symAccessor || parentSym == gs.symFuncDeclaration || parentSym == gs.symClassDeclaration ||
+           parentSym == gs.symInterfaceDeclaration || parentSym == gs.symEnumDeclaration ||
+           parentSym == gs.symFuncdefDeclaration || parentSym == gs.symMixinDeclaration ||
+           parentSym == gs.symLambdaExpression || parentSym == gs.symDeclarationModifier ||
+           parentSym == gs.symSharedExternalModifier;
 }
 
 static bool IsNamedArgumentNode(TSNode node, TSNode parent)
@@ -512,7 +512,7 @@ static bool IsNamedArgumentNode(TSNode node, TSNode parent)
     {
         next = ts_node_next_sibling(next);
     }
-    return !ts_node_is_null(next) && std::string_view(ts_node_type(next)) == ":";
+    return !ts_node_is_null(next) && ts_node_symbol(next) == syms.tokColon;
 }
 
 static bool ShouldSkipReferenceCapture(TSNode parent, ScopeKind scopeKind, bool hasMetadataInDoc)
@@ -535,18 +535,18 @@ static bool ShouldSkipReferenceCapture(TSNode parent, ScopeKind scopeKind, bool 
     return false;
 }
 
-static bool IsAllowedKeywordReference(TSNode node, TSNode parent)
+static bool IsAllowedKeywordReference(TSNode node, TSNode parent, const parser::GrammarSymbols& gs)
 {
     if (ts_node_is_named(node))
     {
         return true;
     }
-    const std::string_view nodeType = ts_node_type(node);
-    if (nodeType != "function" && nodeType != "get" && nodeType != "set" && nodeType != "shared")
+    const TSSymbol nodeSym = ts_node_symbol(node);
+    if (nodeSym != gs.tokFunction && nodeSym != gs.tokGet && nodeSym != gs.tokSet && nodeSym != gs.tokShared)
     {
         return false;
     }
-    return !IsKeywordDeclarationContext(parent);
+    return !IsKeywordDeclarationContext(parent, gs);
 }
 
 bool LocalScopeCollector::IsDeclarationContextSymbol(TSSymbol sym) const noexcept
@@ -572,7 +572,7 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
     }
     const bool hasMetadataInDoc = (sourceCode.find('[') != std::string::npos);
     if (ShouldSkipReferenceCapture(parent, current->kind, hasMetadataInDoc) ||
-        !IsAllowedKeywordReference(capture.node, parent))
+        !IsAllowedKeywordReference(capture.node, parent, m_gs))
     {
         return;
     }

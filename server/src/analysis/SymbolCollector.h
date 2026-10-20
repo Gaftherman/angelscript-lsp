@@ -12,6 +12,7 @@
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <cstring>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
@@ -74,6 +75,15 @@ struct SymbolCollectRequest
  * reference and never throws; parse and validation failures are reported as Diagnostic
  * values instead.
  */
+struct MissingCaseColon
+{
+    uint32_t line = 0;
+    uint32_t character = 0;
+    uint32_t clauseStartByte = 0;
+    uint32_t clauseEndByte = 0;
+    bool isDefault = false;
+};
+
 class SymbolCollector
 {
   public:
@@ -342,9 +352,10 @@ class SymbolCollector
     // Diagnostics & Error Recovery
     // =====================================================================================
 
+    struct ParseErrorReportContext;
     void ReportParseErrors(TSNode rootNode, SymbolCollectContext& sCtx) const;
-    void HandleParseErrorNode(TSNode node, bool missingOpenBrace, uint32_t& firstErrorLine,
-                              SymbolCollectContext& sCtx) const;
+    void EmitMissingColonDiagnostics(std::span<const MissingCaseColon> missingColons, SymbolCollectContext& sCtx) const;
+    void HandleParseErrorNode(TSNode node, ParseErrorReportContext& errCtx) const;
     void EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext& sCtx) const;
     bool TryFormatArgumentListSyntaxError(TSNode node, const SymbolCollectContext& sCtx, Diagnostic& diag) const;
     std::string FormatSyntaxErrorMessage(std::string_view rawErrText, std::string& outCode,

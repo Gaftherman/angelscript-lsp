@@ -20,9 +20,11 @@ namespace
  */
 bool IsInsideMixinBody(TSNode node)
 {
-    for (TSNode current = node; !ts_node_is_null(current); current = ts_node_parent(current))
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode current = parser::GetParent(node);
+    for (int depth = 0; depth < 16 && !ts_node_is_null(current); ++depth, current = parser::GetParent(current))
     {
-        if (std::string_view(ts_node_type(current)) == "mixin_declaration")
+        if (ts_node_symbol(current) == gs.symMixinDeclaration)
         {
             return true;
         }

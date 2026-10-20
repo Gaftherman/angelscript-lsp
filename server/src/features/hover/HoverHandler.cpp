@@ -1717,7 +1717,7 @@ static void AppendLocalDoc(const analysis::LocalDefinition& def, std::string_vie
 
 static std::string DeduceLocalDefinitionHoverType(const analysis::LocalDefinition& def, const HoverQueryContext& ctx)
 {
-    if (!def.typeName.empty() && analysis::CleanBaseType(def.typeName) != "auto")
+    if (!def.typeName.empty() && analysis::CleanBaseTypeView(def.typeName) != "auto")
     {
         return def.typeName;
     }

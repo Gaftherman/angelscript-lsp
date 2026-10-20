@@ -1226,7 +1226,7 @@ size_t CountInterfaceMethodImplementations(const analysis::Symbol& sym, const an
                     {
                         for (const auto& b : cOwner.GetClass().bases)
                         {
-                            if (analysis::CleanBaseType(b) == sym.containerName &&
+                            if (analysis::CleanBaseTypeView(b) == sym.containerName &&
                                 cand.GetFunction().parameters.size() == sym.GetFunction().parameters.size())
                             {
                                 implCount++;
@@ -1257,7 +1257,7 @@ size_t CountInterfaceImplementations(const analysis::Symbol& sym, const analysis
                 {
                     for (const auto& b : cand.GetClass().bases)
                     {
-                        if (analysis::CleanBaseType(b) == sym.name)
+                        if (analysis::CleanBaseTypeView(b) == sym.name)
                         {
                             implCount++;
                             break;

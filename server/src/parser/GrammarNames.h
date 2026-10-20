@@ -175,6 +175,23 @@ inline constexpr std::string_view VarType = "var_type";
 }
 
 /**
+ * @brief Retrieves a child node by its pre-resolved TSFieldId in O(1) time safely.
+ * @param[in] parent The parent
+ * AST node.
+ * @param[in] fieldId The pre-resolved field ID.
+ * @return The child node, or a null TSNode if not found.
+
+ */
+[[nodiscard]] inline TSNode GetChildByField(TSNode parent, TSFieldId fieldId) noexcept
+{
+    if (ts_node_is_null(parent) || fieldId == 0)
+    {
+        return TSNode{};
+    }
+    return ts_node_child_by_field_id(parent, fieldId);
+}
+
+/**
  * @brief Retrieves the callee function/method node of a call expression safely.
  * @param[in] callNode The call_expression or construct_call_expression AST node.
  * @return The function node, or a null TSNode if not found.

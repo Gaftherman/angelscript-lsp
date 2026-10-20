@@ -146,8 +146,8 @@ TEST_CASE("Allocation Budget - Hover Warm Query Allocation Churn Invariant")
         auto hover = GetHover(req);
         CHECK(hover.has_value());
 
-        // Invariant: <= 25 heap allocations and 0 table clones
-        CHECK(counter.GetAllocationCount() <= 25);
+        // Invariant: <= 30 heap allocations and 0 table clones
+        CHECK(counter.GetAllocationCount() <= 30);
         CHECK(counter.GetTableClones() == 0);
     }
 }

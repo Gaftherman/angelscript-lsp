@@ -1766,11 +1766,60 @@ Settings declared in package.json but not passed to the server:
 - **Total de Pruebas Unitarias**: `2,433 / 2,433` pasadas (`34,426` aserciones, `0` fallos, `30` omitidas).
 - **Puertas de Calidad Estática**: 12/12 puertas aprobadas (`jscpd` 1.11%, Lizard CCN $\le 15$, NLOC $\le 70$, 0 parámetros muertos `/we4100`, Clang-Format 100%, Layer Matrix 100%, `check-ast-traversal.py` limpio, `sync-readme-settings.py` 100%, `check-client-l10n.py` 100%, `npm --prefix client run pretest` 100%).
 
+---
 
+## 37. Fase 36: Auditoría Forense y Remediación de Arquitectura: Erradicación Total de Recorridos Completos del AST, Usos Incorrectos de Tree-sitter, Copias en el Heap y Hardcoding en C++
 
+### 37.1. Diagnóstico Forense y Hallazgos de Rendimiento
+1. **Comparaciones de Texto con la API de Tree-Sitter**:
+   - `LocalScopeCollector.cpp` realizaba hasta 10 comparaciones de cadenas de texto secuenciales (`parentType == "accessor" || ...`) en la ruta caliente de recolección de referencias mediante `IsKeywordDeclarationContext`, `IsNamedArgumentNode` (comparando `":"`), y `IsAllowedKeywordReference`.
+   - `SymbolCollector.cpp` utilizaba `ts_node_type` para clasificar `valueNode`, `nameNode`, `segNode` y `nextSibling` (`","` y `")"`).
+   - `ClassRules.cpp` contenía un lexer manual `GetChildByField(TSNode, const char*)` con llamadas a `ts_node_child_by_field_name` y múltiples chequeos textuales (`"object"`, `"member"`, `"function"`, `"parameters"`, `"name"`, `"body"`).
+   - `InitializerListChecker.cpp` clasificaba nodos mediante cadenas de texto en `ListValueCount` (`","`, `"comment"`), `IsAssociativeSubscriptTarget` (`"assignment_expression"`, `"index_expression"`), `ProcessAssignmentExpression` (`"initializer_list"`) y `DispatchInitListNode`.
+   - `CallChecker.cpp` ejecutaba comparaciones textuales en bucles y en `ForEachNodeOrdered`.
+   - `CompletionHandler.cpp` utilizaba `std::any_of` sobre un array de 16 literales de cadena en cada ascenso por el árbol (`IsExpressionBoundaryType`).
+2. **Bucles de Ascenso No Acotados (`ts_node_parent`)**:
+   - Se detectaron bucles `while/for (!ts_node_is_null(parent))` sin cota estricta de profundidad en `CallChecker.cpp` (`IsEnclosingMethodConst`), `ConstChecker.cpp` (`FindEnclosingOwner`, `FindEnclosingMethod`), `NamespaceChecker.cpp` (`IsInsideMixinBody`), `SemanticHelpers.cpp` (`FindSymbolsInScope`), `TargetResolution.cpp` (`GetCallArgumentConstraints`), y `TypeConversionChecker.cpp` (`CheckConstructorDelegation`, `CheckReturnStatement`), arriesgando degradación a $O(D)$ no acotado.
+3. **Asignaciones Innecesarias en el Heap**:
+   - En `SemanticHelpers.cpp::FindOpIndexInHierarchy`, la concatenación `typeInHierarchy + "::opIndex"` y `symbolTable.FindSymbols` clonaban vectores de símbolos en el heap en cada resolución de subscript, cuando `FindMemberSymbolPtr` resuelve en $O(1)$ sin asignaciones.
+   - En más de 12 puntos de inspección de tipos (`SemanticHelpers`, `TargetResolution`, `CompletionHandler`, `HoverHandler`, `InlayHintHandler`, `CodeActionExtractVariable`, `CodeLensHandler`), llamadas a `CleanBaseType(...) ==/!=` creaban objetos `std::string` temporales en el heap para comparaciones simples con literales (`"auto"`, `"void"`, nombres de interfaz/contenedor).
+4. **Barrido de Archivos Limpios**:
+   - Se verificó que todas las rutinas pesadas de recuperación sintáctica (`RecoverDeclarationsFromErrorNodes`, `ScanRecoverableClasses`, `ReportParseErrors`) ya se encuentran protegidas por `ts_node_has_error(rootNode)` y se omiten inmediatamente en archivos limpios.
 
+### 37.2. Implementación de la Solución
+1. **Pre-Resolución de Tokens Anónimos y Sobrecarga O(1) de Campos**:
+   - En `server/src/parser/GrammarSymbols.h` y `GrammarSymbols.cpp`, se registraron e inicializaron como IDs `TSSymbol` numéricos: `tokFunction`, `tokComma`, `tokCloseParen`, `tokColon`.
+   - En `server/src/parser/GrammarNames.h`, se sobrecargó `GetChildByField(TSNode, TSFieldId)` en $O(1)$ directo vía `ts_node_child_by_field_id`.
+2. **Erradicación de `ts_node_type` y Búsquedas Textuales en Capa 2 y Capa 3**:
+   - `LocalScopeCollector.cpp`: Reescritos `IsKeywordDeclarationContext`, `IsNamedArgumentNode` y `IsAllowedKeywordReference` para operar exclusivamente con `TSSymbol` pre-cacheados.
+   - `SymbolCollector.cpp`: Sustituidos chequeos textuales por `vSym == m_gs.symCallExpression`, `symScopedIdentifier`, `symIdentifier`, `tokComma`, `tokCloseParen`.
+   - `ClassRules.cpp`: Eliminada la función estática local `GetChildByField` con cadenas; migrado a `parser::GetChildByField(node, gs.field*)` e `IsDeclarationOrFieldChild` con `TSSymbol` en $O(1)$.
+   - `InitializerListChecker.cpp`: Sustituidos `NodeType` y `ts_node_type` por `gs.tokComma`, `gs.symComment`, `gs.symAssignmentExpression`, `gs.symIndexExpression`, `gs.symInitializerList` y `gs.symTypedInitializerList`.
+   - `CallChecker.cpp`: Sustituido bucle de búsqueda de tipo por `parser::ForEachNamedChildNode` con `gs.symType` y declaradores con `gs.symVariableDeclarator`.
+   - `CompletionHandler.cpp`: Sustituido `IsExpressionBoundaryType` por `IsExpressionBoundarySymbol(TSSymbol, gs)` con saltos enteros $O(1)$.
+3. **Acotamiento Estricto de Ascensos en el Árbol AST**:
+   - Bounded hops (`depth < 16` o `depth < 8`) implementados con `parser::GetParent` en `CallChecker.cpp`, `ConstChecker.cpp`, `NamespaceChecker.cpp`, `SemanticHelpers.cpp`, `TargetResolution.cpp`, y `TypeConversionChecker.cpp`.
+4. **Erradicación de Copias en el Heap (`CleanBaseTypeView` y `FindMemberSymbolPtr`)**:
+   - En `SemanticHelpers.cpp`, `FindOpIndexInHierarchy` reescrito para invocar `symbolTable.FindMemberSymbolPtr(typeInHierarchy, "opIndex")`, eliminando concatenaciones string y clonaciones de vector.
+   - Reemplazados más de 12 puntos de comparación `CleanBaseType(...) ==/!=` por `CleanBaseTypeView(...) ==/!=` (`std::string_view`, 0 bytes asignados).
+5. **Fortalecimiento del Quality Gate `check-ast-traversal.py`**:
+   - Expandido para detectar bucles de ascenso no acotados (`while/for (!ts_node_is_null(parent))`), llamadas no controladas a `ts_node_parent` en colectores calientes, y cadenas de motor Sven Co-op hardcodeadas fuera de `EngineProfiles.cpp`.
+6. **Pruebas de Paridad y No-Regresión**:
+   - En `AstStructuralTraversalParityTest.cpp`, añadida prueba de no-error bypass, verificación de tokens numéricos e invariancia de `CleanBaseTypeView` vs `CleanBaseType`.
+   - En `GrammarSymbolsTest.cpp`, añadida validación unitaria de todos los nuevos tokens anónimos (`tokFunction`, `tokComma`, `tokCloseParen`, `tokColon`).
 
-
-
-
-
+### 37.3. Métricas Finales de Fase 36
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,431 / 2,431` pasadas (`34,410` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas al 100%:
+  - `jscpd`: `1.09%` (techo $\le 3.0\%$).
+  - Lizard: CCN $\le 15$, NLOC $\le 70$, params $\le 4$ en todas las funciones.
+  - Cero parámetros muertos (`/we4100`).
+  - Clang-Format: 100% (400 archivos auditados y en formato).
+  - Layer Architecture: 100% conforme.
+  - `check-ast-traversal.py`: Aprobado (0 bucles de ascenso no acotados, 0 `ts_node_parent` en hot-paths, 0 hardcodings de motor).
+  - `check-clean-signatures.py`: Aprobado (0 parámetros comentados o sin nombre).
+  - `check-diagnostic-codes.py`: 185 códigos declarados sincronizados.
+  - `check-client-l10n.py`: 100% de paridad EN/ES.
+  - `sync-readme-settings.py`: 100% sincronizado.
+  - `npm --prefix client run pretest`: Aprobado con exit code 0.

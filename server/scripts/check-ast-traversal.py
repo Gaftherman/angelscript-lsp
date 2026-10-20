@@ -2,8 +2,9 @@
 """
 AST Traversal & Parent-Climb Quality Gate.
 Enforces:
-1. No unbounded root-climb loops (while (!ts_node_is_null(ts_node_parent(...))) / GetParent) across server/src/.
+1. No unbounded root-climb loops (while/for (!ts_node_is_null(ts_node_parent(...))) / GetParent) across server/src/.
 2. Zero raw ts_node_parent calls in hot-path collectors (LocalScopeCollector, SymbolCollector, SemanticTokensHandler).
+3. Zero hardcoded engine-specific symbols ("BaseClass", "EHandle", etc.) outside EngineProfiles.cpp.
 """
 
 import sys
@@ -21,7 +22,26 @@ HOT_PATH_FILES = [
     SERVER_SRC / "features" / "semantic_tokens" / "SemanticTokensHandler.cpp",
 ]
 
-ROOT_CLIMB_PATTERN = re.compile(r"while\s*\(\s*!ts_node_is_null\s*\(\s*(ts_node_parent|parser::GetParent|GetParent)\s*\(")
+ROOT_CLIMB_PATTERNS = [
+    re.compile(r"while\s*\(\s*!ts_node_is_null\s*\(\s*(ts_node_parent|parser::GetParent|GetParent)\s*\("),
+    re.compile(r"for\s*\([^;]*;\s*!ts_node_is_null\s*\([^)]*\)\s*;\s*[^)]*(ts_node_parent|parser::GetParent|GetParent)\s*\("),
+]
+
+ENGINE_HARDCODED_SYMBOLS = [
+    '"BaseClass"',
+    '"EHandle"',
+    '"HUDTextParams"',
+    '"CBasePlayer"',
+    '"CBaseEntity"',
+    '"SetTimeout"',
+    '"g_Scheduler"',
+    '"CustomEntity"',
+]
+
+ENGINE_ALLOWED_FILES = {
+    SERVER_SRC / "config" / "EngineProfiles.cpp",
+    SERVER_SRC / "config" / "EngineRuleConfig.h",
+}
 
 def check_no_root_climb_loops():
     violations = []
@@ -30,11 +50,16 @@ def check_no_root_climb_loops():
             continue
         try:
             content = file_path.read_text(encoding="utf-8", errors="ignore")
-        except Exception as e:
+        except Exception:
             continue
         for line_num, line in enumerate(content.splitlines(), start=1):
-            if ROOT_CLIMB_PATTERN.search(line):
-                violations.append((file_path, line_num, line.strip()))
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*"):
+                continue
+            if any(p.search(line) for p in ROOT_CLIMB_PATTERNS):
+                # Allow if depth-bounded
+                if "depth" not in line and "kMax" not in line and "k_max" not in line:
+                    violations.append((file_path, line_num, stripped))
     return violations
 
 def check_hot_path_parent_calls():
@@ -48,12 +73,29 @@ def check_hot_path_parent_calls():
         except Exception:
             continue
         for line_num, line in enumerate(content.splitlines(), start=1):
-            # Exclude comments
             stripped = line.strip()
             if stripped.startswith("//") or stripped.startswith("*"):
                 continue
             if raw_parent_pattern.search(line):
                 violations.append((file_path, line_num, stripped))
+    return violations
+
+def check_no_engine_hardcoding():
+    violations = []
+    for file_path in SERVER_SRC.rglob("*.[ch]*"):
+        if not file_path.is_file() or file_path in ENGINE_ALLOWED_FILES:
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*"):
+                continue
+            for sym in ENGINE_HARDCODED_SYMBOLS:
+                if sym in line:
+                    violations.append((file_path, line_num, stripped))
     return violations
 
 def main():
@@ -75,10 +117,18 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 
+    engine_violations = check_no_engine_hardcoding()
+    if engine_violations:
+        has_errors = True
+        print("[ERROR] Engine-specific symbols hardcoded outside EngineProfiles.cpp:")
+        for f, line_num, line in engine_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal and Parent-Climb Invariants verified (0 root-climb loops, 0 hot-path ts_node_parent calls).")
+    print("[PASSED] AST Traversal, Parent-Climb, and Engine Agnosticism Invariants verified (0 root-climb loops, 0 hot-path ts_node_parent calls, 0 engine hardcodings).")
 
 if __name__ == "__main__":
     main()

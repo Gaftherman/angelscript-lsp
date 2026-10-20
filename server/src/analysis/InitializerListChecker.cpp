@@ -143,19 +143,21 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, std:
  */
 std::string EnclosingReturnType(TSNode returnNode, std::string_view sourceCode)
 {
-    for (TSNode parent = ts_node_parent(returnNode); !ts_node_is_null(parent); parent = ts_node_parent(parent))
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode parent = parser::GetParent(returnNode);
+    for (int depth = 0; depth < 16 && !ts_node_is_null(parent); ++depth, parent = parser::GetParent(parent))
     {
-        const std::string_view type = NodeType(parent);
-        if (type == "lambda_expression")
+        const TSSymbol sym = ts_node_symbol(parent);
+        if (sym == gs.symLambdaExpression)
         {
             return "";
         }
-        if (type == "func_declaration")
+        if (sym == gs.symFuncDeclaration)
         {
-            TSNode returnType = parser::GetChildByField(parent, parser::fields::ReturnType);
+            TSNode returnType = parser::GetChildByField(parent, gs.fieldReturnType);
             if (ts_node_is_null(returnType))
             {
-                returnType = parser::GetChildByField(parent, parser::fields::Type);
+                returnType = parser::GetChildByField(parent, gs.fieldType);
             }
             return ts_node_is_null(returnType) ? std::string() : GetNodeText(returnType, sourceCode);
         }
@@ -168,17 +170,18 @@ std::string EnclosingReturnType(TSNode returnNode, std::string_view sourceCode)
  */
 uint32_t ListValueCount(TSNode listNode)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     uint32_t separators = 0;
     uint32_t written = 0;
     parser::ForEachChildNode(listNode,
                              [&](TSNode child)
                              {
-                                 const std::string_view type = NodeType(child);
-                                 if (type == ",")
+                                 const TSSymbol sym = ts_node_symbol(child);
+                                 if (sym == gs.tokComma)
                                  {
                                      ++separators;
                                  }
-                                 else if (ts_node_is_named(child) && type != "comment")
+                                 else if (ts_node_is_named(child) && sym != gs.symComment)
                                  {
                                      ++written;
                                  }
@@ -1029,17 +1032,18 @@ static bool HasStringIndex(TSNode left)
  */
 bool IsAssociativeSubscriptTarget(TSNode listNode, const std::string& type, const ListValidationContext& valCtx)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode parent = parser::GetParent(listNode);
-    if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "assignment_expression")
+    if (ts_node_is_null(parent) || ts_node_symbol(parent) != gs.symAssignmentExpression)
     {
         return false;
     }
-    TSNode left = parser::GetChildByField(parent, parser::fields::Left);
-    if (ts_node_is_null(left) || std::string_view(ts_node_type(left)) != "index_expression")
+    TSNode left = parser::GetChildByField(parent, gs.fieldLeft);
+    if (ts_node_is_null(left) || ts_node_symbol(left) != gs.symIndexExpression)
     {
         return false;
     }
-    TSNode obj = parser::GetChildByField(left, parser::fields::Object);
+    TSNode obj = parser::GetChildByField(left, gs.fieldObject);
     if (ts_node_is_null(obj))
     {
         parser::ForEachChildNode(left,
@@ -1191,8 +1195,9 @@ void ProcessTypedInitializerList(TSNode node, const InitializerListContext& init
  */
 void ProcessAssignmentExpression(TSNode node, const InitializerListContext& initCtx)
 {
-    TSNode value = parser::GetChildByField(node, parser::fields::Right);
-    if (ts_node_is_null(value) || NodeType(value) != "initializer_list")
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode value = parser::GetChildByField(node, gs.fieldRight);
+    if (ts_node_is_null(value) || ts_node_symbol(value) != gs.symInitializerList)
     {
         return;
     }
@@ -1294,20 +1299,21 @@ void ProcessVariableDeclaration(TSNode node, const InitializerListContext& initC
  */
 void DispatchInitListNode(TSNode node, const InitializerListContext& initCtx)
 {
-    const std::string_view nodeType = NodeType(node);
-    if (nodeType == "typed_initializer_list")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symTypedInitializerList)
     {
         ProcessTypedInitializerList(node, initCtx);
     }
-    else if (nodeType == "assignment_expression")
+    else if (sym == gs.symAssignmentExpression)
     {
         ProcessAssignmentExpression(node, initCtx);
     }
-    else if (nodeType == "return_statement")
+    else if (sym == gs.symReturnStatement)
     {
         ProcessReturnStatement(node, initCtx);
     }
-    else if (nodeType == "variable_declaration")
+    else if (sym == gs.symVariableDeclaration)
     {
         ProcessVariableDeclaration(node, initCtx);
     }

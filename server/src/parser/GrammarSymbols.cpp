@@ -130,11 +130,16 @@ void PopulateTokensAndFields(const TSLanguage* lang, GrammarSymbols& gs) noexcep
     gs.tokExternal = SymAnon(lang, "external");
     gs.tokImport = SymAnon(lang, "import");
     gs.tokOpenBrace = SymAnon(lang, "{");
+    gs.tokCloseBrace = SymAnon(lang, "}");
     gs.tokGet = SymAnon(lang, "get");
     gs.tokSet = SymAnon(lang, "set");
     gs.tokColonColon = SymAnon(lang, "::");
     gs.tokClass = SymAnon(lang, "class");
     gs.tokInterface = SymAnon(lang, "interface");
+    gs.tokFunction = SymAnon(lang, "function");
+    gs.tokComma = SymAnon(lang, ",");
+    gs.tokCloseParen = SymAnon(lang, ")");
+    gs.tokColon = SymAnon(lang, ":");
 
     gs.fieldName = FieldId(lang, parser::fields::Name);
     gs.fieldType = FieldId(lang, parser::fields::Type);

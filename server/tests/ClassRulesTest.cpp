@@ -1040,3 +1040,42 @@ TEST_CASE("ClassRules - Calling ::UnknownNS::Foo emits as-err-undefined-namespac
 
     CHECK(HasCode(AnalyzeClassSnippet(code), "as-err-undefined-namespace"));
 }
+
+TEST_CASE(
+    "ClassRules - Mixin referencing global property accessor does not emit as-err-mixin-instantiation-member-not-found")
+{
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("g_Scheduler");
+    const std::string typeName = angel_lsp::test::GenerateRandomSymbolName("CScheduler");
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("WeaponBase");
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("HCAS_M249");
+    const std::string hostName = angel_lsp::test::GenerateRandomSymbolName("weapon_hcasm249");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("DoSomething");
+
+    const std::string code = "class " + typeName +
+                             " {\n"
+                             "    void " +
+                             funcName +
+                             "() {}\n"
+                             "}\n" +
+                             typeName + "@ get_" + propName +
+                             "() { return null; }\n"
+                             "mixin class " +
+                             mixinName +
+                             " {\n"
+                             "    void Init() {\n"
+                             "        " +
+                             propName + "." + funcName +
+                             "();\n"
+                             "    }\n"
+                             "}\n"
+                             "namespace " +
+                             nsName +
+                             " {\n"
+                             "    class " +
+                             hostName + " : " + mixinName +
+                             " {}\n"
+                             "}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-mixin-instantiation-member-not-found"));
+}

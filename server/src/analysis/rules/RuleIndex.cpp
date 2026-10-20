@@ -229,6 +229,7 @@ void RecordAccessorProperty(RuleIndexPartial& partial, const Symbol& sym)
         accessor.remove_prefix(4);
         if (!accessor.empty())
         {
+            partial.allNames.emplace_back(accessor);
             const bool isProp =
                 std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isProperty;
             if (sym.containerName.empty())

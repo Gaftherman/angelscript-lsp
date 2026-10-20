@@ -7,6 +7,7 @@
 #include "parser/GrammarNames.h"
 #include <algorithm>
 #include <doctest/doctest.h>
+#include <ostream>
 
 using namespace angel_lsp;
 using namespace angel_lsp::analysis;
@@ -100,4 +101,30 @@ TEST_CASE("AstStructuralTraversal - Template brackets get templatePunctuation to
     }
     CHECK(hasTemplatePunctuation);
     CHECK(hasOperator);
+}
+
+TEST_CASE("AstStructuralTraversal - Clean file error bypass and O(1) symbols parity")
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    CHECK(gs.tokComma != 0);
+    CHECK(gs.tokCloseParen != 0);
+    CHECK(gs.tokColon != 0);
+    CHECK(gs.tokFunction != 0);
+
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("CleanFn");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("validVar");
+    const std::string code = std::string("void ") + fnName + "()\n{\n    int " + varName + " = 100;\n}\n";
+
+    AngelScriptParser parser;
+    document::TreePtr tree = document::MakeTreePtr(parser.Parse(code));
+    REQUIRE(tree != nullptr);
+
+    TSNode root = ts_tree_root_node(tree.get());
+    REQUIRE(!ts_node_has_error(root));
+
+    // Verify CleanBaseTypeView has exact parity with CleanBaseType
+    const std::string complexType = "const array<int>@";
+    CHECK(analysis::CleanBaseType(complexType) == std::string(analysis::CleanBaseTypeView(complexType)));
+    CHECK(std::string(analysis::CleanBaseTypeView("int")) == "int");
+    CHECK(std::string(analysis::CleanBaseTypeView("auto")) == "auto");
 }

@@ -4,6 +4,7 @@
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include "utils/LspLogger.h"
 #include <algorithm>
 #include <cctype>
@@ -1883,12 +1884,12 @@ void ProcessVariableDeclaration(TSNode node, const InlayHintRequest& request, st
     }
 
     std::string typeText = GetNodeText(varTypeNode, request.sourceCode);
-    bool isAuto = (analysis::CleanBaseType(typeText) == "auto");
+    bool isAuto = (analysis::CleanBaseTypeView(typeText) == "auto");
     bool isHandle = (typeText.find('@') != std::string::npos);
     parser::ForEachChildNode(node,
                              [&](TSNode child)
                              {
-                                 if (std::string_view(ts_node_type(child)) != "variable_declarator")
+                                 if (ts_node_symbol(child) != parser::GetGrammarSymbols().symVariableDeclarator)
                                  {
                                      return;
                                  }

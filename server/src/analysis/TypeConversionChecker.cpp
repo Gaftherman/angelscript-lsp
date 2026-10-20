@@ -2070,12 +2070,16 @@ void CheckConstructorDelegationStatement(TSNode stmt, const std::string& classNa
 
 void CheckConstructorDelegation(TSNode funcNode, DiagnosticContext& ctx)
 {
-    TSNode parent = ts_node_parent(funcNode);
-    while (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) != "class_declaration")
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode parent = parser::GetParent(funcNode);
+    for (int depth = 0; depth < 8 && !ts_node_is_null(parent); ++depth, parent = parser::GetParent(parent))
     {
-        parent = ts_node_parent(parent);
+        if (ts_node_symbol(parent) == gs.symClassDeclaration)
+        {
+            break;
+        }
     }
-    if (ts_node_is_null(parent))
+    if (ts_node_is_null(parent) || ts_node_symbol(parent) != gs.symClassDeclaration)
     {
         return;
     }
@@ -3755,21 +3759,21 @@ void ProcessReturnStatementNode(TSNode node, const TypeConversionCheckRequest& r
         expr = ts_node_named_child(node, 0);
     }
     const Scope* scope = ResolveNodeScope(node, request);
-    TSNode parent = ts_node_parent(node);
-    while (!ts_node_is_null(parent))
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode parent = parser::GetParent(node);
+    for (int depth = 0; depth < 16 && !ts_node_is_null(parent); ++depth, parent = parser::GetParent(parent))
     {
-        const std::string_view pType = ts_node_type(parent);
-        if (pType == "lambda_expression")
+        const TSSymbol pSym = ts_node_symbol(parent);
+        if (pSym == gs.symLambdaExpression)
         {
             CheckLambdaReturnStatement(expr, parent, scope, ctx);
             break;
         }
-        if (pType == "func_declaration")
+        if (pSym == gs.symFuncDeclaration)
         {
             CheckFuncDeclarationReturnStatement(expr, parent, scope, ctx);
             break;
         }
-        parent = ts_node_parent(parent);
     }
 }
 

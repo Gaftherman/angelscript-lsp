@@ -121,11 +121,16 @@ struct GrammarSymbols
     TSSymbol tokExternal = 0;   ///< "external"
     TSSymbol tokImport = 0;     ///< "import"
     TSSymbol tokOpenBrace = 0;  ///< "{"
+    TSSymbol tokCloseBrace = 0; ///< "}"
     TSSymbol tokGet = 0;        ///< "get"
     TSSymbol tokSet = 0;        ///< "set"
     TSSymbol tokColonColon = 0; ///< "::"
     TSSymbol tokClass = 0;      ///< "class"
     TSSymbol tokInterface = 0;  ///< "interface"
+    TSSymbol tokFunction = 0;   ///< "function"
+    TSSymbol tokComma = 0;      ///< ","
+    TSSymbol tokCloseParen = 0; ///< ")"
+    TSSymbol tokColon = 0;      ///< ":"
 
     // =========================================================================
     // Pre-resolved Field IDs (field*)

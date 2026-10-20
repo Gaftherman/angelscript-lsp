@@ -240,7 +240,7 @@ std::string ResolveExplicitReceiverType(const std::string& objText, const Resolv
             const analysis::LocalDefinition* objDef = analysis::ResolveInScopeAt(scope, objText, cursorByte);
             if (objDef)
             {
-                if (!objDef->typeName.empty() && analysis::CleanBaseType(objDef->typeName) != "auto")
+                if (!objDef->typeName.empty() && analysis::CleanBaseTypeView(objDef->typeName) != "auto")
                 {
                     return analysis::CleanBaseType(objDef->typeName);
                 }
@@ -743,13 +743,14 @@ TSNode FindArgumentListNode(TSNode callNode)
  */
 FunctionArgConstraints GetCallArgumentConstraints(TSNode outNode)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     FunctionArgConstraints info;
     TSNode walk = outNode;
-    TSNode walkP = ts_node_parent(outNode);
-    while (!ts_node_is_null(walkP))
+    TSNode walkP = parser::GetParent(outNode);
+    for (int depth = 0; depth < 8 && !ts_node_is_null(walkP); ++depth)
     {
-        std::string_view wpType = ts_node_type(walkP);
-        if (wpType == "call_expression")
+        const TSSymbol wpSym = ts_node_symbol(walkP);
+        if (wpSym == gs.symCallExpression)
         {
             TSNode funcChild = parser::GetCallCallee(walkP);
             if (!ts_node_is_null(funcChild) &&
@@ -764,10 +765,10 @@ FunctionArgConstraints GetCallArgumentConstraints(TSNode outNode)
             }
             break;
         }
-        if (wpType == "member_expression" || wpType == "scoped_identifier")
+        if (wpSym == gs.symMemberExpression || wpSym == gs.symScopedIdentifier)
         {
             walk = walkP;
-            walkP = ts_node_parent(walkP);
+            walkP = parser::GetParent(walkP);
         }
         else
         {
@@ -1486,7 +1487,7 @@ bool ShouldIncludeClassDecl(const std::string& clsName, const std::string& decla
     auto hier = analysis::GetInheritedTypeHierarchy(cleanCls, symbolTable);
     for (const auto& anc : hier)
     {
-        if (analysis::CleanBaseType(anc) == cleanDecl)
+        if (analysis::CleanBaseTypeView(anc) == cleanDecl)
         {
             return true;
         }

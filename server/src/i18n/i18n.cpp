@@ -468,6 +468,8 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
     m_messages["action-generate-getter-setter"] = "Generate Getter and Setter";
     m_messages["note-call-ambiguous-priority"] = "Call to '{}' is ambiguous (Priority: '{}').";
     m_messages["note-expected-comma-or-paren"] = "Expected ',' or ')' before '{}'";
+    m_messages["note-expected-colon-after-case"] = "Expected ':' after case expression";
+    m_messages["note-expected-colon-after-default"] = "Expected ':' after 'default'";
     m_messages["note-in-mixin-member"] = "In mixin '{}': Member '{}'";
     m_messages["hover-more-overloads-singular"] = "1 more overload";
     m_messages["hover-more-overloads-plural"] = "{} more overloads";
@@ -893,6 +895,8 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["action-generate-getter-setter"] = "Generar Getter y Setter";
     m_messages["note-call-ambiguous-priority"] = "La llamada a '{}' es ambigua (Prioridad: '{}').";
     m_messages["note-expected-comma-or-paren"] = "Se esperaba ',' o ')' antes de '{}'";
+    m_messages["note-expected-colon-after-case"] = "Se esperaba ':' después de la expresión del 'case'";
+    m_messages["note-expected-colon-after-default"] = "Se esperaba ':' después de 'default'";
     m_messages["note-in-mixin-member"] = "En el mixin '{}': Miembro '{}'";
     m_messages["hover-more-overloads-singular"] = "1 sobrecarga más";
     m_messages["hover-more-overloads-plural"] = "{} sobrecargas más";
