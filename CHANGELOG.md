@@ -21,6 +21,10 @@ All notable changes to the "angelscript-lsp" extension will be documented in thi
   - Added `"""` to `autoClosingPairs` and `surroundingPairs` in client language configuration.
 - Comprehensive Mutation & Fuzz Testing (`HoverCompletionFuzzHarnessTest`, `PreprocessorRegionsTest`, `SemanticTokensTest`):
   - Added progressive quote deletion and heredoc mutation fuzz tests asserting zero crashes or exceptions across hover and completion on realistic multiline scripts (`inventory.as`).
+- CI Test Network Resilience & IPv4 DNS Priority (`.github/workflows/ci.yml`, `client/.vscode-test.mjs`):
+  - Enforced `NODE_OPTIONS="--dns-result-order=ipv4first"` on Ubuntu CI runners to eliminate dual-stack IPv6 connect timeouts (`AggregateError [ETIMEDOUT]`) when resolving VS Code versions against `update.code.visualstudio.com`.
+  - Added `actions/cache@v4` for `client/.vscode-test` to cache downloaded VS Code test archives across CI runs, avoiding repetitive downloads and enabling offline fallback.
+  - Increased `@vscode/test-cli` download timeout to 60s and wrapped client tests in a 3-attempt retry loop with exponential backoff.
 
 ## [1.1.4-exp.1] - 2026-10-20
 

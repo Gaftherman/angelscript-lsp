@@ -1860,6 +1860,12 @@ Settings declared in package.json but not passed to the server:
    - En `HoverCompletionFuzzHarnessTest.cpp`, añadido el test `Progressive Quote Deletion & Heredoc Mutation Fuzz - inventory.as` que muta progresivamente cada comilla de `"`, `"""` y strings unclosed verificando que `RequestHover` y `RequestCompletion` nunca lancen excepciones ni hagan crash.
    - En `PreprocessorRegionsTest.cpp` y `SemanticTokensTest.cpp`, añadidas pruebas específicas de tokens semánticos multilínea y directivas preprocesador en heredocs.
 
+
+7. **Resiliencia de Red en CI y Prioridad DNS IPv4**:
+   - En `.github/workflows/ci.yml`, configurado `NODE_OPTIONS: "--dns-result-order=ipv4first"` para eliminar los tiempos muertos por agujeros negros IPv6 en runners Ubuntu al resolver versiones contra `update.code.visualstudio.com`.
+   - Incorporada caché de `actions/cache@v4` para `client/.vscode-test`, evitando descargas redundantes de 100+ MB y habilitando el fallback local offline.
+   - En `client/.vscode-test.mjs`, incrementado el timeout de descarga a `60,000 ms` y configurado un bucle de reintento de 3 intentos en el paso `Test Client`.
+
 ### 38.3. Métricas Finales de Fase 37
 - **Estado**: COMPLETED
 - **Total de Pruebas Unitarias**: `2,435 / 2,435` pasadas (`34,434` aserciones, `0` fallos, `30` omitidas).

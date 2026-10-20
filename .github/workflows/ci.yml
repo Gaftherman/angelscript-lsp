@@ -253,11 +253,36 @@ jobs:
           done
           ls -R client/bin
 
+      # Cache the downloaded VS Code test binary across runs to avoid redundant downloads
+      # and enable local version fallback if the remote update API is unreachable.
+      - name: Cache VS Code Test Binary
+        uses: actions/cache@v4
+        with:
+          path: client/.vscode-test
+          key: vscode-test-${{ runner.os }}-${{ hashFiles('client/.vscode-test.mjs', 'client/package.json') }}
+          restore-keys: |
+            vscode-test-${{ runner.os }}-
+
       # The extension tests run inside a real VS Code, which needs a display even headless - hence
       # xvfb-run. The harness tests the extension and verifies live LSP feature performance and stability.
+      # NODE_OPTIONS forces IPv4-first DNS ordering to prevent IPv6 connection timeouts on GitHub runners.
       - name: Test Client
         working-directory: client
-        run: xvfb-run -a npm test
+        env:
+          NODE_OPTIONS: "--dns-result-order=ipv4first"
+        run: |
+          for attempt in 1 2 3; do
+            echo "::notice::Running client extension tests (attempt $attempt of 3)..."
+            if xvfb-run -a npm test; then
+              exit 0
+            fi
+            if [ $attempt -lt 3 ]; then
+              echo "::warning::Client tests failed on attempt $attempt. Retrying in 10 seconds..."
+              sleep 10
+            fi
+          done
+          echo "::error::Client tests failed after 3 attempts."
+          exit 1
 
       # Packaged, not published: releasing is a deliberate act, and this only proves the extension
       # is in a publishable state on every commit.

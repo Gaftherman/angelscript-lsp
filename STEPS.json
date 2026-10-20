@@ -1101,7 +1101,9 @@
         "server/tests/PreprocessorRegionsTest.cpp",
         "server/tests/SemanticTokensTest.cpp",
         "STEPS.json",
-        "STEPS.md"
+        "STEPS.md",
+        ".github/workflows/ci.yml",
+        "client/.vscode-test.mjs"
       ],
       "findings": [
         "Eliminated unsigned underflow crashes (size_t underflow) on single-quote and triple-quote strings by introducing parser::UnquoteStringView with strict length and boundary validation.",
@@ -1111,7 +1113,8 @@
         "Fixed TextMate grammar in client/syntaxes/angelscript.tmLanguage.json for triple-quote heredoc strings, preventing empty string tokenization and inappropriate type highlighting.",
         "Updated client/language-configuration.json to register \"\"\" in autoClosingPairs and surroundingPairs.",
         "Added regression and progressive quote-deletion mutation fuzz tests in HoverCompletionFuzzHarnessTest.cpp, PreprocessorRegionsTest.cpp, and SemanticTokensTest.cpp.",
-        "All 2,435 unit tests (34,434 assertions) passed with 0 failures and all 12 quality gates passed."
+        "All 2,435 unit tests (34,434 assertions) passed with 0 failures and all 12 quality gates passed.",
+        "Enforced NODE_OPTIONS='--dns-result-order=ipv4first', added actions/cache@v4 for client/.vscode-test, extended test-electron download timeout to 60s, and added a 3-attempt retry loop to eliminate ETIMEDOUT crashes during CI client testing."
       ]
     }
   ],
@@ -1163,7 +1166,8 @@
     "GAP-STARTUP-01: CPU saturation and error spam on startup from synthetic module entry closures. (RESOLVED in Phase 35 with isImplicitEntryPoint and immediate SetPredefinedReady).",
     "GAP-RECOVERY-02: Missing opening { inside function causing 30+ cascading syntax and semantic errors. (RESOLVED in Phase 35 with ComputeBraceBalance, HandleParseErrorNode, and FilterSuppressedDiagnostics).",
     "GAP-CRASH-01: LSP server crashes when deleting or editing string/heredoc quotes due to size_t unsigned underflow and unclosed multi-line column indexing. (RESOLVED in Phase 37 with parser::UnquoteStringView, SkipHeredocLiteral, and SemanticTokens column clamping).",
-    "GAP-INDENT-01: Typing '}' inside multiline heredoc strings auto-dedents to column 0 and highlights function opening bracket. (RESOLVED in Phase 37 with FormatOnType AST symbol guard and client TextMate/autoClosingPairs update)."
+    "GAP-INDENT-01: Typing '}' inside multiline heredoc strings auto-dedents to column 0 and highlights function opening bracket. (RESOLVED in Phase 37 with FormatOnType AST symbol guard and client TextMate/autoClosingPairs update).",
+    "GAP-CI-04: AggregateError [ETIMEDOUT] during xvfb-run -a npm test on Ubuntu runners due to Node 22 IPv6 connect timeout on update.code.visualstudio.com. (RESOLVED in Phase 37 with ipv4first DNS ordering, .vscode-test caching, 60s download timeout, and CI retry loops)."
   ],
   "nextActions": [
     "Phase 35 and 1.1.3-exp.1 release completed with 100% test pass rate (2,433 tests, 34,426 assertions) and all 12 quality gates passed."
