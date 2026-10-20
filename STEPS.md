@@ -1877,3 +1877,37 @@ Settings declared in package.json but not passed to the server:
   - Layer Architecture: 100% conforme.
   - `check-ast-traversal.py`: Aprobado (0 bucles no acotados, 0 `ts_node_parent` en hot-paths, 0 hardcodings).
   - `npm --prefix client run pretest`: Aprobado con exit code 0.
+
+---
+
+## 39. Fase 38: Acotamiento de Rango en Diagnósticos de Llamada y Supresión de Cascada por Errores de Sintaxis
+
+### 39.1. Diagnóstico Forense y Causas Raíz
+1. **Rango de Diagnóstico No Acotado en Expresiones de Llamada Multilínea**:
+   - `CallChecker` emitía diagnósticos (`as-err-call-argument-count`, `as-err-call-no-matching-signature`, `as-err-call-ambiguous`) utilizando el rango desde `ts_node_start_point(callee)` hasta `ts_node_end_point(arguments)`.
+   - Cuando una función (como `RegisterSchemaDefinition`) abarca cientos de líneas de argumentos o se desbalancea un heredoc, VS Code pintaba un subrayado rojo de hasta 457 líneas continuas cubriendo clases y métodos ajenos.
+2. **Cascada de Errores Semánticos en Árboles Sintácticos Corruptos**:
+   - Al editar o dejar abierta una comilla en un argumento, Tree-Sitter sintetiza tokens de recuperación que `CheckCall` evaluaba como argumentos válidos adicionales, emitiendo diagnósticos espurios `[ERROR: E117]` ("No hay firmas que coincidan recibiendo 14 argumento(s)") cuando el error de sintaxis ya había sido localizado con precisión.
+
+### 39.2. Remediación Implementada
+1. **Helper `GetCalleeDiagnosticRange(TSNode callee)`**:
+   - Introduce un helper $O(1)$ sin asignaciones de memoria que ancla el rango de diagnóstico estrictamente en el identificador del callee o en el miembro llamado (`gs.fieldMember`), evitando que los errores de llamada se extiendan hacia la lista de argumentos multilínea.
+   - Actualizados todos los puntos de emisión de diagnóstico a nivel de llamada en `CallChecker.cpp`: `ReportLambdaDiagnostics`, `CheckMemberOpCallCandidate`, `ReportOverloadResolutionFailure`, `HandleNamedCallOverloads`, `CheckCallOverloads`, y `CheckArgumentCount`.
+2. **Supresión Temprana por Error Sintáctico**:
+   - En `CallChecker.cpp::CheckCall`, se aborta tempranamente el análisis semántico si `ts_node_has_error(callee) || ts_node_has_error(arguments)` es `true`.
+   - En `CallChecker.cpp::CheckDeclaratorDirectInit`, se protege de manera análoga ante argumentos con errores sintácticos (`ts_node_has_error(argListNode)`).
+3. **Pruebas de Invariantes Aleatorizadas (`CallCheckerTest.cpp`)**:
+   - Añadidas pruebas con identificadores dinámicos que comprueban que las llamadas multilínea (tanto funciones libres como métodos miembros) anclan el rango en la misma línea del callee (`start.line == end.line`).
+   - Comprobado que la presencia de errores de sintaxis en la lista de argumentos suprime efectivamente `as-err-call-argument-count` y `as-err-call-no-matching-signature`.
+
+### 39.3. Métricas Finales de Fase 38
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,438 / 2,438` pasadas (`34,440` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas al 100%:
+  - `jscpd`: `1.09%` (techo $\le 3.0\%$).
+  - Lizard: CCN $\le 15$, NLOC $\le 70$, params $\le 4$ en todas las funciones.
+  - Cero parámetros muertos (`/we4100`).
+  - Clang-Format: 100% (400 archivos auditados y en formato).
+  - Layer Architecture: 100% conforme.
+  - `check-ast-traversal.py`: Aprobado (0 bucles no acotados, 0 `ts_node_parent` en hot-paths, 0 hardcodings).
+  - `npm --prefix client run pretest`: Aprobado con exit code 0.

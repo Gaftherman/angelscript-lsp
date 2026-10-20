@@ -12,6 +12,7 @@
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include "parser/Keywords.h"
 #include "utils/StopFlag.h"
 #include <algorithm>
@@ -83,6 +84,36 @@ std::vector<std::string> GetArgumentNames(TSNode argumentList, std::string_view 
 {
     const ast::CallExpressionView callView(argumentList, sourceCode);
     return callView.ArgumentNames();
+}
+
+/**
+ * @brief Computes the diagnostic source range for a function or method call.
+ *
+ * Anchors the diagnostic range strictly on the callee identifier or member name,
+ * preventing multiline red squiggles from spanning across arguments.
+ *
+ * @param[in] callee AST node of the callee expression.
+ * @return Precise source range of the callee.
+ */
+SourceRange GetCalleeDiagnosticRange(TSNode callee)
+{
+    if (ts_node_is_null(callee))
+    {
+        return SourceRange{};
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode targetNode = callee;
+    if (ts_node_symbol(callee) == gs.symMemberExpression)
+    {
+        const TSNode member = ts_node_child_by_field_id(callee, gs.fieldMember);
+        if (!ts_node_is_null(member))
+        {
+            targetNode = member;
+        }
+    }
+    const TSPoint start = ts_node_start_point(targetNode);
+    const TSPoint end = ts_node_end_point(targetNode);
+    return {start.row, start.column, end.row, end.column};
 }
 
 /** @brief What one declaration will accept, in argument counts. */
@@ -488,13 +519,11 @@ LambdaCandidateStatus EvaluateCandidateLambdaShape(const Symbol& candidate, cons
 void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>& acceptedShapes,
                              const Symbol* priorityCandidate, const LambdaCheckContext& lctx, DiagnosticContext& ctx)
 {
-    const TSPoint start = ts_node_start_point(lctx.callee);
-    const TSPoint end = ts_node_end_point(lctx.arguments);
+    const SourceRange range = GetCalleeDiagnosticRange(lctx.callee);
 
     if (acceptedShapes.empty())
     {
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-no-matching-signature",
-                        lctx.reportedName);
+        ctx.EmitAtRange(range, "as-err-call-no-matching-signature", lctx.reportedName);
         return;
     }
 
@@ -505,8 +534,7 @@ void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>& accept
     {
         const std::string_view prioritySig =
             priorityCandidate != nullptr ? priorityCandidate->GetDisplaySignature() : std::string_view{};
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-ambiguous",
-                        {std::string_view(lctx.reportedName), prioritySig});
+        ctx.EmitAtRange(range, "as-err-call-ambiguous", {std::string_view(lctx.reportedName), prioritySig});
     }
 }
 
@@ -917,10 +945,7 @@ static bool CheckNonCallableVariable(const std::string& name, const std::string&
         res.shouldCheck = true;
         return true;
     }
-    const TSPoint start = ts_node_start_point(valCtx.callee);
-    const TSPoint end = ts_node_end_point(valCtx.arguments);
-    valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::CallNoMatchingSignature,
-                           name);
+    valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), diagnostics::codes::CallNoMatchingSignature, name);
     res.shouldCheck = false;
     return true;
 }
@@ -1592,9 +1617,7 @@ void ReportOverloadResolutionFailure(std::span<const Symbol* const> candidates, 
 
     if (args.allArgsResolved)
     {
-        const TSPoint start = ts_node_start_point(valCtx.callee);
-        const TSPoint end = ts_node_end_point(valCtx.arguments);
-        valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-no-matching-signature",
+        valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), "as-err-call-no-matching-signature",
                                reportedName);
     }
 }
@@ -1806,9 +1829,7 @@ void HandleNamedCallOverloads(std::span<const Symbol* const> matchingArity, cons
     }
     if (!matchedAny && args.allArgsResolved)
     {
-        const TSPoint start = ts_node_start_point(valCtx.callee);
-        const TSPoint end = ts_node_end_point(valCtx.arguments);
-        valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-no-matching-signature",
+        valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), "as-err-call-no-matching-signature",
                                calleeRes.reportedName);
     }
 }
@@ -1841,11 +1862,9 @@ void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const Call
         ResolveBestOverload(matchingArity, args.argTypes, valCtx.ctx.request.symbolTable, args.argIsLValue);
     if (match.isAmbiguous && args.allArgsResolved)
     {
-        const TSPoint start = ts_node_start_point(valCtx.callee);
-        const TSPoint end = ts_node_end_point(valCtx.arguments);
         const std::string_view prioritySig =
             match.priorityCandidate != nullptr ? match.priorityCandidate->GetDisplaySignature() : std::string_view{};
-        valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-ambiguous",
+        valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), "as-err-call-ambiguous",
                                {std::string_view(calleeRes.reportedName), prioritySig},
                                match.priorityCandidate != nullptr ? DiagnosticSeverity::Warning
                                                                   : DiagnosticSeverity::Error);
@@ -1948,9 +1967,7 @@ bool CheckArgumentCount(const CalleeResolution& calleeRes, uint32_t argumentCoun
         }
         if (emit)
         {
-            const TSPoint start = ts_node_start_point(valCtx.callee);
-            const TSPoint end = ts_node_end_point(valCtx.arguments);
-            valCtx.ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-call-argument-count",
+            valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), "as-err-call-argument-count",
                                    calleeRes.reportedName, std::to_string(argumentCount));
         }
         return false;
@@ -1971,7 +1988,8 @@ void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope,
     const ast::CallExpressionView callView(node, request.sourceCode);
     const TSNode callee = callView.Callee();
     const TSNode arguments = callView.ArgumentList();
-    if (ts_node_is_null(callee) || ts_node_is_null(arguments))
+    if (ts_node_is_null(callee) || ts_node_is_null(arguments) || ts_node_has_error(callee) ||
+        ts_node_has_error(arguments))
     {
         return;
     }
@@ -2375,7 +2393,7 @@ void CheckConstructorOverload(TSNode argListNode, const std::vector<Symbol>& can
 void CheckDeclaratorDirectInit(TSNode declarator, const VarInitContext& vctx)
 {
     TSNode argListNode = parser::GetChildByField(declarator, parser::fields::Arguments);
-    if (ts_node_is_null(argListNode))
+    if (ts_node_is_null(argListNode) || ts_node_has_error(argListNode))
     {
         return;
     }

@@ -4,6 +4,21 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.4-exp.3] - 2026-10-20
+
+### Experimental Release 1.1.4-exp.3: Call Diagnostic Range Clamping & Syntax Error Cascade Suppression
+
+- Call Diagnostic Range Clamping (`CallChecker`, `GetCalleeDiagnosticRange`):
+  - Anchored diagnostic ranges for `as-err-call-argument-count`, `as-err-call-no-matching-signature`, and `as-err-call-ambiguous` strictly on the callee function identifier or member name (via $O(1)$ `gs.fieldMember` lookup).
+  - Eradicated unbounded multi-line red squiggles across arguments when function calls have argument count or overload mismatch errors.
+- Syntax Error Cascade Suppression (`CallChecker::CheckCall`, `CheckDeclaratorDirectInit`):
+  - Suppressed semantic call checking and argument count evaluation when `ts_node_has_error(callee)` or `ts_node_has_error(arguments)` is true.
+  - Suppressed constructor overload checking on direct variable declarator initializations (`CheckDeclaratorDirectInit`) when arguments contain syntax errors.
+  - Prevents spurious `[ERROR: E117]` ("No hay firmas que coincidan...") diagnostics from being synthesized over hallucinated recovery tokens when editing unclosed quotes or syntax.
+- Unit & Invariant Testing (`CallCheckerTest`):
+  - Added randomized invariant tests asserting that multi-line free function and member calls emit single-line diagnostic ranges on the callee line.
+  - Added tests asserting that syntax errors inside argument lists and direct initialization arguments suppress cascading semantic call errors.
+
 ## [1.1.4-exp.2] - 2026-10-20
 
 ### Experimental Release 1.1.4-exp.2: Unclosed String & Heredoc Crash Fix, Multiline Heredoc TextMate & On-Type Indentation Protection

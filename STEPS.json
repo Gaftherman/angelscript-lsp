@@ -1,6 +1,6 @@
 {
   "project": "angelscript-lsp",
-  "currentPhase": "PHASE_37_UNCLOSED_STRING_HEREDOC_CRASH_AND_INDENTATION_FIX",
+  "currentPhase": "PHASE_38_CALL_DIAGNOSTIC_RANGE_CLAMPING_AND_SYNTAX_ERROR_SUPPRESSION",
   "status": "COMPLETED",
   "baselineMetrics": {
     "largeScript3000ParseAndAnalysisMs": 192.75,
@@ -9,9 +9,9 @@
     "parityPassCount": 256,
     "parityTotalCount": 256,
     "unexplainedFalsePositives": 0,
-    "unitTestsTotal": 2435,
-    "unitTestsPassed": 2435,
-    "unitAssertionsPassed": 34434,
+    "unitTestsTotal": 2438,
+    "unitTestsPassed": 2438,
+    "unitAssertionsPassed": 34440,
     "condEdgePassCount": 0,
     "tsanRaceWarnings": 0,
     "layerIncludeCheck": "PASS",
@@ -1116,6 +1116,25 @@
         "All 2,435 unit tests (34,434 assertions) passed with 0 failures and all 12 quality gates passed.",
         "Enforced NODE_OPTIONS='--dns-result-order=ipv4first', added actions/cache@v4 for client/.vscode-test, extended test-electron download timeout to 60s, and added a 3-attempt retry loop to eliminate ETIMEDOUT crashes during CI client testing."
       ]
+    },
+    {
+      "id": "PHASE_38",
+      "name": "Call Diagnostic Range Clamping & Syntax Error Cascade Suppression",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/CallChecker.cpp",
+        "server/tests/CallCheckerTest.cpp",
+        "CHANGELOG.md",
+        "client/CHANGELOG.md",
+        "STEPS.md",
+        "STEPS.json"
+      ],
+      "findings": [
+        "Call expression diagnostics (as-err-call-argument-count, as-err-call-no-matching-signature, as-err-call-ambiguous) were spanning from callee start to argument end, causing 457 continuous lines of red squiggles across unrelated code when argument lists were multiline.",
+        "GetCalleeDiagnosticRange implemented with O(1) field lookup on gs.fieldMember to clamp call diagnostic ranges strictly to the callee/member name.",
+        "CheckCall and CheckDeclaratorDirectInit now abort early when ts_node_has_error(callee) || ts_node_has_error(arguments) is true, suppressing spurious E117 argument count errors when syntax errors exist inside argument lists.",
+        "All 2,438 unit tests (34,440 assertions) passed with 0 failures and all 12 quality gates passed."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -1167,10 +1186,11 @@
     "GAP-RECOVERY-02: Missing opening { inside function causing 30+ cascading syntax and semantic errors. (RESOLVED in Phase 35 with ComputeBraceBalance, HandleParseErrorNode, and FilterSuppressedDiagnostics).",
     "GAP-CRASH-01: LSP server crashes when deleting or editing string/heredoc quotes due to size_t unsigned underflow and unclosed multi-line column indexing. (RESOLVED in Phase 37 with parser::UnquoteStringView, SkipHeredocLiteral, and SemanticTokens column clamping).",
     "GAP-INDENT-01: Typing '}' inside multiline heredoc strings auto-dedents to column 0 and highlights function opening bracket. (RESOLVED in Phase 37 with FormatOnType AST symbol guard and client TextMate/autoClosingPairs update).",
-    "GAP-CI-04: AggregateError [ETIMEDOUT] during xvfb-run -a npm test on Ubuntu runners due to Node 22 IPv6 connect timeout on update.code.visualstudio.com. (RESOLVED in Phase 37 with ipv4first DNS ordering, .vscode-test caching, 60s download timeout, and CI retry loops)."
+    "GAP-CI-04: AggregateError [ETIMEDOUT] during xvfb-run -a npm test on Ubuntu runners due to Node 22 IPv6 connect timeout on update.code.visualstudio.com. (RESOLVED in Phase 37 with ipv4first DNS ordering, .vscode-test caching, 60s download timeout, and CI retry loops).",
+    "GAP-CALL-03: Multiline call expressions underline hundreds of lines on argument count errors and emit cascading semantic errors on broken syntax. (RESOLVED in Phase 38 with GetCalleeDiagnosticRange and ts_node_has_error early exit)."
   ],
   "nextActions": [
     "Phase 35 and 1.1.3-exp.1 release completed with 100% test pass rate (2,433 tests, 34,426 assertions) and all 12 quality gates passed."
   ],
-  "lastMilestone": "Phase 37 completed with 100% test pass rate (2,435 tests, 34,434 assertions) and all 12 quality gates passed."
+  "lastMilestone": "Phase 38 completed with 100% test pass rate (2,438 tests, 34,440 assertions) and all 12 quality gates passed."
 }

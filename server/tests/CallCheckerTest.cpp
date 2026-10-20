@@ -1846,3 +1846,91 @@ TEST_CASE("CallChecker - Invariant: Calling unqualified member funcdef with wron
     CHECK(HasCode(diags, "as-err-call-argument-count"));
     CHECK(HasCode(diags, "as-err-no-implicit-conversion"));
 }
+TEST_CASE("CallChecker - Invariant: Call diagnostic range is anchored strictly on callee identifier")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("TargetFunc");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("ConfigManager");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("RegisterSchema");
+
+    const std::string code = "void " + funcName +
+                             "() {}\n"
+                             "class " +
+                             clsName +
+                             " {\n"
+                             "    void " +
+                             methodName +
+                             "(int a) {}\n"
+                             "}\n"
+                             "void Test(" +
+                             clsName +
+                             "@ obj) {\n"
+                             "    " +
+                             funcName +
+                             "(\n"
+                             "        1,\n"
+                             "        2,\n"
+                             "        3\n"
+                             "    );\n"
+                             "    obj." +
+                             methodName +
+                             "(\n"
+                             "        10,\n"
+                             "        20,\n"
+                             "        30\n"
+                             "    );\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    std::vector<Diagnostic> argCountDiags;
+    for (const auto& d : diags)
+    {
+        if (d.code == "as-err-call-argument-count")
+        {
+            argCountDiags.push_back(d);
+        }
+    }
+
+    REQUIRE(argCountDiags.size() == 2);
+    // Line range of the free function call must start and end on the same line (the callee line)
+    CHECK(argCountDiags[0].range.start.line == argCountDiags[0].range.end.line);
+    // Line range of the member function call must start and end on the same line (the callee member line)
+    CHECK(argCountDiags[1].range.start.line == argCountDiags[1].range.end.line);
+}
+
+TEST_CASE("CallChecker - Invariant: Syntax error inside argument list suppresses cascading semantic call errors")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("ProcessData");
+
+    // Syntax error inside arguments: broken token sequence produces syntax error
+    const std::string code = "void " + funcName +
+                             "(int a, int b) {}\n"
+                             "void Test() {\n"
+                             "    " +
+                             funcName +
+                             "(10, %%% bad_token %%%);\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-call-argument-count"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("CallChecker - Invariant: Direct initialization with syntax error suppresses constructor diagnostics")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Widget");
+
+    const std::string code = "class " + clsName +
+                             " {\n"
+                             "    " +
+                             clsName +
+                             "(int x) {}\n"
+                             "}\n"
+                             "void Test() {\n"
+                             "    " +
+                             clsName +
+                             " w(%%% syntax_error %%%);\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-no-matching-constructor"));
+}
