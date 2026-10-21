@@ -569,6 +569,29 @@ std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, const Tra
 
     return symbols;
 }
+
+inline lsp::SymbolKind MapSymbolTypeToKind(analysis::SymbolType type) noexcept
+{
+    switch (type)
+    {
+    case analysis::SymbolType::Class:
+        return lsp::SymbolKind::Class;
+    case analysis::SymbolType::Interface:
+        return lsp::SymbolKind::Interface;
+    case analysis::SymbolType::Enum:
+        return lsp::SymbolKind::Enum;
+    case analysis::SymbolType::Namespace:
+        return lsp::SymbolKind::Namespace;
+    case analysis::SymbolType::Funcdef:
+    case analysis::SymbolType::Typedef:
+    case analysis::SymbolType::Function:
+        return lsp::SymbolKind::Function;
+    case analysis::SymbolType::Property:
+        return lsp::SymbolKind::Property;
+    default:
+        return lsp::SymbolKind::Variable;
+    }
+}
 } // namespace
 
 std::optional<DocumentSymbolResult> GetDocumentSymbols(const DocumentSymbolRequest& request)
@@ -579,21 +602,56 @@ std::optional<DocumentSymbolResult> GetDocumentSymbols(const DocumentSymbolReque
     }
 
     TraversalContext ctx{request.sourceCode, false, ""};
+    DocumentSymbolResult symbols;
 
     if (request.tree != nullptr)
     {
         TSNode root = ts_tree_root_node(request.tree);
-        return ProcessChildren(root, ctx);
+        symbols = ProcessChildren(root, ctx);
     }
-
-    parser::AngelScriptParser parser;
-    document::TreePtr tempTree = document::MakeTreePtr(parser.Parse(request.sourceCode));
-    if (!tempTree)
+    else
     {
-        return DocumentSymbolResult{};
+        parser::AngelScriptParser parser;
+        document::TreePtr tempTree = document::MakeTreePtr(parser.Parse(request.sourceCode));
+        if (tempTree)
+        {
+            TSNode root = ts_tree_root_node(tempTree.get());
+            symbols = ProcessChildren(root, ctx);
+        }
     }
 
-    TSNode root = ts_tree_root_node(tempTree.get());
-    return ProcessChildren(root, ctx);
+    if (request.tree != nullptr && ts_node_has_error(ts_tree_root_node(request.tree)))
+    {
+        ankerl::unordered_dense::set<std::string> existingNames;
+        existingNames.reserve(symbols.size());
+        for (const auto& s : symbols)
+        {
+            existingNames.insert(s.name);
+        }
+
+        request.symbolTable.ForEachSymbolInFile(
+            request.uri,
+            [&]([[maybe_unused]] const std::string& key, const std::vector<analysis::Symbol>& bucket)
+            {
+                for (const auto& sym : bucket)
+                {
+                    if (!sym.isSynthesized && !existingNames.contains(sym.name))
+                    {
+                        lsp::DocumentSymbol ds;
+                        ds.name = sym.name;
+                        ds.kind = MapSymbolTypeToKind(sym.type);
+                        ds.range.start.line = sym.startLine;
+                        ds.range.start.character = sym.startCharacter;
+                        ds.range.end.line = sym.endLine;
+                        ds.range.end.character = sym.endCharacter;
+                        ds.selectionRange = ds.range;
+                        symbols.push_back(std::move(ds));
+                        existingNames.insert(sym.name);
+                    }
+                }
+            });
+    }
+
+    return symbols;
 }
 } // namespace angel_lsp::features

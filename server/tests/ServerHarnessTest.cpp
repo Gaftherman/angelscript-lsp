@@ -6779,3 +6779,161 @@ TEST_CASE("Server - Saving an interface-changing module file clears diagnostics 
     INFO("final published for use.as: " << finalUse);
     CHECK(finalUse.find(R"("diagnostics":[])") != std::string::npos);
 }
+
+TEST_CASE("Server - Pull diagnostics recovers to zero errors when unclosed string quote is added via didChange")
+{
+    WorkspaceFixture fixture;
+    const std::string funcName = test::GenerateRandomSymbolName("func");
+    const std::string stringVal = test::GenerateRandomSymbolName("val");
+    const std::string brokenSource = "string " + funcName + "() { return \"" + stringVal + "; }\n";
+    const std::string fixedSource = "string " + funcName + "() { return \"" + stringVal + "\"; }\n";
+    const std::string fileName = test::GenerateRandomSymbolName("file") + ".as";
+    fixture.Write(fileName, brokenSource);
+
+    test::ScriptedStream stream;
+    stream.Push(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
+                R"("processId":null,"rootUri":")" +
+                fixture.RootUri() +
+                R"(",)"
+                R"("capabilities":{"textDocument":{"diagnostic":{"dynamicRegistration":false}}},)"
+                R"("workspaceFolders":[{"uri":")" +
+                fixture.RootUri() + R"(","name":"fixture"}]}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri(fileName), brokenSource));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri(fileName) + R"("}}})");
+    stream.Push(DidChangeMessage(fixture.Uri(fileName), 2, fixedSource));
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri(fileName) + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string pulledBroken = stream.ResponseFor(2);
+    INFO("broken response: " << pulledBroken);
+    CHECK(pulledBroken.find("as-syntax-error") != std::string::npos);
+
+    const std::string pulledFixed = stream.ResponseFor(3);
+    INFO("fixed response: " << pulledFixed);
+    CHECK(pulledFixed.find("ServerCancelled") == std::string::npos);
+    CHECK(pulledFixed.find(R"("items":[])") != std::string::npos);
+}
+
+TEST_CASE("Server - Heredoc containing JSON braces, quotes and newlines parses with zero errors")
+{
+    WorkspaceFixture fixture;
+    const std::string funcName = test::GenerateRandomSymbolName("GetSchema");
+    const std::string propName = test::GenerateRandomSymbolName("prop");
+    const std::string heredocSource = "string " + funcName +
+                                      "()\n"
+                                      "{\n"
+                                      "    return \"\"\"\n"
+                                      "    {\n"
+                                      "        \"type\": \"object\",\n"
+                                      "        \"properties\": {\n"
+                                      "            \"" +
+                                      propName +
+                                      "\": { \"type\": \"string\" }\n"
+                                      "        },\n"
+                                      "        \"required\": [\"" +
+                                      propName +
+                                      "\"]\n"
+                                      "    }\n"
+                                      "    \"\"\";\n"
+                                      "}\n";
+    const std::string fileName = test::GenerateRandomSymbolName("schema") + ".as";
+    fixture.Write(fileName, heredocSource);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri(fileName), heredocSource));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO("output: " << output);
+    CHECK(output.find("as-syntax-error") == std::string::npos);
+    CHECK(output.find("as-err-") == std::string::npos);
+}
+
+TEST_CASE("Server - Unclosed string literal does not bleed into subsequent declarations")
+{
+    WorkspaceFixture fixture;
+    const std::string brokenFunc = test::GenerateRandomSymbolName("BrokenFunc");
+    const std::string validFunc = test::GenerateRandomSymbolName("ValidFunc");
+    const std::string varName = test::GenerateRandomSymbolName("validVar");
+    const std::string source = "void " + brokenFunc +
+                               "()\n"
+                               "{\n"
+                               "    string s = \"broken;\n"
+                               "}\n"
+                               "\n"
+                               "void " +
+                               validFunc +
+                               "()\n"
+                               "{\n"
+                               "    int " +
+                               varName +
+                               " = 42;\n"
+                               "}\n";
+    const std::string fileName = test::GenerateRandomSymbolName("bleed") + ".as";
+    fixture.Write(fileName, source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri(fileName), source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
+                fixture.Uri(fileName) + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string symbols = stream.ResponseFor(2);
+    INFO("document symbols response: " << symbols);
+    CHECK(symbols.find(validFunc) != std::string::npos);
+}
+
+TEST_CASE("Server - OnTypeFormatting inside heredoc is a no-op")
+{
+    WorkspaceFixture fixture;
+    const std::string funcName = test::GenerateRandomSymbolName("SchemaFunc");
+    const std::string heredocSource = "string " + funcName +
+                                      "()\n"
+                                      "{\n"
+                                      "    return \"\"\"\n"
+                                      "    {\n"
+                                      "        \"key\": \"value\"\n"
+                                      "    }\n"
+                                      "    \"\"\";\n"
+                                      "}\n";
+    const std::string fileName = test::GenerateRandomSymbolName("format") + ".as";
+    fixture.Write(fileName, heredocSource);
+
+    config::ServerConfig serverConfig;
+    serverConfig.features.enableFormatting = true;
+    serverConfig.features.enableOnTypeFormatting = true;
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri(fileName), heredocSource));
+    stream.Push(R"({"jsonrpc":"2.0","id":10,"method":"textDocument/onTypeFormatting","params":{)"
+                R"("textDocument":{"uri":")" +
+                fixture.Uri(fileName) +
+                R"("},)"
+                R"("position":{"line":5,"character":5},"ch":"}",)"
+                R"("options":{"tabSize":4,"insertSpaces":true}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":99,"method":"shutdown"})");
+
+    RunScript(serverConfig, stream);
+
+    const std::string resp = stream.ResponseFor(10);
+    INFO("onTypeFormatting response: " << resp);
+    CHECK(resp.find(R"("result":null)") != std::string::npos);
+}

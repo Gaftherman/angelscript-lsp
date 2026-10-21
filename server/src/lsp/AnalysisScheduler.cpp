@@ -271,7 +271,7 @@ std::optional<std::pair<std::string, PendingAnalysisEntry>> AnalysisScheduler::P
             continue;
         }
         if (const auto itSaved = m_savedVersions.find(currentUri);
-            itSaved != m_savedVersions.end() && (currentEntry.version < 0 || itSaved->second >= currentEntry.version))
+            itSaved != m_savedVersions.end() && currentEntry.version >= 0 && itSaved->second > currentEntry.version)
         {
             UpdateActiveTasksLocked();
             continue;

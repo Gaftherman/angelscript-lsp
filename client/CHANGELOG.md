@@ -4,6 +4,20 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.4-exp.9] - 2026-10-21
+
+### Experimental Release 1.1.4-exp.9: Zero-Trust String Recovery, Pull Diagnostic Real-Time Refresh & Heredoc Isolation
+
+- Pull Diagnostic Real-Time Refresh & Error Clearance (`TextDocumentHandlers`, `ServerDiagnostics`, `AnalysisScheduler`):
+  - In `TextDocumentHandlers::HandleRequestsTextDocument_Diagnostic`: Synchronously analyze stale open documents upon receiving a pull request instead of returning `ServerCancelled`, eliminating frozen obsolete errors in VS Code's Problems panel when quotes are closed.
+  - In `AnalysisScheduler::PopNextValidInFlightEntry`: Corrected stale-version comparison (`>` instead of `>=`) and unversioned request handling to prevent dropping re-analysis of saved documents.
+- Multi-Line Heredoc & String Brace Balance (`ASTUtils`):
+  - In `ASTUtils::SkipLiteral`: Integrated `SkipHeredocLiteral` and restricted single-line string literal skipping to stop at newlines, preventing multiline heredocs (such as JSON schemas in `GetSchema()`) and unclosed single-line strings from corrupting brace balance calculations.
+- Swallowed Function Declaration Recovery (`DeclarationRecovery`, `DocumentSymbolHandler`):
+  - Extended `DeclarationRecovery::ParseCandidateHeader` to recognize top-level function declarations (`void foo()`, etc.) swallowed into unclosed string literal AST tokens.
+  - In `DocumentSymbolHandler::GetDocumentSymbols`: Enhanced document symbol extraction when parse errors are present by supplementing symbols from `m_symbolTable` populated by `DeclarationRecovery`.
+  - Added test cases validating real-time recovery to zero errors on quote closure, JSON heredoc analysis, unclosed string bleed containment, and OnTypeFormatting no-op inside heredocs.
+
 ## [1.1.4-exp.8] - 2026-10-21
 
 ### Experimental Release 1.1.4-exp.8: Eradicate In-Test Timeouts & Synchronize Predefined Stub Document Versions

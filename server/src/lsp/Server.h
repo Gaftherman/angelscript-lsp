@@ -1286,12 +1286,23 @@ class Server
      * Reports `unchanged` when the client's previousResultId still matches, which is the whole
      * point of the pull model - an unedited file costs a result id and nothing else.
      *
-     * A document the analyzer has not reached yet is answered with ServerCancelled and
-     * `retriggerRequest`, not with an empty report. An empty report is a positive claim that
-     * the file is clean, and the server does not know that yet.
+     * A document whose cached analysis is stale is synchronously analyzed so the client
+     * always receives up-to-date diagnostic reports without freezing stale errors.
      */
     lsp::requests::TextDocument_Diagnostic::Result
     HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagnostic::Params&& params);
+
+    /**
+     * @brief Checks the diagnostic cache for a matching document version or content hash.
+     * @param[in] uriStr Document URI key.
+     * @param[in] currentHash Hash of the current document text.
+     * @param[in] currentVersion Version of the current document (-1 if unknown).
+     * @param[in] previousResultId Previous result id submitted by the LSP client.
+     * @return Cached diagnostic report if current, or std::nullopt.
+     */
+    [[nodiscard]] std::optional<lsp::requests::TextDocument_Diagnostic::Result>
+    TryGetCachedDiagnosticReport(const std::string& uriStr, size_t currentHash, int currentVersion,
+                                 const std::optional<std::string>& previousResultId);
 
     /**
      * @brief Answers `workspace/diagnostic` for every document the server has already analysed.

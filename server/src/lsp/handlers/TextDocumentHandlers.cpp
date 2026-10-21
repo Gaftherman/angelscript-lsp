@@ -788,6 +788,37 @@ void Server::RegisterTextDocumentHandlers()
     RegisterFormattingAndSymbolHandlers();
 }
 
+std::optional<lsp::requests::TextDocument_Diagnostic::Result>
+Server::TryGetCachedDiagnosticReport(const std::string& uriStr, size_t currentHash, int currentVersion,
+                                     const std::optional<std::string>& previousResultId)
+{
+    std::lock_guard<std::mutex> lock(m_diagnosticsCacheMutex);
+    const auto it = m_diagnosticsCache.find(uriStr);
+    if (it == m_diagnosticsCache.end())
+    {
+        return std::nullopt;
+    }
+
+    const bool isCurrent = (it->second.textHash == currentHash) ||
+                           (currentVersion >= 0 && it->second.version >= 0 && it->second.version == currentVersion);
+    if (!isCurrent)
+    {
+        return std::nullopt;
+    }
+
+    if (previousResultId.has_value() && *previousResultId == it->second.resultId)
+    {
+        lsp::RelatedUnchangedDocumentDiagnosticReport unchanged;
+        unchanged.resultId = it->second.resultId;
+        return unchanged;
+    }
+
+    lsp::RelatedFullDocumentDiagnosticReport full;
+    full.resultId = it->second.resultId;
+    full.items = it->second.items;
+    return full;
+}
+
 lsp::requests::TextDocument_Diagnostic::Result
 Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagnostic::Params&& params)
 {
@@ -807,35 +838,24 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
     const size_t currentHash = current ? std::hash<std::string>{}(*current) : 0;
     const int currentVersion = GetDocumentVersion(uriStr);
 
-    if (current)
+    if (current && m_parser)
     {
-        std::lock_guard<std::mutex> lock(m_diagnosticsCacheMutex);
-        if (const auto it = m_diagnosticsCache.find(uriStr); it != m_diagnosticsCache.end())
+        if (auto cached = TryGetCachedDiagnosticReport(uriStr, currentHash, currentVersion, params.previousResultId))
         {
-            bool isCurrent = false;
-            if (it->second.textHash == currentHash)
-            {
-                isCurrent = true;
-            }
-            else if (currentVersion >= 0 && it->second.version >= 0)
-            {
-                isCurrent = (it->second.version == currentVersion);
-            }
+            return std::move(*cached);
+        }
 
-            if (isCurrent)
-            {
-                if (params.previousResultId.has_value() && *params.previousResultId == it->second.resultId)
-                {
-                    lsp::RelatedUnchangedDocumentDiagnosticReport unchanged;
-                    unchanged.resultId = it->second.resultId;
-                    return unchanged;
-                }
+        AnalyzeDocument({
+            .uriStr = uriStr,
+            .text = *current,
+            .parser = *m_parser,
+            .version = currentVersion,
+            .generation = m_documentStore.GetGeneration(uriStr),
+        });
 
-                lsp::RelatedFullDocumentDiagnosticReport full;
-                full.resultId = it->second.resultId;
-                full.items = it->second.items;
-                return full;
-            }
+        if (auto fresh = TryGetCachedDiagnosticReport(uriStr, currentHash, currentVersion, params.previousResultId))
+        {
+            return std::move(*fresh);
         }
     }
 

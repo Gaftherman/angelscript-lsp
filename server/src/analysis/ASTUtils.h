@@ -222,23 +222,71 @@ inline void SkipComment(std::string_view sourceCode, size_t& i, int& currentLine
     }
 }
 
+/**
+ * @brief Advances index past a triple-quoted heredoc literal (""" ... """).
+ * @param[in] sourceCode Document source text.
+ * @param[in,out] i Character index in source text.
+ * @param[in,out] currentLine Current line count.
+ */
+inline void SkipHeredocLiteral(std::string_view sourceCode, size_t& i, int& currentLine) noexcept
+{
+    i += 3;
+    const size_t len = sourceCode.size();
+    while (i < len)
+    {
+        if (sourceCode[i] == '\n')
+        {
+            ++currentLine;
+            ++i;
+        }
+        else if (sourceCode.substr(i).starts_with("\"\"\""))
+        {
+            i += 3;
+            return;
+        }
+        else
+        {
+            ++i;
+        }
+    }
+}
+
+/**
+ * @brief Advances index past a string or character literal, stopping at newlines for unclosed literals.
+ * @param[in] sourceCode Document source text.
+ * @param[in,out] i Character index in source text.
+ * @param[in,out] currentLine Current line count.
+ */
 inline void SkipLiteral(std::string_view sourceCode, size_t& i, int& currentLine) noexcept
 {
+    if (sourceCode.substr(i).starts_with("\"\"\""))
+    {
+        SkipHeredocLiteral(sourceCode, i, currentLine);
+        return;
+    }
     const size_t len = sourceCode.size();
     const char quote = sourceCode[i++];
     while (i < len && sourceCode[i] != quote)
     {
         if (sourceCode[i] == '\\' && i + 1 < len)
         {
+            if (sourceCode[i + 1] == '\n')
+            {
+                ++currentLine;
+            }
             i += 2;
             continue;
         }
-        if (sourceCode[i] == '\n')
-            ++currentLine;
+        if (sourceCode[i] == '\n' || sourceCode[i] == '\r')
+        {
+            break;
+        }
         ++i;
     }
-    if (i < len)
+    if (i < len && sourceCode[i] == quote)
+    {
         ++i;
+    }
 }
 
 /**

@@ -190,25 +190,87 @@ std::string_view ExtractDeclarationName(std::string_view line, size_t pos, std::
     return line.substr(nameStart, pos - nameStart);
 }
 
+bool IsControlKeyword(std::string_view name) noexcept
+{
+    return name == "if" || name == "for" || name == "while" || name == "switch" || name == "catch" || name == "return";
+}
+
+bool TryParseFunctionHeader(std::string_view line, size_t pos, std::string_view& outName) noexcept
+{
+    const size_t lparen = line.find('(', pos);
+    if (lparen == std::string_view::npos || lparen <= pos)
+    {
+        return false;
+    }
+
+    const size_t eq = line.find('=', pos);
+    if (eq != std::string_view::npos && eq < lparen)
+    {
+        return false;
+    }
+
+    const size_t quote = line.find_first_of("\"'", pos);
+    if (quote != std::string_view::npos && quote < lparen)
+    {
+        return false;
+    }
+
+    std::string_view funcName = ExtractFuncdefName(line, pos);
+    if (funcName.empty() || IsControlKeyword(funcName))
+    {
+        return false;
+    }
+
+    const size_t funcStart = line.find(funcName, pos);
+    std::string_view beforeFunc =
+        (funcStart != std::string_view::npos) ? line.substr(pos, funcStart - pos) : std::string_view{};
+    while (!beforeFunc.empty() && (beforeFunc.back() == ' ' || beforeFunc.back() == '\t'))
+    {
+        beforeFunc.remove_suffix(1);
+    }
+
+    if (beforeFunc.empty() || beforeFunc == "return")
+    {
+        return false;
+    }
+
+    outName = funcName;
+    return true;
+}
+
 bool ParseCandidateHeader(std::string_view line, std::string_view& outKw, std::string_view& outName)
 {
     size_t pos = 0;
     while (pos < line.size() && (line[pos] == ' ' || line[pos] == '\t' || line[pos] == '\r'))
+    {
         ++pos;
+    }
 
     if (pos >= line.size() || line.substr(pos).starts_with("//") || line.substr(pos).starts_with("/*"))
+    {
         return false;
+    }
 
     pos = SkipModifiers(line, pos);
     outKw = MatchKeyword(line.substr(pos), pos);
-    if (outKw.empty())
-        return false;
+    if (!outKw.empty())
+    {
+        while (pos < line.size() && (line[pos] == ' ' || line[pos] == '\t'))
+        {
+            ++pos;
+        }
 
-    while (pos < line.size() && (line[pos] == ' ' || line[pos] == '\t'))
-        ++pos;
+        outName = ExtractDeclarationName(line, pos, outKw);
+        return !outName.empty();
+    }
 
-    outName = ExtractDeclarationName(line, pos, outKw);
-    return !outName.empty();
+    if (TryParseFunctionHeader(line, pos, outName))
+    {
+        outKw = "function";
+        return true;
+    }
+
+    return false;
 }
 
 void ComputeLineAndColumn(std::string_view source, size_t targetByte, size_t& outLine, size_t& outCol)
