@@ -24,14 +24,25 @@ void DocumentStore::OpenDocument(const std::string& uri, std::string text, int v
 }
 
 void DocumentStore::LinkDocument(const std::string& uri, std::shared_ptr<const document::Document> document,
-                                 const std::string& clientUri)
+                                 const std::string& clientUri, int version)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     if (!clientUri.empty())
     {
         m_clientUriByKey[uri] = clientUri;
     }
-    m_documents.insert_or_assign(uri, std::move(document));
+    const uint64_t gen = m_nextGeneration++;
+    if (document && document->version != version)
+    {
+        auto docWithVersion = std::make_shared<document::Document>(
+            document::DocumentSnapshot{uri, document->text, version, gen}, document::MakeTreePtr(nullptr));
+        docWithVersion->setAST(document->getAST());
+        m_documents.insert_or_assign(uri, std::move(docWithVersion));
+    }
+    else
+    {
+        m_documents.insert_or_assign(uri, std::move(document));
+    }
 }
 
 void DocumentStore::UpdateDocument(const std::string& uri, std::string text, int version, document::TreePtr tree)

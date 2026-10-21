@@ -4065,8 +4065,7 @@ TEST_CASE("Server - What it says while the code is still being written")
                     // backstop; reaching it means something is genuinely wrong rather than slow.
 
                     stream.WaitForCondition([&](const std::string& output)
-                                            { return CountPublishedFor(output, "main.as") > publishesBefore; },
-                                            std::chrono::seconds(20));
+                                            { return CountPublishedFor(output, "main.as") > publishesBefore; });
 
                     published[index] = LastPublishedFor(stream.Output(), "main.as");
                     publishesBefore = CountPublishedFor(stream.Output(), "main.as");
@@ -4983,17 +4982,15 @@ std::string RunEditingOpenStub(const std::string& editedStub, bool expectNewFram
     // Deterministically drain background reanalysis triggered by didChange
     stream.PushAction([&server]() { server.DrainQueue(); });
 
-    // Waiting for a *new* frame about main.as, not for silence: the document was already
-    // published once, so "there is a publish for main.as" was true before the edit.
-    stream.PushAction(
-        [&stream, &before, expectNewFrame]()
-        {
-            // Bounded short when no new frame is expected: waiting the full timeout for something
-            // that correctly never arrives would cost fifteen seconds of suite time per run.
-            const auto budget = expectNewFrame ? std::chrono::seconds(15) : std::chrono::seconds(2);
-            stream.WaitForCondition([&](const std::string& out) { return CountPublishedFor(out, "main.as") > before; },
-                                    budget);
-        });
+    if (expectNewFrame)
+    {
+        stream.PushAction(
+            [&stream, &before]()
+            {
+                stream.WaitForCondition([&](const std::string& out)
+                                        { return CountPublishedFor(out, "main.as") > before; });
+            });
+    }
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
@@ -5596,8 +5593,7 @@ TEST_CASE("Server - The cost of a module-wide pass is measured rather than assum
         [&stream, &savedAt, &elapsed]()
         {
             stream.WaitForCondition([&](const std::string& out)
-                                    { return CountPublishedFor(out, "module/file") >= k_files; },
-                                    std::chrono::seconds(60));
+                                    { return CountPublishedFor(out, "module/file") >= k_files; });
             elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - savedAt);
         });
 

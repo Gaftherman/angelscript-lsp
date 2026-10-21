@@ -317,7 +317,7 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
 
     if (contentUnchanged)
     {
-        m_documentStore.LinkDocument(req.uriStr, preindexedDoc, req.clientUri);
+        m_documentStore.LinkDocument(req.uriStr, preindexedDoc, req.clientUri, req.version);
         const double totalMs = req.totalTimer.ElapsedMs();
         LogInfo(fmt::format("[File Open] Finished opening predefined file (zero-copy link): {} in {}", req.uriStr,
                             utils::FormatDuration(totalMs)));

@@ -66,7 +66,7 @@ class DocumentStore
      * @param clientUri Optional client URI spelling.
      */
     void LinkDocument(const std::string& uri, std::shared_ptr<const document::Document> document,
-                      const std::string& clientUri = "");
+                      const std::string& clientUri = "", int version = 0);
 
     /**
      * @brief Updates text, version, and syntax tree of an existing open document.

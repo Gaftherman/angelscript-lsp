@@ -2,7 +2,6 @@
 
 #include <lsp/io/stream.h>
 
-#include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <functional>
@@ -103,39 +102,33 @@ class ScriptedStream final : public lsp::io::Stream
      * @brief Waits deterministically until a needle appears at least `times` times in output.
      * @param needle Substring to look for in received output.
      * @param times Minimum number of occurrences required.
-     * @param timeout Maximum duration to wait before returning false.
-     * @return True if condition met within timeout; false otherwise.
      */
-    bool WaitForCount(const std::string& needle, size_t times = 1,
-                      std::chrono::milliseconds timeout = std::chrono::seconds(20)) const
+    void WaitForCount(const std::string& needle, size_t times = 1) const
     {
         std::unique_lock<std::mutex> lock(m_outputMutex);
-        return m_outputCv.wait_for(lock, timeout,
-                                   [this, &needle, times]()
-                                   {
-                                       if (needle.empty())
-                                           return true;
-                                       size_t count = 0;
-                                       for (size_t pos = m_output.find(needle); pos != std::string::npos;
-                                            pos = m_output.find(needle, pos + needle.size()))
-                                       {
-                                           ++count;
-                                       }
-                                       return count >= times;
-                                   });
+        m_outputCv.wait(lock,
+                        [this, &needle, times]()
+                        {
+                            if (needle.empty())
+                                return true;
+                            size_t count = 0;
+                            for (size_t pos = m_output.find(needle); pos != std::string::npos;
+                                 pos = m_output.find(needle, pos + needle.size()))
+                            {
+                                ++count;
+                            }
+                            return count >= times;
+                        });
     }
 
     /**
      * @brief Waits deterministically until a custom predicate over output evaluates to true.
      * @param predicate Callable accepting const std::string& and returning bool.
-     * @param timeout Maximum duration to wait before returning false.
-     * @return True if condition met within timeout; false otherwise.
      */
-    template <typename Pred>
-    bool WaitForCondition(Pred&& predicate, std::chrono::milliseconds timeout = std::chrono::seconds(20)) const
+    template <typename Pred> void WaitForCondition(Pred&& predicate) const
     {
         std::unique_lock<std::mutex> lock(m_outputMutex);
-        return m_outputCv.wait_for(lock, timeout, [this, &predicate]() { return predicate(m_output); });
+        m_outputCv.wait(lock, [this, &predicate]() { return predicate(m_output); });
     }
 
     /** @brief Everything the server has written back, framing included. */

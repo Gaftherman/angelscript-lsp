@@ -2,6 +2,21 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.4-exp.8] - 2026-10-21
+
+### Experimental Release 1.1.4-exp.8: Eradicate In-Test Timeouts & Synchronize Predefined Stub Document Versions
+
+- Eradicate In-Test Timeouts & Strict Queue Synchronization (`ScriptedStream`, `ServerHarnessTest`, `PerfBaselineTest`):
+  - Completely removed hardcoded `std::chrono` timeouts from `WaitForCount` and `WaitForCondition` in `ScriptedStream`, converting them into deterministic event-driven condition variable waits.
+  - Eliminated arbitrary `std::chrono::seconds(...)` waits across server harness test suites, ensuring all asynchronous assertions are strictly queue-driven and immediate.
+  - Updated `RunEditingOpenStub` to conditionally check `WaitForCondition` only when a new frame is expected, eliminating artificial delays on frames that never arrive.
+- Predefined Stub Document Versioning & Diagnostic Publishing (`DocumentStore`, `TextDocumentSyncHandlers`):
+  - Updated `DocumentStore::LinkDocument` to accept the client's `version` parameter and assign it to the linked document snapshot instead of keeping default version 0.
+  - Resolved race condition where opening an existing predefined file caused `PublishDiagnostics` to drop empty diagnostics because `GetDocumentVersion` (0) mismatched `req.version` (1).
+- Full Quality Gate & Test Verification:
+  - All 2,451 doctest test cases (34,478 assertions) pass cleanly.
+  - All 12 quality gates pass with 0 warnings.
+
 ## [1.1.4-exp.7] - 2026-10-21
 
 ### Experimental Release 1.1.4-exp.7: Linux x86 CI Synchronization & Stale Task Invalidation

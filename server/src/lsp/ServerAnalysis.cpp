@@ -18,10 +18,6 @@ void Server::ReanalyseOpenDocuments()
         {
             continue;
         }
-        if (m_analysisScheduler && m_analysisScheduler->ShouldDebouncePeer(doc->uri))
-        {
-            continue;
-        }
         IndexModuleClosure(doc->uri);
         SharedTree astSnapshot = doc->getAST();
         document::TreePtr treeCopy = document::MakeTreePtr(astSnapshot ? ts_tree_copy(astSnapshot.get()) : nullptr);

@@ -231,8 +231,7 @@ TEST_CASE("Perf - Baseline Measurements" * doctest::skip(true))
                             return true;
                         }
                         return false;
-                    },
-                    std::chrono::seconds(60));
+                    });
             });
 
         // Single character change: append a comment at the end
