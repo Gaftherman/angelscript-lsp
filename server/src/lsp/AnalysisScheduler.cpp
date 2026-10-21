@@ -271,14 +271,14 @@ std::optional<std::pair<std::string, PendingAnalysisEntry>> AnalysisScheduler::P
             continue;
         }
         if (const auto itSaved = m_savedVersions.find(currentUri);
-            itSaved != m_savedVersions.end() && itSaved->second >= currentEntry.version && currentEntry.version >= 0)
+            itSaved != m_savedVersions.end() && (currentEntry.version < 0 || itSaved->second >= currentEntry.version))
         {
             UpdateActiveTasksLocked();
             continue;
         }
-        if (const auto itPending = m_pending.find(currentUri); itPending != m_pending.end() &&
-                                                               itPending->second.version > currentEntry.version &&
-                                                               currentEntry.version >= 0)
+        if (const auto itPending = m_pending.find(currentUri);
+            itPending != m_pending.end() &&
+            (currentEntry.version < 0 || itPending->second.version > currentEntry.version))
         {
             UpdateActiveTasksLocked();
             continue;

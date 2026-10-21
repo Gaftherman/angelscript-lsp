@@ -6743,12 +6743,13 @@ TEST_CASE("Server - Saving an interface-changing module file clears diagnostics 
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
 
-    // Verify use.as was published with errors during initial module scan
+    // Wait for initial module analysis of all files in the module
     stream.PushAction(
         [&stream]()
         {
-            stream.WaitForCondition([&](const std::string& out) { return CountPublishedFor(out, "use.as") >= 1; },
-                                    std::chrono::seconds(10));
+            stream.WaitForCondition(
+                [&](const std::string& out)
+                { return CountPublishedFor(out, "decl.as") >= 1 && CountPublishedFor(out, "use.as") >= 1; });
             const std::string initialUse = LastPublishedFor(stream.Output(), "use.as");
             CHECK(initialUse.find("as-err-undefined-identifier") != std::string::npos);
         });
@@ -6756,24 +6757,27 @@ TEST_CASE("Server - Saving an interface-changing module file clears diagnostics 
     // Now open decl.as, fix helperName, and save it
     const std::string fixedDecl = "void " + helperName + "() { }\n";
     stream.Push(DidOpenMessage(fixture.Uri("scripts/maps/decl.as"), fixedDecl));
+    stream.PushAction([&stream]() { WaitForCount(stream, "decl.as", 2); });
+
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
                 fixture.Uri("scripts/maps/decl.as") + R"("},"text":")" + JsonEscape(fixedDecl) + R"("}})");
-
-    // Wait for the closed file use.as to receive republished diagnostics (count >= 2)
-    stream.PushAction(
-        [&stream]()
-        {
-            stream.WaitForCondition([&](const std::string& out) { return CountPublishedFor(out, "use.as") >= 2; },
-                                    std::chrono::seconds(10));
-        });
-
-    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
     serverConfig.engineProfile = "standard";
     serverConfig.modules = {{"MapScript", "", (fixture.dir / "scripts/maps").generic_string()}};
+    Server server(serverConfig, stream);
 
-    RunScript(serverConfig, stream);
+    // Wait for the closed file use.as to receive republished diagnostics (count >= 2)
+    stream.PushAction(
+        [&stream, &server]()
+        {
+            WaitForCount(stream, "decl.as", 3);
+            stream.WaitForCondition([&](const std::string& out) { return CountPublishedFor(out, "use.as") >= 2; });
+            server.DrainQueue();
+        });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+    server.Run();
 
     const std::string finalUse = LastPublishedFor(stream.Output(), "use.as");
     INFO("final published for use.as: " << finalUse);

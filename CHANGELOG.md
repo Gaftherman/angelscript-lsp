@@ -2,6 +2,18 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.4-exp.7] - 2026-10-21
+
+### Experimental Release 1.1.4-exp.7: Linux x86 CI Synchronization & Stale Task Invalidation
+
+- Task Invalidation for Closed Documents (`AnalysisScheduler`, `ServerAnalysis`):
+  - Updated `AnalysisScheduler::PopNextValidInFlightEntry` to treat unversioned/closed-file analysis tasks (`version < 0`) as stale whenever a document has been saved (`m_savedVersions`) or has a newer pending edit (`m_pending`).
+  - Updated `Server::IsAnalyzeDocumentStale` and `Server::IsCommitAnalysisStale` to discard background closed-document analysis jobs if the document has since been opened in `DocumentStore` (`currentVersion >= 0`), preventing obsolete initial module scans from clobbering updated symbol tables on Linux where directory enumeration is non-alphabetical.
+- Deterministic Server Test Synchronization (`ServerHarnessTest`):
+  - Synchronized initial module indexing in `ServerHarnessTest` to await publication completion for all module files (`decl.as` and `use.as`), eliminating race conditions on ext4 filesystems.
+  - Added deterministic barrier awaiting document save publication (`decl.as >= 3`) and invoked `server.DrainQueue()` before shutdown.
+  - Eradicated artificial 10-second timeout to adhere to SOP Invariant-Based Testing and eliminate flaky timeouts under parallel multi-threaded test execution.
+
 ## [1.1.4-exp.6] - 2026-10-21
 
 ### Experimental Release 1.1.4-exp.6: Cascading Module Re-Analysis on Save & Member Property Accessor Resolution

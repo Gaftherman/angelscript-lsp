@@ -296,6 +296,10 @@ bool Server::IsCommitAnalysisStale(const CommitAnalysisRequest& req) const
     {
         return true;
     }
+    if (currentVer >= 0 && req.version < 0)
+    {
+        return true;
+    }
     return false;
 }
 
@@ -351,6 +355,10 @@ bool Server::IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const
 
     const int currentVersion = GetDocumentVersion(req.uriStr);
     if (currentVersion >= 0 && req.version >= 0 && req.version != currentVersion)
+    {
+        return true;
+    }
+    if (currentVersion >= 0 && req.version < 0)
     {
         return true;
     }
