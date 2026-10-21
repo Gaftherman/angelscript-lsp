@@ -1010,6 +1010,11 @@ uint32_t RefineRuleIndexFallback(std::string_view tokenText, uint32_t tokenType,
     {
         return Type_EnumMember;
     }
+    if (tokenType == Type_Variable && (ctx.ruleIndex->globalAccessorPropertyNames.contains(tokenText) ||
+                                       ctx.ruleIndex->keywordGlobalAccessorPropertyNames.contains(tokenText)))
+    {
+        return Type_Property;
+    }
     if (tokenType == Type_Type)
     {
         auto it = ctx.ruleIndex->qualifiedTypesByShortName.find(tokenText);

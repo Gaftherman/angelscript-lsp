@@ -2824,15 +2824,23 @@ static std::string ResolveIdentifierAccessorFallback(const std::string& name, co
         auto accessorSyms = symbolTable.FindSymbols(std::string(prefix) + name);
         for (const auto& sym : accessorSyms)
         {
-            if (sym.type == SymbolType::Function && sym.containerName.empty())
+            if (sym.type == SymbolType::Function && sym.containerName.empty() &&
+                std::holds_alternative<FunctionSignature>(sym.signature))
             {
-                if (!sym.GetFunction().returnType.empty() && sym.GetFunction().returnType != "void")
+                const auto& fn = sym.GetFunction();
+                const bool isIndexed = (sym.name.starts_with("get_") && !fn.parameters.empty()) ||
+                                       (sym.name.starts_with("set_") && fn.parameters.size() > 1);
+                if (isIndexed)
                 {
-                    return CleanExpressionType(sym.GetFunction().returnType);
+                    continue;
                 }
-                if (!sym.GetFunction().parameters.empty())
+                if (!fn.returnType.empty() && fn.returnType != "void")
                 {
-                    return CleanExpressionType(sym.GetFunction().parameters.front().typeName);
+                    return CleanExpressionType(fn.returnType);
+                }
+                if (!fn.parameters.empty())
+                {
+                    return CleanExpressionType(fn.parameters.front().typeName);
                 }
             }
         }
@@ -3595,6 +3603,40 @@ static std::string GetTrimmedNodeText(TSNode node, std::string_view sourceCode)
 }
 
 /**
+ * @brief Extracts the resolved type of an accessor function member.
+ * @param[in] sym Accessor function symbol to inspect.
+ * @return Cleaned property type, or empty string if indexed or invalid.
+ */
+static std::string ExtractAccessorMemberType(const Symbol& sym)
+{
+    if (!std::holds_alternative<FunctionSignature>(sym.signature))
+    {
+        return "";
+    }
+    const auto& fn = sym.GetFunction();
+    const bool isGet = sym.name.starts_with("get_");
+    const bool isSet = sym.name.starts_with("set_");
+    if (!isGet && !isSet && !fn.modifiers.isProperty)
+    {
+        return "";
+    }
+    const bool isIndexed = (isGet && !fn.parameters.empty()) || (isSet && fn.parameters.size() > 1);
+    if (isIndexed)
+    {
+        return "";
+    }
+    if (!fn.returnType.empty() && fn.returnType != "void")
+    {
+        return CleanExpressionType(fn.returnType);
+    }
+    if (!fn.parameters.empty())
+    {
+        return CleanExpressionType(fn.parameters.back().typeName);
+    }
+    return "";
+}
+
+/**
  * @brief Extracts the resolved type of a member symbol.
  * @param[in] sym Member symbol to inspect.
  * @return Cleaned member type, or empty string if unresolved.
@@ -3607,20 +3649,7 @@ static std::string ExtractMemberSymbolType(const Symbol& sym)
     }
     if (sym.type == SymbolType::Function)
     {
-        const bool isAccessor =
-            sym.name.starts_with("get_") || sym.name.starts_with("set_") ||
-            (std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isProperty);
-        if (isAccessor)
-        {
-            if (!sym.GetFunction().returnType.empty() && sym.GetFunction().returnType != "void")
-            {
-                return CleanExpressionType(sym.GetFunction().returnType);
-            }
-            if (!sym.GetFunction().parameters.empty())
-            {
-                return CleanExpressionType(sym.GetFunction().parameters.back().typeName);
-            }
-        }
+        return ExtractAccessorMemberType(sym);
     }
     return "";
 }
@@ -4237,7 +4266,100 @@ static std::optional<std::string> ResolveLambdaOrInitExpr(std::string_view nodeT
 }
 
 /**
+ * @brief Searches a collection of accessor symbols for an indexed getter return type.
+ * @param[in] accessors Vector of accessor symbols.
+ * @return Return type of the indexed getter, or empty string.
+ */
+static std::string FindIndexedGetterType(const std::vector<Symbol>& accessors)
+{
+    for (const auto& sym : accessors)
+    {
+        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+        {
+            const auto& fn = sym.GetFunction();
+            if (sym.name.starts_with("get_") && !fn.parameters.empty())
+            {
+                return CleanExpressionType(fn.returnType);
+            }
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Resolves indexed property accessor type from member expression receiver.
+ * @param[in] objNode Member expression AST node.
+ * @param[in] ctx Expression type resolution context.
+ * @param[in] depth AST recursion depth.
+ * @return Resolved return type of the indexed getter, or empty string.
+ */
+static std::string ResolveMemberIndexedProperty(TSNode objNode, const ExpressionTypeContext& ctx, int depth)
+{
+    TSNode recNode = parser::GetChildByField(objNode, parser::fields::Object);
+    TSNode memNode = parser::GetChildByField(objNode, parser::fields::Member);
+    if (ts_node_is_null(recNode) || ts_node_is_null(memNode))
+    {
+        return "";
+    }
+    std::string recType = CleanBaseType(ResolveExpressionType(recNode, ctx, depth + 1));
+    std::string memName = GetTrimmedNodeText(memNode, ctx.sourceCode);
+    if (recType.empty() || memName.empty())
+    {
+        return "";
+    }
+    return FindIndexedGetterType(FindPropertyAccessors(recType, memName, ctx.symbolTable, false));
+}
+
+/**
+ * @brief Resolves indexed property accessor type from scoped or bare identifier.
+ * @param[in] objNode Scoped identifier or identifier AST node.
+ * @param[in] ctx Expression type resolution context.
+ * @return Resolved return type of the indexed getter, or empty string.
+ */
+static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const ExpressionTypeContext& ctx)
+{
+    std::string_view nodeType = NodeType(objNode);
+    if (nodeType == "scoped_identifier")
+    {
+        std::string text = GetTrimmedNodeText(objNode, ctx.sourceCode);
+        const auto colonPos = text.rfind("::");
+        if (colonPos != std::string::npos)
+        {
+            std::string scopeName = text.substr(0, colonPos);
+            std::string name = text.substr(colonPos + 2);
+            return FindIndexedGetterType(FindPropertyAccessors(scopeName, name, ctx.symbolTable, false));
+        }
+        return "";
+    }
+
+    std::string name = GetTrimmedNodeText(objNode, ctx.sourceCode);
+    if (name.empty())
+    {
+        return "";
+    }
+    if (std::string hit = FindIndexedGetterType(FindGlobalPropertyAccessors(name, ctx.symbolTable, false));
+        !hit.empty())
+    {
+        return hit;
+    }
+    for (const auto& cont : GetEnclosingContainers(objNode, ctx.sourceCode))
+    {
+        const std::string cName = cont.qualifiedName.empty() ? cont.name : cont.qualifiedName;
+        if (std::string hit = FindIndexedGetterType(FindPropertyAccessors(cName, name, ctx.symbolTable, false));
+            !hit.empty())
+        {
+            return hit;
+        }
+    }
+    return "";
+}
+
+/**
  * @brief Resolves index expression types for containers and indexed property accessors.
+ * @param[in] exprNode Index expression AST node.
+ * @param[in] ctx Expression type resolution context.
+ * @param[in] depth AST recursion depth.
+ * @return Resolved indexed expression type, or empty string.
  */
 static std::string ResolveIndexExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
@@ -4246,32 +4368,29 @@ static std::string ResolveIndexExpr(TSNode exprNode, const ExpressionTypeContext
     {
         return "";
     }
+
+    std::string_view objNodeType = NodeType(objNode);
+    if (objNodeType == "member_expression")
+    {
+        if (std::string propType = ResolveMemberIndexedProperty(objNode, ctx, depth); !propType.empty())
+        {
+            return propType;
+        }
+    }
+    else
+    {
+        if (std::string propType = ResolveScopedOrBareIndexedProperty(objNode, ctx); !propType.empty())
+        {
+            return propType;
+        }
+    }
+
     std::string objType = ResolveExpressionType(objNode, ctx, depth + 1);
     if (objType.empty())
     {
         return "";
     }
-    std::string indexed = ResolveIndexedType(objType, 1, ctx.symbolTable);
-    if (!indexed.empty())
-    {
-        return indexed;
-    }
-    std::string objName = GetTrimmedNodeText(objNode, ctx.sourceCode);
-    if (!objName.empty())
-    {
-        for (const auto& sym : FindGlobalPropertyAccessors(objName, ctx.symbolTable, false))
-        {
-            if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
-            {
-                const auto& fn = sym.GetFunction();
-                if (sym.name.starts_with("get_") && !fn.parameters.empty())
-                {
-                    return fn.returnType;
-                }
-            }
-        }
-    }
-    return "";
+    return ResolveIndexedType(objType, 1, ctx.symbolTable, ctx.arrayTypeName);
 }
 
 /**

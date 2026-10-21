@@ -372,18 +372,10 @@ void CheckAttributes(const Symbol& sym, const FunctionSignature& sig, const Func
         ctx.Emit(sym, "as-err-explicit-not-member", sym.name);
     }
 
-    if (sig.modifiers.isProperty)
+    if (sig.modifiers.isProperty && !IsValidAccessorSignature(sym.name, sig))
     {
-        if (fctx.containerIsKnown && !fctx.isMember)
-        {
-            ctx.LogRule("CheckAttributes", diagnostics::codes::VirtualPropertyOutsideClass, sym);
-            ctx.Emit(sym, diagnostics::codes::VirtualPropertyOutsideClass, sym.name);
-        }
-        else if (!IsValidAccessorSignature(sym.name, sig))
-        {
-            ctx.LogRule("CheckAttributes", "as-err-virtual-property-signature", sym);
-            ctx.Emit(sym, "as-err-virtual-property-signature", sym.name);
-        }
+        ctx.LogRule("CheckAttributes", "as-err-virtual-property-signature", sym);
+        ctx.Emit(sym, "as-err-virtual-property-signature", sym.name);
     }
 
     // A destructor carrying `delete` is already reported, with a message that says so; this

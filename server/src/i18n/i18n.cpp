@@ -81,6 +81,11 @@ std::string PrimaryLanguageSubtag(const std::string& locale)
 //                                     as-err-inout-on-primitive, which is the sentence the
 //                                     engine itself answers with. See FunctionRules.cpp.
 //
+//   as-err-virtual-property-outside-class  AngelScript allows virtual property accessors
+//                                          to be declared globally and in namespaces as well
+//                                          as in classes/interfaces; this code is retained
+//                                          for catalog parity but is never emitted.
+//
 //   as-warn-shadow-global       Shadowing a global is legal and ordinary; the warning fired on
 //                               plain parameter naming throughout the corpus rather than on
 //                               anything a user would change. See FunctionRules.cpp.

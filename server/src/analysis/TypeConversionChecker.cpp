@@ -1108,10 +1108,79 @@ void CheckAccessorMethods(const std::string& typeName, const std::string& propNa
     }
 }
 
-PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx)
+static void PopulateAccessorInfo(const std::vector<Symbol>& accessors, PropertyAccessInfo& info)
+{
+    for (const auto& sym : accessors)
+    {
+        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+        {
+            const auto& fn = sym.GetFunction();
+            info.isProperty = true;
+            if (sym.name.starts_with("get_"))
+            {
+                info.hasGet = true;
+                if (!fn.parameters.empty())
+                {
+                    info.isIndexed = true;
+                }
+            }
+            else if (sym.name.starts_with("set_"))
+            {
+                info.hasSet = true;
+                if (fn.parameters.size() > 1)
+                {
+                    info.isIndexed = true;
+                }
+            }
+        }
+    }
+}
+
+static PropertyAccessInfo InspectBareOrScopedProperty(TSNode exprNode, const DiagnosticContext& ctx)
 {
     PropertyAccessInfo info;
-    if (NodeType(exprNode) != "member_expression")
+    std::string text = TrimString(NodeText(exprNode, ctx.request.sourceCode));
+    const auto colonPos = text.rfind("::");
+    if (colonPos != std::string::npos)
+    {
+        std::string scopeName = TrimString(text.substr(0, colonPos));
+        info.propName = TrimString(text.substr(colonPos + 2));
+        auto accessors = FindPropertyAccessors(scopeName, info.propName, ctx.request.symbolTable, false);
+        PopulateAccessorInfo(accessors, info);
+        return info;
+    }
+
+    info.propName = text;
+    auto accessors = FindGlobalPropertyAccessors(info.propName, ctx.request.symbolTable, false);
+    PopulateAccessorInfo(accessors, info);
+    if (info.isProperty)
+    {
+        return info;
+    }
+
+    for (const auto& cont : GetEnclosingContainers(exprNode, ctx.request.sourceCode))
+    {
+        const std::string cName = cont.qualifiedName.empty() ? cont.name : cont.qualifiedName;
+        auto contAcc = FindPropertyAccessors(cName, info.propName, ctx.request.symbolTable, false);
+        PopulateAccessorInfo(contAcc, info);
+        if (info.isProperty)
+        {
+            return info;
+        }
+    }
+    return info;
+}
+
+PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx)
+{
+    std::string_view nodeType = NodeType(exprNode);
+    if (nodeType == "identifier" || nodeType == "scoped_identifier")
+    {
+        return InspectBareOrScopedProperty(exprNode, ctx);
+    }
+
+    PropertyAccessInfo info;
+    if (nodeType != "member_expression")
     {
         return info;
     }
@@ -3047,9 +3116,16 @@ void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticCo
             arrayNode = ts_node_named_child(left, 0);
         }
         PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
-        if (pInfo.isProperty && pInfo.isIndexed && opText != "=")
+        if (pInfo.isProperty && pInfo.isIndexed)
         {
-            EmitAtNode(node, ctx, "as-err-compound-assign-on-indexed-prop", pInfo.propName);
+            if (opText != "=")
+            {
+                EmitAtNode(node, ctx, "as-err-compound-assign-on-indexed-prop", pInfo.propName);
+            }
+            if (!pInfo.hasSet && pInfo.hasGet)
+            {
+                EmitAtNode(left, ctx, "as-err-read-only-property", pInfo.propName);
+            }
         }
     }
     else

@@ -28,6 +28,7 @@ DELIBERATELY_NEVER_EMITTED = {
     'as-err-invalid-reference-return',
     'as-err-readonly-handle',
     'as-err-standalone-reference',
+    'as-err-virtual-property-outside-class',
     'as-warn-shadow-global',
 }
 

@@ -1265,6 +1265,51 @@ std::optional<analysis::Symbol> ResolveOrMatchCandidate(std::vector<analysis::Sy
 }
 
 /**
+ * @brief Formats synthesized property header line if property accessor.
+ * @param[in] symbols Candidate symbol list.
+ * @param[in] accessorPropertyType Synthesized property accessor type.
+ * @param[in] nodeText Syntax node text.
+ * @return Formatted property header line, or empty string.
+ */
+static std::string FormatSynthesizedPropertyHeader(const std::vector<analysis::Symbol>& symbols,
+                                                   std::string_view accessorPropertyType, std::string_view nodeText)
+{
+    if (accessorPropertyType.empty())
+    {
+        return "";
+    }
+    std::string indexParam;
+    for (const auto& sym : symbols)
+    {
+        if (sym.type == analysis::SymbolType::Function &&
+            std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+        {
+            const auto& fn = sym.GetFunction();
+            if ((sym.name.starts_with("get_") && !fn.parameters.empty()) ||
+                (sym.name.starts_with("set_") && fn.parameters.size() > 1))
+            {
+                indexParam = fn.parameters.front().typeName;
+                if (!fn.parameters.front().name.empty())
+                {
+                    indexParam += " " + fn.parameters.front().name;
+                }
+                break;
+            }
+        }
+    }
+    std::ostringstream oss;
+    if (!indexParam.empty())
+    {
+        oss << "(property) " << accessorPropertyType << " " << nodeText << "[" << indexParam << "]\n";
+    }
+    else
+    {
+        oss << "(property) " << accessorPropertyType << " " << nodeText << "\n";
+    }
+    return oss.str();
+}
+
+/**
  * @brief Formats hover information for a resolved set of symbols with single signature and overload summary.
  * @param[in,out] symbols Candidate symbol list.
  * @param[in] accessorPropertyType Optional synthesized property accessor type.
@@ -1284,11 +1329,7 @@ lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::strin
     utils::HighResTimer fmtTimer;
     std::ostringstream oss;
     oss << "```angelscript\n";
-
-    if (!accessorPropertyType.empty())
-    {
-        oss << "(property) " << accessorPropertyType << " " << ctx.nodeText << "\n";
-    }
+    oss << FormatSynthesizedPropertyHeader(symbols, accessorPropertyType, ctx.nodeText);
 
     if (!symbols.empty())
     {

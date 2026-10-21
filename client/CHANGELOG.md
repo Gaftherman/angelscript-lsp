@@ -4,6 +4,34 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.4-exp.5] - 2026-10-21
+
+### Experimental Release 1.1.4-exp.5: Global and Indexed Property Accessor Support & Outside-Class Error Elimination
+
+- Global & Namespace Property Accessors (`FunctionRules`, `SemanticHelpers`):
+  - Removed erroneous `as-err-virtual-property-outside-class` diagnostic for global and namespace property accessor declarations (`get_...`, `set_...`).
+  - Added `'as-err-virtual-property-outside-class'` to intentionally never-emitted diagnostic catalog as AngelScript explicitly supports global and namespace virtual properties.
+- Indexed Property Accessors Resolution (`SemanticHelpers`, `TypeConversionChecker`):
+  - Added support for indexed property accessors (`type get_name(index)` and `void set_name(index, value)`).
+  - Resolved `index_expression` to indexed property accessor element type before `ResolveIndexedType`, preventing `stringArray[0]` from being misinterpreted as `string::opIndex` returning `uint8`.
+  - Added indexed property assignment validation and enforced compound assignment restriction (`as-err-compound-assign-on-indexed-prop`) on both global and member indexed properties.
+  - Enforced read-only diagnostics (`as-err-read-only-property`) for indexed properties lacking a `set_` accessor.
+  - Excluded indexed accessors from bare scalar property resolution.
+- Semantic Tokens & Hover Synthesizer (`SemanticTokensHandler`, `HoverHandler`):
+  - Refined global property tokens to `Type_Property`.
+  - Synthesized hover signature format `(property) <Type> <Name>[<IndexParam>]` for indexed properties.
+- Invariant & Regression Tests (`IndexedPropertyTest`, `FunctionRulesTest`):
+  - Added comprehensive test suite with 7 randomized invariant tests covering global and member indexed properties, read-only enforcement, compound assignment prohibition, and string concatenation.
+
+## [1.1.4-exp.4] - 2026-10-20
+
+### Experimental Release 1.1.4-exp.4: Swallowed Declaration Recovery on Cold Start & Incremental Type Retention
+
+- Swallowed Declarations Recovery (`WorkspaceScanner`, `SymbolCollector`):
+  - Recovered top-level declarations swallowed into `ERROR` AST nodes during cold workspace scans when preceding declarations have missing semicolons or syntax errors.
+- Incremental Type Retention (`DocumentStore`, `SemanticAnalyzer`):
+  - Retained last-known-good types across incremental keystrokes and transient syntax error states during active editing.
+
 ## [1.1.4-exp.3] - 2026-10-20
 
 ### Experimental Release 1.1.4-exp.3: Call Diagnostic Range Clamping & Syntax Error Cascade Suppression

@@ -1029,7 +1029,7 @@ TEST_CASE("FunctionRules - Accessor portability hint is not emitted for a namesp
                        [](const Diagnostic& d) { return d.code == "as-hint-accessor-portability"; }));
 }
 
-TEST_CASE("FunctionRules - Virtual property declared outside a class emits as-err-virtual-property-outside-class")
+TEST_CASE("FunctionRules - Virtual property declared outside a class is valid and emits no error")
 {
     const std::string ns = angel_lsp::test::GenerateRandomSymbolName("GlobalScope");
     const std::string propName = "get_" + angel_lsp::test::GenerateRandomSymbolName("Prop");
@@ -1042,7 +1042,8 @@ TEST_CASE("FunctionRules - Virtual property declared outside a class emits as-er
                              "}\n";
 
     const auto diagnostics = AnalyzeFunctionSnippet(code);
-    CHECK(HasCode(diagnostics, "as-err-virtual-property-outside-class"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-virtual-property-outside-class"));
+    CHECK_FALSE(HasCode(diagnostics, "as-err-virtual-property-signature"));
 }
 
 TEST_CASE("FunctionRules - Reports standalone anonymous function")
