@@ -486,6 +486,59 @@ void Server::WithdrawStaleModuleDiagnostics()
     }
 }
 
+std::string Server::ReadClosedDocumentContent(const std::string& uriStr)
+{
+    {
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        if (const auto cached = m_closureDocuments.find(uriStr); cached != m_closureDocuments.end())
+        {
+            return cached->second;
+        }
+    }
+    const std::string path = CanonicalPathFromUri(uriStr);
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+    {
+        return {};
+    }
+    return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+}
+
+void Server::ReanalyzeClosedModuleDependents(const std::string& savedUriStr, const ModuleClaim& savedClaim,
+                                             const ankerl::unordered_dense::set<std::string>& closureSet)
+{
+    std::vector<std::string> closedToReanalyze;
+    {
+        std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
+        for (const auto& pubUri : m_publishedForModules)
+        {
+            if (pubUri == savedUriStr || m_documentStore.IsOpen(pubUri))
+            {
+                continue;
+            }
+            const std::string pubPath = CanonicalPathFromUri(pubUri);
+            if (pubPath.empty())
+            {
+                continue;
+            }
+            const bool sameModule = (savedClaim.owner != nullptr && ClaimFor(pubPath).owner == savedClaim.owner);
+            if (sameModule || closureSet.contains(pubPath))
+            {
+                closedToReanalyze.push_back(pubUri);
+            }
+        }
+    }
+
+    for (const auto& pubUri : closedToReanalyze)
+    {
+        std::string content = ReadClosedDocumentContent(pubUri);
+        if (!content.empty())
+        {
+            ScheduleAnalysis(pubUri, content);
+        }
+    }
+}
+
 ankerl::unordered_dense::set<std::string> Server::CollectWantedClosurePaths() const
 {
     ankerl::unordered_dense::set<std::string> wantedCanonicalPaths;
@@ -836,6 +889,7 @@ void Server::IndexClosureFile(const std::string& path, angel_lsp::parser::AngelS
         std::lock_guard<std::mutex> lock(m_closureMutex);
         m_closureDocuments[uriStr] = std::move(content);
         m_indexedUriByPath[path] = uriStr;
+        m_lastSavedInterfaceHash[uriStr] = m_symbolTable.ComputeDocumentInterfaceHash(uriStr);
     }
 }
 

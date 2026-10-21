@@ -102,8 +102,18 @@ std::vector<angel_lsp::analysis::Diagnostic> Server::ReplaceSymbolsFromTree(cons
     }
     if (outInterfaceChanged)
     {
-        const uint64_t oldHash = m_symbolTable.ComputeDocumentInterfaceHash(uriStr);
+
         const uint64_t newHash = staging.ComputeDocumentInterfaceHash(uriStr);
+        uint64_t oldHash = m_symbolTable.ComputeDocumentInterfaceHash(uriStr);
+        {
+            std::lock_guard<std::mutex> lock(m_closureMutex);
+            if (const auto it = m_lastSavedInterfaceHash.find(uriStr); it != m_lastSavedInterfaceHash.end())
+            {
+                oldHash = it->second;
+            }
+            m_lastSavedInterfaceHash[uriStr] = newHash;
+        }
+
         *outInterfaceChanged = (oldHash != newHash);
     }
     m_symbolTable.ReplaceDocumentSymbols(uriStr, std::move(staging));

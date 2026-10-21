@@ -246,6 +246,11 @@ class Server
     // and indexing the same file under both would duplicate every symbol in it.
     ankerl::unordered_dense::map<std::string, std::string> m_indexedUriByPath;
 
+    // Document URI -> last saved public interface hash. Used to detect whether an on-disk save
+    // actually changed the document's exported interface, avoiding false-negatives when
+    // background keystrokes already committed newer symbols to the live table before didSave.
+    ankerl::unordered_dense::map<std::string, uint64_t> m_lastSavedInterfaceHash;
+
     // Negotiated in HandleRequestsInitialized. UTF-16 is the protocol default and the only
     // value a server may assume when the client stays silent; UTF-8 makes every conversion in
     // utils/PositionEncoding.h an identity, because it is what Tree-sitter reports natively.
@@ -793,6 +798,13 @@ class Server
      */
     void HandleNotificationsTextDocument_WillSave(lsp::notifications::TextDocument_WillSave::Params&& params);
     void HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params&& params);
+
+    /**
+     * @brief Updates closure cache, include graph, and module closure for a saved document.
+     * @param[in] uriStr Document URI that was saved.
+     * @param[in] text Document content that was saved.
+     */
+    void UpdateSavedDocumentCaches(const std::string& uriStr, const std::string& text);
 
     /**
      * @brief Withdraws stale diagnostics or re-analyzes dependents when a document save alters interface.
@@ -1547,6 +1559,22 @@ class Server
      * @param[in] uriStr Saved document URI key.
      */
     void ReanalyzeDependentsOnSave(const std::string& uriStr);
+
+    /**
+     * @brief Reanalyzes closed module files that previously had diagnostics published.
+     * @param[in] savedUriStr URI of the saved document triggering the cascade.
+     * @param[in] savedClaim Module claim of the saved document.
+     * @param[in] closureSet Set of canonical paths in the saved document's closure.
+     */
+    void ReanalyzeClosedModuleDependents(const std::string& savedUriStr, const ModuleClaim& savedClaim,
+                                         const ankerl::unordered_dense::set<std::string>& closureSet);
+
+    /**
+     * @brief Reads content for a closed document from cache or disk.
+     * @param[in] uriStr Document URI key.
+     * @return Document text content, or empty string on read failure.
+     */
+    std::string ReadClosedDocumentContent(const std::string& uriStr);
 
     /**
      * @brief Processes opening of a predefined file stub and publishes empty diagnostics.

@@ -2,6 +2,21 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.4-exp.6] - 2026-10-21
+
+### Experimental Release 1.1.4-exp.6: Cascading Module Re-Analysis on Save & Member Property Accessor Resolution
+
+- Cascading Module Re-Analysis for Closed Files (`ServerModules`, `TextDocumentSyncHandlers`, `ServerAnalysis`):
+  - Tracked `m_lastSavedInterfaceHash` per document to reliably detect interface changes on save without false-negatives caused by earlier typing-time background symbol commits.
+  - Implemented `ReanalyzeClosedModuleDependents` to re-analyze closed files belonging to the saved module that were previously published with diagnostics (`m_publishedForModules`).
+  - Cleared stale diagnostics automatically across closed module files by publishing empty diagnostic lists (`[]`) upon interface fix, eradicating persistent false-positive errors in VS Code's Problems panel without requiring users to open each affected file.
+- Member Property Accessor Resolution (`SemanticHelpers::ResolveEnclosingContainerMemberSymbols`):
+  - Enhanced unqualified identifier symbol resolution within member methods and classes to search the enclosing class/interface inheritance hierarchy for virtual property accessors (`FindPropertyAccessors`) before falling back to global symbols.
+  - Enables member virtual property accesses like `config.max_clip` (where `get_config()` returns an object handle) to correctly resolve to the base class accessor instead of failing with member-not-found errors.
+- Unit & Invariant Testing (`ServerHarnessTest`, `IndexedPropertyTest`):
+  - Added end-to-end server test asserting that saving a fixed interface file clears diagnostics on closed dependent module files.
+  - Added regression test asserting that bare virtual property accesses inside derived member methods resolve against the enclosing class hierarchy.
+
 ## [1.1.4-exp.5] - 2026-10-21
 
 ### Experimental Release 1.1.4-exp.5: Global and Indexed Property Accessor Support & Outside-Class Error Elimination

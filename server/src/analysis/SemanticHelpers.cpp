@@ -2733,39 +2733,65 @@ static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const Expression
 }
 
 /**
+ * @brief Resolves member symbols or accessors from the enclosing class hierarchy.
+ * @param[in] name Identifier name.
+ * @param[in] exprNode AST syntax node.
+ * @param[in] ctx Expression type resolution context.
+ * @return Matching member symbols or property accessors, if found.
+ */
+static std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(const std::string& name, TSNode exprNode,
+                                                                  const ExpressionTypeContext& ctx)
+{
+    auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode);
+    for (const auto& c : containers)
+    {
+        if (c.kind != ContainerKind::Class && c.kind != ContainerKind::Interface)
+        {
+            continue;
+        }
+        const std::string& typeName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
+        auto hierarchy = GetInheritedTypeHierarchy(typeName, ctx.symbolTable);
+        for (const auto& cls : hierarchy)
+        {
+            auto found = ctx.symbolTable.FindMemberSymbols(cls, name);
+            if (!found.empty())
+            {
+                return found;
+            }
+            auto accessors = FindPropertyAccessors(cls, name, ctx.symbolTable, false);
+            if (!accessors.empty())
+            {
+                return accessors;
+            }
+        }
+        break;
+    }
+    return {};
+}
+
+/**
  * @brief Finds symbol matches for a bare identifier.
+ * @param[in] name Identifier name.
+ * @param[in] exprNode AST syntax node.
+ * @param[in] ctx Expression type resolution context.
+ * @return Candidate symbols in lexical, member, or global scope.
  */
 static std::vector<Symbol> ResolveIdentifierSymbols(const std::string& name, TSNode exprNode,
                                                     const ExpressionTypeContext& ctx)
 {
     auto syms = FindSymbolsInScope(name, exprNode, ctx.sourceCode, ctx.symbolTable);
-    if (syms.empty())
+    if (!syms.empty())
     {
-        syms = ctx.symbolTable.FindSymbols(name);
+        return syms;
     }
-    if (syms.empty())
+
+    syms = ResolveEnclosingContainerMemberSymbols(name, exprNode, ctx);
+    if (!syms.empty())
     {
-        auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode);
-        for (const auto& c : containers)
-        {
-            if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
-            {
-                auto hierarchy =
-                    GetInheritedTypeHierarchy(c.qualifiedName.empty() ? c.name : c.qualifiedName, ctx.symbolTable);
-                for (const auto& cls : hierarchy)
-                {
-                    auto found = ctx.symbolTable.FindMemberSymbols(cls, name);
-                    if (!found.empty())
-                    {
-                        syms = std::move(found);
-                        break;
-                    }
-                }
-                break;
-            }
-        }
+        return syms;
     }
-    return syms;
+
+    return ctx.symbolTable.FindSymbols(name);
 }
 
 /**
@@ -2885,6 +2911,10 @@ static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeCo
         {
             return CleanExpressionType(sym.GetVariable().typeName);
         }
+    }
+    if (std::string pType = PropertyTypeFromAccessors(syms); !pType.empty())
+    {
+        return CleanExpressionType(pType);
     }
     return ResolveIdentifierAccessorFallback(name, ctx.symbolTable);
 }

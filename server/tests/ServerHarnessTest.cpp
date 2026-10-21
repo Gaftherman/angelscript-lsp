@@ -6727,3 +6727,55 @@ TEST_CASE("ServerHarness - Wildcard rules file auto-discovery")
     CHECK(output.find("textDocument/publishDiagnostics") != std::string::npos);
     CHECK(output.find(customEntry) == std::string::npos);
 }
+
+TEST_CASE("Server - Saving an interface-changing module file clears diagnostics on closed dependent files")
+{
+    const std::string helperName = test::GenerateRandomSymbolName("FixHelper");
+    const std::string callerName = test::GenerateRandomSymbolName("UserFunc");
+
+    WorkspaceFixture fixture;
+    // Initially decl.as is missing helperName, so use.as produces an error during module scan
+    fixture.Write("scripts/maps/decl.as", "// initial empty decl\n");
+    fixture.Write("scripts/maps/use.as", "void " + callerName + "()\n{\n    " + helperName + "();\n}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    // Verify use.as was published with errors during initial module scan
+    stream.PushAction(
+        [&stream]()
+        {
+            stream.WaitForCondition([&](const std::string& out) { return CountPublishedFor(out, "use.as") >= 1; },
+                                    std::chrono::seconds(10));
+            const std::string initialUse = LastPublishedFor(stream.Output(), "use.as");
+            CHECK(initialUse.find("as-err-undefined-identifier") != std::string::npos);
+        });
+
+    // Now open decl.as, fix helperName, and save it
+    const std::string fixedDecl = "void " + helperName + "() { }\n";
+    stream.Push(DidOpenMessage(fixture.Uri("scripts/maps/decl.as"), fixedDecl));
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":")" +
+                fixture.Uri("scripts/maps/decl.as") + R"("},"text":")" + JsonEscape(fixedDecl) + R"("}})");
+
+    // Wait for the closed file use.as to receive republished diagnostics (count >= 2)
+    stream.PushAction(
+        [&stream]()
+        {
+            stream.WaitForCondition([&](const std::string& out) { return CountPublishedFor(out, "use.as") >= 2; },
+                                    std::chrono::seconds(10));
+        });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+    serverConfig.modules = {{"MapScript", "", (fixture.dir / "scripts/maps").generic_string()}};
+
+    RunScript(serverConfig, stream);
+
+    const std::string finalUse = LastPublishedFor(stream.Output(), "use.as");
+    INFO("final published for use.as: " << finalUse);
+    CHECK(finalUse.find(R"("diagnostics":[])") != std::string::npos);
+}

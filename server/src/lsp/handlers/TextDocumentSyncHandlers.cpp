@@ -83,6 +83,11 @@ void Server::DidSavePredefinedFile(const std::string& uriStr, const std::string&
     const std::string analysisText = AnalysisTextFor(uriStr, text);
     document::TreePtr savedTree = document::MakeTreePtr(m_parser->Parse(analysisText));
 
+    {
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        m_closureDocuments[uriStr] = text;
+    }
+
     if (PredefinedStubContributes(uriStr))
     {
         ClaimPredefinedFile(uriStr, true);
@@ -157,6 +162,8 @@ void Server::ReanalyzeDependentsOnSave(const std::string& uriStr)
             ScheduleAnalysis(openUri, openText);
         }
     }
+
+    ReanalyzeClosedModuleDependents(uriStr, savedClaim, closureSet);
 }
 
 void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params&& params)
@@ -194,13 +201,7 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
     const std::string analysisText = AnalysisTextFor(uriStr, text);
     document::TreePtr savedTree = document::MakeTreePtr(m_parser->Parse(analysisText));
 
-    if (const std::string savedPath = CanonicalPathFromUri(uriStr); !savedPath.empty())
-    {
-        m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
-            savedPath, text, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
-    }
-
-    IndexModuleClosure(uriStr);
+    UpdateSavedDocumentCaches(uriStr, text);
 
     bool interfaceChanged = false;
     auto diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, savedTree.get(), &interfaceChanged);
@@ -224,6 +225,22 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
                         utils::FormatDuration(totalTimer.ElapsedMs())));
 
     HandleSavedInterfaceChange(uriStr, interfaceChanged);
+}
+
+void Server::UpdateSavedDocumentCaches(const std::string& uriStr, const std::string& text)
+{
+    {
+        std::lock_guard<std::mutex> lock(m_closureMutex);
+        m_closureDocuments[uriStr] = text;
+    }
+
+    if (const std::string savedPath = CanonicalPathFromUri(uriStr); !savedPath.empty())
+    {
+        m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
+            savedPath, text, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
+    }
+
+    IndexModuleClosure(uriStr);
 }
 
 void Server::HandleSavedInterfaceChange(const std::string& uriStr, bool interfaceChanged)

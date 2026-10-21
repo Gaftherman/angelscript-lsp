@@ -234,4 +234,36 @@ TEST_SUITE("IndexedProperties")
         const auto diags = AnalyzeSnippet(script);
         CHECK(HasCode(diags, "as-err-compound-assign-on-indexed-prop"));
     }
+
+    TEST_CASE("MemberProperties - Bare virtual property in member method resolves against enclosing class before "
+              "global fallback")
+    {
+        const std::string configClass = test::GenerateRandomSymbolName("ASWeaponConfig");
+        const std::string baseClass = test::GenerateRandomSymbolName("BTS_Weapon");
+        const std::string derivedClass = test::GenerateRandomSymbolName("Saw");
+        const std::string propName = test::GenerateRandomSymbolName("config");
+        const std::string memberName = test::GenerateRandomSymbolName("max_clip");
+
+        const std::string script = "class " + configClass + " { int " + memberName +
+                                   "; }\n"
+                                   "class " +
+                                   baseClass +
+                                   " {\n"
+                                   "    " +
+                                   configClass + "@ get_" + propName +
+                                   "() property { return null; }\n"
+                                   "}\n"
+                                   "class " +
+                                   derivedClass + " : " + baseClass +
+                                   " {\n"
+                                   "    void Fire() {\n"
+                                   "        int m = " +
+                                   propName + "." + memberName +
+                                   ";\n"
+                                   "    }\n"
+                                   "}\n";
+
+        const auto diags = AnalyzeSnippet(script);
+        CHECK_FALSE(HasAnyError(diags));
+    }
 }
