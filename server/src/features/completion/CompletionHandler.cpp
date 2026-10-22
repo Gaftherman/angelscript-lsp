@@ -1457,6 +1457,11 @@ void PopulateMembersForType(const std::string& typeName, const analysis::Templat
  */
 std::string FindEnclosingClassName(const CompletionRequest& request)
 {
+    std::string fromTable = request.symbolTable.FindEnclosingClassName(request.uri, request.position.line);
+    if (!fromTable.empty())
+    {
+        return fromTable;
+    }
     if (request.tree)
     {
         TSNode rootNode = ts_tree_root_node(request.tree);
@@ -1471,24 +1476,7 @@ std::string FindEnclosingClassName(const CompletionRequest& request)
             }
         }
     }
-    std::string className;
-    request.symbolTable.ForEachSymbolInFile(
-        request.uri,
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
-        {
-            for (const auto& sym : symbols)
-            {
-                if (sym.type == analysis::SymbolType::Class && sym.fileUri == request.uri)
-                {
-                    if (request.position.line >= sym.startLine && request.position.line <= sym.endLine)
-                    {
-                        className = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-                        return;
-                    }
-                }
-            }
-        });
-    return className;
+    return "";
 }
 
 /**
@@ -1653,25 +1641,23 @@ static std::string FindMemberInTypeHierarchy(const analysis::SymbolTable& table,
                 }
             }
         }
+        if (auto syms = table.FindSymbolsPtr(cls + "::get_" + std::string(memberName)))
+        {
+            for (const auto& sym : *syms)
+            {
+                if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().returnType.empty())
+                {
+                    return sym.GetFunction().returnType;
+                }
+            }
+        }
     }
     return "";
 }
 
-static std::string ResolveNamedReceiverType(std::string_view nodeText, const CompletionRequest& request,
-                                            const analysis::Scope* innermostScope)
+static std::string ResolveScopeOrGlobalVariableType(std::string_view nodeText, const CompletionRequest& request,
+                                                    const analysis::Scope* innermostScope)
 {
-    if (nodeText.empty())
-    {
-        return "";
-    }
-    if (nodeText == "this")
-    {
-        return FindEnclosingClassName(request);
-    }
-    if (nodeText.starts_with("this."))
-    {
-        return ResolveNamedReceiverType(nodeText.substr(5), request, innermostScope);
-    }
     if (innermostScope)
     {
         const analysis::LocalDefinition* def = analysis::ResolveInScope(innermostScope, nodeText);
@@ -1705,7 +1691,39 @@ static std::string ResolveNamedReceiverType(std::string_view nodeText, const Com
             }
         }
     }
-    return FindMemberInTypeHierarchy(request.symbolTable, FindEnclosingClassName(request), nodeText);
+    return "";
+}
+
+static std::string ResolveNamedReceiverType(std::string_view nodeText, const CompletionRequest& request,
+                                            const analysis::Scope* innermostScope)
+{
+    if (nodeText.empty())
+    {
+        return "";
+    }
+    if (nodeText == "this")
+    {
+        return FindEnclosingClassName(request);
+    }
+    if (nodeText.starts_with("this."))
+    {
+        return ResolveNamedReceiverType(nodeText.substr(5), request, innermostScope);
+    }
+    if (std::string varType = ResolveScopeOrGlobalVariableType(nodeText, request, innermostScope); !varType.empty())
+    {
+        return varType;
+    }
+    std::string memberHit = FindMemberInTypeHierarchy(request.symbolTable, FindEnclosingClassName(request), nodeText);
+    if (!memberHit.empty())
+    {
+        return memberHit;
+    }
+    auto globalProps = analysis::FindGlobalPropertyAccessors(std::string(nodeText), request.symbolTable, false);
+    if (!globalProps.empty())
+    {
+        return analysis::PropertyTypeFromAccessors(globalProps);
+    }
+    return "";
 }
 
 /**
@@ -1744,17 +1762,24 @@ std::string ResolveReceiverNodeType(TSNode receiverNode, const CompletionRequest
                                          {innermostScope, "", request.uri});
 }
 
-/**
- * @brief Peels index bracket sequences preceding a dot access.
- * @param[in] prefix Source prefix preceding cursor.
- * @param[in,out] s Offset position before bracket sequence.
- * @return Number of index brackets peeled.
- */
-static size_t PeelIndexBrackets(const std::string& prefix, size_t& s)
+struct IndexPeelResult
 {
     size_t count = 0;
+    std::string lastIndexExpr;
+};
+
+/**
+ * @brief Peels index bracket sequences preceding a dot access, capturing the last inner index argument.
+ * @param[in] prefix Source prefix preceding cursor.
+ * @param[in,out] s Offset position before bracket sequence.
+ * @return Struct with number of index brackets peeled and last index argument string.
+ */
+static IndexPeelResult PeelIndexBracketsWithExpr(const std::string& prefix, size_t& s)
+{
+    IndexPeelResult res;
     while (s > 0 && prefix[s - 1] == ']')
     {
+        size_t closePos = s - 1;
         --s;
         int depth = 1;
         while (s > 0 && depth > 0)
@@ -1769,13 +1794,23 @@ static size_t PeelIndexBrackets(const std::string& prefix, size_t& s)
             }
             --s;
         }
-        ++count;
+        if (res.lastIndexExpr.empty() && closePos > s)
+        {
+            std::string inner = prefix.substr(s + 1, closePos - s - 1);
+            size_t start = inner.find_first_not_of(" \t");
+            size_t end = inner.find_last_not_of(" \t");
+            if (start != std::string::npos && end != std::string::npos)
+            {
+                res.lastIndexExpr = inner.substr(start, end - start + 1);
+            }
+        }
+        ++res.count;
         while (s > 0 && (prefix[s - 1] == ' ' || prefix[s - 1] == '\t'))
         {
             --s;
         }
     }
-    return count;
+    return res;
 }
 
 static size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)
@@ -1798,6 +1833,87 @@ static size_t ExtractIdentifierBackward(const std::string& text, size_t end)
 }
 
 /**
+ * @brief Deduces basic literal or identifier type from an index expression string.
+ * @param[in] expr Raw trimmed expression inside index brackets.
+ * @param[in] request Completion request context.
+ * @param[in] scope Innermost lexical scope at cursor.
+ * @return Deduced type name string, or empty string.
+ */
+static std::string DeduceLiteralOrNamedType(std::string_view expr, const CompletionRequest& request,
+                                            const analysis::Scope* scope)
+{
+    if (expr.empty())
+    {
+        return "";
+    }
+    if (expr.front() == '"' && expr.back() == '"')
+    {
+        return ConfiguredStringTypeName(request);
+    }
+    if (expr == "true" || expr == "false")
+    {
+        return "bool";
+    }
+    if (std::isdigit(static_cast<unsigned char>(expr.front())) ||
+        ((expr.front() == '-' || expr.front() == '+') && expr.size() > 1 &&
+         std::isdigit(static_cast<unsigned char>(expr[1]))))
+    {
+        if (expr.find('.') != std::string_view::npos || expr.ends_with('f') || expr.ends_with('F'))
+        {
+            return "float";
+        }
+        return "int";
+    }
+    return ResolveNamedReceiverType(expr, request, scope);
+}
+
+/**
+ * @brief Checks if an identifier denotes an indexed property accessor (getter with parameters).
+ * @param[in] table Symbol table.
+ * @param[in] parentType Enclosing class/type name, or empty for global.
+ * @param[in] name Property name without prefix.
+ * @return True if an indexed getter accessor exists.
+ */
+static bool IsIndexedPropertyAccessor(const analysis::SymbolTable& table, const std::string& parentType,
+                                      std::string_view name, std::string_view enclosingClass = "")
+{
+    if (name.empty())
+    {
+        return false;
+    }
+    const std::string getterName = "get_" + std::string(name);
+    std::string searchType = parentType.empty() ? std::string(enclosingClass) : parentType;
+    if (!searchType.empty())
+    {
+        auto hierarchy = GetInheritedTypeHierarchy(table, searchType);
+        for (const auto& cls : hierarchy)
+        {
+            if (auto syms = table.FindSymbolsPtr(cls + "::" + getterName))
+            {
+                for (const auto& sym : *syms)
+                {
+                    if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().parameters.empty())
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    if (auto syms = table.FindSymbolsPtr(getterName))
+    {
+        for (const auto& sym : *syms)
+        {
+            if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().parameters.empty())
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
  * @brief Resolves fallback receiver type when AST node resolution is unavailable or incomplete.
  * @param[in] prefix Prefix text before cursor.
  * @param[in] dotCol Column offset of access dot.
@@ -1810,7 +1926,7 @@ static std::string ResolveFallbackReceiverType(const std::string& prefix, size_t
                                                const analysis::Scope* innermostScope)
 {
     size_t s = SkipInlineWhitespaceBackward(prefix, dotCol);
-    size_t indexCount = PeelIndexBrackets(prefix, s);
+    auto peel = PeelIndexBracketsWithExpr(prefix, s);
     size_t e = s;
     s = ExtractIdentifierBackward(prefix, s);
     if (e <= s)
@@ -1819,21 +1935,42 @@ static std::string ResolveFallbackReceiverType(const std::string& prefix, size_t
     }
     std::string ident(prefix.substr(s, e - s));
     std::string rawTypeName;
+    std::string parentType;
     size_t prevDot = SkipInlineWhitespaceBackward(prefix, s);
     if (prevDot > 0 && prefix[prevDot - 1] == '.')
     {
-        std::string parentType = ResolveFallbackReceiverType(prefix, prevDot - 1, collector, innermostScope);
+        parentType = ResolveFallbackReceiverType(prefix, prevDot - 1, collector, innermostScope);
         rawTypeName = FindMemberInTypeHierarchy(collector.request.symbolTable, parentType, ident);
     }
     if (rawTypeName.empty())
     {
         rawTypeName = ResolveNamedReceiverType(ident, collector.request, innermostScope);
     }
-    if (!rawTypeName.empty() && indexCount > 0)
+    if (rawTypeName.empty())
     {
+        return "";
+    }
+
+    std::string enclosingClass = FindEnclosingClassName(collector.request);
+    size_t indexCount = peel.count;
+    if (indexCount > 0 && IsIndexedPropertyAccessor(collector.request.symbolTable, parentType, ident, enclosingClass))
+    {
+        --indexCount;
+    }
+    if (indexCount > 0)
+    {
+        std::string indexArgType = DeduceLiteralOrNamedType(peel.lastIndexExpr, collector.request, innermostScope);
         const auto& arrayContainer = ConfiguredArrayTypeName(collector.request);
-        rawTypeName =
-            analysis::ResolveIndexedType(rawTypeName, indexCount, collector.request.symbolTable, arrayContainer);
+        if (indexCount == 1)
+        {
+            rawTypeName = analysis::ResolveIndexedTypeWithArg(rawTypeName, collector.request.symbolTable,
+                                                              arrayContainer, indexArgType);
+        }
+        else
+        {
+            rawTypeName =
+                analysis::ResolveIndexedType(rawTypeName, indexCount, collector.request.symbolTable, arrayContainer);
+        }
     }
     return rawTypeName;
 }
@@ -1900,6 +2037,14 @@ bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* i
     if (rawTypeName.empty())
     {
         rawTypeName = ResolveFallbackReceiverType(prefix, *dotCol, collector, innermostScope);
+    }
+    else if (analysis::IsCorePrimitive(rawTypeName))
+    {
+        std::string fallback = ResolveFallbackReceiverType(prefix, *dotCol, collector, innermostScope);
+        if (!fallback.empty() && !analysis::IsCorePrimitive(fallback))
+        {
+            rawTypeName = std::move(fallback);
+        }
     }
 
     if (rawTypeName.empty() || analysis::IsCorePrimitive(rawTypeName) || rawTypeName == "void")

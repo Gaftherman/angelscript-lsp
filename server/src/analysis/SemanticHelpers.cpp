@@ -893,10 +893,10 @@ std::string SubstituteTemplateParameters(std::string_view typeStr, const Templat
     return result;
 }
 
-std::string FindOpIndexInHierarchy(const std::string& owner, const std::string& canonical,
-                                   const SymbolTable& symbolTable)
+static std::vector<Symbol> CollectOpIndexCandidates(const std::vector<std::string>& hierarchy,
+                                                    const SymbolTable& symbolTable)
 {
-    auto hierarchy = GetInheritedTypeHierarchy(owner, symbolTable);
+    std::vector<Symbol> candidates;
     for (const auto& typeInHierarchy : hierarchy)
     {
         auto found = symbolTable.FindMemberSymbolPtr(typeInHierarchy, "opIndex");
@@ -908,29 +908,59 @@ std::string FindOpIndexInHierarchy(const std::string& owner, const std::string& 
         {
             if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
             {
-                std::string ret = sym.GetFunction().returnType;
-                auto binding = BindTemplateArguments(canonical, symbolTable);
-                if (binding.usable)
+                if (sym.GetFunction().returnType != "void" && sym.GetFunction().parameters.size() == 1)
                 {
-                    ret = SubstituteTemplateParameters(ret, binding);
+                    candidates.push_back(sym);
                 }
-                else
-                {
-                    auto tmpl = ParseTemplateType(canonical);
-                    if (tmpl.templateArgs.size() == 1)
-                    {
-                        ret = SubstituteTypeParam(ret, "T", tmpl.templateArgs[0]);
-                    }
-                    else if (tmpl.templateArgs.size() >= 2)
-                    {
-                        ret = SubstituteTypeParam(ret, "T", tmpl.templateArgs.back());
-                        ret = SubstituteTypeParam(ret, "V", tmpl.templateArgs[1]);
-                        ret = SubstituteTypeParam(ret, "K", tmpl.templateArgs[0]);
-                    }
-                }
-                return CleanExpressionType(ret);
             }
         }
+    }
+    return candidates;
+}
+
+static std::string ApplyTemplateBindingToReturn(std::string ret, const std::string& canonical,
+                                                const SymbolTable& symbolTable)
+{
+    auto binding = BindTemplateArguments(canonical, symbolTable);
+    if (binding.usable)
+    {
+        return CleanExpressionType(SubstituteTemplateParameters(ret, binding));
+    }
+    auto tmpl = ParseTemplateType(canonical);
+    if (tmpl.templateArgs.size() == 1)
+    {
+        ret = SubstituteTypeParam(ret, "T", tmpl.templateArgs[0]);
+    }
+    else if (tmpl.templateArgs.size() >= 2)
+    {
+        ret = SubstituteTypeParam(ret, "T", tmpl.templateArgs.back());
+        ret = SubstituteTypeParam(ret, "V", tmpl.templateArgs[1]);
+        ret = SubstituteTypeParam(ret, "K", tmpl.templateArgs[0]);
+    }
+    return CleanExpressionType(ret);
+}
+
+std::string FindOpIndexInHierarchy(const std::string& owner, const std::string& canonical,
+                                   const SymbolTable& symbolTable, std::string_view indexArgType = "")
+{
+    auto hierarchy = GetInheritedTypeHierarchy(owner, symbolTable);
+    auto candidates = CollectOpIndexCandidates(hierarchy, symbolTable);
+    const Symbol* bestSym = nullptr;
+    if (!candidates.empty())
+    {
+        if (!indexArgType.empty())
+        {
+            auto match = ResolveBestOverload(candidates, {std::string(indexArgType)}, symbolTable);
+            bestSym = match.bestCandidate;
+        }
+        if (!bestSym)
+        {
+            bestSym = &candidates.front();
+        }
+    }
+    if (bestSym)
+    {
+        return ApplyTemplateBindingToReturn(bestSym->GetFunction().returnType, canonical, symbolTable);
     }
     return "";
 }
@@ -950,7 +980,7 @@ std::string ResolveIndexFallback(const std::string& canonical)
 }
 
 std::string ResolveSingleIndexStep(std::string_view current, const SymbolTable& symbolTable,
-                                   std::string_view arrayTypeName)
+                                   std::string_view arrayTypeName, std::string_view indexArgType = "")
 {
     const std::string canonical = CanonicalizeArrayType(current, arrayTypeName);
     std::string owner = MemberOwnerType(canonical, arrayTypeName);
@@ -959,12 +989,18 @@ std::string ResolveSingleIndexStep(std::string_view current, const SymbolTable& 
         owner = CleanExpressionType(canonical);
     }
 
-    std::string indexedType = FindOpIndexInHierarchy(owner, canonical, symbolTable);
+    std::string indexedType = FindOpIndexInHierarchy(owner, canonical, symbolTable, indexArgType);
     if (!indexedType.empty())
     {
         return indexedType;
     }
     return ResolveIndexFallback(canonical);
+}
+
+std::string ResolveIndexedTypeWithArg(std::string_view typeName, const SymbolTable& symbolTable,
+                                      std::string_view arrayTypeName, std::string_view indexArgType)
+{
+    return ResolveSingleIndexStep(typeName, symbolTable, arrayTypeName, indexArgType);
 }
 
 std::string ResolveIndexedType(std::string_view typeName, size_t indexCount, const SymbolTable& symbolTable,
@@ -973,7 +1009,7 @@ std::string ResolveIndexedType(std::string_view typeName, size_t indexCount, con
     std::string current(typeName);
     for (size_t idx = 0; idx < indexCount && !current.empty(); ++idx)
     {
-        std::string next = ResolveSingleIndexStep(current, symbolTable, arrayTypeName);
+        std::string next = ResolveSingleIndexStep(current, symbolTable, arrayTypeName, "");
         if (next.empty())
         {
             break;
@@ -4298,10 +4334,14 @@ static std::optional<std::string> ResolveLambdaOrInitExpr(std::string_view nodeT
 /**
  * @brief Searches a collection of accessor symbols for an indexed getter return type.
  * @param[in] accessors Vector of accessor symbols.
+ * @param[in] symbolTable Global symbol table pointer for overload resolution.
+ * @param[in] indexArgType Deduced type of the index argument.
  * @return Return type of the indexed getter, or empty string.
  */
-static std::string FindIndexedGetterType(const std::vector<Symbol>& accessors)
+static std::string FindIndexedGetterType(const std::vector<Symbol>& accessors, const SymbolTable* symbolTable = nullptr,
+                                         std::string_view indexArgType = "")
 {
+    std::vector<Symbol> getters;
     for (const auto& sym : accessors)
     {
         if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
@@ -4309,11 +4349,23 @@ static std::string FindIndexedGetterType(const std::vector<Symbol>& accessors)
             const auto& fn = sym.GetFunction();
             if (sym.name.starts_with("get_") && !fn.parameters.empty())
             {
-                return CleanExpressionType(fn.returnType);
+                getters.push_back(sym);
             }
         }
     }
-    return "";
+    if (getters.empty())
+    {
+        return "";
+    }
+    if (symbolTable && !indexArgType.empty())
+    {
+        auto match = ResolveBestOverload(getters, {std::string(indexArgType)}, *symbolTable);
+        if (match.bestCandidate)
+        {
+            return CleanExpressionType(match.bestCandidate->GetFunction().returnType);
+        }
+    }
+    return CleanExpressionType(getters.front().GetFunction().returnType);
 }
 
 /**
@@ -4321,9 +4373,11 @@ static std::string FindIndexedGetterType(const std::vector<Symbol>& accessors)
  * @param[in] objNode Member expression AST node.
  * @param[in] ctx Expression type resolution context.
  * @param[in] depth AST recursion depth.
+ * @param[in] indexArgType Inferred type of the index argument.
  * @return Resolved return type of the indexed getter, or empty string.
  */
-static std::string ResolveMemberIndexedProperty(TSNode objNode, const ExpressionTypeContext& ctx, int depth)
+static std::string ResolveMemberIndexedProperty(TSNode objNode, const ExpressionTypeContext& ctx, int depth,
+                                                std::string_view indexArgType = "")
 {
     TSNode recNode = parser::GetChildByField(objNode, parser::fields::Object);
     TSNode memNode = parser::GetChildByField(objNode, parser::fields::Member);
@@ -4337,16 +4391,19 @@ static std::string ResolveMemberIndexedProperty(TSNode objNode, const Expression
     {
         return "";
     }
-    return FindIndexedGetterType(FindPropertyAccessors(recType, memName, ctx.symbolTable, false));
+    return FindIndexedGetterType(FindPropertyAccessors(recType, memName, ctx.symbolTable, false), &ctx.symbolTable,
+                                 indexArgType);
 }
 
 /**
  * @brief Resolves indexed property accessor type from scoped or bare identifier.
  * @param[in] objNode Scoped identifier or identifier AST node.
  * @param[in] ctx Expression type resolution context.
+ * @param[in] indexArgType Inferred type of the index argument.
  * @return Resolved return type of the indexed getter, or empty string.
  */
-static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const ExpressionTypeContext& ctx)
+static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const ExpressionTypeContext& ctx,
+                                                      std::string_view indexArgType = "")
 {
     std::string_view nodeType = NodeType(objNode);
     if (nodeType == "scoped_identifier")
@@ -4357,7 +4414,8 @@ static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const Expr
         {
             std::string scopeName = text.substr(0, colonPos);
             std::string name = text.substr(colonPos + 2);
-            return FindIndexedGetterType(FindPropertyAccessors(scopeName, name, ctx.symbolTable, false));
+            return FindIndexedGetterType(FindPropertyAccessors(scopeName, name, ctx.symbolTable, false),
+                                         &ctx.symbolTable, indexArgType);
         }
         return "";
     }
@@ -4367,7 +4425,8 @@ static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const Expr
     {
         return "";
     }
-    if (std::string hit = FindIndexedGetterType(FindGlobalPropertyAccessors(name, ctx.symbolTable, false));
+    if (std::string hit = FindIndexedGetterType(FindGlobalPropertyAccessors(name, ctx.symbolTable, false),
+                                                &ctx.symbolTable, indexArgType);
         !hit.empty())
     {
         return hit;
@@ -4375,10 +4434,24 @@ static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const Expr
     for (const auto& cont : GetEnclosingContainers(objNode, ctx.sourceCode))
     {
         const std::string cName = cont.qualifiedName.empty() ? cont.name : cont.qualifiedName;
-        if (std::string hit = FindIndexedGetterType(FindPropertyAccessors(cName, name, ctx.symbolTable, false));
+        if (std::string hit = FindIndexedGetterType(FindPropertyAccessors(cName, name, ctx.symbolTable, false),
+                                                    &ctx.symbolTable, indexArgType);
             !hit.empty())
         {
             return hit;
+        }
+    }
+    if (!ctx.uri.empty())
+    {
+        std::string enclosing = ctx.symbolTable.FindEnclosingClassName(ctx.uri, ts_node_start_point(objNode).row);
+        if (!enclosing.empty())
+        {
+            if (std::string hit = FindIndexedGetterType(FindPropertyAccessors(enclosing, name, ctx.symbolTable, false),
+                                                        &ctx.symbolTable, indexArgType);
+                !hit.empty())
+            {
+                return hit;
+            }
         }
     }
     return "";
@@ -4399,17 +4472,24 @@ static std::string ResolveIndexExpr(TSNode exprNode, const ExpressionTypeContext
         return "";
     }
 
+    TSNode indexNode = parser::GetChildByField(exprNode, parser::fields::Index);
+    std::string indexArgType;
+    if (!ts_node_is_null(indexNode))
+    {
+        indexArgType = ResolveExpressionType(indexNode, ctx, depth + 1);
+    }
+
     std::string_view objNodeType = NodeType(objNode);
     if (objNodeType == "member_expression")
     {
-        if (std::string propType = ResolveMemberIndexedProperty(objNode, ctx, depth); !propType.empty())
+        if (std::string propType = ResolveMemberIndexedProperty(objNode, ctx, depth, indexArgType); !propType.empty())
         {
             return propType;
         }
     }
     else
     {
-        if (std::string propType = ResolveScopedOrBareIndexedProperty(objNode, ctx); !propType.empty())
+        if (std::string propType = ResolveScopedOrBareIndexedProperty(objNode, ctx, indexArgType); !propType.empty())
         {
             return propType;
         }
@@ -4420,7 +4500,7 @@ static std::string ResolveIndexExpr(TSNode exprNode, const ExpressionTypeContext
     {
         return "";
     }
-    return ResolveIndexedType(objType, 1, ctx.symbolTable, ctx.arrayTypeName);
+    return ResolveIndexedTypeWithArg(objType, ctx.symbolTable, ctx.arrayTypeName, indexArgType);
 }
 
 /**

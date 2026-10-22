@@ -795,6 +795,17 @@ std::string ResolveIndexedType(std::string_view typeName, size_t indexCount, con
                                std::string_view arrayTypeName = "array");
 
 /**
+ * @brief Resolves single index element type, matching opIndex overloads with the index argument.
+ * @param[in] typeName Container or array type name.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in] arrayTypeName Array container name from config.
+ * @param[in] indexArgType Inferred type of the index argument.
+ * @return Resulting element or value type, or empty string.
+ */
+std::string ResolveIndexedTypeWithArg(std::string_view typeName, const SymbolTable& symbolTable,
+                                      std::string_view arrayTypeName, std::string_view indexArgType);
+
+/**
  * @brief Performs container-aware, using-aware and inheritance-aware symbol lookup for a name at an AST node.
  * @param name Symbol name to resolve.
  * @param node The AST node providing lexical context.

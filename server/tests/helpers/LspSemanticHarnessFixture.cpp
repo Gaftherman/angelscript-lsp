@@ -609,7 +609,8 @@ void LspSemanticHarnessFixture::AssertDefinitionTarget(const std::string& uri, u
     CHECK(matched);
 }
 
-bool LspSemanticHarnessFixture::VerifyWithNativeOracle(const std::string& sourceSnippet, std::string& outCompilerError)
+bool LspSemanticHarnessFixture::VerifyWithNativeOracle(const std::string& sourceSnippet, std::string& outCompilerError,
+                                                       std::string_view extraArgs)
 {
     if (!HasOracleBinary())
     {
@@ -630,11 +631,13 @@ bool LspSemanticHarnessFixture::VerifyWithNativeOracle(const std::string& source
     out.close();
 
 #if defined(_WIN32)
+    std::string extraStr = extraArgs.empty() ? "" : (" " + std::string(extraArgs));
     std::string cmd = "cd /d \"" + m_sandboxDir.string() + "\" && \"" + m_oracleExe + "\" \"" + tempScript.string() +
-                      "\" --json --no-pause > \"" + tempOut.string() + "\" 2>&1";
+                      "\" --json --no-pause" + extraStr + " > \"" + tempOut.string() + "\" 2>&1";
 #else
+    std::string extraStr = extraArgs.empty() ? "" : (" " + std::string(extraArgs));
     std::string cmd = "cd \"" + m_sandboxDir.string() + "\" && \"" + m_oracleExe + "\" \"" + tempScript.string() +
-                      "\" --json --no-pause > \"" + tempOut.string() + "\" 2>&1";
+                      "\" --json --no-pause" + extraStr + " > \"" + tempOut.string() + "\" 2>&1";
 #endif
     const int exitCode = std::system(cmd.c_str());
 

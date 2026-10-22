@@ -208,7 +208,8 @@ class LspSemanticHarnessFixture
      * @param[out] outCompilerError Captured compiler errors if rejected.
      * @return True if compiled successfully with exit code 0; false otherwise.
      */
-    bool VerifyWithNativeOracle(const std::string& sourceSnippet, std::string& outCompilerError);
+    bool VerifyWithNativeOracle(const std::string& sourceSnippet, std::string& outCompilerError,
+                                std::string_view extraArgs = "");
 
     /** @brief Returns reference to mutable ServerConfig for test configuration overrides. */
     config::ServerConfig& Config()
