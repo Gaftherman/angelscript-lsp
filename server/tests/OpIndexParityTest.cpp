@@ -287,4 +287,80 @@ TEST_SUITE("OpIndexParity")
         auto insideItems = fixture.RequestCompletion(docUri3, 3, colInside);
         CHECK(HasItemLabel(insideItems, "length"));
     }
+
+    TEST_CASE("OpIndexParity - Overloaded opIndex across uint, double, and const reference verified with oracle")
+    {
+        LspSemanticHarnessFixture fixture;
+        fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
+
+        const std::string valClass = GenerateRandomSymbolName("ValClass");
+        const std::string gridClass = GenerateRandomSymbolName("Grid");
+        const std::string memberField = GenerateRandomSymbolName("value");
+        const std::string computeMethod = GenerateRandomSymbolName("Compute");
+
+        const std::string script = fmt::format("class {0} {{\n"
+                                               "    int {2};\n"
+                                               "    int {3}() const {{ return {2}; }}\n"
+                                               "}}\n"
+                                               "class {1} {{\n"
+                                               "    string opIndex(uint u) {{ return \"uint_res\"; }}\n"
+                                               "    int opIndex(double d) {{ return 42; }}\n"
+                                               "    {0}@ opIndex(const {0} &in v) {{\n"
+                                               "        {0} outObj;\n"
+                                               "        outObj.{2} = v.{2};\n"
+                                               "        return outObj;\n"
+                                               "    }}\n"
+                                               "}}\n"
+                                               "void main() {{\n"
+                                               "    {1} g;\n"
+                                               "    string s = g[uint(10)];\n"
+                                               "    int i = g[3.14159];\n"
+                                               "    {0} v;\n"
+                                               "    v.{2} = 77;\n"
+                                               "    {0}@ res = g[v];\n"
+                                               "    int val = g[v].{3}();\n"
+                                               "    if (s.length() > 0 && i > 0 && val > 0 && res !is null) {{\n"
+                                               "    }}\n"
+                                               "}}\n",
+                                               valClass, gridClass, memberField, computeMethod);
+
+        if (fixture.HasOracleBinary())
+        {
+            std::string oracleError;
+            const bool oracleAccepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(oracleAccepted);
+        }
+
+        const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
+        fixture.AddVirtualDocument(docUri, script);
+        fixture.AssertNoDiagnostics(docUri);
+
+        // Completion right after g[v].
+        const std::string scriptComplete = fmt::format("class {0} {{\n"
+                                                       "    int {2};\n"
+                                                       "    int {3}() const {{ return {2}; }}\n"
+                                                       "}}\n"
+                                                       "class {1} {{\n"
+                                                       "    string opIndex(uint u) {{ return \"uint_res\"; }}\n"
+                                                       "    int opIndex(double d) {{ return 42; }}\n"
+                                                       "    {0}@ opIndex(const {0} &in v) {{\n"
+                                                       "        {0} outObj;\n"
+                                                       "        outObj.{2} = v.{2};\n"
+                                                       "        return outObj;\n"
+                                                       "    }}\n"
+                                                       "}}\n"
+                                                       "void main() {{\n"
+                                                       "    {1} g;\n"
+                                                       "    {0} v;\n"
+                                                       "    g[v].\n"
+                                                       "}}\n",
+                                                       valClass, gridClass, memberField, computeMethod);
+
+        const std::string docUriComplete =
+            fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("docComplete")));
+        fixture.AddVirtualDocument(docUriComplete, scriptComplete);
+        auto items = fixture.RequestCompletion(docUriComplete, 16, 9);
+        CHECK(HasItemLabel(items, memberField));
+        CHECK(HasItemLabel(items, computeMethod));
+    }
 }
