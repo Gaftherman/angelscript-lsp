@@ -2,6 +2,45 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.4] - 2026-10-22
+
+### Official 1.1.4 Release: Zero-Trust String Recovery, Global & Indexed Property Accessors, Swallowed Declarations Recovery, Member Accessors, AST Traversal Optimization, and Cascading Module Diagnostics
+
+- Zero-Trust String & Heredoc Diagnostic Recovery (`TextDocumentHandlers`, `ServerDiagnostics`, `ASTUtils`, `extension.ts`):
+  - Real-time synchronous recovery to 0 errors when closing unclosed strings (`"..."`) and multiline heredocs (`"""..."""`).
+  - Integrated client tab lifecycle synchronization (`diagnosticPullOptions`: `onChange`, `onSave`, `onTabs`, and `match`) eliminating frozen problem markers when re-opening VS Code with restored tabs.
+  - Guaranteed clearance of old problem entries via empty diagnostic push (`textDocument/publishDiagnostics` with `[]`).
+  - Isolated heredoc brace and curly delimiter scanning in `ASTUtils::SkipLiteral` to protect indentation and bracket balance calculations.
+- Cold-Start Swallowed Declaration Recovery (`DeclarationRecovery`, `DocumentSymbolHandler`):
+  - Added `DeclarationRecovery` module parsing top-level functions, classes, and variables swallowed into error tokens during parse failure, preserving document symbols and autocompletion under broken syntax.
+- Global and Indexed Property Accessor Support (`SemanticHelpers`, `IndexedPropertyTest`):
+  - Native resolution of global getter/setter accessors (`get_prop` / `set_prop`) and indexed operator overloads (`opIndex`).
+  - Hierarchical member property resolution across base classes and interfaces.
+- Cascading Module Re-Analysis & Diagnostics Cleanup (`ServerModules`, `TextDocumentSyncHandlers`, `ServerAnalysis`):
+  - Hash-based interface tracking (`m_lastSavedInterfaceHash`) to trigger cascading re-analysis of closed dependent module files on save.
+  - Automatic emission of empty diagnostic notifications (`[]`) for closed module files when an interface error is fixed.
+- High-Performance AST Traversal & Engine Independence (`ASTUtils`, `check-ast-traversal.py`, `SemanticHelpers`):
+  - Depth-bounded AST traversal and parent-climbing bounds (`k_maxAstDepth = 64`, `depth < 16`).
+  - Zero-heap string comparisons with `CleanBaseTypeView`.
+  - Ban on engine-specific identifiers in Layer 2 analysis.
+- Deterministic Concurrency & Test Suite Hardening (`ScriptedStream`, `ServerHarnessTest`, `DocumentStore`):
+  - Eradicated in-test timeouts and arbitrary sleeps across test harnesses (`ScriptedStream`).
+  - Synchronized predefined stub document versions with language client version headers.
+
+## [1.1.4-exp.10] - 2026-10-22
+
+### Experimental Release 1.1.4-exp.10: Reopen String Recovery via Tab Lifecycle Synchronization & Empty Diagnostic Push Clearance
+
+- Client Tab Lifecycle Synchronization (`extension.ts`):
+  - Configured `diagnosticPullOptions` in `clientOptions` (`onChange: true`, `onSave: true`, `onTabs: true`, and `match` predicate) for `.as`, `.angelscript`, `.predefined`, and `angelscript-virtual`.
+  - Implemented `synchronizeDiagnosticTabs` to dynamically register all restored, active, and visible tabs into the language client's tab set, eliminating the race condition on startup where `Tabs.open` remained empty and skipped keystroke pulls.
+  - Dynamically patched `tabs.isVisible` to recognize visible editors in real time, ensuring that closing quotes immediately triggers pull diagnostics.
+  - Subscribed tab and editor visibility hooks to keep diagnostic tracking in sync.
+- Empty Diagnostic Push Clearance (`ServerDiagnostics`):
+  - In `Server::NotifyClientDiagnostics`: When `params.diagnostics.empty()` is true, dispatch `textDocument/publishDiagnostics` with `[]` even if `m_clientPullsDiagnostics` is enabled, guaranteeing instant dismissal of old problem entries across all client collections.
+- Invariant-Based Unit Tests (`ServerHarnessTest`):
+  - Added test cases verifying real-time 0-error recovery and empty publishDiagnostics for both broken strings and heredocs upon closing quotes.
+
 ## [1.1.4-exp.9] - 2026-10-21
 
 ### Experimental Release 1.1.4-exp.9: Zero-Trust String Recovery, Pull Diagnostic Real-Time Refresh & Heredoc Isolation
