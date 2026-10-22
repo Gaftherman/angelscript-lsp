@@ -6,7 +6,8 @@ import {
     StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri, l10n,
     TextEditorDecorationType, Range, TextEditor, WorkspaceEdit, TextDocumentContentProvider,
     CancellationToken, Position, Selection, ViewColumn, TextEditorRevealType, Location,
-    languages, LanguageStatusItem, LanguageStatusSeverity
+    languages, LanguageStatusItem, LanguageStatusSeverity,
+    TabInputText, TabInputTextDiff, TabInputCustom
 } from 'vscode';
 // Types only: erased at compile time, so naming them here costs nothing at runtime.
 import type {
@@ -1391,6 +1392,83 @@ export function buildServerArgs(): string[] {
 }
 
 /**
+ * @brief Ensures the client's tab and document tracking recognizes all open, restored, and visible editors.
+ * @param targetClient The active language client instance.
+ */
+export function synchronizeDiagnosticTabs(targetClient: LanguageClient): void {
+    try {
+        const diagFeature = (targetClient as unknown as { getFeature?: (id: string) => unknown })?.getFeature?.('textDocument/diagnostic') as {
+            tabs?: {
+                open?: Set<string>;
+                isVisible?: (doc: unknown) => boolean;
+                __angelscriptPatched?: boolean;
+            };
+            getAllProviders?: () => Array<{ onDidChangeDiagnosticsEmitter?: { fire: () => void } }>;
+        } | undefined;
+
+        if (!diagFeature) {
+            return;
+        }
+
+        const tabs = diagFeature.tabs;
+        if (tabs && tabs.open instanceof Set) {
+            for (const editor of window.visibleTextEditors) {
+                tabs.open.add(editor.document.uri.toString());
+            }
+            if (window.activeTextEditor) {
+                tabs.open.add(window.activeTextEditor.document.uri.toString());
+            }
+            for (const doc of workspace.textDocuments) {
+                if (doc.languageId === 'angelscript' || doc.languageId === 'angelscript-predefined') {
+                    tabs.open.add(doc.uri.toString());
+                }
+            }
+            for (const group of window.tabGroups.all) {
+                for (const tab of group.tabs) {
+                    const input = tab.input;
+                    if (input instanceof TabInputText) {
+                        tabs.open.add(input.uri.toString());
+                    } else if (input instanceof TabInputTextDiff) {
+                        tabs.open.add(input.modified.toString());
+                    } else if (input instanceof TabInputCustom) {
+                        tabs.open.add(input.uri.toString());
+                    }
+                }
+            }
+
+            if (typeof tabs.isVisible === 'function' && !tabs.__angelscriptPatched) {
+                tabs.__angelscriptPatched = true;
+                const origIsVisible = tabs.isVisible.bind(tabs);
+                tabs.isVisible = (document: unknown): boolean => {
+                    const uri = document instanceof Uri ? document : (document as { uri?: Uri })?.uri;
+                    if (!uri) {
+                        return false;
+                    }
+                    const uriStr = uri.toString();
+                    if (tabs.open && tabs.open.has(uriStr)) {
+                        return true;
+                    }
+                    if (window.activeTextEditor?.document.uri.toString() === uriStr ||
+                        window.visibleTextEditors.some(e => e.document.uri.toString() === uriStr)) {
+                        tabs.open?.add(uriStr);
+                        return true;
+                    }
+                    return origIsVisible(document);
+                };
+            }
+        }
+
+        if (typeof diagFeature.getAllProviders === 'function') {
+            for (const provider of diagFeature.getAllProviders()) {
+                provider?.onDidChangeDiagnosticsEmitter?.fire();
+            }
+        }
+    } catch {
+        // Degrade gracefully if language client internal layout changes in future versions
+    }
+}
+
+/**
  * @brief Builds and starts a language client against the settings in force right now.
  *
  * Separate from activate() because most `angelscript.*` settings become server command-line
@@ -1466,6 +1544,16 @@ async function startClient(context: ExtensionContext): Promise<void> {
     };
 
     const clientOptions: LanguageClientOptions = {
+        diagnosticPullOptions: {
+            onChange: true,
+            onSave: true,
+            onTabs: true,
+            match: (_selector, resource) => {
+                const fsPath = resource.fsPath.toLowerCase();
+                return fsPath.endsWith('.as') || fsPath.endsWith('.angelscript') ||
+                       fsPath.endsWith('.predefined') || resource.scheme === 'angelscript-virtual';
+            }
+        },
         documentSelector: [
             { scheme: 'file', language: 'angelscript' },
             { scheme: 'file', language: 'angelscript-predefined' },
@@ -1507,6 +1595,10 @@ async function startClient(context: ExtensionContext): Promise<void> {
         const startedAt = Date.now();
         await client.start();
         activationTimings['clientStart'] = Date.now() - startedAt;
+
+        // Synchronize tab tracking so restored editor tabs are immediately registered
+        // and pull diagnostics on startup.
+        synchronizeDiagnosticTabs(client);
 
         // One line, because a user asked to attach one. `clientStart` is the process spawn plus the
         // initialize handshake, and on a slow machine it is expected to dominate the rest.
@@ -1712,6 +1804,26 @@ export async function activate(context: ExtensionContext) {
     // the server said is replayed onto it.
     context.subscriptions.push(
         window.onDidChangeVisibleTextEditors(editors => editors.forEach(applyInactiveRegions)));
+
+    context.subscriptions.push(
+        window.onDidChangeActiveTextEditor(() => {
+            const active = activeClient();
+            if (active) {
+                synchronizeDiagnosticTabs(active);
+            }
+        }),
+        window.onDidChangeVisibleTextEditors(() => {
+            const active = activeClient();
+            if (active) {
+                synchronizeDiagnosticTabs(active);
+            }
+        }),
+        window.tabGroups.onDidChangeTabGroups(() => {
+            const active = activeClient();
+            if (active) {
+                synchronizeDiagnosticTabs(active);
+            }
+        }));
 
     context.subscriptions.push(
         workspace.onDidSaveTextDocument(async (doc) => {

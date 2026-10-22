@@ -3163,6 +3163,102 @@ TEST_CASE("Server - A client that does not pull is still sent its diagnostics")
 }
 
 // =====================================================================================
+TEST_CASE("Server - A pulling client receives empty publishDiagnostics when clean on string recovery")
+{
+    WorkspaceFixture fixture;
+    const std::string varName = test::GenerateRandomSymbolName("var");
+    const std::string funcName = test::GenerateRandomSymbolName("getStr");
+    const std::string brokenSource =
+        "string " + funcName + "() { string " + varName + " = \"\nreturn " + varName + "; }\n";
+    const std::string fixedSource =
+        "string " + funcName + "() { string " + varName + " = \"fixed\"; return " + varName + "; }\n";
+    fixture.Write("main.as", brokenSource);
+
+    test::ScriptedStream stream;
+    stream.Push(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
+                R"("processId":null,"rootUri":")" +
+                fixture.RootUri() +
+                R"(",)"
+                R"("capabilities":{"textDocument":{"diagnostic":{"dynamicRegistration":false}}},)"
+                R"("workspaceFolders":[{"uri":")" +
+                fixture.RootUri() + R"(","name":"fixture"}]}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), brokenSource));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
+    stream.Push(DidChangeMessage(fixture.Uri("main.as"), 2, fixedSource));
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO(output);
+
+    // Initial pull for broken string reported errors
+    const std::string brokenPull = stream.ResponseFor(2);
+    INFO(brokenPull);
+    CHECK(brokenPull.find("\"items\":[]") == std::string::npos);
+
+    // Pull after closing the string reports 0 errors
+    const std::string fixedPull = stream.ResponseFor(3);
+    INFO(fixedPull);
+    CHECK(fixedPull.find("\"items\":[]") != std::string::npos);
+
+    // And publishDiagnostics with empty diagnostics array was pushed to dismiss client collection
+    CHECK(output.find("\"diagnostics\":[]") != std::string::npos);
+}
+
+TEST_CASE("Server - A pulling client receives empty publishDiagnostics when clean on heredoc recovery")
+{
+    WorkspaceFixture fixture;
+    const std::string varName = test::GenerateRandomSymbolName("var");
+    const std::string funcName = test::GenerateRandomSymbolName("getHeredoc");
+    const std::string brokenSource =
+        "string " + funcName + "() { string " + varName + " = \"\"\" \"\";\nreturn " + varName + "; }\n";
+    const std::string fixedSource =
+        "string " + funcName + "() { string " + varName + " = \"\"\" \"\"\"; return " + varName + "; }\n";
+    fixture.Write("main.as", brokenSource);
+
+    test::ScriptedStream stream;
+    stream.Push(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{)"
+                R"("processId":null,"rootUri":")" +
+                fixture.RootUri() +
+                R"(",)"
+                R"("capabilities":{"textDocument":{"diagnostic":{"dynamicRegistration":false}}},)"
+                R"("workspaceFolders":[{"uri":")" +
+                fixture.RootUri() + R"(","name":"fixture"}]}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), brokenSource));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
+    stream.Push(DidChangeMessage(fixture.Uri("main.as"), 2, fixedSource));
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO(output);
+
+    // Initial pull for broken heredoc reported errors
+    const std::string brokenPull = stream.ResponseFor(2);
+    INFO(brokenPull);
+    CHECK(brokenPull.find("\"items\":[]") == std::string::npos);
+
+    // Pull after closing heredoc reports 0 errors
+    const std::string fixedPull = stream.ResponseFor(3);
+    INFO(fixedPull);
+    CHECK(fixedPull.find("\"items\":[]") != std::string::npos);
+
+    // And publishDiagnostics with empty diagnostics array was pushed to dismiss client collection
+    CHECK(output.find("\"diagnostics\":[]") != std::string::npos);
+}
+
 // Opening a stub is not the same as selecting it.
 //
 // The workspace scan honours the selection; the three document handlers did not, and each loaded

@@ -497,6 +497,15 @@ void Server::NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDia
                     [](const lsp::ResponseError&) {});
             }
         }
+        if (params.diagnostics.empty())
+        {
+            std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
+            if (m_messageHandler)
+            {
+                m_messageHandler->sendNotification<lsp::notifications::TextDocument_PublishDiagnostics>(
+                    std::move(params));
+            }
+        }
         return;
     }
 
