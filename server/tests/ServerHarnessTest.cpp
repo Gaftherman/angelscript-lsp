@@ -4987,8 +4987,8 @@ std::string RunEditingOpenStub(const std::string& editedStub, bool expectNewFram
         stream.PushAction(
             [&stream, &before]()
             {
-                stream.WaitForCondition([&](const std::string& out)
-                                        { return CountPublishedFor(out, "main.as") > before; });
+                auto condition = [&](const std::string& out) { return CountPublishedFor(out, "main.as") > before; };
+                stream.WaitForCondition(condition);
             });
     }
 
