@@ -4,6 +4,20 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.4-exp.10] - 2026-10-22
+
+### Experimental Release 1.1.4-exp.10: Reopen String Recovery via Tab Lifecycle Synchronization & Empty Diagnostic Push Clearance
+
+- Client Tab Lifecycle Synchronization (`extension.ts`):
+  - Configured `diagnosticPullOptions` in `clientOptions` (`onChange: true`, `onSave: true`, `onTabs: true`, and `match` predicate) for `.as`, `.angelscript`, `.predefined`, and `angelscript-virtual`.
+  - Implemented `synchronizeDiagnosticTabs` to dynamically register all restored, active, and visible tabs into the language client's tab set, eliminating the race condition on startup where `Tabs.open` remained empty and skipped keystroke pulls.
+  - Dynamically patched `tabs.isVisible` to recognize visible editors in real time, ensuring that closing quotes immediately triggers pull diagnostics.
+  - Subscribed tab and editor visibility hooks to keep diagnostic tracking in sync.
+- Empty Diagnostic Push Clearance (`ServerDiagnostics`):
+  - In `Server::NotifyClientDiagnostics`: When `params.diagnostics.empty()` is true, dispatch `textDocument/publishDiagnostics` with `[]` even if `m_clientPullsDiagnostics` is enabled, guaranteeing instant dismissal of old problem entries across all client collections.
+- Invariant-Based Unit Tests (`ServerHarnessTest`):
+  - Added test cases verifying real-time 0-error recovery and empty publishDiagnostics for both broken strings and heredocs upon closing quotes.
+
 ## [1.1.4-exp.9] - 2026-10-21
 
 ### Experimental Release 1.1.4-exp.9: Zero-Trust String Recovery, Pull Diagnostic Real-Time Refresh & Heredoc Isolation
