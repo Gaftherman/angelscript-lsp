@@ -2,6 +2,20 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.5-exp.1] - 2026-10-23
+
+### Experimental Release 1.1.5-exp.1: opIndex Overload Resolution Across Multiple Types, Native Oracle Parity & Indexed Property Member Completion
+
+- Multi-Type `opIndex` Overload Resolution (`SemanticHelpers`, `CompletionHandler`):
+  - Added `ResolveIndexedTypeWithArg` evaluating argument expressions against candidate `opIndex` overloads (`int`, `uint`, `float`, `double`, `bool`, `string`, handles `@`, and const reference `&in`) using formal overload conversion ranking (`ResolveBestOverload`).
+  - Added AST-based index argument literal type deduction (`int`, `uint` with suffix `u`/`U`, `float` with `f`/`F`, `double`, `bool`, string) and variable reference type lookup from scope.
+- Indexed Property Accessor Member Completion (`CompletionHandler`):
+  - Enabled full member completion on indexed property accessors (`stringArray[0].|`, `inv.items[0].|`, and bare `items[0].|` inside class methods).
+  - Fixed primitive fallback indexing recovery in `CompletionHandler::GetTargetTypeAt` so resolved indexed accessor return types (such as `string`) are not inadvertently treated as sub-arrays or stripped of their members.
+- Native AngelScript Oracle Parity Verification (`OpIndexParityTest`):
+  - Verified compiler acceptance and exact runtime semantics against the official AngelScript compiler (`angelscript_oracle.exe`) across multiple `opIndex` overload signatures (`int`, `uint`, `float`, `double`, `bool`, `string`, class handles, and const reference parameters).
+  - Confirmed 100% parity on chained member access expressions on indexed accessor results (`container[key].field`).
+
 ## [1.1.4] - 2026-10-22
 
 ### Official 1.1.4 Release: Zero-Trust String Recovery, Global & Indexed Property Accessors, Swallowed Declarations Recovery, Member Accessors, AST Traversal Optimization, and Cascading Module Diagnostics
